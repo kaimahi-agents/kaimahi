@@ -303,7 +303,7 @@ endpoint reporting. The workflow's hygiene job calls
 configuration merging, kind-node selection and wrapper behavior, and successful
 endpoint evidence filtering. Neither file is embedded or installed for users;
 see [CI registry mirrors](development.md#ci-registry-mirrors) for the boundaries
-and verification status.
+and pull-evidence contract.
 
 `scripts/ci/synthetic-model.sh` is the `e2e-hosted-models` fixture: a
 throwaway CA and a documentation-range address routed over kind's network,

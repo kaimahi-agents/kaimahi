@@ -5,11 +5,13 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "scripts/ci/registry-mirrors.py"
@@ -163,6 +165,28 @@ class RegistryMirrorTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
         self.assert_forwarded_output(result, args)
         self.assertEqual(events, [["docker", args], ["setup", "ci-worker", docker]])
+
+    def test_direct_cluster_setup_filters_cluster_and_excludes_load_balancer(self):
+        commands, configured = [], []
+        roles = {"ci-control": "control-plane", "ci-worker": "worker",
+                 "ci-lb": "external-load-balancer"}
+
+        def docker(args, **kwargs):
+            commands.append(args)
+            output = "ci-control\nci-worker\nci-lb\n" if args[1] == "ps" else roles[args[-1]] + "\n"
+            return SimpleNamespace(stdout=output)
+
+        with patch.object(self.helper, "run", side_effect=docker), \
+                patch.object(self.helper, "setup_node", side_effect=lambda name, engine: configured.append(name)):
+            self.helper.setup_cluster("ci-exact", "/docker-real")
+        self.assertEqual(commands[0], ["/docker-real", "ps", "--filter",
+                         "label=io.x-k8s.kind.cluster=ci-exact", "--format", "{{.Names}}"])
+        self.assertEqual(configured, ["ci-control", "ci-worker"])
+
+    def test_direct_cluster_setup_refuses_missing_nodes(self):
+        with patch.object(self.helper, "run", return_value=SimpleNamespace(stdout="")), \
+                self.assertRaisesRegex(ValueError, "no Kubernetes nodes found"):
+            self.helper.setup_cluster("missing", "/docker-real")
 
     def test_child_sigterm_retains_conventional_shell_status(self):
         args = ["inspect", "example"]

@@ -370,14 +370,12 @@ separately. Hygiene runs
 [`scripts/test_registry_mirrors.py`](../scripts/test_registry_mirrors.py) to test
 configuration merging, wrapper/node selection and evidence filtering.
 
-**Verification status:** locally demonstrated with a real kind 0.33.0 cluster
-created through the wrapper, followed by a successful CRI Python image pull
-recording HTTP 200 from GCR. A refused mirror with origin fallback was also
-exercised locally. Hosted CI verification is pending; configuration and local
-results are not a claim that the hosted jobs have passed. All current Docker Hub
-images were checked to be present at matching GCR digests, including the pinned
-`kindest/node` and explicit Ollama image, so no new ECR fallback is needed.
-Existing Postgres ECR pins remain unchanged.
+Mirror coverage must be checked against the images' existing references and
+digests, including `kindest/node` and the explicit Ollama image. A cache miss or
+mirror outage can fall back to Docker Hub; reports do not call that a mirror
+success. Existing Postgres ECR pins remain unchanged. Ollama's model-weight
+downloads from `registry.ollama.ai` are separate from OCI image pulls and are not
+routed through these mirrors.
 
 ## How the existing plane works
 

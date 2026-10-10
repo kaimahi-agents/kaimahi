@@ -6,12 +6,12 @@ import argparse
 import datetime
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 from urllib.parse import urlsplit
 
 MIRROR = "https://mirror.gcr.io"
@@ -55,7 +55,7 @@ def kind_node_name(args: list[str]) -> str | None:
 
 def docker_main(args: list[str], docker_real: str) -> int:
     # Inherited streams keep kind's container ID and kmx JSON output unchanged.
-    result = subprocess.run([docker_real, *args])
+    result = subprocess.run([docker_real, *args], check=False)
     name = kind_node_name(args)
     if result.returncode == 0 and name:
         try:
@@ -79,7 +79,7 @@ def wait_cri(name: str, docker: str) -> None:
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         result = subprocess.run([docker, "exec", name, "crictl", "info"],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         if result.returncode == 0:
             return
         time.sleep(1)
@@ -89,14 +89,14 @@ def wait_cri(name: str, docker: str) -> None:
 def setup_node(name: str, docker: str) -> None:
     marker = "/etc/containerd/certs.d/docker.io/.kmx-ci-mirror"
     already = subprocess.run([docker, "exec", name, "test", "-f", marker],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     if already.returncode != 0:
         # The pinned node's CRI defaults to certs.d. Wait for systemd before
         # restarting only for debug logging; hosts files themselves reload live.
         wait_cri(name, docker)
         run([docker, "exec", "-i", name, "sh", "-c",
-             "mkdir -p /etc/containerd/certs.d/docker.io; "
-             "tee /etc/containerd/certs.d/docker.io/hosts.toml >/dev/null"], input=HOSTS)
+             ("mkdir -p /etc/containerd/certs.d/docker.io; "
+              "tee /etc/containerd/certs.d/docker.io/hosts.toml >/dev/null")], input=HOSTS)
         config = run([docker, "exec", name, "cat", "/etc/containerd/config.toml"],
                      capture_output=True).stdout
         # CI creates fresh nodes; refuse an unexpected debug table rather than
