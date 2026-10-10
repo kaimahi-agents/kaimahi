@@ -42,7 +42,12 @@ func TestTheLiftRefusesAnUnusableRequestBeforeTouchingAnything(t *testing.T) {
 		{
 			"a phase that does not exist",
 			[]string{"lift", "--payload", "orka", "--resource-group", "rg", "--cluster", "c", "--registry", "reg12345", "--step", "observabilty"},
-			[]string{"--step", "boundary"},
+			[]string{"--step", "orka"},
+		},
+		{
+			"a retired plane phase",
+			[]string{"aks", "up", "--resource-group", "rg", "--cluster", "cluster", "--registry", "reg12345", "--step", "plane"},
+			[]string{"--step", "not a phase", "cluster, orka, observability, verify"},
 		},
 		{
 			"no payload, on a command that bills money",

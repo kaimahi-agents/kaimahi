@@ -140,8 +140,8 @@ func TestBringYourOwnStillNeedsARegistryAndSaysWhy(t *testing.T) {
 	if err == nil {
 		t.Fatal("accepted with no registry")
 	}
-	if !strings.Contains(err.Error(), "Nothing is published") {
-		t.Fatalf("the refusal should say why there is no public image to fall back on: %v", err)
+	if !strings.Contains(err.Error(), "existing private registry") {
+		t.Fatalf("the refusal should name registry identity without promising a plane build: %v", err)
 	}
 }
 
@@ -209,37 +209,5 @@ func TestTheBannerNamesTheTargetAndTheTeardownRule(t *testing.T) {
 	}
 	if strings.Contains(y, "comes back down with it") {
 		t.Fatalf("the bring-your-own banner claims the resource group is torn down:\n%s", y)
-	}
-}
-
-func TestAClusterWithNoPolicyEngineIsRefusedBeforeAnythingIsInstalled(t *testing.T) {
-	for _, engine := range []string{"", "none", "None", "  "} {
-		err := PolicyEngineVerdict(engine, true)
-		if err == nil {
-			t.Fatalf("engine %q was accepted", engine)
-		}
-		if !strings.Contains(err.Error(), "inert") {
-			t.Fatalf("the refusal does not explain that policies would be present and inert: %v", err)
-		}
-	}
-	for _, engine := range []string{"cilium", "azure", "calico", "Cilium"} {
-		if err := PolicyEngineVerdict(engine, true); err != nil {
-			t.Fatalf("engine %q was refused: %v", engine, err)
-		}
-	}
-	if err := PolicyEngineVerdict("something-new", true); err == nil {
-		t.Fatal("an unrecognised engine was assumed to enforce")
-	}
-}
-
-func TestAnUnreadableEngineIsNotAnAnswer(t *testing.T) {
-	// The same rule the resource-group checks follow: a question that could
-	// not be asked is never read as a "yes" or a "no".
-	err := PolicyEngineVerdict("cilium", false)
-	if err == nil {
-		t.Fatal("an unreadable answer was treated as an enforcing cluster")
-	}
-	if !strings.Contains(err.Error(), "Not claiming") {
-		t.Fatalf("the refusal should claim nothing in either direction: %v", err)
 	}
 }

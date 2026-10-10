@@ -15,10 +15,10 @@
 #          the image reference and the pull policy must change. `Never`
 #          there means ErrImageNeverPull, forever.
 #
-# `kmx plane` applies k8s/plane/ on kind without rendering it. Managed-cluster
-# lift and CI's render assertions call this script for registry targets.
-# The kind branch remains for direct script invocation. Only a non-kind
-# target renders proxy.yaml, and only its image/pullPolicy.
+# `kmx plane` applies k8s/plane/ on kind without rendering it. Direct script
+# invocation and CI's render assertions use this script for registry targets;
+# AKS setup does not call it. The kind branch also supports direct invocation.
+# Only a non-kind target renders proxy.yaml, and only its image/pullPolicy.
 #
 # Fail closed: the render must produce exactly the intended change, and
 # the script verifies that before anything is applied.

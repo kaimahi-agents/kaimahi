@@ -1,9 +1,6 @@
 package app
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,11 +13,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// The managed path is the one that cannot be exercised in CI: it needs a
-// subscription, and CI is keyless and cannot reach Azure. So what is asserted
-// here is the SHAPE — that the files it will apply are in the binary, that
-// they say what they must say, and above all that none of it changes the
-// local path. The behaviour is proven by running it, once, by hand.
+// Asset shape checks remain while the standalone plane tooling still carries
+// its manifests. AKS lifecycle side effects are exercised with command fakes.
 
 func TestTheManagedPathsFilesTravelInTheBinary(t *testing.T) {
 	// A mistyped embed pattern is invisible until the file is missing on an
@@ -48,21 +42,6 @@ func TestTheManagedPathsFilesTravelInTheBinary(t *testing.T) {
 	}
 }
 
-func TestBYORegistryRetryKeepsTheRecordedPayload(t *testing.T) {
-	bin := t.TempDir()
-	az := "#!/bin/sh\ncase \"$1\" in\n acr) echo /subscriptions/test/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/reg12345;;\n aks) echo kubelet-id;;\n role) echo role-id;;\n rest) echo 0;;\n *) exit 1;;\nesac\n"
-	if err := os.WriteFile(filepath.Join(bin, "az"), []byte(az), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin)
-	a := &App{Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}}
-	opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: true, ResourceGroup: "rg", Cluster: "cluster", Registry: "reg12345"}
-	err := a.refuseWithoutRegistryPullRights(opt, opt.Payload)
-	if err == nil || !strings.Contains(err.Error(), "kmx aks up --byo --payload orka --step plane") {
-		t.Fatalf("BYO retry lost the recorded payload: %v", err)
-	}
-}
-
 func TestAKSUpPrintsDirectLiftCommandsWhenLiftInvokesIt(t *testing.T) {
 	body, err := kaimahi.Managed.ReadFile("scripts/aks-up.sh")
 	if err != nil {
@@ -75,7 +54,7 @@ func TestAKSUpPrintsDirectLiftCommandsWhenLiftInvokesIt(t *testing.T) {
 		}
 	}
 	if !strings.Contains(text, `if [ -n "${KMX_LIFT_CONTINUE:-}" ]`) ||
-		!strings.Contains(text, "make netpol-verify") ||
+		!strings.Contains(text, "AKS_RESOURCE_GROUP=$RG AKS_CLUSTER=$CLUSTER KAIMAHI_CONFIRM=$RG bash scripts/aks-down.sh") ||
 		!strings.Contains(text, "kmx aks up --byo --resource-group $RG") {
 		t.Error("aks-up.sh no longer keeps its direct-script guidance as the fallback")
 	}
@@ -191,61 +170,8 @@ func TestTheScrapeJobIsAPodMonitorAimedAtTheOperationsPortByName(t *testing.T) {
 	}
 }
 
-// The ConfigMap is cluster-wide and singular, so every custom scrape job on
-// the cluster shares it. This project writing it means either overwriting
-// somebody's jobs or stopping to ask them to merge ours — and its teardown
-// deleting it means removing jobs it never made. Now that the plane's job is a
-// PodMonitor, nothing here may touch that document at all: the file is carried
-// only so the refusal on a cluster with no CRD has something to print.
-func TestTheLiftNeverReadsWritesOrDeletesTheClusterWideScrapeConfigMap(t *testing.T) {
-	fset := token.NewFileSet()
-	found := 0
-	for _, file := range []string{"lift_observability.go", "lift_down.go"} {
-		parsed, err := parser.ParseFile(fset, file, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ast.Inspect(parsed, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			switch sel.Sel.Name {
-			case "kubectlCapture", "kubectlRun", "kubectlQuiet", "applyManaged":
-			default:
-				return true
-			}
-			for _, arg := range call.Args {
-				name := ""
-				switch a := arg.(type) {
-				case *ast.Ident:
-					name = a.Name
-				case *ast.BasicLit:
-					name = a.Value
-				}
-				if strings.Contains(name, "scrapeConfigMap") ||
-					strings.Contains(name, "ama-metrics-prometheus-config") ||
-					strings.Contains(name, "scrape-config.yaml") {
-					t.Errorf("%s: this reaches the cluster-wide scrape ConfigMap through %s — "+
-						"it is somebody else's document and the lift no longer has business in it",
-						fset.Position(call.Pos()), sel.Sel.Name)
-				}
-			}
-			found++
-			return true
-		})
-	}
-	if found < 5 {
-		t.Fatalf("only %d cluster calls were examined — the scan is passing vacuously", found)
-	}
-}
-
-// The fallback text the refusal prints, which is the one place the ConfigMap
-// route survives. It is not applied by anything; a test asserts that above.
+// The retained fallback asset discovers pods, never Services: the plane's
+// operations port is deliberately not exposed by a Service.
 func TestTheFallbackScrapeJobDiscoversPodsAndOnlyTheOperationsPort(t *testing.T) {
 	body, err := kaimahi.Managed.ReadFile("k8s/observability/scrape-config.yaml")
 	if err != nil {
@@ -393,11 +319,8 @@ func TestTheRecordPathIsStablePerClusterAndSafeAsAFilename(t *testing.T) {
 	}
 }
 
-// The working tree the scripts run from has to be shaped like a checkout,
-// because they resolve their neighbours relative to themselves: plane-deploy
-// looks for k8s/plane one directory up, and netpol-probe execs kube-guard.sh
-// from beside it. A flat directory would break both, at run time, on a
-// cluster that already exists.
+// Provisioning scripts keep their executable bits and their relative guard
+// path, and their temporary workspace must not survive cleanup.
 func TestTheCarriedScriptsGetTheLayoutTheyExpect(t *testing.T) {
 	a := &App{Run: nil}
 	dir, cleanup, err := a.liftWorkspace()
@@ -406,20 +329,11 @@ func TestTheCarriedScriptsGetTheLayoutTheyExpect(t *testing.T) {
 	}
 	defer cleanup()
 
-	probe := filepath.Join(dir, "scripts", "netpol-probe.sh")
-	if _, err := os.Stat(filepath.Join(filepath.Dir(probe), "kube-guard.sh")); err != nil {
-		t.Error("netpol-probe.sh execs kube-guard.sh from its own directory, and it is not there")
-	}
-	deploy := filepath.Join(dir, "scripts", "plane-deploy.sh")
-	manifests := filepath.Join(filepath.Dir(filepath.Dir(deploy)), "k8s", "plane")
-	for _, name := range []string{"proxy.yaml", "postgres.yaml", "namespace.yaml", "upstreams.yaml", "network-policy.yaml"} {
-		if _, err := os.Stat(filepath.Join(manifests, name)); err != nil {
-			t.Errorf("plane-deploy.sh resolves k8s/plane/%s relative to itself, and it is not there", name)
+	for _, name := range []string{"aks-up.sh", "aks-down.sh", "kube-guard.sh"} {
+		info, err := os.Stat(filepath.Join(dir, "scripts", name))
+		if err != nil || info.Mode().Perm()&0o100 == 0 {
+			t.Errorf("carried script %s is missing or not executable: %v", name, err)
 		}
-	}
-	info, err := os.Stat(probe)
-	if err != nil || info.Mode().Perm()&0o100 == 0 {
-		t.Error("the carried scripts are not executable")
 	}
 	cleanup()
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
@@ -428,14 +342,14 @@ func TestTheCarriedScriptsGetTheLayoutTheyExpect(t *testing.T) {
 }
 
 // One phase is not the journey. A `--step cluster` run that announced "the
-// agent is running on a managed cluster" would be claiming six phases that
+// agent is running on a managed cluster" would be claiming later phases that
 // have not happened — and the resumable shape exists precisely so that a
 // half-finished lift is a normal state rather than one to paper over.
 func TestOnePhaseSaysWhatIsLeftRatherThanClaimingTheJourney(t *testing.T) {
 	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345", Observability: true, Step: "cluster"}
 	rest := remainingSteps(opt)
-	if len(rest) == 0 || rest[0] != "boundary" {
-		t.Fatalf("after the cluster phase the next is boundary, got %v", rest)
+	if len(rest) == 0 || rest[0] != "orka" {
+		t.Fatalf("after the cluster phase the next is orka, got %v", rest)
 	}
 	for _, s := range rest {
 		if s == "cluster" {
@@ -458,9 +372,8 @@ func TestOnePhaseSaysWhatIsLeftRatherThanClaimingTheJourney(t *testing.T) {
 }
 
 // A cluster whose monitoring was already on keeps sending where it was
-// sending. Creating our own workspaces anyway would bill for something nothing
-// feeds, wire the dashboard to it, and then report the scrape as broken — so
-// the refusal has to come before anything is created.
+// sending. Creating our workspaces anyway would bill for unused resources,
+// so the refusal has to come before anything is created.
 //
 // The property that matters just as much: this must NOT fire on a resumed run.
 // An add-on this run itself enabled reads as "on" the second time through, and
@@ -517,26 +430,6 @@ func TestMonitoringAlreadyOnIsRefusedButAResumedRunIsNot(t *testing.T) {
 			t.Errorf("the refusal does not say why: %v", err)
 		}
 	})
-}
-
-// The phases must stay re-runnable and in an order where nothing is put
-// behind a boundary before the boundary is proven.
-func TestTheBoundaryIsProvenBeforeAnythingIsPutBehindIt(t *testing.T) {
-	order := map[string]int{}
-	for i, s := range lift.Steps {
-		order[s] = i
-	}
-	for _, after := range []string{"credential", "plane", "orka", "observability", "verify"} {
-		if order[after] < order["boundary"] {
-			t.Errorf("%q runs before the boundary is proven", after)
-		}
-	}
-	if order["credential"] > order["plane"] {
-		t.Error("the model credential is checked after the plane is deployed — the proxy mounts it optionally, so a plane started first fails closed for minutes")
-	}
-	if order["observability"] > order["verify"] {
-		t.Error("verification runs before observability is wired, so it cannot check that data arrives")
-	}
 }
 
 // A subscription id is an identifier this project keeps out of terminals, and

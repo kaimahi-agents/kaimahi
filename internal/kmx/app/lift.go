@@ -15,40 +15,24 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 )
 
-// Defaults for the cluster this path creates. These ARE the opinion: an
-// adopter should not have to choose a node size to see a governed agent run
-// on a managed cluster. Region, node size, node count and policy engine each
-// take a flag; the OS disk does not, because the size below is what the
-// monitoring add-ons this path always enables were measured to need.
-// docs/aks.md states each with its reason — an opinion nobody can find is
-// just a default.
+// Defaults for an ephemeral Orka target. Provisioning interfaces stay stable;
+// the OS disk includes headroom for the optional Azure monitoring add-ons.
+// Region, node size, node count and policy engine each take a flag.
 const (
-	// Standard_B4ms: 4 vCPU and 16 GiB, burstable. The plane, its ledger and
-	// two agents fit with room to spare, and a burstable size is the cheapest
-	// thing that does not make the first chat feel broken.
+	// Standard_B4ms: 4 vCPU and 16 GiB, burstable.
 	DefaultNodeSize = "Standard_B4ms"
-	// One node. This is an ephemeral demonstration cluster, not a production
-	// one; the plane is stateless and runs two replicas on it happily.
+	// One node: an ephemeral target, not a production topology.
 	DefaultNodeCount = 1
-	// Azure CNI Overlay powered by Cilium: Microsoft's recommendation for new
-	// clusters, and the only engine this repository has actually watched
-	// enforce the plane's whole boundary matrix.
+	// Azure CNI Overlay powered by Cilium: an enforcing policy engine.
 	DefaultNetworkPolicy = "cilium"
 	// westus3 has the capacity and the price this path was measured at.
 	DefaultLocation = "westus3"
-	// 64 GiB of OS disk, which is twice what a cluster running only the plane
-	// and its agents needs.
-	//
-	// The extra is for the monitoring add-ons, and the number is measured
-	// rather than chosen: on 32 GiB — the size the plain provisioning script
-	// still defaults to — a cluster carrying the plane, two agents AND the two
-	// Azure monitoring add-ons went into DiskPressure and evicted the tools
-	// agent repeatedly. The add-ons are on by default here and are not on that
-	// other path, so this path asks for more disk.
+	// 64 GiB includes room for Azure monitoring add-ons. The plain
+	// provisioning script defaults to 32 GiB without those add-ons.
 	DefaultNodeDiskGiB = 64
 )
 
-// Lift takes an agent that works locally and puts the same agent on AKS.
+// Lift provisions an AKS target and installs Orka without a Provider or Agent.
 func (a *App) Lift(opt lift.Options) error {
 	opt = withLiftDefaults(opt)
 	if err := opt.Validate(); err != nil {
@@ -137,7 +121,7 @@ func (a *App) Lift(opt lift.Options) error {
 		}
 	}
 	// One phase is not the journey. Saying "the agent is running on a managed
-	// cluster" after `--step cluster` would be a claim about six phases that
+	// cluster" after `--step cluster` would be a claim about later phases that
 	// have not run, and the whole point of the resumable shape is that a
 	// half-finished lift is a normal state to be in rather than a failure to
 	// paper over.
@@ -154,7 +138,7 @@ func (a *App) Lift(opt lift.Options) error {
 	// so "the agent is running" would be a claim about something this run
 	// deliberately did not do.
 	a.complete("Orka is running on a managed cluster", started)
-	a.liftNextSteps(opt, record)
+	a.liftNextSteps(opt)
 	return nil
 }
 
@@ -212,16 +196,8 @@ func (a *App) liftDependencies(opt lift.Options) []dependency {
 		switch step {
 		case "cluster":
 			deps = append(deps, depBash)
-		case "boundary":
-			deps = append(deps, depBash, depPython3)
 		case "orka":
 			deps = append(deps, depHelm)
-		case "plane":
-			deps = append(deps, depBash, depGo)
-		case "verify":
-			if opt.Observability {
-				deps = append(deps, depCurl)
-			}
 		}
 	}
 	return deps
@@ -232,13 +208,7 @@ func (a *App) preflightLift(opt lift.Options, goos string) error {
 	if err := liftPlatformError(steps, goos); err != nil {
 		return err
 	}
-	if err := a.preflight(a.liftDependencies(opt)...); err != nil {
-		return err
-	}
-	if liftNeedsManifestRenderer(steps) {
-		return a.preflightManifestRenderer()
-	}
-	return nil
+	return a.preflight(a.liftDependencies(opt)...)
 }
 
 func liftPlatformError(steps []string, goos string) error {
@@ -248,22 +218,13 @@ func liftPlatformError(steps []string, goos string) error {
 	return nil
 }
 
-func liftNeedsManifestRenderer(steps []string) bool {
-	for _, step := range steps {
-		if step == "plane" {
-			return true
-		}
-	}
-	return false
-}
-
 func liftUsesScripts(steps []string) bool { return len(scriptSteps(steps)) > 0 }
 
 func scriptSteps(steps []string) []string {
 	var out []string
 	for _, step := range steps {
 		switch step {
-		case "cluster", "boundary", "plane":
+		case "cluster":
 			out = append(out, step)
 		}
 	}
@@ -344,13 +305,8 @@ func (a *App) liftCommand(opt lift.Options, down bool) string {
 	return target.operationCommand(args...) + " " + liftIdentityFlags(opt)
 }
 
-// liftWorkspace writes the scripts and manifests the managed path needs into
-// a temporary tree shaped like this repository.
-//
-// Shaped like it, rather than flat, because the scripts resolve their
-// neighbours relative to themselves: plane-deploy.sh looks for k8s/plane one
-// directory up, and netpol-probe.sh execs kube-guard.sh beside it. Honouring
-// that is what lets the scripts be carried unchanged instead of forked.
+// liftWorkspace materializes only provisioning scripts and their context
+// guard, preserving the relative layout expected by those scripts.
 func (a *App) liftWorkspace() (string, func(), error) {
 	dir, err := os.MkdirTemp("", "kmx-lift-")
 	if err != nil {
@@ -373,30 +329,9 @@ func (a *App) liftWorkspace() (string, func(), error) {
 	}
 
 	for _, script := range []string{
-		"scripts/aks-up.sh", "scripts/aks-down.sh", "scripts/plane-deploy.sh",
-		"scripts/netpol-probe.sh", "scripts/kube-guard.sh",
+		"scripts/aks-up.sh", "scripts/aks-down.sh", "scripts/kube-guard.sh",
 	} {
 		if err := write(kaimahi.Managed, script, 0o700); err != nil {
-			cleanup()
-			return "", func() {}, err
-		}
-	}
-	for _, manifest := range []string{
-		"k8s/observability/network-policy.yaml", "k8s/observability/podmonitor.yaml",
-		"k8s/observability/scrape-config.yaml", "k8s/observability/workbook.json",
-		"k8s/egress-copilot.yaml",
-	} {
-		if err := write(kaimahi.Managed, manifest, 0o600); err != nil {
-			cleanup()
-			return "", func() {}, err
-		}
-	}
-	// The plane's own manifests, which plane-deploy.sh renders and applies.
-	for _, manifest := range []string{
-		"k8s/plane/namespace.yaml", "k8s/plane/postgres.yaml", "k8s/plane/proxy.yaml",
-		"k8s/plane/upstreams.yaml", "k8s/plane/network-policy.yaml",
-	} {
-		if err := write(kaimahi.Manifests, manifest, 0o600); err != nil {
 			cleanup()
 			return "", func() {}, err
 		}
@@ -408,16 +343,10 @@ func (a *App) liftStep(step string, opt lift.Options, record *lift.Record, save 
 	switch step {
 	case "cluster":
 		return a.liftCluster(opt, work)
-	case "boundary":
-		return a.liftBoundary(opt, work)
-	case "credential":
-		return a.liftCredential(opt, work)
-	case "plane":
-		return a.liftPlane(opt, work)
 	case "orka":
 		return a.liftOrka(opt)
 	case "observability":
-		return a.liftObservability(opt, record, save, work)
+		return a.liftObservability(opt, record, save)
 	case "verify":
 		return a.liftVerify(opt)
 	default:
@@ -444,7 +373,7 @@ func mergeEnv(base []string, extra map[string]string) []string {
 
 func (a *App) liftCluster(opt lift.Options, work string) error {
 	resume := opt
-	resume.Step = "boundary"
+	resume.Step = "orka"
 	downConfirm := opt.ResourceGroup
 	if opt.BringYourOwn {
 		downConfirm = opt.Cluster

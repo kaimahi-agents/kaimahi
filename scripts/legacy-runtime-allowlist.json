@@ -704,18 +704,6 @@
       "why": "Bounded parser tests: real NotFound/Forbidden strings from the legacy API group are the inputs whose translation is under test."
     },
     {
-      "path": "internal/kmx/app/plane_test.go",
-      "text": "if strings.Contains(err.Error(), \"<orka|kagent>\") {",
-      "category": "negative",
-      "why": "Bounded refusal test: the payload refusal must not offer the retired payload as a choice."
-    },
-    {
-      "path": "internal/kmx/app/plane_test.go",
-      "text": "t.Errorf(\"the refusal still offers the retired kagent payload: %v\", err)",
-      "category": "negative",
-      "why": "Bounded refusal test: the payload refusal must not offer the retired payload as a choice."
-    },
-    {
       "path": "internal/kmx/app/quickstart_orka_test.go",
       "text": "// no --legacy-kagent, and no step name that installs one either.",
       "category": "negative",
@@ -735,7 +723,7 @@
     },
     {
       "path": "internal/kmx/app/quickstart_orka_test.go",
-      "text": "if strings.Contains(command, \"kagent\") || strings.Contains(command, \"govern \") {",
+      "text": "if strings.Contains(command, \"kagent\") || strings.Contains(command, \"govern \") || strings.Contains(command, \" plane\") || strings.Contains(command, \" migrate\") {",
       "category": "negative",
       "why": "Bounded quickstart tests: no command and no written manifest names the retired runtime."
     },
@@ -903,7 +891,7 @@
     },
     {
       "path": "internal/kmx/lift/payload_test.go",
-      "text": "for _, legacy := range []string{\"kagent\", \"agents\"} {",
+      "text": "for _, legacy := range []string{\"kagent\", \"agents\", \"boundary\", \"credential\", \"plane\"} {",
       "category": "negative",
       "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
     },

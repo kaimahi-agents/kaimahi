@@ -381,7 +381,7 @@ aks-up: ready.
 
   context:   $CLUSTER   (NOT a kind context — kmx aks up already confirmed it)
   registry:  $ACR.azurecr.io
-  netpol:    $NETWORK_POLICY engine (present; the next lift phase proves enforcement)
+  netpol:    $NETWORK_POLICY engine (present; workload enforcement is not proved here)
   continue:  $KMX_LIFT_CONTINUE
   teardown:  $KMX_LIFT_DOWN
 
@@ -395,16 +395,15 @@ aks-up: ready.
 
   context:   $CLUSTER   (NOT a kind context — targets will ask to confirm)
   registry:  $ACR.azurecr.io
-  netpol:    $NETWORK_POLICY engine (present ≠ enforced: prove it with
-             TARGET=aks make netpol-verify once the plane is deployed)
-  teardown:  AKS_RESOURCE_GROUP=$RG KAIMAHI_CONFIRM=$RG make aks-down
+  netpol:    $NETWORK_POLICY engine (present; workload enforcement is not proved here)
+  teardown:  AKS_RESOURCE_GROUP=$RG AKS_CLUSTER=$CLUSTER KAIMAHI_CONFIRM=$RG bash scripts/aks-down.sh
              ^ do not skip this. The confirmation names the RESOURCE
                GROUP, not the cluster — see docs/aks.md, "Tear it down".
 
 Next (see docs/aks.md):
   kmx aks up --byo --resource-group $RG --cluster $CLUSTER --registry $ACR
 
-  The managed path captures the model credential before deploying the plane
-  and proves the network boundary. Use 'kmx aks up --help' for individual phases.
+  The managed path installs Orka. Create a model Provider with a Secret you
+  control; no model plane is deployed. Use 'kmx aks up --help' for individual phases.
 EOF
 fi

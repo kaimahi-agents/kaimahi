@@ -82,6 +82,8 @@ func liftAuditRecord(t *testing.T, a *App, opt lift.Options, before lift.Pre, ou
 	if err != nil {
 		t.Fatal(err)
 	}
+	// These audit fixtures model historical runs that managed plane objects.
+	record.PlaneMonitoringUnmanaged = false
 	record.Before = before
 	record.ScrapeMonitorApplied = before.Recorded
 	if outside {
@@ -219,7 +221,7 @@ func TestLiftDownUnknownAndZeroAreNotCompleteCleanup(t *testing.T) {
 func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	a := &App{Cfg: &config.Config{KubeContext: "kind-unrelated"}}
 	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345",
-		Location: "eastus", NodeSize: "size'$(false)", NodeCount: 3, NetworkPolicy: "calico", NetworkPolicySet: true, Step: "credential"}
+		Location: "eastus", NodeSize: "size'$(false)", NodeCount: 3, NetworkPolicy: "calico", NetworkPolicySet: true, Step: "orka"}
 	command := a.liftCommand(opt, false)
 	// Execute only a shell function named kmx, never a real command.
 	out, err := exec.Command("/bin/sh", "-c", "kmx() { printf '%s\\000' \"$@\"; }; "+command).Output()
@@ -247,33 +249,37 @@ func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	}
 }
 
-func TestLiftCredentialRecoveryAndPhaseCompletion(t *testing.T) {
-	for _, failure := range []string{"", "credential"} {
-		t.Run(failure, func(t *testing.T) {
-			a, out, _ := liftAuditApp(t)
-			t.Setenv("LIFT_FAIL", failure)
+func TestLiftVerifyRecoveryAndPhaseCompletion(t *testing.T) {
+	for _, ready := range []bool{false, true} {
+		t.Run(map[bool]string{false: "absent", true: "ready"}[ready], func(t *testing.T) {
+			liftAuditApp(t) // isolated home, tools and Azure boundary
+			f := newOrkaFixture(t, nil)
+			t.Setenv("KMX_TEST_DEPLOY_JSON", `{"items":[]}`)
+			if ready {
+				t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy(orkaChartController, nil)))
+			}
 			opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345",
-				Location: "eastus", NodeSize: "Standard_B8ms", NodeCount: 3, NetworkPolicy: "calico", Step: "credential"}
-			a.Cfg.Confirm = opt.Cluster
-			err := a.Lift(opt)
-			if failure != "" {
-				if err == nil || !strings.Contains(err.Error(), "cannot tell whether") {
-					t.Fatalf("credential failure was not preserved: %v", err)
+				Location: "eastus", NodeSize: "Standard_B8ms", NodeCount: 3, NetworkPolicy: "calico", Step: "verify"}
+			f.app.Cfg.Confirm = opt.Cluster
+			err := f.app.Lift(opt)
+			if !ready {
+				if err == nil || !strings.Contains(err.Error(), "no Orka controller Deployment") {
+					t.Fatalf("readiness failure was not preserved: %v", err)
 				}
-				if !strings.Contains(out.String(), a.liftCommand(opt, false)) {
-					t.Fatalf("phase failure lost recovery command: %s", out)
+				if !strings.Contains(f.errOut.String(), f.app.liftCommand(opt, false)) {
+					t.Fatalf("phase failure lost recovery command: %s", f.errOut)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out.String(), "Other phases were not checked") || strings.Contains(out.String(), "Orka is running on a managed cluster") {
-				t.Fatalf("one phase claimed entire lift: %s", out)
+			if !strings.Contains(f.errOut.String(), "Other phases were not checked") || strings.Contains(f.errOut.String(), "Orka is running on a managed cluster") {
+				t.Fatalf("one phase claimed entire lift: %s", f.errOut)
 			}
 			opt.Step = ""
-			if !strings.Contains(out.String(), a.liftCommand(opt, false)) {
-				t.Fatalf("full-run follow-up lost options: %s", out)
+			if !strings.Contains(f.errOut.String(), f.app.liftCommand(opt, false)) {
+				t.Fatalf("full-run follow-up lost options: %s", f.errOut)
 			}
 		})
 	}
@@ -285,18 +291,14 @@ func TestLiftNextStepsDoNotClaimDisabledObservability(t *testing.T) {
 			a, out, _ := liftAuditApp(t)
 			opt := lift.Options{Payload: payload, BringYourOwn: byo, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345"}
 			a.aimAtTheCluster(opt)
-			a.liftNextSteps(opt, &lift.Record{RunID: "abcd1234"})
+			a.liftNextSteps(opt)
 			for _, claim := range []string{"The dashboard is", "two monitoring workspaces", "kmx aks down --byo --byo"} {
 				if strings.Contains(out.String(), claim) {
 					t.Errorf("%s: disabled observability claimed %q: %s", payload, claim, out)
 				}
 			}
 			want := []string{"Azure metrics and logs were not checked", a.liftCommand(opt, true)}
-			// The spend ledger is offered only where something writes to it.
-			// This lift wires no Provider through the plane, so pointing at a
-			// credential's ledger would be pointing at an empty one; `kmx flow`
-			// is the honest view.
-			want = append(want, a.operationCommand("orka", "status"), a.operationCommand("flow"))
+			want = append(want, a.operationCommand("orka", "status"))
 			for _, w := range want {
 				if !strings.Contains(out.String(), w) {
 					t.Errorf("%s: missing %q: %s", payload, w, out)
@@ -384,11 +386,9 @@ func TestLiftDependenciesAreSelectedByPhase(t *testing.T) {
 		not  []string
 	}{
 		{"cluster", []string{"az", "kubectl", "bash"}, []string{"helm", "go", "python3", "curl"}},
-		{"boundary", []string{"az", "kubectl", "bash", "python3"}, []string{"helm", "go", "curl"}},
-		{"credential", []string{"az", "kubectl"}, []string{"bash", "helm", "go", "python3", "curl"}},
-		{"plane", []string{"az", "kubectl", "bash", "go"}, []string{"helm", "curl"}},
+		{"observability", []string{"az", "kubectl"}, []string{"bash", "helm", "go", "python3", "curl"}},
 		{"orka", []string{"az", "kubectl", "helm"}, []string{"bash", "go", "python3", "curl"}},
-		{"verify", []string{"az", "kubectl", "curl"}, []string{"bash", "helm", "go", "python3"}},
+		{"verify", []string{"az", "kubectl"}, []string{"bash", "helm", "go", "python3", "curl"}},
 	} {
 		t.Run(tc.step, func(t *testing.T) {
 			opt := base
@@ -414,7 +414,7 @@ func TestLiftDependenciesAreSelectedByPhase(t *testing.T) {
 		want    []string
 		not     []string
 	}{
-		{lift.PayloadOrka, []string{"az", "kubectl", "bash", "python3", "go", "curl", "helm"}, nil},
+		{lift.PayloadOrka, []string{"az", "kubectl", "bash", "helm"}, []string{"python3", "go", "curl"}},
 	} {
 		payloadBase := base
 		payloadBase.Payload = tc.payload
@@ -439,17 +439,11 @@ func TestLiftDependenciesAreSelectedByPhase(t *testing.T) {
 	}
 }
 
-func TestLiftPyYAMLAndScriptPlatformChecksAreStepAware(t *testing.T) {
-	if liftNeedsManifestRenderer([]string{"credential", "verify"}) {
-		t.Fatal("a phase that does not render the plane requires PyYAML")
+func TestLiftScriptPlatformChecksAreStepAware(t *testing.T) {
+	if err := liftPlatformError([]string{"orka", "observability", "verify"}, "windows"); err != nil {
+		t.Fatalf("phases with no script were rejected on Windows: %v", err)
 	}
-	if !liftNeedsManifestRenderer([]string{"cluster", "plane", "verify"}) {
-		t.Fatal("a run containing plane does not require PyYAML")
-	}
-	if err := liftPlatformError([]string{"credential"}, "windows"); err != nil {
-		t.Fatalf("a phase with no script was rejected on Windows: %v", err)
-	}
-	if err := liftPlatformError([]string{"boundary"}, "windows"); err == nil || !strings.Contains(err.Error(), "WSL") {
+	if err := liftPlatformError([]string{"cluster"}, "windows"); err == nil || !strings.Contains(err.Error(), "WSL") {
 		t.Fatalf("script-backed phase has no clear Windows refusal: %v", err)
 	}
 }

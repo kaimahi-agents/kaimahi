@@ -31,7 +31,7 @@ func TestRunScopedNamesDifferPerRun(t *testing.T) {
 	// Two runs in one subscription must not produce the same resource names.
 	// A fixed name is what makes "the thing I made" and "the thing that was
 	// already here" indistinguishable at teardown.
-	for _, fn := range []func(string) string{MetricsWorkspaceName, LogsWorkspaceName, WorkbookName} {
+	for _, fn := range []func(string) string{MetricsWorkspaceName, LogsWorkspaceName} {
 		if fn("a1b2c3d4") == fn("e5f6a7b8") {
 			t.Fatal("two runs produced the same resource name")
 		}
@@ -71,6 +71,31 @@ func TestRecordingTheSameResourceTwiceIsOneEntry(t *testing.T) {
 	}
 	if len(r.Created) != 1 {
 		t.Fatalf("re-recording the same resource produced %d entries", len(r.Created))
+	}
+}
+
+func TestNewRecordsNeverAuthorizePlaneMonitorDeletion(t *testing.T) {
+	r, err := NewRecord("a1b2c3d4", BringYourOwn, PayloadOrka, "sub", "rg", "cluster")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Before = Pre{Recorded: true}
+	// Even an inconsistent applied field must not override an explicit
+	// statement that this lifecycle does not manage plane objects.
+	r.ScrapeMonitorApplied = true
+	var buf bytes.Buffer
+	if err := r.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
+	back, err := ReadRecord(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.MayRemoveScraperPolicy() || back.MayRemoveScrapeMonitor() {
+		t.Fatal("a new record authorizes deleting plane objects it cannot create")
+	}
+	if !back.Before.WeEnabledMetrics() || !back.Before.WeEnabledLogs() {
+		t.Fatal("new record lost owned Azure add-on cleanup")
 	}
 }
 

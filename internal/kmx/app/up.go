@@ -34,8 +34,7 @@ var UpDefaultSteps = []string{"cluster", "ollama", "model", "orka"}
 // On kind this IS the journey: `make up` is one line delegating here, so the
 // sequence CI runs is the sequence this function implements rather than a
 // list of targets that could drift from it. RUNTIME ONLY: `kmx up` does not
-// deploy the governance plane, and says so at the end rather than leaving
-// anyone to discover it from an empty ledger.
+// deploy a model plane. Agents use native Orka Providers directly.
 func (a *App) Up(step string) error {
 	started := a.timeNow()
 	steps := UpDefaultSteps
@@ -97,23 +96,6 @@ func (a *App) Up(step string) error {
 
 	if step == "" {
 		a.complete("Runtime setup finished", started)
-		// One line: `kmx up` is the RUNTIME. Governance is a deliberate
-		// second step, and saying nothing here would leave an operator to
-		// infer it from an empty ledger.
-		// The route offered is the one this cluster can take. A bare run
-		// deploys no governed Agent, so the old governance operation would
-		// name nothing; putting an application's model traffic on the seam is
-		// `kmx migrate`, one workload at a time.
-		if a.selectedLocalModel == nil {
-			a.notef("\nNEXT  Runtime only: this command does not enable governance.\n"+
-				"Existing governance is not assessed by this setup. To configure it:\n"+
-				"  %s  # the proxy and its ledger\n"+
-				"  %s --namespace <ns> --model %s/%s  # route an application's model traffic (docs/migrate.md)",
-				a.operationCommand("plane"), a.operationCommand("migrate", "<deployment>"),
-				orkaDefaultProvider, a.Cfg.Model)
-		} else {
-			a.notef("\nNEXT  Host Ollama reuse is a direct route; the bundled plane preset requires in-cluster Ollama.")
-		}
 		a.notef("\nTRY   %s", a.operationCommand("agent", "create"))
 	}
 	return nil

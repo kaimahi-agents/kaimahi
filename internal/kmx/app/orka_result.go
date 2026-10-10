@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
 
 // orkaResultSession owns one short-lived, in-memory bearer and proven loopback
@@ -23,7 +23,7 @@ import (
 type orkaResultSession struct {
 	token, base string
 	client      *http.Client
-	forward     *admin.Forward
+	forward     *portforward.Forward
 	conn        net.Conn
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -184,7 +184,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	// started, exec.CommandContext retains it; later kubectl calls use their own
 	// request deadlines. This also cancels a forward still waiting to bind.
 	a.orkaForwardContext = forwardCtx
-	fwd, err := admin.StartForward(a, opt.Namespace, "svc/"+opt.OrkaAPIService, opt.ResultPort, "8080")
+	fwd, err := portforward.Start(a, opt.Namespace, "svc/"+opt.OrkaAPIService, opt.ResultPort, "8080")
 	a.orkaForwardContext = nil
 	if err != nil {
 		cancel()

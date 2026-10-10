@@ -1,17 +1,12 @@
 package app
 
 import (
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"runtime/debug"
-	"slices"
 	"strings"
 	"time"
 
@@ -26,9 +21,9 @@ import (
 // It is a CONSTANT, and equal to the tag committed in k8s/plane/proxy.yaml,
 // because the kind path applies that manifest exactly as committed — no
 // render, no transform — which is what makes "kind is unchanged" a fact
-// rather than a claim. Only a REGISTRY target renders, and kmx is no longer
-// kind-only: `kmx lift` takes that path itself for a managed cluster, and
-// scripts/plane-deploy.sh is what it drives to do the rendering.
+// rather than a claim. Registry targets render through standalone
+// scripts/plane-deploy.sh invocation; CI checks that rendering separately.
+// AKS setup does not build or deploy the model plane.
 //
 // The alternative — tagging by kmx's own revision — is better staleness
 // protection in general, and it is deliberately not taken
@@ -77,8 +72,8 @@ type PlaneOptions struct {
 //
 // On kind, the image can be built from a checkout or fetched at kmx's own
 // revision without a clone (see planebuild). The deploy step applies the
-// committed manifests directly; managed-cluster lift renders them through
-// scripts/plane-deploy.sh.
+// committed manifests directly. Standalone scripts/plane-deploy.sh invocation
+// supports registry rendering separately; AKS setup does not deploy the plane.
 func (a *App) Plane(opt PlaneOptions) error {
 	started := a.timeNow()
 	steps := PlaneSteps
@@ -233,7 +228,7 @@ func (a *App) refuseForeignImageTag() error {
 	}
 	return fmt.Errorf("PLANE_IMAGE=%s, but kmx deploys k8s/plane/proxy.yaml exactly as committed, which names %s.\n"+
 		"  `kmx plane` is the kind path: a side-loaded local tag, imagePullPolicy Never.\n"+
-		"  A registry-backed cluster renders the manifest instead — `kmx aks up --payload orka --step plane` (docs/aks.md).",
+		"  AKS setup does not deploy the model plane.",
 		set, PlaneImage)
 }
 
@@ -472,41 +467,6 @@ func (a *App) ensureSecret(name, key string) error {
 	}
 	a.notef("Secret %s created.", name)
 	return nil
-}
-
-// randomHex returns n cryptographically random bytes, hex encoded.
-func randomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("entropy read failed: %w", err)
-	}
-	return hex.EncodeToString(b), nil
-}
-
-// secretManifest renders an Opaque Secret. Values are base64-encoded into
-// `data`, so nothing has to be escaped and no value can break out of the
-// document.
-func secretManifest(name, namespace string, values, annotations map[string]string) []byte {
-	var b strings.Builder
-	b.WriteString("apiVersion: v1\nkind: Secret\nmetadata:\n")
-	fmt.Fprintf(&b, "  name: %s\n  namespace: %s\n", name, namespace)
-	if len(annotations) > 0 {
-		b.WriteString("  annotations:\n")
-		for _, k := range sortedKeys(annotations) {
-			fmt.Fprintf(&b, "    %s: %q\n", k, annotations[k])
-		}
-	}
-	b.WriteString("type: Opaque\ndata:\n")
-	for _, k := range sortedKeys(values) {
-		fmt.Fprintf(&b, "  %s: %s\n", k, base64.StdEncoding.EncodeToString([]byte(values[k])))
-	}
-	return []byte(b.String())
-}
-
-// sortedKeys keeps the rendered document stable, so re-running a step
-// produces byte-identical YAML and `kubectl apply` reports no change.
-func sortedKeys(m map[string]string) []string {
-	return slices.Sorted(maps.Keys(m))
 }
 
 // ---- deploying ------------------------------------------------------------

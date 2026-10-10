@@ -101,13 +101,24 @@ type Record struct {
 	// deletion is authorised by an act this run performed, not by a state it
 	// observed twenty minutes earlier.
 	ScrapeMonitorApplied bool `json:"scrape_monitor_applied"`
+	// PlaneMonitoringUnmanaged explicitly denies ownership of plane monitor
+	// objects. New lifecycles never create them, so absent Before fields must
+	// not authorise deleting an operator's policy. Missing means an older
+	// record: keep its recorded cleanup rules and billed-resource account.
+	PlaneMonitoringUnmanaged bool `json:"plane_monitoring_unmanaged,omitempty"`
 }
 
 // MayRemoveScrapeMonitor reports whether teardown may delete the plane's
 // PodMonitor: this run applied it, AND it was not already there when the run
 // arrived.
 func (r *Record) MayRemoveScrapeMonitor() bool {
-	return r.ScrapeMonitorApplied && r.Before.WeCreatedScrapeMonitor()
+	return !r.PlaneMonitoringUnmanaged && r.ScrapeMonitorApplied && r.Before.WeCreatedScrapeMonitor()
+}
+
+// MayRemoveScraperPolicy preserves old-record cleanup while denying plane
+// object ownership for runs that never manage those objects.
+func (r *Record) MayRemoveScraperPolicy() bool {
+	return !r.PlaneMonitoringUnmanaged && r.Before.WeCreatedScraperPolicy()
 }
 
 // Pre is the state a run found and must not mistake for its own work.
@@ -134,6 +145,9 @@ type Pre struct {
 	MetricsAddonEnabled bool `json:"metrics_addon_enabled"`
 	LogsAddonEnabled    bool `json:"logs_addon_enabled"`
 
+	// For unmanaged plane monitoring, both Existed flags are compatibility
+	// sentinels set true to deny deletion by older readers, not discovered
+	// objects. Historical snapshots retain their observed values.
 	ScraperPolicyExisted bool `json:"scraper_policy_existed"`
 	// ScrapeMonitorExisted is about the PodMonitor named kaimahi-plane in the
 	// kaimahi namespace. It replaces a field that asked the same question
@@ -158,9 +172,9 @@ type Pre struct {
 func (p Pre) WeEnabledMetrics() bool { return p.Recorded && !p.MetricsAddonEnabled }
 func (p Pre) WeEnabledLogs() bool    { return p.Recorded && !p.LogsAddonEnabled }
 
-// WeCreatedScraperPolicy and WeCreatedScrapeMonitor answer the same question
-// for the two cluster-side objects, and are the ONLY thing that authorises
-// deleting them. Their contents are not evidence of who made them.
+// WeCreatedScraperPolicy and WeCreatedScrapeMonitor interpret prior state in
+// older records. Deletion must also consult Record's MayRemove helpers: new
+// runs do not manage these objects. Contents are not evidence of ownership.
 func (p Pre) WeCreatedScraperPolicy() bool { return p.Recorded && !p.ScraperPolicyExisted }
 func (p Pre) WeCreatedScrapeMonitor() bool { return p.Recorded && !p.ScrapeMonitorExisted }
 
@@ -179,7 +193,6 @@ const namePrefix = "kaimahi"
 // runs, or a run and a stranger's resource, indistinguishable.
 func MetricsWorkspaceName(runID string) string { return namePrefix + "-metrics-" + runID }
 func LogsWorkspaceName(runID string) string    { return namePrefix + "-logs-" + runID }
-func WorkbookName(runID string) string         { return namePrefix + "-workbook-" + runID }
 
 // NewRecord starts an account of a run. It validates the run id rather than
 // trusting it, because the id ends up in every resource name.
@@ -201,7 +214,7 @@ func NewRecord(runID string, branch Branch, payload, subscription, resourceGroup
 		}
 	}
 	return &Record{RunID: runID, Branch: branch, Payload: payload, Subscription: subscription,
-		ResourceGroup: resourceGroup, Cluster: cluster}, nil
+		ResourceGroup: resourceGroup, Cluster: cluster, PlaneMonitoringUnmanaged: true}, nil
 }
 
 // PayloadOrLegacy is what this record landed, reading an absent payload as the

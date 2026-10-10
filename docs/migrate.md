@@ -24,7 +24,9 @@ cross-runtime authoring/lifecycle surface remains open and unsupported.
 - Orka installed, with a ready Provider for the requested model. Start with
   `kmx orka install` / `kmx orka status` and [the Orka guide](orka.md).
   Installing Orka alone does not enable this model governance.
-- The Kaimahi plane deployed (`kmx plane` on kind; [AKS phases](aks.md) on AKS).
+- The Kaimahi plane deployed (`kmx plane` on kind; independently deployed by
+  the owner on registry-backed clusters). [AKS setup](aks.md) provisions Orka,
+  not the model plane, and does not capture plane credentials.
   Upgrading an older plane requires the [retirement steps](operations.md#upgrading-after-approval-retirement);
   stale tool/inbound/notifier configuration is rejected, and apply does not
   prune retired Services, network allowances or owner-managed references.
@@ -257,8 +259,9 @@ is [here](reviews/2026-09-09-orka-composition.md).
 - Tool traffic remains the application owner's responsibility. The Kaimahi tool
   gateway is retired; do not infer tool governance from a model ledger row or
   silently repoint an application's tools during an upgrade.
-- `kmx aks up` lands Orka and obtains a Copilot credential by device login if
-  absent. Orka migration uses selected phases;
+- `kmx aks up` installs Orka with optional Azure monitoring add-ons. The owner
+  configures the Provider and separately deploys any model plane needed for
+  migration; AKS setup does not capture a Copilot credential.
   [AKS](aks.md) records monitoring, ownership and cloud verification limits.
 
 ## Retirement regression evidence

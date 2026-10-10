@@ -24,6 +24,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- AKS setup no longer deploys the model plane, captures its credentials or creates its scrape/dashboard resources. The `boundary`, `credential` and `plane` phases are removed; agents use owner-configured Orka Providers directly. `up` and quickstart no longer advertise plane setup. Standalone plane commands remain separate for now.
+
 - `kmx suite push` now refuses to move an existing registry tag to a different digest unless `--force` is supplied; same-digest pushes are no-ops. Registry push/pull never send credentials over non-loopback plain HTTP, including token endpoints and redirects; use HTTPS for authenticated remote registries. Push prints the digest, and tag pulls print a digest-pinning hint. The tag guard is a preflight check, not atomic against concurrent pushers; local-layout behavior is unchanged.
 
 ### Added

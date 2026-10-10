@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -34,11 +33,6 @@ const (
 	ProxySelectorValue = "kaimahi-proxy"
 )
 
-var (
-	upstreamNameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
-	objectNameRE   = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
-)
-
 // ValidateUpstreamName holds a migration target's upstream name to the shape
 // every use of it requires. It reserves nothing: the caller names an upstream
 // the plane's table ALREADY carries, so refusing a committed name here would
@@ -49,23 +43,6 @@ func ValidateUpstreamName(name string) error {
 		return fmt.Errorf("%q is not a usable upstream name: lowercase letters, digits and dashes, "+
 			"starting and ending alphanumeric, at most 40 characters — it becomes a URL path segment, "+
 			"a ConfigMap key and part of three object names", name)
-	}
-	return nil
-}
-
-// ValidateNamespace checks the Kubernetes RFC 1123 label shape.
-func ValidateNamespace(ns string) error {
-	if !upstreamNameRE.MatchString(ns) || len(ns) > 63 {
-		return fmt.Errorf("%q is not a Kubernetes namespace name (RFC 1123 label)", ns)
-	}
-	return nil
-}
-
-// ValidateObjectName checks referenced Secret, Deployment and ConfigMap names.
-func ValidateObjectName(name string) error {
-	if !objectNameRE.MatchString(name) || len(name) > 253 {
-		return fmt.Errorf("%q is not a Kubernetes object name (RFC 1123 subdomain: "+
-			"lowercase letters, digits, dashes and dots, starting and ending alphanumeric)", name)
 	}
 	return nil
 }

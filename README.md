@@ -124,9 +124,12 @@ boundaries between KMX and runtimes.
 | Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while both create paths require `--namespace` |
 
 `kmx aks up` / `kmx aks down` remain temporary compatibility routes, not
-first-class KMX commands. They are hidden from root help and shell completion;
-direct invocation keeps unchanged flags and behavior for billable AKS provisioning,
-recovery and safe teardown. See the [AKS compatibility guide](docs/aks.md).
+first-class KMX commands. They are hidden from root help and shell completion.
+Setup provisions AKS and installs Orka only, with optional Azure monitoring
+add-ons; the owner configures the model Provider. It does not deploy a model
+plane or capture its credentials. Safe teardown of recorded owned resources,
+including historical runs, remains available. See the
+[AKS compatibility guide](docs/aks.md).
 
 Default Orka create writes reviewable YAML, validates it against the selected
 target, creates dependencies in order, and waits for current-generation

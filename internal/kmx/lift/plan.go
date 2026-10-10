@@ -34,9 +34,8 @@ type Options struct {
 	// draws the same distinction, with `-` rather than `:-`.
 	NetworkPolicySet bool
 
-	// Observability wires Azure-managed monitoring. On by default: an agent
-	// that arrives on a managed cluster with nothing to look at is the gap
-	// this path exists to close.
+	// Observability enables Azure-managed monitoring add-ons and records
+	// owned resources. It does not wire application-specific telemetry.
 	Observability bool
 
 	// Step runs one phase of the lift. The phases are re-runnable, so a
@@ -88,7 +87,7 @@ var Steps = stepsFor(PayloadOrka)
 // bare list because the callers ask the question that way, and because the
 // answer is a property of the payload rather than of the command.
 func stepsFor(string) []string {
-	return []string{"cluster", "boundary", "credential", "plane", "orka", "observability", "verify"}
+	return []string{"cluster", "orka", "observability", "verify"}
 }
 
 // StepsForPayload exposes the phase list for a payload, for the planner and
@@ -156,11 +155,8 @@ func PurposeOf(step, _ string) string { return StepPurpose[step] }
 // StepPurpose is what each phase is for, in the words the banner uses.
 var StepPurpose = map[string]string{
 	"cluster":       "resource group, private registry and an AKS cluster with a policy engine",
-	"boundary":      "the network boundary and the ledger, then PROVE the boundary is enforced",
 	"orka":          "Orka at the pinned version; the model Provider stays yours to create",
-	"credential":    "check the model credential the managed path needs (captured by you, not by kmx)",
-	"plane":         "build the model-traffic bridge in the registry and deploy it",
-	"observability": "Azure Monitor workspace, Container Insights, the scrape job and a workbook",
+	"observability": "Azure monitoring add-ons and owned workspaces; application telemetry stays yours",
 	"verify":        "Orka is installed and ready; no model call is made, because the Provider is yours",
 }
 
@@ -215,15 +211,12 @@ func (o Options) Validate() error {
 		add("--cluster %q is not a usable AKS cluster name", o.Cluster)
 	}
 
-	// The registry is required on BOTH branches, for different reasons. On a
-	// cluster this path creates, it is created too. On yours, it must already
-	// exist and your cluster must already be able to pull from it — the lift
-	// checks that and refuses, rather than granting itself the role, because
-	// granting AcrPull on your subscription is a change to your cluster's
-	// identity that a demo has no business making silently.
+	// Keep registry identity required on both branches. On the created
+	// branch provisioning creates and attaches it; on yours neither the
+	// registry nor pull permissions are changed by this lifecycle.
 	if strings.TrimSpace(o.Registry) == "" {
 		if o.BringYourOwn {
-			add("--registry is required: the plane's image is built in a private registry your cluster can pull from. Nothing is published, so there is no public image to fall back on")
+			add("--registry is required: it identifies your existing private registry; this path does not create or attach it on your cluster")
 		} else {
 			add("--registry is required: a globally-unique name for the private registry this creates")
 		}
@@ -265,7 +258,7 @@ func (o Options) Validate() error {
 		// rather than being swapped for the default: no engine is the AKS
 		// default and is exactly the case worth refusing.
 		if np := o.NetworkPolicy; (np != "" || o.NetworkPolicySet) && !enforcingEngines[np] {
-			add("--network-policy %q is not a policy engine. Accepted: cilium (default), azure, calico. Without an engine AKS ignores NetworkPolicy and the plane's boundary is present but inert", np)
+			add("--network-policy %q is not a policy engine. Accepted: cilium (default), azure, calico. Without an engine AKS ignores NetworkPolicy: policies are present but inert", np)
 		}
 	}
 
@@ -282,8 +275,8 @@ func (o Options) Validate() error {
 // ValidateForTeardown checks the flags that say WHICH lift is being removed.
 //
 // It is separate from Validate because teardown needs less and must not
-// demand more: a registry is required to build a plane image and irrelevant
-// to deleting one, and refusing teardown over a missing --registry would be
+// demand more: registry identity is irrelevant to recorded-id cleanup, and
+// refusing teardown over a missing --registry would be
 // standing between an operator and a resource that is billing. What it does
 // insist on is the pair that identifies the run, because without them there
 // is nothing to look the record up by — and going looking by name on a
@@ -390,36 +383,3 @@ func (o Options) steps() []string {
 
 // Steps exposes the phase list for the caller that runs them.
 func (o Options) StepsToRun() []string { return o.steps() }
-
-// PolicyEngineVerdict turns what the control plane said about a cluster's
-// NetworkPolicy engine into a decision, for a cluster this path did not
-// create and therefore cannot vouch for.
-//
-// This is the cheap gate, and it runs before anything is installed. It cannot
-// prove enforcement — enforcement is a property of the CNI that the API
-// server does not vouch for — but it catches the case that actually happens:
-// a cluster created with no engine at all, where every policy applies and
-// none is enforced. The expensive gate is the existing negative proof, which
-// runs against a live boundary once there is one.
-func PolicyEngineVerdict(engine string, readable bool) error {
-	if !readable {
-		return errors.New("kmx lift: could not read this cluster's NetworkPolicy engine — refusing to install a model-traffic bridge whose boundary might be decorative. Not claiming it enforces, and not claiming it does not")
-	}
-	switch e := strings.TrimSpace(strings.ToLower(engine)); {
-	case e == "" || e == "none":
-		return errors.New(`kmx lift: this cluster has NO NetworkPolicy engine.
-
-  AKS clusters created without one ACCEPT every NetworkPolicy and enforce
-  none of them. The plane's boundary would be present and inert, which reads
-  as protection and is worse than having none — you would believe the model
-  seam and its database were isolated when they are not.
-
-  Refusing to install. To fix it you must re-create the cluster with an
-  engine (az aks create --network-policy cilium ...); an existing cluster
-  cannot be migrated without reimaging every node pool`)
-	case enforcingEngines[e]:
-		return nil
-	default:
-		return fmt.Errorf("kmx lift: this cluster reports NetworkPolicy engine %q, which this path does not recognise as one that enforces. Refusing rather than assuming", engine)
-	}
-}

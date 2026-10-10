@@ -162,8 +162,9 @@ Comparison uses a server-side dry-run replace to account for API defaults; no
 replacement is applied. Different specifications and terminating resources are
 reported as conflicts. Ordinary `agent create` retains its strict collision policy.
 The operation
-does not create AKS clusters or install the plane lift stack.
-`kmx aks up` is the separate provisioning workflow. The deprecated `kmx lift`
+does not create AKS clusters. `kmx aks up` is the separate AKS provisioning
+workflow: it installs Orka with optional Azure monitoring add-ons, not a model
+plane. The deprecated `kmx lift`
 still works and requires `--payload`.
 
 After success chat connects to the lifted Agent on the destination, resets retry

@@ -1176,7 +1176,7 @@ func TestOrkaNextStepsPinTheClusterAndKeepTheKeyOutOfArgv(t *testing.T) {
 				"--model", "<model>", "--secret", "<name>", "--base-url", "<endpoint>"))
 		}},
 		{"the closing next steps", func(a *App) {
-			a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"}, nil)
+			a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"})
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1209,7 +1209,7 @@ func TestOrkaNextStepsPinTheClusterAndKeepTheKeyOutOfArgv(t *testing.T) {
 func TestOrkaClosingTextDoesNotPromiseAnAgent(t *testing.T) {
 	var buf bytes.Buffer
 	a := &App{Cfg: &config.Config{KubeContext: "demo-cluster", Credential: "cred"}, Err: &buf, Out: &buf}
-	a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"}, nil)
+	a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"})
 	got := buf.String()
 
 	for _, forbidden := range []string{"agent chat", "hello-world", "The same agent you ran locally"} {

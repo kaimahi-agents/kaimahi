@@ -262,10 +262,3 @@ func (a *App) secretData(namespace, name string) (map[string][]byte, error) {
 	}
 	return out, nil
 }
-
-func (a *App) applySecretIn(namespace string, body []byte, name string) error {
-	fmt.Fprintf(a.Err, "kubectl --context %s -n %s apply -f - # (Secret %s)\n", a.Cfg.KubeContext, namespace, name)
-	quiet := *a.Run
-	quiet.Echo = false
-	return quiet.RunStdin(body, "kubectl", a.kubectl("-n", namespace, "apply", "-f", "-")...)
-}
