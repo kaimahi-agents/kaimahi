@@ -11,22 +11,20 @@ Root status delegates the Orka-only runtime report; bundle-aware agent status
 is separate.
 
 Plane commands, administration, model overlays, credential exchange and
-workload migration are removed. The separate legacy module, image-build helper,
-embedded plane/observability assets and supporting scripts/fixtures remain
-**dormant, awaiting separate cleanup**, not installed functionality. Their
-presence does not retain an operator journey or the removed live CI coverage.
-Historical SQL, stored data and cloud ownership/teardown records are not
-subjects of destructive cleanup.
+workload migration are removed, along with their source module, image-build
+helper, embedded assets and supporting scripts/fixtures. Historical source,
+including SQL migrations, remains in Git history rather than this checkout.
+This repository cleanup does not delete databases, credentials, caches or
+deployed resources. Cloud ownership/teardown records remain readable.
 
 Read [the documentation index](README.md) for current guides. This map describes
 tracked files, packaging and actual references, not an endorsement of retained
 legacy material.
 
 - **Installed / checkout** describes packaging or reachability, not support.
-  `embed.go` names what travels inside kmx, including five shell scripts and one
-  Python tool server. Some embedded assets are dormant.
-- **Scaffolding** describes build, test, CI and synthetic model fixtures, including
-  retained plane support awaiting removal.
+  `embed.go` names what travels inside kmx, including three shell scripts and one
+  Python tool server.
+- **Scaffolding** describes build, test, CI and native synthetic model fixtures.
 - The custom gateway, inbound/notification runtime, approvals/grants, tool
   workflows and connector demonstrations remain retired. Native runtime tools
   and host credential handling are distinct from those removed services.
@@ -40,15 +38,14 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 
 ## The short version
 
-| Area | Packaging / checkout, including dormant files | Demonstration | Scaffolding |
+| Area | Packaging / checkout | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
-| `internal/` | `kmx/` (18 packages), including dormant build support and schema fixtures | — | experimental lifecycle contracts and tests |
+| `internal/` | `kmx/` (17 packages), including schema fixtures | — | experimental lifecycle contracts and tests |
 | `pkg/` | — | — | experimental KMX target and agent lifecycle contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
-| `plane/` | — | — | dormant legacy module and tests, awaiting removal |
-| `k8s/` | embedded native manifests plus dormant plane/egress/observability assets | — | retained asset checks |
-| `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 54 (checkers, release packaging, probes, CI runners, mutation specs); plane helpers/demonstration are dormant |
+| `k8s/` | two embedded native manifests | — | native packaging checks |
+| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 40 (checkers, release packaging, native CI runners, mutation specs) |
 | `docs/` | 35 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -60,9 +57,11 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 
 ## `internal/` — CLI packages and retained support
 
-`internal/kmx/` is eighteen packages at the top level (twenty-one Go packages
+`internal/kmx/` is seventeen packages at the top level (twenty Go packages
 including nested `runview/orka`, `agentsuite/agentkit`, and `agentsuite/oras`).
-The short version counts top-level directories, including dormant build support.
+The short version counts top-level directories.
+The plane module and image-build helper are absent.
+There is no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`.
 Cluster-independent decisions live in packages; shell-out orchestration lives in
 `app`. `lift` holds cloud-independent rules, while the seven `lift*.go` files in
 `app` run cloud orchestration, preferences and reuse checks. Interactive lift
@@ -120,7 +119,6 @@ by App tests, not installed with kmx.
 | `kmx/orkaschema/fixtures/main` | 3 | Installed | Immutable old main-snapshot CRDs for explicit offline validation, not a runtime support claim. |
 | `kmx/guard` | 2 | Installed | Context-safety checks and read-only target resolution. |
 | `kmx/toolchain` | 2 | Installed | Pinned, checksum-verified kind, kubectl and Helm downloads. |
-| `kmx/planebuild` | 1 | Dormant scaffolding | Separate plane-module image build/fetch helper and its tests, awaiting removal; not in the installed CLI's dependency closure. |
 | `kmx/portforward` | 1 | Installed | Owned loopback kubectl forwards with bind proof and process lifetime, shared by native Orka results and host tools. |
 | `kmx/lift` | 2 | Installed | Cloud-independent lift rules and persisted ownership records. |
 | `kmx/config` | 1 | Installed | Native settings and state/cache path resolution. |
@@ -129,7 +127,7 @@ by App tests, not installed with kmx.
 | `kmx/secretshapes` | 2 | Installed | Shared credential-shape checks and data. |
 | `kmx/version` | 1 | Installed | Version and upgrade answers. |
 
-Historical compatibility fixtures, retained asset tests and Orka tool names do
+Historical compatibility fixtures, native asset tests and Orka tool names do
 not establish a plane dependency in native operations. Shared authoring,
 credential-shape and loopback-forwarding helpers retain their native callers.
 
@@ -153,91 +151,46 @@ native event and journal metadata. No Task command wrapper, AX target or
 runtime read is enabled by these files alone; image packaging, verification
 and publishing require separate reviewed changes.
 
-## `plane/` — dormant legacy module
+## `k8s/` — embedded native manifests
 
-Eleven internal packages and one binary remain in the nested module. They are
-retained source and test support awaiting removal, not an installed KMX service.
-There is no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`.
-The separate module's build and Postgres-backed tests still run in `go-plane`;
-a green root build does not test it. The retained image-build helper has no
-native CLI caller.
+Two of `k8s/`'s 2 files are embedded; zero are not embedded.
 
-| Package under plane/internal | Dormant implementation |
-|---|---|
-| proxy | Authenticated model routing, Responses translation, usage recording and model/budget administration. |
-| store | Credential hashes/expiry, ledger, attribution and exact spend reservations. |
-| meter | Token/cents caps, reservation policy and denial mapping. |
-| pricing | Model cost calculation. |
-| redact | Credential/log redaction. |
-| metrics | Model/accounting/expiry/build metrics. |
-| config | Model routes, protocol/pricing/header validation and model overlays. |
-| egress | Credential-bearing model transport, DNS/IP restrictions, TLS and redirect controls. |
-| seamtls | Model serving certificates and verified transports. |
-| ops | Metrics, database readiness and local liveness. |
-| db | Pool and replica-safe migration engine (Postgres and twelve migrations). |
-
-The twelve SQL migration files and stored history remain unchanged. Removal of
-CLI support does not reset databases, revoke credentials, delete deployed
-resources or prove old replicas stopped. Historical lift records remain readable
-for conservative teardown. Retaining this module is not a model-access or
-accounting promise for native agents.
-
-## `k8s/` — embedded native and dormant artifacts
-
-Thirteen of `k8s/`'s 13 files are embedded; zero are not embedded.
-
-**Embedded in `kmx` (13):** `ollama.yaml`, `orka-k8s-tool.yaml`,
-`egress-hosted.yaml`, `egress-copilot.yaml`, all five of `plane/`, and all four
-of `observability/`.
+**Embedded in `kmx` (2):** `ollama.yaml`, `orka-k8s-tool.yaml`.
 
 **Checkout only (0):** none.
 
 The native local model and read-only Kubernetes Tool manifests remain active.
-The plane, egress and observability assets are dormant packaging retained for
-separate removal, with shape/readability tests still present. They do not imply
-plane deployment, custom scraping or a workbook in native setup. Embedding is
-not an installed functionality claim.
+Packaging tests require every retained asset to be readable and reject retired
+plane, egress and observability assets. Setup does not deploy a model plane,
+custom scrape configuration or workbook.
 
-## `scripts/` — 62 tracked files, three different jobs
+## `scripts/` — 44 tracked files, native helpers and scaffolding
 
-**Reference coverage:** 46 of the 62 are named by something outside themselves,
-and 16 are named by nothing. The ten mutation specifications are discovered by
+**Reference coverage:** 34 of the 44 are named by something outside themselves,
+and 10 are named by nothing. The ten mutation specifications are discovered by
 glob. Map and repository-map checker mentions are not caller evidence; textual
 references, including script cross-references and test data, are not necessarily
 invocations or active CI coverage.
 
-**Unreferenced retained scaffolding (6):** `ci/owner-model-client.sh`,
-`ci/synthetic-model.sh`, `spend-race-probe.sh`, `store-outage-probe.sh`,
-`test_demo_hello_to_governed.py`, `upstream-boundary-probe.sh`.
+**Unreferenced retained scaffolding (0):** None.
 
 | Class | Count | Files |
 |---|---|---|
-| **Embedded packaging** — native helpers plus dormant plane deployment/probe | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
-| **Dormant checkout** — plane operator helper | 1 | `plane-pods.sh` |
-| **Dormant demonstration** | 1 | `demo-hello-to-governed.sh` |
-| **Scaffolding** — checkers, self-tests and release packaging, including retained legacy tests | 24 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py` |
-| **Dormant scaffolding** — plane live-cluster probes | 7 | `*-probe.sh`, minus the embedded one, plus `seam-tls.sh` |
-| **Scaffolding** — active native/eval CI fixtures plus dormant plane fixtures | 12 | `scripts/ci/`: `plain-model.sh`, `plain-model-server.py`, `synthetic-model.sh`, `owner-model-client.sh`, `owner-model-client.py`, `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py` |
+| **Embedded packaging** — native provisioning, guard and Tool helpers | 4 | `aks-up.sh`, `aks-down.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 22 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py` |
+| **Scaffolding** — native/eval CI fixtures | 7 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
 | **Scaffolding** — legacy-runtime scanner's approved exemptions | 1 | `legacy-runtime-allowlist.json` |
-
-Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly.
-These retained probes still verify the model authority in their implementation,
-but their command-dependent live shards are removed. Standalone plane helpers
-and fixtures cross-reference one another; those references do not revive the
-removed journeys. The six unreferenced roots above await cleanup with their
-retained support, rather than acquiring invented callers.
 
 `kube-guard.sh` is counted once as embedded, and is one of the ten checkers
 the mutation harness breaks on purpose. `scripts/test_check_mutations.py`
 checks the mutation runner and is invoked by CONTRIBUTING's local verification
 commands and CI's hygiene job.
 
-`test_model_fixtures.py` still exercises the retained plain-model server and
-native Orka Tool fixture, plus plane-script source guards. The
-`owner-model-client.sh` wrapper, its Python application and safety tests, the
-synthetic hosted-model setup and the old model demonstration remain dormant;
-they are not installed providers or current workload-migration coverage.
+`test_model_fixtures.py` exercises four native Orka Tool HTTP fixture tests:
+read-only deployment health, missing or mismatched live deployment identity,
+unset identity and unexpected Tool results. The native fixture source and YAML
+remain; plane-only fixture servers, clients, source guards and probes are removed.
 
 `.github/actions/kmx-eval` calls `scripts/ci/live-eval-loop.sh` for CI's required
 `e2e-eval-loop` shard and user CI. The runner loads `eval-loop-model.yaml` and
@@ -291,17 +244,17 @@ and intentionally has no hero image.
 | `README.md` | **Documentation** | Repository entry point and native direction. |
 | `CHANGELOG.md` | **Build input and history** | Release notes are extracted by the release-notes script; historical release prose remains. |
 | `CONTRIBUTING.md`, `LICENSE` | **Documentation** | Contribution expectations and MIT licence. |
-| `embed.go` | **Packaging** | Root-module embed declarations, including dormant assets. |
+| `embed.go` | **Packaging** | Root-module native manifest and helper embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
-| `Makefile` | **Scaffolding** | Build/check targets, AKS-credential helper and retained dormant network-policy/egress helpers; no plane-image target. |
-| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven CLI releases. CI retains all five native e2e shards and the nested-module/Postgres job, not plane-command journeys. Exact-v0.10.2 Kagent charts are external test preconditions that KMX does not install. Clone-free proves installation, bare native setup and an Orka Agent/Task answer. |
+| `Makefile` | **Scaffolding** | Native build/check targets, context guard and AKS-credential helper. |
+| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven CLI releases. CI retains all five native e2e shards, their aggregator and native clone-free proof; no plane module or service job remains. Exact-v0.10.2 Kagent charts are external test preconditions that KMX does not install. Clone-free proves installation, bare native setup and an Orka Agent/Task answer. |
 | `.goreleaser.yaml` | **Scaffolding** | GoReleaser config the release workflow builds and renders the Homebrew formula with; publishing reuses that checked artifact set and never pushes the formula to the tap (`skip_upload: true`). |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only changes for CI. |
 | `.github/actions/kmx-eval/` | **Checkout tooling** | Reusable GitHub Action for user bundle evaluation, optional replay and payload-free artifacts; also exercised by required repository CI. |
-| `staticcheck.conf` | **Scaffolding** | Lint configuration for both modules. |
+| `staticcheck.conf` | **Scaffolding** | Root-module lint configuration. |
 | `go.mod`, `go.sum` | **Installed tooling** | Root module dependencies. |
 | `.gitignore` | **Scaffolding** | Checkout exclusions. |
-| `.dockerignore` | **Scaffolding** | Defensive exclusions for root Docker contexts; retained plane image-build support uses a separate module context. |
+| `.dockerignore` | **Scaffolding** | Defensive exclusions for root Docker contexts, including sensitive operator data. |
 
 ## Open questions — one
 
@@ -313,10 +266,10 @@ and intentionally has no hero image.
 
 ## Existing layout
 
-Seven tracked files under `scripts/` contain the literal `k8s/`.
-Embedded scripts remain at the paths named by `embed.go`, including dormant
-plane support. The nested module, build helper and retained plane assets/scripts
-await separate removal; their presence is not native lifecycle functionality.
+Three tracked files under `scripts/` contain the literal `k8s/`.
+Embedded native helpers remain at the paths named by `embed.go`.
+The repository has one Go module; no plane module, build helper or plane-only
+assets/scripts remain.
 Removed source/docs are not kept as empty packages or placeholder guides.
 Native authoring, host inference, shared credential-shape and forwarding helpers,
 Sessions evaluation/replay and conservative historical cloud teardown retain

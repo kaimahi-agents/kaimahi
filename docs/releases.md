@@ -39,8 +39,8 @@ There is no 1.0 promise and no support window yet. What there is: CI refuses
 to publish a tag whose version has no section in the changelog, and refuses
 to publish a binary that does not report its own tag.
 
-Releases use the root `vX.Y.Z` tag for the repository and CLI. The dormant
-nested module is not an installed KMX capability and needs no paired release tag.
+Releases use the root `vX.Y.Z` tag for the repository and CLI. The root is the
+only Go module; no paired module release tag is needed.
 
 ## Install
 

@@ -24,6 +24,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- Completes model-plane removal: the source module (including checked-in SQL migrations), build helper, embedded assets and plane-only CI/scripts/fixtures are removed. Native Orka tooling and historical AKS ownership/teardown remain; no deployed databases, credentials, caches or resources are deleted. Historical source remains in Git.
+
 - Plane CLI commands and model-overlay/credential administration are removed, including workload migration, ledger, budgets, flow/watch, backup/restore and metrics. Root status now reports Orka only; version no longer reports a plane revision. `make plane-image` is removed, and `CRED`, `ADMIN_PORT` and `OPS_PORT` no longer configure the CLI. Native agent, Provider, model discovery, Copilot and Foundry paths remain. Legacy module/assets and stored history are not deleted by this command removal.
 
 - AKS setup no longer deploys the model plane, captures its credentials or creates its scrape/dashboard resources. The `boundary`, `credential` and `plane` phases are removed; agents use owner-configured Orka Providers directly. `up` and quickstart no longer advertise plane setup.

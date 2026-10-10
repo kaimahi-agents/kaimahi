@@ -1,6 +1,0 @@
-# The Kaimahi governance plane lives in its own namespace: the proxy (the
-# only holder of real upstream credentials) and its Postgres ledger.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: kaimahi

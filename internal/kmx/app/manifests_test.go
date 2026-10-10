@@ -31,28 +31,6 @@ func TestEmbeddedManifestsAreTheOnesInTheTree(t *testing.T) {
 	}
 }
 
-// `kmx plane` runs outside a clone, with no k8s/ on disk to point kubectl at,
-// so its manifests travel in the binary.
-func TestThePlanesManifestsTravelInTheBinary(t *testing.T) {
-	for _, name := range []string{
-		"plane/namespace.yaml", "plane/postgres.yaml", "plane/proxy.yaml",
-		"plane/upstreams.yaml", "plane/network-policy.yaml",
-	} {
-		embedded, err := manifest(name)
-		if err != nil {
-			t.Errorf("k8s/%s is not embedded in the binary: %v", name, err)
-			continue
-		}
-		onDisk, err := os.ReadFile(filepath.Join("..", "..", "..", "k8s", filepath.FromSlash(name)))
-		if err != nil {
-			t.Fatalf("k8s/%s: %v", name, err)
-		}
-		if string(embedded) != string(onDisk) {
-			t.Errorf("k8s/%s differs from the embedded copy", name)
-		}
-	}
-}
-
 // The legacy runtime's manifests are gone from the tree AND from the binary.
 // A file deleted from k8s/ but left in an embed pattern is a build error; a
 // file left in k8s/ and dropped from the pattern is the silent half, and the
@@ -73,9 +51,8 @@ func TestTheLegacyRuntimesManifestsAreGone(t *testing.T) {
 	}
 }
 
-// Gateway/scenario retirement leaves no unembedded manifests. Check the
-// positive boundary across both filesystems rather than retaining exclusions
-// for files that no longer exist.
+// Every retained checkout manifest must travel in the binary. Do not silently
+// exclude an unembedded file: it would be missing for clone-free installs.
 func TestAllRetainedManifestsTravelInTheBinary(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "k8s")
 	files := 0

@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Context safety for every MUTATING make target.
+# Context safety for repository helpers and direct-script mutations.
 #
-# The tooling could once only ever reach a kind cluster:
-# `KUBE_CTX := kind-$(KIND_CLUSTER)` prefixed every context with `kind-`,
-# so a typo produced "context not found", not a write to production. Once
-# KUBE_CTX is overridable that safety net is gone, and this repo's own
-# docs/CLI-PROPOSAL.md names the resulting foot-gun: "--apply on a
-# production context by accident". This script is the replacement net.
+# An overridable KUBE_CTX can name a production cluster. Verify its server
+# independently and require scoped confirmation rather than trusting a
+# kind-shaped context name.
 #
 # Contract:
 #   - ALWAYS print where the action is about to land (context, API server
@@ -24,24 +21,12 @@
 # substantive check is the API server address: kind publishes its API
 # server on loopback. Both must agree.
 #
-# Callers run directly, not through make (scripts/model-seam-probe.sh):
-# those bypass the Makefile's `guard` prerequisite because CI and humans
-# invoke them as scripts. They matter because, left alone, they inherit
-# whatever `kubectl config current-context` happens to be — and
-# `az aks get-credentials` rewrites that silently, so after provisioning
-# an AKS cluster a probe meant for kind quietly aims at the managed one.
-# They resolve the effective context with
-# `kubectl config view --minify`, which honours a --context carried inside
-# $KUBECTL; `config current-context` ignores that flag and would guard a
-# different cluster than the one acted on.
-#
-# `make chat` is deliberately NOT guarded, though it does spend budget and
-# write a ledger row. The distinction is not "mutates" but "can be aimed
-# somewhere unintended": chat runs kmx with KUBE_CTX passed explicitly, and
-# kmx puts that context on every kubectl call it makes (an empty one is
-# refused outright), so it cannot silently retarget the way a bare-kubectl
-# probe can. Prompting on the most-used command would buy nothing and
-# teach people to type past confirmations.
+# Direct-script callers must resolve and pass their effective context before
+# mutating, rather than inherit a mutable current-context. In particular,
+# `az aks get-credentials` can change that default. Where $KUBECTL carries
+# --context, `kubectl config view --minify` honours it; `config current-context`
+# does not. Guarding a different context than the operation uses is no proof.
+# Native kmx operations have their own context and cloud ownership guards.
 #
 # Usage:  KUBE_CTX=... [KUBE_NS=...] kube-guard.sh "<what is about to happen>"
 # Confirm non-interactively with:  KAIMAHI_CONFIRM=$KUBE_CTX make <target>

@@ -191,8 +191,8 @@ Use native `kmx aks up` and its phases for managed provisioning; the former
 `make up`, `make ollama` and `make aks-down` shims are removed. The
 [Makefile](../Makefile) retains repository helpers, including Azure credential
 refresh. Set `KUBE_CTX=<cluster>` and confirmation explicitly where applicable;
-do not infer the target from kubectl's current-context. Legacy plane probes and
-assets still in the checkout are dormant, not supported native workflows.
+do not infer the target from kubectl's current-context. Plane-only probes and
+assets are removed; native provisioning and guarded teardown remain.
 
 Lift carries its provisioning scripts. It needs no plane image, manifest,
 certificate or database to install Orka.
@@ -258,15 +258,16 @@ billing audit. Use current Azure prices; historical run estimates are not quotes
 
 ## Historical resources and concurrent checks
 
-Removing CLI commands does not delete existing cloud or Kubernetes resources,
+Removing CLI commands and repository source does not delete existing cloud or Kubernetes resources,
 revoke credentials or erase stored history. Owners must review old Services,
 network allowances, Secrets, application references and external subscriptions
 separately. Disable obsolete webhooks/Slack subscriptions before releasing their
 DNS name, and remove only resources whose ownership is established. KMX does
 not safely repoint old tools or provide a new plane upgrade/recovery interface.
 
-Historical SQL and database backups remain sensitive retained data. An older
-approval-capable process can still use stored grants; command removal is not
+Historical SQL source remains in Git history, not the current checkout.
+Deployed database contents and backups remain sensitive owner-managed data.
+An older approval-capable process can still use stored grants; source removal is not
 revocation or proof that every old replica has stopped. Keep independently
 verified backups and the ownership records needed for teardown.
 

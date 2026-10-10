@@ -33,7 +33,7 @@ the removed conversion spike are not evidence of one.
 ## Maintainer references
 
 - [Development](development.md): source boundaries, verification and operational traps.
-- [Repository map](repository-map.md): where the retained files belong, including dormant legacy scaffolding.
+- [Repository map](repository-map.md): native tooling, packaging, compatibility data and test scaffolding.
 - [Entry-point principles](entry-point-principles.md): delegation, reviewable artifacts and ownership.
 - [CLI presentation](cli-ux-plan.md): current terminal and automation contracts.
 - [Command conventions](command-conventions.md): naming, flag, output and compatibility rules for kmx commands.

@@ -23,7 +23,7 @@ an open, unsupported question.
 New to the codebase? [`docs/development.md`](docs/development.md) covers the
 architecture, the build, and the mistakes that are easy to make here, and
 [`docs/repository-map.md`](docs/repository-map.md) says which parts of the
-tree are current tooling, retained legacy implementation or test support — worth
+tree are current tooling, historical compatibility data or test support — worth
 reading before you change something you found by grepping.
 
 ## Local verification
@@ -44,14 +44,8 @@ python3 scripts/homebrew-formula.py --selftest
 bash scripts/check-no-azure-ids-test.sh && bash scripts/check-no-azure-ids.sh
 bash scripts/kube-guard-test.sh
 test -z "$(gofmt -l cmd internal embed.go embed_test.go)" && go vet ./... && go test ./...
-(cd plane && test -z "$(gofmt -l .)" && go vet ./... && go test ./...)
+python3 scripts/test_model_fixtures.py -v
 ```
-
-Without a database that last line still runs `gofmt`, `go vet` and every
-non-Postgres package for real — but it covers the store not at all: every
-`plane/internal/store` test skips unless `KAIMAHI_TEST_PG_DSN` points at a
-Postgres. Stand a throwaway one up and set it if your change touches the
-store — CI's `go-plane` job uses a service container and always runs them.
 
 The checkers above are the ones you can usefully run by hand. CI's hygiene
 job runs each checker, each checker's self-test, and a set of inline
@@ -71,13 +65,13 @@ change classification is uncertain. It runs the harness in full on main pushes
 and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
 
-Two Go modules remain in the tree: the root CLI (`cmd/kmx`, `internal/kmx`)
-and the dormant legacy `plane/` module. The root includes the first-class Orka
-paths and the narrowly scoped Kagent v0.10.2 create adapter. Plane commands and
-administration are removed from KMX. The nested module, build helpers, embedded
-assets and supporting scripts/fixtures await separate cleanup; retaining them
-is not an installed capability. Historical SQL migrations, stored data, and
-legacy AKS teardown records are not cleanup targets.
+One Go module remains: the root CLI (`cmd/kmx`, `internal/kmx`), including
+first-class Orka paths and the narrowly scoped Kagent v0.10.2 create adapter.
+Plane commands, administration, the source module (including checked-in SQL),
+build helper, embedded assets and plane-only scripts/fixtures are removed.
+Historical source remains in Git history. This cleanup deletes no deployed
+databases, credentials, caches or resources; legacy AKS ownership records and
+conservative teardown support remain.
 
 For cluster changes, use the documented kind path and a dedicated `KIND_CLUSTER`
 name to avoid changing another developer's cluster. See

@@ -16,12 +16,12 @@ verbs. It is not a conversion to Orka; see the
 direction. Runtimes and harnesses own execution, enforcement and model access.
 
 Plane CLI administration, model overlays, credential exchange and workload
-migration are removed. The legacy nested module, image-build helper, embedded
-plane/observability assets and supporting scripts/fixtures remain dormant pending
-separate cleanup. Their presence is not an installed command or supported
-operator journey. The old gateway, approvals/grants, workflow runner and
-connector fixtures remain retired. Historical SQL, stored data and cloud
-ownership/teardown records are not destructive cleanup targets.
+migration are removed, together with the nested source module, image-build
+helper, embedded plane/observability assets and plane-only scripts/fixtures.
+Historical source, including checked-in SQL migrations, remains in Git history,
+not this checkout. No databases, credentials, caches or deployed resources are
+deleted. Cloud ownership/teardown records and their tests remain. The old
+gateway, approvals/grants, workflow runner and connector fixtures remain retired.
 
 ## Repository layout
 
@@ -32,14 +32,11 @@ classification.
 |---|---|
 | `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, Orka and narrowly scoped Kagent create adapters, portable authoring, shared plumbing and embedded manifests |
 | `pkg/kmx/` | experimental public lifecycle contracts, not wired into the installed CLI |
-| `plane/` | dormant separate Go module, including model proxy, accounting and stored history |
-| `internal/kmx/planebuild`, legacy `k8s/` and plane scripts/fixtures | retained build/assets/test scaffolding awaiting separate cleanup, not native lifecycle dependencies |
 | `k8s/ollama.yaml`, `k8s/orka-k8s-tool.yaml` | native local model and read-only Kubernetes Tool |
 | `scripts/`, `Makefile` | checks, packaging and repository helpers |
 | `.github/workflows/` | verification jobs and docs-only routing |
 
-The root CLI and legacy plane are separate Go modules; a green root build does
-not test the nested module. Plain `make` builds `bin/kmx` only. The supported
+The root CLI is the only Go module. Plain `make` builds `bin/kmx` only. The supported
 Kagent surface is the closed v0.10.2 create scaffold and lifecycle adapter, not
 a general legacy-YAML conversion layer.
 
@@ -55,7 +52,6 @@ is the repository's explicit cross-platform isolation contract.
 
 ```bash
 test -z "$(gofmt -l cmd internal embed.go embed_test.go)" && go vet ./... && go build ./... && go test ./...
-(cd plane && test -z "$(gofmt -l .)" && go vet ./... && go build ./... && go test ./...)
 python3 scripts/check-doc-links.py --selftest
 python3 scripts/check-doc-links.py
 python3 scripts/check-secret-shapes.py --selftest
@@ -63,6 +59,7 @@ python3 scripts/check-secret-shapes.py
 bash scripts/check-no-azure-ids-test.sh
 bash scripts/check-no-azure-ids.sh
 bash scripts/kube-guard-test.sh
+python3 scripts/test_model_fixtures.py -v
 ```
 
 ### App test timing
@@ -79,18 +76,11 @@ subprocess with the fixture's environment and call log. A `go test -race` App
 run also compiles the helper with `-race`; the build directory is removed when
 the package run finishes. Keep helper imports independent of App and UI code.
 
-**Legacy store tests skip without PostgreSQL.** A green nested-module test run
-without `KAIMAHI_TEST_PG_DSN` does not verify durable concurrency/SQL behavior.
-Against a throwaway database (never a valuable database), run:
-
-```bash
-(cd plane && KAIMAHI_TEST_PG_DSN='postgres://kaimahi:throwaway@127.0.0.1:5432/kaimahi?sslmode=disable' go test -count=1 ./...)
-```
-
-Bind a local test database to loopback only, not every interface. CI's retained
-`go-plane` module job provides Postgres and fails if those tests skip. The
-workflow's hygiene job is authoritative for the full checker/self-test/mutation
-set; do not replace it with this focused list.
+The workflow's hygiene job is authoritative for the full checker/self-test/
+mutation set; do not replace it with this focused list. The retained native
+Orka Tool fixture tests exercise actual HTTP requests and health/refusal
+responses without a cluster. No plane-module or plane Postgres service job
+remains.
 [CI configuration](../.github/workflows/ci.yml) also checks its own guards and
 aggregator membership.
 
@@ -124,11 +114,12 @@ has different [ownership rules](aks.md#teardown).
 
 ### What CI proves
 
-Required checks include `hygiene`, `go-plane`, and `e2e-hello-world`. The last
+The workflow emits `hygiene` and `e2e-hello-world` merge gates. The latter
 aggregates the native `e2e-quickstart`, `e2e-kagent-create`, `e2e-orka-runtime`,
-`e2e-orka-helm` and clusterless `e2e-eval-loop` shards. Plane-command shards
-and the plane-upgrade probe job are removed; dormant scripts are not evidence
-that those checks still run.
+`e2e-orka-helm` and clusterless `e2e-eval-loop` shards. Plane-command shards,
+upgrade probes and the nested-module/Postgres job are removed.
+Required-check rules are managed separately on GitHub: removing a workflow job
+does not change the active ruleset or satisfy a retired required context.
 
 `state-paths-macos` is a focused native macOS lane for KMX state routing. Linux
 `hygiene` exercises the same contract under XDG semantics; the macOS lane proves
@@ -243,8 +234,8 @@ OCI pulls and do not use these mirrors.
    Historical cloud ownership records remain necessary for conservative teardown.
 5. Mutations need context/cloud guards; name and loopback server are independent
    evidence. Confirmation is scoped consent, not a general bypass.
-6. Changes to the dormant module's durable limits still need concurrent Postgres
-   tests, not a process-local argument. Stored history must not be reset.
+6. Repository cleanup does not authorize deleting databases, caches, credentials
+   or deployed resources. Historical source remains available in Git history.
 7. Metrics labels must not leak tokens or channel/user/request/delivery IDs.
 8. State evidence accurately: continuously tested, demonstrated, schema-valid,
    proposed or unbuilt. Configuration and a fluent answer are not enforcement proof.
