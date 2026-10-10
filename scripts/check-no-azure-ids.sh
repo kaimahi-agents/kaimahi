@@ -69,7 +69,7 @@ if [ ! -s "$workdir/files" ]; then
   exit 1
 fi
 
-python3 - "$workdir/files" <<'PY'
+python3 - "$workdir/files" "$(cd "$(dirname "$0")/.." && pwd)" <<'PY'
 import re, sys
 
 SKIP_DIRS = {".git", "bin", ".claude", "node_modules"}
@@ -141,12 +141,20 @@ def public_ip(s):
             return False
     return True
 
+root = pathlib.Path(sys.argv[2]).resolve()
 findings = []
+examined = 0
 for raw in open(sys.argv[1], "rb").read().split(b"\0"):
     if not raw:
         continue
     p = pathlib.Path(raw.decode("utf-8", "replace"))
-    if p.suffix in SKIP_SUFFIX or SKIP_DIRS & set(p.parts):
+    # A checkout's parent names must not exclude files inside that checkout.
+    # Resolve both paths so symlinked parents behave the same as real ones.
+    try:
+        parts = p.resolve().relative_to(root).parts
+    except ValueError:
+        parts = p.parts  # external explicit input: preserve directory exclusions
+    if p.suffix in SKIP_SUFFIX or SKIP_DIRS & set(parts):
         continue
     try:
         text = p.read_text()
@@ -157,6 +165,7 @@ for raw in open(sys.argv[1], "rb").read().split(b"\0"):
         # permissions problem cannot quietly shrink the scanned set.
         findings.append((p, 0, "could not be read (not scanned)", str(e)))
         continue
+    examined += 1
     for n, line in enumerate(text.splitlines(), 1):
         for m in GUID.finditer(line):
             # Obviously-synthetic GUIDs (00000000-...-000000000099 and
@@ -202,5 +211,7 @@ if findings:
     print(f"\n{len(findings)} Azure identifier(s) in the tree — this repo is public.")
     print("Parameterise them (env vars / <placeholders>) and redact pasted evidence.")
     sys.exit(1)
+if not examined:
+    sys.exit("check-no-azure-ids: no text files examined — refusing to report a clean tree.")
 print("no Azure identifiers in the tree")
 PY

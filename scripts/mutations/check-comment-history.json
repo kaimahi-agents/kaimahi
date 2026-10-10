@@ -1,7 +1,7 @@
 {
   "checker": "check-comment-history.py",
   "why": "The comment scanner must detect forbidden references without interpreting strings as comments.",
-  "verify": ["python3", "scripts/check-comment-history.py", "--selftest"],
+  "verify": ["python3", "-O", "scripts/check-comment-history.py", "--selftest"],
   "signature": "comment-history self-test: ok",
   "mutations": [
     {

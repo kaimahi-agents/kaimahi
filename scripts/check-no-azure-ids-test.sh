@@ -110,7 +110,7 @@ expect clean "ARM template contentVersion"    "$cv,"
 expect refused "address beside a contentVersion" "$cv, \"host\": \"$ip1\"" "public IPv4 address"
 
 # --- the scanner's own failure modes -------------------------------------------
-# Everything above hands the scanner a file to read. These two cases are
+# Everything above hands the scanner a file to read. These cases are
 # about the scanner reaching no content at all, which is the shape a gate
 # fails open in: "nothing to check" reported as "checked, found nothing".
 
@@ -125,6 +125,54 @@ if [ "$rc" -ne 0 ] && grep -q "no files to scan" "$workdir/empty.out"; then
 else
   echo "FAIL want=refused (no files to scan) got=rc$rc  an empty file list"
   sed 's/^/     /' "$workdir/empty.out"
+  fail=1
+fi
+
+# Enumeration can succeed while every file is excluded or binary. Capture
+# output outside each fixture so the log cannot count as examined input.
+for kind in suffix binary directory; do
+  skipped=$(mktemp -d "$workdir/skipped.XXXXXX")
+  case "$kind" in
+    suffix) printf 'not text to scan\n' > "$skipped/file.png" ;;
+    binary) printf '\377\376' > "$skipped/file.dat" ;;
+    directory) mkdir "$skipped/bin"; printf 'excluded\n' > "$skipped/bin/file.txt" ;;
+  esac
+  set +e
+  bash "$scanner" "$skipped" > "$workdir/skipped-$kind.out" 2>&1
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ] && grep -q "no text files examined" "$workdir/skipped-$kind.out"; then
+    echo "ok   refused  all input skipped ($kind)"
+  else
+    echo "FAIL want=refused (no text files examined) got=rc$rc  all input skipped ($kind)"
+    sed 's/^/     /' "$workdir/skipped-$kind.out"
+    fail=1
+  fi
+done
+
+# A checkout's parent directory must not hide its text from an absolute-path
+# scan. Copy the actual scanner so its checkout root is beneath .claude.
+checkout="$workdir/.claude/checkout"
+mkdir -p "$checkout/scripts"
+cp "$scanner" "$checkout/scripts/check-no-azure-ids.sh"
+printf 'sub %s\n' "$guid" > "$checkout/dirty.txt"
+printf 'nothing interesting\n' > "$checkout/clean.txt"
+set +e
+(cd "$checkout" && bash scripts/check-no-azure-ids.sh "$checkout/dirty.txt") > "$workdir/parent-dirty.out" 2>&1
+rc=$?
+set -e
+if [ "$rc" -eq 1 ] && grep -q "GUID" "$workdir/parent-dirty.out"; then
+  echo "ok   refused  absolute input under an excluded-looking checkout parent"
+else
+  echo "FAIL want=refused (GUID) got=rc$rc  absolute input under an excluded-looking checkout parent"
+  sed 's/^/     /' "$workdir/parent-dirty.out"
+  fail=1
+fi
+if (cd "$checkout" && bash scripts/check-no-azure-ids.sh "$checkout/clean.txt") > "$workdir/parent-clean.out" 2>&1; then
+  echo "ok   clean  absolute clean input under an excluded-looking checkout parent"
+else
+  echo "FAIL want=clean  absolute clean input under an excluded-looking checkout parent"
+  sed 's/^/     /' "$workdir/parent-clean.out"
   fail=1
 fi
 
