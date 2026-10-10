@@ -173,7 +173,7 @@ func TestRunCaseRequestAndCompleteResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := s.updates[len(s.updates)-1].GetRecord()
-	want := CaseResult{SessionUID: "session-1", Harness: "chat", Model: "host-model", Head: JournalHead{Seq: 6, Hash: last.ContentHash}, Output: "answer two three"}
+	want := CaseResult{SessionUID: "session-1", Harness: "chat", Model: "host-model", Head: JournalHead{Seq: 6, Hash: last.ContentHash}, Output: "answer two three", ToolCalls: map[string]int{}, ToolEvidenceComplete: true}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("result = %#v; want %#v", got, want)
 	}
@@ -247,7 +247,7 @@ func TestRunCaseCreateFailureDoesNotExec(t *testing.T) {
 	s.createErr = st.Err()
 	got, err := run(t, s)
 	assertSafeError(t, err, codes.PermissionDenied)
-	if got != (CaseResult{}) {
+	if !reflect.DeepEqual(got, CaseResult{}) {
 		t.Fatalf("result = %#v", got)
 	}
 	if creates, execs := s.counts(); creates != 1 || execs != 0 {
@@ -460,7 +460,7 @@ func TestRunCaseExecFailureBeforeSessionRetainsCreatedUID(t *testing.T) {
 	s.execErr = status.Error(codes.Aborted, canary)
 	got, err := run(t, s)
 	assertSafeError(t, err, codes.Aborted)
-	if got != (CaseResult{SessionUID: "session-1", Harness: "chat"}) {
+	if !reflect.DeepEqual(got, CaseResult{SessionUID: "session-1", Harness: "chat"}) {
 		t.Fatalf("partial = %#v", got)
 	}
 	if creates, execs := s.counts(); creates != 1 || execs != 1 {
