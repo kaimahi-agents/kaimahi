@@ -451,7 +451,7 @@ func TestOrkaInstallKeepsIdentifiedChartAndReconcilesReader(t *testing.T) {
 	f.app.orkaInstallerDigest = digestOf(chart)
 	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
 	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
 		t.Fatalf("repeat install: %v", err)
 	}
@@ -478,7 +478,7 @@ func TestOrkaInstallRepeatRejectsLiveControllerImageDrift(t *testing.T) {
 			f.app.orkaInstallerDigest = digestOf(chart)
 			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 			t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
-			controller := orkaDeploy("w112-controller", nil)
+			controller := orkaDeploy("chart-controller", nil)
 			controller["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"] = tc.images
 			t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, controller))
 			err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
@@ -537,7 +537,7 @@ func TestOrkaInstallRepeatRefusesUnreadyController(t *testing.T) {
 	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
 	// Keep the image pinned so this test isolates rollout readiness.
-	d := orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
+	d := orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
 	d["status"].(map[string]any)["availableReplicas"] = 0
 	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, d))
 	err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
@@ -781,8 +781,8 @@ func TestOrkaStatusDoesNotCallAMatchingVersionASkew(t *testing.T) {
 
 func TestOrkaStatusParsesImageTagAfterRegistryPort(t *testing.T) {
 	f := newOrkaFixture(t, nil)
-	t.Setenv("KMX_TEST_DEPLOYMENTS", "w112-controller=1/1 ")
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "registry.example:5000/orka:0.2.0")))
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "chart-controller=1/1 ")
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "registry.example:5000/orka:0.2.0")))
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatal(err)
 	}
@@ -814,7 +814,7 @@ func TestOrkaStatusRefusesDeploymentListFailures(t *testing.T) {
 func TestOrkaStatusRefusesAmbiguousControllerLabels(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "two-controllers=1/1 ")
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy(orkaController, nil), orkaDeploy("w112-controller", nil)))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy(orkaController, nil), orkaDeploy("chart-controller", nil)))
 	if err := f.app.OrkaStatus(); err == nil || !strings.Contains(err.Error(), "multiple Orka controller Deployments") {
 		t.Fatalf("ambiguous Orka status: %v", err)
 	}
@@ -823,7 +823,7 @@ func TestOrkaStatusRefusesAmbiguousControllerLabels(t *testing.T) {
 func TestOrkaStatusReadsPinnedDigestControllerVersion(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-api-controller=1/1 ")
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatal(err)
 	}
@@ -835,7 +835,7 @@ func TestOrkaStatusReadsPinnedDigestControllerVersion(t *testing.T) {
 func TestOrkaStatusReadsChartControllerVersion(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-api-controller=1/1 ")
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka:0.2.0")))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka:0.2.0")))
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatal(err)
 	}
@@ -1007,7 +1007,7 @@ func TestOrkaControllerForLiftSelectsLabelsNotNames(t *testing.T) {
 		name       string
 		controller string
 	}{
-		{"legacy v0.1.3", orkaController}, {"chart other release name", "w112-controller"},
+		{"legacy v0.1.3", orkaController}, {"chart other release name", "chart-controller"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newOrkaFixture(t, nil)
@@ -1048,7 +1048,7 @@ func TestOrkaControllerForLiftRefusesZeroAndMultipleMatches(t *testing.T) {
 			return d
 		}()}},
 
-		{"ambiguous", "multiple Orka controller Deployments", []map[string]any{orkaDeploy(orkaController, nil), orkaDeploy("w112-controller", nil)}},
+		{"ambiguous", "multiple Orka controller Deployments", []map[string]any{orkaDeploy(orkaController, nil), orkaDeploy("chart-controller", nil)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newOrkaFixture(t, nil)
@@ -1066,7 +1066,7 @@ func TestOrkaControllerForLiftRefusesZeroAndMultipleMatches(t *testing.T) {
 
 func TestOrkaReadyAcceptsHarnessV2ControllerWithoutLegacyWrapper(t *testing.T) {
 	f := newOrkaFixture(t, nil)
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy("w112-controller", nil)))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy("chart-controller", nil)))
 	if err := f.app.OrkaReady(); err != nil {
 		t.Fatalf("chart controller was refused without a v1 wrapper: %v", err)
 	}

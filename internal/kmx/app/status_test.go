@@ -32,7 +32,7 @@ func statusFixture(t *testing.T, script string) (*App, *bytes.Buffer, string) {
 
 const orkaStatusScript = `case "$*" in
 *"config view"*) printf '%s' '{"current-context":"kind-test","contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}';;
-*"get deploy -o json") printf '%s' '{"items":[{"metadata":{"name":"w112-controller","labels":{"app.kubernetes.io/component":"controller","app.kubernetes.io/name":"orka"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
+*"get deploy -o json") printf '%s' '{"items":[{"metadata":{"name":"chart-controller","labels":{"app.kubernetes.io/component":"controller","app.kubernetes.io/name":"orka"}},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/orka-agents/orka:0.2.0"}]}}}}]}';;
 *"get deploy"*) printf '%s' 'orka-controller=1/1 ';;
 *"get crd"*) printf '%s' 'agents.core.orka.ai providers.core.orka.ai ';;
 *"get providers"*) printf '%s' 'local=true ';;
