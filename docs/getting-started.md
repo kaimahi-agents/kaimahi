@@ -1,40 +1,53 @@
 # Getting started
 
-This guide uses the unreleased canonical `kmx context show/use` and
-`kmx local up/down` spellings. On tagged v0.4.1 and earlier, use `kmx ctx
-[context]` and root `kmx up/down` instead. Those compatibility routes remain
-available in newer builds; see [command alignment](command-semantics.md).
+Install the stable CLI, get a deterministic Orka answer, then **Create → Prove → Lift**
+an agent of your own. Orka is the platform; Kaimahi provides installation and native
+authoring tools. The selected runtime owns execution and enforcement.
 
-## Create your own agent, then lift it from chat
+## Current Orka path
 
-With `kmx` installed and Docker or Podman available, follow this path for your
-own agent (not the fixed `kmx quickstart` demonstration):
+Install the stable release with Homebrew:
 
 ```bash
-kmx quickstart --interactive
+brew install kaimahi-agents/tap/kmx
 ```
 
-On tagged v0.4.1 and earlier, run `kmx quickstart-wizard` instead; newer builds
-retire that spelling and name the replacement.
+For an exact **v0.4.1** pin, use Go or the checksum-verified
+[release installer](releases.md#install):
 
-1. Describe your agent, choose **Chat with agent**, and send a message. Wait for
-   a local answer.
-2. In that chat, enter `/lift`. Select an existing Kubernetes context or AKS
-   cluster. Review the destination and inference choice at the final deployment
-   review before confirming. `/lift` offers to prepare Orka and the referenced
-   Kubernetes tool if they are missing; it does not create a cluster.
-3. After chat connects to the lifted agent, send a **new message** and check its
-   answer. Lift, readiness and connection do not prove an answer; the answer
-   to that new message does.
+```bash
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.1
+kmx version
+```
 
-See the [interactive lift guide](interactive-lift.md) for target discovery,
-confirmation and connection behavior. See the [bundle lift guide](agent-lift.md)
-for `kmx agent lift` and `kmx agent evaluate`.
+Put Go's binary directory on PATH. All tutorial commands below use v0.4.1.
+`@main` is a moving development option; checkout `make` builds `bin/kmx` without provisioning.
+Newer builds use different spellings:
 
-**Orka is the platform.** Kaimahi provides tooling to install it and author,
-prove and lift native Agents. Start with the [Orka guide](orka.md), including
-[native creation and a first Task](orka.md#author-an-orka-agent-and-get-an-answer).
-The selected runtime owns execution and enforcement.
+| v0.4.1 | Current main (unreleased) |
+|---|---|
+| `kmx ctx` / `kmx ctx <context>` | `kmx context show` / `kmx context use <context>` |
+| `kmx up` / `kmx down` | `kmx local up` / `kmx local down` |
+| `kmx quickstart-wizard` | `kmx quickstart --interactive` |
+| `kmx agent chat --interactive <name>` | `kmx agent chat <name>` (no `--interactive` flag) |
+
+See [command alignment](command-semantics.md) for compatibility and retirement details.
+
+## Prerequisites
+
+| Tool | Needed for |
+|---|---|
+| Go 1.26+ | `go install` and checkout builds; not needed for a downloaded CLI |
+| Docker or Podman | creating local kind clusters |
+| kind, kubectl, helm | kmx uses PATH copies first, otherwise fetches pinned/checksummed binaries |
+| git, make | checkout builds and remaining scripts/helpers |
+| authenticated Azure CLI | AKS workflows **and host-local Azure Foundry inference**, including with local kind; never installed by kmx |
+
+Set `KMX_TOOLCHAIN=off` if missing tools should fail rather than download.
+[kmx installation](kmx.md#install) describes cache verification and release trust.
+Azure is not needed for the keyless local quickstart.
+
+## One command, and an agent that answers
 
 The local quickstart below is the **supported deterministic Orka first-answer
 path**: it ends with a native Orka Agent answering a question. For guided
@@ -44,124 +57,95 @@ KMX does not install or upgrade Kagent; only explicit exact-v0.10.2 create is
 available for an installation an operator already owns.
 `orka.harness.v2` is outside the direction.
 
-## Prerequisites
-
-| Tool | Needed for |
-|---|---|
-| Go 1.26+ | `go install` and checkout builds; not needed to run the downloaded CLI |
-| Docker or Podman | creating local kind clusters |
-| kind, kubectl, helm | kmx uses PATH copies first, otherwise fetches pinned/checksummed binaries |
-| git, make | checkout-based development and remaining scripts/helpers |
-| authenticated Azure CLI | AKS only; never installed by kmx |
-
-Set `KMX_TOOLCHAIN=off` if missing tools should fail rather than download.
-[kmx installation](kmx.md#install) describes cache verification and release trust.
-Choose Podman directly on the command line with
-`kmx --container-engine podman quickstart`; automation can continue to set
-`CONTAINER_ENGINE=podman`.
-
-## Current Orka path
-
-The stable release includes these Orka commands. Install it with Homebrew:
-
-```bash
-brew install kaimahi-agents/tap/kmx
-```
-
-To pin Kaimahi v0.4.0 exactly, use Go or the checksum-verified
-[release installer](releases.md#install):
-
-```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
-kmx version
-kmx ctx <context> # pinned release spelling; newer builds: kmx context use <context>
-kmx orka --help
-kmx orka install
-kmx orka status
-```
-
-Put Go's binary directory on PATH. `@main` remains a moving development option.
-From a checkout, `make` builds `bin/kmx` without provisioning.
-The selected cluster must already exist; for a fresh local cluster the current
-component commands are:
-
-```bash
-export KIND_CLUSTER=orka-local
-export KUBE_CTX=kind-orka-local
-kmx local up --step cluster
-kmx local up --step ollama
-kmx local up --step model
-```
-
-These prepare kind and the keyless model server without installing Orka or the
-legacy runtime.
-Then install Orka on that selected cluster. Its default Provider points at this
-Ollama server; for an existing cluster use your own model/Provider configuration
-as described in [Orka](orka.md). Installation alone does not govern model traffic.
-For a new native Agent, use [agent create](#an-agent-of-your-own).
-
-## One command, and an agent that answers
-
-This section is the **supported Orka first-answer path**. With a current kmx:
+Choose a local cluster name you own and pin its context:
 
 ```bash
 export KIND_CLUSTER=kmx-local
 export KUBE_CTX=kind-kmx-local
 kmx quickstart
+```
+
+On a fresh cluster this creates kind, keyless Ollama, the pinned **Orka v0.2.0
+Helm chart**, a placeholder Provider Secret, the Task result-reader account and
+RBAC, and the fixed `hello-world-agent` Provider/Agent bundle. It asks a **fresh
+Task** and requires a readable answer; readiness alone is not an answer.
+The local model defaults to `qwen2.5:3b`; `MODEL` can override it.
+
+Quickstart is non-interactive: no model picker or prompt. The same settings select
+the same cluster, Provider and Agent. Reruns reuse an **exact** live-spec match
+only and stop rather than overwrite a changed Provider or Agent. A half-finished
+run resumes; other setup still reconciles, so this is not a read-only probe.
+For model selection and custom authoring, use the wizard below.
+
+Optional machine-readable output also runs a new Task:
+
+```bash
 kmx quickstart --output json --task 'Who are you?'
 ```
 
-To author your own Orka agent instead of deploying the fixed demonstration,
-run the experimental `kmx quickstart --interactive`. Its TUI keeps kind, model, and
-Orka setup progress visible while you describe the agent. It offers bundled
-and detected host models with their source and reported size, can continue
-with an existing local Orka agent, and ends by offering a native Task chat.
-Progress rows show approximate local image/model footprints; they are size
-estimates, not byte counters from the underlying container tools.
+JSON stdout is one document; subprocess/progress output goes to stderr.
+`governed: false` means **this invocation did not enable governance**; existing
+governance may survive a rerun and is not assessed. See [output contracts](kmx.md#output-contracts).
+
+## Create your own agent, then lift it from chat
+
+Keep the cluster/context above, then run the experimental wizard shipped in v0.4.1:
+
+```bash
+kmx quickstart-wizard
+```
+
+1. Describe your agent and choose a model. The wizard shows setup progress,
+   bundled and detected host models, and can continue with an existing local
+   Orka Agent. Choose **Chat with agent**, send a message and wait for a local answer.
+2. Prepare an existing **Ready destination Provider and its Secret**, then enter
+   `/lift` and select the destination context or AKS cluster. Bundle-backed Foundry
+   inference must be provisioned separately. Review the destination and inference
+   choice before confirming. `/lift` can separately prepare missing Orka and the
+   Kubernetes tool; it creates neither a cluster nor the destination inference.
+   Source Secret values are never copied to the destination.
+3. After chat connects to the lifted Agent, send a **new message** and check its
+   answer. Lift, readiness and connection do not prove that answer.
 
 Setup starts while the form is open. It creates the Task result-reader account
-and RBAC and installs the default read-only Kubernetes inventory tool, whose
-ClusterRole can list the documented resource kinds across namespaces. Cancelling
-the wizard stops active work but leaves completed resources in place. Review the
-[tool and RBAC boundary](orka-k8s-tool.md) before running it on a shared cluster.
+and RBAC and installs the default read-only Kubernetes inventory tool. Its
+ClusterRole can list the documented resource kinds **across namespaces**.
+Cancelling stops active work but leaves completed resources in place. Review the
+[tool and RBAC boundary](orka-k8s-tool.md) before using a shared cluster.
 
-`quickstart` is deterministic and non-interactive: no model picker and no
-prompt, so the same command on the same machine produces the same cluster, the
-same Provider and the same Agent. That is what lets an unattended caller rerun
-it and compare. Choosing your own model is the wizard above.
-
-On a fresh cluster it creates kind, Ollama with `qwen2.5:3b`, the pinned Orka
-release with a placeholder Provider Secret and Task result-reader account,
-and the fixed `hello-world-agent` Provider/Agent bundle; then it asks a **fresh** Task and
-requires a readable answer. The Orka runtime is installed from the pinned
-v0.2.0 Helm chart (Helm is found on PATH or fetched by kmx).
-Rerunning reuses an **exact** match only: a Provider or Agent whose live spec
-differs from the one quickstart would write is somebody's deliberate change, so
-it stops rather than overwrite it. A half-finished run resumes. Other setup
-steps still reconcile: this is not a read-only probe.
-
-JSON stdout is one document; subprocess/progress output goes to stderr.
-`governed: false` means **this invocation did not enable governance**; reruns may
-preserve existing governance, which quickstart does not assess. The key set and
-human/raw output contracts are in [kmx](kmx.md#output-contracts).
+See [interactive lift](interactive-lift.md) for target discovery and confirmation,
+and [bundle lift](agent-lift.md) for `kmx agent lift` and `kmx agent evaluate`.
+These describe current builds; use the stable spellings above with v0.4.1.
 
 ### The whole runtime
 
+To prepare the runtime without creating an Agent, use `kmx up` instead of quickstart:
+
 ```bash
-kmx local up
+kmx up
 kmx orka status
-kmx agent chat --namespace orka-system hello-world-agent
+# After quickstart or agent create has created this Agent:
+kmx agent chat --interactive --namespace orka-system hello-world-agent
 ```
 
-A bare `local up` brings up the **runtime**: kind, the keyless Ollama model server and
-the pinned Orka release with its Provider and Task result-reader account. It
-deploys no agent — `kmx quickstart` is the command that ends with one
-answering, and `kmx agent create` is the one that authors your own. The chat
-line above therefore needs an Agent from one of those two commands first. Orka
-chat is always a session; a message after the Agent name is its first turn, not
-a one-shot. v0.4.1 and earlier require `--interactive`, which newer builds
-no longer accept.
+A bare `up` brings up kind, keyless Ollama with the configured `MODEL`, and pinned
+Orka with its Provider and Task result-reader account. It deploys **no Agent**.
+Orka chat is a session; a message after the name is its first turn, not a one-shot.
 
+For a cluster that already exists, pass its context explicitly so the exported
+`KUBE_CTX` above cannot select the tutorial cluster:
+
+```bash
+kmx --context <context> orka install
+kmx --context <context> orka status
+```
+
+Configure its model/Provider explicitly;
+installation alone does not govern model traffic. The [Orka guide](orka.md)
+covers the pin, existing-install refusal and lack of a supported version upgrade.
+Orka setup does not install or upgrade other runtimes or silently repair conflicting installations.
+
+The following compatibility notes describe current builds, not v0.4.1 tutorial steps.
 KMX no longer installs Kagent or its two demonstration agents. Its three old
 `kmx local up --step` names are unknown steps, their manifests are no longer shipped
 in the binary, and agent editing, governance and preset switching remain
@@ -176,7 +160,7 @@ does not repoint existing tools. Interactive `/help` lists local controls.
 
 ## An agent of your own
 
-This is the **native Orka path**. Preview a Provider + Agent bundle offline:
+For explicit native Orka authoring, preview a Provider + Agent bundle offline:
 
 ```bash
 kmx agent create my-agent --namespace orka-system \
@@ -184,19 +168,19 @@ kmx agent create my-agent --namespace orka-system \
   --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --no-apply
 ```
 
-Namespace, Provider type, model ID and existing Secret name are required.
-The metadata-only Secret skeleton is a reference: **never write it or bulk-apply
-the bundle**. Online creation uses installed schemas and ordered readiness waits;
-`--dry-run` checks admission but not execution. Only optional `--task` plus an
-existing result ServiceAccount tests a real model answer. Follow the
+Namespace, Provider type, actual model ID and existing Secret name are required;
+match the model to your setup. The metadata-only Secret skeleton is a reference:
+**never write it or bulk-apply the bundle**. Online creation uses installed schemas
+and ordered readiness waits. `--dry-run` checks admission, **not execution**.
+Only optional `--task` with an existing result ServiceAccount tests a real answer;
+create does not provision that account or RBAC. Follow the
 [context-pinned first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
-and [create safety contract](kmx.md#kmx-agent-create) before creating resources.
-No-name terminal invocation offers a wizard. `agent chat` and
-`agent list --namespace <ns>` are Orka-only; a live Agent is edited with
-`kubectl edit agents.core.orka.ai`. BYO images, model-preset and MCP conversion
-are not provided.
+and [create safety contract](kmx.md#kmx-agent-create), using v0.4.1 spellings.
+No-name terminal invocation offers a wizard. `agent chat` and `agent list --namespace <ns>`
+are Orka-only; edit a live Agent with `kubectl edit agents.core.orka.ai`.
+BYO images, model-preset and MCP conversion are not provided.
 
-For the separate, advanced Kagent v0.10.2 create-only path, use the complete
+For the separate, advanced Kagent v0.10.2 create-only path in current builds, use the complete
 [create contract](kmx.md#explicit-kagent-v0102-create). Offline rendering
 requires neither an installed Kagent nor a provisioned cluster Secret. Online
 creation requires both an exact v0.10.2 installation and a separately
@@ -205,36 +189,31 @@ evaluate, console, quickstart, `up`, or AKS support.
 
 ## Using Podman instead of Docker
 
-Select Podman explicitly for an invocation:
-
 ```bash
 kmx --container-engine podman quickstart
-# or equivalently for automation:
+# Equivalently for automation:
 CONTAINER_ENGINE=podman kmx quickstart
 ```
 
-The flag can appear before or after the command and overrides
-`CONTAINER_ENGINE`. Keep the same engine for **every** operation on a cluster;
-Docker's kind inventory cannot see Podman's nodes, and both engines can own a
-cluster with the same name. kmx therefore does not silently switch engines when
-one daemon is unavailable.
-
+The flag overrides `CONTAINER_ENGINE`. Keep the same engine for **every** operation:
+Docker cannot see Podman's kind nodes, and both engines can own the same cluster
+name. kmx does not silently switch engines.
 On macOS, ensure the Podman machine mounts the checkout before building; absent
-mounts require deliberate machine recreation, not an implicit destructive
-repair. Restarted machines may leave nodes stopped; the cluster step starts the
-named nodes and checks API/DNS. kmx supplies
-`KIND_EXPERIMENTAL_PROVIDER=podman` to kind automatically.
+mounts require deliberate machine recreation, not implicit destructive repair.
+Restarted machines may leave nodes stopped; the cluster step starts the named
+nodes and checks API/DNS. kmx supplies `KIND_EXPERIMENTAL_PROVIDER=podman` automatically.
 
 ## Choices and caveats
 
-- Target selection and confirmation are explicit: [where commands land](kmx.md#where-the-command-will-land).
-  Use your own cluster name; do not share the default across development lanes.
-- The bundled local model is small and tool-capable, not a guarantee of reliable
+- Select your own cluster name and context; review [where commands land](kmx.md#where-the-command-will-land).
+- The default local model is small and tool-capable, not a guarantee of reliable
   prose. Validate actual tool payloads; [FAQ](FAQ.md) covers small-model failures.
 - Ollama models are in `emptyDir`; a pod restart requires another model pull.
-- `kmx local down` deletes the whole local cluster and its data, including any historical
-  database still present. Export needed data first. For AKS use
-  [lift teardown](aks.md#teardown), not kind down.
+- `kmx down` (current main: `kmx local down`) deletes the **whole local cluster
+  and its data**, including any historical database. Export needed data first;
+  see [Orka backup cautions](orka.md#preserve-the-charts-generated-snapshot-key).
+  For AKS use [lift teardown](aks.md#teardown), not kind down. Azure resources can
+  remain billable after a failed operation; verify cleanup rather than assuming cancellation deleted them.
 
 Next: [CLI reference](kmx.md), [models and endpoints](models.md) and
 [bundle lifecycle](agent-lift.md).
