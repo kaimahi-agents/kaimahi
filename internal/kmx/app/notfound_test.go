@@ -5,11 +5,11 @@ import (
 	"testing"
 )
 
-// The one distinction the capture-then-restore dance rests on: "the object is
-// not there" versus "I could not ask". Only the first may be read as "nothing
-// to preserve" — the second, read as absence, is how a re-apply silently
-// un-governs a live agent, and how `agent create` would scaffold onto the
-// keyless preset on a cluster that does have a plane.
+// Only a genuine object-not-found response establishes absence. Connection,
+// authorization and discovery failures leave the object's state unknown.
+// Missing tools and resource kinds are not proof that an object is absent.
+// Callers must retain that distinction rather than proceeding as though
+// a failed read established that no existing resource needs preserving.
 //
 // These are kubectl's real messages.
 func TestOnlyAGenuineNotFoundReadsAsAbsent(t *testing.T) {

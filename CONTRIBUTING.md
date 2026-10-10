@@ -6,6 +6,11 @@ corrections, tests, and small capability changes. Start with the organization
 
 ## Before building something new
 
+For command changes, follow [AGENTS.md](AGENTS.md), the
+[command conventions](docs/command-conventions.md) and the
+[command alignment record](docs/command-semantics.md), including help,
+completion, generated instructions and compatibility updates.
+
 Orka remains the first-class/default platform; Kaimahi is tooling to help people
 get agents onto it. Check Orka, Kubernetes and existing integrations first. In
 the pull request, explain why configuration, integration or an upstream

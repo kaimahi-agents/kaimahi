@@ -85,10 +85,12 @@ These warm-cache results do not claim to eliminate a first uncached request.
    Job/Pod termination to become visible. A worker completion acknowledgement
    could remove around 2–3 s, but must preserve execution-success semantics.
    KMX must not treat an early result body alone as successful execution.
-4. **Reuse result-session setup within a chat.** Roughly 1.1–1.2 s per request is
-   spent validating the ServiceAccount/Service, minting a bounded token, and
-   establishing a port-forward. Reuse needs bounded token lifetimes and the
-   existing connection-loss/cancellation behavior.
+4. **Result-session reuse is implemented.** The profiling runs spent roughly
+   1.1–1.2 s per request validating the ServiceAccount/Service, minting a bounded
+   token and establishing a port-forward. Chat now reuses an eight-minute result
+   session and replaces it before a turn when less than five minutes remain.
+   Configuration changes, shutdown and connection loss invalidate it; this is
+   no longer an outstanding optimization.
 5. **Watch status instead of one-second polling.** This can reduce the polling
    tail and repeated `kubectl` process overhead. Identity/generation and final
    result checks still need to surround retrieval.

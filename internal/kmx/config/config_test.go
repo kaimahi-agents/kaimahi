@@ -18,8 +18,7 @@ func TestNativeConfigAndCacheIgnoreOldPlaneSettings(t *testing.T) {
 	t.Setenv("KUBE_CTX", "kind-native")
 	t.Setenv("CONTAINER_ENGINE", "podman")
 	t.Setenv("MODEL", "qwen3:8b")
-	t.Setenv("CHAT_PORT", "auto")
-	for _, name := range []string{"CRED", "ADMIN_PORT", "OPS_PORT"} {
+	for _, name := range []string{"CRED", "ADMIN_PORT", "OPS_PORT", "CHAT_PORT"} {
 		t.Setenv(name, "")
 	}
 	before, err := Load("")
@@ -40,7 +39,7 @@ func TestNativeConfigAndCacheIgnoreOldPlaneSettings(t *testing.T) {
 	if err := os.WriteFile(old, []byte("operator-owned"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"CRED", "ADMIN_PORT", "OPS_PORT"} {
+	for _, name := range []string{"CRED", "ADMIN_PORT", "OPS_PORT", "CHAT_PORT"} {
 		t.Setenv(name, "not/a-valid-port-or-credential; $(bad)")
 	}
 	after, err := Load("")

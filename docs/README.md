@@ -36,6 +36,7 @@ the removed conversion spike are not evidence of one.
 - [Repository map](repository-map.md): native tooling, packaging, compatibility data and test scaffolding.
 - [Entry-point principles](entry-point-principles.md): delegation, reviewable artifacts and ownership.
 - [CLI presentation](cli-ux-plan.md): current terminal and automation contracts.
+- [Command alignment](command-semantics.md): implemented entry points, compatibility policy and remaining vocabulary decisions.
 - [Command conventions](command-conventions.md): naming, flag, output and compatibility rules for kmx commands.
 - [Charm boundary](charm-ux-followup-plan.md): the implemented creation wizard and its limits.
 - [Interactive agent TUI](interactive-agent-tui-plan.md): two-environment overview, keyboard navigation, slash-command completion and demo mode.
@@ -50,10 +51,6 @@ the removed conversion spike are not evidence of one.
   and Copilot measurements and optimization priorities.
 - [Local Foundry inference](local-foundry-inference.md): interactive host inference
   with Azure login, and the separate native Orka integration proposal.
-- [Orka composition](reviews/2026-09-09-orka-composition.md): version-qualified
-  historical findings; not a current ownership or authoring ruling.
-- [Substrate evaluation boundary](reviews/2026-09-10-substrate-evaluation.md):
-  scoped research, not a platform substitution decision.
 
 Superseded lane prompts, old platform proposals and retired review snapshots
 are not maintained as public documentation. Git retains their history.

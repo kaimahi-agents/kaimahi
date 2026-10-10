@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.1
 """
 JOURNEY = """`kmx quickstart` proves an answer.
-`kmx up` provisions the runtime.
+`kmx local up` provisions the runtime.
 `kmx quickstart --interactive` creates your own Agent.
 `kmx agent create` writes a bundle.
 `kmx agent lift` deploys it.
@@ -79,7 +79,7 @@ for label, literal in [
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 for label, literal in [
-    ("kmx up", "`kmx up`"),
+    ("kmx local up", "`kmx local up`"),
     ("kmx quickstart --interactive", "`kmx quickstart --interactive`"),
     ("kmx agent create", "`kmx agent create`"),
     ("kmx agent lift", "`kmx agent lift`"),

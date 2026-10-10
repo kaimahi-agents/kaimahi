@@ -297,7 +297,7 @@ func TestOrkaInstallRefusesExistingV013BeforeAnyWrites(t *testing.T) {
 			if err == nil {
 				t.Fatal("installed Helm on top of existing manifest resources")
 			}
-			for _, want := range []string{"kmx down", "kmx up", "Tasks", "Secrets", "model data", "ledger", "AKS", "snapshot key"} {
+			for _, want := range []string{f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "Secrets", "model data", "ledger", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("legacy recovery does not say %q: %v", want, err)
 				}
@@ -341,7 +341,7 @@ func TestOrkaInstallRefusesForeignOrMismatchedHelmRelease(t *testing.T) {
 			if err == nil {
 				t.Fatal("adopted or replaced a different Helm release")
 			}
-			for _, want := range []string{"kmx down", "kmx up", "Tasks", "AKS", "snapshot key"} {
+			for _, want := range []string{f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("foreign release recovery does not say %q: %v", want, err)
 				}
@@ -395,7 +395,7 @@ func TestOrkaInstallFailedReleaseNamesRecoverySteps(t *testing.T) {
 			if err == nil {
 				t.Fatal("non-deployed release was accepted")
 			}
-			for _, want := range []string{"kmx-owned", state, "helm --kube-context kind-kaimahi-p1", "kmx down", "kmx up", "Tasks", "AKS", "snapshot key"} {
+			for _, want := range []string{"kmx-owned", state, "helm --kube-context kind-kaimahi-p1", f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("missing %q in recovery: %v", want, err)
 				}
@@ -432,7 +432,7 @@ func TestOrkaInstallUnavailableReleaseValuesRefusesWithSafeRecovery(t *testing.T
 	if err == nil {
 		t.Fatal("unreadable release values accepted")
 	}
-	for _, want := range []string{"kmx down", "AKS", "helm --kube-context kind-kaimahi-p1"} {
+	for _, want := range []string{f.app.operationCommand("local", "down"), "AKS", "helm --kube-context kind-kaimahi-p1"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("unreadable release lacks %q: %v", want, err)
 		}

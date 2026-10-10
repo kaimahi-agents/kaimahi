@@ -170,7 +170,7 @@ func Classify(cfg *Kubeconfig, context string) (Posture, error) {
 		return Posture{}, fmt.Errorf("context %q is not in the kubeconfig.\n"+
 			"  Nothing was applied. Check the name with: kubectl config get-contexts\n"+
 			"  (Only a kind-* context may be named before it exists — that is\n"+
-			"   'kmx up' creating it. Any other name here is a typo.)", context)
+			"   'kmx local up' creating it. Any other name here is a typo.)", context)
 	case namedKind && isLoopback(host):
 		return Posture{Context: context, Host: host, Label: "local kind", Local: true}, nil
 	default:
@@ -306,7 +306,7 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 			"  It would have used %q, which is a name kmx made up, and your kubeconfig\n"+
 			"  holds %d context(s) it could have meant instead.%s\n"+
 			"  Nothing was applied. Choose one, and it is remembered:\n"+
-			"    kmx ctx <name>            # kubectl config get-contexts lists them\n"+
+			"    kmx context use <name>    # kubectl config get-contexts lists them\n"+
 			"    kmx --context <name> ...  # or just this once",
 			req.Context, len(cfg.Contexts), currentContextNote(cfg.CurrentContext))
 	}

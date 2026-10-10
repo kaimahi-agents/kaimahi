@@ -4,8 +4,10 @@ Status: native Orka proposal plus implemented host-inference option, 2026-09-18.
 
 ## Interactive host inference (implemented)
 
-Choose **Azure Foundry (Azure login)** in quickstart, or use `/inference` →
-**Azure Foundry** in chat (`/inference-foundry` is the direct shortcut).
+On a local kind target, choose **Azure Foundry (Azure login)** in interactive
+quickstart, or use `/inference` → **Azure Foundry** in chat
+(`/inference-foundry` is the direct shortcut). Host inference is refused on remote
+targets; configure a cluster Provider there instead.
 Select a saved configuration, browse subscriptions/resources/deployments, or
 enter an endpoint and deployment. The host uses the existing `az login` identity
 with refreshable Entra tokens. No Azure API key or access token is copied into
@@ -69,12 +71,12 @@ is required. Azure model inference remains billed and network-dependent.
 | Local Orka + Ollama | Local Orka worker Jobs | Local model runtime | Weight download and local compute |
 | Copilot CLI | Host CLI plus restricted KMX tool adapter | Copilot-selected hosted model | Convenient existing login; CLI overhead and different tool path |
 | Local Orka + Foundry (recommended) | Local Orka worker Jobs | Selected Azure deployment | Native Orka parity; Azure access and pod egress required |
-| Host-direct Foundry (possible follow-up) | A new KMX model/tool loop | Selected Azure deployment | Avoids worker Job latency, but duplicates executor behavior |
+| Host-direct Foundry (implemented) | Host model/tool loop using Azure CLI credentials | Selected Azure deployment | Avoids worker Job latency, but does not exercise Orka worker execution |
 
-Host-direct inference is possible, especially for host Azure-login credentials,
-but it is a larger second implementation. Prefer native Orka for the first slice.
-Existing Job scheduling/result overhead remains; removing Copilot processes is
-not a measured latency improvement until benchmarked on the same model/task.
+Host-direct inference is implemented as described above. The proposed native
+Foundry quickstart would instead test Orka worker execution. Its Job scheduling
+and result overhead would remain; compare latency on the same model/task before
+claiming an improvement.
 
 ## Evidence and existing configuration
 
@@ -121,7 +123,10 @@ optional API version through `kmx agent create`; see the
 choice continues to use host inference with a local Provider fallback, not a
 native hosted Provider. Its agent-create wizard can author a native Azure
 Provider separately. An already-configured local Agent using the v1 Provider
-can use normal Orka chat. The guided Foundry setup currently lives only in lift.
+can use normal Orka chat. Guided native Provider provisioning remains in the
+bundle-less live-copy lift route. Host Foundry configuration is also available
+in interactive quickstart and chat; it does not provision a native Foundry
+Provider or copy the host's Azure credentials into the cluster.
 
 ## Reuse, then decouple, existing setup
 

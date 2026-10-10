@@ -48,14 +48,14 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
 | `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 46 (checkers, release packaging, native CI runners, mutation specs) |
-| `docs/` | 35 tracked files; native guides, design and history | — | maintainer and process docs |
+| `docs/` | 34 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (37 files) | **Installed** | Native agent creation and execution, Orka install/status, quickstart and local setup, guarded AKS lifecycle, interactive console/chat, read-only runtime targets, offline AgentSuite validation and artifact operations, exact Kagent v0.10.2 create and explicit v0.10.3 bundle lift/status, Orka bundle lifecycle/evaluation and local-reference replay verification, safe retirement and Task results. Root help describes creating and running agents on Kubernetes; root status reports only Orka. |
+| `cmd/kmx` (38 files) | **Installed** | Explicit context/local entry points and hidden compatibility routes, native agent creation and execution, Orka install/status, quickstart and local setup, guarded AKS lifecycle, interactive console/chat, read-only runtime targets, offline AgentSuite validation and artifact operations, exact Kagent v0.10.2 create and explicit v0.10.3 bundle lift/status, Orka bundle lifecycle/evaluation and local-reference replay verification, safe retirement and Task results. Root help describes creating and running agents on Kubernetes; root status reports only Orka. |
 
 ## `internal/` — CLI packages and retained support
 
@@ -221,7 +221,7 @@ preparation, identity checks and separate native A2A evidence, and provisions
 to exercise evidence validation, routing and fixture behavior. These are
 checkout-only scaffolding, not embedded installers or user runtimes.
 
-## `docs/` — 35 tracked files, native guides and design/history
+## `docs/` — 34 tracked files, native guides and design/history
 
 **Guides and index (15):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `releases.md`, `FAQ.md`, `orka.md`,
@@ -229,15 +229,14 @@ checkout-only scaffolding, not embedded installers or user runtimes.
 `orka-k8s-tool.md`, `bundle-format.md`, `agentsuite-spec.md` and
 `runtime-adapters.md`.
 
-**Maintainer and process (20):** `development.md`, `repository-map.md`,
-`reviews/2026-09-09-orka-composition.md`,
-`reviews/2026-09-10-substrate-evaluation.md`, `entry-point-principles.md`,
+**Maintainer and process (19):** `development.md`, `repository-map.md`,
+`entry-point-principles.md`,
 `cli-ux-plan.md`, `command-conventions.md`, `charm-ux-followup-plan.md`,
 `interactive-agent-tui-plan.md`, `NAMING.md`, `kmx-lifecycle-interfaces.md`,
 `kmx-application-api.md`, `kmx-public-interface.md`,
 `azure-discovery-performance.md`, `copilot-performance.md`, `orka-latency.md`,
 `orka-startup-performance.md`, `local-foundry-inference.md`,
-`chat-performance-profile.md` and `agent-lift.md`.
+`chat-performance-profile.md`, `agent-lift.md` and `command-semantics.md`.
 
 ## `brand/` — identity assets
 
@@ -254,6 +253,7 @@ and intentionally has no hero image.
 | `README.md` | **Documentation** | Repository entry point and native direction. |
 | `CHANGELOG.md` | **Build input and history** | Release notes are extracted by the release-notes script; historical release prose remains. |
 | `CONTRIBUTING.md`, `LICENSE` | **Documentation** | Contribution expectations and MIT licence. |
+| `AGENTS.md` | **Documentation** | Repository guidance for consistent command changes and verification. |
 | `embed.go` | **Packaging** | Root-module native manifest and helper embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
 | `Makefile` | **Scaffolding** | Native build/check targets, context guard and AKS-credential helper. |

@@ -23,13 +23,40 @@ func newCtxCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
+func newContextCommand(state *commandState) *cobra.Command {
+	group := &cobra.Command{Use: "context", Short: "Show or select KMX's Kubernetes access context", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	show := &cobra.Command{Use: "show", Short: "Show the effective context, selection source and posture", Args: cobra.NoArgs,
+		RunE: appRun(state, func(a *app.App) error { return a.Ctx("") })}
+	use := &cobra.Command{Use: "use <context>", Short: "Remember KMX's context without changing kubectl current-context",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.ExactArgs(1)(cmd, args); err != nil {
+				return err
+			}
+			if strings.TrimSpace(args[0]) == "" {
+				return fmt.Errorf("context use requires a non-empty context name")
+			}
+			return nil
+		}, ValidArgsFunction: completeContexts}
+	use.RunE = appRun(state, func(a *app.App) error { return a.Ctx(use.Flags().Arg(0)) })
+	group.AddCommand(show, use)
+	return group
+}
+
+func newLocalCommand(state *commandState) *cobra.Command {
+	group := &cobra.Command{Use: "local", Short: "Provision or delete the local kind environment", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	group.AddCommand(newUpCommand(state), newDownCommand(state))
+	return group
+}
+
 // newQuickstartCommand is the front door: one command, from a machine with a
 // container engine to an agent that has answered a question.
 //
-// It is a sibling of `up` rather than a flag on it because the two make
-// different promises. `up` brings up the RUNTIME — a cluster, a keyless model
-// server and the pinned Orka release — and deploys no agent. `quickstart`
-// promises one thing, an answer, and adds the one thing `up` deliberately
+// It is separate from `local up` rather than a flag on it because the two
+// make different promises. `local up` brings up the RUNTIME — a cluster, a
+// keyless model server and the pinned Orka release — and deploys no agent.
+// `quickstart` promises one thing, an answer, and adds what `local up` deliberately
 // leaves out: a fixed Orka Agent and a question put to it. Folding them
 // together would mean one command with two contracts and a flag deciding
 // which you got.

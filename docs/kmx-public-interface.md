@@ -263,13 +263,16 @@ The intended conceptual mapping is:
 | `kmx up` | `AgentEnvironment.Up` |
 | `kmx down` | `AgentEnvironment.Down` |
 | `kmx suite validate` | `AgentSuites.Validate` |
-| Future suite package/build/publish commands | `AgentSuites.Package`, `BuildSandbox`, `Publish` |
+| `kmx suite build` | `AgentSuites.BuildSandbox` (conceptual responsibility; current CLI output is experimental) |
+| `kmx suite push` | `AgentSuites.Publish` |
+| Future standalone suite packaging workflow | `AgentSuites.Package` |
 | `kmx agent lift` | `AgentDeployments.Lift` |
 | `kmx agent status` | `AgentDeployments.Status` |
 | `kmx agent retire` | `AgentDeployments.Retire` |
 
 This is a product-level mapping, not shared implementation today. The current
-CLI does not call these northbound interfaces.
+CLI does not call these northbound interfaces. It also provides `kmx suite pull`
+for artifact retrieval; the public `AgentSuites` contract has no pull method.
 
 ## Working CLI today
 
@@ -304,12 +307,15 @@ afterward:
 # Fixed demonstration that ends with an answer.
 kmx quickstart
 
-# Interactive custom authoring.
-kmx quickstart-wizard
+# Interactive custom authoring on current development builds.
+kmx quickstart --interactive
 
 # Author an agent against an already prepared target.
 kmx agent create
 ```
+
+Tagged v0.4.1 and earlier use `kmx quickstart-wizard` for custom authoring;
+`quickstart --interactive` is not available in those releases.
 
 ## Current limitations
 
@@ -323,8 +329,10 @@ The Go package is alpha design evidence rather than a ready-to-instantiate SDK:
   individually selectable `cluster`, `ollama`, `model`, and `orka` recipe steps.
 - Model or inference provisioning is not yet a separate public lifecycle
   contract.
-- AgentSuite OCI packaging, sandbox construction, publication, and production
-  adapters remain unimplemented.
+- Concrete implementations of the northbound suite and runtime services remain
+  unimplemented. The separate CLI already validates, pushes and pulls AgentSuite
+  artifacts and builds experimental images with Docker buildx. Those builds are
+  not AgentSuite-conformant; see the [suite build reference](kmx.md#experimental-agentsuite-image-build).
 
 The authoritative contract details remain in:
 
