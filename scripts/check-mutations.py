@@ -7,12 +7,10 @@ away, nothing goes red — the tree simply reads clean, and the checker is
 still counted as protection. A checker that passes because it checked
 nothing is worse than no checker at all.
 
-A self-test built from fixture pairs proves a checker gets today's answer
-right. It does not prove the checker would NOTICE tomorrow's wrong answer,
-and the difference is not academic: every finding this file exists to
-close was found by editing a checker until it was worthless and watching
-its own self-test stay green. Ten of thirteen edits to the chat verifier
-went unnoticed. Eleven of fifteen to the README front-door checker.
+A self-test built from fixture pairs checks expected answers. This runner
+also checks that representative deliberate breakages are noticed by the
+checker’s verifier. The retained mutations exercise selection, matching
+and verdict boundaries; they are not exhaustive proof of correctness.
 
 So the contract here is stronger than a fixture pair. For every checker:
 

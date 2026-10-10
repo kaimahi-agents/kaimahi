@@ -30,10 +30,8 @@ builds:
     # Linux host or a Mac running one in a VM (docs/releases.md#install) —
     # the same four platforms as before, no windows/amd64.
     #
-    # -trimpath matches the build this replaced: without it the binary
-    # embeds this checkout's absolute path, breaking the reproducibility
-    # release.yml's "Publish the release" comment claims (rebuild == same
-    # bytes) and the vcs.modified check below it.
+    # Remove checkout paths from compiled binaries. The release workflow
+    # separately checks the embedded VCS revision and clean-tree provenance.
     flags:
       - -trimpath
     ldflags:

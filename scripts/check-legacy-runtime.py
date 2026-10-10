@@ -1461,7 +1461,7 @@ def selftest():
                  "a `retirement` exemption outside the files that do the refusing"),
                 (allowlist_with({"path": "docs/kmx.md", "text": "y",
                                  "category": "historical", "why": "planted"}),
-                 "a `historical` line in a document that is not the board"),
+                 "a `historical` line exemption instead of a whole-file record"),
                 (allowlist_with({"path": "docs/kmx.md", "text": "y",
                                  "category": "future", "why": "planted, and silent about support"}),
                  "a `future` note that never says the future is unsupported"),
