@@ -271,9 +271,9 @@ An older approval-capable process can still use stored grants; source removal is
 revocation or proof that every old replica has stopped. Keep independently
 verified backups and the ownership records needed for teardown.
 
-Chat allocates a free loopback port by default. Explicit fixed `CHAT_PORT`
-values must be distinct when checking two clusters concurrently. Occupied chat
-ports fail rather than silently selecting another cluster's forward.
+Task-backed Orka chat and quickstart use loopback port `19180`; `CHAT_PORT`
+and `KMX_CHAT_PORT` are unsupported. An occupied port causes failure rather
+than attaching to another cluster's forward; there is no automatic free-port fallback.
 
 ## What was verified, and what was not
 
