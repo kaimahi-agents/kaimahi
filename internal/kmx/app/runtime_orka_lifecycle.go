@@ -359,6 +359,9 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	if strings.TrimSpace(request.CaseID) == "" || strings.TrimSpace(request.Input) == "" || len(request.ExpectContains)+len(request.Assertions) == 0 {
 		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires a case id, an input and at least one assertion")
 	}
+	if len(request.ExpectContains)+len(request.Assertions) > agentruntime.EvaluationMaxAssertions {
+		return agentruntime.EvaluationReceipt{}, fmt.Errorf("at most %d assertions are allowed", agentruntime.EvaluationMaxAssertions)
+	}
 	if err := agentruntime.ValidateEvaluationAssertions(request.Assertions); err != nil {
 		return agentruntime.EvaluationReceipt{}, err
 	}

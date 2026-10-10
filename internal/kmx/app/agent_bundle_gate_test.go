@@ -106,15 +106,16 @@ func TestLiftGateReceiptConditions(t *testing.T) {
 }
 
 func TestV2GateRequiresEveryCurrentAssertionDefinition(t *testing.T) {
-	c, err := agentruntime.ParseEvaluationCase([]byte("id: greet\ninput: hi\nexpectContains: [hello]\nassertions:\n- id: negative\n  type: notContains\n  value: refuse\n"))
+	raw := []byte("id: greet\ninput: hi\nexpectContains: [hello]\nassertions:\n- id: negative\n  type: notContains\n  value: refuse\n")
+	c, err := agentruntime.ParseEvaluationCase(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cases := []bundleEvaluationCase{{Case: c}}
+	cases := []bundleEvaluationCase{{Digest: agentruntime.EvaluationCaseDigest(raw), Case: c}}
 	rows := agentruntime.EvaluateAssertions(c, agentruntime.EvaluationEvidence{Answer: "hello", AnswerAvailable: true})
-	for _, mode := range []string{"pass", "legacy", "missing", "definition", "type", "id", "fail", "duplicate", "unknown version", "missing case digest", "missing input digest", "invalid reason", "execution unavailable", "result unavailable", "execution failed"} {
+	for _, mode := range []string{"pass", "legacy", "missing", "definition", "type", "id", "fail", "duplicate", "unknown version", "missing case digest", "missing input digest", "stale case digest", "stale input digest", "missing task name", "missing task uid", "missing answer digest", "unsafe task name", "unsafe task uid", "bad answer digest", "invalid reason", "execution unavailable", "result unavailable", "execution failed"} {
 		t.Run(mode, func(t *testing.T) {
-			r := bundleEvaluationReceipt{SchemaVersion: 2, RunID: strings.Repeat("a", 32), Bundle: "sample", PortableDigest: strings.Repeat("b", 64), CasesDigest: strings.Repeat("c", 64), FullCaseSet: true, Result: "pass", Target: bundleEvaluationTarget{Runtime: agentruntime.Orka, ClusterUID: "staging", Namespace: "orka-system", Agent: "sample", AgentUID: "uid"}, Cases: []bundleEvaluationResult{{ID: "greet", Verdict: "pass", CaseDigest: strings.Repeat("d", 64), InputDigest: strings.Repeat("e", 64), Assertions: append([]agentruntime.EvaluationAssertionResult(nil), rows...)}}}
+			r := bundleEvaluationReceipt{SchemaVersion: 2, RunID: strings.Repeat("a", 32), Bundle: "sample", PortableDigest: strings.Repeat("b", 64), CasesDigest: strings.Repeat("c", 64), FullCaseSet: true, GitCommit: "uncommitted", Result: "pass", Target: bundleEvaluationTarget{Runtime: agentruntime.Orka, ClusterUID: "staging", Namespace: "orka-system", Agent: "sample", AgentUID: "uid"}, Cases: []bundleEvaluationResult{{ID: "greet", Verdict: "pass", CaseDigest: agentruntime.EvaluationCaseDigest(raw), InputDigest: agentruntime.EvaluationInputDigest(c.Input), TaskName: "sample-eval-one", TaskUID: "task-uid", AnswerSHA256: agentruntime.EvaluationAnswerDigest("hello"), Assertions: append([]agentruntime.EvaluationAssertionResult(nil), rows...)}}}
 			switch mode {
 			case "legacy":
 				r.SchemaVersion = 0
@@ -138,6 +139,22 @@ func TestV2GateRequiresEveryCurrentAssertionDefinition(t *testing.T) {
 				r.Cases[0].CaseDigest = ""
 			case "missing input digest":
 				r.Cases[0].InputDigest = ""
+			case "stale case digest":
+				r.Cases[0].CaseDigest = strings.Repeat("f", 64)
+			case "stale input digest":
+				r.Cases[0].InputDigest = strings.Repeat("f", 64)
+			case "missing task name":
+				r.Cases[0].TaskName = ""
+			case "missing task uid":
+				r.Cases[0].TaskUID = ""
+			case "missing answer digest":
+				r.Cases[0].AnswerSHA256 = ""
+			case "unsafe task name":
+				r.Cases[0].TaskName = "task\ncanary"
+			case "unsafe task uid":
+				r.Cases[0].TaskUID = "uid\ncanary"
+			case "bad answer digest":
+				r.Cases[0].AnswerSHA256 = "bad"
 			case "invalid reason":
 				r.Cases[0].Assertions[0].Reason = "private-reason-canary"
 			case "execution unavailable":
@@ -162,11 +179,75 @@ func TestV2GateRefusesForgedUnsupportedToolPass(t *testing.T) {
 			rows := agentruntime.EvaluateAssertions(c, agentruntime.EvaluationEvidence{ToolSupported: false})
 			rows[0].Verdict = agentruntime.EvaluationPass
 			rows[0].Reason = "assertion satisfied"
-			r := bundleEvaluationReceipt{SchemaVersion: 2, RunID: strings.Repeat("a", 32), Cases: []bundleEvaluationResult{{ID: "one", Verdict: "pass", CaseDigest: strings.Repeat("b", 64), InputDigest: strings.Repeat("c", 64), Assertions: rows}}}
-			if bundleReceiptCaseResultsPass(r, []bundleEvaluationCase{{Case: c}}) {
+			digest := agentruntime.EvaluationCaseDigest([]byte("authored tool case"))
+			r := bundleEvaluationReceipt{SchemaVersion: 2, RunID: strings.Repeat("a", 32), Bundle: "sample", PortableDigest: strings.Repeat("b", 64), CasesDigest: strings.Repeat("c", 64), GitCommit: "uncommitted", Result: "pass", Cases: []bundleEvaluationResult{{ID: "one", Verdict: "pass", CaseDigest: digest, InputDigest: agentruntime.EvaluationInputDigest(c.Input), TaskName: "task-one", TaskUID: "task-uid", AnswerSHA256: agentruntime.EvaluationAnswerDigest("hello"), Assertions: rows}}}
+			if bundleReceiptCaseResultsPass(r, []bundleEvaluationCase{{Digest: digest, Case: c}}) {
 				t.Fatal("forged unsupported tool pass qualified gate")
 			}
 		})
+	}
+}
+
+func TestGateReceiptJSONShape(t *testing.T) {
+	for _, tc := range []struct {
+		name, root, member string
+		valid              bool
+	}{
+		{name: "omitted legacy fields", valid: true},
+		{name: "old nullable arrays", member: `"matched":null,"missing":null,`, valid: true},
+		{name: "null version", root: `"schemaVersion":null,`},
+		{name: "null run id", root: `"runID":null,`},
+		{name: "null discriminants", root: `"schemaVersion":null,"runID":null,`},
+		{name: "legacy empty case digest", member: `"caseDigest":"",`},
+		{name: "legacy null input digest", member: `"inputDigest":null,`},
+		{name: "legacy empty assertions", member: `"assertions":[],`},
+		{name: "legacy null assertions", member: `"assertions":null,`},
+		{name: "unknown root field", root: `"unknown":true,`},
+		{name: "unknown case field", member: `"unknown":true,`},
+		{name: "wrong assertions type", member: `"assertions":{},`},
+		{name: "wrong cases type", root: `"cases":{},`},
+		{name: "null case", root: `"cases":[null],`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle := t.TempDir()
+			if err := os.Mkdir(filepath.Join(bundle, "receipts"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			r := bundleEvaluationReceipt{Bundle: "sample", Target: bundleEvaluationTarget{Runtime: agentruntime.Orka}, Cases: []bundleEvaluationResult{{ID: "one", Verdict: "pass"}}}
+			raw, err := json.Marshal(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := strings.Replace(string(raw), `"id":"one"`, tc.member+`"id":"one"`, 1)
+			body = "{" + tc.root + body[1:]
+			if err := os.WriteFile(filepath.Join(bundle, "receipts", "eval-test.json"), []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err = readBundleGateEvidence(bundle)
+			if tc.valid && err != nil {
+				t.Fatalf("legacy receipt refused: %v", err)
+			}
+			if !tc.valid && (err == nil || !strings.Contains(err.Error(), "invalid evaluation receipt")) {
+				t.Fatalf("malformed receipt accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestLegacyGateRefusesV2Members(t *testing.T) {
+	for _, member := range []string{"caseDigest", "inputDigest", "assertions"} {
+		r := bundleEvaluationReceipt{Cases: []bundleEvaluationResult{{ID: "one", Verdict: "pass"}}}
+		switch member {
+		case "caseDigest":
+			r.Cases[0].CaseDigest = strings.Repeat("a", 64)
+		case "inputDigest":
+			r.Cases[0].InputDigest = strings.Repeat("a", 64)
+		case "assertions":
+			r.Cases[0].Assertions = []agentruntime.EvaluationAssertionResult{{ID: "check"}}
+		}
+		if bundleReceiptCaseResultsPass(r, []bundleEvaluationCase{{Case: agentruntime.EvaluationCase{ID: "one", ExpectContains: []string{"hello"}}}}) {
+			t.Errorf("legacy gate accepted %s", member)
+		}
 	}
 }
 
@@ -253,7 +334,7 @@ func TestLiftGateRequiresPassingResultForEachCurrentCase(t *testing.T) {
 			if err := json.Unmarshal(raw, &receipt); err != nil {
 				t.Fatal(err)
 			}
-			receipt.Cases = tc.cases
+			receipt.Cases = append([]bundleEvaluationResult{}, tc.cases...)
 			raw, err = json.Marshal(receipt)
 			if err != nil {
 				t.Fatal(err)

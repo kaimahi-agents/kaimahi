@@ -212,6 +212,9 @@ func evaluationAssertionOperandField(kind string) string {
 // slice is valid here; the request/case boundary requires at least one explicit
 // assertion or legacy expectation.
 func ValidateEvaluationAssertions(assertions []EvaluationAssertion) error {
+	if len(assertions) > EvaluationMaxAssertions {
+		return fmt.Errorf("at most %d assertions are allowed", EvaluationMaxAssertions)
+	}
 	seen := make(map[string]bool, len(assertions))
 	for _, a := range assertions {
 		if !evaluationCaseIDRE.MatchString(a.ID) {

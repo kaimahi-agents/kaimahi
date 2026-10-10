@@ -165,6 +165,9 @@ func readSessionsVerificationSource(path string) (sessionsEvaluationReceipt, []b
 	if !evaluationReceiptVersion(receipt.SchemaVersion, receipt.RunID) {
 		return receipt, nil, fmt.Errorf("invalid sessions receipt version")
 	}
+	if !evaluationReceiptJSONShape(raw, receipt.SchemaVersion, receipt.RunID, false) {
+		return receipt, nil, fmt.Errorf("invalid sessions receipt JSON shape")
+	}
 	seen := map[string]bool{}
 	sessions := map[string]bool{}
 	var outcomes []bundleEvaluationResult
@@ -235,6 +238,38 @@ func unambiguousSessionsReceiptJSON(raw []byte) bool {
 	return err == io.EOF
 }
 
+// Check raw members as well as typed values: null scalars must not become zero,
+// and empty v2 members must not disguise a receipt as legacy evidence.
+func evaluationReceiptJSONShape(raw []byte, version int, runID string, legacyOrka bool) bool {
+	if !evaluationReceiptVersion(version, runID) || !evaluationDiffNullJSON(raw, legacyOrka && version == 0) {
+		return false
+	}
+	if version == 2 {
+		return true
+	}
+	var root map[string]json.RawMessage
+	if json.Unmarshal(raw, &root) != nil {
+		return false
+	}
+	for key, value := range root {
+		if !strings.EqualFold(key, "cases") {
+			continue
+		}
+		var cases []map[string]json.RawMessage
+		if json.Unmarshal(value, &cases) != nil {
+			return false
+		}
+		for _, c := range cases {
+			for member := range c {
+				if strings.EqualFold(member, "caseDigest") || strings.EqualFold(member, "inputDigest") || strings.EqualFold(member, "assertions") {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
 // These payload-free checks are shared with offline v2 receipt consumers.
 func evaluationReceiptVersion(version int, runID string) bool {
 	return version == 0 && runID == "" || version == 2 && evaluationRunID(runID)
@@ -243,7 +278,7 @@ func evaluationReceiptVersion(version int, runID string) bool {
 var evaluationEvidenceID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
 
 func evaluationAssertionRows(rows []agentruntime.EvaluationAssertionResult) bool {
-	if len(rows) == 0 || len(rows) > 1000 {
+	if len(rows) == 0 || len(rows) > agentruntime.EvaluationMaxAssertions {
 		return false
 	}
 	seen := make(map[string]bool, len(rows))

@@ -120,11 +120,12 @@ revisions, but need compatible runtime identities and matching inputs and
 assertion IDs/definitions for verdict comparisons. Readability is not a general
 migration or cross-version compatibility promise for local evidence.
 
-Status skips malformed deployment receipts,
-counts a malformed, incomplete or mismatched evaluation receipt as `none`,
-and a malformed remembered selection is refused as ambiguous. Status checks target identity
-and recorded digests before counting evidence; another kmx version's readable
-receipt does not by itself establish that today's bundle or target was tested.
+Status skips malformed deployment receipts and reports `none` for evaluation
+receipts with invalid JSON shape or mismatched target identity or digests.
+A claimed evaluation pass also requires complete, valid passing case evidence;
+recorded `fail` and `unknown` outcomes do not receive that per-case validation.
+A malformed remembered selection is refused as ambiguous. Another kmx version's
+readable receipt does not by itself establish that today's bundle or target was tested.
 
 Today kmx recognizes the Orka and Kagent extension versions above, but no
 negotiation for future versions. The optional

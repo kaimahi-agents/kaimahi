@@ -155,6 +155,85 @@ func TestVerifySessionsV2AssertionValidation(t *testing.T) {
 	}
 }
 
+func TestVerifySessionsRejectsNullAndMixedLegacyShapesBeforeRPC(t *testing.T) {
+	for _, tc := range []struct {
+		name, root, member string
+		valid              bool
+	}{
+		{name: "omitted legacy fields", valid: true},
+		{name: "null version", root: `"schemaVersion":null,`},
+		{name: "null run id", root: `"runID":null,`},
+		{name: "null discriminants", root: `"schemaVersion":null,"runID":null,`},
+		{name: "legacy empty case digest", member: `"caseDigest":"",`},
+		{name: "legacy null case digest", member: `"caseDigest":null,`},
+		{name: "legacy empty input digest", member: `"inputDigest":"",`},
+		{name: "legacy empty assertions", member: `"assertions":[],`},
+		{name: "legacy null assertions", member: `"assertions":null,`},
+		{name: "legacy null model mixed", member: `"modelMixed":null,`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, o, _, s := verifyAppFixture(t)
+			raw, err := os.ReadFile(o.ReceiptPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := strings.Replace(string(raw), `"id":"one"`, tc.member+`"id":"one"`, 1)
+			body = "{" + tc.root + body[1:]
+			if err := os.WriteFile(o.ReceiptPath, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			err = a.VerifyAgentSessions(o)
+			if tc.valid {
+				if err != nil || s.reads.Load() != 1 {
+					t.Fatalf("legacy receipt refused: %v reads=%d", err, s.reads.Load())
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "invalid sessions receipt") || s.reads.Load() != 0 {
+				t.Fatalf("malformed receipt: %v reads=%d", err, s.reads.Load())
+			}
+		})
+	}
+}
+
+func TestV2ReceiptShapeRejectsMalformedCasesBeforeRPCAndGate(t *testing.T) {
+	for _, member := range []string{`"cases":[null]`, `"cases":{}`, `"cases":[{"assertions":null}]`, `"cases":[{"assertions":{}}]`, `"unknown":true`} {
+		t.Run(member, func(t *testing.T) {
+			a, o, r, s := verifyAppFixture(t)
+			r.SchemaVersion, r.RunID = 2, strings.Repeat("a", 32)
+			saveVerifyInput(t, o.ReceiptPath, r)
+			raw, err := os.ReadFile(o.ReceiptPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var root map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &root); err != nil {
+				t.Fatal(err)
+			}
+			var patch map[string]json.RawMessage
+			if err := json.Unmarshal([]byte("{"+member+"}"), &patch); err != nil {
+				t.Fatal(err)
+			}
+			for key, value := range patch {
+				root[key] = value
+			}
+			raw, err = json.Marshal(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(o.ReceiptPath, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.VerifyAgentSessions(o); err == nil || !strings.Contains(err.Error(), "invalid sessions receipt") || s.reads.Load() != 0 {
+				t.Fatalf("malformed receipt: %v reads=%d", err, s.reads.Load())
+			}
+			if _, err := readBundleGateEvidence(filepath.Dir(filepath.Dir(o.ReceiptPath))); err == nil || !strings.Contains(err.Error(), "invalid evaluation receipt") {
+				t.Fatalf("gate accepted malformed receipt: %v", err)
+			}
+		})
+	}
+}
+
 func TestVerifySessionsPreflightNeverConnects(t *testing.T) {
 	for _, tc := range []struct {
 		name, want string

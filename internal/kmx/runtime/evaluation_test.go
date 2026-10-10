@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -112,6 +113,53 @@ func TestParseEvaluationCaseScansTypedAssertionCredentialsBeforeErrors(t *testin
 		_, err := ParseEvaluationCase([]byte("id: a\ninput: public\nassertions:\n" + assertion + "\n"))
 		if err == nil || !strings.Contains(err.Error(), "shaped like") || strings.Contains(err.Error(), secret) {
 			t.Fatalf("credential was not safely rejected: %v", err)
+		}
+	}
+}
+
+func TestEvaluationAssertionCountPreflight(t *testing.T) {
+	for _, count := range []int{1000, 1001} {
+		for _, kind := range []string{"legacy", "explicit", "mixed"} {
+			t.Run(fmt.Sprintf("%s/%d", kind, count), func(t *testing.T) {
+				var doc strings.Builder
+				doc.WriteString("id: one\ninput: hello\n")
+				legacy := 0
+				if kind == "legacy" {
+					legacy = count
+				}
+				if kind == "mixed" {
+					legacy = count - 1
+				}
+				if legacy > 0 {
+					doc.WriteString("expectContains:\n")
+					doc.WriteString(strings.Repeat("- hello\n", legacy))
+				}
+				var assertions []EvaluationAssertion
+				if count > legacy {
+					doc.WriteString("assertions:\n")
+					for i := 0; i < count-legacy; i++ {
+						id := fmt.Sprintf("check-%d", i)
+						fmt.Fprintf(&doc, "- {id: %s, type: contains, value: hello}\n", id)
+						assertions = append(assertions, EvaluationAssertion{ID: id, Type: "contains", Value: "hello"})
+					}
+				}
+				_, err := ParseEvaluationCase([]byte(doc.String()))
+				if count == 1000 && err != nil {
+					t.Fatalf("at limit rejected: %v", err)
+				}
+				if count == 1001 && (err == nil || !strings.Contains(err.Error(), "at most 1000")) {
+					t.Fatalf("over limit not refused: %v", err)
+				}
+				if kind == "explicit" {
+					err = ValidateEvaluationAssertions(assertions)
+					if count == 1000 && err != nil {
+						t.Fatal(err)
+					}
+					if count == 1001 && (err == nil || !strings.Contains(err.Error(), "at most 1000")) {
+						t.Fatalf("standalone over limit not refused: %v", err)
+					}
+				}
+			})
 		}
 	}
 }

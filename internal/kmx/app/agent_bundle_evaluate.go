@@ -97,8 +97,9 @@ type bundleEvaluationResult struct {
 
 // bundleEvaluationCase is one decoded case and the file it came from.
 type bundleEvaluationCase struct {
-	File string
-	Case agentruntime.EvaluationCase
+	File   string
+	Digest string
+	Case   agentruntime.EvaluationCase
 }
 
 // EvaluateAgentBundle runs the bundle's cases against its deployed revision,
@@ -419,7 +420,7 @@ func loadBundleEvaluationCases(bundle string) ([]bundleEvaluationCase, []agentru
 			return nil, nil, fmt.Errorf("%s/%s repeats case id %q from %s", agentruntime.EvaluationCaseDir, entry.Name(), c.ID, previous)
 		}
 		seen[c.ID] = entry.Name()
-		cases = append(cases, bundleEvaluationCase{File: entry.Name(), Case: c})
+		cases = append(cases, bundleEvaluationCase{File: entry.Name(), Digest: agentruntime.EvaluationCaseDigest(raw), Case: c})
 		files = append(files, agentruntime.EvaluationCaseFile{Name: entry.Name(), Bytes: raw})
 	}
 	if len(cases) == 0 {

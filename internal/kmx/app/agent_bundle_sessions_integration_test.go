@@ -147,6 +147,21 @@ func readSessionsAppReceipt(t *testing.T, bundle string) (sessionsEvaluationRece
 	return receipt, raw
 }
 
+func TestSessionsAssertionCapPrecedesSessionCreation(t *testing.T) {
+	s := &sessionsEvalServer{model: "test-model"}
+	a, opt, _ := newSessionsAppFixture(t, s)
+	body := "id: one\ninput: hello\nexpectContains:\n" + strings.Repeat("- hello\n", 1000) + "assertions:\n- {id: check, type: contains, value: hello}\n"
+	if err := os.WriteFile(filepath.Join(opt.BundleDir, "eval", "a.yaml"), []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := a.EvaluateAgentBundle(opt)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err == nil || !strings.Contains(err.Error(), "at most 1000") || len(s.creates) != 0 || len(s.execs) != 0 {
+		t.Fatalf("over-limit request: %v creates=%d execs=%d", err, len(s.creates), len(s.execs))
+	}
+}
+
 func TestSessionsStructuredExecutionFailurePrecedesAssertions(t *testing.T) {
 	for _, tc := range []struct {
 		name, state, model, want, detail string

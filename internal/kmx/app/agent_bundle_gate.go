@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -112,6 +113,15 @@ func readBundleGateEvidence(bundle string) ([]bundleGateEvidence, error) {
 		if err := json.Unmarshal(raw, &receipt); err != nil {
 			return nil, fmt.Errorf("invalid evaluation receipt %s: %w", entry.Name(), err)
 		}
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		var typed any = &receipt
+		if receipt.Target.Runtime == "agentsessions" {
+			typed = &sessionsEvaluationReceipt{}
+		}
+		if decoder.Decode(typed) != nil || !utf8.Valid(raw) || !unambiguousSessionsReceiptJSON(raw) || !evaluationReceiptJSONShape(raw, receipt.SchemaVersion, receipt.RunID, receipt.Target.Runtime == agentruntime.Orka) {
+			return nil, fmt.Errorf("invalid evaluation receipt %s JSON shape", entry.Name())
+		}
 		evidence = append(evidence, bundleGateEvidence{Receipt: receipt, File: entry.Name()})
 	}
 	return evidence, nil
@@ -185,6 +195,11 @@ func bundleReceiptCaseResultsPass(receipt bundleEvaluationReceipt, cases []bundl
 		return false
 	}
 	if receipt.SchemaVersion == 0 && receipt.RunID == "" {
+		for _, c := range receipt.Cases {
+			if c.CaseDigest != "" || c.InputDigest != "" || len(c.Assertions) != 0 {
+				return false
+			}
+		}
 		for _, c := range cases {
 			if len(c.Case.Assertions) != 0 {
 				return false
@@ -192,18 +207,24 @@ func bundleReceiptCaseResultsPass(receipt bundleEvaluationReceipt, cases []bundl
 		}
 		return true
 	}
-	if receipt.SchemaVersion != 2 || !evaluationRunID(receipt.RunID) {
+	if receipt.SchemaVersion != 2 {
 		return false
 	}
-	expected := make(map[string][]agentruntime.EvaluationAssertion, len(cases))
-	for _, c := range cases {
-		expected[c.Case.ID] = agentruntime.EvaluationCaseAssertions(c.Case)
+	if _, ok := evaluationDiffMetadata(receipt.SchemaVersion, receipt.RunID, receipt.Bundle, receipt.PortableDigest, receipt.CasesDigest, receipt.GitCommit, receipt.Result, receipt.FullCaseSet); !ok {
+		return false
 	}
+	expected := make(map[string]bundleEvaluationCase, len(cases))
+	for _, c := range cases {
+		expected[c.Case.ID] = c
+	}
+	names, tasks := map[string]bool{}, map[string]bool{}
 	for _, c := range receipt.Cases {
-		if !evaluationCaseEvidence(c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) {
+		current := expected[c.ID]
+		if !evaluationCaseEvidence(c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) || c.CaseDigest != current.Digest || c.InputDigest != agentruntime.EvaluationInputDigest(current.Case.Input) || !diffIdentity(c.TaskName) || !diffIdentity(c.TaskUID) || !verificationDigest(c.AnswerSHA256) || names[c.TaskName] || tasks[c.TaskUID] || len(c.Matched)+len(c.Missing) != 0 {
 			return false
 		}
-		definitions := expected[c.ID]
+		names[c.TaskName], tasks[c.TaskUID] = true, true
+		definitions := agentruntime.EvaluationCaseAssertions(current.Case)
 		if len(c.Assertions) != len(definitions) {
 			return false
 		}

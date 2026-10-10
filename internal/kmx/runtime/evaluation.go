@@ -24,6 +24,9 @@ import (
 // logical path prefix each case file is framed under in the cases digest.
 const EvaluationCaseDir = "eval"
 
+// EvaluationMaxAssertions bounds the combined legacy and explicit case evidence.
+const EvaluationMaxAssertions = 1000
+
 // EvaluationCase is one authored case file: an id, an input and at least one
 // legacy expected substring or explicit assertion. Unknown fields are refused,
 // so a misspelled assertion can never silently stop being checked.
@@ -101,6 +104,9 @@ func ParseEvaluationCase(data []byte) (EvaluationCase, error) {
 	}
 	if len(c.ExpectContains) == 0 && len(c.Assertions) == 0 {
 		return EvaluationCase{}, fmt.Errorf("evaluation case %s: at least one expectContains string or assertion is required", c.ID)
+	}
+	if len(c.ExpectContains)+len(c.Assertions) > EvaluationMaxAssertions {
+		return EvaluationCase{}, fmt.Errorf("evaluation case %s: at most %d assertions are allowed", c.ID, EvaluationMaxAssertions)
 	}
 	for i, expected := range c.ExpectContains {
 		if strings.TrimSpace(expected) == "" || strings.IndexFunc(expected, unicode.IsControl) >= 0 {

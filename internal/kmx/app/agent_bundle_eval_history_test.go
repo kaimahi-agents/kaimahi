@@ -83,6 +83,20 @@ func TestOrkaAdapterPrevalidatesAssertions(t *testing.T) {
 	}
 }
 
+func TestOrkaAssertionCapPrecedesTaskCreation(t *testing.T) {
+	f := newEvalFixture(t, map[string]string{"a.yaml": evalHelloCase})
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	request := agentruntime.EvaluationRequest{CaseID: "one", Input: "hello", PortableDigest: f.digest, ExpectContains: make([]string, 1000), Assertions: []agentruntime.EvaluationAssertion{{ID: "check", Type: "contains", Value: "hello"}}}
+	for i := range request.ExpectContains {
+		request.ExpectContains[i] = "hello"
+	}
+	_, err := (orkaRuntimeAdapter{app: f.app, resultPort: f.opt.ResultPort}).Evaluate(ctx, agentruntime.AgentRef{Namespace: "orka-system", Name: f.name, UID: "agent-uid"}, request)
+	if err == nil || !strings.Contains(err.Error(), "at most 1000") || f.taskCreates(t) != 0 {
+		t.Fatalf("over-limit request: %v tasks=%d", err, f.taskCreates(t))
+	}
+}
+
 func TestEvaluationRetainsPrivateHistoryAndLatest(t *testing.T) {
 	f := newEvalFixture(t, map[string]string{"a.yaml": evalHelloCase})
 	f.answers["Say hello."] = "hello private-answer-canary"
