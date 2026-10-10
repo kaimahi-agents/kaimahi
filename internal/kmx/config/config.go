@@ -1,11 +1,5 @@
-// Package config resolves kmx's settings.
-//
-// Every knob keeps the name this repository already uses — KIND_CLUSTER,
-// KUBE_CTX, CONTAINER_ENGINE, MODEL and KAIMAHI_CONFIRM from
-// the Makefile, so delegating targets pass nothing: an
-// operator's `KIND_CLUSTER=mine make up` and their `KIND_CLUSTER=mine kmx up`
-// are the same run. Where the Makefile has a default, that default is
-// repeated here verbatim; the two are pinned together by a test.
+// Package config resolves kmx settings from CLI overrides, environment variables
+// and the saved context, and locates state and toolchain directories.
 package config
 
 import (
@@ -15,8 +9,7 @@ import (
 	"strings"
 )
 
-// Pinned versions and defaults. These are the Makefile's, and
-// TestDefaultsMatchTheMakefile refuses to let them drift.
+// Product defaults and namespace hints.
 const (
 	DefaultKindCluster = "kaimahi-p1"
 	DefaultModel       = "qwen2.5:3b"
