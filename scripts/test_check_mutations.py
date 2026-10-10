@@ -258,14 +258,14 @@ class ClassificationTests(unittest.TestCase):
         self.change("docs/readme.md", "updated")
         self.commit()
         got = self.classify(head=self.merge_head())
-        self.assertEqual(got, {"docs_only": "true", "scripts_changed": "false"})
+        self.assertEqual(got, {"docs_only": "true", "scripts_changed": "false", "kagent_changed": "false"})
 
     def test_mixed_paths_do_not_hide_scripts_after_first_non_doc(self):
         self.change("Makefile", "all:")
         self.change("scripts/new.py", "pass")
         self.commit()
         got = self.classify(head=self.merge_head())
-        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true"})
+        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true", "kagent_changed": "false"})
 
     def test_script_deletion_and_rename_out_are_script_changes(self):
         for rename in (False, True):
@@ -278,7 +278,7 @@ class ClassificationTests(unittest.TestCase):
                     old.unlink()
                 self.commit()
                 got = self.classify(head=self.merge_head())
-                self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true"})
+                self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true", "kagent_changed": "false"})
 
     def test_git_quoted_script_paths_still_run_mutations(self):
         for name in ('scripts/check-é.py', 'scripts/check-"quote.py', 'scripts/check-\ttab.py'):
@@ -287,7 +287,7 @@ class ClassificationTests(unittest.TestCase):
                 self.change(name, "pass")
                 self.commit()
                 got = self.classify(head=self.merge_head())
-                self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true"})
+                self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true", "kagent_changed": "false"})
 
     def test_stale_event_base_does_not_include_other_peoples_scripts(self):
         self.change("scripts/old.py", "unrelated merge")
@@ -295,13 +295,13 @@ class ClassificationTests(unittest.TestCase):
         self.change("docs/readme.md", "PR docs")
         self.commit()
         got = self.classify(base=self.base, head=self.merge_head(current_base))
-        self.assertEqual(got, {"docs_only": "true", "scripts_changed": "false"})
+        self.assertEqual(got, {"docs_only": "true", "scripts_changed": "false", "kagent_changed": "false"})
 
     def test_unresolvable_diff_runs_mutations(self):
         got = self.classify(head="missing-merge")
-        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true"})
+        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true", "kagent_changed": "true"})
         got = self.classify(event="push", base="missing-base")
-        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true"})
+        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true", "kagent_changed": "true"})
 
 
 class WorkflowRoutingTests(unittest.TestCase):
@@ -314,6 +314,7 @@ class WorkflowRoutingTests(unittest.TestCase):
         expression = str(expression).strip().removeprefix("${{").removesuffix("}}")
         expression = expression.replace("github.event_name", repr(event))
         expression = expression.replace("steps.mutation_changes.outputs.scripts_changed", repr(scripts_changed))
+        expression = expression.replace("needs.classify-change.outputs.kagent_changed", repr("false"))
         expression = expression.replace("github.ref", repr("refs/heads/main"))
         expression = expression.replace("always()", "True").replace("&&", " and ").replace("||", " or ")
         return bool(eval(expression, {"__builtins__": {}}, {}))
@@ -339,11 +340,14 @@ class WorkflowRoutingTests(unittest.TestCase):
         self.assertTrue(any(self.enabled(s.get("if", "True"), "pull_request", "false") for s in tests),
                         "workflow/action-only changes must exercise routing tests")
 
-    def test_nightly_runs_only_hygiene_and_preserves_other_events(self):
+    def test_nightly_runs_hygiene_classification_new_proof_and_aggregator(self):
         for name, job in self.workflow["jobs"].items():
             with self.subTest(job=name):
                 expression = job.get("if", "True")
-                self.assertEqual(self.enabled(expression, "schedule"), name == "hygiene")
+                self.assertEqual(self.enabled(expression, "schedule"), name in {
+                    "hygiene", "classify-change", "e2e-kagent-lift", "e2e-hello-world"})
+                if name == "e2e-kagent-lift":
+                    continue  # its PR routing is exercised in test_kagent_lift_ci.py
                 if name != "kmx-clone-free":
                     self.assertTrue(self.enabled(expression, "pull_request"))
         triggers = self.workflow.get("on", self.workflow.get(True))

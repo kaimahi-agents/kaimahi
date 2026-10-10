@@ -41,6 +41,7 @@ type App struct {
 	chatClusterName string
 	bundleRoot      string
 	liftReuse       bool
+	kagentProfile   *kagentProfile
 	// operationProgress reports real stage transitions to an owning deployment UI.
 	operationProgress func(name, status string, err error)
 	Cfg               *config.Config

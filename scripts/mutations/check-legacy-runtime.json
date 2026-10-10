@@ -19,7 +19,7 @@
     {
       "name": "findings are collected and then reported as clean",
       "breaks": "The scan is correct and its verdict is thrown away \u2014 indistinguishable from a clean tree from the outside, and the reason the self-test goes through report() and main() rather than only through judge().",
-      "find": "        print(f\"\\n{len(problems)} place(s). Remove the surface, add a legitimate create-support \"\n              \"path to both closed policy sets, or \u2014 for an exact refusal, absence assertion, \"\n              \"or explicitly unsupported future \u2014 name the line in \"\n              f\"{ALLOWLIST.relative_to(ROOT)} with a category and a reason.\", file=sys.stderr)\n        return 1",
+      "find": "        print(f\"\\n{len(problems)} place(s). Remove the surface, add a legitimate bounded-support \"\n              \"path to both closed policy sets, or \u2014 for an exact refusal, absence assertion, \"\n              \"or explicitly unsupported future \u2014 name the line in \"\n              f\"{ALLOWLIST.relative_to(ROOT)} with a category and a reason.\", file=sys.stderr)\n        return 1",
       "replace": "        return 0"
     },
     {

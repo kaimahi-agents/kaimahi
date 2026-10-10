@@ -1,11 +1,11 @@
 {
-  "why": "The closed boundary around explicit Kagent v0.10.2 create support. scoped_support names the only production, test, bundle-fixture, current-doc, and CI-workflow files that may use approved Kagent vocabulary; scripts/check-legacy-runtime.py independently pins the same paths and the exact rule classes they waive. Non-waivable operation rules also scan bounded multiline compounds, while exact historical, teardown, refusal, absence, and external test-fixture exemptions remain original physical lines. A stale line, widened path, widened rule, or widened compound window is a failure.",
+  "why": "Closed explicit Kagent v0.10.2 create and literal-v0.10.3 bundle render/lift/status profiles. Python and JSON independently pin vocabulary paths/rules, qualified bundle rule classes, and exact source-helper path/statement/rule tuples. Bounded multiline scanning remains active; installer/upgrade/chat/eval/list/show/console/up/AKS/coordination/skills/update/retire are not globally waived. Existing history/refusal/absence exemptions and dedicated external qualification fixtures remain exact physical lines. Stale excerpts, unequal policy halves or widened paths/rules/windows fail closed.",
   "historical_files": [
     "CHANGELOG.md",
     "docs/reviews/"
   ],
   "scoped_support": {
-    "why": "These paths may waive only bare-name, API group, v1alpha2, ModelConfig/RemoteMCPServer, official-image, and create-selector findings. Installer assets, moving pins, old commands, non-create runtime flags, payloads, and broad operational claims remain forbidden in every one of them, including when a construct spans a bounded multiline window. The workflow category is exactly ci.yml and does not waive installer rules; its four official content-addressed chart pull/install commands are separate exact physical-line fixtures below.",
+    "why": "Paths alone waive only bare-name, API group, v1alpha2, ModelConfig/RemoteMCPServer and official-image vocabulary; the selector additionally requires create context or qualified bundle lift/status. qualified_bundle_rules earn waivers only from their own literal-v0.10.3 construct, bounded current-doc contract or closed exact executable source helper. No path is an installer, moving-version or generic lifecycle bypass. Workflow remains exactly ci.yml; qualification is the closed script/fixture/routing set. External Helm permission is only four exact commands in ci.yml and four in scripts/ci/kagent-lift.sh; the Python helper may only name the exact disabled-subchart list, never install.",
     "rules": [
       "api-group",
       "api-kind",
@@ -14,16 +14,35 @@
       "create-selector",
       "bare-name"
     ],
+    "qualified_bundle_rules": [
+      "create-selector",
+      "moving-version",
+      "unsupported-runtime-command",
+      "unsupported-runtime-options",
+      "broad-operation",
+      "restored-operation-identifier"
+    ],
     "files": {
       "production": [
         "cmd/kmx/agent_commands.go",
+        "cmd/kmx/agent_lift_commands.go",
+        "cmd/kmx/agent_status_commands.go",
+        "internal/kmx/app/app.go",
         "internal/kmx/app/agent_bundle_evaluate.go",
+        "internal/kmx/app/agent_bundle_lift.go",
+        "internal/kmx/app/agent_bundle_status.go",
         "internal/kmx/app/create.go",
         "internal/kmx/app/create_kagent.go",
         "internal/kmx/app/kagent_create_online.go",
+        "internal/kmx/app/kagent_bundle_deploy.go",
+        "internal/kmx/app/kagent_bundle_status.go",
+        "internal/kmx/app/kagent_bundle_lift.go",
+        "internal/kmx/app/kagent_bundle_receipt.go",
+        "internal/kmx/app/kagent_profile.go",
         "internal/kmx/app/runtime_kagent_lifecycle.go",
         "internal/kmx/app/targets.go",
         "internal/kmx/runtime/kagent_bindings.go",
+        "internal/kmx/runtime/lifecycle.go",
         "internal/kmx/runtime/portable.go",
         "internal/kmx/runtime/prepared.go",
         "internal/kmx/runtime/runtime.go",
@@ -31,11 +50,16 @@
       ],
       "test": [
         "cmd/kmx/agent_create_test.go",
+        "cmd/kmx/agent_lift_commands_test.go",
+        "cmd/kmx/agent_status_commands_test.go",
         "cmd/kmx/targets_commands_test.go",
         "internal/kmx/app/targets_test.go",
         "internal/kmx/app/agent_bundle_runtime_refusal_test.go",
         "internal/kmx/app/bundle_format_compat_test.go",
         "internal/kmx/app/create_kagent_test.go",
+        "internal/kmx/app/kagent_bundle_files_test.go",
+        "internal/kmx/app/kagent_lift_test.go",
+        "internal/kmx/app/kagent_profile_test.go",
         "internal/kmx/app/testdata/kubectl/kagent_test.go",
         "internal/kmx/runtime/kagent_bindings_test.go",
         "internal/kmx/runtime/lifecycle_test.go",
@@ -68,10 +92,323 @@
       ],
       "workflow": [
         ".github/workflows/ci.yml"
+      ],
+      "qualification": [
+        ".github/actions/classify-change/action.yml",
+        "scripts/ci/kagent-lift.sh",
+        "scripts/ci/kagent-lift.py",
+        "scripts/ci/kagent-lift-fixture.py",
+        "scripts/test_check_mutations.py",
+        "scripts/test_kagent_lift.py",
+        "scripts/test_kagent_lift_ci.py",
+        "scripts/test_kagent_lift_fixture.py"
       ]
     }
   },
   "lines": [
+    {
+      "path": "internal/kmx/app/kagent_bundle_files_test.go",
+      "text": "if err := os.WriteFile(filepath.Join(path+\"-old\", \"kagent-v0.10.3\", \"input\"), []byte(\"anchored\"), 0600); err != nil {",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Exact filesystem fixture writes independent anchored bytes into the original version-separated receipt directory after its parent pathname is rebound to a symlink. The test proves the open descriptor still reads the original directory and publication refuses the intermediate symlink. Only this statement at this test path waives moving-version."
+    },
+    {
+      "path": "scripts/test_kagent_lift.py",
+      "text": "subprocess.run([str(wrapper), \"--context\", \"kind-kmx-kagent-lift\", *args], check=True,",
+      "category": "qualified-source",
+      "rules": ["broad-operation"],
+      "why": "Exact negative mutation-audit fixture invokes a disposable fake kubectl wrapper to distinguish auth predicate/read/dry-run argv from an actual create. This subprocess call is not an installed Kagent run verb. Only this physical statement at this Python test path earns broad-operation; changed argv, other paths and installer rules remain refused."
+    },
+    {
+      "path": "internal/kmx/app/testdata/kubectl/kagent_test.go",
+      "text": "podImage = \"ghcr.io/kagent-dev/kagent/controller:latest\"",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Exact negative pod-reference fixture intentionally supplies a foreign controller image so the qualified lift rejects it despite matching config-digest evidence. Only this statement at this test path waives moving-version; the literal remains independent of production constants."
+    },
+    {
+      "path": "scripts/test_kagent_lift.py",
+      "text": "raw = b\"private prompt and credential\\nError: Kagent controller workload: pod does not have exactly one controller container using ghcr.io/kagent-dev/kagent/controller:0.10.3; no Kubernetes resources were changed\"",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Exact negative diagnostic fixture includes private stderr and an independently literal controller version to prove redaction projects only the closed failure code. Only this physical statement at this test path earns moving-version; no executable support or installer permission is granted."
+    },
+    {
+      "path": "scripts/test_kagent_lift.py",
+      "text": "history = bundle / \"receipts/kagent-v0.10.3\"",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Bounded private-receipt tests operate only in the exact lift-profile history and prove malformed/symlink cases refuse."
+    },
+    {
+      "path": "internal/kmx/app/targets.go",
+      "text": "Detection:    TargetDetection{State: \"not-probed\", Scope: \"explicit version-qualified commands only\", Detail: \"no Kagent discovery; create validates v0.10.2, explicit bundle lift/status validate v0.10.3\"}},",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "The static target diagnostic explicitly distinguishes unchanged v0.10.2 create from exact-v0.10.3 bundle lift/status; no expanded discovery."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.py",
+      "text": "require(status.get(\"bundle\") == NAME and status.get(\"runtime\") == \"kagent\" and status.get(\"runtimeVersion\") == \"v0.10.3\",",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Dedicated qualification refuses a status report whose explicit runtime/version does not match the exact profile."
+    },
+    {
+      "path": "scripts/test_kagent_lift.py",
+      "text": "status = {\"bundle\": \"lift-proof\", \"runtime\": \"kagent\", \"runtimeVersion\": \"v0.10.3\",",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Bounded Python status-shape test represents the exact Go lift profile and independently checks selected-target/resource identity."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.py",
+      "text": "optional = [\"kmcp\", \"substrate\", \"kagent-tools\", \"k8s-agent\", \"kgateway-agent\", \"istio-agent\",",
+      "category": "fixture",
+      "why": "Closed external fixture values list: every optional subchart is explicitly disabled, including the retired tools asset. This helper earns only the asset rule, never installer permission."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.py",
+      "text": "\"ghcr.io/kagent-dev/kagent/controller:0.10.3@sha256:\" + CONTROLLER,",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "External chart verification checks the exact digest-qualified v0.10.3 controller image against the locked manifest."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.py",
+      "text": "container = json.loads(run([\"docker\", \"inspect\", \"kmx-kagent-lift-control-plane\"]))[0]",
+      "category": "qualified-source",
+      "rules": ["broad-operation"],
+      "why": "Exact read-only inspection of the dedicated kind container is not an installed Kagent run verb."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.py",
+      "text": "files = list((bundle / \"receipts/kagent-v0.10.3\").glob(\"*.json\"))",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Dedicated qualification verifies only the exact version-separated lift receipt directory."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.py",
+      "text": "flags = [\"--runtime\", \"kagent\", \"--runtime-version\", \"v0.10.3\", \"--to-context\", CONTEXT, \"--bindings\", str(bindings)]",
+      "category": "qualified-source",
+      "rules": ["moving-version", "create-selector"],
+      "why": "Closed helper flag list carries the literal v0.10.3 profile for its lift/status calls only; no execution verb is routed through KMX."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.py",
+      "text": "history = bundle / \"receipts/kagent-v0.10.3\"",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Dedicated conflict qualification temporarily removes the exact receipt history to prove same-name objects cannot authorize reuse."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.py",
+      "text": "artifact = {\"kind\": \"KagentLiftQualification\", \"runtime\": \"kagent\", \"runtime_version\": \"v0.10.3\", \"engine\": \"go\",",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Separate payload-free Go qualification artifact is version-bound and cannot claim Python or broader installed lifecycle support."
+    },
+    {
+      "path": "cmd/kmx/agent_lift_commands.go",
+      "text": "cmd.Flags().StringVar(&opt.RuntimeVersion, \"runtime-version\", \"\", \"explicit runtime version (kagent: v0.10.3)\")",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "The exact bundle lift flag describes the closed literal-v0.10.3 profile, not moving configuration."
+    },
+    {
+      "path": "cmd/kmx/agent_status_commands.go",
+      "text": "cmd.Flags().StringVar(&opt.RuntimeVersion, \"runtime-version\", \"\", \"explicit runtime version (kagent: v0.10.3)\")",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "The exact bundle status flag describes the closed literal-v0.10.3 profile, not moving configuration."
+    },
+    {
+      "path": "internal/kmx/app/kagent_bundle_lift.go",
+      "text": "return fmt.Errorf(\"--runtime-version and --bindings require explicit --runtime kagent\")",
+      "category": "qualified-source",
+      "rules": ["create-selector"],
+      "why": "Shared lift/status input refusal requires explicit runtime selection before entering the literal-v0.10.3 branch."
+    },
+    {
+      "path": "internal/kmx/app/kagent_bundle_lift.go",
+      "text": "return fmt.Errorf(\"Kagent bundle lift/status requires explicit --runtime-version v0.10.3\")",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "The exact version refusal belongs to the closed bundle lift/status validation helper."
+    },
+    {
+      "path": "internal/kmx/app/kagent_bundle_deploy.go",
+      "text": "return result, fmt.Errorf(\"Kagent lift requires the exact v0.10.3 profile\")",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "The closed deploy helper refuses any invocation without the exact v0.10.3 profile."
+    },
+    {
+      "path": "internal/kmx/app/kagent_bundle_status.go",
+      "text": "report := kagentBundleStatusReport{Bundle: name, Runtime: \"kagent\", RuntimeVersion: \"v0.10.3\", PortableDigest: rendered.PortableDigest(), RenderedDigest: rendered.RenderedDigest(), Targets: []kagentBundleTargetStatus{target}}",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "The qualified status helper emits exact version/desired digest/selected-target evidence; it adds no runtime fallback."
+    },
+    {
+      "path": "internal/kmx/app/kagent_bundle_receipt.go",
+      "text": "const kagentLiftReceiptDir = \"receipts/kagent-v0.10.3\"",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Private lift receipts are version-separated; this exact directory constant is not a runtime installer or selector."
+    },
+    {
+      "path": "internal/kmx/app/kagent_lift_test.go",
+      "text": "entries, err := os.ReadDir(filepath.Join(opt.BundleDir, \"receipts\", \"kagent-v0.10.3\"))",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Bounded successful lift test inspects only the qualified receipt directory."
+    },
+    {
+      "path": "internal/kmx/app/kagent_lift_test.go",
+      "text": "raw, err := os.ReadFile(filepath.Join(opt.BundleDir, \"receipts\", \"kagent-v0.10.3\", entries[0].Name()))",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Bounded receipt-content test reads the exact qualified lift history, not Orka history."
+    },
+    {
+      "path": "internal/kmx/app/kagent_lift_test.go",
+      "text": "entries, _ := os.ReadDir(filepath.Join(opt.BundleDir, \"receipts\", \"kagent-v0.10.3\"))",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Bounded failure test proves no success receipt appears in the exact qualified history."
+    },
+    {
+      "path": "internal/kmx/app/kagent_profile_test.go",
+      "text": "for _, labels := range []map[string]string{nil, {\"app.kubernetes.io/version\": \"0.10.3\"}, {\"helm.sh/chart\": \"kagent-0.10.3\"}} {",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Exact negative validation fixture independently spells the v0.10.3 version/chart labels and proves missing evidence is refused. Only this physical statement at this test path earns a version-claim waiver; no production constants compute its expected labels."
+    },
+    {
+      "path": "internal/kmx/app/kagent_profile.go",
+      "text": "ControllerImage:   \"ghcr.io/kagent-dev/kagent/controller:0.10.3\",",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Closed v0.10.3 invocation profile fixes the controller tag alongside its source and immutable index/platform digests."
+    },
+    {
+      "path": "internal/kmx/app/kagent_profile.go",
+      "text": "GoImage:           \"ghcr.io/kagent-dev/kagent/golang-adk:0.10.3\",",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Closed v0.10.3 invocation profile fixes the Go ADK tag alongside immutable index/platform digests."
+    },
+    {
+      "path": "internal/kmx/app/kagent_profile.go",
+      "text": "return kagentFailure(\"drift\", fmt.Errorf(\"Kagent v0.10.3 supports only linux/amd64 and linux/arm64\"))",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Exact qualified platform refusal does not enable other versions or platforms."
+    },
+    {
+      "path": "internal/kmx/app/kagent_profile.go",
+      "text": "return \"\", \"\", nil, fmt.Errorf(\"Kagent v0.10.3 deploy/status supports only the Go runtime; Python is render-only and not runtime-qualified\")",
+      "category": "qualified-source",
+      "rules": ["moving-version", "broad-operation"],
+      "why": "Closed profile explicitly refuses Python deployment/status; Go-only qualification does not claim wider lifecycle support."
+    },
+    {
+      "path": "internal/kmx/app/testdata/kubectl/kagent_test.go",
+      "text": "controllerImage = \"ghcr.io/kagent-dev/kagent/controller:0.10.3\"",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Version-selected fake kubectl fixture mirrors only the exact v0.10.3 controller tag."
+    },
+    {
+      "path": "internal/kmx/app/testdata/kubectl/kagent_test.go",
+      "text": "goImage = \"ghcr.io/kagent-dev/kagent/golang-adk:0.10.3\"",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "Version-selected fake kubectl fixture mirrors only the exact v0.10.3 Go ADK tag."
+    },
+    {
+      "path": "internal/kmx/app/testdata/kubectl/kagent_test.go",
+      "text": "if scenario == \"model-collision\" && kind == \"modelconfigs.kagent.dev\" || fixtureTag == \"0.10.3\" && func() bool { _, err := os.Stat(filepath.Join(dir, name+\"-\"+kind+\".json\")); return err == nil }() {",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "The bounded fake kubectl reports an existing primary object for v0.10.3 repeat/conflict tests; no production path is waived."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "run: bash scripts/ci/kagent-lift.sh",
+      "category": "qualified-source",
+      "rules": ["broad-operation"],
+      "why": "Exact workflow dispatch invokes the dedicated external qualification script, not a kmx run verb."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.sh",
+      "text": "kind delete cluster --name kmx-kagent-lift > \"$work/cleanup.log\" 2>&1 || { echo 'dedicated cluster cleanup failed' >&2; result=1; }",
+      "category": "qualified-source",
+      "rules": ["broad-operation"],
+      "why": "Exact owned disposable-cluster cleanup is CI fixture teardown, not runtime deletion support."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.sh",
+      "text": "kind create cluster --name kmx-kagent-lift --image kindest/node:v1.35.0@sha256:4613778f3cfcd10e615029370f5786704559103cf27bef934597ba562b269661 --wait 180s > \"$work/kind.log\" 2>&1",
+      "category": "qualified-source",
+      "rules": ["moving-version"],
+      "why": "The v1.35.0 pin is the immutable dedicated kind node image, not a Kagent runtime version."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.sh",
+      "text": "python3 \"$root/scripts/ci/kagent-lift.py\" values \"$work/values.yaml\"",
+      "category": "qualified-source",
+      "rules": ["broad-operation"],
+      "why": "Exact external qualification helper generates reviewed minimal fixture values; it adds no installed kmx verb."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.sh",
+      "text": "python3 \"$root/scripts/ci/kagent-lift.py\" chart \"$work/charts\" \"$work/runtime.yaml\"",
+      "category": "qualified-source",
+      "rules": ["broad-operation"],
+      "why": "Exact external helper verifies pulled chart content before the dedicated fixture install."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.sh",
+      "text": "helm install kagent \"$work/charts/runtime/kagent\" --namespace kagent --kube-context kind-kmx-kagent-lift -f \"$work/values.yaml\" --wait --timeout 10m > \"$work/install-runtime.log\" 2>&1",
+      "category": "qualified-source",
+      "rules": ["broad-operation"],
+      "why": "This exact script fixture's work variable is not a positive lifecycle claim; installer permission remains a separate exact fixture entry."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.sh",
+      "text": "python3 \"$root/scripts/ci/kagent-lift.py\" provision \"$work\"",
+      "category": "qualified-source",
+      "rules": ["broad-operation"],
+      "why": "Exact external fixture provisioning prepares deterministic test dependencies, not a production installer."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.sh",
+      "text": "helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds@sha256:76582530f0b58b48575d19936e19d790ca2cea8e0421775be65bd4c99b2d8da0 --untar --untardir \"$work/charts/crds\" > \"$work/chart-crds.log\" 2>&1",
+      "category": "fixture",
+      "why": "External v0.10.3 CRD chart is pulled by immutable digest and verified before installation into the dedicated lift cluster."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.sh",
+      "text": "helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent@sha256:2f355400c760116e830cd7e86e7046477d480fb7dc309131832c51d65dfe9063 --untar --untardir \"$work/charts/runtime\" > \"$work/chart-runtime.log\" 2>&1",
+      "category": "fixture",
+      "why": "External v0.10.3 runtime chart is pulled by immutable digest and its content checked before KMX runs."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.sh",
+      "text": "helm install kagent-crds \"$work/charts/crds/kagent-crds\" --namespace kagent --create-namespace --kube-context kind-kmx-kagent-lift --set kmcp.enabled=false --wait --timeout 5m > \"$work/install-crds.log\" 2>&1",
+      "category": "fixture",
+      "why": "The exact verified external CRD archive is installed only into the dedicated disposable lift qualification cluster, outside KMX."
+    },
+    {
+      "path": "scripts/ci/kagent-lift.sh",
+      "text": "helm install kagent \"$work/charts/runtime/kagent\" --namespace kagent --kube-context kind-kmx-kagent-lift -f \"$work/values.yaml\" --wait --timeout 10m > \"$work/install-runtime.log\" 2>&1",
+      "category": "fixture",
+      "why": "The exact verified external runtime archive and checked minimal fixture values install only into the dedicated qualification cluster; KMX neither invokes nor owns Helm."
+    },
     {
       "path": ".github/workflows/ci.yml",
       "text": "helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds@sha256:d487e679001b1a666e0ec97a0a87aab8a10bc1f52acba92b36b70c195492c7c3 --untar --untardir \"$charts/crds\"",
@@ -230,9 +567,9 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "text": "(re.compile(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+(?:agent\\s+(?:chat|list|show|lift|status|evaluate)|console|quickstart(?:-wizard)?|status)\\b[^\\n]*--runtime(?:=|\\s+)kagent\\b\"),",
+      "text": "(re.compile(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+(?:agent\\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\\b[^\\n]*--runtime(?:=|\\s+)kagent\\b\"),",
       "category": "negative",
-      "why": "Inline CI tripwire for Kagent runtime selection on every unsupported non-create operation."
+      "why": "Inline CI tripwire retains chat/list/show/evaluate/console/quickstart/global-status refusal; the central guard separately requires literal v0.10.3 for bundle lift/status."
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -248,9 +585,9 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "text": "(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+(?:agent\\s+(?:chat|list|show|lift|status|evaluate)|console|quickstart(?:-wizard)?|status)\\b[^\\n]*--runtime(?:=|\\s+)kagent\\b\",",
+      "text": "(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+(?:agent\\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\\b[^\\n]*--runtime(?:=|\\s+)kagent\\b\",",
       "category": "negative",
-      "why": "Clone-free job tripwire for Kagent runtime selection on every unsupported non-create operation."
+      "why": "Clone-free CI tripwire retains unsupported execution/inventory/setup refusal; exact-version bundle lift/status is governed separately by the central scanner."
     },
     {
       "path": ".github/workflows/ci.yml",

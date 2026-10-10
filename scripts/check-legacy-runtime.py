@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Keep Kagent support inside the explicit exact-v0.10.2 create boundary.
+"""Keep Kagent inside exact-v0.10.2 create and exact-v0.10.3 bundle profiles.
 
-kmx intentionally supports one narrow operation against a preinstalled exact
-Kagent v0.10.2: offline render and create-only ModelConfig + Agent deployment,
-with an optional one-shot A2A task. It still does not install or upgrade the
-runtime, restore its old fixed manifests/presets or CLI, expose it through
-other commands, or revive the retired gateway and approval implementation.
+The v0.10.2 offline render/create-only ModelConfig + Agent deployment and
+optional one-shot A2A task remain unchanged. Exact v0.10.3 adds declarative
+bundle render/lift/status against a preinstalled qualified runtime; the
+external Go-only CI proof is not an installed execution verb. KMX still does
+not install/upgrade the runtime, restore fixed manifests/presets or its CLI,
+add chat/eval/list/show/console/up/AKS/retire/update/coordination/skills support,
+or revive retired gateway and approval implementation.
 
 This is a scoped-support scanner, not a broad word allowlist:
 
@@ -13,9 +15,17 @@ This is a scoped-support scanner, not a broad word allowlist:
   RemoteMCPServer, official image namespace, and create runtime selector.
   Those spellings are allowed only in a closed set of production, test,
   current-documentation, and CI-workflow files that implement, describe, or
-  prove create. A path
-  grants only those named rules; it is not a whole-file bypass. The selector
-  additionally needs create context on its own line.
+  prove these profiles. A path grants vocabulary only, not a whole-file
+  bypass. The selector additionally needs create context or a bounded bundle
+  construct with its own literal --runtime-version v0.10.3.
+
+  QUALIFIED BUNDLE CONSTRUCTS waive only the closed verb/pin claim classes.
+  Commands and Go argv/options must carry lift/status and their own literal
+  version; wrong/moving/duplicate/unrelated pins cannot earn a waiver. Known
+  current guides can describe the exact bundle render/lift/status contract.
+  Closed exact source helpers can refer to the qualified profile without
+  repeating the pin; their path, statement and individual rule set must match
+  code and JSON, and unused statements are stale. No interface-name bypass.
 
   MULTILINE COMPOUNDS are checked in bounded windows of adjacent physical
   lines. This closes the newline escape for broad claims, command/source
@@ -25,11 +35,11 @@ This is a scoped-support scanner, not a broad word allowlist:
   an overlap cannot widen one or make a stale exemption look used.
 
   CLOSED SURFACES remain refused even in scoped support files: installer and
-  demo/preset assets, moving or non-v0.10.2 version claims, old CLI/shim/compat
-  packages, up steps and AKS payloads, runtime flags on non-create commands,
-  govern/use/edit, and positive claims of broader operation.
+  demo/preset assets, moving or unqualified version claims, old CLI/shim/compat
+  packages, up steps and AKS payloads, unqualified non-create runtime flags,
+  govern/use/edit, and positive claims beyond bundle render/lift/status.
 
-WHAT MAY STAY, AND NOTHING ELSE. Exact-line exemptions retain six categories,
+WHAT MAY STAY, AND NOTHING ELSE. Exact-line exemptions have seven categories,
 each bound to paths where its claim could be true. A category is an argument
 for why a line may stay, and the same argument is not available everywhere:
 
@@ -51,10 +61,15 @@ for why a line may stay, and the same argument is not available everywhere:
                 or its reason has to SAY so.
   retired-notice  current documentation that explicitly says a named command
                  is gone. An executable surface cannot borrow this exemption.
-  fixture         exactly four reviewed official chart pull/install commands in the
-                 CI workflow. They waive only installer/retired-asset findings
-                 while preparing the disposable test cluster outside KMX; no
-                 other path, line, or rule can borrow this category.
+  fixture         four reviewed official chart pull/install commands in the
+                 create workflow and four at the dedicated lift shell script.
+                 They waive only installer/retired-asset findings outside KMX.
+                 The exact disabled-subchart list in the lift Python helper
+                 waives only its retired-asset mention, never installation.
+  qualified-source  closed exact executable helpers for qualified profiles and
+                 dedicated external proof. Each earns only its individually
+                 reviewed verb/pin rule set; none earns installer permission,
+                 and no current document may borrow this category.
 
 The scoped support paths, categories, and waivable rules are duplicated in
 code and JSON and must match exactly. Adding a path or rule is therefore a
@@ -130,20 +145,31 @@ MIN_READ = 150
 HISTORICAL_FILES = ("CHANGELOG.md", "docs/reviews/")
 CI_WORKFLOW = ".github/workflows/ci.yml"
 
-# The only current files that may carry the vocabulary of the explicit Kagent
-# v0.10.2 create implementation. This is duplicated, with categories and a
-# reason, in the JSON that the checker judges. Changing code alone or policy
+# The only current files that may carry the vocabulary of explicit Kagent
+# v0.10.2 create or exact-v0.10.3 bundle render/lift/status and external proof.
+# Paths, categories and reasons are duplicated in the JSON the checker judges. Changing code alone or policy
 # data alone therefore fails closed.
 SCOPED_SUPPORT_FILES = {
     "production": frozenset({
         "cmd/kmx/agent_commands.go",
+        "cmd/kmx/agent_lift_commands.go",
+        "cmd/kmx/agent_status_commands.go",
+        "internal/kmx/app/app.go",
         "internal/kmx/app/agent_bundle_evaluate.go",
+        "internal/kmx/app/agent_bundle_lift.go",
+        "internal/kmx/app/agent_bundle_status.go",
         "internal/kmx/app/create.go",
         "internal/kmx/app/create_kagent.go",
         "internal/kmx/app/kagent_create_online.go",
+        "internal/kmx/app/kagent_bundle_deploy.go",
+        "internal/kmx/app/kagent_bundle_status.go",
+        "internal/kmx/app/kagent_bundle_lift.go",
+        "internal/kmx/app/kagent_bundle_receipt.go",
+        "internal/kmx/app/kagent_profile.go",
         "internal/kmx/app/runtime_kagent_lifecycle.go",
         "internal/kmx/app/targets.go",
         "internal/kmx/runtime/kagent_bindings.go",
+        "internal/kmx/runtime/lifecycle.go",
         "internal/kmx/runtime/portable.go",
         "internal/kmx/runtime/prepared.go",
         "internal/kmx/runtime/runtime.go",
@@ -151,11 +177,16 @@ SCOPED_SUPPORT_FILES = {
     }),
     "test": frozenset({
         "cmd/kmx/agent_create_test.go",
+        "cmd/kmx/agent_lift_commands_test.go",
+        "cmd/kmx/agent_status_commands_test.go",
         "cmd/kmx/targets_commands_test.go",
         "internal/kmx/app/targets_test.go",
         "internal/kmx/app/agent_bundle_runtime_refusal_test.go",
         "internal/kmx/app/bundle_format_compat_test.go",
         "internal/kmx/app/create_kagent_test.go",
+        "internal/kmx/app/kagent_bundle_files_test.go",
+        "internal/kmx/app/kagent_lift_test.go",
+        "internal/kmx/app/kagent_profile_test.go",
         "internal/kmx/app/testdata/kubectl/kagent_test.go",
         "internal/kmx/runtime/kagent_bindings_test.go",
         "internal/kmx/runtime/lifecycle_test.go",
@@ -194,10 +225,21 @@ SCOPED_SUPPORT_FILES = {
     "workflow": frozenset({
         CI_WORKFLOW,
     }),
+    # Exact external qualification/routing helpers; not all CI or scripts.
+    "qualification": frozenset({
+        ".github/actions/classify-change/action.yml",
+        "scripts/ci/kagent-lift.sh",
+        "scripts/ci/kagent-lift.py",
+        "scripts/ci/kagent-lift-fixture.py",
+        "scripts/test_check_mutations.py",
+        "scripts/test_kagent_lift.py",
+        "scripts/test_kagent_lift_ci.py",
+        "scripts/test_kagent_lift_fixture.py",
+    }),
 }
 
-# Only vocabulary rules can be waived by a scoped support path. Command, pin,
-# asset, path, and broad-operation rules remain active in every support file.
+# A support path alone waives vocabulary only. The separately qualified bundle
+# constructs earn narrow verb/pin waivers; assets/installers/path guards remain.
 SCOPED_SUPPORT_RULES = frozenset({
     "api-group", "api-kind", "schema-version", "image", "create-selector", "bare-name",
 })
@@ -216,7 +258,7 @@ RETIREMENT_FILES = (
 # indistinguishable from documentation of a supported path.
 UNSUPPORTED = ("unsupported", "not supported", "no support", "remains open", "open question")
 
-CATEGORIES = ("retirement", "negative", "historical", "future", "retired-notice", "fixture")
+CATEGORIES = ("retirement", "negative", "historical", "future", "retired-notice", "fixture", "qualified-source")
 
 # Exact-line exemptions remain arguments, not arbitrary waivers. A negative
 # assertion may exercise these retired/vocabulary rules, but it can never bless
@@ -265,6 +307,9 @@ def support_category_problem(category: str, path: str) -> str | None:
     elif category == "workflow":
         if path != CI_WORKFLOW:
             return f"workflow support is restricted to exactly {CI_WORKFLOW}"
+    elif category == "qualification":
+        if path not in SCOPED_SUPPORT_FILES["qualification"]:
+            return "qualification support is restricted to the closed fixture/routing helpers"
     return None
 
 
@@ -304,11 +349,19 @@ def category_problem(entry) -> str | None:
         if not any(marker in said for marker in UNSUPPORTED):
             return ("neither the line nor its reason says the future is unsupported "
                     f"(looked for: {', '.join(UNSUPPORTED)})")
+    elif category == "qualified-source":
+        if current_doc(path) or (path, entry["text"].strip()) not in QUALIFIED_SOURCE_LINES:
+            return "only the closed exact qualified source helpers can earn this category; no prose"
+        rules = entry.get("rules")
+        if (not isinstance(rules, list) or len(rules) != len(set(rules))
+                or set(rules) != QUALIFIED_SOURCE_LINES[(path, entry["text"].strip())]):
+            return "qualified source rules must equal the exact statement's closed rule set"
     elif category == "fixture":
-        if path != CI_WORKFLOW:
-            return f"an external runtime fixture is allowed only in {CI_WORKFLOW}"
-        if entry["text"].strip() not in FIXTURE_LINES:
-            return "only the four closed official chart pull/install lines are runtime fixtures"
+        fixture_paths = FIXTURE_PATH_LINES
+        if path not in fixture_paths:
+            return "external runtime fixtures belong only to the closed create workflow, lift script or disabled-subchart helper"
+        if entry["text"].strip() not in fixture_paths[path]:
+            return "only the closed official chart pull/install lines at their reviewed paths are runtime fixtures"
     return None
 
 
@@ -386,6 +439,22 @@ CHART_FIXTURE_LINE = (
 )
 FIXTURE_LINES = frozenset({CRDS_PULL_LINE, CHART_PULL_LINE, CRDS_FIXTURE_LINE, CHART_FIXTURE_LINE})
 FIXTURE_RULES = frozenset({"installer", "asset"})
+LIFT_FIXTURE_PATH = "scripts/ci/" + NAME + "-lift.sh"
+LIFT_FIXTURE_LINES = frozenset({
+    f'helm pull oci://ghcr.io/{NAME}-dev/{NAME}/helm/{NAME}-crds@sha256:76582530f0b58b48575d19936e19d790ca2cea8e0421775be65bd4c99b2d8da0 --untar --untardir "$work/charts/crds" > "$work/chart-crds.log" 2>&1',
+    f'helm pull oci://ghcr.io/{NAME}-dev/{NAME}/helm/{NAME}@sha256:2f355400c760116e830cd7e86e7046477d480fb7dc309131832c51d65dfe9063 --untar --untardir "$work/charts/runtime" > "$work/chart-runtime.log" 2>&1',
+    f'helm install {NAME}-crds "$work/charts/crds/{NAME}-crds" --namespace {NAME} --create-namespace --kube-context kind-kmx-{NAME}-lift --set kmcp.enabled=false --wait --timeout 5m > "$work/install-crds.log" 2>&1',
+    f'helm install {NAME} "$work/charts/runtime/{NAME}" --namespace {NAME} --kube-context kind-kmx-{NAME}-lift -f "$work/values.yaml" --wait --timeout 10m > "$work/install-runtime.log" 2>&1',
+})
+LIFT_HELPER_PATH = "scripts/ci/" + NAME + "-lift.py"
+LIFT_DISABLED_ASSET_LINE = f'optional = ["kmcp", "substrate", "{NAME}-tools", "k8s-agent", "kgateway-agent", "istio-agent",'
+# The Python helper can name only the exact list of disabled subcharts, never
+# an installer. Its values() converts every member into enabled: False.
+FIXTURE_PATH_LINES = {
+    CI_WORKFLOW: FIXTURE_LINES,
+    LIFT_FIXTURE_PATH: LIFT_FIXTURE_LINES,
+    LIFT_HELPER_PATH: frozenset({LIFT_DISABLED_ASSET_LINE}),
+}
 # Cobra accepts its persistent flags before or inside the command path.
 KMX_OPTIONS = r"(?:\s+--?(?:context|container-engine)(?:=|\s+)\S+)*"
 RUNTIME_SELECTOR = (r"(?:--runtime(?:=|\s+)" + NAME + r"\b|"
@@ -396,10 +465,10 @@ KAGENT_FLAG = (r"(?:" + RUNTIME_SELECTOR + r"|" + COBRA_RUNTIME_DEFAULT + r"|"
 UNSUPPORTED_RUNTIME_OPERATION = (
     r"(?:\bkmx" + KMX_OPTIONS +
     r"\s+(?:agent" + KMX_OPTIONS +
-    r"\s+(?:chat|list|show|lift|status|evaluate)\b|"
-    r"(?:console|quickstart(?:-wizard)?|status)\b)|"
-    r"\bcobra\.Command\s*\{.{0,160}\bUse\s*:\s*[\"'](?:chat|list|show|lift|status|evaluate)\b|"
-    r"[\"']agent[\"']\s*,\s*[\"'](?:chat|list|show|lift|status|evaluate)[\"']|"
+    r"\s+(?:chat|run|list|show|lift|status|eval(?:uate)?|retire|update|upgrade|install|coordination|skills)\b|"
+    r"(?:console|quickstart(?:-wizard)?|status|up)\b)|"
+    r"\bcobra\.Command\s*\{.{0,160}\bUse\s*:\s*[\"'](?:chat|run|list|show|lift|status|eval(?:uate)?|retire)\b|"
+    r"[\"']agent[\"']\s*,\s*[\"'](?:chat|run|list|show|lift|status|eval(?:uate)?|retire|update|upgrade|install|coordination|skills)[\"']|"
     r"[\"'](?:console|quickstart(?:-wizard)?|status)[\"'])"
 )
 CREATE_SELECTOR_CONTEXT = re.compile(
@@ -411,9 +480,9 @@ CREATE_SELECTOR_CONTEXT = re.compile(
 )
 
 # Compound syntax and prose may wrap naturally, but unrelated paragraphs must
-# not be joined into a claim. Only these non-waivable compound rules receive a
-# two-to-four-line normalized view; token rules continue to inspect their
-# original physical line. The literal set and bound are pinned again in the
+# not be joined into a claim. These guarded compound rules receive a
+# two-to-four-line normalized view; token rules inspect their original line.
+# Bundle verbs/pins still need their own literal qualification in this view. The literal set and bound are pinned again in the
 # floors and exercised by mutations, because growing either silently changes
 # what the policy means.
 MULTILINE_WINDOW_LINES = 4
@@ -424,7 +493,7 @@ MULTILINE_RULES = frozenset({
 })
 
 BROAD_OPERATIONS = (
-    r"(?:chat|list|show|lift|status|evaluate|console|quickstart|install(?:ation|er)?|"
+    r"(?:render|chat|run|list|show|lift|status|eval(?:uate|uation)?|console|quickstart|up|retire|coordination|skills|install(?:ation|er)?|"
     r"upgrad(?:e|es|ing)|updat(?:e|es|ing)|delet(?:e|es|ion|ing)|discover(?:y|ies|ing)?|"
     r"invok(?:e|es|ing)|invocation|lifecycle|AKS|payload|gateway|approval|grant|resume|session)"
 )
@@ -470,7 +539,7 @@ RULES = [
           r"(?i:\bkubectl\b.{0,80}\bcreate\s+(?:ns|namespace)\s+" + NAME + r"\b)"),
          "helm install " + NAME + " oci://ghcr.io/" + NAME + "-dev/" + NAME + "/helm/" + NAME,
          "inspect the preinstalled exact " + NAME.capitalize() + " v0.10.2", True),
-    Rule("moving-version", "an unpinned or non-v0.10.2 Kagent support claim",
+    Rule("moving-version", "an unpinned or unqualified Kagent version claim",
          (r"(?i:(?:\b(?:latest|main|HEAD)\b|(?<![A-Za-z0-9.])v?(?!0\.10\.2(?:\b|$))"
           r"\d+\.\d+\.\d+(?![A-Za-z0-9.])).{0,80}\b" + NAME + r"\b|\b" + NAME +
           r"\b.{0,80}(?:\b(?:latest|main|HEAD)\b|(?<![A-Za-z0-9.])v?(?!0\.10\.2(?:\b|$))"
@@ -487,7 +556,7 @@ RULES = [
          "kmx agent chat --runtime " + NAME + " demo",
          "kmx agent create demo --runtime " + NAME, True),
     Rule("unsupported-runtime-options", "Kagent selected in a non-create options struct",
-         (r"(?i:\b(?:Chat|List|Show|Lift|Status|Evaluate|Console|Quickstart)Options\s*\{"
+         (r"(?i:\b(?:Chat|Run|List|Show|Lift|Status|BundleStatus|LiftAgentBundle|Evaluate|Retire|Console|Quickstart)Options\s*\{"
           r"[^\n}]*\bRuntime\s*:\s*[\"']" + NAME + r"[\"'])"),
          "ChatOptions{Runtime: \"" + NAME + "\"}",
          "CreateOptions{Runtime: \"" + NAME + "\"}", True),
@@ -590,12 +659,148 @@ def expected_support() -> dict[str, set[str]]:
     return {category: set(paths) for category, paths in SCOPED_SUPPORT_FILES.items()}
 
 
+# Unlike scoped vocabulary, these rules require a version-qualified construct.
+# The same classes are pinned by JSON and floors; neither list is a bypass.
+BUNDLE_RULES = frozenset({
+    "create-selector", "moving-version", "unsupported-runtime-command",
+    "unsupported-runtime-options", "broad-operation", "restored-operation-identifier",
+})
+
+# Exact reviewed source statements can refer to the closed qualified profile
+# instead of repeating a literal pin. Entries are rule-specific, path-specific
+# and physical-line-specific; load_allowlist and report check their equality
+# and staleness just like the existing refusal/fixture exemptions.
+QUALIFIED_SOURCE_LINES = {
+    ("cmd/kmx/agent_lift_commands.go", f'cmd.Flags().StringVar(&opt.RuntimeVersion, "runtime-version", "", "explicit runtime version ({NAME}: v0.10.3)")'): frozenset({"moving-version"}),
+    ("cmd/kmx/agent_status_commands.go", f'cmd.Flags().StringVar(&opt.RuntimeVersion, "runtime-version", "", "explicit runtime version ({NAME}: v0.10.3)")'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_bundle_lift.go", f'return fmt.Errorf("--runtime-version and --bindings require explicit --runtime {NAME}")'): frozenset({"create-selector"}),
+    ("internal/kmx/app/kagent_bundle_lift.go", f'return fmt.Errorf("{NAME.capitalize()} bundle lift/status requires explicit --runtime-version v0.10.3")'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_bundle_deploy.go", f'return result, fmt.Errorf("{NAME.capitalize()} lift requires the exact v0.10.3 profile")'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_bundle_status.go", f'report := {NAME}BundleStatusReport{{Bundle: name, Runtime: "{NAME}", RuntimeVersion: "v0.10.3", PortableDigest: rendered.PortableDigest(), RenderedDigest: rendered.RenderedDigest(), Targets: []{NAME}BundleTargetStatus{{target}}}}'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_bundle_receipt.go", f'const {NAME}LiftReceiptDir = "receipts/{NAME}-v0.10.3"'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_bundle_files_test.go", f'if err := os.WriteFile(filepath.Join(path+"-old", "{NAME}-v0.10.3", "input"), []byte("anchored"), 0600); err != nil {{'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_lift_test.go", f'entries, err := os.ReadDir(filepath.Join(opt.BundleDir, "receipts", "{NAME}-v0.10.3"))'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_lift_test.go", f'raw, err := os.ReadFile(filepath.Join(opt.BundleDir, "receipts", "{NAME}-v0.10.3", entries[0].Name()))'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_lift_test.go", f'entries, _ := os.ReadDir(filepath.Join(opt.BundleDir, "receipts", "{NAME}-v0.10.3"))'): frozenset({"moving-version"}),
+    ("internal/kmx/app/targets.go", f'Detection:    TargetDetection{{State: "not-probed", Scope: "explicit version-qualified commands only", Detail: "no {NAME.capitalize()} discovery; create validates v0.10.2, explicit bundle lift/status validate v0.10.3"}}}},'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_profile_test.go", f'for _, labels := range []map[string]string{{nil, {{"app.kubernetes.io/version": "0.10.3"}}, {{"helm.sh/chart": "{NAME}-0.10.3"}}}} {{'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_profile.go", f'ControllerImage:   "ghcr.io/{NAME}-dev/{NAME}/controller:0.10.3",'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_profile.go", f'GoImage:           "ghcr.io/{NAME}-dev/{NAME}/golang-adk:0.10.3",'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_profile.go", f'return {NAME}Failure("drift", fmt.Errorf("{NAME.capitalize()} v0.10.3 supports only linux/amd64 and linux/arm64"))'): frozenset({"moving-version"}),
+    ("internal/kmx/app/kagent_profile.go", f'return "", "", nil, fmt.Errorf("{NAME.capitalize()} v0.10.3 deploy/status supports only the Go runtime; Python is render-only and not runtime-qualified")'): frozenset({"moving-version", "broad-operation"}),
+    ("internal/kmx/app/testdata/kubectl/kagent_test.go", f'podImage = "ghcr.io/{NAME}-dev/{NAME}/controller:latest"'): frozenset({"moving-version"}),
+    ("internal/kmx/app/testdata/kubectl/kagent_test.go", f'controllerImage = "ghcr.io/{NAME}-dev/{NAME}/controller:0.10.3"'): frozenset({"moving-version"}),
+    ("internal/kmx/app/testdata/kubectl/kagent_test.go", f'goImage = "ghcr.io/{NAME}-dev/{NAME}/golang-adk:0.10.3"'): frozenset({"moving-version"}),
+    ("internal/kmx/app/testdata/kubectl/kagent_test.go", f'if scenario == "model-collision" && kind == "modelconfigs.{NAME}.dev" || fixtureTag == "0.10.3" && func() bool {{ _, err := os.Stat(filepath.Join(dir, name+"-"+kind+".json")); return err == nil }}() {{'): frozenset({"moving-version"}),
+    (CI_WORKFLOW, f'run: bash scripts/ci/{NAME}-lift.sh'): frozenset({"broad-operation"}),
+    (LIFT_FIXTURE_PATH, f'kind delete cluster --name kmx-{NAME}-lift > "$work/cleanup.log" 2>&1 || {{ echo \'dedicated cluster cleanup failed\' >&2; result=1; }}'): frozenset({"broad-operation"}),
+    (LIFT_FIXTURE_PATH, f'kind create cluster --name kmx-{NAME}-lift --image kindest/node:v1.35.0@sha256:4613778f3cfcd10e615029370f5786704559103cf27bef934597ba562b269661 --wait 180s > "$work/kind.log" 2>&1'): frozenset({"moving-version"}),
+    (LIFT_FIXTURE_PATH, f'python3 "$root/scripts/ci/{NAME}-lift.py" values "$work/values.yaml"'): frozenset({"broad-operation"}),
+    (LIFT_FIXTURE_PATH, f'python3 "$root/scripts/ci/{NAME}-lift.py" chart "$work/charts" "$work/runtime.yaml"'): frozenset({"broad-operation"}),
+    (LIFT_FIXTURE_PATH, f'helm install {NAME} "$work/charts/runtime/{NAME}" --namespace {NAME} --kube-context kind-kmx-{NAME}-lift -f "$work/values.yaml" --wait --timeout 10m > "$work/install-runtime.log" 2>&1'): frozenset({"broad-operation"}),
+    (LIFT_FIXTURE_PATH, f'python3 "$root/scripts/ci/{NAME}-lift.py" provision "$work"'): frozenset({"broad-operation"}),
+    (LIFT_HELPER_PATH, f'"ghcr.io/{NAME}-dev/{NAME}/controller:0.10.3@sha256:" + CONTROLLER,'): frozenset({"moving-version"}),
+    (LIFT_HELPER_PATH, f'container = json.loads(run(["docker", "inspect", "kmx-{NAME}-lift-control-plane"]))[0]'): frozenset({"broad-operation"}),
+    (LIFT_HELPER_PATH, f'files = list((bundle / "receipts/{NAME}-v0.10.3").glob("*.json"))'): frozenset({"moving-version"}),
+    (LIFT_HELPER_PATH, f'flags = ["--runtime", "{NAME}", "--runtime-version", "v0.10.3", "--to-context", CONTEXT, "--bindings", str(bindings)]'): frozenset({"moving-version", "create-selector"}),
+    (LIFT_HELPER_PATH, f'history = bundle / "receipts/{NAME}-v0.10.3"'): frozenset({"moving-version"}),
+    (LIFT_HELPER_PATH, f'require(status.get("bundle") == NAME and status.get("runtime") == "{NAME}" and status.get("runtimeVersion") == "v0.10.3",'): frozenset({"moving-version"}),
+    ("scripts/test_kagent_lift.py", f'raw = b"private prompt and credential\\nError: {NAME.capitalize()} controller workload: pod does not have exactly one controller container using ghcr.io/{NAME}-dev/{NAME}/controller:0.10.3; no Kubernetes resources were changed"'): frozenset({"moving-version"}),
+    ("scripts/test_kagent_lift.py", f'status = {{"bundle": "lift-proof", "runtime": "{NAME}", "runtimeVersion": "v0.10.3",'): frozenset({"moving-version"}),
+    ("scripts/test_kagent_lift.py", f'history = bundle / "receipts/{NAME}-v0.10.3"'): frozenset({"moving-version"}),
+    ("scripts/test_kagent_lift.py", f'subprocess.run([str(wrapper), "--context", "kind-kmx-{NAME}-lift", *args], check=True,'): frozenset({"broad-operation"}),
+    (LIFT_HELPER_PATH, f'artifact = {{"kind": "{NAME.capitalize()}LiftQualification", "runtime": "{NAME}", "runtime_version": "v0.10.3", "engine": "go",'): frozenset({"moving-version"}),
+}
+
+EXACT_BUNDLE_VERSION = re.compile(r"(?<![A-Za-z0-9.])v0\.10\.3(?![A-Za-z0-9.+-])")
+VERSION_TOKEN = re.compile(r"(?<![A-Za-z0-9.])v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?")
+VERSION_FLAG = re.compile(r'''--runtime-version(?:=|\s+)([^\s`\"',;]+)|[\"']--runtime-version[\"']\s*,\s*[\"']([^\"']+)[\"']''')
+BUNDLE_COMMAND = re.compile(
+    r"\bkmx" + KMX_OPTIONS + r"\s+agent" + KMX_OPTIONS + r"\s+(?:lift|status)\b[^;`\n]*|"
+    r'''[\"']agent[\"']\s*,\s*[\"'](?:lift|status)[\"'][^}\n]*''')
+BUNDLE_OPTIONS = re.compile(r'''\b(?:LiftAgentBundle|BundleStatus)Options\s*\{[^}]*\}''')
+FORBIDDEN_BUNDLE_CLAIM = re.compile(
+    r"(?i:\b(?:chat|run|list|show|eval(?:uate|uation)?|console|quickstart|up|retire|coordination|skills|"
+    r"install(?:ation|er|s)?|upgrad(?:e|es|ing)|updat(?:e|es|ing)|delet(?:e|es|ion|ing)|"
+    r"discover(?:y|ies|ing)?|invok(?:e|es|ing)|invocation|lifecycle|AKS|payload|gateway|approval|grant|resume|session)\b)")
+
+
+def qualified_bundle_allowed(path: str, rule: Rule, text: str, support) -> bool:
+    """Earn only the bounded render/lift/status waiver; never installer/pin rules."""
+    if path not in support or rule.name not in BUNDLE_RULES:
+        return False
+    if not EXACT_BUNDLE_VERSION.search(text):
+        return False
+    if rule.name == "moving-version" and any(
+            re.search(r"\b(?:latest|main|HEAD)\b", match.group(), re.I)
+            for match in rule.re.finditer(text)):
+        return False
+    if any(token not in {"v0.10.2", "0.10.2", "v0.10.3", "0.10.3"}
+           for token in VERSION_TOKEN.findall(text)):
+        return False
+    if rule.name in {"create-selector", "unsupported-runtime-command", "unsupported-runtime-options"}:
+        # Remove only complete qualified constructs. A second command, flag,
+        # duplicate version, or unrelated echo/comment cannot inherit a pin.
+        remainder = text
+        for match in list(BUNDLE_COMMAND.finditer(text)) + list(BUNDLE_OPTIONS.finditer(text)):
+            construct = match.group()
+            flags = [a or b for a, b in VERSION_FLAG.findall(construct)]
+            option_pin = re.findall(r'''\bRuntimeVersion\s*:\s*[\"']([^\"']+)[\"']''', construct)
+            if (flags or option_pin) != ["v0.10.3"]:
+                continue
+            if len(re.findall(r"\bkmx\b", construct)) > 1:
+                continue
+            argv_verbs = re.findall(r'''[\"']agent[\"']\s*,\s*[\"']([^\"']+)[\"']''', construct)
+            if argv_verbs and (len(argv_verbs) != 1 or argv_verbs[0] not in {"lift", "status"}):
+                continue
+            remainder = remainder.replace(construct, "", 1)
+        if not re.search(KAGENT_FLAG, remainder) and not re.search(
+                r'''\bRuntime\s*:\s*[\"']''' + NAME + r'''[\"']''', remainder):
+            return True
+        # A closed current guide may describe the exact bundle selector in
+        # prose or a command table. No command in that description may be an
+        # unsupported verb, and any version field must still be literal.
+        if current_doc(path) and path in SCOPED_SUPPORT_FILES["current-doc"]:
+            prose = text.replace("`", "")
+            commands = re.findall(r"\bkmx\s+agent\s+(\w+)", prose)
+            flags = [a or b for a, b in VERSION_FLAG.findall(prose)]
+            return (flags == ["v0.10.3"]
+                    and (re.search(r"\bbundle\s+(?:lift/status|lift|status)\b", prose, re.I)
+                         or commands and all(verb in {"lift", "status"} for verb in commands))
+                    and not re.search(r"\bkmx\s+agent\s+(?:chat|run|list|show|evaluate|eval|retire|update|upgrade|install)\b", prose))
+        return False
+    if rule.name in {"moving-version", "broad-operation"}:
+        # Commands/options are qualified by their own version field, never
+        # an unrelated source literal or prose version.
+        if rule.name == "moving-version" and (BUNDLE_COMMAND.search(text) or BUNDLE_OPTIONS.search(text)):
+            selector = next(r for r in RULES if r.name == "create-selector")
+            if qualified_bundle_allowed(path, selector, text, support):
+                return True
+        # Only current contract docs can earn a prose waiver. An image or an
+        # unqualified source claim needs a separately reviewed exact statement.
+        if not current_doc(path) or path not in SCOPED_SUPPORT_FILES["current-doc"]:
+            return False
+        claims = [m.group() for m in rule.re.finditer(text)]
+        return bool(claims) and all(EXACT_BUNDLE_VERSION.search(claim)
+                   and not re.search(r"\b(?:latest|main|HEAD)\b", claim, re.I)
+                   and (rule.name == "moving-version"
+                        or not FORBIDDEN_BUNDLE_CLAIM.search(claim))
+                   and (re.search(r"\bbundle\b", text, re.I)
+                        or "receipts/" + NAME + "-v0.10.3/" in text
+                        or rule.name == "moving-version" and "e2e-" + NAME + "-lift" in text)
+                   for claim in claims)
+    return False
+
+
 def scoped_rule_allowed(path: str, rule: Rule, line: str, support) -> bool:
-    """Whether this support path earns this vocabulary waiver on this line."""
+    """Whether this support path earns vocabulary or a qualified verb waiver."""
+    if qualified_bundle_allowed(path, rule, line, support):
+        return True
     if path not in support or rule.name not in SCOPED_SUPPORT_RULES:
         return False
     if rule.name == "create-selector":
-        return bool(CREATE_SELECTOR_CONTEXT.search(line))
+        return (not re.search(UNSUPPORTED_RUNTIME_OPERATION, line)
+                and bool(CREATE_SELECTOR_CONTEXT.search(line)))
     return True
 
 
@@ -608,11 +813,16 @@ EXEMPTION_RULES = {
     "future": frozenset({"bare-name"}),
     "retired-notice": frozenset({"bare-name", "create-selector", "retired-command"}),
     "fixture": FIXTURE_RULES,
+    "qualified-source": BUNDLE_RULES,
 }
 
 
 def exemption_allows(entry, rule: Rule) -> bool:
     """Whether this exact-line category may waive this specific rule."""
+    if entry["category"] == "qualified-source":
+        return rule.name in entry["rules"]
+    if entry["category"] == "fixture" and entry["path"] == LIFT_HELPER_PATH:
+        return rule.name == "asset"
     return rule.name in EXEMPTION_RULES[entry["category"]]
 
 
@@ -648,6 +858,9 @@ def multiline_lines_are_connected(path: str, rule: Rule, lines: list[str]) -> bo
     """Refuse wrapped compounds without joining unrelated adjacent entries."""
     stripped = [line.strip() for line in lines]
     joined = multiline_view(lines)
+    if (path.endswith(".md") and rule.name in {"moving-version", "create-selector", "broad-operation"}
+            and not any(line.startswith(("|", "```")) for line in stripped)):
+        return True
     if rule.name == "broad-operation":
         if path.endswith(".md"):
             return not any(line.startswith("|") for line in stripped)
@@ -662,6 +875,20 @@ def multiline_lines_are_connected(path: str, rule: Rule, lines: list[str]) -> bo
         return True
     if "[]string{" in joined and "}" in joined:
         return True
+    return False
+
+
+def qualified_window_allowed(path, rule, physical_lines, start, width, support):
+    """A minimal finding can precede its pin inside one bounded construct."""
+    if rule.name not in BUNDLE_RULES:
+        return False
+    for first in range(max(0, start + width - MULTILINE_WINDOW_LINES), start + 1):
+        for size in range(max(2, start + width - first), MULTILINE_WINDOW_LINES + 1):
+            window = physical_lines[first:first + size]
+            if (len(window) == size and all(part.strip() for part in window)
+                    and multiline_lines_are_connected(path, rule, window)
+                    and qualified_bundle_allowed(path, rule, multiline_view(window), support)):
+                return True
     return False
 
 
@@ -687,6 +914,10 @@ def load_allowlist(path=ALLOWLIST):
     support_rules = support.get("rules") or []
     if not isinstance(support_files, dict) or not isinstance(support_rules, list):
         sys.exit(f"check-legacy-runtime: {path} scoped_support needs files by category and a rule list")
+    bundle_rules = support.get("qualified_bundle_rules") or []
+    if (not isinstance(bundle_rules, list) or len(bundle_rules) != len(set(bundle_rules))
+            or set(bundle_rules) != set(BUNDLE_RULES)):
+        sys.exit("check-legacy-runtime: qualified bundle rules differ from the closed code-owned set")
     normalized = {}
     for category, paths in support_files.items():
         if category not in SCOPED_SUPPORT_FILES:
@@ -722,6 +953,10 @@ def load_allowlist(path=ALLOWLIST):
         if wrong:
             sys.exit(f"check-legacy-runtime: {entry['path']} may not be exempted as "
                      f"{entry['category']!r}: {wrong}\n      {entry['text'].strip()!r}")
+    qualified = {(entry["path"], entry["text"].strip()): frozenset(entry["rules"])
+                 for entry in lines if entry["category"] == "qualified-source"}
+    if qualified != QUALIFIED_SOURCE_LINES:
+        sys.exit("check-legacy-runtime: qualified source helpers differ from the closed code-owned statements")
     return files, lines, frozenset().union(*normalized.values())
 
 
@@ -842,11 +1077,15 @@ def judge(paths, historical, lines, support=None, root=None):
                         for entry in allowed:
                             used.add(id(entry))
                         continue
-                # A scoped support path waives vocabulary only. Retired
-                # commands, pins, assets and broad operation remain findings.
+                # Paths alone waive vocabulary. Qualified bundle constructs
+                # may earn bounded verb/pin waivers; installers/assets do not.
                 if scoped_rule_allowed(path, rule, line, support):
                     continue
-                findings.append((path, n, rule, stripped))
+                # A wrapped qualified construct earns the same narrow waiver
+                # as its one-line spelling, but not across blank/unconnected
+                # lines or beyond the reviewed compound bound.
+                if not qualified_window_allowed(path, rule, physical_lines, n - 1, 1, support):
+                    findings.append((path, n, rule, stripped))
         if record:
             continue
         # Compound rules are deliberately separate from the physical-line
@@ -863,7 +1102,9 @@ def judge(paths, historical, lines, support=None, root=None):
                     if not rule.everywhere and not current:
                         continue
                     if multiline_lines_are_connected(path, rule, window) and multiline_rule_matches(rule, window):
-                        findings.append((path, start + 1, rule, multiline_view(window)))
+                        if not (qualified_bundle_allowed(path, rule, multiline_view(window), support)
+                                or qualified_window_allowed(path, rule, physical_lines, start, width, support)):
+                            findings.append((path, start + 1, rule, multiline_view(window)))
     return findings, read, used
 
 
@@ -885,19 +1126,19 @@ def report(findings, lines, used, paths, read, support_count=0, direct_support=0
         problems.append(f"{where}: {what}\n      {line[:160]}")
 
     if problems:
-        print("check-legacy-runtime: Kagent escaped the explicit v0.10.2 create boundary", file=sys.stderr)
+        print("check-legacy-runtime: Kagent escaped its exact-version create/bundle boundary", file=sys.stderr)
         for p in problems:
             print("  " + p, file=sys.stderr)
-        print(f"\n{len(problems)} place(s). Remove the surface, add a legitimate create-support "
+        print(f"\n{len(problems)} place(s). Remove the surface, add a legitimate bounded-support "
               "path to both closed policy sets, or — for an exact refusal, absence assertion, "
               "or explicitly unsupported future — name the line in "
               f"{ALLOWLIST.relative_to(ROOT)} with a category and a reason.", file=sys.stderr)
         return 1
     print(f"check-legacy-runtime: {len(paths)} tracked file(s), {read} read, "
           f"{len(RULES)} content rule(s), {len(PATH_RULES)} path rule(s), "
-          f"{support_count} scoped create-support file(s) ({direct_support} read directly while untracked), "
+          f"{support_count} scoped support file(s) ({direct_support} read directly while untracked), "
           f"{len(lines)} exact exemption(s) — "
-          "only explicit Kagent v0.10.2 create support remains")
+          "only explicit Kagent v0.10.2 create and v0.10.3 bundle render/lift/status remain")
     return 0
 
 
@@ -918,10 +1159,14 @@ def floors(paths, read, historical, support=None) -> list[str]:
                      "scripts/legacy-runtime-allowlist.json"}:
         bad.append(f"the self-exemption set is no longer this checker and its allowlist: {sorted(SELF)}")
     if support is not None and set(support) != frozenset().union(*SCOPED_SUPPORT_FILES.values()):
-        bad.append("the loaded scoped support paths no longer equal the closed production/test/bundle-fixture/current-doc/workflow set")
+        bad.append("the loaded scoped support paths no longer equal the closed production/test/bundle-fixture/current-doc/workflow/qualification set")
     if SCOPED_SUPPORT_RULES != frozenset({
             "api-group", "api-kind", "schema-version", "image", "create-selector", "bare-name"}):
         bad.append(f"the scoped support rule set widened or shrank: {sorted(SCOPED_SUPPORT_RULES)}")
+    if BUNDLE_RULES != frozenset({
+            "create-selector", "moving-version", "unsupported-runtime-command",
+            "unsupported-runtime-options", "broad-operation", "restored-operation-identifier"}):
+        bad.append(f"the qualified bundle rule set widened or shrank: {sorted(BUNDLE_RULES)}")
     if MULTILINE_WINDOW_LINES != 4:
         bad.append(f"the compound scan window is {MULTILINE_WINDOW_LINES} lines, not the reviewed bound of 4")
     if MULTILINE_RULES != frozenset({
@@ -937,6 +1182,15 @@ def floors(paths, read, historical, support=None) -> list[str]:
             "retired-preset-command", "retired-up-step", "schema-version",
             "unsupported-runtime-command", "unsupported-runtime-options", "wrong-api-version"}):
         bad.append(f"the negative-control rule set widened or shrank: {sorted(NEGATIVE_RULES)}")
+    if (set(FIXTURE_PATH_LINES) != {CI_WORKFLOW, LIFT_FIXTURE_PATH, LIFT_HELPER_PATH}
+            or FIXTURE_PATH_LINES[CI_WORKFLOW] != FIXTURE_LINES
+            or FIXTURE_PATH_LINES[LIFT_FIXTURE_PATH] != LIFT_FIXTURE_LINES
+            or FIXTURE_PATH_LINES[LIFT_HELPER_PATH] != frozenset({LIFT_DISABLED_ASSET_LINE})):
+        bad.append("the external fixture path/statement set widened or shrank")
+    for (path, text), rules in QUALIFIED_SOURCE_LINES.items():
+        if (path not in frozenset().union(*SCOPED_SUPPORT_FILES.values()) or current_doc(path)
+                or not text.strip() or not rules or not rules <= BUNDLE_RULES):
+            bad.append("a qualified source statement escaped its closed executable path/rule boundary")
     if set(EXEMPTION_RULES) != set(CATEGORIES):
         bad.append("the exact-exemption categories do not have one closed rule set each")
     rule_names = {rule.name for rule in RULES}
@@ -944,6 +1198,8 @@ def floors(paths, read, historical, support=None) -> list[str]:
         bad.append("a scoped support rule no longer names a live content rule")
     if not MULTILINE_RULES <= rule_names:
         bad.append("a compound rule no longer names a live content rule")
+    if not BUNDLE_RULES <= rule_names:
+        bad.append("a qualified bundle rule no longer names a live content rule")
     # Only the changelog and dated reviews may be declared historical;
     # a current document cannot exempt itself as a whole file.
     for entry in historical:
@@ -1053,6 +1309,85 @@ def selftest():
         case({"create-selector", "bare-name"} <= unapproved_hits,
              "the same create spelling is refused in an unapproved current file",
              f"an unauthorized support path passed (found: {sorted(unapproved_hits) or 'nothing'})")
+
+        # New profile boundary: removing exact-version qualification must
+        # make these cases fail, while adding unrelated pins must never bless
+        # a different command or version. Exercise judge(), not regex text.
+        qualified_path = "docs/agent-lift.md"
+        (d / qualified_path).parent.mkdir(parents=True, exist_ok=True)
+        for verb in ("lift", "status"):
+            command = f"kmx agent {verb} sample --runtime {NAME} --runtime-version v0.10.3"
+            for content in (command + "\n", command.replace(" --runtime ", " \\\n--runtime ") + "\n"):
+                (d / qualified_path).write_text(content)
+                found = judge([qualified_path], [], [], {qualified_path}, root=d)[0]
+                case(not found, f"exact-v0.10.3 {verb} is allowed in its closed support path, including shell wrapping",
+                     f"qualified {verb} was refused: {[(r.name if r else None) for _, _, r, _ in found]}")
+            (d / unapproved).write_text(command + "\n")
+            case(bool(judge([unapproved], [], [], {qualified_path}, root=d)[0]),
+                 f"exact-v0.10.3 {verb} cannot borrow an unapproved path",
+                 f"qualified {verb} widened the closed support paths")
+            for version in ("v0.10.2", "v0.10.4", "latest", "main", "HEAD", "v0.10.3-rc1", "v0.10.3+local", "$version"):
+                (d / qualified_path).write_text(command.replace("v0.10.3", version) + "\n")
+                case(bool(judge([qualified_path], [], [], {qualified_path}, root=d)[0]),
+                     f"{verb} refuses {version!r} even in a support path",
+                     f"{verb} accepted an unqualified version {version!r}")
+            (d / qualified_path).write_text(command.replace(" --runtime-version v0.10.3", "") + "\n")
+            case(bool(judge([qualified_path], [], [], {qualified_path}, root=d)[0]),
+                 f"{verb} needs a literal version, not just an approved path",
+                 f"{verb} waived its missing version")
+        source_path = "internal/kmx/app/runtime_kagent_lifecycle.go"
+        (d / source_path).parent.mkdir(parents=True, exist_ok=True)
+        for content in (
+                f'return []string{{"agent", "lift", "demo", "--runtime", "{NAME}", "--runtime-version", "v0.10.3"}}\n',
+                f'return []string{{"agent", "status", "--runtime", "{NAME}",\n"--runtime-version", "v0.10.3"}}\n',
+                f'BundleStatusOptions{{Runtime: "{NAME}", RuntimeVersion: "v0.10.3"}}\n',
+                f'LiftAgentBundleOptions{{\nRuntime: "{NAME}",\nRuntimeVersion: "v0.10.3",\n}}\n'):
+            (d / source_path).write_text(content)
+            case(not judge([source_path], [], [], {source_path}, root=d)[0],
+                 "source argv/options need exact bundle verbs and literal v0.10.3, including wrapping",
+                 f"qualified source construction was refused: {content!r}")
+        for verb in ("chat", "evaluate", "eval", "run", "list", "show", "console", "up", "retire", "update", "upgrade", "install", "coordination", "skills"):
+            content = f"kmx agent {verb} sample --runtime {NAME} --runtime-version v0.10.3\n"
+            (d / qualified_path).write_text(content)
+            case(bool(judge([qualified_path], [], [], {qualified_path}, root=d)[0]),
+                 f"exact-v0.10.3 does not enable {verb}", f"a version pin enabled unsupported {verb}")
+        for content in (
+                f"kmx agent status sample --runtime {NAME}; echo v0.10.3\n",
+                f"kmx agent status sample --runtime {NAME} --runtime-version latest; echo v0.10.3\n",
+                f"kmx agent status sample --runtime {NAME} --runtime-version v0.10.3; kmx agent chat --runtime {NAME}\n",
+                f"kmx agent status sample --runtime {NAME} --runtime-version v0.10.3 --runtime-version latest\n",
+                f"kmx agent status sample --runtime {NAME}\n\n--runtime-version v0.10.3\n",
+                f"kmx agent status sample --runtime {NAME} \\\n--runtime-version latest \\\n# v0.10.3\n",
+                f'BundleStatusOptions{{Runtime: "{NAME}", RuntimeVersion: "latest"}} // v0.10.3\n',
+                f'BundleStatusOptions{{Runtime: "{NAME}", RuntimeVersion: "v0.10.3"}}; ChatOptions{{Runtime: "{NAME}"}}\n',
+                f'BundleStatusOptions{{Runtime: "{NAME}", RuntimeVersion: "v0.10.3", RuntimeVersion: "latest"}}\n',
+                f'return []string{{"agent", "chat", "--runtime", "{NAME}", "--runtime-version", "v0.10.3"}}\n',
+                f'return []string{{"agent", "status", "--runtime", "{NAME}", "--runtime-version", "latest"}} // v0.10.3\n',
+                f"kmx agent status create --runtime {NAME} --runtime-version latest\n",
+                f"kmx agent status sample --runtime {NAME} --runtime-version v0.10.3; support {NAME} latest\n",
+                f'return []string{{"agent", "status", "--runtime", "{NAME}", "--runtime-version", "v0.10.3", "agent", "chat"}}\n'):
+            (d / qualified_path).write_text(content)
+            case(bool(judge([qualified_path], [], [], {qualified_path}, root=d)[0]),
+                 "unrelated, duplicate, disconnected or moving pins cannot earn a verb waiver",
+                 f"a scanner composition hazard passed: {content!r}")
+        for content in (
+                f"kmx agent status sample --runtime {NAME} --runtime-version v0.10.3; {NAME.capitalize()} supports chat\n",
+                f"kmx agent lift sample --runtime {NAME} --runtime-version v0.10.3 {NAME.capitalize()} supports installation\n",
+                f"kmx agent status sample --runtime {NAME} --runtime-version v0.10.3\n{NAME.capitalize()} supports chat\n"):
+            (d / qualified_path).write_text(content)
+            hits = {r.name for _, _, r, _ in judge([qualified_path], [], [], {qualified_path}, root=d)[0] if r}
+            case("broad-operation" in hits,
+                 "a valid bundle command cannot bless an adjacent unsupported support claim",
+                 f"a bundle command hid an unsupported support claim: {content!r}")
+        (d / qualified_path).write_text(f'{NAME.capitalize()} v0.10.3 supports bundle render, lift and status.\n')
+        case(not judge([qualified_path], [], [], {qualified_path}, root=d)[0],
+             "closed current docs can describe exact-v0.10.3 bundle render/lift/status",
+             "the exact bounded bundle contract was refused")
+        for operation in ("installation", "upgrade", "chat", "run", "evaluation", "list", "show", "console", "up", "AKS", "coordination", "skills", "update", "retire"):
+            (d / qualified_path).write_text(f'{NAME.capitalize()} v0.10.3 supports bundle lift and {operation}.\n')
+            case(bool(judge([qualified_path], [], [], {qualified_path}, root=d)[0]),
+                 f"bounded bundle prose never enables {operation}",
+                 f"a bundle/version mention enabled {operation}")
 
         (d / approved).write_text(f"pass --runtime {NAME} here\n")
         context_free = {r.name for _, _, r, _ in judge([approved], [], [], {approved}, root=d)[0] if r}
@@ -1175,6 +1510,54 @@ def selftest():
         case(not fixture_findings and len(fixture_used) == len(fixture_entries),
              "the four exact external chart commands are allowed only as CI fixtures",
              f"the closed CI fixtures were refused: {[(r.name if r else None) for _, _, r, _ in fixture_findings]}")
+
+        # The new chart fixtures earn only exact physical-line installer
+        # waivers at the dedicated external script, not a script-directory or
+        # production installer exemption. Reject changed bytes and all aliases.
+        for fixture_line in sorted(LIFT_FIXTURE_LINES):
+            entry = {"path": LIFT_FIXTURE_PATH, "text": fixture_line, "category": "fixture",
+                     "why": "external exact-v0.10.3 verified chart precondition"}
+            case(category_problem(entry) is None,
+                 "a reviewed lift chart precondition earns the dedicated fixture path",
+                 "the dedicated lift chart fixture path is refused")
+            for wrong_path in (CI_WORKFLOW, "scripts/ci/other.sh", "docs/agent-lift.md", "internal/kmx/app/kagent_bundle_lift.go"):
+                copied = dict(entry, path=wrong_path)
+                case(category_problem(copied) is not None,
+                     f"a lift fixture cannot move to {wrong_path}",
+                     f"a lift fixture borrowed {wrong_path}")
+            for changed_line in (fixture_line + " --set extra=true", fixture_line.replace("helm install", "helm upgrade"), fixture_line.replace("76582530", "00000000"), fixture_line.replace("kind-kmx-" + NAME + "-lift", "kind-other")):
+                if changed_line == fixture_line:
+                    continue
+                case(category_problem(dict(entry, text=changed_line)) is not None,
+                     "edited installers cannot inherit exact fixture approval",
+                     "an edited installer inherited the lift fixture exemption")
+
+        lift_path = d / LIFT_FIXTURE_PATH
+        lift_path.parent.mkdir(parents=True, exist_ok=True)
+        lift_entries = [e for e in lines if e["path"] == LIFT_FIXTURE_PATH and e["text"] in LIFT_FIXTURE_LINES]
+        lift_path.write_text("\n".join(sorted(LIFT_FIXTURE_LINES)) + "\n")
+        found, _, used = judge([LIFT_FIXTURE_PATH], [], lift_entries, {LIFT_FIXTURE_PATH}, root=d)
+        case(not found and len(used) == len(lift_entries),
+             "the exact lift installers pass the real judge and each exemption earns staleness credit",
+             "the exact lift installers failed or inherited an unreviewed waiver")
+        sample_lift_install = f'helm install {NAME}-crds "$work/charts/crds/{NAME}-crds" --namespace {NAME} --create-namespace --kube-context kind-kmx-{NAME}-lift --set kmcp.enabled=false --wait --timeout 5m > "$work/install-crds.log" 2>&1'
+        for content in (sample_lift_install + " --set extra=true\n",
+                        sample_lift_install.replace(" --namespace", " \\\n--namespace") + "\n",
+                        f"helm upgrade {NAME} other\n",
+                        f"{NAME.upper()}_VERSION=v0.10.3\n"):
+            lift_path.write_text(content)
+            case(bool(judge([LIFT_FIXTURE_PATH], [], lift_entries, {LIFT_FIXTURE_PATH}, root=d)[0]),
+                 "edited/split installers, upgrades and moving config remain refused in the dedicated script",
+                 f"the dedicated fixture scope waived residue: {content!r}")
+        disabled = {"path": LIFT_HELPER_PATH, "text": LIFT_DISABLED_ASSET_LINE,
+                    "category": "fixture", "why": "exact optional-subchart disable list"}
+        case(category_problem(disabled) is None
+             and not exemption_allows(disabled, next(r for r in RULES if r.name == "installer")),
+             "the Python disable-list fixture earns asset vocabulary, never an installer",
+             "the Python helper earned installer permission")
+        case(category_problem(dict(disabled, path="docs/agent-lift.md")) is not None,
+             "the disabled-subchart fixture cannot grant a prose installation category",
+             "the disabled-subchart fixture leaked into a current guide")
 
         arbitrary_installer = f"helm install other oci://ghcr.io/{NAME}-dev/{NAME}/helm/{NAME} --version 0.10.2"
         (d / workflow).write_text(arbitrary_installer + "\n")
@@ -1430,6 +1813,16 @@ def selftest():
         finally:
             SCOPED_SUPPORT_RULES = original_support_rules
 
+        global BUNDLE_RULES
+        original_bundle_rules = BUNDLE_RULES
+        try:
+            BUNDLE_RULES = original_bundle_rules | {"installer"}
+            case(floors(["a"] * MIN_TRACKED, MIN_READ, historical, support),
+                 "a widened bundle waiver rule set is refused by the real floors",
+                 "qualified bundle scope grew to include installers")
+        finally:
+            BUNDLE_RULES = original_bundle_rules
+
         # An allowlist that exempts nothing, or names a category nobody
         # reviewed, or claims a category its path cannot support, is refused
         # rather than silently applied. The doc-instruction case is the one
@@ -1439,8 +1832,9 @@ def selftest():
         policy = json.loads(ALLOWLIST.read_text())["scoped_support"]
 
         def allowlist_with(entry):
+            helper_entries = [e for e in lines if e["category"] == "qualified-source"]
             return {"historical_files": ["CHANGELOG.md"], "scoped_support": policy,
-                    "lines": [entry]}
+                    "lines": helper_entries + [entry]}
 
         for doc, why in (
                 ({"historical_files": [], "scoped_support": policy, "lines": []},
@@ -1485,6 +1879,228 @@ def selftest():
             except SystemExit:
                 case(True, f"{why} is refused", "")
 
+        # A version-qualified flag's exact source helper is not a whole-file
+        # pin exemption. The code and JSON must agree on its statement/rule,
+        # it cannot migrate to prose, and edits must stale its approval.
+        helper_text = 'cmd.Flags().StringVar(&opt.RuntimeVersion, "runtime-version", "", "explicit runtime version (kagent: v0.10.3)")'
+        helper = {"path": "cmd/kmx/agent_lift_commands.go", "text": helper_text,
+                  "category": "qualified-source", "rules": ["moving-version"],
+                  "why": "closed exact-v0.10.3 bundle flag source helper"}
+        test_doc = json.loads(ALLOWLIST.read_text())
+        test_doc["lines"] = [entry for entry in test_doc["lines"]
+                             if (entry["path"], entry["text"]) != (helper["path"], helper["text"])] + [helper]
+        f = d / "helper-policy.json"
+        f.write_text(json.dumps(test_doc))
+        try:
+            load_allowlist(f)
+            case(True, "the exact version-qualified source helper loads", "")
+        except SystemExit:
+            case(False, "", "the exact version-qualified source helper was refused")
+
+        omitted = json.loads(ALLOWLIST.read_text())
+        omitted["lines"] = [entry for entry in omitted["lines"]
+                            if (entry["path"], entry["text"]) != (helper["path"], helper["text"])]
+        f.write_text(json.dumps(omitted))
+        try:
+            load_allowlist(f)
+            case(False, "", "a missing exact helper was accepted despite unequal policy halves")
+        except SystemExit:
+            case(True, "omitting a closed helper breaks Python/JSON policy equality", "")
+
+        for invalid_helper in (
+                dict(helper, path="docs/agent-lift.md"),
+                dict(helper, path="internal/kmx/app/unqualified.go"),
+                dict(helper, text=helper_text + " // support latest"),
+                dict(helper, rules=["moving-version", "installer"]),
+                dict(helper, rules=["broad-operation"])):
+            case(category_problem(invalid_helper) is not None,
+                 "a source helper cannot move, extend its text or widen its rule set",
+                 "a source helper escaped its exact path/text/rule tuple")
+        helper_path = helper["path"]
+        (d / helper_path).write_text(helper_text + "\n")
+        found, _, used = judge([helper_path], [], [helper], {helper_path}, root=d)
+        case(not found and id(helper) in used,
+             "an exact qualified helper earns only its reviewed rule and is tracked for staleness",
+             "an exact helper failed or disappeared from staleness accounting")
+        (d / helper_path).write_text(helper_text + f'; support {NAME} latest\n')
+        case(bool(judge([helper_path], [], [helper], {helper_path}, root=d)[0]),
+             "extending a qualified helper makes its exact waiver unavailable",
+             "a helper extension inherited exact approval")
+
+        # Keep independently literal negative profile labels without making
+        # all test version claims waivable. Only this exact statement/path
+        # earns moving-version; changing or copying it cannot inherit approval.
+        profile_text = 'for _, labels := range []map[string]string{nil, {"app.kubernetes.io/version": "0.10.3"}, {"helm.sh/chart": "kagent-0.10.3"}} {'
+        profile_helper = {"path": "internal/kmx/app/kagent_profile_test.go", "text": profile_text,
+                          "category": "qualified-source", "rules": ["moving-version"],
+                          "why": "literal missing-label validation cases for exact v0.10.3"}
+        case(category_problem(profile_helper) is None,
+             "the literal negative profile labels earn only their exact source tuple",
+             "the literal negative profile label source tuple was refused")
+        profile_path = profile_helper["path"]
+        profile_entries = [entry for entry in lines
+                           if (entry["path"], entry["text"]) == (profile_path, profile_text)]
+        (d / profile_path).write_text(profile_text + "\n")
+        found, _, used = judge([profile_path], [], profile_entries, {profile_path}, root=d)
+        case(not found and len(profile_entries) == 1 and id(profile_entries[0]) in used,
+             "the literal profile fixture passes the real judge with staleness credit",
+             "the literal profile fixture lacks its exact reviewed exemption")
+        case(any(rule and rule.name == "moving-version" for _, _, rule, _ in
+                 judge([profile_path], [], [], {profile_path}, root=d)[0]),
+             "the literal profile fixture requires an exact exemption, not just a test path",
+             "profile test vocabulary globally waived its version claim")
+        for changed in (profile_text + f' // {NAME.capitalize()} supports chat',
+                        profile_text.replace("0.10.3", "0.10.4")):
+            (d / profile_path).write_text(changed + "\n")
+            found, _, used = judge([profile_path], [], profile_entries, {profile_path}, root=d)
+            case(any(rule and rule.name == "moving-version" for _, _, rule, _ in found) and not used,
+                 "changed or extended profile labels lose their waiver and staleness credit",
+                 "an edited profile fixture inherited its exact waiver")
+        for copied_path in ("internal/kmx/app/kagent_profile.go", "docs/agent-lift.md"):
+            (d / copied_path).write_text(profile_text + "\n")
+            found, _, used = judge([copied_path], [], profile_entries, {copied_path}, root=d)
+            case(category_problem(dict(profile_helper, path=copied_path)) is not None
+                 and any(rule and rule.name == "moving-version" for _, _, rule, _ in found) and not used,
+                 "a copied profile fixture cannot earn production or prose approval",
+                 "a copied profile fixture inherited an exact source waiver")
+        case(category_problem(dict(profile_helper, rules=["moving-version", "installer"])) is not None,
+             "the profile fixture cannot add installer permission to its rule set",
+             "the profile fixture widened its exact rule set")
+
+        # Approved negative image/redaction fixtures retain their independent
+        # literals. Neither their test paths nor another helper earns a waiver.
+        for fixture_path, fixture_text in (
+                ("internal/kmx/app/testdata/kubectl/kagent_test.go",
+                 'podImage = "ghcr.io/kagent-dev/kagent/controller:latest"'),
+                ("scripts/test_kagent_lift.py",
+                 'raw = b"private prompt and credential\\nError: Kagent controller workload: pod does not have exactly one controller container using ghcr.io/kagent-dev/kagent/controller:0.10.3; no Kubernetes resources were changed"')):
+            fixture = {"path": fixture_path, "text": fixture_text,
+                       "category": "qualified-source", "rules": ["moving-version"],
+                       "why": "approved exact negative image/redaction fixture"}
+            case(category_problem(fixture) is None,
+                 f"{fixture_path}: approved negative fixture earns its exact source tuple",
+                 f"{fixture_path}: approved negative fixture tuple was refused")
+            entries = [entry for entry in lines
+                       if (entry["path"], entry["text"]) == (fixture_path, fixture_text)]
+            target = d / fixture_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(fixture_text + "\n")
+            found, _, used = judge([fixture_path], [], entries, {fixture_path}, root=d)
+            case(not found and len(entries) == 1 and id(entries[0]) in used,
+                 f"{fixture_path}: literal fixture passes with exact staleness credit",
+                 f"{fixture_path}: literal fixture lacks its exact exemption")
+            case(any(rule and rule.name == "moving-version" for _, _, rule, _ in
+                     judge([fixture_path], [], [], {fixture_path}, root=d)[0]),
+                 f"{fixture_path}: test vocabulary alone cannot waive the negative version fixture",
+                 f"{fixture_path}: test path globally waived moving-version")
+            target.write_text(fixture_text + f'; {NAME.capitalize()} supports chat\n')
+            found, _, used = judge([fixture_path], [], entries, {fixture_path}, root=d)
+            case(any(rule and rule.name == "moving-version" for _, _, rule, _ in found) and not used,
+                 f"{fixture_path}: extending the fixture loses approval and staleness credit",
+                 f"{fixture_path}: an extension inherited the exact exemption")
+            copied_path = "internal/kmx/app/kagent_profile.go"
+            (d / copied_path).write_text(fixture_text + "\n")
+            found, _, used = judge([copied_path], [], entries, {copied_path}, root=d)
+            case(category_problem(dict(fixture, path=copied_path)) is not None
+                 and any(rule and rule.name == "moving-version" for _, _, rule, _ in found) and not used,
+                 f"{fixture_path}: production cannot borrow its negative fixture approval",
+                 f"{fixture_path}: copied production source inherited the exemption")
+            case(category_problem(dict(fixture, rules=["moving-version", "installer"])) is not None,
+                 f"{fixture_path}: the negative fixture cannot waive installer rules",
+                 f"{fixture_path}: the exact fixture rule set widened")
+
+        # Filesystem safety tests earn vocabulary only at their closed path.
+        # Removing that path must reject the fixtures; adding it must not
+        # waive another operation, version, asset, or neighboring test file.
+        files_path = "internal/kmx/app/kagent_bundle_files_test.go"
+        vocabulary = f'func Test{NAME.capitalize()}FilesBoundary() {{ // ModelConfig {NAME}.dev/v1alpha2\n'
+        files_target = d / files_path
+        files_target.write_text(vocabulary)
+        case(not judge([files_path], [], [], support, root=d)[0],
+             "the filesystem safety test earns vocabulary at its closed test path",
+             "the filesystem safety test lacks closed vocabulary approval")
+        neighbor = "internal/kmx/app/kagent_bundle_files_extra_test.go"
+        (d / neighbor).write_text(vocabulary)
+        case(any(rule and rule.name == "bare-name" for _, _, rule, _ in
+                 judge([neighbor], [], [], support, root=d)[0]),
+             "filesystem test vocabulary cannot spread to a neighboring test path",
+             "a neighboring filesystem test inherited vocabulary approval")
+        for content, wanted in (
+                (f'kmx agent chat --runtime {NAME}', "unsupported-runtime-command"),
+                (f'ChatOptions{{Runtime: "{NAME}"}}', "unsupported-runtime-options"),
+                (f'{NAME.capitalize()} supports deletion', "broad-operation"),
+                (f'helm install {NAME} other', "installer"),
+                (f'load {NAME}-values.yaml', "asset"),
+                (f'support {NAME} latest', "moving-version")):
+            files_target.write_text(content + "\n")
+            case(any(rule and rule.name == wanted for _, _, rule, _ in
+                     judge([files_path], [], [], support, root=d)[0]),
+                 f"filesystem test vocabulary never waives {wanted}",
+                 f"the filesystem test path waived {wanted}")
+
+        # Final owner-source synchronization stays exact: one anchored receipt
+        # fixture, the wrapped platform refusal, and the negative audit wrapper.
+        # Dropping approval must refuse each statement; extending/copying it or
+        # changing its rule set must never inherit the original waiver.
+        for sync_path, sync_text, sync_rule in (
+                (files_path,
+                 'if err := os.WriteFile(filepath.Join(path+"-old", "kagent-v0.10.3", "input"), []byte("anchored"), 0600); err != nil {',
+                 "moving-version"),
+                ("internal/kmx/app/kagent_profile.go",
+                 'return kagentFailure("drift", fmt.Errorf("Kagent v0.10.3 supports only linux/amd64 and linux/arm64"))',
+                 "moving-version"),
+                ("scripts/test_kagent_lift.py",
+                 'subprocess.run([str(wrapper), "--context", "kind-kmx-kagent-lift", *args], check=True,',
+                 "broad-operation")):
+            sync = {"path": sync_path, "text": sync_text, "category": "qualified-source",
+                    "rules": [sync_rule], "why": "exact reviewed owner-source synchronization"}
+            case(category_problem(sync) is None,
+                 f"{sync_path}: synchronized statement earns only {sync_rule}",
+                 f"{sync_path}: synchronized exact source tuple was refused")
+            entries = [entry for entry in lines
+                       if (entry["path"], entry["text"]) == (sync_path, sync_text)]
+            target = d / sync_path
+            target.write_text(sync_text + "\n")
+            found, _, used = judge([sync_path], [], entries, support, root=d)
+            case(not found and len(entries) == 1 and id(entries[0]) in used,
+                 f"{sync_path}: synchronized statement passes with staleness credit",
+                 f"{sync_path}: synchronized statement lacks its exact exemption")
+            case(any(rule and rule.name == sync_rule for _, _, rule, _ in
+                     judge([sync_path], [], [], support, root=d)[0]),
+                 f"{sync_path}: vocabulary alone cannot waive {sync_rule}",
+                 f"{sync_path}: vocabulary globally waived {sync_rule}")
+            target.write_text(sync_text + " // changed\n")
+            found, _, used = judge([sync_path], [], entries, support, root=d)
+            case(any(rule and rule.name == sync_rule for _, _, rule, _ in found) and not used,
+                 f"{sync_path}: an extension loses approval and staleness credit",
+                 f"{sync_path}: extended source inherited its exact exemption")
+            changed = sync_text.replace("0.10.3", "0.10.4") if sync_rule == "moving-version" else sync_text.replace("*args", '"delete", "agents"')
+            target.write_text(changed + "\n")
+            found, _, used = judge([sync_path], [], entries, support, root=d)
+            case(category_problem(dict(sync, text=changed)) is not None
+                 and any(rule and rule.name == sync_rule for _, _, rule, _ in found) and not used,
+                 f"{sync_path}: an edited version or audit argv loses its waiver",
+                 f"{sync_path}: edited source inherited its exact exemption")
+            for copied_path in ("internal/kmx/app/app.go", "docs/agent-lift.md"):
+                (d / copied_path).write_text(sync_text + "\n")
+                found, _, used = judge([copied_path], [], entries, support, root=d)
+                case(category_problem(dict(sync, path=copied_path)) is not None
+                     and any(rule and rule.name == sync_rule for _, _, rule, _ in found) and not used,
+                     f"{sync_path}: production or prose cannot borrow synchronized approval",
+                     f"{sync_path}: a copied statement inherited its waiver")
+            other_rule = "moving-version" if sync_rule == "broad-operation" else "broad-operation"
+            case(category_problem(dict(sync, rules=[sync_rule, other_rule])) is not None,
+                 f"{sync_path}: another bundle rule cannot join the exact waiver",
+                 f"{sync_path}: the exact waiver widened to another operation")
+            case(category_problem(dict(sync, rules=[sync_rule, "installer"])) is not None,
+                 f"{sync_path}: synchronized approval cannot waive installation",
+                 f"{sync_path}: the exact waiver gained installer permission")
+            target.write_text(sync_text + f'\nhelm install {NAME} other\n')
+            found, _, _ = judge([sync_path], [], entries, support, root=d)
+            case(any(rule and rule.name == "installer" for _, _, rule, _ in found),
+                 f"{sync_path}: an adjacent installer remains refused",
+                 f"{sync_path}: an exact source waiver hid an adjacent installer")
+
         # Scoped support is not a free-form JSON allowlist. Both adding a
         # path and adding a rule are rejected before any scan can use them.
         case(support_category_problem("workflow", CI_WORKFLOW) is None,
@@ -1500,9 +2116,17 @@ def selftest():
              "the bundle-fixture category refuses another YAML file",
              "the bundle-fixture category widened beyond the pinned files")
         for mutate, what in (
+                (lambda p: p["files"].update({"test": [path for path in p["files"]["test"] if path != files_path]}),
+                 "omitting the reviewed filesystem test from one policy half"),
+                (lambda p: (p["files"].update({"test": [path for path in p["files"]["test"] if path != files_path]}),
+                            p["files"]["production"].append(files_path)),
+                 "a filesystem test borrowing production support"),
                 (lambda p: p["files"]["production"].append("internal/kmx/app/extra_kagent.go"),
                  "an unauthorized support path"),
                 (lambda p: p["rules"].append("asset"), "a widened support rule set"),
+                (lambda p: p["qualified_bundle_rules"].append("installer"), "a widened qualified bundle rule set"),
+                (lambda p: p["files"]["qualification"].append("scripts/ci/arbitrary.sh"),
+                 "an unauthorized external qualification helper"),
                 (lambda p: p["files"]["production"].append("docs/production.md"),
                  "a support path borrowing the production category"),
                 (lambda p: p["files"]["workflow"].append(".github/workflows/release.yml"),
@@ -1612,7 +2236,7 @@ def selftest():
          "every scoped support file, including untracked files, is read directly",
          f"only {support_read} of {len(support)} scoped support files were read")
     case(not support_findings,
-         "existing scoped support files contain only waivable create vocabulary",
+         "existing scoped support files stay within qualified create/bundle vocabulary and exact fixtures",
          f"a support file carries a non-waivable surface: {[(p, n, r.name if r else None) for p, n, r, _ in support_findings]}")
 
     # Finally, the real tree, through the real entry point. This is what

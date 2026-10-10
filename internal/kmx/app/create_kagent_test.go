@@ -68,15 +68,12 @@ func kagentCreateFixture(t *testing.T, scenario string) (*App, CreateOptions, *b
 	t.Setenv("KMX_KAGENT_TEST_SCENARIO", scenario)
 	t.Setenv("KMX_KAGENT_TEST_RUNTIME", "go")
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
-	oldAgentSchema, oldModelSchema := kagentAgentSchemaSHA256, kagentModelSchemaSHA256
-	kagentAgentSchemaSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(`{"type":"object"}`)))
-	kagentModelSchemaSHA256 = kagentAgentSchemaSHA256
-	t.Cleanup(func() {
-		kagentAgentSchemaSHA256, kagentModelSchemaSHA256 = oldAgentSchema, oldModelSchema
-	})
+	profile := kagentCreateProfile()
+	profile.AgentSchema = fmt.Sprintf("%x", sha256.Sum256([]byte(`{"type":"object"}`)))
+	profile.ModelSchema = profile.AgentSchema
 	out, diagnostics := &bytes.Buffer{}, &bytes.Buffer{}
 	runner := &run.Runner{Stdout: out, Stderr: diagnostics, Echo: true}
-	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: runner, Out: out, Err: diagnostics, waitTiming: fastWaitTiming()}
+	a := &App{kagentProfile: &profile, Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: runner, Out: out, Err: diagnostics, waitTiming: fastWaitTiming()}
 	opt := CreateOptions{
 		Runtime: "kagent", KagentRuntime: "go", Name: "sample", Namespace: "agents",
 		Description: "Sample Kagent agent", ProviderType: "openai", Model: "gpt-4o-mini",

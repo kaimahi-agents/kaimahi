@@ -35,8 +35,9 @@ The local quickstart below is the **supported deterministic Orka first-answer
 path**: it ends with a native Orka Agent answering a question. For guided
 custom authoring and a first answer, use the wizard described below. The old
 Kagent setup steps remain removed; invoking one is still an unknown step.
-KMX does not install or upgrade Kagent; only explicit exact-v0.10.2 create is
-available for an installation an operator already owns.
+KMX does not install or upgrade Kagent. Explicit exact-v0.10.2 create and
+exact-v0.10.3 declarative bundle lift/status require an operator-prepared
+installation; see [version-qualified placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
 `orka.harness.v2` is outside the direction.
 
 ## Prerequisites

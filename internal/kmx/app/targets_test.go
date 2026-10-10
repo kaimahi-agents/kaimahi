@@ -24,7 +24,7 @@ func TestTargetsCapabilitiesMatchLifecycleDeclarations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, adapter := range []agentruntime.LifecycleAdapter{
-		kagentRuntimeAdapter{create: &CreateOptions{}, bindings: &agentruntime.KagentBindings{}},
+		kagentRuntimeAdapter{lift: &kagentLiftOperation{}, bindings: &agentruntime.KagentBindings{}},
 		orkaRuntimeAdapter{create: &CreateOptions{}},
 	} {
 		caps := adapter.Capabilities()
@@ -32,6 +32,22 @@ func TestTargetsCapabilitiesMatchLifecycleDeclarations(t *testing.T) {
 		for _, got := range report.Targets[i+1].Capabilities {
 			if supported, ok := want[got.Operation]; ok && got.Supported != supported {
 				t.Fatalf("%s %s: report=%t adapter=%t", adapter.ID(), got.Operation, got.Supported, supported)
+			}
+		}
+	}
+}
+
+func TestTargetsKagentVersionsRemainBounded(t *testing.T) {
+	for _, row := range compiledTargets() {
+		if row.ID != "kagent" {
+			continue
+		}
+		if len(row.QualifiedVersions) != 2 || row.QualifiedVersions[0].Version != "v0.10.2" || row.QualifiedVersions[1].Version != "v0.10.3" || !strings.Contains(row.QualifiedVersions[1].Scope, "Go") {
+			t.Fatalf("Kagent version boundaries=%+v", row.QualifiedVersions)
+		}
+		for _, capability := range row.Capabilities {
+			if capability.Supported && capability.Operation != "render" && capability.Operation != "deploy" && capability.Operation != "status" {
+				t.Fatalf("expanded unsupported Kagent lifecycle: %+v", capability)
 			}
 		}
 	}

@@ -60,9 +60,10 @@ all existing no-flag behavior. The explicit
 create-only integration for an already-installed exact Kagent v0.10.2, with an
 optional single A2A message as part of that create invocation; KMX never
 installs or upgrades it.
-`kmx agent lift` and interactive `/lift` deploy Orka bundles only to a prepared
-Orka target; the console offers a separately confirmed preparation step when
-Orka or the quickstart Tool is missing.
+`kmx agent lift` defaults to Orka; explicit v0.10.3 declarative placement uses
+`--runtime kagent --runtime-version v0.10.3` with a prepared target and bindings.
+Interactive `/lift` remains Orka-only; the console offers separately confirmed
+preparation when Orka or the quickstart Tool is missing.
 `kmx agent status` reads its revision, readiness, drift and evaluation result.
 `kmx agent evaluate` runs the bundle's cases against that deployed revision.
 See the [bundle lift guide](docs/agent-lift.md) for target preparation, receipts
@@ -101,9 +102,9 @@ From a checkout, `make` builds `bin/kmx` without provisioning anything.
 ## Runtime Contract
 
 [Orka](https://github.com/orka-agents/orka) remains the first-class and default
-runtime. The explicit Kagent v0.10.2 create capability does not change any
-no-flag workflow or add Kagent installation, discovery, chat, inspection, lift,
-evaluation, console, quickstart, `up`, or AKS payload support. The selected
+runtime. Bounded exact-v0.10.2 create and exact-v0.10.3 bundle lift/status do not
+change no-flag workflows or enable installation, discovery, standalone chat,
+evaluation, console, quickstart, `up` or AKS payload support. The selected
 runtime owns execution and enforcement; runtime choice and model provider are
 separate. Read the [runtime adapter contract](docs/runtime-adapters.md) for the
 boundaries between KMX and runtimes.
@@ -117,8 +118,8 @@ boundaries between KMX and runtimes.
 | Create your own local agent interactively | `kmx quickstart --interactive` | Wizard with model and agent choices; v0.4.1 uses `kmx quickstart-wizard` |
 | Create on a prepared target | `kmx agent create` | Orka is the unchanged default; explicit `--runtime kagent` is create-only for exact v0.10.2. Neither path provisions credentials |
 | Prove an answer | Interactive Orka chat or `kmx agent create --task ...` | Readiness alone is not execution proof; Kagent sends one A2A message and never retries an ambiguous result |
-| Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Orka bundles only; reconciles on an existing target and `--plan` writes nothing |
-| Compare Git and deployed revisions | `kmx agent status <bundle-dir> [--to-context <ctx>] [-o table\|json]` | Orka bundles only; read-only per-target revision, readiness, drift and evaluation |
+| Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Default Orka reconciliation; explicit v0.10.3 placement is new-object-only or matching receipt-bound reuse. `--plan` writes nothing |
+| Compare Git and deployed revisions | `kmx agent status <bundle-dir> [--to-context <ctx>] [-o table\|json]` | Default Orka revision/readiness/drift/evaluation; explicit v0.10.3 status compares desired bindings and saved deployment identity, not execution success |
 | Check a revision before promoting it | `kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>]` | Orka bundles only; runs `eval/*.yaml` cases as Tasks and exits non-zero unless all pass |
 | Lift an agent interactively | `/lift` in chat or console | Orka only; deploys the local bundle through the same lift as the CLI, with an untracked labelled live-copy fallback when no bundle exists |
 | Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while both create paths require `--namespace` |
@@ -138,9 +139,9 @@ Explicit Kagent create writes a review artifact and portable bundle; `--out -`
 omits the bundle unless `--bundle-path` is set. Offline rendering requires
 neither an installed Kagent nor a cluster Secret. Online creation requires both,
 and creates only a new ModelConfig and Agent; it never adopts, updates, or rolls
-back. Kagent bundles are intentionally refused
-by the currently Orka-only lift, status, evaluate, console, and interactive
-`/lift` paths. Credentials, namespaces, and RBAC remain separate operator
+back. The v0.10.3 bundle path is explicitly selected and requires its own
+qualified target; create receipts do not authorize reuse. Evaluation, console
+and interactive `/lift` remain Orka-only. Credentials, namespaces, and RBAC remain separate operator
 responsibilities. Use `--out -` or `--no-apply` for offline output and
 `--dry-run` for server admission without cluster writes. Read the complete
 [`agent create` contract](docs/kmx.md#kmx-agent-create).
@@ -148,8 +149,10 @@ responsibilities. Use `--out -` or `--no-apply` for offline output and
 ## Lifecycle
 
 Orka bundles, lift receipts, revision-aware status and evaluation are available
-as standalone commands. Only a successful online Kagent create writes its own
-private, prompt/answer-free receipt. Lift, status, and evaluation remain Orka-only. The
+as standalone commands. Explicit v0.10.3 declarative lift/status records only
+readiness and saved identity in separate private receipts; Go-only kind CI
+qualifies a native A2A answer separately. Standalone run/chat/eval, updates and
+retirement remain unsupported for that profile. The
 [lifecycle direction](https://github.com/kaimahi-agents/kaimahi/issues/194)
 also discusses rollback, which does not have a standalone command. Deploying
 and verifying an earlier revision cannot undo an agent's completed external
@@ -160,8 +163,8 @@ actions. KMX uses Git and the selected runtime rather than a separate server.
 Kaimahi is pre-1.0 and incubating. Interactive local creation, default creation
 on the first-class Orka runtime, inspection, chat, bundle lift and interactive
 lift to an existing target, and AKS platform provisioning are implemented. The
-only current Kagent capability is explicit, create-only authoring for an already-installed exact v0.10.2, optionally ending
-in one A2A message from that invocation. Its former broad
+bounded Kagent capabilities are exact-v0.10.2 create (optionally one A2A message
+in that invocation) and explicit exact-v0.10.3 declarative bundle lift/status. Its former broad
 command surface remains retired, and historical AKS records remain
 teardown-only. Rollback remains directional.
 AKS paths use billable resources and are not continuously re-proved in CI.
