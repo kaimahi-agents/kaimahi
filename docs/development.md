@@ -341,6 +341,46 @@ separately from the retained plane journey. Tags trigger the separate
 release workflow. None of these proves an AKS run: no Azure credentials belong
 in fork-exposed CI. A docs-only shortcut is not an end-to-end rerun.
 
+### CI registry mirrors
+
+CI's twelve Docker-using jobs configure the host daemon with
+[`scripts/ci/registry-mirrors.py`](../scripts/ci/registry-mirrors.py) and report
+pull endpoint evidence. Setup merges `registry-mirrors=["https://mirror.gcr.io"]`
+and `debug=true` into the existing daemon configuration, preserving unrelated
+settings, the engine version and running containers. It reloads Docker with
+SIGHUP rather than restarting or replacing it. Only Docker Hub routing changes:
+image references, digest pins, Kubernetes manifests and application source stay
+unchanged; GHCR and ECR are unaffected.
+
+Seven component/direct-kind jobs configure nodes after cluster creation and
+before workloads. The pinned kind node uses containerd 2.3.4's default
+`/etc/containerd/certs.d` path: `docker.io/hosts.toml` keeps
+`server = "https://registry-1.docker.io"` as the origin fallback and adds
+`https://mirror.gcr.io` with `pull` and `resolve` capabilities. Setup enables
+containerd debug logging for the endpoint report.
+
+Only compound quickstart and clone-free journeys use the small CI-only
+Docker-named symlink wrapper. It forwards Docker calls unchanged, then hooks a
+successful kind-node creation identified by the reserved kind cluster and
+node-role labels, writing hosts configuration and enabling debug logging before
+kind returns. This keeps the bare `up` and fetched-kind proof intact without
+changing KMX or kind. Clone-free CI fetches only this helper at the workflow SHA
+into `RUNNER_TEMP`; it does not check out the repository.
+
+Reports print only successful HTTP 200 endpoint responses: endpoint, image and
+manifest/blob category, without headers, query strings or payloads. A cache hit
+is not evidence of mirror routing; successful Docker Hub fallback is identified
+separately. Hygiene runs
+[`scripts/test_registry_mirrors.py`](../scripts/test_registry_mirrors.py) to test
+configuration merging, wrapper/node selection and evidence filtering.
+
+Mirror coverage must be checked against the images' existing references and
+digests, including `kindest/node` and the explicit Ollama image. A cache miss or
+mirror outage can fall back to Docker Hub; reports do not call that a mirror
+success. Existing Postgres ECR pins remain unchanged. Ollama's model-weight
+downloads from `registry.ollama.ai` are separate from OCI image pulls and are not
+routed through these mirrors.
+
 ## How the existing plane works
 
 One process, normally two replicas, one Postgres, three listeners:
