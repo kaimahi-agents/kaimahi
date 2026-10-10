@@ -18,7 +18,10 @@ inputs:
   model-key-env:
     description: Name of an existing secret environment variable, not the key itself
   aikit-image:
-    description: AIKit image with an immutable sha256 digest
+    description: Digest-pinned AIKit image; default follows orka-agents/agentkit's live evals
+    # Upstream pin: https://github.com/orka-agents/agentkit/blob/main/scripts/aikit-e2e-common.sh
+    # Shared by AgentKit #39 and #44. Follow its reviewed digest
+    # when bumping, and update scripts/ci/live-eval-loop.sh's default to match.
     default: ghcr.io/kaito-project/aikit/qwen3.5:2b@sha256:d838c5eebf533b5b73f67cc7f4984921f87d64d28e4a52d482740b667f46b8b4
   aikit-config:
     description: Regular YAML config path; defaults to the action's bounded CPU preset
