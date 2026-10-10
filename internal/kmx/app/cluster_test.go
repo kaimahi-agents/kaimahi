@@ -11,10 +11,9 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// The Podman recovery #53 added to `make cluster` moved into kmx when that
-// recipe became a delegation. Its fail-closed rule is the part that can be
-// tested without a Podman machine: kind listing a cluster that Podman has no
-// containers for is a disagreement, not an empty start list.
+// A kind cluster with no matching Podman containers is an inventory
+// disagreement, not an empty recovery list. Refuse rather than report
+// successful recovery without starting any node.
 func TestPodmanNodesFailsClosedOnAnEmptyListing(t *testing.T) {
 	for _, listing := range []string{"", "\n", "   \n\t\n"} {
 		if _, err := podmanNodes(listing, "kaimahi-p1"); err == nil {
@@ -37,11 +36,9 @@ func TestPodmanNodesReturnsEveryNode(t *testing.T) {
 	}
 }
 
-// #37 found this and it is the reason it is pinned here: a `kind get
-// clusters` that FAILS is not "no clusters". A broken container engine, a
-// kind that cannot reach its socket, an RBAC-less machine — every one of
-// them would otherwise read as "the cluster is missing" and send kmx into a
-// create that fails later, less clearly, and about something else.
+// A failed `kind get clusters` leaves the inventory unknown. Do not treat
+// container-engine or socket failures as evidence that a cluster is missing
+// and proceed to creation.
 //
 // The stub kind fails whatever it is asked, so a regression that read the
 // error as absence would go on to `kind create cluster` and still return an

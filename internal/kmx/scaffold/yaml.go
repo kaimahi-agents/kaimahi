@@ -7,11 +7,9 @@ import (
 
 // A hand-audited YAML emitter, deliberately not a library.
 //
-// This is #16's reasoning, kept: the generator's whole job is to turn
-// operator-supplied text — a name, a description, a file of instructions —
-// into a document that a cluster will then obey. The interesting failure is
-// not a malformed file, it is a well-formed file that says something the
-// operator did not write. Two rules make that impossible here:
+// Operator-supplied names, descriptions and instructions must remain values,
+// not become new YAML keys or sequence entries. The escaping and indentation
+// rules prevent well-formed documents from expressing injected behavior:
 //
 //   - a block scalar indents EVERY line uniformly, so a line inside an
 //     instruction file cannot dedent out of the scalar and become a sibling
@@ -19,8 +17,8 @@ import (
 //   - a scalar that would have to span lines in flow style is REFUSED
 //     rather than escaped, because escaping is where the subtle bugs live.
 //
-// (CWE-74, found in review on #16: an unquoted tool name containing a
-// newline closed the sequence and appended a tool nobody had reviewed.)
+// This prevents YAML injection (CWE-74), such as a newline in a tool name
+// introducing another sequence entry.
 
 // ValidateSingleLineText states the control-character policy a value rendered
 // as a single-line YAML scalar is held to, without rendering anything. It is
