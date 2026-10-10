@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -74,7 +75,7 @@ func compiledTargets() []TargetInfo {
 	orka := orkaRuntimeAdapter{create: &CreateOptions{}}
 	kagent := kagentRuntimeAdapter{create: &CreateOptions{}, bindings: &agentruntime.KagentBindings{}}
 	rows := []TargetInfo{
-		{ID: string(orka.ID()), DisplayName: "Orka", Kind: "adapter", SupportTier: "reference",
+		{ID: string(orka.ID()), DisplayName: "Orka", Kind: "adapter", SupportTier: "supported",
 			QualifiedVersions: []TargetQualification{{Version: OrkaVersion, Scope: "native Orka commands", Evidence: "SHA-256-pinned release chart; e2e-orka-runtime"}},
 			Capabilities:      lifecycleTargetCapabilities(orka),
 			Detection:         TargetDetection{State: "not-probed", Scope: "controller Deployments in orka-system", Detail: "use --detect with an explicit or saved Kubernetes context"}},
@@ -82,7 +83,7 @@ func compiledTargets() []TargetInfo {
 			QualifiedVersions: []TargetQualification{{Version: scaffold.KagentVersion, Scope: "explicit create only", Evidence: "exact controller commit and OCI image checks; e2e-kagent-create"}},
 			Capabilities:      lifecycleTargetCapabilities(kagent),
 			Detection:         TargetDetection{State: "not-probed", Scope: "explicit create only", Detail: "no Kagent discovery; create validates its preinstalled exact version"}},
-		{ID: "agentsessions", DisplayName: "AgentSessions", Kind: "integration", SupportTier: "eval-only",
+		{ID: "agentsessions", DisplayName: "agentsessions", Kind: "integration", SupportTier: "eval-only",
 			QualifiedVersions: []TargetQualification{{Version: agentsessions.ReferenceRevision, Scope: "reference-chat evaluation and local replay only; not the remote host version", Evidence: "pinned Go module; e2e-eval-loop"}},
 			Detection:         TargetDetection{State: "not-probed", Scope: "Sessions API only", Detail: "use --sessions host:port; HarnessRegistry is not probed or qualified"}},
 	}
@@ -141,6 +142,7 @@ func (a *App) Targets(opt TargetsOptions) error {
 	if opt.Sessions != "" {
 		report.Targets[2].Detection = a.detectSessionsTarget(opt)
 	}
+	slices.SortFunc(report.Targets, func(a, b TargetInfo) int { return strings.Compare(a.ID, b.ID) })
 	if opt.Output == "json" {
 		if err := json.NewEncoder(a.Out).Encode(report); err != nil {
 			return err

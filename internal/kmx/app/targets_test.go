@@ -24,12 +24,12 @@ func TestTargetsCapabilitiesMatchLifecycleDeclarations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, adapter := range []agentruntime.LifecycleAdapter{
-		orkaRuntimeAdapter{create: &CreateOptions{}},
 		kagentRuntimeAdapter{create: &CreateOptions{}, bindings: &agentruntime.KagentBindings{}},
+		orkaRuntimeAdapter{create: &CreateOptions{}},
 	} {
 		caps := adapter.Capabilities()
 		want := map[string]bool{"render": caps.Render, "deploy": caps.Deploy, "status": caps.Status, "evaluate": caps.Evaluate}
-		for _, got := range report.Targets[i].Capabilities {
+		for _, got := range report.Targets[i+1].Capabilities {
 			if supported, ok := want[got.Operation]; ok && got.Supported != supported {
 				t.Fatalf("%s %s: report=%t adapter=%t", adapter.ID(), got.Operation, got.Supported, supported)
 			}
@@ -80,7 +80,7 @@ func TestTargetsOrkaDetectionIsScopedReadOnlyAndFailClosed(t *testing.T) {
 			if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 				t.Fatal(err)
 			}
-			d := report.Targets[0].Detection
+			d := report.Targets[2].Detection
 			if d.State != tc.state || d.Version != tc.version || tc.code != "" && (d.Error == nil || d.Error.Code != tc.code) {
 				t.Fatalf("detection=%+v err=%v", d, err)
 			}

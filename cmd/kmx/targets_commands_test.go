@@ -29,9 +29,14 @@ func TestTargetsOfflineDoesNotLoadConfigOrTools(t *testing.T) {
 				t.Fatalf("offline view touched operational configuration: loads=%d stderr=%s", *loads, &diagnostics)
 			}
 			if output == "table" {
-				for _, want := range []string{"orka", "kagent", "agentsessions", "not-probed", "eval-only"} {
-					if !strings.Contains(out.String(), want) {
-						t.Fatalf("missing %s: %s", want, &out)
+				lines := strings.Split(out.String(), "\n")
+				for i, want := range []string{"agentsessions", "kagent", "orka"} {
+					if len(lines) <= i+1 {
+						t.Fatalf("table row missing: %s", &out)
+					}
+					fields := strings.Fields(lines[i+1])
+					if len(fields) == 0 || fields[0] != want {
+						t.Fatalf("table order must be alphabetical: %s", &out)
 					}
 				}
 				return
@@ -39,8 +44,8 @@ func TestTargetsOfflineDoesNotLoadConfigOrTools(t *testing.T) {
 			var report struct {
 				SchemaVersion int `json:"schemaVersion"`
 				Targets       []struct {
-					ID, Kind, SupportTier string
-					Capabilities          []struct {
+					ID, DisplayName, Kind, SupportTier string
+					Capabilities                       []struct {
 						Operation string
 						Supported bool
 						Reason    string
@@ -54,9 +59,10 @@ func TestTargetsOfflineDoesNotLoadConfigOrTools(t *testing.T) {
 			if report.SchemaVersion != 1 || len(report.Targets) != 3 {
 				t.Fatalf("report=%s", &out)
 			}
-			for i, want := range []string{"orka", "kagent", "agentsessions"} {
+			for i, want := range []string{"agentsessions", "kagent", "orka"} {
 				row := report.Targets[i]
-				if row.ID != want || row.Detection.State != "not-probed" {
+				wantTier := []string{"eval-only", "create-only", "supported"}[i]
+				if row.ID != want || row.SupportTier != wantTier || row.Detection.State != "not-probed" {
 					t.Fatalf("row=%+v", row)
 				}
 				for _, capability := range row.Capabilities {
@@ -70,7 +76,7 @@ func TestTargetsOfflineDoesNotLoadConfigOrTools(t *testing.T) {
 						t.Fatalf("expanded Sessions support: %+v", capability)
 					}
 				}
-				if want == "agentsessions" && (row.Kind != "integration" || row.SupportTier != "eval-only") {
+				if want == "agentsessions" && (row.Kind != "integration" || row.DisplayName != "agentsessions") {
 					t.Fatalf("Sessions advertised as lifecycle adapter: %+v", row)
 				}
 			}
@@ -137,10 +143,10 @@ func TestTargetsSessionsProbeSurvivesUnreadableKubeConfiguration(t *testing.T) {
 		if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 			t.Fatal(err)
 		}
-		if report.Targets[2].Detection.State != "present" || report.Targets[2].Detection.Version != "" {
+		if report.Targets[0].Detection.State != "present" || report.Targets[0].Detection.Version != "" {
 			t.Fatalf("lost independent Sessions read or invented version: %s", &out)
 		}
-		if detect && (report.Targets[0].Detection.Error == nil || report.Targets[0].Detection.Error.Code != "configuration_unreadable") {
+		if detect && (report.Targets[2].Detection.Error == nil || report.Targets[2].Detection.Error.Code != "configuration_unreadable") {
 			t.Fatalf("configuration error became absence: %s", &out)
 		}
 		if strings.Contains(out.String()+diagnostics.String(), "PRIVATE-CONFIG-PAYLOAD") {
