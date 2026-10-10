@@ -869,6 +869,7 @@ jobs:
               # could only approximate with a 0600 file.
               "internal/kmx/planebuild": "the revision the plane is built at",
               "internal/kmx/admin": "credential custody on the admin path",
+              "internal/kmx/portforward": "owned loopback forwards for native results and tools",
               # The managed path's rules about what may be deleted on
               # somebody else's subscription. Live infrastructure teardown
               # is exercised infrequently, so these tests catch regressions
@@ -2840,10 +2841,11 @@ jobs:
           assert r["context"] == "kind-kmx-quickstart", r
           assert r["elapsed_seconds"] > 0, r
           commands = [shlex.split(n) for n in r["next"]]
-          plane = next((argv for argv in commands if argv[-1:] == ["plane"]), None)
-          assert plane is not None, r["next"]
-          assert plane[:2] == ["KIND_CLUSTER=kmx-quickstart", "CONTAINER_ENGINE=docker"], plane
-          assert plane[2:] == ["kmx", "--context", r["context"], "plane"], plane
+          assert len(commands) == 3, r["next"]
+          assert [argv[:3] for argv in commands] == [["kmx", "--context", r["context"]]] * 3, commands
+          assert commands[0][3:5] == ["agent", "chat"], commands
+          assert commands[1][3:] == ["agent", "create"], commands
+          assert commands[2][3:] == ["orka", "status"], commands
           print("second run:", round(r["elapsed_seconds"], 1), "s ·", r["answer"][:80])
           EOF
       # `kmx up` on the same cluster is the RUNTIME and nothing more: it

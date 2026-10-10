@@ -84,22 +84,18 @@ func TestUpIsOrkaOnlyWithNoLegacyStepSurviving(t *testing.T) {
 	}
 }
 
-// The follow-ups are the ones this cluster can actually run now: an Orka
-// chat, Orka authoring, and the two commands that put an application's model
-// traffic on the seam. Indexes 3 and 4 are the governance pair the text
-// ending prints, so their order is part of the contract.
+// Follow-ups keep the first-answer journey on native Orka: ask another
+// question, author another agent, or inspect the platform.
 func TestQuickstartFollowUpsAreOrkaActions(t *testing.T) {
 	a := &App{Cfg: newQuickstartConfig()}
 	next := a.quickstartFollowups()
-	if len(next) != 5 {
+	if len(next) != 3 {
 		t.Fatalf("follow-ups are %q", next)
 	}
 	for i, want := range []string{
 		"agent chat hello-world-agent --runtime orka --namespace orka-system",
 		"agent create",
 		"orka status",
-		"plane",
-		"migrate '<deployment>' --namespace '<ns>' --model hello-world-agent/qwen2.5:3b",
 	} {
 		if !strings.Contains(next[i], want) {
 			t.Errorf("follow-up %d is %q, want it to offer %q", i, next[i], want)
@@ -113,7 +109,7 @@ func TestQuickstartFollowUpsAreOrkaActions(t *testing.T) {
 		if !strings.Contains(command, "--context kind-test") {
 			t.Errorf("follow-up lost the context this run used: %s", command)
 		}
-		if strings.Contains(command, "kagent") || strings.Contains(command, "govern ") {
+		if strings.Contains(command, "kagent") || strings.Contains(command, "govern ") || strings.Contains(command, " plane") || strings.Contains(command, " migrate") {
 			t.Errorf("follow-up points at the legacy runtime: %s", command)
 		}
 	}

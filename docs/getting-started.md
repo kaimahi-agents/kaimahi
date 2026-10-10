@@ -98,7 +98,8 @@ as described in [Orka](orka.md). Installation alone does not govern model traffi
 For a new native Agent, use [agent create](#an-agent-of-your-own).
 
 For an existing application on kind, deploy the plane and follow the owner-reviewed
-[migration procedure](migrate.md) (on AKS use the [lift phases](aks.md#targets-and-resume)):
+[migration procedure](migrate.md). [AKS setup](aks.md#targets-and-resume)
+installs Orka directly; it does not deploy this separate model plane:
 
 ```bash
 kmx plane

@@ -9,6 +9,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
@@ -41,7 +42,7 @@ func (a *App) Metrics(pod string) error {
 	if port == "" {
 		port = config.DefaultOpsPort
 	}
-	fwd, err := admin.StartForward(a, admin.Namespace, "pod/"+pod, port, "9092")
+	fwd, err := portforward.Start(a, admin.Namespace, "pod/"+pod, port, "9092")
 	if err != nil {
 		return fmt.Errorf("%w\n  (the ops port is on no Service; OPS_PORT=<free port> moves the local side)", err)
 	}

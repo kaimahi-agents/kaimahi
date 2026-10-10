@@ -242,12 +242,9 @@ func (a *App) warnAboutScrapeJobsTheAddonOwns() {
 			err, a.Cfg.KubeContext, scrapeMonitorResource)
 		return
 	}
-	var theirs []string
-	for _, name := range strings.Fields(out) {
-		if name != "kaimahi/"+scrapeMonitor {
-			theirs = append(theirs, name)
-		}
-	}
+	// Owned legacy objects were removed before this read. A surviving
+	// object is not ours merely because it carries the old plane name.
+	theirs := strings.Fields(out)
 	if len(theirs) == 0 {
 		return
 	}
@@ -275,13 +272,13 @@ func (a *App) warnAboutScrapeJobsTheAddonOwns() {
 // should ever have been in a position to remove.
 func (a *App) removeInClusterObservability(record *lift.Record) error {
 	var cleanupErr error
-	if record.Before.WeCreatedScraperPolicy() {
+	if record.MayRemoveScraperPolicy() {
 		if err := a.kubectlRun("-n", "kaimahi", "delete", "networkpolicy", scraperPolicy, "--ignore-not-found"); err != nil {
 			cleanupErr = fmt.Errorf("could not remove the scraper's NetworkPolicy allowance: %w\n"+
 				"    kubectl --context %s -n kaimahi delete networkpolicy %s", err, shellArg(a.Cfg.KubeContext), scraperPolicy)
 		}
 	} else {
-		a.notef("the NetworkPolicy %s was there before this run, or its origin was never established; leaving it.", scraperPolicy)
+		a.notef("the NetworkPolicy %s is not owned by this run; leaving it.", scraperPolicy)
 	}
 
 	if !record.MayRemoveScrapeMonitor() {

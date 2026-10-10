@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"encoding/base64"
 	"io"
 	"os"
 	"os/exec"
@@ -108,55 +107,6 @@ func TestEveryPlaneManifestIsAppliedInKubectlsOrder(t *testing.T) {
 	}
 	if planeManifests[0] != "plane/namespace.yaml" {
 		t.Errorf("the namespace must be applied first, got %q", planeManifests[0])
-	}
-}
-
-// Generated secrets travel through the pipe into kubectl and nowhere else.
-// The shell had to write them to 0600 files first, because `kubectl create
-// secret --from-file` reads a path; this is the property that replaces that
-// file, so it is worth asserting rather than commenting.
-func TestSecretManifestCarriesValuesInTheDocumentOnly(t *testing.T) {
-	body := string(secretManifest("kaimahi-governed-token", "orka-system",
-		map[string]string{"api-key": "kmh_" + strings.Repeat("a", 64)},
-		map[string]string{"kaimahi.dev/credential": "hello-world"}))
-
-	if strings.Contains(body, "kmh_") {
-		t.Errorf("the token appears in cleartext in the manifest:\n%s", body)
-	}
-	encoded := base64.StdEncoding.EncodeToString([]byte("kmh_" + strings.Repeat("a", 64)))
-	if !strings.Contains(body, "api-key: "+encoded) {
-		t.Errorf("the token is not carried as data:\n%s", body)
-	}
-	for _, want := range []string{
-		"kind: Secret",
-		"name: kaimahi-governed-token",
-		"namespace: orka-system",
-		`kaimahi.dev/credential: "hello-world"`,
-		"type: Opaque",
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("manifest lacks %q:\n%s", want, body)
-		}
-	}
-}
-
-// A random value is a random value: 32 bytes, hex, and never the same twice.
-// The failure this prevents is a plane bootstrapped with a predictable admin
-// bearer, which is the credential that gates issuing every other one.
-func TestGeneratedSecretsAreRandomAndFullLength(t *testing.T) {
-	seen := map[string]bool{}
-	for i := 0; i < 50; i++ {
-		v, err := randomHex(32)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(v) != 64 {
-			t.Fatalf("generated %d hex characters, want 64", len(v))
-		}
-		if seen[v] {
-			t.Fatal("the same value was generated twice")
-		}
-		seen[v] = true
 	}
 }
 

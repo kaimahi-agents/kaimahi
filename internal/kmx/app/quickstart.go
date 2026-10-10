@@ -151,10 +151,8 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	fmt.Fprintf(a.Out, "\n%s\n", safeTerminal(answer))
 	a.complete("An agent answered", started)
 	a.notef("\n%s  This command does not enable governance.\n"+
-		"Existing governance is not assessed by quickstart. To configure it:\n"+
-		"  %s  # the metering proxy and its ledger\n"+
-		"  %s  # put an application's model traffic on the seam (docs/migrate.md)",
-		a.presenter().Warning("GOVERNANCE"), result.Next[3], result.Next[4])
+		"Existing governance is not assessed by quickstart.",
+		a.presenter().Warning("NOTE"))
 	a.quickstartNext(cliui.New(a.Err), result)
 	return nil
 }
@@ -288,8 +286,6 @@ func (a *App) quickstartFollowups() []string {
 		a.operationCommand("agent", "chat", QuickstartAgent, "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
 		a.operationCommand("agent", "create"),
 		a.operationCommand("orka", "status"),
-		a.operationCommand("plane"),
-		a.operationCommand("migrate", "<deployment>", "--namespace", "<ns>", "--model", QuickstartAgent+"/"+a.Cfg.Model),
 	}
 }
 

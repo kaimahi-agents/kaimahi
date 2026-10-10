@@ -63,7 +63,7 @@ with `--kube-context`. No Orka runtime CLI is fetched or cached. Cached digests 
 rechecked before reuse. Set
 `KMX_TOOLCHAIN=off` to refuse missing tools instead. No container engine or Azure
 CLI is installed for you. `kmx plane` outside a checkout needs Go to fetch/build
-its source; the lift plane phase preflights Go even from a checkout.
+its source. AKS setup installs Orka directly and does not build the plane.
 
 Docker remains the default for compatibility. Podman is a first-class explicit
 choice:

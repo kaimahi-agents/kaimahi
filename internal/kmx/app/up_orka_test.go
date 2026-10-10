@@ -250,16 +250,19 @@ func TestBareUpWaitsForCurrentGenerationProviderReady(t *testing.T) {
 	}
 }
 
-// The guidance at the end of an Orka-only run has to be a route this cluster
-// can take. Putting an application's model traffic on the seam is
-// `kmx migrate`, one workload at a time.
-func TestOrkaOnlyUpPointsAtMigrateRatherThanGovern(t *testing.T) {
+// Runtime setup directs the operator to native authoring, not a separate proxy.
+func TestOrkaOnlyUpPointsAtNativeAuthoring(t *testing.T) {
 	a, errOut, _ := upFixture(t)
 	if err := a.Up(""); err != nil {
 		t.Fatalf("a bare Orka-only `kmx up` failed: %v\n%s", err, errOut)
 	}
-	if !strings.Contains(errOut.String(), "kmx --context kind-test migrate") {
-		t.Errorf("the Orka-only run offers no migration route:\n%s", errOut)
+	if !strings.Contains(errOut.String(), "kmx --context kind-test agent create") {
+		t.Errorf("the Orka-only run offers no native authoring route:\n%s", errOut)
+	}
+	for _, command := range []string{"plane", "migrate"} {
+		if strings.Contains(errOut.String(), a.operationCommand(command)) {
+			t.Errorf("the Orka-only run still advertises %s:\n%s", command, errOut)
+		}
 	}
 	if strings.Contains(errOut.String(), a.operationCommand("govern")) {
 		t.Errorf("the Orka-only run recommends governing an agent it did not deploy:\n%s", errOut)

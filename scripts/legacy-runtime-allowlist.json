@@ -735,7 +735,7 @@
     },
     {
       "path": "internal/kmx/app/quickstart_orka_test.go",
-      "text": "if strings.Contains(command, \"kagent\") || strings.Contains(command, \"govern \") {",
+      "text": "if strings.Contains(command, \"kagent\") || strings.Contains(command, \"govern \") || strings.Contains(command, \" plane\") || strings.Contains(command, \" migrate\") {",
       "category": "negative",
       "why": "Bounded quickstart tests: no command and no written manifest names the retired runtime."
     },
@@ -903,7 +903,7 @@
     },
     {
       "path": "internal/kmx/lift/payload_test.go",
-      "text": "for _, legacy := range []string{\"kagent\", \"agents\"} {",
+      "text": "for _, legacy := range []string{\"kagent\", \"agents\", \"boundary\", \"credential\", \"plane\"} {",
       "category": "negative",
       "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
     },

@@ -60,12 +60,11 @@ func TestTheKagentPayloadIsRefusedAsRetiredRatherThanUnknown(t *testing.T) {
 	}
 }
 
-// Only one payload remains, and it keeps every phase that is about the
-// CLUSTER. Losing one of those to the retirement would be a change to what
-// `lift` is for, not a removal of the legacy runtime.
+// The AKS path installs Orka and optionally Azure monitoring, with no
+// plane installation or credential custody.
 func TestTheOrkaPayloadKeepsEveryClusterPhase(t *testing.T) {
 	steps := strings.Join(stepsFor(PayloadOrka), " ")
-	for _, shared := range []string{"cluster", "boundary", "credential", "plane", "observability", "verify"} {
+	for _, shared := range []string{"cluster", "observability", "verify"} {
 		if !strings.Contains(steps, shared) {
 			t.Errorf("the orka payload dropped the shared phase %q: %s", shared, steps)
 		}
@@ -80,7 +79,7 @@ func TestTheOrkaPayloadKeepsEveryClusterPhase(t *testing.T) {
 // vocabulary. A `--step kagent` that still validated would run a phase whose
 // implementation went with the payload.
 func TestTheLegacyOnlyPhasesAreGoneEverywhere(t *testing.T) {
-	for _, legacy := range []string{"kagent", "agents"} {
+	for _, legacy := range []string{"kagent", "agents", "boundary", "credential", "plane"} {
 		if validStep(legacy, PayloadOrka) {
 			t.Errorf("--step %q is still a phase of the only payload", legacy)
 		}
@@ -196,7 +195,7 @@ func TestAKagentRecordStillDecodesSoItsResourcesCanBeRemoved(t *testing.T) {
 // an operator to a phase whose implementation is gone.
 func TestCompletionOffersEveryPhaseOnceAndNoRetiredOne(t *testing.T) {
 	all := strings.Join(AllSteps(), " ")
-	for _, want := range []string{"cluster", "boundary", "credential", "plane", "orka", "observability", "verify"} {
+	for _, want := range []string{"cluster", "orka", "observability", "verify"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("completion never offers %q: %s", want, all)
 		}
