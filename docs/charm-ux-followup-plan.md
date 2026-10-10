@@ -60,9 +60,10 @@ stack.
 
 Do not extend this prototype to these surfaces:
 
-- **Chat partial integration:** reject it. The chat path already has streaming,
-  history, slash commands, native approval prompts, resize handling, and PTY
-  restoration as one terminal protocol. Replacing only its input widget would
+- **Chat partial integration:** reject it. Chat already owns a full-screen
+  transcript, local scrollback, slash commands, resize handling and terminal
+  restoration. Native Orka turns display answers after Task completion; chat
+  offers no native approval submission. Replacing only its input widget would
   create two renderers and two terminal owners.
 - **Approvals:** keep the native, fail-closed confirmation whose exact context
   and default are security behavior, not presentation.

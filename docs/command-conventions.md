@@ -172,9 +172,9 @@ Update these in the same change:
 
 ## 8. Current exceptions
 
-These commands predate the rules above. Rename them following section 7 when
-they are next changed. The proposed names are not current syntax until they
-ship; remove a row when its rename lands.
+These commands differ from the rules above. Follow section 7 before changing
+any current syntax. Proposed names are not available until they ship; remove a
+row when its rename lands.
 
 | Current command | Rule it breaks | Proposed |
 |---|---|---|
@@ -182,3 +182,6 @@ ship; remove a row when its rename lands.
 | `up`, `down` | Bare verbs that only act on the local environment. | `local up`, `local down` |
 | `lift` (top level) | Deprecated alias of `aks up` that reuses the agent verb. | Undecided; retained for now. |
 | `--no-apply`, `--dry-run`, `--plan` | Preview flags whose effects differ by command. | Undecided; define each flag's effect before renaming. |
+| `suite push <directory> <reference>` | Two positional arguments: source directory and OCI destination reference. | Retain current syntax until a replacement is agreed. |
+| `suite build --output <file>`, `suite pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |
+| `suite build --attestations` | Defaults to true; `--attestations=false` opts out of SBOM and provenance requests. | Keep the documented default; `--require-attestations` refuses missing or unsupported attestations. |

@@ -100,7 +100,7 @@ The standalone example combines `RoundedBorder`, padding, and
 where the operator must stop and decide:
 
 - a remote-context confirmation;
-- a native runtime decision awaiting explicit consent;
+- a setup or deployment action awaiting explicit consent;
 - a destructive teardown summary.
 
 Keep these blocks compact and left-aligned. The command a user copies must stay
@@ -150,8 +150,9 @@ compatibility format. Structured modes belong to each command.
 
 ### Patterns rejected for this CLI
 
-- Full-screen placement and centered documents waste space in command output.
-- Modal compositing obscures the durable transcript.
+- Full-screen placement and centered documents waste space in static command
+  reports. Interactive chat and console have separate full-screen interfaces.
+- Modal compositing obscures static reports.
 - Gradients, animation, and decorative backgrounds add noise to operational
   state and have unreliable contrast across terminal themes.
 - Rounded borders around every section flatten hierarchy rather than improve
@@ -161,59 +162,33 @@ compatibility format. Structured modes belong to each command.
 
 ## Interactive chat
 
-Interactive chat remains a durable human stream rather than a full-screen TUI.
-It can also read lines through a scanner when enhanced input is unavailable.
-Lip Gloss is used for bounded presentation jobs:
+On capable input/output terminals, Orka chat uses a full-screen transcript
+viewport with a pinned header and message editor. It reflows on resize without
+submitting typed input. Users can browse scrollback and draft the next message
+while a response runs, but cannot submit another turn until it finishes.
+See [interactive chat](interactive-chat.md) for keys and fallback behavior.
 
-- trusted semantic labels (`YOU`, `AGENT`, tool activity, governance routes,
-  approvals, failures, and working state) use the shared palette;
-- slash hints and prompt cursor positions use terminal-cell width rather than
-  rune counts, so wide and combining characters do not corrupt redraws.
-- rich startup leads with agent identity, subdued context, scoped model posture,
-  and compact tool information rather than a command dump;
-- `/help` renders the grouped command reference on demand;
-- static native approval/question details use a callout above the prompt,
-  without taking over input handling or truncating consent information.
+The renderer owns terminal mode, prompt redraw, progress, assistant grouping
+and control-sequence sanitization. Trusted actor/action labels and indented
+payloads keep tool/model prose separate from local controls. Lip Gloss styling
+is applied only after dynamic text is sanitized. `/help` lists the active
+backend's commands; unknown slash commands are refused.
 
-Rich startup includes a short message/help/exit hint. Plain/scanner output keeps
-its line-oriented status report. Rich exit notices distinguish explicit exit,
-EOF, and cancellation; plain exits retain their existing status record. Working
-feedback covers connection, posture checks, waiting tasks, and decision
-continuation. The spinner resumes after tool activity only where a transient
-row can be cleared safely, and stops for final states and pending approvals.
+Each native Orka turn is a fresh Task; its answer is displayed after result
+retrieval. Chat has no resumable server-side session, server history replay or
+native approval submission. Local scrollback and sent-message recall are UI
+features, not persistent runtime history. Tools requiring approval are unavailable
+in this client; use the runtime's supported operator path instead.
 
-The existing chat state machine remains authoritative for:
+Retired `--json` and `--session` flags are refused before application loading.
+An optional message after the Agent name is the first interactive turn, not a
+one-shot invocation; use `kmx agent run` for one Task.
 
-- raw mode and terminal restoration;
-- cursor clearing and prompt redraw;
-- serialized spinner, prompt, and stream writes;
-- assistant grouping and the `  | ` response rail;
-- four-space trusted operation labels and six-space fields;
-- control-sequence sanitization before styling;
-- tool correlation, governance provenance, and HITL prompts.
-
-Those indentation levels are not DIY decoration to replace with a snapshot
-tree: they stop model-authored text from occupying renderer-owned provenance
-positions. Lip Gloss styling is applied only after dynamic text is sanitized.
-Orka chat is always a session, including with scanner input. Retired `--json`
-is refused before application loading; there is no raw A2A JSON equivalent for
-an existing Agent.
-
-`NO_COLOR` keeps static rich layout on a capable terminal, but chat separately
-disables cursor effects and enhanced input under it. `TERM=dumb`, non-terminal
-input/output, or unavailable raw mode also use scanner input. Enhanced editing
-tracks physical rows and grapheme widths, retains native approval/question
-prompts, bounds escape-sequence waits, and restores raw mode on exit. Spinner
-clearing is restricted to transient output, not durable response lines.
-Resize during enhanced input aborts chat without submitting the current message
-or approval and restores terminal settings. It avoids stale-coordinate erasure;
-live resize/reflow is not implemented.
-
-Long input uses a marked editing viewport, then emits the complete sanitized
-submission into the durable transcript. Cancelling or resizing never submits
-the hidden portion. Native confirmation batches reject missing or duplicate
-identifiers and refuse arguments larger than the inspectable limit before
-asking for a decision; no truncated preview can authorize an unseen call.
+`NO_COLOR`, `TERM=dumb` and non-terminal input/output select the line-oriented
+path. Scanner input remains available when enhanced input is unavailable.
+Terminal state is restored on exit or cancellation. Full-screen resize preserves
+the draft; the non-full-screen raw-input fallback retains its conservative
+resize-abort behavior. Neither resize nor cancellation submits pending input.
 
 ## Delivery slices
 
@@ -279,36 +254,22 @@ These are safety-semantic and format fixes, not merely color changes:
   printing their values.
 - Lift confirms before any deletion, retains records for incomplete cleanup, and
   scopes telemetry, ownership, and billing claims to what was actually checked.
-- Chat keeps received session IDs on stream failures and clears retry history
-  after a validated resume. Native HITL refuses malformed, incomplete, duplicate,
-  mixed question/approval, or oversized argument requests before sending a
-  decision. Each batch call requires a decision; arguments within the 16 KiB
-  per-call inspection limit are shown without truncation. Questions preserve
-  free text and validate single/multiple choices rather than splitting every
-  answer on commas.
-- Session lists now decode `agent_id`, distinguish empty/null lists from invalid
-  shapes, and share the active renderer with history. Actor/prompt boundaries
-  close correctly around replay. Ordinary tool events with IDs are deduplicated
-  by event content for display in streams/history; changed payloads and different
-  IDs remain visible. The uncolored startup header includes the selected context
-  and groups commands on capable terminals.
+- Chat names the selected agent/context and distinguishes tool activity from
+  local controls. Model prose is not authorization or enforcement evidence.
+- Full-screen chat preserves typed input and reflows on resize. It retains local
+  scrollback, not resumable server-side history.
 
 Still unimplemented: a comprehensive presentation pass over uncommon surviving
-operator paths, side-by-side status panels, and
-positive per-call governance receipts in chat. Existing chat route labels attest startup configuration, not enforcement
-receipts. Unit/fake-service and Linux PTY tests cover these changes; they are not
-evidence of a new live kind/AKS deployment or every terminal/platform combination.
+operator paths, side-by-side status panels, and positive per-call governance
+receipts in chat. Unit/fake-service and Linux PTY tests cover current behavior;
+they are not evidence of a new live kind/AKS deployment or every terminal/platform
+combination.
 
-Residual policies: broad one-shot **legacy-runtime** chat transport retries are unchanged
-(up to three retries for matching connection refusal, EOF, or reset). Ambiguous
-disconnects can repeat effects, including with an explicit one-shot session.
-`kmx quickstart` no longer shares that policy: the Orka path creates one Task and
-polls its result without resubmitting.
-Question-only resampling remains at most twice under its existing exclusions.
-Interactive `/retry` resends a message explicitly, not exactly once. History still
-skips malformed event data and limits verbose payload display; replay deduplication
-is not execution deduplication or a complete audit trail. Resize handling is a
-safe input abort, not live reflow. These are scoped fixes, not an all-clear audit.
+The former one-shot chat transport retries and question-only resampling are
+removed. `kmx quickstart` creates one Orka Task and polls its result without
+resubmitting. Interactive `/retry` explicitly resends a message and does not
+promise exactly-once execution. Cancellation restores terminal state but does
+not undo completed external actions.
 
 ## Test policy
 

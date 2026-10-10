@@ -85,7 +85,8 @@ samples of the same operations were:
 - Agent read: 310–331 ms.
 
 Those include process startup and API transport. The full session setup was
-1.22–1.26 s. KMX currently recreates that session every turn.
+1.22–1.26 s. These profiling runs recreated the session every turn; chat now
+reuses it as described in [implemented changes](#kmx-changes-implemented-after-profiling).
 
 `waitOrkaTaskResultProgress` does a fresh kubectl status read, then sleeps one
 second if not complete. With process/API cost, polling is roughly 1.25–1.35 s
@@ -98,7 +99,7 @@ controller result endpoint measurements were milliseconds.
 
 | Change | Targeted cost | Location |
 | --- | --- | --- |
-| Keep a bounded result session across chat turns | ~1.2 s per warm turn | KMX |
+| Keep a bounded result session across chat turns (implemented) | Historical ~1.2 s setup per warm turn | KMX |
 | Watch Task status instead of sleep/poll/subprocess cycles | Up to roughly one polling cycle plus repeated process overhead | KMX |
 | Use a persistent Kubernetes transport for reads | ~0.25–0.35 s per subprocess read; overlaps the items above | KMX |
 | Earlier authoritative worker completion signal | Observed 2.4–3.1 s Job-completion tail | Orka |
@@ -113,7 +114,7 @@ An early worker signal would need to establish terminal execution success and
 immutable result identity, not merely “a result body has been uploaded.” Removing
 the Job wait in KMX by accepting an early body would change success semantics.
 
-The native warm path could plausibly move toward **3–5 seconds** with client
+The profiling budget suggested a native warm path of **3–5 seconds** with client
 reuse/watch changes plus an upstream completion improvement. That is a target
 derived from the measured budget, not a measured implementation result. A cold
 model/prompt still dominates unless separately addressed.

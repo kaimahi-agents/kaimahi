@@ -160,9 +160,11 @@ Agent, waiting for each to become Ready.
 Existing matching Agent and Provider configurations are reused during lift.
 Comparison uses a server-side dry-run replace to account for API defaults; no
 replacement is applied. Different specifications and terminating resources are
-reported as conflicts. Ordinary `agent create` retains its strict collision policy.
-The operation
-does not create AKS clusters. `kmx aks up` is the separate AKS provisioning
+reported as conflicts. Ordinary online Orka `agent create` instead reconciles
+bundle-owned resources and can adopt identical unmarked objects; conflicting
+objects and local artifacts are still refused. See the
+[create contract](kmx.md#kmx-agent-create) for rerun, dry-run and Task rules.
+The operation does not create AKS clusters. `kmx aks up` is the separate AKS provisioning
 workflow: it installs Orka with optional Azure monitoring add-ons, not a model
 plane. The deprecated `kmx lift`
 still works and requires `--payload`.
@@ -192,8 +194,9 @@ The active step is highlighted; narrow windows use a compact numbered bar.
 Approved Orka installs/repairs, Kubernetes tool installation, bundle
 reconciliation and live-copy deployment open a bordered **LIFT deployment
 pane** showing the Agent, destination, elapsed time and real stage states. Only the active stage animates; no percentages are
-estimated. Orka installation reports installer fetch, wrapper credential
-reconciliation, and installer application/readiness. The bundle pane reports reconciliation through the shared lift operation;
+estimated. Orka installation reports the pinned chart fetch, chart CRDs,
+harness-v2 installation and Task result-reader setup. The bundle pane reports
+reconciliation through the shared lift operation;
 live-copy deployment reports schema/prerequisite checks, server admission,
 Provider creation and Ready wait, then Agent creation and Ready wait.
 
