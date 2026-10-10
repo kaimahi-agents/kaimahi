@@ -28,6 +28,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- `kmx targets` reports compiled runtime capabilities and exact qualification evidence in table or JSON form. It is offline by default; `--detect` reads Orka controller evidence in the selected context and `--sessions` independently checks an explicit Sessions endpoint. Unreadable probes remain distinct from absence and exit nonzero after the complete report. The dated support matrix distinguishes Orka, exact Kagent create and agentsessions eval-only support from unqualified candidates. No runtime selection, installation, registry serving or lifecycle capability is added.
+
 - AX preview activity source includes a bounded, allowlisted OpenCode child-event projector with synthetic failure and replay tests. It does not include a command wrapper, signed image or AX lifting yet.
 
 - Portable agents can declare `spec.coordination.allowedAgents` as a nonempty, explicit helper allowlist. Orka renders it as enabled named delegation; Kagent refuses unsupported core delegation. Legacy Orka coordination and existing bundle digests/rendering remain unchanged. Older kmx readers refuse the new field; upgrade before reading migrated bundles. This does not add an AX adapter.

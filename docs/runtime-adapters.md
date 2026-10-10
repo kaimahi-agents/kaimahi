@@ -13,6 +13,130 @@ already-installed exact Kagent v0.10.2. It does not install or upgrade that
 runtime and does not change any no-flag behavior. The selected platform, not a
 generic KMX control plane, owns execution and enforcement.
 
+## Read-only target view
+
+```bash
+kmx targets                         # offline compiled support
+kmx targets -o json                 # schemaVersion 1; same capability facts
+kmx --context <context> targets --detect
+kmx targets --sessions 127.0.0.1:8080
+kmx targets --detect --sessions <host:port> --sessions-ca <ca.pem>
+```
+
+The default view loads no operational configuration, runs no tools, contacts no
+host, and writes no state. It lists only compiled Orka and explicit Kagent
+create adapters plus the **eval-only agentsessions integration**, not the
+research candidates below. Per-operation support and refusal reasons describe
+compiled command behavior, independently of detection and exact-version evidence.
+The catalog is diagnostic composition, not a new lifecycle registry or SDK.
+
+`--detect` reads controller Deployments in **`orka-system`**, not workload
+namespaces, using the existing `--context`, `KUBE_CTX`, saved `kmx ctx`, or kind
+context resolution. It uses an already available kubectl: no tool download,
+installation, Helm mutation or cluster creation. A labelled controller is
+`present`; no matching controller in that successful scoped list is `absent`.
+Only the exact pinned controller image digest identifies the qualified version;
+a familiar tag, foreign image digest, sidecar image or unavailable image leaves
+version unknown. Presence proves neither readiness nor a successful workload,
+and absence in this namespace says nothing about other namespaces.
+
+`--sessions` independently reads at most one Session page, discarding returned
+metadata. It does not load Kubernetes configuration unless `--detect` is also
+requested. Non-loopback connections require verified TLS; `--sessions-ca`
+supplies a private CA and also enables TLS on loopback. Plaintext is limited to
+literal loopback. A readable Sessions API proves no host version, chat harness,
+model, registration or image identity. **HarnessRegistry is not probed.**
+
+Every requested read failure is `unreadable`, with a typed code and fixed,
+actionable diagnostic; it is never absent, unsupported-version evidence or
+permission to fall through. The command emits the complete report, including
+independent successful probes, then exits nonzero if any requested probe is
+unreadable. Authentication, RBAC, timeout, network and malformed-response
+failures do not echo external bodies. Unrequested reads are `not-probed`.
+Kagent stays not-probed: only explicit create validates its exact installation.
+
+This view does **not select a runtime** or change existing command defaults. It
+can show both Orka and Sessions without preferring either. Multi-runtime
+lifecycle selection and durable target bindings remain separate contract work.
+
+## Revision-pinned support and qualification matrix
+
+**Evidence snapshot: 2026-10-10.** Versions below have different support scopes,
+not uniform parity. Native readiness is never semantic-result proof. Compiled
+capabilities are reported by `kmx targets`; the remaining entries are research
+pins, **not supported adapters**. Upstream release pins identify material to
+qualify, not completed installation or conformance evidence.
+
+### Compiled paths
+
+| Implementation | Exact source / immutable artifact evidence | Preparation owner | Supported KMX operations and evidence limits |
+|---|---|---|---|
+| Orka reference adapter | [v0.2.0 source](https://github.com/orka-agents/orka/tree/5f4eb543b2b35a3afb8e7ea01f5f53985e25d4c1); release chart SHA-256 `b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79`; controller `ghcr.io/orka-agents/orka@sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370` | Operator or existing explicit KMX Orka environment path; targets does neither | Render, deploy/reconcile, status, evaluation, chat, one-shot run, native workload retire. Retire deletes/releases owned workload resources; it is not retained registration retirement. Required Orka CI proves a native result, not every optional capability. |
+| Kagent exact-v0.10.2 create adapter | [release source](https://github.com/kagent-dev/kagent/tree/68df64f671800c37c4204d81ebe0dd66ec35d223); controller OCI index SHA-256 `6adeef9ac70056e5871773a78233a77f12d1357f9f3484aaee59fe8abc6450b9`; official CRD/chart OCI digests are pinned in [CI](../.github/workflows/ci.yml) | Operator; CI installation is an external test precondition, not a KMX installer | Render and explicit new-object create only, optionally one A2A turn within create. No standalone run, chat, discovery, status, evaluation, retirement, reconciliation, diff or rollback. Required create CI checks exact controller/commit/images, admission and a real answer. |
+| agentsessions eval integration, not a lifecycle adapter | Go module/local reference `v0.1.3-0.20261008190619-e680ea10d3b4`; [source](https://github.com/aramase/agentsessions/tree/e680ea10d3b4); daemon built from that exact module by [live eval CI](../scripts/ci/live-eval-loop.sh); its AIKit image is digest-pinned there | Operator supplies host/journal and matching model; KMX runs no infrastructure | Text-only evaluation, one Session per case; bounded read-only verification with the local reference chat harness and zero live model calls. Neither receipt nor verification attests the remote host/image/version or satisfies an Orka lift gate. Deploy/status/retire/re-lift remain unsupported. |
+
+Orka and Kagent common bundle inputs produce a portable source digest; target
+bindings and Secret references remain separate, and rendered resources have
+their own digest. Sessions sends exact instructions in per-execution config and
+checks the host-selected model; Session metadata does not select it. Its
+receipts hold Session/journal/output identities, not prompts or answers.
+KMX documents and receipts contain **Secret references only**, never credential
+values. Model credentials remain operator/runtime-owned; execution config is
+journaled and must not contain credentials.
+
+For all three paths, a standalone `logs`, arbitrary `diff` or `rollback`
+capability is not advertised. Orka status can report drift, but that is not a
+new universal diff API. Targets reports the shared unsupported-operation
+wording with reasons; it does not invoke unsupported commands. Historical
+workload results and infrastructure cleanup are different authorities.
+
+### Second-adapter promotion gate
+
+[agentsessions #100](https://github.com/aramase/agentsessions/pull/100) merged at
+`8d97860b4b9c923b4140b6f5bfcadb718d689014`: it provides a persisted **in-process**
+HarnessRegistry, keyed by name/spec digest, with retained retirement and
+same-spec reactivation. At that pin, `agentsessionsd` serves Sessions but **not
+HarnessRegistry**. An operator-only admin listener is a prerequisite; startup
+`--harness` flags and static built-in `chat` are not deployable registrations.
+
+Promotion to a second real adapter stops until the admin API is served safely,
+registration identity is linked to the exact source/suite member and immutable
+image, and [shared conformance](https://github.com/kaimahi-agents/kaimahi/issues/352)
+proves a bound Session result, restart/unknown outcomes, retained retirement and
+reactivation. Descriptor IDs and recorded replay versions are host-reported,
+not authentication or image attestation. AgentKit remote-harness profiles await
+[its #34](https://github.com/orka-agents/agentkit/pull/34) and
+[#35](https://github.com/orka-agents/agentkit/pull/35); arbitrary-harness verify
+awaits [agentsessions #112](https://github.com/aramase/agentsessions/issues/112).
+No runtime registry or public SDK is promoted by the target view.
+
+### Unqualified candidate pins
+
+Every entry below has **no compiled KMX lifecycle capabilities**. An operator
+must prepare it; KMX does not install, publish its images or own its
+infrastructure. Immutable installation artifacts, Secret-reference behavior,
+revision/result binding, replay posture and workload-only cleanup must be
+qualified before any support claim. Until then render/deploy/status/eval/chat,
+logs/diff/rollback and cleanup are all unsupported by KMX for these candidates.
+
+| Candidate / category | Pinned research source | Blocker and explicit stop rule |
+|---|---|---|
+| Kagent 1.0 alpha11 — agent runtime, unsupported candidate | [source `30e8a2c2ceb9a1fadc16e969aa7ee0107a42d7b2`](https://github.com/kagent-dev/kagent/tree/30e8a2c2ceb9a1fadc16e969aa7ee0107a42d7b2) | Alpha line remains unqualified; revisit at beta. Stop without immutable installation, native ready state, revision-pinned definition, documented execution and a result bound to that revision. No legacy create support is expanded. |
+| KARS — agent/security platform with BYO-image support | [v0.1.26 `4288a3a00e88076a0c779c40fccb90790d4de6db`](https://github.com/Azure/kars/tree/4288a3a00e88076a0c779c40fccb90790d4de6db) | Requalify its current definition/image, policy and result APIs. Stop if cleanup can destroy shared/cloud infrastructure or exact input/result identity cannot be proven. |
+| AX — image execution target | [v0.3.1 `e70162a34037c221fe6fadefd98308c05a4ad8f3`](https://github.com/google/ax/tree/e70162a34037c221fe6fadefd98308c05a4ad8f3) | Preview projector is not an adapter/image. Stop without an immutable instructions/model/image/result contract, logs/cancellation and scoped cleanup evidence. |
+| OpenShell — sandbox/image execution target | [v0.1.2 `6648bd0c290efbc41ba131ee9831ee45cd431f94`](https://github.com/NVIDIA/OpenShell/tree/6648bd0c290efbc41ba131ee9831ee45cd431f94) | Sandbox access is not authored-agent revision/evaluation evidence. Stop without a complete qualified image input/result contract. |
+| Mecatl — agent harness/runtime | [v0.0.41 `89316cd9ed449e2577344723b6df17dec4cde034`](https://github.com/stacklok/mecatl/tree/89316cd9ed449e2577344723b6df17dec4cde034) | Candidate one-shot runner only. Stop without immutable installation, revision-bound terminal results and workload-only cleanup. |
+| Agent Runtime Operator — emerging Kubernetes runtime | [v0.28.1 `cc21d887c14121086a95c54c7122f6786001afed`](https://github.com/agentic-layer/agent-runtime-operator/tree/cc21d887c14121086a95c54c7122f6786001afed) | Watch/conformance probe, not support. Stop at schema/readiness-only evidence without a revision-bound execution result and scoped cleanup. |
+| Agent Substrate — workspace/execution substrate | [v0.2.0 `10a1bfb2f58039608a0b8419379714945e4d65ac`](https://github.com/agent-substrate/substrate/tree/10a1bfb2f58039608a0b8419379714945e4d65ac) | Consume through Orka or another runtime. No peer adapter unless it independently proves the full authored revision, execution/result and cleanup lifecycle; preserve retained templates/snapshots. |
+| Kubernetes Agent Sandbox — workspace/sandbox substrate | [v1.0.4 `810726d89c71da77cdc82668bca1b00f5cd21ed8`](https://github.com/kubernetes-sigs/agent-sandbox/tree/810726d89c71da77cdc82668bca1b00f5cd21ed8) | Consume beneath a runtime; sandbox readiness alone supplies no agent/evaluation semantics. Stop without independent complete lifecycle evidence. |
+
+AgentKit, ADK, Microsoft Agent Framework, LangGraph, CrewAI, Dapr Agents,
+AgentScope and Agno are frameworks/harness libraries, not automatically lifecycle
+targets. Foundry, Copilot, Ollama, KServe, vLLM and KAITO are inference backends,
+not runtime adapters. See [#238](https://github.com/kaimahi-agents/kaimahi/issues/238)
+for qualification ownership and [the Substrate evaluation](reviews/2026-09-10-substrate-evaluation.md)
+for the workspace boundary.
+
 ## Terms and ownership
 
 | Term | Meaning | Owner |

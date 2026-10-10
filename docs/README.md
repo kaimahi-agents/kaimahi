@@ -9,7 +9,7 @@ or comparing implementations.
 | I want to… | Read |
 |---|---|
 | Set up the current development CLI and understand prerequisites | [Getting started](getting-started.md) |
-| Understand runtime, context, session, inference, lifecycle, and enforcement boundaries | [Runtime contract](runtime-adapters.md) |
+| Inspect compiled runtime support and qualification evidence with `kmx targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Author an agent: default native Orka, or explicit create for preinstalled exact Kagent v0.10.2 | [Native Orka create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-agent-create) |
 | Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](agentsuite-spec.md) |

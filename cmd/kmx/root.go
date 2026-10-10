@@ -133,7 +133,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newOrkaCommand(state),
 		newBackupCommand(state), newRestoreCommand(state),
 		newMetricsCommand(state), newStatusCommand(state), newDownCommand(state), newAgentCommand(state), newTaskCommand(state),
-		newSuiteCommand(state),
+		newSuiteCommand(state), newTargetsCommand(state),
 		retiredCommand("govern", "kmx migrate <deployment> --namespace <ns> --model <model>, or kmx credential issue <name> --secret <secret> --namespace <ns>"),
 		retiredCommand("use", "kmx models add <name> --url <url> --classification <class>, then kmx migrate <deployment> --namespace <ns> --model <model>"),
 		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),

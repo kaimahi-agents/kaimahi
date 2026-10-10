@@ -142,6 +142,7 @@ SCOPED_SUPPORT_FILES = {
         "internal/kmx/app/create_kagent.go",
         "internal/kmx/app/kagent_create_online.go",
         "internal/kmx/app/runtime_kagent_lifecycle.go",
+        "internal/kmx/app/targets.go",
         "internal/kmx/runtime/kagent_bindings.go",
         "internal/kmx/runtime/portable.go",
         "internal/kmx/runtime/prepared.go",
@@ -150,6 +151,8 @@ SCOPED_SUPPORT_FILES = {
     }),
     "test": frozenset({
         "cmd/kmx/agent_create_test.go",
+        "cmd/kmx/targets_commands_test.go",
+        "internal/kmx/app/targets_test.go",
         "internal/kmx/app/agent_bundle_runtime_refusal_test.go",
         "internal/kmx/app/bundle_format_compat_test.go",
         "internal/kmx/app/create_kagent_test.go",
