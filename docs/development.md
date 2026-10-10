@@ -93,10 +93,10 @@ export KUBE_CTX=kind-dev-local
 bin/kmx quickstart
 bin/kmx status
 bin/kmx agent chat --namespace orka-system hello-world-agent
-bin/kmx down
+bin/kmx local down
 ```
 
-A bare `bin/kmx up` installs the runtime without an Agent: kind, Ollama, the
+A bare `bin/kmx local up` installs the runtime without an Agent: kind, Ollama, the
 model and pinned Orka with its keyless `local` Provider. Author your own Agent
 with `bin/kmx agent create`, or use `bin/kmx quickstart --interactive` for guided
 creation. `kmx status` is the Orka-only runtime report; bundle-aware
@@ -150,7 +150,7 @@ Hygiene self-tests the evidence/provenance gates and failure diagnostics with
 `scripts/test_eval_runner.py`. This check proves no lift gate, host implementation
 attestation, cluster integration or hosted-model provider behavior.
 
-`e2e-orka-runtime` brings up kind, Ollama and the model with `kmx up --step`
+`e2e-orka-runtime` brings up kind, Ollama and the model with compatibility `kmx up --step`
 component steps, installs pinned Orka and its keyless Provider, and requires a
 Provider → Agent → Task round trip to return an exact, non-empty local-model
 answer. It applies the committed native Orka

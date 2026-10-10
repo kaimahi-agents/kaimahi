@@ -1,11 +1,5 @@
-// Package app implements kmx's commands.
-//
-// The Makefile's kind-path recipes are the specification for everything
-// here: every wait, every fail-closed check and every message is carried
-// across, and where a comment in the Makefile explains WHY a wait exists,
-// that reasoning is repeated at the Go code that replaced it. The Makefile
-// now delegates to this package, so there is one implementation and CI keeps
-// proving the code a developer actually runs.
+// Package app orchestrates kmx commands using resolved configuration,
+// context guards, runtime adapters and external tools.
 package app
 
 import (
@@ -137,10 +131,9 @@ func (a *App) withRunContext(ctx context.Context) *App {
 
 // kubectl returns a kubectl argument list carrying the explicit --context.
 //
-// Every read and every write kmx makes goes through this. The Makefile's
-// $(KUBECTL) does the same thing for the same reason: a bare kubectl follows
-// `current-context`, which `az aks get-credentials` rewrites silently, so a
-// command meant for kind can quietly aim at a managed cluster.
+// An explicit context prevents a command from following kubeconfig's mutable
+// current-context, which tools such as `az aks get-credentials` can change.
+// Reads and writes built with this helper stay on the selected target.
 func (a *App) kubectl(args ...string) []string {
 	return append([]string{"--context", a.Cfg.KubeContext}, args...)
 }

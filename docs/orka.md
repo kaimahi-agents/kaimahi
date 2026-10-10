@@ -88,7 +88,7 @@ Orka v0.2.0 does not require an LLM API key to install; model calls need a
 Provider and an endpoint the cluster can reach. Its `Provider` type accepts
 `baseURL` — "an optional custom API endpoint (for proxies or self-hosted)" —
 so kmx creates one of `type: openai` pointing at the keyless in-cluster model
-server `kmx up` already deployed:
+server `kmx local up` already deployed:
 
 ```yaml
 spec:
@@ -110,7 +110,7 @@ an adopter should learn that here, not at their first model call.
 `agent create` defaults to Orka resources; it does not install Orka. The
 separate explicit Kagent create path is documented in the
 [CLI contract](kmx.md#explicit-kagent-v0102-create) and does not change this
-guide. On the local kind path the runtime is already there: `kmx up` and `kmx quickstart` both
+guide. On the local kind path the runtime is already there: `kmx local up` and `kmx quickstart` both
 install the pinned release and leave the Ollama model in place, so author
 against that **same** context. On a cluster kmx did not bring up, install it
 first:
@@ -125,16 +125,14 @@ it never adopts or updates the installer's shared Provider `local`. This is a
 new Agent/Task example, not a continuation command for an Agent you already
 created. Choose unused names and output paths; creation refuses collisions.
 
-Task execution requires an existing result account, and the runtime step owns
-it. `kmx up --step orka` provisions exactly this account, Role and
-RoleBinding, and so does every run that includes that step — a bare `kmx up`
-and `kmx quickstart`. A standalone `kmx orka install` does **not**: it
-installs the release and wires the keyless Provider, and nothing more.
-`agent create` never does either: it only NAMES an account, so authoring an
-agent cannot mint a grant nobody read as a grant. On a cluster whose Orka
-arrived another way — including one where only `kmx orka install` has run —
-an operator with RBAC creation permission can provision the same account
-separately; these commands contain names only, not token values:
+Task execution requires an existing result account. `kmx orka install`
+provisions the account, Role and RoleBinding below; so does
+`kmx local up --step orka` and every run that includes that step — a bare
+`kmx local up` and `kmx quickstart`. `agent create` only NAMES an account and
+never provisions RBAC. On a cluster whose Orka arrived through upstream tools,
+an operator with RBAC creation permission can provision the account separately.
+Skip these three RBAC creation commands if KMX already provisioned it; they
+contain names only, not token values:
 
 ```bash
 kubectl --context kind-kaimahi-p1 -n orka-system create serviceaccount orka-result-reader
@@ -198,7 +196,7 @@ or governance is added here.
 $ kmx quickstart                            # a cluster, model, Orka Agent and fresh Task answer
 ```
 
-Use `kmx up` instead to install the runtime without creating an Agent, then
+Use `kmx local up` instead to install the runtime without creating an Agent, then
 follow the [native create guide](#author-an-orka-agent-and-get-an-answer).
 Both setup paths install Orka, so neither needs a separate `kmx orka install`.
 
@@ -251,7 +249,7 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   read-only Task result account. An existing namespace alone is not an Orka
   installation; kmx refuses a legacy controller/CRD or foreign Helm release,
   not a pre-created `orka-system` namespace containing only Secrets or ServiceAccounts.
-  On an existing kind cluster, `kmx up` performs this refusal and checks a
+  On an existing kind cluster, `kmx local up` performs this refusal and checks a
   recognized controller's readiness before starting the long model pull.
 - **Partial installs require operator review.** Applying CRDs or creating a
   failed Helm release can leave cluster state even if installation times out.
@@ -261,7 +259,7 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   SHA-256-verified chart with
   `helm --kube-context <ctx> -n orka-system upgrade orka <verified-orka-0.2.0.tgz> --reuse-values --wait`
   (never `--force`), or clean the failed target before retrying kmx. On a
-  disposable local kind cluster you created, `kmx down` then `kmx up` replaces
+  disposable local kind cluster you created, `kmx local down` then `kmx local up` replaces
   it, losing its data. On AKS, stop and use the verified backup/recovery plan.
 - **No supported version upgrade.** [Orka v0.2.0 explicitly supports only new
   installations](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
@@ -269,9 +267,9 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   release that publishes a tested procedure*, not instructions to upgrade
   v0.1.3 to v0.2.0. Do not use `helm upgrade --force`.
 - **Local kind replacement loses data.** If replacing an old local install,
-  first export anything you need; `kmx down` deletes the named kind cluster,
+  first export anything you need; `kmx local down` deletes the named kind cluster,
   including Orka Tasks, custom resources, Secrets, SQLite volumes, snapshots,
-  model data and any historical database still present. Only then run `kmx up`
+  model data and any historical database still present. Only then run `kmx local up`
   for a new v0.2.0 installation. This is not a migration and does not restore the deleted data.
 - **AKS replacement is operator-managed.** Before retiring v0.1.3, make and
   verify backups of the existing controller data volumes, Orka resources/Secrets

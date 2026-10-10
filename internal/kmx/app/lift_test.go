@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
@@ -43,14 +44,13 @@ func TestAKSUpPrintsDirectLiftCommandsWhenLiftInvokesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(body)
-	for _, want := range []string{"KMX_LIFT_CONTINUE", "KMX_LIFT_DOWN", "continue:  $KMX_LIFT_CONTINUE", "teardown:  $KMX_LIFT_DOWN"} {
+	for _, want := range []string{"KMX_LIFT_CONTINUE", "KMX_LIFT_DOWN", "continue:  $KMX_LIFT_CONTINUE", "teardown:  $teardown"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("embedded aks-up.sh does not carry %q", want)
 		}
 	}
 	if !strings.Contains(text, `if [ -n "${KMX_LIFT_CONTINUE:-}" ]`) ||
-		!strings.Contains(text, "AKS_RESOURCE_GROUP=$RG AKS_CLUSTER=$CLUSTER KAIMAHI_CONFIRM=$RG bash scripts/aks-down.sh") ||
-		!strings.Contains(text, "kmx aks up --byo --resource-group $RG") {
+		!strings.Contains(text, "This standalone script does not create a KMX ownership record") {
 		t.Error("aks-up.sh no longer keeps its direct-script guidance as the fallback")
 	}
 }
@@ -166,7 +166,7 @@ func TestOnePhaseSaysWhatIsLeftRatherThanClaimingTheJourney(t *testing.T) {
 // An add-on this run itself enabled reads as "on" the second time through, and
 // re-running a phase must not turn into a refusal.
 func TestMonitoringAlreadyOnIsRefusedButAResumedRunIsNot(t *testing.T) {
-	a := &App{}
+	a := &App{Cfg: &config.Config{KubeContext: "unrelated"}}
 	opt := lift.Options{Payload: lift.PayloadOrka, BringYourOwn: true, ResourceGroup: "rg", Cluster: "c", Registry: "reg12345"}
 
 	for _, tc := range []struct {

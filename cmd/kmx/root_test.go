@@ -317,6 +317,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
 		"agent", "agent chat", "agent create", "agent edit", "agent evaluate", "agent lift", "agent list", "agent retire", "agent run", "agent show", "agent status", "agent verify",
 		"aks", "aks up", "aks down", "completion", "ctx", "down",
+		"context", "context show", "context use", "local", "local up", "local down",
 		"lift", "lift down", "orka", "orka install", "orka status",
 		"quickstart", "quickstart-wizard",
 		"status", "suite", "suite build", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",

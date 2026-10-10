@@ -178,8 +178,6 @@ row when its rename lands.
 
 | Current command | Rule it breaks | Proposed |
 |---|---|---|
-| `ctx [context]` | Abbreviation; one command both reads and writes. | `context show`, `context use <context>` |
-| `up`, `down` | Bare verbs that only act on the local environment. | `local up`, `local down` |
 | `lift` (top level) | Deprecated alias of `aks up` that reuses the agent verb. | Undecided; retained for now. |
 | `--no-apply`, `--dry-run`, `--plan` | Preview flags whose effects differ by command. | Undecided; define each flag's effect before renaming. |
 | `suite push <directory> <reference>` | Two positional arguments: source directory and OCI destination reference. | Retain current syntax until a replacement is agreed. |

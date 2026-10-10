@@ -1,11 +1,5 @@
-// Package run is kmx's shell-out layer for external tools such as kind,
-// kubectl, container engines and cloud CLIs.
-//
-// kmx shells out rather than linking client-go. That is
-// not a shortcut — it is what keeps the Makefile and kmx the same
-// implementation of the same journey. Every command kmx runs is a command an
-// operator can copy off the screen and run themselves, which is why the
-// commands are echoed the way make echoes a recipe line.
+// Package run executes external cluster, container and cloud tools for kmx.
+// It manages command arguments, environment overrides, output and cancellation.
 package run
 
 import (
@@ -27,10 +21,8 @@ type Runner struct {
 	// Env is added to the child's environment (KIND_EXPERIMENTAL_PROVIDER
 	// for the podman path).
 	Env []string
-	// Unset are variables REMOVED from the child's environment. `go
-	// install` refuses to cross-compile while GOBIN is set, and GOBIN is
-	// set by mise, asdf and `go env -w` alike — so the plane's build has to
-	// be able to take a variable away, not only add one.
+	// Unset names inherited variables to remove from child process environments.
+	// Env additions take precedence when the same name appears in both lists.
 	Unset []string
 	// Echo prints each command before running it, like make does.
 	Echo bool

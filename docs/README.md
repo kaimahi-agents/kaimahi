@@ -36,6 +36,7 @@ the removed conversion spike are not evidence of one.
 - [Repository map](repository-map.md): native tooling, packaging, compatibility data and test scaffolding.
 - [Entry-point principles](entry-point-principles.md): delegation, reviewable artifacts and ownership.
 - [CLI presentation](cli-ux-plan.md): current terminal and automation contracts.
+- [Command alignment](command-semantics.md): implemented entry points, compatibility policy and remaining vocabulary decisions.
 - [Command conventions](command-conventions.md): naming, flag, output and compatibility rules for kmx commands.
 - [Charm boundary](charm-ux-followup-plan.md): the implemented creation wizard and its limits.
 - [Interactive agent TUI](interactive-agent-tui-plan.md): two-environment overview, keyboard navigation, slash-command completion and demo mode.
