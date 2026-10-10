@@ -158,7 +158,9 @@ CPU and builds `agentsessionsd` at the module revision pinned by KMX. Through
 that sessions endpoint, `kmx agent evaluate` runs the tiny public bundle in
 `internal/kmx/app/testdata/live-eval-loop`: both cases must pass, containing
 the literal substrings `Paris` and `4` respectively, not exact answer wording.
-It then stops the model provider, keeps the daemon and journal alive, and
+The capital case also exercises a Go RE2 pattern and `notContains` assertion.
+Tool assertions are tested as unknown on these tool-disabled paths, not added to
+this passing live fixture. It then stops the model provider, keeps the daemon and journal alive, and
 requires `kmx agent verify` to report every case equivalent with zero model
 calls through local-reference replay.
 
