@@ -11,6 +11,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -83,6 +84,8 @@ elif args[0] == 'run':
 elif args[0] == 'stop':
     (root / 'model.stopped').touch()
 elif args[0] == 'rm':
+    if os.getenv('TEST_DOCKER_RM_FAIL') == '1':
+        sys.exit(1)
     (root / 'container.removed').touch()
 elif args[0] == 'logs':
     print('RAW-PROVIDER-PAYLOAD-DO-NOT-PRINT')
@@ -319,6 +322,34 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.records("go"), [])
         self.assert_cleaned()
 
+    def test_optimized_python_cannot_bypass_checksum_or_tls_checks(self):
+        self.archive()
+        result = self.run_runner(PYTHONOPTIMIZE="1", SESSIONS_ARCHIVE_URL="https://releases.example/daemon.tar.gz", SESSIONS_ARCHIVE_SHA256="0" * 64)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.state / "daemon.json").exists())
+        self.artifacts.rmdir()
+        result = self.run_runner(PYTHONOPTIMIZE="1", MODEL_BASE_URL="http://provider.example/v1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.state / "daemon.json").exists())
+
+    def test_failed_container_cleanup_cannot_report_success(self):
+        result = self.run_runner(MODEL_MODE="aikit", MODEL_KEY_ENV="", MODEL_NAME="", TEST_DOCKER_RM_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cleanup", result.stderr)
+        self.assertNotIn("Live eval loop passed", result.stdout)
+        self.assertIn("receipt", self.outputs())
+        self.assert_cleaned()
+
+    def test_failed_private_directory_cleanup_cannot_report_success(self):
+        self.executable("rm", "#!/bin/bash\nexit 1\n")
+        result = self.run_runner(VERIFY="false")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cleanup", result.stderr)
+        self.assertNotIn("Live eval loop passed", result.stdout)
+        self.assertTrue(list(self.work.iterdir()))
+        self.assertTrue(self.artifacts.is_dir())
+        self.assertTrue((self.state / "daemon.stopped").exists())
+
     def test_release_checksum_mismatch_rejects_before_daemon_start(self):
         self.archive()
         result = self.run_runner(SESSIONS_ARCHIVE_URL="https://releases.example/daemon.tar.gz", SESSIONS_ARCHIVE_SHA256="0" * 64)
@@ -360,6 +391,13 @@ class RunnerTests(unittest.TestCase):
         encoded = "".join(f"%{ord(c):02X}" for c in SECRET)
         result = self.run_runner(MODEL_BASE_URL="https://provider.example/" + encoded + "/v1")
         self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.state / "daemon.json").exists())
+
+    def test_invalid_release_url_key_never_enters_helper_argv(self):
+        self.executable("python3", '#!/bin/bash\nprintf "%s\\n" "$@" >> "$TEST_STATE/python.args"\nexec ' + sys.executable + ' "$@"\n')
+        result = self.run_runner(SESSIONS_ARCHIVE_URL="https://releases.example/" + SECRET + "/daemon.tar.gz", SESSIONS_ARCHIVE_SHA256="0" * 64)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn(SECRET, (self.state / "python.args").read_text())
         self.assertFalse((self.state / "daemon.json").exists())
 
     def test_keyless_literal_loopback_is_allowed(self):

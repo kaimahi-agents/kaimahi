@@ -563,7 +563,7 @@ Agents that use tools or coordination need the
 not deploy Orka or make sessions receipts satisfy a lift gate.
 
 Run on Linux with Git, Python 3, curl and Go 1.26 or newer. AIKit mode also
-needs Docker and jq. Check out the commit you want to test; the agent and the
+needs Docker. Check out the commit you want to test; the agent and the
 complete `eval/*.yaml` set must be tracked and byte-identical to `HEAD`, including
 staged changes. The action evaluates **in that checkout**, using KMX's existing
 Git provenance reader: receipts name the tested `HEAD` commit, including a
@@ -585,6 +585,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.2'
+          cache: false # This bundle repository need not have a go.sum.
       - uses: kaimahi-agents/kaimahi/.github/actions/kmx-eval@REVIEWED_COMMIT_SHA
         env:
           EVAL_MODEL_KEY: ${{ secrets.EVAL_MODEL_KEY }}

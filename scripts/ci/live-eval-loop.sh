@@ -2,6 +2,8 @@
 # Linux runner: caller bundle stays in its checkout; only sanitized gate output is public.
 set +x +v
 set -Eeuo pipefail
+# Embedded validators must retain their assertions under inherited CI settings.
+unset PYTHONOPTIMIZE
 umask 077
 start=$SECONDS
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -26,16 +28,17 @@ stop_group() {
   while kill -0 -- "-$pid" 2>/dev/null && (( SECONDS < deadline )); do sleep 0.1; done
   kill -KILL -- "-$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
+  ! kill -0 -- "-$pid" 2>/dev/null
 }
 
 cleanup() {
-  local status=$?
+  local status=$? cleanup_failed=false
   trap - EXIT INT TERM
   set +e
-  stop_group "$child_pid"
-  stop_group "$daemon_pid"
+  stop_group "$child_pid" || cleanup_failed=true
+  stop_group "$daemon_pid" || cleanup_failed=true
   if [[ -n "$container" ]]; then
-    docker rm -f "$container" >/dev/null 2>&1
+    docker rm -f "$container" >/dev/null 2>&1 || cleanup_failed=true
   fi
   # Generated evidence survives failure, unlike private command logs and journal.
   if [[ -n "$artifacts" ]]; then
@@ -51,11 +54,19 @@ if dest:
                 out.write(f"{name}={paths[0]}\n")
 PY
   fi
+  if [[ -n "$work" ]]; then
+    rm -rf -- "$work" >/dev/null 2>&1 || cleanup_failed=true
+  fi
+  if [[ "$cleanup_failed" == true ]]; then
+    printf '%s\n' 'error: live evaluation runtime cleanup failed' >&2
+    if (( status == 0 )); then status=1; phase='cleanup'; fi
+  fi
   output elapsed-seconds "$((SECONDS - start))"
   [[ -z "$install_mode" ]] || output daemon-install "$install_mode"
-  [[ -z "$work" ]] || rm -rf -- "$work" >/dev/null 2>&1
   if (( status != 0 )); then
     printf 'error: live evaluation runner failed during %s (%ss)\n' "$phase" "$((SECONDS - start))" >&2
+  else
+    printf 'Live eval loop passed in %ss\n' "$((SECONDS - start))"
   fi
   exit "$status"
 }
@@ -127,7 +138,8 @@ case "$MODEL_MODE" in
   *) exit 1 ;;
 esac
 # Parse URLs rather than doing DNS lookups: only literal loopback can use keyless HTTP.
-python3 - "$sessions_port" "$model_port" "$archive_url" "$archive_sha" "$key_env" 3<<<"$model_key" <<'PY' >/dev/null 2>&1
+export SESSIONS_ARCHIVE_URL="$archive_url"
+python3 - "$sessions_port" "$model_port" "$archive_sha" "$key_env" 3<<<"$model_key" <<'PY' >/dev/null 2>&1
 import ipaddress, os, re, sys
 from urllib.parse import unquote, urlsplit
 with os.fdopen(3) as key_input:
@@ -143,10 +155,10 @@ def url(value, release=False):
     assert not p.query and not p.fragment and "@" not in unquote(p.netloc)
     assert p.port is None or 0 < p.port < 65536
     if p.scheme != "https":
-        assert not release and p.scheme == "http" and not sys.argv[5]
+        assert not release and p.scheme == "http" and not sys.argv[4]
         assert ipaddress.ip_address(p.hostname).is_loopback
 url(os.environ["MODEL_BASE_URL"])
-archive, digest = sys.argv[3:5]
+archive, digest = os.environ["SESSIONS_ARCHIVE_URL"], sys.argv[3]
 assert bool(archive) == bool(digest)
 if archive:
     url(archive, release=True)
@@ -273,7 +285,7 @@ import json, os, sys
 with open(sys.argv[1]) as src:
     result = json.load(src)
 assert result["model"] == os.environ["MODEL_NAME"]
-assert isinstance(result["created"], (int, float))
+assert type(result["created"]) in (int, float)
 assert isinstance(result["choices"][0]["message"]["content"], str) and result["choices"][0]["message"]["content"]
 PY
 fi
@@ -308,4 +320,3 @@ if [[ "$verify" == true ]]; then
   if [[ "$MODEL_MODE" == aikit ]]; then quiet docker stop "$container"; fi
   gate verify --verify-timeout "${VERIFY_TIMEOUT:-5m}" --command-timeout "${COMMAND_TIMEOUT:-600}"
 fi
-printf 'Live eval loop passed in %ss\n' "$((SECONDS - start))"

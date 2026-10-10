@@ -170,7 +170,7 @@ class EvalLoopTests(unittest.TestCase):
                 runner.run(self.args(bundle, Path(tmp) / "artifacts"))
             self.assertEqual(target.read_text(), "keep")
 
-    def evidence_run(self, tmp, returncode=0, commit=None, verdict="pass", mode="evaluate"):
+    def evidence_run(self, tmp, returncode=0, commit=None, verdict="pass", mode="evaluate", report_status="equivalent"):
         bundle = self.make_bundle(tmp)
         artifacts = Path(tmp) / "artifacts"
         runner.run(self.args(bundle, artifacts))
@@ -187,7 +187,7 @@ class EvalLoopTests(unittest.TestCase):
                 own.write_text(json.dumps(receipt))
             else:
                 own.with_name("verify-" + own.name + ".json").write_text(json.dumps({
-                    "result": "unknown", "cases": [{"id": "user-first", "status": "unknown", "modelCalls": 0}]}))
+                    "result": report_status, "cases": [{"id": "user-first", "status": report_status, "modelCalls": 0}]}))
             return SimpleNamespace(returncode=returncode, stdout=b"private answer", stderr=b"private provider log")
         with patch.object(runner, "invoke_kmx", side_effect=kmx):
             runner.run(self.args(bundle, artifacts, mode))
@@ -211,9 +211,14 @@ class EvalLoopTests(unittest.TestCase):
             self.assertRegex(json.loads(files[0].read_text())["gitCommit"], "^[a-f0-9]{40}$")
 
     def test_cli_failure_wrong_revision_and_verify_failure_cannot_pass(self):
-        for kwargs in ({"returncode": 1}, {"commit": "b" * 40}, {"mode": "verify", "returncode": 1}):
+        for kwargs, message in (
+            ({"returncode": 1}, "kmx evaluation failed"),
+            ({"commit": "b" * 40}, "receipt does not describe this checkout"),
+            ({"mode": "verify", "returncode": 1}, "kmx verification failed"),
+            ({"mode": "verify", "report_status": "unknown"}, "verification requires equivalent"),
+        ):
             with self.subTest(kwargs=kwargs), tempfile.TemporaryDirectory() as tmp:
-                with self.assertRaises(runner.GateError):
+                with self.assertRaisesRegex(runner.GateError, message):
                     self.evidence_run(tmp, **kwargs)
                 artifacts = list((Path(tmp) / "artifacts").iterdir())
                 self.assertTrue(artifacts)
