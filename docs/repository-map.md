@@ -296,8 +296,8 @@ checkout-bound evaluation and optional zero-call local-reference replay. Endpoin
 mode accepts a key only through a named secret environment variable. CI's
 hygiene job calls `scripts/test_eval_loop.py` to check evidence, provenance and
 failure diagnostics, and `scripts/test_eval_runner.py` to check runtime cleanup
-and credential handling. Repository CI installs no cluster and uses no hosted
-credential.
+and credential handling. The `e2e-eval-loop` evaluation shard installs no cluster
+and uses no hosted credential.
 
 `scripts/ci/registry-mirrors.py` is called by `.github/workflows/ci.yml`
 for CI-only host Docker and kind-node Docker Hub mirror setup and payload-free
