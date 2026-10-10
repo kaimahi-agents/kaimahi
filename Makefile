@@ -87,6 +87,10 @@ netpol-verify:
 
 # Public TCP 443 only, private ranges excluded. Remove by manifest so a
 # renamed policy cannot silently leave the allowance open.
+# These retained manifest helpers target the dormant plane's namespace,
+# not the native runtime namespaces in the generic guard banner.
+egress-copilot egress-copilot-off egress-hosted egress-hosted-off: GUARD_NS = kaimahi
+
 egress-copilot: guard
 	$(KUBECTL) apply -f k8s/egress-copilot.yaml
 

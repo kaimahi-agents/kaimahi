@@ -142,10 +142,11 @@ squeezed or horizontally stretched grid.
 
 ### Styled tables — implemented for modeled reports
 
-Status and agent list use titled reports with explicit state and numeric column
-roles. Narrow tables become labeled records. Numbers are not abbreviated; state
-styling never guesses from an identifier's spelling. The plain table remains the
-redirected compatibility format. Structured modes belong to each command.
+Agent list uses a titled report with explicit state and numeric column roles.
+Narrow modeled tables become labeled records. Root and Orka status retain their
+fixed-width runtime fields. Numbers are not abbreviated; state styling never
+guesses from an identifier's spelling. The plain table remains the redirected
+compatibility format. Structured modes belong to each command.
 
 ### Patterns rejected for this CLI
 

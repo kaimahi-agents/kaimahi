@@ -608,7 +608,7 @@ jobs:
               "kmx agent create orka-hello --namespace orka-system",
               "kmx agent create kagent-hello --runtime kagent --namespace agents",
               "kmx up",
-              "kmx migrate demo --namespace demo --model local/qwen2.5:3b",
+              "kmx agent run demo --namespace orka-system",
               "kubectl get ns kagent",
               "kubectl -n agents get agents.kagent.dev",
               "kubectl get agents.core.orka.ai -n orka-system",

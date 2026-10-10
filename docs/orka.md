@@ -10,8 +10,7 @@ upstream installs a Helm chart and generates its own encryption key and webhook
 certificate. kmx fetches the pinned release chart rather than requiring an
 Orka checkout or a manually created wrapper credential.
 
-**Installing Orka governs nothing.** That sentence is printed by the command
-itself. Author a native Orka Agent with
+Installation does not author an Agent or run a Task. Author a native Orka Agent with
 [`kmx agent create`](kmx.md#kmx-agent-create) and prove an answer with a Task.
 Installation and authoring are deliberately separate operations.
 
