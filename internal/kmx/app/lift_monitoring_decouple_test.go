@@ -40,8 +40,16 @@ func TestLiftMonitoringOwnershipSurvivesRecordResume(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, _, err := a.openLiftRecord(opt, "test-subscription"); err != nil {
+			resumed, _, err := a.openLiftRecord(opt, "test-subscription")
+			if err != nil {
 				t.Fatal(err)
+			}
+			before, unmanaged := resumed.Before, resumed.PlaneMonitoringUnmanaged
+			if err := a.recordPreExistingState(opt, resumed, func() error { t.Fatal("resume rewrote established ownership"); return nil }); err != nil {
+				t.Fatal(err)
+			}
+			if resumed.Before != before || resumed.PlaneMonitoringUnmanaged != unmanaged {
+				t.Fatalf("resume changed established ownership: %+v", resumed)
 			}
 			a.Cfg.Confirm = opt.Cluster
 			if err := a.LiftDown(opt); err != nil {

@@ -704,18 +704,6 @@
       "why": "Bounded parser tests: real NotFound/Forbidden strings from the legacy API group are the inputs whose translation is under test."
     },
     {
-      "path": "internal/kmx/app/plane_test.go",
-      "text": "if strings.Contains(err.Error(), \"<orka|kagent>\") {",
-      "category": "negative",
-      "why": "Bounded refusal test: the payload refusal must not offer the retired payload as a choice."
-    },
-    {
-      "path": "internal/kmx/app/plane_test.go",
-      "text": "t.Errorf(\"the refusal still offers the retired kagent payload: %v\", err)",
-      "category": "negative",
-      "why": "Bounded refusal test: the payload refusal must not offer the retired payload as a choice."
-    },
-    {
       "path": "internal/kmx/app/quickstart_orka_test.go",
       "text": "// no --legacy-kagent, and no step name that installs one either.",
       "category": "negative",

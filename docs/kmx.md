@@ -340,7 +340,7 @@ Credential issuance/renewal TTL remains 60 seconds–365 days.
 | `kmx quickstart` | kind + keyless Ollama + pinned Orka v0.2.0 Helm chart + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Kagent installation or plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx quickstart --interactive` (`-i`) | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. Flags for the other quickstart mode are refused before configuration loads. The retired `kmx quickstart-wizard` spelling refuses and names this command. |
 | `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
-| `kmx aks up` / `kmx aks down` | Temporary compatibility route, hidden from root help and shell completion; not a first-class KMX domain. Direct invocation keeps unchanged flags and behavior: provision AKS and land Orka on it, then clean up owned resources. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
+| `kmx aks up` / `kmx aks down` | Temporary compatibility route, hidden from root help and shell completion; not a first-class KMX domain. Setup provisions AKS and installs Orka only, with optional Azure monitoring add-ons; the owner configures the model Provider. It does not deploy a model plane or capture its credentials. Teardown preserves cleanup of recorded owned resources, including historical runs. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
 | `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent chat <name> [message]` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Chat is always a session: an optional message is its first turn, and the one-shot Task is `kmx agent run`. The former `--interactive` flag is removed; Kagent chat is not restored by its create capability |
@@ -813,8 +813,9 @@ An existing Secret with no credential-binding annotation also refuses before iss
 Tool credential capture is removed. Plane-side model Copilot capture remains
 `kmx models credential copilot`: GitHub device login, a private 0600 OAuth cache
 and short-lived token exchange without reading credential material from stdin.
-It applies egress and restarts an existing proxy. [AKS](aks.md#the-credential-handoff)
-gives the explicit-context command. Provider credentials for an onboarded
+It applies egress and restarts an existing proxy. See the
+[models guide](models.md#storing-an-api-key) for plane-side credential custody;
+AKS setup uses an owner-configured native Provider instead. Provider credentials for an onboarded
 upstream are `kmx models add`; for plane-side Copilot credentials use
 `kmx models credential copilot`. The retired direct-to-Copilot preset's
 checkout-only Secret helper is no longer provided.

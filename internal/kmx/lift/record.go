@@ -145,6 +145,9 @@ type Pre struct {
 	MetricsAddonEnabled bool `json:"metrics_addon_enabled"`
 	LogsAddonEnabled    bool `json:"logs_addon_enabled"`
 
+	// For unmanaged plane monitoring, both Existed flags are compatibility
+	// sentinels set true to deny deletion by older readers, not discovered
+	// objects. Historical snapshots retain their observed values.
 	ScraperPolicyExisted bool `json:"scraper_policy_existed"`
 	// ScrapeMonitorExisted is about the PodMonitor named kaimahi-plane in the
 	// kaimahi namespace. It replaces a field that asked the same question

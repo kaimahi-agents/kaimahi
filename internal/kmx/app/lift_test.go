@@ -54,7 +54,7 @@ func TestAKSUpPrintsDirectLiftCommandsWhenLiftInvokesIt(t *testing.T) {
 		}
 	}
 	if !strings.Contains(text, `if [ -n "${KMX_LIFT_CONTINUE:-}" ]`) ||
-		!strings.Contains(text, "kmx aks down --resource-group $RG --cluster $CLUSTER") ||
+		!strings.Contains(text, "AKS_RESOURCE_GROUP=$RG AKS_CLUSTER=$CLUSTER KAIMAHI_CONFIRM=$RG bash scripts/aks-down.sh") ||
 		!strings.Contains(text, "kmx aks up --byo --resource-group $RG") {
 		t.Error("aks-up.sh no longer keeps its direct-script guidance as the fallback")
 	}

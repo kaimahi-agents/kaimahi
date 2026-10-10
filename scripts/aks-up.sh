@@ -396,7 +396,7 @@ aks-up: ready.
   context:   $CLUSTER   (NOT a kind context — targets will ask to confirm)
   registry:  $ACR.azurecr.io
   netpol:    $NETWORK_POLICY engine (present; workload enforcement is not proved here)
-  teardown:  KAIMAHI_CONFIRM=$RG kmx aks down --resource-group $RG --cluster $CLUSTER
+  teardown:  AKS_RESOURCE_GROUP=$RG AKS_CLUSTER=$CLUSTER KAIMAHI_CONFIRM=$RG bash scripts/aks-down.sh
              ^ do not skip this. The confirmation names the RESOURCE
                GROUP, not the cluster — see docs/aks.md, "Tear it down".
 

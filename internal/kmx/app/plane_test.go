@@ -127,11 +127,13 @@ func TestAForeignPlaneImageIsRefusedRatherThanIgnored(t *testing.T) {
 	if err == nil {
 		t.Fatal("a registry image was accepted on the kind path")
 	}
-	if !strings.Contains(err.Error(), "kmx aks up --payload orka --step plane") {
-		t.Errorf("the refusal does not name the path that does render: %v", err)
+	for _, want := range []string{"PLANE_IMAGE=", "kind path", "imagePullPolicy Never", "AKS setup does not deploy the model plane"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not explain %q: %v", want, err)
+		}
 	}
-	if strings.Contains(err.Error(), "<orka|kagent>") {
-		t.Errorf("the refusal still offers the retired kagent payload: %v", err)
+	if strings.Contains(err.Error(), "--step plane") {
+		t.Errorf("the refusal offers a retired AKS plane phase: %v", err)
 	}
 }
 

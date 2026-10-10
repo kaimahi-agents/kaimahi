@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -38,9 +39,20 @@ func TestLiftPriorMonitoringStateIsRecordedWithoutPlaneReads(t *testing.T) {
 			}
 			t.Setenv("PATH", dir) // no kubectl: this read must not require it
 			a := &App{Cfg: &config.Config{KubeContext: "cluster"}, Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}}
-			record := &lift.Record{}
+			record, err := lift.NewRecord("abcd1234", lift.BringYourOwn, lift.PayloadOrka, "sub", "rg", "cluster")
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "record.json")
 			saved := 0
-			err := a.recordPreExistingState(lift.Options{Cluster: "cluster", ResourceGroup: "rg"}, record, func() error { saved++; return nil })
+			err = a.recordPreExistingState(lift.Options{Cluster: "cluster", ResourceGroup: "rg"}, record, func() error {
+				saved++
+				var data bytes.Buffer
+				if err := record.Write(&data); err != nil {
+					return err
+				}
+				return os.WriteFile(path, data.Bytes(), 0o600)
+			})
 			if reply == "unreadable" || reply == "invalid" {
 				if err == nil || !strings.Contains(err.Error(), "cannot read the cluster") || saved != 0 || record.Before.Recorded {
 					t.Fatalf("unreadable state authorized cleanup: record=%+v saves=%d err=%v", record, saved, err)
@@ -55,6 +67,43 @@ func TestLiftPriorMonitoringStateIsRecordedWithoutPlaneReads(t *testing.T) {
 			}
 			if record.MayRemoveScraperPolicy() || record.MayRemoveScrapeMonitor() {
 				t.Fatal("recording add-on state authorized plane-object deletion")
+			}
+			// Decode the persisted JSON as an older CLI does: the unmanaged
+			// marker is unknown, so only the legacy fields deny ownership.
+			var old struct {
+				Before struct {
+					Recorded             bool `json:"recorded"`
+					MetricsAddonEnabled  bool `json:"metrics_addon_enabled"`
+					LogsAddonEnabled     bool `json:"logs_addon_enabled"`
+					ScraperPolicyExisted bool `json:"scraper_policy_existed"`
+					ScrapeMonitorExisted bool `json:"scrape_monitor_existed"`
+				} `json:"before"`
+				ScrapeMonitorApplied bool `json:"scrape_monitor_applied"`
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(data, &old); err != nil {
+				t.Fatal(err)
+			}
+			if !old.Before.Recorded {
+				t.Fatal("persisted prior state was not established for the old reader")
+			}
+			if old.Before.Recorded && !old.Before.ScraperPolicyExisted {
+				t.Error("older teardown would delete an unmanaged plane policy")
+			}
+			if old.Before.Recorded && !old.Before.ScrapeMonitorExisted {
+				t.Error("legacy prior state claims ownership of an unmanaged PodMonitor")
+			}
+			if old.ScrapeMonitorApplied {
+				t.Error("persisted snapshot claims to have applied a PodMonitor")
+			}
+			wantCleanup := reply == "off"
+			if (old.Before.Recorded && !old.Before.MetricsAddonEnabled) != wantCleanup ||
+				(old.Before.Recorded && !old.Before.LogsAddonEnabled) != wantCleanup ||
+				record.Before.WeEnabledMetrics() != wantCleanup || record.Before.WeEnabledLogs() != wantCleanup {
+				t.Fatalf("persisted add-on ownership lost: %+v", old.Before)
 			}
 			before := record.Before
 			if err := a.recordPreExistingState(lift.Options{}, record, func() error { t.Fatal("resume rewrote ownership"); return nil }); err != nil || record.Before != before {

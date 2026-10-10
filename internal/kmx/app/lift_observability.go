@@ -320,10 +320,15 @@ func (a *App) recordPreExistingState(opt lift.Options, record *lift.Record, save
 	// observability phase never recorded prior state: it could not yet have
 	// created these objects. Established old records return above unchanged.
 	record.PlaneMonitoringUnmanaged = true
+	// Older readers ignore PlaneMonitoringUnmanaged. These legacy flags
+	// deliberately mean "not owned", not discovered objects: true keeps
+	// those readers from inferring deletion authority from Recorded alone.
 	record.Before = lift.Pre{
-		Recorded:            true,
-		MetricsAddonEnabled: st.metricsEnabled,
-		LogsAddonEnabled:    st.logsEnabled,
+		Recorded:             true,
+		MetricsAddonEnabled:  st.metricsEnabled,
+		LogsAddonEnabled:     st.logsEnabled,
+		ScraperPolicyExisted: true,
+		ScrapeMonitorExisted: true,
 	}
 	return save()
 }
