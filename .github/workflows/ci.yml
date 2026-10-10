@@ -6,11 +6,8 @@ on:
   pull_request:
   schedule:
     - cron: '23 3 * * *'
-  # The clone-free job below runs on main ONLY, because its premise is a
-  # published revision. That made it the one job nobody could reproduce
-  # before merging — it failed on four consecutive merges before anyone
-  # looked. On demand it runs from any branch, so a fix can be proven
-  # before it lands rather than after.
+  # Manual dispatch exercises the clone-free job from a branch as well as
+  # main, so its install path can be verified before merging.
   workflow_dispatch:
 
 # Least privilege for every job: checkout needs repository read, nothing
@@ -491,7 +488,7 @@ jobs:
       - name: No effort IDs or lane references in source comments
         run: python3 scripts/check-comment-history.py
       - name: kmx — gofmt clean
-        run: test -z "$(gofmt -l cmd internal embed.go embed_test.go)"
+        run: test -z "$(gofmt -l cmd internal pkg/kmx embed.go embed_test.go)"
       - name: kmx — vet
         run: go vet ./...
       # staticcheck, pinned to an exact release tag.
@@ -732,7 +729,7 @@ jobs:
           for t in kubectl helm kind go; do
             while p=$(command -v "$t" 2>/dev/null); do
               echo "hiding $p"
-              sudo mv "$p" "$p.w31-hidden"
+              sudo mv "$p" "$p.kmx-ci-hidden"
             done
           done
           for t in kubectl helm kind go; do
@@ -938,9 +935,9 @@ jobs:
           "$HOME/.local/bin/kmx" down || true
           # Put back what was moved aside, so nothing after this job (or any
           # post step) meets a runner missing its own toolchain.
-          for hidden in /usr/bin/*.w31-hidden /usr/local/bin/*.w31-hidden /usr/local/go/bin/*.w31-hidden; do
+          for hidden in /usr/bin/*.kmx-ci-hidden /usr/local/bin/*.kmx-ci-hidden /usr/local/go/bin/*.kmx-ci-hidden; do
             [ -e "$hidden" ] || continue
-            sudo mv "$hidden" "${hidden%.w31-hidden}"
+            sudo mv "$hidden" "${hidden%.kmx-ci-hidden}"
           done
       - name: Docs-only short-circuit
         id: docs-only-summary
@@ -1327,12 +1324,8 @@ jobs:
   #      listing, and both its own validation and the cluster's RBAC refuse
   #      Secrets and every pod mutation.
   #
-  # What is NOT claimed: that the 3B model chose to call the tool. Tool
-  # SELECTION by a small local model is the repository's known CI flake
-  # class 2, so this shard proves the tool's boundary directly over HTTP and
-  # leaves model-driven invocation unasserted rather than asserting it
-  # flakily. It also claims nothing about governance: Orka traffic is not on
-  # the plane seam here, and no step pretends otherwise.
+  # This shard checks the Tool boundary directly over HTTP; it does not
+  # assert model-driven tool selection.
   e2e-orka-runtime:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -1662,8 +1655,7 @@ jobs:
             go test ./internal/kmx/app -run '^TestLiveInspectQuickstartToolEvents$' -count=1 -v
       # Provider → Agent → Task, and a REAL answer. The prompt is
       # deterministic and the comparison is exact: "a non-empty reply" would
-      # pass on an error string, and a 3B model asked an open question is
-      # the repository's CI flake class 2.
+      # also pass on an error string.
       - name: Orka — Agent and Task return an exact local-model answer
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -1944,7 +1936,9 @@ jobs:
             done <<<"$files"
             [ "$docs_only" = true ] && reason="every changed file is documentation"
           fi
-          echo "changed files:"; echo "${files:-(undetermined)}" | sed 's/^/  /'
+          echo "changed files:"
+          display_files="${files:-(undetermined)}"
+          printf '  %s\n' "${display_files//$'\n'/$'\n  '}"
           echo "docs_only=$docs_only ($reason)"
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
       # Bare compound up cannot pause between cluster creation and workload
