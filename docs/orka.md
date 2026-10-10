@@ -293,5 +293,3 @@ traffic. Configure its runtime and model access through the upstream interfaces.
 ## See also
 
 - [kmx agent create](kmx.md#kmx-agent-create) — native Orka authoring and Task result contract
-- [the Orka composition report](reviews/2026-09-09-orka-composition.md) — what
-  each project has, measured rather than compared
