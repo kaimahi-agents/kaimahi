@@ -35,7 +35,10 @@ with open(os.environ["REGISTRY_TEST_EVENTS"], "a") as stream:
     stream.write(json.dumps(["docker", sys.argv[1:]]) + "\\n")
 print(json.dumps(sys.argv[1:]), flush=True)
 print("docker stderr sentinel", file=sys.stderr, flush=True)
-raise SystemExit(int(os.environ["REGISTRY_TEST_EXIT"]))
+code = int(os.environ["REGISTRY_TEST_EXIT"])
+if code < 0:
+    os.kill(os.getpid(), -code)
+raise SystemExit(code)
 '''
 DRIVER = '''import importlib.util, json, os, subprocess, sys
 spec = importlib.util.spec_from_file_location("registry_mirrors_driver", sys.argv[1])
@@ -155,10 +158,17 @@ class RegistryMirrorTests(unittest.TestCase):
         args = ["run", "--name", "ci-worker", "--label", "io.x-k8s.kind.cluster=ci",
                 "--label", "io.x-k8s.kind.role=worker", "kindest/node:v1.31.0"]
         result, events, docker = self.invoke_docker(args, setup_fail=True)
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("CI mirror setup failed for kind node ci-worker", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
         self.assert_forwarded_output(result, args)
         self.assertEqual(events, [["docker", args], ["setup", "ci-worker", docker]])
+
+    def test_child_sigterm_retains_conventional_shell_status(self):
+        args = ["inspect", "example"]
+        result, events, _ = self.invoke_docker(args, exit_code=-15)
+        self.assertEqual(result.returncode, 143)
+        self.assertEqual(events, [["docker", args]])
 
     def test_routes_return_only_deduplicated_sanitized_fetch_tuples(self):
         result = self.helper.routes(FETCHES)

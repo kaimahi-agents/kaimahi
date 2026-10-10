@@ -63,7 +63,8 @@ def docker_main(args: list[str], docker_real: str) -> int:
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             print(f"CI mirror setup failed for kind node {name}: {exc}", file=sys.stderr)
             return 1
-    return result.returncode
+    # Python represents a signal exit as -N; shells expose it as 128+N.
+    return result.returncode if result.returncode >= 0 else 128 - result.returncode
 
 
 def state_dir() -> Path:
