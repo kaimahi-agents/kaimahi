@@ -79,6 +79,7 @@ type EvaluationRequest struct {
 	CaseID         string
 	Input          string
 	ExpectContains []string
+	Assertions     []EvaluationAssertion
 	PortableDigest string
 }
 
@@ -102,6 +103,7 @@ type EvaluationReceipt struct {
 	CaseID           string
 	Verdict          EvaluationVerdict
 	Matched, Missing []string
+	Assertions       []EvaluationAssertionResult
 	TaskName         string
 	TaskUID          string
 	AnswerSHA256     string
