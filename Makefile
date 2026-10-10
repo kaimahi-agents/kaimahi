@@ -8,8 +8,7 @@ AKS_CLUSTER ?= kaimahi
 MODEL ?= qwen2.5:3b
 KMX ?= bin/kmx
 
-# Relink for every embedded asset: the binary also runs outside a clone.
-KMX_SOURCES := go.mod embed.go $(shell find cmd/kmx internal/kmx -name '*.go' 2>/dev/null)
+# Native assets packaged by kmx, including when it runs outside a clone.
 KMX_ASSETS := k8s/ollama.yaml k8s/orka-k8s-tool.yaml scripts/orka-k8s-tool.py \
 	scripts/aks-up.sh scripts/aks-down.sh scripts/kube-guard.sh
 
@@ -18,7 +17,6 @@ export KMX_KIND_CLUSTER := $(KIND_CLUSTER)
 export KMX_CONTAINER_ENGINE := $(CONTAINER_ENGINE)
 export KMX_MODEL := $(MODEL)
 export KMX_CONFIRM := $(KAIMAHI_CONFIRM)
-export KMX_CHAT_PORT := $(CHAT_PORT)
 
 ifeq ($(TARGET),kind)
 KUBE_CTX ?= kind-$(KIND_CLUSTER)
@@ -30,7 +28,8 @@ endif
 export KMX_KUBE_CTX := $(KUBE_CTX)
 GUARD_NS ?= ollama, orka-system (common, not exhaustive; see action for other namespaces)
 
-.PHONY: build test lint docs-check guard aks-creds
+# Let Go's cache track all source, embedded data, and build-option changes.
+.PHONY: build test lint docs-check guard aks-creds $(KMX)
 
 ## test, lint, docs-check: local checks matching the keyless CI gates
 test:
@@ -53,7 +52,7 @@ docs-check:
 build: $(KMX)
 	@echo "kmx ready: $(abspath $(KMX))"
 
-$(KMX): $(KMX_SOURCES) $(KMX_ASSETS)
+$(KMX): $(KMX_ASSETS)
 	@command -v go >/dev/null 2>&1 || { \
 		echo 'kmx needs a Go toolchain to build from a checkout (https://go.dev/dl/).' >&2; \
 		echo 'Without a clone: go install github.com/kaimahi-agents/kaimahi/cmd/kmx@<sha>' >&2; \
