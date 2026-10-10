@@ -16,6 +16,40 @@ The official Homebrew namespace is limited to the public
 claimed; the remaining publication constraints are recorded in
 [NAMING.md](NAMING.md).
 
+## Verify a release
+
+Releases built with checksum signing include `checksums.txt.sigstore.json`, a
+cosign bundle containing the checksum manifest's signature, signing certificate
+and transparency-log evidence. The release job uses GitHub Actions OIDC and an
+ephemeral signing key, not a stored signing secret. Releases published before
+signing was enabled have no bundle.
+
+With cosign **v3.0.6 or newer** and GNU `sha256sum`, choose a signed release and
+download its four bare binaries, checksum manifest and bundle into an empty
+directory (the assets are not archives):
+
+```bash
+version='v<version>'
+base="https://github.com/kaimahi-agents/kaimahi/releases/download/$version"
+for asset in kmx-linux-amd64 kmx-linux-arm64 kmx-darwin-amd64 kmx-darwin-arm64 checksums.txt checksums.txt.sigstore.json; do
+  curl -fsSLO "$base/$asset"
+done
+
+cosign verify-blob \
+  --certificate-identity-regexp '^https://github\.com/kaimahi-agents/kaimahi/\.github/workflows/release\.yml@refs/tags/v[0-9][0-9A-Za-z_.-]*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --bundle checksums.txt.sigstore.json \
+  checksums.txt && sha256sum -c checksums.txt
+```
+
+On macOS, use `shasum -a 256 -c checksums.txt` instead of `sha256sum -c`.
+Verify the signature before checking digests or running a binary. The identity
+check accepts only this repo's release workflow running on a version tag.
+
+The signature covers the four binaries, **not** the separately published
+`kmx.rb` formula. `install.sh` and Homebrew check checksums only; they do not
+automatically verify this bundle.
+
 ## Versions
 
 Tags are `vMAJOR.MINOR.PATCH`, and **the tag is the source of truth** — the
@@ -155,6 +189,11 @@ from:
 | `v0.0.0-dev+fb456eb.dirty (development build from a MODIFIED checkout)` | a clone with uncommitted changes |
 
 ## Upgrading kmx
+
+Development builds introduce `kmx context show/use` and `kmx local up/down`.
+The v0.4.1 examples below retain `ctx` and root `up/down`, which remain callable
+compatibility routes in newer builds. See [command alignment](command-semantics.md)
+for the transition policy.
 
 Use `@latest` for the latest stable release, or pin the version you want:
 

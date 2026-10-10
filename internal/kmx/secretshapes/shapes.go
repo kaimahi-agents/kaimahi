@@ -1,18 +1,9 @@
 // Package secretshapes is the one list of credential shapes this
 // repository refuses to carry.
 //
-// There were three lists. The manifest scaffolder had eight shapes, the
-// blueprint parser had seven, and the tree scan in CI had three — so a
-// GitHub token, a Slack token or this plane's own credential could sit in
-// a documentation file and pass the gate whose whole job was to notice.
-// The narrowest list was the one guarding the largest surface.
-//
-// So the list is data, not Go source, and it lives here because a Go
-// package is not the only thing that needs it: the tree scan is
-// scripts/check-secret-shapes.py, which reads this same shapes.json. A Go
-// constant could not be read by a Python checker, and a Python list could
-// not be read by the scaffolder; a JSON file next to both is the only form
-// that is genuinely one place to add a shape.
+// Go consumers and scripts/check-secret-shapes.py read the same shapes.json
+// so credential detection rules stay consistent across generated documents
+// and repository scans.
 //
 // Adding a shape:
 //
@@ -23,9 +14,8 @@
 //     be a literal credential shape committed to the tree, which is the
 //     one thing this list exists to forbid — and the tree scan reads
 //     shapes.json like every other file.
-//   - Nothing else. Every consumer reads the whole list, so a shape added
-//     here is refused everywhere at once, which is the property the three
-//     lists did not have.
+//   - Every consumer reads the whole list; no separate consumer-specific
+//     rule list needs updating.
 package secretshapes
 
 import (

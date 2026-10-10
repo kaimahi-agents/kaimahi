@@ -3,9 +3,8 @@ name: release
 # The tag is the source of truth. Everything below is derived from it: the
 # version the binaries report, the notes, and whether this is a pre-release.
 #
-# Keyless, like the rest of this project's CI. The only credential is
-# the GITHUB_TOKEN GitHub mints for the run, scoped to `contents: write`
-# because creating a release IS a write to this repository's contents. No
+# Keyless: GitHub's run token publishes assets, and GitHub OIDC certifies
+# the ephemeral signing key for the checksum manifest. No
 # repository secret is added, and none is needed: nothing is pushed to a
 # package registry, a container registry or a Homebrew tap. The release carries
 # the formula as an asset; a reviewed tap PR validates and publishes it.
@@ -31,6 +30,8 @@ jobs:
     permissions:
       # Creating the release. Nothing else is written.
       contents: write
+      # Obtain a GitHub OIDC certificate for keyless checksum signing.
+      id-token: write
     defaults:
       run:
         shell: bash
@@ -77,10 +78,12 @@ jobs:
           fi
           prerelease=false
           case "$version" in *-*) prerelease=true ;; esac
-          echo "version=$version"     >> "$GITHUB_OUTPUT"
-          echo "dry_run=$dry_run"     >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
-          echo "synthetic=$synthetic" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "dry_run=$dry_run"
+            echo "prerelease=$prerelease"
+            echo "synthetic=$synthetic"
+          } >> "$GITHUB_OUTPUT"
           echo "building $version (dry_run=$dry_run, prerelease=$prerelease, synthetic=$synthetic)"
 
       - uses: actions/setup-go@v5
@@ -248,7 +251,10 @@ jobs:
             grep -qx "  version \"${VERSION#v}\"" dist/homebrew/Formula/kmx.rb
           else
             perl -i -ne 'print unless /^  version "/' dist/homebrew/Formula/kmx.rb
-            ! grep -q '^  version "' dist/homebrew/Formula/kmx.rb
+            if grep -q '^  version "' dist/homebrew/Formula/kmx.rb; then
+              echo "stable formula still has a redundant version" >&2
+              exit 1
+            fi
           fi
           ruby -c dist/homebrew/Formula/kmx.rb
           test -s dist/homebrew/Formula/kmx.rb
@@ -274,6 +280,33 @@ jobs:
           cmp dist/checksums.txt "$artifact_dir/checksums.txt"
           cmp dist/homebrew/Formula/kmx.rb "$artifact_dir/kmx.rb"
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      # Sign the validated manifest, not unchecked files or moving URLs.
+      # Dry runs exercise the same signing path but publish no release.
+      - name: Sign the checked checksum manifest
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/release-assets"
+          cosign sign-blob --yes \
+            --bundle "$artifact_dir/checksums.txt.sigstore.json" \
+            "$artifact_dir/checksums.txt"
+
+      - name: Verify the checksum signature
+        env:
+          CERTIFICATE_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/release-assets"
+          cosign verify-blob \
+            --certificate-identity "$CERTIFICATE_IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --bundle "$artifact_dir/checksums.txt.sigstore.json" \
+            "$artifact_dir/checksums.txt"
+
       # Only now, with every check above green, does anything get published.
       # Create the GitHub release with the exact files just checked rather
       # than asking GoReleaser to rebuild them. `gh release create` keeps the
@@ -294,6 +327,7 @@ jobs:
             "$artifact_dir/kmx-darwin-amd64"
             "$artifact_dir/kmx-darwin-arm64"
             "$artifact_dir/checksums.txt"
+            "$artifact_dir/checksums.txt.sigstore.json"
             "$artifact_dir/kmx.rb"
           )
           for asset in "${assets[@]}"; do test -f "$asset"; done

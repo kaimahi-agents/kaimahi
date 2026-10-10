@@ -1,5 +1,10 @@
 # Getting started
 
+This guide uses the unreleased canonical `kmx context show/use` and
+`kmx local up/down` spellings. On tagged v0.4.1 and earlier, use `kmx ctx
+[context]` and root `kmx up/down` instead. Those compatibility routes remain
+available in newer builds; see [command alignment](command-semantics.md).
+
 ## Create your own agent, then lift it from chat
 
 With `kmx` installed and Docker or Podman available, follow this path for your
@@ -69,7 +74,7 @@ To pin Kaimahi v0.4.0 exactly, use Go or the checksum-verified
 ```bash
 go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
 kmx version
-kmx ctx <context>
+kmx ctx <context> # pinned release spelling; newer builds: kmx context use <context>
 kmx orka --help
 kmx orka install
 kmx orka status
@@ -83,9 +88,9 @@ component commands are:
 ```bash
 export KIND_CLUSTER=orka-local
 export KUBE_CTX=kind-orka-local
-kmx up --step cluster
-kmx up --step ollama
-kmx up --step model
+kmx local up --step cluster
+kmx local up --step ollama
+kmx local up --step model
 ```
 
 These prepare kind and the keyless model server without installing Orka or the
@@ -143,12 +148,12 @@ human/raw output contracts are in [kmx](kmx.md#output-contracts).
 ### The whole runtime
 
 ```bash
-kmx up
+kmx local up
 kmx orka status
 kmx agent chat --namespace orka-system hello-world-agent
 ```
 
-A bare `up` brings up the **runtime**: kind, the keyless Ollama model server and
+A bare `local up` brings up the **runtime**: kind, the keyless Ollama model server and
 the pinned Orka release with its Provider and Task result-reader account. It
 deploys no agent — `kmx quickstart` is the command that ends with one
 answering, and `kmx agent create` is the one that authors your own. The chat
@@ -158,7 +163,7 @@ a one-shot. v0.4.1 and earlier require `--interactive`, which newer builds
 no longer accept.
 
 KMX no longer installs Kagent or its two demonstration agents. Its three old
-`kmx up --step` names are unknown steps, their manifests are no longer shipped
+`kmx local up --step` names are unknown steps, their manifests are no longer shipped
 in the binary, and agent editing, governance and preset switching remain
 retired. `kmx agent chat` and `kmx agent list` remain Orka-only. The one scoped
 exception is `kmx agent create --runtime kagent <name>` for a preinstalled exact
@@ -227,7 +232,7 @@ named nodes and checks API/DNS. kmx supplies
 - The bundled local model is small and tool-capable, not a guarantee of reliable
   prose. Validate actual tool payloads; [FAQ](FAQ.md) covers small-model failures.
 - Ollama models are in `emptyDir`; a pod restart requires another model pull.
-- `kmx down` deletes the whole local cluster and its data, including any historical
+- `kmx local down` deletes the whole local cluster and its data, including any historical
   database still present. Export needed data first. For AKS use
   [lift teardown](aks.md#teardown), not kind down.
 

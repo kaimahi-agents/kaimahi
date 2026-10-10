@@ -103,10 +103,10 @@ chat/logs/diff/rollback and cleanup remain unsupported for these candidates.
 
 Frameworks/harness libraries such as AgentKit, ADK, MAF and LangGraph are not
 automatically lifecycle targets. Foundry, Copilot, Ollama, KServe, vLLM and KAITO
-are inference backends, not runtime adapters. Qualification ownership is in
-[#238](https://github.com/kaimahi-agents/kaimahi/issues/238); the
-[Substrate evaluation](reviews/2026-09-10-substrate-evaluation.md) explains the
-workspace boundary. The [AX activity protocol](../ax-harness/README.md) covers
+are inference backends, not runtime adapters. Qualification and the Substrate
+workspace boundary are tracked in
+[#238](https://github.com/kaimahi-agents/kaimahi/issues/238).
+The [AX activity protocol](../ax-harness/README.md) covers
 its checkout-only projector, not a built or installed adapter.
 
 ## Terms and ownership
