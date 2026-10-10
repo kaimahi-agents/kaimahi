@@ -32,7 +32,6 @@ SVG_REQUIREMENTS = {
     "brand/ketu.svg": "Kaimahi ketu mark",
     "brand/mark.svg": "Kaimahi compact mark",
     "brand/wordmark.svg": "Kaimahi wordmark",
-    "docs/assets/architecture.svg": "Kaimahi model-traffic architecture",
 }
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -334,6 +333,7 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         build_tree(root)
+        (root / "docs/assets/architecture.svg").unlink(missing_ok=True)
         clean = check(root)
         if clean:
             print(f"FAIL a tree meeting every requirement was refused: {clean}")

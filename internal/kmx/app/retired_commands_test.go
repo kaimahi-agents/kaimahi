@@ -12,12 +12,9 @@ import (
 
 // A retired command must not be SUGGESTED, not merely refused when typed.
 //
-// `cmd/kmx` proves that `kmx govern`, `kmx use` and `kmx agent edit` are
-// refused. That is the easier half. The half that actually reaches an operator
-// is the NEXT-step text a successful command prints: `kmx plane` closed with
-// "Govern the agent — kmx govern <credential>" long after the command it named
-// had gone, which is worse than a retirement refusal, because the operator has
-// been told to run it by something that just succeeded.
+// `cmd/kmx` proves removed commands are refused. The other half is next-step
+// text from successful native operations: it must not send an operator to a
+// command the binary refuses to run.
 //
 // So the rule is checked where such text is produced: every operationCommand
 // call in this package's production files, whose first argument is a literal
@@ -29,8 +26,20 @@ func TestNoProductionCodeSuggestsARetiredCommand(t *testing.T) {
 	// replacement is named so a failure says what to write, not merely what
 	// not to.
 	retired := map[string]string{
-		"govern": "`kmx migrate` routes an application's model traffic through the plane",
-		"use":    "there is no preset switch; the legacy runtime it switched is gone",
+		"govern":      "native Agents use their runtime Provider directly",
+		"use":         "there is no legacy preset switch",
+		"plane":       "native setup uses kmx up or kmx orka install",
+		"migrate":     "native Agents use their runtime Provider directly",
+		"models":      "model selection belongs to native Provider setup",
+		"credential":  "native Provider Secrets are provisioned separately",
+		"credentials": "native Provider Secrets are provisioned separately",
+		"ledger":      "the model-plane client is removed",
+		"budget":      "the model-plane client is removed",
+		"flow":        "the model-plane client is removed",
+		"watch":       "the model-plane client is removed",
+		"backup":      "the model-plane client is removed",
+		"restore":     "the model-plane client is removed",
+		"metrics":     "the model-plane client is removed",
 	}
 
 	entries, err := os.ReadDir(".")
@@ -39,6 +48,7 @@ func TestNoProductionCodeSuggestsARetiredCommand(t *testing.T) {
 	}
 	fset := token.NewFileSet()
 	checked := 0
+	foundNative := false
 	for _, entry := range entries {
 		name := entry.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -63,6 +73,11 @@ func TestNoProductionCodeSuggestsARetiredCommand(t *testing.T) {
 			}
 			checked++
 			verb := strings.Trim(lit.Value, `"`)
+			if verb == "agent" && len(call.Args) > 1 {
+				if sub, ok := call.Args[1].(*ast.BasicLit); ok && sub.Kind == token.STRING && strings.Trim(sub.Value, `"`) == "create" {
+					foundNative = true
+				}
+			}
 			if instead, dead := retired[verb]; dead {
 				t.Errorf("%s: suggests the retired command `kmx %s` — %s",
 					fset.Position(call.Pos()), verb, instead)
@@ -72,8 +87,8 @@ func TestNoProductionCodeSuggestsARetiredCommand(t *testing.T) {
 	}
 	// Without this the scan could pass by reading nothing at all, which is
 	// exactly how a guard like this rots.
-	if checked < 20 {
-		t.Fatalf("only %d literal operationCommand verbs were examined — the scan is passing vacuously", checked)
+	if checked == 0 || !foundNative {
+		t.Fatalf("scan lost native agent-create calls (%d verbs checked) — it is passing vacuously", checked)
 	}
 }
 
@@ -109,7 +124,7 @@ func TestTheCommandReferenceDoesNotInstructARetiredCommand(t *testing.T) {
 // exactly what these files should say, and a whole-file search would refuse
 // the sentence that documents the retirement.
 func TestNoOperatorFacingStringNamesARetiredCommand(t *testing.T) {
-	retired := []string{"kmx govern ", "kmx govern`", "kmx govern\\n", "kmx use ", "kmx use`", "kmx agent edit"}
+	retired := []string{"kmx govern", "kmx use", "kmx agent edit", "kmx plane", "kmx migrate", "kmx models", "kmx credential", "kmx credentials", "kmx ledger", "kmx budget", "kmx flow", "kmx watch", "kmx backup", "kmx restore", "kmx metrics"}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)

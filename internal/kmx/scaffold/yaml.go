@@ -78,32 +78,6 @@ func quote(value string) (string, error) {
 	return b.String(), nil
 }
 
-// literalBlock renders `<key>: |<n>` and the indented body beneath it.
-//
-// The indentation indicator (`|2`) is the load-bearing part, and it is why
-// this is one function rather than a caller gluing a key to a body. Without
-// it YAML INFERS the block's indentation from the first non-empty line — so
-// an instructions file whose first line happens to be indented sets a deeper
-// block indent than the one every following line is emitted at, and those
-// following lines fall out of the scalar. Reproduced during review: a file
-// beginning with four spaces produced a manifest that would not parse at all.
-// The indicator states the indentation up front, so the content can no longer
-// change it, and every line is content whatever it looks like.
-//
-// The indicator is relative to the key's own indentation, hence the
-// subtraction; YAML allows 1-9.
-func literalBlock(key, value string, keyIndent, contentIndent int) (string, error) {
-	relative := contentIndent - keyIndent
-	if relative < 1 || relative > 9 {
-		return "", fmt.Errorf("block scalar indentation %d is not expressible", relative)
-	}
-	body, err := blockScalar(value, contentIndent)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%s%s: |%d\n%s", strings.Repeat(" ", keyIndent), key, relative, body), nil
-}
-
 // blockScalar renders the body of a literal block scalar, every line carrying
 // the same indent. Trailing whitespace is stripped per line so a line of
 // spaces cannot change the block's shape, and a line that is entirely empty is

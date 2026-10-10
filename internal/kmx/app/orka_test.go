@@ -696,9 +696,8 @@ func TestOrkaInstallWaitsForHelmChart(t *testing.T) {
 	}
 }
 
-// Installing is not governing, and the run has to say so: an adopter who
-// reads "Orka is running" as "its traffic is metered" has been misled by us.
-func TestOrkaInstallSaysThatInstallingGovernsNothing(t *testing.T) {
+// A successful native install points to native status, not removed commands.
+func TestOrkaInstallOffersNativeStatusWithoutPlaneAdvice(t *testing.T) {
 	installer := orkaChart(t)
 	f := newOrkaFixture(t, installer)
 	f.app.orkaInstallerDigest = digestOf(installer)
@@ -707,11 +706,13 @@ func TestOrkaInstallSaysThatInstallingGovernsNothing(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	notes := f.errOut.String()
-	if !strings.Contains(notes, "governs nothing by itself") {
-		t.Errorf("the run does not say installing governs nothing:\n%s", notes)
+	if !strings.Contains(notes, "kmx orka status") {
+		t.Errorf("install did not offer native status:\n%s", notes)
 	}
-	if !strings.Contains(notes, "kmx migrate") {
-		t.Error("the run does not name the command that does govern it")
+	for _, forbidden := range []string{"kmx migrate", "kmx plane", "seam"} {
+		if strings.Contains(notes, forbidden) {
+			t.Errorf("install advertises %q:\n%s", forbidden, notes)
+		}
 	}
 }
 
@@ -1181,7 +1182,7 @@ func TestOrkaNextStepsPinTheClusterAndKeepTheKeyOutOfArgv(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			a := &App{Cfg: &config.Config{KubeContext: "demo-cluster", Credential: "cred"}, Err: &buf, Out: &buf}
+			a := &App{Cfg: &config.Config{KubeContext: "demo-cluster"}, Err: &buf, Out: &buf}
 			tc.print(a)
 			got := buf.String()
 
@@ -1208,7 +1209,7 @@ func TestOrkaNextStepsPinTheClusterAndKeepTheKeyOutOfArgv(t *testing.T) {
 // claim one or send the operator to `agent chat`.
 func TestOrkaClosingTextDoesNotPromiseAnAgent(t *testing.T) {
 	var buf bytes.Buffer
-	a := &App{Cfg: &config.Config{KubeContext: "demo-cluster", Credential: "cred"}, Err: &buf, Out: &buf}
+	a := &App{Cfg: &config.Config{KubeContext: "demo-cluster"}, Err: &buf, Out: &buf}
 	a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"})
 	got := buf.String()
 

@@ -26,12 +26,10 @@ See the [interactive lift guide](interactive-lift.md) for target discovery,
 confirmation and connection behavior. See the [bundle lift guide](agent-lift.md)
 for `kmx agent lift` and `kmx agent evaluate`.
 
-**Orka is the platform.** Kaimahi provides tooling to install it, author native
-Agents and get an existing application's model traffic onto it. Start with the
-[Orka guide](orka.md), including [native creation and a first Task](orka.md#author-an-orka-agent-and-get-an-answer),
-or [migration](migrate.md); a migrated application's Deployment stays owner-managed.
-Tool traffic remains the application owner's responsibility; the Kaimahi tool
-gateway is retired.
+**Orka is the platform.** Kaimahi provides tooling to install it and author,
+prove and lift native Agents. Start with the [Orka guide](orka.md), including
+[native creation and a first Task](orka.md#author-an-orka-agent-and-get-an-answer).
+The selected runtime owns execution and enforcement.
 
 The local quickstart below is the **supported deterministic Orka first-answer
 path**: it ends with a native Orka Agent answering a question. For guided
@@ -45,8 +43,8 @@ available for an installation an operator already owns.
 
 | Tool | Needed for |
 |---|---|
-| Go 1.26+ | `go install` builds and fetched plane builds; not needed to run the downloaded CLI |
-| Docker or Podman | creating local kind clusters; not needed for ACR cloud builds |
+| Go 1.26+ | `go install` and checkout builds; not needed to run the downloaded CLI |
+| Docker or Podman | creating local kind clusters |
 | kind, kubectl, helm | kmx uses PATH copies first, otherwise fetches pinned/checksummed binaries |
 | git, make | checkout-based development and remaining scripts/helpers |
 | authenticated Azure CLI | AKS only; never installed by kmx |
@@ -97,20 +95,6 @@ Ollama server; for an existing cluster use your own model/Provider configuration
 as described in [Orka](orka.md). Installation alone does not govern model traffic.
 For a new native Agent, use [agent create](#an-agent-of-your-own).
 
-For an existing application on kind, deploy the plane and follow the owner-reviewed
-[migration procedure](migrate.md). [AKS setup](aks.md#targets-and-resume)
-installs Orka directly; it does not deploy this separate model plane:
-
-```bash
-kmx plane
-kmx migrate <deployment> --namespace <namespace> --model <provider>/<model>
-```
-
-kmx writes the Deployment patch; **you apply it** and carry its configuration into
-the application's Helm/GitOps release. Review API/continuation compatibility and
-both credential deadlines before adopting it. A fresh answer plus model ledger
-rows is evidence of that route, not blanket governance of the application.
-
 ## One command, and an agent that answers
 
 This section is the **supported Orka first-answer path**. With a current kmx:
@@ -144,8 +128,8 @@ it and compare. Choosing your own model is the wizard above.
 On a fresh cluster it creates kind, Ollama with `qwen2.5:3b`, the pinned Orka
 release with a placeholder Provider Secret and Task result-reader account,
 and the fixed `hello-world-agent` Provider/Agent bundle; then it asks a **fresh** Task and
-requires a readable answer. It deploys no plane; the Orka runtime is installed
-from the pinned v0.2.0 Helm chart (Helm is found on PATH or fetched by kmx).
+requires a readable answer. The Orka runtime is installed from the pinned
+v0.2.0 Helm chart (Helm is found on PATH or fetched by kmx).
 Rerunning reuses an **exact** match only: a Provider or Agent whose live spec
 differs from the one quickstart would write is somebody's deliberate change, so
 it stops rather than overwrite it. A half-finished run resumes. Other setup
@@ -182,27 +166,12 @@ v0.10.2; it does not alter this setup or quickstart path.
 
 A cluster that still carries Kagent is untouched by Orka setup. Other than the
 explicit exact-v0.10.2 create path, operate it with upstream tools or kubectl.
-An old gateway reference needs
-[explicit upgrade review](operations.md#upgrading-after-gateway-retirement).
-Interactive `/help` lists local controls.
-
-### Governing an application
-
-```bash
-kmx plane
-kmx migrate <deployment> --namespace <ns> --model local/qwen2.5:3b
-kmx ledger <deployment>
-```
-
-`kmx migrate` puts an owner-managed application behind the plane and gives it an
-opaque plane token, never the real upstream key. It changes model routing only;
-see [kmx](kmx.md#governing-model-traffic). Direct MCP wiring an application
-already owns is untouched, and carries no Kaimahi tool policy, grants or audit.
+Owners must deliberately remove or replace obsolete gateway references; setup
+does not repoint existing tools. Interactive `/help` lists local controls.
 
 ## An agent of your own
 
-This is the **native Orka path**, not a new legacy agent for the commands
-above. Preview a Provider + Agent bundle offline:
+This is the **native Orka path**. Preview a Provider + Agent bundle offline:
 
 ```bash
 kmx agent create my-agent --namespace orka-system \
@@ -258,8 +227,9 @@ named nodes and checks API/DNS. kmx supplies
 - The bundled local model is small and tool-capable, not a guarantee of reliable
   prose. Validate actual tool payloads; [FAQ](FAQ.md) covers small-model failures.
 - Ollama models are in `emptyDir`; a pod restart requires another model pull.
-- `kmx down` deletes the whole local cluster, **including Postgres/ledger**.
-  Back up first if needed. For AKS use [lift teardown](aks.md#teardown), not kind down.
+- `kmx down` deletes the whole local cluster and its data, including any historical
+  database still present. Export needed data first. For AKS use
+  [lift teardown](aks.md#teardown), not kind down.
 
-Next: [CLI reference](kmx.md), [migration](migrate.md) and
-[operations](operations.md).
+Next: [CLI reference](kmx.md), [models and endpoints](models.md) and
+[bundle lifecycle](agent-lift.md).

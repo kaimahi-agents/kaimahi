@@ -71,7 +71,7 @@ esac`,
 	}
 	t.Setenv("PATH", dir)
 	var out bytes.Buffer
-	a := &App{Cfg: &config.Config{KubeContext: "kind-unrelated", Credential: "test-credential"},
+	a := &App{Cfg: &config.Config{KubeContext: "kind-unrelated"},
 		Run: &run.Runner{Stdout: io.Discard, Stderr: &out}, Out: io.Discard, Err: &out}
 	return a, &out, dir
 }

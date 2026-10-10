@@ -41,8 +41,6 @@ kmx quickstart
 The wizard offers an interactive path.
 ## Runtime Contract
 Runtimes own execution.
-## Migrate Model Traffic
-Migration is separate.
 ## Status
 Limitations.
 ## Documentation
@@ -63,7 +61,6 @@ for label, literal in [
     ("journey heading", "## Create, Prove, Lift\n"),
     ("Quickstart heading", "## Quickstart\n"),
     ("runtime contract heading", "## Runtime Contract\n"),
-    ("migration heading", "## Migrate Model Traffic\n"),
     ("Status heading", "## Status\n"),
     ("documentation heading", "## Documentation\n"),
     ("Development heading", "## Development\n"),

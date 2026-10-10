@@ -3,7 +3,7 @@
 
 The map describes the installed tree, not the current product direction:
 file counts, embedded manifests, callers, and packages without source.
-Legacy plane code can remain present without being current guidance.
+The native-only module boundary remains checked after retired source removal.
 
 WHAT THIS CHECKS, AND WHAT IT DELIBERATELY DOES NOT.
 
@@ -249,9 +249,9 @@ def globbed(path: str, pattern: str) -> bool:
     """A glob that does not cross directories.
 
     `fnmatch`'s `*` matches a slash, so `scripts/*-probe.sh` also matches
-    `scripts/ci/status-unknown-probe.sh` — which moved a file from the CI
-    bucket into the probe bucket and made both counts right by being wrong
-    twice. A pattern here spans one directory level, the way a shell glob
+    `scripts/ci/example-probe.sh`. That would misclassify an example in a
+    nested directory while leaving bucket totals correct. A pattern here
+    spans one directory level, the way a shell glob
     does and the way the map reads.
     """
     import fnmatch
@@ -268,8 +268,8 @@ def resolve(token: str, base: str, tree: Tree) -> set[str]:
     section's directory — which is what `lift*.go` in the `internal/`
     section means.
     """
-    # The section's own directory first: inside the `k8s/` section `plane/`
-    # is k8s/plane/ and not the plane module at the root, and inside
+    # The section's own directory first: inside a `k8s/` section `assets/`
+    # means k8s/assets/, not an unrelated root assets/ directory, and inside
     # `docs/` `README.md` is the documentation index and not the front
     # door. Reading those the other way round is not a near miss — it
     # resolves to a real, wrong file and the claim passes.
@@ -494,32 +494,21 @@ def the_lift_split_is_still_five_files(doc: Doc, tree: Tree) -> list[str]:
 
 
 @claim
-def the_plane_is_thirteen_packages_and_ten_migrations(doc: Doc, tree: Tree) -> list[str]:
-    _, body = doc.section("`plane/`")
-    pkgs = once(phrase("{n} internal packages and {n} binary"), body, "the plane's package count")
-    migs = once(phrase("(Postgres and {n} migrations)"), body, "the plane's migration count")
-    return (compare_count(number(pkgs.group(1)), len(tree.dirs_under("plane/internal")),
-                          "plane internal packages")
-            + compare_count(number(pkgs.group(2)), len(tree.dirs_under("plane/cmd")), "plane binaries")
-            + compare_count(number(migs.group(1)),
-                            len(tree.under("plane/internal/db/migrations")), "plane migrations"))
-
-
-@claim
 def the_root_module_does_not_import_the_plane(doc: Doc, tree: Tree) -> list[str]:
-    """The module boundary the map calls the point of the split.
+    """Native code must not reacquire the retired module or build helper.
 
-    An import would compile, and nothing else in the tree would object —
-    which is why the map says it and why it is worth a check. Import
-    declarations only: the plane's module path appears all over
-    `planebuild` as a string constant, and that coupling is the map's next
-    paragraph rather than a violation of this one.
+    Keep this anchored to current internal packages, not a section for an
+    absent module. Import declarations are checked, not historical comments.
     """
-    _, body = doc.section("`plane/`")
+    _, body = doc.section("`internal/`")
+    once(phrase("The plane module and image-build helper are absent"), body,
+         "the retired-source boundary")
     once(phrase("no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`"),
          body, "the no-import claim")
     module = "github.com/kaimahi-agents/kaimahi/plane"
-    problems, examined = [], 0
+    problems = [f"retired source is tracked: {path}" for path in sorted(
+        tree.under("plane") | tree.under("internal/kmx/planebuild"))]
+    examined = 0
     for path in sorted(tree.under("cmd") | tree.under("internal")):
         if not path.endswith(".go"):
             continue
@@ -532,7 +521,7 @@ def the_root_module_does_not_import_the_plane(doc: Doc, tree: Tree) -> list[str]
             problems.append(f"{path} imports the plane module: {line.strip()}")
     if not examined:
         raise Anchor("no Go files were found under cmd/ or internal/ — the no-import check read nothing")
-    if re.search(rf"^\s+{re.escape(module)}\s", tree.read("go.mod"), re.M):
+    if re.search(rf"^\s*(?:require\s+)?{re.escape(module)}\s", tree.read("go.mod"), re.M):
         problems.append("go.mod requires the plane module")
     return problems
 
@@ -621,9 +610,9 @@ def the_script_buckets_cover_scripts(doc: Doc, tree: Tree) -> list[str]:
     """Every tracked file under scripts/ is classified exactly once.
 
     The buckets are resolved in the order the table lists them and a file
-    already claimed is not claimed again — which is the table's own rule,
-    written into it twice: `kube-guard.sh` is "counted once above", and
-    the probes are "`*-probe.sh`, minus the one that is embedded".
+    already claimed is not claimed again, so generic globs in a later
+    bucket cannot count an embedded helper twice. The map describes
+    `kube-guard.sh` as counted once as embedded.
 
     This is where a new file makes the check fail, and the message says
     only that it is unclassified. Which bucket it belongs in is not a
@@ -818,9 +807,8 @@ def nothing_under_scripts_is_orphaned(doc: Doc, tree: Tree) -> list[str]:
     references, and the map says so.
     """
     _, body = doc.section("`scripts/`")
-    m = once(phrase("{n} of the {n} are named by something outside themselves, and the {n} "
-                    "`scripts/mutations/*.json` are named by nothing"),
-             body, "the orphan arithmetic")
+    m = once(phrase("{n} of the {n} are named by something outside themselves, "
+                    "and {n} are named by nothing"), body, "the orphan arithmetic")
     everything = sorted(tree.under("scripts"))
     others = [p for p in tree.files if p not in NOT_EVIDENCE]
     named, unnamed = 0, []
@@ -833,7 +821,18 @@ def nothing_under_scripts_is_orphaned(doc: Doc, tree: Tree) -> list[str]:
     problems = compare_count(number(m.group(1)), named, "scripts named by something outside themselves")
     problems += compare_count(number(m.group(2)), len(everything), "tracked files under scripts/")
     problems += compare_count(number(m.group(3)), len(unnamed), "scripts named by nothing")
-    return problems + compare_sets(set(unnamed), tree.under("scripts/mutations"),
+    retained = once(r"\*\*Unreferenced retained scaffolding \(" + NUM + r"\):\*\*(.*?)\n\n",
+                    body, "the unreferenced scaffolding list", re.S)
+    declared = set()
+    for token in ticks(retained.group(2)):
+        path = token if token.startswith("scripts/") else "scripts/" + token
+        if path not in everything or path in tree.under("scripts/mutations"):
+            problems.append(f"unreferenced scaffolding names `{token}`, not a tracked scaffold file")
+        else:
+            declared.add(path)
+    problems += compare_count(number(retained.group(1)), len(declared),
+                              "unreferenced retained scaffolding count")
+    return problems + compare_sets(declared | tree.under("scripts/mutations"), set(unnamed),
                                    "the files nothing outside names")
 
 
@@ -853,39 +852,12 @@ def the_scripts_that_name_a_k8s_path(doc: Doc, tree: Tree) -> list[str]:
 
 
 @claim
-def model_probes_call_seam_ca_directly(doc: Doc, tree: Tree) -> list[str]:
-    """Both direct model probes obtain the CA rather than skipping verification."""
-    _, body = doc.section("`scripts/`")
-    once(phrase("Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly"), body,
-         "the model probes' authority helper")
-    missing = [path for path in ("scripts/model-seam-probe.sh", "scripts/spend-race-probe.sh")
-               if not re.search(r"^\s*seam_ca\b", tree.read(path), re.M)]
-    return [f"{path} does not call seam_ca directly as the map says" for path in missing]
-
-
-@claim
 def the_open_question_count_matches(doc: Doc, tree: Tree) -> list[str]:
     """Questions may evolve or reach zero; the declared count must agree."""
     heading, body = doc.section("Open questions")
     m = once(phrase("Open questions — {n}"), heading, "the count of open questions")
     items = re.findall(r"^\d+\. \*\*(.+?)\*\*", body, re.M)
     return compare_count(number(m.group(1)), len(items), "open questions")
-
-
-@claim
-def the_architecture_svg_still_has_no_trailing_newline(doc: Doc, tree: Tree) -> list[str]:
-    """The map warns that `wc -l` reports this file as empty. The warning
-    is only worth carrying while it is true."""
-    m = once(phrase("the `.svg` has no trailing newline, so `wc -l` reports it as ") + r"(\d+)",
-             doc.text, "the architecture.svg warning")
-    data = (tree.root / "docs/assets/architecture.svg").read_bytes()
-    if not data:
-        return ["docs/assets/architecture.svg is empty"]
-    lines = data.count(b"\n")
-    if data.endswith(b"\n") or lines != int(m.group(1)):
-        return [f"docs/assets/architecture.svg now ends with a newline or is {lines} lines by "
-                f"`wc -l`, and the map warns it reads as {m.group(1)}"]
-    return []
 
 
 # --------------------------------------------------------------------------
@@ -961,26 +933,21 @@ def main(argv) -> int:
 # manufacture its own expected answer. The real tree is checked separately.
 SELFTEST_FILES = {
     "README.md": "# Fixture\n![mark](brand/mark.svg)\n",
-    "Makefile": "\t./scripts/embedded.sh\n\t./scripts/model-seam-probe.sh\n\t./scripts/spend-race-probe.sh\n"
+    "Makefile": "\t./scripts/embedded.sh\n"
                 "# scripts/verify-example.py\n"
                 "# scripts/check-example.py\n",
-    "embed.go": "//go:embed k8s/embedded.yaml k8s/plane blueprints scripts/embedded.sh\n",
+    "embed.go": "//go:embed k8s/embedded.yaml k8s/assets blueprints scripts/embedded.sh\n",
     "go.mod": "module example.invalid/fixture\n",
     "staticcheck.conf": "checks = [\"all\"]\n",
     "cmd/kmx/main.go": "package main\n",
     "internal/kmx/app/lift.go": "package app\n",
-        "plane/internal/db/db.go": "package db\n",
-    "plane/internal/db/migrations/001.sql": "SELECT 1;\n",
-    "plane/cmd/proxy/main.go": "package main\n",
     "k8s/embedded.yaml": "kind: ConfigMap\n",
-    "k8s/plane/config.yaml": "kind: ConfigMap\n",
+    "k8s/assets/config.yaml": "kind: ConfigMap\n",
     "k8s/checkout.yaml": "kind: ConfigMap\n",
     "k8s/release.yaml": "kind: ConfigMap\n",
     "k8s/demo.yaml": "kind: ConfigMap\n",
     "k8s/checkout-data.json": "{}\n",
     "scripts/embedded.sh": "true\n",
-    "scripts/model-seam-probe.sh": 'seam_ca "$work/ca.crt"\n',
-    "scripts/spend-race-probe.sh": 'seam_ca "$work/ca.crt"\n',
     "scripts/verify-example.py": "pass\n",
     "scripts/check-example.py": "# k8s/\n",
     "scripts/mutations/check-example.json": "{}\n",
@@ -988,7 +955,6 @@ SELFTEST_FILES = {
     "docs/getting-started.md": "# Start\n",
     "docs/release-agent.md": "# Legacy reference\nNo current product authority.\n",
     "docs/reviews/retained.md": "# Retained review\n",
-    "docs/assets/architecture.svg": "<svg/>",
     "brand/README.md": "hero.png and mark.svg\n",
     "brand/hero.png": "image fixture\n",
     "brand/mark.svg": "<svg/>\n",
@@ -1001,8 +967,8 @@ Installed does not mean current direction, including one shell scripts.
 
 ## The short version
 | `internal/` | `kmx/` (one packages) |
-| `scripts/` | 1 (1 embedded in the binary, 0 operator) | 2 | 3 |
-| `docs/` | 6 tracked files |
+| `scripts/` | 1 (1 embedded in the binary, 0 operator) | 0 | 3 |
+| `docs/` | 5 tracked files |
 | `brand/` | 2 identity assets for repository and organization surfaces |
 
 ## `cmd/` — installed commands
@@ -1012,14 +978,13 @@ Installed does not mean current direction, including one shell scripts.
 `internal/kmx/` is one packages; the one `lift*.go` files in `app`.
 | `kmx/app` | 1 | Installed |
 
-## `plane/` — legacy module
-One internal packages and one binary (Postgres and one migrations).
-no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`.
+The plane module and image-build helper are absent.
+There is no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`.
 
 ## `k8s/` — installed and checkout artifacts
 Two of `k8s/`'s 6 files are embedded; four are not embedded.
 
-**Embedded in `kmx` (2):** `embedded.yaml`, all one of `plane/`.
+**Embedded in `kmx` (2):** `embedded.yaml`, all one of `assets/`.
 
 **Checkout — connectors (1):** `checkout.yaml`.
 
@@ -1027,26 +992,23 @@ Two of `k8s/`'s 6 files are embedded; four are not embedded.
 
 **Checkout — demonstrations (2):** `demo.yaml`, `checkout-data.json`.
 
-## `scripts/` — 6 tracked files
-5 of the 6 are named by something outside themselves, and the one
-`scripts/mutations/*.json` are named by nothing.
+## `scripts/` — 4 tracked files
+3 of the 4 are named by something outside themselves, and one are named by nothing.
+
+**Unreferenced retained scaffolding (0):** None.
+
+Mutation specifications are discovered by glob.
 | **Installed** | 1 | `embedded.sh` |
-| **Demonstration** | 2 | `model-seam-probe.sh`, `spend-race-probe.sh` |
 | **Scaffolding** | 2 | the one `check-*` files, `verify-example.py` |
 | **Scaffolding** | 1 | `scripts/mutations/*.json` |
 `embedded.sh` is one of the one checkers the mutation harness breaks on purpose.
-Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly.
 
-## `docs/` — 6 tracked files
+## `docs/` — 5 tracked files
 **Guidance (2):** `README.md`, `getting-started.md`.
 
 **Legacy reference (1):** `release-agent.md`.
 
 **Maintainer (2):** `repository-map.md`, `reviews/retained.md`.
-
-**Assets (1):** `docs/assets/architecture.svg`.
-
-**Asset note:** the `.svg` has no trailing newline, so `wc -l` reports it as 0.
 
 ## `brand/` — assets
 Two image files plus a README.
@@ -1077,17 +1039,13 @@ MAP_EDITS = [
      "drops a manifest from the embedded list that embed.go embeds"),
     ("`demo.yaml`, `checkout-data.json`", "`demo.yaml`, `checkout-data.json`, `embedded.yaml`",
      "files an embedded manifest under checkout as well"),
-    ("`model-seam-probe.sh`, `spend-race-probe.sh`", "`model-seam-probe.sh`",
+    ("the one `check-*` files, `verify-example.py`", "the one `check-*` files",
      "leaves a script out of every bucket"),
     ("`README.md`, `getting-started.md`", "`README.md`",
      "leaves a doc out of every list"),
-    ("One internal packages and one binary", "Two internal packages and one binary",
-     "miscounts the plane's packages"),
-    ("Postgres and one migrations", "Postgres and two migrations",
-     "miscounts the plane's migrations"),
-    ("Both `model-seam-probe.sh` and `spend-race-probe.sh` call `seam_ca` directly",
-     "Only `model-seam-probe.sh` calls `seam_ca` directly",
-     "no longer names both direct authority-helper callers"),
+    ("The plane module and image-build helper are absent",
+     "The former module boundary is no longer checked",
+     "no longer makes the retired-source boundary claim"),
     ("no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`",
      "the root module imports it freely", "no longer makes the module-boundary claim"),
     ("| `cmd/kmx` (1 files)", "| `cmd/kmx` (2 files)",
@@ -1098,7 +1056,7 @@ MAP_EDITS = [
      "miscounts the cloud-running half of the AKS lift"),
     ("1 (1 embedded in the binary, 0 operator)", "1 (1 embedded in the binary, 1 operator)",
      "has a summary row whose own parts no longer add up"),
-    ("| `docs/` | 6 tracked files", "| `docs/` | 7 tracked files",
+    ("| `docs/` | 5 tracked files", "| `docs/` | 6 tracked files",
      "miscounts the docs in its summary"),
     ("Two image files plus a README", "Three image files plus a README",
      "miscounts the brand assets"),
@@ -1108,13 +1066,11 @@ MAP_EDITS = [
      "miscounts the checkers the mutation harness proves"),
     ("`staticcheck.conf` |", "`staticcheck.conf.gone` |",
      "leaves a root file out of its table"),
-    ("5 of the 6 are named", "4 of the 6 are named",
+    ("3 of the 4 are named", "2 of the 4 are named",
      "miscounts which scripts anything outside names"),
     ("One tracked files under `scripts/` contain the literal `k8s/`",
      "Two tracked files under `scripts/` contain the literal `k8s/`",
      "miscounts the scripts naming k8s paths"),
-    ("`wc -l` reports it as 0", "`wc -l` reports it as 1",
-     "gets the architecture asset's line count wrong"),
 ]
 
 
@@ -1136,6 +1092,50 @@ def selftest_fixture(tree: Tree) -> int:
     import copy
 
     failed = 0
+
+    # Retained scaffolding may lose its caller, but only an exact, current
+    # declaration can account for it. Counts alone cannot authorize orphans.
+    reference_tree = Tree(tree.root, files=[
+        "Makefile", "scripts/embedded.sh", "scripts/verify-example.py",
+        "scripts/mutations/check-example.json",
+    ])
+    reference_tree._text = {
+        "Makefile": "scripts/embedded.sh\n",
+        "scripts/embedded.sh": "true\n",
+        "scripts/verify-example.py": "pass\n",
+        "scripts/mutations/check-example.json": "{}\n",
+    }
+    reference_map = (
+        "## `scripts/`\n"
+        "1 of the 3 are named by something outside themselves, and 2 are named by nothing.\n\n"
+        "**Unreferenced retained scaffolding (1):** `verify-example.py`.\n\n"
+    )
+    now_referenced = reference_map.replace("1 of the 3", "2 of the 3").replace(
+        "and 2 are named by nothing", "and 1 are named by nothing")
+    for text, caller, want, label in [
+        (reference_map, "scripts/embedded.sh\n", False, "exact dormant scaffold declaration passes"),
+        (reference_map.replace("(1):** `verify-example.py`", "(0):** None"),
+         "scripts/embedded.sh\n", True, "undeclared dormant scaffold is refused"),
+        (reference_map.replace("`verify-example.py`", "`missing.py`"),
+         "scripts/embedded.sh\n", True, "nonexistent scaffold declaration is refused"),
+        (now_referenced, "scripts/embedded.sh\nscripts/verify-example.py\n", True,
+         "a scaffold declaration with a new caller is stale"),
+        (now_referenced, "scripts/embedded.sh\nscripts/mutations/check-example.json\n", True,
+         "mutation specifications stay discovered rather than named"),
+        (reference_map.replace("`verify-example.py`", "`*.py`"),
+         "scripts/embedded.sh\n", True, "wildcards cannot authorize orphan scripts"),
+    ]:
+        variant = copy.copy(reference_tree)
+        variant._text = {**reference_tree._text, "Makefile": caller}
+        try:
+            findings = nothing_under_scripts_is_orphaned(Doc(text), variant)
+        except Anchor as exc:
+            findings = [str(exc)]
+        if bool(findings) != want:
+            print(f"FAIL {label}: {findings}")
+            failed += 1
+        else:
+            print(f"ok   {label}")
 
     # A fully embedded tree needs no invented checkout fixture or exclusion
     # ledger. The same claim must still reject an unclassified new manifest.
@@ -1211,6 +1211,45 @@ def selftest_fixture(tree: Tree) -> int:
     else:
         print("ok   embedded script language counts distinguish shell from Python")
 
+    # The native-only boundary lives in the internal section, not a phantom
+    # section for the removed module. Exercise it directly so unrelated
+    # counts or missing-heading findings cannot satisfy an illegal-import case.
+    native_map = Doc("## `internal/` — native CLI packages\n"
+                     "The plane module and image-build helper are absent.\n"
+                     "There is no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`.\n")
+    native_files = ["go.mod", "cmd/kmx/main.go", "internal/kmx/app/app.go"]
+    native_source = {"go.mod": "module example.invalid/native\n",
+                     "cmd/kmx/main.go": "package main\n",
+                     "internal/kmx/app/app.go": "package app\n"}
+    module = "github.com/kaimahi-agents/kaimahi/plane"
+    for extra, changed, expected, label in [
+        ([], {}, "", "native tree passes without a plane section"),
+        ([], {"cmd/kmx/main.go": f'package main\nimport "{module}/proxy"\n'},
+         "imports the plane module", "single plane import is refused"),
+        ([], {"internal/kmx/app/app.go": f'package app\nimport (\n alias "{module}/store"\n)\n'},
+         "imports the plane module", "grouped aliased plane import is refused"),
+        ([], {"go.mod": f'module example.invalid/native\nrequire {module} v0.0.0\n'},
+         "requires the plane module", "single plane require is refused"),
+        ([], {"go.mod": f'module example.invalid/native\nrequire (\n {module} v0.0.0\n)\n'},
+         "requires the plane module", "grouped plane require is refused"),
+        (["plane/go.mod"], {}, "retired source", "reintroduced plane module is refused"),
+        (["internal/kmx/planebuild/build.go"], {}, "retired source", "reintroduced image-build helper is refused"),
+        ([], {"cmd/kmx/main.go": f'package main\n// import "{module}/proxy"\n'},
+         "", "comment mentioning an old import is not an import"),
+    ]:
+        variant = Tree(tree.root, files=native_files + extra)
+        variant._text = {**native_source, **{path: "package retired\n" for path in extra}, **changed}
+        try:
+            findings = the_root_module_does_not_import_the_plane(native_map, variant)
+        except Anchor as exc:
+            findings = [str(exc)]
+        matched = not findings if not expected else any(expected in p for p in findings)
+        if matched:
+            print(f"ok   {label}")
+        else:
+            print(f"FAIL {label}: {findings}")
+            failed += 1
+
     real = tree.read(MAP)
     problems, ran = check(tree, real)
     if problems:
@@ -1269,8 +1308,8 @@ def selftest_fixture(tree: Tree) -> int:
 
     grown = copy.copy(tree)
     grown.files = sorted(tree.files + ["docs/new-guide.md"])
-    expanded = real.replace("| `docs/` | 6 tracked files", "| `docs/` | 7 tracked files").replace(
-        "## `docs/` — 6 tracked files", "## `docs/` — 7 tracked files").replace(
+    expanded = real.replace("| `docs/` | 5 tracked files", "| `docs/` | 6 tracked files").replace(
+        "## `docs/` — 5 tracked files", "## `docs/` — 6 tracked files").replace(
         "**Guidance (2):** `README.md`, `getting-started.md`.",
         "**Guidance (3):** `README.md`, `getting-started.md`, `new-guide.md`.",
     )
@@ -1287,6 +1326,14 @@ def selftest_fixture(tree: Tree) -> int:
         print("ok   mentioning the section directory does not enumerate its files")
     else:
         print("FAIL a directory mention became a list of every file")
+        failed += 1
+    relative_assets = Tree(tree.root, files=[
+        "assets/other.yaml", "k8s/assets/native.yaml", "k8s/checkout.yaml",
+    ])
+    if listed("`assets/`", "k8s", relative_assets) == ({"k8s/assets/native.yaml"}, []):
+        print("ok   directory lists resolve relative to their section before unrelated root assets")
+    else:
+        print("FAIL a directory list resolved to an unrelated root asset directory")
         failed += 1
     if (globbed("scripts/example-probe.sh", "scripts/*-probe.sh")
             and not globbed("scripts/ci/example-probe.sh", "scripts/*-probe.sh")):
@@ -1333,19 +1380,6 @@ def selftest_fixture(tree: Tree) -> int:
         else:
             print(f"FAIL a new file in {where} was not noticed by any claim")
             failed += 1
-
-    # Each probe's actual command must be checked, not a comment or just the first file.
-    for caller in ("scripts/model-seam-probe.sh", "scripts/spend-race-probe.sh"):
-        for replacement in ("true\n", '# seam_ca "$work/ca.crt"\n'):
-            changed = copy.copy(tree)
-            changed._text = {**tree._text, caller: replacement}
-            problems, _ = check(changed, real)
-            note(problems)
-            if any(p.startswith("[model_probes_call_seam_ca_directly]") for p in problems):
-                print(f"ok   replacing seam_ca in {caller} with {replacement.strip()!r} is caught")
-            else:
-                print(f"FAIL replacing seam_ca in {caller} with {replacement.strip()!r} went unnoticed")
-                failed += 1
 
     # And the empty case, from both ends.
     try:
@@ -1415,7 +1449,7 @@ def selftest_fixture(tree: Tree) -> int:
         print(f"\ncheck-repository-map self-test: {failed} case(s) failed", file=sys.stderr)
         return 1
     print(f"\ncheck-repository-map self-test: {len(CLAIMS)} claims, each broken by at least one "
-          f"of {len(MAP_EDITS)} map edits and 11 tree changes, every one caught")
+          f"of {len(MAP_EDITS)} map edits and targeted tree changes, every one caught")
     return 0
 
 

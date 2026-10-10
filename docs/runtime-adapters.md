@@ -119,8 +119,8 @@ its checkout-only projector, not a built or installed adapter.
 - **Workspace substrate:** execution machinery beneath a runtime.
 
 KMX names mutation targets and obtains consent. Workload retirement never grants
-cluster/shared-infrastructure teardown authority. A model-traffic bridge's
-controls are not proof of governance for every runtime operation.
+cluster/shared-infrastructure teardown authority. Model-route configuration
+is not proof of enforcement for every runtime operation.
 
 ## Adapter contract implemented today
 

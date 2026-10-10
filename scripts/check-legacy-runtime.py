@@ -183,7 +183,6 @@ SCOPED_SUPPORT_FILES = {
         "docs/interactive-agent-tui-plan.md",
         "docs/interactive-chat.md",
         "docs/kmx.md",
-        "docs/migrate.md",
         "docs/orka.md",
         "docs/releases.md",
         "docs/repository-map.md",

@@ -23,10 +23,6 @@ var (
 	depKind    = dependency{"kind", "to manage the local Kubernetes cluster", "https://kind.sigs.k8s.io/docs/user/quick-start/#installation", []string{"version"}, true}
 	depHelm    = dependency{"helm", "to install Orka from its Helm chart", "https://helm.sh/docs/intro/install/", []string{"version", "--short"}, true}
 	depBash    = dependency{"bash", "to run the embedded scripts used by this lift phase", "https://www.gnu.org/software/bash/", []string{"--version"}, false}
-	// Go is deliberately NOT fetchable: it is a toolchain and a directory
-	// tree, not one binary. Only clone-free `kmx plane` builds need it;
-	// local first-answer and AKS setup do not build a plane.
-	depGo = dependency{"go", "to fetch and build the model-traffic bridge", "https://go.dev/dl/", []string{"version"}, false}
 )
 
 func (a *App) engineDependency() dependency {

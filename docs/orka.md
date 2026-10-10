@@ -10,12 +10,9 @@ upstream installs a Helm chart and generates its own encryption key and webhook
 certificate. kmx fetches the pinned release chart rather than requiring an
 Orka checkout or a manually created wrapper credential.
 
-**Installing Orka governs nothing.** That sentence is printed by the command
-itself. Authoring a native Orka Agent is now [`kmx agent create`](kmx.md#kmx-agent-create);
-putting an existing application's model traffic on the governed seam is
-[`kmx migrate`](migrate.md), one owned Deployment at a time. Migration does not
-translate a legacy BYO definition or create Tasks; install, create and migrate
-are deliberately separate commands.
+Installation does not author an Agent or run a Task. Author a native Orka Agent with
+[`kmx agent create`](kmx.md#kmx-agent-create) and prove an answer with a Task.
+Installation and authoring are deliberately separate operations.
 
 ## The command
 
@@ -198,14 +195,12 @@ or governance is added here.
 ## The whole journey, from nothing
 
 ```console
-$ kmx up                                    # a cluster, a model, and the Orka runtime
-$ kmx plane                                 # the model-traffic bridge
-$ kmx migrate concierge --namespace demo --model local/qwen2.5:3b
+$ kmx quickstart                            # a cluster, model, Orka Agent and fresh Task answer
 ```
 
-The third command is the one that governs anything. The first two are the
-front door — `kmx up` installs Orka itself, so there is no separate
-`kmx orka install` on this path.
+Use `kmx up` instead to install the runtime without creating an Agent, then
+follow the [native create guide](#author-an-orka-agent-and-get-an-answer).
+Both setup paths install Orka, so neither needs a separate `kmx orka install`.
 
 ## Authoring an agent for Orka
 
@@ -228,13 +223,8 @@ the Provider and its named credential Secret, not just the Agent; an accepted
 Agent manifest alone does not prove it can reach its model.
 
 For an application image you already operate, keep its Deployment under your
-own management. [`kmx migrate`](migrate.md) describes the model-traffic path
-for supported applications. That path does not register the application as
-an Orka `Agent` or turn its requests into Orka `Task` resources. The migration
-guide records the exercised behavior and its limits. A legacy BYO definition
-is not an input to `kmx migrate`: the application must already have a
-Deployment it owns. Model-traffic migration is a separate boundary, not BYO
-Agent conversion.
+own management. KMX does not convert it into an Orka Agent or redirect its model
+traffic. Configure its runtime and model access through the upstream interfaces.
 
 ## Limits, stated
 
@@ -281,8 +271,8 @@ Agent conversion.
 - **Local kind replacement loses data.** If replacing an old local install,
   first export anything you need; `kmx down` deletes the named kind cluster,
   including Orka Tasks, custom resources, Secrets, SQLite volumes, snapshots,
-  model data and the plane ledger. Only then run `kmx up` for a new v0.2.0
-  installation. This is not a migration and does not restore the deleted data.
+  model data and any historical database still present. Only then run `kmx up`
+  for a new v0.2.0 installation. This is not a migration and does not restore the deleted data.
 - **AKS replacement is operator-managed.** Before retiring v0.1.3, make and
   verify backups of the existing controller data volumes, Orka resources/Secrets
   and any owner workloads. Preserve a snapshot-key Secret if the existing
@@ -298,14 +288,10 @@ Agent conversion.
   while deleting CRDs deletes their custom resources.
 - **Uninstall is not implemented in kmx.** Orka's chart manages persistent
   state; removal is an explicit data-retention decision.
-- **The model seam has no per-credential allowlist**, so every credential the
-  plane has issued can reach the `orka` upstream — a property of the seam,
-  described in [migrate.md](migrate.md#8-limits-stated).
 - **Not run on AKS.** Measured on kind only.
 
 ## See also
 
 - [kmx agent create](kmx.md#kmx-agent-create) — native Orka authoring and Task result contract
-- [migrate.md](migrate.md) — putting an application's model traffic on the seam
 - [the Orka composition report](reviews/2026-09-09-orka-composition.md) — what
   each project has, measured rather than compared

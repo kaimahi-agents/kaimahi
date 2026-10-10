@@ -155,32 +155,15 @@ also discusses rollback, which does not have a standalone command. Deploying
 and verifying an earlier revision cannot undo an agent's completed external
 actions. KMX uses Git and the selected runtime rather than a separate server.
 
-## Migrate Model Traffic
-
-`kmx migrate` is a separate compatibility bridge for an existing application:
-
-```bash
-kmx plane
-kmx migrate <deployment> --namespace <namespace> --model <provider>/<model>
-```
-
-The application owner keeps the Deployment and reviews the generated patch. The
-bridge covers a supported model-client shape; it does not convert the application
-into an agent, govern all of its activity, or replace runtime enforcement. Read
-the [migration guide](docs/migrate.md) for protocol, credential, and ownership
-limits.
-
 ## Status
 
 Kaimahi is pre-1.0 and incubating. Interactive local creation, default creation
 on the first-class Orka runtime, inspection, chat, bundle lift and interactive
-lift to an existing target, AKS platform provisioning, and model-traffic
-migration are implemented. The only current Kagent capability is explicit,
-create-only authoring for an already-installed exact v0.10.2, optionally ending
+lift to an existing target, and AKS platform provisioning are implemented. The
+only current Kagent capability is explicit, create-only authoring for an already-installed exact v0.10.2, optionally ending
 in one A2A message from that invocation. Its former broad
 command surface remains retired, and historical AKS records remain
-teardown-only. Rollback remains directional; the model-traffic bridge
-(`kmx plane`, `kmx migrate`) remains.
+teardown-only. Rollback remains directional.
 AKS paths use billable resources and are not continuously re-proved in CI.
 
 ## Documentation
@@ -195,7 +178,6 @@ AKS paths use billable resources and are not continuously re-proved in CI.
 | [Bundle lift](docs/agent-lift.md) | Standalone bundle-to-prepared-target command and receipts |
 | [Interactive lift](docs/interactive-lift.md) | Bundle lift with guided preparation and the labelled live-copy fallback |
 | [AKS](docs/aks.md) | Billable resource ownership, provisioning, and teardown |
-| [Migration](docs/migrate.md) | Existing-application model-traffic bridge |
 | [Releases](docs/releases.md) | Versioning, install/upgrade paths, and cutting a release |
 | [Direction issue #194](https://github.com/kaimahi-agents/kaimahi/issues/194) | Proposed definitions, adapters, and lifecycle |
 | [Documentation index](docs/README.md) | All current guides and maintainer references |
