@@ -121,7 +121,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Replace `kmx quickstart-wizard [flags]` with `kmx quickstart --interactive [flags]`; drop `--interactive` from `kmx agent chat`. Tagged v0.4.1 and earlier use the old wizard and require `agent chat --interactive`.
   Use the old `ctx`, `up` and `down` spellings with v0.4.1; `context` and `local` are unreleased names.
 
-- `CHAT_PORT` and `KMX_CHAT_PORT` are unsupported. Task-backed Orka chat and quickstart use fixed loopback port 19180 and fails if it is occupied; free that port rather than relying on these environment variables.
+- `CHAT_PORT` and `KMX_CHAT_PORT` are unsupported. Task-backed Orka chat and quickstart use fixed loopback port 19180 and fail if it is occupied; free that port rather than relying on these environment variables.
 
 ## v0.4.1 — 2026-09-30
 
