@@ -32,9 +32,11 @@ type JournalHead struct {
 type CaseResult struct {
 	SessionUID, Harness, Model string
 	// ModelMixed is sticky and clears Model when distinct safe models are observed.
-	ModelMixed bool
-	Head       JournalHead
-	Output     string
+	ModelMixed           bool
+	Head                 JournalHead
+	Output               string
+	ToolCalls            map[string]int
+	ToolEvidenceComplete bool
 }
 type Client struct{ sdk *sdk.Client }
 
@@ -94,7 +96,9 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 	}
 
 	var evidenceErr error
+	var tools toolEvidenceCollector
 	fail := func(code codes.Code, diagnostic string) {
+		tools.invalidate()
 		if evidenceErr == nil {
 			evidenceErr = status.Error(code, diagnostic)
 		}
@@ -109,6 +113,7 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 			break
 		}
 		if err != nil {
+			tools.invalidate()
 			return result, safeRPCError(err, "agentsessions: execution stream failed")
 		}
 		if update == nil || len(update.ProtoReflect().GetUnknown()) != 0 {
@@ -133,6 +138,7 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 		switch frame := update.GetUpdate().(type) {
 		case *v1.ExecUpdate_Record:
 			record := frame.Record
+			collectTools := tools.reserve(record)
 			event := record.GetEvent()
 			if ended || !validEvent(event) || len(record.ProtoReflect().GetUnknown()) != 0 || record.GetSeq() != result.Head.Seq+1 || record.GetPrevHash() != result.Head.Hash || executionID != "" && event.GetExecutionId() != executionID {
 				chainValid = false
@@ -147,6 +153,9 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 			}
 			result.Head = JournalHead{Seq: record.Seq, Hash: hash}
 			executionID = event.ExecutionId
+			if collectTools {
+				tools.observe(event)
+			}
 			if event.Kind != v1.EventKind_EVENT_EXECUTION_START && event.Kind != v1.EventKind_EVENT_INPUT && (!seenStart || !seenInput) {
 				fail(codes.DataLoss, "agentsessions: incomplete invocation prefix")
 			}
@@ -225,6 +234,7 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 	if !ended {
 		fail(codes.FailedPrecondition, "agentsessions: missing execution completion")
 	}
+	result.ToolCalls, result.ToolEvidenceComplete = tools.finish(evidenceErr == nil)
 	return result, evidenceErr
 }
 
