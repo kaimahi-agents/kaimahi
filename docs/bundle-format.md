@@ -89,6 +89,14 @@ Go RE2, nonblank and at most 1,024 UTF-8 bytes; `llmJudge` and `llm_judge` are
 refused. An older reader without typed assertion support refuses `assertions`
 as an unknown field, even though case files still have no version tag.
 
+Evaluation preflight reserves 8 KiB per receipt, 4 KiB per case and 384 bytes
+per assertion within the 1 MiB receipt limit. At most 232 cases with one
+assertion each fit this conservative budget; additional assertions reduce the
+case count. The exact serialized-size check remains for unbounded runtime
+metadata. `--case <id>` selects one case, not an arbitrary subset, and its
+receipt cannot satisfy a full-case lift gate. Reader limits (including the
+1,000-case verification limit) are separate from this execution budget.
+
 Their exact bytes and filenames have a **separate** case-set digest, so
 changing a case does not change the portable revision but invalidates the
 prior evaluation result for that set. V2 receipts additionally record each

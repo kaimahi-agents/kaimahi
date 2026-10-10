@@ -39,11 +39,13 @@ func TestEvaluationReceiptSizeBudget(t *testing.T) {
 		{name: "empty", want: "at least one"},
 		{name: "small", counts: []int{1}},
 		{name: "maximum single case", counts: []int{1000}},
-		// 8192 + 4*8192 + 2624*384 = 1048576 exactly.
-		{name: "exact byte budget", counts: []int{1000, 1000, 623, 1}},
-		{name: "one row over budget", counts: []int{1000, 1000, 624, 1}, want: "1 MiB"},
+		// 8192 + 5*4096 + 2656*384 = 1048576 exactly.
+		{name: "exact byte budget", counts: []int{1000, 1000, 654, 1, 1}},
+		{name: "one row over budget", counts: []int{1000, 1000, 655, 1, 1}, want: "1 MiB"},
 		{name: "many cases overhead", counts: make([]int, 200), want: "1 MiB"},
-		{name: "too many cases", counts: make([]int, 1001), want: "at most 1000"},
+		{name: "maximum one assertion cases", counts: oneAssertionCaseCounts(232)},
+		{name: "one case over budget", counts: oneAssertionCaseCounts(233), want: "at most 232 cases with one assertion each"},
+		{name: "reader case cap unreachable", counts: oneAssertionCaseCounts(1001), want: "at most 232 cases with one assertion each"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cases := make([]bundleEvaluationCase, len(tc.counts))
@@ -63,12 +65,20 @@ func TestEvaluationReceiptSizeBudget(t *testing.T) {
 	}
 }
 
+func oneAssertionCaseCounts(count int) []int {
+	counts := make([]int, count)
+	for i := range counts {
+		counts[i] = 1
+	}
+	return counts
+}
+
 func TestEvaluationReceiptBudgetCoversIndentedEscapedEvidence(t *testing.T) {
 	id, digest, escaped := strings.Repeat("z", 63), strings.Repeat("a", 64), strings.Repeat("<", 256)
 	row := agentruntime.EvaluationAssertionResult{ID: id, Type: "toolNotCalled", DefinitionDigest: digest, Verdict: agentruntime.EvaluationUnknown, Reason: "runtime does not support tools"}
 	for _, receipt := range []any{
-		bundleEvaluationReceipt{SchemaVersion: 2, RunID: strings.Repeat("e", 32), Bundle: id, PortableDigest: digest, CasesDigest: digest, FullCaseSet: true, GitCommit: digest, Result: "unknown", Target: bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: escaped, Namespace: id, ClusterUID: escaped, Agent: id, AgentUID: escaped, Model: escaped}, Cases: []bundleEvaluationResult{{ID: id, Verdict: "unknown", CaseDigest: digest, InputDigest: digest, TaskName: escaped, TaskUID: escaped, AnswerSHA256: digest, Detail: evaluationExecutionUnavailable}}},
-		sessionsEvaluationReceipt{SchemaVersion: 2, RunID: strings.Repeat("e", 32), Bundle: id, PortableDigest: digest, CasesDigest: digest, FullCaseSet: true, GitCommit: digest, Result: "unknown", Target: sessionsEvaluationTarget{Runtime: "agentsessions", Identity: sessionsHostIdentity{Version: 1, Provenance: "host-reported", Address: escaped, Harness: escaped, Model: escaped}}, Cases: []sessionsEvaluationResult{{ID: id, Verdict: "unknown", CaseDigest: digest, InputDigest: digest, SessionUID: escaped, Harness: escaped, Model: escaped, ModelMixed: true, JournalHead: sessionsJournalHead{Seq: 9223372036854775807, Hash: digest}, AnswerSHA256: digest, Detail: evaluationExecutionUnavailable}}},
+		bundleEvaluationReceipt{SchemaVersion: 2, RunID: strings.Repeat("e", 32), Bundle: id, PortableDigest: digest, CasesDigest: digest, FullCaseSet: true, GitCommit: digest, Result: "unknown", Target: bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: escaped, Namespace: id, ClusterUID: escaped, Agent: id, AgentUID: escaped, Model: escaped}, Cases: []bundleEvaluationResult{{ID: id, Verdict: "unknown", CaseDigest: digest, InputDigest: digest, TaskName: strings.Repeat("z", 62), TaskUID: escaped, AnswerSHA256: digest, Detail: evaluationExecutionUnavailable}}},
+		sessionsEvaluationReceipt{SchemaVersion: 2, RunID: strings.Repeat("e", 32), Bundle: id, PortableDigest: digest, CasesDigest: digest, FullCaseSet: true, GitCommit: digest, Result: "unknown", Target: sessionsEvaluationTarget{Runtime: "agentsessions", Identity: sessionsHostIdentity{Version: 1, Provenance: "host-reported", Address: escaped, Harness: escaped, Model: escaped}}, Cases: []sessionsEvaluationResult{{ID: id, Verdict: "unknown", CaseDigest: digest, InputDigest: digest, SessionUID: escaped, Harness: "chat", Model: escaped, JournalHead: sessionsJournalHead{Seq: 9223372036854775807, Hash: digest}, AnswerSHA256: digest, Detail: evaluationExecutionUnavailable}}},
 	} {
 		before, err := json.MarshalIndent(receipt, "", "  ")
 		if err != nil {
@@ -87,8 +97,26 @@ func TestEvaluationReceiptBudgetCoversIndentedEscapedEvidence(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(top)+1 > 8192 || len(before)-len(top) > 8192 {
+		// Measure the actual indented schemas, with maximum case/digest lengths.
+		// An unexpected observed model can survive a failed chat execution;
+		// an invalid created harness instead returns before observing any model.
+		t.Logf("maximum metadata: envelope=%d case=%d", len(top)+1, len(before)-len(top))
+		if len(top)+1 > 8192 || len(before)-len(top) > 4096 {
 			t.Fatalf("metadata exceeds reserved budget: envelope=%d case=%d", len(top)+1, len(before)-len(top))
+		}
+		if r, ok := receipt.(sessionsEvaluationReceipt); ok {
+			r.Cases = append([]sessionsEvaluationResult(nil), r.Cases...)
+			r.Cases[0].Harness, r.Cases[0].Model = escaped, ""
+			r.Cases[0].JournalHead = sessionsJournalHead{}
+			r.Cases[0].AnswerSHA256 = ""
+			invalidSession, err := json.MarshalIndent(r, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("invalid created session metadata: case=%d", len(invalidSession)-len(top))
+			if len(invalidSession)-len(top) > 4096 {
+				t.Fatalf("invalid created session exceeds case reserve: %d", len(invalidSession)-len(top))
+			}
 		}
 		switch r := receipt.(type) {
 		case bundleEvaluationReceipt:
@@ -102,8 +130,37 @@ func TestEvaluationReceiptBudgetCoversIndentedEscapedEvidence(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Logf("two maximum assertion rows: %d bytes", len(after)-len(before))
 		if len(after)-len(before) > 2*384 {
 			t.Fatalf("indented maximum rows exceed budget: %d", len(after)-len(before))
+		}
+		// Check a whole maximum-count receipt too, including array separators
+		// and the final newline the writers append.
+		switch r := receipt.(type) {
+		case bundleEvaluationReceipt:
+			entry := r.Cases[0]
+			entry.Assertions = entry.Assertions[:1]
+			r.Cases = make([]bundleEvaluationResult, 232)
+			for i := range r.Cases {
+				r.Cases[i] = entry
+			}
+			receipt = r
+		case sessionsEvaluationReceipt:
+			entry := r.Cases[0]
+			entry.Assertions = entry.Assertions[:1]
+			r.Cases = make([]sessionsEvaluationResult, 232)
+			for i := range r.Cases {
+				r.Cases[i] = entry
+			}
+			receipt = r
+		}
+		full, err := json.MarshalIndent(receipt, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("232 maximum-length cases with one assertion: %d bytes", len(full)+1)
+		if len(full)+1 > maxSessionsReceiptBytes {
+			t.Fatalf("accepted case count produces oversized receipt: %d", len(full)+1)
 		}
 	}
 }

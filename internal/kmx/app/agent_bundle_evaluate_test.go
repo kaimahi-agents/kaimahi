@@ -430,8 +430,8 @@ func TestEvaluateReceiptSizePreflight(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") {
-				t.Errorf("want receipt-size preflight refusal, got %v", err)
+			if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") || !strings.Contains(err.Error(), "at most 232 cases with one assertion each") || !strings.Contains(err.Error(), "--case <id> to run one case") {
+				t.Errorf("want receipt-size preflight refusal with case limit and single-case guidance, got %v", err)
 			}
 			if calls := orkaCalls(t, f.dir); len(calls) != 0 || f.taskCreates(t) != 0 {
 				t.Errorf("oversized evaluation reached kubectl: %+v", calls)

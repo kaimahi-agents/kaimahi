@@ -13,22 +13,23 @@ const (
 )
 
 // preflightEvaluationReceiptSize budgets the selected suite before execution.
-// Rows have safe ASCII IDs (63 bytes), fixed types/reasons and SHA-256 digests;
-// 384 bytes covers each row's indented JSON, including separators. Reserve
-// 8 KiB per case for metadata (including 256-byte identities escaped up to six
-// bytes per byte) and another 8 KiB for the envelope. Runtime metadata such as
-// a Kubernetes context can be unbounded, so the writer's exact size check stays.
+// 384 bytes covers each indented assertion row (63-byte safe ID, fixed
+// type/reason, SHA-256 digest and separators). 4 KiB covers case metadata:
+// sessions can retain a 256-byte UID and unexpected model escaped up to six
+// bytes per byte, but then the harness is chat. An invalid created harness
+// returns before observing a model. IDs/digests do not escape; Orka Task names
+// are at most 62 bytes. Tests measure both schemas and session failure shapes.
+// Reserve another 8 KiB for the envelope. Unbounded runtime metadata (e.g.
+// Kubernetes context or Task UID) still needs the writer's exact size check.
 func preflightEvaluationReceiptSize(cases []bundleEvaluationCase) error {
 	if len(cases) == 0 {
 		return fmt.Errorf("evaluation requires at least one case")
 	}
-	if len(cases) > 1000 {
-		return fmt.Errorf("evaluation receipt supports at most 1000 cases")
-	}
-	const caseBytes, assertionBytes = 8192, 384
-	remaining := maxSessionsReceiptBytes - 8192
+	const caseBytes, assertionBytes, envelopeBytes = 4096, 384, 8192
+	remaining := maxSessionsReceiptBytes - envelopeBytes
+	maxCases := remaining / (caseBytes + assertionBytes)
 	tooLarge := func() error {
-		return fmt.Errorf("selected evaluation cases exceed the conservative 1 MiB receipt budget; select fewer cases with --case")
+		return fmt.Errorf("selected evaluation cases exceed the conservative 1 MiB receipt budget; supports at most %d cases with one assertion each (fewer with additional assertions); reduce the suite or use --case <id> to run one case", maxCases)
 	}
 	for _, c := range cases {
 		if remaining < caseBytes {

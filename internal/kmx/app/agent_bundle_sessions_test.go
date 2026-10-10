@@ -62,8 +62,8 @@ func TestSessionsReceiptSizePreflight(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") || strings.Contains(err.Error(), "finished") {
-				t.Errorf("want receipt-size preflight refusal, got %v", err)
+			if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") || !strings.Contains(err.Error(), "at most 232 cases with one assertion each") || !strings.Contains(err.Error(), "--case <id> to run one case") || strings.Contains(err.Error(), "finished") {
+				t.Errorf("want receipt-size preflight refusal with case limit and single-case guidance, got %v", err)
 			}
 			if creates != 0 || execs != 0 {
 				t.Errorf("oversized evaluation mutated host: creates=%d execs=%d", creates, execs)
