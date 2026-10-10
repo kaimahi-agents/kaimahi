@@ -247,7 +247,7 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 					judge(call.Pos(), call.Args)
 				default:
 					// The direct form: Run.Run("kubectl", a.kubectl(...)...)
-					// and its Capture/Quiet/Pipe/RunStdin/Command siblings.
+					// and its Capture/Quiet/RunStdin/Command siblings.
 					// The command line is inside the inner a.kubectl call.
 					for _, arg := range call.Args {
 						inner, ok := arg.(*ast.CallExpr)

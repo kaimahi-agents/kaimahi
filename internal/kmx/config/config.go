@@ -1,7 +1,7 @@
 // Package config resolves kmx's settings.
 //
 // Every knob keeps the name this repository already uses — KIND_CLUSTER,
-// KUBE_CTX, CONTAINER_ENGINE, MODEL, CHAT_PORT and KAIMAHI_CONFIRM from
+// KUBE_CTX, CONTAINER_ENGINE, MODEL and KAIMAHI_CONFIRM from
 // the Makefile, so delegating targets pass nothing: an
 // operator's `KIND_CLUSTER=mine make up` and their `KIND_CLUSTER=mine kmx up`
 // are the same run. Where the Makefile has a default, that default is
@@ -20,7 +20,6 @@ import (
 const (
 	DefaultKindCluster = "kaimahi-p1"
 	DefaultModel       = "qwen2.5:3b"
-	DefaultChatPort    = "auto"
 	DefaultTask        = "Hello! Who are you and where are you running?"
 	// GuardNamespaces names the common fixed namespaces. Some operations also
 	// write to a caller-selected workload namespace; the generic banner must
@@ -55,7 +54,6 @@ type Config struct {
 	// ModelExplicit distinguishes an operator's MODEL choice from the default,
 	// so interactive discovery never replaces a value automation supplied.
 	ModelExplicit bool
-	ChatPort      string
 	Confirm       string
 	// ContextSource records where KubeContext came from, for the banner.
 	ContextSource string
@@ -113,7 +111,6 @@ func LoadWithOverrides(contextFlag, containerEngineFlag string) (*Config, error)
 		ContainerEngine: env("CONTAINER_ENGINE", DefaultContainerEngine),
 		Model:           model,
 		ModelExplicit:   modelExplicit,
-		ChatPort:        env("CHAT_PORT", DefaultChatPort),
 		Confirm:         os.Getenv("KAIMAHI_CONFIRM"),
 	}
 	engine := c.ContainerEngine
