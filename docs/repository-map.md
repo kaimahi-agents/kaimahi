@@ -39,7 +39,7 @@ checks.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `plane/` | model bridge and ordinary budget administration | — | test fakes inside packages |
 | `k8s/` | embedded runtime/plane/observability artifacts | — | — |
-| `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 51 (checkers, release packaging, probes, CI fixtures, mutation specs) |
+| `scripts/` | 7 (6 embedded in the binary, 1 operator) | 1 | 53 (checkers, release packaging, probes, CI fixtures, mutation specs) |
 | `docs/` | 51 tracked files; guides, direction, retirement records and assets | historical scenario records | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -249,9 +249,9 @@ manifests, and the nine model presets. All were objects of the legacy runtime
 applied by the retired installer; nothing left in kmx reads or applies one. Plane and
 observability manifests remain part of clone-free deployment.
 
-## `scripts/` — 59 tracked files, three different jobs
+## `scripts/` — 61 tracked files, three different jobs
 
-**Reference coverage:** 49 of the 59 are named by something outside themselves,
+**Reference coverage:** 51 of the 61 are named by something outside themselves,
 and the ten `scripts/mutations/*.json` are named by nothing at all — the
 mutation harness discovers them by glob. Map/checker/board mentions are not
 caller evidence. Textual references are not necessarily invocations.
@@ -261,9 +261,9 @@ caller evidence. Textual references are not necessarily invocations.
 | **Installed** — embedded in kmx | 6 | `aks-up.sh`, `aks-down.sh`, `plane-deploy.sh`, `netpol-probe.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
 | **Checkout** — operator scripts | 1 | `plane-pods.sh` |
 | **Demonstration** | 1 | `demo-hello-to-governed.sh` |
-| **Scaffolding** — checkers, self-tests and release packaging | 22 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py`, `test_check_mutations.py`, `test_eval_loop.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 23 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_demo_hello_to_governed.py`, `test_orka_k8s_tool.py`, `test_owner_model_client.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_registry_mirrors.py` |
 | **Scaffolding** — live-cluster probes | 7 | `*-probe.sh`, minus the embedded one, plus `seam-tls.sh` |
-| **Scaffolding** — CI fixtures | 11 | `scripts/ci/`: `plain-model.sh`, `plain-model-server.py`, `synthetic-model.sh`, `owner-model-client.sh`, `owner-model-client.py`, `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json` |
+| **Scaffolding** — CI fixtures | 12 | `scripts/ci/`: `plain-model.sh`, `plain-model-server.py`, `synthetic-model.sh`, `owner-model-client.sh`, `owner-model-client.py`, `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
 | **Scaffolding** — legacy-runtime scanner's approved exemptions | 1 | `legacy-runtime-allowlist.json` |
 
@@ -295,6 +295,15 @@ shard. It loads `eval-loop-model.yaml` and `eval-loop-warmup.json`, then calls
 replay. CI's hygiene job calls `scripts/test_eval_loop.py` to check the gates
 and public-toy failure diagnostics. The fixture installs no cluster and uses
 no hosted credential.
+
+`scripts/ci/registry-mirrors.py` is called by `.github/workflows/ci.yml`
+for CI-only host Docker and kind-node Docker Hub mirror setup and payload-free
+endpoint reporting. The workflow's hygiene job calls
+`scripts/test_registry_mirrors.py`, which also names the helper and tests daemon
+configuration merging, kind-node selection and wrapper behavior, and successful
+endpoint evidence filtering. Neither file is embedded or installed for users;
+see [CI registry mirrors](development.md#ci-registry-mirrors) for the boundaries
+and verification status.
 
 `scripts/ci/synthetic-model.sh` is the `e2e-hosted-models` fixture: a
 throwaway CA and a documentation-range address routed over kind's network,

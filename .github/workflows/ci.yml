@@ -90,6 +90,8 @@ jobs:
       # not prove the checker would notice tomorrow's wrong answer, and
       # every gap this closes was found by editing a checker until it was
       # worthless and watching its own self-test stay green.
+      - name: Registry mirror helper self-tests
+        run: python3 scripts/test_registry_mirrors.py
       - name: Live eval gate and failure diagnostics self-tests
         run: python3 scripts/test_eval_loop.py
       - name: Mutation runner and CI routing self-tests
@@ -1047,6 +1049,8 @@ jobs:
         with:
           go-version-file: plane/go.mod
           cache-dependency-path: plane/go.sum
+      - name: Configure CI registry mirrors
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       - name: gofmt clean
         run: test -z "$(gofmt -l .)"
       - name: Vet
@@ -1076,6 +1080,9 @@ jobs:
           grep -q -- '--- PASS: TestConcurrentAdmissionsAgainstOneMoreCallAdmitExactlyOne' test.out
           grep -q -- '--- PASS: TestMigrateTwiceConcurrentlyIsSerialAndIdempotent' test.out
           grep -q -- '--- PASS: TestEveryLabelIsFromTheFixedVocabularyOrAnAllowedShape' test.out
+      - name: Report registry pull endpoint evidence
+        if: always()
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
 
   # E2e shards apply migrations to EMPTY databases and cannot expose data
   # loss during an upgrade. This job starts an older released plane from the
@@ -1117,6 +1124,8 @@ jobs:
         with:
           go-version-file: plane/go.mod
           cache-dependency-path: plane/go.sum
+      - name: Configure CI registry mirrors
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       - name: Upgrade an older plane, with data in it, to this one
         env:
           PGHOST: 127.0.0.1
@@ -1125,6 +1134,9 @@ jobs:
           PGDATABASE: kaimahi
           PGPASSWORD: ci-throwaway
         run: bash scripts/plane-upgrade-probe.sh
+      - name: Report registry pull endpoint evidence
+        if: always()
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
 
   # Seven retained shards isolate model budgets, protocol/onboarding safety,
   # hosted model upstreams, quickstart, owner-managed governance, the Orka
@@ -1180,6 +1192,9 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
+      - name: Configure CI registry mirrors
+        if: steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       # Component steps only: nothing in this shard needs an agent runtime
       # at all — every hosted-upstream claim below is a direct, authenticated
       # call to the plane's own model seam. A bare `kmx up` would install the
@@ -1197,6 +1212,7 @@ jobs:
         run: |
           set -euo pipefail
           bin/kmx up --step cluster
+          python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster "$KIND_CLUSTER"
           bin/kmx up --step ollama
           bin/kmx up --step model
           if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
@@ -1325,6 +1341,9 @@ jobs:
             exit 1
           fi
           echo "no legacy namespace: every hosted-upstream claim above came from the plane's own seam"
+      - name: Report registry pull endpoint evidence
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
       - name: "Hosted models: teardown"
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -1411,6 +1430,9 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
+      - name: Configure CI registry mirrors
+        if: steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       # Component steps only. The Orka install a bare `kmx up` would perform
       # is run as its own step below, where its digest verification and its
       # Provider's readiness are ASSERTED — folded into the bring-up they
@@ -1422,6 +1444,7 @@ jobs:
         run: |
           set -euo pipefail
           bin/kmx up --step cluster
+          python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster "$KIND_CLUSTER"
           bin/kmx up --step ollama
           bin/kmx up --step model
           if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
@@ -1750,6 +1773,9 @@ jobs:
             exit 1
           fi
           echo "no legacy namespace: every spend, expiry and budget claim above came from Orka, the plane and the owner's Deployment"
+      - name: Report registry pull endpoint evidence
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -1835,6 +1861,9 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
+      - name: Configure CI registry mirrors
+        if: steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       # Component steps only. Nothing in this shard needs an agent runtime at
       # all: the model seam is called directly, over TLS, with a plane
       # credential. A bare `kmx up` would install the pinned Orka release
@@ -1845,6 +1874,7 @@ jobs:
         run: |
           set -euo pipefail
           bin/kmx up --step cluster
+          python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster "$KIND_CLUSTER"
           bin/kmx up --step ollama
           bin/kmx up --step model
           if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
@@ -2282,6 +2312,9 @@ jobs:
             SECRET_NAMESPACE="$CLIENT_NS" UPSTREAM=house SEAM_PATH=v1/responses \
             bash scripts/model-seam-probe.sh '{"model": "fixture", "input": "still here"}' | tee house-call-2.out
           grep -qF '"input_tokens": 2' house-call-2.out
+      - name: Report registry pull endpoint evidence
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
       - name: "Models: teardown"
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2408,6 +2441,9 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
+      - name: Configure CI registry mirrors
+        if: steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       # Component steps only. The Orka install a bare `kmx up` would perform
       # is run as its own step below, where its digest verification and its
       # Provider's readiness are ASSERTED before `kmx migrate` depends on
@@ -2419,6 +2455,7 @@ jobs:
         run: |
           set -euo pipefail
           bin/kmx up --step cluster
+          python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster "$KIND_CLUSTER"
           bin/kmx up --step ollama
           bin/kmx up --step model
           if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then
@@ -2660,6 +2697,9 @@ jobs:
             exit 1
           fi
           echo "no legacy namespace: every claim above came from Orka, the plane and the owner's Deployment"
+      - name: Report registry pull endpoint evidence
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2701,6 +2741,11 @@ jobs:
       # the binary this branch builds, plus the checksums.txt the install
       # script verifies it against. The mechanism under test is the real one
       # — only the origin is local.
+      # Compound quickstart cannot pause between cluster creation and workload
+      # pulls; wrap Docker's node creation, leaving kind and image pins intact.
+      - name: Configure CI registry mirrors
+        if: steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup --wrap
       - name: Build the release this branch would publish
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2916,6 +2961,9 @@ jobs:
             echo "Find what got slower before raising the ceiling."
             exit 1
           fi
+      - name: Report registry pull endpoint evidence
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
       - name: Tear down, and give the runner its tools back
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2954,6 +3002,9 @@ jobs:
       - name: Classify the change (docs-only short-circuit, fail closed)
         id: changes
         uses: ./.github/actions/classify-change
+      - name: Configure CI registry mirrors
+        if: steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       - name: Install kind 0.33.0
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -2985,6 +3036,7 @@ jobs:
         run: |
           set -euo pipefail
           kind create cluster --name kmx-kagent-create --wait 180s
+          python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster "$KIND_CLUSTER"
           test "$(kubectl config current-context)" = kind-kmx-kagent-create
           charts="$RUNNER_TEMP/kagent-v0.10.2-charts"
           mkdir -p "$charts/crds" "$charts/runtime"
@@ -3282,6 +3334,9 @@ jobs:
           kubectl --context kind-kmx-kagent-create -n agents get events --sort-by=.lastTimestamp || true
           kubectl --context kind-kmx-kagent-create -n agents logs deployment/model --tail=80 || true
           kubectl --context kind-kmx-kagent-create -n agents logs deployment/live-kagent --tail=120 || true
+      - name: Report registry pull endpoint evidence
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
       - name: Delete only the dedicated Kagent create cluster
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: kind delete cluster --name kmx-kagent-create || true
@@ -3342,6 +3397,9 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
+      - name: Configure CI registry mirrors
+        if: steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       # Component steps only. `kmx orka install` is the command under test
       # here, and the next step runs it with its digest verification and its
       # Provider's readiness asserted — a bare `kmx up` would have installed
@@ -3357,6 +3415,7 @@ jobs:
           fi
           bin/kmx up --step cluster
           echo 'KMX_ORKA_RUNTIME_CREATED=1' >> "$GITHUB_ENV"
+          python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster "$KIND_CLUSTER"
           bin/kmx up --step ollama
           bin/kmx up --step model
           # Fail closed on the premise. If a later edit made any of the three
@@ -3671,6 +3730,9 @@ jobs:
             kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | python3 -c 'import json,sys; print("Task phases:", [t.get("status",{}).get("phase","unknown") for t in json.load(sys.stdin).get("items",[])])' || true
             kubectl --context kind-kmx-orka -n orka-system get tools.core.orka.ai k8s-get-resources -o json | python3 -c 'import json,sys; print("Tool conditions:",[(c.get("type"),c.get("status")) for c in json.load(sys.stdin).get("status",{}).get("conditions",[])])' || true
           fi
+      - name: Report registry pull endpoint evidence
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
       - name: down
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -3704,6 +3766,9 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         with:
           go-version-file: go.mod
+      - name: Configure CI registry mirrors
+        if: steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       - name: Create only the dedicated Helm cluster
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -3713,6 +3778,7 @@ jobs:
           fi
           kind create cluster --name helm-release-orka --wait 90s
           echo 'KMX_ORKA_HELM_CREATED=1' >> "$GITHUB_ENV"
+          python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster helm-release-orka
       - name: Install SHA-256 verified stock Orka harness-v2 chart
         if: steps.changes.outputs.docs_only != 'true'
         run: |
@@ -3791,6 +3857,9 @@ jobs:
             kubectl --context kind-helm-release-orka -n orka-system get tasks.core.orka.ai -o json | python3 -c 'import json,sys; print("Task phases:",[t.get("status",{}).get("phase","unknown") for t in json.load(sys.stdin).get("items",[])])' || true
             kubectl --context kind-helm-release-orka -n orka-system get tools.core.orka.ai k8s-get-resources -o json | python3 -c 'import json,sys; print("Tool conditions:",[(c.get("type"),c.get("status")) for c in json.load(sys.stdin).get("status",{}).get("conditions",[])])' || true
           fi
+      - name: Report registry pull endpoint evidence
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
       - name: Delete only the cluster created by this job
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
@@ -3817,11 +3886,17 @@ jobs:
       - name: Build kmx
         if: steps.changes.outputs.docs_only != 'true'
         run: go build -o bin/kmx ./cmd/kmx
+      - name: Configure CI registry mirrors
+        if: steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       - name: Live AIKit evaluation and zero-call replay
         if: steps.changes.outputs.docs_only != 'true'
         env:
           ARTIFACT_DIR: ${{ runner.temp }}/eval-loop-evidence
         run: bash scripts/ci/live-eval-loop.sh
+      - name: Report registry pull endpoint evidence
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
       - name: Upload payload-free receipt and verify report
         if: always() && steps.changes.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v4
@@ -3908,6 +3983,19 @@ jobs:
           echo "changed files:"; echo "${files:-(undetermined)}" | sed 's/^/  /'
           echo "docs_only=$docs_only ($reason)"
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+      # Bare compound up cannot pause between cluster creation and workload
+      # pulls; wrap Docker's node creation, leaving kind and image pins intact.
+      - name: Configure CI registry mirrors without a checkout
+        if: steps.changes.outputs.docs_only != 'true'
+        env:
+          CI_MIRROR_REPO: ${{ github.repository }}
+          CI_MIRROR_REF: ${{ github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-registry-bootstrap"
+          curl -fsSL --retry 3 \
+            "https://raw.githubusercontent.com/${CI_MIRROR_REPO}/${CI_MIRROR_REF}/scripts/ci/registry-mirrors.py" \
+            -o "$RUNNER_TEMP/ci-registry-bootstrap/registry-mirrors.py"
+          python3 "$RUNNER_TEMP/ci-registry-bootstrap/registry-mirrors.py" setup --wrap
       - uses: actions/setup-go@v5
         if: steps.changes.outputs.docs_only != 'true'
         with:
@@ -4094,6 +4182,9 @@ jobs:
           kubectl --context kind-kmx-clone-free -n kaimahi get pods -o wide || true
           kubectl --context kind-kmx-clone-free -n kaimahi logs -l app=kaimahi-proxy --tail=100 --prefix || true
           kubectl --context kind-kmx-clone-free -n orka-system get agents.core.orka.ai,tasks.core.orka.ai || true
+      - name: Report registry pull endpoint evidence
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 "$RUNNER_TEMP/ci-registry-bootstrap/registry-mirrors.py" report
       - name: down
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: kind delete cluster --name kmx-clone-free || true
