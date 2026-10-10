@@ -16,10 +16,18 @@ import (
 
 type probeServer struct {
 	v1.UnimplementedSessionsServer
-	code codes.Code
+	code             codes.Code
+	block, oversized bool
 }
 
-func (s probeServer) ListSessions(_ context.Context, req *v1.ListSessionsRequest) (*v1.ListSessionsResponse, error) {
+func (s probeServer) ListSessions(ctx context.Context, req *v1.ListSessionsRequest) (*v1.ListSessionsResponse, error) {
+	if s.block {
+		<-ctx.Done()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+	if s.oversized {
+		return &v1.ListSessionsResponse{NextPageToken: strings.Repeat("x", 1<<20)}, nil
+	}
 	if req.PageSize != 1 || req.PageToken != "" || req.Project != "" {
 		return nil, status.Error(codes.InvalidArgument, "wrong probe request")
 	}
@@ -60,6 +68,38 @@ func TestProbeOnlyReadsSessionsAndPreservesSanitizedErrorCodes(t *testing.T) {
 			}
 			if err != nil && strings.Contains(err.Error(), "PRIVATE-REMOTE-PAYLOAD") {
 				t.Fatal("remote error leaked")
+			}
+		})
+	}
+}
+
+func TestProbeBoundsResponseAndBlockedRPC(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		server probeServer
+		code   codes.Code
+	}{
+		{"blocked", probeServer{block: true}, codes.DeadlineExceeded},
+		{"oversized", probeServer{oversized: true}, codes.ResourceExhausted},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := grpc.NewServer()
+			v1.RegisterSessionsServer(server, tc.server)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(server.Stop)
+			client, err := Dial(Options{Address: listener.Addr().String()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = client.Close() })
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := client.Probe(ctx); status.Code(err) != tc.code {
+				t.Fatalf("code=%s err=%v", tc.code, err)
 			}
 		})
 	}
