@@ -22,7 +22,7 @@ Releases built with checksum signing include `checksums.txt.sigstore.json`, a
 cosign bundle containing the checksum manifest's signature, signing certificate
 and transparency-log evidence. The release job uses GitHub Actions OIDC and an
 ephemeral signing key, not a stored signing secret. Releases published before
-signing was enabled, including v0.4.1, have no bundle from this workflow.
+signing was enabled have no bundle.
 
 With cosign **v3.0.6 or newer** and GNU `sha256sum`, choose a signed release and
 download its four bare binaries, checksum manifest and bundle into an empty
@@ -43,20 +43,12 @@ cosign verify-blob \
 ```
 
 On macOS, use `shasum -a 256 -c checksums.txt` instead of `sha256sum -c`.
-Verify the manifest signature before checking its binary digests or running any
-binary. The anchored certificate identity accepts only this repository's release
-workflow on a version tag, with GitHub's OIDC issuer. It rejects branch dry-run
-certificates. It does not bind a matching tag to the particular version requested
-above, prevent replay of an older signed release, or prove publication: a manual
-run on a tag can also have that tag identity. Nor does it prove the workflow or
-build inputs were uncompromised.
+Verify the signature before checking digests or running a binary. The identity
+check accepts only this repo's release workflow running on a version tag.
 
-The signed manifest covers the four binary digests, **not** the separately
-published `kmx.rb` formula. The installer and Homebrew still verify checksums
-only; they do not automatically verify this bundle. Manual workflow dry runs
-build, sign and verify the same manifest and upload the bundle as a run artifact,
-but create no release. Real tag publication remains untested until a signed
-release is cut.
+The signature covers the four binaries, **not** the separately published
+`kmx.rb` formula. `install.sh` and Homebrew check checksums only; they do not
+automatically verify this bundle.
 
 ## Versions
 
