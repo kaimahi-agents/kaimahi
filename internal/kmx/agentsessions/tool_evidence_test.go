@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aramase/agentsessions/api"
 	v1 "github.com/aramase/agentsessions/api/genpb"
@@ -289,7 +290,16 @@ func TestRunCaseToolEvidenceRecordOverflowPreservesText(t *testing.T) {
 	}
 	events = append(events, e[3:]...)
 	s.updates = append([]*v1.ExecUpdate{sessionFrame(s.created)}, records(t, events)...)
-	got, err := run(t, s)
+	client, err := Dial(Options{Address: serve(t, s, nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	// Hashing 20,002 records under race instrumentation exceeds the small-turn
+	// fixture budget; retain a bounded deadline without changing the limit tested.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	got, err := client.RunCase(ctx, caseRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
