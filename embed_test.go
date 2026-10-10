@@ -117,6 +117,7 @@ func TestMakeBuildTracksOnlyNativeEmbeddedAssets(t *testing.T) {
 }
 
 func TestMakeBuildRefreshesCompiledInputs(t *testing.T) {
+	t.Setenv("KMX", filepath.Join(t.TempDir(), "inherited-kmx"))
 	makefile, err := os.ReadFile("Makefile")
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +224,7 @@ func main() { fmt.Printf("%s|%s|%s|%s", kmx.Value, secretshapes.Data, orkaschema
 				for _, entry := range os.Environ() {
 					key, _, _ := strings.Cut(entry, "=")
 					switch key {
-					case "MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEFILES", "GOWORK", "GOFLAGS", "GOOS", "GOARCH":
+					case "MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEFILES", "KMX", "GOWORK", "GOFLAGS", "GOOS", "GOARCH":
 						continue
 					default:
 						cmd.Env = append(cmd.Env, entry)
