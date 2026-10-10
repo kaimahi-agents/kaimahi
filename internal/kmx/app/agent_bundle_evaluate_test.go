@@ -408,6 +408,41 @@ func TestEvaluateUsesRememberedTarget(t *testing.T) {
 	}
 }
 
+func TestEvaluateReceiptSizePreflight(t *testing.T) {
+	for _, selected := range []bool{false, true} {
+		t.Run(fmt.Sprintf("selected=%t", selected), func(t *testing.T) {
+			f := newEvalFixture(t, oversizedEvaluationSuite())
+			f.answers["hello"] = "hello"
+			if selected {
+				f.opt.Case = "case-0"
+			} else {
+				// Budget refusal must precede even the remote mutation guard.
+				t.Setenv("KMX_EVAL_REMOTE", "1")
+			}
+			err := f.app.EvaluateAgentBundle(f.opt)
+			if selected {
+				if err != nil || f.taskCreates(t) != 1 {
+					t.Fatalf("single case: err=%v tasks=%d", err, f.taskCreates(t))
+				}
+				r, _ := f.receipt(t)
+				if r.FullCaseSet || len(r.Cases) != 1 || len(r.Cases[0].Assertions) != 1000 {
+					t.Fatalf("wrong selected evidence: %+v", r)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") {
+				t.Errorf("want receipt-size preflight refusal, got %v", err)
+			}
+			if calls := orkaCalls(t, f.dir); len(calls) != 0 || f.taskCreates(t) != 0 {
+				t.Errorf("oversized evaluation reached kubectl: %+v", calls)
+			}
+			if _, err := os.Stat(filepath.Join(f.bundle, "receipts")); !os.IsNotExist(err) {
+				t.Errorf("refused evaluation changed receipts: %v", err)
+			}
+		})
+	}
+}
+
 func TestEvaluateSingleCase(t *testing.T) {
 	f := newEvalFixture(t, map[string]string{"a.yaml": evalSignCase, "b.yaml": evalHelloCase})
 	f.answers["Say hello."] = "hello"

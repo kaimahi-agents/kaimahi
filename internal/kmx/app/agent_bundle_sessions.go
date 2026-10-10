@@ -54,6 +54,9 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 			return fmt.Errorf("no evaluation case with id %q in %s", opt.Case, agentruntime.EvaluationCaseDir)
 		}
 	}
+	if err := preflightEvaluationReceiptSize(cases); err != nil {
+		return err
+	}
 	client, err := agentsessions.Dial(agentsessions.Options{Address: opt.Sessions, CAFile: opt.SessionsCA})
 	if err != nil {
 		return err

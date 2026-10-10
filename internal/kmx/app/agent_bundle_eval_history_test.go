@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,100 @@ import (
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
+
+// Each case is valid on its own; only the combined receipt exceeds 1 MiB.
+func oversizedEvaluationSuite() map[string]string {
+	cases := make(map[string]string)
+	for i := 0; i < 5; i++ {
+		var body strings.Builder
+		fmt.Fprintf(&body, "id: case-%d\ninput: hello\nexpectContains:\n", i)
+		body.WriteString(strings.Repeat("- hello\n", 500))
+		body.WriteString("assertions:\n")
+		for j := 0; j < 500; j++ {
+			fmt.Fprintf(&body, "- {id: %s%04d, type: contains, value: hello}\n", strings.Repeat("z", 59), j)
+		}
+		cases[fmt.Sprintf("case-%d.yaml", i)] = body.String()
+	}
+	return cases
+}
+
+func TestEvaluationReceiptSizeBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		counts []int
+		want   string
+	}{
+		{name: "empty", want: "at least one"},
+		{name: "small", counts: []int{1}},
+		{name: "maximum single case", counts: []int{1000}},
+		// 8192 + 4*8192 + 2624*384 = 1048576 exactly.
+		{name: "exact byte budget", counts: []int{1000, 1000, 623, 1}},
+		{name: "one row over budget", counts: []int{1000, 1000, 624, 1}, want: "1 MiB"},
+		{name: "many cases overhead", counts: make([]int, 200), want: "1 MiB"},
+		{name: "too many cases", counts: make([]int, 1001), want: "at most 1000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cases := make([]bundleEvaluationCase, len(tc.counts))
+			for i, count := range tc.counts {
+				if count == 0 {
+					count = 20
+				}
+				// Exercise combined legacy and explicit row accounting.
+				cases[i].Case.ExpectContains = make([]string, count/2)
+				cases[i].Case.Assertions = make([]agentruntime.EvaluationAssertion, count-count/2)
+			}
+			err := preflightEvaluationReceiptSize(cases)
+			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+				t.Fatalf("budget error=%v; want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestEvaluationReceiptBudgetCoversIndentedEscapedEvidence(t *testing.T) {
+	id, digest, escaped := strings.Repeat("z", 63), strings.Repeat("a", 64), strings.Repeat("<", 256)
+	row := agentruntime.EvaluationAssertionResult{ID: id, Type: "toolNotCalled", DefinitionDigest: digest, Verdict: agentruntime.EvaluationUnknown, Reason: "runtime does not support tools"}
+	for _, receipt := range []any{
+		bundleEvaluationReceipt{SchemaVersion: 2, RunID: strings.Repeat("e", 32), Bundle: id, PortableDigest: digest, CasesDigest: digest, FullCaseSet: true, GitCommit: digest, Result: "unknown", Target: bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: escaped, Namespace: id, ClusterUID: escaped, Agent: id, AgentUID: escaped, Model: escaped}, Cases: []bundleEvaluationResult{{ID: id, Verdict: "unknown", CaseDigest: digest, InputDigest: digest, TaskName: escaped, TaskUID: escaped, AnswerSHA256: digest, Detail: evaluationExecutionUnavailable}}},
+		sessionsEvaluationReceipt{SchemaVersion: 2, RunID: strings.Repeat("e", 32), Bundle: id, PortableDigest: digest, CasesDigest: digest, FullCaseSet: true, GitCommit: digest, Result: "unknown", Target: sessionsEvaluationTarget{Runtime: "agentsessions", Identity: sessionsHostIdentity{Version: 1, Provenance: "host-reported", Address: escaped, Harness: escaped, Model: escaped}}, Cases: []sessionsEvaluationResult{{ID: id, Verdict: "unknown", CaseDigest: digest, InputDigest: digest, SessionUID: escaped, Harness: escaped, Model: escaped, ModelMixed: true, JournalHead: sessionsJournalHead{Seq: 9223372036854775807, Hash: digest}, AnswerSHA256: digest, Detail: evaluationExecutionUnavailable}}},
+	} {
+		before, err := json.MarshalIndent(receipt, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var envelope any
+		switch r := receipt.(type) {
+		case bundleEvaluationReceipt:
+			r.Cases = nil
+			envelope = r
+		case sessionsEvaluationReceipt:
+			r.Cases = nil
+			envelope = r
+		}
+		top, err := json.MarshalIndent(envelope, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(top)+1 > 8192 || len(before)-len(top) > 8192 {
+			t.Fatalf("metadata exceeds reserved budget: envelope=%d case=%d", len(top)+1, len(before)-len(top))
+		}
+		switch r := receipt.(type) {
+		case bundleEvaluationReceipt:
+			r.Cases[0].Assertions = []agentruntime.EvaluationAssertionResult{row, row}
+			receipt = r
+		case sessionsEvaluationReceipt:
+			r.Cases[0].Assertions = []agentruntime.EvaluationAssertionResult{row, row}
+			receipt = r
+		}
+		after, err := json.MarshalIndent(receipt, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(after)-len(before) > 2*384 {
+			t.Fatalf("indented maximum rows exceed budget: %d", len(after)-len(before))
+		}
+	}
+}
 
 func TestOrkaTypedAssertionsAndUnavailableRows(t *testing.T) {
 	for _, tc := range []struct{ name, assertion, answer, phase, want, rowWant string }{

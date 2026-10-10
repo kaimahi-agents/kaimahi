@@ -12,6 +12,41 @@ const (
 	evaluationResultUnavailable    = "evaluation result unavailable"
 )
 
+// preflightEvaluationReceiptSize budgets the selected suite before execution.
+// Rows have safe ASCII IDs (63 bytes), fixed types/reasons and SHA-256 digests;
+// 384 bytes covers each row's indented JSON, including separators. Reserve
+// 8 KiB per case for metadata (including 256-byte identities escaped up to six
+// bytes per byte) and another 8 KiB for the envelope. Runtime metadata such as
+// a Kubernetes context can be unbounded, so the writer's exact size check stays.
+func preflightEvaluationReceiptSize(cases []bundleEvaluationCase) error {
+	if len(cases) == 0 {
+		return fmt.Errorf("evaluation requires at least one case")
+	}
+	if len(cases) > 1000 {
+		return fmt.Errorf("evaluation receipt supports at most 1000 cases")
+	}
+	const caseBytes, assertionBytes = 8192, 384
+	remaining := maxSessionsReceiptBytes - 8192
+	tooLarge := func() error {
+		return fmt.Errorf("selected evaluation cases exceed the conservative 1 MiB receipt budget; select fewer cases with --case")
+	}
+	for _, c := range cases {
+		if remaining < caseBytes {
+			return tooLarge()
+		}
+		remaining -= caseBytes
+		// Consume each count separately: neither summed counts nor unchecked
+		// multiplication can overflow, even for a large suite.
+		for _, count := range []int{len(c.Case.ExpectContains), len(c.Case.Assertions)} {
+			if count > remaining/assertionBytes {
+				return tooLarge()
+			}
+			remaining -= count * assertionBytes
+		}
+	}
+	return nil
+}
+
 func evaluationRunID(id string) bool {
 	if len(id) != 32 {
 		return false

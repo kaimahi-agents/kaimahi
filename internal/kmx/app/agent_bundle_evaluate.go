@@ -166,6 +166,9 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 			return fmt.Errorf("no evaluation case with id %q in %s", opt.Case, agentruntime.EvaluationCaseDir)
 		}
 	}
+	if err := preflightEvaluationReceiptSize(cases); err != nil {
+		return err
+	}
 	casesDigest := agentruntime.EvaluationCasesDigest(files)
 
 	selectionPath, err := bundleLiftSelectionPath(bundle)
