@@ -162,13 +162,17 @@ It then stops the model provider, keeps the daemon and journal alive, and
 requires `kmx agent verify` to report every case equivalent with zero model
 calls through local-reference replay.
 
-The uploaded artifacts are only the payload-free evaluation receipt and verify
-report, not the private session evidence or logs. Successful logs omit prompts
-and answers; failure diagnostics may print the public toy failing answer and
-tails of the daemon/model logs. Hygiene self-tests the evidence gates and
-failure diagnostics with `scripts/test_eval_loop.py`. This check proves no lift
-gate, host implementation attestation, cluster integration or hosted-model
-provider behavior.
+The job uses the same [eval action](../.github/actions/kmx-eval/action.yml)
+users can run [in their own CI](agent-lift.md#run-evals-in-ci). Evaluation stays
+in the checkout so the receipt names the tested commit. The uploaded artifacts
+are only the payload-free evaluation receipt and verify report, not the private
+session evidence or logs. Successful logs omit prompts and answers; failure
+diagnostics print only digest-checked, redacted failing answers, never raw
+daemon/model logs. Hygiene self-tests the evidence/provenance gates and failure
+diagnostics with `scripts/test_eval_loop.py`, and runtime lifecycle/credential
+handling with `scripts/test_eval_runner.py`. This check proves no lift gate,
+host implementation attestation, cluster integration or hosted-model provider
+behavior.
 
 `e2e-orka-runtime` is the Orka boundary and runs on every pull request. It brings
 up kind, Ollama and the model with `kmx up --step` component steps only, installs

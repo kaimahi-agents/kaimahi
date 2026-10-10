@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Regression tests for the live CI gate and case-scoped failure diagnostics."""
+"""Regression tests for portable CI gates, provenance and safe diagnostics."""
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -19,20 +22,17 @@ SPEC.loader.exec_module(runner)
 
 class EvalLoopTests(unittest.TestCase):
     def receipt(self):
-        return {
-            "result": "pass", "fullCaseSet": True,
-            "cases": [{"id": "capital-france", "verdict": "pass"},
-                      {"id": "arithmetic", "verdict": "pass"}],
-        }
+        return {"result": "pass", "fullCaseSet": True,
+                "cases": [{"id": "user-first", "verdict": "pass"},
+                          {"id": "user-second", "verdict": "pass"}]}
 
-    def test_eval_gate_refuses_failed_partial_missing_and_duplicate_cases(self):
-        receipt = self.receipt()
-        runner.check_evaluation(receipt)
+    def test_generic_gate_accepts_user_cases_and_refuses_incomplete_evidence(self):
+        runner.check_evaluation(self.receipt())
         for mutate in (
             lambda r: r.update(result="fail"),
             lambda r: r.update(fullCaseSet=False),
             lambda r: r["cases"][0].update(verdict="unknown"),
-            lambda r: r["cases"].pop(),
+            lambda r: r.update(cases=[]),
             lambda r: r["cases"].append(r["cases"][0]),
         ):
             with self.subTest(mutate=mutate):
@@ -41,112 +41,183 @@ class EvalLoopTests(unittest.TestCase):
                 with self.assertRaises(runner.GateError):
                     runner.check_evaluation(changed)
 
-    def test_verify_gate_refuses_live_calls_and_non_equivalent_cases(self):
+    def test_verify_checks_same_cases_and_zero_calls(self):
         report = {"result": "equivalent", "cases": [
-            {"id": "capital-france", "status": "equivalent", "modelCalls": 0},
-            {"id": "arithmetic", "status": "equivalent", "modelCalls": 0},
-        ]}
-        runner.check_verification(report)
-        for field, value in (("modelCalls", 1), ("status", "unknown")):
+            {"id": "user-first", "status": "equivalent", "modelCalls": 0},
+            {"id": "user-second", "status": "equivalent", "modelCalls": 0}]}
+        runner.check_verification(report, {"user-first", "user-second"})
+        for field, value in (("modelCalls", 1), ("modelCalls", False),
+                             ("status", "unknown"), ("id", "wrong-case")):
             changed = json.loads(json.dumps(report))
             changed["cases"][0][field] = value
             with self.assertRaises(runner.GateError):
-                runner.check_verification(changed)
-        report["cases"].pop()
-        with self.assertRaises(runner.GateError):
-            runner.check_verification(report)
+                runner.check_verification(changed, {"user-first", "user-second"})
 
-    def test_mixed_failure_only_prints_failing_answer(self):
+    def report(self, answer, output=None, digest=None):
         receipt = self.receipt()
-        receipt["cases"][1]["verdict"] = "fail"
-        output = "\ncase capital-france\nParis: passing answer\ncapital-france: pass\n\ncase arithmetic\nWrong toy answer\narithmetic: fail\n\nevaluation fail: summary\n"
+        receipt["cases"][1].update(verdict="fail", answerSHA256=digest or
+                                   hashlib.sha256(answer.encode()).hexdigest())
+        if output is None:
+            output = ("\ncase user-first\nprivate passing answer\nuser-first: pass\n"
+                      "\ncase user-second\n" + answer + "\nuser-second: fail\n"
+                      "\nevaluation fail: summary\n")
         stream = io.StringIO()
         with contextlib.redirect_stderr(stream):
-            runner.report_failed_cases(receipt, output)
-        self.assertIn('arithmetic answer: "Wrong toy answer"', stream.getvalue())
-        self.assertNotIn("Paris", stream.getvalue())
-        self.assertNotIn("evaluation fail", stream.getvalue())
+            runner.report_failed_cases(receipt, output.encode())
+        return stream.getvalue()
 
-    def test_malformed_output_does_not_dump_other_cases(self):
-        receipt = self.receipt()
-        receipt["cases"][1]["verdict"] = "fail"
-        stream = io.StringIO()
-        with contextlib.redirect_stderr(stream):
-            runner.report_failed_cases(receipt, "unstructured passing answer")
-        self.assertIn("answer unavailable", stream.getvalue())
-        self.assertNotIn("unstructured", stream.getvalue())
+    def test_failure_preserves_newlines_and_only_discloses_failed_answer(self):
+        answer = "wrong\r\nanswer\n"
+        result = self.report(answer)
+        self.assertIn(json.dumps(answer), result)
+        self.assertNotIn("private passing", result)
+        self.assertNotIn("evaluation fail", result)
 
-    def test_answer_cannot_emit_workflow_commands(self):
-        receipt = self.receipt()
-        receipt["cases"][1]["verdict"] = "fail"
-        stream = io.StringIO()
-        output = "\ncase arithmetic\n::error::toy\n\x1b[31msecond line\narithmetic: fail\n"
-        with contextlib.redirect_stderr(stream):
-            runner.report_failed_cases(receipt, output)
-        self.assertEqual(len(stream.getvalue().splitlines()), 1)
-        self.assertIn('\\n', stream.getvalue())
-        self.assertNotIn('\x1b', stream.getvalue())
+    def test_digest_mismatch_or_ambiguous_boundary_hides_answer(self):
+        for output in ("unstructured secret", "\ncase user-second\nwrong\nuser-second: fail\n"
+                       "\ncase user-second\nwrong\nuser-second: fail\n"):
+            result = self.report("wrong", output=output)
+            self.assertIn("answer unavailable", result)
+            self.assertNotIn("unstructured", result)
+        self.assertIn("answer unavailable", self.report("wrong", digest="a" * 64))
 
-    def test_run_is_quiet_on_success_and_keeps_only_evidence(self):
+    def test_selected_key_is_redacted_and_workflow_commands_are_inert(self):
+        answer = "::error::toy\n\x1b[31msecret-canary"
+        with patch.dict(os.environ, {"MODEL_KEY_ENV": "MY_KEY", "MY_KEY": "secret-canary"}):
+            result = self.report(answer)
+        self.assertEqual(len(result.splitlines()), 1)
+        self.assertNotIn("secret-canary", result)
+        self.assertNotIn("\x1b", result)
+        self.assertIn("[REDACTED]", result)
+        self.assertIn("\\n", result)
+
+    def git(self, bundle, *args):
+        return subprocess.check_output(["git", "-C", str(bundle), *args], stderr=subprocess.DEVNULL)
+
+    def make_bundle(self, tmp):
+        bundle = Path(tmp) / "bundle"
+        (bundle / "eval").mkdir(parents=True)
+        (bundle / "agent.yaml").write_text("public agent\n")
+        (bundle / "eval" / "one.yaml").write_text("public case\n")
+        self.git(bundle, "init", "-q")
+        self.git(bundle, "add", "agent.yaml", "eval")
+        self.git(bundle, "-c", "user.name=CI", "-c", "user.email=ci@example.invalid", "commit", "-qm", "fixture")
+        return bundle
+
+    def args(self, bundle, artifacts, mode="prepare"):
+        return SimpleNamespace(mode=mode, kmx="kmx", bundle=bundle,
+                               sessions="127.0.0.1:18088", artifacts=artifacts,
+                               case_timeout="2m", verify_timeout="5m", command_timeout=600)
+
+    def test_prepare_keeps_provenance_and_only_removes_own_endpoint_receipts(self):
         with tempfile.TemporaryDirectory() as tmp:
-            bundle = Path(tmp) / "bundle"
+            bundle = self.make_bundle(tmp)
             receipts = bundle / "receipts"
-            receipts.mkdir(parents=True)
-            (receipts / "eval-test.json").write_text(json.dumps(self.receipt()))
+            receipts.mkdir()
+            own = runner.evaluation_path(bundle, "127.0.0.1:18088")
+            own.write_text("stale")
+            report = own.with_name("verify-" + own.name + ".json")
+            report.write_text("stale")
+            foreign = receipts / "eval-other-target.json"
+            foreign.write_text("keep")
             artifacts = Path(tmp) / "artifacts"
-            args = SimpleNamespace(mode="evaluate", kmx="kmx", bundle=bundle,
-                                   sessions="127.0.0.1:18088", artifacts=artifacts)
-            stdout, stderr = io.StringIO(), io.StringIO()
-            result = SimpleNamespace(returncode=0, stdout="toy answers", stderr="provider text")
-            with patch.object(runner.subprocess, "run", return_value=result), \
-                    contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                runner.run(args)
-            self.assertEqual(stdout.getvalue(), "evaluation: 2/2 cases passed\n")
-            self.assertEqual(stderr.getvalue(), "")
-            self.assertEqual([p.name for p in artifacts.iterdir()], ["eval-test.json"])
+            runner.run(self.args(bundle, artifacts))
+            self.assertFalse(own.exists())
+            self.assertFalse(report.exists())
+            self.assertEqual(foreign.read_text(), "keep")
+            self.assertEqual(runner.source_revision(bundle), self.git(bundle, "rev-parse", "HEAD").decode().strip())
 
-    def test_cli_failure_cannot_be_hidden_by_a_passing_receipt(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            bundle = Path(tmp) / "bundle"
-            receipts = bundle / "receipts"
-            receipts.mkdir(parents=True)
-            (receipts / "eval-test.json").write_text(json.dumps(self.receipt()))
-            args = SimpleNamespace(mode="evaluate", kmx="kmx", bundle=bundle,
-                                   sessions="127.0.0.1:18088", artifacts=Path(tmp) / "artifacts")
-            result = SimpleNamespace(returncode=1, stdout="toy answers", stderr="provider text")
-            with patch.object(runner.subprocess, "run", return_value=result), \
-                    self.assertRaisesRegex(runner.GateError, "kmx evaluation failed"):
-                runner.run(args)
+    def test_git_preflight_rejects_dirty_staged_deleted_and_untracked_cases(self):
+        for change in ("dirty", "staged", "deleted", "untracked", "hint-hidden"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as tmp:
+                bundle = self.make_bundle(tmp)
+                case = bundle / "eval" / "one.yaml"
+                if change == "deleted":
+                    case.unlink()
+                elif change == "untracked":
+                    (case.parent / "extra.yaml").write_text("extra")
+                else:
+                    if change == "hint-hidden":
+                        self.git(bundle, "update-index", "--assume-unchanged", "eval/one.yaml")
+                    case.write_text("changed")
+                    if change == "staged":
+                        self.git(bundle, "add", "eval")
+                with self.assertRaises(runner.GateError):
+                    runner.source_revision(bundle)
 
-    def test_verify_failure_still_preserves_report_for_review(self):
+    def test_source_revision_accepts_nested_bundle_in_shallow_checkout(self):
         with tempfile.TemporaryDirectory() as tmp:
-            bundle = Path(tmp) / "bundle"
-            receipts = bundle / "receipts"
-            receipts.mkdir(parents=True)
-            (receipts / "eval-test.json").write_text(json.dumps(self.receipt()))
-            report = {"result": "different", "cases": []}
-            (receipts / "verify-eval-test.json.json").write_text(json.dumps(report))
-            artifacts = Path(tmp) / "artifacts"
-            args = SimpleNamespace(mode="verify", kmx="kmx", bundle=bundle,
-                                   sessions="127.0.0.1:18088", artifacts=artifacts)
-            result = SimpleNamespace(returncode=1, stdout="safe summary", stderr="")
-            with patch.object(runner.subprocess, "run", return_value=result), \
-                    self.assertRaisesRegex(runner.GateError, "kmx verification failed"):
-                runner.run(args)
-            self.assertEqual(json.loads((artifacts / "verify-eval-test.json.json").read_text()), report)
+            repo = self.make_bundle(tmp)
+            nested = repo / "agents" / "my-agent"
+            (nested / "eval").mkdir(parents=True)
+            (nested / "agent.yaml").write_text("nested agent\n")
+            (nested / "eval" / "one.yaml").write_text("nested case\n")
+            self.git(repo, "add", "agents")
+            self.git(repo, "-c", "user.name=CI", "-c", "user.email=ci@example.invalid", "commit", "-qm", "nested fixture")
+            clone = Path(tmp) / "shallow"
+            subprocess.run(["git", "clone", "-q", "--depth=1", repo.as_uri(), str(clone)], check=True)
+            self.assertEqual(runner.source_revision(clone / "agents/my-agent"), self.git(repo, "rev-parse", "HEAD").decode().strip())
 
-    def test_receipt_selection_rejects_absent_and_multiple_files(self):
+    def test_linked_receipts_are_refused_without_deleting_target_files(self):
         with tempfile.TemporaryDirectory() as tmp:
-            bundle = Path(tmp)
-            (bundle / "receipts").mkdir()
+            bundle = self.make_bundle(tmp)
+            elsewhere = Path(tmp) / "elsewhere"
+            elsewhere.mkdir()
+            target = elsewhere / "eval-private.json"
+            target.write_text("keep")
+            (bundle / "receipts").symlink_to(elsewhere, target_is_directory=True)
             with self.assertRaises(runner.GateError):
-                runner.evaluation_path(bundle)
-            first = bundle / "receipts" / "eval-first.json"
-            first.write_text("{}")
-            self.assertEqual(runner.evaluation_path(bundle), first)
-            (bundle / "receipts" / "eval-second.json").write_text("{}")
-            with self.assertRaises(runner.GateError):
-                runner.evaluation_path(bundle)
+                runner.run(self.args(bundle, Path(tmp) / "artifacts"))
+            self.assertEqual(target.read_text(), "keep")
+
+    def evidence_run(self, tmp, returncode=0, commit=None, verdict="pass", mode="evaluate"):
+        bundle = self.make_bundle(tmp)
+        artifacts = Path(tmp) / "artifacts"
+        runner.run(self.args(bundle, artifacts))
+        receipt = {"gitCommit": commit or runner.source_revision(bundle),
+                   "result": verdict, "fullCaseSet": True,
+                   "target": {"runtime": "agentsessions", "identity": {"address": "127.0.0.1:18088"}},
+                   "cases": [{"id": "user-first", "verdict": verdict}]}
+        own = runner.evaluation_path(bundle, "127.0.0.1:18088")
+        own.parent.mkdir(exist_ok=True)
+        if mode == "verify":
+            own.write_text(json.dumps(receipt))
+        def kmx(*args, **kwargs):
+            if mode == "evaluate":
+                own.write_text(json.dumps(receipt))
+            else:
+                own.with_name("verify-" + own.name + ".json").write_text(json.dumps({
+                    "result": "unknown", "cases": [{"id": "user-first", "status": "unknown", "modelCalls": 0}]}))
+            return SimpleNamespace(returncode=returncode, stdout=b"private answer", stderr=b"private provider log")
+        with patch.object(runner, "invoke_kmx", side_effect=kmx):
+            runner.run(self.args(bundle, artifacts, mode))
+        return artifacts
+
+    def test_kmx_child_does_not_inherit_provider_credentials(self):
+        with patch.dict(os.environ, {"MODEL_KEY_ENV": "MY_KEY", "MY_KEY": "canary",
+                                     "MODEL_API_KEY": "canary", "OPENAI_API_KEY": "canary"}):
+            result = runner.invoke_kmx(["python3", "-c", "import os; print([os.getenv(n) for n in ['MY_KEY', 'MODEL_API_KEY', 'OPENAI_API_KEY']])"], 10)
+        self.assertEqual(result.stdout, b"[None, None, None]\n")
+
+    def test_success_is_quiet_and_uploads_receipt_with_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                artifacts = self.evidence_run(tmp)
+            self.assertEqual(out.getvalue(), "evaluation: 1/1 cases passed\n")
+            self.assertEqual(err.getvalue(), "")
+            files = list(artifacts.iterdir())
+            self.assertEqual(len(files), 1)
+            self.assertRegex(json.loads(files[0].read_text())["gitCommit"], "^[a-f0-9]{40}$")
+
+    def test_cli_failure_wrong_revision_and_verify_failure_cannot_pass(self):
+        for kwargs in ({"returncode": 1}, {"commit": "b" * 40}, {"mode": "verify", "returncode": 1}):
+            with self.subTest(kwargs=kwargs), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(runner.GateError):
+                    self.evidence_run(tmp, **kwargs)
+                artifacts = list((Path(tmp) / "artifacts").iterdir())
+                self.assertTrue(artifacts)
+                self.assertNotIn("private answer", "".join(p.read_text() for p in artifacts))
 
 
 if __name__ == "__main__":

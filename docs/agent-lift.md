@@ -552,6 +552,121 @@ Every invocation recomputes the
 proof, replacing any prior report. Only `equivalent` for every case exits zero;
 `mismatch`, `unsupported` and `unknown` never count as passing evidence.
 
+## Run evals in CI
+
+Use the [KMX eval action](../.github/actions/kmx-eval/action.yml) to run a
+bundle's complete case set, fail the job unless every case passes, and optionally
+replay-check the receipt. **Sessions evals currently refuse tools and
+coordination**, as well as skills, rate limits and Kagent-specific behavior.
+Agents that use tools or coordination need the
+[Orka evaluation path](#evaluating-a-deployed-revision) for now; this action does
+not deploy Orka or make sessions receipts satisfy a lift gate.
+
+Run on Linux with Git, Python 3, curl and Go 1.26 or newer. AIKit mode also
+needs Docker and jq. Check out the commit you want to test; the agent and the
+complete `eval/*.yaml` set must be tracked and byte-identical to `HEAD`, including
+staged changes. The action evaluates **in that checkout**, using KMX's existing
+Git provenance reader: receipts name the tested `HEAD` commit, including a
+GitHub PR merge commit when that is what checkout selected. No claimed revision
+is substituted from an environment variable. Dirty, added or deleted cases are
+refused rather than attributed to the wrong commit.
+
+For an OpenAI-compatible endpoint, supply the model name exactly as it appears
+in `agent.yaml`. Replace `REVIEWED_COMMIT_SHA` with a reviewed immutable commit
+containing the action; do not leave the placeholder or use a moving branch in
+production:
+
+```yaml
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.2'
+      - uses: kaimahi-agents/kaimahi/.github/actions/kmx-eval@REVIEWED_COMMIT_SHA
+        env:
+          EVAL_MODEL_KEY: ${{ secrets.EVAL_MODEL_KEY }}
+        with:
+          bundle: agents/my-agent
+          model-mode: endpoint
+          model-name: my-model
+          model-base-url: https://model.example.com/v1
+          model-key-env: EVAL_MODEL_KEY
+          verify: 'true'
+          artifact-name: agent-eval-evidence
+```
+
+The endpoint must use HTTPS; keyless literal-loopback HTTP endpoints are also
+accepted. Never put a key in an input or URL: `model-key-env` is only the name
+of a secret environment variable. The runner passes its value to the daemon's
+model client through the child environment, not argv or a file. It does not
+print CLI, provider or daemon logs. Successful logs contain only summaries and
+timing. On failure it prints the failing answer only if its exact bytes match
+the receipt's digest, with known credentials redacted and terminal/workflow
+commands escaped; ambiguous answers or credential-shaped text are withheld.
+Failure answers can still contain sensitive application data: use public or
+sanitized cases and restrict access to job logs.
+
+For a secret-free local model, use `model-mode: aikit` instead of the endpoint
+inputs. The default image is Qwen3.5-2B pinned by SHA-256, with the same CPU
+[preset](../scripts/ci/eval-loop-model.yaml) used in repository CI. The bundle's
+model must be `qwen-3.5-2b`. This small model and its 4096-context/64-output-token
+preset are not a universal quality baseline. `aikit-image` must include
+`@sha256:...`; `aikit-config` can select a model-specific LocalAI config, paired
+with the corresponding `model-name`. No inherited hosted-model key is used.
+
+The action starts agentsessions on loopback with a private, temporary journal.
+Prefer a compatible released daemon archive through the paired
+`sessions-archive-url` and `sessions-archive-sha256` inputs: the HTTPS archive
+must contain a regular `agentsessionsd` binary and support chat, execution
+`system_prompt` and the journal evidence required by KMX. A checksum proves
+archive identity, **not compatibility or host implementation attestation**.
+The latest inspected release, v0.1.2, predates that support, so the default is
+currently a clearly reported source-build fallback at KMX's pinned module
+revision, never `@latest`. The log reports install mode and elapsed runner time,
+including builds; the workflow job duration additionally includes setup/upload.
+
+`verify: 'true'` (the default) checks reference replay equivalence and zero model
+calls separately from evaluation. AIKit is stopped before verification; an
+external endpoint is not stopped, but replay still requires zero calls. A
+failed evaluation never becomes a success through replay. Set `verify: 'false'`
+to omit it. `case-timeout` defaults to `2m`; `command-timeout` is a separate
+per-command deadline in seconds (default `600`). Adjust the workflow job timeout
+to fit the complete case set; cases are never retried.
+
+Only the fresh payload-free receipt and optional verification report are
+uploaded, including failed results when available. Journals, raw logs, prompts
+and answers are not artifacts. Each invocation uses a fresh private artifact
+directory; before evaluation it removes only KMX's receipt/report for its
+selected sessions endpoint, preserving evidence from other targets. The action
+outputs `receipt`, `verify-report`, `artifact-dir`, `daemon-install` and
+`elapsed-seconds`. Files in the output directory survive runtime cleanup.
+
+### Other CI systems
+
+Check out a reviewed Kaimahi revision beside your clean agent checkout, provide
+Go and the prerequisites above, and call the same runner. For example, from
+your agent repository, with Kaimahi checked out at `../kaimahi`:
+
+```bash
+# EVAL_MODEL_KEY is injected by your CI secret store, not assigned here.
+BUNDLE_DIR="$PWD/agents/my-agent" \
+MODEL_MODE=endpoint MODEL_NAME=my-model \
+MODEL_BASE_URL=https://model.example.com/v1 MODEL_KEY_ENV=EVAL_MODEL_KEY \
+ARTIFACT_DIR="$PWD/eval-evidence-$CI_JOB_ID" VERIFY=true \
+bash ../kaimahi/scripts/ci/live-eval-loop.sh
+```
+
+`ARTIFACT_DIR` must be a fresh per-run path outside `receipts/`. Configure your
+CI to retain **only** its `*.json` files, even when the runner exits nonzero.
+The runner builds KMX from the reviewed Kaimahi checkout; `KMX_BIN` can reuse a
+matching binary already built by your job. A nonzero runner exit is a failed
+eval or missing proof, not a reason to rerun a potentially side-effecting case.
+For agents requiring Orka, provision the runtime, Provider, Secrets and tools
+first and use the [staging-to-production sequence](#requiring-evaluation-before-lift).
+
 ## Running an existing Agent
 
 ```console

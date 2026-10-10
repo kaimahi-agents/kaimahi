@@ -91,7 +91,9 @@ jobs:
       # every gap this closes was found by editing a checker until it was
       # worthless and watching its own self-test stay green.
       - name: Live eval gate and failure diagnostics self-tests
-        run: python3 scripts/test_eval_loop.py
+        run: |
+          python3 scripts/test_eval_loop.py
+          python3 scripts/test_eval_runner.py
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken
@@ -3819,17 +3821,13 @@ jobs:
         run: go build -o bin/kmx ./cmd/kmx
       - name: Live AIKit evaluation and zero-call replay
         if: steps.changes.outputs.docs_only != 'true'
-        env:
-          ARTIFACT_DIR: ${{ runner.temp }}/eval-loop-evidence
-        run: bash scripts/ci/live-eval-loop.sh
-      - name: Upload payload-free receipt and verify report
-        if: always() && steps.changes.outputs.docs_only != 'true'
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/kmx-eval
         with:
-          name: eval-loop-evidence
-          path: ${{ runner.temp }}/eval-loop-evidence/*.json
-          if-no-files-found: warn
-          retention-days: 7
+          bundle: internal/kmx/app/testdata/live-eval-loop
+          kmx-bin: ${{ github.workspace }}/bin/kmx
+          model-mode: aikit
+          verify: 'true'
+          artifact-name: eval-loop-evidence
       - name: Documentation-only summary
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
