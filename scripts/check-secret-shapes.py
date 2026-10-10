@@ -11,10 +11,8 @@ no exceptions to remember.
 The shapes are NOT written here. They are
 internal/kmx/secretshapes/shapes.json, which the manifest scaffolder and
 the blueprint parser read too — one list, three readers, one place to add
-a shape. Before this, the three lists had eight, seven and three shapes
-respectively, and the shortest was CI's: a GitHub token, a Slack token, an
-Azure DevOps PAT or this plane's own credential could sit in a
-documentation file and pass the gate whose whole job was to notice.
+a shape. Sharing the definitions keeps the scanner and product readers
+consistent when credential shapes are added or updated.
 
 Scope, honestly: these are SHAPE rules, and a credential with no shape
 cannot be caught this way. A bare password, or an opaque token from an

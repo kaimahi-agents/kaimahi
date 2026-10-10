@@ -370,7 +370,7 @@ echo "aks-up: AcrPull confirmed" >&2
 
 # --- kubeconfig -----------------------------------------------------------
 # The context is named after the cluster. Note this is NOT a kind context,
-# so every mutating make target will demand confirmation (scripts/kube-guard.sh).
+# so scripts/kube-guard.sh requires explicit consent for this non-kind context.
 echo "aks-up: writing kubeconfig context '$CLUSTER'" >&2
 az aks get-credentials --name "$CLUSTER" --resource-group "$RG" \
   --overwrite-existing --output none

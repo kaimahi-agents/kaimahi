@@ -26,9 +26,7 @@ Fenced code blocks are not links, and neither is anything inside a
 `backtick` code span: both are blanked out before the scan, so a sample
 link in an example stays an example.
 
-Current guides, historical pointers and indexes all keep their relative
-links and heading anchors valid, except for the dated review's retired-board
-reference.
+All documents keep their relative links and heading anchors valid.
 
 Run:  python3 scripts/check-doc-links.py [file.md ...]
       (no arguments: every tracked *.md, plus untracked ones git would add)
@@ -116,12 +114,6 @@ def label(raw):
     return " ".join(raw.split()).lower()
 
 
-def retired_board_link(path, target):
-    """The dated review retains its reference to the retired board as history."""
-    return (path.replace(os.sep, "/").endswith("docs/reviews/2026-09-09-orka-composition.md")
-            and target == "../COORDINATION.md")
-
-
 def check(path, slug_cache):
     problems = []
     text = prose(path)
@@ -140,8 +132,6 @@ def check(path, slug_cache):
         else:
             resolved = path
         if not os.path.exists(resolved):
-            if retired_board_link(path, target):
-                return
             problems.append(f"{path}:{lineno(pos)}: missing {what} {target}")
             return
         if frag and resolved.endswith(".md"):
@@ -275,14 +265,14 @@ def selftest():
     case("...while the same paths taken as relative fail",
          dict(real, **{"a.md": '[x](nowhere.md)\n'}), 1)
 
-    # The dated review is immutable history, but its board target is retired.
-    case("the review retains its historical board reference",
+    # Missing targets must fail regardless of the document's path.
+    case("a missing target at the former exempt path fails",
          {"docs/reviews/2026-09-09-orka-composition.md":
-          "[board](../COORDINATION.md)\n"}, 0)
+          "[board](../COORDINATION.md)\n"}, 1)
     case("another missing target in that review still fails",
          {"docs/reviews/2026-09-09-orka-composition.md":
           "[missing](../other.md)\n"}, 1)
-    case("another review cannot borrow the exception",
+    case("a missing target in another review also fails",
          {"docs/reviews/other.md": "[board](../COORDINATION.md)\n"}, 1)
 
     # A run that found nothing to read is not a clean run. The pair is a

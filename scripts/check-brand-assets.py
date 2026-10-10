@@ -333,7 +333,6 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         build_tree(root)
-        (root / "docs/assets/architecture.svg").unlink(missing_ok=True)
         clean = check(root)
         if clean:
             print(f"FAIL a tree meeting every requirement was refused: {clean}")

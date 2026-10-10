@@ -6,7 +6,7 @@
   "mutations": [
     {
       "name": "the SVG requirements are never checked",
-      "breaks": "The ketu mark, wordmark, compact mark and architecture diagram stop being checked for a viewBox or a title, which is how an asset ends up shipping under the wrong name.",
+      "breaks": "The ketu mark, wordmark and compact mark stop being checked for a viewBox or a title, which is how an asset ends up shipping under the wrong name.",
       "find": "    for relative, expected_title in SVG_REQUIREMENTS.items():\n        problems.extend(validate_svg(root, relative, expected_title))",
       "replace": "    for relative, expected_title in []:\n        problems.extend(validate_svg(root, relative, expected_title))"
     },
