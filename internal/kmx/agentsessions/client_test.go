@@ -338,6 +338,130 @@ func TestRunCaseRequiresModelEvidenceAndCompletion(t *testing.T) {
 	}
 }
 
+// Catches treating a terminal execution error as unknown, or allowing invalid
+// evidence and transport failure to be classified as attributable execution failure.
+func TestRunCaseExecutionFailureRequiresVerifiedWholeStream(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func([]api.Event) []api.Event
+		stream func(*sessionsServer)
+		failed bool
+		code   codes.Code
+	}{
+		{name: "normal completion", code: codes.OK},
+		{name: "failed end", change: func(e []api.Event) []api.Event { e[4].End.State = "FAILED"; return e }, failed: true, code: codes.FailedPrecondition},
+		{name: "canceled end", change: func(e []api.Event) []api.Event { e[4].End.State = "CANCELED"; return e }, failed: true, code: codes.FailedPrecondition},
+		{name: "unrecognized cancellation spelling", change: func(e []api.Event) []api.Event { e[4].End.State = "CANCELLED"; return e }, code: codes.FailedPrecondition},
+		{name: "unknown end", change: func(e []api.Event) []api.Event { e[4].End.State = canary; return e }, code: codes.FailedPrecondition},
+		{name: "end error", change: func(e []api.Event) []api.Event {
+			e[4].End.Error = &api.Error{Code: int32(codes.ResourceExhausted), Description: canary}
+			return e
+		}, failed: true, code: codes.ResourceExhausted},
+		{name: "end error with OK code", change: func(e []api.Event) []api.Event { e[4].End.Error = &api.Error{Description: canary}; return e }, failed: true, code: codes.Unknown},
+		{name: "end error with invalid code", change: func(e []api.Event) []api.Event { e[4].End.Error = &api.Error{Code: 999, Description: canary}; return e }, failed: true, code: codes.Unknown},
+		{name: "unknown end with error", change: func(e []api.Event) []api.Event {
+			e[4].End.State = canary
+			e[4].End.Error = &api.Error{Code: int32(codes.Aborted), Description: canary}
+			return e
+		}, code: codes.Aborted},
+		{name: "error event then completed", change: func(e []api.Event) []api.Event {
+			return append(e[:4:4], api.Event{Kind: api.EventError, Err: &api.Error{Code: int32(codes.Aborted), Description: canary}}, e[4])
+		}, failed: true, code: codes.Aborted},
+		{name: "error event then failed", change: func(e []api.Event) []api.Event {
+			e[4].End.State = "FAILED"
+			return append(e[:4:4], api.Event{Kind: api.EventError, Err: &api.Error{Code: int32(codes.Aborted), Description: canary}}, e[4])
+		}, failed: true, code: codes.Aborted},
+		{name: "error event without end", change: func(e []api.Event) []api.Event {
+			return append(e[:4:4], api.Event{Kind: api.EventError, Err: &api.Error{Code: int32(codes.Aborted), Description: canary}})
+		}, code: codes.Aborted},
+		{name: "error event then unknown end", change: func(e []api.Event) []api.Event {
+			e[4].End.State = canary
+			return append(e[:4:4], api.Event{Kind: api.EventError, Err: &api.Error{Code: int32(codes.Aborted), Description: canary}}, e[4])
+		}, code: codes.Aborted},
+		{name: "error result tool is not execution failure", change: func(e []api.Event) []api.Event {
+			p := toolPair("t1", "inventory")
+			p[1].Result.IsError = true
+			p[1].Result.Error = canary
+			return append(append(e[:3:3], p...), e[3:]...)
+		}, code: codes.OK},
+		{name: "failed end then transport error", change: func(e []api.Event) []api.Event { e[4].End.State = "FAILED"; return e }, stream: func(s *sessionsServer) { s.execErr = status.Error(codes.Unavailable, "FAILED "+canary) }, code: codes.Unavailable},
+		{name: "transport error text is not evidence", stream: func(s *sessionsServer) { s.execErr = status.Error(codes.Aborted, "FAILED "+canary) }, code: codes.Aborted},
+		{name: "failed end then model record", change: func(e []api.Event) []api.Event {
+			e[4].End.State = "FAILED"
+			return append(e, api.Event{Kind: api.EventModelCall, ModelCall: &api.ModelCall{Model: "other-model"}})
+		}, code: codes.FailedPrecondition},
+		{name: "failed end then corrupt frame", change: func(e []api.Event) []api.Event { e[4].End.State = "FAILED"; return e }, stream: func(s *sessionsServer) { s.updates = append(s.updates, &v1.ExecUpdate{}) }, code: codes.FailedPrecondition},
+		{name: "corrupt failed end", change: func(e []api.Event) []api.Event { e[4].End.State = "FAILED"; return e }, stream: func(s *sessionsServer) { s.updates[5].GetRecord().ContentHash = canary }, code: codes.DataLoss},
+		{name: "wrong session then failed end", change: func(e []api.Event) []api.Event { e[4].End.State = "FAILED"; return e }, stream: func(s *sessionsServer) {
+			f := newSession()
+			f.Metadata.Uid = "other-session"
+			s.updates[0] = sessionFrame(f)
+		}, code: codes.DataLoss},
+		{name: "missing model then failed end", change: func(e []api.Event) []api.Event { e[4].End.State = "FAILED"; return append(e[:2:2], e[3:]...) }, code: codes.FailedPrecondition},
+		{name: "wrong model then failed end", change: func(e []api.Event) []api.Event {
+			e[2].ModelCall.Model = "other-model"
+			e[4].End.State = "FAILED"
+			return e
+		}, code: codes.FailedPrecondition},
+		{name: "missing prefix then failed end", change: func(e []api.Event) []api.Event { e[4].End.State = "FAILED"; return e[2:] }, code: codes.DataLoss},
+		{name: "wrong config then failed end", change: func(e []api.Event) []api.Event {
+			e[0].ExecutionStart.Config = []byte(`{}`)
+			e[4].End.State = "FAILED"
+			return e
+		}, code: codes.DataLoss},
+		{name: "wrong input then failed end", change: func(e []api.Event) []api.Event {
+			e[1].Message = api.TextMessage("user", "different input")
+			e[4].End.State = "FAILED"
+			return e
+		}, code: codes.DataLoss},
+		{name: "output overflow then failed end", change: func(e []api.Event) []api.Event {
+			e[3].Message = api.TextMessage("assistant", strings.Repeat("x", maxAnswerBytes+1))
+			e[4].End.State = "FAILED"
+			return e
+		}, code: codes.ResourceExhausted},
+		{name: "error event then mixed model", change: func(e []api.Event) []api.Event {
+			return append(e[:4:4], api.Event{Kind: api.EventError, Err: &api.Error{Code: int32(codes.Aborted), Description: canary}}, api.Event{Kind: api.EventModelCall, ModelCall: &api.ModelCall{Model: "other-model"}}, e[4])
+		}, code: codes.Aborted},
+		{name: "error event then output overflow", change: func(e []api.Event) []api.Event {
+			return append(e[:4:4], api.Event{Kind: api.EventError, Err: &api.Error{Code: int32(codes.Aborted), Description: canary}}, api.Event{Kind: api.EventOutput, Message: api.TextMessage("assistant", strings.Repeat("x", maxAnswerBytes+1))}, e[4])
+		}, code: codes.Aborted},
+		{name: "error event then corrupt end", change: func(e []api.Event) []api.Event {
+			return append(e[:4:4], api.Event{Kind: api.EventError, Err: &api.Error{Code: int32(codes.Aborted), Description: canary}}, e[4])
+		}, stream: func(s *sessionsServer) { s.updates[6].GetRecord().ContentHash = canary }, code: codes.Aborted},
+		{name: "unhashed error event", change: func(e []api.Event) []api.Event {
+			return append(e[:4:4], api.Event{Kind: api.EventError, Err: &api.Error{Code: int32(codes.Aborted), Description: canary}}, e[4])
+		}, stream: func(s *sessionsServer) {
+			s.updates[5].GetRecord().Event.GetError().ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
+		}, code: codes.DataLoss},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := validServer(t)
+			e := fixtureEvents()
+			if tc.change != nil {
+				e = tc.change(e)
+			}
+			s.updates = append([]*v1.ExecUpdate{sessionFrame(s.created)}, records(t, e)...)
+			if tc.stream != nil {
+				tc.stream(s)
+			}
+			got, err := run(t, s)
+			if tc.code == codes.OK {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				assertSafeError(t, err, tc.code)
+			}
+			if got.ExecutionFailed != tc.failed {
+				t.Fatalf("ExecutionFailed = %v; want %v (result %#v, error %v)", got.ExecutionFailed, tc.failed, got, err)
+			}
+			if tc.failed && (got.ToolEvidenceComplete || got.ToolCalls != nil) {
+				t.Fatalf("failed execution published tool evidence: %#v", got)
+			}
+		})
+	}
+}
+
 func TestRunCaseRejectsMalformedStreams(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

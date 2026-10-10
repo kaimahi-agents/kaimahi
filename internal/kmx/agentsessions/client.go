@@ -32,7 +32,10 @@ type JournalHead struct {
 type CaseResult struct {
 	SessionUID, Harness, Model string
 	// ModelMixed is sticky and clears Model when distinct safe models are observed.
-	ModelMixed           bool
+	ModelMixed bool
+	// ExecutionFailed requires a complete, attributable journal with a recognized
+	// terminal END and execution error evidence; invalid or partial streams stay false.
+	ExecutionFailed      bool
 	Head                 JournalHead
 	Output               string
 	ToolCalls            map[string]int
@@ -96,12 +99,17 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 	}
 
 	var evidenceErr error
+	var evidenceInvalid, executionFailed bool
 	var tools toolEvidenceCollector
-	fail := func(code codes.Code, diagnostic string) {
+	reportError := func(code codes.Code, diagnostic string) {
 		tools.invalidate()
 		if evidenceErr == nil {
 			evidenceErr = status.Error(code, diagnostic)
 		}
+	}
+	fail := func(code codes.Code, diagnostic string) {
+		evidenceInvalid = true
+		reportError(code, diagnostic)
 	}
 	var seenSession, chainValid, ended, seenStart, seenInput bool
 	var executionID, firstModel string
@@ -202,12 +210,21 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 				output.WriteString(text)
 				result.Output = output.String()
 			case v1.EventKind_EVENT_ERROR:
-				fail(remoteCode(event.GetError().GetCode()), "agentsessions: execution reported an error")
+				executionFailed = true
+				reportError(remoteCode(event.GetError().GetCode()), "agentsessions: execution reported an error")
 			case v1.EventKind_EVENT_END:
 				ended = true
-				if event.GetEnd().GetError() != nil {
-					fail(remoteCode(event.GetEnd().GetError().GetCode()), "agentsessions: execution completion reported an error")
-				} else if event.GetEnd().GetState() != "COMPLETED" {
+				end := event.GetEnd()
+				if end.GetError() != nil {
+					executionFailed = true
+					reportError(remoteCode(end.GetError().GetCode()), "agentsessions: execution completion reported an error")
+				}
+				switch api.ExecState(end.GetState()) {
+				case api.ExecCompleted:
+				case api.ExecFailed, api.ExecCanceled:
+					executionFailed = true
+					reportError(codes.FailedPrecondition, "agentsessions: execution did not complete")
+				default:
 					fail(codes.FailedPrecondition, "agentsessions: execution did not complete")
 				}
 			}
@@ -234,6 +251,9 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 	if !ended {
 		fail(codes.FailedPrecondition, "agentsessions: missing execution completion")
 	}
+	// Publish only after EOF: a later integrity or transport failure cannot turn
+	// a verified prefix into proof of the whole invocation's execution outcome.
+	result.ExecutionFailed = ended && !evidenceInvalid && executionFailed
 	result.ToolCalls, result.ToolEvidenceComplete = tools.finish(evidenceErr == nil)
 	return result, evidenceErr
 }

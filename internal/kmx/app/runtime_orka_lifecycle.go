@@ -356,9 +356,13 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	if strings.TrimSpace(request.PortableDigest) == "" {
 		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires the portable digest of the revision under test")
 	}
-	if strings.TrimSpace(request.CaseID) == "" || strings.TrimSpace(request.Input) == "" || len(request.ExpectContains) == 0 {
-		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires a case id, an input and at least one expected string")
+	if strings.TrimSpace(request.CaseID) == "" || strings.TrimSpace(request.Input) == "" || len(request.ExpectContains)+len(request.Assertions) == 0 {
+		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires a case id, an input and at least one assertion")
 	}
+	if err := agentruntime.ValidateEvaluationAssertions(request.Assertions); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	c := agentruntime.EvaluationCase{ID: request.CaseID, Input: request.Input, ExpectContains: request.ExpectContains, Assertions: request.Assertions}
 	if err := a.statusTargetError(ref); err != nil {
 		return agentruntime.EvaluationReceipt{}, err
 	}
@@ -402,7 +406,7 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	if err := session.probe(ctx, ref.Namespace, name); err != nil {
 		return agentruntime.EvaluationReceipt{}, err
 	}
-	receipt := agentruntime.EvaluationReceipt{CaseID: request.CaseID, TaskName: name, Verdict: agentruntime.EvaluationUnknown}
+	receipt := agentruntime.EvaluationReceipt{CaseID: request.CaseID, TaskName: name, Verdict: agentruntime.EvaluationUnknown, Assertions: agentruntime.EvaluateAssertions(c, agentruntime.EvaluationEvidence{ToolSupported: false})}
 	task := map[string]any{
 		"apiVersion": "core.orka.ai/v1alpha1", "kind": "Task",
 		"metadata": map[string]any{"name": name, "namespace": ref.Namespace},
@@ -410,7 +414,7 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	}
 	id, err := app.createOrkaObject(ctx, ref.Namespace, task)
 	if err != nil {
-		receipt.Detail = "Task create failed or was ambiguous; it may exist or be running, and was not retried"
+		receipt.Detail = evaluationExecutionUnavailable
 		return receipt, nil
 	}
 	receipt.TaskUID = id.UID
@@ -419,17 +423,17 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	switch {
 	case errors.As(err, &ended):
 		receipt.Verdict = agentruntime.EvaluationFail
-		receipt.Detail = "Task ended in " + ended.Phase
+		receipt.Detail = evaluationExecutionFailed
 		return receipt, nil
 	case errors.Is(err, context.DeadlineExceeded):
-		receipt.Detail = "no readable terminal result within the case timeout"
+		receipt.Detail = evaluationResultUnavailable
 		return receipt, nil
 	case err != nil:
-		receipt.Detail = "result could not be read: " + err.Error()
+		receipt.Detail = evaluationResultUnavailable
 		return receipt, nil
 	}
 	if _, err := fmt.Fprintln(a.app.Out, answer); err != nil {
-		receipt.Detail = "the answer could not be written to the terminal"
+		receipt.Detail = evaluationResultUnavailable
 		return receipt, nil
 	}
 	receipt.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(answer)
@@ -437,15 +441,11 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	// The answer counts only if the Agent it came from is still the revision
 	// under test: a lift that landed while the Task ran makes it unattributable.
 	if err := app.orkaEvaluationRevisionError(ctx, ref, request.PortableDigest); err != nil {
-		receipt.Detail = "the Agent's revision could not be confirmed after the Task finished"
+		receipt.Detail = evaluationResultUnavailable
 		return receipt, nil
 	}
-	if len(receipt.Missing) > 0 {
-		receipt.Verdict = agentruntime.EvaluationFail
-		receipt.Detail = fmt.Sprintf("answer lacks %d of %d expected strings", len(receipt.Missing), len(request.ExpectContains))
-		return receipt, nil
-	}
-	receipt.Verdict = agentruntime.EvaluationPass
+	receipt.Assertions = agentruntime.EvaluateAssertions(c, agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true, ToolSupported: false})
+	receipt.Verdict = agentruntime.EvaluationAssertionsVerdict(receipt.Assertions)
 	return receipt, nil
 }
 

@@ -20,6 +20,7 @@ import (
 	"github.com/aramase/agentsessions/eventlog"
 	"github.com/aramase/agentsessions/harness/chatagent"
 	"github.com/aramase/agentsessions/wire"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"google.golang.org/grpc"
 )
 
@@ -88,6 +89,72 @@ func saveVerifyInput(t *testing.T, path string, r sessionsEvaluationReceipt) {
 }
 
 // Catch accepting an unacknowledged destination, including DNS aliases, before any RPC.
+func TestVerifySessionsV2AssertionValidation(t *testing.T) {
+	for _, mode := range []string{"valid", "version", "runID", "caseDigest", "inputDigest", "no rows", "duplicate rows", "row digest", "row id", "row type", "row verdict", "row reason", "unknown row", "tool pass", "case coherence", "overall coherence", "legacy with rows", "failed execution mixed rows"} {
+		t.Run(mode, func(t *testing.T) {
+			a, o, r, s := verifyAppFixture(t)
+			r.SchemaVersion = 2
+			r.RunID = strings.Repeat("a", 32)
+			c := &r.Cases[0]
+			c.CaseDigest = strings.Repeat("c", 64)
+			c.InputDigest = strings.Repeat("d", 64)
+			c.Assertions = []agentruntime.EvaluationAssertionResult{{ID: "check", Type: "contains", DefinitionDigest: strings.Repeat("e", 64), Verdict: agentruntime.EvaluationPass, Reason: "assertion satisfied"}}
+			row := &c.Assertions[0]
+			switch mode {
+			case "version":
+				r.SchemaVersion = 3
+			case "runID":
+				r.RunID = "../canary"
+			case "caseDigest":
+				c.CaseDigest = "bad"
+			case "inputDigest":
+				c.InputDigest = "bad"
+			case "no rows":
+				c.Assertions = nil
+			case "duplicate rows":
+				c.Assertions = append(c.Assertions, *row)
+			case "row digest":
+				row.DefinitionDigest = "bad"
+			case "row id":
+				row.ID = "private\ncanary"
+			case "row type":
+				row.Type = "llmJudge"
+			case "row verdict":
+				row.Verdict = "invented"
+			case "row reason":
+				row.Reason = "private-reason-canary"
+			case "unknown row":
+				row.Verdict = agentruntime.EvaluationUnknown
+				row.Reason = "answer unavailable"
+			case "tool pass":
+				row.Type = "toolNotCalled"
+			case "case coherence":
+				row.Verdict = agentruntime.EvaluationFail
+				row.Reason = "assertion not satisfied"
+			case "overall coherence":
+				r.Result = "fail"
+			case "legacy with rows":
+				r.SchemaVersion = 0
+				r.RunID = ""
+			case "failed execution mixed rows":
+				r.Result = "fail"
+				c.Verdict = "fail"
+				c.Detail = evaluationExecutionFailed
+				c.Assertions = append(c.Assertions, agentruntime.EvaluationAssertionResult{ID: "unavailable", Type: "contains", DefinitionDigest: strings.Repeat("f", 64), Verdict: agentruntime.EvaluationUnknown, Reason: "answer unavailable"})
+			}
+			saveVerifyInput(t, o.ReceiptPath, r)
+			err := a.VerifyAgentSessions(o)
+			if mode == "valid" {
+				if err != nil || s.reads.Load() != 1 {
+					t.Fatalf("valid v2 rejected: %v reads=%d", err, s.reads.Load())
+				}
+			} else if err == nil || s.reads.Load() != 0 || strings.Contains(err.Error(), "canary") {
+				t.Fatalf("invalid v2 allowed/leaked: %v reads=%d", err, s.reads.Load())
+			}
+		})
+	}
+}
+
 func TestVerifySessionsPreflightNeverConnects(t *testing.T) {
 	for _, tc := range []struct {
 		name, want string

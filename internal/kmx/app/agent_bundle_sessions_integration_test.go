@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aramase/agentsessions/api"
 	v1 "github.com/aramase/agentsessions/api/genpb"
 	"github.com/aramase/agentsessions/canon"
 	"github.com/aramase/agentsessions/wire"
@@ -35,6 +36,8 @@ type sessionsEvalServer struct {
 	model             string
 	fail              bool
 	mixed, errorAfter bool
+	tools             bool
+	endState          string
 }
 
 func (s *sessionsEvalServer) CreateSession(_ context.Context, req *v1.CreateSessionRequest) (*v1.Session, error) {
@@ -62,9 +65,19 @@ func (s *sessionsEvalServer) Exec(req *v1.ExecRequest, stream grpc.ServerStreami
 		{Kind: v1.EventKind_EVENT_OUTPUT, Body: &v1.Event_Message{Message: &v1.Message{Role: "assistant", Parts: []*v1.Part{{Part: &v1.Part_Text{Text: &v1.TextPart{Text: s.answers[req.GetInputs()[0].GetParts()[0].GetText().GetText()]}}}}}}},
 		{Kind: v1.EventKind_EVENT_END, Body: &v1.Event_End{End: &v1.HarnessEnd{State: "COMPLETED"}}},
 	}
+	if s.endState != "" {
+		events[len(events)-1].GetEnd().State = s.endState
+	}
 	if s.mixed {
 		other := &v1.Event{Kind: v1.EventKind_EVENT_MODEL_CALL, Body: &v1.Event_Model{Model: &v1.ModelCall{Model: "other-model", Id: "call-2", InputHash: strings.Repeat("b", 64)}}}
 		events = append(events[:3], append([]*v1.Event{other}, events[3:]...)...)
+	}
+	if s.tools {
+		tools := []*v1.Event{
+			wire.EventToProto(api.Event{Kind: api.EventToolCall, ToolCall: &api.ToolCall{ID: "t1", Tool: "inventory", Mediation: api.MediationControllerMediated, IdempotencyKey: "key", Args: map[string]any{"payload": "private-tool-args-canary"}}}),
+			wire.EventToProto(api.Event{Kind: api.EventToolResult, Result: &api.ToolResult{ID: "t1", Output: map[string]any{"payload": "private-tool-result-canary"}}}),
+		}
+		events = append(append(append([]*v1.Event{}, events[:3]...), tools...), events[3:]...)
 	}
 	prev := ""
 	for i, ev := range events {
@@ -132,6 +145,109 @@ func readSessionsAppReceipt(t *testing.T, bundle string) (sessionsEvaluationRece
 		t.Fatal(err)
 	}
 	return receipt, raw
+}
+
+func TestSessionsStructuredExecutionFailurePrecedesAssertions(t *testing.T) {
+	for _, tc := range []struct {
+		name, state, model, want, detail string
+		remote                           bool
+	}{
+		{name: "known failure", state: "FAILED", model: "test-model", want: "fail", detail: "evaluation execution failed"},
+		{name: "failure after model mismatch", state: "FAILED", model: "other-model", want: "unknown", detail: "evaluation execution unavailable"},
+		{name: "RPC failure", model: "test-model", want: "unknown", detail: "evaluation execution unavailable", remote: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &sessionsEvalServer{model: tc.model, endState: tc.state, fail: tc.remote, answers: map[string]string{"private-input-one": "private-assertion-canary"}}
+			a, opt, _ := newSessionsAppFixture(t, s)
+			opt.Case = "one"
+			if err := a.EvaluateAgentBundle(opt); err == nil || !strings.Contains(err.Error(), "did not pass") {
+				t.Fatalf("failure passed: %v", err)
+			}
+			r, raw := readSessionsAppReceipt(t, opt.BundleDir)
+			if r.Result != tc.want || r.Cases[0].Verdict != tc.want || r.Cases[0].Detail != tc.detail {
+				t.Fatalf("unproven failure precedence: %+v", r)
+			}
+			for _, row := range r.Cases[0].Assertions {
+				if row.Verdict != agentruntime.EvaluationUnknown {
+					t.Fatalf("failed execution has known assertion: %+v", row)
+				}
+			}
+			if bytes.Contains(raw, []byte("private-remote-error-canary")) {
+				t.Fatal("persisted arbitrary error")
+			}
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if len(s.creates) != 1 || len(s.execs) != 1 {
+				t.Fatal("execution retried")
+			}
+		})
+	}
+}
+
+func TestSessionsTypedAssertionsAndDisabledToolJournals(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, operand, answer, want string
+		tools, fail                       bool
+	}{
+		{name: "negative pass", kind: "notContains", operand: "value: refuse", answer: "hello", want: "pass"},
+		{name: "negative fail", kind: "notContains", operand: "value: refuse", answer: "refuse", want: "fail"},
+		{name: "regex pass", kind: "regex", operand: "pattern: '^hello$'", answer: "hello", want: "pass"},
+		{name: "regex fail", kind: "regex", operand: "pattern: '^hello$'", answer: "goodbye", want: "fail"},
+		{name: "positive empty journal", kind: "toolCalled", operand: "tool: inventory", answer: "hello", want: "unknown"},
+		{name: "negative empty journal", kind: "toolNotCalled", operand: "tool: inventory", answer: "hello", want: "unknown"},
+		{name: "positive journal", kind: "toolCalled", operand: "tool: inventory", answer: "hello", want: "unknown", tools: true},
+		{name: "negative positive journal", kind: "toolNotCalled", operand: "tool: inventory", answer: "hello", want: "unknown", tools: true},
+		{name: "failed text", kind: "notContains", operand: "value: refuse", want: "unknown", fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &sessionsEvalServer{model: "test-model", answers: map[string]string{"public input": tc.answer}, tools: tc.tools, fail: tc.fail}
+			a, opt, _ := newSessionsAppFixture(t, s)
+			opt.Case = "one"
+			body := "id: one\ninput: public input\nassertions:\n- id: check\n  type: " + tc.kind + "\n  " + tc.operand + "\n"
+			if err := os.WriteFile(filepath.Join(opt.BundleDir, "eval", "a.yaml"), []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			err := a.EvaluateAgentBundle(opt)
+			if (err == nil) != (tc.want == "pass") {
+				t.Fatalf("error=%v want=%s", err, tc.want)
+			}
+			r, raw := readSessionsAppReceipt(t, opt.BundleDir)
+			var data struct {
+				SchemaVersion int
+				RunID         string
+				Cases         []struct {
+					CaseDigest, InputDigest string
+					Assertions              []agentruntime.EvaluationAssertionResult
+				}
+			}
+			if err := json.Unmarshal(raw, &data); err != nil {
+				t.Fatal(err)
+			}
+			if r.Result != tc.want || data.SchemaVersion != 2 || len(data.RunID) != 32 || len(data.Cases[0].Assertions) != 1 {
+				t.Fatalf("missing verdict/evidence: %s", raw)
+			}
+			c := data.Cases[0]
+			row := c.Assertions[0]
+			if c.CaseDigest != agentruntime.EvaluationCaseDigest([]byte(body)) || c.InputDigest != agentruntime.EvaluationInputDigest("public input") || string(row.Verdict) != tc.want {
+				t.Fatalf("case=%+v", c)
+			}
+			if strings.HasPrefix(tc.kind, "tool") && row.Reason != "runtime does not support tools" {
+				t.Fatalf("unsupported tool=%+v", row)
+			}
+			if tc.fail && r.Cases[0].Detail != "evaluation execution unavailable" {
+				t.Fatalf("unfixed detail=%s", r.Cases[0].Detail)
+			}
+			for _, canary := range []string{"private-tool-args-canary", "private-tool-result-canary", "private-remote-error-canary", "inventory", "refuse", "^hello$", "public input"} {
+				if bytes.Contains(raw, []byte(canary)) {
+					t.Fatalf("leaked %s", canary)
+				}
+			}
+			paths, _ := filepath.Glob(filepath.Join(opt.BundleDir, "receipts", "runs", "eval-*.json"))
+			if len(paths) != 1 {
+				t.Fatalf("history=%v", paths)
+			}
+		})
+	}
 }
 
 func TestSessionsEvaluationRunsCasesAndRecordsEvidence(t *testing.T) {

@@ -156,7 +156,7 @@ func bundleGateCondition(evidence []bundleGateEvidence, target bundleGateTarget,
 			return fmt.Sprintf("evaluation receipt %s is a single-case run, not the full case set", item.File)
 		case r.Result != "pass":
 			return fmt.Sprintf("evaluation receipt %s result is %s, not pass", item.File, r.Result)
-		case !bundleCaseResultsPass(r.Cases, cases):
+		case !bundleReceiptCaseResultsPass(r, cases):
 			return fmt.Sprintf("evaluation receipt %s has incomplete or non-passing case results", item.File)
 		}
 	}
@@ -178,6 +178,50 @@ func bundleCaseResultsPass(results []bundleEvaluationResult, cases []bundleEvalu
 		delete(expected, result.ID)
 	}
 	return len(expected) == 0
+}
+
+func bundleReceiptCaseResultsPass(receipt bundleEvaluationReceipt, cases []bundleEvaluationCase) bool {
+	if !bundleCaseResultsPass(receipt.Cases, cases) {
+		return false
+	}
+	if receipt.SchemaVersion == 0 && receipt.RunID == "" {
+		for _, c := range cases {
+			if len(c.Case.Assertions) != 0 {
+				return false
+			}
+		}
+		return true
+	}
+	if receipt.SchemaVersion != 2 || !evaluationRunID(receipt.RunID) {
+		return false
+	}
+	expected := make(map[string][]agentruntime.EvaluationAssertion, len(cases))
+	for _, c := range cases {
+		expected[c.Case.ID] = agentruntime.EvaluationCaseAssertions(c.Case)
+	}
+	for _, c := range receipt.Cases {
+		if !evaluationCaseEvidence(c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) {
+			return false
+		}
+		definitions := expected[c.ID]
+		if len(c.Assertions) != len(definitions) {
+			return false
+		}
+		rows := make(map[string]agentruntime.EvaluationAssertionResult, len(c.Assertions))
+		for _, row := range c.Assertions {
+			if _, dup := rows[row.ID]; dup {
+				return false
+			}
+			rows[row.ID] = row
+		}
+		for _, definition := range definitions {
+			row, ok := rows[definition.ID]
+			if !ok || row.Type != definition.Type || row.DefinitionDigest != agentruntime.EvaluationAssertionDigest(definition) || row.Verdict != agentruntime.EvaluationPass {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func evaluateBundleLiftGate(bundle, name, digest string, destination bundleGateTarget, sourceContext string) (required bool, condition string) {
