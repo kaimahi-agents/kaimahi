@@ -20,6 +20,7 @@ import (
 	"github.com/aramase/agentsessions/eventlog"
 	"github.com/aramase/agentsessions/harness/chatagent"
 	"github.com/aramase/agentsessions/wire"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"google.golang.org/grpc"
 )
 
@@ -88,6 +89,151 @@ func saveVerifyInput(t *testing.T, path string, r sessionsEvaluationReceipt) {
 }
 
 // Catch accepting an unacknowledged destination, including DNS aliases, before any RPC.
+func TestVerifySessionsV2AssertionValidation(t *testing.T) {
+	for _, mode := range []string{"valid", "version", "runID", "caseDigest", "inputDigest", "no rows", "duplicate rows", "row digest", "row id", "row type", "row verdict", "row reason", "unknown row", "tool pass", "case coherence", "overall coherence", "legacy with rows", "failed execution mixed rows"} {
+		t.Run(mode, func(t *testing.T) {
+			a, o, r, s := verifyAppFixture(t)
+			r.SchemaVersion = 2
+			r.RunID = strings.Repeat("a", 32)
+			c := &r.Cases[0]
+			c.CaseDigest = strings.Repeat("c", 64)
+			c.InputDigest = strings.Repeat("d", 64)
+			c.Assertions = []agentruntime.EvaluationAssertionResult{{ID: "check", Type: "contains", DefinitionDigest: strings.Repeat("e", 64), Verdict: agentruntime.EvaluationPass, Reason: "assertion satisfied"}}
+			row := &c.Assertions[0]
+			switch mode {
+			case "version":
+				r.SchemaVersion = 3
+			case "runID":
+				r.RunID = "../canary"
+			case "caseDigest":
+				c.CaseDigest = "bad"
+			case "inputDigest":
+				c.InputDigest = "bad"
+			case "no rows":
+				c.Assertions = nil
+			case "duplicate rows":
+				c.Assertions = append(c.Assertions, *row)
+			case "row digest":
+				row.DefinitionDigest = "bad"
+			case "row id":
+				row.ID = "private\ncanary"
+			case "row type":
+				row.Type = "llmJudge"
+			case "row verdict":
+				row.Verdict = "invented"
+			case "row reason":
+				row.Reason = "private-reason-canary"
+			case "unknown row":
+				row.Verdict = agentruntime.EvaluationUnknown
+				row.Reason = "answer unavailable"
+			case "tool pass":
+				row.Type = "toolNotCalled"
+			case "case coherence":
+				row.Verdict = agentruntime.EvaluationFail
+				row.Reason = "assertion not satisfied"
+			case "overall coherence":
+				r.Result = "fail"
+			case "legacy with rows":
+				r.SchemaVersion = 0
+				r.RunID = ""
+			case "failed execution mixed rows":
+				r.Result = "fail"
+				c.Verdict = "fail"
+				c.Detail = evaluationExecutionFailed
+				c.Assertions = append(c.Assertions, agentruntime.EvaluationAssertionResult{ID: "unavailable", Type: "contains", DefinitionDigest: strings.Repeat("f", 64), Verdict: agentruntime.EvaluationUnknown, Reason: "answer unavailable"})
+			}
+			saveVerifyInput(t, o.ReceiptPath, r)
+			err := a.VerifyAgentSessions(o)
+			if mode == "valid" {
+				if err != nil || s.reads.Load() != 1 {
+					t.Fatalf("valid v2 rejected: %v reads=%d", err, s.reads.Load())
+				}
+			} else if err == nil || s.reads.Load() != 0 || strings.Contains(err.Error(), "canary") {
+				t.Fatalf("invalid v2 allowed/leaked: %v reads=%d", err, s.reads.Load())
+			}
+		})
+	}
+}
+
+func TestVerifySessionsRejectsNullAndMixedLegacyShapesBeforeRPC(t *testing.T) {
+	for _, tc := range []struct {
+		name, root, member string
+		valid              bool
+	}{
+		{name: "omitted legacy fields", valid: true},
+		{name: "null version", root: `"schemaVersion":null,`},
+		{name: "null run id", root: `"runID":null,`},
+		{name: "null discriminants", root: `"schemaVersion":null,"runID":null,`},
+		{name: "legacy empty case digest", member: `"caseDigest":"",`},
+		{name: "legacy null case digest", member: `"caseDigest":null,`},
+		{name: "legacy empty input digest", member: `"inputDigest":"",`},
+		{name: "legacy empty assertions", member: `"assertions":[],`},
+		{name: "legacy null assertions", member: `"assertions":null,`},
+		{name: "legacy null model mixed", member: `"modelMixed":null,`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, o, _, s := verifyAppFixture(t)
+			raw, err := os.ReadFile(o.ReceiptPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := strings.Replace(string(raw), `"id":"one"`, tc.member+`"id":"one"`, 1)
+			body = "{" + tc.root + body[1:]
+			if err := os.WriteFile(o.ReceiptPath, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			err = a.VerifyAgentSessions(o)
+			if tc.valid {
+				if err != nil || s.reads.Load() != 1 {
+					t.Fatalf("legacy receipt refused: %v reads=%d", err, s.reads.Load())
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "invalid sessions receipt") || s.reads.Load() != 0 {
+				t.Fatalf("malformed receipt: %v reads=%d", err, s.reads.Load())
+			}
+		})
+	}
+}
+
+func TestV2ReceiptShapeRejectsMalformedCasesBeforeRPCAndGate(t *testing.T) {
+	for _, member := range []string{`"cases":[null]`, `"cases":{}`, `"cases":[{"assertions":null}]`, `"cases":[{"assertions":{}}]`, `"unknown":true`} {
+		t.Run(member, func(t *testing.T) {
+			a, o, r, s := verifyAppFixture(t)
+			r.SchemaVersion, r.RunID = 2, strings.Repeat("a", 32)
+			saveVerifyInput(t, o.ReceiptPath, r)
+			raw, err := os.ReadFile(o.ReceiptPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var root map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &root); err != nil {
+				t.Fatal(err)
+			}
+			var patch map[string]json.RawMessage
+			if err := json.Unmarshal([]byte("{"+member+"}"), &patch); err != nil {
+				t.Fatal(err)
+			}
+			for key, value := range patch {
+				root[key] = value
+			}
+			raw, err = json.Marshal(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(o.ReceiptPath, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.VerifyAgentSessions(o); err == nil || !strings.Contains(err.Error(), "invalid sessions receipt") || s.reads.Load() != 0 {
+				t.Fatalf("malformed receipt: %v reads=%d", err, s.reads.Load())
+			}
+			if _, err := readBundleGateEvidence(filepath.Dir(filepath.Dir(o.ReceiptPath))); err == nil || !strings.Contains(err.Error(), "invalid evaluation receipt") {
+				t.Fatalf("gate accepted malformed receipt: %v", err)
+			}
+		})
+	}
+}
+
 func TestVerifySessionsPreflightNeverConnects(t *testing.T) {
 	for _, tc := range []struct {
 		name, want string

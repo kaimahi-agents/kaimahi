@@ -277,9 +277,9 @@ func TestEvaluateMissingExpectationFailsAndExitsNonZero(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "did not pass") {
 		t.Fatalf("failing evaluation returned %v", err)
 	}
-	receipt, _ := f.receipt(t)
+	receipt, raw := f.receipt(t)
 	c := receipt.Cases[0]
-	if receipt.Result != "fail" || c.Verdict != "fail" || !slices.Equal(c.Matched, []string{"hello"}) || !slices.Equal(c.Missing, []string{"Signed, Sample"}) {
+	if receipt.Result != "fail" || c.Verdict != "fail" || len(c.Assertions) != 2 || c.Assertions[0].Verdict != agentruntime.EvaluationPass || c.Assertions[1].Verdict != agentruntime.EvaluationFail || len(c.Matched)+len(c.Missing) != 0 || strings.Contains(raw, "Signed, Sample") {
 		t.Fatalf("receipt = %+v", receipt)
 	}
 	if !strings.Contains(f.out.String(), "hello there.") || !strings.Contains(f.out.String(), `missing "Signed, Sample"`) {
@@ -294,7 +294,7 @@ func TestEvaluateFailedTaskIsFail(t *testing.T) {
 		t.Fatal("a failed Task passed the gate")
 	}
 	receipt, _ := f.receipt(t)
-	if receipt.Result != "fail" || receipt.Cases[0].Verdict != "fail" || !strings.Contains(receipt.Cases[0].Detail, "Failed") {
+	if receipt.Result != "fail" || receipt.Cases[0].Verdict != "fail" || receipt.Cases[0].Detail != "evaluation execution failed" {
 		t.Fatalf("receipt = %+v", receipt)
 	}
 	if f.taskCreates(t) != 1 {

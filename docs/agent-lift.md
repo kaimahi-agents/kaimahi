@@ -242,9 +242,12 @@ sharing that label is refused, without contacting that cluster. A context label 
 even when `eval/` has only one case.
 The evaluation destination must already have this same portable revision
 lifted, and its receipt must say `pass` for the current complete `eval/` case
-set and record a passing result for each current case. A changed `agent.yaml`
-or case file requires another evaluation. If the required evaluation identity
-or matching local evidence cannot be established,
+set and record a passing result for each current case. A schema-version-2
+receipt must also contain every current assertion ID and definition digest,
+with every assertion passing. Legacy receipts can satisfy only legacy
+`expectContains`-only cases, never newly authored typed assertions. A changed
+`agent.yaml` or case file requires another evaluation. If the required
+evaluation identity or matching local evidence cannot be established,
 the lift is refused rather than silently ungated.
 
 The gate checks **local receipts only**. It does not contact the evaluation
@@ -385,10 +388,67 @@ expectContains:
   - "— the release agent"
 ```
 
-Decoding is strict: `id`, `input` and a non-empty `expectContains` list are
-required, unknown fields are refused, and each file holds exactly one YAML
-mapping with a unique `id`. Cases test a revision; they do not define it, so
-they are **not** part of the portable digest. `kmx agent create` scaffolds one
+Existing `expectContains` cases remain valid. A case requires `id`, nonblank
+`input`, and at least one legacy expectation or typed assertion; both forms
+can be combined. Each file holds exactly one YAML mapping, with a case ID
+unique across the set. Case and explicit assertion IDs use 1–63 letters,
+digits, `.`, `_` or `-`, starting with a letter or digit. Explicit assertion
+IDs must be unique within their case. The `expectContains.*` namespace is
+reserved: legacy entries become `contains` assertions named
+`expectContains.0`, `expectContains.1`, and so on, including repeated strings.
+
+A text-only typed case can replace or extend those expectations:
+
+```yaml
+id: sign-off
+input: Summarize today's plan in one sentence and sign off.
+assertions:
+  - id: signature
+    type: contains
+    value: "— the release agent"
+  - id: no-placeholder
+    type: notContains
+    value: TODO
+  - id: signed-ending
+    type: regex
+    pattern: '— the release agent[.!]?$'
+```
+
+The accepted types and **only** operand field for each are:
+
+| Type | Operand | Meaning with available evidence |
+|---|---|---|
+| `contains` | `value` | Exact, case-sensitive substring occurs in the answer. |
+| `notContains` | `value` | Exact, case-sensitive substring does not occur in the answer. |
+| `regex` | `pattern` | Go RE2 pattern matches the answer; anchor it for a whole-answer test. |
+| `toolCalled` | `tool` | Reserved for supported, complete invocation evidence; currently always `unknown`. |
+| `toolNotCalled` | `tool` | Same evidence requirement, including for absence; currently always `unknown`. |
+
+Tool assertion syntax is accepted, but this case cannot pass on either current
+production evaluation path:
+
+```yaml
+id: inventory-policy
+input: Summarize the supplied inventory.
+assertions:
+  - id: inventory-invoked
+    type: toolCalled
+    tool: inventory
+  - id: no-delete
+    type: toolNotCalled
+    tool: delete-resources
+```
+
+Assertion fields must be strings. `value` and `tool` must be nonblank and
+single-line; `pattern` must be nonblank, valid Go RE2 and at most **1,024
+UTF-8 bytes**, compiled during preflight. Lookaround and backreferences are
+not supported. Unknown fields/types, wrong operand fields (even empty/null),
+duplicate keys, aliases and merge keys are refused. Source and decoded values
+are scanned for credential shapes. `llmJudge` and `llm_judge` are refused:
+there is no judge or fallback to the agent model.
+
+Cases test a revision; they do not define it, so they are **not** part of the
+portable digest. `kmx agent create` scaffolds one
 trivial `eval/example.yaml` in a new bundle, and a create rerun accepts any
 `eval/` directory without touching its cases.
 
@@ -409,23 +469,57 @@ cleaned up.
 
 | Verdict | Meaning |
 |---|---|
-| `pass` | The Task succeeded and its answer contains every `expectContains` string (exact, case-sensitive). |
-| `fail` | The Task ended `Failed` or `Cancelled`, or the answer lacks an expected string. |
-| `unknown` | The outcome could not be observed: the result was unreadable, the case timed out, the create was ambiguous, the case was refused before a Task was created, or the Agent's revision changed while it ran. |
+| `pass` | The Task succeeded, its answer is available and every assertion passed. |
+| `fail` | The Task ended `Failed` or `Cancelled`, or at least one assertion failed on available evidence. |
+| `unknown` | Execution or answer evidence is unavailable, or an assertion cannot be established (including either tool assertion type). |
 
-Every answer is printed to the terminal. The receipt,
-`<bundle-dir>/receipts/eval-<target>.json` (the same per-context, namespace
-and cluster key as the lift receipt), records the portable digest, a digest of
-the case files that ran, the Git provenance, the target (including its
-cluster UID) and live Agent UID,
-and per case the id, verdict, matched and missing expectations, Task name and
-UID, and a SHA-256 of the answer. It also marks whether the whole case set ran
-without `--case`. **It never contains answer text**, but it is
-forgeable local evidence, **not intended to be committed**. Store it in the
-same local workspace used by a gated lift; a teammate or CI job without the
-receipt must evaluate independently. `--case` runs one case; its receipt
-covers only that case's file, so status does not count it as the bundle's
-case set.
+Known execution failure remains `fail`; otherwise unavailable execution remains
+`unknown`. For observed successful execution, an assertion failure takes
+precedence over unknown assertions, and all assertions must pass for a case to
+pass. Missing evidence never proves a negative assertion. The shared Orka
+result reader is unchanged: blank/missing answers remain unavailable, and
+unprintable answers are refused, not treated as known empty answers. Timeout,
+ambiguous creation, pre-Task refusal or a changed Agent revision also remains
+unknown. Cases are never rerun to resolve missing evidence.
+
+**Neither production path supports tool assertion verdicts.** Sessions selects
+tool-disabled chat; Orka supplies no structured tool-invocation evidence.
+Both declare tools unsupported to the evaluator, so `toolCalled` and
+`toolNotCalled` are **always `unknown`**, with reason
+`runtime does not support tools`. This holds even when a sessions journal is
+present, empty, or contains a correlated call/result pair. An Orka Agent can
+execute its configured tools, but that does not make their invocation observable
+as supported assertion evidence. These assertions do not enable tools.
+
+Readable answers are printed to the terminal. Both evaluation paths write
+`schemaVersion: 2` receipts with a random 128-bit `runID`. Each produced run
+is archived once at
+`<bundle-dir>/receipts/runs/eval-<runID>.json`, without overwriting an existing
+run. Then the existing latest filename is updated: for Orka,
+`receipts/eval-<target>.json` retains its per-context, namespace and cluster key;
+sessions keeps its endpoint/chat key. Both paths are printed. Directories are
+private (0700), files are regular mode-0600 files, and linked receipt paths
+are refused. A persistence failure returns an error; if updating latest fails,
+the completed archive remains available.
+
+The receipt records the portable and case-set digests, Git provenance,
+full-case-set marker, target identity (Orka cluster UID, namespace, live Agent
+name/UID and model), and per-case ID, verdict, `caseDigest`, `inputDigest`,
+Task name/UID and answer SHA-256 where observed. Each assertion row contains
+only `id`, `type`, `definitionDigest`, `verdict` and a fixed `reason`.
+`caseDigest` hashes the case file's exact bytes; `inputDigest` hashes the
+exact decoded input bytes; `definitionDigest` hashes the assertion type and
+authored operand, independently of its ID. New receipts omit the legacy
+matched/missing expectation strings. **No answer, input, needle, pattern, tool
+operand, tool arguments/results or model reasoning is persisted in receipts.**
+
+Receipts remain forgeable local evidence, **not intended to be committed**.
+Store latest evidence in the same local workspace used by a gated lift;
+a teammate or CI job without it must evaluate independently. Archive history
+is outside the root `eval-*` namespace and never selects or satisfies a lift
+gate or status result instead of latest. `--case` runs one case; its receipt
+covers only that case's file and has `fullCaseSet: false`, so it cannot satisfy
+a full-case gate, even when the bundle has only one case.
 
 Evaluate is a gate: it exits non-zero unless every case passed, including when
 any case is `unknown`.
@@ -455,8 +549,10 @@ as `system_prompt`. Cases never share history or retry a mutation. The model
 comes from the host, not creation bindings or session metadata. kmx observes
 model-call records and refuses to pass a missing, mixed, or different model;
 it does not switch models or infer equivalent aliases. `pass` requires a
-completed execution and all exact, case-sensitive `expectContains` strings;
-a missing expectation is `fail`, while an unproven execution is `unknown`.
+completed execution and every legacy/typed assertion to pass, using the
+[same assertion rules](#evaluating-a-deployed-revision) as Orka. An assertion
+failure is `fail`, while unproven execution or unavailable assertion evidence
+is `unknown`.
 The returned journal must record the exact invocation config and input before
 its effects. Committed answer text is limited to 1 MiB in total; an oversized
 answer is `unknown` and has no output digest. Any non-passing case makes the
@@ -486,13 +582,29 @@ its singular model identity, even if a later stream error masks the mismatch.
 Identity versioning leaves room for future descriptor discovery. Prompts,
 answers, expectation strings, tool payloads and arbitrary server errors stay
 out of this receipt; conversation content remains in the host's journal.
-New receipt directories are mode 0700 and receipt files are mode 0600. Each
-endpoint/chat selection replaces its prior receipt; model changes therefore
-cannot leave an old passing receipt at that same filename. Keep receipts local,
-not in Git, and protect the journal separately.
+Schema-version-2 receipts add the same run ID, per-case input/source digests
+and payload-free assertion rows as Orka. Every run has an immutable private
+archive under `receipts/runs/`; each endpoint/chat selection still replaces
+its **latest** receipt, so model changes cannot leave an old passing receipt
+at that filename. Keep receipts local, not in Git, and protect the journal
+separately.
+
+The journal reader projects candidate invocation names/counts **in memory
+only**, correlating controller-mediated `TOOL_CALL` records with subsequent
+matching `TOOL_RESULT` records in the same validated invocation. Error results
+count a logical invocation, not tool success. Proposals in model output,
+orphan results, unresolved calls, malformed metadata or another execution do
+not establish complete evidence. The projection uses bounds of **20,000
+records, 64 MiB and 256 pending calls**; overflow discards it as unavailable.
+Only a complete validated invocation can publish a complete projection.
+This boundary is not host attestation or tool capability: the production
+assertion evaluator still treats **both** tool assertion types as unknown,
+regardless of the projected counts.
 
 Sessions receipts do **not** satisfy lift-policy or status gates, including
-when replay verification succeeds. Orka receipt and gate behavior is unchanged.
+when replay verification succeeds. Only matching Orka latest receipts can do
+so; v2 evidence must match the current assertion IDs/definitions as well as
+the existing revision, case-set and target checks.
 
 ### Verifying a sessions receipt
 
@@ -532,10 +644,13 @@ implementation/version stays unknown until
 provenance. The locally trusted receipt anchors integrity; replacing both it
 and the journal is outside this guarantee.
 
-Existing version-1 sessions receipts need no migration. Each case must have a
-completed `pass` or `fail` evaluation verdict and full session/head/model/answer
-evidence; `unknown` outcomes are refused. A failed expectation can replay
-equivalently without becoming a passing evaluation. Receipts are limited to
+Existing legacy sessions receipts (without `schemaVersion`/`runID`, with
+version-1 `target.identity`) need no migration where their evidence remains
+valid. Verification also accepts typed schema-version-2 receipts, strictly
+validating their assertion rows and case/aggregate verdict coherence. Each
+case must have a completed `pass` or `fail` evaluation verdict and full
+session/head/model/answer evidence; `unknown` outcomes are refused. A failed
+assertion can replay equivalently without becoming a passing evaluation. Receipts are limited to
 1 MiB and 1,000 cases; journal prefixes to 20,000 records and 64 MiB, with the
 same 1 MiB committed-answer bound as evaluation. Conversation content stays in
 memory during verification and is never printed or written into the report.
@@ -552,15 +667,62 @@ Every invocation recomputes the
 proof, replacing any prior report. Only `equivalent` for every case exits zero;
 `mismatch`, `unsupported` and `unknown` never count as passing evidence.
 
+## Comparing saved evaluations offline
+
+```console
+kmx agent eval diff <before.json> <after.json>
+```
+
+Pass explicit latest receipts or immutable run files from either supported
+receipt family. This command reads only those local files: no kubeconfig or
+runtime configuration, network request, model call or case rerun. Inputs must
+be regular, non-linked files, at most 1 MiB each. Unknown or duplicate JSON
+members (including case-folded spellings), malformed identities/digests,
+duplicate case/assertion IDs and incoherent versions/results are refused.
+
+Both receipts must be v2 full-case runs with compatible runtime identity.
+Sessions compares syntactically normalized address, returned harness and
+journal-observed model, without DNS/alias equivalence. Orka compares cluster
+UID, namespace, Agent name/UID and model. Missing or mixed identity is
+incompatible, never inferred. **Different portable digests or Git commits
+are allowed**: before/after revision identities are displayed for the operator.
+Legacy receipts are recognized but incompatible for assertion-level comparison;
+no assertion outcomes are synthesized from old aggregate verdicts.
+
+Cases align by case ID. Assertions align by explicit or legacy assertion ID
+and definition digest, and verdicts are compared only on identical input
+digests and unchanged definitions. The report distinguishes added/removed
+cases and assertions, changed definitions, changed inputs and changed case
+source. An exact-byte case-set change is reported even for comments or
+filenames alone. For unchanged definitions and inputs:
+
+| Transition | Report status |
+|---|---|
+| `pass` → `fail` | `regression` |
+| `fail` → `pass` | `fix` |
+| `pass`/`fail` → `unknown` | `lostEvidence` |
+| `unknown` → `pass`/`fail` | `gainedEvidence`, not a fix or regression |
+| `unknown` → `unknown` | `unknown` |
+| Unchanged known verdict | `stable` |
+
+Output contains only safe identities, types, fixed statuses and digests,
+never inputs, answers, assertion operands or journal payloads. Invalid or
+incompatible inputs, regressions, changed case/assertion sets, changed
+inputs/definitions/source, lost evidence and remaining unknowns exit nonzero.
+Evidence gains are also reported as an incomplete comparison, not a
+known-to-known comparison. A complete stable comparison or fixes can exit zero **even if both
+evaluations failed**; zero is not an evaluation-pass claim.
+
 ## Run evals in CI
 
 Use the [KMX eval action](../.github/actions/kmx-eval/action.yml) to run a
 bundle's complete case set, fail the job unless every case passes, and optionally
 replay-check the receipt. **Sessions evals currently refuse tools and
 coordination**, as well as skills, rate limits and Kagent-specific behavior.
-Agents that use tools or coordination need the
-[Orka evaluation path](#evaluating-a-deployed-revision) for now; this action does
-not deploy Orka or make sessions receipts satisfy a lift gate.
+Agents whose portable behavior uses tools or coordination need the
+[Orka evaluation path](#evaluating-a-deployed-revision) for execution, but
+**neither path can pass tool assertions**. This action does not enable tools,
+deploy Orka or make sessions receipts satisfy a lift gate.
 
 Run on Linux with Git, Python 3, curl and Go 1.26 or newer. AIKit mode also
 needs Docker. Check out the commit you want to test; the agent and the
@@ -806,8 +968,10 @@ create/replace. If that permission is unavailable, the comparison is
 Each target also reports its evaluation (`EVAL` in the table, `evaluation` in
 JSON): the recorded `pass`, `fail` or `unknown` result when an evaluation
 receipt exists for that cluster, the live Agent's UID, the bundle's current
-portable digest and the current `eval/` case set; otherwise `none`. A target
-that is behind, or whose cases changed since the last evaluation, shows
+portable digest and the current `eval/` case set; otherwise `none`. A v2
+displayed pass additionally requires every current assertion ID and definition
+digest to match and all assertions to pass. Only latest receipts are
+considered, not immutable run archives. A target that is behind, or whose cases changed since the last evaluation, shows
 `none`. Status also shows `GATE` (`gate` in JSON) for each target: `pass`,
 `not required`, `refused: <condition>`, or `unknown` when the destination
 cluster identity cannot be observed. Gate status checks the local policy and

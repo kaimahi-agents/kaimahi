@@ -1,6 +1,7 @@
 package agentsessions
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/aramase/agentsessions/api"
@@ -101,9 +102,9 @@ func TestRunCaseMixedModelEvidenceIsSticky(t *testing.T) {
 			got, err := run(t, s)
 			assertSafeError(t, err, wantCode)
 			last := s.updates[len(s.updates)-1].GetRecord()
-			// Whole-value comparison also keeps CaseResult's comparable contract.
+			// Compare the whole result, including unavailable tool evidence.
 			want := CaseResult{SessionUID: "session-1", Harness: "chat", ModelMixed: true, Head: JournalHead{Seq: last.Seq, Hash: last.ContentHash}, Output: "answer"}
-			if got != want {
+			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("mixed evidence = %#v; want %#v", got, want)
 			}
 		})

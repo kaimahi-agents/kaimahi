@@ -59,6 +59,8 @@ const (
 // receipts/eval-<target>.json. It never holds answer text: only its SHA-256
 // is recorded. Receipts remain local and are not intended to be committed.
 type bundleEvaluationReceipt struct {
+	SchemaVersion  int                      `json:"schemaVersion,omitempty"`
+	RunID          string                   `json:"runID,omitempty"`
 	Bundle         string                   `json:"bundle"`
 	PortableDigest string                   `json:"portableDigest"`
 	CasesDigest    string                   `json:"casesDigest"`
@@ -76,23 +78,28 @@ type bundleEvaluationTarget struct {
 	ClusterUID string          `json:"clusterUID"`
 	Agent      string          `json:"agent"`
 	AgentUID   string          `json:"agentUID"`
+	Model      string          `json:"model,omitempty"`
 }
 
 type bundleEvaluationResult struct {
-	ID           string   `json:"id"`
-	Verdict      string   `json:"verdict"`
-	Matched      []string `json:"matched"`
-	Missing      []string `json:"missing"`
-	TaskName     string   `json:"taskName,omitempty"`
-	TaskUID      string   `json:"taskUID,omitempty"`
-	AnswerSHA256 string   `json:"answerSHA256,omitempty"`
-	Detail       string   `json:"detail,omitempty"`
+	ID           string                                   `json:"id"`
+	Verdict      string                                   `json:"verdict"`
+	Matched      []string                                 `json:"matched,omitempty"`
+	Missing      []string                                 `json:"missing,omitempty"`
+	CaseDigest   string                                   `json:"caseDigest,omitempty"`
+	InputDigest  string                                   `json:"inputDigest,omitempty"`
+	Assertions   []agentruntime.EvaluationAssertionResult `json:"assertions,omitempty"`
+	TaskName     string                                   `json:"taskName,omitempty"`
+	TaskUID      string                                   `json:"taskUID,omitempty"`
+	AnswerSHA256 string                                   `json:"answerSHA256,omitempty"`
+	Detail       string                                   `json:"detail,omitempty"`
 }
 
 // bundleEvaluationCase is one decoded case and the file it came from.
 type bundleEvaluationCase struct {
-	File string
-	Case agentruntime.EvaluationCase
+	File   string
+	Digest string
+	Case   agentruntime.EvaluationCase
 }
 
 // EvaluateAgentBundle runs the bundle's cases against its deployed revision,
@@ -133,10 +140,14 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 	if err != nil {
 		return fmt.Errorf("resolve bundle: %w", err)
 	}
-	name, _, portableDigest, err := readBundlePortableAgent(bundle)
+	portable, _, portableDigest, err := readBundlePortableDocument(bundle)
 	if err != nil {
 		return err
 	}
+	if portable.Extensions.Kagent != nil {
+		return fmt.Errorf("runtime %s bundle is not supported by this Orka-only command", agentruntime.Kagent)
+	}
+	name := portable.Metadata.Name
 	if err := checkLiftReceiptsDir(bundle); err != nil {
 		return err
 	}
@@ -205,25 +216,33 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 	worker.notef("Each case creates one Task (never retried) and reads its result as %s, which uses that ServiceAccount's full effective authority.", orkaResultAccount)
 
 	adapter := orkaRuntimeAdapter{app: &worker, resultPort: opt.ResultPort}
+	runID, err := randomHex(16)
+	if err != nil {
+		return err
+	}
 	receipt := bundleEvaluationReceipt{
+		SchemaVersion: 2, RunID: runID,
 		Bundle: name, PortableDigest: portableDigest, CasesDigest: casesDigest, FullCaseSet: opt.Case == "",
 		GitCommit: liftAgentCommit(ctx, bundle, portableDigest),
-		Target:    bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: contextName, Namespace: namespace, ClusterUID: uid, Agent: name, AgentUID: ref.UID},
+		Target:    bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: contextName, Namespace: namespace, ClusterUID: uid, Agent: name, AgentUID: ref.UID, Model: portable.Spec.Model.Name},
 	}
 	ui := cliui.New(a.Out)
-	for _, c := range cases {
+	for i, c := range cases {
 		fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("case "+c.Case.ID))
 		caseCtx, cancel := worker.waitContext(ctx, "orka-evaluation-case", timeout)
 		result, err := adapter.Evaluate(caseCtx, ref, agentruntime.EvaluationRequest{
-			CaseID: c.Case.ID, Input: c.Case.Input, ExpectContains: c.Case.ExpectContains, PortableDigest: portableDigest,
+			CaseID: c.Case.ID, Input: c.Case.Input, ExpectContains: c.Case.ExpectContains, Assertions: c.Case.Assertions, PortableDigest: portableDigest,
 		})
 		cancel()
 		if err != nil {
 			// Refused before any Task was created: nothing ran, so nothing
 			// passed or failed.
-			result = agentruntime.EvaluationReceipt{CaseID: c.Case.ID, Verdict: agentruntime.EvaluationUnknown, Detail: "not run: " + err.Error()}
+			result = agentruntime.EvaluationReceipt{CaseID: c.Case.ID, Verdict: agentruntime.EvaluationUnknown, Detail: evaluationExecutionUnavailable, Assertions: agentruntime.EvaluateAssertions(c.Case, agentruntime.EvaluationEvidence{ToolSupported: false})}
 		}
-		receipt.Cases = append(receipt.Cases, bundleEvaluationResultFrom(result))
+		entry := bundleEvaluationResultFrom(result)
+		entry.CaseDigest = agentruntime.EvaluationCaseDigest(files[i].Bytes)
+		entry.InputDigest = agentruntime.EvaluationInputDigest(c.Case.Input)
+		receipt.Cases = append(receipt.Cases, entry)
 		fmt.Fprintln(a.Out, bundleEvaluationVerdictLine(result))
 	}
 	receipt.Result = bundleEvaluationOverall(receipt.Cases)
@@ -235,7 +254,7 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 		counts[c.Verdict]++
 	}
 	summary := fmt.Sprintf("%d passed, %d failed, %d unknown", counts["pass"], counts["fail"], counts["unknown"])
-	fmt.Fprintf(a.Out, "\nevaluation %s: %s (portable digest %s)\n", receipt.Result, summary, shortSHA(portableDigest))
+	fmt.Fprintf(a.Out, "\nevaluation %s: %s (portable digest %s)\nhistory: %s\nreceipt: %s\n", receipt.Result, summary, shortSHA(portableDigest), evaluationHistoryPath(bundle, receipt.RunID), bundleEvaluationReceiptPath(bundle, contextName, namespace, uid))
 	if receipt.Result != string(agentruntime.EvaluationPass) {
 		return fmt.Errorf("evaluation did not pass: %s", summary)
 	}
@@ -401,7 +420,7 @@ func loadBundleEvaluationCases(bundle string) ([]bundleEvaluationCase, []agentru
 			return nil, nil, fmt.Errorf("%s/%s repeats case id %q from %s", agentruntime.EvaluationCaseDir, entry.Name(), c.ID, previous)
 		}
 		seen[c.ID] = entry.Name()
-		cases = append(cases, bundleEvaluationCase{File: entry.Name(), Case: c})
+		cases = append(cases, bundleEvaluationCase{File: entry.Name(), Digest: agentruntime.EvaluationCaseDigest(raw), Case: c})
 		files = append(files, agentruntime.EvaluationCaseFile{Name: entry.Name(), Bytes: raw})
 	}
 	if len(cases) == 0 {
@@ -413,16 +432,9 @@ func loadBundleEvaluationCases(bundle string) ([]bundleEvaluationCase, []agentru
 func bundleEvaluationResultFrom(result agentruntime.EvaluationReceipt) bundleEvaluationResult {
 	return bundleEvaluationResult{
 		ID: result.CaseID, Verdict: string(result.Verdict),
-		Matched: nonNilStrings(result.Matched), Missing: nonNilStrings(result.Missing),
-		TaskName: result.TaskName, TaskUID: result.TaskUID, AnswerSHA256: result.AnswerSHA256, Detail: result.Detail,
+		Assertions: result.Assertions,
+		TaskName:   result.TaskName, TaskUID: result.TaskUID, AnswerSHA256: result.AnswerSHA256, Detail: result.Detail,
 	}
-}
-
-func nonNilStrings(values []string) []string {
-	if values == nil {
-		return []string{}
-	}
-	return values
 }
 
 func bundleEvaluationVerdictLine(result agentruntime.EvaluationReceipt) string {
@@ -471,6 +483,16 @@ func bundleEvaluationReceiptPath(bundle, context, namespace, clusterUID string) 
 }
 
 func writeBundleEvaluationReceipt(bundle, clusterUID string, receipt bundleEvaluationReceipt) error {
+	if receipt.SchemaVersion == 2 {
+		if !evaluationReceiptVersion(receipt.SchemaVersion, receipt.RunID) || len(receipt.Cases) == 0 || bundleEvaluationOverall(receipt.Cases) != receipt.Result {
+			return fmt.Errorf("invalid evaluation receipt evidence")
+		}
+		for _, c := range receipt.Cases {
+			if !evaluationCaseEvidence(c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) {
+				return fmt.Errorf("invalid evaluation receipt case evidence")
+			}
+		}
+	}
 	dir := filepath.Join(bundle, "receipts")
 	if err := os.Mkdir(dir, 0700); err != nil && !os.IsExist(err) {
 		return err
@@ -481,12 +503,17 @@ func writeBundleEvaluationReceipt(bundle, clusterUID string, receipt bundleEvalu
 	if receipt.Target.ClusterUID != clusterUID {
 		return fmt.Errorf("evaluation receipt target cluster UID does not match its file identity")
 	}
+	// Old fields remain readable, but authored operands never leave a new writer.
+	receipt.Cases = append([]bundleEvaluationResult(nil), receipt.Cases...)
+	for i := range receipt.Cases {
+		receipt.Cases[i].Matched, receipt.Cases[i].Missing = nil, nil
+	}
 	raw, err := json.MarshalIndent(receipt, "", "  ")
 	if err != nil {
 		return err
 	}
 	path := bundleEvaluationReceiptPath(bundle, receipt.Target.Context, receipt.Target.Namespace, clusterUID)
-	return writePrivateAgentFile(path, append(raw, '\n'))
+	return writeEvaluationRunAndLatest(bundle, receipt.SchemaVersion, receipt.RunID, path, append(raw, '\n'))
 }
 
 // bundleEvaluationStatus is what `kmx agent status` reports about one
@@ -511,7 +538,7 @@ func bundleEvaluationStatus(bundle string, target bundleTargetStatus, portableDi
 		}
 		if receipt.Result == string(agentruntime.EvaluationPass) {
 			cases, _, err := loadBundleEvaluationCases(bundle)
-			if err != nil || !bundleCaseResultsPass(receipt.Cases, cases) {
+			if err != nil || !bundleReceiptCaseResultsPass(receipt, cases) {
 				return none
 			}
 		} else if receipt.Result != string(agentruntime.EvaluationFail) && receipt.Result != string(agentruntime.EvaluationUnknown) {

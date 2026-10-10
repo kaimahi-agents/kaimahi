@@ -10,12 +10,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
 	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
@@ -160,13 +162,31 @@ func readSessionsVerificationSource(path string) (sessionsEvaluationReceipt, []b
 	if !verificationDigest(receipt.PortableDigest) || !verificationDigest(receipt.CasesDigest) || !verificationIdentity(receipt.Bundle) || len(receipt.Cases) == 0 || len(receipt.Cases) > 1000 || receipt.Result != "pass" && receipt.Result != "fail" {
 		return receipt, nil, fmt.Errorf("invalid sessions receipt evidence")
 	}
+	if !evaluationReceiptVersion(receipt.SchemaVersion, receipt.RunID) {
+		return receipt, nil, fmt.Errorf("invalid sessions receipt version")
+	}
+	if !evaluationReceiptJSONShape(raw, receipt.SchemaVersion, receipt.RunID, false) {
+		return receipt, nil, fmt.Errorf("invalid sessions receipt JSON shape")
+	}
 	seen := map[string]bool{}
 	sessions := map[string]bool{}
+	var outcomes []bundleEvaluationResult
 	for _, c := range receipt.Cases {
 		if !verificationIdentity(c.ID) || !verificationIdentity(c.SessionUID) || !verificationIdentity(c.Harness) || !verificationIdentity(c.Model) || c.ModelMixed || c.Verdict != "pass" && c.Verdict != "fail" || c.JournalHead.Seq < 1 || !verificationDigest(c.JournalHead.Hash) || !verificationDigest(c.AnswerSHA256) || seen[c.ID] || sessions[c.SessionUID] {
 			return receipt, nil, fmt.Errorf("invalid sessions receipt case evidence")
 		}
+		if receipt.SchemaVersion == 2 {
+			if !evaluationCaseEvidence(c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) {
+				return receipt, nil, fmt.Errorf("invalid sessions receipt assertion evidence")
+			}
+		} else if c.CaseDigest != "" || c.InputDigest != "" || len(c.Assertions) != 0 {
+			return receipt, nil, fmt.Errorf("invalid legacy sessions receipt evidence")
+		}
 		seen[c.ID], sessions[c.SessionUID] = true, true
+		outcomes = append(outcomes, bundleEvaluationResult{Verdict: c.Verdict})
+	}
+	if receipt.SchemaVersion == 2 && bundleEvaluationOverall(outcomes) != receipt.Result {
+		return receipt, nil, fmt.Errorf("incoherent sessions receipt result")
 	}
 	return receipt, raw, nil
 }
@@ -216,6 +236,106 @@ func unambiguousSessionsReceiptJSON(raw []byte) bool {
 	}
 	_, err := decoder.Token()
 	return err == io.EOF
+}
+
+// Check raw members as well as typed values: null scalars must not become zero,
+// and empty v2 members must not disguise a receipt as legacy evidence.
+func evaluationReceiptJSONShape(raw []byte, version int, runID string, legacyOrka bool) bool {
+	if !evaluationReceiptVersion(version, runID) || !evaluationDiffNullJSON(raw, legacyOrka && version == 0) {
+		return false
+	}
+	if version == 2 {
+		return true
+	}
+	var root map[string]json.RawMessage
+	if json.Unmarshal(raw, &root) != nil {
+		return false
+	}
+	for key, value := range root {
+		if !strings.EqualFold(key, "cases") {
+			continue
+		}
+		var cases []map[string]json.RawMessage
+		if json.Unmarshal(value, &cases) != nil {
+			return false
+		}
+		for _, c := range cases {
+			for member := range c {
+				if strings.EqualFold(member, "caseDigest") || strings.EqualFold(member, "inputDigest") || strings.EqualFold(member, "assertions") {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// These payload-free checks are shared with offline v2 receipt consumers.
+func evaluationReceiptVersion(version int, runID string) bool {
+	return version == 0 && runID == "" || version == 2 && evaluationRunID(runID)
+}
+
+var evaluationEvidenceID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
+
+func evaluationAssertionRows(rows []agentruntime.EvaluationAssertionResult) bool {
+	if len(rows) == 0 || len(rows) > agentruntime.EvaluationMaxAssertions {
+		return false
+	}
+	seen := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		if !evaluationEvidenceID.MatchString(row.ID) || !verificationIdentity(row.ID) || seen[row.ID] || !verificationDigest(row.DefinitionDigest) {
+			return false
+		}
+		seen[row.ID] = true
+		switch row.Type {
+		case "toolCalled", "toolNotCalled":
+			if row.Verdict != agentruntime.EvaluationUnknown || row.Reason != "runtime does not support tools" {
+				return false
+			}
+		case "contains", "notContains", "regex":
+			switch row.Verdict {
+			case agentruntime.EvaluationPass:
+				if row.Reason != "assertion satisfied" {
+					return false
+				}
+			case agentruntime.EvaluationFail:
+				if row.Reason != "assertion not satisfied" {
+					return false
+				}
+			case agentruntime.EvaluationUnknown:
+				if row.Reason != "answer unavailable" {
+					return false
+				}
+			default:
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func evaluationCaseEvidence(caseDigest, inputDigest, verdict, detail string, rows []agentruntime.EvaluationAssertionResult) bool {
+	if !verificationDigest(caseDigest) || !verificationDigest(inputDigest) || !evaluationAssertionRows(rows) {
+		return false
+	}
+	if detail != "" && detail != evaluationExecutionUnavailable && detail != evaluationResultUnavailable && detail != evaluationExecutionFailed {
+		return false
+	}
+	if detail != "" {
+		// No assertion can claim known evidence when execution attribution failed.
+		for _, row := range rows {
+			if row.Verdict != agentruntime.EvaluationUnknown {
+				return false
+			}
+		}
+		if detail == evaluationExecutionFailed {
+			return verdict == "fail"
+		}
+		return verdict == "unknown"
+	}
+	return verdict == string(agentruntime.EvaluationAssertionsVerdict(rows))
 }
 
 func verificationDigest(value string) bool {
