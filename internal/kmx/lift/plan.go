@@ -127,10 +127,11 @@ func ValidPayload(payload string) error {
 		return nil
 	case PayloadKagent:
 		return errors.New("kmx aks up: --payload kagent is retired — the legacy kagent runtime has been\n" +
-			"  removed from kmx, and this command no longer installs it or its demo agents.\n" +
+			"  retired as an AKS installer payload; this command no longer installs it or its demo agents.\n" +
 			"  Use --payload orka, which lands Orka on the same provisioned cluster.\n" +
-			"  An existing kagent lift can still be inspected and torn down (`kmx aks down`);\n" +
-			"  what is refused is creating or resuming one.")
+			"  Run kmx targets to see supported operations on separately installed runtimes.\n" +
+			"  An existing kagent AKS provisioning run can still be inspected and torn down (`kmx aks down`);\n" +
+			"  creating or resuming that retired provisioning flow is refused.")
 	case "":
 		return errors.New("kmx lift: --payload is required, and has no default.\n" +
 			"  --payload orka     Orka, the platform this project gets agents onto\n" +

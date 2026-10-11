@@ -63,8 +63,8 @@ func checkChatRuntime(name string) error {
 	case "", "auto", "orka":
 		return nil
 	case "kagent":
-		return fmt.Errorf("--runtime kagent is not supported: that runtime has been removed from kmx.\n" +
-			"  kmx chats with Orka Agents — drop the flag, or say --runtime orka explicitly.")
+		return fmt.Errorf("--runtime kagent is unsupported for chat.\n" +
+			"  Run kmx targets to see supported runtime operations; kmx agent chat is Orka-only.")
 	default:
 		return fmt.Errorf("unknown chat runtime %q; use auto or orka", name)
 	}
