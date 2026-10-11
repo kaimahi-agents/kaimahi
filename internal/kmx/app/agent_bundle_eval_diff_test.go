@@ -86,6 +86,22 @@ func TestEvaluationDiffTransitionsAcrossRevisions(t *testing.T) {
 	}
 }
 
+func TestEvaluationDiffDifferentBundlesAreIncompatible(t *testing.T) {
+	for _, beforeVerdict := range []string{"pass", "fail"} {
+		t.Run(beforeVerdict, func(t *testing.T) {
+			before, after := diffFixture(beforeVerdict), diffFixture("pass")
+			after.Bundle = "another-bundle"
+			out, err := diffExecute(t, before, after)
+			if err == nil || err.Error() != "evaluation comparison is incompatible" || !strings.Contains(out, "comparison incompatible: different bundle") {
+				t.Fatalf("different bundles compared: err=%v output=%s", err, out)
+			}
+			if strings.Contains(out, "\tstable\t") || strings.Contains(out, "\tfix\t") {
+				t.Fatalf("different bundles produced verdict transitions: %s", out)
+			}
+		})
+	}
+}
+
 // Catch changed definitions/inputs being misreported as regressions, and hidden set changes.
 func TestEvaluationDiffSetChanges(t *testing.T) {
 	tests := []struct {

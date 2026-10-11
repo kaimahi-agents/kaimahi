@@ -367,6 +367,8 @@ func normalizeOrkaEvaluation(r bundleEvaluationReceipt) (normalizedEvaluation, b
 func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport {
 	r := evaluationDiffReport{Before: before, After: after, CaseSetChanged: before.CasesDigest != after.CasesDigest}
 	switch {
+	case before.Bundle != after.Bundle:
+		r.IncompatibleReason = "different bundle"
 	case before.Version != 2 || after.Version != 2:
 		r.IncompatibleReason = "legacy receipt has no assertion evidence"
 	case !before.FullCaseSet || !after.FullCaseSet:
