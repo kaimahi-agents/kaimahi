@@ -388,6 +388,7 @@ func TestOrkaInstallFailedReleaseNamesRecoverySteps(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			chart := orkaChart(t)
 			f := newOrkaFixture(t, chart)
+			f.app.Cfg.KubeContext = "team's cluster; staging"
 			f.app.orkaInstallerDigest = digestOf(chart)
 			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"`+state+`"}]`)
 			t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
@@ -395,7 +396,10 @@ func TestOrkaInstallFailedReleaseNamesRecoverySteps(t *testing.T) {
 			if err == nil {
 				t.Fatal("non-deployed release was accepted")
 			}
-			for _, want := range []string{"kmx-owned", state, "helm --kube-context kind-kaimahi-p1", f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "AKS", "snapshot key"} {
+			for _, want := range []string{"kmx-owned", state,
+				`helm --kube-context 'team'"'"'s cluster; staging' -n orka-system status orka`,
+				`helm --kube-context 'team'"'"'s cluster; staging' -n orka-system upgrade orka <verified-orka-0.2.0.tgz> --reuse-values --wait`,
+				f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("missing %q in recovery: %v", want, err)
 				}
@@ -425,6 +429,7 @@ func TestOrkaInstallProvisionsTheResultReaderForDemo(t *testing.T) {
 func TestOrkaInstallUnavailableReleaseValuesRefusesWithSafeRecovery(t *testing.T) {
 	chart := orkaChart(t)
 	f := newOrkaFixture(t, chart)
+	f.app.Cfg.KubeContext = "team's cluster; staging"
 	f.app.orkaInstallerDigest = digestOf(chart)
 	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"pending-install"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES_READ", "failed")
@@ -432,7 +437,7 @@ func TestOrkaInstallUnavailableReleaseValuesRefusesWithSafeRecovery(t *testing.T
 	if err == nil {
 		t.Fatal("unreadable release values accepted")
 	}
-	for _, want := range []string{f.app.operationCommand("local", "down"), "AKS", "helm --kube-context kind-kaimahi-p1"} {
+	for _, want := range []string{f.app.operationCommand("local", "down"), "AKS", `helm --kube-context 'team'"'"'s cluster; staging' -n orka-system status orka`} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("unreadable release lacks %q: %v", want, err)
 		}
@@ -607,13 +612,18 @@ func TestOrkaInstallAppliesChartCRDsBeforeHelm(t *testing.T) {
 func TestOrkaInstallFailedChartNamesSafeDiagnosticsWithoutLeakingOutput(t *testing.T) {
 	chart := orkaChart(t)
 	f := newOrkaFixture(t, chart)
+	f.app.Cfg.KubeContext = "team's cluster; staging"
 	f.app.orkaInstallerDigest = digestOf(chart)
 	t.Setenv("KMX_TEST_HELM_INSTALL", "failed")
 	err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
 	if err == nil {
 		t.Fatal("failed Helm install passed")
 	}
-	for _, want := range []string{"helm --kube-context kind-kaimahi-p1", "kubectl --context kind-kaimahi-p1", "failed release"} {
+	for _, want := range []string{
+		`helm --kube-context 'team'"'"'s cluster; staging' -n orka-system status orka`,
+		`kubectl --context 'team'"'"'s cluster; staging' -n orka-system get pods,events`,
+		"failed release",
+	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing diagnostic %q: %v", want, err)
 		}
@@ -1127,6 +1137,7 @@ func TestOrkaReadyRefusesARolloutThatNeverLanded(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newOrkaFixture(t, nil)
+			f.app.Cfg.KubeContext = "team's cluster; staging"
 			t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t,
 				orkaDeploy(orkaController, tc.edit), orkaDeploy(orkaWrapper, nil)))
 
@@ -1139,6 +1150,20 @@ func TestOrkaReadyRefusesARolloutThatNeverLanded(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), orkaController) {
 				t.Errorf("the refusal does not name the deployment: %v", err)
+			}
+			var recovery []string
+			if tc.want == "nothing is running to verify" {
+				recovery = []string{`kmx --context 'team'"'"'s cluster; staging' orka install`}
+			} else {
+				recovery = []string{`kubectl --context 'team'"'"'s cluster; staging' -n orka-system rollout status deploy/orka-controller-manager`}
+				if tc.want == "not finished rolling out" {
+					recovery = append(recovery, `kubectl --context 'team'"'"'s cluster; staging' -n orka-system get pods`)
+				}
+			}
+			for _, want := range recovery {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("recovery does not preserve the selected context in %q: %v", want, err)
+				}
 			}
 		})
 	}

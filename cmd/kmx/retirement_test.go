@@ -41,6 +41,14 @@ func TestLegacyRuntimeCommandsAreRetired(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("retired command must name replacement %q: %v: %v", tc.want, tc.args, err)
 			}
+			for _, want := range []string{
+				"kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>",
+				"kmx --context <ctx> agent show <name> --namespace <namespace>",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("retirement advice lost the selector in %q: %v", want, err)
+				}
+			}
 			if *loads != 0 {
 				t.Fatalf("retired command loaded operational configuration: %v", tc.args)
 			}
@@ -72,6 +80,14 @@ func TestRetiredCommandHelpShowsMigrationBeforeConfiguration(t *testing.T) {
 			}
 			if !strings.Contains(out.String(), tc.want) {
 				t.Fatalf("help did not show migration %q: %q", tc.want, out.String())
+			}
+			for _, want := range []string{
+				"kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>",
+				"kmx --context <ctx> agent show <name> --namespace <namespace>",
+			} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("retirement help lost the selector in %q: %s", want, out.String())
+				}
 			}
 			if *loads != 0 {
 				t.Fatalf("retired help loaded operational configuration: %v", tc.args)

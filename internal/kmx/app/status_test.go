@@ -134,6 +134,7 @@ func TestStatusRefusesStructuredOutputRatherThanInventingIt(t *testing.T) {
 	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {
 			a, out, calls := statusFixture(t, orkaStatusScript)
+			a.Cfg.KubeContext = "team's cluster; staging"
 			err := a.StatusWithOptions(StatusOptions{Output: format})
 			if err == nil {
 				t.Fatalf("%s output was accepted", format)
@@ -149,7 +150,7 @@ func TestStatusRefusesStructuredOutputRatherThanInventingIt(t *testing.T) {
 					t.Errorf("format refusal advertises %q: %v", forbidden, err)
 				}
 			}
-			for _, want := range []string{format, "table"} {
+			for _, want := range []string{format, "table", `kubectl --context 'team'"'"'s cluster; staging' -n orka-system get deploy,providers.core.orka.ai -o json`} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("the refusal does not name %q: %v", want, err)
 				}

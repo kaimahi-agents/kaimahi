@@ -119,7 +119,7 @@ func (a *App) orkaInstallState() (bool, error) {
 		if err != nil {
 			// Helm stderr can include chart-controlled text. Refuse without
 			// repeating it or guessing whether this release is kmx-owned.
-			return false, fmt.Errorf("cannot inspect existing Orka chart values; refusing to adopt or retry the release. Inspect `helm --kube-context %s -n %s status %s` before cleanup. %s", a.Cfg.KubeContext, OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
+			return false, fmt.Errorf("cannot inspect existing Orka chart values; refusing to adopt or retry the release. Inspect `helm --kube-context %s -n %s status %s` before cleanup. %s", shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
 		}
 		var installed orkaHelmValues
 		if err := json.Unmarshal([]byte(values), &installed); err != nil {
@@ -170,7 +170,7 @@ func (a *App) orkaInstallState() (bool, error) {
 			default:
 				status = "not deployed"
 			}
-			return false, fmt.Errorf("kmx-owned Orka Helm release is %s; refusing automatic retry over a partial installation. Inspect `helm --kube-context %s -n %s status %s` and Pod events. After resolving any pending operation, an operator may explicitly retry the same SHA-256-verified chart with `helm --kube-context %s -n %s upgrade %s <verified-orka-0.2.0.tgz> --reuse-values --wait` (never --force), or clean the target before retrying kmx. %s", status, a.Cfg.KubeContext, OrkaNamespace, orkaRelease, a.Cfg.KubeContext, OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
+			return false, fmt.Errorf("kmx-owned Orka Helm release is %s; refusing automatic retry over a partial installation. Inspect `helm --kube-context %s -n %s status %s` and Pod events. After resolving any pending operation, an operator may explicitly retry the same SHA-256-verified chart with `helm --kube-context %s -n %s upgrade %s <verified-orka-0.2.0.tgz> --reuse-values --wait` (never --force), or clean the target before retrying kmx. %s", status, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
 		}
 	}
 	if len(releases) != 0 {
@@ -264,7 +264,7 @@ func (a *App) applyOrkaChart(chart []byte) error {
 		"--set-string", "controller.acpRuntime.claudeImage="+orkaClaudeImage,
 		"--set-string", "controller.acpRuntime.copilotImage="+orkaCopilotImage,
 		"--set-string", "controller.acpRuntime.opencodeImage="+orkaOpencodeImage); err != nil {
-		return fmt.Errorf("installing pinned Orka chart: %w\n  A failed release and CRDs may remain; kmx refuses to silently reinstall over them. Inspect without exposing Secrets:\n  helm --kube-context %s -n %s status %s\n  kubectl --context %s -n %s get pods,events", err, a.Cfg.KubeContext, OrkaNamespace, orkaRelease, a.Cfg.KubeContext, OrkaNamespace)
+		return fmt.Errorf("installing pinned Orka chart: %w\n  A failed release and CRDs may remain; kmx refuses to silently reinstall over them. Inspect without exposing Secrets:\n  helm --kube-context %s -n %s status %s\n  kubectl --context %s -n %s get pods,events", err, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace)
 	}
 	return nil
 }

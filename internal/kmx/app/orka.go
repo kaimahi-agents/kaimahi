@@ -583,13 +583,13 @@ func (a *App) OrkaReady() error {
 		switch {
 		case d.Spec.Replicas <= 0:
 			return fmt.Errorf("Orka's %s is scaled to %d in namespace %s, so nothing is running to verify.\n"+
-				"  Scale it up, or reinstall with `kmx orka install`",
-				name, d.Spec.Replicas, OrkaNamespace)
+				"  Scale it up, or reinstall with `%s`",
+				name, d.Spec.Replicas, OrkaNamespace, a.operationCommand("orka", "install"))
 		case d.Status.ObservedGeneration < d.Metadata.Generation:
 			return fmt.Errorf("Orka's %s has a spec its controller has not observed yet in namespace %s "+
 				"(generation %d, observed %d), so this lift is not complete.\n"+
-				"  Watch it finish:  kubectl -n %s rollout status deploy/%s",
-				name, OrkaNamespace, d.Metadata.Generation, d.Status.ObservedGeneration, OrkaNamespace, name)
+				"  Watch it finish:  kubectl --context %s -n %s rollout status deploy/%s",
+				name, OrkaNamespace, d.Metadata.Generation, d.Status.ObservedGeneration, shellArg(a.Cfg.KubeContext), OrkaNamespace, name)
 		case d.Status.UpdatedReplicas != d.Spec.Replicas,
 			d.Status.AvailableReplicas != d.Spec.Replicas,
 			d.Status.ReadyReplicas != d.Spec.Replicas,
@@ -599,10 +599,10 @@ func (a *App) OrkaReady() error {
 			return fmt.Errorf("Orka's %s has not finished rolling out in namespace %s: "+
 				"%d/%d updated, %d ready, %d available, %d unavailable.\n"+
 				"  A ready count alone can be the OLD pod while its replacement fails to start.\n"+
-				"  Its rollout says why:  kubectl -n %s rollout status deploy/%s\n"+
-				"  And the pods:          kubectl -n %s get pods",
+				"  Its rollout says why:  kubectl --context %s -n %s rollout status deploy/%s\n"+
+				"  And the pods:          kubectl --context %s -n %s get pods",
 				name, OrkaNamespace, d.Status.UpdatedReplicas, d.Spec.Replicas, d.Status.ReadyReplicas,
-				d.Status.AvailableReplicas, d.Status.UnavailableReplicas, OrkaNamespace, name, OrkaNamespace)
+				d.Status.AvailableReplicas, d.Status.UnavailableReplicas, shellArg(a.Cfg.KubeContext), OrkaNamespace, name, shellArg(a.Cfg.KubeContext), OrkaNamespace)
 		}
 	}
 	return nil
