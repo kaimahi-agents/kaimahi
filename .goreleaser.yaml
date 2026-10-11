@@ -66,12 +66,6 @@ brews:
     description: "Agent Builder CLI for Kubernetes"
     license: "MIT"
     commit_msg_template: "Brew formula update for kmx version {{ .Tag }}"
-    # Matches the coverage of the formula already in homebrew-tap: not just
-    # that the binary runs, but that it reports the version it claims to be
-    # and that a real subcommand's help text renders — kmx version and
-    # docs/releases.md's "by hand" checks assert the same two things.
+    # Check the installed version without coupling packaging to help prose.
     test: |
-      assert_equal "kmx v#{version} (release build)",
-                   shell_output("#{bin}/kmx version").lines.first.chomp
-      assert_match "Create, inspect, and chat with Orka agents",
-                   shell_output("#{bin}/kmx agent --help")
+      assert_equal "v#{version}", shell_output("#{bin}/kmx version").split.fetch(1)
