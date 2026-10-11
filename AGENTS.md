@@ -22,6 +22,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   longer accepts `--interactive`. `kmx targets` is the read-only capability view.
   Plane administration, model overlays, migration and their demo are removed;
   do not restore or regroup their commands.
+- Recorded-session case preparation is `kmx agent eval from-sessions`; execution
+  stays `kmx agent evaluate --from-sessions`. Keep reference manifests private,
+  require named candidate/judge confirmation before recorded-content transfer,
+  and suppress answer/reasoning output unless `--show-content` is explicit.
+  Expired sources are unknown, never a skip or export.
 - Keep **Create → Prove → Lift** as the local-to-remote story. **Lift** is the
   chosen agent lifecycle verb: retain `kmx agent lift` and interactive `/lift`,
   and use Lift in corresponding help and menu labels rather than renaming the

@@ -52,6 +52,33 @@ refuse core-only documents instead of ignoring them. The Orka-only reader at
 reports `portable agent document: extensions must contain exactly one of
 "orka" or "kagent"` (a command may prefix that parser error).
 
+## Private recorded-session manifests
+
+`agent eval from-sessions` writes an external mode-0600 JSON manifest, not a
+portable bundle file. The strict contract uses `schemaVersion: 1`,
+`policy: single-turn-text-chat-v1`, and `cases`: each has a stable ID, authored
+`expectContains`/`assertions`, `assertionsDigest`, and `source` with `store`,
+`sessionUID`, `harness`, `harnessVersion`, `model`, `inputSeq`, `prefixSeq`,
+`prefixHash`, `inputDigest`, `answerDigest` and `configDigest`. Store is an
+explicitly selected normalized endpoint identity, not permission to dial it.
+Only the five-record fresh text-chat shape with input sequence 2 is supported.
+Unknown/duplicate/null fields, incompatible identities, changed assertions and
+duplicate IDs or store/UID pairs are refused. Manifests are limited to 1 MiB and
+1,000 cases; the smaller execution receipt budget still applies.
+
+Manifests hold **no recorded input/answer text**, but references, hashes and
+rubrics remain sensitive. Existing outputs are atomically appended, with
+cooperative writer locking; all selected UIDs must extract successfully before
+any additions are saved. Keep manifests and receipts outside Git. Resolution
+uses the explicit `--source-sessions` selector and bounded prefix verification,
+never exports content when a source expires. Reference-case bytes bind policy,
+source prefix and authored assertion identities into existing v2 case/set
+digests; v2 receipts themselves retain their unchanged payload-free schema.
+See [recorded cases and consent](agent-lift.md#recorded-sessions-as-reference-cases).
+One unavailable source currently makes the whole diff incompatible because its
+candidate identity is unobserved; [#403](https://github.com/kaimahi-agents/kaimahi/issues/403)
+tracks row-local unknown handling.
+
 ## What the digests say
 
 The **portable digest** identifies the exact authored bytes of `agent.yaml`,

@@ -522,8 +522,10 @@ are recorded, never an invented average. Unavailable answers or failed agent
 execution make no judge calls. Direct runtime adapter callers without a judge
 port leave `llmJudge` unknown, never implicitly passing.
 
-Authoring a judge case and choosing its endpoint explicitly consents to sending
-**input, answer and rubric** to that judge. An external provider may retain
+For ordinary authored-input evaluation, authoring a judge case and choosing its
+endpoint explicitly consents to sending **input, answer and rubric** to that judge.
+[Recorded-session cases](#recorded-sessions-as-reference-cases) require separate
+named destination confirmation and suppress terminal content by default. An external provider may retain
 these payloads under its own policy; check access and retention before using
 private data. Receipts retain no payload or reasoning. Valid reasoning is
 credential-checked and safely rendered to terminal stdout, but it may repeat
@@ -722,6 +724,79 @@ Sessions receipts do **not** satisfy lift-policy or status gates, including
 when replay verification succeeds. Only matching Orka latest receipts can do
 so; v2 evidence must match the current assertion IDs/definitions as well as
 the existing revision, case-set and target checks.
+
+### Recorded sessions as reference cases
+
+Extract one or more **completed, fresh, single-turn text-chat** sessions using an
+assertion-only YAML file. Author `id`, `expectContains` and/or typed `assertions`
+with the same rules as ordinary cases, but omit `input`. Original answers are
+not truth: only the authored assertions determine the candidate verdict.
+
+```yaml
+id: capital
+assertions:
+  - id: expected-capital
+    type: contains
+    value: Paris
+```
+
+```bash
+kmx agent eval from-sessions session-uid-1 session-uid-2 \
+  --sessions 127.0.0.1:8080 --assertions capital.yaml --out private/references.json
+# Existing --out means atomic append. Duplicate UIDs or IDs refuse the whole add.
+kmx agent eval from-sessions session-uid-3 \
+  --sessions 127.0.0.1:8080 --assertions capital.yaml --out private/references.json
+KAIMAHI_CONFIRM=127.0.0.1:8081 kmx agent evaluate agents/my-agent \
+  --from-sessions private/references.json --source-sessions 127.0.0.1:8080 \
+  --sessions 127.0.0.1:8081
+```
+
+The source and candidate hosts must already be running. `--sessions-ca` supplies
+the candidate CA; `--source-sessions-ca` supplies the source CA. All selected
+UIDs use the supplied assertions. Case IDs combine the authored ID (truncated
+to 50 characters) with a stable 12-character store/UID digest suffix; batching
+and later append derive the same IDs. Keep the mode-0600 manifest private and
+outside Git. It contains references, low-entropy content digests and authored
+assertions, **not recorded inputs or answers**; this is not anonymization.
+
+Extraction reads at most six records to refuse multi-turn sources. Resolution
+reads exactly the recorded five-record prefix, verifies its contiguous hash
+chain, sequence/head, single-turn shape, model, config/input/answer digests and
+pinned chat compatibility, then retains input only in memory. The reference
+policy is `single-turn-text-chat-v1`; the compatibility token identifies local
+reference semantics, not an attested source host. Forks, resumed/interrupted
+turns, tools, attachments and unsupported schemas are refused. Source selection
+is explicit and must match the manifest store after syntactic normalization;
+no endpoint supplied by a manifest is automatically dialed.
+
+`--from-sessions` replaces `eval/` inputs for this run. Each resolved case runs
+in a **new candidate session** with the current bundle instructions. Missing,
+expired, altered or unsupported references produce `unknown` rows and no
+candidate/judge calls for that row; they are never skipped or exported. Existing
+assertion receipts and `agent eval diff` are reused; source, policy and assertion
+identities are included in the case/set digests. `--case <derived-id>` still
+selects one case and produces a partial receipt.
+
+Before any recorded input transfer, set **`KAIMAHI_CONFIRM` to the normalized
+candidate host:port**, even for loopback. An explicitly selected judge additionally
+requires **`KAIMAHI_CONFIRM_JUDGE` equal to its canonical base URL** (no trailing
+slash, lowercase host and no default port). This confirms input/answer/rubric
+transfer separately from the candidate; it never selects a default judge.
+Default stdout contains verdicts, IDs and digests only, including on success;
+errors never expose recorded content. `--show-content` explicitly allows answer
+text and judge reasoning on stdout. Protect those logs if enabled.
+
+References inherit source TTL. Candidate journals and judge providers receive
+copies under their own retention policies. Confirmation is not data-owner
+permission, tenant isolation, or region/retention enforcement; an authenticated,
+authorized source deployment is required for private traffic. Automatic deletion
+propagation is not implemented. No production export or multi-turn mode is
+supported.
+
+**Diff limitation:** an unavailable source row has no observed candidate runtime
+identity. The existing conservative diff therefore marks the **whole comparison
+incompatible**, rather than comparing the remaining rows. Row-local unknown
+handling is tracked in [#403](https://github.com/kaimahi-agents/kaimahi/issues/403).
 
 ### Verifying a sessions receipt
 
