@@ -281,6 +281,8 @@ and intentionally has no hero image.
 | `README.md` | **Documentation** | Repository entry point and native direction. |
 | `CHANGELOG.md` | **Build input and history** | Release notes are extracted by the release-notes script; historical release prose remains. |
 | `CONTRIBUTING.md`, `LICENSE` | **Documentation** | Contribution expectations and MIT licence. |
+| `CODE_OF_CONDUCT.md` | **Documentation** | Microsoft Open Source Code of Conduct and moderation contacts. |
+| `SECURITY.md` | **Documentation** | Microsoft security vulnerability reporting guidance. |
 | `AGENTS.md` | **Documentation** | Repository guidance for consistent command changes and verification. |
 | `embed.go` | **Packaging** | Root-module native manifest and helper embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
