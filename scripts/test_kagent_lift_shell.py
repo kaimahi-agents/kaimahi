@@ -63,6 +63,12 @@ elif name == "kind" and args == ["version", "-q"]:
     print("0.33.0")
 elif name == "helm" and args[:1] == ["version"]:
     print("v3.20.0")
+elif name == "driver" and args[0] == "qualify":
+    work = pathlib.Path(args[2])
+    assert os.environ["KMX_HOME"] == str(work / "kmx-home")
+    assert os.environ["KMX_TOOLCHAIN"] == "off"
+    assert pathlib.Path(os.environ["PATH"].split(os.pathsep)[0]) == work / "fail-bin"
+    (work / "qualification.json").write_text('{"proof":true}')
 else:
     print("private-bootstrap-payload")
     print("private-bootstrap-payload", file=sys.stderr)
@@ -101,14 +107,14 @@ class ShellTests(unittest.TestCase):
         for key in ("HELM_CONFIG_HOME", "HELM_CACHE_HOME", "HELM_DATA_HOME"):
             self.env[key] = str(self.home / key)
 
-    def run_shell(self, args=(), fail=""):
+    def run_shell(self, args=("bootstrap",), fail=""):
         result = subprocess.run(["bash", str(self.root / "scripts/ci/kagent-lift.sh"), *args],
                                 env=dict(self.env, FAIL=fail), cwd=self.root,
                                 capture_output=True, text=True, timeout=15)
         self.assertNotIn(PAYLOAD, result.stdout + result.stderr)
         self.assertEqual(self.kubeconfig.read_text(), "caller-kubeconfig")
         self.assertEqual(sorted(p.name for p in self.home.iterdir()), ["config"])
-        self.assertEqual(list(self.runner.iterdir()), [], "owned work was not removed")
+        self.assertEqual([p.name for p in self.runner.iterdir()], ["kmx-kagent-lift"] if result.returncode == 0 and args != ("bootstrap",) else [], "owned work was not removed")
         records = [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
         return result, records
 
@@ -118,8 +124,8 @@ class ShellTests(unittest.TestCase):
         for record in deletes:
             self.assertEqual(record["args"], ["delete", "cluster", "--name", "kmx-kagent-lift"])
 
-    def test_default_and_explicit_bootstrap_succeed_without_installed_cli(self):
-        for args in ((), ("bootstrap",)):
+    def test_explicit_bootstrap_succeeds_without_installed_cli(self):
+        for args in (("bootstrap",),):
             with self.subTest(args=args):
                 self.calls.unlink(missing_ok=True)
                 result, records = self.run_shell(args)
@@ -237,8 +243,71 @@ class ShellTests(unittest.TestCase):
         self.assertIn("phase=platform exitstatus=1", result.stderr)
         self.assertEqual([r["tool"] for r in records], ["uname", "uname"])
 
+    def test_default_and_explicit_qualification_reach_driver_with_private_state(self):
+        for args in ((), ("qualify",)):
+            with self.subTest(args=args):
+                self.calls.unlink(missing_ok=True)
+                result, records = self.run_shell(args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("native A2A MCP execution qualified", result.stdout)
+                self.assertNotIn("NOT qualified", result.stdout)
+                self.assert_owned_cleanup(records, 1)
+                self.assertEqual([r["args"][0] for r in records if r["tool"] == "driver"][-1], "qualify")
+                self.assertEqual(json.loads((self.runner / "kmx-kagent-lift/qualification.json").read_text()), {"proof": True})
+                shutil.rmtree(self.runner / "kmx-kagent-lift")
+
+    def test_qualification_failure_does_not_leave_success_artifact(self):
+        result, records = self.run_shell((), "qualify")
+        self.assertEqual(result.returncode, 23)
+        self.assertIn("phase=qualify exitstatus=23", result.stderr)
+        self.assert_owned_cleanup(records, 1)
+
+    def test_real_python_boundary_reports_only_closed_qualifier_phase_and_reason(self):
+        driver = self.root / "scripts/ci/kagent-lift.py"
+        bootstrap_double = driver.with_name("bootstrap-double.py")
+        bootstrap_double.write_text(driver.read_text())
+        actual = SOURCE.with_name("kagent-lift.py").read_text()
+        injection = '''
+original_main = main
+def main(argv):
+    if argv[0] != "qualify":
+        subprocess.run([sys.executable, %r, *argv], check=True)
+    else:
+        original_main(argv)
+def qualify(binary, work):
+    qualification_phase(os.environ["TEST_QUALIFIER_PHASE"])
+    print("private-bootstrap-payload")
+    print("private-bootstrap-payload", file=sys.stderr)
+    defect = os.environ["TEST_QUALIFIER_DEFECT"]
+    if defect == "tool":
+        raise RuntimeError("private-bootstrap-payload")
+    if defect == "unlisted":
+        raise QualificationError("private-bootstrap-payload", reason="private-bootstrap-payload")
+    raise QualificationError("private-bootstrap-payload", reason=cli_failure_reason(
+        b"private-bootstrap-payload pod does not have exactly one controller container using private-bootstrap-payload"))
+
+''' % str(bootstrap_double)
+        driver.write_text(actual.replace('\nif __name__ == "__main__":', '\n' + injection + 'if __name__ == "__main__":'))
+        cases = (("new-lift", "cli", "controller-pod-reference-mismatch"),
+                 ("native-a2a-one-shot", "tool", "unclassified-qualifier-error"),
+                 ("plan", "unlisted", "unclassified-qualifier-error"),
+                 (PAYLOAD, "cli", "unclassified-qualifier-error"))
+        for phase, defect, reason in cases:
+            with self.subTest(phase=phase, defect=defect):
+                self.calls.unlink(missing_ok=True)
+                self.env.update(TEST_QUALIFIER_PHASE=phase, TEST_QUALIFIER_DEFECT=defect)
+                result, records = self.run_shell(())
+                self.assertEqual(result.returncode, 1)
+                safe_phase = "setup" if phase == PAYLOAD else phase
+                expected = [] if phase == PAYLOAD else ["kagent qualification: phase=" + phase]
+                expected += ["kagent qualification failed: phase=" + safe_phase + " reason=" + reason,
+                             "kagent bootstrap failed: phase=qualify exitstatus=1; lift/native A2A NOT qualified"]
+                self.assertEqual(result.stderr.splitlines(), expected)
+                self.assertEqual(result.stdout, "")
+                self.assert_owned_cleanup(records, 1)
+
     def test_invalid_modes_and_extra_arguments_do_no_work(self):
-        for args in (("qualify",), ("bootstrap", "extra")):
+        for args in (("invalid",), ("bootstrap", "extra")):
             with self.subTest(args=args):
                 result, records = self.run_shell(args)
                 self.assertEqual(result.returncode, 2)

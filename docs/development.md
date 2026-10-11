@@ -126,7 +126,8 @@ has different [ownership rules](aks.md#teardown).
 
 The workflow emits `hygiene` and `e2e-hello-world` merge gates. The latter
 aggregates the native `e2e-quickstart`, `e2e-kagent-create`, `e2e-orka-runtime`,
-`e2e-orka-helm` and clusterless `e2e-eval-loop` shards. Plane-command shards,
+`e2e-orka-helm`, clusterless `e2e-eval-loop` and dedicated `e2e-kagent-lift`
+shards, plus successful change classification. Plane-command shards,
 upgrade probes and the nested-module/Postgres job are removed.
 Required-check rules are managed separately on GitHub: removing a workflow job
 does not change the active ruleset or satisfy a retired required context.
@@ -136,8 +137,11 @@ does not change the active ruleset or satisfy a retired required context.
 the `~/Library/Application Support` default and shared `KMX_HOME` override
 without duplicating cluster setup or the full Linux suite.
 Add probes to the shard owning their state lineage, or arrange independent setup.
-Every cluster step needs the docs-only guard; the aggregator uses `always()` and
-must depend on every shard. An unneeded failing shard would not gate a merge.
+Existing cluster steps retain docs-only guards. `e2e-kagent-lift` instead routes
+at job level: relevant/unknown PR changes run it, as do every main push, nightly
+and manual dispatch. The aggregator uses `always()`, requires classification and
+all six shards, and accepts only intentional skipped outcomes. A failed or
+cancelled shard is never an intentional skip.
 
 `e2e-eval-loop` is a required clusterless, secret-free evaluation boundary on
 non-docs-only changes. It runs digest-pinned AIKit Qwen3.5-2B on CPU and builds
@@ -210,14 +214,22 @@ The workflow, not KMX, installs those charts. This proves no standalone Kagent
 operation beyond create's optional single A2A message, no managed-cluster path,
 and no hosted model provider.
 
-Go declarative v0.10.3 plan/lift/repeat/status and a separate native A2A tool
-answer were demonstrated once with an externally prepared kind runtime.
-Deployment readiness is not execution evidence. Dedicated continuous
-qualification is not yet wired; Python deployment, managed clusters and hosted
-providers remain unqualified.
+`e2e-kagent-lift` continuously qualifies Go declarative v0.10.3
+plan/lift/repeat/status and specific binding, missing-receipt and operator-drift
+refusals. The metadata-only kubectl audit checks complete ordered server-admission
+and persistent-create frames, effective dry-run strategy and resource identities;
+unsupported command forms leave a closed rejection and never forward. Negative
+calls must exit 1 with the exact final ordinary CLI error, not an unrelated failure.
+A separate one-shot native A2A message must return the fixture's random MCP sentinel
+with one actual tool call, two model calls and one terminal answer. Only identities,
+counts and hashes enter its private qualification artifact; readiness receipts
+remain separate. Python deployment, managed clusters and hosted providers remain
+unqualified.
 
-The checkout-only [bootstrap shell](../scripts/ci/kagent-lift.sh) accepts no
-argument or explicit `bootstrap`; run `bash scripts/ci/kagent-lift.sh bootstrap`
+The checkout-only [qualification shell](../scripts/ci/kagent-lift.sh) defaults to
+`qualify`; build the final Go state with `go build -o bin/kmx ./cmd/kmx`, then
+run `bash scripts/ci/kagent-lift.sh`. Explicit `bootstrap` stops after readiness
+and discovery; run `bash scripts/ci/kagent-lift.sh bootstrap`
 on Linux amd64 with Docker. It downloads checksum-verified local tools, pins
 the kind node and official v0.10.3 OCI charts, disables optional workloads/UI
 and telemetry, and checks rendered and running image identities. Its
@@ -235,9 +247,10 @@ kind and Docker retain the caller's Docker configuration and daemon access.
 Closed phase/exit-status diagnostics identify failures without replaying payloads. Cleanup deletes the cluster only after successful creation;
 a failed kind create is ambiguous and left for inspection. No caller tools,
 Helm credentials, daemon configuration or unrelated clusters are changed.
-Hygiene unconditionally runs `scripts/test_kagent_lift.py`,
-`scripts/test_kagent_lift_shell.py` and the six HTTP tests in
-`scripts/test_kagent_lift_fixture.py`; it does not run this live bootstrap.
+Hygiene unconditionally runs bootstrap, shell, HTTP fixture, qualification,
+metadata-audit and CI-routing tests, including the actual qualifier with hermetic
+external boundaries and unrelated failures injected at all five negative calls.
+It creates no cluster. The dedicated shard runs the live qualification.
 
 `kmx-clone-free` runs on main/manual dispatch, not as a required PR shard. It
 checks installation, bare `up` and native Orka creation with an actual Task

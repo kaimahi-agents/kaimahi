@@ -54,7 +54,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 - Preserve Orka defaults and exact-v0.10.2 kagent create. Bundle lift/status
   requires explicit `--runtime kagent --runtime-version v0.10.3`, `--to-context`
   and author-owned `KagentBindings`. Only Go deployment/status is qualified;
-  Python remains render-only. Lift creates new objects or reuses a complete
+  Python remains render-only. Dedicated CI qualifies Go lift/status and separately
+  proves one native A2A MCP answer; receipts still prove readiness, not execution.
+  Lift creates new objects or reuses a complete
   matching UID-bound receipt without adoption, update or retry of ambiguous
   writes. Readiness is not execution proof. Do not infer installation,
   discovery, chat/run/evaluation, retirement or console support from this slice.

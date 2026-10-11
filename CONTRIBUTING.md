@@ -22,9 +22,9 @@ kagent support is intentionally version-bounded: explicit
 explicit bundle lift/status with `--runtime kagent --runtime-version v0.10.3`
 targets preinstalled exact v0.10.3. Lift creates new Go declarative resources or
 reuses a complete matching UID-bound deployment; it does not adopt or update.
-Deployment receipts prove readiness, not execution success. Go native A2A
-execution was demonstrated once; dedicated continuous qualification is not yet
-wired. Do not infer or add an installer, upgrade path,
+Deployment receipts prove readiness, not execution success. Dedicated CI now
+continuously qualifies Go v0.10.3 plan/lift/repeat/status/conflicts and a separate
+one-shot native A2A answer using a keyless model/MCP fixture. Do not infer or add an installer, upgrade path,
 auto-detection, chat, list/show, evaluation, retirement, console, quickstart,
 `up`, or AKS payload from those capabilities. Preserve Orka defaults and
 v0.10.2 create; runtime choice remains distinct from model-provider choice.
@@ -59,6 +59,12 @@ python3 scripts/test_model_fixtures.py -v
 python3 scripts/test_kagent_lift.py -v
 python3 scripts/test_kagent_lift_shell.py -v
 python3 scripts/test_kagent_lift_fixture.py -v
+python3 scripts/test_kagent_lift_qualification.py -v
+python3 scripts/test_kagent_lift_audit.py -v
+python3 scripts/test_kagent_lift_qualify.py -v
+python3 scripts/test_kagent_lift_ci.py -v
+shellcheck scripts/ci/kagent-lift.sh
+actionlint .github/workflows/ci.yml
 ```
 
 The checkers above are the ones you can usefully run by hand. CI's hygiene
@@ -110,8 +116,22 @@ Helm/Docker credentials or plugins. Docker daemon access is preserved. It remove
 only its owned cluster and temporary work. A failed kind create is ambiguous and
 left for inspection. Bootstrap checks readiness and MCP discovery, not bundle
 lift or native A2A execution qualification; it is not an installed CLI installer.
-Hygiene runs its hermetic validator, shell and loopback fixture tests without
-creating a cluster.
+Hygiene runs hermetic bootstrap, qualification, audit, shell, CI-routing and
+loopback fixture tests without creating a cluster.
+
+With no argument (or explicit `qualify`), the shell runs the full qualification.
+Build the final Go state first with `go build -o bin/kmx ./cmd/kmx`, then run
+`bash scripts/ci/kagent-lift.sh`. It audits complete ordered admission/create
+metadata, enforces specific exit-1 refusals and checks receipt-bound status.
+Native A2A execution is independently verified with exactly one MCP tool call,
+two model calls and one terminal answer, with no resend. Only the payload-free
+`qualification.json` survives under `${RUNNER_TEMP:-/tmp}/kmx-kagent-lift/`;
+raw logs, manifests, credentials, prompts and answers are not artifacts.
+Qualifier diagnostics expose only whitelisted subphase and reason codes through
+saved shell stderr; bootstrap and tool output remain private.
+The `e2e-kagent-lift` shard runs for relevant or unknown PR changes and always
+on main pushes, nightly and manual runs. Its required aggregator accepts only
+intentional skipped outcomes, never failed or cancelled shards.
 
 ## Comments
 

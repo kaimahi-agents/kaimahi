@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""External pinned kind/bootstrap validation; not execution qualification.
+"""External pinned bootstrap, Go lift/status and one-shot native A2A proof.
 
-All external output is private. Public failures use closed phases and statuses.
+All external output is private. Public failures use closed phases and codes.
 """
 import contextlib
+import hashlib
 import json
+import os
 import pathlib
 import re
 import secrets
+import stat
 import subprocess
 import sys
 import tempfile
@@ -28,6 +31,8 @@ NODE_IMAGE = "kindest/node:v1.35.0@sha256:4613778f3cfcd10e615029370f578670455910
 IMAGES = {
     "controller": ("ghcr.io/kagent-dev/kagent/controller", CONTROLLER,
                    "8ca13042c21181ecf280d6f3ca005d58e216a0a56978bb8824fd73cc02b685d8"),
+    "kagent": ("ghcr.io/kagent-dev/kagent/golang-adk", GO_ADK,
+               "7f788d09d5f21ccc3068679310943dcf4f0df19e1a93960423810438f4238b24"),
     "postgresql": ("docker.io/library/postgres", POSTGRES,
                    "3928680cee9028902891672c0a6ce84de58ed3eb1b987588e7c9424d8f08d21d"),
     "fixture": ("docker.io/library/python", FIXTURE,
@@ -36,15 +41,19 @@ IMAGES = {
 
 
 class QualificationError(ValueError):
-    """A closed, payload-free bootstrap failure safe for CI output."""
+    """Private failure detail with a separately whitelisted public reason."""
+
+    def __init__(self, message, *, reason="qualification-check-failed"):
+        super().__init__(message)
+        self.reason = reason
 
 
-def require(condition, message):
+def require(condition, message, *, reason="qualification-check-failed"):
     if not condition:
-        raise QualificationError(message)
+        raise QualificationError(message, reason=reason)
 
 
-PHASES = {"cluster-inventory", "node-container-inspect", "node-image-inspect", "resource-get",
+PHASES = {"operator-patch", "cluster-inventory", "node-container-inspect", "node-image-inspect", "resource-get",
           "namespace-create", "secret-create", "fixture-apply", "fixture-ready", "controller-version"}
 
 
@@ -227,7 +236,7 @@ def http_json(url, data=None):
         return json.loads(raw)
 
 
-def verify_images():
+def verify_images(include_agent=False):
     found = set()
     evidence = {}
     for ns in ("kagent", NAMESPACE):
@@ -245,7 +254,7 @@ def verify_images():
                 repository, index, platform = IMAGES[role]
                 evidence[role] = image_digest(status.get("imageID", ""), repository, {index, platform})
                 found.add(role)
-    expected = {"controller", "postgresql", "fixture"}
+    expected = {"controller", "postgresql", "fixture"} | ({"kagent"} if include_agent else set())
     require(found == expected, "required running image evidence missing")
     return evidence
 
@@ -267,6 +276,365 @@ def bootstrap():
         require(http_json(url + "/evidence")["tool_calls"] == 0, "bootstrap invoked the actual proof tool")
     print("pinned node/charts/controller/Postgres/fixture images and MCP discovery verified")
     print("verified_imageIDs=" + json.dumps(images, sort_keys=True))
+
+
+NAME = "lift-proof"
+
+
+def digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+def project_identity(objects):
+    result = {}
+    for obj in objects:
+        metadata = obj["metadata"]
+        key = obj["kind"] + "/" + metadata["name"]
+        require(metadata.get("uid") and key not in result, "resource identity is missing or ambiguous")
+        markers = ("kaimahi.dev/bundle", "kaimahi.dev/runtime-version", "kaimahi.dev/portable-digest", "kaimahi.dev/rendered-digest")
+        ownership = {"managed_by": metadata.get("labels", {}).get("app.kubernetes.io/managed-by"),
+                     "markers": {marker: metadata.get("annotations", {}).get(marker) for marker in markers},
+                     "owner_references": [{field: ref.get(field) for field in
+                         ("apiVersion", "kind", "name", "uid", "controller", "blockOwnerDeletion")}
+                         for ref in metadata.get("ownerReferences", [])]}
+        value = {"uid": metadata["uid"], "namespace": metadata.get("namespace", ""),
+                 "generation": metadata.get("generation", 0), "ownership_sha256": digest(ownership),
+                 "terminating": bool(metadata.get("deletionTimestamp"))}
+        # Controller-updated status/resourceVersion churn is not mutation proof.
+        if obj["kind"] in {"Secret", "ConfigMap", "ServiceAccount"}:
+            value["resource_version"] = metadata["resourceVersion"]
+        if obj["kind"] != "Secret":
+            value["spec_sha256"] = digest(obj.get("spec", obj.get("data", {})))
+        result[key] = value
+    return result
+
+
+def snapshot():
+    objects = []
+    for kind, name, namespace in (
+        ("agents.kagent.dev", NAME, NAMESPACE), ("modelconfigs.kagent.dev", NAME, NAMESPACE),
+        ("deployment", NAME, NAMESPACE), ("service", NAME, NAMESPACE), ("serviceaccount", NAME, NAMESPACE),
+        ("secret", NAME, NAMESPACE), ("secret", "lift-model-key", NAMESPACE),
+        ("remotemcpservers.kagent.dev", "lift-tools", NAMESPACE),
+        ("deployment", "lift-fixture", NAMESPACE), ("service", "lift-fixture", NAMESPACE),
+        ("configmap", "lift-fixture", NAMESPACE), ("deployment", "kagent-controller", "kagent"),
+        ("configmap", "kagent-controller", "kagent"), ("deployment", "kagent-postgresql", "kagent")):
+        obj = get(kind, name, namespace, optional=True)
+        if obj:
+            objects.append(obj)
+    return project_identity(objects)
+
+
+def validate_read_only(phase, before, after, local_before, local_after, writes, expected_writes):
+    if before != after:
+        changes = [{"resource": key, "fields": sorted(field for field in set(before.get(key, {})) | set(after.get(key, {}))
+                    if before.get(key, {}).get(field) != after.get(key, {}).get(field))}
+                   for key in sorted(set(before) | set(after)) if before.get(key) != after.get(key)]
+        print("evidence_changes=" + json.dumps(changes, sort_keys=True), flush=True)
+    require(before == after, phase + " changed cluster evidence")
+    require(local_before == local_after, phase + " changed local evidence")
+    require(writes == expected_writes, phase + " changed mutation audit")
+
+
+def filesystem(*roots):
+    # Directory identities detect local state created by --plan/status too.
+    return {str(path): (stat.S_IMODE(path.stat().st_mode), None if path.is_dir() else hashlib.sha256(path.read_bytes()).hexdigest())
+            for root in roots for path in ([root] + sorted(root.rglob("*"))) if path.exists()}
+
+
+def validate_a2a(response, evidence):
+    require(response.get("jsonrpc") == "2.0" and response.get("id") == "kmx-lift-once" and "error" not in response,
+            "native A2A returned an invalid/error response; do not resend")
+    result = response.get("result", {})
+    context_id = result.get("contextId")
+    valid_id = lambda value: isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value) is not None
+    if result.get("kind") == "task":
+        native_id = result.get("id")
+        require(valid_id(native_id) and valid_id(context_id) and "messageId" not in result,
+                "native A2A task/context identity is missing, invalid or conflicting; do not resend")
+        require(result.get("status", {}).get("state") == "completed", "native A2A task did not terminally complete; do not resend")
+        parts = [part for artifact in result.get("artifacts", []) for part in artifact.get("parts", [])]
+    elif result.get("kind") == "message":
+        native_id = result.get("messageId")
+        require(valid_id(native_id) and "id" not in result and ("contextId" not in result or valid_id(context_id)),
+                "native A2A message/context identity is missing, invalid or conflicting; do not resend")
+        require(result.get("role") == "agent", "native A2A message is not an agent answer")
+        parts = result.get("parts", [])
+    else:
+        raise QualificationError("native A2A returned no terminal task/message; do not resend")
+    text = "\n".join(part["text"] for part in parts if part.get("kind") == "text" and isinstance(part.get("text"), str))
+    require(text.strip(), "native terminal answer has no text")
+    markers = re.findall(r"kmx-mcp-[A-Za-z0-9-]+", text)
+    require(any(hashlib.sha256(marker.encode()).hexdigest() == evidence.get("sentinel_sha256") for marker in markers),
+            "terminal text did not return the actual MCP sentinel")
+    require(evidence.get("tool_calls") == 1 and evidence.get("model_calls") == 2 and evidence.get("terminal_answers") == 1,
+            "one actual MCP call and tool-then-terminal model calls were not observed")
+    proof = {"answer_sha256": hashlib.sha256(text.encode()).hexdigest(), "native_kind": result["kind"],
+             "native_id": native_id, "tool_calls": 1, "model_calls": 2}
+    if context_id is not None:
+        proof["native_context_id"] = context_id
+    return proof
+
+
+def one_message(endpoint, fixture):
+    before = http_json(fixture + "/evidence")
+    require(all(before.get(key) == 0 for key in ("model_calls", "tool_calls", "terminal_answers")), "fixture was already executed; do not resend")
+    request = {"jsonrpc": "2.0", "id": "kmx-lift-once", "method": "message/send", "params": {
+        "message": {"kind": "message", "role": "user", "messageId": "kmx-lift-one-message",
+                    "parts": [{"kind": "text", "text": "Use the allowed tool and return its result."}]},
+        "configuration": {"blocking": True}}}
+    response = http_json(endpoint, request)
+    return validate_a2a(response, http_json(fixture + "/evidence"))
+
+
+def bundle_files(work):
+    bundle = work / "bundle"
+    bundle.mkdir(mode=0o700)
+    agent = {"apiVersion": "kmx.kaimahi.dev/v1alpha1", "kind": "PortableAgent", "metadata": {"name": NAME},
+             "spec": {"description": "Deterministic Go lift qualification", "instructions": "Use the allowed tool and return its result.",
+                      "model": {"name": "fixture"}},
+             "extensions": {"kagent": {"apiVersion": "kagent.dev/v1alpha2", "runtime": "go", "tools": [{
+                 "server": {"kind": "RemoteMCPServer", "name": "lift-tools"}, "toolNames": ["read_sentinel"]}]}}}
+    (bundle / "agent.yaml").write_text(yaml.safe_dump(agent, sort_keys=False))
+    bindings = {"apiVersion": "kmx.kaimahi.dev/v1alpha1", "kind": "KagentBindings", "namespace": NAMESPACE,
+                "modelConfig": {"provider": "openai", "baseURL": "http://lift-fixture.agents.svc.cluster.local:9000/v1",
+                                "secretRef": {"name": "lift-model-key", "key": "api-key"}}}
+    # Status must read author-owned external bindings, never infer live values.
+    path = work / "external-bindings.yaml"
+    path.write_text(yaml.safe_dump(bindings, sort_keys=False))
+    return bundle, path
+
+
+def kubectl_audit(work):
+    wrapper = work / "fail-bin/kubectl"
+    wrapper.unlink()
+    audit = work / "kubectl-mutations.jsonl"
+    classifier = pathlib.Path(__file__).with_name("kagent-lift-audit.py")
+    wrapper.write_text('#!/usr/bin/env python3\nimport os,sys\nos.execv(sys.executable, [sys.executable, '
+                       + repr(str(classifier)) + ', ' + repr(str(work / "bin/kubectl")) + ', '
+                       + repr(str(audit)) + ', *sys.argv[1:]])\n')
+    wrapper.chmod(0o700)
+    return audit
+
+
+def audit_frames(audit):
+    return [json.loads(line) for line in audit.read_text().splitlines()] if audit.exists() else []
+
+
+def validate_receipt(bundle, identities, cluster_uid):
+    files = list((bundle / "receipts/kagent-v0.10.3").glob("*.json"))
+    require(len(files) == 1 and stat.S_IMODE(files[0].stat().st_mode) == 0o600, "one private lift receipt required")
+    wrapped = json.loads(files[0].read_text())
+    receipt = wrapped["receipt"]
+    require(set(wrapped) <= {"receipt", "gitCommit", "gateOverrideReason", "gateFailedCondition"}
+            and set(receipt) <= {"Bundle", "PortableDigest", "RenderedDigest", "Target", "Resources", "RuntimeVersion",
+                                 "ClusterUID", "Ready", "ObservedAt", "Proofs", "Dependencies", "Workload"},
+            "deployment receipt is not the closed payload-free schema")
+    require(receipt["Target"] == {"Runtime": "kagent", "Context": CONTEXT, "Namespace": NAMESPACE}, "receipt target differs")
+    require(receipt["Bundle"] == NAME and receipt["RuntimeVersion"] == "v0.10.3" and receipt["ClusterUID"] == cluster_uid
+            and receipt["Ready"] is True and receipt["ObservedAt"], "receipt qualification identity is incomplete")
+    require(len(receipt["Resources"]) == 2 and len(receipt["Proofs"]) == 2 and len(receipt["Workload"]) == 4,
+            "receipt primary/workload proof incomplete")
+    for section in ("Resources", "Proofs", "Workload", "Dependencies"):
+        expected_kinds = {"ModelConfig", "Agent"} if section in {"Resources", "Proofs"} else (
+            {"Deployment", "Service", "ServiceAccount", "Secret"} if section == "Workload" else None)
+        if expected_kinds:
+            require({r["Kind"] for r in receipt[section]} == expected_kinds, "receipt resource kinds are incomplete")
+        for resource in receipt[section]:
+            require(set(resource) <= {"Kind", "Name", "Namespace", "UID", "Generation", "Outcome", "ResourceVersion", "SpecDigest", "Key"},
+                    "deployment resource evidence is not payload-free")
+            identity = identities[resource["Kind"] + "/" + resource["Name"]]
+            require(resource["UID"] == identity["uid"] and resource["Namespace"] == NAMESPACE, "receipt resource identity differs")
+    for kind in ("Agent", "ModelConfig"):
+        obj = get(kind.lower() + "s.kagent.dev", NAME)
+        annotations = obj["metadata"].get("annotations", {})
+        require(obj["metadata"].get("labels", {}).get("app.kubernetes.io/managed-by") == "kmx", "ownership label missing")
+        require(annotations.get("kaimahi.dev/bundle") == NAME and annotations.get("kaimahi.dev/runtime-version") == "v0.10.3",
+                "ownership bundle/version marker missing")
+        for field, marker in (("PortableDigest", "portable-digest"), ("RenderedDigest", "rendered-digest")):
+            require(re.fullmatch(r"[0-9a-f]{64}", receipt[field]) is not None
+                    and annotations.get("kaimahi.dev/" + marker) == receipt[field], "receipt digest differs from ownership")
+    return receipt
+
+
+CLI_FAILURE_PATTERNS = (
+    (b"pod does not have exactly one controller container using", "controller-pod-reference-mismatch"),
+    (b"controller Deployment does not use official image", "controller-deployment-reference-mismatch"),
+    (b"ready pod controller container image identity does not match", "controller-running-image-unqualified"),
+    (b"Deployment is not a complete current-generation rollout", "controller-rollout-incomplete"),
+    (b"Deployment selected an invalid or non-running pod", "controller-pod-state-invalid"),
+    (b"Kagent pod node", "controller-node-platform-unqualified"),
+    (b"Kagent pod image digest differs", "controller-platform-digest-mismatch"),
+    (b"controller workload:", "controller-workload-unqualified"),
+    (b"openAPIV3Schema SHA-256 differs", "crd-schema-mismatch"),
+    (b"strict Kagent server dry-run", "server-dryrun-refused"),
+    (b"dependency", "dependency-unqualified"),
+    (b"ModelConfig", "modelconfig-unqualified"), (b"Agent", "agent-unqualified"),
+)
+
+
+def cli_failure_reason(raw):
+    # Closed codes only; never replay even surrounding text from known errors.
+    return next((code for pattern, code in CLI_FAILURE_PATTERNS if pattern in raw), "unclassified-cli-error")
+
+
+QUALIFICATION_PHASES = {"setup", "absent-status", "plan", "new-lift", "repeat-lift", "ready-status",
+                        "native-a2a-one-shot", "bindings-and-receipt-conflicts", "operator-drift-conflict"}
+QUALIFICATION_REASONS = {code for _, code in CLI_FAILURE_PATTERNS} | {
+    "qualification-check-failed", "expected-refusal-not-observed", "unclassified-cli-error", "unclassified-qualifier-error"}
+QUALIFICATION_PHASE = "setup"
+
+
+def qualification_phase(phase):
+    global QUALIFICATION_PHASE
+    require(phase in QUALIFICATION_PHASES, "unknown qualifier phase", reason="unclassified-qualifier-error")
+    QUALIFICATION_PHASE = phase
+    if os.environ.get("KMX_QUALIFICATION_DIAGNOSTIC_FD") == "4":
+        os.write(4, ("kagent qualification: phase=" + phase + "\n").encode())
+
+
+def qualification_failure(error):
+    # The shell supplies its saved stderr FD only at the qualifier boundary.
+    # Neither exception detail nor captured tool output enters this channel.
+    reason = error.reason if isinstance(error, QualificationError) else "unclassified-qualifier-error"
+    if reason not in QUALIFICATION_REASONS:
+        reason = "unclassified-qualifier-error"
+    if os.environ.get("KMX_QUALIFICATION_DIAGNOSTIC_FD") == "4":
+        os.write(4, ("kagent qualification failed: phase=" + QUALIFICATION_PHASE + " reason=" + reason + "\n").encode())
+
+
+def qualify(binary, work):
+    qualification_phase("setup")
+    require(binary.is_file(), "build matching bin/kmx after Go writes settle")
+    bundle, bindings = bundle_files(work)
+    audit = kubectl_audit(work)
+    home = pathlib.Path(os.environ["KMX_HOME"])
+    flags = ["--runtime", "kagent", "--runtime-version", "v0.10.3", "--to-context", CONTEXT, "--bindings", str(bindings)]
+
+    def cli(verb, *extra, expected_refusal=None, with_bindings=True):
+        selected = flags if with_bindings else flags[:-2]
+        result = subprocess.run([str(binary), "agent", verb, str(bundle), *selected, *extra],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
+        if expected_refusal is not None:
+            lines = [line for line in result.stderr.splitlines() if line.strip()]
+            require(result.returncode == 1 and bool(lines) and lines[-1] == expected_refusal.encode(),
+                    "KMX " + verb + " expected refusal not observed exit=" + str(result.returncode),
+                    reason="expected-refusal-not-observed")
+        else:
+            require(result.returncode == 0,
+                    "KMX " + verb + " unexpected exit=" + str(result.returncode), reason=cli_failure_reason(result.stderr))
+        return result.stdout
+
+    def frame(kind, strategy, verb="create"):
+        return {"verb": verb, "dry_run": strategy, "resources": [{"apiVersion": "kagent.dev/v1alpha2",
+                "kind": kind, "namespace": "agents", "name": "lift-proof"}]}
+
+    expected = []
+    def read_only(phase, live, local):
+        validate_read_only(phase, live, snapshot(), local, filesystem(bundle, home), audit_frames(audit), expected)
+
+    before, local = snapshot(), filesystem(bundle, home)
+    qualification_phase("absent-status")
+    absent = json.loads(cli("status", "-o", "json"))
+    require(len(absent.get("targets", [])) == 1 and absent["targets"][0]["state"] == "absent"
+            and absent["targets"][0].get("noReceipt") is True, "new target must report absent without a receipt")
+    read_only("absent status", before, local)
+    qualification_phase("plan")
+    cli("lift", "--plan")
+    expected += [frame(kind, "server") for kind in ("ModelConfig", "Agent")]
+    read_only("plan", before, local)
+    qualification_phase("new-lift")
+    cli("lift")
+    expected += [frame(kind, strategy) for strategy in ("server", "none") for kind in ("ModelConfig", "Agent")]
+    require(audit_frames(audit) == expected, "new lift mutation audit differs from ordered admission/create metadata")
+    images = verify_images(include_agent=True)
+    live = snapshot()
+    uid = get("namespace", "kube-system", namespace=None)["metadata"]["uid"]
+    receipt = validate_receipt(bundle, live, uid)
+    local = filesystem(bundle, home)
+    qualification_phase("repeat-lift")
+    cli("lift")
+    read_only("repeat lift", live, local)
+    qualification_phase("ready-status")
+    status = json.loads(cli("status", "-o", "json"))
+    validate_status(status, live, uid)
+    require(status["portableDigest"] == receipt["PortableDigest"] and status["renderedDigest"] == receipt["RenderedDigest"],
+            "status digests differ from saved deployment")
+    read_only("status", live, local)
+    # Independently native: no KMX execution command, hosted account or resend.
+    qualification_phase("native-a2a-one-shot")
+    with forward("lift-fixture", 9000) as fixture, forward("kagent-controller", 8083, "kagent") as controller:
+        execution = one_message(controller + "/api/a2a/agents/" + NAME, fixture)
+    read_only("native execution", live, local)
+    qualification_phase("bindings-and-receipt-conflicts")
+    original = bindings.read_bytes()
+    changed = yaml.safe_load(original)
+    changed["modelConfig"]["baseURL"] = "http://unused.invalid/v1"
+    bindings.write_text(yaml.safe_dump(changed))
+    local = filesystem(bundle, home)
+    cli("lift", expected_refusal="Kagent receipt-bound reuse conflict: drift (desired source or bindings differ from saved deployment)")
+    changed_status = json.loads(cli("status", "-o", "json"))
+    validate_refusal_status(changed_status, "drift", False, "desired source or bindings differ from saved deployment")
+    read_only("changed bindings", live, local)
+    bindings.write_bytes(original)
+    bindings.rename(work / "saved-bindings.yaml")
+    local = filesystem(bundle, home)
+    missing = "open Kagent bounded regular file, not a link: no such file or directory"
+    cli("status", "-o", "json", expected_refusal=missing)
+    cli("status", "-o", "json", expected_refusal=missing, with_bindings=False)
+    read_only("missing bindings", live, local)
+    (work / "saved-bindings.yaml").rename(bindings)
+    history = bundle / "receipts/kagent-v0.10.3"
+    saved = bundle / "saved-history"
+    history.rename(saved)
+    local = filesystem(bundle, home)
+    cli("lift", expected_refusal="Kagent lift conflict: primary already exists without a complete matching receipt; no adoption or updates")
+    unbound = json.loads(cli("status", "-o", "json"))
+    validate_refusal_status(unbound, "failed", True, "unbound: no complete selected-target deployment receipt; live readiness is not a saved deployment")
+    read_only("missing receipt", live, local)
+    saved.rename(history)
+    qualification_phase("operator-drift-conflict")
+    kube("-n", NAMESPACE, "patch", "agents.kagent.dev", NAME, "--type=merge",
+         "-p", '{"spec":{"description":"operator changed"}}', phase="operator-patch")
+    expected += [frame("Agent", "none", "patch")]
+    require(audit_frames(audit) == expected, "operator patch mutation audit differs")
+    drift, local = snapshot(), filesystem(bundle, home)
+    cli("lift", expected_refusal="Kagent receipt-bound reuse conflict: drift (primary ownership, digest or admitted spec differs from desired)")
+    drift_status = json.loads(cli("status", "-o", "json"))
+    validate_refusal_status(drift_status, "drift", False, "primary ownership, digest or admitted spec differs from desired")
+    read_only("operator drift", drift, local)
+    artifact = {"kind": "KagentLiftQualification", "runtime": "kagent", "runtime_version": "v0.10.3", "engine": "go",
+                "cluster_uid": uid, "context": CONTEXT, "namespace": NAMESPACE, "bundle": NAME,
+                "portable_digest": receipt["PortableDigest"], "rendered_digest": receipt["RenderedDigest"],
+                "identities": live, "images": images, "execution": execution,
+                "proofs": {"plan_no_writes": True, "create_only": True, "repeat_read_only": True,
+                           "status_identity": True, "conflict_no_mutation": True, "native_a2a_mcp": True}}
+    (work / "qualification.json").write_text(json.dumps(artifact, indent=2) + "\n")
+    (work / "qualification.json").chmod(0o600)
+    print("native_a2a_counts=tool:1 model:2 terminal:1", flush=True)
+
+
+def status_ready(status):
+    targets = status.get("targets", [])
+    return len(targets) == 1 and targets[0].get("state") == "ready" and targets[0].get("ready") is True
+
+
+def validate_refusal_status(status, state, no_receipt, detail):
+    targets = status.get("targets", [])
+    require(len(targets) == 1 and targets[0].get("state") == state and targets[0].get("ready") is False
+            and bool(targets[0].get("noReceipt")) == no_receipt and targets[0].get("detail") == detail,
+            "adjacent status did not report the specific refusal state/detail")
+
+
+def validate_status(status, identities, cluster_uid):
+    require(status_ready(status), "status did not report one ready target")
+    require(status.get("bundle") == NAME and status.get("runtime") == "kagent" and status.get("runtimeVersion") == "v0.10.3",
+            "status bundle/runtime/version differs")
+    target = status["targets"][0]
+    require(target.get("context") == CONTEXT and target.get("namespace") == NAMESPACE
+            and target.get("clusterUID") == cluster_uid and not target.get("noReceipt"), "status is not receipt-bound to target")
+    for field, kind in (("agentUID", "Agent"), ("modelConfigUID", "ModelConfig"), ("deploymentUID", "Deployment")):
+        require(target.get(field) == identities[kind + "/" + NAME]["uid"], "status resource identity differs")
 
 
 def diagnostics():
@@ -295,7 +663,7 @@ def diagnostics():
 
 def main(argv):
     modes = {"values": 1, "chart": 2, "cluster-absent": 0, "node": 0,
-             "provision": 1, "bootstrap": 0, "diagnostics": 0}
+             "provision": 1, "bootstrap": 0, "qualify": 2, "diagnostics": 0}
     require(bool(argv) and argv[0] in modes, "unknown bootstrap mode")
     mode = argv[0]
     require(len(argv) == modes[mode] + 1, "invalid bootstrap arguments")
@@ -311,6 +679,8 @@ def main(argv):
         provision(pathlib.Path(argv[1]))
     elif mode == "bootstrap":
         bootstrap()
+    elif mode == "qualify":
+        qualify(pathlib.Path(argv[1]), pathlib.Path(argv[2]))
     elif mode == "diagnostics":
         diagnostics()
 
@@ -319,6 +689,8 @@ if __name__ == "__main__":
     try:
         main(sys.argv[1:])
     except Exception as error:
+        if sys.argv[1:2] == ["qualify"]:
+            qualification_failure(error)
         # Network/YAML/tool exception text may contain payloads. Only our own
         # fixed reasons (and a closed generic category) are public.
         detail = str(error) if isinstance(error, QualificationError) else "unclassified-bootstrap-error"

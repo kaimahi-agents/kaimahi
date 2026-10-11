@@ -45,7 +45,7 @@ kmx agent status agents/reviewer --runtime kagent --runtime-version v0.10.3 --to
 Both commands use strict `KagentBindings`: destination namespace, model provider
 (`openai` or `anthropic`), optional credential-free baseURL and Secret name/key
 references. Without `--bindings`, they read the bundle's `bindings.yaml` only if
-it is KagentBindings. Supply external bindings again to status; status never
+it is `KagentBindings`. Supply external bindings again to status; status never
 infers desired configuration from live objects. `--to-namespace`, if supplied,
 must agree with bindings. No remembered Orka selection is read or changed;
 every invocation requires `--to-context`. Orka `--inference` and evaluation
@@ -89,9 +89,11 @@ Read-only status distinguishes absent, unreadable, failed readiness, ready and
 drift. Pending or stale conditions are not ready; inspection without a saved
 receipt is unbound and cannot certify a saved deployment. Status never sends a
 message or records execution success. Standalone run/chat/eval, updates,
-retirement, diff and rollback remain unsupported. Go native A2A execution was
-demonstrated once with an externally prepared kind runtime; dedicated continuous
-qualification is not yet wired. Lift and status do not test an answer.
+retirement, diff and rollback remain unsupported. Dedicated CI continuously
+qualifies Go plan/lift/repeat/status/conflicts and independently sends one native
+A2A message against a keyless model/MCP fixture: one actual tool call, two model
+calls and one terminal answer. Deployment receipts remain readiness-only;
+lift and status themselves do not test an answer.
 
 ## Coordination in `agent.yaml`
 

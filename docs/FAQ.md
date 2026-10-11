@@ -25,7 +25,7 @@ would install, not proof of what someone else installed. An unreadable
 cluster is not an empty cluster. See [Orka installation](orka.md) for
 inspection, no-write planning, dry-run and upgrade limits.
 
-## What Kagent support exists now?
+## What kagent support exists now?
 
 Orka remains the default. The exact-v0.10.2 create profile is explicit
 `kmx agent create --runtime kagent <name>` against an already-installed exact
@@ -40,8 +40,8 @@ it is not a standalone or resumable chat capability.
 The separate exact-v0.10.3 profile permits explicit declarative bundle
 lift/status with desired bindings and a named context. It creates new resources
 or reuses a complete matching UID-bound deployment, never adopts or updates.
-Readiness receipts do not prove an answer. Go native A2A execution was
-demonstrated once; dedicated continuous qualification is not yet wired. See [exact-version placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
+Readiness receipts do not prove an answer. Dedicated CI continuously qualifies
+Go lift/status and a separate one-shot native A2A tool answer. See [exact-version placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
 Standalone chat/run/eval, list/show, console, interactive `/lift`, quickstart,
 `up`, installer and AKS payload remain unsupported. Historical AKS lift records
 remain teardown-only. See the [create contract](kmx.md#explicit-kagent-v0102-create).

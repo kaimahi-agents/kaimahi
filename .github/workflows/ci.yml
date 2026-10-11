@@ -16,6 +16,18 @@ permissions:
   contents: read
 
 jobs:
+  classify-change:
+    runs-on: ubuntu-latest
+    outputs:
+      kagent_changed: ${{ steps.changes.outputs.kagent_changed }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: changes
+        uses: ./.github/actions/classify-change
+
   hygiene:
     runs-on: ubuntu-latest
     steps:
@@ -91,11 +103,15 @@ jobs:
         run: |
           python3 scripts/test_eval_loop.py
           python3 scripts/test_eval_runner.py
-      - name: kagent bootstrap and deterministic fixture self-tests
+      - name: kagent bootstrap, qualification and deterministic fixture self-tests
         run: |
           python3 scripts/test_kagent_lift.py
           python3 scripts/test_kagent_lift_shell.py
           python3 scripts/test_kagent_lift_fixture.py
+          python3 scripts/test_kagent_lift_qualification.py
+          python3 scripts/test_kagent_lift_audit.py
+          python3 scripts/test_kagent_lift_qualify.py
+          python3 scripts/test_kagent_lift_ci.py
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken
@@ -457,17 +473,24 @@ jobs:
           for job in shards + ["kmx-clone-free"]:
               steps = jobs[job]["steps"]
               total += len(steps)
+              if job == "e2e-kagent-lift":
+                  routed = "always() && (github.event_name != 'pull_request' || needs.classify-change.outputs.kagent_changed != 'false')"
+                  if jobs[job].get("if") != routed or jobs[job].get("needs") != ["classify-change"]:
+                      print(f"{job}: missing fail-closed job-level routing"); sys.exit(1)
+                  if any(str(s.get("if", "")).strip() not in {"", "always()", "failure()"} for s in steps):
+                      print(f"{job}: unexpected step guard can skip main/nightly proof"); sys.exit(1)
+                  continue
               bad = [s.get("name") or s.get("uses") for s in steps
                      if not exempt(s) and str(s.get("if", "")).strip() not in guards]
               if bad:
                   print(f"{job} steps missing the docs-only guard:", *bad, sep="\n  ")
                   sys.exit(1)
           agg = jobs[required]
-          if sorted(agg.get("needs", [])) != shards:
-              print(f"{required} must need exactly {shards}, needs {agg.get('needs')}")
+          if sorted(agg.get("needs", [])) != sorted(shards + ["classify-change"]):
+              print(f"{required} must need all shards and classification, needs {agg.get('needs')}")
               sys.exit(1)
-          if str(agg.get("if", "")).strip() != "always() && github.event_name != 'schedule'":
-              print(f"{required} must always report except on the hygiene-only schedule")
+          if str(agg.get("if", "")).strip() != "always()":
+              print(f"{required} must always report, including nightly")
               sys.exit(1)
           for step in agg["steps"]:
               body = str(step.get("run", ""))
@@ -661,8 +684,8 @@ jobs:
   # execute that distinction, so this native job protects the KMX_HOME
   # isolation contract without duplicating the cluster or full Go
   # suites already run by the Linux jobs.
-  # Nightly proves hygiene only; cluster and platform jobs retain their
-  # existing PR, push and manual-dispatch behavior.
+  # Nightly also runs the dedicated Go lift proof; existing cluster and
+  # platform jobs retain their PR, push and manual-dispatch behavior.
   state-paths-macos:
     if: github.event_name != 'schedule'
     runs-on: macos-latest
@@ -695,9 +718,9 @@ jobs:
           done
           ! grep -q -- '--- SKIP:' state-dir.out app-state.out
 
-  # Five native shards prove quickstart, exact-version Kagent create,
+  # Existing native shards prove quickstart, exact-version kagent create,
   # Orka runtime and Helm integration, and clusterless live evaluation.
-  # The required aggregator covers every shard; execution steps have docs guards.
+  # Their docs guards and schedule semantics remain unchanged.
   e2e-quickstart:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -1882,23 +1905,59 @@ jobs:
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no live evaluation run"
+  e2e-kagent-lift:
+    needs: [classify-change]
+    if: always() && (github.event_name != 'pull_request' || needs.classify-change.outputs.kagent_changed != 'false')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Build kmx
+        run: mkdir -p bin && go build -o bin/kmx ./cmd/kmx
+      - name: Externally install pinned runtime and qualify Go bundle lift plus native A2A
+        run: bash scripts/ci/kagent-lift.sh
+      - name: Payload-free qualification evidence (not a deployment receipt)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kagent-lift-qualification
+          path: ${{ runner.temp }}/kmx-kagent-lift/qualification.json
+          if-no-files-found: ignore
+
   e2e-hello-world:
     runs-on: ubuntu-latest
-    needs: [e2e-eval-loop, e2e-kagent-create, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart]
-    if: always() && github.event_name != 'schedule'
+    needs: [classify-change, e2e-eval-loop, e2e-kagent-create, e2e-kagent-lift, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart]
+    if: always()
     steps:
       - name: Every e2e shard succeeded
         env:
           SHARDS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
         run: |
           python3 - <<'EOF'
           import json, os, sys
-          shards = json.loads(os.environ["SHARDS"])
-          for job, outcome in sorted(shards.items()):
-              print(f"{job}: {outcome['result']}")
-          bad = {job: o["result"] for job, o in shards.items() if o["result"] != "success"}
-          if not shards:
-              print("no e2e shards reported — refusing to report success"); sys.exit(1)
+          needs = json.loads(os.environ["SHARDS"])
+          expected = {"e2e-eval-loop", "e2e-kagent-create", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}
+          classifier = needs.pop("classify-change", {})
+          if classifier.get("result") != "success":
+              print("classification did not succeed — refusing to report success"); sys.exit(1)
+          if set(needs) != expected:
+              print("missing or unexpected e2e shard dependencies — refusing success"); sys.exit(1)
+          changed = classifier.get("outputs", {}).get("kagent_changed", "")
+          event = os.environ["EVENT"]
+          bad = {}
+          for job, outcome in sorted(needs.items()):
+              result = outcome.get("result", "unknown")
+              print(f"{job}: {result}")
+              intended_skip = job == "e2e-kagent-lift" and event == "pull_request" and changed == "false"
+              scheduled_skip = job != "e2e-kagent-lift" and event == "schedule"
+              if result != "success" and not (result == "skipped" and (intended_skip or scheduled_skip)):
+                  bad[job] = result
           if bad:
               print("e2e shards did not succeed:", bad); sys.exit(1)
           print("every e2e shard succeeded")

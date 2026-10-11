@@ -18,6 +18,9 @@ outputs:
   scripts_changed:
     description: "true when scripts changed or the diff cannot be determined"
     value: ${{ steps.classify.outputs.scripts_changed }}
+  kagent_changed:
+    description: "true when kagent/shared qualification paths changed or the diff is unknown"
+    value: ${{ steps.classify.outputs.kagent_changed }}
 
 runs:
   using: composite
@@ -44,6 +47,7 @@ runs:
         set +e
         docs_only=false
         scripts_changed=true
+        kagent_changed=true
         reason=""
         files=""
         # A pull_request's base is the merge commit's FIRST parent: the
@@ -77,6 +81,19 @@ runs:
               scripts_changed=false
               [ -z "$script_files" ] || scripts_changed=true
             fi
+            # Query independently so unrelated paths cannot hide later shared
+            # dependencies, deletions, renames or git-quoted filenames.
+            if kagent_files=$(git diff --name-only --no-renames "$BASE" "$HEAD" -- \
+                internal/kmx/app/ internal/kmx/runtime/ internal/kmx/scaffold/ \
+                internal/kmx/guard/ internal/kmx/run/ internal/kmx/config/ \
+                internal/kmx/secretshapes/ internal/kmx/toolchain/ internal/kmx/portforward/ \
+                cmd/kmx/ go.mod go.sum embed.go embed_test.go \
+                'scripts/ci/kagent-*' 'scripts/test_kagent_lift*' \
+                scripts/check-legacy-runtime.py scripts/legacy-runtime-allowlist.json \
+                .github/actions/classify-change/ .github/workflows/ci.yml); then
+              kagent_changed=false
+              [ -z "$kagent_files" ] || kagent_changed=true
+            fi
             while IFS= read -r f; do
               case "$f" in
                 docs/*|*.md) ;;
@@ -97,3 +114,5 @@ runs:
         echo "scripts_changed=$scripts_changed"
         echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
         echo "scripts_changed=$scripts_changed" >> "$GITHUB_OUTPUT"
+        echo "kagent_changed=$kagent_changed"
+        echo "kagent_changed=$kagent_changed" >> "$GITHUB_OUTPUT"

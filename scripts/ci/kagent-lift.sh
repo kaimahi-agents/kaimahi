@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# External exact-version CI bootstrap, never an installed CLI installer.
+# External exact-version CI qualification, never an installed CLI installer.
 set -euo pipefail
 umask 077
 exec 3>&1 4>&2
 work=
 created=false
 phase=arguments
+mode=${1:-qualify}
 cleanup() {
   result=$?
   trap - EXIT
@@ -36,13 +37,18 @@ cleanup() {
     fi
   fi
   if [ "$result" -eq 0 ]; then
-    printf 'external bootstrap and deterministic fixture characterized; lift/native A2A NOT qualified\n' >&3
+    if [ "$mode" = bootstrap ]; then
+      printf 'external bootstrap and deterministic fixture characterized; lift/native A2A NOT qualified\n' >&3
+    else
+      printf 'Go lift/repeat/status/conflict and one native A2A MCP execution qualified\n' >&3
+      printf 'native_a2a_counts=tool:1 model:2 terminal:1\n' >&3
+    fi
   fi
   exit "$result"
 }
 trap cleanup EXIT
-if [ "$#" -gt 1 ] || [ "${1:-bootstrap}" != bootstrap ]; then
-  printf 'usage: kagent-lift.sh [bootstrap]\n' >&4
+if [ "$#" -gt 1 ] || { [ "$mode" != bootstrap ] && [ "$mode" != qualify ]; }; then
+  printf 'usage: kagent-lift.sh [qualify|bootstrap]\n' >&4
   exit 2
 fi
 phase=root
@@ -57,6 +63,7 @@ phase='work-layout'
 mkdir -p "$work/bin" "$work/charts/crds" "$work/charts/runtime" "$work/kube-cache" \
   "$work/helm-config/registry" "$work/helm-cache/repository" "$work/helm-data/plugins"
 export KUBECONFIG="$work/kubeconfig" KUBECACHEDIR="$work/kube-cache"
+export KMX_HOME="$work/kmx-home" KMX_TOOLCHAIN=off
 export HELM_CONFIG_HOME="$work/helm-config" HELM_CACHE_HOME="$work/helm-cache" HELM_DATA_HOME="$work/helm-data"
 export HELM_REGISTRY_CONFIG="$work/helm-config/registry/config.json"
 export HELM_REPOSITORY_CONFIG="$work/helm-config/repositories.yaml"
@@ -92,7 +99,7 @@ phase=kubectl-download
 curl -fsSL https://dl.k8s.io/release/v1.35.0/bin/linux/amd64/kubectl -o "$work/bin/kubectl"
 phase=kubectl-checksum
 printf '%s %s\n' 'a2e984a18a0c063279d692533031c1eff93a262afcc0afdc517375432d060989' "$work/bin/kubectl" | sha256sum --check --status
-phase=tool-permissions
+phase='tool-permissions'
 chmod 0755 "$work/bin/kind" "$work/bin/helm" "$work/bin/kubectl"
 export PATH="$work/bin:$PATH"
 phase=kind-version
@@ -131,3 +138,19 @@ phase=provision
 python3 "$root/scripts/ci/kagent-lift.py" provision "$work"
 phase=bootstrap
 python3 "$root/scripts/ci/kagent-lift.py" bootstrap
+if [ "$mode" = bootstrap ]; then exit 0; fi
+# Install traps only after external bootstrap; record swallowed tool attempts.
+phase=installer-traps
+mkdir "$work/fail-bin"
+for tool in helm kagent; do
+  printf '#!/bin/sh\ntouch "%s/installer-attempt"\nexit 97\n' "$work" > "$work/fail-bin/$tool"
+  chmod 0755 "$work/fail-bin/$tool"
+done
+ln -s "$work/bin/kubectl" "$work/fail-bin/kubectl"
+phase=qualify
+KMX_QUALIFICATION_DIAGNOSTIC_FD=4 PATH="$work/fail-bin:$PATH" python3 "$root/scripts/ci/kagent-lift.py" qualify "$root/bin/kmx" "$work"
+phase=installer-audit
+test ! -e "$work/installer-attempt"
+phase=artifact
+mkdir -p "${RUNNER_TEMP:-/tmp}/kmx-kagent-lift"
+cp "$work/qualification.json" "${RUNNER_TEMP:-/tmp}/kmx-kagent-lift/qualification.json"

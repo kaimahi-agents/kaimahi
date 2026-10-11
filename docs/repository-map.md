@@ -48,7 +48,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `pkg/` | — | — | experimental KMX target and agent lifecycle contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
-| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 46 (checkers, release packaging, native CI runners, bootstrap fixtures, mutation specs) |
+| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 51 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
 | `docs/` | 33 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -184,9 +184,9 @@ Packaging tests require every retained asset to be readable and reject retired
 plane, egress and observability assets. Setup does not deploy a model plane,
 custom scrape configuration or workbook.
 
-## `scripts/` — 50 tracked files, native helpers and scaffolding
+## `scripts/` — 55 tracked files, native helpers and scaffolding
 
-**Reference coverage:** 40 of the 50 are named by something outside themselves,
+**Reference coverage:** 45 of the 55 are named by something outside themselves,
 and 10 are named by nothing. The ten mutation specifications are discovered by
 glob. Map and repository-map checker mentions are not caller evidence; textual
 references, including script cross-references and test data, are not necessarily
@@ -197,8 +197,8 @@ invocations or active CI coverage.
 | Class | Count | Files |
 |---|---|---|
 | **Embedded packaging** — native provisioning, guard and Tool helpers | 4 | `aks-up.sh`, `aks-down.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
-| **Scaffolding** — checkers, self-tests and release packaging | 25 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py` |
-| **Scaffolding** — native/eval CI and bootstrap fixtures | 10 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py`, `kagent-lift.sh`, `kagent-lift.py`, `kagent-lift-fixture.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 29 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py`, `test_kagent_lift_qualification.py`, `test_kagent_lift_audit.py`, `test_kagent_lift_qualify.py`, `test_kagent_lift_ci.py` |
+| **Scaffolding** — native/eval CI and qualification fixtures | 11 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py`, `kagent-lift.sh`, `kagent-lift.py`, `kagent-lift-fixture.py`, `kagent-lift-audit.py` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
 | **Scaffolding** — retired-command scanner's exact inert exceptions | 1 | `legacy-runtime-allowlist.json` |
 
@@ -236,16 +236,19 @@ endpoint evidence filtering. Neither file is embedded or installed for users;
 see [CI registry mirrors](development.md#ci-registry-mirrors) for the boundaries
 and pull-evidence contract.
 
-`scripts/ci/kagent-lift.sh` calls the bootstrap-only `kagent-lift.py` driver,
-which loads `kagent-lift-fixture.py`. They prepare exact kagent v0.10.3 in a
-private dedicated kind cluster; bootstrap proves images, readiness and MCP
-discovery, not bundle lift or native A2A execution. Hygiene calls
-`test_kagent_lift.py`, `test_kagent_lift_shell.py` and the six real HTTP tests in
-`test_kagent_lift_fixture.py` without a cluster. The shell tests run the actual
-script with temporary PATH doubles and check failures, environment isolation,
-privacy and owned cleanup. HTTP tests cover malformed nested request shapes with
-fixed errors and no payload logs.
-None of these files is embedded or installed, and no live bootstrap shard is wired.
+`scripts/ci/kagent-lift.sh` calls `kagent-lift.py`, which loads
+`kagent-lift-fixture.py` and installs the `kagent-lift-audit.py` kubectl wrapper.
+The dedicated `e2e-kagent-lift` shard prepares exact kagent v0.10.3 in a private
+kind cluster, qualifies Go plan/lift/repeat/status/conflicts and separately proves
+one native A2A MCP answer. Explicit `bootstrap` stops at images/readiness/discovery.
+Hygiene unconditionally calls `test_kagent_lift.py`, `test_kagent_lift_shell.py`,
+`test_kagent_lift_fixture.py`, `test_kagent_lift_qualification.py`,
+`test_kagent_lift_audit.py`, `test_kagent_lift_qualify.py` and
+`test_kagent_lift_ci.py` without a cluster. These exercise phase diagnostics,
+privacy/isolation/owned cleanup, HTTP fixture request shapes, receipt/status/native
+validators, complete metadata frames/effective dry-run, all five specific negative
+calls through the actual qualifier and classifier/aggregator truth tables.
+None of these files is embedded or installed.
 
 ## `docs/` — 33 tracked files, native guides and design/history
 
@@ -282,9 +285,9 @@ and intentionally has no hero image.
 | `embed.go` | **Packaging** | Root-module native manifest and helper embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
 | `Makefile` | **Scaffolding** | Native build/check targets, context guard and AKS-credential helper. |
-| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven CLI releases. CI retains all five native e2e shards, their aggregator and native clone-free proof; no plane module or service job remains. Exact-v0.10.2 Kagent charts are external test preconditions that KMX does not install. Clone-free proves installation, bare native setup and an Orka Agent/Task answer. |
+| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven CLI releases. CI retains the five existing native e2e shards plus dedicated Go kagent lift qualification, their aggregator and native clone-free proof; no plane module or service job remains. Exact-v0.10.2 Kagent charts are external test preconditions that KMX does not install. Clone-free proves installation, bare native setup and an Orka Agent/Task answer. |
 | `.goreleaser.yaml` | **Scaffolding** | GoReleaser config the release workflow builds and renders the Homebrew formula with; publishing reuses that checked artifact set and never pushes the formula to the tap (`skip_upload: true`). |
-| `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only changes for CI. |
+| `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only, scripts and kagent/shared qualification paths for CI. |
 | `.github/actions/kmx-eval/` | **Checkout tooling** | Reusable GitHub Action for user bundle evaluation, optional replay, AIKit-only opt-in public production judge proof and payload-free JSON artifacts; also exercised by required repository CI. |
 | `staticcheck.conf` | **Scaffolding** | Root-module lint configuration. |
 | `go.mod`, `go.sum` | **Installed tooling** | Root module dependencies. |
