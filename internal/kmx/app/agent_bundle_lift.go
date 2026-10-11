@@ -333,13 +333,13 @@ func (a *App) liftPrerequisites(ctx context.Context, namespace string) error {
 		return err // Without CRD discovery, other cluster reads may be untrustworthy.
 	}
 	if len(missing) > 0 {
-		gaps = append(gaps, fmt.Errorf("missing Orka CRDs (%s); prepare destination with kmx orka install (or kmx aks up for a new cluster)", strings.Join(missing, ", ")))
+		gaps = append(gaps, fmt.Errorf("missing Orka CRDs (%s); prepare destination with %s", strings.Join(missing, ", "), a.operationCommand("orka", "install")))
 	}
 	controller, err := a.orkaControllerForLift(ctx)
 	if err != nil {
 		gaps = append(gaps, err)
 	} else if _, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "rollout", "status", "deploy/"+controller, "--timeout=10s"); err != nil {
-		gaps = append(gaps, fmt.Errorf("Orka controller is not Ready; prepare destination with kmx orka install: %w", err))
+		gaps = append(gaps, fmt.Errorf("Orka controller is not Ready; prepare destination with %s: %w", a.operationCommand("orka", "install"), err))
 	}
 	raw, err := a.orkaCapture(ctx, nil, "get", "namespace", namespace, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
@@ -353,7 +353,7 @@ func (a *App) liftPrerequisites(ctx context.Context, namespace string) error {
 			} `json:"metadata"`
 		}
 		if json.Unmarshal(raw, &ns) != nil || ns.Kind != "Namespace" || ns.Metadata.Name != namespace || ns.Metadata.DeletionTimestamp != nil {
-			gaps = append(gaps, fmt.Errorf("destination namespace %s is missing or terminating; create it before lifting (kmx orka install prepares %s)", namespace, OrkaNamespace))
+			gaps = append(gaps, fmt.Errorf("destination namespace %s is missing or terminating; create it before lifting (%s prepares %s)", namespace, a.operationCommand("orka", "install"), OrkaNamespace))
 		}
 	}
 	return errors.Join(gaps...)
