@@ -518,7 +518,7 @@ jobs:
           go-version-file: go.mod
       - name: Comment-history tripwire self-test
         run: python3 scripts/check-comment-history.py --selftest
-      - name: No effort IDs or lane references in source comments
+      - name: Source comments describe current behavior
         run: python3 scripts/check-comment-history.py
       - name: kmx — gofmt clean
         run: |
