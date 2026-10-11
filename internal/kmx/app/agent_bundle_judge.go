@@ -362,20 +362,24 @@ func evaluationJudgeJSONUnique(data []byte) bool {
 		}
 		switch delimiter {
 		case '{':
-			seen := map[string]bool{}
+			var keys []string
 			for decoder.More() {
 				token, err := decoder.Token()
 				if err != nil {
 					return false
 				}
 				key, ok := token.(string)
-				// encoding/json matches struct fields case-insensitively; refuse
-				// case variants too, so extras cannot shadow identity or choices.
-				key = strings.ToLower(key)
-				if !ok || seen[key] {
+				if !ok {
 					return false
 				}
-				seen[key] = true
+				// Match encoding/json's Unicode case folding so aliases cannot
+				// shadow identity, choices, or other evidence-bearing fields.
+				for _, seen := range keys {
+					if strings.EqualFold(key, seen) {
+						return false
+					}
+				}
+				keys = append(keys, key)
 				if !walk(depth + 1) {
 					return false
 				}

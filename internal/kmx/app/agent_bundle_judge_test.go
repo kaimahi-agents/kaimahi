@@ -290,6 +290,51 @@ func TestEvaluationJudgeMalformedSamplesNeverExportPartialScores(t *testing.T) {
 	}
 }
 
+func TestEvaluationJudgeUnicodeCaseFoldShadowsAreMalformed(t *testing.T) {
+	good := judgeEnvelope(`{"score":100,"reasoning":"safe"}`)
+	cases := map[string]string{
+		"finish reason canonical first": strings.Replace(good, `"finish_reason":"stop"`, `"finish_reason":"length","finish_reaſon":"stop"`, 1),
+		"finish reason alias first":     strings.Replace(good, `"finish_reason":"stop"`, `"finish_reaſon":"length","finish_reason":"stop"`, 1),
+		"choices canonical first":       strings.Replace(good, `"choices":`, `"choices":[],"choiceſ":`, 1),
+		"choices alias first":           strings.Replace(good, `"choices":`, `"choiceſ":[],"choices":`, 1),
+		"tool calls canonical first":    strings.Replace(good, `"role":"assistant"`, `"role":"assistant","tool_calls":[{"id":"call"}],"tool_callſ":null`, 1),
+		"tool calls alias first":        strings.Replace(good, `"role":"assistant"`, `"role":"assistant","tool_callſ":[{"id":"call"}],"tool_calls":null`, 1),
+		"refusal canonical first":       strings.Replace(good, `"refusal":null`, `"refusal":"no","refuſal":null`, 1),
+		"refusal alias first":           strings.Replace(good, `"refusal":null`, `"refuſal":"no","refusal":null`, 1),
+	}
+	for name, bad := range cases {
+		t.Run(name, func(t *testing.T) {
+			if score, reason, ok := parseEvaluationJudgeResponse([]byte(bad), "fixture/model", ""); ok || score != 0 || reason != "" {
+				t.Errorf("Unicode case-fold shadow accepted: score=%d reason=%q ok=%v", score, reason, ok)
+			}
+			for _, badSample := range []string{"first", "second", "both"} {
+				t.Run(badSample, func(t *testing.T) {
+					var calls atomic.Int32
+					var output bytes.Buffer
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						n := calls.Add(1)
+						if badSample == "both" || (n == 1 && badSample == "first") || (n == 2 && badSample == "second") {
+							fmt.Fprint(w, bad)
+						} else {
+							fmt.Fprint(w, good)
+						}
+					}))
+					defer server.Close()
+					client := evaluationJudgeClient{baseURL: server.URL + "/v1", httpClient: server.Client(), out: &output}
+					rows := client.evaluate(judgeDeadline(t), judgeCase(), agentruntime.EvaluationEvidence{Answer: "answer", AnswerAvailable: true})
+					row := rows[0]
+					if calls.Load() != 2 || row.Verdict != agentruntime.EvaluationUnknown || row.Reason != "judge response malformed" || row.Judge == nil || len(row.Judge.Scores) != 0 || !agentruntime.EvaluationJudgeEvidenceValid(row) {
+						t.Errorf("malformed evidence: calls=%d row=%+v judge=%+v", calls.Load(), row, row.Judge)
+					}
+					if output.Len() != 0 {
+						t.Errorf("malformed sample emitted reasoning: %q", output.String())
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestEvaluationJudgeUnavailableEvidenceAndContextAvoidHTTP(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
