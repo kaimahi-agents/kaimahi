@@ -743,7 +743,8 @@ assertions:
 ```bash
 kmx agent eval from-sessions session-uid-1 session-uid-2 \
   --sessions 127.0.0.1:8080 --assertions capital.yaml --out private/references.json
-# Existing --out means atomic append. Duplicate UIDs or IDs refuse the whole add.
+# Existing --out means atomic append to the same source store.
+# Duplicate UIDs or IDs refuse the whole add.
 kmx agent eval from-sessions session-uid-3 \
   --sessions 127.0.0.1:8080 --assertions capital.yaml --out private/references.json
 KAIMAHI_CONFIRM=127.0.0.1:8081 kmx agent evaluate agents/my-agent \

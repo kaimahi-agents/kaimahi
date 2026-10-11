@@ -67,8 +67,9 @@ duplicate IDs or store/UID pairs are refused. Manifests are limited to 1 MiB and
 1,000 cases; the smaller execution receipt budget still applies.
 
 Manifests hold **no recorded input/answer text**, but references, hashes and
-rubrics remain sensitive. Existing outputs are atomically appended, with
-cooperative writer locking; all selected UIDs must extract successfully before
+rubrics remain sensitive. Existing outputs are atomically appended within one source store, with
+cooperative writer locking; mixed-store additions are refused and all selected
+UIDs must extract successfully before
 any additions are saved. Keep manifests and receipts outside Git. Resolution
 uses the explicit `--source-sessions` selector and bounded prefix verification,
 never exports content when a source expires. Reference-case bytes bind policy,

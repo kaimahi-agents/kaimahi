@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -96,7 +97,7 @@ func referenceEvaluationFixture(t *testing.T) (*App, EvaluateAgentBundleOptions,
 	if err != nil {
 		t.Fatal(err)
 	}
-	opt.FromSessions = filepath.Join(t.TempDir(), "references.json")
+	opt.FromSessions = filepath.Join(diffTempDir(t), "references.json")
 	if err := os.WriteFile(opt.FromSessions, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -137,6 +138,34 @@ func TestReferenceEvaluationPayloadFreeAndFreshSessions(t *testing.T) {
 			}
 			if !strings.Contains(output, "pass") || !strings.Contains(output, second.Cases[0].SessionUID) {
 				t.Fatal("missing payload-free outcome/identity")
+			}
+		})
+	}
+}
+
+type referenceReportFailureWriter struct{ marker string }
+
+func (w referenceReportFailureWriter) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), w.marker) {
+		return 0, errors.New("private-output-error-canary")
+	}
+	return len(p), nil
+}
+
+// Successful execution must not turn failed report delivery into command success.
+func TestReferenceEvaluationReportFailureReturnsContentFreeError(t *testing.T) {
+	for _, marker := range []string{"case ", ": pass (", "\nevaluation "} {
+		t.Run(strings.TrimSpace(marker), func(t *testing.T) {
+			a, opt, _ := referenceEvaluationFixture(t)
+			t.Setenv("KAIMAHI_CONFIRM", opt.Sessions)
+			a.Out = referenceReportFailureWriter{marker: marker}
+			err := a.EvaluateAgentBundle(opt)
+			if err == nil || strings.Contains(err.Error(), "private-output-error-canary") {
+				t.Fatalf("report failure mishandled: %v", err)
+			}
+			receipt, _ := readSessionsAppReceipt(t, opt.BundleDir)
+			if receipt.Result != "pass" {
+				t.Fatal("report failure discarded valid execution evidence")
 			}
 		})
 	}

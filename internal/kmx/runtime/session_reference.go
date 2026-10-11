@@ -118,7 +118,8 @@ func ParseSessionReferenceManifest(data []byte) (SessionReferenceManifest, error
 }
 
 // MarshalSessionReferenceManifest returns compact deterministic struct JSON.
-// Each case's json.Marshal bytes are the canonical bytes for case/set digests.
+// Receipt case/set digests wrap each case with the manifest policy as
+// deterministic JSON; they do not hash the case alone.
 func MarshalSessionReferenceManifest(m SessionReferenceManifest) ([]byte, error) {
 	if !validSessionReferenceManifest(m) {
 		return nil, errSessionReference
@@ -216,7 +217,7 @@ func strictReferenceJSON(d *json.Decoder, t reflect.Type, depth int) (any, error
 			return nil, errSessionReference
 		}
 		fields := make(map[string]reflect.StructField)
-		for i := 0; i < t.NumField(); i++ {
+		for i := range t.NumField() {
 			f := t.Field(i)
 			name := strings.Split(f.Tag.Get("json"), ",")[0]
 			fields[name] = f

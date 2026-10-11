@@ -29,6 +29,7 @@ var (
 	errSessionReferenceDirectory  = errors.New("session reference file directory is unavailable or unsafe")
 	errSessionReferenceManifest   = errors.New("invalid session reference manifest")
 	errSessionReferenceDuplicate  = errors.New("duplicate session reference case or source")
+	errSessionReferenceStore      = errors.New("session reference manifest must use one source store")
 	errSessionReferenceAppend     = errors.New("session reference manifest append unavailable")
 	errSessionReferenceChanged    = errors.New("session reference manifest changed before replacement")
 	errSessionReferenceExtraction = errors.New("session reference extraction unavailable or unsupported")
@@ -93,6 +94,9 @@ func (a *App) ExtractAgentSessionReferences(opt SessionReferenceExtractionOption
 	}
 	existingIDs := make(map[string]bool, len(existing.Cases))
 	for _, c := range existing.Cases {
+		if c.Source.Store != address {
+			return errSessionReferenceStore
+		}
 		existingIDs[c.ID] = true
 		if c.Source.Store == address && seen[c.Source.SessionUID] {
 			return errSessionReferenceDuplicate
@@ -362,6 +366,9 @@ func checkSessionReferenceDuplicates(cases []agentruntime.SessionReferenceCase) 
 		source := [2]string{c.Source.Store, c.Source.SessionUID}
 		if ids[c.ID] || sources[source] {
 			return errSessionReferenceDuplicate
+		}
+		if c.Source.Store != cases[0].Source.Store {
+			return errSessionReferenceStore
 		}
 		ids[c.ID], sources[source] = true, true
 	}

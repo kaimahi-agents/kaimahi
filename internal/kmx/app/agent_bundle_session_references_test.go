@@ -47,6 +47,45 @@ func readSessionReferenceAppBytes(t *testing.T, path string) []byte {
 	return raw
 }
 
+// A single explicit source selector cannot evaluate a mixed-store manifest.
+func TestSessionReferenceAppendRefusesMixedStoresWithoutChangingBytes(t *testing.T) {
+	first := sessionReferenceAppCase(t, "first", "source-one")
+	second := sessionReferenceAppCase(t, "second", "source-two")
+	second.Source.Store = "127.0.0.1:8081"
+	path := filepath.Join(diffTempDir(t), "manifest.json")
+	if err := appendSessionReferenceManifest(path, []agentruntime.SessionReferenceCase{first}); err != nil {
+		t.Fatal(err)
+	}
+	before := readSessionReferenceAppBytes(t, path)
+	err := appendSessionReferenceManifest(path, []agentruntime.SessionReferenceCase{second})
+	if err == nil || !strings.Contains(err.Error(), "one source store") {
+		t.Fatalf("mixed-store append accepted: %v", err)
+	}
+	if !bytes.Equal(before, readSessionReferenceAppBytes(t, path)) {
+		t.Fatal("mixed-store append changed manifest")
+	}
+}
+func TestSessionReferenceExtractionRefusesDifferentStoreBeforeReads(t *testing.T) {
+	a, opt, s := newSessionReferenceExtractionFixture(t)
+	existing := sessionReferenceAppCase(t, "existing", "unrelated-uid")
+	if err := appendSessionReferenceManifest(opt.Out, []agentruntime.SessionReferenceCase{existing}); err != nil {
+		t.Fatal(err)
+	}
+	before := readSessionReferenceAppBytes(t, opt.Out)
+	err := a.ExtractAgentSessionReferences(opt)
+	if err == nil || !strings.Contains(err.Error(), "one source store") {
+		t.Fatalf("wrong store accepted: %v", err)
+	}
+	if !bytes.Equal(before, readSessionReferenceAppBytes(t, opt.Out)) {
+		t.Fatal("preflight changed manifest")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.requests) != 0 {
+		t.Fatal("wrong-store append read sources")
+	}
+}
+
 // Catch truncation/overwrite before duplicate detection, including duplicates
 // among additions and duplicates by either source identity or authored case ID.
 func TestSessionReferenceAppendRefusesDuplicatesWithoutChangingBytes(t *testing.T) {
@@ -54,7 +93,7 @@ func TestSessionReferenceAppendRefusesDuplicatesWithoutChangingBytes(t *testing.
 	second := sessionReferenceAppCase(t, "second", "session-2")
 	for _, kind := range []string{"source", "id", "batch source", "batch id"} {
 		t.Run(kind, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "private-manifest.json")
+			path := filepath.Join(diffTempDir(t), "private-manifest.json")
 			if err := appendSessionReferenceManifest(path, []agentruntime.SessionReferenceCase{first}); err != nil {
 				t.Fatal(err)
 			}
@@ -91,7 +130,7 @@ func TestSessionReferenceReadAndAppendRefuseUnsafeFiles(t *testing.T) {
 	first := sessionReferenceAppCase(t, "first", "session-1")
 	for _, kind := range []string{"invalid", "oversize", "link", "ancestor link", "directory", "broad permissions", "unsafe directory"} {
 		t.Run(kind, func(t *testing.T) {
-			dir := t.TempDir()
+			dir := diffTempDir(t)
 			path := filepath.Join(dir, "private-path-canary.json")
 			if err := appendSessionReferenceManifest(path, []agentruntime.SessionReferenceCase{first}); err != nil {
 				t.Fatal(err)
@@ -115,7 +154,7 @@ func TestSessionReferenceReadAndAppendRefuseUnsafeFiles(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "ancestor link":
-				link := filepath.Join(t.TempDir(), "linked")
+				link := filepath.Join(diffTempDir(t), "linked")
 				if err := os.Symlink(dir, link); err != nil {
 					t.Fatal(err)
 				}
@@ -163,7 +202,7 @@ func TestSessionReferenceReadAndAppendRefuseUnsafeFiles(t *testing.T) {
 
 // Catch nonprivate creation and lost updates when cooperative appenders overlap.
 func TestSessionReferenceConcurrentAppendRetainsAllPrivateCases(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "manifest.json")
+	path := filepath.Join(diffTempDir(t), "manifest.json")
 	const count = 12
 	cases := make([]agentruntime.SessionReferenceCase, count)
 	for i := range cases {
@@ -222,7 +261,7 @@ func TestSessionReferenceConcurrentAppendRetainsAllPrivateCases(t *testing.T) {
 func TestSessionReferenceFailedReplacementPreservesExistingBytes(t *testing.T) {
 	for _, kind := range []string{"rename failure", "identity changed", "content changed", "link changed"} {
 		t.Run(kind, func(t *testing.T) {
-			dir := t.TempDir()
+			dir := diffTempDir(t)
 			path := filepath.Join(dir, "manifest.json")
 			if err := appendSessionReferenceManifest(path, []agentruntime.SessionReferenceCase{sessionReferenceAppCase(t, "first", "session-1")}); err != nil {
 				t.Fatal(err)
@@ -283,7 +322,7 @@ func TestSessionReferenceFailedReplacementPreservesExistingBytes(t *testing.T) {
 
 // Catch over-budget append validation occurring after truncation or replacement.
 func TestSessionReferenceAppendCombinedBudgetLeavesBytesUnchanged(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "manifest.json")
+	path := filepath.Join(diffTempDir(t), "manifest.json")
 	large := strings.Repeat("public expectation ", 34000)
 	cases := make([]agentruntime.SessionReferenceCase, 2)
 	for i := range cases {
@@ -311,7 +350,7 @@ func TestSessionReferenceAppendCombinedBudgetLeavesBytesUnchanged(t *testing.T) 
 func TestSessionReferenceAppendLockFailurePreservesManifestAndLock(t *testing.T) {
 	for _, mode := range []string{"link", "broad", "canceled"} {
 		t.Run(mode, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "manifest.json")
+			path := filepath.Join(diffTempDir(t), "manifest.json")
 			if err := appendSessionReferenceManifest(path, []agentruntime.SessionReferenceCase{sessionReferenceAppCase(t, "first", "session-1")}); err != nil {
 				t.Fatal(err)
 			}
@@ -410,7 +449,7 @@ func newSessionReferenceExtractionFixture(t *testing.T) (*App, SessionReferenceE
 	done := make(chan struct{})
 	go func() { defer close(done); _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); <-done })
-	dir := t.TempDir()
+	dir := diffTempDir(t)
 	assertions := filepath.Join(dir, "assertions.yaml")
 	if err := os.WriteFile(assertions, []byte("id: authored\nexpectContains: [private-authored-operand]\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -594,7 +633,9 @@ func TestSessionReferencePartialExtractionFailureLeavesManifestUnchanged(t *test
 				a, opt, s := newSessionReferenceExtractionFixture(t)
 				var before []byte
 				if existing {
-					if err := appendSessionReferenceManifest(opt.Out, []agentruntime.SessionReferenceCase{sessionReferenceAppCase(t, "existing", "session-other")}); err != nil {
+					existingCase := sessionReferenceAppCase(t, "existing", "session-other")
+					existingCase.Source.Store = opt.Sessions
+					if err := appendSessionReferenceManifest(opt.Out, []agentruntime.SessionReferenceCase{existingCase}); err != nil {
 						t.Fatal(err)
 					}
 					before = readSessionReferenceAppBytes(t, opt.Out)
@@ -631,7 +672,9 @@ func TestSessionReferencePartialExtractionFailureLeavesManifestUnchanged(t *test
 
 func TestSessionReferenceCanceledExtractionLeavesManifestUnchanged(t *testing.T) {
 	a, opt, s := newSessionReferenceExtractionFixture(t)
-	if err := appendSessionReferenceManifest(opt.Out, []agentruntime.SessionReferenceCase{sessionReferenceAppCase(t, "existing", "session-other")}); err != nil {
+	existingCase := sessionReferenceAppCase(t, "existing", "session-other")
+	existingCase.Source.Store = opt.Sessions
+	if err := appendSessionReferenceManifest(opt.Out, []agentruntime.SessionReferenceCase{existingCase}); err != nil {
 		t.Fatal(err)
 	}
 	before := readSessionReferenceAppBytes(t, opt.Out)

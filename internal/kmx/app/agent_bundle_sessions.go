@@ -107,8 +107,11 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 	ui := cliui.New(a.Out)
 	counts := map[string]int{}
 	var verdicts []bundleEvaluationResult
+	reportUnavailable := false
 	for i, c := range cases {
-		fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("case "+c.Case.ID))
+		if _, err := fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("case "+c.Case.ID)); err != nil && source != nil {
+			reportUnavailable = true
+		}
 		caseCtx, cancel := context.WithTimeout(ctx, timeout)
 		var result agentsessions.CaseResult
 		inputDigest := agentruntime.EvaluationInputDigest(c.Case.Input)
@@ -160,7 +163,9 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 		if source != nil {
 			line += fmt.Sprintf(" (source %s prefix %s input %s; session %s answer %s)", references[i].Source.SessionUID, references[i].Source.PrefixHash, entry.InputDigest, entry.SessionUID, entry.AnswerSHA256)
 		}
-		fmt.Fprintln(a.Out, line)
+		if _, err := fmt.Fprintln(a.Out, line); err != nil && source != nil {
+			reportUnavailable = true
+		}
 		receipt.Cases = append(receipt.Cases, entry)
 		verdicts = append(verdicts, bundleEvaluationResult{Verdict: entry.Verdict})
 		counts[entry.Verdict]++
@@ -183,9 +188,14 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 	}
 	summary := fmt.Sprintf("%d passed, %d failed, %d unknown", counts["pass"], counts["fail"], counts["unknown"])
 	if source != nil {
-		fmt.Fprintf(a.Out, "\nevaluation %s: %s (portable digest %s; cases digest %s; run %s)\n", receipt.Result, summary, digest, receipt.CasesDigest, receipt.RunID)
+		if _, err := fmt.Fprintf(a.Out, "\nevaluation %s: %s (portable digest %s; cases digest %s; run %s)\n", receipt.Result, summary, digest, receipt.CasesDigest, receipt.RunID); err != nil {
+			reportUnavailable = true
+		}
 	} else {
 		fmt.Fprintf(a.Out, "\nevaluation %s: %s (portable digest %s)\nhistory: %s\nreceipt: %s\n", receipt.Result, summary, shortSHA(digest), evaluationHistoryPath(bundle, receipt.RunID), path)
+	}
+	if reportUnavailable {
+		return fmt.Errorf("evaluation receipts saved but report output unavailable")
 	}
 	if receipt.Result != "pass" {
 		return fmt.Errorf("evaluation did not pass: %s", summary)
