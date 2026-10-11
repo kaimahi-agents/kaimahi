@@ -2,3 +2,10 @@ id: capital-france
 input: What is the capital of France? Answer with the city name.
 expectContains:
   - Paris
+assertions:
+  - id: capital-pattern
+    type: regex
+    pattern: '\bParis\b'
+  - id: no-wrong-capital
+    type: notContains
+    value: London

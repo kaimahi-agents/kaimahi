@@ -54,15 +54,25 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 			return fmt.Errorf("no evaluation case with id %q in %s", opt.Case, agentruntime.EvaluationCaseDir)
 		}
 	}
+	runID, err := randomHex(16)
+	if err != nil {
+		return err
+	}
+	casesDigest := agentruntime.EvaluationCasesDigest(files)
+	gitCommit := liftAgentCommit(ctx, bundle, digest)
+	if err := preflightEvaluationReceiptSize(cases, portable.Spec.Model.Name, portable.Metadata.Name, opt.Sessions, digest, casesDigest, gitCommit, runID, "2", "agentsessions", "1", "host-reported", "chat"); err != nil {
+		return err
+	}
 	client, err := agentsessions.Dial(agentsessions.Options{Address: opt.Sessions, CAFile: opt.SessionsCA})
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 	receipt := sessionsEvaluationReceipt{
+		SchemaVersion: 2, RunID: runID,
 		Bundle: portable.Metadata.Name, PortableDigest: digest,
-		CasesDigest: agentruntime.EvaluationCasesDigest(files), FullCaseSet: opt.Case == "",
-		GitCommit: liftAgentCommit(ctx, bundle, digest),
+		CasesDigest: casesDigest, FullCaseSet: opt.Case == "",
+		GitCommit: gitCommit,
 		Target: sessionsEvaluationTarget{Runtime: "agentsessions", Identity: sessionsHostIdentity{
 			Version: 1, Provenance: "host-reported", Address: opt.Sessions,
 		}},
@@ -70,7 +80,7 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 	ui := cliui.New(a.Out)
 	counts := map[string]int{}
 	var verdicts []bundleEvaluationResult
-	for _, c := range cases {
+	for i, c := range cases {
 		fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("case "+c.Case.ID))
 		caseCtx, cancel := context.WithTimeout(ctx, timeout)
 		result, err := client.RunCase(caseCtx, agentsessions.CaseRequest{
@@ -79,6 +89,7 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 		})
 		cancel()
 		entry := sessionsEvaluationResult{
+			CaseDigest: agentruntime.EvaluationCaseDigest(files[i].Bytes), InputDigest: agentruntime.EvaluationInputDigest(c.Case.Input),
 			ID: c.Case.ID, Verdict: "unknown", SessionUID: result.SessionUID,
 			Harness: result.Harness, Model: result.Model, ModelMixed: result.ModelMixed,
 			JournalHead: sessionsJournalHead{Seq: result.Head.Seq, Hash: result.Head.Hash},
@@ -86,16 +97,19 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 		if result.Output != "" {
 			entry.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(result.Output)
 		}
+		entry.Assertions = agentruntime.EvaluateAssertions(c.Case, agentruntime.EvaluationEvidence{
+			Answer: result.Output, AnswerAvailable: err == nil, ToolSupported: false,
+			ToolCalls: result.ToolCalls, ToolEvidenceComplete: result.ToolEvidenceComplete,
+		})
 		if err != nil {
-			// The adapter only returns fixed diagnostics, never remote error bodies.
-			entry.Detail = err.Error()
+			entry.Detail = evaluationExecutionUnavailable
+			if result.ExecutionFailed {
+				entry.Verdict = "fail"
+				entry.Detail = evaluationExecutionFailed
+			}
 		} else {
 			entry.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(result.Output)
-			_, missing := agentruntime.MatchExpectations(result.Output, c.Case.ExpectContains)
-			entry.Verdict = "pass"
-			if len(missing) > 0 {
-				entry.Verdict = "fail"
-			}
+			entry.Verdict = string(agentruntime.EvaluationAssertionsVerdict(entry.Assertions))
 			fmt.Fprintln(a.Out, result.Output)
 		}
 		line := fmt.Sprintf("%s: %s", entry.ID, entry.Verdict)
@@ -124,7 +138,7 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 		return fmt.Errorf("evaluation finished but its receipt was not saved: %w", err)
 	}
 	summary := fmt.Sprintf("%d passed, %d failed, %d unknown", counts["pass"], counts["fail"], counts["unknown"])
-	fmt.Fprintf(a.Out, "\nevaluation %s: %s (portable digest %s)\nreceipt: %s\n", receipt.Result, summary, shortSHA(digest), path)
+	fmt.Fprintf(a.Out, "\nevaluation %s: %s (portable digest %s)\nhistory: %s\nreceipt: %s\n", receipt.Result, summary, shortSHA(digest), evaluationHistoryPath(bundle, receipt.RunID), path)
 	if receipt.Result != "pass" {
 		return fmt.Errorf("evaluation did not pass: %s", summary)
 	}

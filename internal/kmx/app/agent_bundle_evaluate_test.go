@@ -19,6 +19,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"go.yaml.in/yaml/v3"
 )
 
 type evalFixture struct {
@@ -277,9 +278,9 @@ func TestEvaluateMissingExpectationFailsAndExitsNonZero(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "did not pass") {
 		t.Fatalf("failing evaluation returned %v", err)
 	}
-	receipt, _ := f.receipt(t)
+	receipt, raw := f.receipt(t)
 	c := receipt.Cases[0]
-	if receipt.Result != "fail" || c.Verdict != "fail" || !slices.Equal(c.Matched, []string{"hello"}) || !slices.Equal(c.Missing, []string{"Signed, Sample"}) {
+	if receipt.Result != "fail" || c.Verdict != "fail" || len(c.Assertions) != 2 || c.Assertions[0].Verdict != agentruntime.EvaluationPass || c.Assertions[1].Verdict != agentruntime.EvaluationFail || len(c.Matched)+len(c.Missing) != 0 || strings.Contains(raw, "Signed, Sample") {
 		t.Fatalf("receipt = %+v", receipt)
 	}
 	if !strings.Contains(f.out.String(), "hello there.") || !strings.Contains(f.out.String(), `missing "Signed, Sample"`) {
@@ -294,7 +295,7 @@ func TestEvaluateFailedTaskIsFail(t *testing.T) {
 		t.Fatal("a failed Task passed the gate")
 	}
 	receipt, _ := f.receipt(t)
-	if receipt.Result != "fail" || receipt.Cases[0].Verdict != "fail" || !strings.Contains(receipt.Cases[0].Detail, "Failed") {
+	if receipt.Result != "fail" || receipt.Cases[0].Verdict != "fail" || receipt.Cases[0].Detail != "evaluation execution failed" {
 		t.Fatalf("receipt = %+v", receipt)
 	}
 	if f.taskCreates(t) != 1 {
@@ -404,6 +405,143 @@ func TestEvaluateUsesRememberedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := f.app.EvaluateAgentBundle(f.opt); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEvaluateReceiptSizePreflight(t *testing.T) {
+	for _, selected := range []bool{false, true} {
+		t.Run(fmt.Sprintf("selected=%t", selected), func(t *testing.T) {
+			f := newEvalFixture(t, oversizedEvaluationSuite())
+			f.answers["hello"] = "hello"
+			if selected {
+				f.opt.Case = "case-0"
+			} else {
+				// Budget refusal must precede even the remote mutation guard.
+				t.Setenv("KMX_EVAL_REMOTE", "1")
+			}
+			err := f.app.EvaluateAgentBundle(f.opt)
+			if selected {
+				if err != nil || f.taskCreates(t) != 1 {
+					t.Fatalf("single case: err=%v tasks=%d", err, f.taskCreates(t))
+				}
+				r, _ := f.receipt(t)
+				if r.FullCaseSet || len(r.Cases) != 1 || len(r.Cases[0].Assertions) != 1000 {
+					t.Fatalf("wrong selected evidence: %+v", r)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") || !strings.Contains(err.Error(), "at most 231 cases with one assertion each") || !strings.Contains(err.Error(), "--case <id> to run one case") {
+				t.Errorf("want receipt-size preflight refusal with case limit and single-case guidance, got %v", err)
+			}
+			if calls := orkaCalls(t, f.dir); len(calls) != 0 || f.taskCreates(t) != 0 {
+				t.Errorf("oversized evaluation reached kubectl: %+v", calls)
+			}
+			if _, err := os.Stat(filepath.Join(f.bundle, "receipts")); !os.IsNotExist(err) {
+				t.Errorf("refused evaluation changed receipts: %v", err)
+			}
+		})
+	}
+}
+
+func TestEvaluateKnownMetadataPreflight(t *testing.T) {
+	for _, field := range []string{"model", "escaped model", "context", "remembered namespace", "cluster UID", "Agent UID"} {
+		t.Run(field, func(t *testing.T) {
+			f := newEvalFixture(t, map[string]string{"a.yaml": evalHelloCase})
+			f.answers["Say hello."] = "hello"
+			huge := strings.Repeat("x", maxSessionsReceiptBytes)
+			beforeCluster := true
+			switch field {
+			case "model", "escaped model":
+				if field == "escaped model" {
+					// Raw bytes fit comfortably; JSON HTML escaping does not.
+					huge = strings.Repeat("<", maxSessionsReceiptBytes/6)
+				}
+				setEvaluationPortableModel(t, f.bundle, huge)
+				_, _, digest, err := readBundlePortableDocument(f.bundle)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.digest = digest
+				f.seedAgent(t, f.digest)
+			case "context":
+				f.opt.ToContext = huge
+			case "remembered namespace":
+				path, err := bundleLiftSelectionPath(f.bundle)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := saveBundleLiftSelection(path, bundleLiftSelection{Context: "kind-test", ClusterUID: "cluster-uid", Namespace: huge, Inference: "provider:inference"}); err != nil {
+					t.Fatal(err)
+				}
+			case "cluster UID":
+				// Avoid oversized environment variables while retaining huge JSON.
+				t.Setenv("KMX_EVAL_CLUSTER_UID", strings.Repeat("<", 110000))
+				body := "id: greet\ninput: Say hello.\nexpectContains:\n" + strings.Repeat("- hello\n", 1000)
+				if err := os.WriteFile(filepath.Join(f.bundle, "eval", "a.yaml"), []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+				beforeCluster = false
+			case "Agent UID":
+				raw, err := os.ReadFile(filepath.Join(f.dir, "agent.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var agent map[string]any
+				if err := json.Unmarshal(raw, &agent); err != nil {
+					t.Fatal(err)
+				}
+				agent["metadata"].(map[string]any)["uid"] = huge
+				seed, err := json.Marshal(agent)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(f.dir, "agent.json"), seed, 0600); err != nil {
+					t.Fatal(err)
+				}
+				beforeCluster = false
+			}
+			if !beforeCluster {
+				// Metadata refusal must precede the remote mutation guard too.
+				t.Setenv("KMX_EVAL_REMOTE", "1")
+			}
+			err := f.app.EvaluateAgentBundle(f.opt)
+			if err == nil || !strings.Contains(err.Error(), "1 MiB receipt budget") || strings.Contains(err.Error(), "finished") {
+				t.Errorf("known metadata did not fail preflight: %v", err)
+			}
+			if f.taskCreates(t) != 0 {
+				t.Error("known oversized metadata created a Task")
+			}
+			if calls := orkaCalls(t, f.dir); beforeCluster && len(calls) != 0 {
+				t.Errorf("known oversized metadata reached kubectl: %d calls", len(calls))
+			}
+			if _, err := os.Stat(filepath.Join(f.bundle, "receipts")); !os.IsNotExist(err) {
+				t.Errorf("metadata refusal changed receipts: %v", err)
+			}
+		})
+	}
+}
+
+func setEvaluationPortableModel(t *testing.T, bundle, model string) {
+	t.Helper()
+	path := filepath.Join(bundle, "agent.yaml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portable, err := agentruntime.ParsePortableAgent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portable.Spec.Model.Name = model
+	raw, err = yaml.Marshal(portable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agentruntime.ParsePortableAgent(raw); err != nil {
+		t.Fatalf("oversized model must remain a valid portable source: %v", err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 // Sessions evidence is separate from Orka's deployed-Agent receipt. No prompts,
 // answers, expectation text, tool payloads or arbitrary server errors are persisted.
 // Unknown outcomes retain any session/journal references available for inspection.
 type sessionsEvaluationReceipt struct {
+	SchemaVersion  int                        `json:"schemaVersion,omitempty"`
+	RunID          string                     `json:"runID,omitempty"`
 	Bundle         string                     `json:"bundle"`
 	PortableDigest string                     `json:"portableDigest"`
 	CasesDigest    string                     `json:"casesDigest"`
@@ -44,20 +48,38 @@ type sessionsJournalHead struct {
 }
 
 type sessionsEvaluationResult struct {
-	ID           string              `json:"id"`
-	Verdict      string              `json:"verdict"`
-	SessionUID   string              `json:"sessionUID,omitempty"`
-	Harness      string              `json:"harness,omitempty"`
-	Model        string              `json:"model,omitempty"`
-	ModelMixed   bool                `json:"modelMixed,omitempty"`
-	JournalHead  sessionsJournalHead `json:"journalHead"`
-	AnswerSHA256 string              `json:"answerSHA256,omitempty"`
-	Detail       string              `json:"detail,omitempty"`
+	CaseDigest   string                                   `json:"caseDigest,omitempty"`
+	InputDigest  string                                   `json:"inputDigest,omitempty"`
+	Assertions   []agentruntime.EvaluationAssertionResult `json:"assertions,omitempty"`
+	ID           string                                   `json:"id"`
+	Verdict      string                                   `json:"verdict"`
+	SessionUID   string                                   `json:"sessionUID,omitempty"`
+	Harness      string                                   `json:"harness,omitempty"`
+	Model        string                                   `json:"model,omitempty"`
+	ModelMixed   bool                                     `json:"modelMixed,omitempty"`
+	JournalHead  sessionsJournalHead                      `json:"journalHead"`
+	AnswerSHA256 string                                   `json:"answerSHA256,omitempty"`
+	Detail       string                                   `json:"detail,omitempty"`
 }
 
 // Keep the latest evaluation per endpoint/harness, like Orka's latest evaluation
 // per destination. A runtime-specific domain separates their filename identities.
 func writeSessionsEvaluationReceipt(bundle string, receipt sessionsEvaluationReceipt) (string, error) {
+	if receipt.SchemaVersion == 2 {
+		if !evaluationReceiptVersion(receipt.SchemaVersion, receipt.RunID) || len(receipt.Cases) == 0 {
+			return "", fmt.Errorf("invalid evaluation receipt evidence")
+		}
+		var outcomes []bundleEvaluationResult
+		for _, c := range receipt.Cases {
+			if !evaluationCaseEvidence(c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) {
+				return "", fmt.Errorf("invalid evaluation receipt case evidence")
+			}
+			outcomes = append(outcomes, bundleEvaluationResult{Verdict: c.Verdict})
+		}
+		if bundleEvaluationOverall(outcomes) != receipt.Result {
+			return "", fmt.Errorf("invalid evaluation receipt result")
+		}
+	}
 	dir := filepath.Join(bundle, "receipts")
 	if err := os.Mkdir(dir, 0700); err != nil && !os.IsExist(err) {
 		return "", err
@@ -71,5 +93,5 @@ func writeSessionsEvaluationReceipt(bundle string, receipt sessionsEvaluationRec
 	}
 	key := sha256.Sum256([]byte("agentsessions\x00" + receipt.Target.Identity.Address + "\x00chat"))
 	path := filepath.Join(dir, fmt.Sprintf("eval-%x.json", key))
-	return path, writePrivateAgentFile(path, append(raw, '\n'))
+	return path, writeEvaluationRunAndLatest(bundle, receipt.SchemaVersion, receipt.RunID, path, append(raw, '\n'))
 }

@@ -24,13 +24,17 @@ import (
 // logical path prefix each case file is framed under in the cases digest.
 const EvaluationCaseDir = "eval"
 
-// EvaluationCase is one authored case file: exactly an id, an input and at
-// least one expected substring. Unknown fields are refused, so a misspelled
-// assertion can never silently stop being checked.
+// EvaluationMaxAssertions bounds the combined legacy and explicit case evidence.
+const EvaluationMaxAssertions = 1000
+
+// EvaluationCase is one authored case file: an id, an input and at least one
+// legacy expected substring or explicit assertion. Unknown fields are refused,
+// so a misspelled assertion can never silently stop being checked.
 type EvaluationCase struct {
-	ID             string   `yaml:"id"`
-	Input          string   `yaml:"input"`
-	ExpectContains []string `yaml:"expectContains"`
+	ID             string                `yaml:"id"`
+	Input          string                `yaml:"input"`
+	ExpectContains []string              `yaml:"expectContains"`
+	Assertions     []EvaluationAssertion `yaml:"assertions"`
 }
 
 // EvaluationCaseFile is one case file's name inside EvaluationCaseDir and its
@@ -73,6 +77,19 @@ func ParseEvaluationCase(data []byte) (EvaluationCase, error) {
 	if err := rejectPortableKeyHazards(root.Content[0], ""); err != nil {
 		return EvaluationCase{}, fmt.Errorf("evaluation case: %w", err)
 	}
+	// yaml.v3 skips null sequence entries before invoking element unmarshallers.
+	// Refuse them explicitly so a malformed authored assertion cannot disappear.
+	mapping := root.Content[0]
+	for i := 0; i < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value != "assertions" || mapping.Content[i+1].Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, assertion := range mapping.Content[i+1].Content {
+			if assertion.Kind != yaml.MappingNode {
+				return EvaluationCase{}, fmt.Errorf("evaluation assertion must be a mapping")
+			}
+		}
+	}
 	strict := yaml.NewDecoder(bytes.NewReader(data))
 	strict.KnownFields(true)
 	var c EvaluationCase
@@ -85,13 +102,19 @@ func ParseEvaluationCase(data []byte) (EvaluationCase, error) {
 	if strings.TrimSpace(c.Input) == "" {
 		return EvaluationCase{}, fmt.Errorf("evaluation case %s: input is required", c.ID)
 	}
-	if len(c.ExpectContains) == 0 {
-		return EvaluationCase{}, fmt.Errorf("evaluation case %s: expectContains needs at least one string", c.ID)
+	if len(c.ExpectContains) == 0 && len(c.Assertions) == 0 {
+		return EvaluationCase{}, fmt.Errorf("evaluation case %s: at least one expectContains string or assertion is required", c.ID)
+	}
+	if len(c.ExpectContains)+len(c.Assertions) > EvaluationMaxAssertions {
+		return EvaluationCase{}, fmt.Errorf("evaluation case %s: at most %d assertions are allowed", c.ID, EvaluationMaxAssertions)
 	}
 	for i, expected := range c.ExpectContains {
 		if strings.TrimSpace(expected) == "" || strings.IndexFunc(expected, unicode.IsControl) >= 0 {
 			return EvaluationCase{}, fmt.Errorf("evaluation case %s: expectContains[%d] must be a nonblank single-line string", c.ID, i)
 		}
+	}
+	if err := ValidateEvaluationAssertions(c.Assertions); err != nil {
+		return EvaluationCase{}, fmt.Errorf("evaluation case %s: %w", c.ID, err)
 	}
 	return c, nil
 }
