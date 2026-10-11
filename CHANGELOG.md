@@ -22,15 +22,29 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+## v0.5.0 — 2026-10-11
+
 ### Added
+
+- `kmx agent evaluate` supports `contains`, `notContains` and RE2 `regex` assertions alongside `expectContains`, and keeps immutable run receipts.
+  `toolCalled` and `toolNotCalled` syntax is accepted but currently reports unknown. [Evaluation assertions](docs/agent-lift.md#evaluating-a-deployed-revision).
+
+- `kmx agent eval diff <before.json> <after.json>` compares saved evaluations offline by case and assertion, showing regressions, fixes and lost evidence without rerunning models.
+  Comparison requires compatible full-case v2 receipts; regressions and incomplete comparisons exit nonzero. [Compare evaluations](docs/agent-lift.md#comparing-saved-evaluations-offline).
+
+- The console's `R` key shows recent Orka Tasks, task lanes and sanitized activity for the selected agent, context and namespace.
+  Discovery is bounded and reports missing or unreadable evidence without showing conversation payloads. [Interactive console](docs/interactive-agent-tui-plan.md).
+
+- The reusable KMX GitHub evaluation action runs a tracked bundle's cases through Sessions, optionally replay-checks receipts, and fails the job unless every case passes.
+  Sessions evaluation does not satisfy an Orka lift gate. [Run evals in CI](docs/agent-lift.md#run-evals-in-ci).
 
 - `kmx agent eval from-sessions <session-uid>...` extracts private single-turn UID/prefix references and authored assertions without copying recorded inputs or answers; existing `--out` manifests append atomically and refuse duplicates.
   `agent evaluate --from-sessions` verifies source prefixes in memory and runs fresh candidate sessions, with named candidate/judge confirmation and payload-free output unless `--show-content` is explicit. Expired/unavailable references remain unknown; current diff conservatively makes the whole comparison incompatible when a case lacks runtime identity ([#403](https://github.com/kaimahi-agents/kaimahi/issues/403)). Ordinary authored-input evaluation and v2 receipt formats are unchanged. [Recorded cases and privacy](docs/agent-lift.md#recorded-sessions-as-reference-cases).
 
 - `kmx agent evaluate` supports explicit `llmJudge` rubric/threshold/model/version assertions with `--judge-base-url` and optional `--judge-key-env` (environment name only), without model/endpoint defaults.
-  Two temperature-zero scores must agree on the threshold side; split or unavailable evidence is unknown. Receipts bind identity/policy/threshold and both scores without payloads; input/answer/rubric go to the chosen judge provider and terminal reasoning may contain answer text. Replay makes zero judge calls and explicitly leaves judge outcomes unverified. Older strict v2 readers must upgrade for judge receipts. [Judge configuration and privacy](docs/agent-lift.md#explicit-llm-judge).
+  Two temperature-zero scores must agree on the threshold side; split or unavailable evidence is unknown. Receipts bind identity/policy/threshold and both scores without payloads; input/answer/rubric go to the chosen judge provider and terminal reasoning may contain answer text. Replay makes zero judge calls and explicitly leaves judge outcomes unverified. [Judge configuration and privacy](docs/agent-lift.md#explicit-llm-judge).
 
-- `kmx context show/use` inspect and save context selection; `kmx local up/down` name the existing local kind setup and deletion operations. [Command names](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+- v0.5.0 introduces `kmx context show/use` to inspect and save context selection, and `kmx local up/down` for the existing local kind setup and deletion operations. [Command names](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
 
 - `kmx targets` reports runtime capabilities offline, with optional Orka and Sessions probes. It selects, installs and deploys nothing; unreadable probes exit nonzero, distinct from absence. [Target view](docs/runtime-adapters.md#read-only-target-view).
 
@@ -54,7 +68,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Explicit `kmx agent lift` and `kmx agent status` with `--runtime kagent --runtime-version v0.10.3` support Go declarative bundles on an operator-prepared target with `--to-context` and desired `KagentBindings`.
   Lift is create-only or complete UID-bound receipt reuse, with no adoption/update; receipts prove readiness, not execution. Dedicated CI qualifies Go plan/lift/repeat/status/conflicts and a separate one-shot native A2A MCP answer with payload-free evidence. [Version-qualified placement](docs/agent-lift.md#exact-v0103-declarative-bundle-placement).
 
-- Upcoming signed releases include `checksums.txt.sigstore.json`, a keyless cosign bundle for the four binaries' checksum manifest. Earlier releases and the Homebrew formula are not covered; installers still verify checksums, not signatures automatically. [Verify a release](docs/releases.md#verify-a-release) ([#387](https://github.com/kaimahi-agents/kaimahi/issues/387)).
+- v0.5.0 includes `checksums.txt.sigstore.json`, a keyless cosign bundle for the four binaries' checksum manifest.
+  Earlier releases and the Homebrew formula are not covered; installers still verify checksums, not signatures automatically. [Verify a release](docs/releases.md#verify-a-release).
 
 ### Changed
 
@@ -79,7 +94,25 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
-- Recovery commands preserve local and AKS selectors and no longer suggest deleted Make targets. Teardown is unchanged. [Recovery commands](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+- Recovery advice preserves local and AKS selectors and safely quotes the selected context, including status/Orka diagnostics and retired-edit migration hints.
+  Teardown is unchanged; advice no longer suggests deleted Make targets. [Recovery commands](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+
+- Message text after `--` stays positional data instead of being interpreted as a `--context` or legacy `-context` selector. [Context parsing fix](https://github.com/kaimahi-agents/kaimahi/pull/407).
+
+- Quickstart and native chat check Task-result read access before creating a Task, stopping on denied or malformed responses.
+  No Task is created on refusal; earlier setup may remain. [Result-access fix](https://github.com/kaimahi-agents/kaimahi/pull/365).
+
+- `kmx agent show` and bundle-aware `kmx agent status` return a failure when their JSON output cannot be written. [JSON output fix](https://github.com/kaimahi-agents/kaimahi/pull/415).
+
+- Creation and quickstart help distinguish offline rendering, optional bundle persistence, fixed-mode answers and guided readiness/chat.
+  Operations, defaults and flag names are unchanged. [Help improvements](https://github.com/kaimahi-agents/kaimahi/pull/416).
+
+- kagent refusal messages identify unsupported chat and the retired AKS installer payload, and point to `kmx targets` for supported operations.
+  Explicit bundle lift/status and historical AKS teardown remain available. [Runtime guidance](https://github.com/kaimahi-agents/kaimahi/pull/419).
+
+- `make build` delegates freshness checks to Go so source, embedded-data and build-option changes rebuild the CLI. [Build and verify](docs/development.md#build-and-verify).
+
+- `install.sh --help` prints its complete header instead of truncating instructions or showing script code. [Installer](install.sh).
 
 - Console Prepare can repair the quickstart Kubernetes Tool's scoped policy-reader grant.
   Install and lift refuse missing/ambiguous worker identity or ineffective authorization. [Repair instructions](docs/orka-k8s-tool.md#repair-a-missing-policy-reader-grant).
@@ -100,8 +133,20 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Upgrading
 
-- Replace `kmx quickstart-wizard` with `kmx quickstart --interactive` and drop `--interactive` from `kmx agent chat`; tagged v0.4.1 and earlier still use the old wizard and require `agent chat --interactive`.
-  With v0.4.1 use `ctx/up/down`, not the unreleased `context/local` names. [Quickstart migration](docs/getting-started.md#create-your-own-agent-then-lift-it-from-chat), [command compatibility](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+- Replace `kmx quickstart-wizard` with `kmx quickstart --interactive` and drop `--interactive` from `kmx agent chat` in v0.5.0.
+  v0.4.1 and earlier retain the old wizard and require `agent chat --interactive`. [Quickstart migration](docs/getting-started.md#create-your-own-agent-then-lift-it-from-chat).
+
+- Use `kmx context show/use` and `kmx local up/down` in v0.5.0; `ctx/up/down` remain compatibility routes.
+  v0.4.1 and earlier require the old names. [Command compatibility](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+
+- Remove retired plane/admin commands and configuration from automation; configure supported Orka agents with native inference instead.
+  Existing plane deployments and data need separate operator-owned retirement; upgrading kmx deletes none of them. [Native inference](docs/kmx.md#default-orka-contract), [removal scope](CONTRIBUTING.md#local-verification).
+
+- Use HTTPS for authenticated remote registry push/pull and add `--force` only when deliberately replacing a tag's digest.
+  The tag preflight guard is non-atomic. [Registry safety](docs/kmx.md#registry-authentication).
+
+- Upgrade receipt readers to v0.5.0 before exchanging `llmJudge` receipts.
+  Older strict v2 readers reject the added judge metadata. [Judge receipt compatibility](docs/agent-lift.md#explicit-llm-judge).
 
 - `CHAT_PORT` and `KMX_CHAT_PORT` are unsupported: Task-backed Orka chat and quickstart fail if fixed loopback port 19180 is occupied. Free that port instead. [Chat port](docs/aks.md#historical-resources-and-concurrent-checks).
 
