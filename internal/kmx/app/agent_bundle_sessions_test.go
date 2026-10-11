@@ -62,7 +62,7 @@ func TestSessionsReceiptSizePreflight(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") || !strings.Contains(err.Error(), "at most 232 cases with one assertion each") || !strings.Contains(err.Error(), "--case <id> to run one case") || strings.Contains(err.Error(), "finished") {
+			if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") || !strings.Contains(err.Error(), "at most 231 cases with one assertion each") || !strings.Contains(err.Error(), "--case <id> to run one case") || strings.Contains(err.Error(), "finished") {
 				t.Errorf("want receipt-size preflight refusal with case limit and single-case guidance, got %v", err)
 			}
 			if creates != 0 || execs != 0 {
@@ -87,6 +87,32 @@ func TestSessionsReceiptSizePreflightPrecedesDial(t *testing.T) {
 	err := a.EvaluateAgentBundle(opt)
 	if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") {
 		t.Fatalf("dial preceded size refusal: %v", err)
+	}
+}
+
+func TestSessionsKnownMetadataPreflightPrecedesDial(t *testing.T) {
+	for _, field := range []string{"model", "escaped model", "endpoint"} {
+		t.Run(field, func(t *testing.T) {
+			a, opt, _ := newSessionsAppFixture(t, &sessionsEvalServer{})
+			opt.Case = "one"
+			opt.Sessions = "not-an-endpoint"
+			model := strings.Repeat("x", maxSessionsReceiptBytes)
+			if field == "escaped model" {
+				model = strings.Repeat("<", maxSessionsReceiptBytes/6)
+			}
+			if field == "endpoint" {
+				opt.Sessions = strings.Repeat("<", maxSessionsReceiptBytes/6)
+			} else {
+				setEvaluationPortableModel(t, opt.BundleDir, model)
+			}
+			err := a.EvaluateAgentBundle(opt)
+			if err == nil || !strings.Contains(err.Error(), "1 MiB receipt budget") || strings.Contains(err.Error(), "finished") {
+				t.Fatalf("dial preceded known metadata refusal: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(opt.BundleDir, "receipts")); !os.IsNotExist(err) {
+				t.Errorf("metadata refusal changed receipts: %v", err)
+			}
+		})
 	}
 }
 

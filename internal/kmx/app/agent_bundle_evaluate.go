@@ -166,10 +166,16 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 			return fmt.Errorf("no evaluation case with id %q in %s", opt.Case, agentruntime.EvaluationCaseDir)
 		}
 	}
-	if err := preflightEvaluationReceiptSize(cases); err != nil {
+	casesDigest := agentruntime.EvaluationCasesDigest(files)
+	runID, err := randomHex(16)
+	if err != nil {
 		return err
 	}
-	casesDigest := agentruntime.EvaluationCasesDigest(files)
+	gitCommit := liftAgentCommit(ctx, bundle, portableDigest)
+	metadata := []string{portable.Spec.Model.Name, name, name, portableDigest, casesDigest, gitCommit, runID, "2", string(agentruntime.Orka)}
+	if err := preflightEvaluationReceiptSize(cases, append(metadata, opt.ToContext, OrkaNamespace)...); err != nil {
+		return err
+	}
 
 	selectionPath, err := bundleLiftSelectionPath(bundle)
 	if err != nil {
@@ -190,6 +196,14 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 	if remembered.Context == contextName && remembered.Namespace != "" {
 		namespace = remembered.Namespace
 	}
+	metadata = append(metadata, contextName, namespace)
+	knownClusterUID := ""
+	if remembered.Context == contextName {
+		knownClusterUID = remembered.ClusterUID
+	}
+	if err := preflightEvaluationReceiptSize(cases, append(metadata, knownClusterUID)...); err != nil {
+		return err
+	}
 	worker := *a
 	cfg := *a.Cfg
 	cfg.KubeContext, cfg.ContextSource = contextName, config.SourceFlag
@@ -209,6 +223,9 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := preflightEvaluationReceiptSize(cases, append(metadata, uid, ref.UID)...); err != nil {
+		return err
+	}
 	// Every case executes a Task, which can have side effects, so evaluate
 	// passes the same context guard as any other Orka mutation.
 	action := fmt.Sprintf("execute %d evaluation Task(s) against Agent %s in %s", len(cases), name, namespace)
@@ -219,14 +236,10 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 	worker.notef("Each case creates one Task (never retried) and reads its result as %s, which uses that ServiceAccount's full effective authority.", orkaResultAccount)
 
 	adapter := orkaRuntimeAdapter{app: &worker, resultPort: opt.ResultPort}
-	runID, err := randomHex(16)
-	if err != nil {
-		return err
-	}
 	receipt := bundleEvaluationReceipt{
 		SchemaVersion: 2, RunID: runID,
 		Bundle: name, PortableDigest: portableDigest, CasesDigest: casesDigest, FullCaseSet: opt.Case == "",
-		GitCommit: liftAgentCommit(ctx, bundle, portableDigest),
+		GitCommit: gitCommit,
 		Target:    bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: contextName, Namespace: namespace, ClusterUID: uid, Agent: name, AgentUID: ref.UID, Model: portable.Spec.Model.Name},
 	}
 	ui := cliui.New(a.Out)

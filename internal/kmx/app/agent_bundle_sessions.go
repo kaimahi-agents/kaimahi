@@ -54,7 +54,13 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 			return fmt.Errorf("no evaluation case with id %q in %s", opt.Case, agentruntime.EvaluationCaseDir)
 		}
 	}
-	if err := preflightEvaluationReceiptSize(cases); err != nil {
+	runID, err := randomHex(16)
+	if err != nil {
+		return err
+	}
+	casesDigest := agentruntime.EvaluationCasesDigest(files)
+	gitCommit := liftAgentCommit(ctx, bundle, digest)
+	if err := preflightEvaluationReceiptSize(cases, portable.Spec.Model.Name, portable.Metadata.Name, opt.Sessions, digest, casesDigest, gitCommit, runID, "2", "agentsessions", "1", "host-reported", "chat"); err != nil {
 		return err
 	}
 	client, err := agentsessions.Dial(agentsessions.Options{Address: opt.Sessions, CAFile: opt.SessionsCA})
@@ -62,15 +68,11 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 		return err
 	}
 	defer client.Close()
-	runID, err := randomHex(16)
-	if err != nil {
-		return err
-	}
 	receipt := sessionsEvaluationReceipt{
 		SchemaVersion: 2, RunID: runID,
 		Bundle: portable.Metadata.Name, PortableDigest: digest,
-		CasesDigest: agentruntime.EvaluationCasesDigest(files), FullCaseSet: opt.Case == "",
-		GitCommit: liftAgentCommit(ctx, bundle, digest),
+		CasesDigest: casesDigest, FullCaseSet: opt.Case == "",
+		GitCommit: gitCommit,
 		Target: sessionsEvaluationTarget{Runtime: "agentsessions", Identity: sessionsHostIdentity{
 			Version: 1, Provenance: "host-reported", Address: opt.Sessions,
 		}},

@@ -65,6 +65,37 @@ func TestEvaluationReceiptSizeBudget(t *testing.T) {
 	}
 }
 
+func TestEvaluationReceiptKnownMetadataBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		model string
+		fixed []string
+		count int
+		want  string
+	}{
+		{name: "small metadata", model: "test-model", fixed: []string{"sample", "kind-test"}, count: 231},
+		{name: "small metadata reduces case limit", model: "test-model", fixed: []string{"sample", "kind-test"}, count: 232, want: "at most 231 cases"},
+		{name: "oversized fixed metadata", fixed: []string{strings.Repeat("x", maxSessionsReceiptBytes)}, count: 1, want: "at most 0 cases"},
+		{name: "escaped fixed metadata", fixed: []string{strings.Repeat("<", maxSessionsReceiptBytes/6)}, count: 1, want: "at most 0 cases"},
+		{name: "model repeated per case", model: strings.Repeat("x", 10000), count: 80, want: "at most 71 cases"},
+		{name: "model escaping repeated per case", model: strings.Repeat("<", 2000), count: 70, want: "at most 62 cases"},
+		{name: "combined fixed metadata", fixed: []string{strings.Repeat("x", 600000), strings.Repeat("x", 500000)}, count: 1, want: "at most 0 cases"},
+		{name: "model exceeds entire budget", model: strings.Repeat("x", maxSessionsReceiptBytes), count: 1, want: "at most 0 cases"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cases := make([]bundleEvaluationCase, tc.count)
+			for i := range cases {
+				cases[i].Case.ExpectContains = []string{"hello"}
+			}
+			metadata := append([]string{tc.model}, tc.fixed...)
+			err := preflightEvaluationReceiptSize(cases, metadata...)
+			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+				t.Fatalf("metadata budget error=%v; want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func oneAssertionCaseCounts(count int) []int {
 	counts := make([]int, count)
 	for i := range counts {

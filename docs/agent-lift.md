@@ -450,11 +450,14 @@ there is no judge or fallback to the agent model.
 Before execution, both evaluation paths enforce a conservative **1 MiB receipt
 budget**: 8 KiB for the envelope, 4 KiB per case's metadata and 384 bytes per
 assertion (legacy and typed combined). This permits at most **232 cases with
-one assertion each**, fewer with additional assertions. Metadata reserves cover
+one assertion each** before known metadata is added; additional assertions and
+metadata reduce that count. Preflight measures the actual JSON-serialized size
+of the model, bundle and resolved target metadata, including escaping, before
+creating Tasks or sessions. Metadata reserves cover
 the indented JSON schemas, including escaped session identities and an
 unexpected observed model on failed execution; IDs and digests do not need
 escaping. The writer also checks the exact serialized size, since some runtime
-metadata, such as a Kubernetes context or Task UID, is unbounded. Reduce an
+metadata learned during execution, such as a Task UID, is unbounded. Reduce an
 oversized suite or use `--case <id>` to run **one** case, not an arbitrary subset.
 A single-case receipt does not satisfy a full-case lift gate.
 

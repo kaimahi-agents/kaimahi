@@ -91,9 +91,10 @@ as an unknown field, even though case files still have no version tag.
 
 Evaluation preflight reserves 8 KiB per receipt, 4 KiB per case and 384 bytes
 per assertion within the 1 MiB receipt limit. At most 232 cases with one
-assertion each fit this conservative budget; additional assertions reduce the
-case count. The exact serialized-size check remains for unbounded runtime
-metadata. `--case <id>` selects one case, not an arbitrary subset, and its
+assertion each fit before known metadata is added; additional assertions and
+metadata reduce the case count. Preflight adds the actual JSON-serialized sizes
+of model, bundle and target metadata before execution. The exact serialized-size
+check remains for unbounded metadata learned during execution. `--case <id>` selects one case, not an arbitrary subset, and its
 receipt cannot satisfy a full-case lift gate. Reader limits (including the
 1,000-case verification limit) are separate from this execution budget.
 

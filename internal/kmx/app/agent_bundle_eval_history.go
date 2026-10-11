@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,23 +20,41 @@ const (
 // bytes per byte, but then the harness is chat. An invalid created harness
 // returns before observing a model. IDs/digests do not escape; Orka Task names
 // are at most 62 bytes. Tests measure both schemas and session failure shapes.
-// Reserve another 8 KiB for the envelope. Unbounded runtime metadata (e.g.
-// Kubernetes context or Task UID) still needs the writer's exact size check.
-func preflightEvaluationReceiptSize(cases []bundleEvaluationCase) error {
+// Reserve another 8 KiB for the envelope. Known metadata is added using its
+// actual JSON string size, including escaping. The first optional string is
+// the model: reserve it once in the target and once per case (conservative for
+// Orka, required for sessions). Remaining strings occur once. Metadata learned
+// during execution (e.g. Task UID) still needs the writer's exact size check.
+func preflightEvaluationReceiptSize(cases []bundleEvaluationCase, metadata ...string) error {
 	if len(cases) == 0 {
 		return fmt.Errorf("evaluation requires at least one case")
 	}
 	const caseBytes, assertionBytes, envelopeBytes = 4096, 384, 8192
 	remaining := maxSessionsReceiptBytes - envelopeBytes
-	maxCases := remaining / (caseBytes + assertionBytes)
+	maxCases := 0
 	tooLarge := func() error {
 		return fmt.Errorf("selected evaluation cases exceed the conservative 1 MiB receipt budget; supports at most %d cases with one assertion each (fewer with additional assertions); reduce the suite or use --case <id> to run one case", maxCases)
 	}
-	for _, c := range cases {
-		if remaining < caseBytes {
+	modelBytes := 0
+	for i, value := range metadata {
+		// Marshaling a string cannot fail. Measure rather than assume a byte
+		// limit: JSON expands HTML characters, controls and invalid UTF-8.
+		raw, _ := json.Marshal(value)
+		if len(raw) > remaining {
 			return tooLarge()
 		}
-		remaining -= caseBytes
+		remaining -= len(raw)
+		if i == 0 {
+			modelBytes = len(raw)
+		}
+	}
+	// modelBytes cannot exceed the receipt budget, so this addition is safe.
+	maxCases = remaining / (caseBytes + assertionBytes + modelBytes)
+	for _, c := range cases {
+		if remaining < caseBytes+modelBytes {
+			return tooLarge()
+		}
+		remaining -= caseBytes + modelBytes
 		// Consume each count separately: neither summed counts nor unchecked
 		// multiplication can overflow, even for a large suite.
 		for _, count := range []int{len(c.Case.ExpectContains), len(c.Case.Assertions)} {
