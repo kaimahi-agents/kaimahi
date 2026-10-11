@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image/color"
 	"io"
 	"os"
 	"strings"
@@ -840,123 +839,6 @@ func (m quickstartWizardModel) compactQuestion(width, height int) string {
 	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Blue).Padding(0, 1).Width(width - 2).Render(body)
 }
 
-func (m quickstartWizardModel) infrastructurePanel(width int) string {
-	var body strings.Builder
-	target := []struct{ label, value string }{
-		{"ABOUT TO", m.target.Action}, {"CONTEXT", m.target.Context}, {"CHOSEN BY", m.target.Source},
-		{"SERVER", m.target.Server}, {"NAMESPACES", m.target.Namespaces}, {"POSTURE", m.target.Posture},
-	}
-	for _, field := range target {
-		if field.value == "" {
-			continue
-		}
-		label := lipgloss.NewStyle().Foreground(lipgloss.BrightBlack).Width(12).Render(field.label)
-		fmt.Fprintf(&body, "%s %s\n", label, field.value)
-	}
-	if body.Len() > 0 {
-		body.WriteByte('\n')
-	}
-	modelLabel := "Model download"
-	if m.chosen != nil {
-		modelLabel = "Model " + m.chosen.Model
-	}
-	labels := []string{"Detecting models", "Kind cluster", "Model runtime", modelLabel, "Loading model", "Orka runtime"}
-	if m.chosen != nil && m.chosen.Provider == "copilot" {
-		labels[2], labels[3], labels[4] = "Configuring model", "Configuring model", "Configuring model"
-	}
-	for i, label := range labels {
-		status := m.setup[i]
-		if status == "" {
-			status = "pending"
-		}
-		state := quickstartStatusStyle(status).Render(status)
-		bar := quickstartBarStyle(status).Render(quickstartProgressBar(status, m.frame))
-		detail := lipgloss.NewStyle().Foreground(lipgloss.BrightBlack).Render(m.infrastructureSize(i))
-		if width >= 76 {
-			fmt.Fprintf(&body, "%-16s %s %-7s %s", label, bar, state, detail)
-		} else {
-			fmt.Fprintf(&body, "%s\n  %s %-7s %s", label, bar, state, detail)
-		}
-		if i != len(labels)-1 {
-			body.WriteByte('\n')
-		}
-	}
-	body.WriteString("\n\nInfrastructure runs top to bottom while you prepare the agent.")
-	if m.setup[2] == "waiting" {
-		body.WriteString("\nWaiting for your agent/model choice before continuing setup.")
-	}
-	if m.setupNote != "" {
-		body.WriteString("\n" + m.setupNote)
-	}
-	if m.inferenceNote != "" && m.inferenceNote != m.setupNote {
-		body.WriteString("\n" + m.inferenceNote)
-	}
-	return quickstartSection("TARGET & INFRASTRUCTURE", body.String(), width, lipgloss.Cyan)
-}
-
-func (m quickstartWizardModel) agentPanel(width int) string {
-	var body strings.Builder
-	step := quickstartInteractiveStep(m.create.step)
-	if m.agentStep {
-		step = 1
-	} else if m.modelStep {
-		step = 2
-	}
-	stages := []string{"Agent source", "Model discovery & choice", "Agent details", "Review & continue"}
-	stepLabel := lipgloss.NewStyle().Foreground(lipgloss.Blue).Bold(true).Render(fmt.Sprintf("STAGE %d OF 4 · %s", step, stages[step-1]))
-	body.WriteString(stepLabel + "\n\n")
-	if m.agentStep {
-		body.WriteString(lipgloss.NewStyle().Bold(true).Render("Start with") + "\n\n")
-		choices := []string{"Create a new agent"}
-		for _, agent := range m.existing {
-			choices = append(choices, fmt.Sprintf("Use existing Agent %q (%s)", agent.Name, agent.Namespace))
-		}
-		body.WriteString(quickstartChoices(choices, m.selection))
-		body.WriteString("\n\n" + lipgloss.NewStyle().Foreground(lipgloss.BrightBlack).Render("enter choose  •  arrows/j/k select"))
-	} else if m.modelStep {
-		if !m.detectDone {
-			body.WriteString(lipgloss.NewStyle().Bold(true).Render("Detecting models") + "\n\n")
-			body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.BrightBlack).Render("Checking local model runtimes before offering choices..."))
-		} else {
-			body.WriteString(lipgloss.NewStyle().Bold(true).Render("Inference Provider") + "\n\n")
-			choices := make([]string, 0, len(m.models))
-			for _, model := range m.models {
-				choices = append(choices, quickstartProviderLabel(model))
-			}
-			body.WriteString(quickstartChoices(choices, m.selection))
-			if m.selection < len(m.models) {
-				body.WriteString("\n" + quickstartProviderDescription(m.models[m.selection]))
-			}
-			body.WriteString("\n\n" + lipgloss.NewStyle().Foreground(lipgloss.BrightBlack).Render("enter choose  •  arrows/j/k select"))
-		}
-	} else if m.formDone {
-		if m.setupErr != nil {
-			body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Red).Render("Infrastructure setup failed. Restoring the terminal for diagnostics."))
-		} else if m.imported != nil {
-			body.WriteString(fmt.Sprintf("Using existing Agent %q. Waiting for infrastructure before continuing...", m.imported.Name))
-		} else {
-			body.WriteString(fmt.Sprintf("Agent %q is queued. Waiting for the model and runtime before deployment...", m.create.opt.Name))
-		}
-	} else {
-		inner := m.create.View().Content
-		if _, content, ok := strings.Cut(inner, "\n\n"); ok {
-			inner = content
-		}
-		body.WriteString(inner)
-	}
-	if m.chosen != nil && !m.modelStep {
-		fmt.Fprintf(&body, "\n\n%s %s", lipgloss.NewStyle().Foreground(lipgloss.BrightBlack).Render("MODEL"), m.quickstartModelChoiceLabel(*m.chosen))
-	}
-	if m.formDone {
-		heading := color.Color(lipgloss.Blue)
-		if m.setupErr != nil {
-			heading = lipgloss.Red
-		}
-		return quickstartSection("AGENT SETUP", body.String(), width, heading)
-	}
-	return quickstartPanel("AGENT SETUP", body.String(), width, lipgloss.Blue, lipgloss.Blue)
-}
-
 func (m quickstartWizardModel) setupComplete() bool {
 	for _, status := range m.setup {
 		if status != "done" && status != "skipped" {
@@ -964,44 +846,6 @@ func (m quickstartWizardModel) setupComplete() bool {
 		}
 	}
 	return true
-}
-
-func (m quickstartWizardModel) quickstartModelChoiceLabel(model localModel) string {
-	if model.Provider == "bundled" && m.setup[3] == "done" {
-		return fmt.Sprintf("%s (KMX managed, already downloaded)", model.Model)
-	}
-	return quickstartModelLabel(model)
-}
-
-func quickstartPanel(title, body string, width int, headingColor, borderColor color.Color) string {
-	innerWidth := max(24, width-4)
-	heading := lipgloss.NewStyle().Bold(true).Foreground(headingColor).Render(" " + title + " ")
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(1, 2).
-		Width(innerWidth).
-		Render(heading + "\n\n" + body)
-}
-
-func quickstartSection(title, body string, width int, headingColor color.Color) string {
-	heading := lipgloss.NewStyle().Bold(true).Foreground(headingColor).Render(title)
-	return lipgloss.NewStyle().Width(max(24, width-2)).PaddingLeft(1).Render(heading + "\n\n" + body)
-}
-
-func quickstartChoices(choices []string, selected int) string {
-	var body strings.Builder
-	for i, choice := range choices {
-		if i > 0 {
-			body.WriteByte('\n')
-		}
-		if i == selected {
-			body.WriteString(pickerSelectedStyle().Render("› " + choice))
-		} else {
-			body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.BrightBlack).Render("  " + choice))
-		}
-	}
-	return body.String()
 }
 
 func quickstartStatusStyle(status string) lipgloss.Style {
@@ -1018,38 +862,6 @@ func quickstartStatusStyle(status string) lipgloss.Style {
 
 func quickstartBarStyle(status string) lipgloss.Style {
 	return quickstartStatusStyle(status)
-}
-
-func (m quickstartWizardModel) infrastructureSize(step int) string {
-	switch step {
-	case 0:
-		return "host runtimes"
-	case 1:
-		return "~1.3 GB node image"
-	case 2:
-		if m.chosen != nil && m.chosen.Provider != "bundled" {
-			return "reuse host runtime"
-		}
-		return "~1.1 GB image"
-	case 3:
-		model := m.chosen
-		if model == nil && len(m.models) > 0 {
-			model = &m.models[0]
-		}
-		if model != nil && model.Provider != "bundled" {
-			if model.Size > 0 {
-				return fmt.Sprintf("%s already installed", quickstartSize(model.Size))
-			}
-			return "already installed; size unknown"
-		}
-		return "~1.9 GB model"
-	case 4:
-		return "weights into memory"
-	case 5:
-		return "~860 MB images"
-	default:
-		return ""
-	}
 }
 
 func quickstartSize(size int64) string {
@@ -1113,15 +925,6 @@ func quickstartProviderDescription(model localModel) string {
 		return "Copilot CLI · auto model · no local model download"
 	default:
 		return quickstartModelLabel(model)
-	}
-}
-
-func quickstartInteractiveStep(step createWizardStep) int {
-	switch step {
-	case createConfirm, createDone:
-		return 4
-	default:
-		return 3
 	}
 }
 
