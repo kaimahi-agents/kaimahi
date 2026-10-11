@@ -14,20 +14,25 @@ import (
 
 // EvaluationAssertion is an authored definition, never a receipt row.
 type EvaluationAssertion struct {
-	ID      string `yaml:"id" json:"id"`
-	Type    string `yaml:"type" json:"type"`
-	Value   string `yaml:"value,omitempty" json:"value,omitempty"`
-	Pattern string `yaml:"pattern,omitempty" json:"pattern,omitempty"`
-	Tool    string `yaml:"tool,omitempty" json:"tool,omitempty"`
+	ID           string `yaml:"id" json:"id"`
+	Type         string `yaml:"type" json:"type"`
+	Value        string `yaml:"value,omitempty" json:"value,omitempty"`
+	Pattern      string `yaml:"pattern,omitempty" json:"pattern,omitempty"`
+	Tool         string `yaml:"tool,omitempty" json:"tool,omitempty"`
+	Rubric       string `yaml:"rubric,omitempty" json:"rubric,omitempty"`
+	MinScore     *int   `yaml:"minScore,omitempty" json:"minScore,omitempty"`
+	JudgeModel   string `yaml:"judgeModel,omitempty" json:"judgeModel,omitempty"`
+	JudgeVersion string `yaml:"judgeVersion,omitempty" json:"judgeVersion,omitempty"`
 }
 
 // EvaluationAssertionResult carries identity and outcome, but no operands.
 type EvaluationAssertionResult struct {
-	ID               string            `json:"id"`
-	Type             string            `json:"type"`
-	DefinitionDigest string            `json:"definitionDigest"`
-	Verdict          EvaluationVerdict `json:"verdict"`
-	Reason           string            `json:"reason"`
+	ID               string                   `json:"id"`
+	Type             string                   `json:"type"`
+	DefinitionDigest string                   `json:"definitionDigest"`
+	Verdict          EvaluationVerdict        `json:"verdict"`
+	Reason           string                   `json:"reason"`
+	Judge            *EvaluationJudgeEvidence `json:"judge,omitempty"`
 }
 
 // EvaluationEvidence exists only in memory. Availability is independent of
@@ -51,7 +56,7 @@ func (a *EvaluationAssertion) UnmarshalYAML(node *yaml.Node) error {
 	for i := 0; i < len(node.Content); i += 2 {
 		key, value := node.Content[i].Value, node.Content[i+1]
 		switch key {
-		case "id", "type", "value", "pattern", "tool":
+		case "id", "type", "value", "pattern", "tool", "rubric", "minScore", "judgeModel", "judgeVersion":
 		default:
 			return fmt.Errorf("evaluation assertion: field %s not found", key)
 		}
@@ -59,7 +64,11 @@ func (a *EvaluationAssertion) UnmarshalYAML(node *yaml.Node) error {
 			return fmt.Errorf("evaluation assertion: duplicate key %s", key)
 		}
 		fields[key] = true
-		if value.Kind != yaml.ScalarNode || value.Tag != "!!str" {
+		if key == "minScore" {
+			if value.Kind != yaml.ScalarNode || value.Tag != "!!int" {
+				return fmt.Errorf("evaluation assertion field minScore must be an integer")
+			}
+		} else if value.Kind != yaml.ScalarNode || value.Tag != "!!str" {
 			return fmt.Errorf("evaluation assertion field %s must be a string", key)
 		}
 	}
@@ -69,11 +78,15 @@ func (a *EvaluationAssertion) UnmarshalYAML(node *yaml.Node) error {
 		return err
 	}
 	operand := evaluationAssertionOperandField(decoded.Type)
-	if operand == "" {
+	if operand == "" && decoded.Type != "llmJudge" {
 		return fmt.Errorf("unsupported assertion type")
 	}
-	for _, field := range []string{"value", "pattern", "tool"} {
-		if field != operand && fields[field] {
+	for _, field := range []string{"value", "pattern", "tool", "rubric", "minScore", "judgeModel", "judgeVersion"} {
+		allowed := field == operand
+		if decoded.Type == "llmJudge" {
+			allowed = field == "rubric" || field == "minScore" || field == "judgeModel" || field == "judgeVersion"
+		}
+		if !allowed && fields[field] {
 			return fmt.Errorf("evaluation assertion: field %s is not allowed for this type", field)
 		}
 	}
@@ -126,6 +139,10 @@ func EvaluateAssertions(c EvaluationCase, evidence EvaluationEvidence) []Evaluat
 				}
 				matched = re.MatchString(evidence.Answer)
 			}
+		case "llmJudge":
+			row.Reason = "judge unavailable"
+			rows = append(rows, row)
+			continue
 		case "toolCalled", "toolNotCalled":
 			if !evidence.ToolSupported {
 				row.Reason = "runtime does not support tools"
@@ -183,8 +200,21 @@ func EvaluationAssertionDigest(a EvaluationAssertion) string {
 	case "tool":
 		operand = a.Tool
 	}
+	if a.Type == "llmJudge" {
+		operand = a.Rubric
+	}
 	frames := frameEntry("type", []byte(a.Type))
 	frames = append(frames, frameEntry("operand", []byte(operand))...)
+	if a.Type == "llmJudge" {
+		threshold := ""
+		if a.MinScore != nil {
+			threshold = fmt.Sprint(*a.MinScore)
+		}
+		frames = append(frames, frameEntry("minScore", []byte(threshold))...)
+		frames = append(frames, frameEntry("judgeModel", []byte(a.JudgeModel))...)
+		frames = append(frames, frameEntry("judgeVersion", []byte(a.JudgeVersion))...)
+		frames = append(frames, frameEntry("evaluatorDigest", []byte(EvaluationJudgeEvaluatorDigest()))...)
+	}
 	return sha256Hex(frames)
 }
 
@@ -235,7 +265,7 @@ func ValidateEvaluationAssertions(assertions []EvaluationAssertion) error {
 }
 
 func validateEvaluationAssertionOperand(a EvaluationAssertion) error {
-	for _, value := range []string{a.ID, a.Type, a.Value, a.Pattern, a.Tool} {
+	for _, value := range []string{a.ID, a.Type, a.Value, a.Pattern, a.Tool, a.Rubric, a.JudgeModel, a.JudgeVersion} {
 		if !utf8.ValidString(value) {
 			return fmt.Errorf("evaluation assertion must be valid UTF-8")
 		}
@@ -243,7 +273,27 @@ func validateEvaluationAssertionOperand(a EvaluationAssertion) error {
 			return err
 		}
 	}
+	if a.Type != "llmJudge" && (a.Rubric != "" || a.MinScore != nil || a.JudgeModel != "" || a.JudgeVersion != "") {
+		return fmt.Errorf("evaluation assertion does not allow judge fields for this type")
+	}
 	switch a.Type {
+	case "llmJudge":
+		if a.Value != "" || a.Pattern != "" || a.Tool != "" {
+			return fmt.Errorf("evaluation assertion only allows judge fields")
+		}
+		if strings.TrimSpace(a.Rubric) == "" || len(a.Rubric) > 4096 || strings.IndexFunc(a.Rubric, func(r rune) bool {
+			return unicode.IsControl(r) && r != '\n' && r != '\t'
+		}) >= 0 {
+			return fmt.Errorf("evaluation assertion rubric must be nonblank, at most 4096 UTF-8 bytes, and contain no controls except newline or tab")
+		}
+		if a.MinScore == nil || *a.MinScore < 0 || *a.MinScore > 100 {
+			return fmt.Errorf("evaluation assertion minScore is required and must be an integer from 0 to 100")
+		}
+		for _, value := range []string{a.JudgeModel, a.JudgeVersion} {
+			if !evaluationJudgeIdentitySafe(value) {
+				return fmt.Errorf("evaluation assertion judgeModel and judgeVersion must be nonblank printable ASCII strings of at most 256 bytes without credentials")
+			}
+		}
 	case "contains", "notContains":
 		if a.Pattern != "" || a.Tool != "" {
 			return fmt.Errorf("evaluation assertion only allows the value field")

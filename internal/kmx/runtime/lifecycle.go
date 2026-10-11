@@ -70,6 +70,11 @@ type DeployReceipt struct {
 	Resources                              []ResourceResult
 }
 
+// EvaluationJudge evaluates an entire case while the attributed answer remains
+// ephemeral. The app-owned implementation returns ordinary and judge rows.
+// Adapters invoke it only after successful execution and revision attribution.
+type EvaluationJudge func(context.Context, EvaluationCase, EvaluationEvidence) []EvaluationAssertionResult
+
 // EvaluationRequest carries one evaluation case: identity, input, the
 // assertions the terminal answer must satisfy, and the portable digest of the
 // revision it must run against. Results are bound to that digest, so an
@@ -81,6 +86,8 @@ type EvaluationRequest struct {
 	ExpectContains []string
 	Assertions     []EvaluationAssertion
 	PortableDigest string
+	// Judge is optional; without it, llmJudge assertions remain unknown.
+	Judge EvaluationJudge
 }
 
 // EvaluationVerdict is one case's outcome. Unknown is neither a pass nor a
