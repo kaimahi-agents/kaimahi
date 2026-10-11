@@ -96,7 +96,7 @@ func TestLiftBundlePlanIsReadOnlyAndMapsTargetProvider(t *testing.T) {
 
 func TestLiftBundlePlanQueriesLabelSelectedChartController(t *testing.T) {
 	a, opt, dir, _ := liftBundleFixture(t)
-	t.Setenv("KMX_LIFT_CONTROLLER_NAME", "w112-controller")
+	t.Setenv("KMX_LIFT_CONTROLLER_NAME", "chart-controller")
 	opt.Plan = true
 	if err := a.LiftAgentBundle(opt); err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func TestLiftBundlePlanQueriesLabelSelectedChartController(t *testing.T) {
 		if strings.Contains(joined, "get deploy -o json") {
 			discovered = true
 		}
-		if strings.Contains(joined, "rollout status deploy/w112-controller --timeout=10s") {
+		if strings.Contains(joined, "rollout status deploy/chart-controller --timeout=10s") {
 			rolled = true
 		}
 	}

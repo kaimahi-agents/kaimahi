@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -238,7 +238,7 @@ func copilotToolLoop(ctx context.Context, instructions, message string, tools []
 }
 
 type copilotToolConnection struct {
-	forward *admin.Forward
+	forward *portforward.Forward
 	client  *http.Client
 	base    string
 	cancel  context.CancelFunc
@@ -296,7 +296,7 @@ func (b *orkaChatBackend) executeCopilotTool(ctx context.Context, tool copilotTo
 		}
 		connectionCtx, stop := context.WithCancel(parent)
 		worker.orkaForwardContext = connectionCtx
-		fwd, err := admin.StartForward(&worker, b.namespace, "svc/"+service, local, port)
+		fwd, err := portforward.Start(&worker, b.namespace, "svc/"+service, local, port)
 		if err != nil {
 			stop()
 			return nil, err

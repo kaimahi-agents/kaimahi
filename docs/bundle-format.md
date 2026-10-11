@@ -15,7 +15,8 @@ other release's output.
 | `bindings.yaml` | Creation-target `kmx.kaimahi.dev/v1alpha1` `OrkaBindings` or `KagentBindings`; Orka lift supplies new target bindings rather than copying these. |
 | `eval/*.yaml` | One case per file (`id`, `input`, non-empty `expectContains`); **no** `apiVersion` field. |
 | `lift-policy.yaml` | Optional strict YAML mapping of destination and evaluated cluster UID/namespace rules; **no** `apiVersion` field. See [the evaluation gate](agent-lift.md#requiring-evaluation-before-lift). |
-| Lift/evaluation receipts and remembered target | JSON with **no** format-version field or version negotiation. Remembered selections live in local kmx state, outside the bundle and Git. |
+| Orka lift/evaluation receipts and remembered target | JSON with **no** format-version field or version negotiation. Remembered selections live in local kmx state, outside the bundle and Git. |
+| Agentsessions evaluation receipts | JSON with runtime `agentsessions` and version-1 `target.identity` (`host-reported` address, returned harness name and journal-observed model), plus per-case session UID, journal head and output digest. No verified descriptor or lift-gate support. See [sessions evaluation](agent-lift.md#evaluating-on-agentsessions). |
 
 `agent.yaml`, evaluation cases and a present `lift-policy.yaml` use strict
 YAML decoding: an unknown field (including a future optional field) is an
@@ -81,8 +82,10 @@ performs its usual checks before writing. See [lift and status](agent-lift.md).
 Evaluation case files have no version tag; an unknown case field is refused.
 Their exact bytes and filenames have a **separate** case-set digest, so
 changing a case does not change the portable revision but invalidates the
-prior evaluation result for that set. JSON receipts and the remembered target
-have no schema version. Unknown JSON keys are tolerated, not interpreted as
+prior evaluation result for that set. Orka JSON receipts and the remembered target
+have no schema version. Agentsessions receipts version their limited host identity
+separately so fuller descriptor evidence can be added without changing Orka
+identities. Unknown JSON keys are tolerated, not interpreted as
 new behavior; there is no general migration or cross-version compatibility
 promise for local evidence. Status skips malformed deployment receipts,
 counts a malformed, incomplete or mismatched evaluation receipt as `none`,

@@ -6,7 +6,6 @@ import "fmt"
 type ChatOptions struct {
 	Agent          string
 	Task           string
-	Interactive    bool
 	Verbose        bool
 	Runtime        string
 	Namespace      string
@@ -14,7 +13,8 @@ type ChatOptions struct {
 	Bundles        string
 }
 
-// ChatWithOptions opens the interactive Orka session.
+// ChatWithOptions opens the interactive Orka session. Task, when set, is
+// sent as the first turn.
 //
 // Unguarded, like every other read-shaped command here. Calling it
 // "read-only" would be wrong — it spends budget and writes a ledger row. It
@@ -36,16 +36,10 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 		return fmt.Errorf("unknown Azure discovery %q; use cli or sdk", opt.AzureDiscovery)
 	}
 	agent := opt.Agent
-	// Orka chat is a session, not an invocation: a Task is created, polled
-	// for its own result over a single connection, and never resubmitted.
-	// There is no one-shot transport left to fall back to, so say which
-	// command does work rather than dialing a controller that is gone.
-	if !opt.Interactive {
-		return fmt.Errorf("Orka chat requires --interactive; for a one-shot Task use kmx agent run --agent %s --namespace %s --prompt-file -:\n  %s",
-			agent, valueOr(opt.Namespace, OrkaNamespace),
-			a.operationCommand("agent", "chat", "--interactive", "--namespace",
-				valueOr(opt.Namespace, OrkaNamespace), agent))
-	}
+	// Orka chat is always a session: a Task is created, polled for its own
+	// result over a single connection, and never resubmitted. An initial
+	// message is the first turn of that session, not a one-shot; the one-shot
+	// Task is kmx agent run.
 	if err := a.preflight(depKubectl); err != nil {
 		return err
 	}

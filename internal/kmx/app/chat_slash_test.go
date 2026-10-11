@@ -117,10 +117,9 @@ func TestSlashHintFitsTerminalWidth(t *testing.T) {
 }
 
 // dispatchedSlashCommands reads the chat loop's own dispatch switch and
-// returns the slash commands it acts on. Reading the source is deliberate: a
-// list written out here would only ever prove that the commands someone
-// remembered are still dispatched, and the command this test used to miss
-// (/quit) was missed for exactly that reason.
+// returns the slash commands it acts on. Reading the source is deliberate:
+// a hand-maintained expected list could omit a dispatched command and leave
+// the registry's completion and help coverage unchecked.
 func dispatchedSlashCommands(t *testing.T) map[string]bool {
 	t.Helper()
 	source, err := os.ReadFile("chat_interactive.go")

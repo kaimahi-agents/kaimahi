@@ -169,6 +169,22 @@ func TestToolProviderCompositionSchemaDefinesStandaloneSandboxInput(t *testing.T
 	validateSchemaJSON(t, schema, strings.Replace(valid, `"variantDigest"`, `"notVariantDigest"`, 1), false)
 }
 
+func TestBuildProfileSchemaRequiresDigestAddressedImageReferences(t *testing.T) {
+	schema := compileReferenceSchema(t, "build-profile.schema.json")
+	for _, name := range []string{"minimal", "coordinator-workers"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("testdata", name, "build-profiles", "default.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			valid := string(data)
+			validateSchemaJSON(t, schema, valid, true)
+			validateSchemaJSON(t, schema, strings.Replace(valid, `"imageRef": `, `"notImageRef": `, 1), false)
+			validateSchemaJSON(t, schema, strings.Replace(valid, `@sha256:`, `:latest@sha256:`, 1), false)
+		})
+	}
+}
+
 func TestProviderTerminologyRejectsEarlierDraftFields(t *testing.T) {
 	tests := []struct {
 		name    string

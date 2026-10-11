@@ -41,9 +41,13 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["platform", "image"],
+        "required": ["platform", "imageRef", "image"],
         "properties": {
           "platform": {"$ref": "#/$defs/platform"},
+          "imageRef": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]+)?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}$"
+          },
           "image": {"$ref": "#/$defs/descriptor"}
         }
       }

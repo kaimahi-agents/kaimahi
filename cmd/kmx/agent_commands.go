@@ -11,7 +11,7 @@ import (
 
 func newAgentCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{Use: "agent", Short: "Create agents; inspect and chat with Orka agents", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
-	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentLiftCommand(state), newAgentRetireCommand(state), newAgentStatusCommand(state), newAgentEvaluateCommand(state), newAgentRunCommand(state), newAgentChatCommand(state),
+	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentLiftCommand(state), newAgentRetireCommand(state), newAgentStatusCommand(state), newAgentEvaluateCommand(state), newAgentVerifyCommand(), newAgentRunCommand(state), newAgentChatCommand(state),
 		retiredCommand("edit", "kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>; inspect with kmx agent show <name> --namespace <namespace>"))
 	return group
 }
@@ -65,7 +65,7 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 Select explicitly the namespace the Orka controller watches. Provider type, model
 identifier such as local/qwen2.5:3b, and a separately provisioned Secret are required.
 This command does not build or deploy application images. Keep your Deployment
-or chart; use kmx migrate for an existing application's model seam.
+or chart.
 Interactive agent chat is Orka-only, and so is kmx agent list --namespace.
 For azure-openai, --base-url is the HTTPS Azure resource root (not /openai/v1),
 --azure-deployment is required and must equal --model: portable model.name names
@@ -174,10 +174,10 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 }
 
 func newAgentChatCommand(state *commandState) *cobra.Command {
-	var interactive, verbose bool
+	var verbose bool
 	var runtime, namespace, azureDiscovery, bundles string
-	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with an Orka Agent", Args: usageArgs(1, -1, "kmx agent chat --interactive [--namespace <namespace>] <name> [message]")}
-	cmd.Flags().BoolVar(&interactive, "interactive", false, "open the Orka chat TUI (required: Orka chat is a session)")
+	usage := "kmx agent chat [--namespace <namespace>] <name> [message]"
+	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with an Orka Agent", Long: "Open an interactive chat session with an Orka Agent. An optional message is sent as the first turn; for a one-shot Task use kmx agent run.", Args: usageArgs(1, -1, usage)}
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "show chat WORKING and TIMING details")
 	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto (detect the Orka Agent) or orka")
 	cmd.Flags().StringVar(&namespace, "namespace", "", "Orka Agent namespace (default: "+app.OrkaNamespace+")")
@@ -192,16 +192,16 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 	cmd.ValidArgsFunction = completeLiveAgents
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("session") {
-			return fmt.Errorf("--session is retired: Orka chat has no resumable server-side session; use kmx agent chat --interactive --namespace <ns> <name>")
+			return fmt.Errorf("--session is retired: Orka chat has no resumable server-side session; use kmx agent chat --namespace <ns> <name>")
 		}
 		if cmd.Flags().Changed("json") {
-			return fmt.Errorf("--json is retired: there is no raw A2A JSON equivalent for an existing Agent; use kmx agent chat --interactive --namespace <ns> <name> for interactive chat")
+			return fmt.Errorf("--json is retired: there is no raw A2A JSON equivalent for an existing Agent; use kmx agent chat --namespace <ns> <name> for interactive chat")
 		}
-		return usageArgs(1, -1, "kmx agent chat --interactive [--namespace <namespace>] <name> [message]")(cmd, args)
+		return usageArgs(1, -1, usage)(cmd, args)
 	}
 	cmd.RunE = appRun(state, func(a *app.App) error {
 		args := cmd.Flags().Args()
-		return a.ChatWithOptions(app.ChatOptions{Agent: args[0], Task: joinArgs(args[1:]), Interactive: interactive, Verbose: verbose, Runtime: runtime, Namespace: namespace, AzureDiscovery: azureDiscovery, Bundles: bundles})
+		return a.ChatWithOptions(app.ChatOptions{Agent: args[0], Task: joinArgs(args[1:]), Verbose: verbose, Runtime: runtime, Namespace: namespace, AzureDiscovery: azureDiscovery, Bundles: bundles})
 	})
 	return cmd
 }

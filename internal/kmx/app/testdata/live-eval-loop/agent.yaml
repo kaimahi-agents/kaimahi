@@ -1,0 +1,8 @@
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: PortableAgent
+metadata:
+  name: live-eval-loop
+spec:
+  instructions: Answer simple factual questions briefly in plain text. Use digits for arithmetic answers and conventional capitalization for place names. Do not explain your reasoning.
+  model:
+    name: qwen-3.5-2b

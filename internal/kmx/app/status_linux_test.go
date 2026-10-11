@@ -51,11 +51,9 @@ func reportApp(t *testing.T, out io.Writer, script string) *App {
 		Run: &run.Runner{Stdout: out, Stderr: io.Discard}}
 }
 
-// `kmx ctx` is where an incomplete local setup is explained. `kmx status`
-// used to say it too, from a context check of its own in front of the Orka
-// reading — which made it answer a missing context differently from
-// `kmx orka status`, the command it exists to delegate to. The guidance lives
-// here, on the command whose whole job is the context.
+// `kmx ctx` explains incomplete local setup and its repair path. Keep that
+// context guidance separate from `kmx status`, which delegates to the native
+// Orka status report.
 func TestCtxShowsHowToCompleteMissingDefaultSetup(t *testing.T) {
 	var out bytes.Buffer
 	a := reportApp(t, &out, `case "$*" in

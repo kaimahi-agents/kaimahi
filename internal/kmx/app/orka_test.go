@@ -297,7 +297,7 @@ func TestOrkaInstallRefusesExistingV013BeforeAnyWrites(t *testing.T) {
 			if err == nil {
 				t.Fatal("installed Helm on top of existing manifest resources")
 			}
-			for _, want := range []string{"kmx down", "kmx up", "Tasks", "Secrets", "model data", "ledger", "AKS", "snapshot key"} {
+			for _, want := range []string{f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "Secrets", "model data", "ledger", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("legacy recovery does not say %q: %v", want, err)
 				}
@@ -341,7 +341,7 @@ func TestOrkaInstallRefusesForeignOrMismatchedHelmRelease(t *testing.T) {
 			if err == nil {
 				t.Fatal("adopted or replaced a different Helm release")
 			}
-			for _, want := range []string{"kmx down", "kmx up", "Tasks", "AKS", "snapshot key"} {
+			for _, want := range []string{f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("foreign release recovery does not say %q: %v", want, err)
 				}
@@ -395,7 +395,7 @@ func TestOrkaInstallFailedReleaseNamesRecoverySteps(t *testing.T) {
 			if err == nil {
 				t.Fatal("non-deployed release was accepted")
 			}
-			for _, want := range []string{"kmx-owned", state, "helm --kube-context kind-kaimahi-p1", "kmx down", "kmx up", "Tasks", "AKS", "snapshot key"} {
+			for _, want := range []string{"kmx-owned", state, "helm --kube-context kind-kaimahi-p1", f.app.operationCommand("local", "down"), f.app.operationCommand("local", "up"), "Tasks", "AKS", "snapshot key"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("missing %q in recovery: %v", want, err)
 				}
@@ -432,7 +432,7 @@ func TestOrkaInstallUnavailableReleaseValuesRefusesWithSafeRecovery(t *testing.T
 	if err == nil {
 		t.Fatal("unreadable release values accepted")
 	}
-	for _, want := range []string{"kmx down", "AKS", "helm --kube-context kind-kaimahi-p1"} {
+	for _, want := range []string{f.app.operationCommand("local", "down"), "AKS", "helm --kube-context kind-kaimahi-p1"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("unreadable release lacks %q: %v", want, err)
 		}
@@ -451,7 +451,7 @@ func TestOrkaInstallKeepsIdentifiedChartAndReconcilesReader(t *testing.T) {
 	f.app.orkaInstallerDigest = digestOf(chart)
 	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
 	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
 		t.Fatalf("repeat install: %v", err)
 	}
@@ -478,7 +478,7 @@ func TestOrkaInstallRepeatRejectsLiveControllerImageDrift(t *testing.T) {
 			f.app.orkaInstallerDigest = digestOf(chart)
 			t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 			t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
-			controller := orkaDeploy("w112-controller", nil)
+			controller := orkaDeploy("chart-controller", nil)
 			controller["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["containers"] = tc.images
 			t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, controller))
 			err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
@@ -537,7 +537,7 @@ func TestOrkaInstallRepeatRefusesUnreadyController(t *testing.T) {
 	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
 	// Keep the image pinned so this test isolates rollout readiness.
-	d := orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
+	d := orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
 	d["status"].(map[string]any)["availableReplicas"] = 0
 	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, d))
 	err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
@@ -696,9 +696,8 @@ func TestOrkaInstallWaitsForHelmChart(t *testing.T) {
 	}
 }
 
-// Installing is not governing, and the run has to say so: an adopter who
-// reads "Orka is running" as "its traffic is metered" has been misled by us.
-func TestOrkaInstallSaysThatInstallingGovernsNothing(t *testing.T) {
+// A successful native install points to native status, not removed commands.
+func TestOrkaInstallOffersNativeStatusWithoutPlaneAdvice(t *testing.T) {
 	installer := orkaChart(t)
 	f := newOrkaFixture(t, installer)
 	f.app.orkaInstallerDigest = digestOf(installer)
@@ -707,11 +706,13 @@ func TestOrkaInstallSaysThatInstallingGovernsNothing(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	notes := f.errOut.String()
-	if !strings.Contains(notes, "governs nothing by itself") {
-		t.Errorf("the run does not say installing governs nothing:\n%s", notes)
+	if !strings.Contains(notes, "kmx orka status") {
+		t.Errorf("install did not offer native status:\n%s", notes)
 	}
-	if !strings.Contains(notes, "kmx migrate") {
-		t.Error("the run does not name the command that does govern it")
+	for _, forbidden := range []string{"kmx migrate", "kmx plane", "seam"} {
+		if strings.Contains(notes, forbidden) {
+			t.Errorf("install advertises %q:\n%s", forbidden, notes)
+		}
 	}
 }
 
@@ -780,8 +781,8 @@ func TestOrkaStatusDoesNotCallAMatchingVersionASkew(t *testing.T) {
 
 func TestOrkaStatusParsesImageTagAfterRegistryPort(t *testing.T) {
 	f := newOrkaFixture(t, nil)
-	t.Setenv("KMX_TEST_DEPLOYMENTS", "w112-controller=1/1 ")
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "registry.example:5000/orka:0.2.0")))
+	t.Setenv("KMX_TEST_DEPLOYMENTS", "chart-controller=1/1 ")
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "registry.example:5000/orka:0.2.0")))
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatal(err)
 	}
@@ -813,7 +814,7 @@ func TestOrkaStatusRefusesDeploymentListFailures(t *testing.T) {
 func TestOrkaStatusRefusesAmbiguousControllerLabels(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "two-controllers=1/1 ")
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy(orkaController, nil), orkaDeploy("w112-controller", nil)))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy(orkaController, nil), orkaDeploy("chart-controller", nil)))
 	if err := f.app.OrkaStatus(); err == nil || !strings.Contains(err.Error(), "multiple Orka controller Deployments") {
 		t.Fatalf("ambiguous Orka status: %v", err)
 	}
@@ -822,7 +823,7 @@ func TestOrkaStatusRefusesAmbiguousControllerLabels(t *testing.T) {
 func TestOrkaStatusReadsPinnedDigestControllerVersion(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-api-controller=1/1 ")
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatal(err)
 	}
@@ -834,7 +835,7 @@ func TestOrkaStatusReadsPinnedDigestControllerVersion(t *testing.T) {
 func TestOrkaStatusReadsChartControllerVersion(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	t.Setenv("KMX_TEST_DEPLOYMENTS", "orka-api-controller=1/1 ")
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka:0.2.0")))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka:0.2.0")))
 	if err := f.app.OrkaStatus(); err != nil {
 		t.Fatal(err)
 	}
@@ -1006,7 +1007,7 @@ func TestOrkaControllerForLiftSelectsLabelsNotNames(t *testing.T) {
 		name       string
 		controller string
 	}{
-		{"legacy v0.1.3", orkaController}, {"chart other release name", "w112-controller"},
+		{"legacy v0.1.3", orkaController}, {"chart other release name", "chart-controller"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newOrkaFixture(t, nil)
@@ -1047,7 +1048,7 @@ func TestOrkaControllerForLiftRefusesZeroAndMultipleMatches(t *testing.T) {
 			return d
 		}()}},
 
-		{"ambiguous", "multiple Orka controller Deployments", []map[string]any{orkaDeploy(orkaController, nil), orkaDeploy("w112-controller", nil)}},
+		{"ambiguous", "multiple Orka controller Deployments", []map[string]any{orkaDeploy(orkaController, nil), orkaDeploy("chart-controller", nil)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newOrkaFixture(t, nil)
@@ -1065,7 +1066,7 @@ func TestOrkaControllerForLiftRefusesZeroAndMultipleMatches(t *testing.T) {
 
 func TestOrkaReadyAcceptsHarnessV2ControllerWithoutLegacyWrapper(t *testing.T) {
 	f := newOrkaFixture(t, nil)
-	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy("w112-controller", nil)))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeploy("chart-controller", nil)))
 	if err := f.app.OrkaReady(); err != nil {
 		t.Fatalf("chart controller was refused without a v1 wrapper: %v", err)
 	}
@@ -1176,12 +1177,12 @@ func TestOrkaNextStepsPinTheClusterAndKeepTheKeyOutOfArgv(t *testing.T) {
 				"--model", "<model>", "--secret", "<name>", "--base-url", "<endpoint>"))
 		}},
 		{"the closing next steps", func(a *App) {
-			a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"}, nil)
+			a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"})
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			a := &App{Cfg: &config.Config{KubeContext: "demo-cluster", Credential: "cred"}, Err: &buf, Out: &buf}
+			a := &App{Cfg: &config.Config{KubeContext: "demo-cluster"}, Err: &buf, Out: &buf}
 			tc.print(a)
 			got := buf.String()
 
@@ -1208,8 +1209,8 @@ func TestOrkaNextStepsPinTheClusterAndKeepTheKeyOutOfArgv(t *testing.T) {
 // claim one or send the operator to `agent chat`.
 func TestOrkaClosingTextDoesNotPromiseAnAgent(t *testing.T) {
 	var buf bytes.Buffer
-	a := &App{Cfg: &config.Config{KubeContext: "demo-cluster", Credential: "cred"}, Err: &buf, Out: &buf}
-	a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"}, nil)
+	a := &App{Cfg: &config.Config{KubeContext: "demo-cluster"}, Err: &buf, Out: &buf}
+	a.liftNextSteps(lift.Options{Payload: lift.PayloadOrka, Cluster: "demo-cluster"})
 	got := buf.String()
 
 	for _, forbidden := range []string{"agent chat", "hello-world", "The same agent you ran locally"} {
@@ -1287,7 +1288,7 @@ func TestUpOrkaStepOwnsTheResultAccountAndItsExactGrant(t *testing.T) {
 
 // Every path that needs the Task result identity writes the SAME grant.
 //
-// `kmx up --step orka`, `kmx quickstart-wizard` and the lift deployment all
+// `kmx up --step orka`, `kmx quickstart --interactive` and the lift deployment all
 // provision the account results are read with, and a copy per path is free to
 // drift: a Role whose extent depends on which command wrote it is a grant
 // nobody reviews as one. The wizard used to carry its own literal; both

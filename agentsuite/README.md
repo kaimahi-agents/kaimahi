@@ -5,7 +5,8 @@ agents and the exact ToolProviders used to construct their runnable sandboxes.
 Suites are distributed as OCI artifacts and contain a closed graph of agent,
 ToolProvider, composition, and build-profile manifests.
 
-This module provides the format's public Go model:
+This package provides the format's public Go model within Kaimahi's root Go
+module; it does not have a separate module or release version:
 
 - object types for suites, agents, ToolProviders, callable Tools, compositions,
   and build profiles;
@@ -35,7 +36,9 @@ digest, err := agentsuite.Digest(data)
 directly when strict format enforcement is required.
 
 `ValidatePath` validates either an extracted AgentSuite content directory or
-an OCI image-layout directory and returns a conformance report.
+an OCI image-layout directory and returns a conformance report. Consumers that
+read loose manifests should use `ValidateDirectory` to validate extracted
+content explicitly, without OCI layout auto-detection.
 
 Builders, packers, registry transfer, sandbox-image construction, and
 builder-owned image metadata are implementation concerns and are not part of

@@ -7,11 +7,9 @@ import (
 
 // A hand-audited YAML emitter, deliberately not a library.
 //
-// This is #16's reasoning, kept: the generator's whole job is to turn
-// operator-supplied text — a name, a description, a file of instructions —
-// into a document that a cluster will then obey. The interesting failure is
-// not a malformed file, it is a well-formed file that says something the
-// operator did not write. Two rules make that impossible here:
+// Operator-supplied names, descriptions and instructions must remain values,
+// not become new YAML keys or sequence entries. The escaping and indentation
+// rules prevent well-formed documents from expressing injected behavior:
 //
 //   - a block scalar indents EVERY line uniformly, so a line inside an
 //     instruction file cannot dedent out of the scalar and become a sibling
@@ -19,8 +17,8 @@ import (
 //   - a scalar that would have to span lines in flow style is REFUSED
 //     rather than escaped, because escaping is where the subtle bugs live.
 //
-// (CWE-74, found in review on #16: an unquoted tool name containing a
-// newline closed the sequence and appended a tool nobody had reviewed.)
+// This prevents YAML injection (CWE-74), such as a newline in a tool name
+// introducing another sequence entry.
 
 // ValidateSingleLineText states the control-character policy a value rendered
 // as a single-line YAML scalar is held to, without rendering anything. It is
@@ -76,32 +74,6 @@ func quote(value string) (string, error) {
 	}
 	b.WriteByte('"')
 	return b.String(), nil
-}
-
-// literalBlock renders `<key>: |<n>` and the indented body beneath it.
-//
-// The indentation indicator (`|2`) is the load-bearing part, and it is why
-// this is one function rather than a caller gluing a key to a body. Without
-// it YAML INFERS the block's indentation from the first non-empty line — so
-// an instructions file whose first line happens to be indented sets a deeper
-// block indent than the one every following line is emitted at, and those
-// following lines fall out of the scalar. Reproduced during review: a file
-// beginning with four spaces produced a manifest that would not parse at all.
-// The indicator states the indentation up front, so the content can no longer
-// change it, and every line is content whatever it looks like.
-//
-// The indicator is relative to the key's own indentation, hence the
-// subtraction; YAML allows 1-9.
-func literalBlock(key, value string, keyIndent, contentIndent int) (string, error) {
-	relative := contentIndent - keyIndent
-	if relative < 1 || relative > 9 {
-		return "", fmt.Errorf("block scalar indentation %d is not expressible", relative)
-	}
-	body, err := blockScalar(value, contentIndent)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%s%s: |%d\n%s", strings.Repeat(" ", keyIndent), key, relative, body), nil
 }
 
 // blockScalar renders the body of a literal block scalar, every line carrying

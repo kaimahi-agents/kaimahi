@@ -1,7 +1,7 @@
 # Running on a managed cluster (AKS)
 
-[Orka](orka.md) is the platform; Kaimahi helps applications get onto it.
-For existing applications, start with [model-traffic migration](migrate.md).
+[Orka](orka.md) is the platform; Kaimahi helps developers get agents onto it.
+Agents reach models through owner-configured Orka Providers directly.
 This page documents the **current AKS implementation**, which lands Orka on a
 cluster it provisions. The former Kagent Copilot demo journey and its lift
 payload remain retired. Explicit Kagent v0.10.2 create can target a separately
@@ -10,8 +10,9 @@ alternate-runtime AKS payload remains retired.
 
 `kmx aks up` and `kmx aks down` are **temporary compatibility routes**,
 not a first-class KMX domain. They are hidden from root help and shell
-completion, but direct invocation retains the same flags and behavior for
-existing workflows, historical records, recovery and safe teardown. Cloud-provider
+completion. Provisioning installs Orka and optionally enables Azure monitoring;
+it does not deploy the model plane. Historical records, recovery and safe teardown
+remain available. Cloud-provider
 extraction remains tracked in [#223](https://github.com/kaimahi-agents/kaimahi/issues/223);
 this visibility change does not move or redesign Azure implementation.
 
@@ -24,16 +25,13 @@ it has no Azure credential and does not re-prove live cloud behavior.
 - An authenticated `az` CLI and subscription permissions for the intended
   resources. kmx does not install `az`. Created-cluster registry attachment also
   requires permission to create the pull-role assignment.
-- Phase-specific tools: kubectl; Bash for cluster/boundary/plane; Python 3 for
-  boundary and PyYAML for plane rendering; Go for the plane; curl for Azure
-  telemetry verification. The Orka phase uses Helm from PATH or the pinned,
-  checksum-verified kmx toolchain. Script phases
+- Phase-specific tools: kubectl and Bash for cluster provisioning. The Orka
+  phase uses Helm from PATH or the pinned, checksum-verified kmx toolchain. Script phases
   require Linux, macOS or WSL, not native Windows. `--plan` requires only the
   authenticated Azure CLI.
 - An independently provisioned model/Provider is the operator's responsibility:
   the lift deploys no Ollama and creates no Provider.
-- A checkout for standalone probes and model-key helpers, not for lift or
-  Copilot capture. Images build in private ACR: no local Docker or push.
+- No checkout, local Docker engine, plane build or Copilot login is needed for AKS setup.
 
 ## One command: `kmx aks up`
 
@@ -48,7 +46,7 @@ kmx aks up --resource-group <your-rg> --registry <registry> --cluster <cluster>
 
 | payload | what lands | phases |
 |---|---|---|
-| `orka` | Orka v0.2.0 chart — the same verified chart `kmx orka install` puts on a local cluster | cluster, boundary, credential, plane, **orka**, observability, verify |
+| `orka` | Orka v0.2.0 chart — the same verified chart `kmx orka install` puts on a local cluster | cluster, **orka**, observability, verify |
 
 The legacy payload is **refused as retired**, by name rather than as an unknown
 value: a script that still names it asked for a platform this command installed
@@ -95,10 +93,9 @@ written to shell history; `printf` keeps the trailing newline out of the Secret,
 and a newline there corrupts the Authorization header on every request. See
 [models](models.md) for the same approach.
 
-The plane's own model seam is **not** usable as that endpoint today: it serves
-TLS under the plane's own authority, and Orka's `Provider` has no field for a
-certificate authority to trust. [`kmx migrate`](migrate.md) remains the
-governed path — for an application's traffic, not for Orka's own Provider.
+The endpoint is your model backend, not the Kaimahi model seam. To lift a
+bundle onto an existing Ready Provider, use [`kmx agent lift`](agent-lift.md)
+with `--inference provider:<name>`.
 
 The banner names the account, subscription name and destination. `--plan` stops
 after preflight/account inspection, without creating cloud resources. A real
@@ -111,28 +108,25 @@ For an existing cluster, add `--byo` explicitly:
 kmx aks up --byo --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
 
-**BYO never creates, deletes or adopts the cluster or resource group.** It checks
-registry pull rights and refuses rather than granting itself `AcrPull`. It also
-refuses to take over pre-existing Azure monitoring. Those are owner decisions.
+**BYO never creates, deletes or adopts the cluster or resource group.** It
+refuses to take over pre-existing Azure monitoring. Provider configuration and
+workload image pull permissions remain owner decisions.
 
 ### Targets and resume
 
 | Phase | Current work |
 |---|---|
 | `cluster` | create tagged resource group, private ACR and AKS; obtain kubeconfig |
-| `boundary` | check policy engine, deploy plane boundary/ledger bootstrap, run negative network proof |
-| `credential` | keep an existing Copilot Secret; otherwise run native device login and capture |
-| `plane` | build in ACR, create/renew data certificate, render registry image/pull policy, deploy |
 | `orka` | install the pinned v0.2.0 Helm chart in harness-v2 mode on the selected context; creates **no** Provider — that stays yours |
-| `observability` | Azure monitoring, scrape allowance/PodMonitor, workbook |
-| `verify` | Orka's controller is installed and ready, strictly — no model call is made. Azure metrics/logs when enabled |
+| `observability` | enable Azure monitoring and record the workspaces/add-on resources it creates; no plane scrape or workbook |
+| `verify` | Orka's controller is installed and ready, strictly — no model call or telemetry-arrival check is made |
 
 `--step <phase>` runs **one phase only**, not that phase and all following ones.
 Failures leave earlier work in place and print a target-preserving retry. Fix
 the cause, rerun that phase, then run the remaining phases or the full lift:
 
 ```bash
-kmx aks up --step plane --resource-group <your-rg> --registry <registry> --cluster <cluster>
+kmx aks up --step orka --resource-group <your-rg> --registry <registry> --cluster <cluster>
 ```
 
 Retain the same identity/options and `--byo` where used. A run is recorded with
@@ -148,31 +142,14 @@ invocation.
 `--step` is validated against the phases the lift has, so a retired phase such
 as `--step agents` is refused and names the phases that exist.
 
-For an Orka **migration** — an existing application's model traffic, rather
-than a fresh Orka — the reusable infrastructure phases are `cluster`,
-`boundary`, `plane`, and optionally `observability`. Run those, then
-[`kmx migrate`](migrate.md). Note that `credential` still requires Copilot even
-when the migration does not, and the boundary phase applies the legacy Copilot
-egress allowance: selected phases are not yet a minimal Orka-specific
-provisioning profile.
+The former `boundary`, `credential` and `plane` phases are not accepted.
+Plane administration commands are also removed from KMX.
 
 ### The credential handoff
 
-The full lift keeps `kaimahi/kaimahi-copilot-token` if present; if absent, it
-runs the same native device-login flow available explicitly as:
-
-```bash
-KAIMAHI_CONFIRM=<cluster> kmx --context <cluster> models credential copilot
-```
-
-No checkout or credential input flag/stdin is needed. Follow the printed GitHub
-device-login instructions; a `gh` login is not a Copilot login. The OAuth login
-is cached at `~/.config/kaimahi/copilot-oauth-token` with mode 0600; only the
-exchanged short-lived token enters the plane Secret through kubectl stdin.
-The command applies Copilot egress and **restarts an existing proxy**, waiting
-for rollout; an absent proxy will start with the Secret later. Re-run this
-command when the token expires. Lift's presence check does not establish that
-an existing token is still valid. See [models](models.md).
+Model credentials stay in the owner-created Provider's Secret. AKS setup does
+not capture a Copilot token, mint plane credentials or route traffic through a
+model proxy. See [models](models.md) for native Provider configuration.
 
 ### Defaults and escape hatches
 
@@ -184,7 +161,7 @@ an existing token is still valid. See [models](models.md).
 | Network | Azure CNI Overlay + Cilium (`--network-policy cilium`); `azure` or `calico` accepted but not live-verified here |
 | Control plane | Free tier, no SLA; not exposed as a lift flag |
 | Registry | private ACR Basic, admin user disabled; `--registry` |
-| Monitoring | enabled; `--observability=false` skips it and Azure telemetry verification |
+| Monitoring | enabled; `--observability=false` skips new Azure monitoring setup |
 
 The larger lift disk follows a recorded 32 GiB `DiskPressure`/eviction failure
 with both monitoring add-ons. It is not a sizing guarantee for Orka, a larger
@@ -203,72 +180,39 @@ local kind requires both a `kind-*` name and loopback API server; remote writes
 require confirmation naming the context. Cloud provisioning/deletion have their
 own confirmation because they do not act through a kube context.
 
-A NetworkPolicy object is not evidence of enforcement. The boundary phase:
-
-1. Refuses an absent, non-enforcing or unreadable policy engine.
-2. Applies the boundary and ledger bootstrap, then runs
-   [`netpol-probe.sh`](../scripts/netpol-probe.sh), with a reachable positive
-   control and connections that must be denied.
-
-A failed fresh boundary proof leaves bootstrap resources to clean up, not a
-completed plane/agent deployment. The tooling does not migrate an existing
-cluster to a different policy engine; a mismatch is refused. Changing a cluster's
-CNI or reimaging node pools is not hidden behind a create operation.
+A NetworkPolicy object is not evidence of enforcement. Created clusters retain
+the selected policy engine, but setup does not deploy or prove a model-plane
+boundary. The tooling does not migrate an existing cluster's CNI or reimage its
+node pools; workload network policies remain the owner's responsibility.
 
 ## Remaining checkout helpers
 
 Use native `kmx aks up` and its phases for managed provisioning; the former
 `make up`, `make ollama` and `make aks-down` shims are removed. The
-[Makefile](../Makefile) retains model credential helpers and probes such as
-`make netpol-verify`. For those helpers, set `TARGET=aks`,
-`KUBE_CTX=<cluster>` and confirmation explicitly; do not infer the target from
-kubectl's current-context. Read the model ledger and metrics through native kmx.
+[Makefile](../Makefile) retains repository helpers, including Azure credential
+refresh. Set `KUBE_CTX=<cluster>` and confirmation explicitly where applicable;
+do not infer the target from kubectl's current-context. Plane-only probes and
+assets are removed; native provisioning and guarded teardown remain.
 
-Lift carries its needed scripts/manifests. Registry rendering preserves the
-committed kind `imagePullPolicy: Never`, and the plane uses the default
-StorageClass. There is no separate plane Helm chart.
+Lift carries its provisioning scripts. It needs no plane image, manifest,
+certificate or database to install Orka.
 
 ## Observability
 
-Lift wires two independent paths: Managed Prometheus into an Azure Monitor
-workspace and Container Insights logs into Log Analytics. A parameterized ARM
-workbook joins them; committed templates carry no deployment identifiers.
-
-The plane's unauthenticated ops port **9092 remains on no Service**. Pod discovery
-reaches the named `ops` container port through
-[`k8s/observability/network-policy.yaml`](../k8s/observability/network-policy.yaml),
-which admits only `kube-system` pods labelled `rsName: ama-metrics`. This is the
-custom-scrape replica, not the per-node DaemonSet. The allowance is access control,
-not permission to expose the port generally.
-
-### The scrape job is a PodMonitor, and yours can sit beside it
-
-[`podmonitor.yaml`](../k8s/observability/podmonitor.yaml) lives in `kaimahi` and
-selects only plane pods and their named ops port. For your own workload, author
-a separate monitor and allowance; retain these load-bearing details:
-
-- API group `azmonitoring.coreos.com/v1`, not the open-source operator's group.
-- `port` is a **container port name**, not a number.
-- Put it beside its pods or set `namespaceSelector.matchNames` explicitly.
-- Retain `labelLimit: 63`, `labelNameLengthLimit: 511`, and
-  `labelValueLengthLimit: 1023`; Azure may drop a job exceeding its limits.
-- A default-deny namespace needs its own scraper ingress allowance.
-
-Lift never reads, writes or deletes the cluster-wide
-`ama-metrics-prometheus-config` ConfigMap. On an older add-on without the monitor
-CRD, it prints the equivalent job for **the owner to merge**, continues the
-workbook/log path, and leaves metrics unproven until data arrives.
+Lift enables Managed Prometheus into an Azure Monitor workspace and Container
+Insights logs into Log Analytics. It records workspaces and add-on resources as
+they are created. It does not create a plane scrape allowance, PodMonitor or
+workbook, and it never edits the cluster-wide scrape ConfigMap. Configure
+workload-specific scrape jobs and dashboards yourself.
 
 **Disabling the metrics add-on can remove its CRD and every PodMonitor using it,
 including yours.** BYO teardown warns before disabling an add-on this run enabled;
 keep your manifests and reapply after re-enabling it. This consequence exists
 even though lift never edits your shared scrape ConfigMap.
 
-`verify` queries `kaimahi_build_info` and an actual plane log line, with waits for
-both pipelines. Add-on enabled, scrape target allocated, data queryable and
-workbook rendered are different claims. `--observability=false` checks none of
-the Azure telemetry. The view covers calls crossing the seam, **not agent-internal
-spans or reasoning**; keep your own OpenTelemetry instrumentation.
+`verify` checks Orka readiness, not telemetry arrival or model inference.
+Enabling an add-on does not prove that your workload's metrics or logs arrive.
+Keep your own OpenTelemetry instrumentation and verify its data path separately.
 
 ## Teardown
 
@@ -312,29 +256,24 @@ another recorded monitoring group. Check those too, along with the node resource
 group, registry and kubeconfig. Deleting one named group is not a subscription
 billing audit. Use current Azure prices; historical run estimates are not quotes.
 
-## Retired public edge and concurrent checks
+## Historical resources and concurrent checks
 
-The gateway/MCP listener, public inbound edge, tool/workflow commands and
-Slack/ERP/AP fixtures are removed. The plane retains **model 8080, admin 9091
-and ops 9092**. Existing installations need the
-[explicit retirement steps](operations.md#upgrading-after-approval-retirement):
-review rejected tool overlays, old Services/network allowances, credentials and
-owner-managed application references. **Applying the new manifests does not
-prune them or safely repoint tools.** For older inbound installations also disable
-external webhooks/Slack subscriptions before releasing their DNS name and remove
-obsolete owned edge resources. This is not automatic cloud deletion, credential
-revocation or database cleanup.
+Removing CLI commands and repository source does not delete existing cloud or Kubernetes resources,
+revoke credentials or erase stored history. Owners must review old Services,
+network allowances, Secrets, application references and external subscriptions
+separately. Disable obsolete webhooks/Slack subscriptions before releasing their
+DNS name, and remove only resources whose ownership is established. KMX does
+not safely repoint old tools or provide a new plane upgrade/recovery interface.
 
-All custom approvals/grants and their APIs/CLI views are retired. Ordinary model
-caps/accounting remain; historical requests/grants/audits remain in SQL/backups.
-Upgrade CLI and plane together and verify every replica's new build: old replicas
-can still consume grants during rollout, and rollback can reactivate them. The
-gateway-backed fixtures are gone with the gateway.
+Historical SQL source remains in Git history, not the current checkout.
+Deployed database contents and backups remain sensitive owner-managed data.
+An older approval-capable process can still use stored grants; source removal is not
+revocation or proof that every old replica has stopped. Keep independently
+verified backups and the ownership records needed for teardown.
 
-Chat allocates a free loopback port by default. Fixed-port helpers need distinct
-`CHAT_PORT`, `ADMIN_PORT`, or `OPS_PORT` values when checking two clusters
-concurrently. Occupied chat ports fail rather than silently selecting another
-cluster's forward.
+Task-backed Orka chat and quickstart use loopback port `19180`; `CHAT_PORT`
+and `KMX_CHAT_PORT` are unsupported. An occupied port causes failure rather
+than attaching to another cluster's forward; there is no automatic free-port fallback.
 
 ## What was verified, and what was not
 
@@ -342,23 +281,24 @@ Recorded single-node runs in September 2026 demonstrated private ACR builds,
 default-storage PVC binding, Copilot model rows and budget denial, MCP audit,
 Cilium enforcement, the now-retired opt-in Slack edge, and the AP fixture path.
 Those gateway/AP measurements are historical: their fixtures and CI scenarios
-are now retired, not current verification of the reduced model plane.
+are now retired, not current verification of native setup.
 
 The September 6 lift runs exercised created and BYO clusters, refused a missing
 engine and missing pull rights, and queried metrics/log data. Those runs used
 the older ConfigMap scrape implementation; do not treat them as evidence for
-later PodMonitor behavior. The September 10 [migration](migrate.md) run exercised
-selected infrastructure phases and observed PodMonitor target allocation.
+later PodMonitor behavior. The September 10
+[historical migration run](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md)
+exercised selected infrastructure phases and observed PodMonitor target allocation.
 
 Not established: current end-to-end cloud correctness on every PR, workbook
 panel rendering in a browser, Azure/Calico engine enforcement, multi-node
 scheduling, durability, upgrades or node replacement. Historical edge runs also
 did not establish certificate renewal; the edge is no longer shipped. The legacy
 default is ephemeral, with default node SSH and no claim of production hardening;
-the legacy agent namespaces remain outside the plane's default-deny boundary. Orka+Ollama was demonstrated in a separate migration, not
-provisioned by the full Copilot lift. The checkout ACR plane build currently
-omits the version build argument and can report `unknown`; inspect rather than
-infer the running revision.
+the legacy agent namespaces were outside the plane's default-deny boundary.
+Orka+Ollama was demonstrated in a separate historical migration, not provisioned
+by that full Copilot lift. These records do not establish the current native
+setup's cloud behavior.
 
 ## No Azure identifiers in shared evidence
 

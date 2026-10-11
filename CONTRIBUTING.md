@@ -6,11 +6,16 @@ corrections, tests, and small capability changes. Start with the organization
 
 ## Before building something new
 
+For command changes, follow [AGENTS.md](AGENTS.md), the
+[command conventions](docs/command-conventions.md) and the
+[command alignment record](docs/command-semantics.md), including help,
+completion, generated instructions and compatibility updates.
+
 Orka remains the first-class/default platform; Kaimahi is tooling to help people
 get agents onto it. Check Orka, Kubernetes and existing integrations first. In
 the pull request, explain why configuration, integration or an upstream
-contribution cannot provide the requested behavior. The migration bridge should
-shrink as upstream capabilities cover it.
+contribution cannot provide the requested behavior. Runtimes and harnesses own
+execution, enforcement and model access; KMX should not duplicate them.
 
 Kagent support is intentionally bounded to explicit
 `kmx agent create --runtime kagent <name>` against an already-installed exact
@@ -23,7 +28,7 @@ an open, unsupported question.
 New to the codebase? [`docs/development.md`](docs/development.md) covers the
 architecture, the build, and the mistakes that are easy to make here, and
 [`docs/repository-map.md`](docs/repository-map.md) says which parts of the
-tree are current tooling, retained legacy implementation or test support — worth
+tree are current tooling, historical compatibility data or test support — worth
 reading before you change something you found by grepping.
 
 ## Local verification
@@ -35,6 +40,7 @@ python3 scripts/check-doc-links.py --selftest && python3 scripts/check-doc-links
 python3 scripts/check-secret-shapes.py --selftest && python3 scripts/check-secret-shapes.py
 python3 scripts/check-repository-map.py --selftest && python3 scripts/check-repository-map.py
 python3 scripts/check-comment-history.py --selftest && python3 scripts/check-comment-history.py
+python3 scripts/test_check_mutations.py
 python3 scripts/check-mutations.py
 python3 scripts/check-readme-front-door.py
 python3 scripts/check-readme-front-door-test.py
@@ -42,27 +48,38 @@ python3 scripts/check-brand-assets.py
 python3 scripts/homebrew-formula.py --selftest
 bash scripts/check-no-azure-ids-test.sh && bash scripts/check-no-azure-ids.sh
 bash scripts/kube-guard-test.sh
-test -z "$(gofmt -l cmd internal embed.go embed_test.go)" && go vet ./... && go test ./...
-(cd plane && test -z "$(gofmt -l .)" && go vet ./... && go test ./...)
+formatted=$(gofmt -l agentsuite cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go test ./...
+python3 scripts/test_model_fixtures.py -v
 ```
-
-Without a database that last line still runs `gofmt`, `go vet` and every
-non-Postgres package for real — but it covers the store not at all: every
-`plane/internal/store` test skips unless `KAIMAHI_TEST_PG_DSN` points at a
-Postgres. Stand a throwaway one up and set it if your change touches the
-store — CI's `go-plane` job uses a service container and always runs them.
 
 The checkers above are the ones you can usefully run by hand. CI's hygiene
 job runs each checker, each checker's self-test, and a set of inline
 meta-checks over CI's own guards; it is the authority on what gates a
 merge, not this list.
 
-Two Go modules: the root one is `kmx` (`cmd/kmx`, `internal/kmx`), and
-`plane/` is the retained model seam's. The root includes the first-class Orka
-paths and the narrowly scoped Kagent v0.10.2 create adapter. Gateway/tool
-governance and custom approval/grant runtime are retired; ordinary model
-caps/accounting remain. Historical SQL migrations, stored data, and legacy AKS
-teardown records are not cleanup targets.
+The mutation harness checks 40 representative mutants across ten checkers,
+not every failure mode. This bounded set keeps verification practical but
+intentionally drops some unique mutation coverage; checker self-tests and
+ordinary tree checks still run. Checkers run in parallel with a worker count
+that defaults to the CPU count (or one if unavailable). Set
+`KMX_MUTATION_JOBS` or pass `--jobs N` to limit it; `--jobs` takes precedence.
+Keep the checkout unchanged while the harness runs.
+
+On pull requests, CI runs the mutation harness when `scripts/` changes or
+change classification is uncertain. It runs the harness in full on main pushes
+and in the nightly hygiene job. Its inexpensive runner/routing tests and other
+hygiene checks run regardless of that mutation gate.
+
+One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), the public
+AgentSuite format package (`agentsuite`), and the application interface
+(`pkg/kmx`). AgentSuite does not have a separate module or version pin; root
+`go test ./...` tests it alongside the CLI, including first-class Orka paths
+and the narrowly scoped Kagent v0.10.2 create adapter.
+Plane commands, administration, the source module (including checked-in SQL),
+build helper, embedded assets and plane-only scripts/fixtures are removed.
+Historical source remains in Git history. This cleanup deletes no deployed
+databases, credentials, caches or resources; legacy AKS ownership records and
+conservative teardown support remain.
 
 For cluster changes, use the documented kind path and a dedicated `KIND_CLUSTER`
 name to avoid changing another developer's cluster. See

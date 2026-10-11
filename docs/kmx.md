@@ -1,22 +1,20 @@
 # `kmx` — agent tooling with Orka as the default
 
 [Orka](orka.md) remains the first-class platform and the default for every
-existing workflow. Kaimahi's front door is `kmx orka` for installation/status,
-`kmx agent create` for native Provider + Agent authoring, and `kmx migrate` for
-an existing application's **model traffic**. The Deployment remains
-owner-managed. Installing Orka alone is not this migration; none of these
-operations silently governs application tools.
+existing workflow. Kaimahi's front door is `kmx orka` for installation/status
+and `kmx agent create` for native Provider + Agent authoring. The selected
+runtime owns execution, enforcement and model access; installing it alone does
+not prove an Agent can answer.
 
 The former broad Kagent integration is not restored. Its installer steps,
 manifests, chat, list/show/status, lift/evaluate, console, quickstart, `up`, and
 AKS payload remain absent or retired. The only current capability is explicit
 `kmx agent create --runtime kagent <name>` against an already-installed exact
 Kagent v0.10.2. Historical lift records remain readable for teardown only.
-Governance, preset switching and agent editing remain retired; hidden command
-stubs guide old callers to supported replacements. `orka.harness.v2` is outside
+Plane administration, model overlays, migration, governance and preset
+switching are removed, not redirected to replacement commands. Agent editing
+remains retired; its hidden stub points to kubectl. `orka.harness.v2` is outside
 the direction.
-A shrinking compatibility/governance bridge is success, not a reason to rebuild
-Orka's platform in Kaimahi.
 
 ## Install
 
@@ -29,8 +27,8 @@ brew install kaimahi-agents/tap/kmx &&
 ```
 
 The fully qualified formula trusts only `kmx`. Homebrew installs the CLI, not
-Docker, Podman or Go; local kind still needs a container engine, and `kmx plane`
-still needs Go. To build the same release with Go 1.26+ instead:
+Docker, Podman or Go; local kind still needs a container engine. To build the
+same release with Go 1.26+ instead:
 
 ```bash
 go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
@@ -62,8 +60,7 @@ Helm 3 for Orka's v0.2.0 chart. Helm calls pin the selected Kubernetes context
 with `--kube-context`. No Orka runtime CLI is fetched or cached. Cached digests are
 rechecked before reuse. Set
 `KMX_TOOLCHAIN=off` to refuse missing tools instead. No container engine or Azure
-CLI is installed for you. `kmx plane` outside a checkout needs Go to fetch/build
-its source; the lift plane phase preflights Go even from a checkout.
+CLI is installed for you. AKS setup installs Orka directly.
 
 Docker remains the default for compatibility. Podman is a first-class explicit
 choice:
@@ -83,13 +80,21 @@ Use `kmx --help` and `kmx <command> --help` for flags and defaults. The Cobra tr
 also generates completion; this guide describes contracts rather than duplicating
 every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
+**Unreleased entry-point alignment:** `context show/use` and `local up/down`
+are the canonical grouped commands below. Tagged v0.4.1 uses `ctx [context]`
+and root `up/down`; those routes remain callable in newer builds with notices
+only on stderr. No removal release is scheduled. See the
+[alignment record](command-semantics.md) for current versus proposed names.
+
 ### Current Orka path and explicit Kagent create
 
 | Command | Contract / reference |
 |---|---|
+| `kmx targets [-o table\|json] [--detect] [--sessions <host:port>]` | offline compiled support by default; explicit read-only probes report present/absent/unreadable separately from qualified versions. No runtime selection, installation or deployment. [Target view and support matrix](runtime-adapters.md#read-only-target-view) |
 | `kmx orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
 | `kmx orka status` | read running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin |
 | `kmx agent create [name]` | default, unchanged Orka authoring: native Provider + Agent and optional Task. Explicit `--runtime kagent <name>` is create-only for an already-installed exact Kagent v0.10.2. Retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
+| `kmx suite build <directory> ...` | resolve one agent/platform composition and build an OCI image-layout tar through AgentKit using Docker buildx. The current implementation is explicitly experimental and non-conformant because it treats the selected harness image as a monolithic AgentKit adapter and does not compose the runtime-base image. |
 | `kmx suite push <directory> <registry/repository:tag>` | deterministically archive and validate an extracted AgentSuite, then push it to an OCI registry. An existing tag with the same digest is a no-op; a different digest requires `--force`. Prints the pushed digest. See [registry safety](#registry-authentication). |
 | `kmx suite push <directory> --to-layout <layout> <repository:tag>` | deterministically archive and validate an extracted AgentSuite, then add its referenced artifact to a local OCI image layout. New layouts are published atomically; existing layouts retain unrelated references. Output states whether the layout was created or updated. |
 | `kmx suite pull <registry/repository:tag-or-digest> --output <directory>` | pull and validate one AgentSuite from an OCI registry, then atomically extract it into a new directory. Prints the resolved digest; tag pulls also print a digest-pinned reference for repeatable pulls. See [registry safety](#registry-authentication). |
@@ -101,9 +106,163 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 | `kmx agent evaluate <bundle-dir>` | run an Orka bundle's `eval/*.yaml` cases as one Task each against the deployed revision, only when it carries the bundle's current portable digest; Kagent bundles are refused. Print answers, write a receipt with answer digests (never text), exit non-zero unless every case passed. [Bundle evaluation](agent-lift.md#evaluating-a-deployed-revision) |
 | `kmx agent run <bundle-dir> --prompt <text>` / `kmx agent run --agent <name> --prompt-file <path>` | execute one Task against an already-deployed Agent without changing the bundle; stdout is answer-only. Supports `--prompt-file -` for stdin and `--wait` (default 5m, maximum 9m). [Running an existing Agent](agent-lift.md#running-an-existing-agent) |
 | `kmx task result <task> [--context <ctx>] [--namespace <ns>] [--wait 5m]` | inspect an AI Task's phase once by default and open a result session only for a readable terminal answer; `--wait <duration>` waits 10s–9m and reports phase changes. Pending or not-yet-readable results exit 2; failed or cancelled Tasks exit 1. [Running an existing Agent](agent-lift.md#running-an-existing-agent) |
-| `kmx migrate <deployment>` | inspect workload/Provider; create seam identity and ingress; mint/reconcile credentials; write the owner-applied patch. [Migration](migrate.md) |
-| `kmx ctx [context]` | show target/source/posture or remember a target in kmx's config directory |
+| `kmx context show` / `kmx context use <context>` | read effective context/source/posture or remember KMX's guarded access selection; never change kubectl current-context |
 | `kmx console` | two-column local/remote workspace for native Orka Agents, with Vim/arrow navigation, agent actions, inference details and slash-command completion; Kagent inventory and bundles are unsupported. `b` compares the selected Orka agent with its local bundle using the same report as `kmx agent status`; `--demo` uses sample data. [Console guide](interactive-agent-tui-plan.md) |
+
+#### Experimental AgentSuite image build
+
+The first image-build backend is intentionally narrow:
+
+It requires Docker with the buildx plugin. Authenticate Docker to any private
+registry containing the selected harness image before building.
+
+With the classic Docker image store, the default `docker` builder can reject
+`--output type=oci` with `OCI exporter is not supported for the docker driver.`,
+even with attestations disabled. If you see this error, enable Docker's containerd
+image store, or create a `docker-container` builder and pass its name to KMX:
+
+```sh
+docker buildx create --name kmx-builder --driver docker-container
+# Add --builder kmx-builder to the kmx suite build command below.
+```
+
+`--builder` selects an existing Buildx builder for this build without changing
+Docker's default builder. When omitted, Docker Buildx uses its existing builder
+selection. Disabling attestations does not fix an unsupported OCI exporter.
+
+```zsh
+SUITE=./internal/kmx/agentsuite/testdata/incident-analyst
+
+kmx suite validate "$SUITE"
+
+read "AZURE_OPENAI_RESOURCE?Azure OpenAI resource name: "
+AZURE_OPENAI_BASE_URL="https://${AZURE_OPENAI_RESOURCE}.openai.azure.com/openai/v1/"
+
+kmx suite build "$SUITE" \
+  --agent incident-analyst \
+  --platform linux/amd64 \
+  --model-base-url "$AZURE_OPENAI_BASE_URL" \
+  --model-api-key-env AZURE_OPENAI_API_KEY \
+  --builder kmx-builder \
+  --require-attestations \
+  --verbose \
+  --output incident-analyst.oci.tar
+
+tar -tf incident-analyst.oci.tar
+```
+
+`--verbose` exposes Docker buildx progress. Correctness warnings,
+including the current non-conformance warning, are always written to stderr.
+An existing output archive is replaced only after the new build completes
+successfully; a failed or canceled build preserves the previous archive and
+removes its staged partial output.
+
+SBOM and maximum-mode provenance attestations are requested by default
+(`--sbom=true --provenance=mode=max`). If the selected builder explicitly rejects
+attestation support, KMX warns and retries without either attestation.
+`--require-attestations` fails instead of downgrading and refuses an archive
+missing the required statements. Use `--attestations=false` to opt out explicitly;
+it cannot be combined with `--require-attestations`. Authentication, scanner,
+network, cancellation, and unrelated build failures are not grounds to downgrade.
+
+Attestations are stored inside the OCI archive: `index.json` can reference a
+nested image index containing the runnable platform manifest and an
+`unknown/unknown` attestation manifest. The latter contains in-toto SBOM and
+provenance statements bound to the runnable image. KMX prints the runnable image
+manifest digest as **the image digest** and reports the index digest separately
+as including attestations and varying per build. `SOURCE_DATE_EPOCH` and
+`rewrite-timestamp=true` normalize image timestamps; provenance still records
+per-build timestamps, invocation identifiers, and BuildKit metadata. Do not
+expect byte-identical attested archives. An unchanged runnable-image digest was
+demonstrated across two cached builds of a scratch-image probe; this is not a
+clean-room reproducibility guarantee for every agent.
+
+When an SBOM is present, KMX prints a `tar -xOf` command with the archive path and
+SBOM blob path. Run that command to read the complete in-toto SPDX statement
+without a registry or network access. These BuildKit attestations are not signed
+identity evidence; KMX does not sign user-built images.
+
+Create an Azure OpenAI deployment named `gpt-5-mini` in Azure AI Foundry. Then
+load the image and inject its API key only when the container starts:
+
+```zsh
+docker load -i incident-analyst.oci.tar
+
+read -s "AZURE_OPENAI_API_KEY?Azure OpenAI API key: "
+echo
+export AZURE_OPENAI_API_KEY
+
+docker run --rm \
+  --platform linux/amd64 \
+  --name incident-analyst \
+  -p 127.0.0.1:8080:8080 \
+  -e AGENTKIT_BIND=0.0.0.0 \
+  -e AGENTKIT_AUTH_TOKEN=local-test-token \
+  -e AZURE_OPENAI_API_KEY \
+  incident-analyst:latest
+```
+
+The image is not build-locked to the OpenAI-compatible server surface.
+AgentKit selects its protocol at runtime with `AGENTKIT_PROTOCOL`; the command
+above uses the default `openai` protocol for local testing. Supported AgentKit
+versions can instead select `foundry`, `orka`, or `acp` without rebuilding the
+image.
+
+From another terminal:
+
+```bash
+curl --fail http://127.0.0.1:8080/healthz
+
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H 'authorization: Bearer local-test-token' \
+  -H 'content-type: application/json' \
+  -d '{
+    "model": "gpt-5-mini",
+    "messages": [{
+      "role": "user",
+      "content": "At 14:03 UTC checkout latency rose from 200 ms to 8 s. Pods report database connection pool exhaustion. Produce an incident triage report."
+    }]
+  }'
+```
+
+The checked-in incident analyst is a realistic, tool-free example: it turns
+pasted alerts, logs and operator notes into an evidence-based triage report. Its
+Linux amd64 Python runtime base and AgentKit v0.1.0 Pydantic AI harness are real,
+platform-specific, digest-pinned OCI manifests. The example targets an Azure
+OpenAI deployment named `gpt-5-mini` through the OpenAI-compatible v1 endpoint.
+The build records only the environment variable name `AZURE_OPENAI_API_KEY`; it
+never reads or embeds the key. `--model-api-key-env` accepts only names matching
+`[A-Za-z_][A-Za-z0-9_]*`; invalid names are rejected before any build files are
+written. Supply the key in that environment variable when running or deploying
+the resulting image.
+
+The command validates the suite, resolves one immutable sandbox build plan and
+publishes a new output atomically. It supports only agents without ToolProviders,
+invocation edges, endpoint environment bindings or model secret references.
+AgentKit v0.1 requires a literal model `baseURL`, so this adapter currently
+embeds `--model-base-url` and rejects `model.endpointEnv`; a future AgentKit
+release needs runtime model-endpoint environment resolution before KMX can
+preserve that portable binding.
+KMX writes the current experimental `pydantic-ai` runtime into a generated
+AgentKitfile and invokes `docker buildx build`. The AgentKit frontend is
+digest-pinned, the selected harness image is passed as its adapter, and buildx
+exports the OCI tar through KMX's staged output. Docker supplies registry
+credentials for private harness images through its configured credential store.
+KMX does not link the BuildKit client libraries or create a privileged BuildKit
+daemon.
+
+The provider-neutral build-plan and builder contracts do not import AgentKit.
+The current adapter uses the selected harness image as AgentKit's
+monolithic adapter. The experimental plan currently carries validated metadata,
+not verified image blobs or ToolProvider payload bytes; a conformant offline
+builder will require a provider-neutral verified content source.
+It emits a warning because the runtime-base image, AgentSuite binding, final
+inventory and provider payload composition are not yet represented. The harness
+image must therefore currently be a complete AgentKit adapter image from the
+`ghcr.io/orka-agents/agentkit/serve-pydantic-ai` repository, matching the fixed
+`pydantic-ai` runtime; other harness repositories are refused. A future
+conformant AgentKit adapter or another builder can replace it without changing
+AgentSuite resolution.
 
 #### Registry authentication
 
@@ -147,48 +306,20 @@ and a pull by tag also prints a reference such as
 `registry.example.com/agentsuites/team@sha256:…` to pin subsequent pulls to that
 artifact rather than a mutable tag.
 
-### Existing plane and operator commands
-
-These are the present seam implementation, including the bridge used by migrate.
-
-| Command | Contract / reference |
-|---|---|
-| `kmx plane` | image, secrets, certificate, deployment; `--step` runs one of those steps; `--source` selects checkout or fetch |
-| `kmx credentials` / `kmx credential renew <name>` | list expiries / extend deadline without changing token material. [Identity](identity.md) |
-| `kmx credential issue <name>` | require exactly one destination: `--secret <name>` with the `--namespace <ns>` it lands in (no default — the namespace is named, never guessed) or `--discard` to discard the one-time bearer; never print the bearer. A namespace that does not exist is refused before the token is minted |
-| `kmx models credential copilot` | native device-login/exchange into plane custody; applies egress and restarts an existing proxy |
-| `kmx ledger [credential]` | newest model rows plus month-to-date totals; defaults to `$CRED` |
-| `kmx flow [credential]` | model ledger, oldest first; all credentials by default; **timeline, not causal trace** |
-| `kmx watch [credential]` | model ledger rows **as they happen**, appended one line per event, with denials marked. Append-only rather than full-screen, so the scrollback survives and the feed pipes into `grep`. Starts from now — `--replay N` prints recent history first. A failed read prints a gap that says it is **not** an absence of activity, and a watch that cannot recover exits non-zero rather than going quiet (`--interval`, `--limit`, `--for`, `--replay`, `--json`) |
-| `kmx budget [credential]` | replace monthly caps; **no cap flags clears both**; `0` is a valid cap |
-| `kmx models add <name>` | reviewable model upstream/NetworkPolicy onboarding; contract below |
-| `kmx backup [file]` / `kmx restore <file>` / `kmx metrics` | database backup/replacement / one replica's counters; contracts below |
-| `kmx completion bash\|zsh\|fish` / `kmx version` | shell completion / binary and dependency versions |
-
-Custom request/approval/grant commands and APIs, including approval audit, are
-removed, following tool-governance/capture, workflow, inbound and notification
-retirement. Historical SQL/data remain accessible through SQL/backups, not those
-APIs. `flow`/`watch` read only the model ledger. Ordinary `budget` and credential
-operations remain. Admin contract 5 marks this breaking removal, not compatibility
-negotiation: **upgrade CLI and plane together**. See the
-[upgrade procedure](operations.md#upgrading-after-approval-retirement), including
-old-replica and rollback risks; older installations also need gateway cleanup.
-
-Credential issuance/renewal TTL remains 60 seconds–365 days.
-
 ### Runtime commands
 
 | Command | Current behavior |
 |---|---|
 | `kmx quickstart` | kind + keyless Ollama + pinned Orka v0.2.0 Helm chart + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Kagent installation or plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
-| `kmx quickstart-wizard` | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. |
-| `kmx up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
-| `kmx aks up` / `kmx aks down` | Temporary compatibility route, hidden from root help and shell completion; not a first-class KMX domain. Direct invocation keeps unchanged flags and behavior: provision AKS and land Orka on it, then clean up owned resources. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
+| `kmx quickstart --interactive` (`-i`) | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. Flags for the other quickstart mode are refused before configuration loads. The retired `kmx quickstart-wizard` spelling refuses and names this command. |
+| `kmx local up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
+| `kmx aks up` / `kmx aks down` | Temporary compatibility route, hidden from root help and shell completion; not a first-class KMX domain. Setup provisions AKS and installs Orka only, with optional Azure monitoring add-ons; the owner configures the model Provider. It does not deploy a model plane or capture its credentials. Teardown preserves cleanup of recorded owned resources, including historical runs. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
 | `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
-| `kmx agent chat --interactive <name>` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Orka chat is a session, so a one-shot invocation is refused and names this command; Kagent chat is not restored by its create capability |
-| `kmx status` | Starts with the unchanged `kmx orka status` report (running version, deployments, CRDs, Provider readiness), then reports the separate model plane's readiness and seam certificate expiry with the same pinned context. An absent, unreadable, or scaled-zero plane is reported distinctly. `-o table` only |
-| `kmx down` | delete named kind cluster, **including its ledger** |
+| `kmx agent chat <name> [message]` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Chat is always a session: an optional message is its first turn, and the one-shot Task is `kmx agent run`. The former `--interactive` flag is removed; Kagent chat is not restored by its create capability |
+| `kmx status` | The same Orka runtime report as `kmx orka status`: running version, Deployments, CRDs and Provider readiness on the pinned context. `-o table` only |
+| `kmx local down` | delete the named kind cluster and all its data, including any historical database still present |
+| `kmx completion bash\|zsh\|fish` / `kmx version` | shell completion / binary, Orka pin and bundled model versions |
 
 `quickstart` reuses an **exact** live match of the Provider and Agent it would
 write, and nothing else: a differing spec is somebody's deliberate change, so
@@ -204,12 +335,10 @@ access.
 
 | Setting | Meaning / default |
 |---|---|
-| `--context`, `KUBE_CTX`, `kmx ctx` | explicit invocation, environment or remembered target; kmx does not follow changing kubectl current-context |
+| `--context`, `KUBE_CTX`, `kmx context use` | explicit invocation, environment or remembered target; kmx does not follow changing kubectl current-context |
 | `KIND_CLUSTER` | kind container cluster name, default `kaimahi-p1`; pick your own for isolated work |
 | `--container-engine`, `CONTAINER_ENGINE` | `docker` (default) or `podman`; the flag overrides the environment; keep consistent for every operation on a cluster |
 | `MODEL` | model the runtime pulls and resolves, default `qwen2.5:3b` |
-| `CHAT_PORT`, `ADMIN_PORT`, `OPS_PORT` | automatic chat port; fixed admin `19091`, ops `19092` |
-| `CRED` | default model/operator credential `hello-world` |
 | `KAIMAHI_CONFIRM` | explicit named-target consent, not a universal yes |
 | `KMX_HOME` | portable override for all kmx state/cache; otherwise the native user config directory (`~/.config/kmx` on Linux, `~/Library/Application Support/kmx` on macOS) |
 
@@ -233,7 +362,7 @@ that the fallback is already current, permits first setup. Current-context is
 never substituted as kmx's target. Kind creation/image loading also require
 context `kind-$KIND_CLUSTER`; confirmation cannot override that mismatch.
 
-`kmx down` checks the container engine because kind deletes by container name,
+`kmx local down` checks the container engine because kind deletes by container name,
 not kubeconfig. A listed kind cluster missing from kubeconfig requires explicit
 named confirmation; no matching container cluster is a no-op. An absent context
 is not proof there is nothing to delete.
@@ -251,26 +380,20 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   remain available. `TERM=dumb` chooses plain; non-empty `NO_COLOR` removes ANSI
   but keeps static rich report layout. Chat additionally disables cursor effects
   and enhanced input under `NO_COLOR`.
-- Redirected admin reports retain fixed-width/truncated compatibility output.
-  Progress/diagnostics go to stderr. JSON/YAML, manifests, metrics, completion,
-  SQL and raw chat bypass styling. Admin JSON/YAML is not implemented.
-- Chat is a session and has no one-shot form: a non-interactive invocation is
-  refused and names the command that works, so there are no task bytes to pipe
-  and no `--json` chat output. `--interactive --json` is refused too.
+- Progress/diagnostics go to stderr. JSON/YAML, manifests, completion and
+  answer-only Task output bypass styling.
+- Chat is a session and has no one-shot form: a message after the Agent name
+  is the first turn of that session, and there is no `--json` chat output.
+  `--json` and `--session` are refused before configuration loads. Use
+  `kmx agent run` for answer-only stdout.
 - Quickstart JSON has keys `ok`, `context`, `cluster`, `agent`, `manifest`,
   `question`, `answer`, `governed`, `tools`, `elapsed_seconds`, `next`. `tools` is
   null when none were provisioned. `governed: false` means **this invocation did
   not enable governance**, not that existing governance is absent. Success
   requires a completed task with a readable answer; stdout is one JSON document.
-- `status` has no `-o json|yaml`, and refuses them by name rather than printing
-  an empty document. The structured output counted the legacy runtime's
-  Agents and model presets; nothing replaces that count, because `kmx migrate` routes the
-  owner's own workloads and kmx cannot enumerate them. Read the cluster
-  directly for machine-readable runtime facts.
-- Ledger caller claims are unverified client assertions; observed source
-  addresses and `acted for` are separate fields. Flow counts model refusals from
-  `cost_source: denied`, not from any upstream HTTP error. Configuration posture
-  is not proof a specific request crossed a seam.
+- Root `status` has no `-o json|yaml`, and refuses them by name rather than
+  printing an empty document. Read the cluster directly for machine-readable
+  runtime facts; `agent status` retains its separate bundle-aware JSON report.
 
 Completion (`source <(kmx completion bash)`, similarly zsh; fish uses
 `kmx completion fish | source`) performs bounded read-only lookups for contexts
@@ -393,7 +516,7 @@ delegation limits ([bundle format](agent-lift.md#coordination-in-agentyaml)). Us
   nothing is rolled back; the error says so, and a rerun reuses what it wrote.
 - `--task` authorizes a model call and requires an existing
   `--result-service-account` in the selected namespace; `agent create` creates no
-  account or RBAC. (`kmx up --step orka` provisions `orka-result-reader`, whose
+  account or RBAC. (`kmx local up --step orka` provisions `orka-result-reader`, whose
   grant is one verb on `tasks.core.orka.ai` in `orka-system`.) It creates the
   Task once and waits for Succeeded plus an actual nonblank
   answer. **Without `--task`, no model response was tested.**
@@ -415,9 +538,8 @@ embedded examples that occupied `hello-world` and `hello-tools` are gone.
 
 `--image`, `--isolation` and `--run-as-user` are removed. There is no BYO image
 scaffold, model-preset/MCP conversion, injected governance or copied legacy pod
-hardening. Keep application image/placement/identity in the owner's Deployment;
-[migration](migrate.md) routes its model traffic, not a BYO definition. This
-native implementation does not settle the open authoring-format decision or
+hardening. Keep application image/placement/identity in the owner's Deployment.
+This native implementation does not settle the open authoring-format decision or
 promote the isolated conversion spike to a supported interface.
 
 ### Explicit Kagent v0.10.2 create
@@ -544,7 +666,7 @@ depends on.
 ## Interactive chat
 
 ```bash
-kmx agent chat --interactive --namespace orka-system hello-world-agent
+kmx agent chat --namespace orka-system hello-world-agent
 ```
 
 `/help`, `/agent`, `/tools`, `/lift`, `/inference`, `/inference-local`,
@@ -557,11 +679,8 @@ verbose payloads are display-limited; this is not an audit export.
 
 Trusted actor/action labels and indented payloads prevent tool/model prose from
 impersonating controls. `[KAIMAHI ROUTE]` shows verified startup configuration,
-not an allowed/ledgered receipt: the stream does not carry those receipts.
-Possible denial text has unverified provenance; inspect `kmx ledger` for model
-refusals. Cap denials file no approval request; recovery is an operator's deliberate
-budget change or the UTC month reset. Direct tool activity has no Kaimahi approval path.
-These records remain visible with `/tools off`.
+not a per-call enforcement receipt. Model prose is not trusted control or
+authorization evidence. Tool activity records remain visible with `/tools off`.
 
 Orka chat offers no native approval submission. Tools requiring approval are
 unavailable in this client; inspect and configure them through the runtime's
@@ -585,100 +704,3 @@ resubmits: connection or forward loss ends the wait rather than repeating the
 model call. A missing or whitespace-only result remains unavailable and is
 polled on that same Task; once a nonblank result arrives, output with no printable
 content is refused. Neither case resubmits the Task.
-
-## How the plane gets there without a clone
-
-The plane is a nested Go module, so root `go:embed` cannot carry its source.
-Outside a checkout, kmx fetches/builds `plane/cmd/kaimahi-proxy` via the Go proxy
-at its own revision, packages it on the distroless base and side-loads into kind.
-Embedded manifests are applied as committed; no plane image is published.
-A checkout wins, `--source <path>` selects one, and `--source -` forces fetch.
-Ask `kmx metrics` for `kaimahi_build_info` rather than infer revision from a tag.
-
-The fetched plane build targets Linux. kmx removes shell `GOBIN` for cross-builds;
-if Go's environment file still sets it, use `go env -u GOBIN` or a checkout build.
-AKS uses ACR instead; see [managed-cluster limitations](aks.md).
-
-## `kmx models add`
-
-```bash
-kmx models add house --url http://vllm.demo:8000/v1/responses --classification free
-```
-
-Writes three documents: an overlay ConfigMap, proxy egress and server ingress;
-no legacy model preset. kmx prints the seam address/CA requirements. Supply the
-**whole POST URL**, including path, over in-cluster HTTP. TLS/keyed endpoints
-need reviewed committed custody configuration. Explicit `free|metered` is
-required; protocol is inferred only from recognized paths, otherwise declared,
-and conflicting declarations refuse. Models pulling weights may need deliberate
-server egress rather than default none.
-
-Service selectors and post-NAT pod ports come from the live Service;
-selector-less Services refuse, and named target ports need `--pod-port`.
-Shared selectors affect every matching pod. `--server-egress none|dns|keep`
-defaults to none; choose deliberately.
-
-Files use exclusive create and reject credential shapes. The whole existing
-overlay carries `resourceVersion` so stale apply conflicts instead of pruning
-concurrent work. Only genuine NotFound means no overlay. Committed entries
-cannot be overridden. Overlays refuse `credential_file`, `credential_header`,
-`internet`, `ca_file`, `extra_headers` and `prices`; these remain reviewed code.
-Retired `tool_upstreams` and `standing_constraints` keys refuse even if empty or
-null; clean old fragments up deliberately, not by silently discarding them.
-
-The plane validates the table, not the generated policies; Kubernetes checks
-those on apply/server dry-run. `--out -` mutates nothing but still validates;
-`--no-apply` writes only. Multi-document apply is not transactional and can leave
-partial changes. Review selectors and output before trusting the boundary.
-
-Cents budgets refuse unpriced pairs while token budgets can meter them. Admin
-contract 2 is required. **Every plane credential can access a configured model
-upstream**: there is no per-credential model allowlist.
-
-## Governing model traffic
-
-`kmx govern` is retired; its hidden stub points to `kmx migrate`.
-Put an owner-managed application behind the plane with `kmx migrate`, or
-issue a credential into a named destination with
-`kmx credential issue <name> --secret <secret> --namespace <ns>`. Both paths
-share the same pre-issue binding checks, so neither can overwrite a one-time
-token, and both refuse a destination namespace that is blank or absent before
-anything is minted — there is no default namespace, because a token issued
-into a guessed one cannot be recovered. Legacy preset governance is gone with
-the legacy lift payload that was its last caller.
-
-It uses cluster access plus the admin bearer on a pod port-forward, not a
-public admin Service. Tokens travel in memory/pipes to Secrets. Already-issued
-credentials are reconciled, not overwritten; wrong/missing bindings refuse.
-An existing Secret with no credential-binding annotation also refuses before issuance.
-
-Tool credential capture is removed. Plane-side model Copilot capture remains
-`kmx models credential copilot`: GitHub device login, a private 0600 OAuth cache
-and short-lived token exchange without reading credential material from stdin.
-It applies egress and restarts an existing proxy. [AKS](aks.md#the-credential-handoff)
-gives the explicit-context command. Provider credentials for an onboarded
-upstream are `kmx models add`; for plane-side Copilot credentials use
-`kmx models credential copilot`. The retired direct-to-Copilot preset's
-checkout-only Secret helper is no longer provided.
-
-## Backup, restore, and metrics
-
-`backup` runs pg_dump inside Postgres, no local database client/password exposure.
-It writes a unique 0600 temporary file, verifies the dump trailer, then renames;
-failure preserves an existing destination. Default: `backups/kaimahi-<UTC>.sql`.
-Treat token hashes, budgets and audit history as sensitive database material.
-
-`restore` **replaces all tables**, guarded. It rejects missing trailers before
-mutation, scales proxies to zero, loads the dump, and attempts original replica
-recovery even after failure. Recovery errors are reported; success is not
-promised. An originally stopped plane stays stopped. `metrics` port-forwards
-one Ready, non-terminating replica; its name goes to stderr, exposition to stdout.
-It does not invent a sum across replicas. See [operations](operations.md).
-
-## What is NOT in `kmx`
-
-Standalone network probes retain checkout paths in [egress](egress.md).
-Plane-side Copilot capture and the full lift do not need a checkout handoff.
-The tool gateway, tool-governance/capture commands and [workflow runner](workflows.md)
-are retired, not checkout alternatives. Use native kmx, with the Makefile only
-for retained repository helpers.

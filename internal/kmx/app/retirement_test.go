@@ -24,7 +24,7 @@ func TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster(t *testing.T)
 	t.Setenv("PATH", empty)
 	var out bytes.Buffer
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}, Run: &run.Runner{}, Out: &out, Err: &out}
-	err := a.ChatWithOptions(ChatOptions{Agent: "demo", Runtime: "kagent", Interactive: true})
+	err := a.ChatWithOptions(ChatOptions{Agent: "demo", Runtime: "kagent"})
 	if err == nil {
 		t.Fatal("the retired runtime was accepted")
 	}
@@ -36,17 +36,17 @@ func TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster(t *testing.T)
 }
 
 // One-shot chat was kagent's transport: a port-forward to its controller and
-// an A2A task printed as JSON. Orka chat is the interactive session, so a
-// bare message must be refused with the command that works rather than
-// dialing a controller that is no longer installed.
-func TestOneShotChatIsRefusedWithTheInteractiveCommand(t *testing.T) {
-	empty := t.TempDir()
-	t.Setenv("PATH", empty)
+// an A2A task printed as JSON. Orka chat is always the interactive session, so
+// a message is its first turn rather than a one-shot, and nothing refuses it
+// before the session's own dependencies are checked.
+func TestChatMessageOpensTheSessionInsteadOfAOneShot(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("KMX_TOOLCHAIN", "off")
 	var out bytes.Buffer
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}, Run: &run.Runner{}, Out: &out, Err: &out}
 	err := a.ChatWithOptions(ChatOptions{Agent: "demo", Task: "hello"})
-	if err == nil || !strings.Contains(err.Error(), "--interactive") {
-		t.Fatalf("a one-shot chat was not redirected to the interactive session: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "kubectl is not on PATH") {
+		t.Fatalf("a chat message did not reach the session preflight: %v", err)
 	}
 }
 

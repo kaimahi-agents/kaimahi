@@ -77,6 +77,17 @@ func TestEvaluateBundleRefusesKagentBeforeClusterReads(t *testing.T) {
 	requireNoNewBundleKubectlCalls(t, f.dir, before)
 }
 
+func TestSessionsEvaluationRefusesKagentBeforeHostWork(t *testing.T) {
+	bundle := t.TempDir()
+	replaceBundleAgentWithKagent(t, bundle)
+	// This is a valid authored Kagent source; the evaluation backend, not
+	// malformed input, must refuse its runtime-specific behavior.
+	_, _, _, err := readSessionsEvaluationSource(bundle)
+	if err == nil || !strings.Contains(err.Error(), "agentsessions chat cannot honor extensions.kagent") {
+		t.Fatalf("sessions accepted Kagent behavior: %v", err)
+	}
+}
+
 func TestRetireBundleRefusesKagentBeforeClusterReads(t *testing.T) {
 	a, opt, dir, _ := liftBundleFixture(t)
 	replaceBundleAgentWithKagent(t, opt.BundleDir)

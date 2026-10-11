@@ -65,9 +65,8 @@ func Resolve(info *debug.BuildInfo, ok bool) Build {
 	}
 	// vcs.revision is what separates the two remaining cases, and it is
 	// present in exactly one of them: a build from a checkout records it,
-	// a build from the module cache cannot (planebuild.Revision rests on
-	// the same distinction). Order matters, because a modern toolchain
-	// ALSO synthesises Main.Version from the VCS state in a checkout
+	// a build from the module cache cannot. Order matters, because a modern
+	// toolchain ALSO synthesises Main.Version from the VCS state in a checkout
 	// build — reading Main.Version first would label every developer's
 	// own binary "installed with go install".
 	rev, dirty := "", false

@@ -102,13 +102,10 @@ FYI, in plain terms:
   (was `tomte-p1`) and the Copilot token cache moved to
   `~/.config/kaimahi/` — both are one-time local migrations for anyone with
   an existing checkout; see [getting-started.md](getting-started.md) and
-  [models.md](models.md). The coordination board was excluded from that
-  lane and had its present-tense references renamed separately; historical
-  quotes on the board keep the old name verbatim.
-- **Renaming the tree was never the same as clearing the name.** The
-  rename lane was explicitly scoped to mechanical substitution and kept
-  the no-trademark wording; clearance came later and only in part, as
-  recorded above.
+  [models.md](models.md).
+- **Renaming the tree was never the same as clearing the name.** The rename
+  was a mechanical substitution and kept the no-trademark wording; clearance
+  came later and only in part, as recorded above.
 - **Pronunciation**, for the inevitable meeting: roughly *kigh-MAH-hee*
   (`kai` as in "kite", not "kay").
 - **Icon**, added after the name was settled: the repository mark is a stylized

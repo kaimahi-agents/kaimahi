@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Version:** `1.0.0-draft`
-**Last updated:** October 7, 2026
+**Last updated:** October 8, 2026
 
 ## Abstract
 
@@ -432,7 +432,7 @@ permission is directional: the coordinator's edges do not grant either worker
 permission to invoke the coordinator or each other.
 
 The complete conformant example is checked in at
-[`internal/kmx/agentsuite/testdata/coordinator-workers/`](../internal/kmx/agentsuite/testdata/coordinator-workers/).
+[`testdata/coordinator-workers/`](testdata/coordinator-workers/).
 
 ## 9. Tool providers and tools
 
@@ -474,7 +474,7 @@ The provider contract and bundled variants serve different purposes:
   platform implementation.
 
 The complete machine-readable shape is
-[`tool-provider.schema.json`](../internal/kmx/agentsuite/schema/tool-provider.schema.json).
+[`tool-provider.schema.json`](schema/tool-provider.schema.json).
 
 ### 9.1 ToolProvider catalog
 
@@ -618,7 +618,7 @@ MUST NOT be declared. Header names are compared case-insensitively for
 duplicates.
 
 The complete fixture is
-[`internal/kmx/agentsuite/testdata/remote-mcp/`](../internal/kmx/agentsuite/testdata/remote-mcp/).
+[`testdata/remote-mcp/`](testdata/remote-mcp/).
 Its ToolProvider manifest includes:
 
 ```json
@@ -669,9 +669,9 @@ package or extension installation is prohibited; the complete runtime closure
 MUST already be present in the variant or in exact bundle dependencies.
 
 The reference schema tests validate multi-file bundle fixtures for
-[`kubectl`](../internal/kmx/agentsuite/testdata/tool-providers/kubectl-tool-provider.json),
-[`Azure CLI`](../internal/kmx/agentsuite/testdata/tool-providers/azure-cli-tool-provider.json),
-and [`OPA`](../internal/kmx/agentsuite/testdata/tool-providers/opa-tool-provider.json).
+[`kubectl`](testdata/tool-providers/kubectl-tool-provider.json),
+[`Azure CLI`](testdata/tool-providers/azure-cli-tool-provider.json),
+and [`OPA`](testdata/tool-providers/opa-tool-provider.json).
 
 ### 9.7 OPA writer and reviewer example
 
@@ -698,9 +698,9 @@ instance without defining agent binding.
 
 The complete example is:
 
-1. [`opa-tool-provider.json`](../internal/kmx/agentsuite/testdata/tool-providers/opa-tool-provider.json)
+1. [`opa-tool-provider.json`](testdata/tool-providers/opa-tool-provider.json)
    defines the ToolProvider contract, callable tools, and available implementation;
-2. [`opa-tool-provider-composition.json`](../internal/kmx/agentsuite/testdata/tool-providers/opa-tool-provider-composition.json)
+2. [`opa-tool-provider-composition.json`](testdata/tool-providers/opa-tool-provider-composition.json)
    selects the exact ToolProvider manifest, variant, platform, and build profile and is
    embedded unchanged in the resulting image.
 
@@ -938,14 +938,60 @@ deploy the resulting image.
 
 ## 11. Build profiles
 
-A build profile pins, per platform:
+A build profile MUST contain non-empty `runtimeBase` and `harness` arrays and
+one positive, profile-wide `sourceEpoch`. Each array contains one image entry
+per platform:
 
-- one OCI runtime-base image manifest descriptor;
-- one OCI harness image manifest descriptor;
-- one positive source epoch.
+- `runtimeBase` contains the OCI runtime-base image;
+- `harness` contains the OCI harness image;
+- `sourceEpoch` is a Unix timestamp used as `SOURCE_DATE_EPOCH` (or equivalent)
+  to normalize generated image and layer timestamps for reproducible builds.
 
-Descriptors MUST identify OCI image manifests by digest and size. Tags are not
-part of the profile.
+Each runtime-base and harness entry MUST contain `platform`, `imageRef`, and
+`image`. `image` MUST be an OCI image manifest descriptor containing its media
+type, digest, and size. `imageRef` MUST be a registry-qualified, digest-addressed
+OCI image reference of the form `registry/repository@sha256:digest`; tag-only
+references are invalid. The digest in `imageRef` MUST equal the digest in
+`image`.
+
+`imageRef` identifies where the image manifest can be found. The descriptor
+remains authoritative for the manifest's content identity and size. A consumer
+MUST NOT resolve a mutable tag to select an image. The reference does not relax
+the offline construction requirement: all referenced OCI blobs MUST be present
+before construction begins.
+
+For example, a build profile has this form:
+
+```json
+{
+  "schemaVersion": "1.0.0-draft",
+  "mediaType": "application/vnd.agentsuite.build.profile.v1+json",
+  "id": "default",
+  "runtimeBase": [
+    {
+      "platform": {"os": "linux", "architecture": "amd64"},
+      "imageRef": "registry.example/agentsuite/runtime-base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "image": {
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234
+      }
+    }
+  ],
+  "harness": [
+    {
+      "platform": {"os": "linux", "architecture": "amd64"},
+      "imageRef": "registry.example/agentsuite/harness@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "image": {
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size": 5678
+      }
+    }
+  ],
+  "sourceEpoch": 1
+}
+```
 
 The platform named by every agent composition MUST have exactly one matching
 runtime-base and harness entry in its selected profile. A ToolProvider composition
@@ -1194,6 +1240,6 @@ This draft does not specify:
 [rfc8785]: https://www.rfc-editor.org/rfc/rfc8785
 [json-schema-2020-12]: https://json-schema.org/draft/2020-12
 [helm-oci]: https://helm.sh/docs/topics/registries/
-[agentkit]: https://github.com/sozercan/agentkit
+[agentkit]: https://github.com/orka-agents/agentkit
 [dalec-homebrew]: https://github.com/sozercan/dalec-homebrew
 [agentsessions]: https://github.com/aramase/agentsessions

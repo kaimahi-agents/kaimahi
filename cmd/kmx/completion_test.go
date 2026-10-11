@@ -13,11 +13,11 @@ func TestCobraCompletionIncludesCompleteCommandTree(t *testing.T) {
 	deps := productionDependencies()
 	deps.stdout, deps.stderr = &out, &errOut
 	root := newRootCommand(&commandState{deps: deps})
-	root.SetArgs([]string{"__complete", "mo"})
+	root.SetArgs([]string{"__complete", "qu"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"models", ":4"} {
+	for _, want := range []string{"quickstart", ":4"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("completion output lacks %q:\n%s", want, out.String())
 		}
@@ -88,7 +88,7 @@ func TestCompletionExcludesRetiredApprovalCommands(t *testing.T) {
 		want      []string
 		forbidden []string
 	}{
-		{[]string{"__complete", ""}, []string{"budget", "credential", "flow", "watch", ":4"}, []string{"approve", "approvals", "deny", "request", "grants", "audit"}},
+		{[]string{"__complete", ""}, []string{"agent", "quickstart", "status", ":4"}, []string{"approve", "approvals", "deny", "request", "grants", "audit", "budget", "credential", "flow", "watch"}},
 		{[]string{"__complete", "ap"}, []string{":4"}, []string{"approve", "approvals"}},
 		{[]string{"__complete", "au"}, []string{":4"}, []string{"audit"}},
 	} {

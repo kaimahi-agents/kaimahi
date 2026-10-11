@@ -1,7 +1,7 @@
 {
   "_comment": [
     "Every credential shape this project or its upstreams issue, in one place.",
-    "See doc.go for why this is data and not Go source, and for the rules a new",
+    "See shapes.go for why this is data and not Go source, and for the rules a new",
     "entry has to follow.",
     "",
     "`example` and `counterexample` are written as PARTS and joined by whoever",

@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
 
 // orkaResultSession owns one short-lived, in-memory bearer and proven loopback
@@ -23,7 +23,7 @@ import (
 type orkaResultSession struct {
 	token, base string
 	client      *http.Client
-	forward     *admin.Forward
+	forward     *portforward.Forward
 	conn        net.Conn
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -184,7 +184,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	// started, exec.CommandContext retains it; later kubectl calls use their own
 	// request deadlines. This also cancels a forward still waiting to bind.
 	a.orkaForwardContext = forwardCtx
-	fwd, err := admin.StartForward(a, opt.Namespace, "svc/"+opt.OrkaAPIService, opt.ResultPort, "8080")
+	fwd, err := portforward.Start(a, opt.Namespace, "svc/"+opt.OrkaAPIService, opt.ResultPort, "8080")
 	a.orkaForwardContext = nil
 	if err != nil {
 		cancel()
@@ -341,13 +341,17 @@ func orkaResultError(envelope map[string]json.RawMessage) (int, string, bool) {
 }
 
 func (s *orkaResultSession) probe(ctx context.Context, namespace, name string) error {
+	return s.probeBeforeCreate(ctx, namespace, name, "No resources created")
+}
+
+func (s *orkaResultSession) probeBeforeCreate(ctx context.Context, namespace, name, failureScope string) error {
 	status, envelope, err := s.get(ctx, namespace, name)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", failureScope, err)
 	}
 	code, message, valid := orkaResultError(envelope)
 	if status != http.StatusNotFound || !valid || code != 404 || message != "task not found" {
-		return fmt.Errorf("Orka result access preflight refused (HTTP %d); expected the exact absent-Task JSON response. No resources created", status)
+		return fmt.Errorf("Orka result access preflight refused (HTTP %d); expected the exact absent-Task JSON response. %s", status, failureScope)
 	}
 	return nil
 }

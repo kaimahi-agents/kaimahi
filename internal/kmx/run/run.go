@@ -1,17 +1,10 @@
-// Package run is kmx's shell-out layer for external tools such as kind,
-// kubectl, container engines and cloud CLIs.
-//
-// kmx shells out rather than linking client-go. That is
-// not a shortcut — it is what keeps the Makefile and kmx the same
-// implementation of the same journey. Every command kmx runs is a command an
-// operator can copy off the screen and run themselves, which is why the
-// commands are echoed the way make echoes a recipe line.
+// Package run executes external cluster, container and cloud tools for kmx.
+// It manages command arguments, environment overrides, output and cancellation.
 package run
 
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -28,10 +21,8 @@ type Runner struct {
 	// Env is added to the child's environment (KIND_EXPERIMENTAL_PROVIDER
 	// for the podman path).
 	Env []string
-	// Unset are variables REMOVED from the child's environment. `go
-	// install` refuses to cross-compile while GOBIN is set, and GOBIN is
-	// set by mise, asdf and `go env -w` alike — so the plane's build has to
-	// be able to take a variable away, not only add one.
+	// Unset names inherited variables to remove from child process environments.
+	// Env additions take precedence when the same name appears in both lists.
 	Unset []string
 	// Echo prints each command before running it, like make does.
 	Echo bool
@@ -116,25 +107,6 @@ func (r *Runner) RunStdin(stdin []byte, name string, args ...string) error {
 	return nil
 }
 
-// Pipe runs a command with an explicit stdin and stdout. It is how kmx
-// streams bytes rather than reading them into memory: pg_dump OUT of the
-// Postgres pod and psql back INTO it, both through `kubectl exec`. A nil
-// stdin or stdout means "none" and "the Runner's own", respectively.
-func (r *Runner) Pipe(stdin io.Reader, stdout io.Writer, name string, args ...string) error {
-	r.echo(name, args)
-	c := r.cmd(name, args...)
-	c.Stdin = stdin
-	c.Stdout = stdout
-	if stdout == nil {
-		c.Stdout = r.Stdout
-	}
-	c.Stderr = r.Stderr
-	if err := c.Run(); err != nil {
-		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
-	}
-	return nil
-}
-
 // Capture returns the command's stdout, trimmed, plus stderr on failure.
 // Nothing is echoed: these are reads, and a status command that printed
 // every query it made would be unreadable.
@@ -148,25 +120,6 @@ func (r *Runner) Capture(name string, args ...string) (string, error) {
 			fmt.Errorf("%s: %s", err, strings.TrimSpace(errOut.String()))
 	}
 	return strings.TrimSpace(out.String()), nil
-}
-
-// CaptureCombined returns stdout and stderr together with the exit status,
-// for callers that classify a command's error text (the chat retry).
-func (r *Runner) CaptureCombined(name string, args ...string) (string, int, error) {
-	c := r.cmd(name, args...)
-	var out bytes.Buffer
-	c.Stdout, c.Stderr = &out, &out
-	err := c.Run()
-	status := 0
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			status = ee.ExitCode()
-		} else {
-			return out.String(), -1, err
-		}
-	}
-	return out.String(), status, nil
 }
 
 // Quiet reports whether the command succeeded, discarding all output. It is

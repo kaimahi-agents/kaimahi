@@ -69,7 +69,13 @@ func ValidatePath(value string) (*Report, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	content, err := loadDirectory(value)
+	return ValidateDirectory(value)
+}
+
+// ValidateDirectory validates extracted AgentSuite content without OCI layout
+// auto-detection. Consumers of loose manifests must validate this same view.
+func ValidateDirectory(root string) (*Report, error) {
+	content, err := loadDirectory(root)
 	if err != nil {
 		return nil, err
 	}

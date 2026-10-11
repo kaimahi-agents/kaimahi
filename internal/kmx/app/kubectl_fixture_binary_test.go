@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,7 +9,31 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
+
+// appWithKubectl puts a kubectl on PATH that does whatever the script says,
+// so cluster reads and writes can be driven without a real cluster.
+func appWithKubectl(t *testing.T, script string) *App {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake kubectl is a shell script")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
+	r := run.Default()
+	r.Stdout, r.Stderr, r.Echo = out, errOut, false
+	return &App{
+		Cfg: &config.Config{KubeContext: "kind-kaimahi-p1", ContextSource: config.SourceKubeCtx},
+		Run: r, Out: out, Err: errOut,
+	}
+}
 
 // Capture the build environment before fixtures restrict PATH or change the
 // target environment. Only the helper build uses it; kubectl still inherits the

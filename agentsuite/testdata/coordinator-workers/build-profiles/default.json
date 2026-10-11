@@ -8,6 +8,7 @@
         "os": "linux",
         "architecture": "amd64"
       },
+      "imageRef": "registry.example/agentsuite/runtime-base@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "image": {
         "mediaType": "application/vnd.oci.image.manifest.v1+json",
         "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -21,6 +22,7 @@
         "os": "linux",
         "architecture": "amd64"
       },
+      "imageRef": "registry.example/agentsuite/harness@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "image": {
         "mediaType": "application/vnd.oci.image.manifest.v1+json",
         "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

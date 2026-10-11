@@ -6,7 +6,7 @@ From a live Orka chat, `/lift` opens the target picker. The lift action in
 both are interactive front ends to [`kmx agent lift`](agent-lift.md), not a
 copy of the live Agent. They look for `agents/<name>/agent.yaml` under the
 working directory, or `<root>/<name>/agent.yaml` with `--bundles <root>` on
-`kmx console` or `kmx agent chat --interactive`. The bundle must name the
+`kmx console` or `kmx agent chat`. The bundle must name the
 selected Agent. An invalid or incomplete bundle stops the operation instead
 of falling back to a live copy.
 
@@ -53,7 +53,7 @@ The target picker offers:
   include resource group and region; both are searchable. The selected cluster's
   resource group is carried into credential retrieval and the Foundry default.
 
-For faster AKS listing, start with `kmx quickstart-wizard --azure-discovery sdk`.
+For faster AKS listing, start with `kmx quickstart --interactive --azure-discovery sdk`.
 It uses the Go ARM SDK with `DefaultAzureCredential` (including Azure CLI login).
 The `cli` default remains selectable; see `azure-discovery-performance.md` for
 the measured comparison and scope of the alternative implementation.
@@ -160,10 +160,13 @@ Agent, waiting for each to become Ready.
 Existing matching Agent and Provider configurations are reused during lift.
 Comparison uses a server-side dry-run replace to account for API defaults; no
 replacement is applied. Different specifications and terminating resources are
-reported as conflicts. Ordinary `agent create` retains its strict collision policy.
-The operation
-does not create AKS clusters or install the plane lift stack.
-`kmx aks up` is the separate provisioning workflow. The deprecated `kmx lift`
+reported as conflicts. Ordinary online Orka `agent create` instead reconciles
+bundle-owned resources and can adopt identical unmarked objects; conflicting
+objects and local artifacts are still refused. See the
+[create contract](kmx.md#kmx-agent-create) for rerun, dry-run and Task rules.
+The operation does not create AKS clusters. `kmx aks up` is the separate AKS provisioning
+workflow: it installs Orka with optional Azure monitoring add-ons, not a model
+plane. The deprecated `kmx lift`
 still works and requires `--payload`.
 
 After success chat connects to the lifted Agent on the destination, resets retry
@@ -191,8 +194,9 @@ The active step is highlighted; narrow windows use a compact numbered bar.
 Approved Orka installs/repairs, Kubernetes tool installation, bundle
 reconciliation and live-copy deployment open a bordered **LIFT deployment
 pane** showing the Agent, destination, elapsed time and real stage states. Only the active stage animates; no percentages are
-estimated. Orka installation reports installer fetch, wrapper credential
-reconciliation, and installer application/readiness. The bundle pane reports reconciliation through the shared lift operation;
+estimated. Orka installation reports the pinned chart fetch, chart CRDs,
+harness-v2 installation and Task result-reader setup. The bundle pane reports
+reconciliation through the shared lift operation;
 live-copy deployment reports schema/prerequisite checks, server admission,
 Provider creation and Ready wait, then Agent creation and Ready wait.
 

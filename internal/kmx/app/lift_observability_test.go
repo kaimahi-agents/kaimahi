@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -17,128 +18,98 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// A kubectl stub that refuses what real kubectl refuses.
-//
-// kubectl has no `networkpolicy` COMMAND. Handed one where a verb belongs, it
-// concludes the word must name a plugin binary (kubectl-networkpolicy) and,
-// because flags precede it, exits 1 with "flags cannot be placed before plugin
-// name". A stub that answered every invocation cheerfully would have passed
-// while the real thing failed on every lift, so this one carries the single
-// rule that was actually broken: after the flags, the first bare word must be
-// a verb.
-//
-// It also records what it was asked, because a test that only checks the exit
-// status cannot tell a fixed call from a call that never happened.
-func stubKubectlThatChecksTheVerb(t *testing.T, dir string) string {
-	t.Helper()
-	log := filepath.Join(dir, "kubectl.log")
-	script := `#!/bin/sh
-printf '%s\n' "$*" >> ` + log + `
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --context|-n|--namespace|-o|--output) shift 2 ;;
-    -*) shift ;;
-    *) break ;;
-  esac
-done
-case "$1" in
-  get|apply|delete|create|describe|patch|exec|logs|rollout|wait|version|config) ;;
-  *)
-    echo "Error: flags cannot be placed before plugin name: --context" >&2
-    exit 1 ;;
-esac
-echo "networkpolicy.networking.k8s.io/whatever"
-`
-	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return log
-}
-
-// The defect this pins: `recordPreExistingState` asked kubectl whether two
-// objects existed and never said `get`. It is upstream of the only line that
-// sets Before.Recorded, so no run could get past it and no resumed run could
-// skip it — the observability phase of EVERY lift failed, on a bring-your-own
-// cluster and on one the lift had just created alike. It failed closed, which
-// is why it destroyed nothing and why nothing but running it noticed.
-func TestRecordingWhatWasHereBeforeAsksKubectlSomethingKubectlAccepts(t *testing.T) {
-	dir := t.TempDir()
-	// az answers the one call this path makes: the cluster's current
-	// monitoring configuration. Nothing is enabled, which is the branch that
-	// carries on into the two existence reads.
-	if err := os.WriteFile(filepath.Join(dir, "az"), []byte("#!/bin/sh\necho '{}'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	log := stubKubectlThatChecksTheVerb(t, dir)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	var errOut bytes.Buffer
-	a := &App{
-		Cfg: &config.Config{KubeContext: "kind-test"},
-		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard},
-		Out: io.Discard, Err: &errOut,
-	}
-	record := &lift.Record{}
-	if err := a.recordPreExistingState(lift.Options{Cluster: "c", ResourceGroup: "rg"}, record, func() error { return nil }); err != nil {
-		t.Fatalf("recording the cluster's prior state failed, so the observability phase cannot start: %v", err)
-	}
-	if !record.Before.Recorded {
-		t.Fatal("the prior state was not recorded, so teardown would have nothing to consult")
-	}
-
-	// Without this the test is vacuous: a path that made no kubectl call at
-	// all would satisfy every assertion above.
-	asked, err := os.ReadFile(log)
-	if err != nil {
-		t.Fatalf("the stub kubectl was never called: %v", err)
-	}
-	for _, want := range []string{"networkpolicy " + scraperPolicy, scrapeMonitorResource + " " + scrapeMonitor} {
-		if !strings.Contains(string(asked), "get "+want) {
-			t.Errorf("no `get %s` in what kubectl was asked:\n%s", want, asked)
-		}
-	}
-}
-
-// The prior-state read runs BEFORE the metrics add-on is enabled, and the
-// add-on is what installs the PodMonitor CRD. So on every fresh cluster the
-// question "is there already a PodMonitor of ours" is asked of a cluster that
-// has no such kind, and kubectl answers "the server doesn't have a resource
-// type" — which is not a NotFound and which this package deliberately refuses
-// to read as absence everywhere else. Read as a refusal here it would block
-// the phase exactly the way the missing verb did.
-func TestAClusterWithNoPodMonitorCRDIsNotARefusal(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "az"), []byte("#!/bin/sh\necho '{}'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// kubectl's real words for a kind the cluster does not have.
-	script := `#!/bin/sh
-case "$*" in
-  *podmonitors*)
-    echo "error: the server doesn't have a resource type \"podmonitors\"" >&2
-    exit 1 ;;
-esac
-echo "networkpolicy.networking.k8s.io/whatever"
-`
-	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	a := &App{
-		Cfg: &config.Config{KubeContext: "kind-test"},
-		Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard},
-		Out: io.Discard, Err: io.Discard,
-	}
-	record := &lift.Record{}
-	if err := a.recordPreExistingState(lift.Options{Cluster: "c", ResourceGroup: "rg"}, record, func() error { return nil }); err != nil {
-		t.Fatalf("a cluster with no PodMonitor CRD blocked the phase: %v", err)
-	}
-	if record.Before.ScrapeMonitorExisted {
-		t.Fatal("a kind the cluster does not have was recorded as an object that was already there")
-	}
-	if !record.Before.WeCreatedScrapeMonitor() {
-		t.Fatal("the run may not remove the PodMonitor it is about to create")
+// Monitoring ownership is established only from Azure add-on state. No
+// Kubernetes-plane read is needed, and an unreadable Azure state must not
+// create deletion authority or persist a guessed snapshot.
+func TestLiftPriorMonitoringStateIsRecordedWithoutPlaneReads(t *testing.T) {
+	for _, reply := range []string{"off", "on", "unreadable", "invalid"} {
+		t.Run(reply, func(t *testing.T) {
+			dir := t.TempDir()
+			body := "#!/bin/sh\necho '{}'\n"
+			switch reply {
+			case "on":
+				body = "#!/bin/sh\necho '{\"azureMonitorProfile\":{\"metrics\":{\"enabled\":true}},\"addonProfiles\":{\"omsagent\":{\"enabled\":true}}}'\n"
+			case "unreadable":
+				body = "#!/bin/sh\necho 'permission denied' >&2\nexit 1\n"
+			case "invalid":
+				body = "#!/bin/sh\necho 'not-json'\n"
+			}
+			if err := os.WriteFile(filepath.Join(dir, "az"), []byte(body), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", dir) // no kubectl: this read must not require it
+			a := &App{Cfg: &config.Config{KubeContext: "cluster"}, Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}}
+			record, err := lift.NewRecord("abcd1234", lift.BringYourOwn, lift.PayloadOrka, "sub", "rg", "cluster")
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "record.json")
+			saved := 0
+			err = a.recordPreExistingState(lift.Options{Cluster: "cluster", ResourceGroup: "rg"}, record, func() error {
+				saved++
+				var data bytes.Buffer
+				if err := record.Write(&data); err != nil {
+					return err
+				}
+				return os.WriteFile(path, data.Bytes(), 0o600)
+			})
+			if reply == "unreadable" || reply == "invalid" {
+				if err == nil || !strings.Contains(err.Error(), "cannot read the cluster") || saved != 0 || record.Before.Recorded {
+					t.Fatalf("unreadable state authorized cleanup: record=%+v saves=%d err=%v", record, saved, err)
+				}
+				return
+			}
+			if err != nil || saved != 1 || !record.Before.Recorded || !record.PlaneMonitoringUnmanaged {
+				t.Fatalf("prior state: record=%+v saves=%d err=%v", record, saved, err)
+			}
+			if record.Before.MetricsAddonEnabled != (reply == "on") || record.Before.LogsAddonEnabled != (reply == "on") {
+				t.Fatalf("prior add-on state lost: %+v", record.Before)
+			}
+			if record.MayRemoveScraperPolicy() || record.MayRemoveScrapeMonitor() {
+				t.Fatal("recording add-on state authorized plane-object deletion")
+			}
+			// Decode the persisted JSON as an older CLI does: the unmanaged
+			// marker is unknown, so only the legacy fields deny ownership.
+			var old struct {
+				Before struct {
+					Recorded             bool `json:"recorded"`
+					MetricsAddonEnabled  bool `json:"metrics_addon_enabled"`
+					LogsAddonEnabled     bool `json:"logs_addon_enabled"`
+					ScraperPolicyExisted bool `json:"scraper_policy_existed"`
+					ScrapeMonitorExisted bool `json:"scrape_monitor_existed"`
+				} `json:"before"`
+				ScrapeMonitorApplied bool `json:"scrape_monitor_applied"`
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(data, &old); err != nil {
+				t.Fatal(err)
+			}
+			if !old.Before.Recorded {
+				t.Fatal("persisted prior state was not established for the old reader")
+			}
+			if old.Before.Recorded && !old.Before.ScraperPolicyExisted {
+				t.Error("older teardown would delete an unmanaged plane policy")
+			}
+			if old.Before.Recorded && !old.Before.ScrapeMonitorExisted {
+				t.Error("legacy prior state claims ownership of an unmanaged PodMonitor")
+			}
+			if old.ScrapeMonitorApplied {
+				t.Error("persisted snapshot claims to have applied a PodMonitor")
+			}
+			wantCleanup := reply == "off"
+			if (old.Before.Recorded && !old.Before.MetricsAddonEnabled) != wantCleanup ||
+				(old.Before.Recorded && !old.Before.LogsAddonEnabled) != wantCleanup ||
+				record.Before.WeEnabledMetrics() != wantCleanup || record.Before.WeEnabledLogs() != wantCleanup {
+				t.Fatalf("persisted add-on ownership lost: %+v", old.Before)
+			}
+			before := record.Before
+			if err := a.recordPreExistingState(lift.Options{}, record, func() error { t.Fatal("resume rewrote ownership"); return nil }); err != nil || record.Before != before {
+				t.Fatalf("resume changed prior state: %+v, %v", record.Before, err)
+			}
+		})
 	}
 }
 
@@ -167,10 +138,7 @@ echo "networkpolicy.networking.k8s.io/whatever"
 // somewhere else. `objectExists` did exactly that — it took `args ...string`
 // and spread them, so the verb was the CALLER'S business and no reader of
 // either end could see whether one had been supplied. Rule one cannot judge
-// such a call, which is precisely the problem with it. One pass-through
-// survives, App.Capture in app.go, named explicitly rather than
-// pattern-matched: it exists to satisfy the admin.Kube interface, whose
-// callers live in another package.
+// such a call, which is precisely the problem with it.
 func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 	verbs := map[string]bool{
 		"get": true, "apply": true, "create": true, "delete": true, "describe": true,
@@ -251,7 +219,7 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 		}
 	}
 
-	for path, file := range files {
+	for _, file := range files {
 		{
 			enclosing := ""
 			ast.Inspect(file, func(n ast.Node) bool {
@@ -270,9 +238,6 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 				switch sel.Sel.Name {
 				case "kubectlCapture", "kubectlRun", "kubectlQuiet":
 					if call.Ellipsis.IsValid() {
-						if enclosing == "Capture" && filepath.Base(path) == "app.go" {
-							return true // the admin.Kube adapter; see above
-						}
 						t.Errorf("%s: this kubectl command is assembled by whoever calls %s, so "+
 							"nothing here can tell whether it names a verb — pass the parts as "+
 							"named arguments and build the command line at this end",
@@ -282,7 +247,7 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 					judge(call.Pos(), call.Args)
 				default:
 					// The direct form: Run.Run("kubectl", a.kubectl(...)...)
-					// and its Capture/Quiet/Pipe/RunStdin/Command siblings.
+					// and its Capture/Quiet/RunStdin/Command siblings.
 					// The command line is inside the inner a.kubectl call.
 					for _, arg := range call.Args {
 						inner, ok := arg.(*ast.CallExpr)
@@ -301,8 +266,8 @@ func TestEveryKubectlCallInThisPackageNamesAVerb(t *testing.T) {
 		}
 	}
 	// A scan that matches no call passes every assertion in the loop it never
-	// enters. This package makes dozens.
-	if checked < 40 {
+	// enters. Native runtime and cloud orchestration make at least 25.
+	if checked < 25 {
 		t.Fatalf("only %d kubectl calls were examined in this package — the scan is not seeing them, "+
 			"so it is passing vacuously", checked)
 	}
@@ -321,6 +286,23 @@ func stringLiteral(expr ast.Expr) (string, bool) {
 		return "", false
 	}
 	return value, true
+}
+
+// A plane-named PodMonitor is not implicitly ours: a new lift never creates
+// it. Owned legacy objects are removed before this warning runs, so every
+// object still listed must be named before disabling the add-on's CRD.
+func TestLiftScrapeWarningIncludesOwnerCreatedPlaneNamedMonitor(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte("#!/bin/sh\necho kaimahi/kaimahi-plane\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	var out bytes.Buffer
+	a := &App{Cfg: &config.Config{KubeContext: "cluster"}, Run: &run.Runner{Stdout: io.Discard, Stderr: io.Discard}, Err: &out}
+	a.warnAboutScrapeJobsTheAddonOwns()
+	if !strings.Contains(out.String(), "kaimahi/kaimahi-plane") || !strings.Contains(out.String(), "removes the PodMonitor KIND") {
+		t.Fatalf("teardown silently removes an owner-created monitor with the old name: %s", out.String())
+	}
 }
 
 // An unreadable cluster is not "you have no scrape jobs".

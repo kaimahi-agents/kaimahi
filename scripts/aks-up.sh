@@ -19,16 +19,14 @@
 #
 # NetworkPolicy enforcement is NOT a given on AKS. `az aks create` with no
 # `--network-policy` builds a cluster whose CNI ignores NetworkPolicy
-# objects entirely: the plane's policies (k8s/plane/network-policy.yaml)
-# would be present and inert, which reads as protection and is worse than
-# none. So this script ALWAYS provisions a policy
-# engine, and refuses a value that would not enforce:
+# objects entirely: workload policies would be present and inert, which
+# reads as protection and is worse than none. This script ALWAYS provisions
+# a policy engine, and refuses a value that would not enforce:
 #
 #   cilium  (default) Azure CNI Overlay powered by Cilium. Microsoft's
 #           recommendation for new clusters, eBPF dataplane, and the
 #           engine the other two are being retired in favour of (Azure
 #           NPM on Linux: end of support 2028-09-30; kubenet: 2028-03-31).
-#           Verified enforcing the plane's whole matrix on 2026-09-01.
 #   azure   Azure Network Policy Manager (iptables). Retiring; accepted
 #           for clusters that need it, not recommended.
 #   calico  Azure-managed Calico. Accepted; not exercised here.
@@ -58,12 +56,9 @@ CLUSTER="${AKS_CLUSTER:-kaimahi}"
 LOCATION="${AKS_LOCATION:-westus3}"
 NODE_SIZE="${AKS_NODE_SIZE:-Standard_B4ms}"
 NODE_COUNT="${AKS_NODE_COUNT:-1}"
-# The smallest managed OS disk that fits a cluster running only the plane and
-# its agents. It is a PARAMETER because that is no longer the only thing that
-# runs here: a cluster with Azure's monitoring add-ons on it also carries their
-# images and their buffers, and 32 GiB was measured evicting pods under
-# DiskPressure once both were present (2026-09-06). Anything that enables the
-# add-ons should ask for more.
+# Workload images, kubelet state and monitoring buffers share this disk.
+# Monitoring add-ons need more space than the default to avoid DiskPressure;
+# callers enabling them should request a larger disk.
 NODE_OSDISK_SIZE="${AKS_NODE_OSDISK_SIZE:-32}"
 # `-` not `:-`: an EXPLICITLY empty AKS_NETWORK_POLICY must reach the
 # refusal below with its message, not be silently swapped for the default.
@@ -82,6 +77,15 @@ usage() {
 [ -n "$RG" ] || { echo "aks-up: AKS_RESOURCE_GROUP is required" >&2; usage; exit 1; }
 [ -n "$ACR" ] || { echo "aks-up: ACR_NAME is required" >&2; usage; exit 1; }
 
+# Standalone use does not write KMX's ownership record. Its recovery stays with
+# the scripts; a KMX invocation supplies native commands with its full options.
+if [ -n "${KMX_LIFT_DOWN:-}" ]; then
+  teardown="$KMX_LIFT_DOWN"
+else
+  printf -v teardown 'AKS_RESOURCE_GROUP=%q AKS_CLUSTER=%q KAIMAHI_CONFIRM=%q bash %q' \
+    "$RG" "$CLUSTER" "$RG" "$(dirname "$0")/aks-down.sh"
+fi
+
 # ACR names are globally unique, alphanumeric only, 5-50 chars. Check
 # locally so a bad name fails in a second rather than after the group and
 # cluster already exist.
@@ -96,13 +100,13 @@ fi
 # A policy ENGINE is mandatory. "none" and "" are the AKS default and are
 # exactly the case this script exists to prevent, so they are refused
 # rather than accepted as "the operator knows best": a cluster without an
-# engine would deploy the plane's policies and enforce nothing.
+# engine would accept workload NetworkPolicy objects and enforce nothing.
 case "$NETWORK_POLICY" in
   cilium | azure | calico) ;;
   *)
     echo "aks-up: AKS_NETWORK_POLICY='$NETWORK_POLICY' is not a policy engine." >&2
     echo "  Accepted: cilium (default), azure, calico. Without an engine AKS" >&2
-    echo "  ignores NetworkPolicy and the plane's boundary is inert." >&2
+    echo "  ignores NetworkPolicy and workload policies are inert." >&2
     exit 1 ;;
 esac
 # The flags each engine needs (Azure docs, use-network-policies, 2026-08).
@@ -231,8 +235,9 @@ if [ "$cluster_state" = true ]; then
     echo "aks-up: existing cluster '$CLUSTER' has network policy engine" >&2
     echo "  '${have:-none}', not '$NETWORK_POLICY'. Existing clusters are NOT migrated." >&2
     if [ -z "$have" ] || [ "$have" = none ]; then
-      echo "  With no engine, AKS ignores NetworkPolicy: the plane's boundary would" >&2
-      echo "  be present and inert. Tear it down (make aks-down) and re-create." >&2
+      echo "  With no engine, AKS ignores NetworkPolicy: workload policies would be inert." >&2
+      echo "  Re-creation requires destructive infrastructure teardown:" >&2
+      printf '    %s\n' "$teardown" >&2
     else
       echo "  Re-run with AKS_NETWORK_POLICY=$have to keep it, or re-create it." >&2
     fi
@@ -245,7 +250,7 @@ else
   # --tier free: no control-plane charge and no SLA, which is right for an
   #   ephemeral demo cluster.
   # --attach-acr: grants the kubelet identity AcrPull on the registry, so
-  #   the proxy image is pulled with no imagePullSecret anywhere.
+  #   workload images can be pulled without an imagePullSecret.
   # --node-osdisk-size: nothing here is stored on the node, so this only has
   #   to hold images and kubelet's own working space — see the variable above
   #   for why it is no longer fixed at the smallest size that fits.
@@ -260,11 +265,9 @@ else
     --output none
 fi
 
-# The claim this script exists for, read back from the control plane rather
-# than inferred from a create that returned 0. Enforcement itself is a
-# CNI property the API server cannot vouch for; that proof is
-# `TARGET=aks make netpol-verify`, which the next-steps text below insists
-# on. This check catches the cheaper failure: the flag not taking.
+# Read the configured engine back rather than inferring it from a create
+# that returned 0. This catches a flag that did not take; it does not prove
+# workload policy enforcement, which needs workload-specific network tests.
 if ! have=$(cluster_policy); then
   echo "aks-up: the cluster's network policy engine could not be read." >&2
   echo "  Not claiming an enforcing cluster. Re-run once 'az aks show' works." >&2
@@ -279,7 +282,7 @@ echo "aks-up: network policy engine '$NETWORK_POLICY' confirmed by the control p
 
 # Whether the cluster was just created or already existed, the kubelet
 # identity must actually hold AcrPull on the registry — without it the
-# proxy pod fails with ImagePullBackOff and the cause is two layers away
+# workload pod fails with ImagePullBackOff and the cause is two layers away
 # from the symptom.
 #
 # VERIFY, then repair. `az aks update --attach-acr` is idempotent but runs
@@ -359,7 +362,7 @@ if [ "$confirmed" != yes ]; then
   echo "  Either the assignment is missing, or the role query failed (reading" >&2
   echo "  role assignments needs Microsoft.Authorization/roleAssignments/read" >&2
   echo "  on the registry)." >&2
-  echo "  Not claiming success: the proxy image would fail to pull. Re-run" >&2
+  echo "  Not claiming success: workload images would fail to pull. Re-run" >&2
   echo "  once you can read role assignments, or grant AcrPull manually." >&2
   exit 1
 fi
@@ -367,7 +370,7 @@ echo "aks-up: AcrPull confirmed" >&2
 
 # --- kubeconfig -----------------------------------------------------------
 # The context is named after the cluster. Note this is NOT a kind context,
-# so every mutating make target will demand confirmation (scripts/kube-guard.sh).
+# so scripts/kube-guard.sh requires explicit consent for this non-kind context.
 echo "aks-up: writing kubeconfig context '$CLUSTER'" >&2
 az aks get-credentials --name "$CLUSTER" --resource-group "$RG" \
   --overwrite-existing --output none
@@ -381,9 +384,9 @@ aks-up: ready.
 
   context:   $CLUSTER   (NOT a kind context — kmx aks up already confirmed it)
   registry:  $ACR.azurecr.io
-  netpol:    $NETWORK_POLICY engine (present; the next lift phase proves enforcement)
+  netpol:    $NETWORK_POLICY engine (present; workload enforcement is not proved here)
   continue:  $KMX_LIFT_CONTINUE
-  teardown:  $KMX_LIFT_DOWN
+  teardown:  $teardown
 
 The invoking kmx aks up continues automatically. Use the commands above only
 to resume after interruption or to tear the billed resources down.
@@ -395,16 +398,14 @@ aks-up: ready.
 
   context:   $CLUSTER   (NOT a kind context — targets will ask to confirm)
   registry:  $ACR.azurecr.io
-  netpol:    $NETWORK_POLICY engine (present ≠ enforced: prove it with
-             TARGET=aks make netpol-verify once the plane is deployed)
-  teardown:  AKS_RESOURCE_GROUP=$RG KAIMAHI_CONFIRM=$RG make aks-down
+  netpol:    $NETWORK_POLICY engine (present; workload enforcement is not proved here)
+  teardown:  $teardown
              ^ do not skip this. The confirmation names the RESOURCE
                GROUP, not the cluster — see docs/aks.md, "Tear it down".
 
-Next (see docs/aks.md):
-  kmx aks up --byo --resource-group $RG --cluster $CLUSTER --registry $ACR
-
-  The managed path captures the model credential before deploying the plane
-  and proves the network boundary. Use 'kmx aks up --help' for individual phases.
+This standalone script does not create a KMX ownership record. Continue runtime
+setup using an explicitly selected context (see docs/aks.md); do not change this
+created environment to --byo merely to resume. Use the script teardown above for
+this standalone run. For KMX-managed setup and recovery, start with kmx aks up.
 EOF
 fi

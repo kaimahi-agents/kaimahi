@@ -430,6 +430,244 @@ case set.
 Evaluate is a gate: it exits non-zero unless every case passed, including when
 any case is `unknown`.
 
+## Evaluating on agentsessions
+
+```console
+kmx agent evaluate <bundle-dir> --sessions 127.0.0.1:8080 [--case <id>] [--case-timeout 5m]
+```
+
+This selects an agentsessions host instead of a deployed Orka target. No
+Kubernetes reads, lift, or remembered cluster selection are needed. Start the
+host yourself with the **chat** harness and a model matching `spec.model.name`.
+The reference daemon registers chat when `-model` is set, but still defaults
+to echo; kmx explicitly selects chat. The host must support execution config
+`system_prompt` ([agentsessions #78](https://github.com/aramase/agentsessions/pull/78)).
+For example, with an already-running local OpenAI-compatible Ollama endpoint:
+
+```console
+agentsessionsd -addr 127.0.0.1:8080 -journal ./evaluation.db -model qwen2.5:3b -model-base-url http://127.0.0.1:11434/v1
+kmx agent evaluate agents/my-agent --sessions 127.0.0.1:8080
+```
+
+Each case creates one new session, labeled with the portable and case-set
+digests, and executes its input with the bundle's exact decoded instructions
+as `system_prompt`. Cases never share history or retry a mutation. The model
+comes from the host, not creation bindings or session metadata. kmx observes
+model-call records and refuses to pass a missing, mixed, or different model;
+it does not switch models or infer equivalent aliases. `pass` requires a
+completed execution and all exact, case-sensitive `expectContains` strings;
+a missing expectation is `fail`, while an unproven execution is `unknown`.
+The returned journal must record the exact invocation config and input before
+its effects. Committed answer text is limited to 1 MiB in total; an oversized
+answer is `unknown` and has no output digest. Any non-passing case makes the
+command exit non-zero.
+
+The text-only chat harness accepts core-only sources and Orka sources without
+runtime-specific behavior. Kagent extensions, coordination, tools, skills and
+rate limits are refused before sessions are created, rather than silently
+ignored. `--sessions` cannot be combined with `--to-context` or `--result-port`.
+The per-case timeout has the same 10s–9m bounds as Orka evaluation.
+
+Only literal loopback IPs may use plaintext. Other addresses use verified TLS
+with system roots; `--sessions-ca <pem-file>` adds a private trust root and also
+selects TLS for loopback. There is no unverified fallback. The reference daemon
+has no TLS listener or access controls: remote use requires operator-managed
+TLS termination and appropriate authentication/authorization at the boundary.
+Do not expose the daemon itself to an untrusted network.
+
+The private `receipts/eval-<key>.json` records runtime `agentsessions`, digests,
+Git provenance and full-case-set status. Each case records its session UID,
+journal sequence/hash head, verdict, observed model and output SHA-256. The
+version-1 `target.identity` labels its address, returned harness name and
+journal-observed model as **`host-reported`**, not a verified descriptor or
+attestation. Per-case identities remain available when observations differ.
+Distinct model names within one execution set `modelMixed: true` and suppress
+its singular model identity, even if a later stream error masks the mismatch.
+Identity versioning leaves room for future descriptor discovery. Prompts,
+answers, expectation strings, tool payloads and arbitrary server errors stay
+out of this receipt; conversation content remains in the host's journal.
+New receipt directories are mode 0700 and receipt files are mode 0600. Each
+endpoint/chat selection replaces its prior receipt; model changes therefore
+cannot leave an old passing receipt at that same filename. Keep receipts local,
+not in Git, and protect the journal separately.
+
+Sessions receipts do **not** satisfy lift-policy or status gates, including
+when replay verification succeeds. Orka receipt and gate behavior is unchanged.
+
+### Verifying a sessions receipt
+
+```console
+kmx agent verify <sessions-receipt.json> --sessions 127.0.0.1:8080 [--sessions-ca ca.pem] [--timeout 5m]
+```
+
+Verification reads each case's journal prefix through the receipt's recorded
+sequence, checks the contiguous hash chain and exact sequence/hash head, then
+runs agentsessions' pinned built-in **chat** harness locally with the recorded
+config, input and model completions. It checks model-request fingerprints,
+complete consumption of the recorded effects and the exact answer SHA-256.
+There is no model endpoint configured; both the independent fail-on-call counter
+and the replay controller's live-model count must remain zero. No new session,
+Exec, Resume, or live journal/fence mutation occurs. Later records beyond the
+receipt's head are outside this check.
+
+`--sessions` is required: the operator always names the destination. kmx refuses
+**before connecting** unless it matches the receipt's recorded address after
+syntactic normalization: canonical literal IPs (including IPv4-mapped IPv6),
+lowercase DNS names without a trailing dot, and decimal ports. No DNS lookup or
+alias equivalence is used for comparison; `localhost` does not match
+`127.0.0.1`. Only the operator-supplied address is dialed, retaining its original
+spelling so normalization cannot relax transport security. Connection
+security is the same as evaluation: verified TLS except for literal loopback,
+with `--sessions-ca` also enabling TLS there. The deadline covers the whole
+verification and must be between 10s and 9m (default 5m).
+
+This proves **local reference replay equivalence**, not the original host
+implementation/version, provider-side behavior, or a new evaluation result.
+The reference includes `system_prompt` support; config-ignoring older journals
+may be non-equivalent without being corrupt. Other harness names, forks,
+tools, incomplete/extra executions and unsupported journal shapes never pass.
+A lookalike custom `chat` harness can only be shown reference-equivalent; host
+implementation/version stays unknown until
+[agentsessions #87](https://github.com/aramase/agentsessions/issues/87) exposes
+provenance. The locally trusted receipt anchors integrity; replacing both it
+and the journal is outside this guarantee.
+
+Existing version-1 sessions receipts need no migration. Each case must have a
+completed `pass` or `fail` evaluation verdict and full session/head/model/answer
+evidence; `unknown` outcomes are refused. A failed expectation can replay
+equivalently without becoming a passing evaluation. Receipts are limited to
+1 MiB and 1,000 cases; journal prefixes to 20,000 records and 64 MiB, with the
+same 1 MiB committed-answer bound as evaluation. Conversation content stays in
+memory during verification and is never printed or written into the report.
+
+kmx leaves the source receipt unchanged and atomically writes a mode-0600
+sibling `verify-<receipt-basename>.json` (for example,
+`verify-eval-abc.json.json`), outside the `eval-*` gate namespace. It binds the
+source receipt's SHA-256, the local reference revision, per-case session/head,
+config and reconstructed-answer SHA-256, model-call count and verification
+status. Host implementation remains `unknown`. Linked/non-regular input files
+or a linked receipt directory are refused. Duplicate JSON members (including
+case-folded spellings) and unknown fields are refused before connecting.
+Every invocation recomputes the
+proof, replacing any prior report. Only `equivalent` for every case exits zero;
+`mismatch`, `unsupported` and `unknown` never count as passing evidence.
+
+## Run evals in CI
+
+Use the [KMX eval action](../.github/actions/kmx-eval/action.yml) to run a
+bundle's complete case set, fail the job unless every case passes, and optionally
+replay-check the receipt. **Sessions evals currently refuse tools and
+coordination**, as well as skills, rate limits and Kagent-specific behavior.
+Agents that use tools or coordination need the
+[Orka evaluation path](#evaluating-a-deployed-revision) for now; this action does
+not deploy Orka or make sessions receipts satisfy a lift gate.
+
+Run on Linux with Git, Python 3, curl and Go 1.26 or newer. AIKit mode also
+needs Docker. Check out the commit you want to test; the agent and the
+complete `eval/*.yaml` set must be tracked and byte-identical to `HEAD`, including
+staged changes. The action evaluates **in that checkout**, using KMX's existing
+Git provenance reader: receipts name the tested `HEAD` commit, including a
+GitHub PR merge commit when that is what checkout selected. No claimed revision
+is substituted from an environment variable. Dirty, added or deleted cases are
+refused rather than attributed to the wrong commit.
+
+For an OpenAI-compatible endpoint, supply the model name exactly as it appears
+in `agent.yaml`. Replace `REVIEWED_COMMIT_SHA` with a reviewed immutable commit
+containing the action; do not leave the placeholder or use a moving branch in
+production:
+
+```yaml
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.2'
+          cache: false # This bundle repository need not have a go.sum.
+      - uses: kaimahi-agents/kaimahi/.github/actions/kmx-eval@REVIEWED_COMMIT_SHA
+        env:
+          EVAL_MODEL_KEY: ${{ secrets.EVAL_MODEL_KEY }}
+        with:
+          bundle: agents/my-agent
+          model-mode: endpoint
+          model-name: my-model
+          model-base-url: https://model.example.com/v1
+          model-key-env: EVAL_MODEL_KEY
+          verify: 'true'
+          artifact-name: agent-eval-evidence
+```
+
+The endpoint must use HTTPS; keyless literal-loopback HTTP endpoints are also
+accepted. Never put a key in an input or URL: `model-key-env` is only the name
+of a secret environment variable. The runner passes its value to the daemon's
+model client through the child environment, not argv or a file. It does not
+print CLI, provider or daemon logs. Successful logs contain only summaries and
+timing. On failure it prints the failing answer only if its exact bytes match
+the receipt's digest, with known credentials redacted and terminal/workflow
+commands escaped; ambiguous answers or credential-shaped text are withheld.
+Failure answers can still contain sensitive application data: use public or
+sanitized cases and restrict access to job logs.
+
+For a secret-free local model, use `model-mode: aikit` instead of the endpoint
+inputs. The default image is Qwen3.5-2B pinned by SHA-256, with the same CPU
+[preset](../scripts/ci/eval-loop-model.yaml) used in repository CI. The bundle's
+model must be `qwen-3.5-2b`. This small model and its 4096-context/64-output-token
+preset are not a universal quality baseline. `aikit-image` must include
+`@sha256:...`; `aikit-config` can select a model-specific LocalAI config, paired
+with the corresponding `model-name`. No inherited hosted-model key is used.
+
+The action starts agentsessions on loopback with a private, temporary journal.
+Prefer a compatible released daemon archive through the paired
+`sessions-archive-url` and `sessions-archive-sha256` inputs: the HTTPS archive
+must contain a regular `agentsessionsd` binary and support chat, execution
+`system_prompt` and the journal evidence required by KMX. A checksum proves
+archive identity, **not compatibility or host implementation attestation**.
+The latest inspected release, v0.1.2, predates that support, so the default is
+currently a clearly reported source-build fallback at KMX's pinned module
+revision, never `@latest`. The log reports install mode and elapsed runner time,
+including builds; the workflow job duration additionally includes setup/upload.
+
+`verify: 'true'` (the default) checks reference replay equivalence and zero model
+calls separately from evaluation. AIKit is stopped before verification; an
+external endpoint is not stopped, but replay still requires zero calls. A
+failed evaluation never becomes a success through replay. Set `verify: 'false'`
+to omit it. `case-timeout` defaults to `2m`; `command-timeout` is a separate
+per-command deadline in seconds (default `600`). Adjust the workflow job timeout
+to fit the complete case set; cases are never retried.
+
+Only the fresh payload-free receipt and optional verification report are
+uploaded, including failed results when available. Journals, raw logs, prompts
+and answers are not artifacts. Each invocation uses a fresh private artifact
+directory; before evaluation it removes only KMX's receipt/report for its
+selected sessions endpoint, preserving evidence from other targets. The action
+outputs `receipt`, `verify-report`, `artifact-dir`, `daemon-install` and
+`elapsed-seconds`. Files in the output directory survive runtime cleanup.
+
+### Other CI systems
+
+Check out a reviewed Kaimahi revision beside your clean agent checkout, provide
+Go and the prerequisites above, and call the same runner. For example, from
+your agent repository, with Kaimahi checked out at `../kaimahi`:
+
+```bash
+# EVAL_MODEL_KEY is injected by your CI secret store, not assigned here.
+BUNDLE_DIR="$PWD/agents/my-agent" \
+MODEL_MODE=endpoint MODEL_NAME=my-model \
+MODEL_BASE_URL=https://model.example.com/v1 MODEL_KEY_ENV=EVAL_MODEL_KEY \
+ARTIFACT_DIR="$PWD/eval-evidence-$CI_JOB_ID" VERIFY=true \
+bash ../kaimahi/scripts/ci/live-eval-loop.sh
+```
+
+`ARTIFACT_DIR` must be a fresh per-run path outside `receipts/`. Configure your
+CI to retain **only** its `*.json` files, even when the runner exits nonzero.
+The runner builds KMX from the reviewed Kaimahi checkout; `KMX_BIN` can reuse a
+matching binary already built by your job. A nonzero runner exit is a failed
+eval or missing proof, not a reason to rerun a potentially side-effecting case.
+For agents requiring Orka, provision the runtime, Provider, Secrets and tools
+first and use the [staging-to-production sequence](#requiring-evaluation-before-lift).
+
 ## Running an existing Agent
 
 ```console

@@ -22,7 +22,7 @@ import (
 // need only manifest/blob reads, not a second implementation of registry uploads.
 func suiteOutputRegistry(t *testing.T) (*httptest.Server, godigest.Digest) {
 	t.Helper()
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	layoutRoot := filepath.Join(t.TempDir(), "layout")
 	result, err := agentsuiteoras.Push(context.Background(), fixture, layoutRoot, "v1")
 	if err != nil {
@@ -117,7 +117,7 @@ func TestSuiteRegistryPushPrintsDigestAndPassesForce(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	server, digest := suiteOutputRegistry(t)
 	reference := strings.TrimPrefix(server.URL, "http://") + "/team/suite:v1"
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
 	args := []string{"suite", "push", fixture, reference, "--plain-http"}
