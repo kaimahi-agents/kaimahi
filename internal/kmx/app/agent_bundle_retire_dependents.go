@@ -158,7 +158,7 @@ func (a *App) retireListDependents(ctx context.Context, resource string) ([]reti
 	out := &retireLimitedOutput{orkaBoundedBuffer: orkaBoundedBuffer{remaining: 4 << 20}}
 	stderr := &retireLimitedOutput{orkaBoundedBuffer: orkaBoundedBuffer{remaining: 4 << 10}}
 	cmd.Stdout, cmd.Stderr = out, stderr
-	err := cmd.Run()
+	err := a.executeCapture(callCtx, cmd)
 	if callCtx.Err() != nil {
 		return nil, fmt.Errorf("kubectl request cancelled or timed out")
 	}

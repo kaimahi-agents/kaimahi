@@ -75,12 +75,33 @@ deadlines. Keep setup budgets intact and shorten only the wait under test;
 assert that the intended readiness, admission, or result boundary was reached.
 An unset timing hook must retain the production intervals and deadlines.
 
-The fake kubectl handlers live in `internal/kmx/app/testdata/kubectl`. App tests
-compile this lightweight executable once per package run instead of launching
-the full UI-bearing App test binary for every CLI call. It still runs as a real
-subprocess with the fixture's environment and call log. A `go test -race` App
-run also compiles the helper with `-race`; the build directory is removed when
-the package run finishes. Keep helper imports independent of App and UI code.
+The fake kubectl executable lives in `internal/kmx/app/testdata/kubectl`. App
+fixtures default to compiling this lightweight executable once per package run
+and running it with the fixture's environment and call log. A `go test -race`
+App run also compiles the helper with `-race`; its build directory is removed
+when the package run finishes. Keep helper imports independent of App and UI.
+
+Retire lifecycle tests and `TestKagentStatusFinalReadinessAndWorkloadCategories`
+explicitly use in-process capture fixtures instead. They do not build or launch
+the kubectl helper: a failing executable sentinel catches accidental fallback.
+Both modes share the stateful reconcile and kagent handlers in
+`internal/kmx/app/testdata/kubectl/protocol`. The App-local capture hook receives
+the prepared command and call context; argv, effective environment, stdin,
+bounded output, guards, deadlines and error classification stay at the normal
+production boundary. The hook is unset in installed commands. Protocol delays
+obey the context synchronously, without a goroutine timeout wrapper. Executable
+parity tests compare raw output, exit status, persisted state and ordered calls.
+Other lift, reconcile and create tests retain executable fixtures.
+
+Go's `./...` wildcard skips `testdata`, so check the shared protocol explicitly;
+App parity tests separately exercise the executable adapters:
+
+```bash
+go test ./internal/kmx/app/testdata/kubectl/protocol
+go test -race ./internal/kmx/app/testdata/kubectl/protocol
+go test ./internal/kmx/app/testdata/kubectl -run 'TestReconcileKubectlHelper|TestKagentKubectlHelper|TestKagentKubectlPinsHelper'
+go test -race ./internal/kmx/app -run 'TestKubectl|TestCapture|TestRetire|TestKagentStatusFinalReadinessAndWorkloadCategories'
+```
 
 The workflow's hygiene job is authoritative for the full checker/self-test/
 mutation set; do not replace it with this focused list. The retained native

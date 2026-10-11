@@ -100,7 +100,10 @@ Cluster-independent decisions live in packages; shell-out orchestration lives in
 `app` run cloud orchestration, preferences and reuse checks. Interactive lift
 panes use `chat_lift*.go`. Counts exclude Go test files but include non-Go data.
 The test-only kubectl executable under `app/testdata/kubectl` is built separately
-by App tests, not installed with kmx. Judge integration tests and the opt-in
+by App tests, not installed with kmx. Its reconcile and kagent protocol is shared
+with explicit in-process retire/status fixtures; default fixtures and dedicated
+parity/boundary tests still execute the helper. The protocol has no App imports
+and is not reachable from installed code. Judge integration tests and the opt-in
 live production-client proof are test scaffolding, not additional production
 files or judge cases in the live CLI agent fixture.
 
@@ -119,7 +122,8 @@ files or judge cases in the live CLI agent fixture.
 | `kmx/agentsuite/testdata/incident-analyst/compositions` | 1 | Scaffolding | Linux amd64 composition selecting the AgentKit v0.1.0 build profile. |
 | `kmx/agentsuite/testdata/incident-analyst/tool-providers` | 1 | Scaffolding | Empty catalog reflecting the experimental backend's current no-ToolProvider boundary. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
-| `kmx/app/testdata/kubectl` | 0 | Scaffolding | Test-only executable-boundary kubectl handlers, compiled once per App test run with matching race instrumentation; no App or UI dependencies. |
+| `kmx/app/testdata/kubectl` | 0 | Scaffolding | Test-only executable-boundary kubectl handlers and thin reconcile/kagent adapters, compiled once per App test run with matching race instrumentation; no App or UI dependencies. |
+| `kmx/app/testdata/kubectl/protocol` | 4 | Scaffolding | Shared stateful reconcile/kagent handlers and pins for executable and explicitly selected in-process capture fixtures; request-scoped context, environment and I/O, synchronous cancellable delays and observed writer errors. App parity tests exercise both modes; protocol unit tests require an explicit package path because `./...` skips testdata. |
 | `kmx/app/testdata/live-eval-loop` | 1 | Scaffolding | Portable agent for the clusterless, secret-free real-inference CI fixture and App bundle-loading test. |
 | `kmx/app/testdata/live-eval-loop/eval` | 2 | Scaffolding | Public capital and arithmetic cases requiring literal `Paris` and `4` substrings, plus a Go RE2 capital pattern and `notContains` check, not exact answers. |
 | `kmx/app/testdata/bundle-format` | 2 | Scaffolding | Exact rendered documents for historical and current portable bundle fixtures. |

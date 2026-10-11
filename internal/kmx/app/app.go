@@ -55,6 +55,9 @@ type App struct {
 	Stdin              *os.File
 	// now is injectable so progress timing can be tested without sleeping.
 	now func() time.Time
+	// captureCommand replaces execution of an already-prepared kubectl capture
+	// in tests only. Nil retains the real subprocess boundary.
+	captureCommand func(context.Context, *exec.Cmd) error
 	// waitTiming overrides retry pacing and phase deadlines in tests only.
 	// Nil preserves every production interval and timeout.
 	waitTiming *waitTiming
@@ -129,6 +132,13 @@ func (a *App) withRunContext(ctx context.Context) *App {
 	runner.Context = ctx
 	app.Run = &runner
 	return &app
+}
+
+func (a *App) executeCapture(ctx context.Context, cmd *exec.Cmd) error {
+	if a.captureCommand != nil {
+		return a.captureCommand(ctx, cmd)
+	}
+	return cmd.Run()
 }
 
 // kubectl returns a kubectl argument list carrying the explicit --context.

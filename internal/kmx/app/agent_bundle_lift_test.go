@@ -20,7 +20,12 @@ import (
 
 func liftBundleFixture(t *testing.T) (*App, LiftAgentBundleOptions, string, *bytes.Buffer) {
 	t.Helper()
-	adapter, _, dir := reconcileFixture(t)
+	return liftBundleFixtureMode(t, false)
+}
+
+func liftBundleFixtureMode(t *testing.T, inProcess bool) (*App, LiftAgentBundleOptions, string, *bytes.Buffer) {
+	t.Helper()
+	adapter, _, dir := reconcileFixtureMode(t, inProcess)
 	t.Setenv("KMX_LIFT_TEST", "1")
 	t.Setenv("KMX_HOME", filepath.Join(dir, "user-state"))
 	source, err := portableOrkaSource(*adapter.create)

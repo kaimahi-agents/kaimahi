@@ -188,7 +188,7 @@ func (a *App) kagentCaptureWithTimeout(ctx context.Context, timeout time.Duratio
 	out := &orkaBoundedBuffer{remaining: 4 << 20}
 	stderr := &orkaBoundedBuffer{remaining: 4 << 10}
 	cmd.Stdout, cmd.Stderr = out, stderr
-	if err := cmd.Run(); err != nil {
+	if err := a.executeCapture(callCtx, cmd); err != nil {
 		if callCtx.Err() != nil {
 			return nil, fmt.Errorf("kubectl request cancelled or timed out")
 		}

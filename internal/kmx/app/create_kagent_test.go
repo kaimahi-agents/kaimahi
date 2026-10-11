@@ -60,8 +60,15 @@ func TestKagentKubectlFixturePinsMatchProduction(t *testing.T) {
 
 func kagentCreateFixture(t *testing.T, scenario string) (*App, CreateOptions, *bytes.Buffer, *bytes.Buffer, string) {
 	t.Helper()
+	return kagentCreateFixtureMode(t, scenario, false)
+}
+
+func kagentCreateFixtureMode(t *testing.T, scenario string, inProcess bool) (*App, CreateOptions, *bytes.Buffer, *bytes.Buffer, string) {
+	t.Helper()
 	dir := t.TempDir()
-	fakeTool(t, dir, "kubectl", kubectlFixture(t, "TestKagentKubectlHelper"))
+	if !inProcess {
+		fakeTool(t, dir, "kubectl", kubectlFixture(t, "TestKagentKubectlHelper"))
+	}
 	t.Setenv("PATH", dir)
 	t.Setenv("KMX_TOOLCHAIN", "off")
 	t.Setenv("KMX_KAGENT_TEST_DIR", dir)
@@ -74,6 +81,10 @@ func kagentCreateFixture(t *testing.T, scenario string) (*App, CreateOptions, *b
 	out, diagnostics := &bytes.Buffer{}, &bytes.Buffer{}
 	runner := &run.Runner{Stdout: out, Stderr: diagnostics, Echo: true}
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: runner, Out: out, Err: diagnostics, waitTiming: fastWaitTiming(), kagentProfile: &profile}
+	if inProcess {
+		a.captureCommand = kagentCaptureFixture
+		forbidKubectlLaunch(t, dir)
+	}
 	opt := CreateOptions{
 		Runtime: "kagent", KagentRuntime: "go", Name: "sample", Namespace: "agents",
 		Description: "Sample Kagent agent", ProviderType: "openai", Model: "gpt-4o-mini",

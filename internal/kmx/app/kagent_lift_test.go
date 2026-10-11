@@ -15,7 +15,12 @@ import (
 
 func kagentLiftFixture(t *testing.T, scenario string) (*App, LiftAgentBundleOptions, string) {
 	t.Helper()
-	a, create, _, _, dir := kagentCreateFixture(t, scenario)
+	return kagentLiftFixtureMode(t, scenario, false)
+}
+
+func kagentLiftFixtureMode(t *testing.T, scenario string, inProcess bool) (*App, LiftAgentBundleOptions, string) {
+	t.Helper()
+	a, create, _, _, dir := kagentCreateFixtureMode(t, scenario, inProcess)
 	profile := kagentLiftProfile()
 	profile.AgentSchema = a.kagentProfile.AgentSchema
 	profile.ModelSchema = a.kagentProfile.ModelSchema
@@ -149,7 +154,7 @@ func TestKagentStatusFinalReadinessAndWorkloadCategories(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
-			a, opt, dir := kagentLiftFixture(t, "")
+			a, opt, dir := kagentLiftInProcessFixture(t, "")
 			if err := a.LiftAgentBundle(opt); err != nil {
 				t.Fatal(err)
 			}

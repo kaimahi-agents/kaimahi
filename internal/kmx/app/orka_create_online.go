@@ -35,7 +35,7 @@ func (a *App) orkaCapture(ctx context.Context, stdin []byte, args ...string) ([]
 	// leave this boundary.
 	stderr := &orkaBoundedBuffer{remaining: 4 << 10}
 	cmd.Stdout, cmd.Stderr = out, stderr
-	if err := cmd.Run(); err != nil {
+	if err := a.executeCapture(callCtx, cmd); err != nil {
 		if callCtx.Err() != nil {
 			if err := ctx.Err(); err != nil {
 				return nil, fmt.Errorf("kubectl request cancelled or timed out: %w", err)
