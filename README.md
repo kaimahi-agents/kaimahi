@@ -22,17 +22,17 @@ Kaimahi's `kmx` CLI helps developers **Create → Prove → Lift** an agent: wri
 
 ## Create, Prove, Lift
 
-Install Docker or Podman (set `CONTAINER_ENGINE=podman` for Podman), then choose one stable CLI install route (Go needs 1.26+):
+Install Docker or Podman (set `CONTAINER_ENGINE=podman` for Podman), then choose one CLI install route for the latest release (Go needs 1.26+):
 
 ```bash
 brew install kaimahi-agents/tap/kmx
 # or
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 # or
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.1
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.0
 ```
 
-**Stable v0.4.1 first answer:** start with the fixed, non-interactive local demonstration:
+**Latest release first answer:** start with the fixed, non-interactive local demonstration:
 
 ```bash
 kmx quickstart
@@ -40,9 +40,9 @@ kmx quickstart
 
 This prepares local kind, Ollama and Orka, then prints a fresh Task's answer; follow [getting started](docs/getting-started.md) to select your own cluster/context.
 
-`kmx local up` prepares the runtime without creating an agent (unreleased on current main; v0.4.1 uses `kmx up`).
+`kmx local up` prepares the runtime without creating an agent.
 
-`kmx quickstart --interactive` guides custom agent and model choices (unreleased; build current main, or use the stable wizard below).
+`kmx quickstart --interactive` guides custom agent and model choices.
 
 `kmx agent create` defaults to Orka and writes an editable bundle on a prepared target.
 
@@ -50,28 +50,27 @@ This prepares local kind, Ollama and Orka, then prints a fresh Task's answer; fo
 
 `kmx agent status` reports the deployed revision, readiness, drift and available evaluation evidence.
 
-`kmx agent evaluate` tests the deployed Orka revision (current main also supports an explicitly selected agentsessions host).
+`kmx agent evaluate` tests the deployed Orka revision or an explicitly selected agentsessions host.
 
 Follow the [bundle lift guide](docs/agent-lift.md) for target preparation, receipts and evaluation.
 
 ## Quickstart
 
-For your own agent on **stable v0.4.1**, run the experimental wizard:
+For your own agent, run the experimental wizard:
 
 ```bash
-kmx quickstart-wizard
+kmx quickstart --interactive
 ```
 
 Choose **Chat with agent**, check a local answer, then enter `/lift` to a prepared Orka target; after connecting, send a **new message** to prove it answers there.
-On **current main (unreleased)**, build with `make` and use `bin/kmx quickstart --interactive` instead.
-See [releases and versions](docs/releases.md) for stable installs versus development builds.
+See [releases and versions](docs/releases.md) for installation and upgrades.
 
 **Safety:** use a dedicated test cluster and review [getting started](docs/getting-started.md).
 Both paths create cluster resources and result-reader RBAC; the wizard adds a [read-only inventory Tool with cross-namespace permissions](docs/orka-k8s-tool.md).
 Setup starts while the form is open, and cancellation leaves completed resources in place.
 Bundle-backed `/lift` needs a prepared target, a **Ready Provider and its Secret**, and referenced Tools; it creates neither a cluster nor cloud inference.
 Hosted model calls can incur charges; review [interactive lift](docs/interactive-lift.md) for preparation and recovery.
-`kmx down` on v0.4.1 (`kmx local down` on current main) deletes the **whole local cluster and its data**; export needed data first.
+`kmx local down` deletes the **whole local cluster and its data**; export needed data first.
 
 ## Runtime Contract
 
