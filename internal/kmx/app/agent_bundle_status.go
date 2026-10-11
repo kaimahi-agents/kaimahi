@@ -768,8 +768,8 @@ func (a *App) printBundleStatusJSON(report bundleStatusReport) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(a.Out, string(body))
-	return nil
+	_, err = fmt.Fprintln(a.Out, string(body))
+	return err
 }
 
 func (a *App) printBundleStatusTable(report bundleStatusReport) {

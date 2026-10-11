@@ -347,8 +347,8 @@ func (a *App) showAgentJSON(agent *orkaAgentSpec, provider *orkaProviderSpec, pr
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(a.Out, string(body))
-	return nil
+	_, err = fmt.Fprintln(a.Out, string(body))
+	return err
 }
 
 // agentModelName resolves what the agent will actually ask for. An Agent may
