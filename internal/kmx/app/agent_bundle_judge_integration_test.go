@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -161,6 +162,86 @@ func TestJudgeDiffIdentityAndScores(t *testing.T) {
 		out, err := diffExecute(t, integrationJudgeReceipt(tc.before), integrationJudgeReceipt(tc.after))
 		if (err != nil) != tc.failed || !strings.Contains(out, tc.status) || !strings.Contains(out, "scores") || !strings.Contains(out, "[100 80]") && tc.status != "stable" {
 			t.Fatalf("score transition: %v %s", err, out)
+		}
+	}
+}
+
+// Catch scores disappearing when an assertion or its entire case is added/removed.
+func TestEvaluationDiffAddedRemovedJudgeScores(t *testing.T) {
+	for _, tc := range []struct {
+		name, status, scoresLine  string
+		wholeCase, added          bool
+		beforeScores, afterScores []int
+	}{
+		{"case removed", "assertionRemoved", "judge scores case-one/changed: [80 100]/[]", true, false, []int{80, 100}, nil},
+		{"assertion removed", "assertionRemoved", "judge scores case-one/changed: [80 100]/[]", false, false, []int{80, 100}, nil},
+		{"assertion added", "assertionAdded", "judge scores case-one/changed: []/[80 100]", false, true, nil, []int{80, 100}},
+		{"case added", "assertionAdded", "judge scores case-one/changed: []/[80 100]", true, true, nil, []int{80, 100}},
+	} {
+		for _, kind := range []string{"known judge", "unknown judge", "nonjudge"} {
+			t.Run(tc.name+"/"+kind, func(t *testing.T) {
+				before, after := diffFixture("pass"), diffFixture("pass")
+				present, absent := &before, &after
+				if tc.added {
+					present, absent = &after, &before
+				}
+				row := integrationJudgeRow([]int{80, 100})
+				wantBefore, wantAfter := tc.beforeScores, tc.afterScores
+				wantLine := tc.scoresLine
+				switch kind {
+				case "unknown judge":
+					row = integrationJudgeRow(nil)
+					present.Result, present.Cases[0].Verdict = "unknown", "unknown"
+					wantBefore, wantAfter = nil, nil
+					wantLine = "judge scores case-one/changed: []/[]"
+				case "nonjudge":
+					row = diffFixture("pass").Cases[0].Assertions[0]
+					wantBefore, wantAfter = nil, nil
+				}
+				row.ID = "changed"
+				present.Cases[0].Assertions = append(present.Cases[0].Assertions, row)
+				if tc.wholeCase {
+					absent.Cases[0].ID = "case-other"
+				}
+				b, err := readEvaluationDiffSource(diffWrite(t, before))
+				if err != nil {
+					t.Fatal(err)
+				}
+				a, err := readEvaluationDiffSource(diffWrite(t, after))
+				if err != nil {
+					t.Fatal(err)
+				}
+				report := compareEvaluations(b, a)
+				if !report.Incomplete || report.Regression || report.IncompatibleReason != "" {
+					t.Fatalf("set change classification: %+v", report)
+				}
+				found := false
+				for _, got := range report.Rows {
+					if got.CaseID == "case-one" && got.AssertionID == "changed" {
+						found = true
+						if got.Status != tc.status || !reflect.DeepEqual(got.BeforeScores, wantBefore) || !reflect.DeepEqual(got.AfterScores, wantAfter) {
+							t.Errorf("row status/scores: %+v; want %s %v/%v", got, tc.status, wantBefore, wantAfter)
+						}
+					}
+					if got.BeforeType != "llmJudge" && got.AfterType != "llmJudge" && (got.BeforeScores != nil || got.AfterScores != nil) {
+						t.Errorf("nonjudge row has scores: %+v", got)
+					}
+				}
+				if !found {
+					t.Fatal("missing changed assertion row")
+				}
+				out, err := diffExecute(t, before, after)
+				if err == nil || err.Error() != "evaluation comparison is incomplete" || !strings.Contains(out, "comparison: incomplete") {
+					t.Fatalf("set change exit/output: %v %s", err, out)
+				}
+				if kind == "nonjudge" {
+					if strings.Contains(out, "judge scores") {
+						t.Errorf("nonjudge scores rendered: %s", out)
+					}
+				} else if !strings.Contains(out, wantLine+"\n") {
+					t.Errorf("missing %q in output: %s", wantLine, out)
+				}
+			})
 		}
 	}
 }

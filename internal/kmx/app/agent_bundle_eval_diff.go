@@ -399,7 +399,11 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 		if !exists {
 			add(evaluationDiffRow{CaseID: id, Status: "caseRemoved", BeforeDigest: b.CaseDigest})
 			for aid, row := range b.Assertions {
-				add(evaluationDiffRow{CaseID: id, AssertionID: aid, BeforeType: row.Type, BeforeDigest: row.DefinitionDigest, Before: string(row.Verdict), Status: "assertionRemoved"})
+				diffRow := evaluationDiffRow{CaseID: id, AssertionID: aid, BeforeType: row.Type, BeforeDigest: row.DefinitionDigest, Before: string(row.Verdict), Status: "assertionRemoved"}
+				if row.Judge != nil {
+					diffRow.BeforeScores = row.Judge.Scores
+				}
+				add(diffRow)
 			}
 			continue
 		}
@@ -413,15 +417,15 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 		for aid, br := range b.Assertions {
 			ar, exists := a.Assertions[aid]
 			row := evaluationDiffRow{CaseID: id, AssertionID: aid, BeforeType: br.Type, BeforeDigest: br.DefinitionDigest, Before: string(br.Verdict)}
+			if br.Judge != nil {
+				row.BeforeScores = br.Judge.Scores
+			}
 			if !exists {
 				row.Status = "assertionRemoved"
 				add(row)
 				continue
 			}
 			row.AfterType, row.AfterDigest, row.After = ar.Type, ar.DefinitionDigest, string(ar.Verdict)
-			if br.Judge != nil {
-				row.BeforeScores = br.Judge.Scores
-			}
 			if ar.Judge != nil {
 				row.AfterScores = ar.Judge.Scores
 			}
@@ -449,7 +453,11 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 		}
 		for aid, ar := range a.Assertions {
 			if _, exists := b.Assertions[aid]; !exists {
-				add(evaluationDiffRow{CaseID: id, AssertionID: aid, AfterType: ar.Type, AfterDigest: ar.DefinitionDigest, After: string(ar.Verdict), Status: "assertionAdded"})
+				row := evaluationDiffRow{CaseID: id, AssertionID: aid, AfterType: ar.Type, AfterDigest: ar.DefinitionDigest, After: string(ar.Verdict), Status: "assertionAdded"}
+				if ar.Judge != nil {
+					row.AfterScores = ar.Judge.Scores
+				}
+				add(row)
 			}
 		}
 	}
@@ -457,7 +465,11 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 		if _, exists := before.Cases[id]; !exists {
 			add(evaluationDiffRow{CaseID: id, Status: "caseAdded", AfterDigest: a.CaseDigest})
 			for aid, row := range a.Assertions {
-				add(evaluationDiffRow{CaseID: id, AssertionID: aid, AfterType: row.Type, AfterDigest: row.DefinitionDigest, After: string(row.Verdict), Status: "assertionAdded"})
+				diffRow := evaluationDiffRow{CaseID: id, AssertionID: aid, AfterType: row.Type, AfterDigest: row.DefinitionDigest, After: string(row.Verdict), Status: "assertionAdded"}
+				if row.Judge != nil {
+					diffRow.AfterScores = row.Judge.Scores
+				}
+				add(diffRow)
 			}
 		}
 	}
