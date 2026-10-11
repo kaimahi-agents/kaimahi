@@ -71,15 +71,13 @@ jobs:
         run: python3 scripts/check-repository-map.py --selftest
       - name: The repository map still describes this tree
         run: python3 scripts/check-repository-map.py
-      # Explicit alternate-runtime v0.10.2 create is a closed support boundary, not a
-      # restoration of the old runtime surface. The checker permits only its
-      # reviewed production/test/docs files and vocabulary; installer assets,
-      # moving pins, chat/list/status/lift/evaluate/console/quickstart, old up
-      # steps and the AKS payload remain refused everywhere. Its self-test and
-      # mutation suite prove the path/rule sets cannot quietly widen.
-      - name: Alternate-runtime boundary scanner still catches every class
+      # Retired commands and assets must not return as current instructions.
+      # Native runtime identifiers and external chart bootstrap are not bans;
+      # supported operations and runtime versions are validated by kmx tests.
+      # Self-tests and mutations exercise matching, exact exceptions and scan coverage.
+      - name: Retired-command scanner catches its bounded command and asset cases
         run: python3 scripts/check-legacy-runtime.py --selftest
-      - name: Alternate-runtime support stays inside exact-version create
+      - name: Current instructions contain no retired commands or assets
         run: python3 scripts/check-legacy-runtime.py
       # And the checkers themselves: each one is copied, broken on purpose
       # in a named way, and required to notice. A self-test built from

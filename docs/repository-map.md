@@ -198,7 +198,7 @@ invocations or active CI coverage.
 | **Scaffolding** — checkers, self-tests and release packaging | 22 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py` |
 | **Scaffolding** — native/eval CI fixtures | 7 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
-| **Scaffolding** — legacy-runtime scanner's approved exemptions | 1 | `legacy-runtime-allowlist.json` |
+| **Scaffolding** — retired-command scanner's exact inert exceptions | 1 | `legacy-runtime-allowlist.json` |
 
 `kube-guard.sh` is counted once as embedded, and is one of the ten checkers
 the mutation harness breaks on purpose. `scripts/test_check_mutations.py`
@@ -288,7 +288,7 @@ and intentionally has no hero image.
 
 ## Existing layout
 
-Three tracked files under `scripts/` contain the literal `k8s/`.
+Two tracked files under `scripts/` contain the literal `k8s/`.
 Embedded native helpers remain at the paths named by `embed.go`.
 The repository has one Go module; no plane module, build helper or plane-only
 assets/scripts remain.

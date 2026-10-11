@@ -86,7 +86,10 @@ Orka Tool fixture tests exercise actual HTTP requests and health/refusal
 responses without a cluster. No plane-module or plane Postgres service job
 remains.
 [CI configuration](../.github/workflows/ci.yml) also checks its own guards and
-aggregator membership.
+aggregator membership. The retired-command scanner rejects concrete removed
+commands/assets, not kagent vocabulary or version claims. It uses bounded literal
+command tokenization and exact inert exceptions; production command tests own
+runtime selection and supported-operation validation.
 
 ### Local loop
 

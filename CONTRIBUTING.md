@@ -39,6 +39,7 @@ Run the checks relevant to your change:
 python3 scripts/check-doc-links.py --selftest && python3 scripts/check-doc-links.py
 python3 scripts/check-secret-shapes.py --selftest && python3 scripts/check-secret-shapes.py
 python3 scripts/check-repository-map.py --selftest && python3 scripts/check-repository-map.py
+python3 scripts/check-legacy-runtime.py --selftest && python3 scripts/check-legacy-runtime.py
 python3 scripts/check-comment-history.py --selftest && python3 scripts/check-comment-history.py
 python3 scripts/test_check_mutations.py
 python3 scripts/check-mutations.py
@@ -56,6 +57,13 @@ The checkers above are the ones you can usefully run by hand. CI's hygiene
 job runs each checker, each checker's self-test, and a set of inline
 meta-checks over CI's own guards; it is the authority on what gates a
 merge, not this list.
+
+The retired-command scanner checks concrete removed commands and assets, not
+kagent API/image identifiers or runtime-version support. Its small exact
+path/text/reason exceptions cover inert CI controls, notices and refusals;
+unused exceptions and unreadable or insufficient text coverage fail the gate.
+Conventional tests/testdata, source comments and historical releases are records,
+not current instructions. Runtime behavior remains the command tests' responsibility.
 
 The mutation harness checks 40 representative mutants across ten checkers,
 not every failure mode. This bounded set keeps verification practical but
