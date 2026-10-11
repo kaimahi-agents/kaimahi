@@ -32,7 +32,7 @@ func TestAgentLiftCommandSurface(t *testing.T) {
 	if err != nil || cmd == nil || cmd.Name() != "lift" {
 		t.Fatalf("agent lift command missing: %v", err)
 	}
-	for _, name := range []string{"to-context", "to-namespace", "inference", "require-evaluated", "override-gate", "plan"} {
+	for _, name := range []string{"to-context", "to-namespace", "inference", "require-evaluated", "override-gate", "plan", "runtime", "runtime-version", "bindings"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("missing --%s", name)
 		}

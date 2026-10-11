@@ -49,6 +49,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   updating current examples. Do not bulk-rename historical text or serialized
   state. Generated recovery commands must preserve selectors and shell quoting.
 
+## kagent version boundary
+
+- Preserve Orka defaults and exact-v0.10.2 kagent create. Bundle lift/status
+  requires explicit `--runtime kagent --runtime-version v0.10.3`, `--to-context`
+  and author-owned `KagentBindings`. Only Go deployment/status is qualified;
+  Python remains render-only. Lift creates new objects or reuses a complete
+  matching UID-bound receipt without adoption, update or retry of ambiguous
+  writes. Readiness is not execution proof. Do not infer installation,
+  discovery, chat/run/evaluation, retirement or console support from this slice.
+
 ## Verification
 
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.

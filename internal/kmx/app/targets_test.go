@@ -24,7 +24,7 @@ func TestTargetsCapabilitiesMatchLifecycleDeclarations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, adapter := range []agentruntime.LifecycleAdapter{
-		kagentRuntimeAdapter{create: &CreateOptions{}, bindings: &agentruntime.KagentBindings{}},
+		kagentRuntimeAdapter{lift: &kagentLiftOperation{}, bindings: &agentruntime.KagentBindings{}},
 		orkaRuntimeAdapter{create: &CreateOptions{}},
 	} {
 		caps := adapter.Capabilities()

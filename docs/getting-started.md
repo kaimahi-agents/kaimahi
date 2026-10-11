@@ -52,8 +52,9 @@ Azure is not needed for the keyless local quickstart.
 The local quickstart below is the **supported deterministic Orka first-answer
 path**: it ends with a native Orka Agent answering a question. For guided
 custom authoring and a first answer, use the wizard described below.
-KMX does not install or upgrade Kagent; only explicit exact-v0.10.2 create is
-available for an installation an operator already owns.
+KMX does not install or upgrade kagent. Explicit exact-v0.10.2 create and
+exact-v0.10.3 declarative bundle lift/status require an operator-prepared
+installation; see [version-qualified placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
 
 Choose a local cluster name you own and pin its context:
 
@@ -147,12 +148,13 @@ The following compatibility notes describe current builds, not v0.4.1 tutorial s
 KMX no longer installs kagent or its two demonstration agents. Its three old
 `kmx local up --step` names are unknown steps, their manifests are no longer shipped
 in the binary, and agent editing, governance and preset switching remain
-retired. `kmx agent chat` and `kmx agent list` remain Orka-only. The one scoped
-exception is `kmx agent create --runtime kagent <name>` for a preinstalled exact
-v0.10.2; it does not alter this setup or quickstart path.
+retired. `kmx agent chat` and `kmx agent list` remain Orka-only. The scoped
+exceptions are `kmx agent create --runtime kagent <name>` for preinstalled exact
+v0.10.2 and explicit exact-v0.10.3 declarative bundle lift/status; neither alters
+this setup or quickstart path.
 
-A cluster that still carries kagent is untouched by Orka setup. Other than the
-explicit exact-v0.10.2 create path, operate it with upstream tools or kubectl.
+A cluster that still carries kagent is untouched by Orka setup. Outside those
+version-qualified operations, use upstream tools or kubectl.
 Owners must deliberately remove or replace obsolete gateway references; setup
 does not repoint existing tools. Interactive `/help` lists local controls.
 
@@ -182,7 +184,7 @@ For the separate, advanced kagent v0.10.2 create-only path in current builds, us
 [create contract](kmx.md#explicit-kagent-v0102-create). Offline rendering
 requires neither an installed kagent nor a provisioned cluster Secret. Online
 creation requires both an exact v0.10.2 installation and a separately
-provisioned Secret. Neither mode adds kagent chat, list, show, status, lift,
+provisioned Secret. Neither v0.10.2 create mode adds kagent chat, list, show, status, lift,
 evaluate, console, quickstart, `up`, or AKS support.
 
 ## Using Podman instead of Docker

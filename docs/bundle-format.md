@@ -12,9 +12,10 @@ other release's output.
 | File | Current rule |
 |---|---|
 | `agent.yaml` | Exactly one `kmx.kaimahi.dev/v1alpha1` `PortableAgent`. `extensions` is absent, `{}`, or holds exactly one of `orka` (`core.orka.ai/v1alpha1`) or `kagent` (`kagent.dev/v1alpha2`). `extensions: null`, null arms, unknown fields and other versions are refused. |
-| `bindings.yaml` | Creation-target `kmx.kaimahi.dev/v1alpha1` `OrkaBindings` or `KagentBindings`; Orka lift supplies new target bindings rather than copying these. |
+| `bindings.yaml` | `kmx.kaimahi.dev/v1alpha1` `OrkaBindings` or `KagentBindings`; Orka lift supplies new target bindings rather than copying these. Explicit v0.10.3 bundle lift/status uses KagentBindings here or from `--bindings`; status requires the same desired binding input. |
 | `eval/*.yaml` | One case per file with `id`, nonblank `input`, and at least one `expectContains` entry or typed `assertions` entry (or both); **no** `apiVersion` field. See [assertion schema](agent-lift.md#evaluating-a-deployed-revision). |
 | `lift-policy.yaml` | Optional strict YAML mapping of destination and evaluated cluster UID/namespace rules; **no** `apiVersion` field. See [the evaluation gate](agent-lift.md#requiring-evaluation-before-lift). |
+| Exact-v0.10.3 lift receipts | Private readiness evidence in `receipts/kagent-v0.10.3/`, binding runtime/version, cluster/namespace, primary/deployment UIDs and portable/rendered digests. Separate from create, Orka, eval and execution evidence; no kagent remembered selection. |
 | Orka lift receipts and remembered target | JSON with **no** format-version field or version negotiation. Remembered selections live in local kmx state, outside the bundle and Git. |
 | Orka evaluation receipts | New writers use `schemaVersion: 2`, `runID`, per-case source/input digests and payload-free assertion rows, plus existing revision/target/Task evidence and the target model identity. Legacy unversioned receipts remain readable subject to evidence checks. |
 | Agentsessions evaluation receipts | New writers use `schemaVersion: 2` and the same run/assertion fields. The separate version-1 `target.identity` remains `host-reported` address, returned harness and journal-observed model; each case retains session UID, journal head and output digest. No verified descriptor or lift-gate support. See [sessions evaluation](agent-lift.md#evaluating-on-agentsessions). |
@@ -33,7 +34,10 @@ rejects those fields even though the version string is unchanged. Persistent
 `agent.yaml`/`bindings.yaml` bundles first shipped in v0.3.0.
 
 A core-only document with absent or empty `extensions` can be rendered to Orka;
-Kagent rendering still requires an explicit `extensions.kagent.runtime` choice.
+explicit v0.10.3 bundle rendering selects Go for core-only definitions. The
+v0.10.2 create renderer still requires `extensions.kagent.runtime`. An explicit
+extension binds native behavior; it is not permission to ignore unsupported
+fields or to auto-select a runtime.
 `spec.coordination.allowedAgents` is optional portable-core behavior: when present
 it must name at least one distinct, non-self helper in the destination scope.
 It never permits all Agents. Orka renders it as enabled coordination with exactly
@@ -67,7 +71,7 @@ The **rendered digest** instead identifies the exact ordered rendered documents
 byte length. It depends on target bindings and the kmx renderer. An upgraded
 kmx can produce different output—and a different rendered digest—from the
 same `agent.yaml` against the same target; the portable digest still matches.
-Status compares the live Provider and Agent against today's target-specific
+Orka status compares the live Provider and Agent against today's target-specific
 rendering using a server dry-run. With matching ownership markers it reports
 `drifted` and changed field **paths** when fields differ, or `in sync` when
 both fields and markers agree. A stale rendered-digest ownership marker on an
@@ -160,13 +164,20 @@ judge identity makes diff incomplete/nonzero, not a fix/regression, and valid
 comparable rows report both scores. Readability is not a general
 migration or cross-version compatibility promise for local evidence.
 
-Status skips malformed deployment receipts and reports `none` for evaluation
+Orka status skips malformed deployment receipts and reports `none` for evaluation
 receipts with invalid JSON shape or mismatched target identity or digests.
 V2 receipts require valid per-case assertion and judge evidence even for
 recorded `fail` and `unknown` outcomes. A claimed evaluation pass additionally
 requires complete passing evidence matching today's authored assertions.
 A malformed remembered selection is refused as ambiguous. Another kmx version's
 readable receipt does not by itself establish that today's bundle or target was tested.
+
+The explicit v0.10.3 path refuses malformed selected deployment evidence as
+unreadable. It re-renders desired bindings, checks saved UIDs/digests/dependencies
+and reports drift rather than repairing it. No-flag Orka readers exclude foreign
+runtime receipts but continue to accept historical runtime-less Orka receipts.
+A v0.10.2 create receipt cannot authorize v0.10.3 reuse; matching names or labels
+are insufficient. See [exact-version placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
 
 Today kmx recognizes the Orka and Kagent extension versions above, but no
 negotiation for future versions. The optional

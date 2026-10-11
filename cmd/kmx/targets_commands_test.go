@@ -45,6 +45,7 @@ func TestTargetsOfflineDoesNotLoadConfigOrTools(t *testing.T) {
 				SchemaVersion int `json:"schemaVersion"`
 				Targets       []struct {
 					ID, DisplayName, Kind, SupportTier string
+					QualifiedVersions                  []struct{ Version, Scope, Evidence string }
 					Capabilities                       []struct {
 						Operation string
 						Supported bool
@@ -61,16 +62,24 @@ func TestTargetsOfflineDoesNotLoadConfigOrTools(t *testing.T) {
 			}
 			for i, want := range []string{"agentsessions", "kagent", "orka"} {
 				row := report.Targets[i]
-				wantTier := []string{"eval-only", "create-only", "supported"}[i]
+				wantTier := []string{"eval-only", "version-scoped", "supported"}[i]
 				if row.ID != want || row.SupportTier != wantTier || row.Detection.State != "not-probed" {
 					t.Fatalf("row=%+v", row)
+				}
+				if want == "kagent" {
+					if len(row.QualifiedVersions) != 2 || row.QualifiedVersions[0].Version != "v0.10.2" || row.QualifiedVersions[1].Version != "v0.10.3" || !strings.Contains(row.QualifiedVersions[1].Scope, "Go-only") || !strings.Contains(row.QualifiedVersions[0].Scope, "create only") {
+						t.Fatalf("Kagent version boundaries=%+v", row.QualifiedVersions)
+					}
 				}
 				for _, capability := range row.Capabilities {
 					if !capability.Supported && capability.Reason == "" {
 						t.Fatalf("unexplained refusal: %+v", capability)
 					}
-					if want == "kagent" && capability.Supported && capability.Operation != "render" && capability.Operation != "deploy" {
+					if want == "kagent" && capability.Supported && capability.Operation != "render" && capability.Operation != "deploy" && capability.Operation != "status" {
 						t.Fatalf("expanded Kagent support: %+v", capability)
+					}
+					if want == "kagent" && capability.Supported && capability.Operation == "status" && (!strings.Contains(capability.Reason, "v0.10.3 Go-only") || !strings.Contains(capability.Reason, "readiness")) {
+						t.Fatalf("Kagent status boundary=%+v", capability)
 					}
 					if want == "agentsessions" && capability.Supported && capability.Operation != "evaluate" && capability.Operation != "verify" {
 						t.Fatalf("expanded Sessions support: %+v", capability)

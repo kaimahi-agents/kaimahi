@@ -48,6 +48,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `kmx agent create --runtime kagent <name>` creates on preinstalled exact kagent v0.10.2, optionally sending one task; Orka remains the default.
   Create-only, with no rollback or ambiguous retry; kagent and Service-proxy audits may retain conversation content. [Prerequisites and limits](docs/kmx.md#explicit-kagent-v0102-create).
 
+- Explicit `kmx agent lift` and `kmx agent status` with `--runtime kagent --runtime-version v0.10.3` support Go declarative bundles on an operator-prepared target with `--to-context` and desired `KagentBindings`.
+  Lift is create-only or complete UID-bound receipt reuse, with no adoption/update; receipts prove readiness, not execution. [Version-qualified placement](docs/agent-lift.md#exact-v0103-declarative-bundle-placement).
+
 - Upcoming signed releases include `checksums.txt.sigstore.json`, a keyless cosign bundle for the four binaries' checksum manifest. Earlier releases and the Homebrew formula are not covered; installers still verify checksums, not signatures automatically. [Verify a release](docs/releases.md#verify-a-release) ([#387](https://github.com/kaimahi-agents/kaimahi/issues/387)).
 
 ### Changed

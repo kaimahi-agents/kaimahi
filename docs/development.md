@@ -8,10 +8,11 @@ For work **on** Kaimahi; contribution/PR expectations are in
 
 **Orka remains the first-class/default platform.** Kaimahi tooling helps
 agents get onto it. `kmx agent create` without a runtime flag authors native
-Orka Provider + Agent resources with an optional Task. The explicit Kagent
-path is intentionally narrower: render and create against an already-installed
-exact v0.10.2, with no installer, upgrade, discovery, chat or later lifecycle
-verbs. It is not a conversion to Orka; see the
+Orka Provider + Agent resources with an optional Task. The explicit kagent
+path is intentionally narrower: create against preinstalled exact v0.10.2,
+and Go declarative bundle lift/status against preinstalled exact v0.10.3.
+There is no installer, upgrade, discovery, standalone chat or evaluation.
+It is not a conversion to Orka; see the
 [safety contract](kmx.md#kmx-agent-create). `orka.harness.v2` is outside the
 direction. Runtimes and harnesses own execution, enforcement and model access.
 
@@ -30,15 +31,16 @@ classification.
 
 | Path | Responsibility |
 |---|---|
-| `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, Orka and narrowly scoped Kagent create adapters, portable authoring, shared plumbing and embedded manifests |
+| `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, Orka and version-bounded kagent lifecycle adapter, portable authoring, shared plumbing and embedded manifests |
 | `pkg/kmx/` | experimental public lifecycle contracts, not wired into the installed CLI |
 | `k8s/ollama.yaml`, `k8s/orka-k8s-tool.yaml` | native local model and read-only Kubernetes Tool |
 | `scripts/`, `Makefile` | checks, packaging and repository helpers |
 | `.github/workflows/` | verification jobs and docs-only routing |
 
 The root CLI is the only Go module. Plain `make` builds `bin/kmx` only. The supported
-Kagent surface is the closed v0.10.2 create scaffold and lifecycle adapter, not
-a general legacy-YAML conversion layer.
+kagent surface is version-qualified create or declarative bundle lift/status,
+not a general legacy-YAML conversion layer. One production LifecycleAdapter
+owns both profiles; experimental public ports remain unwired.
 
 ## Build and verify
 
@@ -109,9 +111,10 @@ with `bin/kmx agent create`, or use `bin/kmx quickstart --interactive` for guide
 creation. `kmx status` is the Orka-only runtime report; bundle-aware
 `agent status` is a separate command.
 
-KMX never installs or upgrades Kagent and drives it only when
-`agent create --runtime kagent` explicitly targets a preinstalled exact
-v0.10.2. The normal development loop remains Orka.
+KMX never installs or upgrades kagent. Explicit create targets exact v0.10.2;
+explicit bundle lift/status uses `--runtime kagent --runtime-version v0.10.3`,
+`--to-context` and validated `KagentBindings`. The normal development loop remains
+Orka; the profiles never fall back between installed runtimes.
 
 Pick a distinct cluster name and explicit context. Keep
 `CONTAINER_ENGINE=podman` consistent if selected; Docker and Podman inventories
@@ -206,6 +209,12 @@ prompt/answer-free two-resource receipt. No hosted credential is used.
 The workflow, not KMX, installs those charts. This proves no standalone Kagent
 operation beyond create's optional single A2A message, no managed-cluster path,
 and no hosted model provider.
+
+Go declarative v0.10.3 plan/lift/repeat/status and a separate native A2A tool
+answer were demonstrated once with an externally prepared kind runtime.
+Deployment readiness is not execution evidence. Dedicated continuous
+qualification is not yet wired; Python deployment, managed clusters and hosted
+providers remain unqualified.
 
 `kmx-clone-free` runs on main/manual dispatch, not as a required PR shard. It
 checks installation, bare `up` and native Orka creation with an actual Task

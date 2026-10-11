@@ -21,10 +21,12 @@ import (
 )
 
 // LiftAgentBundleOptions selects a bundle and a destination independent of
-// kubeconfig's current context. Omitted target and inference reuse only a
-// previous successful lift of this exact local bundle path.
+// kubeconfig's current context. Orka can reuse a successful lift's target and
+// inference for this exact local bundle path; Kagent requires explicit context
+// and version, with destination inputs supplied by KagentBindings.
 type LiftAgentBundleOptions struct {
 	BundleDir, ToContext, ToNamespace, Inference string
+	Runtime, RuntimeVersion, Bindings            string
 	RequireEvaluated, OverrideGate               string
 	Plan                                         bool
 }
@@ -43,9 +45,17 @@ type bundleLiftReceipt struct {
 	GateFailedCondition string                     `json:"gateFailedCondition,omitempty"`
 }
 
-// LiftAgentBundle deploys only an Orka portable agent.yaml. In particular it
-// does not copy a source Provider, credentials or Tasks from another cluster.
+// LiftAgentBundle dispatches portable agent.yaml to Orka reconciliation by
+// default or explicit Kagent create-only lift. Neither copies credentials or
+// Tasks from another cluster; Orka derives bindings from a destination Provider,
+// while Kagent reads author-owned KagentBindings.
 func (a *App) LiftAgentBundle(opt LiftAgentBundleOptions) error {
+	if err := validateBundleRuntime(opt.Runtime, opt.RuntimeVersion, opt.Bindings); err != nil {
+		return err
+	}
+	if opt.Runtime == "kagent" {
+		return a.liftKagentBundle(opt)
+	}
 	ctx := a.operationContext()
 	if a.Cfg == nil || a.Run == nil {
 		return fmt.Errorf("lift requires configured kubectl and streams")

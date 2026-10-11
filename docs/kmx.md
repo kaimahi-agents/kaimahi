@@ -6,11 +6,13 @@ and `kmx agent create` for native Provider + Agent authoring. The selected
 runtime owns execution, enforcement and model access; installing it alone does
 not prove an Agent can answer.
 
-The former broad Kagent integration is not restored. Its installer steps,
-manifests, chat, list/show/status, lift/evaluate, console, quickstart, `up`, and
-AKS payload remain absent or retired. The only current capability is explicit
-`kmx agent create --runtime kagent <name>` against an already-installed exact
-Kagent v0.10.2. Historical lift records remain readable for teardown only.
+The former broad kagent integration is not restored. Its installer steps,
+fixed manifests, chat, list/show, evaluation, console, quickstart, `up` and
+AKS payload remain absent or retired. Explicit create targets preinstalled
+exact v0.10.2; explicit declarative bundle lift/status targets preinstalled
+exact v0.10.3. [Version-qualified placement](agent-lift.md#exact-v0103-declarative-bundle-placement)
+does not adopt or update resources. Historical AKS lift records remain
+readable for teardown only.
 Plane administration, model overlays, migration, governance and preset
 switching are removed, not redirected to replacement commands. Agent editing
 remains retired; its hidden stub points to kubectl. `orka.harness.v2` is outside
@@ -86,7 +88,7 @@ and root `up/down`; those routes remain callable in newer builds with notices
 only on stderr. No removal release is scheduled. See the
 [alignment record](command-semantics.md) for current versus proposed names.
 
-### Current Orka path and explicit Kagent create
+### Current Orka path and explicit version-qualified operations
 
 | Command | Contract / reference |
 |---|---|
@@ -100,9 +102,9 @@ only on stderr. No removal release is scheduled. See the
 | `kmx suite pull <registry/repository:tag-or-digest> --output <directory>` | pull and validate one AgentSuite from an OCI registry, then atomically extract it into a new directory. Prints the resolved digest; tag pulls also print a digest-pinned reference for repeatable pulls. See [registry safety](#registry-authentication). |
 | `kmx suite pull <repository:tag> --from-layout <layout> --output <directory>` | resolve and validate one AgentSuite reference from a local OCI image layout, then atomically extract its content into a new directory. Existing output is never replaced. |
 | `kmx suite validate <path>` | validate an extracted AgentSuite content directory or OCI image layout offline, including strict JSON, canonical identities, closed references, tool locks, build profiles and archive safety. `-o json` emits the validated summary. [AgentSuite specification](../agentsuite/spec.md) |
-| `kmx agent lift <bundle-dir>` | reconcile an existing Orka portable bundle on a prepared destination; Kagent bundles are refused before target reads. `--plan` checks without writing. [Bundle lift](agent-lift.md) |
+| `kmx agent lift <bundle-dir>` | default Orka reconciliation; explicit `--runtime kagent --runtime-version v0.10.3` is new-object declarative placement or complete receipt-bound reuse. No adoption/update in that profile. `--plan` checks without writing. [Bundle lift](agent-lift.md) |
 | `kmx agent retire <bundle-dir>` | delete or release bundle-owned Orka resources after UID, receipt and dependent checks; Kagent bundles are refused before target reads. `--plan` checks without writing. [Bundle retirement](agent-lift.md#retiring-a-bundle-from-a-target) |
-| `kmx agent status <bundle-dir>` | compare an Orka portable Git revision with each recorded target's live Provider and Agent, readiness, drift and evaluation result; Kagent bundles are refused. `--to-context` selects one target, `-o json` emits structured facts. [Bundle status](agent-lift.md#checking-deployed-status) |
+| `kmx agent status <bundle-dir>` | default Orka revision/readiness/drift/evaluation report; explicit `--runtime kagent --runtime-version v0.10.3` reports absent, unreadable, failed readiness, ready or drift against desired bindings and saved identity. `--to-context` selects the target, `-o json` emits facts. [Bundle status](agent-lift.md#checking-deployed-status) |
 | `kmx agent evaluate <bundle-dir>` | run an Orka bundle's `eval/*.yaml` cases as one Task each against the deployed revision, only when it carries the bundle's current portable digest; Kagent bundles are refused. Print answers, evaluate legacy/typed assertions, write private v2 latest and immutable run receipts with digests (never payloads), and exit non-zero unless every case passed. `--sessions <host:port>` selects tool-disabled chat without Kubernetes; both paths always report tool assertions unknown. `llmJudge` explicitly authors rubric/threshold/model/version and uses `--judge-base-url` plus optional `--judge-key-env` (name only), with no defaults or agent-model fallback. Two temperature-zero scores must agree on the threshold side; split/malformed/unavailable is unknown. Input/answer/rubric go to the judge provider; safe terminal reasoning may contain answer text but is not stored in receipts. [Bundle evaluation](agent-lift.md#evaluating-a-deployed-revision) |
 | `kmx agent eval diff <before.json> <after.json>` | offline comparison of explicit v2 full-run receipts: align inputs and assertion IDs/definition digests under compatible runtime identities, allowing different portable revisions. Judge model/version, policy/configuration digests and threshold must match before transitions; comparable rows report both scores. Report changed sets, regressions/fixes and evidence gains/losses without payloads; incompatible, changed/incomplete, regression or lost/unknown evidence exits nonzero. Zero is not an evaluation pass. [Receipt comparison](agent-lift.md#comparing-saved-evaluations-offline) |
 | `kmx agent verify <sessions-receipt.json> --sessions <host:port>` | zero-call local reference reconstruction of agent journal/answer evidence, never judge verdict verification. Valid agent evidence may replay despite unknown judge outcomes; reports count `judgeAssertionsNotVerified` and print a notice when judges exist. No lift gate or host attestation. [Replay verification](agent-lift.md#verifying-a-sessions-receipt) |
@@ -548,10 +550,12 @@ promote the isolated conversion spike to a supported interface.
 
 This is a narrow lifecycle adapter for **render and create only**. It targets an
 already-installed exact Kagent v0.10.2; KMX never installs, upgrades, repairs,
-or otherwise manages Kagent. It does not change the default runtime or restore
-Kagent chat, list, show, status, lift, evaluate, console, interactive `/lift`,
-quickstart, `up`, installer, or AKS payload support. Old AKS lift records remain
-teardown-only.
+or otherwise manages kagent infrastructure. This profile does not change the
+default runtime or enable standalone chat, list, show, evaluation, console,
+interactive `/lift`, quickstart, `up`, installer or AKS payload support.
+Bundle lift/status requires the separate explicit v0.10.3 profile; create's
+exact v0.10.2 successful artifact/receipt contract is retained. Old AKS lift
+records remain teardown-only.
 
 An offline review needs no cluster, kubeconfig read, or tool on `PATH`:
 
@@ -647,10 +651,11 @@ credential.
 After every successful online create, KMX writes a mode-0600
 `KagentCreateReceipt` under the bundle's `receipts/` directory. It records the
 cluster and resource identities and portable/rendered digests, never prompt or
-answer text or system instructions. This receipt does not make the bundle eligible for other lifecycle
-commands: `kmx agent lift`, `status`, `evaluate`, console bundle operations, and
-interactive `/lift` are currently Orka-only and intentionally refuse Kagent
-bundles before target work.
+answer text or system instructions. This receipt does not authorize later
+lifecycle reuse. Explicit v0.10.3 bundle placement requires its own qualified
+target and UID-bound receipt; an existing v0.10.2 deployment is a conflict,
+never adopted or upgraded. Evaluation, console bundle operations and
+interactive `/lift` remain Orka-only.
 
 ### Editing an agent
 

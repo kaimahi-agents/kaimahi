@@ -6,9 +6,10 @@ cluster. It takes a named destination and inference Provider. Interactive
 read-only plan before invoking this operation. A separately confirmed
 **Prepare target** action can install Orka or the quickstart Kubernetes Tool
 before retrying the checks; bundle lift itself never installs them.
-This command is intentionally Orka-only: a portable bundle authored by explicit
-Kagent create is refused before cluster reads. Kagent create receipts do not
-enable lift, status, evaluation, console bundle actions, or interactive `/lift`.
+Orka remains the default. Explicit exact-v0.10.3 declarative bundle lift/status
+is a separate [kagent path](#exact-v0103-declarative-bundle-placement).
+kagent create receipts do not authorize reuse by that path. Evaluation, console
+bundle actions and interactive `/lift` remain Orka-only.
 
 ```console
 kmx agent lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--require-evaluated <context>] [--override-gate "reason"] [--plan]
@@ -29,6 +30,68 @@ bundle's original bindings. The exact bytes of `agent.yaml`, including comments
 and whitespace, determine the portable digest. A rendered digest identifies
 the target-specific rendering. See [bundle format compatibility](bundle-format.md)
 for accepted versions, strict decoding and cross-version behavior.
+
+## Exact-v0.10.3 declarative bundle placement
+
+Select the already-installed target explicitly; no cluster or runtime is
+installed, upgraded or auto-selected:
+
+```bash
+kmx agent lift agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml --plan
+kmx agent lift agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml
+kmx agent status agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml -o json
+```
+
+Both commands use strict `KagentBindings`: destination namespace, model provider
+(`openai` or `anthropic`), optional credential-free baseURL and Secret name/key
+references. Without `--bindings`, they read the bundle's `bindings.yaml` only if
+it is KagentBindings. Supply external bindings again to status; status never
+infers desired configuration from live objects. `--to-namespace`, if supplied,
+must agree with bindings. No remembered Orka selection is read or changed;
+every invocation requires `--to-context`. Orka `--inference` and evaluation
+gates/overrides are refused.
+
+The portable instructions, description and model become a declarative Agent
+and its same-name ModelConfig. The Secret prerequisite is review-only and is
+never applied; provision it separately with a name different from the Agent.
+An explicit kagent extension can grant named tools on at most one existing
+same-namespace RemoteMCPServer. Coordination, skills, Orka-specific behavior,
+implicit tool grants, stdio tools and AgentSuite/image placement are refused,
+not dropped. The qualified v0.10.3 workload uses Go; Python qualification is a
+follow-up. Exact-v0.10.2 create retains its successful artifact and receipt
+contracts; refusal messages now distinguish readiness, drift and unreadable evidence.
+
+Before writing, lift proves the exact controller build, official imageIDs,
+served/storage schemas, namespace watch/RBAC and dependencies, then strictly
+server-dry-runs both new objects. Schema equality alone is insufficient:
+v0.10.2 and v0.10.3 share the Agent/ModelConfig schema hashes. Wrong, ambiguous
+or unreadable qualification refuses rather than falling through to another
+runtime. `--plan` writes no resources, artifact, receipt or selection.
+
+Placement is new-object-only: ModelConfig must become Accepted before Agent
+creation; Agent must become Accepted and Ready for its current generation with
+its verified owned workload. A repeat lift reuses only a complete matching
+saved deployment, primary/workload UIDs, ownership, desired spec/digests and
+dependencies. It performs no adoption, update or automatic rollback. Existing
+unowned objects, changed definitions/bindings, replacements, partial placement
+and missing receipts are conflicts. An ambiguous create stops without retry;
+inspect confirmed creations rather than rerunning a possibly accepted write.
+
+Private receipts under `receipts/kagent-v0.10.3/` bind cluster/namespace,
+resource UIDs, portable/rendered digests and readiness. They contain no prompts,
+answers or Secret values and are separate from evaluation/execution evidence.
+Incomplete deployments get no receipt. A receipt-write failure is reported as
+deployed but unrecorded and requires inspection; matching markers alone never
+authorize reuse. Keep receipts local, not in Git. No-flag Orka commands ignore
+this history and continue to read historical runtime-less Orka receipts.
+
+Read-only status distinguishes absent, unreadable, failed readiness, ready and
+drift. Pending or stale conditions are not ready; inspection without a saved
+receipt is unbound and cannot certify a saved deployment. Status never sends a
+message or records execution success. Standalone run/chat/eval, updates,
+retirement, diff and rollback remain unsupported. Go native A2A execution was
+demonstrated once with an externally prepared kind runtime; dedicated continuous
+qualification is not yet wired. Lift and status do not test an answer.
 
 ## Coordination in `agent.yaml`
 

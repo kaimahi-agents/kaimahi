@@ -605,19 +605,23 @@ func TestKagentInstallationProofRejectsDriftAndAllowsMetricsService(t *testing.T
 		{"wrong-controller-image", "official image"},
 		{"controller-args", "command or arguments"},
 		{"wrong-controller-imageid", "published v0.10.2 digest"},
+		{"status-image-config", "published v0.10.2 digest"},
 		{"wrong-image-config", "image config"},
 		{"wrong-auth", "AUTH_MODE"},
 		{"wrong-label", "app.kubernetes.io/version"},
+		{"pods-missing-items", "0 proven ready pods"}, {"pods-null-list", "0 proven ready pods"},
+		{"pods-null-items", "0 proven ready pods"}, {"pods-empty", "0 proven ready pods"},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
-			a, opt, _, _, dir := kagentCreateFixture(t, tc.scenario)
+			a, opt, out, _, dir := kagentCreateFixture(t, tc.scenario)
 			err := a.CreateAgent(opt)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("error = %v", err)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || out.Len() != 0 {
+				t.Fatalf("installation refusal = %v, stdout=%s", err, out)
 			}
+			assertKagentReadOnlyCalls(t, kagentCalls(t, dir))
 			for _, call := range kagentCalls(t, dir) {
-				if call.Body != nil {
-					t.Fatalf("installation drift reached admission/write: %+v", call)
+				if slices.Contains(call.Args, "replicasets.apps") {
+					t.Fatal("v0.10.2 unexpectedly read ReplicaSets")
 				}
 			}
 			if _, err := os.Stat(filepath.Join(opt.BundlePath, "receipts")); !os.IsNotExist(err) {
@@ -625,9 +629,14 @@ func TestKagentInstallationProofRejectsDriftAndAllowsMetricsService(t *testing.T
 			}
 		})
 	}
-	a, opt, _, _, _ := kagentCreateFixture(t, "")
+	a, opt, _, _, dir := kagentCreateFixture(t, "pod-owner-missing")
 	if err := a.CreateAgent(opt); err != nil {
-		t.Fatalf("same-labeled metrics Service was not tolerated: %v", err)
+		t.Fatalf("same-labeled metrics Service or historical pod ownership was refused: %v", err)
+	}
+	for _, call := range kagentCalls(t, dir) {
+		if slices.Contains(call.Args, "replicasets.apps") {
+			t.Fatal("v0.10.2 unexpectedly read ReplicaSets")
+		}
 	}
 }
 
@@ -1249,6 +1258,8 @@ func TestKagentLifecycleUnsupportedVerbsAreTyped(t *testing.T) {
 		t.Fatalf("unconfigured Kagent adapter declares capabilities: %+v", capabilities)
 	}
 	for verb, call := range map[string]func() error{
+		"probe": func() error { _, err := adapter.Probe(t.Context(), agentruntime.Target{}); return err },
+		"chat":  func() error { _, err := adapter.Open(t.Context(), agentruntime.Target{}); return err },
 		agentruntime.VerbStatus: func() error {
 			_, err := adapter.Status(t.Context(), agentruntime.AgentRef{}, agentruntime.StatusOptions{})
 			return err

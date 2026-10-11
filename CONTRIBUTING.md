@@ -17,13 +17,18 @@ the pull request, explain why configuration, integration or an upstream
 contribution cannot provide the requested behavior. Runtimes and harnesses own
 execution, enforcement and model access; KMX should not duplicate them.
 
-Kagent support is intentionally bounded to explicit
-`kmx agent create --runtime kagent <name>` against an already-installed exact
-v0.10.2. Do not infer or add an installer, upgrade path, auto-detection, chat,
-list/show/status, lift/evaluate, console, quickstart, `up`, or AKS payload from
-that adapter. Preserve Orka defaults and keep runtime choice distinct from the
-model-provider choice. A wider cross-runtime authoring/lifecycle surface remains
-an open, unsupported question.
+kagent support is intentionally version-bounded: explicit
+`kmx agent create --runtime kagent <name>` targets preinstalled exact v0.10.2;
+explicit bundle lift/status with `--runtime kagent --runtime-version v0.10.3`
+targets preinstalled exact v0.10.3. Lift creates new Go declarative resources or
+reuses a complete matching UID-bound deployment; it does not adopt or update.
+Deployment receipts prove readiness, not execution success. Go native A2A
+execution was demonstrated once; dedicated continuous qualification is not yet
+wired. Do not infer or add an installer, upgrade path,
+auto-detection, chat, list/show, evaluation, retirement, console, quickstart,
+`up`, or AKS payload from those capabilities. Preserve Orka defaults and
+v0.10.2 create; runtime choice remains distinct from model-provider choice.
+Wider cross-runtime lifecycle remains unsupported.
 
 New to the codebase? [`docs/development.md`](docs/development.md) covers the
 architecture, the build, and the mistakes that are easy to make here, and
@@ -82,7 +87,7 @@ One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), the public
 AgentSuite format package (`agentsuite`), and the application interface
 (`pkg/kmx`). AgentSuite does not have a separate module or version pin; root
 `go test ./...` tests it alongside the CLI, including first-class Orka paths
-and the narrowly scoped Kagent v0.10.2 create adapter.
+and bounded kagent v0.10.2 create/v0.10.3 bundle lift/status.
 Plane commands, administration, the source module (including checked-in SQL),
 build helper, embedded assets and plane-only scripts/fixtures are removed.
 Historical source remains in Git history. This cleanup deletes no deployed

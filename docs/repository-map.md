@@ -4,9 +4,11 @@
 agents onto it.** The installed CLI creates and runs agents on Kubernetes.
 Runtimes and harnesses own execution, enforcement and model access. Native
 Orka authoring, Provider configuration, host inference, bundle lifecycle,
-AgentSuite validation and evaluation remain. Explicit Kagent create targets an
-already-installed exact v0.10.2, optionally followed by one A2A message in that
-same invocation. Installation and later lifecycle are unsupported.
+AgentSuite validation and evaluation remain. Explicit kagent create targets
+preinstalled exact v0.10.2, optionally followed by one A2A message in that
+invocation. Explicit Go declarative bundle lift/status targets preinstalled exact
+v0.10.3, with new-object placement or matching UID-bound reuse. No installation,
+updates, adoption or later execution/evaluation/retirement surface is enabled.
 Root status delegates the Orka-only runtime report; bundle-aware agent status
 is separate.
 
@@ -54,7 +56,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (39 files) | **Installed** | Explicit context/local entry points and hidden compatibility routes, native agent creation and execution, Orka install/status, quickstart and local setup, guarded AKS lifecycle, interactive console/chat, read-only runtime targets, offline AgentSuite validation and artifact operations, exact Kagent v0.10.2 create, bundle lift/status/evaluation and local-reference replay verification, typed evaluation assertions including explicitly configured two-sample `llmJudge`, offline v2 receipt comparison across revisions through `agent eval diff` with judge identity/score checks, agent-only replay with unverified judge counts, safe retirement and Task results. Root help describes creating and running agents on Kubernetes; root status reports only Orka. |
+| `cmd/kmx` (40 files) | **Installed** | Explicit context/local entry points and hidden compatibility routes, native agent creation and execution, Orka install/status, quickstart and local setup, guarded AKS lifecycle, interactive console/chat, read-only runtime targets, offline AgentSuite validation and artifact operations, exact kagent v0.10.2 create and explicit v0.10.3 bundle lift/status, Orka bundle lifecycle/evaluation and local-reference replay verification, typed evaluation assertions including explicitly configured two-sample `llmJudge`, offline v2 receipt comparison across revisions through `agent eval diff` with judge identity/score checks, agent-only replay with unverified judge counts, safe retirement and Task results. Root help describes creating and running agents on Kubernetes; root status reports only Orka. |
 
 ## `agentsuite/` — public specification package
 
@@ -104,7 +106,7 @@ files or judge cases in the live CLI agent fixture.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 99 | Installed | Command orchestration, native Orka lifecycle and run views, exact Kagent v0.10.2 create-only adapter and online proof, agent bundle persistence, lift/evaluation gates, Sessions evidence and replay verification, strict receipt verification, bounded OpenAI-compatible judge I/O in `agent_bundle_judge.go` with explicit transport/identity and two temperature-zero threshold-side samples, private immutable evaluation run history and offline payload-free receipt diff with judge identity/scores, agent-only replay that does not verify judge outcomes, Task execution/results, interactive console and shared chat UI, host inference, native platform operations, guarded cloud setup and historical ownership teardown. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`. |
+| `kmx/app` | 104 | Installed | Command orchestration, native Orka lifecycle and run views, version-bounded kagent v0.10.2 create/v0.10.3 bundle lift/status adapter and online proof, agent bundle persistence, lift/evaluation gates, Sessions evidence and replay verification, strict receipt verification, bounded OpenAI-compatible judge I/O in `agent_bundle_judge.go` with explicit transport/identity and two temperature-zero threshold-side samples, private immutable evaluation run history and offline payload-free receipt diff with judge identity/scores, agent-only replay that does not verify judge outcomes, Task execution/results, interactive console and shared chat UI, host inference, native platform operations, guarded cloud setup and historical ownership teardown. The eight kagent non-test files are `create_kagent.go`, `kagent_create_online.go`, `runtime_kagent_lifecycle.go`, `kagent_profile.go` and the four `kagent_bundle_{lift,deploy,receipt,status}.go` files. |
 | `kmx/agentsessions` | 5 | Installed | Read-only bounded Sessions availability probe, Sessions gRPC evaluation and read-only replay adapters, verified remote TLS transport and syntactic destination comparison, per-case chat execution, journal evidence projection, ephemeral invocation name/count correlation (20,000 records, 64 MiB, 256 pending calls) and bounded offline reference-chat reconstruction. Correlation is not tool capability: production tool assertions always remain unknown. No daemon startup, tool enablement, host implementation attestation, descriptor discovery or lift-gate integration. |
 | `kmx/agentsuite` | 8 | Installed | Builder-owned sandbox binding, bounded OCI image-archive metadata parsing, digest and attestation inspection, provider-neutral sandbox build planning, and provider-neutral packing, CAS, and artifact push/pull contracts; portable format validation remains in the public AgentSuite package. |
 | `kmx/agentsuite/agentkit` | 2 | Installed | Experimental AgentKit adapter for the provider-neutral sandbox builder contract; generates input for a digest-pinned AgentKit frontend, invokes the selected Docker buildx builder with the monolithic harness adapter, requests SBOM/provenance attestations where supported, and streams an OCI image-layout tar to App for inspection before publication while explicitly reporting that the runtime base is not composed. |
@@ -280,11 +282,12 @@ and intentionally has no hero image.
 
 ## Open questions — one
 
-1. **Cross-runtime lifecycle scope.** Whether the exact Kagent v0.10.2
-   create-only adapter should ever grow into a general translation or lifecycle
-   surface remains open and unsupported. The current adapter renders Kagent
-   resources directly; it does not translate them to Orka or add Kagent
-   installation, chat, inspection, lift, status, evaluation or console support.
+1. **Wider cross-runtime lifecycle scope.** Exact kagent v0.10.2 create and
+   v0.10.3 declarative bundle lift/status share the production lifecycle seam.
+   The bounded adapter renders native resources, not a translation to Orka.
+   Image placement, standalone run/chat/evaluation, updates, retirement, diff and
+   rollback remain unsupported; infrastructure and console integration are
+   not implied by the qualified verbs.
 
 ## Existing layout
 
