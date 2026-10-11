@@ -216,6 +216,29 @@ Deployment readiness is not execution evidence. Dedicated continuous
 qualification is not yet wired; Python deployment, managed clusters and hosted
 providers remain unqualified.
 
+The checkout-only [bootstrap shell](../scripts/ci/kagent-lift.sh) accepts no
+argument or explicit `bootstrap`; run `bash scripts/ci/kagent-lift.sh bootstrap`
+on Linux amd64 with Docker. It downloads checksum-verified local tools, pins
+the kind node and official v0.10.3 OCI charts, disables optional workloads/UI
+and telemetry, and checks rendered and running image identities. Its
+[driver](../scripts/ci/kagent-lift.py) provisions a private dummy Secret and the
+[keyless model/MCP fixture](../scripts/ci/kagent-lift-fixture.py), then proves
+health and discovery with zero tool calls through an owned loopback forward.
+This is bootstrap characterization, not lift/native A2A qualification.
+
+The script refuses an existing `kmx-kagent-lift` cluster. Kubeconfig, Kubernetes
+discovery cache (`KUBECACHEDIR`), Helm config/cache/data, registry/repository/plugin
+paths and raw tool output stay in private temporary work, removed on exit.
+Inherited `HELM_KUBE*` connection/auth overrides are cleared. Chart pulls use a
+keyless private registry config, also scoped to Helm's Docker credential fallback;
+kind and Docker retain the caller's Docker configuration and daemon access.
+Closed phase/exit-status diagnostics identify failures without replaying payloads. Cleanup deletes the cluster only after successful creation;
+a failed kind create is ambiguous and left for inspection. No caller tools,
+Helm credentials, daemon configuration or unrelated clusters are changed.
+Hygiene unconditionally runs `scripts/test_kagent_lift.py`,
+`scripts/test_kagent_lift_shell.py` and the six HTTP tests in
+`scripts/test_kagent_lift_fixture.py`; it does not run this live bootstrap.
+
 `kmx-clone-free` runs on main/manual dispatch, not as a required PR shard. It
 checks installation, bare `up` and native Orka creation with an actual Task
 answer. Tags trigger the separate release workflow. None of these proves an

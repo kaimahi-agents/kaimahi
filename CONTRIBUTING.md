@@ -56,6 +56,9 @@ bash scripts/check-no-azure-ids-test.sh && bash scripts/check-no-azure-ids.sh
 bash scripts/kube-guard-test.sh
 formatted=$(gofmt -l agentsuite cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go test ./...
 python3 scripts/test_model_fixtures.py -v
+python3 scripts/test_kagent_lift.py -v
+python3 scripts/test_kagent_lift_shell.py -v
+python3 scripts/test_kagent_lift_fixture.py -v
 ```
 
 The checkers above are the ones you can usefully run by hand. CI's hygiene
@@ -97,6 +100,18 @@ conservative teardown support remain.
 For cluster changes, use the documented kind path and a dedicated `KIND_CLUSTER`
 name to avoid changing another developer's cluster. See
 [`docs/getting-started.md`](docs/getting-started.md) for prerequisites.
+
+The checkout-only `bash scripts/ci/kagent-lift.sh bootstrap` prepares pinned
+kagent v0.10.3 charts and a keyless model/MCP fixture in the dedicated
+`kmx-kagent-lift` kind cluster (Linux amd64, Docker required). It refuses a
+preexisting cluster, uses private kubeconfig/discovery cache and Helm state,
+clears inherited Helm connection/auth overrides, and pulls charts without caller
+Helm/Docker credentials or plugins. Docker daemon access is preserved. It removes
+only its owned cluster and temporary work. A failed kind create is ambiguous and
+left for inspection. Bootstrap checks readiness and MCP discovery, not bundle
+lift or native A2A execution qualification; it is not an installed CLI installer.
+Hygiene runs its hermetic validator, shell and loopback fixture tests without
+creating a cluster.
 
 ## Comments
 

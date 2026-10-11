@@ -91,6 +91,11 @@ jobs:
         run: |
           python3 scripts/test_eval_loop.py
           python3 scripts/test_eval_runner.py
+      - name: kagent bootstrap and deterministic fixture self-tests
+        run: |
+          python3 scripts/test_kagent_lift.py
+          python3 scripts/test_kagent_lift_shell.py
+          python3 scripts/test_kagent_lift_fixture.py
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken

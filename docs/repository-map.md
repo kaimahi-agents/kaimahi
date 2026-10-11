@@ -48,7 +48,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `pkg/` | — | — | experimental KMX target and agent lifecycle contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
-| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 40 (checkers, release packaging, native CI runners, mutation specs) |
+| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 46 (checkers, release packaging, native CI runners, bootstrap fixtures, mutation specs) |
 | `docs/` | 33 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -184,9 +184,9 @@ Packaging tests require every retained asset to be readable and reject retired
 plane, egress and observability assets. Setup does not deploy a model plane,
 custom scrape configuration or workbook.
 
-## `scripts/` — 44 tracked files, native helpers and scaffolding
+## `scripts/` — 50 tracked files, native helpers and scaffolding
 
-**Reference coverage:** 34 of the 44 are named by something outside themselves,
+**Reference coverage:** 40 of the 50 are named by something outside themselves,
 and 10 are named by nothing. The ten mutation specifications are discovered by
 glob. Map and repository-map checker mentions are not caller evidence; textual
 references, including script cross-references and test data, are not necessarily
@@ -197,8 +197,8 @@ invocations or active CI coverage.
 | Class | Count | Files |
 |---|---|---|
 | **Embedded packaging** — native provisioning, guard and Tool helpers | 4 | `aks-up.sh`, `aks-down.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
-| **Scaffolding** — checkers, self-tests and release packaging | 22 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py` |
-| **Scaffolding** — native/eval CI fixtures | 7 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 25 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py` |
+| **Scaffolding** — native/eval CI and bootstrap fixtures | 10 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py`, `kagent-lift.sh`, `kagent-lift.py`, `kagent-lift-fixture.py` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
 | **Scaffolding** — retired-command scanner's exact inert exceptions | 1 | `legacy-runtime-allowlist.json` |
 
@@ -235,6 +235,17 @@ configuration merging, kind-node selection, wrapper behavior and successful
 endpoint evidence filtering. Neither file is embedded or installed for users;
 see [CI registry mirrors](development.md#ci-registry-mirrors) for the boundaries
 and pull-evidence contract.
+
+`scripts/ci/kagent-lift.sh` calls the bootstrap-only `kagent-lift.py` driver,
+which loads `kagent-lift-fixture.py`. They prepare exact kagent v0.10.3 in a
+private dedicated kind cluster; bootstrap proves images, readiness and MCP
+discovery, not bundle lift or native A2A execution. Hygiene calls
+`test_kagent_lift.py`, `test_kagent_lift_shell.py` and the six real HTTP tests in
+`test_kagent_lift_fixture.py` without a cluster. The shell tests run the actual
+script with temporary PATH doubles and check failures, environment isolation,
+privacy and owned cleanup. HTTP tests cover malformed nested request shapes with
+fixed errors and no payload logs.
+None of these files is embedded or installed, and no live bootstrap shard is wired.
 
 ## `docs/` — 33 tracked files, native guides and design/history
 
