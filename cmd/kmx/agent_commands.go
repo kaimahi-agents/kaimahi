@@ -63,14 +63,14 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 	var opt app.CreateOptions
 	cmd := &cobra.Command{
 		Use:   "create [name]",
-		Short: "Create an Orka or Kagent declarative Agent",
-		Long: `Create an Orka or Kagent Agent as reviewable Kubernetes YAML.
+		Short: "Create an Orka or kagent declarative Agent",
+		Long: `Create an Orka or kagent Agent as reviewable Kubernetes YAML.
 
 Named creation applies to the selected cluster by default. Use --no-apply to
 validate and write local artifacts without applying, or --dry-run for server
 validation and local artifacts. --out - writes YAML to stdout without applying.
 With --out -, explicitly set --bundle-path to also write an authored bundle.
-Omit the name for guided Orka creation in a terminal; Kagent creation requires a name.
+Omit the name for guided Orka creation in a terminal; kagent creation requires a name.
 Select explicitly the namespace the runtime controller watches. Provider type, model
 identifier and a separately provisioned Secret are required.
 This command does not build or deploy application images. Keep your Deployment
@@ -102,12 +102,12 @@ read RBAC; pinned main requires namespaced get on tasks.core.orka.ai. Results us
 loopback HTTP through a context-pinned port-forward. Fresh names and UID checks
 do not bind returned result bytes to a UID. Dry-run tests neither access nor execution.
 
-Kagent creation:
-With --runtime kagent, create targets a preinstalled exact Kagent v0.10.2 and
-requires a name and --description. --kagent-runtime selects go or python. Kagent tools use exactly
+kagent creation:
+With --runtime kagent, create targets a preinstalled exact kagent v0.10.2 and
+requires a name and --description. --kagent-runtime selects go or python. kagent tools use exactly
 one server:tool1,tool2 binding; its Secret skeleton is review-only, and online
 deployment creates ModelConfig then Agent without adoption or rollback. With
---task, Kagent stores the full task prompt, history, and answer in its database;
+--task, kagent stores the full task prompt, history, and answer in its database;
 default upstream session retention is unlimited. Kubernetes audit policy may
 also capture Service-proxy request and response bodies.`,
 		Example: `  # Guided Orka creation (terminal required)
@@ -124,7 +124,7 @@ also capture Service-proxy request and response bodies.`,
     --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out - --bundle-path agents/preview`,
 	}
 	cmd.Flags().StringVar(&opt.Runtime, "runtime", "orka", "agent runtime: orka or kagent")
-	cmd.Flags().StringVar(&opt.KagentRuntime, "kagent-runtime", "go", "Kagent declarative runtime: go or python")
+	cmd.Flags().StringVar(&opt.KagentRuntime, "kagent-runtime", "go", "kagent declarative runtime: go or python")
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "explicit target namespace; the selected runtime controller must watch it (required)")
 	cmd.Flags().StringVar(&opt.Description, "description", "", "one-line description")
 	cmd.Flags().StringVar(&opt.ProviderType, "provider-type", "", "Provider type: openai, anthropic or azure-openai (required)")
@@ -135,11 +135,11 @@ also capture Service-proxy request and response bodies.`,
 	cmd.Flags().StringVar(&opt.AzureDeployment, "azure-deployment", "", "Azure OpenAI deployment name (required for azure-openai; must match --model)")
 	cmd.Flags().StringVar(&opt.AzureAPIVersion, "azure-api-version", "", "Azure OpenAI API version (optional; omitted from YAML when unset)")
 	cmd.Flags().StringVar(&opt.Instructions, "instructions", "", "file containing the system message")
-	cmd.Flags().StringVar(&opt.Tools, "tools", "", "Orka: comma-separated names; Kagent: exactly one server:tool1,tool2 binding")
+	cmd.Flags().StringVar(&opt.Tools, "tools", "", "Orka: comma-separated names; kagent: exactly one server:tool1,tool2 binding")
 	cmd.Flags().StringVar(&opt.Skills, "skills", "", "comma-separated explicit Orka skill names")
 	cmd.Flags().BoolVar(&opt.Coordination, "coordination", false, "enable agent-to-agent delegation (requires --allowed-agent)")
 	cmd.Flags().StringArrayVar(&opt.AllowedAgents, "allowed-agent", nil, "Agent permitted as a delegation target in this namespace (repeat for each Agent)")
-	cmd.Flags().StringVar(&opt.Task, "task", "", "first prompt: Orka Task or one Kagent A2A message; applying authorizes execution")
+	cmd.Flags().StringVar(&opt.Task, "task", "", "first prompt: Orka Task or one kagent A2A message; applying authorizes execution")
 	cmd.Flags().StringVar(&opt.AgentRequestsPerMinute, "agent-requests-per-minute", "", "explicit positive Agent request limit (int32)")
 	cmd.Flags().StringVar(&opt.AgentTokensPerMinute, "agent-tokens-per-minute", "", "explicit positive Agent token limit (int64)")
 	cmd.Flags().StringVar(&opt.ProviderRequestsPerMinute, "provider-requests-per-minute", "", "explicit positive Provider request limit (int32)")
