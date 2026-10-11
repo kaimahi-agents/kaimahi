@@ -17,7 +17,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"golang.org/x/term"
 )
 
@@ -307,29 +306,6 @@ func (r *chatRenderer) operation(kind, subject string, color actorColor, payload
 		payload = "Tool: " + safeTerminal(subject) + "\n" + payload
 	}
 	r.block(label, color, payload)
-}
-
-func (r *chatRenderer) operationPrompt(kind string, color actorColor, payload, prompt string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.clearLocked()
-	r.spinnerPaused = true
-	r.closeLocked()
-	r.promptText = strings.Join(strings.Fields(safeTerminal(prompt)), " ") + " "
-	r.promptIndent = 2
-	r.promptKind = cliui.FocusQuestion
-	if strings.Contains(strings.ToLower(kind), "approval") {
-		r.promptKind = cliui.FocusApproval
-	}
-	if r.ui.Rich() {
-		fmt.Fprintf(r.out, "%s\n%s\n", r.label("["+kind+"]", color), indentPayload(payload))
-		if !r.cursor || !isTerminal(r.out) {
-			fmt.Fprintf(r.out, "  %s", r.promptText)
-		}
-	} else {
-		fmt.Fprintf(r.out, "%s\n%s\n  %s", r.label("["+kind+"]", color), indentPayload(payload), r.promptText)
-	}
-	r.promptOpen = true
 }
 
 func (r *chatRenderer) beginAssistant(agent string) {
@@ -797,21 +773,6 @@ func safeTerminal(s string) string {
 		}
 	}
 	return out.String()
-}
-
-func (a *App) prepareInteractiveMutation() error {
-	cfg, err := a.kubeconfig()
-	if err != nil {
-		return err
-	}
-	posture, err := guard.Classify(cfg, a.Cfg.KubeContext)
-	if err != nil {
-		return err
-	}
-	if !posture.Local && a.Cfg.Confirm != a.Cfg.KubeContext {
-		return fmt.Errorf("in-chat mutations on context %q require KAIMAHI_CONFIRM=%s before chat starts", a.Cfg.KubeContext, a.Cfg.KubeContext)
-	}
-	return nil
 }
 
 func scanLine(ctx context.Context, reader lineScanner) (string, error) {

@@ -166,13 +166,14 @@ func TestOperationSubjectCannotForgeAProvenanceMarker(t *testing.T) {
 	}
 }
 
-func TestNativePromptStaysInsideItsInteraction(t *testing.T) {
+func TestChatPromptFollowsOperationalDetails(t *testing.T) {
 	var out bytes.Buffer
 	renderer := &chatRenderer{out: &out}
-	renderer.operationPrompt("NATIVE APPROVAL", colorYellow, "Tool: delete_pod\nArguments:\n"+indentPayload(`{"name":"pod-a"}`), "Approve? [y/N]:")
-	want := "[NATIVE APPROVAL]\n  Tool: delete_pod\n  Arguments:\n    {\"name\":\"pod-a\"}\n  Approve? [y/N]: "
+	renderer.operation("TOOL CALL", "delete_pod", colorYellow, "Arguments:\n"+indentPayload(`{"name":"pod-a"}`))
+	renderer.prompt()
+	want := "[TOOL CALL]\n  Tool: delete_pod\n  Arguments:\n    {\"name\":\"pod-a\"}\n\nYOU > "
 	if out.String() != want {
-		t.Fatalf("native prompt detached from interaction:\n%q", out.String())
+		t.Fatalf("chat prompt damaged operational details:\n%q", out.String())
 	}
 }
 
@@ -214,25 +215,5 @@ func TestUpPreflightReportsAllMissingDependencies(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("preflight error lacks %q:\n%s", want, err)
 		}
-	}
-}
-
-func TestInteractiveMutationRequiresRemotePreconfirmation(t *testing.T) {
-	dir := t.TempDir()
-	fakeTool(t, dir, "kubectl", `
-if [ "$*" = "config view -o json" ]; then
-  printf '{"contexts":[{"name":"prod","context":{"cluster":"prod"}}],"clusters":[{"name":"prod","cluster":{"server":"https://prod.example"}}]}'
-  exit 0
-fi
-exit 99`)
-	t.Setenv("PATH", dir)
-	a := &App{Cfg: &config.Config{KubeContext: "prod"}, Run: &run.Runner{}}
-	err := a.prepareInteractiveMutation()
-	if err == nil || !strings.Contains(err.Error(), "KAIMAHI_CONFIRM=prod before chat starts") {
-		t.Fatalf("remote mutation did not require preconfirmation: %v", err)
-	}
-	a.Cfg.Confirm = "prod"
-	if err := a.prepareInteractiveMutation(); err != nil {
-		t.Fatalf("matching preconfirmation was refused: %v", err)
 	}
 }
