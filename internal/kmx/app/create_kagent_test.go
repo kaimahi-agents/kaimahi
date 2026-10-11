@@ -68,15 +68,12 @@ func kagentCreateFixture(t *testing.T, scenario string) (*App, CreateOptions, *b
 	t.Setenv("KMX_KAGENT_TEST_SCENARIO", scenario)
 	t.Setenv("KMX_KAGENT_TEST_RUNTIME", "go")
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
-	oldAgentSchema, oldModelSchema := kagentAgentSchemaSHA256, kagentModelSchemaSHA256
-	kagentAgentSchemaSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(`{"type":"object"}`)))
-	kagentModelSchemaSHA256 = kagentAgentSchemaSHA256
-	t.Cleanup(func() {
-		kagentAgentSchemaSHA256, kagentModelSchemaSHA256 = oldAgentSchema, oldModelSchema
-	})
+	profile := kagentCreateProfile()
+	profile.AgentSchema = fmt.Sprintf("%x", sha256.Sum256([]byte(`{"type":"object"}`)))
+	profile.ModelSchema = profile.AgentSchema
 	out, diagnostics := &bytes.Buffer{}, &bytes.Buffer{}
 	runner := &run.Runner{Stdout: out, Stderr: diagnostics, Echo: true}
-	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: runner, Out: out, Err: diagnostics, waitTiming: fastWaitTiming()}
+	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: runner, Out: out, Err: diagnostics, waitTiming: fastWaitTiming(), kagentProfile: &profile}
 	opt := CreateOptions{
 		Runtime: "kagent", KagentRuntime: "go", Name: "sample", Namespace: "agents",
 		Description: "Sample Kagent agent", ProviderType: "openai", Model: "gpt-4o-mini",
@@ -84,6 +81,59 @@ func kagentCreateFixture(t *testing.T, scenario string) (*App, CreateOptions, *b
 		Out: filepath.Join(dir, "sample.yaml"), BundlePath: filepath.Join(dir, "agents", "sample"),
 	}
 	return a, opt, out, diagnostics, dir
+}
+
+func TestKagentCreateProfileDefaultsAndCopies(t *testing.T) {
+	production := &App{}
+	profile := production.selectedKagentProfile()
+	if !profile.validVersion("v0.10.2", "68df64f") || profile.validVersion("v0.10.1", "68df64f") {
+		t.Fatal("default App did not enforce the exact create version")
+	}
+	if err := profile.validateLabels(map[string]string{"app.kubernetes.io/version": "0.10.2", "helm.sh/chart": "kagent-0.10.2"}); err != nil {
+		t.Fatalf("default App refused create labels: %v", err)
+	}
+	profile.Commit = "1234567890abcdef"
+	local := &App{kagentProfile: &profile}
+	if !local.selectedKagentProfile().validVersion("0.10.2", "1234567") || production.selectedKagentProfile().validVersion("0.10.2", "1234567") {
+		t.Fatal("selected commit leaked into the default App")
+	}
+	copy := local.selectedKagentProfile()
+	copy.Commit = "abcdef0123456789"
+	if !local.selectedKagentProfile().validVersion("0.10.2", "1234567") {
+		t.Fatal("editing a returned profile changed its App")
+	}
+}
+
+func TestKagentCreateProfileRuntimeImages(t *testing.T) {
+	profile := kagentCreateProfile()
+	for _, tc := range []struct {
+		runtime, image, repository, digest string
+	}{
+		{"go", "ghcr.io/kagent-dev/kagent/golang-adk:0.10.2", "ghcr.io/kagent-dev/kagent/golang-adk", "922dd44552c55cad46c9e38c9d56b1138a682114e665e89b60caebde8f1952f6"},
+		{"python", "ghcr.io/kagent-dev/kagent/app:0.10.2", "ghcr.io/kagent-dev/kagent/app", "7dfa664fde480f5504098e5937492312c218091996857c32c5269c67e5a1048f"},
+	} {
+		image, repository, digests, err := profile.runtimeImage(tc.runtime)
+		if err != nil || image != tc.image || repository != tc.repository || len(digests) != 3 || digests[1] != tc.digest {
+			t.Fatalf("%s image = %q, %q, %v, %v", tc.runtime, image, repository, digests, err)
+		}
+	}
+	if _, _, _, err := profile.runtimeImage("other"); err == nil {
+		t.Fatal("unknown runtime selected an image")
+	}
+}
+
+func TestKagentCreateProfileIsInvocationLocal(t *testing.T) {
+	fixture, _, _, _, _ := kagentCreateFixture(t, "")
+	production := &App{Cfg: fixture.Cfg, Run: fixture.Run}
+	if _, err := fixture.inspectKagentInstallation(t.Context(), "go", "agents"); err != nil {
+		t.Fatalf("fixture profile refused its schema: %v", err)
+	}
+	if _, err := production.inspectKagentInstallation(t.Context(), "go", "agents"); err == nil || !strings.Contains(err.Error(), "SHA-256") {
+		t.Fatalf("default App accepted another invocation's fixture schema: %v", err)
+	}
+	if _, err := fixture.inspectKagentInstallation(t.Context(), "go", "agents"); err != nil {
+		t.Fatalf("default App changed the fixture profile: %v", err)
+	}
 }
 
 // kagentTestPhaseDeadline leaves setup and all other phase deadlines unchanged.
@@ -598,14 +648,15 @@ func TestKagentControllerReplacementRaceStopsBeforeWrites(t *testing.T) {
 }
 
 func TestPinnedKagentVersionAcceptsOfficialShortCommitOnly(t *testing.T) {
-	if !validPinnedKagentVersion("v0.10.2", kagentPinnedCommit) {
+	profile := kagentCreateProfile()
+	if !profile.validVersion("v0.10.2", kagentPinnedCommit) {
 		t.Fatal("exact Kagent version and commit refused")
 	}
-	if !validPinnedKagentVersion("0.10.2", kagentPinnedCommit[:7]) {
+	if !profile.validVersion("0.10.2", kagentPinnedCommit[:7]) {
 		t.Fatal("official release-style short Kagent commit refused")
 	}
 	for _, commit := range []string{kagentPinnedCommit[:6], "68df64g", kagentPinnedCommit + "0", "1234567"} {
-		if validPinnedKagentVersion("v0.10.2", commit) {
+		if profile.validVersion("v0.10.2", commit) {
 			t.Fatalf("invalid Kagent commit %q accepted", commit)
 		}
 	}

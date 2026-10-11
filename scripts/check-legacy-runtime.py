@@ -138,6 +138,7 @@ SCOPED_SUPPORT_FILES = {
     "production": frozenset({
         "cmd/kmx/agent_commands.go",
         "internal/kmx/app/agent_bundle_evaluate.go",
+        "internal/kmx/app/app.go",
         "internal/kmx/app/create.go",
         "internal/kmx/app/create_kagent.go",
         "internal/kmx/app/kagent_create_online.go",
