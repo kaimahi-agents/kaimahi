@@ -51,11 +51,9 @@ Azure is not needed for the keyless local quickstart.
 
 The local quickstart below is the **supported deterministic Orka first-answer
 path**: it ends with a native Orka Agent answering a question. For guided
-custom authoring and a first answer, use the wizard described below. The old
-Kagent setup steps remain removed; invoking one is still an unknown step.
+custom authoring and a first answer, use the wizard described below.
 KMX does not install or upgrade Kagent; only explicit exact-v0.10.2 create is
 available for an installation an operator already owns.
-`orka.harness.v2` is outside the direction.
 
 Choose a local cluster name you own and pin its context:
 
@@ -146,14 +144,14 @@ covers the pin, existing-install refusal and lack of a supported version upgrade
 Orka setup does not install or upgrade other runtimes or silently repair conflicting installations.
 
 The following compatibility notes describe current builds, not v0.4.1 tutorial steps.
-KMX no longer installs Kagent or its two demonstration agents. Its three old
+KMX no longer installs kagent or its two demonstration agents. Its three old
 `kmx local up --step` names are unknown steps, their manifests are no longer shipped
 in the binary, and agent editing, governance and preset switching remain
 retired. `kmx agent chat` and `kmx agent list` remain Orka-only. The one scoped
 exception is `kmx agent create --runtime kagent <name>` for a preinstalled exact
 v0.10.2; it does not alter this setup or quickstart path.
 
-A cluster that still carries Kagent is untouched by Orka setup. Other than the
+A cluster that still carries kagent is untouched by Orka setup. Other than the
 explicit exact-v0.10.2 create path, operate it with upstream tools or kubectl.
 Owners must deliberately remove or replace obsolete gateway references; setup
 does not repoint existing tools. Interactive `/help` lists local controls.
@@ -180,11 +178,11 @@ No-name terminal invocation offers a wizard. `agent chat` and `agent list --name
 are Orka-only; edit a live Agent with `kubectl edit agents.core.orka.ai`.
 BYO images, model-preset and MCP conversion are not provided.
 
-For the separate, advanced Kagent v0.10.2 create-only path in current builds, use the complete
+For the separate, advanced kagent v0.10.2 create-only path in current builds, use the complete
 [create contract](kmx.md#explicit-kagent-v0102-create). Offline rendering
-requires neither an installed Kagent nor a provisioned cluster Secret. Online
+requires neither an installed kagent nor a provisioned cluster Secret. Online
 creation requires both an exact v0.10.2 installation and a separately
-provisioned Secret. Neither mode adds Kagent chat, list, show, status, lift,
+provisioned Secret. Neither mode adds kagent chat, list, show, status, lift,
 evaluate, console, quickstart, `up`, or AKS support.
 
 ## Using Podman instead of Docker
