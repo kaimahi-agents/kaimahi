@@ -32,6 +32,64 @@ func TestContextIsExtractedFromAnywhere(t *testing.T) {
 	}
 }
 
+func TestContextExtractionStopsAtEndOfOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		argv     []string
+		wantKept []string
+		wantCtx  string
+	}{
+		{
+			name:     "message is not a target selector",
+			argv:     []string{"agent", "chat", "hello", "--", "--context", "other"},
+			wantKept: []string{"agent", "chat", "hello", "--", "--context", "other"},
+		},
+		{
+			name:     "leading selector survives message data",
+			argv:     []string{"--context", "kind-x", "agent", "chat", "hello", "--", "--context", "other"},
+			wantKept: []string{"agent", "chat", "hello", "--", "--context", "other"},
+			wantCtx:  "kind-x",
+		},
+		{
+			name:     "interspersed inline selector survives message data",
+			argv:     []string{"agent", "chat", "hello", "--context=kind-x", "--", "--context=other"},
+			wantKept: []string{"agent", "chat", "hello", "--", "--context=other"},
+			wantCtx:  "kind-x",
+		},
+		{
+			name:     "legacy selectors respect the delimiter",
+			argv:     []string{"agent", "chat", "hello", "-context=kind-x", "--", "-context", "other"},
+			wantKept: []string{"agent", "chat", "hello", "--", "-context", "other"},
+			wantCtx:  "kind-x",
+		},
+		{
+			name:     "incomplete selector is literal message data",
+			argv:     []string{"agent", "chat", "hello", "--", "--context"},
+			wantKept: []string{"agent", "chat", "hello", "--", "--context"},
+		},
+		{
+			name:     "empty inline selector is literal message data",
+			argv:     []string{"agent", "chat", "hello", "--", "--context="},
+			wantKept: []string{"agent", "chat", "hello", "--", "--context="},
+		},
+		{
+			name:     "plain trailing delimiter is retained",
+			argv:     []string{"agent", "chat", "hello", "--"},
+			wantKept: []string{"agent", "chat", "hello", "--"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			kept, context, err := extractContext(tc.argv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(kept, tc.wantKept) || context != tc.wantCtx {
+				t.Fatalf("%v -> kept %v, context %q; want kept %v, context %q", tc.argv, kept, context, tc.wantKept, tc.wantCtx)
+			}
+		})
+	}
+}
+
 func TestChatMessageIsJoined(t *testing.T) {
 	if got := joinArgs([]string{"what", "pods", "run?"}); got != "what pods run?" {
 		t.Fatalf("message=%q", got)
