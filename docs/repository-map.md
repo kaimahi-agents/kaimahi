@@ -47,7 +47,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
 | `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 40 (checkers, release packaging, native CI runners, mutation specs) |
-| `docs/` | 33 tracked files; native guides, design and history | — | maintainer and process docs |
+| `docs/` | 34 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
@@ -234,21 +234,22 @@ endpoint evidence filtering. Neither file is embedded or installed for users;
 see [CI registry mirrors](development.md#ci-registry-mirrors) for the boundaries
 and pull-evidence contract.
 
-## `docs/` — 33 tracked files, native guides and design/history
+## `docs/` — 34 tracked files, native guides and design/history
 
 **Guides and index (14):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `releases.md`, `FAQ.md`, `orka.md`,
 `copilot-inference.md`, `interactive-chat.md`, `interactive-lift.md`,
 `orka-k8s-tool.md`, `bundle-format.md` and `runtime-adapters.md`.
 
-**Maintainer and process (19):** `development.md`, `repository-map.md`,
+**Maintainer and process (20):** `development.md`, `repository-map.md`,
 `entry-point-principles.md`,
 `cli-ux-plan.md`, `command-conventions.md`, `charm-ux-followup-plan.md`,
 `interactive-agent-tui-plan.md`, `NAMING.md`, `kmx-lifecycle-interfaces.md`,
 `kmx-application-api.md`, `kmx-public-interface.md`,
 `azure-discovery-performance.md`, `copilot-performance.md`, `orka-latency.md`,
 `orka-startup-performance.md`, `local-foundry-inference.md`,
-`chat-performance-profile.md`, `agent-lift.md` and `command-semantics.md`.
+`chat-performance-profile.md`, `agent-lift.md`, `command-semantics.md` and
+`suite-first-lifecycle.md`.
 
 ## `brand/` — identity assets
 
