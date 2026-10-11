@@ -137,15 +137,36 @@ endpoint, `kmx agent evaluate` runs the tiny public bundle in
 the literal substrings `Paris` and `4` respectively, not exact answer wording.
 The capital case also exercises a Go RE2 pattern and `notContains` assertion.
 Tool assertions are tested as unknown on these tool-disabled paths, not added to
-this passing live fixture. It then stops the model provider, keeps the daemon and journal alive, and
+this passing live fixture. Judge assertions are not part of these live CLI
+agent cases either. Before sessions startup, CI separately opts into the action's
+AIKit-only `judge-proof: 'true'` (default `'false'`).
+`TestLiveEvaluationJudgeAIKitProof` calls the production judge client/evaluator
+with public literal answers and the rubric “100 if exactly YES, otherwise 0”,
+threshold 50, explicitly selecting `qwen-3.5-2b` and the running image SHA-256
+as **user-declared** version. Two temperature-zero calls per answer must yield
+`YES` → `[100, 100]`/pass and `NO` → `[0, 0]`/fail. Unknown is never accepted;
+there are no retries or model substitutions. This is a real provider/client
+boundary, not a live CLI agent-judge end-to-end assertion.
+
+One local run demonstrated those exact scores in **four calls, 17.82 seconds**
+for the judge test, not total runner/build time. The required shard gates the
+same proof on non-docs-only changes; neither this trivial pair nor the agent
+happy cases prove general 2B judge quality. The proof prints safely rendered
+public fixture reasoning and saves actual payload-free rows in `judge-proof.json`.
+
+The shard then stops the model provider, keeps the daemon and journal alive, and
 requires `kmx agent verify` to report every case equivalent with zero model
 calls through local-reference replay.
 
 The job uses the same [eval action](../.github/actions/kmx-eval/action.yml)
 users can run [in their own CI](agent-lift.md#run-evals-in-ci). Evaluation stays
 in the checkout so the receipt names the tested commit. Uploaded artifacts are
-only the payload-free evaluation receipt and verify report, not private session
-evidence or logs. Successful logs omit prompts and answers; failure diagnostics
+only the payload-free evaluation receipt, verify report and public judge-proof
+JSON, not private session evidence or logs. Successful agent-evaluation logs
+omit prompts and answers; the separate public judge proof prints safe reasoning.
+For user-authored judges, reasoning can repeat answer text: terminal output is
+not payload-free, external judge retention applies to input/answer/rubric, and
+private runtime journals remain outside receipt privacy. Failure diagnostics
 print only digest-checked, redacted failing answers, never raw daemon/model logs.
 Hygiene self-tests the evidence/provenance gates and failure diagnostics with
 `scripts/test_eval_loop.py`, and runtime lifecycle/credential handling with

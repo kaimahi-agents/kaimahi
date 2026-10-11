@@ -53,7 +53,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (39 files) | **Installed** | Explicit context/local entry points and hidden compatibility routes, native agent creation and execution, Orka install/status, quickstart and local setup, guarded AKS lifecycle, interactive console/chat, read-only runtime targets, offline AgentSuite validation and artifact operations, exact Kagent v0.10.2 create, bundle lift/status/evaluation and local-reference replay verification, typed evaluation assertions and offline v2 receipt comparison across revisions through `agent eval diff`, safe retirement and Task results. Root help describes creating and running agents on Kubernetes; root status reports only Orka. |
+| `cmd/kmx` (39 files) | **Installed** | Explicit context/local entry points and hidden compatibility routes, native agent creation and execution, Orka install/status, quickstart and local setup, guarded AKS lifecycle, interactive console/chat, read-only runtime targets, offline AgentSuite validation and artifact operations, exact Kagent v0.10.2 create, bundle lift/status/evaluation and local-reference replay verification, typed evaluation assertions including explicitly configured two-sample `llmJudge`, offline v2 receipt comparison across revisions through `agent eval diff` with judge identity/score checks, agent-only replay with unverified judge counts, safe retirement and Task results. Root help describes creating and running agents on Kubernetes; root status reports only Orka. |
 
 ## `internal/` — CLI packages and retained support
 
@@ -67,11 +67,13 @@ Cluster-independent decisions live in packages; shell-out orchestration lives in
 `app` run cloud orchestration, preferences and reuse checks. Interactive lift
 panes use `chat_lift*.go`. Counts exclude Go test files but include non-Go data.
 The test-only kubectl executable under `app/testdata/kubectl` is built separately
-by App tests, not installed with kmx.
+by App tests, not installed with kmx. Judge integration tests and the opt-in
+live production-client proof are test scaffolding, not additional production
+files or judge cases in the live CLI agent fixture.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 98 | Installed | Command orchestration, native Orka lifecycle and run views, exact Kagent v0.10.2 create-only adapter and online proof, agent bundle persistence, lift/evaluation gates, Sessions evidence and replay verification, strict receipt verification, private immutable evaluation run history and offline payload-free receipt diff, Task execution/results, interactive console and shared chat UI, host inference, native platform operations, guarded cloud setup and historical ownership teardown. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`. |
+| `kmx/app` | 99 | Installed | Command orchestration, native Orka lifecycle and run views, exact Kagent v0.10.2 create-only adapter and online proof, agent bundle persistence, lift/evaluation gates, Sessions evidence and replay verification, strict receipt verification, bounded OpenAI-compatible judge I/O in `agent_bundle_judge.go` with explicit transport/identity and two temperature-zero threshold-side samples, private immutable evaluation run history and offline payload-free receipt diff with judge identity/scores, agent-only replay that does not verify judge outcomes, Task execution/results, interactive console and shared chat UI, host inference, native platform operations, guarded cloud setup and historical ownership teardown. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`. |
 | `kmx/agentsessions` | 5 | Installed | Read-only bounded Sessions availability probe, Sessions gRPC evaluation and read-only replay adapters, verified remote TLS transport and syntactic destination comparison, per-case chat execution, journal evidence projection, ephemeral invocation name/count correlation (20,000 records, 64 MiB, 256 pending calls) and bounded offline reference-chat reconstruction. Correlation is not tool capability: production tool assertions always remain unknown. No daemon startup, tool enablement, host implementation attestation, descriptor discovery or lift-gate integration. |
 | `kmx/agentsuite` | 13 | Installed | Strict JSON and JCS identities, OCI image-reference, image-layout, and content-layer validation, OCI image-archive digest and attestation inspection, closed agent/tool-provider/composition/build-profile graph validation, callable Tool contracts, sandbox binding validation, provider-neutral sandbox build planning, and provider-neutral packing, CAS, and artifact push/pull contracts. |
 | `kmx/agentsuite/agentkit` | 2 | Installed | Experimental AgentKit adapter for the provider-neutral sandbox builder contract; generates input for a digest-pinned AgentKit frontend, invokes the selected Docker buildx builder with the monolithic harness adapter, requests SBOM/provenance attestations where supported, and streams an OCI image-layout tar to App for inspection before publication while explicitly reporting that the runtime base is not composed. |
@@ -110,7 +112,7 @@ by App tests, not installed with kmx.
 | `kmx/app/testdata/bundle-format/v0.3.0/eval` | 1 | Scaffolding | First bundle-writer evaluation case. |
 | `kmx/runview` | 1 | Installed | In-memory, runtime-neutral run, Task, agent, hand-off and missing-evidence presentation types. |
 | `kmx/runview/orka` | 1 | Installed | Bounded Orka Task lineage, event and trace reader with caller-scoped reads and safe projection. |
-| `kmx/runtime` | 11 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable Orka/Kagent authoring union, target bindings, strict legacy/typed evaluation cases, RE2 validation, ephemeral assertion evaluation and payload-free result digests. `prepared.go` checks behavior before target-bound rendering; `kagent_bindings.go` adds closed creation-target bindings. Only Orka is registered for chat/discovery. |
+| `kmx/runtime` | 12 | Installed | Platform-neutral adapter/session and lifecycle contracts, identities, capabilities, events, bundle digests, registry, portable Orka/Kagent authoring union, target bindings, strict legacy/typed evaluation cases, RE2 validation, ephemeral assertion evaluation and payload-free result digests. `evaluation_judge.go` owns the versioned judge policy, identity/configuration digests, optional evaluator port evidence and two-score/threshold coherence; HTTP stays in App. `prepared.go` checks behavior before target-bound rendering; `kagent_bindings.go` adds closed creation-target bindings. Only Orka is registered for chat/discovery. |
 | `kmx/lifecycle` | 4 | Scaffolding | Experimental internal platform, AgentSuite, OCI publication and runtime ports; runtime-native documents/bundles, deploy options, recovery interfaces and receipt factories behind the public `pkg/kmx` workflows. |
 | `kmx/scaffold` | 6 | Installed | Native Orka authoring, exact Kagent v0.10.2 review scaffolding in `kagent.go`, shared name validators, YAML helpers and file writing. Model-overlay and migration generators are removed. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
@@ -195,8 +197,13 @@ remain; plane-only fixture servers, clients, source guards and probes are remove
 `.github/actions/kmx-eval` calls `scripts/ci/live-eval-loop.sh` for CI's required
 `e2e-eval-loop` shard and user CI. The runner loads `eval-loop-model.yaml` and
 `eval-loop-warmup.json` in AIKit mode, then calls `eval-loop.py` to gate
-checkout-bound evaluation and optional zero-call local-reference replay. Endpoint
-mode accepts a key only through a named secret environment variable. CI's
+checkout-bound evaluation and optional zero-call local-reference replay.
+The action's AIKit-only `judge-proof` input defaults false; required CI opts in
+to a separate production-client proof using public YES/NO answers, not live
+CLI agent judge cases. It explicitly binds the selected model/image digest,
+requires `[100, 100]`/pass and `[0, 0]`/fail at threshold 50, prints safe public
+reasoning and adds payload-free judge-proof JSON. Unknown never passes.
+Endpoint mode accepts a key only through a named secret environment variable. CI's
 hygiene job calls `scripts/test_eval_loop.py` to check evidence, provenance and
 failure diagnostics, and `scripts/test_eval_runner.py` to check runtime cleanup
 and credential handling. The evaluation shard installs no cluster and uses no
@@ -250,7 +257,7 @@ and intentionally has no hero image.
 | `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Verification gates and tag-driven CLI releases. CI retains all five native e2e shards, their aggregator and native clone-free proof; no plane module or service job remains. Exact-v0.10.2 Kagent charts are external test preconditions that KMX does not install. Clone-free proves installation, bare native setup and an Orka Agent/Task answer. |
 | `.goreleaser.yaml` | **Scaffolding** | GoReleaser config the release workflow builds and renders the Homebrew formula with; publishing reuses that checked artifact set and never pushes the formula to the tap (`skip_upload: true`). |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only changes for CI. |
-| `.github/actions/kmx-eval/` | **Checkout tooling** | Reusable GitHub Action for user bundle evaluation, optional replay and payload-free artifacts; also exercised by required repository CI. |
+| `.github/actions/kmx-eval/` | **Checkout tooling** | Reusable GitHub Action for user bundle evaluation, optional replay, AIKit-only opt-in public production judge proof and payload-free JSON artifacts; also exercised by required repository CI. |
 | `staticcheck.conf` | **Scaffolding** | Root-module lint configuration. |
 | `go.mod`, `go.sum` | **Installed tooling** | Root module dependencies. |
 | `.gitignore` | **Scaffolding** | Checkout exclusions. |

@@ -34,6 +34,25 @@ use these native instructions when invoked by KMX. Standalone script use has
 no KMX ownership receipt, so its fallback names the actual script with quoted
 arguments instead of a deleted Make target or an invented BYO recovery route.
 
+## Evaluation judge selectors (unreleased)
+
+`kmx agent evaluate` accepts `--judge-base-url <url>` and optional
+`--judge-key-env <env-name>` on both Orka and sessions paths. They select only
+judge transport and the credential's environment-variable name, never a secret
+value, judge model or version. Model/version, rubric and integer `minScore`
+belong in explicit `llmJudge` assertions; there is no default endpoint/model or
+agent-model fallback. Empty flags and unused judge configuration after `--case`
+selection are refused before Task/session execution. Completion suggests no
+endpoint/env names and suppresses file completion for both flags.
+
+Existing destination selectors stay unchanged: `--to-context` or a remembered
+Orka target, versus explicit `--sessions`; sessions still conflicts with
+`--to-context` and Orka-only `--result-port`. Judging shares the case deadline
+and never retries or reruns the agent. Safe reasoning goes to terminal stdout,
+not receipts, and may contain answer text. Offline `agent eval diff` and
+`agent verify` do not select a judge endpoint or call a judge; replay explicitly
+reports judge assertions not verified. See [judge behavior and disclosure](agent-lift.md#explicit-llm-judge).
+
 ## Vocabulary
 
 **Decided: keep Create → Prove → Lift.** Lift is the chosen lifecycle verb for

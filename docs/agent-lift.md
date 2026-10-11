@@ -244,8 +244,10 @@ The evaluation destination must already have this same portable revision
 lifted, and its receipt must say `pass` for the current complete `eval/` case
 set and record a passing result for each current case. A schema-version-2
 receipt must also contain every current assertion ID and definition digest,
-with every assertion passing. Legacy receipts can satisfy only legacy
-`expectContains`-only cases, never newly authored typed assertions. A changed
+with every assertion passing. For `llmJudge`, the model/version, evaluator
+policy, authored `minScore` and two valid scores must also establish a pass;
+missing, split or stale judge evidence never satisfies the gate. Legacy receipts
+can satisfy only legacy `expectContains`-only cases, never newly authored typed assertions. A changed
 `agent.yaml` or case file requires another evaluation. If the required
 evaluation identity or matching local evidence cannot be established,
 the lift is refused rather than silently ungated.
@@ -376,7 +378,7 @@ bound to the same digest.
 ## Evaluating a deployed revision
 
 ```console
-kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>] [--case-timeout 5m]
+kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>] [--case-timeout 5m] [--judge-base-url <url>] [--judge-key-env <env-name>]
 ```
 
 Evaluation cases live beside the bundle in `eval/*.yaml`, one case per file:
@@ -414,7 +416,7 @@ assertions:
     pattern: '— the release agent[.!]?$'
 ```
 
-The accepted types and **only** operand field for each are:
+The accepted types and their required operand fields are:
 
 | Type | Operand | Meaning with available evidence |
 |---|---|---|
@@ -423,6 +425,7 @@ The accepted types and **only** operand field for each are:
 | `regex` | `pattern` | Go RE2 pattern matches the answer; anchor it for a whole-answer test. |
 | `toolCalled` | `tool` | Reserved for supported, complete invocation evidence; currently always `unknown`. |
 | `toolNotCalled` | `tool` | Same evidence requirement, including for absence; currently always `unknown`. |
+| `llmJudge` | `rubric`, `minScore`, `judgeModel`, `judgeVersion` | Two explicit judge samples agree on the threshold side; see below. |
 
 Tool assertion syntax is accepted, but this case cannot pass on either current
 production evaluation path:
@@ -439,21 +442,105 @@ assertions:
     tool: delete-resources
 ```
 
-Assertion fields must be strings. `value` and `tool` must be nonblank and
-single-line; `pattern` must be nonblank, valid Go RE2 and at most **1,024
-UTF-8 bytes**, compiled during preflight. Lookaround and backreferences are
-not supported. Unknown fields/types, wrong operand fields (even empty/null),
-duplicate keys, aliases and merge keys are refused. Source and decoded values
-are scanned for credential shapes. `llmJudge` and `llm_judge` are refused:
-there is no judge or fallback to the agent model.
+Except for integer `minScore`, assertion fields must be strings. `value` and
+`tool` must be nonblank and single-line; `pattern` must be nonblank, valid Go
+RE2 and at most **1,024 UTF-8 bytes**, compiled during preflight. Lookaround
+and backreferences are not supported. Unknown fields/types, wrong operand
+fields (even empty/null), duplicate keys, aliases and merge keys are refused.
+Source and decoded values are scanned for credential shapes. `llm_judge` is
+not an accepted spelling.
+
+### Explicit LLM judge
+
+Author the rubric, threshold and judge identity in the case, independently of
+`agent.yaml`'s model. For example, this public case selects the digest-pinned
+AIKit model used by the small judge proof:
+
+```yaml
+id: exact-yes
+input: Return exactly YES.
+assertions:
+  - id: public-answer
+    type: llmJudge
+    rubric: The score is 100 if the answer is exactly YES. Otherwise the score is 0.
+    minScore: 50
+    judgeModel: qwen-3.5-2b
+    judgeVersion: sha256:d838c5eebf533b5b73f67cc7f4984921f87d64d28e4a52d482740b667f46b8b4
+```
+
+`rubric` is required, nonblank and at most 4,096 UTF-8 bytes. `minScore` is a
+required integer from 0 to 100. `judgeModel` and `judgeVersion` are explicit,
+nonblank printable ASCII identities of at most 256 bytes each. The version is
+**user-declared**, not provider attestation: even a `sha256:` value does not
+prove that a remote provider loaded those weights. Choose and maintain an
+identity appropriate to your provider; KMX does not verify the version remotely.
+There is no default judge model, agent-model fallback or default endpoint.
+
+Supply transport separately, for either Orka or sessions evaluation:
+
+```bash
+# The judge endpoint is operator-managed; this command does not start it.
+kmx agent evaluate agents/my-agent --sessions 127.0.0.1:8080 \
+  --judge-base-url http://127.0.0.1:18089/v1
+# JUDGE_API_KEY is injected by your secret store; only its name appears here.
+kmx agent evaluate agents/my-agent --to-context staging \
+  --judge-base-url https://judge.example.com/v1 --judge-key-env JUDGE_API_KEY
+```
+
+`--judge-base-url` names an OpenAI-compatible chat-completions base URL.
+HTTPS with normal certificate verification is required, except keyless HTTP at
+literal `127.0.0.1` or `::1`. URL credentials, query strings, fragments and
+redirects are refused. `--judge-key-env` accepts only an environment-variable
+name matching `[A-Za-z_][A-Za-z0-9_]*`; its nonempty value is read from the
+environment for the HTTPS authorization header, never from argv or a case.
+Explicit empty flags, missing transport for selected judge assertions and
+supplied judge transport with no selected judge assertions are refused before
+any Task/session. `--case` selection matters to this preflight.
+
+Each judge assertion attempts two independent **temperature-zero** requests over
+one successfully attributed answer, without retrying a judge request or
+rerunning the agent. The case deadline covers agent execution and both judge
+calls. Input, answer and rubric are delimited untrusted JSON data under a
+versioned system policy that instructs the model not to let them override the
+score/output contract; this is not a guarantee against prompt injection.
+Each sample must return one completed assistant message from the requested
+model, containing only JSON `{"score": <integer 0..100>, "reasoning": <string>}`.
+Reasoning is bounded to 4,096 UTF-8 bytes. Markdown, extra/duplicate/null
+fields in the score object, trailing data, tools, refusals, truncation, out-of-range scores,
+mismatched model identity and transport failures cannot establish a verdict.
+
+| Judge evidence | Assertion verdict |
+|---|---|
+| Both valid scores are at or above `minScore` | `pass` |
+| Both valid scores are below `minScore` | `fail` |
+| Valid scores are on opposite sides of `minScore` | `unknown` |
+| Either response is malformed or unavailable | `unknown`, with no scores retained |
+
+Agreement means the **same threshold side**, not equal scores: at `minScore: 50`,
+`[100, 80]` passes, `[0, 20]` fails and `[49, 50]` is unknown. Both valid scores
+are recorded, never an invented average. Unavailable answers or failed agent
+execution make no judge calls. Direct runtime adapter callers without a judge
+port leave `llmJudge` unknown, never implicitly passing.
+
+Authoring a judge case and choosing its endpoint explicitly consents to sending
+**input, answer and rubric** to that judge. An external provider may retain
+these payloads under its own policy; check access and retention before using
+private data. Receipts retain no payload or reasoning. Valid reasoning is
+credential-checked and safely rendered to terminal stdout, but it may repeat
+answer text or other sensitive application data: **terminal output is not
+payload-free**. Protect terminal/CI logs and private runtime journals separately;
+sessions journals already contain conversation content. Use public or sanitized
+cases where logs are shared.
 
 Before execution, both evaluation paths enforce a conservative **1 MiB receipt
 budget**: 8 KiB for the envelope, 4 KiB per case's metadata and 384 bytes per
-assertion (legacy and typed combined). This permits at most **232 cases with
-one assertion each** before known metadata is added; additional assertions and
-metadata reduce that count. Preflight measures the actual JSON-serialized size
-of the model, bundle and resolved target metadata, including escaping, before
-creating Tasks or sessions. Metadata reserves cover
+ordinary assertion (legacy and typed combined), plus each judge row's bounded
+identity/digest/threshold/score metadata measured in its actual serialized JSON
+form, including escaping. **232 cases with one ordinary assertion each** is an
+upper bound before known metadata is added, not a promise for judge suites;
+additional assertions, judge identities and metadata lower it. Preflight measures
+the actual JSON-serialized size of model, bundle and resolved target metadata
+before creating Tasks or sessions. Metadata reserves cover
 the indented JSON schemas, including escaped session identities and an
 unexpected observed model on failed execution; IDs and digests do not need
 escaping. The writer also checks the exact serialized size, since some runtime
@@ -477,7 +564,8 @@ remote-context guard as other Orka writes.
 Each case is one Orka Task against that Agent, created and read the way
 `kmx agent create --task` does it: the `orka-result-reader` account over a
 pinned loopback port-forward (`--result-port`, default 19180). Each case waits
-for a terminal state within `--case-timeout` (default 5m, at most 9m). A case
+for a terminal state and any judge calls within `--case-timeout` (default 5m,
+at most 9m). A case
 is never retried, because a Task can have side effects, and Tasks are not
 cleaned up.
 
@@ -520,12 +608,27 @@ The receipt records the portable and case-set digests, Git provenance,
 full-case-set marker, target identity (Orka cluster UID, namespace, live Agent
 name/UID and model), and per-case ID, verdict, `caseDigest`, `inputDigest`,
 Task name/UID and answer SHA-256 where observed. Each assertion row contains
-only `id`, `type`, `definitionDigest`, `verdict` and a fixed `reason`.
+`id`, `type`, `definitionDigest`, `verdict` and a fixed `reason`. Only
+`llmJudge` rows additionally carry `judge`: `model`, `modelVersion`,
+`provenance: user-declared`, `evaluatorDigest`, `configurationDigest`,
+`minScore` and, when both samples are valid, `scores` containing both integers.
+Unknown rows retain safe configured identity but omit unavailable scores;
+split rows retain both scores. Non-judge rows cannot carry judge metadata.
+
 `caseDigest` hashes the case file's exact bytes; `inputDigest` hashes the
 exact decoded input bytes; `definitionDigest` hashes the assertion type and
-authored operand, independently of its ID. New receipts omit the legacy
-matched/missing expectation strings. **No answer, input, needle, pattern, tool
-operand, tool arguments/results or model reasoning is persisted in receipts.**
+authored operands, independently of its ID. For judges it also binds rubric,
+threshold, model/version and the versioned evaluator policy. `evaluatorDigest`
+identifies the prompting/parser/two-sample threshold policy;
+`configurationDigest` binds canonical endpoint, model/version and policy,
+excluding the credential. The endpoint itself is not recorded. Offline readers
+validate identity, score ranges and verdict/threshold coherence. A passing lift
+gate also compares the evidence with today's authored model/version, threshold
+and assertion definition. These hashes are identities, not attestations.
+New receipts omit the legacy matched/missing expectation strings. **No answer,
+input, needle, pattern, rubric, tool operand, tool arguments/results or model
+reasoning is persisted in receipts.** Older strict v2 readers refuse the added
+judge metadata; upgrade readers before exchanging judge receipts.
 
 Receipts remain forgeable local evidence, **not intended to be committed**.
 Store latest evidence in the same local workspace used by a gated lift;
@@ -541,7 +644,7 @@ any case is `unknown`.
 ## Evaluating on agentsessions
 
 ```console
-kmx agent evaluate <bundle-dir> --sessions 127.0.0.1:8080 [--case <id>] [--case-timeout 5m]
+kmx agent evaluate <bundle-dir> --sessions 127.0.0.1:8080 [--case <id>] [--case-timeout 5m] [--judge-base-url <url>] [--judge-key-env <env-name>]
 ```
 
 This selects an agentsessions host instead of a deployed Orka target. No
@@ -662,9 +765,16 @@ Existing legacy sessions receipts (without `schemaVersion`/`runID`, with
 version-1 `target.identity`) need no migration where their evidence remains
 valid. Verification also accepts typed schema-version-2 receipts, strictly
 validating their assertion rows and case/aggregate verdict coherence. Each
-case must have a completed `pass` or `fail` evaluation verdict and full
-session/head/model/answer evidence; `unknown` outcomes are refused. A failed
-assertion can replay equivalently without becoming a passing evaluation. Receipts are limited to
+case must have successful agent execution and full session/head/model/answer
+evidence. Valid `pass`/`fail` assertion outcomes can replay; a case or overall
+`unknown` caused only by judge uncertainty can also replay when agent-answer
+evidence is valid. Unavailable answers/execution, unknown ordinary assertions
+and unsupported tool-bearing replay remain refused. Verification makes **zero
+judge calls** and verifies **no judge outcome**, whether pass, fail, split or
+unavailable. When judge rows exist, the report adds `judgeAssertionsNotVerified`
+with their count and the terminal prints an explicit agent-answer/journal-only
+notice; no-judge reports retain their previous shape. A failed assertion can
+replay equivalently without becoming a passing evaluation. Receipts are limited to
 1 MiB and 1,000 cases; journal prefixes to 20,000 records and 64 MiB, with the
 same 1 MiB committed-answer bound as evaluation. Conversation content stays in
 memory during verification and is never printed or written into the report.
@@ -708,7 +818,11 @@ and definition digest, and verdicts are compared only on identical input
 digests and unchanged definitions. The report distinguishes added/removed
 cases and assertions, changed definitions, changed inputs and changed case
 source. An exact-byte case-set change is reported even for comments or
-filenames alone. For unchanged definitions and inputs:
+filenames alone. Judge rows also compare model/version, provenance,
+`evaluatorDigest`, `configurationDigest` and `minScore` before verdict
+transitions; any identity change makes the comparison incomplete/nonzero,
+never a fix or regression. Valid comparable judge rows report both stored
+scores. For unchanged definitions, judge identities and inputs:
 
 | Transition | Report status |
 |---|---|
@@ -719,9 +833,9 @@ filenames alone. For unchanged definitions and inputs:
 | `unknown` → `unknown` | `unknown` |
 | Unchanged known verdict | `stable` |
 
-Output contains only safe identities, types, fixed statuses and digests,
-never inputs, answers, assertion operands or journal payloads. Invalid or
-incompatible inputs, regressions, changed case/assertion sets, changed
+Output contains only safe identities, types, fixed statuses, digests and judge
+scores, never inputs, answers, assertion operands or journal payloads.
+Invalid or incompatible inputs, regressions, changed case/assertion sets, changed
 inputs/definitions/source, lost evidence and remaining unknowns exit nonzero.
 Evidence gains are also reported as an incomplete comparison, not a
 known-to-known comparison. A complete stable comparison or fixes can exit zero **even if both
@@ -779,8 +893,10 @@ The endpoint must use HTTPS; keyless literal-loopback HTTP endpoints are also
 accepted. Never put a key in an input or URL: `model-key-env` is only the name
 of a secret environment variable. The runner passes its value to the daemon's
 model client through the child environment, not argv or a file. It does not
-print CLI, provider or daemon logs. Successful logs contain only summaries and
-timing. On failure it prints the failing answer only if its exact bytes match
+print CLI, provider or daemon logs. Successful agent-evaluation logs contain
+only summaries and timing; the optional public judge proof below also prints
+safely rendered fixture reasoning. On failure it prints the failing answer only
+if its exact bytes match
 the receipt's digest, with known credentials redacted and terminal/workflow
 commands escaped; ambiguous answers or credential-shaped text are withheld.
 Failure answers can still contain sensitive application data: use public or
@@ -793,6 +909,19 @@ model must be `qwen-3.5-2b`. This small model and its 4096-context/64-output-tok
 preset are not a universal quality baseline. `aikit-image` must include
 `@sha256:...`; `aikit-config` can select a model-specific LocalAI config, paired
 with the corresponding `model-name`. No inherited hosted-model key is used.
+
+`judge-proof: 'false'` is the default. Set it to `'true'` only in AIKit mode to
+run the separate production judge client/evaluator against public literal `YES`
+and `NO` answers before sessions startup. The proof requires `qwen-3.5-2b`, even
+when a custom AIKit image/config is supplied. It explicitly selects the running
+AIKit model and its image SHA-256 as user-declared version, with threshold 50:
+`YES` must pass with `[100, 100]`, `NO` must fail with `[0, 0]`. Split,
+malformed, unavailable or other unknown evidence fails the proof; no retries or
+accepted unknowns. The proof adds payload-free `judge-proof.json` with actual
+identity and both assertion rows, and prints safe public fixture reasoning.
+This is **not** a live CLI agent case with `llmJudge`; it does not enable or
+configure judge assertions in the caller's bundle. Repository CI opts into the
+same proof. The trivial pair is not evidence of general 2B judge quality.
 
 The action starts agentsessions on loopback with a private, temporary journal.
 Prefer a compatible released daemon archive through the paired
@@ -813,9 +942,9 @@ to omit it. `case-timeout` defaults to `2m`; `command-timeout` is a separate
 per-command deadline in seconds (default `600`). Adjust the workflow job timeout
 to fit the complete case set; cases are never retried.
 
-Only the fresh payload-free receipt and optional verification report are
-uploaded, including failed results when available. Journals, raw logs, prompts
-and answers are not artifacts. Each invocation uses a fresh private artifact
+Only the fresh payload-free receipt, optional verification report and optional
+public judge-proof JSON are uploaded, including failed results when available.
+Journals, raw logs, prompts and answers are not artifacts. Each invocation uses a fresh private artifact
 directory; before evaluation it removes only KMX's receipt/report for its
 selected sessions endpoint, preserving evidence from other targets. The action
 outputs `receipt`, `verify-report`, `artifact-dir`, `daemon-install` and
@@ -982,9 +1111,11 @@ create/replace. If that permission is unavailable, the comparison is
 Each target also reports its evaluation (`EVAL` in the table, `evaluation` in
 JSON): the recorded `pass`, `fail` or `unknown` result when an evaluation
 receipt exists for that cluster, the live Agent's UID, the bundle's current
-portable digest and the current `eval/` case set; otherwise `none`. A v2
+portable digest and the current `eval/` case set; otherwise `none`. V2 assertion
+and judge evidence is validated even for recorded `fail`/`unknown` results. A v2
 displayed pass additionally requires every current assertion ID and definition
-digest to match and all assertions to pass. Only latest receipts are
+digest to match and all assertions to pass, including two judge scores passing
+today's authored threshold and model/version. Only latest receipts are
 considered, not immutable run archives. A target that is behind, or whose cases changed since the last evaluation, shows
 `none`. Status also shows `GATE` (`gate` in JSON) for each target: `pass`,
 `not required`, `refused: <condition>`, or `unknown` when the destination

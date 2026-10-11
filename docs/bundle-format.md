@@ -82,30 +82,51 @@ performs its usual checks before writing. See [lift and status](agent-lift.md).
 
 Evaluation case files have no version tag; an unknown case field is refused.
 Typed entries require explicit unique assertion IDs, `type`, and exactly its
-operand: `contains`/`notContains` use `value`, `regex` uses `pattern`, and
-`toolCalled`/`toolNotCalled` use `tool`. The `expectContains.*` ID namespace is
-reserved for legacy entries expanded to `contains` rows. Regex patterns are
-Go RE2, nonblank and at most 1,024 UTF-8 bytes; `llmJudge` and `llm_judge` are
-refused. An older reader without typed assertion support refuses `assertions`
-as an unknown field, even though case files still have no version tag.
+operands: `contains`/`notContains` use `value`, `regex` uses `pattern`, and
+`toolCalled`/`toolNotCalled` use `tool`. `llmJudge` requires nonblank `rubric`
+(up to 4,096 UTF-8 bytes), integer `minScore` (0–100), and explicit printable
+ASCII `judgeModel`/`judgeVersion` identities (up to 256 bytes each).
+`llm_judge` is refused. There is no default judge model or endpoint, nor a
+fallback to the agent model. Transport is separately selected with
+`--judge-base-url` and optional `--judge-key-env` (environment name, not a key).
+See [judge configuration and privacy](agent-lift.md#explicit-llm-judge).
+The `expectContains.*` ID namespace is reserved for legacy entries expanded to
+`contains` rows. Regex patterns are Go RE2, nonblank and at most 1,024 UTF-8
+bytes. Older readers without judge support refuse `llmJudge`; readers without
+typed assertion support refuse `assertions` as an unknown field, even though
+case files still have no version tag.
 
 Evaluation preflight reserves 8 KiB per receipt, 4 KiB per case and 384 bytes
-per assertion within the 1 MiB receipt limit. At most 232 cases with one
-assertion each fit before known metadata is added; additional assertions and
-metadata reduce the case count. Preflight adds the actual JSON-serialized sizes
-of model, bundle and target metadata before execution. The exact serialized-size
-check remains for unbounded metadata learned during execution. `--case <id>` selects one case, not an arbitrary subset, and its
-receipt cannot satisfy a full-case lift gate. Reader limits (including the
+per ordinary assertion within the 1 MiB receipt limit, plus actual bounded
+serialized judge identity/digest/threshold/score metadata, including JSON
+escaping. **232 one-ordinary-assertion cases** is only the upper bound before
+known metadata is added; judge rows, additional assertions and metadata lower
+it. Preflight also adds the actual JSON-serialized sizes of model, bundle and
+target metadata before execution. The exact 1 MiB serialized-size writer
+backstop remains for unbounded metadata learned during execution. `--case <id>`
+selects one case, not an arbitrary subset, and its receipt cannot satisfy a full-case lift gate. Reader limits (including the
 1,000-case verification limit) are separate from this execution budget.
 
 Their exact bytes and filenames have a **separate** case-set digest, so
 changing a case does not change the portable revision but invalidates the
 prior evaluation result for that set. V2 receipts additionally record each
 case file's exact-byte `caseDigest`, decoded-input `inputDigest`, and assertion
-`definitionDigest` (type plus authored operand, independent of ID). Assertion
-rows retain only ID, type, definition digest, verdict and fixed reason, not
-operands. Both current production evaluation paths always mark tool assertions
-unknown, including negative assertions with empty or present journals; parser
+`definitionDigest` (type plus authored operands, independent of ID). For a
+judge, that definition also binds rubric, `minScore`, model/version and the
+versioned prompting/parser/threshold policy. Assertion rows retain ID, type,
+definition digest, verdict and fixed reason, not operands. Judge rows additionally
+require `judge` evidence with `model`, `modelVersion`, `provenance: user-declared`,
+`evaluatorDigest`, `configurationDigest` and `minScore`; `scores` records both
+valid integer samples or is absent when either response is unavailable/malformed.
+The evaluator digest identifies policy; the configuration digest binds canonical
+endpoint/model/version/policy without credentials. Model/version are authored
+claims, not provider attestation. Non-judge rows refuse judge metadata.
+Both scores at or above the threshold pass, both below fail, split scores are
+unknown. Offline readers validate this coherence; lift gates also require
+current authored identity/threshold/definition and two passing scores.
+Older strict v2 readers reject the added judge field, despite the unchanged
+schema version. Existing non-judge typed receipts remain readable. Both current
+production evaluation paths always mark tool assertions unknown, including negative assertions with empty or present journals; parser
 support is not runtime tool capability.
 
 New evaluation receipts are v2; deployment receipts and remembered selections
@@ -113,26 +134,37 @@ remain unversioned. Agentsessions versions its limited host identity separately
 from the receipt schema. V2 writers archive each run once in private
 `receipts/runs/eval-<runID>.json` and then update the unchanged latest
 `receipts/eval-<key>.json` filename. Archives never participate in lift-gate or
-status selection. No prompts, answers, assertion operands, tool payloads or
-reasoning are persisted in new evaluation receipts; older Orka receipts can
+status selection. No prompts, answers, assertion operands (including rubric),
+tool payloads or reasoning are persisted in new evaluation receipts. Judge input/answer/rubric
+are sent to the explicitly chosen provider, whose retention policy applies;
+terminal reasoning may repeat answer text. Receipt privacy does not cover
+terminal logs or private sessions journals. Older Orka receipts can
 contain legacy matched/missing expectation text. Keep all local evidence
 private and outside Git.
 
 [Sessions verification](agent-lift.md#verifying-a-sessions-receipt) accepts valid
-legacy and v2 receipts without synthesizing evidence; unknown verdicts and
-unsupported tool-bearing replay remain refused. Verification and
+legacy and v2 receipts without synthesizing evidence. Valid agent-answer
+evidence may replay even with unknown judge outcomes, but unknown ordinary
+assertions, unavailable execution/answers and unsupported tool-bearing replay
+remain refused. Replay makes zero model/judge calls and does not verify any
+judge outcome; `judgeAssertionsNotVerified` counts judge rows in the report
+when nonzero, with an explicit terminal notice. Verification and
 [offline diff](agent-lift.md#comparing-saved-evaluations-offline) strictly reject
 unknown/duplicate JSON members, including case-folded duplicates. Diff
 recognizes legacy receipts but reports them incompatible because they lack
 assertion-level evidence. V2 full runs may compare across different portable
 revisions, but need compatible runtime identities and matching inputs and
-assertion IDs/definitions for verdict comparisons. Readability is not a general
+assertion IDs/definitions for verdict comparisons. Judge model/version,
+provenance, policy/configuration digests and threshold must also match; changed
+judge identity makes diff incomplete/nonzero, not a fix/regression, and valid
+comparable rows report both scores. Readability is not a general
 migration or cross-version compatibility promise for local evidence.
 
 Status skips malformed deployment receipts and reports `none` for evaluation
 receipts with invalid JSON shape or mismatched target identity or digests.
-A claimed evaluation pass also requires complete, valid passing case evidence;
-recorded `fail` and `unknown` outcomes do not receive that per-case validation.
+V2 receipts require valid per-case assertion and judge evidence even for
+recorded `fail` and `unknown` outcomes. A claimed evaluation pass additionally
+requires complete passing evidence matching today's authored assertions.
 A malformed remembered selection is refused as ambiguous. Another kmx version's
 readable receipt does not by itself establish that today's bundle or target was tested.
 
