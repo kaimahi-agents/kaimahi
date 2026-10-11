@@ -54,6 +54,10 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 			return fmt.Errorf("no evaluation case with id %q in %s", opt.Case, agentruntime.EvaluationCaseDir)
 		}
 	}
+	judge, err := newEvaluationJudge(evaluationJudgeConfig{BaseURL: opt.JudgeBaseURL, KeyEnv: opt.JudgeKeyEnv}, cases, a.Out)
+	if err != nil {
+		return err
+	}
 	runID, err := randomHex(16)
 	if err != nil {
 		return err
@@ -87,7 +91,6 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 			PortableDigest: digest, CasesDigest: receipt.CasesDigest,
 			Instructions: portable.Spec.Instructions, Model: portable.Spec.Model.Name, Input: c.Case.Input,
 		})
-		cancel()
 		entry := sessionsEvaluationResult{
 			CaseDigest: agentruntime.EvaluationCaseDigest(files[i].Bytes), InputDigest: agentruntime.EvaluationInputDigest(c.Case.Input),
 			ID: c.Case.ID, Verdict: "unknown", SessionUID: result.SessionUID,
@@ -97,10 +100,7 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 		if result.Output != "" {
 			entry.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(result.Output)
 		}
-		entry.Assertions = agentruntime.EvaluateAssertions(c.Case, agentruntime.EvaluationEvidence{
-			Answer: result.Output, AnswerAvailable: err == nil, ToolSupported: false,
-			ToolCalls: result.ToolCalls, ToolEvidenceComplete: result.ToolEvidenceComplete,
-		})
+		entry.Assertions = evaluateCaseWithJudge(caseCtx, c.Case, agentruntime.EvaluationEvidence{ToolSupported: false}, judge)
 		if err != nil {
 			entry.Detail = evaluationExecutionUnavailable
 			if result.ExecutionFailed {
@@ -109,9 +109,14 @@ func (a *App) evaluateAgentBundleSessions(opt EvaluateAgentBundleOptions) error 
 			}
 		} else {
 			entry.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(result.Output)
-			entry.Verdict = string(agentruntime.EvaluationAssertionsVerdict(entry.Assertions))
-			fmt.Fprintln(a.Out, result.Output)
+			if _, printErr := fmt.Fprintln(a.Out, result.Output); printErr != nil {
+				entry.Detail = evaluationResultUnavailable
+			} else {
+				entry.Assertions = evaluateCaseWithJudge(caseCtx, c.Case, agentruntime.EvaluationEvidence{Answer: result.Output, AnswerAvailable: true, ToolSupported: false, ToolCalls: result.ToolCalls, ToolEvidenceComplete: result.ToolEvidenceComplete}, judge)
+				entry.Verdict = string(agentruntime.EvaluationAssertionsVerdict(entry.Assertions))
+			}
 		}
+		cancel()
 		line := fmt.Sprintf("%s: %s", entry.ID, entry.Verdict)
 		if entry.Detail != "" {
 			line += " — " + entry.Detail

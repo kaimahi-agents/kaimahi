@@ -409,7 +409,7 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	if err := session.probe(ctx, ref.Namespace, name); err != nil {
 		return agentruntime.EvaluationReceipt{}, err
 	}
-	receipt := agentruntime.EvaluationReceipt{CaseID: request.CaseID, TaskName: name, Verdict: agentruntime.EvaluationUnknown, Assertions: agentruntime.EvaluateAssertions(c, agentruntime.EvaluationEvidence{ToolSupported: false})}
+	receipt := agentruntime.EvaluationReceipt{CaseID: request.CaseID, TaskName: name, Verdict: agentruntime.EvaluationUnknown, Assertions: evaluateCaseWithJudge(ctx, c, agentruntime.EvaluationEvidence{ToolSupported: false}, request.Judge)}
 	task := map[string]any{
 		"apiVersion": "core.orka.ai/v1alpha1", "kind": "Task",
 		"metadata": map[string]any{"name": name, "namespace": ref.Namespace},
@@ -447,7 +447,7 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 		receipt.Detail = evaluationResultUnavailable
 		return receipt, nil
 	}
-	receipt.Assertions = agentruntime.EvaluateAssertions(c, agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true, ToolSupported: false})
+	receipt.Assertions = evaluateCaseWithJudge(ctx, c, agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true, ToolSupported: false}, request.Judge)
 	receipt.Verdict = agentruntime.EvaluationAssertionsVerdict(receipt.Assertions)
 	return receipt, nil
 }

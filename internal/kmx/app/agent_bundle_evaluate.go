@@ -43,8 +43,9 @@ import (
 type EvaluateAgentBundleOptions struct {
 	BundleDir, ToContext, Case string
 	Sessions, SessionsCA       string
-	// CaseTimeout bounds each case from Task creation to a readable terminal
-	// result. The result session's token lasts ten minutes, so it is capped
+	JudgeBaseURL, JudgeKeyEnv  string
+	// CaseTimeout bounds execution, answer attribution, and both judge calls.
+	// The result session's token lasts ten minutes, so it is capped
 	// below that.
 	CaseTimeout time.Duration
 	ResultPort  string
@@ -166,6 +167,10 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 			return fmt.Errorf("no evaluation case with id %q in %s", opt.Case, agentruntime.EvaluationCaseDir)
 		}
 	}
+	judge, err := newEvaluationJudge(evaluationJudgeConfig{BaseURL: opt.JudgeBaseURL, KeyEnv: opt.JudgeKeyEnv}, cases, a.Out)
+	if err != nil {
+		return err
+	}
 	casesDigest := agentruntime.EvaluationCasesDigest(files)
 	runID, err := randomHex(16)
 	if err != nil {
@@ -247,14 +252,14 @@ func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
 		fmt.Fprintf(a.Out, "\n%s\n", ui.Heading("case "+c.Case.ID))
 		caseCtx, cancel := worker.waitContext(ctx, "orka-evaluation-case", timeout)
 		result, err := adapter.Evaluate(caseCtx, ref, agentruntime.EvaluationRequest{
-			CaseID: c.Case.ID, Input: c.Case.Input, ExpectContains: c.Case.ExpectContains, Assertions: c.Case.Assertions, PortableDigest: portableDigest,
+			CaseID: c.Case.ID, Input: c.Case.Input, ExpectContains: c.Case.ExpectContains, Assertions: c.Case.Assertions, PortableDigest: portableDigest, Judge: judge,
 		})
-		cancel()
 		if err != nil {
 			// Refused before any Task was created: nothing ran, so nothing
 			// passed or failed.
-			result = agentruntime.EvaluationReceipt{CaseID: c.Case.ID, Verdict: agentruntime.EvaluationUnknown, Detail: evaluationExecutionUnavailable, Assertions: agentruntime.EvaluateAssertions(c.Case, agentruntime.EvaluationEvidence{ToolSupported: false})}
+			result = agentruntime.EvaluationReceipt{CaseID: c.Case.ID, Verdict: agentruntime.EvaluationUnknown, Detail: evaluationExecutionUnavailable, Assertions: evaluateCaseWithJudge(caseCtx, c.Case, agentruntime.EvaluationEvidence{ToolSupported: false}, judge)}
 		}
+		cancel()
 		entry := bundleEvaluationResultFrom(result)
 		entry.CaseDigest = agentruntime.EvaluationCaseDigest(files[i].Bytes)
 		entry.InputDigest = agentruntime.EvaluationInputDigest(c.Case.Input)
@@ -443,6 +448,15 @@ func loadBundleEvaluationCases(bundle string) ([]bundleEvaluationCase, []agentru
 		return nil, nil, fmt.Errorf("bundle %s/ has no *.yaml cases", agentruntime.EvaluationCaseDir)
 	}
 	return cases, files, nil
+}
+
+// A configured callback returns all rows, including safe identity when the
+// answer is unavailable. Nil ports retain the pure runtime unknown behavior.
+func evaluateCaseWithJudge(ctx context.Context, c agentruntime.EvaluationCase, evidence agentruntime.EvaluationEvidence, judge agentruntime.EvaluationJudge) []agentruntime.EvaluationAssertionResult {
+	if judge != nil {
+		return judge(ctx, c, evidence)
+	}
+	return agentruntime.EvaluateAssertions(c, evidence)
 }
 
 func bundleEvaluationResultFrom(result agentruntime.EvaluationReceipt) bundleEvaluationResult {

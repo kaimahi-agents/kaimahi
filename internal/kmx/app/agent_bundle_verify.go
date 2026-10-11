@@ -28,13 +28,14 @@ type VerifyAgentSessionsOptions struct {
 }
 
 type sessionsVerificationReceipt struct {
-	Version             int                        `json:"version"`
-	SourceReceiptSHA256 string                     `json:"sourceReceiptSHA256"`
-	ReferenceRevision   string                     `json:"referenceRevision"`
-	HostImplementation  string                     `json:"hostImplementation"`
-	Address             string                     `json:"address"`
-	Result              string                     `json:"result"`
-	Cases               []sessionsVerificationCase `json:"cases"`
+	Version                    int                        `json:"version"`
+	SourceReceiptSHA256        string                     `json:"sourceReceiptSHA256"`
+	ReferenceRevision          string                     `json:"referenceRevision"`
+	HostImplementation         string                     `json:"hostImplementation"`
+	Address                    string                     `json:"address"`
+	Result                     string                     `json:"result"`
+	Cases                      []sessionsVerificationCase `json:"cases"`
+	JudgeAssertionsNotVerified int                        `json:"judgeAssertionsNotVerified,omitempty"`
 }
 
 type sessionsVerificationCase struct {
@@ -90,6 +91,11 @@ func (a *App) VerifyAgentSessions(opt VerifyAgentSessionsOptions) error {
 	sourceHash := sha256.Sum256(raw)
 	report := sessionsVerificationReceipt{Version: 1, SourceReceiptSHA256: fmt.Sprintf("%x", sourceHash), ReferenceRevision: agentsessions.ReferenceRevision, HostImplementation: "unknown", Address: address, Result: "equivalent"}
 	for _, entry := range receipt.Cases {
+		for _, row := range entry.Assertions {
+			if row.Type == "llmJudge" {
+				report.JudgeAssertionsNotVerified++
+			}
+		}
 		result, err := client.VerifyCase(ctx, agentsessions.VerifyRequest{SessionUID: entry.SessionUID, Harness: entry.Harness, Model: entry.Model, Head: agentsessions.JournalHead{Seq: entry.JournalHead.Seq, Hash: entry.JournalHead.Hash}, AnswerSHA256: entry.AnswerSHA256})
 		if err != nil && result.Status == "" {
 			return fmt.Errorf("sessions verification unavailable")
@@ -107,6 +113,9 @@ func (a *App) VerifyAgentSessions(opt VerifyAgentSessionsOptions) error {
 	}
 	if err := writePrivateAgentFile(reportPath, append(reportRaw, '\n')); err != nil {
 		return fmt.Errorf("verification finished but its report was not saved: %w", err)
+	}
+	if report.JudgeAssertionsNotVerified > 0 {
+		fmt.Fprintf(a.Out, "judge assertions not verified: %d (agent answer/journal only; no judge calls or judge equivalence claim)\n", report.JudgeAssertionsNotVerified)
 	}
 	fmt.Fprintf(a.Out, "verification %s (local reference; host implementation/version unknown)\nreport: %s\n", report.Result, reportPath)
 	if report.Result != "equivalent" {
@@ -159,7 +168,7 @@ func readSessionsVerificationSource(path string) (sessionsEvaluationReceipt, []b
 	if receipt.Target.Identity.Version != 1 || receipt.Target.Identity.Provenance != "host-reported" {
 		return receipt, nil, fmt.Errorf("unsupported sessions receipt identity")
 	}
-	if !verificationDigest(receipt.PortableDigest) || !verificationDigest(receipt.CasesDigest) || !verificationIdentity(receipt.Bundle) || len(receipt.Cases) == 0 || len(receipt.Cases) > 1000 || receipt.Result != "pass" && receipt.Result != "fail" {
+	if !verificationDigest(receipt.PortableDigest) || !verificationDigest(receipt.CasesDigest) || !verificationIdentity(receipt.Bundle) || len(receipt.Cases) == 0 || len(receipt.Cases) > 1000 || receipt.Result != "pass" && receipt.Result != "fail" && receipt.Result != "unknown" {
 		return receipt, nil, fmt.Errorf("invalid sessions receipt evidence")
 	}
 	if !evaluationReceiptVersion(receipt.SchemaVersion, receipt.RunID) {
@@ -172,10 +181,20 @@ func readSessionsVerificationSource(path string) (sessionsEvaluationReceipt, []b
 	sessions := map[string]bool{}
 	var outcomes []bundleEvaluationResult
 	for _, c := range receipt.Cases {
-		if !verificationIdentity(c.ID) || !verificationIdentity(c.SessionUID) || !verificationIdentity(c.Harness) || !verificationIdentity(c.Model) || c.ModelMixed || c.Verdict != "pass" && c.Verdict != "fail" || c.JournalHead.Seq < 1 || !verificationDigest(c.JournalHead.Hash) || !verificationDigest(c.AnswerSHA256) || seen[c.ID] || sessions[c.SessionUID] {
+		if !verificationIdentity(c.ID) || !verificationIdentity(c.SessionUID) || !verificationIdentity(c.Harness) || !verificationIdentity(c.Model) || c.ModelMixed || c.Verdict != "pass" && c.Verdict != "fail" && c.Verdict != "unknown" || c.JournalHead.Seq < 1 || !verificationDigest(c.JournalHead.Hash) || !verificationDigest(c.AnswerSHA256) || seen[c.ID] || sessions[c.SessionUID] {
+			return receipt, nil, fmt.Errorf("invalid sessions receipt case evidence")
+		}
+		if c.Detail != "" || c.Verdict == "unknown" && receipt.SchemaVersion != 2 {
 			return receipt, nil, fmt.Errorf("invalid sessions receipt case evidence")
 		}
 		if receipt.SchemaVersion == 2 {
+			// Replay reconstructs a successful agent answer, never a judge outcome.
+			// Unsupported tools and unavailable ordinary answers remain refusals.
+			for _, row := range c.Assertions {
+				if row.Verdict == agentruntime.EvaluationUnknown && (row.Type != "llmJudge" || row.Reason == "answer unavailable") {
+					return receipt, nil, fmt.Errorf("invalid sessions receipt assertion evidence")
+				}
+			}
 			if !evaluationCaseEvidence(c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) {
 				return receipt, nil, fmt.Errorf("invalid sessions receipt assertion evidence")
 			}
@@ -245,7 +264,7 @@ func evaluationReceiptJSONShape(raw []byte, version int, runID string, legacyOrk
 		return false
 	}
 	if version == 2 {
-		return true
+		return evaluationJudgeReceiptJSONShape(raw)
 	}
 	var root map[string]json.RawMessage
 	if json.Unmarshal(raw, &root) != nil {
@@ -270,6 +289,69 @@ func evaluationReceiptJSONShape(raw []byte, version int, runID string, legacyOrk
 	return true
 }
 
+// Required raw judge members cannot be inferred from typed zero values.
+func evaluationJudgeReceiptJSONShape(raw []byte) bool {
+	var root struct {
+		Cases []struct {
+			Assertions []map[string]json.RawMessage `json:"assertions"`
+		} `json:"cases"`
+	}
+	if json.Unmarshal(raw, &root) != nil {
+		return false
+	}
+	for _, c := range root.Cases {
+		for _, row := range c.Assertions {
+			var typ string
+			var judge json.RawMessage
+			present := false
+			for key, value := range row {
+				if strings.EqualFold(key, "type") && json.Unmarshal(value, &typ) != nil {
+					return false
+				}
+				if strings.EqualFold(key, "judge") {
+					judge, present = value, true
+				}
+			}
+			if typ != "llmJudge" {
+				if present {
+					return false
+				}
+				continue
+			}
+			if !present {
+				return false
+			}
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(judge, &fields) != nil || fields == nil {
+				return false
+			}
+			required := map[string]bool{"model": false, "modelVersion": false, "provenance": false, "evaluatorDigest": false, "configurationDigest": false, "minScore": false}
+			for key, value := range fields {
+				if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+					return false
+				}
+				if key == "scores" {
+					var scores []int
+					if json.Unmarshal(value, &scores) != nil || len(scores) != 0 && len(scores) != 2 {
+						return false
+					}
+					continue
+				}
+				if _, ok := required[key]; !ok {
+					return false
+				}
+				required[key] = true
+			}
+			for _, present := range required {
+				if !present {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
 // These payload-free checks are shared with offline v2 receipt consumers.
 func evaluationReceiptVersion(version int, runID string) bool {
 	return version == 0 && runID == "" || version == 2 && evaluationRunID(runID)
@@ -283,11 +365,32 @@ func evaluationAssertionRows(rows []agentruntime.EvaluationAssertionResult) bool
 	}
 	seen := make(map[string]bool, len(rows))
 	for _, row := range rows {
-		if !evaluationEvidenceID.MatchString(row.ID) || !verificationIdentity(row.ID) || seen[row.ID] || !verificationDigest(row.DefinitionDigest) {
+		if !evaluationEvidenceID.MatchString(row.ID) || !verificationIdentity(row.ID) || seen[row.ID] || !verificationDigest(row.DefinitionDigest) || !agentruntime.EvaluationJudgeEvidenceValid(row) {
 			return false
 		}
 		seen[row.ID] = true
 		switch row.Type {
+		case "llmJudge":
+			switch row.Verdict {
+			case agentruntime.EvaluationPass:
+				if row.Reason != "assertion satisfied" {
+					return false
+				}
+			case agentruntime.EvaluationFail:
+				if row.Reason != "assertion not satisfied" {
+					return false
+				}
+			case agentruntime.EvaluationUnknown:
+				if len(row.Judge.Scores) == 2 {
+					if row.Reason != "judge verdict split" {
+						return false
+					}
+				} else if row.Reason != "answer unavailable" && row.Reason != "judge unavailable" && row.Reason != "judge response unavailable" && row.Reason != "judge response malformed" {
+					return false
+				}
+			default:
+				return false
+			}
 		case "toolCalled", "toolNotCalled":
 			if row.Verdict != agentruntime.EvaluationUnknown || row.Reason != "runtime does not support tools" {
 				return false
@@ -326,7 +429,7 @@ func evaluationCaseEvidence(caseDigest, inputDigest, verdict, detail string, row
 	if detail != "" {
 		// No assertion can claim known evidence when execution attribution failed.
 		for _, row := range rows {
-			if row.Verdict != agentruntime.EvaluationUnknown {
+			if row.Verdict != agentruntime.EvaluationUnknown || row.Judge != nil && len(row.Judge.Scores) != 0 {
 				return false
 			}
 		}

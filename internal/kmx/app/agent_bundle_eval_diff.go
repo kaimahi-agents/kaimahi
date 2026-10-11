@@ -43,6 +43,7 @@ type normalizedEvaluationCase struct {
 type evaluationDiffRow struct {
 	CaseID, AssertionID, BeforeType, AfterType, BeforeDigest, AfterDigest string
 	Before, After, Status                                                 string
+	BeforeScores, AfterScores                                             []int
 }
 
 type evaluationDiffReport struct {
@@ -137,7 +138,7 @@ func readEvaluationDiffSource(path string) (normalizedEvaluation, error) {
 		return invalid()
 	}
 	legacyOrka := target.Target.Runtime == string(agentruntime.Orka) && target.SchemaVersion == 0 && target.RunID == ""
-	if !evaluationDiffNullJSON(raw, legacyOrka) {
+	if !evaluationReceiptJSONShape(raw, target.SchemaVersion, target.RunID, legacyOrka) {
 		return invalid()
 	}
 	decode := func(receipt any) bool {
@@ -418,7 +419,15 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 				continue
 			}
 			row.AfterType, row.AfterDigest, row.After = ar.Type, ar.DefinitionDigest, string(ar.Verdict)
+			if br.Judge != nil {
+				row.BeforeScores = br.Judge.Scores
+			}
+			if ar.Judge != nil {
+				row.AfterScores = ar.Judge.Scores
+			}
 			switch {
+			case br.Type == "llmJudge" && ar.Type == "llmJudge" && !evaluationJudgeSameIdentity(br.Judge, ar.Judge):
+				row.Status = "identityChanged"
 			case br.Type != ar.Type || br.DefinitionDigest != ar.DefinitionDigest:
 				row.Status = "definitionChanged"
 			case !sameInput:
@@ -465,6 +474,10 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 	return r
 }
 
+func evaluationJudgeSameIdentity(before, after *agentruntime.EvaluationJudgeEvidence) bool {
+	return before != nil && after != nil && before.Model == after.Model && before.ModelVersion == after.ModelVersion && before.Provenance == after.Provenance && before.EvaluatorDigest == after.EvaluatorDigest && before.ConfigurationDigest == after.ConfigurationDigest && before.MinScore == after.MinScore
+}
+
 func writeEvaluationDiffReport(out io.Writer, r evaluationDiffReport) error {
 	var text strings.Builder
 	for _, item := range []struct {
@@ -480,6 +493,9 @@ func writeEvaluationDiffReport(out io.Writer, r evaluationDiffReport) error {
 		fmt.Fprintln(&text, "CASE\tASSERTION\tTYPE BEFORE/AFTER\tVERDICT BEFORE/AFTER\tSTATUS\tDIGEST BEFORE/AFTER")
 		for _, row := range r.Rows {
 			fmt.Fprintf(&text, "%s\t%s\t%s/%s\t%s/%s\t%s\t%s/%s\n", row.CaseID, orDash(row.AssertionID), orDash(row.BeforeType), orDash(row.AfterType), orDash(row.Before), orDash(row.After), row.Status, orDash(row.BeforeDigest), orDash(row.AfterDigest))
+			if row.BeforeType == "llmJudge" || row.AfterType == "llmJudge" {
+				fmt.Fprintf(&text, "judge scores %s/%s: %v/%v\n", row.CaseID, row.AssertionID, row.BeforeScores, row.AfterScores)
+			}
 		}
 		status := "complete"
 		if r.Regression {

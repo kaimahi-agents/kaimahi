@@ -122,6 +122,13 @@ func readBundleGateEvidence(bundle string) ([]bundleGateEvidence, error) {
 		if decoder.Decode(typed) != nil || !utf8.Valid(raw) || !unambiguousSessionsReceiptJSON(raw) || !evaluationReceiptJSONShape(raw, receipt.SchemaVersion, receipt.RunID, receipt.Target.Runtime == agentruntime.Orka) {
 			return nil, fmt.Errorf("invalid evaluation receipt %s JSON shape", entry.Name())
 		}
+		if receipt.SchemaVersion == 2 {
+			for _, c := range receipt.Cases {
+				if !evaluationCaseEvidence(c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) {
+					return nil, fmt.Errorf("invalid evaluation receipt %s case evidence", entry.Name())
+				}
+			}
+		}
 		evidence = append(evidence, bundleGateEvidence{Receipt: receipt, File: entry.Name()})
 	}
 	return evidence, nil
@@ -238,6 +245,9 @@ func bundleReceiptCaseResultsPass(receipt bundleEvaluationReceipt, cases []bundl
 		for _, definition := range definitions {
 			row, ok := rows[definition.ID]
 			if !ok || row.Type != definition.Type || row.DefinitionDigest != agentruntime.EvaluationAssertionDigest(definition) || row.Verdict != agentruntime.EvaluationPass {
+				return false
+			}
+			if definition.Type == "llmJudge" && (definition.MinScore == nil || row.Judge.Model != definition.JudgeModel || row.Judge.ModelVersion != definition.JudgeVersion || row.Judge.MinScore != *definition.MinScore) {
 				return false
 			}
 		}
