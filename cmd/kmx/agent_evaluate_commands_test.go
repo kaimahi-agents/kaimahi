@@ -9,7 +9,44 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/spf13/cobra"
 )
+
+func TestAgentEvaluateJudgeFlags(t *testing.T) {
+	for _, name := range []string{"judge-base-url", "judge-key-env"} {
+		out := &bytes.Buffer{}
+		cmd := newAgentEvaluateCommand(&commandState{app: &app.App{Out: out}})
+		cmd.SetOut(out)
+		cmd.SetErr(out)
+		cmd.SetArgs([]string{"unused", "--" + name, ""})
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "--"+name+" requires a non-empty") {
+			t.Fatalf("explicit empty accepted: %v", err)
+		}
+		if cmd.Flags().Lookup("judge-model") != nil {
+			t.Fatal("authored model overridden by CLI")
+		}
+		completion, ok := cmd.GetFlagCompletionFunc(name)
+		if !ok {
+			t.Fatal("judge flag would fall back to file completion")
+		}
+		values, directive := completion(cmd, nil, "")
+		if len(values) != 0 || directive&cobra.ShellCompDirectiveNoFileComp == 0 {
+			t.Fatalf("unsafe completion: %v %v", values, directive)
+		}
+	}
+	cmd := newAgentEvaluateCommand(&commandState{app: &app.App{Out: &bytes.Buffer{}}})
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"authored", "temperature 0", "both", "reasoning", "never"} {
+		if !strings.Contains(out.String(), text) {
+			t.Fatalf("help missing %s: %s", text, out)
+		}
+	}
+}
 
 func TestAgentEvaluateSessionsFlagValidation(t *testing.T) {
 	for _, tc := range []struct {
