@@ -50,7 +50,7 @@ Build.
 > [!IMPORTANT]
 > **Kaimahi is experimental and under active development.** Interfaces may change.
 > [!NOTE]
-> KMX is the Agent Builder and lifecycle layer, not a runtime or generic
+> kmx is the Agent Builder and lifecycle layer, not a runtime or generic
 > governance control plane.
 """
 
@@ -65,7 +65,7 @@ for label, literal in [
     ("documentation heading", "## Documentation\n"),
     ("Development heading", "## Development\n"),
     ("experimental notice", "> [!IMPORTANT]\n> **Kaimahi is experimental and under active development.** Interfaces may change.\n"),
-    ("runtime ownership note", "> [!NOTE]\n> KMX is the Agent Builder and lifecycle layer, not a runtime or generic\n> governance control plane.\n"),
+    ("runtime ownership note", "> [!NOTE]\n> kmx is the Agent Builder and lifecycle layer, not a runtime or generic\n> governance control plane.\n"),
     ("CI badge", "actions/workflows/ci.yml/badge.svg?branch=main"),
     ("release badge", "img.shields.io/github/v/release/kaimahi-agents/kaimahi"),
     ("license badge", "img.shields.io/github/license/kaimahi-agents/kaimahi"),

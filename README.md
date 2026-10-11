@@ -75,13 +75,10 @@ Hosted model calls can incur charges; review [interactive lift](docs/interactive
 
 ## Runtime Contract
 
-[Orka](https://github.com/orka-agents/orka) is the first-class/default runtime; runtime and model-backend choices are separate, and the selected runtime owns execution and enforcement.
-
-On **current main (unreleased)**, explicit `kmx agent create --runtime kagent <name>` targets exact v0.10.2;
-Go-only bundle lift/status requires `--runtime kagent --runtime-version v0.10.3`, `--to-context` and author-owned `KagentBindings`.
-The operator prepares the runtime, qualified images and model Secret; UID-bound receipts prove readiness, **not execution**.
-For v0.10.3, Python is render-only; KMX provides no kagent installer, standalone chat, evaluation or retirement.
-Read [runtime support and boundaries](docs/runtime-adapters.md) and [qualified bundle placement](docs/agent-lift.md#exact-v0103-declarative-bundle-placement).
+[Orka](https://github.com/orka-agents/orka) is the default runtime; kagent v0.10.3
+bundle lift/status is supported on a prepared cluster.
+See [runtime support](docs/runtime-adapters.md) and
+[bundle lift](docs/agent-lift.md#exact-v0103-declarative-bundle-placement) for flags and limits.
 
 ## Status
 
@@ -110,6 +107,6 @@ The project's cultural and publication boundaries are recorded in [docs/NAMING.m
 > with feedback, bugs, or ideas.
 
 > [!NOTE]
-> KMX is the Agent Builder and lifecycle layer, not a runtime or generic
+> kmx is the Agent Builder and lifecycle layer, not a runtime or generic
 > governance control plane. The selected runtime owns execution and enforcement.
 > See the [runtime contract](docs/runtime-adapters.md) for the current boundary.
