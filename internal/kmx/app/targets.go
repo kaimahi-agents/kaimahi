@@ -73,16 +73,19 @@ func (e *TargetsUnreadableError) Error() string {
 // registry. Research candidates and unwired experimental ports do not appear here.
 func compiledTargets() []TargetInfo {
 	orka := orkaRuntimeAdapter{create: &CreateOptions{}}
-	kagent := kagentRuntimeAdapter{create: &CreateOptions{}, bindings: &agentruntime.KagentBindings{}}
+	kagent := kagentRuntimeAdapter{lift: &kagentLiftOperation{}, bindings: &agentruntime.KagentBindings{}}
 	rows := []TargetInfo{
 		{ID: string(orka.ID()), DisplayName: "Orka", Kind: "adapter", SupportTier: "supported",
 			QualifiedVersions: []TargetQualification{{Version: OrkaVersion, Scope: "native Orka commands", Evidence: "SHA-256-pinned release chart; e2e-orka-runtime"}},
 			Capabilities:      lifecycleTargetCapabilities(orka),
 			Detection:         TargetDetection{State: "not-probed", Scope: "controller Deployments in orka-system", Detail: "use --detect with an explicit or saved Kubernetes context"}},
-		{ID: string(kagent.ID()), DisplayName: "Kagent", Kind: "adapter", SupportTier: "create-only",
-			QualifiedVersions: []TargetQualification{{Version: scaffold.KagentVersion, Scope: "explicit create only", Evidence: "exact controller commit and OCI image checks; e2e-kagent-create"}},
-			Capabilities:      lifecycleTargetCapabilities(kagent),
-			Detection:         TargetDetection{State: "not-probed", Scope: "explicit create only", Detail: "no Kagent discovery; create validates its preinstalled exact version"}},
+		{ID: string(kagent.ID()), DisplayName: "Kagent", Kind: "adapter", SupportTier: "version-scoped",
+			QualifiedVersions: []TargetQualification{
+				{Version: scaffold.KagentVersion, Scope: "explicit create only", Evidence: "exact controller commit and OCI image checks; e2e-kagent-create"},
+				{Version: "v0.10.3", Scope: "explicit Go-only new placement and receipt-bound lift/status; Go/Python render", Evidence: "compiled exact pins; Go native A2A execution demonstrated once; dedicated continuous qualification not yet wired; deployment readiness is not execution proof"},
+			},
+			Capabilities: lifecycleTargetCapabilities(kagent),
+			Detection:    TargetDetection{State: "not-probed", Scope: "explicit version-qualified commands only", Detail: "no Kagent discovery; create validates v0.10.2, explicit bundle lift/status validate v0.10.3"}},
 		{ID: "agentsessions", DisplayName: "agentsessions", Kind: "integration", SupportTier: "eval-only",
 			QualifiedVersions: []TargetQualification{{Version: agentsessions.ReferenceRevision, Scope: "reference-chat evaluation and local replay only; not the remote host version", Evidence: "pinned Go module; e2e-eval-loop"}},
 			Detection:         TargetDetection{State: "not-probed", Scope: "Sessions API only", Detail: "use --sessions host:port; HarnessRegistry is not probed or qualified"}},
@@ -111,7 +114,10 @@ func lifecycleTargetCapabilities(adapter agentruntime.LifecycleAdapter) []Target
 		if !supported {
 			reason = (&agentruntime.UnsupportedVerbError{Runtime: adapter.ID(), Verb: operation}).Error() + "; use only the supported commands listed here"
 		} else if adapter.ID() == agentruntime.Kagent {
-			reason = "explicit exact-v0.10.2 create only; no installation, reconciliation, adoption or rollback"
+			reason = "explicit exact-v0.10.2 create or exact-v0.10.3 Go-only bundle lift/status; no installation, reconciliation, adoption, update or rollback"
+			if operation == "status" {
+				reason = "explicit exact-v0.10.3 Go-only bundle status with desired bindings; receipt-bound readiness, never execution success"
+			}
 		} else if operation == "retire" {
 			reason = "native Orka workload delete/release; not retained-registration retirement; no target teardown"
 		}

@@ -333,7 +333,9 @@ func TestSessionReferenceAppendCombinedBudgetLeavesBytesUnchanged(t *testing.T) 
 		}
 		cases[i] = c
 	}
-	if err := appendSessionReferenceManifest(path, cases[:1]); err != nil {
+	// This fixture tests the combined byte budget, not a wall-clock limit.
+	// Large assertion validation can exceed the convenience timeout under race.
+	if err := appendSessionReferenceManifestContext(t.Context(), path, cases[:1]); err != nil {
 		t.Fatal(err)
 	}
 	before := readSessionReferenceAppBytes(t, path)

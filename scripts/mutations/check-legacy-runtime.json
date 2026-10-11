@@ -1,38 +1,38 @@
 {
   "checker": "check-legacy-runtime.py",
-  "why": "This gate keeps alternate-runtime support inside explicit v0.10.2 create. These representative edits cover disabled rules, substring exemptions, discarded verdicts, ignored scan floors and globally waived scoped vocabulary; they do not exhaust the gate's support-path, fixture or multiline boundaries.",
+  "why": "This gate rejects retired commands and assets, not runtime/version vocabulary. Five representative mutations exercise disabled matching, substring exceptions, discarded findings, ignored enumeration/read floors and a global command bypass. They are not exhaustive parser proof.",
   "verify": ["python3", "scripts/check-legacy-runtime.py", "--selftest"],
   "signature": "check-legacy-runtime self-test:",
   "mutations": [
     {
-      "name": "every rule's pattern stops matching",
-      "breaks": "The quiet failure every scanner has: the patterns no longer fire on the thing they name, and every file in the tree reads clean with no symptom at all.",
-      "find": "        self.counterexample = counterexample\n        # True: refused in every tracked file. False: refused only on the\n        # surfaces a reader takes as current.\n        self.everywhere = everywhere",
-      "replace": "        self.re = re.compile(self.re.pattern + \"NEVERMATCHESTHIS\")\n        self.counterexample = counterexample\n        # True: refused in every tracked file. False: refused only on the\n        # surfaces a reader takes as current.\n        self.everywhere = everywhere"
+      "name": "command and asset patterns stop matching",
+      "breaks": "Every retired command and content asset becomes clean even though files are still enumerated and read.",
+      "find": "    hits = command_hits(tokens(text))\n    if ASSET.search(text):",
+      "replace": "    return set()\n    hits = command_hits(tokens(text))\n    if ASSET.search(text):"
     },
     {
-      "name": "an exemption matches by substring instead of by exact line",
-      "breaks": "An exempted line can be extended with anything at all and keep its exemption: `# the runtime is gone` becomes `# the runtime is gone, install it from here` and stays approved.",
-      "find": "                hit = exact.get(path, {}).get(stripped)",
-      "replace": "                hit = next((v for k, v in exact.get(path, {}).items() if k in stripped), None)"
+      "name": "an exception matches by substring instead of exact line",
+      "breaks": "Appending a second retired instruction to an exempted inert sample inherits its exception.",
+      "find": "            hit = exact.get((path, original[start].strip())) if len(block) == 1 else None",
+      "replace": "            hit = next((v for (p, t), v in exact.items() if p == path and t in original[start].strip()), None) if len(block) == 1 else None"
     },
     {
-      "name": "findings are collected and then reported as clean",
-      "breaks": "The scan is correct and its verdict is thrown away \u2014 indistinguishable from a clean tree from the outside, and the reason the self-test goes through report() and main() rather than only through judge().",
-      "find": "        print(f\"\\n{len(problems)} place(s). Remove the surface, add a legitimate create-support \"\n              \"path to both closed policy sets, or \u2014 for an exact refusal, absence assertion, \"\n              \"or explicitly unsupported future \u2014 name the line in \"\n              f\"{ALLOWLIST.relative_to(ROOT)} with a category and a reason.\", file=sys.stderr)\n        return 1",
-      "replace": "        return 0"
+      "name": "findings are collected then reported clean",
+      "breaks": "Correct matching never produces a failing exit; the real main-entry fixtures must reject it.",
+      "find": "    if findings:\n        for path, n, why in findings:",
+      "replace": "    if False:\n        for path, n, why in findings:"
     },
     {
-      "name": "the floors are computed and ignored",
-      "breaks": "An empty enumeration, a scan that read nothing, or a whole directory declared historical all pass. Every one of those looks exactly like success.",
-      "find": "    if bad:\n        print(\"check-legacy-runtime: this scan proves nothing\", file=sys.stderr)",
-      "replace": "    if False:\n        print(\"check-legacy-runtime: this scan proves nothing\", file=sys.stderr)"
+      "name": "enumeration and read floors are ignored",
+      "breaks": "Empty or shrunken enumeration and no readable known text receive a clean verdict.",
+      "find": "    if bad:\n        print(\"check-legacy-runtime: this scan proves nothing: \" + \"; \".join(bad), file=sys.stderr)",
+      "replace": "    if False:\n        print(\"check-legacy-runtime: this scan proves nothing: \" + \"; \".join(bad), file=sys.stderr)"
     },
     {
-      "name": "scoped vocabulary is waived in every file",
-      "breaks": "The central boundary disappears: an unapproved current source file can compose the alternate-runtime create selector and use the API vocabulary merely because those rule classes are scoped somewhere.",
-      "find": "                if scoped_rule_allowed(path, rule, line, support):\n                    continue",
-      "replace": "                if rule.name in SCOPED_SUPPORT_RULES:\n                    continue"
+      "name": "all command invocations are globally bypassed",
+      "breaks": "Native identifiers still scan, but every executable retired instruction receives a global waiver.",
+      "find": "        argv = []\n        for part, operator in parts[start + 1:]:",
+      "replace": "        continue\n        argv = []\n        for part, operator in parts[start + 1:]:"
     }
   ]
 }

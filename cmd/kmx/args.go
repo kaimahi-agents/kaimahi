@@ -6,14 +6,18 @@ import (
 )
 
 // extractContext preserves kmx's compatibility contract: --context and the
-// legacy -context spelling may appear anywhere, including after positionals.
-// Cobra owns every other flag.
+// legacy -context spelling may appear anywhere before --, including after
+// positionals. Cobra owns every other flag and treats everything after -- as data.
 func extractContext(argv []string) ([]string, string, error) {
 	var kept []string
 	value := ""
 	seen := false
 	for i := 0; i < len(argv); i++ {
 		arg := argv[i]
+		if arg == "--" {
+			kept = append(kept, argv[i:]...)
+			break
+		}
 		name, inline, hasInline := strings.Cut(arg, "=")
 		if name != "--context" && name != "-context" {
 			kept = append(kept, arg)
