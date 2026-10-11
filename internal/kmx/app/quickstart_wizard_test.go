@@ -142,8 +142,19 @@ func TestQuickstartModelPickerShowsSelectedProviderDetails(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := quickstartWizardModel{width: 120, modelStep: true, detectDone: true, models: models, selection: i}
 			view := ansi.Strip(m.View().Content)
-			for _, want := range tc.want {
-				if !strings.Contains(view, want) {
+			var detailRows []string
+			for _, line := range strings.Split(view, "\n") {
+				if !strings.Contains(line, "› ") {
+					detailRows = append(detailRows, line)
+				}
+			}
+			details := strings.Join(detailRows, "\n")
+			for i, want := range tc.want {
+				text := details
+				if i == 0 {
+					text = view
+				}
+				if !strings.Contains(text, want) {
 					t.Fatalf("selected provider missing %q:\n%s", want, view)
 				}
 			}
