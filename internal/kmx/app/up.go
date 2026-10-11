@@ -31,11 +31,9 @@ var UpDefaultSteps = []string{"cluster", "ollama", "model", "orka"}
 
 // Up runs the whole journey, or the single named step.
 //
-// On kind this IS the journey: `make up` is one line delegating here, so the
-// sequence CI runs is the sequence this function implements rather than a
-// list of targets that could drift from it. RUNTIME ONLY: `kmx up` does not
-// deploy the governance plane, and says so at the end rather than leaving
-// anyone to discover it from an empty ledger.
+// On kind, runtime setup and quickstart share the cluster, Ollama, model and
+// Orka phases. RUNTIME ONLY: `kmx local up` does not deploy an agent or a
+// model plane. Agents use native Orka Providers directly.
 func (a *App) Up(step string) error {
 	started := a.timeNow()
 	steps := UpDefaultSteps
@@ -66,9 +64,9 @@ func (a *App) Up(step string) error {
 	}
 
 	action := "bring up the kmx runtime (kind, Ollama, Orka)"
-	command := "kmx up"
+	command := a.operationCommand("local", "up")
 	if step != "" {
-		action, command = "run the '"+step+"' step", "kmx up --step "+step
+		action, command = "run the '"+step+"' step", a.operationCommand("local", "up", "--step", step)
 	}
 	// Every step writes to the Orka path's two namespaces, so the banner
 	// names them exactly — for a bare run and for a single step alike. The
@@ -97,23 +95,6 @@ func (a *App) Up(step string) error {
 
 	if step == "" {
 		a.complete("Runtime setup finished", started)
-		// One line: `kmx up` is the RUNTIME. Governance is a deliberate
-		// second step, and saying nothing here would leave an operator to
-		// infer it from an empty ledger.
-		// The route offered is the one this cluster can take. A bare run
-		// deploys no governed Agent, so the old governance operation would
-		// name nothing; putting an application's model traffic on the seam is
-		// `kmx migrate`, one workload at a time.
-		if a.selectedLocalModel == nil {
-			a.notef("\nNEXT  Runtime only: this command does not enable governance.\n"+
-				"Existing governance is not assessed by this setup. To configure it:\n"+
-				"  %s  # the proxy and its ledger\n"+
-				"  %s --namespace <ns> --model %s/%s  # route an application's model traffic (docs/migrate.md)",
-				a.operationCommand("plane"), a.operationCommand("migrate", "<deployment>"),
-				orkaDefaultProvider, a.Cfg.Model)
-		} else {
-			a.notef("\nNEXT  Host Ollama reuse is a direct route; the bundled plane preset requires in-cluster Ollama.")
-		}
 		a.notef("\nTRY   %s", a.operationCommand("agent", "create"))
 	}
 	return nil
@@ -224,12 +205,12 @@ func (a *App) rememberInventedContext() {
 	if err != nil {
 		// Not fatal: the cluster is up, and the cost of failing here is one
 		// `kmx ctx` the operator types themselves.
-		a.notef("could not record %q as the context kmx acts on (%v) — set it with: kmx ctx %s",
+		a.notef("could not record %q as the context kmx acts on (%v) — set it with: kmx context use %s",
 			a.Cfg.KubeContext, err, shellArg(a.Cfg.KubeContext))
 		return
 	}
 	a.Cfg.ContextSource = config.SourceSelected
-	a.notef("kmx will act on context %q from now on (recorded in %s); change it with: kmx ctx <name>",
+	a.notef("kmx will act on context %q from now on (recorded in %s); change it with: kmx context use <name>",
 		a.Cfg.KubeContext, path)
 }
 

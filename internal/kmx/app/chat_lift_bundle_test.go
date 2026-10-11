@@ -5,121 +5,46 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
-// Keep the existing kubectl fake's real read/compare/write behavior; intercept
-// only the collection listing it does not implement.
-func TestBundleLiftKubectlHelper(t *testing.T) {
-	if os.Getenv("KMX_BUNDLE_INTERACTIVE_TEST") != "1" {
-		return
-	}
-	args := os.Args[slices.Index(os.Args, "--")+1:]
-	if os.Getenv("KMX_CHAT_LIVE_POLICY_TEST") == "1" && len(args) > 2 && args[0] == "--context" && args[1] == "kind-source" {
-		if slices.Contains(args, "agents.core.orka.ai") {
-			fmt.Print(os.Getenv("KMX_CHAT_SOURCE_AGENT"))
-			os.Exit(0)
+// liftFixtureOutput signals when the next input owner has actually rendered.
+// Sending all keys up front lets the previous Bubble Tea program consume them;
+// sleeping instead makes every plan/confirmation test pay an arbitrary delay.
+type liftFixtureOutput struct {
+	mu       sync.Mutex
+	out      *bytes.Buffer
+	nextPane chan struct{}
+	panes    int
+}
+
+func (w *liftFixtureOutput) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n, err := w.out.Write(p)
+	// Bubble Tea hides the cursor when its next program takes input ownership,
+	// including on non-terminal output where the view itself is not rendered.
+	if strings.Contains(string(p), "\x1b[?25l") {
+		w.panes++
+		if w.panes == 2 {
+			w.nextPane <- struct{}{}
 		}
-		if slices.Contains(args, "providers.core.orka.ai") {
-			fmt.Print(os.Getenv("KMX_CHAT_SOURCE_PROVIDER"))
-			os.Exit(0)
-		}
 	}
-	if path := os.Getenv("KMX_BUNDLE_ENV_LOG"); path != "" {
-		_ = os.WriteFile(path, []byte(os.Getenv("KUBECONFIG")), 0600)
-	}
-	if len(args) > 2 && args[0] == "--context" && args[1] == "kind-source" && slices.Contains(args, "config") {
-		fmt.Print(`{"current-context":"kind-source","clusters":[{"name":"kind-source","cluster":{"server":"https://127.0.0.1:6443"}}],"contexts":[{"name":"kind-source","context":{"cluster":"kind-source"}}]}`)
-		os.Exit(0)
-	}
-	if slices.Contains(args, "rollout") && os.Getenv("KMX_BUNDLE_CONTROLLER_UNREACHABLE") == "1" {
-		os.Exit(1)
-	}
-	if slices.Contains(args, "rollout") && os.Getenv("KMX_LIFT_MISSING") == "controller" {
-		fmt.Fprint(os.Stderr, "NotFound")
-		os.Exit(1)
-	}
-	if slices.Contains(args, "apply") {
-		if os.Getenv("KMX_BUNDLE_NO_APPLY") == "1" {
-			os.Exit(1)
-		}
-		manifest, _ := io.ReadAll(os.Stdin)
-		if !bytes.Contains(manifest, []byte("kind: ServiceAccount")) || !bytes.Contains(manifest, []byte(`verbs: ["get"]`)) {
-			os.Exit(1)
-		}
-		fmt.Print("result-reader applied")
-		os.Exit(0)
-	}
-	if i := slices.Index(args, "get"); i >= 0 && len(args) > i+2 && (args[i+1] == "role" || args[i+1] == "rolebinding") && args[i+2] == orkaResultAccount {
-		if os.Getenv("KMX_BUNDLE_NO_RESULT_ROLE") != "1" {
-			if slices.Contains(args, "json") {
-				if args[i+1] == "role" {
-					verbs := `["get"]`
-					if os.Getenv("KMX_BUNDLE_BAD_RESULT_ROLE") == "1" {
-						verbs = `["list"]`
-					}
-					resourceNames := ""
-					if os.Getenv("KMX_BUNDLE_LIMITED_RESULT_ROLE") == "1" {
-						resourceNames = `,"resourceNames":["an-old-task"]`
-					}
-					fmt.Printf(`{"kind":"Role","metadata":{"name":%q,"namespace":"orka-system"},"rules":[{"apiGroups":["core.orka.ai"],"resources":["tasks"],"verbs":%s%s}]}`, orkaResultAccount, verbs, resourceNames)
-				} else {
-					subject := orkaResultAccount
-					if os.Getenv("KMX_BUNDLE_BAD_RESULT_BINDING") == "1" {
-						subject = "some-other-account"
-					}
-					role := orkaResultAccount
-					if os.Getenv("KMX_BUNDLE_BAD_RESULT_REF") == "1" {
-						role = "some-other-role"
-					}
-					fmt.Printf(`{"kind":"RoleBinding","metadata":{"name":%q,"namespace":"orka-system"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"Role","name":%q},"subjects":[{"kind":"ServiceAccount","name":%q,"namespace":"orka-system"}]}`, orkaResultAccount, role, subject)
-				}
-			} else {
-				fmt.Print(args[i+1] + ".rbac.authorization.k8s.io/" + orkaResultAccount)
-			}
-		}
-		os.Exit(0)
-	}
-	if i := slices.Index(args, "get"); i >= 0 && len(args) > i+2 && args[i+1] == "serviceaccount" && args[i+2] == orkaResultAccount {
-		if os.Getenv("KMX_BUNDLE_NO_RESULT_READER") != "1" {
-			fmt.Print("serviceaccount/" + orkaResultAccount)
-		}
-		os.Exit(0)
-	}
-	if i := slices.Index(args, "get"); i >= 0 && len(args) > i+2 && args[i+1] == "providers.core.orka.ai" && args[i+2] == "-o" {
-		if os.Getenv("KMX_CHAT_LIVE_POLICY_TEST") == "1" {
-			fmt.Print(`{"items":[{"metadata":{"name":"inference"},"spec":{"type":"openai","baseURL":"https://target.example.invalid/v1","defaultModel":"test","secretRef":{"name":"target-secret","key":"api-key"}},"status":{"ready":true}}]}`)
-			os.Exit(0)
-		}
-		if os.Getenv("KMX_LIFT_MISSING") == "controller" {
-			os.Exit(1)
-		}
-		if os.Getenv("KMX_BUNDLE_NO_READY") == "1" {
-			fmt.Print(`{"items":[{"metadata":{"name":"sample","generation":1},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}},{"metadata":{"name":"stale","generation":2},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}]}`)
-		} else {
-			fmt.Print(`{"items":[{"metadata":{"name":"sample","generation":1},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}},{"metadata":{"name":"inference","generation":1},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}]}`)
-		}
-		os.Exit(0)
-	}
-	TestReconcileKubectlHelper(t)
+	return n, err
 }
 
 func interactiveBundleFixture(t *testing.T, keys string) (*orkaChatBackend, *chatRenderer, LiftAgentBundleOptions, string, *bytes.Buffer) {
 	t.Helper()
 	a, opt, dir, _ := liftBundleFixture(t)
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	fakeTool(t, dir, "kubectl", "exec "+shellArg(exe)+" -test.run=^TestBundleLiftKubectlHelper$ -- \"$@\"")
+	fakeTool(t, dir, "kubectl", kubectlFixture(t, "TestBundleLiftKubectlHelper"))
 	t.Setenv("KMX_BUNDLE_INTERACTIVE_TEST", "1")
 	root := filepath.Join(dir, "agents")
 	if err := os.Mkdir(root, 0700); err != nil {
@@ -130,37 +55,79 @@ func interactiveBundleFixture(t *testing.T, keys string) (*orkaChatBackend, *cha
 	}
 	opt.BundleDir = filepath.Join(root, "sample")
 	var out bytes.Buffer
+	output := &liftFixtureOutput{out: &out, nextPane: make(chan struct{}, 1)}
 	input, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	first, rest, _ := strings.Cut(keys, "\r")
+	// This wait includes subprocess preparation, not just picker rendering. Use
+	// the existing test budget, reserving time to report failure and close pipes.
+	// A direct test-binary run with no package deadline still needs a finite cap.
+	deadline, bounded := t.Deadline()
+	if bounded {
+		deadline = deadline.Add(-time.Second)
+	} else {
+		deadline = time.Now().Add(time.Minute)
+	}
+	paneCtx, cancelPane := context.WithDeadline(t.Context(), deadline)
+	inputDone := make(chan struct{})
 	go func() {
+		defer close(inputDone)
 		defer writer.Close()
 		_, _ = writer.WriteString(first + "\r")
 		if rest != "" {
-			time.Sleep(3 * time.Second) // next picker opens only after the CLI plan finishes
+			select {
+			case <-output.nextPane:
+			case <-paneCtx.Done():
+				if t.Context().Err() != nil {
+					return
+				}
+				t.Errorf("lift fixture: next pane did not take input ownership: %v", paneCtx.Err())
+				_, _ = writer.WriteString("\x03")
+				return
+			}
 			if strings.HasSuffix(rest, "\r\r") {
 				_, _ = writer.WriteString(strings.TrimSuffix(rest, "\r"))
-				for start := time.Now(); time.Since(start) < 15*time.Second; time.Sleep(50 * time.Millisecond) {
+				for start := time.Now(); time.Since(start) < 15*time.Second; {
+					select {
+					case <-t.Context().Done():
+						return
+					case <-time.After(time.Millisecond):
+					}
 					if entries, err := os.ReadDir(filepath.Join(opt.BundleDir, "receipts")); err == nil && len(entries) > 0 {
-						time.Sleep(500 * time.Millisecond) // allow the deployment completion event to render
+						// Let the completion event reach the deployment pane.
+						select {
+						case <-t.Context().Done():
+							return
+						case <-time.After(500 * time.Millisecond):
+						}
 						_, _ = writer.WriteString("\r")
-						break
+						return
 					}
 				}
+				if t.Context().Err() != nil {
+					return
+				}
+				t.Error("lift fixture: deployment did not write its receipt")
+				_, _ = writer.WriteString("\x03")
 			} else {
 				_, _ = writer.WriteString(rest)
 			}
 		}
 	}()
-	t.Cleanup(func() { _ = input.Close(); _ = writer.Close() })
+	t.Cleanup(func() {
+		cancelPane()
+		_ = input.Close()
+		_ = writer.Close()
+		<-inputDone
+	})
 	a.Stdin = input
 	a.Cfg.KubeContext = "kind-source"
-	a.Out = &out
-	a.Err = &out
+	a.Out = output
+	a.Err = output
 	b := &orkaChatBackend{app: a, agent: "sample", namespace: OrkaNamespace, bundleRoot: root}
-	return b, newChatRenderer(&out), opt, dir, &out
+	return b, newChatRenderer(output), opt, dir, &out
 }
 
 // Removing the bundle route must make this test attempt to copy a live Agent
@@ -190,6 +157,25 @@ func TestInteractiveBundleLiftPlanCancelIsReadOnly(t *testing.T) {
 	b, r, opt, dir, out := interactiveBundleFixture(t, "inference\r\r")
 	if err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"}); err != nil {
 		t.Fatal(err)
+	}
+	assertNoLiftWrites(t, dir, opt.BundleDir)
+	for _, want := range []string{"Lift destination:", "Provider/sample: created", "Agent/sample: created", "Plan only:"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("review missing %q: %s", want, out.String())
+		}
+	}
+}
+
+// A valid read-only plan may take longer than a small picker-only watchdog,
+// especially when the executable boundary is race-instrumented.
+func TestInteractiveBundleLiftPlanCancelAllowsSlowPreparation(t *testing.T) {
+	b, r, opt, dir, out := interactiveBundleFixture(t, "inference\r\r")
+	t.Setenv("KMX_LIFT_PROVIDER_READ_DELAY", "4s")
+	if err := b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "provider-read-delayed")); err != nil {
+		t.Fatalf("slow preparation was not exercised: %v", err)
 	}
 	assertNoLiftWrites(t, dir, opt.BundleDir)
 	for _, want := range []string{"Lift destination:", "Provider/sample: created", "Agent/sample: created", "Plan only:"} {
@@ -493,11 +479,7 @@ func TestCancelledBundleDeployWarnsAboutPartialWrites(t *testing.T) {
 
 func TestBundleReviewRejectsRemovedResultAccess(t *testing.T) {
 	a, opt, dir, _ := liftBundleFixture(t)
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	fakeTool(t, dir, "kubectl", "exec "+shellArg(exe)+" -test.run=^TestBundleLiftKubectlHelper$ -- \"$@\"")
+	fakeTool(t, dir, "kubectl", kubectlFixture(t, "TestBundleLiftKubectlHelper"))
 	t.Setenv("KMX_BUNDLE_INTERACTIVE_TEST", "1")
 	t.Setenv("KMX_BUNDLE_NO_RESULT_ROLE", "1")
 	if err := confirmBundleResultAccess(t.Context(), a, OrkaNamespace); err == nil || !strings.Contains(err.Error(), "result access") {

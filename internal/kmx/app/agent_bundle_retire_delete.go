@@ -32,7 +32,7 @@ func (a *App) deleteRetireObject(ctx context.Context, namespace string, d retire
 		return fmt.Errorf("cannot prepare conditional Kubernetes deletion")
 	}
 	uid := types.UID(d.uid)
-	deleteCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	deleteCtx, cancel := a.waitContext(ctx, "retire-delete-request", 20*time.Second)
 	defer cancel()
 	err = client.Resource(schema.GroupVersionResource{Group: "core.orka.ai", Version: "v1alpha1", Resource: strings.ToLower(d.kind) + "s"}).Namespace(namespace).Delete(deleteCtx, d.name, metav1.DeleteOptions{
 		Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &d.version},
@@ -49,7 +49,7 @@ func (a *App) deleteRetireObject(ctx context.Context, namespace string, d retire
 			return fmt.Errorf("conditional deletion failed; inspect target and permissions before retrying")
 		}
 	}
-	waitCtx, stop := context.WithTimeout(ctx, 8*time.Second)
+	waitCtx, stop := a.waitContext(ctx, "retire-deletion", 8*time.Second)
 	defer stop()
 	for {
 		raw, err := a.orkaCapture(waitCtx, nil, "-n", namespace, "get", orkaPlural(d.kind), d.name, "--ignore-not-found=true", "-o", "json")
@@ -67,10 +67,8 @@ func (a *App) deleteRetireObject(ctx context.Context, namespace string, d retire
 		if json.Unmarshal(raw, &live) != nil || live.Metadata.UID != d.uid {
 			return fmt.Errorf("%s/%s changed while waiting for deletion", d.kind, d.name)
 		}
-		select {
-		case <-waitCtx.Done():
+		if err := a.pause(waitCtx, 250*time.Millisecond); err != nil {
 			return fmt.Errorf("%s/%s deletion is still pending; retirement remains incomplete", d.kind, d.name)
-		case <-time.After(250 * time.Millisecond):
 		}
 	}
 }

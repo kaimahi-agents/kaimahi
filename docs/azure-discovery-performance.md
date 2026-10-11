@@ -3,7 +3,7 @@
 Use the native Go ARM SDK for subscription-wide AKS cluster listing in `/lift`:
 
 ```sh
-./bin/kmx quickstart-wizard --azure-discovery sdk
+./bin/kmx quickstart --interactive --azure-discovery sdk
 ```
 
 `--azure-discovery cli` retains the original Azure CLI implementation (the
@@ -21,7 +21,7 @@ restrict that chain to your Azure CLI credential for a comparison:
 
 ```sh
 AZURE_TOKEN_CREDENTIALS=AzureCLICredential \
-  ./bin/kmx quickstart-wizard --azure-discovery sdk
+  ./bin/kmx quickstart --interactive --azure-discovery sdk
 ```
 
 The selected subscription's tenant ID is passed to the credential. SDK clients

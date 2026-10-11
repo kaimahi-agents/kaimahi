@@ -486,6 +486,7 @@ func (a *App) readOrkaObject(ctx context.Context, namespace string, id orkaIdent
 }
 
 func (a *App) waitOrkaReady(ctx context.Context, namespace string, id orkaIdentity) error {
+	started := false
 	for {
 		object, err := a.readOrkaObject(ctx, namespace, id)
 		if err != nil {
@@ -494,7 +495,13 @@ func (a *App) waitOrkaReady(ctx context.Context, namespace string, id orkaIdenti
 		if orkaCurrentGenerationReady(object, id.Generation) {
 			return nil
 		}
-		if err := orkaPause(ctx); err != nil {
+		if !started {
+			var cancel context.CancelFunc
+			ctx, cancel = a.waitContext(ctx, "orka-ready-"+strings.ToLower(id.Kind), 0)
+			defer cancel()
+			started = true
+		}
+		if err := a.pause(ctx, time.Second); err != nil {
 			return fmt.Errorf("waiting for %s/%s UID %s current-generation Ready: %w", id.Kind, id.Name, id.UID, err)
 		}
 	}
@@ -523,15 +530,4 @@ func orkaCurrentGenerationReady(object *orkaObject, generation int64) bool {
 		}
 	}
 	return false
-}
-
-func orkaPause(ctx context.Context) error {
-	timer := time.NewTimer(time.Second)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }

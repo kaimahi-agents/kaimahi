@@ -317,7 +317,7 @@ func (a *App) waitOrkaResourceCondition(resource, name, condition string) error 
 				return nil
 			}
 		}
-		if err := orkaPause(ctx); err != nil {
+		if err := a.pause(ctx, time.Second); err != nil {
 			return fmt.Errorf("waiting for %s/%s current-generation %s: %w",
 				resource, name, condition, err)
 		}

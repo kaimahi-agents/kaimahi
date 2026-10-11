@@ -1,8 +1,7 @@
 # FAQ and troubleshooting
 
-Start with [getting started](getting-started.md). Orka installation, native
-Agent creation and model-traffic migration are the current paths; the final
-section below is for the legacy plane implementation that still exists.
+Start with [getting started](getting-started.md) for Orka installation, native
+Agent creation, chat and bundle lifecycle.
 
 ## Why is `kmx orka` missing?
 
@@ -14,11 +13,10 @@ published tag, not the tip of `main`.
 
 ## Does installing Orka govern my application?
 
-No. Installation creates platform resources and, by default, a local
-Provider. [Migration](migrate.md) is separate. The application must already
-have a Deployment managed by its owner, who reviews and applies the
-printed patch. This routes model traffic; it does not register an Orka
-Agent or put all tool and inbound traffic under governance.
+No. Installation creates platform resources and, by default, a local Provider.
+It does not adopt an existing application or redirect its traffic. Author an
+Agent with [`kmx agent create`](kmx.md#kmx-agent-create); use a Task to prove an
+answer. Execution and enforcement belong to the selected runtime.
 
 ## Why does status show a version different from the pin?
 
@@ -64,19 +62,7 @@ retention, and cluster audit policy may also capture Service-proxy bodies.
 Trusted-proxy task submission is unsupported because KMX accepts no Kagent
 bearer credential.
 
-## A migrated application's turn still fails
-
-Check the actual model route and the application's model identifier,
-then the bridge credential, Orka ServiceAccount token, Provider and ledger.
-A successful HTTP response alone is not a completed application turn.
-The [migration limits](migrate.md#8-limits-stated) cover Responses translation,
-continuation incompatibilities, token renewal and owner-applied patches.
-A Helm upgrade can overwrite a one-off patch: retain the change in the
-application owner's deployment source rather than assuming kmx owns it.
-
-## Existing legacy-runtime and plane troubleshooting
-
-The following describes retained legacy code, not Orka's contracts.
+## Model and tool troubleshooting
 
 ### Empty replies and `input-required`
 
@@ -98,41 +84,20 @@ that a model reasons correctly or copies identifiers faithfully.
 
 ### Hosted model authentication fails
 
-Create the required Secret before onboarding a hosted endpoint. Copilot uses
-its own device flow, not the `gh` CLI's token, and its short-lived token
-needs renewal. The endpoint is not a stable public GitHub API contract.
-See [models.md](models.md) for the current capture path.
-Never put token values in command arguments or committed YAML.
+For native Orka, provision the Provider's named Secret and key separately,
+without a trailing newline. Provider readiness is not proof of a successful
+model call. Inspect the Task and the model/deployment identifier as well as
+Provider and Agent readiness. See [models.md](models.md) for native configuration.
 
-### What do plane error codes mean?
+Host Copilot authentication is managed by the installed Copilot CLI, not a KMX
+cluster token exchange; see [Copilot inference](copilot-inference.md). Host
+Foundry uses its own endpoint and credential path; see
+[Foundry inference](local-foundry-inference.md). Never put token values in
+command arguments or committed YAML.
 
-| Code | Check |
-|---|---|
-| 401 | Missing or unknown plane credential. Inspect the response's stated cause. |
-| 403 | A known credential has expired, routing is refused, a cents-capped model is unpriced, or admission metering is unavailable (`metering unavailable`). |
-| 429 | The monthly token or money budget is exhausted. No approval request is filed; the operator may deliberately change the budget or wait for the UTC month reset. Runtime retries may create multiple denied rows. |
-| 502 | Upstream transport/protocol failure, including a response with no readable usage. An admitted attempt is not proof of downstream success. |
-| 503 | A dependency needed for custody, authentication or accounting is unavailable; restore that dependency rather than bypassing enforcement. |
+### A local model disappeared after a restart
 
-[Spend](spend.md) explains the actual model protocols and refusal boundaries.
-An unpriced subscription model is not a free model; use token budgets where
-no defensible money price exists.
-
-### A governed application vanished from the ledger
-
-Inspect the model endpoint the workload actually resolves. Reapplying an
-ungoverned manifest outside the preserving command path can change routing
-without preventing answers. `kmx migrate` is the supported way to put an
-owner-managed application back behind the plane; `kmx govern` was removed with
-the legacy runtime.
-
-### I lost a plane token or ledger
-
-The plane stores a token hash, not a recoverable token. Follow the refusal
-and recovery instructions printed by the owning command; reissuing a
-credential may require restoring its budget. See [identity.md](identity.md).
-
-Pod restarts are not cluster deletion. Deleting kind removes its Postgres
-volume and ledger; take a backup first when data matters. See
-[operations.md](operations.md). The local Ollama model cache is an
-`emptyDir`, so a pod restart may require pulling models again.
+The local Ollama model cache is an `emptyDir`; a pod restart may require another
+model pull. Pod restarts are not cluster deletion. `kmx down` removes the whole
+named kind cluster and its persistent data. Export needed resources, Secrets and
+volumes before replacing it; see [Orka's data-retention limits](orka.md#limits-stated).

@@ -22,6 +22,7 @@
         "internal/kmx/app/create_kagent.go",
         "internal/kmx/app/kagent_create_online.go",
         "internal/kmx/app/runtime_kagent_lifecycle.go",
+        "internal/kmx/app/targets.go",
         "internal/kmx/runtime/kagent_bindings.go",
         "internal/kmx/runtime/portable.go",
         "internal/kmx/runtime/prepared.go",
@@ -30,9 +31,12 @@
       ],
       "test": [
         "cmd/kmx/agent_create_test.go",
+        "cmd/kmx/targets_commands_test.go",
+        "internal/kmx/app/targets_test.go",
         "internal/kmx/app/agent_bundle_runtime_refusal_test.go",
         "internal/kmx/app/bundle_format_compat_test.go",
         "internal/kmx/app/create_kagent_test.go",
+        "internal/kmx/app/testdata/kubectl/kagent_test.go",
         "internal/kmx/runtime/kagent_bindings_test.go",
         "internal/kmx/runtime/lifecycle_test.go",
         "internal/kmx/runtime/portable_secretshapes_test.go",
@@ -57,7 +61,6 @@
         "docs/interactive-agent-tui-plan.md",
         "docs/interactive-chat.md",
         "docs/kmx.md",
-        "docs/migrate.md",
         "docs/orka.md",
         "docs/releases.md",
         "docs/repository-map.md",
@@ -69,6 +72,42 @@
     }
   },
   "lines": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "text": "\"kmx --context kind-x local up --step=tools-agent\",",
+      "category": "negative",
+      "why": "Negative control proving the canonical local group cannot bypass the retired-step tripwire."
+    },
+    {
+      "path": "cmd/kmx/entrypoint_commands_test.go",
+      "text": "{\"context\"}, {\"context\", \"show\", \"--help\"}, {\"context\", \"use\", \"--help\"},",
+      "category": "negative",
+      "why": "Asserts context-use help is non-operational; the use token is not the retired root preset-switch command."
+    },
+    {
+      "path": "cmd/kmx/entrypoint_commands_test.go",
+      "text": "{\"context\", \"show\", \"extra\"}, {\"context\", \"use\"}, {\"context\", \"use\", \"\"},",
+      "category": "negative",
+      "why": "Invalid context-selection inputs must refuse before configuration; no preset switching."
+    },
+    {
+      "path": "cmd/kmx/entrypoint_commands_test.go",
+      "text": "{\"context\", \"use\", \" \"}, {\"context\", \"use\", \"one\", \"two\"}, {\"context\", \"unknown\"},",
+      "category": "negative",
+      "why": "Invalid context-selection inputs must refuse before configuration; no preset switching."
+    },
+    {
+      "path": "cmd/kmx/entrypoint_commands_test.go",
+      "text": "for _, args := range [][]string{{\"ctx\", \"kind-demo\"}, {\"context\", \"use\", \"kind-demo\"}} {",
+      "category": "negative",
+      "why": "Pins saved-context compatibility without invoking the retired root preset-switch operation."
+    },
+    {
+      "path": "cmd/kmx/entrypoint_commands_test.go",
+      "text": "err := execute([]string{\"context\", \"use\", \"remote team\"}, deps)",
+      "category": "negative",
+      "why": "Remote context selection without consent must refuse, preserving saved state and quoted recovery."
+    },
     {
       "path": ".github/workflows/ci.yml",
       "text": "helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds@sha256:d487e679001b1a666e0ec97a0a87aab8a10bc1f52acba92b36b70c195492c7c3 --untar --untardir \"$charts/crds\"",
@@ -92,54 +131,6 @@
       "text": "helm install kagent \"$runtime_chart\" --namespace kagent --kube-context kind-kmx-kagent-create --set kmcp.enabled=false --set kagent-tools.enabled=false --set k8s-agent.enabled=false --set kgateway-agent.enabled=false --set istio-agent.enabled=false --set promql-agent.enabled=false --set observability-agent.enabled=false --set argo-rollouts-agent.enabled=false --set helm-agent.enabled=false --set cilium-policy-agent.enabled=false --set cilium-manager-agent.enabled=false --set cilium-debug-agent.enabled=false --set grafana-mcp.enabled=false --set oauth2-proxy.enabled=false --set providers.default=ollama --set-string providers.ollama.config.host=http://unused.invalid:11434 --set ui.replicas=0 --wait --timeout 10m",
       "category": "fixture",
       "why": "External official exact-version runtime chart precondition for the disposable live-create shard, with only the locally proven minimal values; KMX neither invokes nor owns this install."
-    },
-    {
-      "path": "cmd/kmx/root.go",
-      "text": "retiredCommand(\"govern\", \"kmx migrate <deployment> --namespace <ns> --model <model>, or kmx credential issue <name> --secret <secret> --namespace <ns>\"),",
-      "category": "retirement",
-      "why": "Hidden compatibility stub that refuses the retired command locally and points old callers to supported replacements."
-    },
-    {
-      "path": "cmd/kmx/root.go",
-      "text": "retiredCommand(\"use\", \"kmx models add <name> --url <url> --classification <class>, then kmx migrate <deployment> --namespace <ns> --model <model>\"),",
-      "category": "retirement",
-      "why": "Hidden compatibility stub that refuses the retired command locally and points old callers to supported replacements."
-    },
-    {
-      "path": "cmd/kmx/retirement_test.go",
-      "text": "{[]string{\"govern\", \"hello-world\"}, \"kmx migrate\"},",
-      "category": "negative",
-      "why": "Bounded test that the hidden govern stub refuses old argv and names its replacement."
-    },
-    {
-      "path": "cmd/kmx/retirement_test.go",
-      "text": "{[]string{\"govern\", \"hello-world\", \"--model\", \"governed-ollama\"}, \"kmx migrate\"},",
-      "category": "negative",
-      "why": "Bounded test that legacy govern flags cannot bypass the retirement stub."
-    },
-    {
-      "path": "cmd/kmx/retirement_test.go",
-      "text": "{[]string{\"use\", \"ollama\"}, \"kmx models add\"},",
-      "category": "negative",
-      "why": "Bounded test that the hidden preset-switch stub refuses old argv and names its replacement."
-    },
-    {
-      "path": "cmd/kmx/retirement_test.go",
-      "text": "{[]string{\"use\", \"ollama\", \"--agent\", \"hello-world\"}, \"kmx models add\"},",
-      "category": "negative",
-      "why": "Bounded test that legacy preset flags cannot bypass the retirement stub."
-    },
-    {
-      "path": "cmd/kmx/retirement_test.go",
-      "text": "for _, path := range [][]string{{\"govern\"}, {\"use\"}, {\"agent\", \"edit\"}} {",
-      "category": "negative",
-      "why": "Asserts all three retired command paths remain hidden compatibility stubs."
-    },
-    {
-      "path": "cmd/kmx/root_test.go",
-      "text": "\"ctx\", \"down\", \"flow\", \"govern\", \"ledger\",",
-      "category": "negative",
-      "why": "Closed command-tree assertion includes the hidden retirement stub so removal or accidental replacement is visible."
     },
     {
       "path": "internal/kmx/app/manifests_test.go",
@@ -172,12 +163,6 @@
       "why": "Explains why the formerly reserved demo name is now available after its fixed manifest was retired."
     },
     {
-      "path": "cmd/kmx/root_test.go",
-      "text": "\"up\", \"use\", \"version\", \"watch\",",
-      "category": "negative",
-      "why": "Closed command-tree assertion includes the hidden retirement stub so removal or accidental replacement is visible."
-    },
-    {
       "path": "cmd/kmx/retirement_test.go",
       "text": "{[]string{\"agent\", \"edit\", \"hello-world\"}, \"kmx agent edit is retired; use kubectl\"},",
       "category": "negative",
@@ -191,57 +176,9 @@
     },
     {
       "path": "cmd/kmx/retirement_test.go",
-      "text": "{[]string{\"govern\", \"--help\"}, \"kmx govern is retired; use kmx migrate\"},",
-      "category": "negative",
-      "why": "Asserts help shows the retired command's supported replacement."
-    },
-    {
-      "path": "cmd/kmx/retirement_test.go",
-      "text": "{[]string{\"use\", \"-h\"}, \"kmx use is retired; use kmx models add\"},",
-      "category": "negative",
-      "why": "Asserts short help does not hide the retirement notice."
-    },
-    {
-      "path": "cmd/kmx/retirement_test.go",
       "text": "{[]string{\"agent\", \"edit\", \"--help\"}, \"kmx agent edit is retired; use kubectl --context\"},",
       "category": "negative",
       "why": "Asserts help names the complete retired command and context-pinned alternative."
-    },
-    {
-      "path": "internal/kmx/app/retired_commands_test.go",
-      "text": "// \"Govern the agent — kmx govern <credential>\" long after the command it named",
-      "category": "negative",
-      "why": "Documents the obsolete follow-up text whose reintroduction the negative test refuses."
-    },
-    {
-      "path": "internal/kmx/admin/admin_test.go",
-      "text": "// `kmx govern` would issue the credential in THAT plane while the Secret and",
-      "category": "negative",
-      "why": "Explains the negative wrong-cluster port-forward test; it does not invoke the removed command."
-    },
-    {
-      "path": "internal/kmx/app/certificate_test.go",
-      "text": "if strings.Contains(note, \"kmx govern\") {",
-      "category": "negative",
-      "why": "Rejects output that offers the removed command."
-    },
-    {
-      "path": "internal/kmx/app/modelsadd_test.go",
-      "text": "// It named `kmx govern`, which was retired with the runtime adapter: an",
-      "category": "negative",
-      "why": "Explains the bounded assertion that the follow-up suggests only commands that exist."
-    },
-    {
-      "path": "internal/kmx/app/modelsadd_test.go",
-      "text": "if strings.Contains(printed, \"kmx govern\") {",
-      "category": "negative",
-      "why": "Rejects a suggested command removed from the CLI."
-    },
-    {
-      "path": "internal/kmx/app/retired_commands_test.go",
-      "text": "// `cmd/kmx` proves that `kmx govern`, `kmx use` and `kmx agent edit` are",
-      "category": "negative",
-      "why": "Describes negative tests for the removed command surface."
     },
     {
       "path": "internal/kmx/app/retired_commands_test.go",
@@ -274,12 +211,6 @@
       "why": "A negative command control: the closure gate must reject agent edit with a context flag."
     },
     {
-      "path": "docs/FAQ.md",
-      "text": "owner-managed application back behind the plane; `kmx govern` was removed with",
-      "category": "retired-notice",
-      "why": "Explains that the old command cannot be used and names migrate as its replacement."
-    },
-    {
       "path": "docs/interactive-chat.md",
       "text": "and `--runtime kagent` is refused rather than resolved to Orka. Those",
       "category": "retired-notice",
@@ -290,18 +221,6 @@
       "text": "`kmx agent edit` is retired; its hidden stub points to kubectl.",
       "category": "retired-notice",
       "why": "Explicitly retires the editor and names the supported kubectl alternative; its hidden stub only guides callers."
-    },
-    {
-      "path": "docs/kmx.md",
-      "text": "`kmx govern` is retired; its hidden stub points to `kmx migrate`.",
-      "category": "retired-notice",
-      "why": "Explicitly retires the command and names migration as the supported replacement; its hidden stub only guides callers."
-    },
-    {
-      "path": "docs/spend.md",
-      "text": "credential. (`kmx govern`, which did this for a legacy Agent, was removed with",
-      "category": "retired-notice",
-      "why": "Historical comparison explains that the command is removed, not an available way to issue a credential."
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -401,13 +320,13 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "text": "(r\"kmx(?:\\s+--\\S+(?:=|\\s+)\\S+)*\\s+up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\",",
+      "text": "(r\"kmx(?:\\s+--\\S+(?:=|\\s+)\\S+)*\\s+(?:local\\s+)?up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\",",
       "category": "negative",
       "why": "The clone-free job's own forbidden-pattern list: the legacy install steps and the legacy API group, named so a reinstated one cannot pass as a supported setup."
     },
     {
       "path": ".github/workflows/ci.yml",
-      "text": "(re.compile(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\\b\"),",
+      "text": "(re.compile(r\"\\bkmx(?:\\s+--(?:context|container-engine)(?:=|\\s+)\\S+)*\\s+(?:local\\s+)?up\\s+--step(?:=|\\s+)(?:kagent|agent|tools-agent)\\b\"),",
       "category": "negative",
       "why": "The forbidden-pattern list itself: a tripwire has to spell the runtime it refuses, or it refuses nothing. The controls above prove each pattern still fires."
     },
@@ -452,12 +371,6 @@
       "text": "if grep -qi 'kagent' up-after-quickstart.out; then",
       "category": "negative",
       "why": "Bounded output assertions: the supported path must not NAME the retired runtime anywhere in what it printed or wrote."
-    },
-    {
-      "path": ".github/workflows/ci.yml",
-      "text": "if kubectl --context kind-kaimahi-p1 get namespace kagent >/dev/null 2>&1; then",
-      "category": "negative",
-      "why": "The shard tripwire: the retired runtime's namespace must not exist. The assertion has to name the namespace it is asking a cluster about."
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -581,7 +494,7 @@
     },
     {
       "path": "internal/kmx/app/lift.go",
-      "text": "return nil, nil, fmt.Errorf(\"kmx lift: %s/%s was lifted onto with --payload kagent, which is retired.\\n\"+",
+      "text": "return nil, nil, fmt.Errorf(\"kmx aks up: %s/%s was provisioned with --payload kagent, which is retired.\\n\"+",
       "category": "retirement",
       "why": "The resume refusal for a record that landed the retired payload, naming the payload the operator's script still passes."
     },
@@ -652,32 +565,8 @@
       "why": "Bounded packaging test: the retired runtime's chart values, demo agents and model presets must stay deleted from the tree."
     },
     {
-      "path": "internal/kmx/app/modelsadd_test.go",
-      "text": "// There is no fourth document: a ModelConfig is a kagent CRD, and a",
-      "category": "negative",
-      "why": "Bounded scaffolder test: the generated model artifact must contain no resource of the retired runtime."
-    },
-    {
-      "path": "internal/kmx/app/modelsadd_test.go",
-      "text": "// foreign runtime has no kagent. The base URL is printed instead.",
-      "category": "negative",
-      "why": "Bounded scaffolder test: the generated model artifact must contain no resource of the retired runtime."
-    },
-    {
-      "path": "internal/kmx/app/modelsadd_test.go",
-      "text": "if strings.Contains(doc, \"kind: ModelConfig\") {",
-      "category": "negative",
-      "why": "Bounded scaffolder test: the generated model artifact must contain no resource of the retired runtime."
-    },
-    {
-      "path": "internal/kmx/app/modelsadd_test.go",
-      "text": "t.Fatalf(\"a kagent custom resource reached a manifest a non-kagent adopter must apply:\\n%s\", doc)",
-      "category": "negative",
-      "why": "Bounded scaffolder test: the generated model artifact must contain no resource of the retired runtime."
-    },
-    {
       "path": "internal/kmx/app/notfound_test.go",
-      "text": "// The CRD is not installed yet — kagent has not been deployed.",
+      "text": "// The CRD is not installed yet \u2014 kagent has not been deployed.",
       "category": "negative",
       "why": "Bounded parser tests: real NotFound/Forbidden strings from the legacy API group are the inputs whose translation is under test."
     },
@@ -700,18 +589,6 @@
       "why": "Bounded parser tests: real NotFound/Forbidden strings from the legacy API group are the inputs whose translation is under test."
     },
     {
-      "path": "internal/kmx/app/plane_test.go",
-      "text": "if strings.Contains(err.Error(), \"<orka|kagent>\") {",
-      "category": "negative",
-      "why": "Bounded refusal test: the payload refusal must not offer the retired payload as a choice."
-    },
-    {
-      "path": "internal/kmx/app/plane_test.go",
-      "text": "t.Errorf(\"the refusal still offers the retired kagent payload: %v\", err)",
-      "category": "negative",
-      "why": "Bounded refusal test: the payload refusal must not offer the retired payload as a choice."
-    },
-    {
       "path": "internal/kmx/app/quickstart_orka_test.go",
       "text": "// no --legacy-kagent, and no step name that installs one either.",
       "category": "negative",
@@ -731,7 +608,7 @@
     },
     {
       "path": "internal/kmx/app/quickstart_orka_test.go",
-      "text": "if strings.Contains(command, \"kagent\") || strings.Contains(command, \"govern \") {",
+      "text": "if strings.Contains(command, \"kagent\") || strings.Contains(command, \"govern \") || strings.Contains(command, \" plane\") || strings.Contains(command, \" migrate\") {",
       "category": "negative",
       "why": "Bounded quickstart tests: no command and no written manifest names the retired runtime."
     },
@@ -749,19 +626,7 @@
     },
     {
       "path": "internal/kmx/app/retired_commands_test.go",
-      "text": "// `cmd/kmx` proves that `kmx govern`, `kmx use` and `kmx agent edit` are",
-      "category": "negative",
-      "why": "Bounded source test: removed command spellings are enumerated so operator-facing strings cannot reintroduce them."
-    },
-    {
-      "path": "internal/kmx/app/retired_commands_test.go",
       "text": "for _, dead := range []string{\"`kmx govern <\", \"`kmx govern `\", \"`kmx use `\", \"`kmx use <\"} {",
-      "category": "negative",
-      "why": "Bounded source test: removed command spellings are enumerated so operator-facing strings cannot reintroduce them."
-    },
-    {
-      "path": "internal/kmx/app/retired_commands_test.go",
-      "text": "retired := []string{\"kmx govern \", \"kmx govern`\", \"kmx govern\\\\n\", \"kmx use \", \"kmx use`\", \"kmx agent edit\"}",
       "category": "negative",
       "why": "Bounded source test: removed command spellings are enumerated so operator-facing strings cannot reintroduce them."
     },
@@ -803,7 +668,7 @@
     },
     {
       "path": "internal/kmx/app/retirement_test.go",
-      "text": "err := a.ChatWithOptions(ChatOptions{Agent: \"demo\", Runtime: \"kagent\", Interactive: true})",
+      "text": "err := a.ChatWithOptions(ChatOptions{Agent: \"demo\", Runtime: \"kagent\"})",
       "category": "negative",
       "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
     },
@@ -826,12 +691,6 @@
       "why": "Bounded refusal tests: the retired runtime is refused by name and no cluster call reaches its API group."
     },
     {
-      "path": "internal/kmx/app/status_test.go",
-      "text": "if strings.Contains(string(asked), \"kagent\") || strings.Contains(string(asked), \"modelconfigs\") {",
-      "category": "negative",
-      "why": "Bounded tests that the status report asks a cluster for nothing belonging to the retired runtime."
-    },
-    {
       "path": "internal/kmx/app/up_orka_test.go",
       "text": "*kagent.dev*)",
       "category": "negative",
@@ -839,13 +698,13 @@
     },
     {
       "path": "internal/kmx/app/up_orka_test.go",
-      "text": "// cluster WITHOUT the kagent CRDs answers — \"the server doesn't have a",
+      "text": "// cluster WITHOUT the kagent CRDs answers \u2014 \"the server doesn't have a",
       "category": "negative",
       "why": "Bounded tests that `kmx up` reaches no legacy API group and that the three removed steps fail locally as unknown."
     },
     {
       "path": "internal/kmx/app/up_orka_test.go",
-      "text": "// cluster with no kagent CRD answers — the command completing at all is the",
+      "text": "// cluster with no kagent CRD answers \u2014 the command completing at all is the",
       "category": "negative",
       "why": "Bounded tests that `kmx up` reaches no legacy API group and that the three removed steps fail locally as unknown."
     },
@@ -899,7 +758,7 @@
     },
     {
       "path": "internal/kmx/lift/payload_test.go",
-      "text": "for _, legacy := range []string{\"kagent\", \"agents\"} {",
+      "text": "for _, legacy := range []string{\"kagent\", \"agents\", \"boundary\", \"credential\", \"plane\"} {",
       "category": "negative",
       "why": "Bounded payload tests: a new lift with the retired payload is refused, and a historical record carrying it must still DECODE so its resources can be torn down."
     },
@@ -1031,7 +890,7 @@
     },
     {
       "path": "internal/kmx/lift/plan.go",
-      "text": "return errors.New(\"kmx lift: --payload kagent is retired — the legacy kagent runtime has been\\n\" +",
+      "text": "return errors.New(\"kmx aks up: --payload kagent is retired — the legacy kagent runtime has been\\n\" +",
       "category": "retirement",
       "why": "The lift payload's refusal. `--payload <name>` is what an operator TYPED, so the refusal has to spell it back or it refuses nothing they can recognise; PayloadKagent is the historical teardown sentinel a pre-retirement record decodes to."
     },
@@ -1043,7 +902,7 @@
     },
     {
       "path": "internal/kmx/lift/record.go",
-      "text": "// because it is not unknown — it is history. The kagent payload is now",
+      "text": "// because it is not unknown \u2014 it is history. The kagent payload is now",
       "category": "retirement",
       "why": "The historical teardown sentinel: a record written before the split carries no payload, and reading it as this one is what keeps an existing cluster removable."
     },
@@ -1078,10 +937,40 @@
       "why": "Bounded scaffolder tests: the emitted Orka document and its refusals must name nothing of the retired runtime."
     },
     {
-      "path": "internal/kmx/seamcert/seamcert_test.go",
-      "text": "if strings.Contains(err.Error(), \"kagent\") {",
+      "path": "cmd/kmx/plane_removal_test.go",
+      "text": "var removedPlaneCommands = []string{\"plane\", \"migrate\", \"credential\", \"credentials\", \"ledger\", \"budget\", \"flow\", \"watch\", \"backup\", \"restore\", \"metrics\", \"models\", \"govern\", \"use\"}",
       "category": "negative",
-      "why": "Bounded recovery test: certificate recovery must not delegate trust redistribution to the retired runtime."
+      "why": "Negative controls assert former plane command roots and invocations fail as unknown without configuration or runtime construction."
+    },
+    {
+      "path": "cmd/kmx/plane_removal_test.go",
+      "text": "[]string{\"govern\", \"hello-world\", \"--model\", \"governed-ollama\"},",
+      "category": "negative",
+      "why": "Negative controls assert former plane command roots and invocations fail as unknown without configuration or runtime construction."
+    },
+    {
+      "path": "cmd/kmx/plane_removal_test.go",
+      "text": "[]string{\"use\", \"ollama\", \"--agent\", \"hello-world\"},",
+      "category": "negative",
+      "why": "Negative controls assert former plane command roots and invocations fail as unknown without configuration or runtime construction."
+    },
+    {
+      "path": "cmd/kmx/retirement_test.go",
+      "text": "for _, path := range [][]string{{\"agent\", \"edit\"}} {",
+      "category": "negative",
+      "why": "Bounded negative resolution test asserts the retired agent editor is hidden and fails locally."
+    },
+    {
+      "path": "internal/kmx/app/retired_commands_test.go",
+      "text": "retired := []string{\"kmx govern\", \"kmx use\", \"kmx agent edit\", \"kmx plane\", \"kmx migrate\", \"kmx models\", \"kmx credential\", \"kmx credentials\", \"kmx ledger\", \"kmx budget\", \"kmx flow\", \"kmx watch\", \"kmx backup\", \"kmx restore\", \"kmx metrics\"}",
+      "category": "negative",
+      "why": "Bounded scan ensures user-facing App guidance never recommends any removed plane or legacy-runtime command."
+    },
+    {
+      "path": "internal/kmx/app/status_test.go",
+      "text": "for _, forbidden := range []string{\"kagent\", \"modelconfigs\", \"-n kaimahi\", \"get secret\"} {",
+      "category": "negative",
+      "why": "Negative executable-boundary assertion: native Orka status must never query retired-runtime kinds or plane Secrets."
     }
   ]
 }

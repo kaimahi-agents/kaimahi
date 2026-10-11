@@ -1,0 +1,110 @@
+name: KMX evaluation gate
+description: >-
+  Evaluate a clean, tracked caller bundle in its Git checkout on Linux and optionally
+  verify reference replay with zero model calls. Caller must set up Go (and Docker
+  for AIKit mode). Credentials are nominated by environment variable name, never input.
+
+inputs:
+  bundle:
+    description: Path to the caller's complete, clean, tracked bundle in its Git checkout
+    required: true
+  model-mode:
+    description: aikit (local CPU container) or endpoint (caller-owned OpenAI-compatible endpoint)
+    default: aikit
+  model-name:
+    description: Endpoint model name, required in endpoint mode and must match the bundle
+  model-base-url:
+    description: HTTPS endpoint without credentials/query; literal loopback HTTP is keyless only
+  model-key-env:
+    description: Name of an existing secret environment variable, not the key itself
+  aikit-image:
+    description: Digest-pinned AIKit image; default follows orka-agents/agentkit's live evals
+    # Upstream pin: https://github.com/orka-agents/agentkit/blob/main/scripts/aikit-e2e-common.sh
+    # Shared by AgentKit #39 and #44. Follow its reviewed digest
+    # when bumping, and update scripts/ci/live-eval-loop.sh's default to match.
+    default: ghcr.io/kaito-project/aikit/qwen3.5:2b@sha256:d838c5eebf533b5b73f67cc7f4984921f87d64d28e4a52d482740b667f46b8b4
+  aikit-config:
+    description: Regular YAML config path; defaults to the action's bounded CPU preset
+  sessions-archive-url:
+    description: Optional HTTPS compatible agentsessionsd tar.gz URL without credentials/query
+  sessions-archive-sha256:
+    description: SHA256 for the optional archive; required together with its URL
+  kmx-bin:
+    description: Optional executable KMX path; otherwise build from the action repository
+  verify:
+    description: Verify reference replay after evaluation (true or false)
+    default: 'true'
+  case-timeout:
+    description: Per-case evaluation timeout
+    default: 2m
+  command-timeout:
+    description: Maximum duration in seconds for a KMX command
+    default: '600'
+  artifact-name:
+    description: Name of the uploaded receipt/report artifact
+    default: kmx-eval-evidence
+
+outputs:
+  receipt:
+    description: Exact path of the generated evaluation receipt, when available
+    value: ${{ steps.evaluate.outputs.receipt }}
+  verify-report:
+    description: Exact path of the replay verification report, when available
+    value: ${{ steps.evaluate.outputs.verify-report }}
+  elapsed-seconds:
+    description: Elapsed runner seconds including builds and cleanup
+    value: ${{ steps.evaluate.outputs.elapsed-seconds }}
+  daemon-install:
+    description: release-sha256 or source-fallback
+    value: ${{ steps.evaluate.outputs.daemon-install }}
+  artifact-dir:
+    description: Private directory containing generated JSON evidence, retained on failure
+    value: ${{ steps.evaluate.outputs.artifact-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Reserve fresh evidence path
+      id: setup
+      shell: bash
+      run: |
+        set +x +v
+        set -euo pipefail
+        umask 077
+        if [[ "$(uname -s)" != Linux ]]; then
+          printf '%s\n' 'error: kmx-eval requires Linux' >&2
+          exit 1
+        fi
+        path="$(mktemp -d "$RUNNER_TEMP/kmx-eval-evidence.XXXXXX")"
+        rmdir -- "$path"
+        printf 'artifact-dir=%s\n' "$path" >> "$GITHUB_OUTPUT"
+    - name: Evaluate and optionally verify
+      id: evaluate
+      shell: bash
+      env:
+        EVAL_RUNNER: ${{ github.action_path }}/../../../scripts/ci/live-eval-loop.sh
+        BUNDLE_DIR: ${{ inputs.bundle }}
+        ARTIFACT_DIR: ${{ steps.setup.outputs.artifact-dir }}
+        MODEL_MODE: ${{ inputs.model-mode }}
+        MODEL_NAME: ${{ inputs.model-name }}
+        MODEL_BASE_URL: ${{ inputs.model-base-url }}
+        MODEL_KEY_ENV: ${{ inputs.model-key-env }}
+        AIKIT_IMAGE: ${{ inputs.aikit-image }}
+        AIKIT_CONFIG: ${{ inputs.aikit-config }}
+        SESSIONS_ARCHIVE_URL: ${{ inputs.sessions-archive-url }}
+        SESSIONS_ARCHIVE_SHA256: ${{ inputs.sessions-archive-sha256 }}
+        KMX_BIN: ${{ inputs.kmx-bin }}
+        VERIFY: ${{ inputs.verify }}
+        CASE_TIMEOUT: ${{ inputs.case-timeout }}
+        COMMAND_TIMEOUT: ${{ inputs.command-timeout }}
+      run: |
+        set +x +v
+        exec bash "$EVAL_RUNNER"
+    - name: Upload JSON evaluation evidence
+      if: ${{ always() && steps.evaluate.outputs.artifact-dir != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.evaluate.outputs.artifact-dir }}/*.json
+        if-no-files-found: warn
+        retention-days: 7

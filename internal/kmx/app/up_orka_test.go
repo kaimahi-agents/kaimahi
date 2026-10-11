@@ -94,7 +94,7 @@ func upFixture(t *testing.T) (*App, *bytes.Buffer, string) {
 	a := &App{
 		Cfg: &config.Config{KindCluster: "test", KubeContext: "kind-test",
 			ContextSource: config.SourceKubeCtx, ContainerEngine: "docker",
-			Model: "qwen2.5:3b", Credential: "hello-world"},
+			Model: "qwen2.5:3b"},
 		Run: &run.Runner{Stdout: out, Stderr: errOut}, Out: out, Err: errOut,
 		guarded: true, orkaInstaller: server.URL, orkaInstallerDigest: digestOf(installer),
 	}
@@ -134,7 +134,7 @@ func TestOrkaUpRefusesUnreadyOwnedReleaseBeforeModelPull(t *testing.T) {
 	a, _, args := upFixture(t)
 	t.Setenv("KMX_TEST_UP_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_UP_HELM_VALUES", pinnedOrkaHelmValues(t, nil))
-	controller := orkaDeployWithImage("w112-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
+	controller := orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)
 	controller["status"].(map[string]any)["availableReplicas"] = 0
 	t.Setenv("KMX_TEST_UP_DEPLOY_JSON", orkaDeployJSON(t, controller))
 	err := a.Up("")
@@ -250,16 +250,19 @@ func TestBareUpWaitsForCurrentGenerationProviderReady(t *testing.T) {
 	}
 }
 
-// The guidance at the end of an Orka-only run has to be a route this cluster
-// can take. Putting an application's model traffic on the seam is
-// `kmx migrate`, one workload at a time.
-func TestOrkaOnlyUpPointsAtMigrateRatherThanGovern(t *testing.T) {
+// Runtime setup directs the operator to native authoring, not a separate proxy.
+func TestOrkaOnlyUpPointsAtNativeAuthoring(t *testing.T) {
 	a, errOut, _ := upFixture(t)
 	if err := a.Up(""); err != nil {
 		t.Fatalf("a bare Orka-only `kmx up` failed: %v\n%s", err, errOut)
 	}
-	if !strings.Contains(errOut.String(), "kmx --context kind-test migrate") {
-		t.Errorf("the Orka-only run offers no migration route:\n%s", errOut)
+	if !strings.Contains(errOut.String(), "kmx --context kind-test agent create") {
+		t.Errorf("the Orka-only run offers no native authoring route:\n%s", errOut)
+	}
+	for _, command := range []string{"plane", "migrate"} {
+		if strings.Contains(errOut.String(), a.operationCommand(command)) {
+			t.Errorf("the Orka-only run still advertises %s:\n%s", command, errOut)
+		}
 	}
 	if strings.Contains(errOut.String(), a.operationCommand("govern")) {
 		t.Errorf("the Orka-only run recommends governing an agent it did not deploy:\n%s", errOut)

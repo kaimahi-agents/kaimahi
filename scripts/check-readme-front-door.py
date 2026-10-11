@@ -16,7 +16,6 @@ ORDER = [
     ("journey heading", r"^## Create, Prove, Lift$"),
     ("Quickstart heading", r"^## Quickstart$"),
     ("runtime contract heading", r"^## Runtime Contract$"),
-    ("migration heading", r"^## Migrate Model Traffic$"),
     ("Status heading", r"^## Status$"),
     ("documentation heading", r"^## Documentation$"),
     ("Development heading", r"^## Development$"),
@@ -37,8 +36,8 @@ INSTALL_COMMANDS = [
 ]
 FIRST_ANSWER_COMMANDS = [("kmx quickstart", r"^kmx quickstart$")]
 JOURNEY_COMMANDS = [
-    ("kmx up", r"^`kmx up`"),
-    ("kmx quickstart-wizard", r"^`kmx quickstart-wizard`"),
+    ("kmx local up", r"^`kmx local up`"),
+    ("kmx quickstart --interactive", r"^`kmx quickstart --interactive`"),
     ("kmx agent create", r"^`kmx agent create`"),
     ("kmx agent lift", r"^`kmx agent lift`"),
     ("kmx agent status", r"^`kmx agent status`"),

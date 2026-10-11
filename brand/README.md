@@ -18,7 +18,6 @@ used at the top of the repository README.
 | `wordmark.svg` | SVG viewBox `0 0 760 192`; transparent | Horizontal name lockup |
 | `hero.png` | 1600×600 RGB; opaque | Organization profile hero; not embedded in the repository README |
 | `social-preview.png` | 1280×640 RGB; opaque | GitHub repository social preview |
-| `../docs/assets/architecture.svg` | Scalable SVG; opaque navy canvas | Governance architecture; editable source is beside it |
 
 ## Ketu mark
 
@@ -51,8 +50,7 @@ constitute a separate cultural review of this later icon.
   mascot below 96 px.
 - Place transparent artwork on quiet backgrounds where its navy edges and pale
   details retain contrast. Use the dark-blue wordmark only on light backgrounds.
-- Keep the hero, social preview, and architecture diagram on their supplied
-  dark canvases; the diagram is designed to read in GitHub light and dark modes.
+- Keep the hero and social preview on their supplied dark canvases.
 - Do not recolor individual character details or add holiday/cultural motifs.
 - Do not place text over the worker or the guarded pathways.
 - Technical diagrams may use the palette without including the mascot.
@@ -62,6 +60,6 @@ constitute a separate cultural review of this later icon.
 The ketu SVG was supplied by a project maintainer and adopted as the compact
 repository mark. The mascot and scene illustrations were generated with OpenAI
 ImageGen under human art direction. `mascot.png` is the canonical character
-reference used for subsequent edits. The compact mark, wordmark, and architecture
-diagram are vector-authored assets. Generation prompts and material edits are
+reference used for subsequent edits. The compact mark and wordmark are
+vector-authored assets. Generation prompts and material edits are
 recorded in the pull request that introduced these files.

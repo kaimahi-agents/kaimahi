@@ -10,7 +10,7 @@
 [![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)
 [![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)
 
-[Getting started](docs/getting-started.md) · [AgentSuite specification](docs/agentsuite-spec.md) · [Runtime contract](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Contributing](CONTRIBUTING.md)
+[Getting started](docs/getting-started.md) · [AgentSuite specification](agentsuite/spec.md) · [Runtime contract](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Contributing](CONTRIBUTING.md)
 
 <sub>[About the ketu mark](brand/README.md#ketu-mark)</sub>
 
@@ -42,11 +42,13 @@ kmx quickstart
 ```
 
 `kmx quickstart` provisions local kind and Orka and runs a fixed Agent's fresh Task.
-`kmx up` provisions the local runtime without creating an Agent.
-`kmx quickstart-wizard` is the custom interactive path:
+`kmx local up` provisions the local runtime without creating an Agent
+(`kmx up` on tagged v0.4.1; the grouped command is unreleased).
+`kmx quickstart --interactive` is the custom interactive path
+(`kmx quickstart-wizard` on tagged v0.4.1; the flag is unreleased):
 
 ```bash
-kmx quickstart-wizard
+kmx quickstart --interactive
 ```
 
 Create an agent, choose **Chat with agent**, get a local answer, then enter
@@ -91,7 +93,7 @@ Completed setup can remain after cancellation. Read
 Use Podman explicitly with:
 
 ```bash
-kmx --container-engine podman quickstart-wizard
+kmx --container-engine podman quickstart --interactive
 ```
 
 `@main` remains the moving development option; use `@v0.4.1` for this release.
@@ -112,8 +114,8 @@ boundaries between KMX and runtimes.
 | Goal | Current interface | Boundary |
 |---|---|---|
 | Prove the fixed local first-answer path | `kmx quickstart` | Non-interactive Orka Agent and fresh Task |
-| Provision the local runtime only | `kmx up` | Does not create an agent |
-| Create your own local agent interactively | `kmx quickstart-wizard` | Wizard with model and agent choices |
+| Provision the local runtime only | `kmx local up` | Does not create an agent; v0.4.1 uses `kmx up` |
+| Create your own local agent interactively | `kmx quickstart --interactive` | Wizard with model and agent choices; v0.4.1 uses `kmx quickstart-wizard` |
 | Create on a prepared target | `kmx agent create` | Orka is the unchanged default; explicit `--runtime kagent` is create-only for exact v0.10.2. Neither path provisions credentials |
 | Prove an answer | Interactive Orka chat or `kmx agent create --task ...` | Readiness alone is not execution proof; Kagent sends one A2A message and never retries an ambiguous result |
 | Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Orka bundles only; reconciles on an existing target and `--plan` writes nothing |
@@ -123,9 +125,12 @@ boundaries between KMX and runtimes.
 | Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while both create paths require `--namespace` |
 
 `kmx aks up` / `kmx aks down` remain temporary compatibility routes, not
-first-class KMX commands. They are hidden from root help and shell completion;
-direct invocation keeps unchanged flags and behavior for billable AKS provisioning,
-recovery and safe teardown. See the [AKS compatibility guide](docs/aks.md).
+first-class KMX commands. They are hidden from root help and shell completion.
+Setup provisions AKS and installs Orka only, with optional Azure monitoring
+add-ons; the owner configures the model Provider. It does not deploy a model
+plane or capture its credentials. Safe teardown of recorded owned resources,
+including historical runs, remains available. See the
+[AKS compatibility guide](docs/aks.md).
 
 Default Orka create writes reviewable YAML, validates it against the selected
 target, creates dependencies in order, and waits for current-generation
@@ -151,32 +156,15 @@ also discusses rollback, which does not have a standalone command. Deploying
 and verifying an earlier revision cannot undo an agent's completed external
 actions. KMX uses Git and the selected runtime rather than a separate server.
 
-## Migrate Model Traffic
-
-`kmx migrate` is a separate compatibility bridge for an existing application:
-
-```bash
-kmx plane
-kmx migrate <deployment> --namespace <namespace> --model <provider>/<model>
-```
-
-The application owner keeps the Deployment and reviews the generated patch. The
-bridge covers a supported model-client shape; it does not convert the application
-into an agent, govern all of its activity, or replace runtime enforcement. Read
-the [migration guide](docs/migrate.md) for protocol, credential, and ownership
-limits.
-
 ## Status
 
 Kaimahi is pre-1.0 and incubating. Interactive local creation, default creation
 on the first-class Orka runtime, inspection, chat, bundle lift and interactive
-lift to an existing target, AKS platform provisioning, and model-traffic
-migration are implemented. The only current Kagent capability is explicit,
-create-only authoring for an already-installed exact v0.10.2, optionally ending
+lift to an existing target, and AKS platform provisioning are implemented. The
+only current Kagent capability is explicit, create-only authoring for an already-installed exact v0.10.2, optionally ending
 in one A2A message from that invocation. Its former broad
 command surface remains retired, and historical AKS records remain
-teardown-only. Rollback remains directional; the model-traffic bridge
-(`kmx plane`, `kmx migrate`) remains.
+teardown-only. Rollback remains directional.
 AKS paths use billable resources and are not continuously re-proved in CI.
 
 ## Documentation
@@ -184,14 +172,13 @@ AKS paths use billable resources and are not continuously re-proved in CI.
 | Start here | Purpose |
 |---|---|
 | [Getting started](docs/getting-started.md) | Prerequisites and current local workflows |
-| [AgentSuite specification](docs/agentsuite-spec.md) | Portable OCI manifests, ToolProviders exposing callable Tools, provider sandbox images, and Agent sandbox bindings |
+| [AgentSuite specification](agentsuite/spec.md) | Portable OCI manifests, ToolProviders exposing callable Tools, provider sandbox images, and Agent sandbox bindings |
 | [`kmx` reference](docs/kmx.md) | Commands, safety rules, and output contracts |
 | [Runtime contract](docs/runtime-adapters.md) | Runtime, context, session, inference, lifecycle, and enforcement boundaries |
 | [Runtime setup](docs/orka.md) | First-class default implementation setup, native creation, and first task |
 | [Bundle lift](docs/agent-lift.md) | Standalone bundle-to-prepared-target command and receipts |
 | [Interactive lift](docs/interactive-lift.md) | Bundle lift with guided preparation and the labelled live-copy fallback |
 | [AKS](docs/aks.md) | Billable resource ownership, provisioning, and teardown |
-| [Migration](docs/migrate.md) | Existing-application model-traffic bridge |
 | [Releases](docs/releases.md) | Versioning, install/upgrade paths, and cutting a release |
 | [Direction issue #194](https://github.com/kaimahi-agents/kaimahi/issues/194) | Proposed definitions, adapters, and lifecycle |
 | [Documentation index](docs/README.md) | All current guides and maintainer references |

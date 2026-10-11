@@ -118,12 +118,13 @@ func TestTaskResultRejectsNonAITaskAndMissingTask(t *testing.T) {
 func TestTaskResultWaitDeadlineDuringTaskGetIsPending(t *testing.T) {
 	f, opt := taskResultFixture(t)
 	t.Setenv("KMX_EVAL_TASK_GET_DELAY", "3s")
+	deadline := orkaTestDeadline(t, f.app, "task-result-inspect")
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	f.app.Run.Context = ctx
 	opt.Wait = 5 * time.Minute
 	err := f.app.TaskResult(opt)
-	if !errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
+	if !errors.Is(err, ErrTaskPending) || deadline().Err() != context.DeadlineExceeded || f.out.Len() != 0 {
 		t.Fatalf("deadline during Task GET: err=%v stdout=%q", err, f.out)
 	}
 }
@@ -131,11 +132,12 @@ func TestTaskResultWaitDeadlineDuringTaskGetIsPending(t *testing.T) {
 func TestTaskResultNoWaitReadTimeoutIsNotPending(t *testing.T) {
 	f, opt := taskResultFixture(t)
 	t.Setenv("KMX_EVAL_TASK_GET_DELAY", "3s")
+	deadline := orkaTestDeadline(t, f.app, "task-result-inspect")
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	f.app.Run.Context = ctx
 	err := f.app.TaskResult(opt)
-	if err == nil || errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
+	if err == nil || errors.Is(err, ErrTaskPending) || deadline().Err() != context.DeadlineExceeded || f.out.Len() != 0 {
 		t.Fatalf("no-wait Task GET failure: err=%v stdout=%q", err, f.out)
 	}
 }
@@ -143,12 +145,13 @@ func TestTaskResultNoWaitReadTimeoutIsNotPending(t *testing.T) {
 func TestTaskResultWaitDeadlineDuringSessionStartupIsPending(t *testing.T) {
 	f, opt := taskResultFixture(t)
 	t.Setenv("KMX_EVAL_FORWARD_DELAY", "3s")
+	deadline := orkaTestDeadline(t, f.app, "orka-result-forward")
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	f.app.Run.Context = ctx
 	opt.Wait = 5 * time.Minute
 	err := f.app.TaskResult(opt)
-	if !errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
+	if !errors.Is(err, ErrTaskPending) || deadline().Err() != context.DeadlineExceeded || f.out.Len() != 0 {
 		t.Fatalf("session startup deadline: err=%v stdout=%q", err, f.out)
 	}
 }
@@ -187,12 +190,13 @@ func TestTaskResultWaitReportsPhaseChangesAndChecksUID(t *testing.T) {
 func TestTaskResultWaitTimeoutIsPending(t *testing.T) {
 	f, opt := taskResultFixture(t)
 	t.Setenv("KMX_EVAL_PHASE", "Running")
+	deadline := orkaTestDeadline(t, f.app, "task-result-status")
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	f.app.Run.Context = ctx
 	opt.Wait = 5 * time.Minute
 	err := f.app.TaskResult(opt)
-	if !errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
+	if !errors.Is(err, ErrTaskPending) || deadline().Err() != context.DeadlineExceeded || f.out.Len() != 0 {
 		t.Fatalf("timeout: err=%v stdout=%q", err, f.out)
 	}
 }
@@ -200,12 +204,13 @@ func TestTaskResultWaitTimeoutIsPending(t *testing.T) {
 func TestTaskResultWaitSucceededWithoutReadableResultTimesOut(t *testing.T) {
 	f, opt := taskResultFixture(t)
 	t.Setenv("KMX_EVAL_RESULT_AVAILABLE", "false")
+	deadline := orkaTestDeadline(t, f.app, "task-result-status")
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	f.app.Run.Context = ctx
 	opt.Wait = 5 * time.Minute
 	err := f.app.TaskResult(opt)
-	if !errors.Is(err, ErrTaskPending) || f.out.Len() != 0 {
+	if !errors.Is(err, ErrTaskPending) || deadline().Err() != context.DeadlineExceeded || f.out.Len() != 0 {
 		t.Fatalf("unavailable answer: err=%v stdout=%q", err, f.out)
 	}
 	if !strings.Contains(f.app.Err.(*bytes.Buffer).String(), "phase: Succeeded") {

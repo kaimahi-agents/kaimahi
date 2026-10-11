@@ -26,7 +26,7 @@ import (
 func newOrkaCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "orka",
-		Short: "Install and inspect Orka, the agent platform kmx can govern",
+		Short: "Install and inspect Orka, the agent platform",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}

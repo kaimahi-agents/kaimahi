@@ -38,7 +38,7 @@ func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, err
 		}
 		// Console agents are native Orka Agents; naming the runtime explicitly
 		// keeps chat off the discovery path rather than re-resolving the agent.
-		return agentTUIEnvironment{}, source.ChatWithOptions(ChatOptions{Agent: action.agent.Name, Namespace: action.agent.Namespace, Runtime: "orka", Interactive: true, Bundles: action.bundles})
+		return agentTUIEnvironment{}, source.ChatWithOptions(ChatOptions{Agent: action.agent.Name, Namespace: action.agent.Namespace, Runtime: "orka", Bundles: action.bundles})
 	}
 	if action.kind == "tools" {
 		if action.agent.External {

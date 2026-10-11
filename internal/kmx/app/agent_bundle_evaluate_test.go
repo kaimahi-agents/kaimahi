@@ -11,176 +11,16 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"go.yaml.in/yaml/v3"
 )
-
-// TestEvalKubectlHelper is the fake kubectl for evaluate. It serves the
-// destination's kube-system UID, one live Agent from agent.json, the result
-// account and Service, a token, a port-forward that only announces its bind
-// (the test's own HTTP server owns the port), and Tasks: every create is
-// logged and stored, and every read reports the phase KMX_EVAL_PHASE names.
-func TestEvalKubectlHelper(t *testing.T) {
-	dir := os.Getenv("KMX_EVAL_DIR")
-	if dir == "" {
-		return
-	}
-	args := os.Args[slices.Index(os.Args, "--")+1:]
-	if slices.Equal(args, []string{"version", "--client"}) {
-		os.Exit(0)
-	}
-	fail := func() { fmt.Fprint(os.Stderr, "external failure "+orkaTestToken()); os.Exit(1) }
-	if len(args) < 2 || args[0] != "--context" || args[1] != "kind-test" {
-		fail()
-	}
-	call := orkaCall{Args: args}
-	if slices.Contains(args, "-f") {
-		raw := new(bytes.Buffer)
-		_, _ = raw.ReadFrom(os.Stdin)
-		_ = json.Unmarshal(raw.Bytes(), &call.Document)
-	}
-	log, _ := os.OpenFile(filepath.Join(dir, "calls"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	_ = json.NewEncoder(log).Encode(call)
-	_ = log.Close()
-	if slices.Contains(args, "config") {
-		server := "https://127.0.0.1:6443"
-		if os.Getenv("KMX_EVAL_REMOTE") == "1" {
-			server = "https://managed.example.invalid"
-		}
-		fmt.Printf(`{"current-context":"kind-test","clusters":[{"name":"kind-test","cluster":{"server":%q}}],"contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}]}`, server)
-		os.Exit(0)
-	}
-	if slices.Contains(args, "port-forward") {
-		if os.Getenv("KMX_EVAL_STOCK_RELEASE") == "1" && !slices.Contains(args, "svc/orka") {
-			fail()
-		}
-		if delay := os.Getenv("KMX_EVAL_FORWARD_DELAY"); delay != "" {
-			pause, err := time.ParseDuration(delay)
-			if err != nil {
-				fail()
-			}
-			time.Sleep(pause)
-		}
-		_ = os.WriteFile(filepath.Join(dir, "forward-pid"), []byte(fmt.Sprint(os.Getpid())), 0600)
-		port, _, _ := strings.Cut(args[len(args)-1], ":")
-		fmt.Println("Forwarding from 127.0.0.1:" + port + " -> 8080")
-		time.Sleep(time.Hour)
-	}
-	if slices.Contains(args, "token") {
-		fmt.Printf(`{"status":{"token":%q,"expirationTimestamp":%q}}`, orkaTestToken(), time.Now().Add(10*time.Minute).Format(time.RFC3339))
-		os.Exit(0)
-	}
-	if i := slices.Index(args, "get"); i >= 0 {
-		kind, name := args[i+1], args[i+2]
-		switch kind {
-		case "namespace":
-			fmt.Printf(`{"kind":"Namespace","metadata":{"name":"kube-system","uid":%q}}`, getenvLiftTest("KMX_EVAL_CLUSTER_UID", "cluster-uid"))
-		case "crd":
-			plural, _, _ := strings.Cut(name, ".")
-			raw, err := os.ReadFile(filepath.Join(os.Getenv("KMX_RECONCILE_FIXTURES"), "v0.1.3", plural+".yaml"))
-			if err != nil {
-				fail()
-			}
-			_, _ = os.Stdout.Write(raw)
-		case "serviceaccount":
-			fmt.Print("serviceaccount/" + name)
-		case "services":
-			if raw := os.Getenv("KMX_EVAL_SERVICES"); raw != "" {
-				fmt.Print(raw)
-				break
-			}
-			fmt.Print(`{"items":[{"metadata":{"name":"orka","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"},"ports":[{"name":"api","port":8080}]}}]}`)
-		case "service":
-			if os.Getenv("KMX_EVAL_STOCK_RELEASE") == "1" && name != "orka" {
-				fail()
-			}
-			fmt.Print(`{"spec":{"ports":[{"port":8080}]}}`)
-		case "providers.core.orka.ai":
-			raw, err := os.ReadFile(filepath.Join(dir, "provider.json"))
-			if err != nil {
-				os.Exit(0)
-			}
-			_, _ = os.Stdout.Write(raw)
-		case "agents.core.orka.ai":
-			raw, err := os.ReadFile(filepath.Join(dir, "agent.json"))
-			if err != nil {
-				os.Exit(0)
-			}
-			if swap := os.Getenv("KMX_EVAL_AGENT_SWAP_ON_READ"); swap != "" {
-				countPath := filepath.Join(dir, "agent-read-count")
-				countRaw, _ := os.ReadFile(countPath)
-				count, _ := strconv.Atoi(string(countRaw))
-				count++
-				_ = os.WriteFile(countPath, []byte(strconv.Itoa(count)), 0600)
-				threshold, _ := strconv.Atoi(swap)
-				if count >= threshold {
-					raw = bytes.Replace(raw, []byte(`"uid":"agent-uid"`), []byte(`"uid":"replacement-uid"`), 1)
-				}
-			}
-			_, _ = os.Stdout.Write(raw)
-		case "tasks.core.orka.ai":
-			if delay := os.Getenv("KMX_EVAL_TASK_GET_DELAY"); delay != "" {
-				pause, err := time.ParseDuration(delay)
-				if err != nil {
-					fail()
-				}
-				time.Sleep(pause)
-			}
-			raw, err := os.ReadFile(filepath.Join(dir, "task-"+name+".json"))
-			if err != nil {
-				os.Exit(0)
-			}
-			var task map[string]any
-			_ = json.Unmarshal(raw, &task)
-			phase := getenvLiftTest("KMX_EVAL_PHASE", "Succeeded")
-			if sequence := os.Getenv("KMX_EVAL_PHASE_SEQUENCE"); sequence != "" {
-				path := filepath.Join(dir, "task-phase-read-count")
-				countRaw, _ := os.ReadFile(path)
-				count, _ := strconv.Atoi(string(countRaw))
-				phases := strings.Split(sequence, ",")
-				phase = phases[min(count, len(phases)-1)]
-				_ = os.WriteFile(path, []byte(strconv.Itoa(count+1)), 0600)
-			}
-			if swap := os.Getenv("KMX_EVAL_TASK_SWAP_ON_READ"); swap != "" {
-				threshold, _ := strconv.Atoi(swap)
-				countRaw, _ := os.ReadFile(filepath.Join(dir, "task-phase-read-count"))
-				count, _ := strconv.Atoi(string(countRaw))
-				if count >= threshold {
-					task["metadata"].(map[string]any)["uid"] = "replacement-task-uid"
-				}
-			}
-			available := phase == "Succeeded" && os.Getenv("KMX_EVAL_RESULT_AVAILABLE") != "false"
-			task["status"] = map[string]any{"phase": phase, "resultRef": map[string]any{"available": available}}
-			_ = json.NewEncoder(os.Stdout).Encode(task)
-		default:
-			fail()
-		}
-		os.Exit(0)
-	}
-	if slices.Contains(args, "replace") && slices.Contains(args, "--dry-run=server") && call.Document != nil {
-		_ = json.NewEncoder(os.Stdout).Encode(call.Document)
-		os.Exit(0)
-	}
-	if slices.Contains(args, "create") && call.Document != nil && call.Document["kind"] == "Task" {
-		if os.Getenv("KMX_EVAL_CREATE_FAIL") == "1" {
-			fail()
-		}
-		meta := call.Document["metadata"].(map[string]any)
-		meta["uid"] = "task-uid-" + meta["name"].(string)
-		meta["generation"] = 1
-		body, _ := json.Marshal(call.Document)
-		_ = os.WriteFile(filepath.Join(dir, "task-"+meta["name"].(string)+".json"), body, 0600)
-		_, _ = os.Stdout.Write(body)
-		os.Exit(0)
-	}
-	fail()
-}
 
 type evalFixture struct {
 	app                              *App
@@ -191,6 +31,7 @@ type evalFixture struct {
 	answers                          map[string]string
 	resultStatus                     int
 	resultDisconnect, resultHoldBody bool
+	resultHeldBodies                 atomic.Int32
 }
 
 // newEvalFixture writes a created bundle (with its scaffolded example case
@@ -199,11 +40,7 @@ type evalFixture struct {
 func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 	t.Helper()
 	dir := t.TempDir()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	fakeTool(t, dir, "kubectl", "exec "+shellArg(exe)+" -test.run=^TestEvalKubectlHelper$ -- \"$@\"")
+	fakeTool(t, dir, "kubectl", kubectlFixture(t, "TestEvalKubectlHelper"))
 	t.Setenv("PATH", dir)
 	t.Setenv("KMX_EVAL_DIR", dir)
 	t.Setenv("KMX_HOME", filepath.Join(dir, "user-state"))
@@ -229,7 +66,7 @@ func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 	}
 	out := &bytes.Buffer{}
 	f := &evalFixture{
-		app: &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Out: out, Err: &bytes.Buffer{}, Run: &run.Runner{Stdout: out, Stderr: &bytes.Buffer{}}},
+		app: &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Out: out, Err: &bytes.Buffer{}, Run: &run.Runner{Stdout: out, Stderr: &bytes.Buffer{}}, waitTiming: fastWaitTiming()},
 		opt: EvaluateAgentBundleOptions{BundleDir: bundle, ToContext: "kind-test", CaseTimeout: 30 * time.Second},
 		dir: dir, bundle: bundle, name: create.Name, digest: agentruntime.PortableBundleDigest(source), out: out,
 		answers: map[string]string{}, resultStatus: http.StatusOK,
@@ -254,6 +91,7 @@ func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 		if f.resultHoldBody {
 			w.WriteHeader(http.StatusOK)
 			w.(http.Flusher).Flush()
+			f.resultHeldBodies.Add(1)
 			<-r.Context().Done()
 			return
 		}
@@ -440,9 +278,9 @@ func TestEvaluateMissingExpectationFailsAndExitsNonZero(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "did not pass") {
 		t.Fatalf("failing evaluation returned %v", err)
 	}
-	receipt, _ := f.receipt(t)
+	receipt, raw := f.receipt(t)
 	c := receipt.Cases[0]
-	if receipt.Result != "fail" || c.Verdict != "fail" || !slices.Equal(c.Matched, []string{"hello"}) || !slices.Equal(c.Missing, []string{"Signed, Sample"}) {
+	if receipt.Result != "fail" || c.Verdict != "fail" || len(c.Assertions) != 2 || c.Assertions[0].Verdict != agentruntime.EvaluationPass || c.Assertions[1].Verdict != agentruntime.EvaluationFail || len(c.Matched)+len(c.Missing) != 0 || strings.Contains(raw, "Signed, Sample") {
 		t.Fatalf("receipt = %+v", receipt)
 	}
 	if !strings.Contains(f.out.String(), "hello there.") || !strings.Contains(f.out.String(), `missing "Signed, Sample"`) {
@@ -457,7 +295,7 @@ func TestEvaluateFailedTaskIsFail(t *testing.T) {
 		t.Fatal("a failed Task passed the gate")
 	}
 	receipt, _ := f.receipt(t)
-	if receipt.Result != "fail" || receipt.Cases[0].Verdict != "fail" || !strings.Contains(receipt.Cases[0].Detail, "Failed") {
+	if receipt.Result != "fail" || receipt.Cases[0].Verdict != "fail" || receipt.Cases[0].Detail != "evaluation execution failed" {
 		t.Fatalf("receipt = %+v", receipt)
 	}
 	if f.taskCreates(t) != 1 {
@@ -567,6 +405,143 @@ func TestEvaluateUsesRememberedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := f.app.EvaluateAgentBundle(f.opt); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEvaluateReceiptSizePreflight(t *testing.T) {
+	for _, selected := range []bool{false, true} {
+		t.Run(fmt.Sprintf("selected=%t", selected), func(t *testing.T) {
+			f := newEvalFixture(t, oversizedEvaluationSuite())
+			f.answers["hello"] = "hello"
+			if selected {
+				f.opt.Case = "case-0"
+			} else {
+				// Budget refusal must precede even the remote mutation guard.
+				t.Setenv("KMX_EVAL_REMOTE", "1")
+			}
+			err := f.app.EvaluateAgentBundle(f.opt)
+			if selected {
+				if err != nil || f.taskCreates(t) != 1 {
+					t.Fatalf("single case: err=%v tasks=%d", err, f.taskCreates(t))
+				}
+				r, _ := f.receipt(t)
+				if r.FullCaseSet || len(r.Cases) != 1 || len(r.Cases[0].Assertions) != 1000 {
+					t.Fatalf("wrong selected evidence: %+v", r)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") || !strings.Contains(err.Error(), "at most 231 cases with one assertion each") || !strings.Contains(err.Error(), "--case <id> to run one case") {
+				t.Errorf("want receipt-size preflight refusal with case limit and single-case guidance, got %v", err)
+			}
+			if calls := orkaCalls(t, f.dir); len(calls) != 0 || f.taskCreates(t) != 0 {
+				t.Errorf("oversized evaluation reached kubectl: %+v", calls)
+			}
+			if _, err := os.Stat(filepath.Join(f.bundle, "receipts")); !os.IsNotExist(err) {
+				t.Errorf("refused evaluation changed receipts: %v", err)
+			}
+		})
+	}
+}
+
+func TestEvaluateKnownMetadataPreflight(t *testing.T) {
+	for _, field := range []string{"model", "escaped model", "context", "remembered namespace", "cluster UID", "Agent UID"} {
+		t.Run(field, func(t *testing.T) {
+			f := newEvalFixture(t, map[string]string{"a.yaml": evalHelloCase})
+			f.answers["Say hello."] = "hello"
+			huge := strings.Repeat("x", maxSessionsReceiptBytes)
+			beforeCluster := true
+			switch field {
+			case "model", "escaped model":
+				if field == "escaped model" {
+					// Raw bytes fit comfortably; JSON HTML escaping does not.
+					huge = strings.Repeat("<", maxSessionsReceiptBytes/6)
+				}
+				setEvaluationPortableModel(t, f.bundle, huge)
+				_, _, digest, err := readBundlePortableDocument(f.bundle)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.digest = digest
+				f.seedAgent(t, f.digest)
+			case "context":
+				f.opt.ToContext = huge
+			case "remembered namespace":
+				path, err := bundleLiftSelectionPath(f.bundle)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := saveBundleLiftSelection(path, bundleLiftSelection{Context: "kind-test", ClusterUID: "cluster-uid", Namespace: huge, Inference: "provider:inference"}); err != nil {
+					t.Fatal(err)
+				}
+			case "cluster UID":
+				// Avoid oversized environment variables while retaining huge JSON.
+				t.Setenv("KMX_EVAL_CLUSTER_UID", strings.Repeat("<", 110000))
+				body := "id: greet\ninput: Say hello.\nexpectContains:\n" + strings.Repeat("- hello\n", 1000)
+				if err := os.WriteFile(filepath.Join(f.bundle, "eval", "a.yaml"), []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+				beforeCluster = false
+			case "Agent UID":
+				raw, err := os.ReadFile(filepath.Join(f.dir, "agent.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var agent map[string]any
+				if err := json.Unmarshal(raw, &agent); err != nil {
+					t.Fatal(err)
+				}
+				agent["metadata"].(map[string]any)["uid"] = huge
+				seed, err := json.Marshal(agent)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(f.dir, "agent.json"), seed, 0600); err != nil {
+					t.Fatal(err)
+				}
+				beforeCluster = false
+			}
+			if !beforeCluster {
+				// Metadata refusal must precede the remote mutation guard too.
+				t.Setenv("KMX_EVAL_REMOTE", "1")
+			}
+			err := f.app.EvaluateAgentBundle(f.opt)
+			if err == nil || !strings.Contains(err.Error(), "1 MiB receipt budget") || strings.Contains(err.Error(), "finished") {
+				t.Errorf("known metadata did not fail preflight: %v", err)
+			}
+			if f.taskCreates(t) != 0 {
+				t.Error("known oversized metadata created a Task")
+			}
+			if calls := orkaCalls(t, f.dir); beforeCluster && len(calls) != 0 {
+				t.Errorf("known oversized metadata reached kubectl: %d calls", len(calls))
+			}
+			if _, err := os.Stat(filepath.Join(f.bundle, "receipts")); !os.IsNotExist(err) {
+				t.Errorf("metadata refusal changed receipts: %v", err)
+			}
+		})
+	}
+}
+
+func setEvaluationPortableModel(t *testing.T, bundle, model string) {
+	t.Helper()
+	path := filepath.Join(bundle, "agent.yaml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portable, err := agentruntime.ParsePortableAgent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portable.Spec.Model.Name = model
+	raw, err = yaml.Marshal(portable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agentruntime.ParsePortableAgent(raw); err != nil {
+		t.Fatalf("oversized model must remain a valid portable source: %v", err)
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -162,13 +162,15 @@ def selftest() -> None:
                     "workflow.yml:14", "workflow.yml:16"}
         actual = {"%s:%s" % (pathlib.Path(item.split(":", 1)[0]).name,
                                item.split(":", 2)[1]) for item in findings}
-        assert actual == expected, (actual, expected)
+        if actual != expected:
+            sys.exit(f"comment-history self-test: got {actual}, expected {expected}")
         for name in examples:
             (root / name).write_text('text = "W31 the lane"\n' if name.endswith('.py') else
                                      'key: "# W31 the lane"\n' if name.endswith(('.yaml', '.yml')) else
                                      'echo "# W31 the lane"\n' if name.endswith('.sh') else
                                      'package sample\nvar text = "W31 the lane"\n')
-        assert not scan(fixtures), "strings were flagged"
+        if scan(fixtures):
+            sys.exit("comment-history self-test: strings were flagged")
     print("comment-history self-test: ok")
 
 

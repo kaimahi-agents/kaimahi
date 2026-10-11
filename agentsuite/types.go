@@ -1,0 +1,303 @@
+package agentsuite
+
+const (
+	SpecVersion = "1.0.0-draft"
+
+	LayoutVersion = "1.0.0"
+
+	MediaTypeArtifact                = "application/vnd.agentsuite.suite.v1"
+	MediaTypeEmptyConfig             = "application/vnd.oci.empty.v1+json"
+	MediaTypeContent                 = "application/vnd.agentsuite.content.v1.tar+gzip"
+	MediaTypeSuite                   = "application/vnd.agentsuite.manifest.v1+json"
+	MediaTypeAgent                   = "application/vnd.agentsuite.agent.v1+json"
+	MediaTypeToolProviderCatalog     = "application/vnd.agentsuite.tool.provider.catalog.v1+json"
+	MediaTypeToolProvider            = "application/vnd.agentsuite.tool.provider.v1+json"
+	MediaTypeToolProviderComposition = "application/vnd.agentsuite.tool.provider.composition.v1+json"
+	MediaTypeComposition             = "application/vnd.agentsuite.composition.v1+json"
+	MediaTypeBuildProfile            = "application/vnd.agentsuite.build.profile.v1+json"
+
+	ExecutionSharedSandbox = "shared-sandbox"
+)
+
+type Descriptor struct {
+	MediaType string `json:"mediaType"`
+	Digest    string `json:"digest"`
+	Size      int64  `json:"size"`
+}
+
+type Platform struct {
+	OS           string `json:"os"`
+	Architecture string `json:"architecture"`
+	Variant      string `json:"variant,omitempty"`
+}
+
+func (p Platform) String() string {
+	if p.Variant == "" {
+		return p.OS + "/" + p.Architecture
+	}
+	return p.OS + "/" + p.Architecture + "/" + p.Variant
+}
+
+type AgentPlatform struct {
+	ID        string     `json:"id"`
+	Platforms []Platform `json:"platforms"`
+}
+
+type Extension struct {
+	Name     string `json:"name"`
+	Critical bool   `json:"critical"`
+	Digest   string `json:"digest,omitempty"`
+}
+
+type Suite struct {
+	SchemaVersion            string                       `json:"schemaVersion"`
+	MediaType                string                       `json:"mediaType"`
+	Name                     string                       `json:"name"`
+	Agents                   []ManifestRef                `json:"agents"`
+	ToolProviderCatalog      ManifestRef                  `json:"toolProviderCatalog"`
+	ToolProviderCompositions []ToolProviderCompositionRef `json:"toolProviderCompositions,omitempty"`
+	Compositions             []CompositionRef             `json:"compositions"`
+	BuildProfiles            []ManifestRef                `json:"buildProfiles"`
+	Capabilities             []string                     `json:"capabilities,omitempty"`
+	Extensions               []Extension                  `json:"extensions,omitempty"`
+}
+
+type ManifestRef struct {
+	ID      string `json:"id"`
+	Version string `json:"version,omitempty"`
+	Path    string `json:"path"`
+	Digest  string `json:"digest"`
+}
+
+type CompositionRef struct {
+	Agent    string   `json:"agent"`
+	Platform Platform `json:"platform"`
+	Path     string   `json:"path"`
+	Digest   string   `json:"digest"`
+}
+
+type ToolProviderCompositionRef struct {
+	ID       string   `json:"id"`
+	Version  string   `json:"version"`
+	Platform Platform `json:"platform"`
+	Path     string   `json:"path"`
+	Digest   string   `json:"digest"`
+}
+
+type Agent struct {
+	SchemaVersion string                    `json:"schemaVersion"`
+	MediaType     string                    `json:"mediaType"`
+	ID            string                    `json:"id"`
+	Description   string                    `json:"description,omitempty"`
+	Instructions  FileRef                   `json:"instructions"`
+	Model         ModelRequirement          `json:"model"`
+	ToolProviders []ToolProviderRequirement `json:"toolProviders,omitempty"`
+	Invokes       []AgentInvoke             `json:"invokes,omitempty"`
+	Extensions    []Extension               `json:"extensions,omitempty"`
+}
+
+type FileRef struct {
+	Path   string `json:"path"`
+	Digest string `json:"digest"`
+}
+
+type ModelRequirement struct {
+	Protocol    string   `json:"protocol"`
+	Model       string   `json:"model"`
+	EndpointEnv string   `json:"endpointEnv,omitempty"`
+	SecretRefs  []string `json:"secretRefs,omitempty"`
+}
+
+type ToolProviderRequirement struct {
+	ID            string `json:"id"`
+	Version       string `json:"version"`
+	ExecutionMode string `json:"executionMode"`
+}
+
+type AgentInvoke struct {
+	Agent         string `json:"agent"`
+	MaxConcurrent int    `json:"maxConcurrent,omitempty"`
+	MaxDepth      int    `json:"maxDepth,omitempty"`
+}
+
+type ToolProviderCatalog struct {
+	SchemaVersion string        `json:"schemaVersion"`
+	MediaType     string        `json:"mediaType"`
+	ToolProviders []ManifestRef `json:"toolProviders"`
+}
+
+// ToolProvider is a versioned contract and its bundled or remote implementations.
+// The abstraction is protocol-neutral; the declared protocol contributes to identity.
+type ToolProvider struct {
+	SchemaVersion string                `json:"schemaVersion"`
+	MediaType     string                `json:"mediaType"`
+	ID            string                `json:"id"`
+	Version       string                `json:"version"`
+	Retained      *bool                 `json:"retained,omitempty"`
+	Protocol      string                `json:"protocol"`
+	Revision      string                `json:"revision"`
+	Tools         []Tool                `json:"tools"`
+	Variants      []ToolProviderVariant `json:"variants,omitempty"`
+	Remote        *RemoteToolProvider   `json:"remote,omitempty"`
+	Extensions    []Extension           `json:"extensions,omitempty"`
+}
+
+// Tool is one model-callable function exposed by a ToolProvider.
+type Tool struct {
+	Name                   string                  `json:"name"`
+	Description            string                  `json:"description,omitempty"`
+	InputSchema            FileRef                 `json:"inputSchema"`
+	OutputSchema           *FileRef                `json:"outputSchema,omitempty"`
+	Effects                []string                `json:"effects,omitempty"`
+	DelegatedAuthorization *DelegatedAuthorization `json:"delegatedAuthorization,omitempty"`
+}
+
+// DelegatedAuthorization declares that a Tool requires delegated-user
+// authorization before it may be called. It never contains a credential
+// value, consent state, token lifecycle state, or a deployment-specific
+// Connection identifier; the deployment/runtime resolves the requirement to
+// a verified requester and a live user-owned connection.
+type DelegatedAuthorization struct {
+	Service    string             `json:"service"`
+	Scope      string             `json:"scope"`
+	Effect     string             `json:"effect"`
+	Approval   bool               `json:"approval"`
+	Credential BrokeredCredential `json:"credential"`
+}
+
+// BrokeredCredential declares that credential resolution and injection for a
+// delegated-user authorization requirement are brokered entirely by the
+// runtime. It never contains a credential value.
+type BrokeredCredential struct {
+	Resolution string `json:"resolution"`
+	BindingRef string `json:"bindingRef"`
+}
+
+type RemoteToolProvider struct {
+	Transport    string                     `json:"transport"`
+	EndpointRef  string                     `json:"endpointRef"`
+	Headers      []RemoteHeader             `json:"headers,omitempty"`
+	Network      []RemoteNetworkRequirement `json:"network"`
+	Timeouts     RemoteTimeouts             `json:"timeouts"`
+	Cancellation string                     `json:"cancellation"`
+	Connection   string                     `json:"connection"`
+}
+
+type RemoteHeader struct {
+	Name      string       `json:"name"`
+	SecretRef SecretKeyRef `json:"secretRef"`
+}
+
+type SecretKeyRef struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+}
+
+type RemoteNetworkRequirement struct {
+	DestinationRef string `json:"destinationRef"`
+}
+
+type RemoteTimeouts struct {
+	ConnectMilliseconds int `json:"connectMilliseconds"`
+	RequestMilliseconds int `json:"requestMilliseconds"`
+}
+
+type ToolProviderVariant struct {
+	Platform      Platform                 `json:"platform"`
+	VariantDigest string                   `json:"variantDigest"`
+	InstallRoot   string                   `json:"installRoot"`
+	Relocatable   bool                     `json:"relocatable,omitempty"`
+	PayloadRoot   string                   `json:"payloadRoot"`
+	Entrypoint    string                   `json:"entrypoint"`
+	Arguments     []string                 `json:"arguments,omitempty"`
+	SearchPath    []string                 `json:"searchPath,omitempty"`
+	Environment   []EnvironmentName        `json:"environment,omitempty"`
+	WritablePaths []string                 `json:"writablePaths,omitempty"`
+	Network       []NetworkAccess          `json:"network,omitempty"`
+	Runtime       RuntimeRequirement       `json:"runtime"`
+	Files         []InventoryEntry         `json:"files"`
+	Dependencies  []ToolProviderDependency `json:"dependencies,omitempty"`
+	SBOM          *Descriptor              `json:"sbom,omitempty"`
+	Provenance    *Descriptor              `json:"provenance,omitempty"`
+}
+
+type EnvironmentName struct {
+	Name     string `json:"name"`
+	Required bool   `json:"required,omitempty"`
+	Secret   bool   `json:"secret,omitempty"`
+	Delivery string `json:"delivery,omitempty"`
+}
+
+type NetworkAccess struct {
+	Scheme string `json:"scheme"`
+	Host   string `json:"host"`
+	Port   int    `json:"port"`
+}
+
+type RuntimeRequirement struct {
+	ABI           string   `json:"abi"`
+	ABIVersion    string   `json:"abiVersion,omitempty"`
+	CPUBaseline   string   `json:"cpuBaseline"`
+	RequiredPaths []string `json:"requiredBasePaths,omitempty"`
+}
+
+type InventoryEntry struct {
+	Path       string `json:"path"`
+	Type       string `json:"type"`
+	Mode       uint32 `json:"mode"`
+	UID        int    `json:"uid"`
+	GID        int    `json:"gid"`
+	Size       int64  `json:"size,omitempty"`
+	Digest     string `json:"digest,omitempty"`
+	LinkTarget string `json:"linkTarget,omitempty"`
+	Component  string `json:"component,omitempty"`
+}
+
+type ToolProviderDependency struct {
+	ID            string `json:"id"`
+	Version       string `json:"version"`
+	VariantDigest string `json:"variantDigest"`
+}
+
+type PlatformImage struct {
+	Platform Platform   `json:"platform"`
+	ImageRef string     `json:"imageRef"`
+	Image    Descriptor `json:"image"`
+}
+
+type Composition struct {
+	SchemaVersion string                 `json:"schemaVersion"`
+	MediaType     string                 `json:"mediaType"`
+	Agent         string                 `json:"agent"`
+	Platform      Platform               `json:"platform"`
+	BuildProfile  string                 `json:"buildProfile"`
+	ToolProviders []ResolvedToolProvider `json:"toolProviders"`
+}
+
+type ResolvedToolProvider struct {
+	ID             string `json:"id"`
+	Version        string `json:"version"`
+	ManifestDigest string `json:"manifestDigest"`
+	VariantDigest  string `json:"variantDigest,omitempty"`
+	ExecutionMode  string `json:"executionMode"`
+}
+
+type ToolProviderComposition struct {
+	SchemaVersion  string   `json:"schemaVersion"`
+	MediaType      string   `json:"mediaType"`
+	ID             string   `json:"id"`
+	Version        string   `json:"version"`
+	ManifestDigest string   `json:"manifestDigest"`
+	Platform       Platform `json:"platform"`
+	VariantDigest  string   `json:"variantDigest"`
+	BuildProfile   string   `json:"buildProfile"`
+}
+
+type BuildProfile struct {
+	SchemaVersion string          `json:"schemaVersion"`
+	MediaType     string          `json:"mediaType"`
+	ID            string          `json:"id"`
+	RuntimeBase   []PlatformImage `json:"runtimeBase"`
+	Harness       []PlatformImage `json:"harness"`
+	SourceEpoch   int64           `json:"sourceEpoch"`
+}

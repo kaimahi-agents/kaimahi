@@ -1,7 +1,8 @@
 # Copilot inference and tools
 
-Quickstart always waits for discovery and requires an explicit inference choice,
-including reruns and cases with only one option. No source is auto-selected.
+Interactive quickstart always waits for discovery and requires an explicit
+inference choice, including reruns and cases with only one option. No source is
+auto-selected.
 The legacy `--inference` flag does not bypass the picker.
 
 Discovery checks local runtimes, Copilot installation, CLI `auth.getStatus`, and
@@ -15,9 +16,11 @@ Existing agents can choose their current Orka Provider or Copilot auto.
 Choosing Copilot does not rewrite the stored Orka Provider. Local setup remains
 available for explicit comparisons.
 
-In chat, `/inference-copilot` opens a discovered-model picker. `/inference-local`
-returns to the Agent's Orka Provider; `/retry` repeats the previous prompt using
-the chosen route. Each reply shows total elapsed request time.
+On a local kind target, `/inference-copilot` opens a discovered-model picker.
+Host Copilot inference is refused on remote targets; configure a cluster Provider
+there instead. `/inference-local` returns to the Agent's Orka Provider; `/retry`
+repeats the previous prompt using the chosen route. Each reply shows total elapsed
+request time.
 
 ## Tool translation
 

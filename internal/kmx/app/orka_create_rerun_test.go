@@ -51,12 +51,13 @@ func TestOrkaCreateRerunAfterProviderReadyTimeout(t *testing.T) {
 	if err := os.WriteFile(flag, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	// Room for race-instrumented helper startup before the Ready poll begins.
+	// Expire at Ready, leaving the original setup budget untouched.
+	deadline := orkaTestDeadline(t, a, "orka-ready-provider")
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	a.Run.Context = ctx
 	err := a.CreateAgent(opt)
-	if err == nil || ctx.Err() != context.DeadlineExceeded {
+	if err == nil || deadline().Err() != context.DeadlineExceeded {
 		t.Fatalf("unready Provider did not stop the create: %v", err)
 	}
 	if !strings.Contains(err.Error(), "Rerunning the same command is safe") {
@@ -73,6 +74,7 @@ func TestOrkaCreateRerunAfterProviderReadyTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.Run.Context = t.Context()
+	a.waitTiming = fastWaitTiming()
 	diagnostics.Reset()
 	before := len(orkaCalls(t, dir))
 	if err := a.CreateAgent(opt); err != nil {

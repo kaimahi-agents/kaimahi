@@ -131,7 +131,7 @@ func TestLiveToolInstallContextGuard(t *testing.T) {
 		wantSkip, wantRefusal bool
 	}{
 		{name: "unset", wantSkip: true},
-		{name: "remote", context: "kmx-teams-w112", wantRefusal: true},
+		{name: "remote", context: "remote-cluster", wantRefusal: true},
 		{name: "empty kind name", context: "kind-", wantRefusal: true},
 		{name: "malformed", context: "kind-demo/other", wantRefusal: true},
 		{name: "valid", context: "kind-tool-ci"},

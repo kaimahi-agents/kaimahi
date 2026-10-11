@@ -75,7 +75,7 @@ type quickstartStep struct {
 // picker and no prompt: the same command on the same machine produces the
 // same cluster, the same Provider and the same Agent, which is what lets an
 // unattended caller rerun it and compare. Choosing your own model and
-// authoring your own agent is `kmx quickstart-wizard`.
+// authoring your own agent is `kmx quickstart --interactive`.
 //
 // This command does not enable governance; existing governance may survive
 // a rerun and is not assessed here.
@@ -100,8 +100,7 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	// `kubectl wait` would land in front of the JSON and the caller would
 	// get "Expecting value: line 1 column 1". Under --output json those go
 	// to stderr with everything else humans read, leaving stdout carrying
-	// exactly one document. `kmx metrics` already draws this line for the
-	// same reason.
+	// exactly one document.
 	if asJSON {
 		a.Run.Stdout = a.Err
 	}
@@ -151,10 +150,8 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	fmt.Fprintf(a.Out, "\n%s\n", safeTerminal(answer))
 	a.complete("An agent answered", started)
 	a.notef("\n%s  This command does not enable governance.\n"+
-		"Existing governance is not assessed by quickstart. To configure it:\n"+
-		"  %s  # the metering proxy and its ledger\n"+
-		"  %s  # put an application's model traffic on the seam (docs/migrate.md)",
-		a.presenter().Warning("GOVERNANCE"), result.Next[3], result.Next[4])
+		"Existing governance is not assessed by quickstart.",
+		a.presenter().Warning("NOTE"))
 	a.quickstartNext(cliui.New(a.Err), result)
 	return nil
 }
@@ -283,23 +280,16 @@ func (a *App) quickstartAnswer(task string) (string, error) {
 }
 
 // quickstartFollowups are the commands this cluster can actually run next.
-//
-// The chat follow-up carries --interactive because Orka chat has no one-shot:
-// `kmx agent chat --runtime orka` without it is refused by name, so printing
-// the shorter command would end the first answer with an instruction that
-// fails.
 func (a *App) quickstartFollowups() []string {
 	return []string{
-		a.operationCommand("agent", "chat", QuickstartAgent, "--interactive", "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
+		a.operationCommand("agent", "chat", QuickstartAgent, "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
 		a.operationCommand("agent", "create"),
 		a.operationCommand("orka", "status"),
-		a.operationCommand("plane"),
-		a.operationCommand("migrate", "<deployment>", "--namespace", "<ns>", "--model", QuickstartAgent+"/"+a.Cfg.Model),
 	}
 }
 
 func (a *App) quickstartNext(ui cliui.Output, result QuickstartResult) {
-	down := a.operationCommand("down")
+	down := a.operationCommand("local", "down")
 	if ui.Rich() {
 		a.notef("\n%s", ui.Actions("Next", []cliui.Action{
 			{Label: "Ask another question", Command: result.Next[0]},
@@ -328,7 +318,7 @@ func shellArg(value string) string {
 // operationCommand pins follow-up actions to the context this operation used.
 func (a *App) operationCommand(args ...string) string {
 	parts := []string{"kmx", "--context", shellArg(a.Cfg.KubeContext)}
-	if len(args) > 0 && (args[0] == "up" || args[0] == "plane" || args[0] == "down") {
+	if len(args) > 0 && (args[0] == "local" || args[0] == "up" || args[0] == "plane" || args[0] == "down") {
 		parts = append([]string{"KIND_CLUSTER=" + shellArg(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + shellArg(a.Cfg.ContainerEngine)}, parts...)
 	}
 	for _, arg := range args {

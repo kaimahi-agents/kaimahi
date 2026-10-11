@@ -1,11 +1,5 @@
-// Package config resolves kmx's settings.
-//
-// Every knob keeps the name this repository already uses — KIND_CLUSTER,
-// KUBE_CTX, CONTAINER_ENGINE, MODEL, CHAT_PORT, CRED and KAIMAHI_CONFIRM and
-// ADMIN_PORT from the Makefile, so delegating targets pass nothing: an
-// operator's `KIND_CLUSTER=mine make up` and their `KIND_CLUSTER=mine kmx up`
-// are the same run. Where the Makefile has a default, that default is
-// repeated here verbatim; the two are pinned together by a test.
+// Package config resolves kmx settings from CLI overrides, environment variables
+// and the saved context, and locates state and toolchain directories.
 package config
 
 import (
@@ -15,53 +9,16 @@ import (
 	"strings"
 )
 
-// Pinned versions and defaults. These are the Makefile's, and
-// TestDefaultsMatchTheMakefile refuses to let them drift.
+// Product defaults and namespace hints.
 const (
 	DefaultKindCluster = "kaimahi-p1"
 	DefaultModel       = "qwen2.5:3b"
-	DefaultChatPort    = "auto"
-	// DefaultAdminPort is the local side of the plane's admin port-forward.
-	// Keeping one default makes a stale forward fail closed at bind time.
-	DefaultAdminPort = "19091"
-	// DefaultOpsPort is the local side of the metrics forward. Keeping one
-	// default makes a stale forward fail closed at bind time.
-	DefaultOpsPort = "19092"
-	DefaultTask    = "Hello! Who are you and where are you running?"
-	// DefaultCredential is the Makefile's CRED, used by bare budget commands.
-	// Ledger without a credential instead reads across all credentials.
-	DefaultCredential = "hello-world"
-	// GovernedSecret is the workload-side Secret an issued token is stored
-	// in by default.
-	GovernedSecret = "kaimahi-governed-token"
-	// The three Secrets the seam certificate lives in, and they are three
-	// on purpose.
-	//
-	// PlaneAuthoritySecret holds the certificate authority and ITS PRIVATE
-	// KEY. It lives in the plane's namespace and is mounted into no pod at
-	// all — not even the proxy's, which needs only the serving key. It is
-	// read by `kmx plane` when it signs, and by nothing else. Keeping it is
-	// what makes renewal a re-sign under an unchanged authority rather than
-	// a redistribution to every agent.
-	//
-	// PlaneSeamTLSSecret holds what the proxy serves with: the certificate,
-	// its key, and the authority's certificate so the plane can verify its
-	// own seams over loopback. No issuing power.
-	//
-	//   - The AUTHORITY'S CERTIFICATE ALONE is copied into a workload's
-	//     namespace, where its model client verifies the seam against it. It
-	//     is public material: it says who to trust, and confers nothing.
-	PlaneAuthoritySecret = "kaimahi-plane-authority"
-	PlaneSeamTLSSecret   = "kaimahi-plane-seam-tls"
-	PlaneCASecret        = "kaimahi-plane-ca"
-	// PlaneCAKey is the key inside PlaneCASecret, and the one a workload's
-	// model client verifies the seam against.
-	PlaneCAKey = "ca.crt"
+	DefaultTask        = "Hello! Who are you and where are you running?"
 	// GuardNamespaces names the common fixed namespaces. Some operations also
 	// write to a caller-selected workload namespace; the generic banner must
 	// not present this list as a complete destination set. Known Orka-path
 	// destinations still get their exact list from app.GuardCreateIn.
-	GuardNamespaces        = "kaimahi, ollama, orka-system"
+	GuardNamespaces        = "ollama, orka-system"
 	GuardNamespaceHint     = GuardNamespaces + " (common, not exhaustive; see action for other namespaces)"
 	DefaultContainerEngine = "docker"
 )
@@ -90,10 +47,6 @@ type Config struct {
 	// ModelExplicit distinguishes an operator's MODEL choice from the default,
 	// so interactive discovery never replaces a value automation supplied.
 	ModelExplicit bool
-	ChatPort      string
-	AdminPort     string
-	OpsPort       string
-	Credential    string
 	Confirm       string
 	// ContextSource records where KubeContext came from, for the banner.
 	ContextSource string
@@ -151,10 +104,6 @@ func LoadWithOverrides(contextFlag, containerEngineFlag string) (*Config, error)
 		ContainerEngine: env("CONTAINER_ENGINE", DefaultContainerEngine),
 		Model:           model,
 		ModelExplicit:   modelExplicit,
-		ChatPort:        env("CHAT_PORT", DefaultChatPort),
-		AdminPort:       env("ADMIN_PORT", DefaultAdminPort),
-		OpsPort:         env("OPS_PORT", DefaultOpsPort),
-		Credential:      env("CRED", DefaultCredential),
 		Confirm:         os.Getenv("KAIMAHI_CONFIRM"),
 	}
 	engine := c.ContainerEngine
@@ -287,18 +236,6 @@ func LiftRecordDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "lift"), nil
-}
-
-// PlaneCacheDir is where the proxy binary built for the plane's image is put
-// on the clone-free path. It is kmx's own directory rather than the
-// operator's GOBIN, so building the plane never lands a binary on top of
-// something they installed themselves.
-func (c *Config) PlaneCacheDir() (string, error) {
-	dir, err := StateDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "plane-bin"), nil
 }
 
 // ReadSelectedContext returns the context chosen by `kmx ctx`, or "".

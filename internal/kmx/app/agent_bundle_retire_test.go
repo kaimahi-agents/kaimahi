@@ -2,12 +2,14 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRetireDeletesOwnedCreatedObjectsAndRemembersHistory(t *testing.T) {
@@ -276,6 +278,16 @@ func TestRetireDoesNotCompleteWhileDeleteIsPending(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("KMX_RETIRE_PERSIST_DELETE_KIND", "agents.core.orka.ai")
+	a.waitTiming = fastWaitTiming()
+	a.waitTiming.timeout = func(parent context.Context, phase string, timeout time.Duration) (context.Context, context.CancelFunc) {
+		if phase == "retire-deletion" {
+			timeout = 100 * time.Millisecond
+		}
+		if timeout == 0 {
+			return parent, func() {}
+		}
+		return context.WithTimeout(parent, timeout)
+	}
 	err := a.RetireAgentBundle(RetireAgentBundleOptions{BundleDir: lift.BundleDir, ToContext: lift.ToContext})
 	if err == nil {
 		t.Fatal("pending deletion reported complete")

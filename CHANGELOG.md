@@ -24,62 +24,77 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
-- AX preview activity source includes a bounded, allowlisted OpenCode child-event projector with synthetic failure and replay tests. It does not include a command wrapper, signed image or AX lifting yet.
+- `kmx context show/use` inspect and save context selection; `kmx local up/down` name the existing local kind setup and deletion operations. [Command names](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
 
-- Portable agents can declare `spec.coordination.allowedAgents` as a nonempty, explicit helper allowlist. Orka renders it as enabled named delegation; Kagent refuses unsupported core delegation. Legacy Orka coordination and existing bundle digests/rendering remain unchanged. Older kmx readers refuse the new field; upgrade before reading migrated bundles. This does not add an AX adapter.
+- `kmx targets` reports runtime capabilities offline, with optional Orka and Sessions probes. It selects, installs and deploys nothing; unreadable probes exit nonzero, distinct from absence. [Target view](docs/runtime-adapters.md#read-only-target-view).
 
-- Portable bundles may omit `extensions` or use `extensions: {}` for a core-only Agent. Orka renders that core like an apiVersion-only Orka extension; create still writes the extension. Lifecycle rendering refuses each behavior field a target cannot honor rather than silently dropping it. `extensions: null` is refused, and existing Orka and Kagent bundle digests remain tied to their exact authored bytes.
+- `kmx suite validate`, `push` and `pull` validate and exchange portable AgentSuite artifacts through OCI registries or local layouts; push reports the digest and registry tag pulls show a digest-pinning hint. [Suite commands](docs/kmx.md#commands).
 
-- `kmx agent create --runtime kagent <name>` adds an explicit, create-only
-  integration for an already-installed exact Kagent v0.10.2. Orka remains the
-  default and all no-flag behavior is unchanged. Offline create needs no cluster
-  or tool and writes a review artifact plus portable bundle, except that
-  `--out -` omits the bundle unless `--bundle-path` is set. Online create
-  requires a separately provisioned Secret and exact installation, proves the
-  controller version and its release-reported pinned commit prefix, CRD schemas,
-  controller/runtime image configuration and identities, then creates
-  ModelConfig and Agent in order and waits for their
-  current-generation conditions and the Agent-owned workload. It never installs
-  or upgrades Kagent, adopts or updates existing objects, or rolls back partial
-  writes. Only a successful online create writes a private prompt/answer-free
-  receipt.
-- Kagent create supports namespace, description, `openai|anthropic` model
-  provider, model, Secret name/key, optional base URL and instructions, one
-  `server:tool1,tool2` binding, `go|python` declarative runtime, optional
-  applying task, and output/bundle/no-apply/dry-run controls. Orka skills, rate
-  limits, schema target, result ServiceAccount, and Orka result Service/port
-  flags are refused. An optional task sends once, never retries ambiguity, and
-  validates and sanitizes a completed answer. Trusted-proxy task submission is
-  refused because KMX accepts no Kagent bearer credential; Kagent database
-  prompt/history/answer retention and possible Kubernetes Service-proxy audit
-  capture are disclosed before the write.
-- A seventh required e2e shard now exercises that create-only contract against
-  a disposable kind cluster. CI pulls the official exact-v0.10.2 charts by OCI
-  digest, verifies their unpacked chart names and versions, and
-  installs them externally as test preconditions, then proves KMX uses neither Helm nor the
-  Kagent CLI, gets an exact answer from a keyless in-cluster fixture, and leaves
-  live ownership/readiness and a private prompt/answer-free receipt. This is
-  evidence for create against a preinstalled runtime, not a KMX installer claim.
+- Experimental `kmx suite build` builds an agent image with Docker buildx and an OCI-export-capable builder.
+  Output is **not AgentSuite-conformant**; use `--require-attestations` to refuse missing attestations and never pass a key value to `--model-api-key-env`. [Build limits](docs/kmx.md#experimental-agentsuite-image-build).
+
+- `kmx agent evaluate --sessions <host:port>` evaluates bundles on a Sessions chat host; `kmx agent verify --sessions <host:port>` replays receipts locally with zero live model calls.
+  This is eval-only and reference verification, not host attestation or a lift gate; remote hosts require verified TLS, and host journals retain conversation content. [Sessions evaluation and verification](docs/agent-lift.md#evaluating-on-agentsessions).
+
+- Portable agents can declare an explicit `spec.coordination.allowedAgents` helper allowlist for Orka delegation.
+  Older readers and kagent refuse this field: upgrade readers before using it with Orka. [Bundle compatibility](docs/bundle-format.md).
+
+- Core-only bundles may omit `extensions` or use `extensions: {}`.
+  `extensions: null` and unsupported runtime behavior are refused, not silently dropped. [Bundle compatibility](docs/bundle-format.md#what-a-reader-accepts).
+
+- `kmx agent create --runtime kagent <name>` creates on preinstalled exact kagent v0.10.2, optionally sending one task; Orka remains the default.
+  Create-only, with no rollback or ambiguous retry; kagent and Service-proxy audits may retain conversation content. [Prerequisites and limits](docs/kmx.md#explicit-kagent-v0102-create).
+
+- Upcoming signed releases include `checksums.txt.sigstore.json`, a keyless cosign bundle for the four binaries' checksum manifest. Earlier releases and the Homebrew formula are not covered; installers still verify checksums, not signatures automatically. [Verify a release](docs/releases.md#verify-a-release) ([#387](https://github.com/kaimahi-agents/kaimahi/issues/387)).
 
 ### Changed
 
-- `kmx aks` is hidden from root help and shell completion as a temporary compatibility route; direct `kmx aks up` and `kmx aks down` invocation keeps unchanged flags and behavior.
-- Kagent bundles are explicitly refused by the currently Orka-only lift,
-  status, evaluate, console bundle, and interactive `/lift` paths. No Kagent
-  chat, list, show, status, lift, evaluate, console, quickstart, `up`, installer,
-  or AKS payload was restored; historical lift records remain teardown-only.
-  Runtime selection and model-provider selection remain distinct concepts.
-- `kmx agent run` submits one Task to an already-deployed bundle or live Orka Agent without rewriting its definition or the bundle. It prints only the answer on stdout, reports the Task name and deployed state on stderr, and leaves timed-out Tasks available for later retrieval with `kmx task result`. The latter reads an existing AI Task's phase and answer, optionally waiting for completion. Pending results exit 2; failed or cancelled Tasks exit 1.
-- Portable Orka bundles can specify Agent coordination (enabled, same-namespace allowed Agents, concurrency and depth limits). `kmx agent create --coordination --allowed-agent <name>` requires an explicit helper; edit `agent.yaml` to set optional limits. Lift refuses missing helpers and targets without an installed coordination schema at `--plan`, and reconciliation/status include coordination changes and drift. Autonomous Job loops are not supported.
-- `kmx agent create` and its create wizards accept native Orka `azure-openai` Providers with a required Azure deployment and optional API version. Use an HTTPS resource root URL, an existing Secret created from a key file, and a model name matching the deployment. The OpenAI-compatible `/openai/v1` route remains `openai`. Lift accepts an existing Ready Azure Provider only when its deployment matches the bundle's evaluated model; `--plan` refuses the same mismatch rather than changing the revision. An omitted API version stays absent in the generated bundle, though the Orka CRD may default it on apply.
-- Documented the current bundle format compatibility rules and pinned historical and current bundles in tests, including strict version/field refusal, portable and rendered digests, and versionless local evidence. See [bundle format compatibility](docs/bundle-format.md).
-- Bundle lift can require a passing staging evaluation before a production lift. Commit `lift-policy.yaml` beside `agent.yaml` with rules mapping destination cluster UID and namespace to evaluation cluster UID and namespace, or require a context ad hoc with `kmx agent lift --require-evaluated <context>`; context names are display labels, not identities. Lift and `--plan` report whether a local receipt passes for the current portable digest and complete case set. The gate reads local receipts only, never contacts the evaluation cluster, and refuses absent, stale, partial, failed or unknown evidence before deployment. To bootstrap CI, lift to staging, evaluate there, then lift to production in the same workspace; teammates without local receipts must evaluate for themselves. Receipts are forgeable local evidence, not intended to be committed.
-- `kmx agent lift --override-gate "reason"` bypasses only an evaluation gate with an explicit explanation; the reason and bypassed condition are printed to stderr and stored in the local destination lift receipt until the next lift overwrites it. Interactive `/lift` and console use the shared read-only gate check: a passing gate appears in the review plan, while a refusal stops before deployment review; neither silently bypasses it.
-- `kmx agent retire <bundle-dir> [--to-context <ctx>] [--to-namespace <ns>] [--plan] [--delete-adopted]` inspects cross-namespace Agent dependents before retiring a bundle's owned Agent and rendered Provider. Lift now records each object's original `created` or `adopted` origin on the live object; retire deletes created objects and releases adopted or legacy objects by default (`--delete-adopted` opts into deletion). Retirement writes a per-target receipt and forgets its remembered destination; status reports released Agents as not deployed. The selected Provider, its Secret and existing Tasks remain untouched.
+- `kmx ctx`, `up` and `down` remain compatibility routes; help and hints use `context` and `local`.
+  Notices go to stderr with no removal scheduled; hidden `kmx aks up/down` remains callable. [Command compatibility](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+
+- `kmx agent run` submits one Task without rewriting a deployed bundle or live Orka Agent; `kmx task result` retrieves its phase/answer without resending, with answer-only run stdout.
+  Timed-out Tasks remain retrievable; pending results exit 2, failed/cancelled results exit 1. [Run and retrieve results](docs/agent-lift.md#running-an-existing-agent).
+
+- Native Orka coordination supports same-namespace helpers, concurrency/depth limits and drift checks. Lift/`--plan` refuse missing helpers or coordination schema; autonomous Job loops remain unsupported. [Configure coordination](docs/agent-lift.md#coordination-in-agentyaml).
+
+- Orka create and its wizards accept native `azure-openai` inference.
+  Supply a matching deployment/model, HTTPS resource root and existing Secret; lift requires a matching Ready Provider, while `/openai/v1` remains `openai`. [Azure inputs](docs/kmx.md#default-orka-contract).
+
+- Bundle lift can require a passing staging evaluation through `lift-policy.yaml` or `--require-evaluated <context>`.
+  Missing, stale, partial, failed or unknown evidence blocks lift; receipts are forgeable local evidence: **do not commit them**. [Evaluation gates](docs/agent-lift.md#requiring-evaluation-before-lift).
+
+- `kmx agent lift --override-gate "reason"` explicitly bypasses only an evaluation gate and prints/records the reason and bypassed condition. Interactive `/lift` and console refuse before deployment review, with no silent bypass. [Gate overrides](docs/agent-lift.md#requiring-evaluation-before-lift).
+
+- `kmx agent retire` checks dependents, deletes created objects and releases adopted/legacy objects.
+  `--delete-adopted` opts into deleting adopted objects; the selected Provider, its Secret and existing Tasks remain untouched. [Retirement and ownership](docs/agent-lift.md#retiring-a-bundle-from-a-target).
 
 ### Fixed
 
-- The quickstart Orka Kubernetes Tool now grants named-policy `get` only to the AI worker configured by the installed v0.2.0 chart, including stock Helm `orka` releases. Installation and Agent lift refuse missing or ambiguous worker identity and ineffective policy authorization even when a Tool reports Available. Console Prepare can reapply the scoped grant; see [repair instructions](docs/orka-k8s-tool.md#repair-a-missing-policy-reader-grant). CI proves both chart variants with a succeeded health Task and metadata-only Tool-call events instead of worker logs or printed answers.
+- Recovery commands preserve local and AKS selectors and no longer suggest deleted Make targets. Teardown is unchanged. [Recovery commands](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+
+- Console Prepare can repair the quickstart Kubernetes Tool's scoped policy-reader grant.
+  Install and lift refuse missing/ambiguous worker identity or ineffective authorization. [Repair instructions](docs/orka-k8s-tool.md#repair-a-missing-policy-reader-grant).
+
+### Breaking
+
+- Model-plane commands/assets, model-overlay/credential administration, `make plane-image`, `CRED`, `ADMIN_PORT`, `OPS_PORT` and AKS `boundary`/`credential`/`plane` phases are removed; setup no longer creates plane credentials or monitoring, status is Orka-only, and version drops the plane revision.
+  This deletes **no deployed databases, credentials, caches or resources**; native inference and historical AKS teardown remain. [Removal scope](CONTRIBUTING.md#local-verification).
+
+- Registry `kmx suite push` requires `--force` to replace a tag's digest; its preflight guard is non-atomic.
+  Authenticated push/pull requires HTTPS or loopback HTTP, including token endpoints/redirects; remote plain HTTP auth challenges are refused. [Registry safety](docs/kmx.md#registry-authentication).
+
+- `kmx quickstart-wizard` now refuses: use `kmx quickstart --interactive` (`-i`); bare quickstart is unchanged.
+  Before configuration loads, quickstart refuses `-o/--output` with interactive mode, and `--instructions`, `--tools`, `--skills`, `--result-service-account`, `--out`, `--verbose`, `--azure-discovery` or `--inference` without it; interactive `--task` runs a first Task only when explicit. [Quickstart modes](docs/getting-started.md#one-command-and-an-agent-that-answers) ([#336](https://github.com/kaimahi-agents/kaimahi/issues/336)).
+
+- `kmx agent chat <name> [message]` is always interactive; removed `--interactive` fails as an unknown flag, and `--session`/`--json` remain refused.
+  A message is the first interactive turn, not a one-shot; use `kmx agent run` for one Task. [Chat migration](docs/interactive-chat.md).
+
+### Upgrading
+
+- Replace `kmx quickstart-wizard` with `kmx quickstart --interactive` and drop `--interactive` from `kmx agent chat`; tagged v0.4.1 and earlier still use the old wizard and require `agent chat --interactive`.
+  With v0.4.1 use `ctx/up/down`, not the unreleased `context/local` names. [Quickstart migration](docs/getting-started.md#create-your-own-agent-then-lift-it-from-chat), [command compatibility](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+
+- `CHAT_PORT` and `KMX_CHAT_PORT` are unsupported: Task-backed Orka chat and quickstart fail if fixed loopback port 19180 is occupied. Free that port instead. [Chat port](docs/aks.md#historical-resources-and-concurrent-checks).
 
 ## v0.4.1 — 2026-09-30
 
@@ -554,7 +569,7 @@ sections, not the intermediate instruction.
   repoint a kagent Agent with `kmx govern` and produce every ledger row through
   `kmx agent chat`. It now runs the same supported path `e2e-resilience` does:
   component bring-up, the pinned Orka, an ungoverned `owner-ci` Deployment in
-  its own namespace, the plane, [`kmx migrate`](docs/migrate.md), and a patch
+  its own namespace, the plane, [`kmx migrate`](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md), and a patch
   the **owner** applies. It installs no kagent and fails closed — after
   bring-up and again at the end — if that namespace ever appears. This removes
   the last PR-time live `kmx govern` check while the command still ships;
@@ -586,7 +601,7 @@ sections, not the intermediate instruction.
   The `e2e-resilience` shard used to install the legacy runtime, repoint a
   kagent Agent at the seam with `kmx govern`, and produce every ledger row
   through `kmx agent chat`. It now proves the path
-  [`kmx migrate`](docs/migrate.md) actually supports: a Deployment its own
+  [`kmx migrate`](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md) actually supports: a Deployment its own
   owner runs (`owner-ci`, in its own namespace, created before the plane
   exists), repointed by the patch `kmx migrate` writes and the **owner**
   applies. The shard installs no kagent and fails closed — after bring-up and
@@ -758,7 +773,7 @@ sections, not the intermediate instruction.
   coordinator loop and a header an application configured by environment
   variables cannot send; `orka-coordinator` does not, so what that default
   costs can be read off the ledger instead of argued about. See
-  [docs/migrate.md](docs/migrate.md).
+  [docs/migrate.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md).
 
 - **The model seam accepts the Responses API on an endpoint that serves
   chat completions.** An upstream may now declare `client_path` — the one
@@ -792,7 +807,7 @@ sections, not the intermediate instruction.
   `unmetered` — the one case that cannot be refused is a stream already
   flushed, which is relayed, logged at ERROR and ledgered `unmetered` all
   the same. Migration `00012`
-  ([docs/spend.md](docs/spend.md#protocols-and-missing-usage)).
+  ([docs/spend.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/spend.md#protocols-and-missing-usage)).
 
 - **`kmx models add` — onboard your own model endpoint.** The model seam
   had no onboarding path at all: the only route edited
@@ -813,8 +828,8 @@ sections, not the intermediate instruction.
   assume — **the model seam has no allowlist**, so a new upstream is
   reachable by every credential the plane has issued, bounded only by
   their budgets. Admin contract 2
-  ([docs/kmx.md](docs/kmx.md#kmx-models-add),
-  [docs/spend.md](docs/spend.md#adding-a-model-upstream)).
+  ([docs/kmx.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/kmx.md#kmx-models-add),
+  [docs/spend.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/spend.md#adding-a-model-upstream)).
 
 - **The audit row says who called.** Nothing in a governed row
   distinguished an agent the plane deployed from a shell script holding
@@ -833,7 +848,7 @@ sections, not the intermediate instruction.
   vocabulary are unchanged. Migration `00011`; rows written before it
   say `legacy`, which means *no record of who called* and is a different
   word from `none`, *the caller offered no name*
-  ([docs/identity.md](docs/identity.md#who-called)).
+  ([docs/identity.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/identity.md#who-called)).
 
 - **The known imprecision in `acted for` is now written down where a
   reader of the trail meets it.** For a client the plane did not deploy,
@@ -842,7 +857,7 @@ sections, not the intermediate instruction.
   accepted rather than fixed, on the grounds that no supported
   configuration reaches it: kagent and the inbound bridge are the only
   doors. It is bounded and reversible, and
-  [docs/identity.md](docs/identity.md#correlation-is-a-window-not-caller-identity)
+  [docs/identity.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/identity.md#correlation-is-a-window-not-caller-identity)
   says plainly that if a foreign runtime becomes supported the position
   is void.
 - **The plane's two data seams serve TLS.** The model seam (8080) carries the
@@ -883,7 +898,7 @@ sections, not the intermediate instruction.
   one before its verdict on the tree is trusted.
 
 - **`kmx migrate` measured on AKS, with the application deployed BEFORE
-  Orka.** [docs/migrate.md](docs/migrate.md) §9 is the same migration on a
+  Orka.** [docs/migrate.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/migrate.md) §9 is the same migration on a
   managed cluster — `Standard_D8s_v5`, Cilium, Kubernetes 1.35.7 — against
   the same Orka `v0.1.3` and the same application, exercising four phases of
   `kmx lift` on the way, with wall clock per step, the ledger's rows, the
@@ -1245,7 +1260,7 @@ sections, not the intermediate instruction.
   or on both; `kmx workflow show` and `kmx workflow run` describe the same
   run for the same `--set`, and a guard on a parameter that carries a default
   is refused rather than silently always-on. See
-  [docs/workflows.md](docs/workflows.md).
+  [docs/workflows.md](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/docs/workflows.md).
 - **The release agent** — the first thing in this repository that is not a
   demonstration. One command reads what merged since the last release,
   drafts the notes, and proposes the release branch and the builds. Cutting
@@ -1263,7 +1278,7 @@ sections, not the intermediate instruction.
   call, but the transfer runs on the operator's machine under their own
   credentials, which is weaker than the rest of the path and is written
   down rather than glossed. See
-  [docs/release-agent.md](docs/release-agent.md).
+  [docs/release-agent.md](https://github.com/kaimahi-agents/kaimahi/blob/10c561d4a890244e240d9d223d20059b1464e957/docs/release-agent.md).
 
 - **`kmx lift`** — the same agent you have been running locally, on AKS, in
   one command. It creates the cluster (or acts on one you already have with
@@ -1544,7 +1559,7 @@ sections, not the intermediate instruction.
 
 Install matching CLI and plane revisions, and back up the plane before rollout.
 For installations with the old gateway/tool or inbound integrations, first
-follow the [gateway retirement review](docs/operations.md#upgrading-after-gateway-retirement):
+follow the [gateway retirement review](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/operations.md#upgrading-after-gateway-retirement):
 stop or replace owner-managed tool integrations and review their configuration,
 network access and Secrets. The retired tool listener has no supported
 reapplication command; `kmx migrate` handles model traffic only. Do not expect
@@ -1562,7 +1577,7 @@ the latest published tag. Verify every plane replica runs the new build before
 declaring retirement effective: old replicas can still consume stored grants,
 and rollback to an approval-capable build can reactivate historical grants.
 Existing credentials and ledger rows survive, but the retired APIs do not.
-See [the plane retirement upgrade procedure](docs/operations.md#upgrading-after-approval-retirement).
+See [the plane retirement upgrade procedure](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/operations.md#upgrading-after-approval-retirement).
 
 Scripts using `kmx up --step kagent|agent|tools-agent`, `kmx govern`, `kmx use`
 or `kmx agent edit` must move to the supported Orka and model-seam commands:
@@ -1600,7 +1615,7 @@ commit hash — plus the last capability to land before the tag was cut.
   proxy, the MCP gateway and the inbound door, failing closed and audited.
   `make credentials` shows what is expiring; `kmx credential renew` moves the
   date without touching the token, so custody is unchanged
-  ([docs/identity.md](docs/identity.md)).
+  ([docs/identity.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/identity.md)).
 - **Tagged releases, built by CI from the tag.** `kmx` binaries for
   linux/amd64, linux/arm64, darwin/amd64 and darwin/arm64, with a
   `checksums.txt` published beside them. The job refuses to publish a build
@@ -1616,7 +1631,7 @@ commit hash — plus the last capability to land before the tag was cut.
   depend entirely on VCS stamping surviving the build; the tag is now the
   first source it reads, and the release refuses to publish unless the
   plane module's matching `plane/vX.Y.Z` tag exists at the same commit.
-- **A documented upgrade path** ([docs/releases.md](docs/releases.md)),
+- **A documented upgrade path** ([docs/releases.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/releases.md)),
   including what happens when a migration fails halfway (the plane does not
   start), and a CI job that upgrades a plane across a real schema gap with
   live data in it and proves the data survives.
@@ -1625,7 +1640,7 @@ commit hash — plus the last capability to land before the tag was cut.
 
 - From an untagged `go install …@<sha>` build: install `@latest` and run
   `kmx version`. There is no state in `kmx` itself to migrate.
-- For the **plane**, see [docs/releases.md](docs/releases.md#upgrading-the-plane).
+- For the **plane**, see [docs/releases.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/releases.md#upgrading-the-plane).
   Migrations are additive and run at startup under a lock. Two behaviours are
   worth knowing before you upgrade, and both follow the same rule — an
   upgrade never silently widens or voids what an operator already had:
@@ -1641,7 +1656,7 @@ commit hash — plus the last capability to land before the tag was cut.
 - **No container image is published.** `kmx plane` still builds the plane's
   image locally from the Go module proxy at kmx's own revision, so Go remains
   a prerequisite for the governed half even if you installed a binary. The
-  reasoning is in [docs/releases.md](docs/releases.md#why-no-published-image-yet).
+  reasoning is in [docs/releases.md](https://github.com/kaimahi-agents/kaimahi/blob/df3ead4a6a4d6eee9d1112895daab48c29600150/docs/releases.md#why-no-published-image-yet).
 - **No package-manager namespace is claimed** — no Homebrew tap, no npm, no
   crates, no PyPI. The name is provisional and no trademark opinion has been
   obtained; claiming namespaces would raise the cost of a rename that may

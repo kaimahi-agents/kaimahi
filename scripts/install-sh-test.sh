@@ -140,6 +140,59 @@ if install_run "plain v0.1.0 install" --version=v0.1.0; then
     "$(grep -q 'go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest' "$workdir/out" && echo ok || echo no)"
 fi
 
+# Failed downloads and unverifiable bytes must stop before installation or
+# execution, whether installing fresh or replacing an existing binary.
+failure_case() {
+  local scenario=$1 expected=$2 state=$3
+  local fixture="$workdir/$scenario-$state-release"
+  local destination="$workdir/$scenario-$state-bin"
+  local temp_root="$workdir/$scenario-$state-tmp"
+  local rc=0
+  mkdir -p "$fixture" "$temp_root"
+  cp "$release/kmx-$os-$arch" "$fixture/"
+  cp "$release/checksums.txt" "$fixture/"
+  case "$scenario" in
+    binary-download) rm "$fixture/kmx-$os-$arch" ;;
+    checksum-download) rm "$fixture/checksums.txt" ;;
+    missing-checksum) : > "$fixture/checksums.txt" ;;
+    corrupt-checksum) printf '%064d  kmx-%s-%s\n' 0 "$os" "$arch" > "$fixture/checksums.txt" ;;
+  esac
+  if [ "$state" = existing ]; then
+    mkdir -p "$destination"
+    cp "$release/kmx-$os-$arch" "$destination/kmx"
+    printf '\n# installed version\n' >> "$destination/kmx"
+    cp "$destination/kmx" "$workdir/$scenario-installed"
+  fi
+  : > "$workdir/calls"
+  KMX_CALLS="$workdir/calls" KMX_DOWNLOAD_BASE="file://$fixture" \
+    KMX_BIN_DIR="$destination" TMPDIR="$temp_root" \
+    sh "$installer" --quickstart >"$workdir/out" 2>&1 </dev/null || rc=$?
+  check "$scenario ($state) exits nonzero" \
+    "$([ "$rc" -ne 0 ] && echo ok || echo no)"
+  check "$scenario ($state) explains the intended failure" \
+    "$(grep -Fq "$expected" "$workdir/out" && echo ok || echo no)"
+  check "$scenario ($state) runs no binary" \
+    "$([ ! -s "$workdir/calls" ] && echo ok || echo no)"
+  if [ "$state" = existing ]; then
+    check "$scenario preserves the installed binary" \
+      "$(cmp -s "$workdir/$scenario-installed" "$destination/kmx" && echo ok || echo no)"
+  else
+    check "$scenario creates no install directory" \
+      "$([ ! -e "$destination" ] && echo ok || echo no)"
+  fi
+  check "$scenario ($state) leaves no staged replacement" \
+    "$([ ! -e "$destination/.kmx.new" ] && echo ok || echo no)"
+  check "$scenario ($state) removes temporary downloads" \
+    "$([ -z "$(find "$temp_root" -mindepth 1 -print)" ] && echo ok || echo no)"
+}
+
+for state in fresh existing; do
+  failure_case binary-download "cannot download file://$workdir/binary-download-$state-release/kmx-$os-$arch" "$state"
+  failure_case checksum-download "cannot download file://$workdir/checksum-download-$state-release/checksums.txt" "$state"
+  failure_case missing-checksum "the release checksums do not mention kmx-$os-$arch" "$state"
+  failure_case corrupt-checksum "checksum mismatch for kmx-$os-$arch" "$state"
+done
+
 # --help prints the header comment, in full, and nothing else. It is read
 # from the file rather than a hard-coded slice of it, so the check is that
 # the help keeps the comment's LAST line and never leaks the script body —

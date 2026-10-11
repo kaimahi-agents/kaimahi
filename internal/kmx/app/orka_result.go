@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
 
 // orkaResultSession owns one short-lived, in-memory bearer and proven loopback
@@ -23,7 +23,7 @@ import (
 type orkaResultSession struct {
 	token, base string
 	client      *http.Client
-	forward     *admin.Forward
+	forward     *portforward.Forward
 	conn        net.Conn
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -172,17 +172,24 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 		return nil, fmt.Errorf("granted token lifetime does not cover the total execution deadline plus 30 seconds; refusing execution")
 	}
 	a.notef("Task execution uses the selected ServiceAccount's full effective authority. v0.2.0 Task-read enforcement is unverified; v0.1.3 only authenticates result reads. Retain the namespaced Task-get grant. Discarding the token is not revocation.")
-	forwardCtx, cancel := context.WithCancel(ctx)
+	// Token coverage above uses the original execution cap, not an injected
+	// forward deadline. Bound this phase only once all session preflight passed.
+	forwardParent, stop := a.waitContext(ctx, "orka-result-forward", 0)
+	forwardCtx, cancelForward := context.WithCancel(forwardParent)
+	cancel := func() {
+		cancelForward()
+		stop()
+	}
 	// The adapter's context is used only to prepare this forward process. Once
 	// started, exec.CommandContext retains it; later kubectl calls use their own
 	// request deadlines. This also cancels a forward still waiting to bind.
 	a.orkaForwardContext = forwardCtx
-	fwd, err := admin.StartForward(a, opt.Namespace, "svc/"+opt.OrkaAPIService, opt.ResultPort, "8080")
+	fwd, err := portforward.Start(a, opt.Namespace, "svc/"+opt.OrkaAPIService, opt.ResultPort, "8080")
 	a.orkaForwardContext = nil
 	if err != nil {
 		cancel()
-		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("Orka result port-forward timed out: %w", ctx.Err())
+		if forwardParent.Err() == context.DeadlineExceeded {
+			return nil, orkaPhaseError(ctx, forwardParent, fmt.Errorf("Orka result port-forward timed out: %w", forwardParent.Err()))
 		}
 		return nil, fmt.Errorf("Orka result port-forward did not prove a 127.0.0.1 bind; use a free result port and check Service access")
 	}
@@ -201,8 +208,8 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if err != nil {
 		cancel()
 		fwd.Close()
-		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("Orka result connection timed out: %w", ctx.Err())
+		if forwardParent.Err() == context.DeadlineExceeded {
+			return nil, orkaPhaseError(ctx, forwardParent, fmt.Errorf("Orka result connection timed out: %w", forwardParent.Err()))
 		}
 		return nil, fmt.Errorf("cannot establish the Orka result connection; no resources created")
 	}
@@ -216,8 +223,8 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if forwardCtx.Err() != nil {
 		_ = bound.Close()
 		fwd.Close()
-		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("Orka result forward timed out before the session opened: %w", ctx.Err())
+		if forwardParent.Err() == context.DeadlineExceeded {
+			return nil, orkaPhaseError(ctx, forwardParent, fmt.Errorf("Orka result forward timed out before the session opened: %w", forwardParent.Err()))
 		}
 		return nil, fmt.Errorf("Orka result forward ended before the session opened")
 	}
@@ -334,13 +341,17 @@ func orkaResultError(envelope map[string]json.RawMessage) (int, string, bool) {
 }
 
 func (s *orkaResultSession) probe(ctx context.Context, namespace, name string) error {
+	return s.probeBeforeCreate(ctx, namespace, name, "No resources created")
+}
+
+func (s *orkaResultSession) probeBeforeCreate(ctx context.Context, namespace, name, failureScope string) error {
 	status, envelope, err := s.get(ctx, namespace, name)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", failureScope, err)
 	}
 	code, message, valid := orkaResultError(envelope)
 	if status != http.StatusNotFound || !valid || code != 404 || message != "task not found" {
-		return fmt.Errorf("Orka result access preflight refused (HTTP %d); expected the exact absent-Task JSON response. No resources created", status)
+		return fmt.Errorf("Orka result access preflight refused (HTTP %d); expected the exact absent-Task JSON response. %s", status, failureScope)
 	}
 	return nil
 }
@@ -356,11 +367,13 @@ func (a *App) waitOrkaTaskResultProgress(ctx context.Context, namespace string, 
 // readOrkaTaskResult uses the same identity and credential-echo checks for
 // blocking execution and a nonblocking read of an already-successful Task.
 func (a *App) readOrkaTaskResult(ctx context.Context, namespace string, id orkaIdentity, session *orkaResultSession, ready func(), follow bool) (answer string, err error) {
+	parent := ctx
+	statusStarted := false
 	succeeded := false
 	var before *orkaObject
 	defer func() {
 		if err != nil {
-			err = fmt.Errorf("Task %s/%s UID %s (execution succeeded: %t): %w; no execution retry or cleanup", namespace, id.Name, id.UID, succeeded, err)
+			err = fmt.Errorf("Task %s/%s UID %s (execution succeeded: %t): %w; no execution retry or cleanup", namespace, id.Name, id.UID, succeeded, orkaPhaseError(parent, ctx, err))
 		}
 	}()
 	for {
@@ -382,10 +395,18 @@ func (a *App) readOrkaTaskResult(ctx context.Context, namespace string, id orkaI
 		if !follow {
 			return "", ErrTaskPending
 		}
-		if err := orkaPause(ctx); err != nil {
+		if !statusStarted {
+			var cancel context.CancelFunc
+			ctx, cancel = a.waitContext(ctx, "orka-task-status", 0)
+			defer cancel()
+			statusStarted = true
+		}
+		if err := a.pause(ctx, time.Second); err != nil {
 			return "", err
 		}
 	}
+	ctx, stop := a.waitContext(ctx, "orka-task-result", 0)
+	defer stop()
 	for {
 		// Both checks surround the actual HTTP read, not merely the earlier poll.
 		// The successful status read above is already the identity/state check
@@ -448,7 +469,7 @@ func (a *App) readOrkaTaskResult(ctx context.Context, namespace string, id orkaI
 			return "", ErrTaskPending
 		}
 		before = nil
-		if err := orkaPause(ctx); err != nil {
+		if err := a.pause(ctx, time.Second); err != nil {
 			return "", fmt.Errorf("result remained unavailable: %w", err)
 		}
 	}

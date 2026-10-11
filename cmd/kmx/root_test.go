@@ -3,10 +3,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -16,7 +12,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/admin"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
@@ -27,64 +22,10 @@ func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	deps.stdout, deps.stderr = out, errOut
 	deps.loadConfig = func(context, engine string) (*config.Config, error) {
 		loads++
-		return &config.Config{KubeContext: context, Credential: "default-cred"}, nil
+		return &config.Config{KubeContext: context}, nil
 	}
 	deps.newApp = func(cfg *config.Config) *app.App { return app.New(cfg) }
 	return deps, &loads
-}
-
-func TestLedgerCommandUsesAllCredentialsUnlessNamed(t *testing.T) {
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
-		{args: []string{"ledger"}, want: ""},
-		{args: []string{"ledger", "named-cred"}, want: "named-cred"},
-	} {
-		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/healthz":
-					w.WriteHeader(http.StatusOK)
-				case "/admin/version":
-					fmt.Fprintf(w, `{"version":"test","admin_contract":%d}`, admin.Speaks)
-				case "/admin/ledger":
-					if got := r.URL.Query().Get("credential"); got != tc.want {
-						t.Errorf("ledger credential filter = %q, want %q", got, tc.want)
-					}
-					_, _ = w.Write([]byte(`{"entries":[{"credential":"named-cred","created_at":"2026-09-03T01:37:36Z","upstream":"ollama","model":"model","status":200}]}`))
-				default:
-					t.Errorf("unexpected admin path %s", r.URL.Path)
-					http.NotFound(w, r)
-				}
-			}))
-			defer srv.Close()
-			parsed, err := url.Parse(srv.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			port := parsed.Port()
-			bin := t.TempDir()
-			// The stub returns a per-process, test-only bearer via stdout, never argv or logs.
-			stub := "#!/bin/sh\ncase \"$*\" in\n  *version*) ;;\n  *'--context kind-test'*) ;;\n  *) exit 2;;\nesac\ncase \"$*\" in\n  *port-forward*) printf 'Forwarding from 127.0.0.1:%s -> 9091\\n' '" + port + "'; exec sleep 60;;\n  *secret*) printf '%s' \"$$\" | base64;;\nesac\n"
-			if err := os.WriteFile(filepath.Join(bin, "kubectl"), []byte(stub), 0700); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			t.Setenv("KMX_TOOLCHAIN", "off")
-			var out, diagnostics bytes.Buffer
-			deps, _ := testDependencies(&out, &diagnostics)
-			deps.loadConfig = func(_, _ string) (*config.Config, error) {
-				return &config.Config{KubeContext: "kind-test", AdminPort: port, Credential: "default-cred"}, nil
-			}
-			if err := execute(tc.args, deps); err != nil {
-				t.Fatalf("ledger: %v", err)
-			}
-			if !strings.Contains(out.String(), "named-cred") {
-				t.Errorf("ledger did not print its row: %s", out.String())
-			}
-		})
-	}
 }
 
 func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {
@@ -143,7 +84,7 @@ func TestSuiteValidateDoesNotLoadConfig(t *testing.T) {
 }
 
 func TestInteractiveCommandsExposeVerboseFlag(t *testing.T) {
-	for _, path := range [][]string{{"quickstart-wizard"}, {"agent", "chat"}} {
+	for _, path := range [][]string{{"quickstart"}, {"agent", "chat"}} {
 		var out, errOut bytes.Buffer
 		deps, _ := testDependencies(&out, &errOut)
 		root := newRootCommand(&commandState{deps: deps})
@@ -168,7 +109,7 @@ func TestQuickstartExposesAzureDiscoveryAlternative(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
 	root := newRootCommand(&commandState{deps: deps})
-	cmd, _, err := root.Find([]string{"quickstart-wizard"})
+	cmd, _, err := root.Find([]string{"quickstart"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,27 +187,15 @@ func TestExplicitEmptyContainerEngineIsRefused(t *testing.T) {
 	}
 }
 
-func TestExplicitEmptyContainerEngineIsRefusedOnCredentialIssue(t *testing.T) {
-	var out, errOut bytes.Buffer
-	deps, loads := testDependencies(&out, &errOut)
-	err := execute([]string{"credential", "issue", "demo", "--discard", "--container-engine="}, deps)
-	if err == nil || !strings.Contains(err.Error(), "requires docker or podman") {
-		t.Fatalf("error = %v", err)
-	}
-	if *loads != 0 {
-		t.Fatalf("empty global flag loaded configuration %d times", *loads)
-	}
-}
-
-func TestCredentialIssueRecordsResolvedEngineInInvocation(t *testing.T) {
+func TestNativeCommandRecordsResolvedEngineInInvocation(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
 	deps.loadConfig = func(_, engine string) (*config.Config, error) {
-		return &config.Config{KubeContext: "kind-demo", KindCluster: "demo", ContainerEngine: engine, Credential: "cred"}, nil
+		return &config.Config{KubeContext: "kind-demo", KindCluster: "demo", ContainerEngine: engine}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"credential", "issue", "demo", "--discard", "--container-engine", "podman"}}
+	state := &commandState{deps: deps, argv: []string{"agent", "retire", "demo", "--plan", "--container-engine", "podman"}}
 	root := newRootCommand(state)
-	issue, _, err := root.Find([]string{"credential", "issue"})
+	issue, _, err := root.Find([]string{"agent", "retire"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,13 +222,8 @@ func TestCobraRejectsInvalidFlagRelationshipsBeforeApplicationConstruction(t *te
 		argv []string
 		want string
 	}{
-		{"credential destination required", []string{"credential", "issue", "demo"}, "at least one of the flags"},
-		{"credential destinations conflict", []string{"credential", "issue", "demo", "--discard", "--secret", "demo"}, "none of the others can be"},
-		{"credential secret is non-empty", []string{"credential", "issue", "demo", "--secret="}, "non-empty --secret"},
 		{"orka execution modes", []string{"orka", "install", "--no-apply", "--dry-run"}, "none of the others can be"},
 		{"agent create execution modes", []string{"agent", "create", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
-		{"model execution modes", []string{"models", "add", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
-		{"migration execution modes", []string{"migrate", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -320,11 +244,11 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
 	deps.loadConfig = func(string, string) (*config.Config, error) {
-		return &config.Config{KubeContext: "kind-other", KindCluster: "other", ContainerEngine: "podman", Credential: "finance"}, nil
+		return &config.Config{KubeContext: "kind-other", KindCluster: "other", ContainerEngine: "podman"}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"budget", "a'b; $(bad)", "--cents", "0", "--tokens", "300"}}
+	state := &commandState{deps: deps, argv: []string{"agent", "retire", "a'b; $(bad)", "--to-namespace", "team", "--plan"}}
 	root := newRootCommand(state)
-	cmd, _, err := root.Find([]string{"budget"})
+	cmd, _, err := root.Find([]string{"agent", "retire"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,14 +261,14 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman CRED=finance kmx --context kind-other budget 'a'\"'\"'b; $(bad)' --cents 0 --tokens 300"
+	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman kmx --context kind-other agent retire 'a'\"'\"'b; $(bad)' --to-namespace team --plan"
 	if invocation != want {
 		t.Fatalf("retry lost target or arguments:\n got: %s\nwant: %s", invocation, want)
 	}
 }
 
 func TestBareGroupsShowCobraHelpWithoutLoadingConfig(t *testing.T) {
-	for _, group := range []string{"agent", "models", "credential"} {
+	for _, group := range []string{"agent", "orka", "suite", "task"} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
 		deps.loadConfig = func(string, string) (*config.Config, error) {
@@ -391,15 +315,13 @@ func commandPaths(root *cobra.Command) []string {
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
-		"agent", "agent chat", "agent create", "agent edit", "agent evaluate", "agent lift", "agent list", "agent retire", "agent run", "agent show", "agent status",
-		"aks", "aks up", "aks down", "backup", "budget", "completion",
-		"credential", "credential issue", "credential renew", "credentials",
-		"ctx", "down", "flow", "govern", "ledger",
-		"lift", "lift down", "metrics", "migrate", "models", "models add",
-		"models credential", "models credential copilot", "orka", "orka install", "orka status",
-		"plane", "quickstart", "quickstart-wizard",
-		"restore", "status", "suite", "suite validate", "console", "task", "task result",
-		"up", "use", "version", "watch",
+		"agent", "agent chat", "agent create", "agent edit", "agent eval", "agent eval diff", "agent evaluate", "agent lift", "agent list", "agent retire", "agent run", "agent show", "agent status", "agent verify",
+		"aks", "aks up", "aks down", "completion", "ctx", "down",
+		"context", "context show", "context use", "local", "local up", "local down",
+		"lift", "lift down", "orka", "orka install", "orka status",
+		"quickstart", "quickstart-wizard",
+		"status", "suite", "suite build", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",
+		"up", "version",
 	}
 	sort.Strings(want)
 
@@ -443,9 +365,8 @@ func TestInterspersedFlagsAreOwnedByCobra(t *testing.T) {
 		want []string
 	}{
 		{[]string{"agent", "chat", "hello", "who", "--verbose"}, []string{"hello", "who"}},
-		{[]string{"budget", "demo", "--tokens", "1"}, []string{"demo"}},
-		{[]string{"credential", "renew", "demo", "--ttl", "1d"}, []string{"demo"}},
-		{[]string{"credential", "issue", "demo", "--discard", "--ttl", "1d"}, []string{"demo"}},
+		{[]string{"agent", "retire", "demo", "--to-namespace", "team", "--plan"}, []string{"demo"}},
+		{[]string{"task", "result", "demo", "--wait", "1m"}, []string{"demo"}},
 	} {
 		cmd, args, err := root.Find(tc.path)
 		if err != nil {
@@ -482,7 +403,7 @@ func TestConfigLoadFailureIsReturnedOnce(t *testing.T) {
 }
 
 func TestGroupedCommandsRejectUnknownVerb(t *testing.T) {
-	for _, args := range [][]string{{"credential", "frob"}, {"models", "frob"}, {"agent", "frob"}} {
+	for _, args := range [][]string{{"suite", "frob"}, {"orka", "frob"}, {"agent", "frob"}} {
 		var out, errOut bytes.Buffer
 		deps, _ := testDependencies(&out, &errOut)
 		if err := execute(args, deps); err == nil {
@@ -509,62 +430,150 @@ func TestAuditInboundIsRejectedBeforeLoadingConfig(t *testing.T) {
 	}
 }
 
-func TestCredentialIssueRequiresExactlyOneDestination(t *testing.T) {
-	for _, args := range [][]string{
-		{"credential", "issue", "inbound-demo"},
-		{"credential", "issue", "inbound-demo", "--discard=false"},
-		{"credential", "issue", "inbound-demo", "--discard", "--secret", "inbound-token"},
-	} {
-		var out, errOut bytes.Buffer
-		deps, loads := testDependencies(&out, &errOut)
-		if err := execute(args, deps); err == nil {
-			t.Fatalf("%v unexpectedly succeeded", args)
-		}
-		if *loads != 0 {
-			t.Fatalf("%v loaded config before enforcing the destination", args)
-		}
-	}
-}
-
-// The namespace a one-time token is written into has no default. It used to
-// be the legacy runtime's, so an operator who omitted the flag got a
-// credential minted into a namespace nothing in kmx installs any more, and
-// the token cannot be re-read. The flag is required with --secret, and the
-// refusal happens before any configuration is loaded or anything is issued.
-func TestCredentialIssueToASecretRequiresItsNamespace(t *testing.T) {
-	root := newRootCommand(&commandState{deps: productionDependencies()})
-	issue, _, err := root.Find([]string{"credential", "issue"})
+// nonTerminalStdin is a real file, so a mode that needs a terminal refuses it
+// the way it would refuse a pipe.
+func nonTerminalStdin(t *testing.T) *os.File {
+	t.Helper()
+	f, err := os.Create(filepath.Join(t.TempDir(), "stdin"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := issue.Flag("namespace").DefValue; got != "" {
-		t.Fatalf("--namespace default=%q, want no default at all", got)
-	}
+	t.Cleanup(func() { _ = f.Close() })
+	return f
+}
 
-	for _, args := range [][]string{
-		{"credential", "issue", "inbound-demo", "--secret", "inbound-token"},
-		{"credential", "issue", "inbound-demo", "--secret", "inbound-token", "--namespace", ""},
-		{"credential", "issue", "inbound-demo", "--secret", "inbound-token", "--namespace", "   "},
+// A flag from the other quickstart mode would otherwise be silently ignored,
+// so it is refused before configuration loads or a cluster is touched.
+func TestQuickstartRejectsFlagsFromTheOtherModeBeforeConfiguration(t *testing.T) {
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"quickstart", "--interactive", "-o", "json"}, "--output does not apply to kmx quickstart --interactive"},
+		{[]string{"quickstart", "--interactive", "--output", "text"}, "--output does not apply to kmx quickstart --interactive"},
+		{[]string{"quickstart", "-i", "-o", "json"}, "--output does not apply to kmx quickstart --interactive"},
+	}
+	for _, name := range quickstartInteractiveOnly {
+		value := "x"
+		if name == "verbose" {
+			value = "true"
+		}
+		cases = append(cases, struct {
+			args []string
+			want string
+		}{[]string{"quickstart", "--" + name + "=" + value}, "--" + name + " requires --interactive"})
+	}
+	for _, tc := range cases {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			err := execute(tc.args, deps)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			if *loads != 0 {
+				t.Fatalf("mode conflict loaded configuration %d times", *loads)
+			}
+			if out.Len() != 0 {
+				t.Fatalf("mode conflict wrote stdout: %q", out.String())
+			}
+		})
+	}
+}
+
+// Each mode reaches its own operation: the guided setup refuses a
+// non-terminal by its canonical name, and the fixed run validates its own
+// output contract.
+func TestQuickstartRoutesEachMode(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"quickstart", "--interactive"}, "kmx quickstart --interactive requires an interactive terminal"},
+		{[]string{"quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "kmx quickstart --interactive requires an interactive terminal"},
+		{[]string{"quickstart", "-i"}, "kmx quickstart --interactive requires an interactive terminal"},
+		{[]string{"quickstart", "-i", "--azure-discovery", "sdk"}, "kmx quickstart --interactive requires an interactive terminal"},
+		{[]string{"quickstart", "-o", "yaml"}, "unknown --output"},
+		{[]string{"quickstart", "--task", "hi", "-o", "yaml"}, "unknown --output"},
 	} {
-		var out, errOut bytes.Buffer
-		deps, loads := testDependencies(&out, &errOut)
-		err := execute(args, deps)
-		if err == nil {
-			t.Fatalf("%v issued a credential with no namespace to put it in", args)
-		}
-		if !strings.Contains(err.Error(), "--namespace") {
-			t.Errorf("%v: the refusal does not name the missing flag: %v", args, err)
-		}
-		if *loads != 0 {
-			t.Fatalf("%v loaded config before enforcing the destination namespace", args)
-		}
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, _ := testDependencies(&out, &errOut)
+			deps.stdin = nonTerminalStdin(t)
+			err := execute(tc.args, deps)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
 	}
+}
 
-	// --discard stores nothing, so it needs no namespace.
+func TestQuickstartWizardIsRetiredToQuickstartInteractive(t *testing.T) {
+	for _, args := range [][]string{
+		{"quickstart-wizard"},
+		{"quickstart-wizard", "--tools", "k8s-get-resources", "--verbose"},
+		{"--context", "kind-x", "quickstart-wizard", "--azure-discovery", "sdk"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			err := execute(args, deps)
+			if err == nil || !strings.Contains(err.Error(), "kmx quickstart-wizard is retired; use kmx quickstart --interactive") {
+				t.Fatalf("error = %v", err)
+			}
+			if *loads != 0 {
+				t.Fatalf("retired command loaded configuration %d times", *loads)
+			}
+		})
+	}
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	if err := execute([]string{"credential", "issue", "inbound-demo", "--discard"}, deps); err != nil &&
-		strings.Contains(err.Error(), "--namespace") {
-		t.Errorf("--discard was asked for a namespace it does not use: %v", err)
+	if err := execute([]string{"quickstart-wizard", "--help"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "use kmx quickstart --interactive") {
+		t.Fatalf("help did not name the replacement: %q", out.String())
+	}
+	root := newRootCommand(&commandState{deps: deps})
+	if cmd, _, err := root.Find([]string{"quickstart-wizard"}); err != nil || !cmd.Hidden {
+		t.Fatalf("quickstart-wizard must exist but be hidden: %v", err)
+	}
+}
+
+// Chat is always a session, so it needs no mode flag: it passes the command
+// layer and reaches the operation, which here stops at its first local
+// dependency. The removed --interactive flag is an unknown flag.
+func TestAgentChatIsInteractiveWithoutAModeFlag(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("KMX_TOOLCHAIN", "off")
+	for _, args := range [][]string{
+		{"agent", "chat", "hello-world-agent"},
+		{"agent", "chat", "hello-world-agent", "what", "pods", "run?"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, _ := testDependencies(&out, &errOut)
+			err := execute(args, deps)
+			if err == nil || !strings.Contains(err.Error(), "kubectl is not on PATH") {
+				t.Fatalf("chat did not reach its session preflight: %v", err)
+			}
+		})
+	}
+	var out, errOut bytes.Buffer
+	deps, loads := testDependencies(&out, &errOut)
+	err := execute([]string{"agent", "chat", "--interactive", "hello-world-agent"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "unknown flag: --interactive") {
+		t.Fatalf("removed --interactive was accepted: %v", err)
+	}
+	if *loads != 0 {
+		t.Fatalf("unknown flag loaded configuration %d times", *loads)
+	}
+	root := newRootCommand(&commandState{deps: deps})
+	cmd, _, err := root.Find([]string{"agent", "chat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(cmd.UseLine(), "--interactive") || strings.Contains(cmd.Long, "--interactive") {
+		t.Fatalf("chat help still teaches --interactive: %q %q", cmd.UseLine(), cmd.Long)
 	}
 }
