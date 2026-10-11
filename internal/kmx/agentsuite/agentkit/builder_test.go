@@ -11,7 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	"github.com/kaimahi-agents/kaimahi/agentsuite"
+	suitebuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 )
 
 const testDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -183,7 +184,7 @@ func TestBuildValidatesModelAPIKeyEnvironmentName(t *testing.T) {
 func TestBuildRejectsUnsupportedAgentSuiteFeatures(t *testing.T) {
 	plan := minimalPlan()
 	plan.Agent.Invokes = []agentsuite.AgentInvoke{{Agent: "reviewer", MaxConcurrent: 1, MaxDepth: 1}}
-	plan.ToolProviders = []agentsuite.SelectedToolProvider{{ID: "search"}}
+	plan.ToolProviders = []suitebuilder.SelectedToolProvider{{ID: "search"}}
 	err := buildError(New(Options{ModelBaseURL: "https://models.example/v1"}), plan)
 	for _, want := range []string{"invocation edges", "ToolProviders"} {
 		if !strings.Contains(err, want) {
@@ -242,47 +243,47 @@ func TestBuildRequiresPydanticAIHarnessRepository(t *testing.T) {
 func TestBuildRejectsInvalidPlanMappings(t *testing.T) {
 	tests := []struct {
 		name   string
-		mutate func(*agentsuite.SandboxPlan)
+		mutate func(*suitebuilder.SandboxPlan)
 		want   string
 	}{
 		{
 			name: "unsupported protocol",
-			mutate: func(plan *agentsuite.SandboxPlan) {
+			mutate: func(plan *suitebuilder.SandboxPlan) {
 				plan.Agent.Model.Protocol = "anthropic"
 			},
 			want: "does not support model protocol",
 		},
 		{
 			name: "endpoint environment",
-			mutate: func(plan *agentsuite.SandboxPlan) {
+			mutate: func(plan *suitebuilder.SandboxPlan) {
 				plan.Agent.Model.EndpointEnv = "MODEL_ENDPOINT"
 			},
 			want: "model.endpointEnv",
 		},
 		{
 			name: "secret references",
-			mutate: func(plan *agentsuite.SandboxPlan) {
+			mutate: func(plan *suitebuilder.SandboxPlan) {
 				plan.Agent.Model.SecretRefs = []string{"model-key"}
 			},
 			want: "model.secretRefs",
 		},
 		{
 			name: "missing runtime base",
-			mutate: func(plan *agentsuite.SandboxPlan) {
+			mutate: func(plan *suitebuilder.SandboxPlan) {
 				plan.RuntimeBase.ImageRef = ""
 			},
 			want: "runtime-base image reference is required",
 		},
 		{
 			name: "unpinned harness",
-			mutate: func(plan *agentsuite.SandboxPlan) {
+			mutate: func(plan *suitebuilder.SandboxPlan) {
 				plan.Harness.ImageRef = "registry.example/harness:latest"
 			},
 			want: "digest-addressed",
 		},
 		{
 			name: "unsupported platform",
-			mutate: func(plan *agentsuite.SandboxPlan) {
+			mutate: func(plan *suitebuilder.SandboxPlan) {
 				plan.Composition.Platform.Architecture = "s390x"
 			},
 			want: "does not support platform linux/s390x",
@@ -386,7 +387,7 @@ func decodeAgentkitFile(t *testing.T, data []byte) agentConfig {
 	return config
 }
 
-func buildError(builder *Builder, plan agentsuite.SandboxPlan) string {
+func buildError(builder *Builder, plan suitebuilder.SandboxPlan) string {
 	_, err := builder.Build(context.Background(), plan, io.Discard)
 	if err == nil {
 		return ""
@@ -394,9 +395,9 @@ func buildError(builder *Builder, plan agentsuite.SandboxPlan) string {
 	return err.Error()
 }
 
-func minimalPlan() agentsuite.SandboxPlan {
+func minimalPlan() suitebuilder.SandboxPlan {
 	platform := agentsuite.Platform{OS: "linux", Architecture: "amd64"}
-	return agentsuite.SandboxPlan{
+	return suitebuilder.SandboxPlan{
 		Agent: agentsuite.Agent{
 			ID: "writer",
 			Model: agentsuite.ModelRequirement{

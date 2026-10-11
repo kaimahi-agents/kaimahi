@@ -12,7 +12,7 @@ or comparing implementations.
 | Inspect compiled runtime support and qualification evidence with `kmx targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Author an agent: default native Orka, or explicit create for preinstalled exact Kagent v0.10.2 | [Native Orka create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-agent-create) |
-| Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](agentsuite-spec.md) |
+| Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](../agentsuite/spec.md) |
 | Discover models and configure native inference | [Models](models.md), [Copilot inference](copilot-inference.md), [Foundry inference](local-foundry-inference.md) |
 | Chat with an existing Orka Agent | [Interactive chat](interactive-chat.md) |
 | Lift, inspect, run, evaluate, verify or retire a portable bundle | [Bundle lifecycle](agent-lift.md) |

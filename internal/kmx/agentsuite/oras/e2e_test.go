@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	"github.com/kaimahi-agents/kaimahi/agentsuite"
 	orasbinding "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
@@ -218,7 +218,7 @@ func newAgentSuiteSource(
 	name string,
 ) (agentsuite.Suite, *memory.Store, ocispec.Descriptor) {
 	t.Helper()
-	fixtureRoot := filepath.Join("..", "testdata", "minimal")
+	fixtureRoot := filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal")
 	rawSuite, err := os.ReadFile(filepath.Join(fixtureRoot, "agentsuite.json"))
 	if err != nil {
 		t.Fatal(err)

@@ -432,7 +432,7 @@ permission is directional: the coordinator's edges do not grant either worker
 permission to invoke the coordinator or each other.
 
 The complete conformant example is checked in at
-[`internal/kmx/agentsuite/testdata/coordinator-workers/`](../internal/kmx/agentsuite/testdata/coordinator-workers/).
+[`testdata/coordinator-workers/`](testdata/coordinator-workers/).
 
 ## 9. Tool providers and tools
 
@@ -474,7 +474,7 @@ The provider contract and bundled variants serve different purposes:
   platform implementation.
 
 The complete machine-readable shape is
-[`tool-provider.schema.json`](../internal/kmx/agentsuite/schema/tool-provider.schema.json).
+[`tool-provider.schema.json`](schema/tool-provider.schema.json).
 
 ### 9.1 ToolProvider catalog
 
@@ -618,7 +618,7 @@ MUST NOT be declared. Header names are compared case-insensitively for
 duplicates.
 
 The complete fixture is
-[`internal/kmx/agentsuite/testdata/remote-mcp/`](../internal/kmx/agentsuite/testdata/remote-mcp/).
+[`testdata/remote-mcp/`](testdata/remote-mcp/).
 Its ToolProvider manifest includes:
 
 ```json
@@ -669,9 +669,9 @@ package or extension installation is prohibited; the complete runtime closure
 MUST already be present in the variant or in exact bundle dependencies.
 
 The reference schema tests validate multi-file bundle fixtures for
-[`kubectl`](../internal/kmx/agentsuite/testdata/tool-providers/kubectl-tool-provider.json),
-[`Azure CLI`](../internal/kmx/agentsuite/testdata/tool-providers/azure-cli-tool-provider.json),
-and [`OPA`](../internal/kmx/agentsuite/testdata/tool-providers/opa-tool-provider.json).
+[`kubectl`](testdata/tool-providers/kubectl-tool-provider.json),
+[`Azure CLI`](testdata/tool-providers/azure-cli-tool-provider.json),
+and [`OPA`](testdata/tool-providers/opa-tool-provider.json).
 
 ### 9.7 OPA writer and reviewer example
 
@@ -698,9 +698,9 @@ instance without defining agent binding.
 
 The complete example is:
 
-1. [`opa-tool-provider.json`](../internal/kmx/agentsuite/testdata/tool-providers/opa-tool-provider.json)
+1. [`opa-tool-provider.json`](testdata/tool-providers/opa-tool-provider.json)
    defines the ToolProvider contract, callable tools, and available implementation;
-2. [`opa-tool-provider-composition.json`](../internal/kmx/agentsuite/testdata/tool-providers/opa-tool-provider-composition.json)
+2. [`opa-tool-provider-composition.json`](testdata/tool-providers/opa-tool-provider-composition.json)
    selects the exact ToolProvider manifest, variant, platform, and build profile and is
    embedded unchanged in the resulting image.
 

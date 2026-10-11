@@ -48,7 +48,7 @@ python3 scripts/check-brand-assets.py
 python3 scripts/homebrew-formula.py --selftest
 bash scripts/check-no-azure-ids-test.sh && bash scripts/check-no-azure-ids.sh
 bash scripts/kube-guard-test.sh
-test -z "$(gofmt -l cmd internal embed.go embed_test.go)" && go vet ./... && go test ./...
+formatted=$(gofmt -l agentsuite cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go test ./...
 python3 scripts/test_model_fixtures.py -v
 ```
 
@@ -70,8 +70,11 @@ change classification is uncertain. It runs the harness in full on main pushes
 and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
 
-One Go module remains: the root CLI (`cmd/kmx`, `internal/kmx`), including
-first-class Orka paths and the narrowly scoped Kagent v0.10.2 create adapter.
+One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), the public
+AgentSuite format package (`agentsuite`), and the application interface
+(`pkg/kmx`). AgentSuite does not have a separate module or version pin; root
+`go test ./...` tests it alongside the CLI, including first-class Orka paths
+and the narrowly scoped Kagent v0.10.2 create adapter.
 Plane commands, administration, the source module (including checked-in SQL),
 build helper, embedded assets and plane-only scripts/fixtures are removed.
 Historical source remains in Git history. This cleanup deletes no deployed

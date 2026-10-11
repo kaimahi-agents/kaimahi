@@ -12,6 +12,7 @@ require (
 	github.com/aramase/agentsessions v0.1.3-0.20261008190619-e680ea10d3b4
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/distribution/reference v0.6.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/gowebpki/jcs v1.0.1
 	github.com/muesli/cancelreader v0.2.2
 	github.com/opencontainers/go-digest v1.0.0

@@ -488,7 +488,9 @@ jobs:
       - name: No effort IDs or lane references in source comments
         run: python3 scripts/check-comment-history.py
       - name: kmx — gofmt clean
-        run: test -z "$(gofmt -l cmd internal pkg/kmx embed.go embed_test.go)"
+        run: |
+          formatted=$(gofmt -l agentsuite cmd internal pkg/kmx embed.go embed_test.go)
+          test -z "$formatted"
       - name: kmx — vet
         run: go vet ./...
       # staticcheck, pinned to an exact release tag.
@@ -534,6 +536,10 @@ jobs:
           # Why each of these is required, rather than just being a package
           # that happens to exist:
           REQUIRED = {
+              "agentsuite": "portable AgentSuite conformance",
+              "internal/kmx/agentsuite": "internal sandbox construction contracts",
+              "internal/kmx/agentsuite/agentkit": "AgentKit build and archive policy",
+              "internal/kmx/agentsuite/oras": "AgentSuite packing and registry transfer",
               # The reason this job is required at all.
               "internal/kmx/guard": "the context guard's port decisions",
               "internal/kmx/scaffold": "the scaffolder's key-shape refusals",
@@ -581,7 +587,7 @@ jobs:
 
           problems = []
           for suffix, why in REQUIRED.items():
-              named = [p for p in result if p.endswith("/" + suffix)]
+              named = [p for p in result if p == "github.com/kaimahi-agents/kaimahi/" + suffix]
               if not named:
                   problems.append(f"{suffix}: no such package ran — {why} was not exercised")
                   continue

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	oraslib "oras.land/oras-go/v2"
@@ -21,7 +22,7 @@ func (LayoutValidator) Validate(
 	ctx context.Context,
 	src agentsuite.ReadOnlyStorage,
 	root ocispec.Descriptor,
-) (*agentsuite.Report, error) {
+) (*spec.Report, error) {
 	if src == nil {
 		return nil, fmt.Errorf("AgentSuite validation source is required")
 	}
@@ -40,5 +41,5 @@ func (LayoutValidator) Validate(
 	if err := stage.Tag(ctx, root, "validation"); err != nil {
 		return nil, fmt.Errorf("index AgentSuite validation root: %w", err)
 	}
-	return agentsuite.ValidatePath(stageRoot)
+	return spec.ValidatePath(stageRoot)
 }

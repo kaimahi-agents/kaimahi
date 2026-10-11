@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -26,7 +27,7 @@ type PushResult struct {
 	Reference  string
 	Updated    bool
 	Descriptor ocispec.Descriptor
-	Report     *agentsuite.Report
+	Report     *spec.Report
 }
 
 // Push deterministically packages an extracted AgentSuite directory and
@@ -257,7 +258,7 @@ func pushDirectory(
 		return ocispec.Descriptor{}, err
 	}
 	descriptor := ocispec.Descriptor{
-		MediaType: agentsuite.MediaTypeContent,
+		MediaType: spec.MediaTypeContent,
 		Digest:    digest,
 		Size:      size,
 	}

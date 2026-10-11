@@ -1,14 +1,26 @@
 package agentsuite
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode/utf8"
+
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+)
+
+const (
+	maxBuildJSONBytes     = int64(4 << 20)
+	maxBuildMetadataBytes = int64(256 << 20)
 )
 
 // BuildSelection identifies one runnable agent composition.
@@ -18,13 +30,13 @@ type BuildSelection struct {
 }
 
 // SelectedToolProvider is one exact provider bundle selected by a composition.
-// The closure order follows validator traversal; builders must not infer install
+// The closure order follows selection traversal; builders must not infer install
 // ordering from this slice.
 type SelectedToolProvider struct {
 	ID             string
 	Version        string
 	ManifestDigest string
-	Variant        ToolProviderVariant
+	Variant        spec.ToolProviderVariant
 	Root           bool
 }
 
@@ -32,15 +44,15 @@ type SelectedToolProvider struct {
 // sandbox image builder. The current experimental contract does not yet expose
 // verified image blobs or ToolProvider payload content.
 type SandboxPlan struct {
-	Suite             Suite
+	Suite             spec.Suite
 	SuiteManifestHash string
-	Agent             Agent
+	Agent             spec.Agent
 	Instructions      []byte
-	Composition       Composition
+	Composition       spec.Composition
 	CompositionDigest string
-	BuildProfile      BuildProfile
-	RuntimeBase       PlatformImage
-	Harness           PlatformImage
+	BuildProfile      spec.BuildProfile
+	RuntimeBase       spec.PlatformImage
+	Harness           spec.PlatformImage
 	ToolProviders     []SelectedToolProvider
 }
 
@@ -68,11 +80,32 @@ type SandboxBuilder interface {
 // ResolveSandboxPlan validates an extracted AgentSuite directory and resolves
 // exactly one agent/platform composition.
 func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, error) {
-	content, err := loadDirectory(root)
+	canonicalRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return nil, err
 	}
-	v, _, err := validateContentGraph(content)
+	rootHandle, err := os.OpenRoot(canonicalRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer rootHandle.Close()
+	suiteBytes, err := readBuildFile(rootHandle, "agentsuite.json", maxBuildJSONBytes)
+	if err != nil {
+		return nil, err
+	}
+	// Public suite validation is the conformance authority. The byte comparison
+	// detects ordinary root-manifest mutation, not a transactional snapshot.
+	if _, err := spec.ValidateDirectory(canonicalRoot); err != nil {
+		return nil, err
+	}
+	after, err := readBuildFile(rootHandle, "agentsuite.json", maxBuildJSONBytes)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(suiteBytes, after) {
+		return nil, errors.New("agentsuite.json changed during validation")
+	}
+	v, err := loadBuildMetadata(rootHandle, suiteBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +124,7 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 		return nil, fmt.Errorf("AgentSuite has no agent %q", agentID)
 	}
 
-	var candidates []Composition
+	var candidates []spec.Composition
 	for _, composition := range v.compositions {
 		if composition.Agent == agentID {
 			candidates = append(candidates, composition)
@@ -134,19 +167,14 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 		return nil, err
 	}
 
-	instructions, err := readBuildInstructions(root, agent.Instructions, content)
+	instructions, err := readBuildInstructions(rootHandle, agent.Instructions)
 	if err != nil {
 		return nil, fmt.Errorf("agent %s instructions: %w", agentID, err)
 	}
-	suiteBytes, err := content.data("agentsuite.json")
+	suiteHash, err := spec.Digest(suiteBytes)
 	if err != nil {
 		return nil, err
 	}
-	suiteHash, err := canonicalDigest(suiteBytes)
-	if err != nil {
-		return nil, err
-	}
-
 	compositionDigest := ""
 	for _, ref := range v.suite.Compositions {
 		if ref.Agent == composition.Agent && ref.Platform == composition.Platform {
@@ -154,17 +182,15 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 			break
 		}
 	}
-
 	selected, err := resolveSelectedToolProviders(v, composition)
 	if err != nil {
 		return nil, err
 	}
-
 	return &SandboxPlan{
 		Suite:             v.suite,
 		SuiteManifestHash: suiteHash,
 		Agent:             agent,
-		Instructions:      append([]byte(nil), instructions...),
+		Instructions:      instructions,
 		Composition:       composition,
 		CompositionDigest: compositionDigest,
 		BuildProfile:      profile,
@@ -174,42 +200,173 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 	}, nil
 }
 
-func resolveSelectedToolProviders(v *validator, composition Composition) ([]SelectedToolProvider, error) {
+// buildMetadata retains only the documents needed by the builder after public
+// validation, without exposing or replicating the spec validator's graph.
+type buildMetadata struct {
+	suite               spec.Suite
+	agents              map[string]spec.Agent
+	builds              map[string]spec.BuildProfile
+	compositions        []spec.Composition
+	toolProviders       map[string]spec.ToolProvider
+	toolProviderDigests map[string]string
+}
+
+func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error) {
+	v := &buildMetadata{
+		agents:              map[string]spec.Agent{},
+		builds:              map[string]spec.BuildProfile{},
+		toolProviders:       map[string]spec.ToolProvider{},
+		toolProviderDigests: map[string]string{},
+	}
+	if err := spec.Unmarshal(suiteBytes, &v.suite); err != nil {
+		return nil, fmt.Errorf("agentsuite.json: %w", err)
+	}
+	retained := int64(len(suiteBytes))
+	readJSON := func(name, digest string, out any) error {
+		data, err := readBuildFile(root, name, maxBuildJSONBytes)
+		if err != nil {
+			return err
+		}
+		if int64(len(data)) > maxBuildMetadataBytes-retained {
+			return fmt.Errorf("build metadata exceeds %d bytes", maxBuildMetadataBytes)
+		}
+		retained += int64(len(data))
+		if err := spec.Unmarshal(data, out); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		actual, err := spec.Digest(data)
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		if actual != digest {
+			return fmt.Errorf("%s manifest digest mismatch after validation", name)
+		}
+		return nil
+	}
+	for _, ref := range v.suite.Agents {
+		var agent spec.Agent
+		if err := readJSON(ref.Path, ref.Digest, &agent); err != nil {
+			return nil, err
+		}
+		v.agents[ref.ID] = agent
+	}
+	for _, ref := range v.suite.BuildProfiles {
+		var profile spec.BuildProfile
+		if err := readJSON(ref.Path, ref.Digest, &profile); err != nil {
+			return nil, err
+		}
+		v.builds[ref.ID] = profile
+	}
+	for _, ref := range v.suite.Compositions {
+		var composition spec.Composition
+		if err := readJSON(ref.Path, ref.Digest, &composition); err != nil {
+			return nil, err
+		}
+		v.compositions = append(v.compositions, composition)
+	}
+	var catalog spec.ToolProviderCatalog
+	if err := readJSON(v.suite.ToolProviderCatalog.Path, v.suite.ToolProviderCatalog.Digest, &catalog); err != nil {
+		return nil, err
+	}
+	for _, ref := range catalog.ToolProviders {
+		var provider spec.ToolProvider
+		if err := readJSON(ref.Path, ref.Digest, &provider); err != nil {
+			return nil, err
+		}
+		key := ref.ID + "@" + ref.Version
+		v.toolProviders[key] = provider
+		v.toolProviderDigests[key] = ref.Digest
+	}
+	for _, ref := range v.suite.ToolProviderCompositions {
+		var composition spec.ToolProviderComposition
+		if err := readJSON(ref.Path, ref.Digest, &composition); err != nil {
+			return nil, err
+		}
+	}
+	return v, nil
+}
+
+func resolveSelectedToolProviders(v *buildMetadata, composition spec.Composition) ([]SelectedToolProvider, error) {
 	roots := map[string]bool{}
 	for _, resolved := range composition.ToolProviders {
 		roots[resolved.ID+"@"+resolved.Version] = true
 	}
 	var selected []SelectedToolProvider
 	seen := map[string]bool{}
+	active := map[string]bool{}
+	var visit func(string, spec.ToolProviderVariant) error
+	visit = func(key string, variant spec.ToolProviderVariant) error {
+		identity := key + "#" + variant.VariantDigest
+		if active[identity] {
+			return fmt.Errorf("tool provider %s has a dependency cycle", key)
+		}
+		if seen[identity] {
+			return nil
+		}
+		active[identity] = true
+		id, version, _ := strings.Cut(key, "@")
+		selected = append(selected, SelectedToolProvider{
+			ID:             id,
+			Version:        version,
+			ManifestDigest: v.toolProviderDigests[key],
+			Variant:        variant,
+			Root:           roots[key],
+		})
+		for _, dep := range variant.Dependencies {
+			depKey := dep.ID + "@" + dep.Version
+			provider, ok := v.toolProviders[depKey]
+			if !ok {
+				return fmt.Errorf("missing tool provider %s", depKey)
+			}
+			if !spec.IsValidDigest(v.toolProviderDigests[depKey]) {
+				return fmt.Errorf("dependency %s has no pinned manifest digest", depKey)
+			}
+			dependency, matches := exactBuildVariant(provider.Variants, variant.Platform)
+			if matches != 1 || !spec.IsValidDigest(dep.VariantDigest) || dependency.VariantDigest != dep.VariantDigest {
+				return fmt.Errorf("dependency %s must select exactly one matching variant", depKey)
+			}
+			if err := visit(depKey, dependency); err != nil {
+				return err
+			}
+		}
+		delete(active, identity)
+		seen[identity] = true
+		return nil
+	}
 	for _, resolved := range composition.ToolProviders {
 		key := resolved.ID + "@" + resolved.Version
-		provider := v.toolProviders[key]
-		variant, _ := exactVariant(provider.Variants, composition.Platform)
-		closure, err := bundleClosure(key, variant, v.toolProviders)
-		if err != nil {
-			return nil, err
+		provider, ok := v.toolProviders[key]
+		if !ok {
+			return nil, fmt.Errorf("composition contains missing tool provider %s", key)
 		}
-		for _, bundle := range closure {
-			identity := bundle.providerKey + "#" + bundle.variant.VariantDigest
-			if seen[identity] {
-				continue
-			}
-			seen[identity] = true
-			id, version, _ := strings.Cut(bundle.providerKey, "@")
-			selected = append(selected, SelectedToolProvider{
-				ID:             id,
-				Version:        version,
-				ManifestDigest: v.toolProviderDigests[bundle.providerKey],
-				Variant:        bundle.variant,
-				Root:           roots[bundle.providerKey],
-			})
+		if !spec.IsValidDigest(resolved.ManifestDigest) || resolved.ManifestDigest != v.toolProviderDigests[key] {
+			return nil, fmt.Errorf("tool provider %s manifest digest mismatch", key)
+		}
+		variant, matches := exactBuildVariant(provider.Variants, composition.Platform)
+		if matches != 1 || !spec.IsValidDigest(resolved.VariantDigest) || variant.VariantDigest != resolved.VariantDigest {
+			return nil, fmt.Errorf("tool provider %s must select exactly one matching variant for %s", key, composition.Platform)
+		}
+		if err := visit(key, variant); err != nil {
+			return nil, err
 		}
 	}
 	return selected, nil
 }
 
-func exactPlatformImage(name string, images []PlatformImage, platform Platform) (PlatformImage, error) {
-	var selected PlatformImage
+func exactBuildVariant(variants []spec.ToolProviderVariant, platform spec.Platform) (spec.ToolProviderVariant, int) {
+	var selected spec.ToolProviderVariant
+	count := 0
+	for _, variant := range variants {
+		if variant.Platform == platform {
+			selected = variant
+			count++
+		}
+	}
+	return selected, count
+}
+
+func exactPlatformImage(name string, images []spec.PlatformImage, platform spec.Platform) (spec.PlatformImage, error) {
+	var selected spec.PlatformImage
 	count := 0
 	for _, image := range images {
 		if image.Platform == platform {
@@ -218,46 +375,59 @@ func exactPlatformImage(name string, images []PlatformImage, platform Platform) 
 		}
 	}
 	if count != 1 {
-		return PlatformImage{}, fmt.Errorf("build profile must contain exactly one %s image for %s", name, platform)
+		return spec.PlatformImage{}, fmt.Errorf("build profile must contain exactly one %s image for %s", name, platform)
 	}
 	return selected, nil
 }
 
-func readBuildInstructions(root string, ref FileRef, content *contentSet) ([]byte, error) {
-	entry, ok := content.entries[ref.Path]
-	if !ok || entry.Type != "file" || entry.Digest != ref.Digest {
-		return nil, errors.New("instruction content was not validated")
-	}
-	if entry.Size < 0 || entry.Size > maxRetainedMetadataBytes {
-		return nil, fmt.Errorf("instruction content exceeds %d bytes", maxRetainedMetadataBytes)
-	}
-	canonicalRoot, err := filepath.EvalSymlinks(root)
+func readBuildInstructions(root *os.Root, ref spec.FileRef) ([]byte, error) {
+	data, err := readBuildFile(root, ref.Path, maxBuildMetadataBytes)
 	if err != nil {
 		return nil, err
 	}
-	rootHandle, err := os.OpenRoot(canonicalRoot)
+	if digestBytes(data) != ref.Digest {
+		return nil, errors.New("instruction content changed after validation")
+	}
+	return data, nil
+}
+
+func readBuildFile(root *os.Root, name string, limit int64) ([]byte, error) {
+	if name == "" || len(name) > 1024 || !utf8.ValidString(name) || strings.ContainsAny(name, "\\\x00") ||
+		path.IsAbs(name) || path.Clean(name) != name || name == "." || name == ".." || strings.HasPrefix(name, "../") {
+		return nil, fmt.Errorf("content path is not normalized below the root: %q", name)
+	}
+	info, err := root.Lstat(filepath.FromSlash(name))
 	if err != nil {
 		return nil, err
 	}
-	defer rootHandle.Close()
-	file, err := rootHandle.Open(filepath.FromSlash(ref.Path))
+	if !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > limit {
+		return nil, fmt.Errorf("%s must be regular and at most %d bytes", name, limit)
+	}
+	file, err := root.Open(filepath.FromSlash(name))
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	info, err := file.Stat()
+	openedInfo, err := file.Stat()
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Size() != entry.Size {
-		return nil, errors.New("instruction content changed after validation")
+	if !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) || openedInfo.Size() != info.Size() {
+		return nil, fmt.Errorf("%s changed while opening", name)
 	}
-	data, err := io.ReadAll(io.LimitReader(file, entry.Size+1))
+	data, err := io.ReadAll(io.LimitReader(file, info.Size()+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) != entry.Size || digestBytes(data) != ref.Digest {
-		return nil, errors.New("instruction content changed after validation")
+	if int64(len(data)) != info.Size() {
+		return nil, fmt.Errorf("%s size changed while reading", name)
 	}
 	return data, nil
+}
+
+// digestBytes is the raw SHA-256 identity shared by instruction and OCI archive
+// checks. JSON manifest identities use spec.Digest instead.
+func digestBytes(data []byte) string {
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }

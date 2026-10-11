@@ -2,16 +2,28 @@ package agentsuite
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strings"
+	"unicode/utf8"
+
+	portable "github.com/kaimahi-agents/kaimahi/agentsuite"
 )
 
 const (
 	OCIArchiveMediaType       = "application/vnd.oci.image.layout.v1.tar"
+	ociManifestMediaType      = "application/vnd.oci.image.manifest.v1+json"
+	ociIndexMediaType         = "application/vnd.oci.image.index.v1+json"
+	maxArchiveIndexEntries    = 1000
+	maxArchiveEntries         = 100_000
+	maxArchivePathBytes       = 1024
 	maxArchiveJSONBytes       = int64(64 << 20)
 	maxArchiveObjectMembers   = 100_000
 	maxArchiveDocumentMembers = 4_000_000
@@ -19,6 +31,41 @@ const (
 	spdxPredicate             = "https://spdx.dev/Document"
 	provenancePredicatePrefix = "https://slsa.dev/provenance/"
 )
+
+type ociLayout struct {
+	ImageLayoutVersion string `json:"imageLayoutVersion"`
+}
+
+// Keep raw descriptor fields so explicit null and malformed embedded data or
+// URLs cannot disappear during decoding. The platform is the portable contract,
+// not OCI's extended platform, preserving the exact selected-platform check.
+type ociDescriptor struct {
+	MediaType    string             `json:"mediaType"`
+	Digest       string             `json:"digest"`
+	Size         int64              `json:"size"`
+	Data         json.RawMessage    `json:"data,omitempty"`
+	URLs         json.RawMessage    `json:"urls,omitempty"`
+	ArtifactType string             `json:"artifactType,omitempty"`
+	Platform     *portable.Platform `json:"platform,omitempty"`
+	Annotations  map[string]string  `json:"annotations,omitempty"`
+}
+
+type ociIndex struct {
+	SchemaVersion int               `json:"schemaVersion"`
+	MediaType     string            `json:"mediaType,omitempty"`
+	Manifests     []ociDescriptor   `json:"manifests"`
+	Annotations   map[string]string `json:"annotations,omitempty"`
+}
+
+type ociManifest struct {
+	SchemaVersion int               `json:"schemaVersion"`
+	MediaType     string            `json:"mediaType,omitempty"`
+	ArtifactType  string            `json:"artifactType"`
+	Config        ociDescriptor     `json:"config"`
+	Layers        []ociDescriptor   `json:"layers"`
+	Subject       *ociDescriptor    `json:"subject,omitempty"`
+	Annotations   map[string]string `json:"annotations,omitempty"`
+}
 
 type archiveEntry struct {
 	offset, size int64
@@ -34,7 +81,7 @@ type imageArchive struct {
 // or retaining image layers. Only bounded JSON metadata is read into memory.
 // Digest identifies the single runnable image; IndexDigest identifies its
 // enclosing index (or index.json for an unwrapped layout).
-func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, platform Platform, requested, required bool) (BuildResult, error) {
+func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, platform portable.Platform, requested, required bool) (BuildResult, error) {
 	result := BuildResult{MediaType: OCIArchiveMediaType, AttestationsRequested: requested, RequireAttestations: required}
 	archive, err := scanImageArchive(ctx, source, size)
 	if err != nil {
@@ -48,7 +95,7 @@ func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, pl
 	if err := decodeArchiveJSON(layoutBytes, &layout); err != nil {
 		return BuildResult{}, fmt.Errorf("oci-layout: %w", err)
 	}
-	if layout.ImageLayoutVersion != LayoutVersion {
+	if layout.ImageLayoutVersion != portable.LayoutVersion {
 		return BuildResult{}, errors.New("unsupported OCI layout version")
 	}
 	data, err := archive.readJSON("index.json")
@@ -67,7 +114,7 @@ func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, pl
 	var visit func(ociIndex, int) error
 	count := 0
 	visit = func(index ociIndex, depth int) error {
-		if depth > maxJSONDepth {
+		if depth > maxArchiveJSONDepth {
 			return errors.New("OCI index nesting limit exceeded")
 		}
 		if index.SchemaVersion != 2 || index.MediaType != "" && index.MediaType != ociIndexMediaType {
@@ -75,7 +122,7 @@ func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, pl
 		}
 		for _, d := range index.Manifests {
 			count++
-			if count > maxOCIIndexEntries {
+			if count > maxArchiveIndexEntries {
 				return errors.New("OCI index descriptor limit exceeded")
 			}
 			if err := archive.verify(d); err != nil {
@@ -129,7 +176,7 @@ func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, pl
 	if err := decodeArchiveJSON(configBytes, &config); err != nil {
 		return BuildResult{}, fmt.Errorf("image config: %w", err)
 	}
-	configPlatform := Platform{OS: config.OS, Architecture: config.Architecture, Variant: config.Variant}
+	configPlatform := portable.Platform{OS: config.OS, Architecture: config.Architecture, Variant: config.Variant}
 	if configPlatform != platform || image.Platform != nil && *image.Platform != platform {
 		return BuildResult{}, fmt.Errorf("runnable image platform does not match selected platform %s", platform)
 	}
@@ -230,14 +277,14 @@ func scanImageArchive(ctx context.Context, source io.ReaderAt, size int64) (*ima
 		if header.Typeflag == tar.TypeDir {
 			name = strings.TrimSuffix(name, "/")
 		}
-		if _, err := validateContentPath(name); err != nil {
+		if err := validateArchivePath(name); err != nil {
 			return nil, err
 		}
 		if seen[name] {
 			return nil, fmt.Errorf("duplicate OCI archive path %s", name)
 		}
 		seen[name] = true
-		if len(seen) > maxContentEntries {
+		if len(seen) > maxArchiveEntries {
 			return nil, errors.New("OCI archive entry limit exceeded")
 		}
 		if header.Typeflag == tar.TypeDir {
@@ -257,7 +304,7 @@ func scanImageArchive(ctx context.Context, source io.ReaderAt, size int64) (*ima
 		entry.digest = digest
 		if strings.HasPrefix(name, "blobs/") {
 			expected := "sha256:" + strings.TrimPrefix(name, "blobs/sha256/")
-			if !strings.HasPrefix(name, "blobs/sha256/") || !validDigest(expected) || expected != digest {
+			if !strings.HasPrefix(name, "blobs/sha256/") || !portable.IsValidDigest(expected) || expected != digest {
 				return nil, fmt.Errorf("OCI blob path or digest mismatch: %s", name)
 			}
 		}
@@ -267,7 +314,7 @@ func scanImageArchive(ctx context.Context, source io.ReaderAt, size int64) (*ima
 }
 
 func (a *imageArchive) verify(d ociDescriptor) error {
-	if err := validateDescriptorFields(d); err != nil {
+	if err := validateArchiveDescriptor(d); err != nil {
 		return err
 	}
 	name := "blobs/sha256/" + strings.TrimPrefix(d.Digest, "sha256:")
@@ -323,22 +370,55 @@ func (a *imageArchive) manifest(d ociDescriptor) (ociManifest, error) {
 	}
 	return m, nil
 }
-func decodeArchiveJSON(data []byte, out any) error {
-	return decodeArchiveJSONWithLimits(data, out, maxJSONBytes, maxJSONObjectMembers, maxJSONDocumentMembers)
+func validateArchivePath(value string) error {
+	if value == "" || len(value) > maxArchivePathBytes || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
+		return fmt.Errorf("unsafe content path %q", value)
+	}
+	if strings.Contains(value, "\\") || strings.HasPrefix(value, "/") {
+		return fmt.Errorf("content path must be relative POSIX syntax: %q", value)
+	}
+	clean := path.Clean(value)
+	if clean != value || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return fmt.Errorf("content path is not normalized below the root: %q", value)
+	}
+	for _, part := range strings.Split(clean, "/") {
+		if part == "" || part == "." || part == ".." {
+			return fmt.Errorf("content path contains an unsafe segment: %q", value)
+		}
+	}
+	return nil
 }
 
-func decodeArchiveJSONWithLimits(data []byte, out any, byteLimit int64, objectLimit, documentLimit int) error {
-	// OCI and in-toto may add fields independently of the AgentSuite schema.
-	// Statements need larger inventories, but root arrays (manifests, layers,
-	// subjects) must be bounded before typed allocation. Nested predicate arrays
-	// remain governed by the byte, member, nesting, and duplicate-key budgets.
-	if int64(len(data)) > byteLimit {
-		return fmt.Errorf("OCI JSON metadata exceeds %d bytes", byteLimit)
+func validateArchiveDescriptor(d ociDescriptor) error {
+	if !portable.IsValidDigest(d.Digest) || d.Size < 0 {
+		return errors.New("descriptor digest or size is invalid")
 	}
-	if err := validateJSONTokensWithLimits(data, objectLimit, documentLimit, maxOCIIndexEntries); err != nil {
-		return err
+	if d.URLs != nil {
+		return errors.New("descriptor urls are not allowed in a self-contained AgentSuite layout")
 	}
-	return json.Unmarshal(data, out)
+	if d.Data == nil {
+		return nil
+	}
+	if bytes.Equal(bytes.TrimSpace(d.Data), []byte("null")) {
+		return errors.New("descriptor data must be a base64 string")
+	}
+	var embedded []byte
+	if err := json.Unmarshal(d.Data, &embedded); err != nil {
+		return fmt.Errorf("descriptor data must be a base64 string: %w", err)
+	}
+	if int64(len(embedded)) != d.Size || digestBytes(embedded) != d.Digest {
+		return errors.New("descriptor data does not match digest and size")
+	}
+	return nil
+}
+
+func digestReader(reader io.Reader) (string, int64, error) {
+	hash := sha256.New()
+	size, err := io.Copy(hash, reader)
+	if err != nil {
+		return "", 0, err
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), size, nil
 }
 
 type archiveReader struct {

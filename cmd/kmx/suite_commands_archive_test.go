@@ -99,7 +99,7 @@ func TestSuiteBuildAttestationFlagsAndOutput(t *testing.T) {
 					return agentsuite.BuildResult{MediaType: agentsuite.OCIArchiveMediaType, AttestationsRequested: !tc.disabled, RequireAttestations: tc.required}, err
 				})
 			}
-			args := append([]string{"suite", "build", filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"), "--model-base-url", "https://models.example/v1", "--output", output}, tc.args...)
+			args := append([]string{"suite", "build", filepath.Join("..", "..", "agentsuite", "testdata", "minimal"), "--model-base-url", "https://models.example/v1", "--output", output}, tc.args...)
 			if err := execute(args, deps); err != nil {
 				t.Fatal(err)
 			}

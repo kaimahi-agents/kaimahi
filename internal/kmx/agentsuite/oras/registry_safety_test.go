@@ -312,7 +312,7 @@ func TestRegistryPushTagPreflight(t *testing.T) {
 	}))
 	defer server.Close()
 	source := filepath.Join(t.TempDir(), "source")
-	copyDirectory(t, filepath.Join("..", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
 	reference := strings.TrimPrefix(server.URL, "http://") + "/team/suite:v1"
 	first, err := PushRegistry(context.Background(), source, reference, true, false)
 	if err != nil {
@@ -381,7 +381,7 @@ func TestRegistryPushTagPreflight(t *testing.T) {
 func TestRegistryPushExistenceFailure(t *testing.T) {
 	t.Setenv("DOCKER_CONFIG", t.TempDir())
 	source := filepath.Join(t.TempDir(), "source")
-	copyDirectory(t, filepath.Join("..", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
 	var mutations, tagChecks atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v2/team/manifests/v1" {

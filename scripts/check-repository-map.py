@@ -468,6 +468,33 @@ def the_package_table_covers_internal(doc: Doc, tree: Tree) -> list[str]:
 
 
 @claim
+def the_directory_table_covers_agentsuite(doc: Doc, tree: Tree) -> list[str]:
+    """Portable source, docs and fixtures have direct, non-test counts.
+
+    Each file-bearing directory is listed once, as in the internal table;
+    parent fixture rows cannot conceal an unclassified child directory.
+    """
+    _, body = doc.section("`agentsuite/`")
+    rows = re.findall(r"^\| `([a-z0-9/._-]+)` \| \*?\*?" + NUM + r"\*?\*? \|",
+                      body, re.M | re.I)
+    if not rows:
+        raise Anchor("the `agentsuite/` section no longer has a directory table with file counts")
+    actual = {os.path.dirname(p) for p in tree.under("agentsuite")}
+    problems, named = [], set()
+    for directory, count in rows:
+        path = "agentsuite" if directory == "." else "agentsuite/" + directory.rstrip("/")
+        if path in named:
+            problems.append(f"the portable directory table repeats `{directory}`")
+        named.add(path)
+        if path not in actual:
+            problems.append(f"the portable directory table names `{directory}`, which is not a directory in the tree")
+            continue
+        problems += compare_count(number(count), len(non_test(tree.directly_under(path))),
+                                  f"{path} non-test files")
+    return problems + compare_sets(named, actual, "agentsuite/ directory coverage")
+
+
+@claim
 def the_package_count_matches(doc: Doc, tree: Tree) -> list[str]:
     _, body = doc.section("`internal/`")
     m = once(phrase("`internal/kmx/` is {n} packages"), body, "the internal/kmx package count")
@@ -940,6 +967,10 @@ SELFTEST_FILES = {
     "go.mod": "module example.invalid/fixture\n",
     "staticcheck.conf": "checks = [\"all\"]\n",
     "cmd/kmx/main.go": "package main\n",
+    "agentsuite/model.go": "package agentsuite\n",
+    "agentsuite/model_test.go": "package agentsuite\n",
+    "agentsuite/README.md": "# Portable format\n",
+    "agentsuite/schema/suite.json": "{}\n",
     "internal/kmx/app/lift.go": "package app\n",
     "k8s/embedded.yaml": "kind: ConfigMap\n",
     "k8s/assets/config.yaml": "kind: ConfigMap\n",
@@ -973,6 +1004,12 @@ Installed does not mean current direction, including one shell scripts.
 
 ## `cmd/` — installed commands
 | `cmd/kmx` (1 files) | **Installed** | CLI |
+
+## `agentsuite/` — portable format package
+| Directory | Non-test files | Class | Evidence |
+|---|---|---|---|
+| `.` | 2 | Checkout | Go model and documentation |
+| `schema/` | 1 | Checkout | Reference schema |
 
 ## `internal/` — installed packages
 `internal/kmx/` is one packages; the one `lift*.go` files in `app`.
@@ -1035,6 +1072,8 @@ MAP_EDITS = [
      "miscounts its open questions"),
     ("| `kmx/app` | 1 |", "| `kmx/app` | 2 |",
      "gets a package's source-file count wrong"),
+    ("| `.` | 2 |", "| `.` | 3 |",
+     "gets the portable package's direct non-test file count wrong"),
     ("`embedded.yaml`, all one", "all one",
      "drops a manifest from the embedded list that embed.go embeds"),
     ("`demo.yaml`, `checkout-data.json`", "`demo.yaml`, `checkout-data.json`, `embedded.yaml`",
@@ -1198,6 +1237,52 @@ def selftest_fixture(tree: Tree) -> int:
             failed += 1
         else:
             print(f"ok   {label}")
+
+    # Exercise portable inventory through the registry, but require findings
+    # from its own claim: unrelated failures cannot prove portable coverage.
+    portable_map = (
+        "## `agentsuite/` — portable format\n"
+        "| Directory | Non-test files | Class | Evidence |\n"
+        "|---|---|---|---|\n"
+        "| `.` | 2 | Checkout | Model and docs |\n"
+        "| `schema/` | 1 | Checkout | Schema |\n"
+    )
+    portable_files = ["agentsuite/model.go", "agentsuite/model_test.go",
+                      "agentsuite/README.md", "agentsuite/schema/suite.json"]
+    portable_claim = "[the_directory_table_covers_agentsuite]"
+    for text, extra, expected, label in [
+        (portable_map, [], "", "portable directory inventory passes and excludes Go tests"),
+        (portable_map.replace("| 2 |", "| 3 |"), [], "non-test files",
+         "portable direct count drift is refused"),
+        (portable_map, ["agentsuite/unclassified.new"], "non-test files",
+         "unclassified portable direct file is refused"),
+        (portable_map, ["agentsuite/new-fixture/input.json"], "directory coverage",
+         "unclassified portable fixture directory is refused"),
+        (portable_map.replace("| `schema/` | 1 | Checkout | Schema |\n", ""), [],
+         "directory coverage", "omitted portable schema directory is refused"),
+        (portable_map.replace("`schema/`", "`missing/`"), [], "directory",
+         "equal-count wrong portable directory is refused"),
+        (portable_map + "| `schema/` | 1 | Checkout | Schema |\n", [], "repeats",
+         "duplicate portable inventory row is refused"),
+        ("## `agentsuite/`\nNo inventory.\n", [], "directory table",
+         "missing portable inventory table is refused"),
+        (portable_map, ["agentsuite/extra_test.go"], "",
+         "additional portable Go tests do not change non-test counts"),
+        (portable_map + "| `new-fixture/` | 1 | Scaffolding | Input |\n",
+         ["agentsuite/new-fixture/input.json"], "",
+         "portable fixture inventory may grow with a classified row"),
+        (portable_map.replace("Checkout", "Scaffolding"), [], "",
+         "portable classification labels remain editorial"),
+    ]:
+        variant = Tree(tree.root, files=portable_files + extra)
+        findings, _ = check(variant, text)
+        findings = [p for p in findings if p.startswith(portable_claim)]
+        matched = not findings if not expected else any(expected in p for p in findings)
+        if matched:
+            print(f"ok   {label}")
+        else:
+            print(f"FAIL {label}: {findings}")
+            failed += 1
 
     # Embedded Python helpers count as scripts in the inventory but not shell
     # scripts in the preamble's language-specific claim.

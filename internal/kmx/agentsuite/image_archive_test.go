@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	portable "github.com/kaimahi-agents/kaimahi/agentsuite"
 )
 
 type imageArchiveFixture struct {
@@ -41,7 +43,7 @@ func makeImageArchive(t *testing.T, f imageArchiveFixture) ([]byte, string, stri
 		imageBody = f.manifestBody
 	}
 	image := add(ociManifestMediaType, imageBody)
-	image.Platform = &Platform{OS: "linux", Architecture: "amd64"}
+	image.Platform = &portable.Platform{OS: "linux", Architecture: "amd64"}
 	if f.badPlatform {
 		image.Platform.Architecture = "arm64"
 	}
@@ -85,7 +87,7 @@ func makeImageArchive(t *testing.T, f imageArchiveFixture) ([]byte, string, stri
 	}
 	if len(layers) > 0 {
 		att := add(ociManifestMediaType, ociManifest{SchemaVersion: 2, MediaType: ociManifestMediaType, Config: config, Layers: layers})
-		att.Platform = &Platform{OS: "unknown", Architecture: "unknown"}
+		att.Platform = &portable.Platform{OS: "unknown", Architecture: "unknown"}
 		binding := image.Digest
 		if f.binding != "" {
 			binding = f.binding
@@ -142,7 +144,7 @@ func makeImageArchive(t *testing.T, f imageArchiveFixture) ([]byte, string, stri
 
 func TestInspectImageArchiveNestedAttestations(t *testing.T) {
 	archive, image, index, sbom := makeImageArchive(t, imageArchiveFixture{nested: true, sbom: true, provenance: true})
-	result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), Platform{OS: "linux", Architecture: "amd64"}, true, true)
+	result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), portable.Platform{OS: "linux", Architecture: "amd64"}, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +176,7 @@ func TestInspectImageArchiveAttestationFailures(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			archive, _, _, _ := makeImageArchive(t, tc.fixture)
-			result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), Platform{OS: "linux", Architecture: "amd64"}, tc.requested, tc.required)
+			result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), portable.Platform{OS: "linux", Architecture: "amd64"}, tc.requested, tc.required)
 			if tc.warning {
 				if err != nil || len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], tc.want) {
 					t.Fatalf("result=%+v error=%v", result, err)
@@ -204,7 +206,7 @@ func TestInspectImageArchiveLargeSBOM(t *testing.T) {
 	}
 	predicate := map[string]any{"spdxVersion": "SPDX-2.3", "packages": packages, "files": files}
 	archive, image, _, sbom := makeImageArchive(t, imageArchiveFixture{nested: true, sbom: true, provenance: true, predicateBody: predicate})
-	result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), Platform{OS: "linux", Architecture: "amd64"}, true, true)
+	result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), portable.Platform{OS: "linux", Architecture: "amd64"}, true, true)
 	if err != nil || result.Digest != image || result.SBOMDigest != sbom {
 		t.Fatalf("large SBOM: result=%+v error=%v", result, err)
 	}
@@ -212,7 +214,8 @@ func TestInspectImageArchiveLargeSBOM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateJSONTokens(data); err == nil || !strings.Contains(err.Error(), "member limit") {
+	var suiteValue any
+	if err := portable.Unmarshal(data, &suiteValue); err == nil || !strings.Contains(err.Error(), "member limit") {
 		t.Fatalf("Suite JSON limits were relaxed: %v", err)
 	}
 }
@@ -230,12 +233,14 @@ func TestArchiveJSONMemberLimitsAndProtections(t *testing.T) {
 	if err := decodeArchiveJSONWithLimits(data, &value, maxArchiveJSONBytes, maxArchiveObjectMembers, maxArchiveDocumentMembers); err != nil {
 		t.Fatalf("wide inventory object: %v", err)
 	}
-	if err := validateJSONTokens(data); err == nil || !strings.Contains(err.Error(), "member limit") {
+	if err := portable.Unmarshal(data, &value); err == nil || !strings.Contains(err.Error(), "member limit") {
 		t.Fatalf("Suite JSON limits were relaxed: %v", err)
 	}
 	for _, tc := range []struct{ data, want string }{
 		{`{"predicate":{"package":"a","package":"b"}}`, "duplicate JSON key"},
+		{`{"predicate":{"package":"a","packa\u0067e":"b"}}`, "duplicate JSON key"},
 		{strings.Repeat("[", 101) + "0" + strings.Repeat("]", 101), "JSON nesting"},
+		{`{} {}`, "unexpected trailing token"},
 	} {
 		if err := decodeArchiveJSONWithLimits([]byte(tc.data), &value, maxArchiveJSONBytes, maxArchiveObjectMembers, maxArchiveDocumentMembers); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("protection error=%v, want %q", err, tc.want)
@@ -256,7 +261,7 @@ func TestInspectImageArchiveRootArrayLimits(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			archive, _, _, _ := makeImageArchive(t, tc.fixture)
-			_, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), Platform{OS: "linux", Architecture: "amd64"}, false, false)
+			_, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), portable.Platform{OS: "linux", Architecture: "amd64"}, false, false)
 			if err == nil || !strings.Contains(err.Error(), "JSON array entry limit exceeded") {
 				t.Fatalf("count limit must precede descriptor validation: error=%v", err)
 			}
@@ -270,7 +275,8 @@ func TestArchiveJSONRootArrayLimitBeforeUnmarshal(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/%d", field, count), func(t *testing.T) {
 				entries := "[" + strings.Repeat("{},", count-1) + "{}]"
 				data := []byte(`{"` + field + `":` + entries + `}`)
-				if err := validateJSONTokens(data); err != nil {
+				var suiteValue any
+				if err := portable.Unmarshal(data, &suiteValue); err != nil {
 					t.Fatalf("Suite array counts must remain unrestricted: %v", err)
 				}
 				var value struct {
@@ -321,11 +327,48 @@ func TestArchiveJSONStructuralMetadataLimits(t *testing.T) {
 	}
 }
 
+func TestArchiveDescriptorFields(t *testing.T) {
+	// {} hashes to this literal digest. Raw fields must retain explicit null;
+	// decoding data/urls into ordinary OCI slices would silently accept it.
+	const digest = "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+	const base = `{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"` + digest + `","size":2`
+	for _, tc := range []struct{ name, fields, want string }{
+		{"absent data and urls", ``, ""},
+		{"matching embedded data", `,"data":"e30="`, ""},
+		{"null embedded data", `,"data":null`, "descriptor data must be a base64 string"},
+		{"malformed embedded data", `,"data":"!"`, "descriptor data must be a base64 string"},
+		{"wrong embedded digest", `,"data":"e10="`, "descriptor data does not match digest and size"},
+		{"wrong embedded size", `,"data":""`, "descriptor data does not match digest and size"},
+		{"null urls", `,"urls":null`, "descriptor urls are not allowed"},
+		{"empty urls", `,"urls":[]`, "descriptor urls are not allowed"},
+		{"external urls", `,"urls":["https://example.invalid/blob"]`, "descriptor urls are not allowed"},
+		{"unknown OCI field", `,"futureField":{"enabled":true}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var descriptor ociDescriptor
+			if err := decodeArchiveJSON([]byte(base+tc.fields+`}`), &descriptor); err != nil {
+				t.Fatal(err)
+			}
+			archive := &imageArchive{entries: map[string]archiveEntry{
+				"blobs/sha256/" + strings.TrimPrefix(digest, "sha256:"): {size: 2, digest: digest},
+			}}
+			err := archive.verify(descriptor)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error=%v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestInspectImageArchiveCanceled(t *testing.T) {
 	archive, _, _, _ := makeImageArchive(t, imageArchiveFixture{})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := InspectImageArchive(ctx, bytes.NewReader(archive), int64(len(archive)), Platform{OS: "linux", Architecture: "amd64"}, false, false)
+	_, err := InspectImageArchive(ctx, bytes.NewReader(archive), int64(len(archive)), portable.Platform{OS: "linux", Architecture: "amd64"}, false, false)
 	if err != context.Canceled {
 		t.Fatalf("error=%v", err)
 	}

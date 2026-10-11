@@ -9,7 +9,8 @@ import (
 	"slices"
 	"strings"
 
-	agentsuitecore "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	agentsuitecore "github.com/kaimahi-agents/kaimahi/agentsuite"
+	suitebuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
 
@@ -99,13 +100,13 @@ func (a *App) BuildSuite(
 	ctx context.Context,
 	source string,
 	output string,
-	selection agentsuitecore.BuildSelection,
-	builder agentsuitecore.SandboxBuilder,
+	selection suitebuilder.BuildSelection,
+	builder suitebuilder.SandboxBuilder,
 ) (SuiteBuildResult, error) {
 	if builder == nil {
 		return SuiteBuildResult{}, fmt.Errorf("AgentSuite sandbox builder is required")
 	}
-	plan, err := agentsuitecore.ResolveSandboxPlan(source, selection)
+	plan, err := suitebuilder.ResolveSandboxPlan(source, selection)
 	if err != nil {
 		return SuiteBuildResult{}, fmt.Errorf("resolve AgentSuite sandbox plan: %w", err)
 	}
@@ -148,7 +149,7 @@ func (a *App) BuildSuite(
 		_ = stage.Close()
 		return SuiteBuildResult{}, fmt.Errorf("stat staged AgentSuite build output: %w", err)
 	}
-	verified, err := agentsuitecore.InspectImageArchive(ctx, stage, info.Size(), plan.Composition.Platform, result.AttestationsRequested, result.RequireAttestations)
+	verified, err := suitebuilder.InspectImageArchive(ctx, stage, info.Size(), plan.Composition.Platform, result.AttestationsRequested, result.RequireAttestations)
 	if err != nil {
 		_ = stage.Close()
 		return SuiteBuildResult{}, fmt.Errorf("inspect AgentSuite image archive: %w", err)

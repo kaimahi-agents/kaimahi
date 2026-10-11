@@ -41,12 +41,13 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | Area | Packaging / checkout | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
+| `agentsuite/` | public specification, Go model, schemas and conformance validator | — | conformance fixtures |
 | `internal/` | `kmx/` (17 packages), including schema fixtures | — | experimental lifecycle contracts and tests |
 | `pkg/` | — | — | experimental KMX target and agent lifecycle contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
 | `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 40 (checkers, release packaging, native CI runners, mutation specs) |
-| `docs/` | 34 tracked files; native guides, design and history | — | maintainer and process docs |
+| `docs/` | 33 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
@@ -54,6 +55,36 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | Path | Class | Evidence |
 |---|---|---|
 | `cmd/kmx` (39 files) | **Installed** | Explicit context/local entry points and hidden compatibility routes, native agent creation and execution, Orka install/status, quickstart and local setup, guarded AKS lifecycle, interactive console/chat, read-only runtime targets, offline AgentSuite validation and artifact operations, exact Kagent v0.10.2 create, bundle lift/status/evaluation and local-reference replay verification, typed evaluation assertions including explicitly configured two-sample `llmJudge`, offline v2 receipt comparison across revisions through `agent eval diff` with judge identity/score checks, agent-only replay with unverified judge counts, safe retirement and Task results. Root help describes creating and running agents on Kubernetes; root status reports only Orka. |
+
+## `agentsuite/` — public specification package
+
+The portable Go model, canonical JSON serializer, OCI/content safety checks,
+and offline graph validator are importable from the root Go module.
+`spec.md` is the normative specification and `README.md` introduces the package.
+Builders, packing, transfer, credentials, and sandbox construction remain under
+`internal/`, including the builder-owned incident-analyst fixture. Counts are
+direct non-test files, including documentation and data; every file-bearing
+directory has its own row.
+
+| Package or data directory | Non-test files | Class | What it is |
+|---|---|---|---|
+| `.` | 10 | Checkout | Portable Go model, canonical JSON, OCI image-reference/content safety and offline graph validation, plus package documentation and the normative specification. |
+| `schema/` | 6 | Checkout | Closed JSON Schema 2020-12 reference documents for suite, agent, ToolProvider and provider composition, and build-profile records. |
+| `testdata/minimal/` | 1 | Scaffolding | Root manifest for the minimal conformant suite. |
+| `testdata/minimal/agents/` | 1 | Scaffolding | Minimal writer agent manifest. |
+| `testdata/minimal/build-profiles/` | 1 | Scaffolding | Exact Linux build profile with pinned example descriptors. |
+| `testdata/minimal/instructions/` | 1 | Scaffolding | Digest-bound writer instructions. |
+| `testdata/minimal/compositions/` | 1 | Scaffolding | Empty agent composition for Linux amd64. |
+| `testdata/minimal/tool-providers/` | 1 | Scaffolding | Empty closed ToolProvider catalog. |
+| `testdata/coordinator-workers/` | 1 | Scaffolding | Root manifest for the coordinator, writer and reviewer suite. |
+| `testdata/coordinator-workers/agents/` | 3 | Scaffolding | Coordinator, writer and reviewer manifests with directional invocation edges. |
+| `testdata/coordinator-workers/build-profiles/` | 1 | Scaffolding | Shared exact Linux build profile. |
+| `testdata/coordinator-workers/instructions/` | 3 | Scaffolding | Digest-bound coordinator, writer and reviewer instructions. |
+| `testdata/coordinator-workers/compositions/` | 3 | Scaffolding | Empty per-agent Linux amd64 compositions. |
+| `testdata/coordinator-workers/tool-providers/` | 1 | Scaffolding | Empty closed ToolProvider catalog. |
+| `testdata/tool-providers/` | 4 | Scaffolding | `kubectl` and Azure CLI ToolProvider manifests plus the OPA provider and provider composition examples. |
+| `testdata/remote-mcp/` | 1 | Scaffolding | Remote Streamable HTTP ToolProvider manifest. |
+| `testdata/remote-mcp/schemas/` | 2 | Scaffolding | Digest-bound input and output schemas for the remote provider's callable Tool. |
 
 ## `internal/` — CLI packages and retained support
 
@@ -75,31 +106,16 @@ files or judge cases in the live CLI agent fixture.
 |---|---|---|---|
 | `kmx/app` | 99 | Installed | Command orchestration, native Orka lifecycle and run views, exact Kagent v0.10.2 create-only adapter and online proof, agent bundle persistence, lift/evaluation gates, Sessions evidence and replay verification, strict receipt verification, bounded OpenAI-compatible judge I/O in `agent_bundle_judge.go` with explicit transport/identity and two temperature-zero threshold-side samples, private immutable evaluation run history and offline payload-free receipt diff with judge identity/scores, agent-only replay that does not verify judge outcomes, Task execution/results, interactive console and shared chat UI, host inference, native platform operations, guarded cloud setup and historical ownership teardown. The three Kagent non-test files are `create_kagent.go`, `kagent_create_online.go` and `runtime_kagent_lifecycle.go`. |
 | `kmx/agentsessions` | 5 | Installed | Read-only bounded Sessions availability probe, Sessions gRPC evaluation and read-only replay adapters, verified remote TLS transport and syntactic destination comparison, per-case chat execution, journal evidence projection, ephemeral invocation name/count correlation (20,000 records, 64 MiB, 256 pending calls) and bounded offline reference-chat reconstruction. Correlation is not tool capability: production tool assertions always remain unknown. No daemon startup, tool enablement, host implementation attestation, descriptor discovery or lift-gate integration. |
-| `kmx/agentsuite` | 13 | Installed | Strict JSON and JCS identities, OCI image-reference, image-layout, and content-layer validation, OCI image-archive digest and attestation inspection, closed agent/tool-provider/composition/build-profile graph validation, callable Tool contracts, sandbox binding validation, provider-neutral sandbox build planning, and provider-neutral packing, CAS, and artifact push/pull contracts. |
+| `kmx/agentsuite` | 8 | Installed | Builder-owned sandbox binding, bounded OCI image-archive metadata parsing, digest and attestation inspection, provider-neutral sandbox build planning, and provider-neutral packing, CAS, and artifact push/pull contracts; portable format validation remains in the public AgentSuite package. |
 | `kmx/agentsuite/agentkit` | 2 | Installed | Experimental AgentKit adapter for the provider-neutral sandbox builder contract; generates input for a digest-pinned AgentKit frontend, invokes the selected Docker buildx builder with the monolithic harness adapter, requests SBOM/provenance attestations where supported, and streams an OCI image-layout tar to App for inspection before publication while explicitly reporting that the runtime base is not composed. |
 | `kmx/agentsuite/oras` | 6 | Installed | ORAS-backed deterministic directory push, validated directory extraction, manifest construction, validation materialization, target-bound artifact push/pull, and remote repository binding through the Docker credential store; registry configuration, authentication, and transport policy remain outside the portable AgentSuite contracts. |
-| `kmx/agentsuite/schema` | 7 | Checkout | Closed JSON Schema 2020-12 reference documents for suite, agent, ToolProvider and provider composition, build-profile, and Agent sandbox-binding records; published with the source checkout, not embedded in or loaded by the binary. |
-| `kmx/agentsuite/testdata/minimal` | 1 | Scaffolding | Root manifest for the checked-in minimal conformant AgentSuite layout used by package and CLI validation tests. |
-| `kmx/agentsuite/testdata/minimal/agents` | 1 | Scaffolding | Minimal writer agent manifest. |
-| `kmx/agentsuite/testdata/minimal/build-profiles` | 1 | Scaffolding | Minimal exact Linux build profile with pinned example descriptors. |
-| `kmx/agentsuite/testdata/minimal/instructions` | 1 | Scaffolding | Digest-bound instruction content for the minimal writer agent. |
-| `kmx/agentsuite/testdata/minimal/compositions` | 1 | Scaffolding | Empty composition manifest for the minimal agent and platform. |
-| `kmx/agentsuite/testdata/minimal/tool-providers` | 1 | Scaffolding | Empty closed tool provider catalog for the minimal suite. |
-| `kmx/agentsuite/testdata/coordinator-workers` | 1 | Scaffolding | Root manifest for the conformant coordinator, writer and reviewer fixture. |
-| `kmx/agentsuite/testdata/coordinator-workers/agents` | 3 | Scaffolding | Coordinator, writer and reviewer manifests; only the coordinator declares invocation edges. |
-| `kmx/agentsuite/testdata/coordinator-workers/build-profiles` | 1 | Scaffolding | Shared exact Linux build profile for all three agents. |
-| `kmx/agentsuite/testdata/coordinator-workers/instructions` | 3 | Scaffolding | Digest-bound coordinator, writer and reviewer instructions. |
-| `kmx/agentsuite/testdata/coordinator-workers/compositions` | 3 | Scaffolding | Empty composition manifests for all three agents on Linux amd64. |
-| `kmx/agentsuite/testdata/coordinator-workers/tool-providers` | 1 | Scaffolding | Empty closed tool provider catalog for the coordinator-workers suite. |
-| `kmx/agentsuite/testdata/incident-analyst` | 1 | Scaffolding | Root manifest for the realistic, buildable incident-response example with real digest-pinned Linux amd64 image inputs. |
+| `kmx/agentsuite/schema` | 1 | Checkout | Builder-owned Agent sandbox-binding schema; published with the source checkout, not embedded in or loaded by the binary. |
+| `kmx/agentsuite/testdata/incident-analyst` | 1 | Scaffolding | Internal builder-owned realistic, buildable incident-response example with real digest-pinned Linux amd64 image inputs; not a portable conformance fixture. |
 | `kmx/agentsuite/testdata/incident-analyst/agents` | 1 | Scaffolding | Tool-free incident analyst targeting an Azure OpenAI deployment named gpt-5-mini. |
 | `kmx/agentsuite/testdata/incident-analyst/build-profiles` | 1 | Scaffolding | Real digest-pinned Python runtime-base and AgentKit v0.1.0 Pydantic AI harness descriptors. |
 | `kmx/agentsuite/testdata/incident-analyst/instructions` | 1 | Scaffolding | Evidence-bound incident triage, hypothesis, diagnostic and mitigation instructions. |
 | `kmx/agentsuite/testdata/incident-analyst/compositions` | 1 | Scaffolding | Linux amd64 composition selecting the AgentKit v0.1.0 build profile. |
 | `kmx/agentsuite/testdata/incident-analyst/tool-providers` | 1 | Scaffolding | Empty catalog reflecting the experimental backend's current no-ToolProvider boundary. |
-| `kmx/agentsuite/testdata/tool-providers` | 4 | Scaffolding | `kubectl` and Azure CLI ToolProvider manifests plus the OPA provider and provider composition examples. |
-| `kmx/agentsuite/testdata/remote-mcp` | 1 | Scaffolding | Remote Streamable HTTP ToolProvider manifest used by schema and semantic validation tests. |
-| `kmx/agentsuite/testdata/remote-mcp/schemas` | 2 | Scaffolding | Digest-bound input and output schemas for the remote provider's callable Tool. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
 | `kmx/app/testdata/kubectl` | 0 | Scaffolding | Test-only executable-boundary kubectl handlers, compiled once per App test run with matching race instrumentation; no App or UI dependencies. |
 | `kmx/app/testdata/live-eval-loop` | 1 | Scaffolding | Portable agent for the clusterless, secret-free real-inference CI fixture and App bundle-loading test. |
@@ -218,13 +234,12 @@ endpoint evidence filtering. Neither file is embedded or installed for users;
 see [CI registry mirrors](development.md#ci-registry-mirrors) for the boundaries
 and pull-evidence contract.
 
-## `docs/` — 34 tracked files, native guides and design/history
+## `docs/` — 33 tracked files, native guides and design/history
 
-**Guides and index (15):** `README.md`, `getting-started.md`, `kmx.md`,
+**Guides and index (14):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `releases.md`, `FAQ.md`, `orka.md`,
 `copilot-inference.md`, `interactive-chat.md`, `interactive-lift.md`,
-`orka-k8s-tool.md`, `bundle-format.md`, `agentsuite-spec.md` and
-`runtime-adapters.md`.
+`orka-k8s-tool.md`, `bundle-format.md` and `runtime-adapters.md`.
 
 **Maintainer and process (19):** `development.md`, `repository-map.md`,
 `entry-point-principles.md`,

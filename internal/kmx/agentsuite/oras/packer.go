@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -70,7 +71,7 @@ func (p *Packer) Pack(
 		return agentsuite.PackResult{}, fmt.Errorf("stage AgentSuite content: %w", err)
 	}
 	configBytes := []byte("{}")
-	configDescriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeEmptyConfig, configBytes)
+	configDescriptor := content.NewDescriptorFromBytes(spec.MediaTypeEmptyConfig, configBytes)
 	if err := stage.Push(ctx, configDescriptor, bytes.NewReader(configBytes)); err != nil {
 		return agentsuite.PackResult{}, fmt.Errorf("stage AgentSuite config: %w", err)
 	}
@@ -78,7 +79,7 @@ func (p *Packer) Pack(
 		ctx,
 		stage,
 		oraslib.PackManifestVersion1_1,
-		agentsuite.MediaTypeArtifact,
+		spec.MediaTypeArtifact,
 		oraslib.PackManifestOptions{
 			Layers:           []ocispec.Descriptor{contentDescriptor},
 			ConfigDescriptor: &configDescriptor,
@@ -108,7 +109,7 @@ func (p *Packer) Pack(
 }
 
 func validateContentDescriptor(descriptor ocispec.Descriptor) error {
-	if descriptor.MediaType != agentsuite.MediaTypeContent ||
+	if descriptor.MediaType != spec.MediaTypeContent ||
 		descriptor.Digest.Validate() != nil ||
 		descriptor.Digest.Algorithm() != godigest.SHA256 ||
 		descriptor.Size < 0 {

@@ -1,14 +1,11 @@
-// Package agentsuite validates the draft AgentSuite artifact format.
+// Package agentsuite implements kmx construction support for AgentSuite.
 //
 // AgentSuite is definition and packaging data. It does not contain sessions,
 // checkpoints, runtime snapshots, credentials, or secret values.
 //
-// The packing, storage, and transfer contracts declared in packer.go,
-// storage.go, and transfer.go are an extraction boundary. Keep them portable
-// enough to move into a standalone AgentSuite module without changing callers.
-// They must not depend on host lifecycle or CLI types, operating-system paths,
-// ORAS interfaces, cloud provider SDKs, authentication, UI state, or deployment
-// policy.
+// The portable data model, serializer, schemas, and validator live in the
+// top-level agentsuite package. This internal package owns builder-specific
+// bindings, packing, transfer, and sandbox construction used by kmx.
 //
 // Provider-specific behavior belongs behind these contracts. Filesystem,
 // ORAS, registry, Azure Storage, and other service bindings live in

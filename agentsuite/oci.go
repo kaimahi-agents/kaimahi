@@ -69,7 +69,13 @@ func ValidatePath(value string) (*Report, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	content, err := loadDirectory(value)
+	return ValidateDirectory(value)
+}
+
+// ValidateDirectory validates extracted AgentSuite content without OCI layout
+// auto-detection. Consumers of loose manifests must validate this same view.
+func ValidateDirectory(root string) (*Report, error) {
+	content, err := loadDirectory(root)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +299,7 @@ func openBlob(root string, descriptor ociDescriptor) (*os.File, error) {
 }
 
 func validateDescriptorFields(descriptor ociDescriptor) error {
-	if !validDigest(descriptor.Digest) || descriptor.Size < 0 {
+	if !IsValidDigest(descriptor.Digest) || descriptor.Size < 0 {
 		return errors.New("descriptor digest or size is invalid")
 	}
 	if descriptor.URLs != nil {
@@ -323,30 +329,8 @@ func (d ociDescriptor) embeddedData() ([]byte, bool, error) {
 	return data, true, nil
 }
 
-// ValidateSandboxBinding validates the fixed binding record embedded in a
-// derived Agent Sandbox Image. Image filesystem and runtime probes are separate
-// conformance operations.
-func ValidateSandboxBinding(data []byte) (*SandboxBinding, error) {
-	var binding SandboxBinding
-	if err := decodeStrict(data, &binding); err != nil {
-		return nil, err
-	}
-	if binding.SchemaVersion != SpecVersion || binding.MediaType != MediaTypeSandboxBinding {
-		return nil, errors.New("sandbox binding has unsupported schemaVersion or mediaType")
-	}
-	if !validDigest(binding.SuiteDigest) || !identifierPattern.MatchString(binding.Agent) ||
-		binding.BuildProfile == "" || !validDescriptor(binding.Composition) ||
-		binding.Composition.MediaType != MediaTypeComposition || !validDescriptor(binding.Inventory) {
-		return nil, errors.New("sandbox binding identity or descriptors are invalid")
-	}
-	if err := validatePlatform(binding.Platform); err != nil {
-		return nil, err
-	}
-	return &binding, nil
-}
-
 func validDescriptor(descriptor Descriptor) bool {
-	return descriptor.MediaType != "" && validDigest(descriptor.Digest) && descriptor.Size >= 0
+	return descriptor.MediaType != "" && IsValidDigest(descriptor.Digest) && descriptor.Size >= 0
 }
 
 func digestReader(reader io.Reader) (string, int64, error) {

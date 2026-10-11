@@ -11,14 +11,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	"github.com/kaimahi-agents/kaimahi/agentsuite"
+	suitebuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content/oci"
 )
 
 func TestSuiteValidateMinimalLayout(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -59,12 +60,12 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 }
 
 func TestSuiteBuildUsesAgentKitBackend(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	output := filepath.Join(t.TempDir(), "writer.oci.tar")
 	archive, _, _, _ := suiteCommandArchive(t, false)
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	deps.newAgentKitBuilder = func(options agentkitbuilder.Options) agentsuite.SandboxBuilder {
+	deps.newAgentKitBuilder = func(options agentkitbuilder.Options) suitebuilder.SandboxBuilder {
 		if options.ModelBaseURL != "https://models.example/v1" {
 			t.Fatalf("ModelBaseURL = %q", options.ModelBaseURL)
 		}
@@ -74,9 +75,9 @@ func TestSuiteBuildUsesAgentKitBackend(t *testing.T) {
 		if !options.Verbose || options.Progress != &diagnostics {
 			t.Fatalf("verbose=%v progress=%T", options.Verbose, options.Progress)
 		}
-		return sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
+		return sandboxBuilderFunc(func(_ context.Context, _ suitebuilder.SandboxPlan, dst io.Writer) (suitebuilder.BuildResult, error) {
 			_, err := dst.Write(archive)
-			return agentsuite.BuildResult{
+			return suitebuilder.BuildResult{
 				MediaType: agentkitbuilder.OCIArchiveMediaType,
 				Warnings:  []string{"not AgentSuite-conformant"},
 			}, err
@@ -117,11 +118,11 @@ func TestSuiteBuildRejectsInvalidModelKeyEnvBeforeBuilderOrFiles(t *testing.T) {
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
 			createdBuilder := false
-			deps.newAgentKitBuilder = func(agentkitbuilder.Options) agentsuite.SandboxBuilder {
+			deps.newAgentKitBuilder = func(agentkitbuilder.Options) suitebuilder.SandboxBuilder {
 				createdBuilder = true
-				return sandboxBuilderFunc(func(context.Context, agentsuite.SandboxPlan, io.Writer) (agentsuite.BuildResult, error) {
+				return sandboxBuilderFunc(func(context.Context, suitebuilder.SandboxPlan, io.Writer) (suitebuilder.BuildResult, error) {
 					t.Fatal("invalid environment name reached builder")
-					return agentsuite.BuildResult{}, nil
+					return suitebuilder.BuildResult{}, nil
 				})
 			}
 			// Missing input and output parent prove validation precedes suite reads
@@ -154,18 +155,18 @@ func TestSuiteBuildRejectsInvalidModelKeyEnvBeforeBuilderOrFiles(t *testing.T) {
 }
 
 func TestSuiteBuildShowsBuilderWarningsWithoutVerbose(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	output := filepath.Join(t.TempDir(), "writer.oci.tar")
 	archive, _, _, _ := suiteCommandArchive(t, false)
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
-	deps.newAgentKitBuilder = func(options agentkitbuilder.Options) agentsuite.SandboxBuilder {
+	deps.newAgentKitBuilder = func(options agentkitbuilder.Options) suitebuilder.SandboxBuilder {
 		if options.Verbose {
 			t.Fatal("verbose unexpectedly enabled")
 		}
-		return sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
+		return sandboxBuilderFunc(func(_ context.Context, _ suitebuilder.SandboxPlan, dst io.Writer) (suitebuilder.BuildResult, error) {
 			_, err := dst.Write(archive)
-			return agentsuite.BuildResult{
+			return suitebuilder.BuildResult{
 				MediaType: agentkitbuilder.OCIArchiveMediaType,
 				Warnings:  []string{"builder implementation detail"},
 			}, err
@@ -187,7 +188,7 @@ func TestSuiteBuildShowsBuilderWarningsWithoutVerbose(t *testing.T) {
 }
 
 func TestSuitePushMinimalDirectory(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	outputRoot := t.TempDir()
 	firstOutput := filepath.Join(outputRoot, "first")
 	secondOutput := filepath.Join(outputRoot, "second")
@@ -236,7 +237,7 @@ func TestSuitePushMinimalDirectory(t *testing.T) {
 }
 
 func TestSuitePushAddsReferencesToExistingLayout(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	target := filepath.Join(t.TempDir(), "layout")
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
@@ -275,7 +276,7 @@ func TestSuitePushAddsReferencesToExistingLayout(t *testing.T) {
 }
 
 func TestSuitePushRefusesNestedTarget(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	target := filepath.Join(fixture, "layout")
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
@@ -312,7 +313,7 @@ func TestSuitePushFailureLeavesNoNewTarget(t *testing.T) {
 }
 
 func TestSuitePullExtractsDirectory(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "internal", "kmx", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
 	layout := filepath.Join(t.TempDir(), "layout")
 	output := filepath.Join(t.TempDir(), "suite")
 	reference := "agentsuites/minimal:v1"
@@ -419,13 +420,13 @@ func TestSuiteTransferFlagsMatchIssue(t *testing.T) {
 	}
 }
 
-type sandboxBuilderFunc func(context.Context, agentsuite.SandboxPlan, io.Writer) (agentsuite.BuildResult, error)
+type sandboxBuilderFunc func(context.Context, suitebuilder.SandboxPlan, io.Writer) (suitebuilder.BuildResult, error)
 
 func (fn sandboxBuilderFunc) Build(
 	ctx context.Context,
-	plan agentsuite.SandboxPlan,
+	plan suitebuilder.SandboxPlan,
 	dst io.Writer,
-) (agentsuite.BuildResult, error) {
+) (suitebuilder.BuildResult, error) {
 	return fn(ctx, plan, dst)
 }
 

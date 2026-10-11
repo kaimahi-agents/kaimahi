@@ -42,7 +42,11 @@ a general legacy-YAML conversion layer.
 
 ## Build and verify
 
-Run from the repository root. Formatting checks must test `gofmt` output because
+Run from the repository root. AgentSuite is a public package in the same Go
+module, so these commands include it without a workspace or a dependency pin.
+CI's Go hygiene checks remain unguarded, including on documentation-only changes;
+only the live and clone-free operation steps use documentation-only guards.
+Formatting checks must test `gofmt` output because
 `gofmt -l` alone exits successfully even when it lists files.
 
 Tests that read or write KMX state must set `KMX_HOME` to `t.TempDir()`. Do not
@@ -51,7 +55,7 @@ config location, while macOS uses `~/Library/Application Support`. `KMX_HOME`
 is the repository's explicit cross-platform isolation contract.
 
 ```bash
-test -z "$(gofmt -l cmd internal embed.go embed_test.go)" && go vet ./... && go build ./... && go test ./...
+formatted=$(gofmt -l agentsuite cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go build ./... && go test ./...
 python3 scripts/check-doc-links.py --selftest
 python3 scripts/check-doc-links.py
 python3 scripts/check-secret-shapes.py --selftest
