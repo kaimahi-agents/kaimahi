@@ -33,9 +33,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Comparison requires compatible full-case v2 receipts; regressions and incomplete comparisons exit nonzero. [Compare evaluations](docs/agent-lift.md#comparing-saved-evaluations-offline).
 
 - The console's `R` key shows recent Orka Tasks, task lanes and sanitized activity for the selected agent, context and namespace.
-  Discovery is bounded and reports missing or unreadable evidence without showing conversation payloads. [Interactive console](docs/interactive-agent-tui-plan.md).
+  Discovery is bounded and reports missing or unreadable evidence without showing conversation payloads. [Interactive console](docs/interactive-chat.md).
 
-- The reusable KMX GitHub evaluation action runs a tracked bundle's cases through Sessions, optionally replay-checks receipts, and fails the job unless every case passes.
+- The reusable kmx GitHub evaluation action runs a tracked bundle's cases through Sessions, optionally replay-checks receipts, and fails the job unless every case passes.
   Sessions evaluation does not satisfy an Orka lift gate. [Run evals in CI](docs/agent-lift.md#run-evals-in-ci).
 
 - `kmx agent eval from-sessions <session-uid>...` extracts private single-turn UID/prefix references and authored assertions without copying recorded inputs or answers; existing `--out` manifests append atomically and refuse duplicates.
@@ -120,7 +120,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Breaking
 
 - Model-plane commands/assets, model-overlay/credential administration, `make plane-image`, `CRED`, `ADMIN_PORT`, `OPS_PORT` and AKS `boundary`/`credential`/`plane` phases are removed; setup no longer creates plane credentials or monitoring, status is Orka-only, and version drops the plane revision.
-  This deletes **no deployed databases, credentials, caches or resources**; native inference and historical AKS teardown remain. [Removal scope](CONTRIBUTING.md#local-verification).
+  This deletes **no deployed databases, credentials, caches or resources**; native inference and historical AKS teardown remain. [Removal scope](docs/kmx.md).
 
 - Registry `kmx suite push` requires `--force` to replace a tag's digest; its preflight guard is non-atomic.
   Authenticated push/pull requires HTTPS or loopback HTTP, including token endpoints/redirects; remote plain HTTP auth challenges are refused. [Registry safety](docs/kmx.md#registry-authentication).
@@ -140,7 +140,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   v0.4.1 and earlier require the old names. [Command compatibility](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
 
 - Remove retired plane/admin commands and configuration from automation; configure supported Orka agents with native inference instead.
-  Existing plane deployments and data need separate operator-owned retirement; upgrading kmx deletes none of them. [Native inference](docs/kmx.md#default-orka-contract), [removal scope](CONTRIBUTING.md#local-verification).
+  Existing plane deployments and data need separate operator-owned retirement; upgrading kmx deletes none of them. [Native inference](docs/kmx.md#default-orka-contract), [removal scope](docs/kmx.md).
 
 - Use HTTPS for authenticated remote registry push/pull and add `--force` only when deliberately replacing a tag's digest.
   The tag preflight guard is non-atomic. [Registry safety](docs/kmx.md#registry-authentication).
