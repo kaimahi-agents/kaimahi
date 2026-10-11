@@ -980,33 +980,9 @@ sections, not the intermediate instruction.
   again on the way out, for rows they did not write today. Real tool and
   upstream names are untouched — no quoting, no escaping, no change.
 
-- **`scripts/check-board.py`** — the coordination board's lane table said a
-  lane was unassigned when it had already shipped five times in six days, and
-  twice carried two rows for one lane that contradicted each other. Each time
-  it was found by eye and hand-patched. CI now runs the board against itself
-  on every pull request: no two rows for one lane, no row that says both
-  unassigned and merged, no ready-to-paste worker prompt for a lane the table
-  says shipped, no finished lane's delta sheet above a row saying nobody has
-  started, and every pull request the board calls merged is one that merged.
-
-  This is not cosmetic. A stale row invites a worker to rebuild something that
-  exists — one said unassigned for the lane that had shipped `kmx tools add`.
-
-  Whether a lane is *done* is a judgement and nothing here asks it. Whether the
-  board contradicts itself is not, and that is all this checks. One claim
-  reaches outside the document, to `git log`: a row claiming nothing has
-  shipped, for work a merge already describes in that row's own words. Pull
-  request titles carry no lane numbers, so the match is on the words the row
-  itself uses; on the board the day it was written it matched 17 rows to the
-  exact pull request each cites and none to a different one. It is keyless,
-  needs a full checkout, and names the claims it skipped when it does not have
-  one.
-
-  The board has one writer, so this lane did not edit it. What it found is
-  recorded in `scripts/board-open-drift.json` with what each item costs to
-  close — including the stale row that was live on main while this was being
-  written. An entry there that the board no longer earns fails the check too,
-  so the record cannot outlive the debt.
+- Contribution status validation catches duplicate or contradictory completion
+  records and incorrect merged pull-request references, helping contributors
+  avoid repeating work that has already shipped.
 
 - **`scripts/check-repository-map.py`** — `docs/repository-map.md` asserted
   several dozen facts about this tree and nothing checked any of them. CI now
@@ -1098,13 +1074,8 @@ sections, not the intermediate instruction.
   command-specific help, validation, and Bash/Zsh/Fish completion. Operational
   behavior, context guards, Make delegation, and machine-readable stdout remain
   in the existing application layer.
-- Documentation and code comments now say what a thing does rather than
-  citing the planning identifier that tracked it. A lane or decision number
-  is a coordination artifact nobody reading the code can resolve, so each
-  one is replaced by the mechanism or the rule it stood for — and where the
-  reference was carrying the argument, the reason is written out instead of
-  cited. Trailing pointers to a capability document are unchanged; the
-  planning board keeps its own identifiers.
+- Documentation and code comments describe behavior, constraints and rationale
+  directly, while retaining useful links to capability documentation.
 - **`kmx agent create` and the blueprint parser refuse a wider set of
   credential shapes**, and both now read one shared list rather than each
   keeping its own — so a shape added in one place is refused in all of them,
@@ -1129,51 +1100,11 @@ sections, not the intermediate instruction.
   Interactive quickstart output also shows its six-step plan and clearer phase
   boundaries; redirected and JSON output are unchanged.
 
-- **The board checker's self-test only worked while the board was broken.**
-  Three of its cases needed a finding standing open in
-  `scripts/board-open-drift.json`, so striking the last one off — the day its
-  design succeeds — turned the self-test red with nothing wrong. Two of the
-  three failed loudly. The third, that a claim skipped for want of a merge
-  ledger does not strike its open findings off, passed on an empty ledger
-  having compared nothing, and one deliberate breakage went unnoticed behind
-  it. All three now build their own contradictory board. The ledger is
-  asserted in both directions by name — the finding it recorded is gone, and a
-  second one it did not record is still reported — because recording *some*
-  problem is not enough: an entry the board no longer earns is itself a
-  problem. A fourth case, added here, is the only shape that shows the ledger
-  reads the lane and not just the claim: two lanes failing one claim, with one
-  of them recorded.
-
-- **A worker prompt whose identifier was not a number was invisible to the
-  board checker**, and the one on this board invited a fresh session to rename
-  `tomte` to `kaimahi` in a repository renamed six weeks earlier. Both reasons
-  are closed for prompts: the identifier pattern used where a row or a heading
-  *opens* now admits a worded lane, and a heading that says it is a prompt
-  whose lane cannot be read stops the run rather than being filed under
-  nothing. A pasteable prompt with no row was also silently exempt from the
-  shipped-lane claim; `every_prompt_has_a_row` owns that case, and the claim
-  that declines to answer it now says so. On the *row* side the class stays
-  open by choice — seventeen of sixty-three rows name no lane the checker can
-  read, and reporting them would name seventeen rows the board is not wrong
-  about. `Row`'s docstring says so, and says why.
-
-- **A retired prompt now has to cite the pull request its own row cites.**
-  Retiring a prompt writes a merge number into its heading by hand, once per
-  lane, and sixteen of those numbers are older than the merge ledger's first —
-  so the ledger cannot check them, and the document checking itself is the
-  only thing that can.
-
-- **The board's whole open drift is closed.** Thirty-eight prompt headings
-  invited a paste into a fresh CLI session; thirty-six of them sat under rows
-  saying the lane had merged, and each of those now reads `(RUN — merged as
-  #N; kept as the record of what the lane was asked for)`, keeping the prompt
-  text — which is what makes a lane's delta sheet checkable — and dropping the
-  invitation together with the sequencing conditions written beside it in the
-  same parenthesis. The two left pasteable, W42 and W43, are for lanes whose
-  rows say unassigned and mean it. W41's row, which said `unassigned` for work
-  that merged as #139 the same day, says so.
-  `scripts/board-open-drift.json` carries no open findings and records how
-  each was closed.
+- Contribution status validation now fails closed on malformed references and
+  checks that retired records cite the same merged pull request as their status
+  entries. Completed work is no longer presented as available to start.
+  Self-tests use independent fixtures and remain valid with no open findings,
+  including checks that resolved findings disappear and unrecorded ones remain.
 - Chat aborts enhanced input on resize without submitting the current message or
   approval. Session list shapes/empty states, active-renderer history boundaries,
   and duplicate tool-event display are corrected. Broad one-shot transport
@@ -1491,23 +1422,17 @@ sections, not the intermediate instruction.
   it starts, which seams it is deliberately not refreshing and what an expired
   one will look like. A live run is unchanged and still refreshes.
 
-- **`kmx down` no longer deletes a cluster under a banner saying it does
-  not exist.** `kind delete cluster` deletes by **container** name and never
-  opens the kubeconfig, so a kubeconfig that has never heard of the context
-  is not evidence there is nothing to delete — but the guard's "context not
-  created yet" allowance, which exists so `kmx up` can name the cluster it
-  is about to create, was accepted here too. A stale or re-pointed
-  `KUBECONFIG` plus `kmx down` therefore destroyed a real cluster, with no
-  confirmation, under a banner saying it had never been created. It cost a
-  lane a cluster.
-
-  `kmx down` now asks the container engine first. No cluster by that name:
-  it says so and deletes nothing. A cluster the kubeconfig describes: the
-  banner and no question, exactly as before, so CI and every ordinary
-  teardown are unchanged. A cluster the kubeconfig cannot vouch for: the
-  banner says so, and it takes `KAIMAHI_CONFIRM=<context>` or a typed
-  confirmation — which is also how a half-created cluster is removed after
-  a `kmx up` that died before writing its kubeconfig entry.
+- **`kmx down` checks cluster existence independently of the kubeconfig.**
+  `kind delete cluster` deletes by container name, so a missing context does
+  not prove the cluster is absent. Teardown checks the container engine first:
+  a failed check is an error, and a confirmed absent cluster deletes nothing.
+  A confirmed local kind cluster keeps the existing banner-only path;
+  an unreadable kubeconfig refuses teardown. Other cases identify the
+  uncertainty and require
+  `KAIMAHI_CONFIRM=<context>` or a typed context confirmation, refusing deletion
+  without a matching confirmation. This also supports cleanup after `kmx up`
+  fails before writing its kubeconfig entry. Deletion destroys all cluster
+  data; export anything needed first.
 - **`kmx workflow run` and `kmx credential renew` go through the context
   guard.** The documentation said every mutating command did; these two did
   not. `kmx workflow run` is the one that matters: it files approval

@@ -127,8 +127,7 @@ has different [ownership rules](aks.md#teardown).
 The workflow emits `hygiene` and `e2e-hello-world` merge gates. The latter
 aggregates the native `e2e-quickstart`, `e2e-kagent-create`, `e2e-orka-runtime`,
 `e2e-orka-helm`, clusterless `e2e-eval-loop` and dedicated `e2e-kagent-lift`
-shards, plus successful change classification. Plane-command shards,
-upgrade probes and the nested-module/Postgres job are removed.
+shards, plus successful change classification.
 Required-check rules are managed separately on GitHub: removing a workflow job
 does not change the active ruleset or satisfy a retired required context.
 

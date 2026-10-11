@@ -52,5 +52,5 @@ the removed conversion spike are not evidence of one.
 - [Local Foundry inference](local-foundry-inference.md): interactive host inference
   with Azure login, and the separate native Orka integration proposal.
 
-Superseded lane prompts, old platform proposals and retired review snapshots
-are not maintained as public documentation. Git retains their history.
+Maintained documentation provides current guidance.
+For superseded material, consult Git history.
