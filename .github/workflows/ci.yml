@@ -1831,7 +1831,7 @@ jobs:
   e2e-eval-loop:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1849,7 +1849,7 @@ jobs:
       - name: Configure CI registry mirrors
         if: steps.changes.outputs.docs_only != 'true'
         run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
-      - name: Live AIKit evaluation and zero-call replay
+      - name: Live AIKit judge proof, evaluation and zero-call replay
         if: steps.changes.outputs.docs_only != 'true'
         uses: ./.github/actions/kmx-eval
         with:
@@ -1857,6 +1857,7 @@ jobs:
           kmx-bin: ${{ github.workspace }}/bin/kmx
           model-mode: aikit
           verify: 'true'
+          judge-proof: 'true'
           artifact-name: eval-loop-evidence
       - name: Report registry pull endpoint evidence
         if: always() && steps.changes.outputs.docs_only != 'true'
