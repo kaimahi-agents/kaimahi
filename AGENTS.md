@@ -35,7 +35,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   stays `kmx agent evaluate --from-sessions`. Keep reference manifests private,
   require named candidate/judge confirmation before recorded-content transfer,
   and suppress answer/reasoning output unless `--show-content` is explicit.
-  Expired sources are unknown, never a skip or export.
+  Expired sources are unknown, never a skip or export. Offline eval diff keeps
+  missing Sessions case identity row-local unknown/nonzero; observed identity
+  conflicts or no complete observed case identity in either receipt stay incompatible.
 - Keep **Create → Prove → Lift** as the local-to-remote story. **Lift** is the
   chosen agent lifecycle verb: retain `kmx agent lift` and interactive `/lift`,
   and use Lift in corresponding help and menu labels rather than renaming the

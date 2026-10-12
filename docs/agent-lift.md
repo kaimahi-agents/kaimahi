@@ -878,10 +878,11 @@ authorized source deployment is required for private traffic. Automatic deletion
 propagation is not implemented. No production export or multi-turn mode is
 supported.
 
-**Diff limitation:** an unavailable source row has no observed candidate runtime
-identity. The existing conservative diff therefore marks the **whole comparison
-incompatible**, rather than comparing the remaining rows. Row-local unknown
-handling is tracked in [#403](https://github.com/kaimahi-agents/kaimahi/issues/403).
+An unavailable source has no observed candidate runtime identity. In
+`agent eval diff`, that case gets its own `unknown` row while the remaining
+cases still compare. The comparison remains incomplete/nonzero; it is
+incompatible when either receipt has no complete observed case identity or
+when observed identities disagree, including mixed models.
 
 ### Verifying a sessions receipt
 
@@ -967,8 +968,14 @@ duplicate case/assertion IDs and incoherent versions/results are refused.
 Both receipts must be v2 full-case runs with compatible runtime identity.
 Sessions compares syntactically normalized address, returned harness and
 journal-observed model, without DNS/alias equivalence. Orka compares cluster
-UID, namespace, Agent name/UID and model. Missing or mixed identity is
-incompatible, never inferred. **Different portable digests or Git commits
+UID, namespace, Agent name/UID and model. Sessions requires at least one case
+with a complete observed harness/model pair in each receipt. A case missing
+identity on either side produces a case-level `unknown` row, not assertion
+verdict transitions; other cases still compare, and structural changes remain
+visible. All nonempty observations must agree, including partial observations;
+mixed models or disagreements make the whole comparison incompatible. No
+observed identity, or missing Orka target identity, is incompatible, never
+inferred from requested models or recorded sources. **Different portable digests or Git commits
 are allowed**: before/after revision identities are displayed for the operator.
 Legacy receipts are recognized but incompatible for assertion-level comparison;
 no assertion outcomes are synthesized from old aggregate verdicts.

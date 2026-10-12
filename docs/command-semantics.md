@@ -75,8 +75,10 @@ separate `KAIMAHI_CONFIRM_JUDGE=<canonical-judge-base-url>`. Refusals name the
 transfer destination plainly; choosing an endpoint alone is not consent.
 Reference runs suppress answers and judge reasoning unless `--show-content` is
 explicit. Help/completion performs no reads, writes or inference. See
-[reference cases and the conservative diff limitation](agent-lift.md#recorded-sessions-as-reference-cases),
-tracked in [#403](https://github.com/kaimahi-agents/kaimahi/issues/403).
+[reference cases and row-local unknown comparisons](agent-lift.md#recorded-sessions-as-reference-cases).
+Missing case identity produces an `unknown` diff row without hiding comparable
+cases; unknown rows remain incomplete/nonzero. Observed identity disagreement
+or no complete observed case identity in either receipt remains incompatible.
 
 ## Offline suite workspace
 

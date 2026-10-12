@@ -98,9 +98,10 @@ never exports content when a source expires. Reference-case bytes bind policy,
 source prefix and authored assertion identities into existing v2 case/set
 digests; v2 receipts themselves retain their unchanged payload-free schema.
 See [recorded cases and consent](agent-lift.md#recorded-sessions-as-reference-cases).
-One unavailable source currently makes the whole diff incompatible because its
-candidate identity is unobserved; [#403](https://github.com/kaimahi-agents/kaimahi/issues/403)
-tracks row-local unknown handling.
+An unavailable source produces its own `unknown` case row in diff, while cases
+with compatible observed candidate identities still compare. Any unknown row
+keeps the comparison incomplete/nonzero. If either receipt has no complete
+observed case identity, or the observed identities disagree, diff is incompatible.
 
 ## What the digests say
 

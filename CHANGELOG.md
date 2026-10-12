@@ -37,6 +37,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- `kmx agent eval diff` reports cases without observed Sessions runtime identity
+  as individual `unknown` rows instead of hiding comparable cases. Unknown rows
+  still exit nonzero; conflicting identities or no complete observed identity
+  in either receipt remain incompatible. Receipt formats are unchanged.
+
 - Applying `kmx agent create` without a Task can reuse its offline preview when
   only the generated schema-source comment differs. The preview stays unchanged;
   every other byte difference still refuses reuse, and online schema/admission

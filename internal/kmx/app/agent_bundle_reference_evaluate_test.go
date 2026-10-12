@@ -32,12 +32,13 @@ const referenceAnswerCanary = "candidate-private-answer-canary"
 
 type referenceEvaluationServer struct {
 	*sessionsEvalServer
-	records []*v1.LogRecord
-	expired bool
+	records        []*v1.LogRecord
+	expired        bool
+	expiredSession string
 }
 
 func (s *referenceEvaluationServer) Replay(r *v1.ReplayRequest, stream v1.Sessions_ReplayServer) error {
-	if s.expired {
+	if s.expired || r.Session == s.expiredSession {
 		return status.Error(codes.NotFound, "recorded-private-error-canary")
 	}
 	for _, record := range s.records {
@@ -223,6 +224,61 @@ func TestReferenceEvaluationExpiredIsUnknownAndDiffIncompatible(t *testing.T) {
 	for _, canary := range []string{referenceInputCanary, referenceAnswerCanary, "recorded-private-error-canary"} {
 		if strings.Contains(output, canary) {
 			t.Fatal("expiry leaked content")
+		}
+	}
+}
+
+// One expired source must not hide another case's real candidate evidence.
+func TestReferenceEvaluationExpiredCaseDiffIsRowLocal(t *testing.T) {
+	a, opt, s := referenceEvaluationFixture(t)
+	t.Setenv("KAIMAHI_CONFIRM", opt.Sessions)
+	raw, err := os.ReadFile(opt.FromSessions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := agentruntime.ParseSessionReferenceManifest(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := manifest.Cases[0].Source
+	ref.SessionUID = "source-session-2"
+	second, err := agentruntime.NewSessionReferenceCase(agentruntime.EvaluationCase{ID: "remaining", ExpectContains: []string{referenceAnswerCanary}}, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Cases = append(manifest.Cases, second)
+	raw, err = agentruntime.MarshalSessionReferenceManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(opt.FromSessions, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.EvaluateAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := readSessionsAppReceipt(t, opt.BundleDir)
+	s.expiredSession = "source-session-1"
+	if err := a.EvaluateAgentBundle(opt); err == nil {
+		t.Fatal("expired source passed")
+	}
+	after, raw := readSessionsAppReceipt(t, opt.BundleDir)
+	if len(after.Cases) != 2 || after.Cases[0].Verdict != "unknown" || after.Cases[0].SessionUID != "" || after.Cases[0].Model != "" || after.Cases[1].Verdict != "pass" || after.Cases[1].SessionUID == "" {
+		t.Fatalf("invalid mixed expiry evidence: %+v", after)
+	}
+	out, err := diffExecute(t, before, after)
+	if err == nil || err.Error() != "evaluation comparison is incomplete" || !strings.Contains(out, manifest.Cases[0].ID+"\t-\t-/-\tpass/unknown\tunknown\t") || !strings.Contains(out, second.ID+"\texpectContains.0\tcontains/contains\tpass/pass\tstable\t") || strings.Contains(out, "incompatible") {
+		t.Fatalf("err=%v out=%s", err, out)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.creates) != 3 || len(s.execs) != 3 {
+		t.Fatal("expired reference executed or remaining reference skipped")
+	}
+	output := out + a.Out.(*bytes.Buffer).String() + a.Err.(*bytes.Buffer).String() + string(raw)
+	for _, canary := range []string{referenceInputCanary, referenceAnswerCanary, "recorded-private-error-canary"} {
+		if strings.Contains(output, canary) {
+			t.Fatal("mixed expiry leaked content")
 		}
 	}
 }
