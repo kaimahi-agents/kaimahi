@@ -356,17 +356,48 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	if strings.TrimSpace(request.PortableDigest) == "" {
 		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires the portable digest of the revision under test")
 	}
-	if strings.TrimSpace(request.CaseID) == "" || strings.TrimSpace(request.Input) == "" || len(request.ExpectContains)+len(request.Assertions) == 0 {
-		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires a case id, an input and at least one assertion")
-	}
-	if len(request.ExpectContains)+len(request.Assertions) > agentruntime.EvaluationMaxAssertions {
-		return agentruntime.EvaluationReceipt{}, fmt.Errorf("at most %d assertions are allowed", agentruntime.EvaluationMaxAssertions)
-	}
-	if err := agentruntime.ValidateEvaluationAssertions(request.Assertions); err != nil {
+	c := agentruntime.EvaluationCase{ID: request.CaseID, Input: request.Input, ExpectContains: request.ExpectContains, Assertions: request.Assertions}
+	if err := orkaNativeEvaluationCaseError(c); err != nil {
 		return agentruntime.EvaluationReceipt{}, err
 	}
-	c := agentruntime.EvaluationCase{ID: request.CaseID, Input: request.Input, ExpectContains: request.ExpectContains, Assertions: request.Assertions}
 	if err := a.statusTargetError(ref); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	return a.app.evaluateOrkaNative(ctx, ref, c, orkaNativeEvaluationOptions{
+		resultPort: a.resultPort, judge: request.Judge, out: a.app.Out,
+		verify: func(ctx context.Context) error {
+			return a.app.orkaEvaluationRevisionError(ctx, ref, request.PortableDigest)
+		},
+	})
+}
+
+// Only the attribution and content sinks differ between bundle and suite
+// callers. The native Task, authority, result and assertion path stays shared.
+// Strict attribution adds observations after opening the session and judging;
+// legacy bundle callers retain their original two revision checks.
+type orkaNativeEvaluationOptions struct {
+	resultPort        string
+	judge             agentruntime.EvaluationJudge
+	out               io.Writer
+	verify            func(context.Context) error
+	strictAttribution bool
+}
+
+func orkaNativeEvaluationCaseError(c agentruntime.EvaluationCase) error {
+	if strings.TrimSpace(c.ID) == "" || strings.TrimSpace(c.Input) == "" || len(c.ExpectContains)+len(c.Assertions) == 0 {
+		return fmt.Errorf("Orka evaluate requires a case id, an input and at least one assertion")
+	}
+	if len(c.ExpectContains)+len(c.Assertions) > agentruntime.EvaluationMaxAssertions {
+		return fmt.Errorf("at most %d assertions are allowed", agentruntime.EvaluationMaxAssertions)
+	}
+	return agentruntime.ValidateEvaluationAssertions(c.Assertions)
+}
+
+func (a *App) evaluateOrkaNative(ctx context.Context, ref agentruntime.AgentRef, c agentruntime.EvaluationCase, opt orkaNativeEvaluationOptions) (agentruntime.EvaluationReceipt, error) {
+	if strings.TrimSpace(ref.Namespace) == "" || strings.TrimSpace(ref.Name) == "" || strings.TrimSpace(ref.UID) == "" {
+		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate requires an explicit namespace, Agent name and Agent UID")
+	}
+	if err := orkaNativeEvaluationCaseError(c); err != nil {
 		return agentruntime.EvaluationReceipt{}, err
 	}
 	if ctx == nil {
@@ -378,11 +409,11 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	if err := ctx.Err(); err != nil {
 		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Orka evaluate for %s/%s: %w", ref.Namespace, ref.Name, err)
 	}
-	app := a.app.withRunContext(ctx)
+	app := a.withRunContext(ctx)
 	if err := app.preflight(depKubectl); err != nil {
 		return agentruntime.EvaluationReceipt{}, err
 	}
-	if err := app.orkaEvaluationRevisionError(ctx, ref, request.PortableDigest); err != nil {
+	if err := opt.verify(ctx); err != nil {
 		return agentruntime.EvaluationReceipt{}, err
 	}
 	suffix, err := randomHex(8)
@@ -390,7 +421,7 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 		return agentruntime.EvaluationReceipt{}, err
 	}
 	name := strings.TrimRight(ref.Name[:min(len(ref.Name), 40)], "-.") + "-eval-" + suffix
-	port := a.resultPort
+	port := opt.resultPort
 	if port == "" {
 		port = "19180"
 	}
@@ -409,11 +440,19 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	if err := session.probe(ctx, ref.Namespace, name); err != nil {
 		return agentruntime.EvaluationReceipt{}, err
 	}
-	receipt := agentruntime.EvaluationReceipt{CaseID: request.CaseID, TaskName: name, Verdict: agentruntime.EvaluationUnknown, Assertions: evaluateCaseWithJudge(ctx, c, agentruntime.EvaluationEvidence{ToolSupported: false}, request.Judge)}
+	if opt.strictAttribution {
+		if err := opt.verify(ctx); err != nil {
+			return agentruntime.EvaluationReceipt{}, err
+		}
+		if err := ctx.Err(); err != nil {
+			return agentruntime.EvaluationReceipt{}, err
+		}
+	}
+	receipt := agentruntime.EvaluationReceipt{CaseID: c.ID, TaskName: name, Verdict: agentruntime.EvaluationUnknown, Assertions: evaluateCaseWithJudge(ctx, c, agentruntime.EvaluationEvidence{ToolSupported: false}, opt.judge)}
 	task := map[string]any{
 		"apiVersion": "core.orka.ai/v1alpha1", "kind": "Task",
 		"metadata": map[string]any{"name": name, "namespace": ref.Namespace},
-		"spec":     map[string]any{"type": "ai", "prompt": request.Input, "agentRef": map[string]any{"name": ref.Name, "namespace": ref.Namespace}, "resources": map[string]any{}},
+		"spec":     map[string]any{"type": "ai", "prompt": c.Input, "agentRef": map[string]any{"name": ref.Name, "namespace": ref.Namespace}, "resources": map[string]any{}},
 	}
 	id, err := app.createOrkaObject(ctx, ref.Namespace, task)
 	if err != nil {
@@ -422,6 +461,14 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 	}
 	receipt.TaskUID = id.UID
 	answer, err := app.waitOrkaTaskResult(ctx, ref.Namespace, id, session)
+	// A native terminal failure is still unknown when suite attribution was
+	// lost during execution. Legacy failure semantics remain unchanged.
+	if err != nil && opt.strictAttribution {
+		if verifyErr := opt.verify(ctx); verifyErr != nil || ctx.Err() != nil {
+			receipt.Detail = evaluationResultUnavailable
+			return receipt, nil
+		}
+	}
 	var ended *orkaTaskEndedError
 	switch {
 	case errors.As(err, &ended):
@@ -435,19 +482,33 @@ func (a orkaRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.Agent
 		receipt.Detail = evaluationResultUnavailable
 		return receipt, nil
 	}
-	if _, err := fmt.Fprintln(a.app.Out, answer); err != nil {
+	if opt.strictAttribution {
+		// Retrieved suite evidence survives a content-sink failure.
+		receipt.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(answer)
+	}
+	if _, err := fmt.Fprintln(opt.out, answer); err != nil {
 		receipt.Detail = evaluationResultUnavailable
 		return receipt, nil
 	}
-	receipt.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(answer)
-	receipt.Matched, receipt.Missing = agentruntime.MatchExpectations(answer, request.ExpectContains)
-	// The answer counts only if the Agent it came from is still the revision
-	// under test: a lift that landed while the Task ran makes it unattributable.
-	if err := app.orkaEvaluationRevisionError(ctx, ref, request.PortableDigest); err != nil {
+	if !opt.strictAttribution {
+		receipt.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(answer)
+	}
+	receipt.Matched, receipt.Missing = agentruntime.MatchExpectations(answer, c.ExpectContains)
+	// Only an answer attributable to the same live revision may be judged.
+	if err := opt.verify(ctx); err != nil {
 		receipt.Detail = evaluationResultUnavailable
 		return receipt, nil
 	}
-	receipt.Assertions = evaluateCaseWithJudge(ctx, c, agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true, ToolSupported: false}, request.Judge)
+	assertions := evaluateCaseWithJudge(ctx, c, agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true, ToolSupported: false}, opt.judge)
+	if opt.strictAttribution {
+		if err := opt.verify(ctx); err != nil || ctx.Err() != nil {
+			// Retain the initial unknown rows and evaluator identity, not scores
+			// from an answer whose subject changed while it was judged.
+			receipt.Detail = evaluationResultUnavailable
+			return receipt, nil
+		}
+	}
+	receipt.Assertions = assertions
 	receipt.Verdict = agentruntime.EvaluationAssertionsVerdict(receipt.Assertions)
 	return receipt, nil
 }
