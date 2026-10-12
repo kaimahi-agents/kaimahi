@@ -1,12 +1,12 @@
 # Suite-first lifecycle: objects and everyday commands
 
-**Status:** Proposal, discussed in [#328](https://github.com/kaimahi-agents/kaimahi/issues/328); not implemented.
+**Status:** Direction, partly implemented; discussed in [#328](https://github.com/kaimahi-agents/kaimahi/issues/328). The native one-member path is landing under [#430](https://github.com/kaimahi-agents/kaimahi/issues/430) (#437, #445, #450 merged). Also merged: suite diff (#441), the image-backed `AgentSuites` contract (#443) and offline kagent receipts (#446). Open questions below are owned by the linked issues.
 
 ## Direction
 
 The workspace is what people author; the suite is the portable release and lifecycle object. Everyday commands stay few, while their internals are split into small capabilities.
 
-This develops the [walkthrough](https://github.com/kaimahi-agents/kaimahi/issues/328#issuecomment-6104051141) and Tatsinnit's reply, alongside the [lifecycle interface decision](kmx-lifecycle-interfaces.md), not as a replacement for it. Follow-ups belong to [#344](https://github.com/kaimahi-agents/kaimahi/issues/344). The merged [#355](https://github.com/kaimahi-agents/kaimahi/pull/355) makes the portable format public in `agentsuite/`; construction and transfer remain internal. Open [#342](https://github.com/kaimahi-agents/kaimahi/pull/342) is a working prototype, not a settled storage or adapter contract.
+This develops the [walkthrough](https://github.com/kaimahi-agents/kaimahi/issues/328#issuecomment-6104051141) and Tatsinnit's reply, alongside the [lifecycle interface decision](kmx-lifecycle-interfaces.md), not as a replacement for it. Follow-ups belong to [#344](https://github.com/kaimahi-agents/kaimahi/issues/344). The merged [#355](https://github.com/kaimahi-agents/kaimahi/pull/355) makes the portable format public in `agentsuite/`; construction and transfer remain internal. The image-backed prototype from #342 is being split into drafts #448 and #449 (tracked in [#447](https://github.com/kaimahi-agents/kaimahi/issues/447)); it should arrive through the same lift as the native path, not a second one.
 
 ## What the user holds
 
@@ -54,8 +54,8 @@ Commands find the workspace by walking up from the current directory to `workspa
 | Current path | Mapping to this proposal |
 |---|---|
 | `agent create/evaluate/lift` on main | Separate authoring from live creation; evaluate becomes workspace-level `eval`; bundle lift converges on suite-based `lift`. Default create applies to a target and writes a bundle; offline bundle generation already exists, but suite-member authoring is proposed. |
-| `suite create/publish/deploy/run` in open #342, not main | Member authoring joins `agent create`; publication joins `suite push`; the prototype's `deploy` spelling is rejected in favor of `lift`; invocation remains member-scoped run/chat, not lift. |
-| `suite push <directory> <reference>` on main | Exists today for validated suite-artifact transfer, but does not build/publish the required image set. The one-reference, current-workspace form above is proposed. |
+| Image-backed path in drafts #448/#449 (#447; #342 closed) | Member authoring joins `agent create`; publication joins `suite push`; deployment converges on the single lift rather than a separate `suite lift`; invocation remains member-scoped run/chat, not lift. |
+| `suite push <directory> <reference>` on main | Exists today for validated suite-artifact transfer. `suite push --workspace . <reference>` (#437) prepares and publishes the exact native suite with no member images; the one-reference form without `--workspace` is proposed. |
 
 Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/kaimahi/pull/302) and the [command alignment record](command-semantics.md) decided. Bare `kmx lift` today is deprecated AKS provisioning, not artifact lift. Reassigning it needs an explicit compatibility transition; this proposal does not change it. Follow the [command conventions](command-conventions.md), including aligned help, interactive labels, recovery commands and compatibility tests, when any spelling ships.
 
@@ -68,6 +68,10 @@ Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/
 - Old bundle receipts stay readable for their original lifecycle but do not count as suite or image evidence.
 - Multi-agent evaluation needs a member-selection rule: every member, exported entrypoints, or a declared invocation closure remains open.
 - AgentSuite covers local and remote runs; local commands compose suite operations rather than adding a separate lifecycle. A quick local preview may skip packaging, but only a run of the exact packaged suite counts as promotion evidence.
+- Commands find the workspace from the current directory; `agent create` with no workspace offers to start one. Authoring is the default meaning of `agent create`.
+- Runtime comes from the member and is bound in evaluation evidence; lift resolves and prints it, and is not a way to switch runtimes.
+- For the packaged path (#430), only a complete passing run exports evidence. A failed or incomplete run exits nonzero and produces no receipt, so lift refuses a candidate for lack of matching passing evidence, not because a failure was recorded.
+- Lifting a previous digest again is a re-lift of that release, not a rollback of a deployed bad revision. Rollback needs the revision and retention records in #348/#346.
 - The current `agent.yaml` path keeps working until a one-member suite path (create, eval, push, lift to Orka) is proven end to end; then `agent.yaml` is read as a one-agent workspace.
 
 ## What evaluation evidence binds to
@@ -86,9 +90,10 @@ Two options are to read a bundle as a one-agent workspace or require a one-time 
 
 ## Open questions
 
-1. Which fields are authored versus resolved, and how do membership, ToolProviders, invocation edges and inference requirements enter the workspace? **Owners:** #328/#351, coordinated with the #342 prototype.
-2. What immutable member-image association supports required platforms and thin versus fully portable/offline packaging? **Owners:** #345 and #307, coordinated with #342.
+1. Which fields are authored versus resolved, and how do membership, ToolProviders, invocation edges and inference requirements enter the workspace? **Owners:** #328/#351, coordinated with #447.
+2. What immutable member-image association supports required platforms and thin versus fully portable/offline packaging? **Owners:** #345 and #307, coordinated with #447.
 3. Which members does `eval` select, and how is full coverage recorded? **Owner:** #350.
 4. Which signatures and policies permit promotion across targets or model bindings? **Owner:** #350; signer policy is not yet decided.
 5. How are target/binding identities, aggregate deployment revisions, partial outcomes, recovery and retained retirement recorded? **Owners:** #348, #346 and #347; session-runtime conformance belongs to #352.
-6. How do root `lift` compatibility, destination/inference flags and member run/chat selection converge without changing existing contracts silently? **Owners:** #301/#302 and #351, coordinated with #342.
+6. How do root `lift` compatibility, destination/inference flags and member run/chat selection converge without changing existing contracts silently? **Owners:** #301/#302 and #351, coordinated with #447.
+7. How does a lifted suite member get chatted with on its destination? Today's `agent chat` targets live Agents, and suite-owned objects deliberately refuse legacy access. **Owner:** #344.
