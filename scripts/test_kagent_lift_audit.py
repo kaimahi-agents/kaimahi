@@ -29,6 +29,27 @@ class AuditTests(unittest.TestCase):
             with self.subTest(args=args):
                 self.assertIsNone(self.audit.classify(args, b""))
 
+    def test_only_bound_a2a_service_proxy_post_is_not_object_create(self):
+        route = "/api/v1/namespaces/kagent/services/http:kagent-controller:8083/proxy/api/a2a/agents/lift-proof"
+        body = b'{"jsonrpc":"2.0","method":"message/send","params":{"private":"payload"}}'
+        with tempfile.TemporaryDirectory() as temp:
+            work = pathlib.Path(temp)
+            real = work / "real"
+            real.write_text('#!/usr/bin/env python3\nimport pathlib,sys\npathlib.Path(' + repr(str(work / "bytes")) + ').write_bytes(sys.stdin.buffer.read())\n')
+            real.chmod(0o700)
+            audit = work / "frames"
+            argv = ["--context", "kind-kmx-kagent-lift", "--request-timeout=20s", "create", "--raw", route, "-f", "-"]
+            result = subprocess.run(["python3", str(SOURCE), str(real), str(audit), *argv], input=body, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((work / "bytes").read_bytes(), body)
+            self.assertFalse(audit.exists())
+            for changed in (route.replace("lift-proof", "other"), route + "?dryRun=All", "/api/v1/namespaces/agents/secrets"):
+                with self.subTest(route=changed), self.assertRaisesRegex(ValueError, "unsupported kubectl invocation"):
+                    self.audit.classify(["create", "--raw", changed, "-f", "-"], body)
+            for extra in (["--dry-run=server"], ["-o", "json"], ["agent"]):
+                with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, "unsupported kubectl invocation"):
+                    self.audit.classify(["create", "--raw", route, "-f", "-", *extra], body)
+
     def test_effective_dryrun_final_duplicate_wins_and_metadata_only(self):
         for flags, strategy in (([], "none"), (["--dry-run=none"], "none"),
                                 (["--dry-run=server"], "server"), (["--dry-run=client"], "client"),

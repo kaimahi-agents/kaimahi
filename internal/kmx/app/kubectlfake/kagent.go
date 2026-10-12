@@ -78,6 +78,16 @@ func (r Request) kagent() {
 		fail()
 	}
 	scenario := r.Getenv("KMX_KAGENT_TEST_SCENARIO")
+	mutateEvaluationInput := func() {
+		path := r.Getenv("KMX_KAGENT_TEST_EVAL_MUTATE")
+		if path == "" {
+			fail()
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil || os.WriteFile(path, append(raw, '\n'), 0600) != nil {
+			fail()
+		}
+	}
 	fixtureTag := "0.10.2"
 	commit := kagentPinnedCommit
 	controllerImage, goImage := kagentControllerImage, kagentGoImage
@@ -166,6 +176,9 @@ func (r Request) kagent() {
 			exit(0)
 		}
 		if strings.HasSuffix(path, "/.well-known/agent-card.json") {
+			if scenario == "eval-pre-local-drift" {
+				mutateEvaluationInput()
+			}
 			if scenario == "card-stale" {
 				fail()
 			}
@@ -191,6 +204,41 @@ func (r Request) kagent() {
 		_ = os.WriteFile(filepath.Join(dir, "message-sent"), []byte("sent"), 0o600)
 		if scenario == "wrong-rpc-id" {
 			id = "other"
+		}
+		if fixtureTag == "0.10.3" {
+			counterPath := filepath.Join(dir, "evaluation-count")
+			stored, _ := os.ReadFile(counterPath)
+			count := 0
+			_, _ = fmt.Sscanf(string(stored), "%d", &count)
+			count++
+			_ = os.WriteFile(counterPath, []byte(fmt.Sprint(count)), 0600)
+			if scenario == "eval-malformed" {
+				fmt.Fprint(r.Stdout, "{private response")
+				exit(0)
+			}
+			params, _ := call.Body["params"].(map[string]any)
+			message, _ := params["message"].(map[string]any)
+			if params["configuration"].(map[string]any)["blocking"] != true || message["taskId"] != nil || message["contextId"] != nil {
+				fail()
+			}
+			contextID := fmt.Sprintf("context-%d", count)
+			if scenario == "eval-repeated-context" {
+				contextID = "context-1"
+			}
+			state := "completed"
+			if scenario == "eval-failed" || scenario == "eval-failed-drift" {
+				state = "failed"
+			}
+			if scenario == "eval-local-drift" {
+				mutateEvaluationInput()
+			}
+			if scenario == "eval-post-drift" || scenario == "eval-failed-drift" {
+				_ = os.WriteFile(filepath.Join(dir, "evaluation-drift"), []byte(scenario), 0600)
+			}
+			result := map[string]any{"kind": "task", "id": fmt.Sprintf("task-%d", count), "contextId": contextID, "status": map[string]any{"state": state},
+				"artifacts": []any{map[string]any{"artifactId": fmt.Sprintf("answer-%d", count), "parts": []any{map[string]any{"kind": "text", "text": "  exact\nanswer\t "}}}}, "history": []any{message}}
+			_ = json.NewEncoder(r.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+			exit(0)
 		}
 		fmt.Fprintf(r.Stdout, `{"jsonrpc":"2.0","id":%q,"result":{"kind":"task","id":"task-1","contextId":"context-1","status":{"state":"completed","message":{"kind":"message","role":"agent","messageId":"answer-1","contextId":"context-1","parts":[{"kind":"text","text":"one answer"}]}}}}`, id)
 		exit(0)
@@ -290,7 +338,11 @@ func (r Request) kagent() {
 			if controller {
 				name, uid, deploymentName, deploymentUID = "controller-rs", "controller-rs-uid", "kagent-controller", "controller-deployment-uid"
 				labels = `{"app.kubernetes.io/name":"kagent","app.kubernetes.io/instance":"kagent","app.kubernetes.io/component":"controller"}`
-				templateSpec = fmt.Sprintf(`{"serviceAccountName":"kagent-controller","containers":[{"name":"controller","image":%q,"env":[{"name":"AUTH_MODE","value":"unsecure"}],"envFrom":[{"configMapRef":{"name":"kagent-controller"}}]}]}`, controllerImage)
+				authMode := "unsecure"
+				if scenario == "trusted-proxy" {
+					authMode = "trusted-proxy"
+				}
+				templateSpec = fmt.Sprintf(`{"serviceAccountName":"kagent-controller","containers":[{"name":"controller","image":%q,"env":[{"name":"AUTH_MODE","value":%q}],"envFrom":[{"configMapRef":{"name":"kagent-controller"}}]}]}`, controllerImage, authMode)
 			} else {
 				if scenario == "rs-owner-foreign" {
 					deploymentUID = "foreign-deployment-uid"
@@ -489,7 +541,8 @@ func (r Request) kagent() {
 			}
 			if fixtureTag == "0.10.3" && strings.HasPrefix(projection(), "go-template={{.kind}}") {
 				rv := "key-rv"
-				if scenario == "dependency-drift" && agentExists() {
+				_, postSendDrift := os.Stat(filepath.Join(dir, "evaluation-drift"))
+				if scenario == "dependency-drift" && agentExists() || postSendDrift == nil && (scenario == "eval-post-drift" || scenario == "eval-failed-drift") {
 					rv = "changed"
 				}
 				presence := "present"

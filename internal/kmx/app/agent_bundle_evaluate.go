@@ -42,6 +42,7 @@ import (
 // an optional single case.
 type EvaluateAgentBundleOptions struct {
 	BundleDir, ToContext, Case                     string
+	Runtime, RuntimeVersion, Bindings, ToNamespace string
 	Sessions, SessionsCA                           string
 	JudgeBaseURL, JudgeKeyEnv                      string
 	FromSessions, SourceSessions, SourceSessionsCA string
@@ -108,6 +109,15 @@ type bundleEvaluationCase struct {
 // EvaluateAgentBundle runs the bundle's cases against its deployed revision,
 // prints every answer, writes a receipt and fails unless every case passed.
 func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
+	if err := validateBundleRuntime(opt.Runtime, opt.RuntimeVersion, opt.Bindings); err != nil {
+		return err
+	}
+	if opt.Runtime == "kagent" {
+		return a.evaluateKagentBundle(opt)
+	}
+	if opt.ToNamespace != "" {
+		return fmt.Errorf("--to-namespace requires explicit --runtime kagent for evaluation")
+	}
 	if err := validateReferenceEvaluationOptions(opt); err != nil {
 		return err
 	}

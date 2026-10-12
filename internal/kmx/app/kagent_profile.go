@@ -78,7 +78,7 @@ func (p kagentProfile) validateLabels(labels map[string]string) error {
 	}
 	return nil
 }
-func (a *App) verifyKagentPodPlatform(ctx context.Context, node, declaredImage, statusImage, imageID, repository string, digests []string) error {
+func (a *App) observeKagentPodPlatform(ctx context.Context, node, declaredImage, statusImage, imageID, repository string, digests []string, observed *kagentEvaluationImage) error {
 	raw, err := a.kagentCapture(ctx, nil, "get", "node", node, "-o", "json")
 	if err != nil {
 		return fmt.Errorf("cannot qualify Kagent pod platform: %w", err)
@@ -121,6 +121,9 @@ func (a *App) verifyKagentPodPlatform(ctx context.Context, node, declaredImage, 
 	config := configs[index-1]
 	if !profile.imageMatches(statusImage, declaredImage, repository, platformDigests) && (profile.Version != "v0.10.3" || config == "" || statusImage != "sha256:"+config) {
 		return kagentFailure("drift", fmt.Errorf("Kagent status image identity differs from its qualified node platform"))
+	}
+	if observed != nil {
+		*observed = kagentEvaluationImage{OS: object.Status.NodeInfo.OperatingSystem, Architecture: object.Status.NodeInfo.Architecture, Digest: imageID[strings.LastIndex(imageID, "sha256:")+7:]}
 	}
 	return nil
 }

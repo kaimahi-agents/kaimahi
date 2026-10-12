@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the keyless model/MCP fixture over real loopback HTTP."""
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -81,9 +82,54 @@ class FixtureTests(unittest.TestCase):
         call = chunks[0]["choices"][0]["delta"]["tool_calls"][0]
         self.assertEqual(chunks[-1]["choices"][0]["finish_reason"], "tool_calls")
         sentinel = self.rpc("tools/call", {"name": "read_sentinel", "arguments": {}})["result"]["content"][0]["text"]
-        chunks = self.model([{"role": "tool", "content": sentinel, "tool_call_id": call["id"]}], stream=True)
+        chunks = self.model([{"role": "user", "content": "private"},
+                             {"role": "tool", "content": sentinel, "tool_call_id": call["id"]}], stream=True)
         self.assertEqual(chunks[0]["choices"][0]["delta"]["content"], "KMX MCP proof: " + sentinel)
         self.assertEqual(chunks[-1]["choices"][0]["finish_reason"], "stop")
+
+    def test_each_fresh_case_records_two_models_one_tool_and_exact_answer_hash(self):
+        call_ids = []
+        for prompt in ("case one", "case two"):
+            messages = [{"role": "user", "content": prompt}]
+            first = self.model(messages)["choices"][0]["message"]
+            call = first["tool_calls"][0]
+            call_ids.append(call["id"])
+            sentinel = self.rpc("tools/call", {"name": "read_sentinel"})["result"]["content"][0]["text"]
+            messages += [first, {"role": "tool", "content": sentinel, "tool_call_id": call["id"]}]
+            answer = self.model(messages)["choices"][0]["message"]["content"]
+            evidence = self.request("/evidence")
+            self.assertIn("cases", evidence, "per-case execution evidence is missing")
+            row = evidence["cases"][-1]
+            self.assertEqual((row["model_calls"], row["tool_calls"], row["terminal_answers"], row["user_turns"]), (2, 1, 1, 1))
+            self.assertEqual(row["input_sha256"], hashlib.sha256(prompt.encode()).hexdigest())
+            self.assertEqual(row["answer_sha256"], hashlib.sha256(answer.encode()).hexdigest())
+            self.assertNotIn(prompt, json.dumps(row))
+            self.assertNotIn(sentinel, json.dumps(row))
+        self.assertEqual(len(set(call_ids)), 2)
+
+    def test_reused_conversation_is_refused_without_execution(self):
+        messages = [{"role": "user", "content": "old"}, {"role": "user", "content": "new"}]
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.model(messages)
+        error.exception.close()
+        self.assertEqual(self.request("/evidence")["model_calls"], 0)
+
+    def test_fixture_judge_is_separate_two_sample_transport_without_payload_evidence(self):
+        for _ in range(2):
+            try:
+                reply = self.request("/v1/chat/completions", {"model": "fixture-judge", "temperature": 0,
+                    "stream": False, "messages": [{"role": "system", "content": "public policy"},
+                    {"role": "user", "content": json.dumps({"input": "private input", "answer": "private answer", "rubric": "public rubric"})}]})
+            except urllib.error.HTTPError as error:
+                error.close()
+                self.fail("separate fixture judge request was refused")
+            self.assertEqual(reply["model"], "fixture-judge")
+            result = json.loads(reply["choices"][0]["message"]["content"])
+            self.assertEqual(result, {"score": 100, "reasoning": "Synthetic fixture rubric satisfied."})
+        evidence = self.request("/evidence")
+        self.assertEqual(evidence["judge_calls"], 2)
+        self.assertEqual((evidence["model_calls"], evidence["tool_calls"], evidence["terminal_answers"]), (0, 0, 0))
+        self.assertNotIn("private", json.dumps(evidence))
 
     def assert_invalid_requests(self, path, requests):
         with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:

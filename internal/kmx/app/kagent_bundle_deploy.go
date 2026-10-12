@@ -193,7 +193,11 @@ func (a *App) verifyKagentLiftDependencies(ctx context.Context, bundle *scaffold
 }
 
 func (a *App) kagentLiftWorkload(ctx context.Context, namespace string, id kagentIdentity) ([]agentruntime.ResourceEvidence, error) {
-	workload, err := a.verifyKagentAgentWorkload(ctx, namespace, id, "go", nil)
+	return a.observeKagentLiftWorkload(ctx, namespace, id, nil)
+}
+
+func (a *App) observeKagentLiftWorkload(ctx context.Context, namespace string, id kagentIdentity, images *[]kagentEvaluationImage) ([]agentruntime.ResourceEvidence, error) {
+	workload, err := a.observeKagentAgentWorkload(ctx, namespace, id, "go", nil, images)
 	if err != nil {
 		return nil, err
 	}

@@ -58,13 +58,14 @@ def classify(argv, data):
               "api-resources": {"-o", "--output", "--api-group"}, "api-versions": set(),
               "auth": {"--as", "--as-group", "--subresource"},
               "config": {"-o", "--output"}, "rollout": {"--timeout"},
-              "create": {"-f", "--filename", "-o", "--output", "--validate"},
+              "create": {"-f", "--filename", "-o", "--output", "--validate", "--raw"},
               "patch": {"-p", "--patch", "--type", "-o", "--output"}}[verb] | leading
     booleans = {"get": {"--all-namespaces", "-A", "--ignore-not-found"},
                 "version": {"--client"}, "config": {"--minify", "--flatten"},
                 "api-resources": {"--namespaced"}}.get(verb, set())
     positionals, options = [], {}
     strategy = "none"
+    dry_run_seen = False
     while args:
         arg = args.pop(0)
         if not arg.startswith("-"):
@@ -73,6 +74,7 @@ def classify(argv, data):
         option, equal, value = arg.partition("=")
         if option == "--dry-run":
             require(verb in {"create", "patch"})
+            dry_run_seen = True
             # Pinned kubectl uses NoOptDefVal=client: a separated strategy is
             # positional, NOT consumed. Position validation below rejects it.
             strategy = value if equal else "client"
@@ -101,6 +103,13 @@ def classify(argv, data):
             require(len(positionals) == 1)
         else:
             require(1 <= len(positionals) <= 3 or (not positionals and "--raw" in options))
+        return None
+    if verb == "create" and "--raw" in options:
+        # A2A Service-proxy POST is native execution, not object creation.
+        # No other raw endpoint earns exemption from the mutation audit.
+        require(options["--raw"] == "/api/v1/namespaces/kagent/services/http:kagent-controller:8083/proxy/api/a2a/agents/lift-proof")
+        require(not positionals and not dry_run_seen and options.get("-f", options.get("--filename")) == "-"
+                and set(options) <= leading | {"--raw", "-f", "--filename"} and 0 < len(data) <= LIMIT)
         return None
     if verb == "patch":
         require(positionals == ["agents.kagent.dev", "lift-proof"] and namespace == "agents")

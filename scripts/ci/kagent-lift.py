@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""External pinned bootstrap, Go lift/status and one-shot native A2A proof.
+"""External pinned bootstrap, Go lift/status, native A2A and product eval proof.
 
 All external output is private. Public failures use closed phases and codes.
 """
@@ -318,7 +318,8 @@ def snapshot():
         ("remotemcpservers.kagent.dev", "lift-tools", NAMESPACE),
         ("deployment", "lift-fixture", NAMESPACE), ("service", "lift-fixture", NAMESPACE),
         ("configmap", "lift-fixture", NAMESPACE), ("deployment", "kagent-controller", "kagent"),
-        ("configmap", "kagent-controller", "kagent"), ("deployment", "kagent-postgresql", "kagent")):
+        ("configmap", "kagent-controller", "kagent"), ("service", "kagent-controller", "kagent"),
+        ("deployment", "kagent-postgresql", "kagent")):
         obj = get(kind, name, namespace, optional=True)
         if obj:
             objects.append(obj)
@@ -405,6 +406,186 @@ def bundle_files(work):
     return bundle, path
 
 
+def hash_bytes(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def framed_digest(entries):
+    return hash_bytes(b"".join(name.encode() + b" " + str(len(data)).encode() + b"\n" + data + b"\n" for name, data in entries))
+
+
+def evaluation_cases(bundle):
+    directory = bundle / "eval"
+    directory.mkdir(mode=0o700)
+    cases = []
+    for ordinal in ("one", "two"):
+        case = {"id": "case-" + ordinal, "input": "Use the allowed tool and return its result. Qualification case " + ordinal + ".",
+                "expectContains": ["KMX MCP proof:"]}
+        if ordinal == "one":
+            case["assertions"] = [{"id": "quality", "type": "llmJudge", "rubric": "Return the allowed tool result.",
+                                    "minScore": 50, "judgeModel": "fixture-judge", "judgeVersion": "1"}]
+        path = directory / (case["id"] + ".yaml")
+        path.write_text(yaml.safe_dump(case, sort_keys=False))
+        path.chmod(0o600)
+        cases.append((path, case))
+    return cases
+
+
+def closed(value, fields):
+    require(isinstance(value, dict) and set(value) <= set(fields.split()), "evaluation evidence is not payload-free")
+
+
+def private_file(path):
+    info = path.lstat()
+    require(stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1
+            and info.st_size <= 1024 * 1024, "evaluation receipt must be a bounded private regular file")
+    return path.read_bytes()
+
+
+def validate_evaluation(report, cases, receipt, deployment_digest, live, uid, images, observed, seen, judge_url):
+    closed(report, "schemaVersion runID bundle portableDigest renderedDigest deploymentReceiptDigest casesDigest fullCaseSet gitCommit target result cases")
+    require(report.get("schemaVersion") == 2 and report.get("bundle") == NAME and report.get("result") == "pass",
+            "product evaluation is not a passing v2 receipt")
+    require(report.get("portableDigest") == receipt["PortableDigest"] and report.get("renderedDigest") == receipt["RenderedDigest"]
+            and report.get("deploymentReceiptDigest") == deployment_digest, "evaluation source/deployment digests differ")
+    require(report.get("casesDigest") == framed_digest([("eval/" + path.name, path.read_bytes()) for path, _ in cases]),
+            "evaluation case set digest differs")
+    target = report.get("target", {})
+    closed(target, "runtime runtimeVersion engine context clusterUID namespace agent agentUID agentGeneration modelConfigUID modelConfigGeneration model platform snapshot")
+    expected = {"runtime": "kagent", "runtimeVersion": "v0.10.3", "engine": "go", "context": CONTEXT,
+                "clusterUID": uid, "namespace": NAMESPACE, "agent": NAME, "model": "fixture"}
+    for field, kind in (("agent", "Agent"), ("modelConfig", "ModelConfig")):
+        expected[field + "UID"] = live[kind + "/" + NAME]["uid"]
+        expected[field + "Generation"] = live[kind + "/" + NAME]["generation"]
+    require(all(target.get(key) == value for key, value in expected.items()), "evaluation actual target identity differs")
+    platform = target.get("platform", {})
+    closed(platform, "sourceCommit controllerImage adkImage controller")
+    require(platform.get("sourceCommit") == "8878c39ac64421cb665c8e62ecc6411dd12f2fc2", "evaluation platform source differs")
+    for field, role in (("controllerImage", "controller"), ("adkImage", "kagent")):
+        require(platform.get(field) == {"os": "linux", "architecture": "amd64", "digest": images[role]},
+                "evaluation platform image differs from actual running imageID")
+    resource_fields = "Kind Name Namespace UID Generation ResourceVersion SpecDigest Key"
+    controller = platform.get("controller", [])
+    require(len(controller) == 3, "evaluation controller platform snapshot is incomplete")
+    for row, kind in zip(controller, ("Service", "Deployment", "ConfigMap")):
+        closed(row, resource_fields)
+        identity = live[kind + "/kagent-controller"]
+        require(row.get("Kind") == kind and row.get("Name") == "kagent-controller" and row.get("Namespace") == "kagent"
+                and row.get("UID") == identity["uid"] and row.get("Generation", 0) == identity["generation"]
+                and row.get("ResourceVersion"), "evaluation controller platform snapshot differs")
+    snap = target.get("snapshot", {})
+    closed(snap, "proofs workload dependencies")
+    for key, saved in (("proofs", "Proofs"), ("workload", "Workload"), ("dependencies", "Dependencies")):
+        rows = snap.get(key, [])
+        require(len(rows) == len(receipt[saved]) and bool(rows), "evaluation snapshot is incomplete")
+        for row, previous in zip(rows, receipt[saved]):
+            closed(row, resource_fields)
+            require(all(row.get(field, "" if isinstance(value, str) else 0) == value for field, value in previous.items()),
+                    "evaluation snapshot differs from bound deployment")
+    require(len(report.get("cases", [])) == len(cases) == len(observed), "evaluation case counts differ")
+    projected = []
+    for row, (path, case), native in zip(report["cases"], cases, observed):
+        closed(row, "id verdict caseDigest inputDigest assertions execution answerSHA256 detail")
+        require(row.get("id") == case["id"] and row.get("verdict") == "pass" and not row.get("detail")
+                and row.get("caseDigest") == hash_bytes(path.read_bytes()) and row.get("inputDigest") == hash_bytes(case["input"].encode()),
+                "evaluation case identity/digests differ")
+        require(tuple(native.get(key) for key in ("model_calls", "tool_calls", "terminal_answers", "user_turns")) == (2, 1, 1, 1)
+                and native.get("input_sha256") == row["inputDigest"], "fixture case counts/fresh user history differ")
+        require(row.get("answerSHA256") == native.get("answer_sha256") and re.fullmatch(r"[0-9a-f]{64}", row.get("answerSHA256", "")),
+                "evaluation complete answer hash differs from fixture")
+        execution = row.get("execution", {})
+        closed(execution, "rpcID requestMessageID taskID contextID state")
+        require(execution.get("state") == "completed", "evaluation native task did not complete")
+        for field in ("rpcID", "requestMessageID", "taskID", "contextID"):
+            value = execution.get(field, "")
+            require(isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,255}", value)
+                    and value not in seen[field], "evaluation IDs are not fresh across runs/cases")
+            seen[field].add(value)
+        assertions = row.get("assertions", [])
+        require(len(assertions) == 1 + len(case.get("assertions", [])), "evaluation assertion evidence is incomplete")
+        for index, assertion in enumerate(assertions):
+            closed(assertion, "id type definitionDigest verdict reason judge")
+            require(assertion.get("verdict") == "pass", "evaluation assertion did not pass")
+            if index == 0:
+                require(assertion.get("id") == "expectContains.0" and assertion.get("type") == "contains"
+                        and assertion.get("reason") == "assertion satisfied" and "judge" not in assertion
+                        and assertion.get("definitionDigest") == framed_digest([("type", b"contains"), ("operand", b"KMX MCP proof:")]),
+                        "evaluation contains definition differs")
+            else:
+                authored = case["assertions"][index - 1]
+                judge = assertion.get("judge", {})
+                closed(judge, "model modelVersion provenance evaluatorDigest configurationDigest minScore scores")
+                require(assertion.get("id") == authored["id"] and assertion.get("type") == "llmJudge"
+                        and judge.get("model") == "fixture-judge" and judge.get("modelVersion") == "1"
+                        and judge.get("provenance") == "user-declared" and judge.get("minScore") == 50 and judge.get("scores") == [100, 100]
+                        and re.fullmatch(r"[0-9a-f]{64}", judge.get("evaluatorDigest", "")), "evaluation two-sample judge differs")
+                evaluator = judge["evaluatorDigest"].encode()
+                require(judge.get("configurationDigest") == framed_digest([("endpoint", judge_url.encode()), ("model", b"fixture-judge"), ("modelVersion", b"1"), ("evaluatorDigest", evaluator)])
+                        and assertion.get("definitionDigest") == framed_digest([("type", b"llmJudge"), ("operand", authored["rubric"].encode()), ("minScore", b"50"), ("judgeModel", b"fixture-judge"), ("judgeVersion", b"1"), ("evaluatorDigest", evaluator)]),
+                        "evaluation judge digests differ")
+        projected.append({key: row[key] for key in ("id", "caseDigest", "inputDigest", "answerSHA256", "execution")})
+    return projected
+
+
+def product_evaluations(cli, binary, bundle, home, receipt, live, uid, images, fixture, execution):
+    cases = evaluation_cases(bundle)
+    deploy = list((bundle / "receipts/kagent-v0.10.3").glob("*.json"))
+    require(len(deploy) == 1, "one bound deployment receipt required for evaluation")
+    deployment_digest = hash_bytes(private_file(deploy[0]))
+    key = hash_bytes(("kagent\x00v0.10.3\x00" + CONTEXT + "\x00" + NAMESPACE + "\x00" + uid).encode())
+    latest = bundle / ("receipts/eval-kagent-v0.10.3-" + key + ".json")
+    seen = {field: set() for field in ("rpcID", "requestMessageID", "taskID", "contextID")}
+    seen["taskID"].add(execution["native_id"])
+    seen["contextID"].add(execution["native_context_id"])
+    runs, archives = [], {}
+    for phase, selected in (("product-evaluate", False), ("repeat-evaluate", False), ("selected-evaluate", True)):
+        qualification_phase(phase)
+        local = filesystem(bundle, home)
+        before = http_json(fixture + "/evidence")
+        require(len(before.get("cases", [])) == before.get("terminal_answers"), "fixture case counts are incomplete")
+        chosen = cases[:1] if selected else cases
+        # Normal CLI answers/reasoning are captured, never emitted by qualifier.
+        cli("evaluate", "--judge-base-url", fixture + "/v1", *(["--case", "case-one"] if selected else []))
+        after = http_json(fixture + "/evidence")
+        counts = {field: after.get(field, 0) - before.get(field, 0) for field in ("tool_calls", "model_calls", "terminal_answers", "judge_calls")}
+        require(counts == {"tool_calls": len(chosen), "model_calls": 2 * len(chosen), "terminal_answers": len(chosen), "judge_calls": 2},
+                "product evaluation fixture case counts differ")
+        current = set((bundle / "receipts/runs").glob("eval-*.json"))
+        require(all(path in current and private_file(path) == raw for path, raw in archives.items()), "immutable evaluation archive changed")
+        new = current - set(archives)
+        require(len(new) == 1, "one fresh evaluation archive per run required")
+        path = new.pop()
+        raw = private_file(path)
+        report = json.loads(raw)
+        run_id = report.get("runID", "")
+        require(isinstance(run_id, str) and re.fullmatch(r"[0-9a-f]{32}", run_id) and path.name == "eval-" + run_id + ".json"
+                and path.parent == bundle / "receipts/runs" and run_id not in {r["run_id"] for r in runs}, "evaluation archive/run identity differs")
+        require(private_file(latest) == raw, "evaluation latest differs from new archive")
+        require(report.get("fullCaseSet") is (not selected), "evaluation full/selected case set marker differs")
+        for directory in (bundle / "receipts", path.parent):
+            info = directory.lstat()
+            require(stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o700, "evaluation history directories are not private")
+        rows = validate_evaluation(report, chosen, receipt, deployment_digest, live, uid, images,
+                                   after["cases"][len(before["cases"]):], seen, fixture + "/v1")
+        updated = filesystem(bundle, home)
+        allowed = {str(path.parent), str(path), str(latest)}
+        require(all(local.get(key) == updated.get(key) for key in set(local) | set(updated) if key not in allowed),
+                "evaluation changed non-receipt local evidence")
+        archives[path] = raw
+        runs.append({"run_id": run_id, "full_case_set": not selected, "receipt_sha256": hash_bytes(raw), "cases": rows, "counts": counts})
+        if len(runs) == 2:
+            qualification_phase("offline-eval-diff")
+            result = subprocess.run([str(binary), "agent", "eval", "diff", str(next(iter(archives))), str(path)],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+            require(result.returncode == 0, "offline repeated evaluation diff failed", reason=cli_failure_reason(result.stderr))
+            require(filesystem(bundle, home) == updated and http_json(fixture + "/evidence") == after,
+                    "offline evaluation diff changed evidence or invoked fixture")
+    evidence = http_json(fixture + "/evidence")
+    totals = {field: evidence[field] for field in ("tool_calls", "model_calls", "terminal_answers", "judge_calls")}
+    require(totals == {"tool_calls": 6, "model_calls": 12, "terminal_answers": 6, "judge_calls": 6}, "native plus product fixture counts differ")
+    return {"runs": runs, "fixture_counts": totals}
+
+
 def kubectl_audit(work):
     wrapper = work / "fail-bin/kubectl"
     wrapper.unlink()
@@ -479,7 +660,8 @@ def cli_failure_reason(raw):
 
 
 QUALIFICATION_PHASES = {"setup", "absent-status", "plan", "new-lift", "repeat-lift", "ready-status",
-                        "native-a2a-one-shot", "bindings-and-receipt-conflicts", "operator-drift-conflict"}
+                        "native-a2a-one-shot", "product-evaluate", "repeat-evaluate", "selected-evaluate", "offline-eval-diff",
+                        "bindings-and-receipt-conflicts", "operator-drift-conflict"}
 QUALIFICATION_REASONS = {code for _, code in CLI_FAILURE_PATTERNS} | {
     "qualification-check-failed", "expected-refusal-not-observed", "unclassified-cli-error", "unclassified-qualifier-error"}
 QUALIFICATION_PHASE = "setup"
@@ -566,6 +748,10 @@ def qualify(binary, work):
     with forward("lift-fixture", 9000) as fixture, forward("kagent-controller", 8083, "kagent") as controller:
         execution = one_message(controller + "/api/a2a/agents/" + NAME, fixture)
     read_only("native execution", live, local)
+    with forward("lift-fixture", 9000) as fixture:
+        evaluation = product_evaluations(cli, binary, bundle, home, receipt, live, uid, images, fixture, execution)
+    local = filesystem(bundle, home)
+    read_only("product evaluation", live, local)
     qualification_phase("bindings-and-receipt-conflicts")
     original = bindings.read_bytes()
     changed = yaml.safe_load(original)
@@ -606,9 +792,10 @@ def qualify(binary, work):
     artifact = {"kind": "KagentLiftQualification", "runtime": "kagent", "runtime_version": "v0.10.3", "engine": "go",
                 "cluster_uid": uid, "context": CONTEXT, "namespace": NAMESPACE, "bundle": NAME,
                 "portable_digest": receipt["PortableDigest"], "rendered_digest": receipt["RenderedDigest"],
-                "identities": live, "images": images, "execution": execution,
+                "identities": live, "images": images, "execution": execution, "evaluation": evaluation,
                 "proofs": {"plan_no_writes": True, "create_only": True, "repeat_read_only": True,
-                           "status_identity": True, "conflict_no_mutation": True, "native_a2a_mcp": True}}
+                           "status_identity": True, "conflict_no_mutation": True, "native_a2a_mcp": True,
+                           "product_evaluation": True, "repeat_diff_offline": True, "selected_case_marker": True}}
     (work / "qualification.json").write_text(json.dumps(artifact, indent=2) + "\n")
     (work / "qualification.json").chmod(0o600)
     print("native_a2a_counts=tool:1 model:2 terminal:1", flush=True)
