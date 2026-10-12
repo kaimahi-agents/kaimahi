@@ -19,7 +19,7 @@ import (
 
 // Public format acceptance alone must not certify native execution semantics.
 func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
-	for _, change := range []string{"null images", "missing images", "nonempty images", "unknown metadata", "duplicate metadata", "renderer", "case digest", "case escape", "case omission", "unlisted case", "private file", "secret model", "secret instructions", "model bindings"} {
+	for _, change := range []string{"null images", "missing images", "nonempty images", "unknown metadata", "duplicate metadata", "malformed metadata", "renderer", "case digest", "case escape", "case omission", "null cases", "unknown case metadata", "malformed case", "unknown case field", "unlisted case", "private file", "secret model", "blank model", "secret instructions", "blank instructions", "model bindings"} {
 		t.Run(change, func(t *testing.T) {
 			root, cache := createWorkspace(t)
 			p, err := workspace.Prepare(context.Background(), root, cache)
@@ -40,6 +40,8 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 				b = strings.TrimSuffix(b, "}") + `,"extra":true}`
 			case "duplicate metadata":
 				b = strings.TrimSuffix(b, "}") + `,"member":"greeter"}`
+			case "malformed metadata":
+				b = "{"
 			case "renderer":
 				b = strings.ReplaceAll(b, "kmx.native-orka/v1", "kmx.native-orka/v2")
 			case "case digest":
@@ -66,11 +68,35 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 					t.Fatal(err)
 				}
 				b = string(bb)
+			case "null cases", "unknown case metadata", "malformed case", "unknown case field":
+				var rec map[string]any
+				if err := json.Unmarshal([]byte(b), &rec); err != nil {
+					t.Fatal(err)
+				}
+				c := rec["cases"].([]any)[0].(map[string]any)
+				switch change {
+				case "null cases":
+					rec["cases"] = nil
+				case "unknown case metadata":
+					c["extra"] = true
+				case "malformed case", "unknown case field":
+					data := "id: ["
+					if change == "unknown case field" {
+						data = string(readFile(t, filepath.Join(out, c["path"].(string)))) + "unknown: ignored\n"
+					}
+					writeFile(t, filepath.Join(out, c["path"].(string)), data)
+					c["digest"] = godigest.FromBytes([]byte(data)).String()
+				}
+				bb, err := json.Marshal(rec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				b = string(bb)
 			case "unlisted case":
 				writeFile(t, filepath.Join(out, "metadata/kmx/eval/unlisted.yaml"), "id: unlisted\ninput: Public question\nexpectContains: [answer]\n")
 			case "private file":
 				writeFile(t, filepath.Join(out, "receipts/private.json"), "private execution data")
-			case "secret model", "secret instructions", "model bindings":
+			case "secret model", "blank model", "secret instructions", "blank instructions", "model bindings":
 				// These graph edits must remain valid under the public schema. Recompute
 				// its member/instruction graph digests independently of the workspace resolver.
 				memberPath := filepath.Join(out, "agents/greeter.json")
@@ -81,11 +107,17 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 				if change == "secret model" {
 					agent.Model.Model = "ghp_" + strings.Repeat("x", 36)
 				}
+				if change == "blank model" {
+					agent.Model.Model = " "
+				}
 				if change == "model bindings" {
 					agent.Model.SecretRefs = []string{"provider-secret"}
 				}
-				if change == "secret instructions" {
+				if change == "secret instructions" || change == "blank instructions" {
 					data := "ghp_" + strings.Repeat("x", 36)
+					if change == "blank instructions" {
+						data = " \n"
+					}
 					writeFile(t, filepath.Join(out, agent.Instructions.Path), data)
 					agent.Instructions.Digest = godigest.FromBytes([]byte(data)).String()
 				}
@@ -130,8 +162,16 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 			if _, err := spec.ValidatePath(layout); err != nil {
 				t.Fatalf("not a public-valid negative fixture: %v", err)
 			}
-			if err := workspace.Verify(context.Background(), &candidate); err == nil {
+			verifyErr := workspace.Verify(context.Background(), &candidate)
+			if verifyErr == nil {
 				t.Fatalf("accepted invalid native content %s", change)
+			}
+			loaded, err := workspace.Load(context.Background(), &candidate)
+			if err == nil || loaded != nil {
+				t.Fatalf("Load accepted invalid native content %s or returned partial input: %+v, %v", change, loaded, err)
+			}
+			if err.Error() != verifyErr.Error() {
+				t.Fatalf("Load did not preserve native verification refusal: %v != %v", err, verifyErr)
 			}
 		})
 	}
