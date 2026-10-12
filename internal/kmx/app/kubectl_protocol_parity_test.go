@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/app/testdata/kubectl/protocol"
+	protocol "github.com/kaimahi-agents/kaimahi/internal/kmx/app/kubectlfake"
 )
 
 type protocolStep struct {

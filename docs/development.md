@@ -85,23 +85,14 @@ Retire lifecycle tests and `TestKagentStatusFinalReadinessAndWorkloadCategories`
 explicitly use in-process capture fixtures instead. They do not build or launch
 the kubectl helper: a failing executable sentinel catches accidental fallback.
 Both modes share the stateful reconcile and kagent handlers in
-`internal/kmx/app/testdata/kubectl/protocol`. The App-local capture hook receives
+`internal/kmx/app/kubectlfake`. Its unit tests are included in `go test ./...`
+and CI; installed commands do not import it. The App-local capture hook receives
 the prepared command and call context; argv, effective environment, stdin,
 bounded output, guards, deadlines and error classification stay at the normal
 production boundary. The hook is unset in installed commands. Protocol delays
 obey the context synchronously, without a goroutine timeout wrapper. Executable
 parity tests compare raw output, exit status, persisted state and ordered calls.
 Other lift, reconcile and create tests retain executable fixtures.
-
-Go's `./...` wildcard skips `testdata`, so check the shared protocol explicitly;
-App parity tests separately exercise the executable adapters:
-
-```bash
-go test ./internal/kmx/app/testdata/kubectl/protocol
-go test -race ./internal/kmx/app/testdata/kubectl/protocol
-go test ./internal/kmx/app/testdata/kubectl -run 'TestReconcileKubectlHelper|TestKagentKubectlHelper|TestKagentKubectlPinsHelper'
-go test -race ./internal/kmx/app -run 'TestKubectl|TestCapture|TestRetire|TestKagentStatusFinalReadinessAndWorkloadCategories'
-```
 
 The workflow's hygiene job is authoritative for the full checker/self-test/
 mutation set; do not replace it with this focused list. The retained native

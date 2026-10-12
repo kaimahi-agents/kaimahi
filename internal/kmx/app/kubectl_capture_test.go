@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/app/testdata/kubectl/protocol"
+	protocol "github.com/kaimahi-agents/kaimahi/internal/kmx/app/kubectlfake"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )

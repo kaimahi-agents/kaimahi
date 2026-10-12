@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/app/testdata/kubectl/protocol"
+	protocol "github.com/kaimahi-agents/kaimahi/internal/kmx/app/kubectlfake"
 )
 
 func captureFixtureRequest(ctx context.Context, cmd *exec.Cmd) protocol.Request {

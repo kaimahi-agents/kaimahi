@@ -1,5 +1,4 @@
-// Package protocol implements test-only kubectl requests without App dependencies.
-package protocol
+package kubectlfake
 
 import (
 	"encoding/json"

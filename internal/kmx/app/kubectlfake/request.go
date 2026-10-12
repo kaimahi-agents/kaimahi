@@ -1,4 +1,6 @@
-package protocol
+// Package kubectlfake shares the fake kubectl protocol between lifecycle tests
+// and their executable helper. Installed commands do not import this package.
+package kubectlfake
 
 import (
 	"context"

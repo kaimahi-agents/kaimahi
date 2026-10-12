@@ -90,8 +90,9 @@ directory has its own row.
 
 ## `internal/` — CLI packages and retained support
 
-`internal/kmx/` is seventeen packages at the top level (twenty Go packages
-including nested `runview/orka`, `agentsuite/agentkit`, and `agentsuite/oras`).
+`internal/kmx/` is seventeen packages at the top level (twenty-one Go packages
+including nested `runview/orka`, `agentsuite/agentkit`, `agentsuite/oras`, and
+`app/kubectlfake`).
 The short version counts top-level directories.
 The plane module and image-build helper are absent.
 There is no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`.
@@ -123,7 +124,7 @@ files or judge cases in the live CLI agent fixture.
 | `kmx/agentsuite/testdata/incident-analyst/tool-providers` | 1 | Scaffolding | Empty catalog reflecting the experimental backend's current no-ToolProvider boundary. |
 | `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
 | `kmx/app/testdata/kubectl` | 0 | Scaffolding | Test-only executable-boundary kubectl handlers and thin reconcile/kagent adapters, compiled once per App test run with matching race instrumentation; no App or UI dependencies. |
-| `kmx/app/testdata/kubectl/protocol` | 4 | Scaffolding | Shared stateful reconcile/kagent handlers and pins for executable and explicitly selected in-process capture fixtures; request-scoped context, environment and I/O, synchronous cancellable delays and observed writer errors. App parity tests exercise both modes; protocol unit tests require an explicit package path because `./...` skips testdata. |
+| `kmx/app/kubectlfake` | 4 | Scaffolding | Shared stateful reconcile/kagent handlers and pins for executable and explicitly selected in-process capture fixtures; request-scoped context, environment and I/O, synchronous cancellable delays and observed writer errors. App parity tests exercise both modes; unit tests run under `go test ./...` and CI. Not imported by installed code. |
 | `kmx/app/testdata/live-eval-loop` | 1 | Scaffolding | Portable agent for the clusterless, secret-free real-inference CI fixture and App bundle-loading test. |
 | `kmx/app/testdata/live-eval-loop/eval` | 2 | Scaffolding | Public capital and arithmetic cases requiring literal `Paris` and `4` substrings, plus a Go RE2 capital pattern and `notContains` check, not exact answers. |
 | `kmx/app/testdata/bundle-format` | 2 | Scaffolding | Exact rendered documents for historical and current portable bundle fixtures. |
