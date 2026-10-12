@@ -29,7 +29,9 @@ writes the Orka extension. Lift reads the definition from
 bundle's original bindings. The exact bytes of `agent.yaml`, including comments
 and whitespace, determine the portable digest. A rendered digest identifies
 the target-specific rendering. See [bundle format compatibility](bundle-format.md)
-for accepted versions, strict decoding and cross-version behavior.
+for accepted versions, strict decoding and cross-version behavior. These YAML
+bundles are distinct from AgentSuite definitions and sandbox images; see
+[which format goes where](bundle-format.md#which-format-goes-where).
 
 ## Exact-v0.10.3 declarative bundle placement
 
@@ -983,6 +985,10 @@ known-to-known comparison. A complete stable comparison or fixes can exit zero *
 evaluations failed**; zero is not an evaluation-pass claim.
 
 ## Run evals in CI
+
+The action's `bundle` input selects a directory containing `agent.yaml` and its
+`eval/*.yaml` cases, not an AgentSuite fixture or a sandbox image archive. See
+[which format goes where](bundle-format.md#which-format-goes-where).
 
 Use the [KMX eval action](../.github/actions/kmx-eval/action.yml) to run a
 bundle's complete case set, fail the job unless every case passes, and optionally
