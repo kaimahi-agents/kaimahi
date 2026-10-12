@@ -89,11 +89,16 @@ authors one tool-free native-Orka member offline. It accepts optional descriptio
 refuses live-create selectors and leaves default create/bundle output unchanged.
 No Kubernetes configuration, builder or model call is needed.
 
-`suite push --workspace <directory> <reference>` prepares that member and its
-shareable authored cases as an ordinary AgentSuite, then copies the exact OCI
-manifest/blob graph. Native member image requirements are empty. Registry auth,
-plain-HTTP and non-atomic tag replacement remain as documented. Old
-`suite push <directory> <reference>` retains extracted-artifact transfer behavior.
+`suite push <reference>` discovers the nearest ancestor `workspace.yaml`;
+`--workspace <directory>` instead selects that exact directory, without fallback.
+Missing, invalid or unreadable workspace selection refuses. The command prepares
+that member and its shareable authored cases as an ordinary AgentSuite, then
+copies the exact OCI manifest/blob graph. A single stderr line names the absolute
+workspace and prepared OCI manifest digest; result stdout is unchanged. Native
+member image requirements are empty. Registry auth, plain-HTTP and non-atomic tag
+replacement remain as documented. Old `suite push <directory> <reference>` retains
+extracted-artifact transfer behavior without workspace discovery; combining that
+form with `--workspace` refuses. This does not change create's default.
 Workspace evaluation and reference lift are not implemented; these commands
 create no evaluation or promotion evidence. See [suite workspace](suite-workspace.md).
 

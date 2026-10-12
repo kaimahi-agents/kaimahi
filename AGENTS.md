@@ -24,10 +24,13 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Plane administration, model overlays, migration and their demo are removed;
   do not restore or regroup their commands.
 - Opt-in `agent create --workspace` authors one tool-free native-Orka suite member
-  offline; `suite push --workspace` copies its exact prepared OCI graph and authored
-  cases. The native member image requirement is empty. Neither command evaluates,
-  deploys, builds images or loads cluster settings. Workspace evaluation/release
-  lift are not implemented. Preserve default create, PortableAgent formats and
+  offline. One-reference `suite push` discovers the nearest ancestor `workspace.yaml`;
+  `--workspace` selects an exact root without fallback. Two-positional suite push
+  retains extracted-directory transfer without discovery. Workspace push names its
+  absolute root and prepared OCI manifest digest on stderr, then copies that exact
+  graph and authored cases. The native member image requirement is empty. Neither
+  command evaluates, deploys, builds images or loads cluster settings. Workspace
+  evaluation/release lift are not implemented. Preserve default create, PortableAgent formats and
   old extracted-directory suite transfer; do not treat public graph validation
   as native execution-profile validation. Private packaged-native preparation and
   ownership-safe Provider/Agent placement have no CLI or execution qualification.
