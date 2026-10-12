@@ -33,7 +33,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
+      - name: Changed lines contain no conflict markers or whitespace errors
+        id: whitespace
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request) base=HEAD^1 ;;
+            push)
+              case "$BEFORE" in
+                ""|0000000000000000000000000000000000000000)
+                  echo "No before commit for the push; cannot check its diff." >&2
+                  exit 1
+                  ;;
+              esac
+              base="$BEFORE"
+              if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+                git fetch --no-tags origin "$base"
+              fi
+              ;;
+            schedule|workflow_dispatch) base=HEAD^ ;;
+            *) echo "Unsupported diff-check event: $EVENT" >&2; exit 1 ;;
+          esac
+          # PR checkout is the merge commit: its actual first parent avoids
+          # including unrelated changes from a stale event base SHA.
+          base=$(git rev-parse --verify "$base^{commit}")
+          merge_base=$(git merge-base "$base" HEAD)
+          echo "Checking changed lines from $merge_base to HEAD"
+          git diff --check "$merge_base" HEAD
       - name: Classify script changes (fail closed)
         id: mutation_changes
         if: github.event_name == 'pull_request'
@@ -99,6 +129,8 @@ jobs:
       # worthless and watching its own self-test stay green.
       - name: Registry mirror helper self-tests
         run: python3 scripts/test_registry_mirrors.py
+      - name: Quickstart timing diagnostic self-tests
+        run: python3 scripts/test_quickstart_timing.py
       - name: Live eval gate and failure diagnostics self-tests
         run: |
           python3 scripts/test_eval_loop.py
@@ -784,6 +816,13 @@ jobs:
           done
           command -v docker >/dev/null || { echo "no container engine"; exit 1; }
           echo "this machine now has a container engine and nothing else kmx needs"
+      - name: Report quickstart runner resources
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          lscpu | grep -E '^(Architecture|CPU\(s\)|Model name):'
+          free -m
+          df -h / /tmp
+          docker version --format '{{.Server.Version}}'
       - name: One command — install kmx and answer a question
         id: quickstart
         if: steps.changes.outputs.docs_only != 'true'
@@ -797,6 +836,9 @@ jobs:
           elapsed=$(( $(date +%s) - start ))
           echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
           echo "time from one command to an answer: ${elapsed}s"
+      - name: Report first-answer pod and pull timings
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        run: python3 scripts/ci/quickstart-timing.py --kubectl "$HOME/.config/kmx/path/kubectl" --context kind-kmx-quickstart
       - name: The agent actually answered, and nothing is governed yet
         if: steps.changes.outputs.docs_only != 'true'
         run: |

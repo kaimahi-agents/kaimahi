@@ -48,7 +48,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `pkg/` | — | — | experimental KMX target and agent lifecycle contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
-| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 51 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
+| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 53 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
 | `docs/` | 34 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -190,9 +190,9 @@ Packaging tests require every retained asset to be readable and reject retired
 plane, egress and observability assets. Setup does not deploy a model plane,
 custom scrape configuration or workbook.
 
-## `scripts/` — 55 tracked files, native helpers and scaffolding
+## `scripts/` — 57 tracked files, native helpers and scaffolding
 
-**Reference coverage:** 45 of the 55 are named by something outside themselves,
+**Reference coverage:** 47 of the 57 are named by something outside themselves,
 and 10 are named by nothing. The ten mutation specifications are discovered by
 glob. Map and repository-map checker mentions are not caller evidence; textual
 references, including script cross-references and test data, are not necessarily
@@ -203,8 +203,8 @@ invocations or active CI coverage.
 | Class | Count | Files |
 |---|---|---|
 | **Embedded packaging** — native provisioning, guard and Tool helpers | 4 | `aks-up.sh`, `aks-down.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
-| **Scaffolding** — checkers, self-tests and release packaging | 29 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py`, `test_kagent_lift_qualification.py`, `test_kagent_lift_audit.py`, `test_kagent_lift_qualify.py`, `test_kagent_lift_ci.py` |
-| **Scaffolding** — native/eval CI and qualification fixtures | 11 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py`, `kagent-lift.sh`, `kagent-lift.py`, `kagent-lift-fixture.py`, `kagent-lift-audit.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 30 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py`, `test_kagent_lift_qualification.py`, `test_kagent_lift_audit.py`, `test_kagent_lift_qualify.py`, `test_kagent_lift_ci.py`, `test_quickstart_timing.py` |
+| **Scaffolding** — native/eval CI and qualification fixtures | 12 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py`, `kagent-lift.sh`, `kagent-lift.py`, `kagent-lift-fixture.py`, `kagent-lift-audit.py`, `quickstart-timing.py` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
 | **Scaffolding** — retired-command scanner's exact inert exceptions | 1 | `legacy-runtime-allowlist.json` |
 
@@ -241,6 +241,20 @@ configuration merging, kind-node selection, wrapper behavior and successful
 endpoint evidence filtering. Neither file is embedded or installed for users;
 see [CI registry mirrors](development.md#ci-registry-mirrors) for the boundaries
 and pull-evidence contract.
+
+`.github/workflows/ci.yml` calls `scripts/ci/quickstart-timing.py` immediately
+outside the quickstart first-answer clock, including failed quickstarts, with an
+explicit cached kubectl path and `kind-kmx-quickstart` context. Six bounded reads
+snapshot only pods/events in `kube-system`, `ollama` and `orka-system`. Output is
+prefixed JSON with scalar identity, image, condition, container-state and event
+timing fields; messages, logs, secrets, prompts and answers are excluded.
+Event first/last timestamps and counts retain repeated-event timing ambiguity;
+a snapshot is not proof of the cause of a slow image pull or readiness wait.
+Failures emit generic namespace/resource reason codes without raw tool output
+and do not change the quickstart result. Hygiene calls
+`scripts/test_quickstart_timing.py`, whose executable kubectl fixture checks
+scoping, timeout bounds, whitelist projection and failure-output suppression.
+Neither file is embedded or installed.
 
 `scripts/ci/kagent-lift.sh` calls `kagent-lift.py`, which loads
 `kagent-lift-fixture.py` and installs the `kagent-lift-audit.py` kubectl wrapper.
