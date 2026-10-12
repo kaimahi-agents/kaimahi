@@ -87,17 +87,22 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 - Preserve Orka defaults and exact-v0.10.2 kagent create. Bundle lift/status
   requires explicit `--runtime kagent --runtime-version v0.10.3`, `--to-context`
-  and author-owned `KagentBindings`. Only Go deployment/status is qualified;
-  Python remains render-only. Dedicated CI qualifies Go lift/status and separately
-  proves one native A2A MCP answer; receipts still prove readiness, not execution.
+  and author-owned `KagentBindings`. Only Go deployment/status/evaluation is
+  qualified; Python remains render-only. Explicit `kmx bundle evaluate --runtime
+  kagent --runtime-version v0.10.3` uses the saved placement and desired bindings;
+  unsecure only, trusted-proxy refused
+  before any send. One fresh blocking native A2A Task per case, never retried,
+  with attribution rechecked before judging. Ambiguity/drift stops later sends.
+  Dedicated CI qualifies Go lift/status, native MCP and product evaluation;
+  deployment receipts still prove readiness, not execution.
   Lift creates new objects or reuses a complete
   matching UID-bound receipt without adoption, update or retry of ambiguous
   writes. Readiness is not execution proof. Offline `eval diff` reads
   strict v2 kagent Go receipts with native A2A identities; valid kagent evidence
-  is excluded from Orka gate/status selection. This does not enable kagent
-  execution, promotion gates or Python. Do not infer installation,
-  discovery, chat/run/evaluation, retirement or console support from receipt
-  reading or placement.
+  is excluded from Orka gate/status selection. This does not enable promotion gates or Python. Tool assertions stay unknown;
+  structured upstream events are not qualified tool evidence. Do not infer
+  installation, discovery, standalone chat/run, retirement or console support
+  from receipt reading, evaluation or placement.
 
 ## Verification
 

@@ -107,6 +107,9 @@ type EvaluationRequest struct {
 	ExpectContains []string
 	Assertions     []EvaluationAssertion
 	PortableDigest string
+	// Desired and Expected bind evaluation of a deployed native revision.
+	Desired  *RenderedBundle
+	Expected *DeployReceipt
 	// Judge is optional; without it, llmJudge assertions remain unknown.
 	Judge EvaluationJudge
 }
@@ -136,6 +139,19 @@ type EvaluationReceipt struct {
 	TaskUID          string
 	AnswerSHA256     string
 	Detail           string
+	Execution        *EvaluationExecution
+	// Stop prevents later cases after an ambiguous send or lost attribution.
+	Stop bool
+}
+
+// EvaluationExecution records native request and Task identities, not
+// Kubernetes Task names or UIDs. Unknown sends retain only request identities.
+type EvaluationExecution struct {
+	RPCID            string `json:"rpcID"`
+	RequestMessageID string `json:"requestMessageID"`
+	TaskID           string `json:"taskID,omitempty"`
+	ContextID        string `json:"contextID,omitempty"`
+	State            string `json:"state,omitempty"`
 }
 
 // Document is one rendered document: the exact bytes plus whether Deploy may

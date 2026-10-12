@@ -24,7 +24,7 @@ func TestTargetsCapabilitiesMatchLifecycleDeclarations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, adapter := range []agentruntime.LifecycleAdapter{
-		kagentRuntimeAdapter{lift: &kagentLiftOperation{}, bindings: &agentruntime.KagentBindings{}},
+		kagentRuntimeAdapter{lift: &kagentLiftOperation{}, bindings: &agentruntime.KagentBindings{}, evaluation: &kagentEvaluationOperation{}},
 		orkaRuntimeAdapter{create: &CreateOptions{}},
 	} {
 		caps := adapter.Capabilities()
@@ -33,6 +33,18 @@ func TestTargetsCapabilitiesMatchLifecycleDeclarations(t *testing.T) {
 			if supported, ok := want[got.Operation]; ok && got.Supported != supported {
 				t.Fatalf("%s %s: report=%t adapter=%t", adapter.ID(), got.Operation, got.Supported, supported)
 			}
+		}
+	}
+}
+
+func TestTargetsKagentEvaluationRemainsVersionScoped(t *testing.T) {
+	kagent := compiledTargets()[1]
+	for _, capability := range kagent.Capabilities {
+		if capability.Operation == "evaluate" && (!capability.Supported || !strings.Contains(capability.Reason, "unsecure")) {
+			t.Fatalf("missing scoped evaluation: %+v", capability)
+		}
+		if (capability.Operation == "chat" || capability.Operation == "run" || capability.Operation == "verify") && capability.Supported {
+			t.Fatalf("evaluation broadened support: %+v", capability)
 		}
 	}
 }

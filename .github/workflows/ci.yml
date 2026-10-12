@@ -33,7 +33,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
+      - name: Changed lines contain no conflict markers or whitespace errors
+        id: whitespace
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request) base=HEAD^1 ;;
+            push)
+              case "$BEFORE" in
+                ""|0000000000000000000000000000000000000000)
+                  echo "No before commit for the push; cannot check its diff." >&2
+                  exit 1
+                  ;;
+              esac
+              base="$BEFORE"
+              if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+                git fetch --no-tags origin "$base"
+              fi
+              ;;
+            schedule|workflow_dispatch) base=HEAD^ ;;
+            *) echo "Unsupported diff-check event: $EVENT" >&2; exit 1 ;;
+          esac
+          # PR checkout is the merge commit: its actual first parent avoids
+          # including unrelated changes from a stale event base SHA.
+          base=$(git rev-parse --verify "$base^{commit}")
+          merge_base=$(git merge-base "$base" HEAD)
+          echo "Checking changed lines from $merge_base to HEAD"
+          git diff --check "$merge_base" HEAD
       - name: Classify script changes (fail closed)
         id: mutation_changes
         if: github.event_name == 'pull_request'
@@ -293,7 +323,7 @@ jobs:
           # remove it from the guard.
           converted = ["e2e-quickstart"]
           # A bare `kmx local up` installs Orka. Bounded exact-v0.10.2 create and
-          # exact-v0.10.3 declarative lift/status do not let these converted
+          # exact-v0.10.3 Go bundle lift/status/evaluate do not let these converted
           # Orka shards install the alternate runtime or use unsupported verbs.
           # API-group text is not globally forbidden; these controls name
           # unsupported operations, not runtime-version qualification.
@@ -306,7 +336,7 @@ jobs:
                "the retired preset switch selects the legacy runtime"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b"),
                "the retired source editor edits a legacy Agent"),
-              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:chat|run|orka\s+(?:list|show)|bundle\s+(?:evaluate|verify|retire)|agent\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:chat|run|orka\s+(?:list|show)|bundle\s+(?:verify|retire)|bundle\s+evaluate\b(?![^;\n]*--runtime-version(?:=|\s+)v0\.10\.3(?:\s|$))|agent\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b"),
                "an unsupported command aimed at the alternate runtime"),
               (re.compile(r"--payload(?:=|\s+)kagent\b"), "the retired alternate-runtime AKS payload"),
               (re.compile(r"\bKAGENT_VERSION\b|kagent-(?:values|tool-server|tools|shim|cli)\b|\bkagent(?:cli|compat)\b"),
@@ -327,6 +357,11 @@ jobs:
               "kmx chat --runtime kagent hello-world",
               "kmx orka list --runtime=kagent",
               "kmx bundle evaluate ./bundle --runtime kagent",
+              "kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.2",
+              "kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3-other",
+              "kmx agent evaluate ./bundle --runtime kagent --runtime-version v0.10.3",
+              "kmx chat demo --runtime kagent --runtime-version v0.10.3",
+              "kmx bundle retire ./bundle --runtime kagent --runtime-version v0.10.3",
               "kmx aks up --payload kagent",
               "KAGENT_VERSION=0.10.2",
               "helm install -f kagent-values.yaml kagent",
@@ -339,6 +374,7 @@ jobs:
               "kmx create kagent-hello --runtime kagent --namespace agents",
               "kmx bundle lift ./bundle --runtime kagent --runtime-version v0.10.3",
               "kmx bundle status ./bundle --runtime kagent --runtime-version v0.10.3",
+              "kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3 --to-context target-context",
               "kmx local up",
               "kmx --context kind-x local up",
               "kmx run demo --namespace orka-system",
@@ -409,7 +445,7 @@ jobs:
               problems.append("the result account is made by hand: `kmx local up --step orka` provisions it")
           if "--result-service-account orka-result-reader" not in joined:
               problems.append("no Orka Task proof reading its result through orka-result-reader")
-          # Retired operations, forbidden by name. Bounded create/lift/status
+          # Retired operations, forbidden by name. Bounded create/lift/status/evaluate
           # and API vocabulary are not globally banned; this Orka-only job
           # must not install the alternate runtime, use unsupported commands
           # or use its retired AKS payload.
@@ -422,13 +458,14 @@ jobs:
                    "the retired preset switch"),
                    (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b",
                     "the retired source editor"),
-                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:chat|run|orka\s+(?:list|show)|bundle\s+(?:evaluate|verify|retire)|agent\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b",
+                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:chat|run|orka\s+(?:list|show)|bundle\s+(?:verify|retire)|bundle\s+evaluate\b(?![^;\n]*--runtime-version(?:=|\s+)v0\.10\.3(?:\s|$))|agent\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b",
                     "an unsupported command aimed at the alternate runtime"),
                    (r"--payload(?:=|\s+)kagent\b", "the retired alternate-runtime AKS payload"),
                    (r"\bKAGENT_VERSION\b|kagent-(?:values|tool-server|tools|shim|cli)\b|\bkagent(?:cli|compat)\b",
                     "a retired alternate-runtime installer, CLI, shim, preset, or moving version pin")]
           for sample in ["kmx bundle lift ./bundle --runtime kagent --runtime-version v0.10.3",
-                         "kmx bundle status ./bundle --runtime kagent --runtime-version v0.10.3"]:
+                         "kmx bundle status ./bundle --runtime kagent --runtime-version v0.10.3",
+                         "kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3 --to-context target-context"]:
               if any(re.search(pattern, sample) for pattern, _ in forbidden):
                   problems.append("supported version-qualified command refused: " + sample)
           for pattern, why in forbidden:

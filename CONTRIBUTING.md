@@ -19,15 +19,19 @@ execution, enforcement and model access; KMX should not duplicate them.
 
 kagent support is intentionally version-bounded: explicit
 `kmx create --runtime kagent <name>` targets preinstalled exact v0.10.2;
-explicit bundle lift/status with `--runtime kagent --runtime-version v0.10.3`
+explicit Go bundle lift/status/evaluate with `--runtime kagent --runtime-version v0.10.3`
 targets preinstalled exact v0.10.3. Lift creates new Go declarative resources or
 reuses a complete matching UID-bound deployment; it does not adopt or update.
+Evaluation requires a complete matching saved placement, desired bindings and
+explicit `--to-context`; unsecure only, trusted-proxy refused before any send.
 Deployment receipts prove readiness, not execution success. Dedicated CI now
-continuously qualifies Go v0.10.3 plan/lift/repeat/status/conflicts and a separate
-one-shot native A2A answer using a keyless model/MCP fixture. Do not infer or add an installer, upgrade path,
-auto-detection, chat, list/show, evaluation, retirement, console, quickstart,
-`up`, or AKS payload from those capabilities. Preserve Orka defaults and
-v0.10.2 create; runtime choice remains distinct from model-provider choice.
+continuously qualifies Go v0.10.3 plan/lift/repeat/status/conflicts, receipt-bound
+evaluation and a separate one-shot native A2A answer using a keyless model/MCP
+fixture. Python remains render-only; promotion gates are unsupported. Do not
+infer or add an installer, upgrade path, auto-detection, standalone chat/run,
+list/show, retirement, console, quickstart, `up`, or AKS payload from those
+capabilities. Preserve Orka defaults and v0.10.2 create; runtime choice remains
+distinct from model-provider choice.
 Wider cross-runtime lifecycle remains unsupported.
 
 New to the codebase? [`docs/development.md`](docs/development.md) covers the
@@ -96,7 +100,7 @@ One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), the public
 AgentSuite format package (`agentsuite`), and the application interface
 (`pkg/kmx`). AgentSuite does not have a separate module or version pin; root
 `go test ./...` tests it alongside the CLI, including first-class Orka paths
-and bounded kagent v0.10.2 create/v0.10.3 bundle lift/status.
+and bounded kagent v0.10.2 create/v0.10.3 Go bundle lift/status/evaluate.
 Plane commands, administration, the source module (including checked-in SQL),
 build helper, embedded assets and plane-only scripts/fixtures are removed.
 Historical source remains in Git history. This cleanup deletes no deployed

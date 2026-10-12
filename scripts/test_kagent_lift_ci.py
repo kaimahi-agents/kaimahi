@@ -165,6 +165,42 @@ class WorkflowTests(unittest.TestCase):
                 with self.subTest(mutation=mutation):
                     self.assertEqual(result.returncode == 0, mutation == "none", result.stdout + result.stderr)
 
+    def test_native_tripwires_allow_only_version_qualified_bundle_evaluation(self):
+        samples = [
+            ("kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3 --to-context target-context", True),
+            ("kmx --context kind-x bundle evaluate ./bundle --runtime=kagent --runtime-version=v0.10.3 --bindings desired.yaml", True),
+            ("kmx bundle evaluate ./bundle --runtime kagent", False),
+            ("kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.2", False),
+            ("kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3-other", False),
+            ("kmx agent evaluate ./bundle --runtime kagent --runtime-version v0.10.3", False),
+            ("kmx chat demo --runtime kagent --runtime-version v0.10.3", False),
+            ("kmx run demo --runtime kagent --runtime-version v0.10.3", False),
+            ("kmx bundle retire ./bundle --runtime kagent --runtime-version v0.10.3", False),
+            ("kmx bundle verify receipt.json --runtime kagent --runtime-version v0.10.3", False),
+            ("kmx local up --step kagent", False),
+            ("kmx aks up --payload kagent", False),
+        ]
+        with tempfile.TemporaryDirectory(prefix="kmx-ci-evaluation-guards-") as directory:
+            root = pathlib.Path(directory)
+            workflow = root / ".github/workflows/ci.yml"
+            workflow.parent.mkdir(parents=True)
+            for step in self.jobs["hygiene"]["steps"]:
+                name = step.get("name", "")
+                if name.startswith("Converted shards install"):
+                    job = "e2e-quickstart"
+                elif name.startswith("The clone-free journey sets up"):
+                    job = "kmx-clone-free"
+                else:
+                    continue
+                for sample, allowed in samples:
+                    with self.subTest(guard=name, sample=sample):
+                        jobs = json.loads(json.dumps(self.jobs))
+                        jobs[job]["steps"].append({"run": sample})
+                        workflow.write_text(yaml.safe_dump({"jobs": jobs}))
+                        result = subprocess.run(["bash", "-e", "-c", step["run"]], cwd=root,
+                                                text=True, capture_output=True, timeout=10)
+                        self.assertEqual(result.returncode == 0, allowed, result.stdout + result.stderr)
+
     def test_native_tripwires_execute_with_supported_lift_status_and_refused_chat_eval(self):
         for step in self.jobs["hygiene"]["steps"]:
             if step.get("name", "").startswith(("Converted shards install", "The clone-free journey sets up")):

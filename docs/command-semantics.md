@@ -44,7 +44,7 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 | `agent chat <name> [message...]` | `chat <name> [message...]` | Interactive Orka session, not workspace execution. |
 | `agent run [<bundle-dir>]` | `run [<bundle-dir>]` | One Task; retain `--agent` selection, answer-only stdout and pending/result contracts. |
 | `agent show <name>` / `agent list` | `orka show <name>` / `orka list` | Live Orka detail/inventory, not workspace inspection. Show still requires namespace. |
-| `agent evaluate/lift/retire/status <bundle-dir>` | `bundle evaluate/lift/retire/status <bundle-dir>` | Existing PortableAgent lifecycle, selectors and evidence; kagent v0.10.3 supports only explicit Go lift/status. |
+| `agent evaluate/lift/retire/status <bundle-dir>` | `bundle evaluate/lift/retire/status <bundle-dir>` | Existing PortableAgent lifecycle, selectors and evidence; exact kagent v0.10.3 supports explicit Go lift/status and receipt-bound evaluation with desired bindings and explicit `--to-context`. Evaluation is unsecure-only; trusted-proxy is refused. Python remains render-only; promotion gates, standalone chat/run, installation and retirement remain unsupported. |
 | `agent verify <sessions-receipt.json>` | `bundle verify <sessions-receipt.json>` | Local reference replay only, not packaged-suite verification. |
 | `agent eval diff <before.json> <after.json>` | `eval diff <before.json> <after.json>` | Offline receipt comparison, not evaluation execution. |
 | `agent eval from-sessions <session-uid>...` | `eval from-sessions <session-uid>...` | Private reference-case preparation, not execution. |

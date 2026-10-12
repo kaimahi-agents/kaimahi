@@ -62,6 +62,8 @@ type kagentControllerService struct {
 	DeploymentName                        string
 	DeploymentUID                         string
 	DeploymentResourceVersion             string
+	DeploymentGeneration                  int64
+	ControllerImages                      []kagentEvaluationImage
 	ControllerServiceAccount              string
 	ConfigMapName                         string
 	ConfigMapUID                          string
@@ -598,6 +600,7 @@ func (a *App) inspectKagentInstallation(ctx context.Context, runtimeName, target
 	service.DeploymentName = deployment.Metadata.Name
 	service.DeploymentUID = deployment.Metadata.UID
 	service.DeploymentResourceVersion = deployment.Metadata.ResourceVersion
+	service.DeploymentGeneration = deployment.Metadata.Generation
 	service.ControllerServiceAccount = deployment.Spec.Template.Spec.ServiceAccountName
 	if service.ControllerServiceAccount == "" {
 		return kagentControllerService{}, fmt.Errorf("Kagent controller Deployment has no explicit serviceAccountName")
@@ -634,8 +637,8 @@ func (a *App) inspectKagentInstallation(ctx context.Context, runtimeName, target
 	if err := validateKagentWatchNamespaces(configMap.Data["WATCH_NAMESPACES"], targetNamespace); err != nil {
 		return kagentControllerService{}, err
 	}
-	if err := a.verifyKagentDeploymentPods(ctx, service.Namespace, deployment, "controller", controller.Image, kagentControllerImageRepo,
-		profile.ControllerDigests[:]); err != nil {
+	if err := a.observeKagentDeploymentPods(ctx, service.Namespace, deployment, "controller", controller.Image, kagentControllerImageRepo,
+		profile.ControllerDigests[:], &service.ControllerImages); err != nil {
 		return kagentControllerService{}, fmt.Errorf("Kagent controller workload: %w", err)
 	}
 	versionPath := kagentServiceProxyPath(service, "/version")
@@ -669,6 +672,10 @@ func (a *App) inspectKagentInstallation(ctx context.Context, runtimeName, target
 }
 
 func (a *App) reverifyKagentInstallation(ctx context.Context, service kagentControllerService) error {
+	return a.observeKagentInstallationRecheck(ctx, service, nil)
+}
+
+func (a *App) observeKagentInstallationRecheck(ctx context.Context, service kagentControllerService, observed *kagentControllerService) error {
 	current, err := a.inspectKagentInstallation(ctx, service.Runtime, service.TargetNamespace)
 	if err != nil {
 		return err
@@ -681,6 +688,9 @@ func (a *App) reverifyKagentInstallation(ctx context.Context, service kagentCont
 		current.ConfigMapName != service.ConfigMapName || current.ConfigMapUID != service.ConfigMapUID ||
 		current.ConfigMapResourceVersion != service.ConfigMapResourceVersion || current.AuthMode != service.AuthMode {
 		return fmt.Errorf("the exact Kagent controller Service, Deployment, or image ConfigMap changed during preflight")
+	}
+	if observed != nil {
+		*observed = current
 	}
 	return nil
 }
@@ -734,7 +744,11 @@ func (a *App) verifyKagentControllerRBAC(ctx context.Context, service kagentCont
 }
 
 func (a *App) reverifyKagentPlatformAndCluster(ctx context.Context, service kagentControllerService, clusterUID string) error {
-	if err := a.reverifyKagentInstallation(ctx, service); err != nil {
+	return a.observeKagentPlatformAndCluster(ctx, service, clusterUID, nil)
+}
+
+func (a *App) observeKagentPlatformAndCluster(ctx context.Context, service kagentControllerService, clusterUID string, observed *kagentControllerService) error {
+	if err := a.observeKagentInstallationRecheck(ctx, service, observed); err != nil {
 		return err
 	}
 	currentUID, err := a.kagentClusterUID(ctx)
@@ -906,7 +920,7 @@ func (a *App) readKagentControllerConfigMap(ctx context.Context, namespace, name
 	return configMap, nil
 }
 
-func (a *App) verifyKagentDeploymentPods(ctx context.Context, namespace string, deployment kagentDeployment, containerName, image, imageRepo string, digests []string) error {
+func (a *App) observeKagentDeploymentPods(ctx context.Context, namespace string, deployment kagentDeployment, containerName, image, imageRepo string, digests []string, observed *[]kagentEvaluationImage) error {
 	desired := int32(1)
 	if deployment.Spec.Replicas != nil {
 		desired = *deployment.Spec.Replicas
@@ -1004,8 +1018,12 @@ func (a *App) verifyKagentDeploymentPods(ctx context.Context, namespace string, 
 			return kagentFailure("drift", fmt.Errorf("ready pod %s container image identity does not match the published %s digest", containerName, a.selectedKagentProfile().Version))
 		}
 		if a.selectedKagentProfile().StrictPlatform {
-			if err := a.verifyKagentPodPlatform(ctx, pod.Spec.NodeName, image, statuses[0].Image, statuses[0].ImageID, imageRepo, digests); err != nil {
+			var platform kagentEvaluationImage
+			if err := a.observeKagentPodPlatform(ctx, pod.Spec.NodeName, image, statuses[0].Image, statuses[0].ImageID, imageRepo, digests, &platform); err != nil {
 				return err
+			}
+			if observed != nil {
+				*observed = append(*observed, platform)
 			}
 		}
 		readyPods++
@@ -1648,6 +1666,10 @@ func kagentControllerOwner(metadata kagentMetadata, id kagentIdentity) bool {
 }
 
 func (a *App) verifyKagentAgentWorkload(ctx context.Context, namespace string, id kagentIdentity, runtimeName string, previous *kagentWorkloadIdentity) (kagentWorkloadIdentity, error) {
+	return a.observeKagentAgentWorkload(ctx, namespace, id, runtimeName, previous, nil)
+}
+
+func (a *App) observeKagentAgentWorkload(ctx context.Context, namespace string, id kagentIdentity, runtimeName string, previous *kagentWorkloadIdentity, observed *[]kagentEvaluationImage) (kagentWorkloadIdentity, error) {
 	identity := kagentWorkloadIdentity{}
 	object, err := a.readKagentObject(ctx, namespace, id)
 	if err != nil {
@@ -1679,7 +1701,7 @@ func (a *App) verifyKagentAgentWorkload(ctx context.Context, namespace string, i
 	if err != nil || !a.selectedKagentProfile().imageMatches(container.Image, image, repository, digests) {
 		return identity, kagentFailure("drift", fmt.Errorf("generated Kagent Agent Deployment does not use exactly one kagent container with image %s", image))
 	}
-	if err := a.verifyKagentDeploymentPods(ctx, namespace, deployment, "kagent", container.Image, repository, digests); err != nil {
+	if err := a.observeKagentDeploymentPods(ctx, namespace, deployment, "kagent", container.Image, repository, digests, observed); err != nil {
 		return identity, fmt.Errorf("generated Kagent Agent Deployment is not a proven current rollout: %w", err)
 	}
 	raw, err = a.kagentCapture(ctx, nil, "-n", namespace, "get", "service", id.Name, "-o", "json")

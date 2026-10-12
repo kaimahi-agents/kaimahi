@@ -81,13 +81,7 @@ type kagentEvaluationResult struct {
 	Detail       string                                   `json:"detail,omitempty"`
 }
 
-type kagentEvaluationExecution struct {
-	RPCID            string `json:"rpcID"`
-	RequestMessageID string `json:"requestMessageID"`
-	TaskID           string `json:"taskID,omitempty"`
-	ContextID        string `json:"contextID,omitempty"`
-	State            string `json:"state,omitempty"`
-}
+type kagentEvaluationExecution = agentruntime.EvaluationExecution
 
 // Parse only bounded, unambiguous, payload-free evidence. A typed decoder alone
 // accepts null scalars and duplicate/case-folded keys, so reuse the shared raw
@@ -279,10 +273,14 @@ func validKagentEvaluationExecution(c kagentEvaluationResult) bool {
 	}
 }
 
+func validKagentEvaluationTarget(t kagentEvaluationTarget, bundle string) bool {
+	return t.Runtime == agentruntime.Kagent && t.RuntimeVersion == "v0.10.3" && t.Engine == "go" && verificationIdentity(t.Context) && safeKagentEvaluationID(t.ClusterUID) && scaffold.ValidateNamespace(t.Namespace) == nil && scaffold.ValidateObjectName(t.Agent) == nil && t.Agent == bundle && safeKagentEvaluationID(t.AgentUID) && safeKagentEvaluationID(t.ModelConfigUID) && t.AgentGeneration >= 1 && t.ModelConfigGeneration >= 1 && verificationIdentity(t.Model) && validKagentEvaluationPlatform(t.Platform) && validKagentEvaluationSnapshot(t)
+}
+
 func normalizeKagentEvaluation(r kagentEvaluationReceipt) (normalizedEvaluation, bool) {
 	n, ok := evaluationDiffMetadata(r.SchemaVersion, r.RunID, r.Bundle, r.PortableDigest, r.CasesDigest, r.GitCommit, r.Result, r.FullCaseSet)
 	t := r.Target
-	if !ok || r.SchemaVersion != 2 || !verificationDigest(r.RenderedDigest) || !verificationDigest(r.DeploymentReceiptDigest) || t.Runtime != agentruntime.Kagent || t.RuntimeVersion != "v0.10.3" || t.Engine != "go" || !verificationIdentity(t.Context) || !safeKagentEvaluationID(t.ClusterUID) || scaffold.ValidateNamespace(t.Namespace) != nil || scaffold.ValidateObjectName(t.Agent) != nil || t.Agent != r.Bundle || !safeKagentEvaluationID(t.AgentUID) || !safeKagentEvaluationID(t.ModelConfigUID) || t.AgentGeneration < 1 || t.ModelConfigGeneration < 1 || !verificationIdentity(t.Model) || !validKagentEvaluationPlatform(t.Platform) || !validKagentEvaluationSnapshot(t) {
+	if !ok || r.SchemaVersion != 2 || !verificationDigest(r.RenderedDigest) || !verificationDigest(r.DeploymentReceiptDigest) || !validKagentEvaluationTarget(t, r.Bundle) {
 		return n, false
 	}
 	n.Identity = evaluationDiffIdentity{Runtime: string(t.Runtime), RuntimeVersion: t.RuntimeVersion, Engine: t.Engine, ClusterUID: t.ClusterUID, Namespace: t.Namespace, Agent: t.Agent, AgentUID: t.AgentUID, ModelConfigUID: t.ModelConfigUID, Model: t.Model, SourceCommit: t.Platform.SourceCommit, ControllerImage: t.Platform.ControllerImage, ADKImage: t.Platform.ADKImage}
