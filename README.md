@@ -29,7 +29,7 @@ brew install kaimahi-agents/tap/kmx
 # or
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 # or
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
 ```
 
 **Latest release first answer:** start with the fixed, non-interactive local demonstration:
