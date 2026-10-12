@@ -678,6 +678,12 @@ jobs:
           grep -q -- '--- PASS: TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster' retirement.out
           grep -q -- '--- PASS: TestLegacyRuntimeCommandsAreRetired' retirement.out
           ! grep -q -- '--- SKIP:' retirement.out
+      - name: AgentSuite incremental artifact diff end to end
+        run: |
+          set -euo pipefail
+          go test ./cmd/kmx -run '^TestSuiteDiffArtifactsEndToEnd$' -count=1 -v | tee suite-diff-e2e.out
+          grep -q -- '--- PASS: TestSuiteDiffArtifactsEndToEnd' suite-diff-e2e.out
+          ! grep -q -- '--- SKIP:' suite-diff-e2e.out
 
   # Linux uses its XDG user-config location while macOS uses
   # ~/Library/Application Support. Cross-compiling a Darwin binary does not

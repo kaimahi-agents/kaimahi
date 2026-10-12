@@ -60,6 +60,17 @@ Provider bindings, promotion policies and unrelated workspace files are not
 packaged. Changes to model, instructions or cases produce a different suite
 identity; old evidence cannot qualify the changed content.
 
+For example, the authored `eval/example.yaml` becomes:
+
+```text
+metadata/kmx/native-orka.json
+metadata/kmx/eval/example.yaml
+```
+
+`native-orka.json` inventories the member, renderer version, required images,
+and every packaged case path and digest. These are KMX native-Orka supplemental
+files in the OCI content layer, not public AgentSuite record types.
+
 The OCI manifest digest binds all the content-layer bytes, including cases.
 The canonical `agentsuite.json` graph digest alone does not bind supplemental
 metadata. No outer package envelope is used. The public format still

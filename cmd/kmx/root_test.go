@@ -320,7 +320,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 		"context", "context show", "context use", "local", "local up", "local down",
 		"lift", "lift down", "orka", "orka install", "orka status",
 		"quickstart", "quickstart-wizard",
-		"status", "suite", "suite build", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",
+		"status", "suite", "suite build", "suite diff", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",
 		"up", "version",
 	}
 	sort.Strings(want)

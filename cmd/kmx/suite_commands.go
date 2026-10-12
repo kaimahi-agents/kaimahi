@@ -123,6 +123,31 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		return err
 	}
 
+	var diffOutput, diffView string
+	diff := &cobra.Command{
+		Use:   "diff <before> <after>",
+		Short: "Compare two portable AgentSuite artifacts",
+		Long:  "Compare two conformant extracted AgentSuites or local OCI image layouts by logical record identity and packaged content.",
+		Example: "  kmx suite diff ./suite-v1 ./suite-v2\n" +
+			"  kmx suite diff ./suite-v1 ./suite-v2 --view split\n" +
+			"  kmx suite diff ./suite-v1 ./suite-v2 --output json",
+		Args: usageArgs(2, 2, "kmx suite diff <before> <after> [--view unified|split] [-o text|json]"),
+	}
+	diff.Flags().StringVarP(&diffOutput, "output", "o", "text", "output: text|json")
+	diff.Flags().StringVar(&diffView, "view", app.SuiteDiffUnified, "text diff view: unified|split")
+	_ = diff.RegisterFlagCompletionFunc("output", staticCompletion([]string{"text", "json"}))
+	_ = diff.RegisterFlagCompletionFunc("view", staticCompletion([]string{app.SuiteDiffUnified, app.SuiteDiffSplit}))
+	diff.RunE = func(cmd *cobra.Command, args []string) error {
+		if diffOutput == "json" && cmd.Flags().Changed("view") {
+			return fmt.Errorf("--view cannot be used with --output json")
+		}
+		a := &app.App{Out: cmd.OutOrStdout()}
+		if err := a.DiffSuites(args[0], args[1], diffOutput, diffView); err != nil {
+			return &suiteDiagnosticError{err}
+		}
+		return nil
+	}
+
 	var target, pushWorkspace string
 	var pushPlainHTTP, pushForce, pushProvenance, pushRequireProvenance bool
 	push := &cobra.Command{
@@ -320,7 +345,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		}
 		return nil
 	}
-	group.AddCommand(build, pull, push, validate)
+	group.AddCommand(build, diff, pull, push, validate)
 	return group
 }
 
@@ -378,14 +403,14 @@ func provenanceClaims(provenance agentsuite.Provenance) string {
 	return claims
 }
 
-// suiteDiagnosticError keeps registry failures safe to print without losing
+// suiteDiagnosticError keeps artifact diagnostics safe to print without losing
 // the underlying error for callers that inspect its type or identity.
 type suiteDiagnosticError struct{ cause error }
 
 func (e *suiteDiagnosticError) Error() string { return terminalLine(e.cause.Error()) }
 func (e *suiteDiagnosticError) Unwrap() error { return e.cause }
 
-// terminalLine makes registry error text a single safe line.
+// terminalLine makes artifact error text a single safe line.
 func terminalLine(s string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {

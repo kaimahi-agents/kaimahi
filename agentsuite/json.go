@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"reflect"
 	"strings"
 	"unicode/utf8"
@@ -213,6 +214,26 @@ func decodeJSONValue(data []byte) (any, error) {
 }
 
 func sameJSONValue(a, b any) bool {
+	return sameJSONValueWithNumbers(a, b, func(left, right json.Number) bool {
+		if leftInteger, err := left.Int64(); err == nil {
+			rightInteger, err := right.Int64()
+			return err == nil && leftInteger == rightInteger
+		}
+		leftFloat, leftErr := left.Float64()
+		rightFloat, rightErr := right.Float64()
+		return leftErr == nil && rightErr == nil && leftFloat == rightFloat
+	})
+}
+
+func sameExactJSONValue(a, b any) bool {
+	return sameJSONValueWithNumbers(a, b, func(left, right json.Number) bool {
+		leftValue, leftOK := new(big.Rat).SetString(left.String())
+		rightValue, rightOK := new(big.Rat).SetString(right.String())
+		return leftOK && rightOK && leftValue.Cmp(rightValue) == 0
+	})
+}
+
+func sameJSONValueWithNumbers(a, b any, sameNumber func(json.Number, json.Number) bool) bool {
 	switch a := a.(type) {
 	case nil:
 		return b == nil
@@ -224,23 +245,14 @@ func sameJSONValue(a, b any) bool {
 		return ok && a == other
 	case json.Number:
 		other, ok := b.(json.Number)
-		if !ok {
-			return false
-		}
-		if left, err := a.Int64(); err == nil {
-			right, err := other.Int64()
-			return err == nil && left == right
-		}
-		left, leftErr := a.Float64()
-		right, rightErr := other.Float64()
-		return leftErr == nil && rightErr == nil && left == right
+		return ok && sameNumber(a, other)
 	case []any:
 		other, ok := b.([]any)
 		if !ok || len(a) != len(other) {
 			return false
 		}
 		for i := range a {
-			if !sameJSONValue(a[i], other[i]) {
+			if !sameJSONValueWithNumbers(a[i], other[i], sameNumber) {
 				return false
 			}
 		}
@@ -252,7 +264,7 @@ func sameJSONValue(a, b any) bool {
 		}
 		for key, value := range a {
 			otherValue, ok := other[key]
-			if !ok || !sameJSONValue(value, otherValue) {
+			if !ok || !sameJSONValueWithNumbers(value, otherValue, sameNumber) {
 				return false
 			}
 		}

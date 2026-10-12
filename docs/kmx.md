@@ -104,6 +104,7 @@ release is scheduled. See the
 | `kmx suite pull <registry/repository:tag-or-digest> --output <directory>` | pull and validate one AgentSuite from an OCI registry, then atomically extract it into a new directory. Prints the resolved digest and any [suite provenance](#suite-provenance) that names it, for information only; tag pulls also print a digest-pinned reference for repeatable pulls. See [registry safety](#registry-authentication). |
 | `kmx suite pull <repository:tag> --from-layout <layout> --output <directory>` | resolve and validate one AgentSuite reference from a local OCI image layout, then atomically extract its content into a new directory. Existing output is never replaced. |
 | `kmx suite validate <path>` | validate an extracted AgentSuite content directory or OCI image layout offline, including strict JSON, canonical identities, closed references, tool locks, build profiles and archive safety. `-o json` emits the validated summary. [AgentSuite specification](../agentsuite/spec.md) |
+| `kmx suite diff <before> <after>` | validate and semantically compare two extracted AgentSuites or local OCI image layouts, including supplemental packaged content and artifact identities. The default unified view uses `-` and `+` field lines; `--view split` renders before and after values side by side, and `-o json` emits the versioned change and affected-agent report. [Suite artifact diff](#suite-artifact-diff). |
 | `kmx agent lift <bundle-dir>` | default Orka reconciliation; explicit `--runtime kagent --runtime-version v0.10.3` is new-object declarative placement or complete receipt-bound reuse. No adoption/update in that profile. `--plan` checks without writing. [Bundle lift](agent-lift.md) |
 | `kmx agent retire <bundle-dir>` | delete or release bundle-owned Orka resources after UID, receipt and dependent checks; Kagent bundles are refused before target reads. `--plan` checks without writing. [Bundle retirement](agent-lift.md#retiring-a-bundle-from-a-target) |
 | `kmx agent status <bundle-dir>` | default Orka revision/readiness/drift/evaluation report; explicit `--runtime kagent --runtime-version v0.10.3` reports absent, unreadable, failed readiness, ready or drift against desired bindings and saved identity. `--to-context` selects the target, `-o json` emits facts. [Bundle status](agent-lift.md#checking-deployed-status) |
@@ -352,6 +353,50 @@ Push prints the artifact digest on success. Pull prints the resolved digest,
 and a pull by tag also prints a reference such as
 `registry.example.com/agentsuites/team@sha256:…` to pin subsequent pulls to that
 artifact rather than a mutable tag.
+
+#### Suite artifact diff
+
+`kmx suite diff <before> <after>` validates and compares two extracted content
+directories or local OCI layouts without registry or cluster access. Logical
+records are matched by AgentSuite identity. Identity-keyed collections such as
+agent invocation edges and ToolProvider selections are compared as sets;
+behaviorally ordered values such as process arguments remain positional.
+Added or removed identity-keyed elements are reported as one field containing
+the complete element, and added or removed supplemental content records use one
+aggregate `$` field, so large valid additions do not exhaust field limits by
+expanding every leaf.
+Supplemental packaged files, including `metadata/kmx/`, are compared by path,
+mode, size and digest. A raw packaged-content identity change is still reported
+when all modeled records remain semantically equal.
+
+The report identifies each side by suite name, source type and a
+representation-neutral content digest. OCI-layout inputs also include their
+authoritative manifest digest. The content digest is SHA-256 over the sorted inventory of non-directory path,
+filesystem-equivalent type, mode, size, file digest and symbolic-link target.
+Archive hardlinks inherit their target file metadata and explicit directory
+headers are excluded, so equivalent extracted and OCI-layout content has the
+same identity. A standalone
+ToolProvider composition and its build profile remain record changes but do not
+affect an agent without an explicit AgentSuite relationship.
+
+An OCI manifest-digest change is reported even when both manifests reference
+identical packaged content. Differences are a successful comparison and exit
+with status 0; validation, loading, usage and output failures return a nonzero
+status.
+
+`-o json` emits the pinned `kmx.agentsuite.diff/v1` envelope. `changes` and
+`affectedAgents` are always arrays, including for an unchanged comparison.
+The report refuses more than 10,000 changed fields in one record, 20,000
+changed fields in total, 10,000 changed records, or an indented JSON
+representation larger than 8 MiB; unchanged fields do not consume these
+limits, and automation output is never silently truncated.
+
+Human output strips terminal controls and Unicode format/bidirectional controls,
+and renders artifact-derived labels on one line.
+With a measured terminal width, split output constrains every report line and
+falls back to unified rows when two useful columns do not fit. When output width
+is unknown, split rows remain unwrapped and unpadded rather than assuming a
+terminal size.
 
 #### Suite provenance
 
