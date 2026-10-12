@@ -29,6 +29,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- Applying `kmx agent create` without a Task can reuse its offline preview when
+  only the generated schema-source comment differs. The preview stays unchanged;
+  every other byte difference still refuses reuse, and online schema/admission
+  checks remain required.
+
 - `kmx targets` describes the dedicated continuous Go kagent v0.10.3 lift/status
   qualification and its separate one-shot native A2A MCP proof. Supported
   operations and Python's render-only boundary are unchanged.

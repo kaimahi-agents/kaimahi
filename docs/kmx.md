@@ -30,10 +30,10 @@ brew install kaimahi-agents/tap/kmx &&
 
 The fully qualified formula trusts only `kmx`. Homebrew installs the CLI, not
 Docker, Podman or Go; local kind still needs a container engine. To build the
-same release with Go 1.26+ instead:
+v0.5.1 release with Go 1.26+ instead:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
 kmx version
 kmx orka --help
 ```
@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 ```
 
 That installer puts the selected release in `~/.local/bin`, without sudo;
-`--version=v0.4.0` pins it, `--bin-dir=DIR` changes the destination, and
+`--version=v0.5.1` pins it, `--bin-dir=DIR` changes the destination, and
 `--quickstart` continues into `kmx quickstart`. A new shell may need
 `~/.local/bin` on `PATH`, or invoke `$HOME/.local/bin/kmx` directly. It checks the binary against
 a checksum from the **same** GitHub release over TLS: corruption detection, not
@@ -82,10 +82,10 @@ Use `kmx --help` and `kmx <command> --help` for flags and defaults. The Cobra tr
 also generates completion; this guide describes contracts rather than duplicating
 every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
-**Unreleased entry-point alignment:** `context show/use` and `local up/down`
-are the canonical grouped commands below. Tagged v0.4.1 uses `ctx [context]`
-and root `up/down`; those routes remain callable in newer builds with notices
-only on stderr. No removal release is scheduled. See the
+**Released in v0.5.0:** `context show/use` and `local up/down` are the canonical
+grouped commands below. Historically, v0.4.1 used `ctx [context]` and root
+`up/down`; those routes remain callable with notices only on stderr. No removal
+release is scheduled. See the
 [alignment record](command-semantics.md) for current versus proposed names.
 
 ### Current Orka path and explicit version-qualified operations
@@ -122,15 +122,32 @@ The first image-build backend is intentionally narrow:
 It requires Docker with the buildx plugin. Authenticate Docker to any private
 registry containing the selected harness image before building.
 
+A downloaded kmx binary does not include the example files. With Git installed,
+get the tool-free incident-analyst fixture from the released source into a new
+`kmx-examples` directory:
+
+```sh
+git clone --depth 1 --branch v0.5.1 https://github.com/kaimahi-agents/kaimahi.git kmx-examples
+SUITE="$PWD/kmx-examples/internal/kmx/agentsuite/testdata/incident-analyst"
+```
+
+The checkout supplies the fixture only; keep using your installed kmx binary.
+No Go build is needed. Run the remaining commands in the same shell and working
+directory so `SUITE` still selects these files.
+
 With the classic Docker image store, the default `docker` builder can reject
 `--output type=oci` with `OCI exporter is not supported for the docker driver.`,
-even with attestations disabled. If you see this error, enable Docker's containerd
-image store, or create a `docker-container` builder and pass its name to KMX:
+even with attestations disabled. The example below explicitly uses a named
+`docker-container` builder. Create it before running that build:
 
 ```sh
 docker buildx create --name kmx-builder --driver docker-container
-# Add --builder kmx-builder to the kmx suite build command below.
+docker buildx inspect kmx-builder
 ```
+
+If `kmx-builder` already exists, inspect it and confirm its driver is
+`docker-container` instead of recreating it. To use another builder, replace
+`kmx-builder` in both the setup and the build's `--builder` flag.
 
 `--builder` selects an existing Buildx builder for this build without changing
 Docker's default builder. When omitted, Docker Buildx uses its existing builder
@@ -140,8 +157,6 @@ but it does not change that host's image store. The load/run example below
 requires Docker's containerd image store.
 
 ```zsh
-SUITE=./internal/kmx/agentsuite/testdata/incident-analyst
-
 kmx suite validate "$SUITE"
 
 read "AZURE_OPENAI_RESOURCE?Azure OpenAI resource name: "
@@ -546,9 +561,14 @@ delegation limits ([bundle format](agent-lift.md#coordination-in-agentyaml)). Us
   unless `--bundle-path` explicitly names a bundle directory. `--no-apply`
   writes an exclusive local rendered artifact. Default artifact file:
   `agents/<name>.yaml`. An existing rendered artifact is never overwritten:
-  an applying create keeps one that is byte-identical to what it renders and
-  refuses, naming the file, one that differs; offline and `--dry-run` refuse any
-  existing file. Input and final YAML reject known credential shapes.
+  an applying create without `--task` keeps one matching every byte except the
+  generated schema-source comment block. The preview's original attribution
+  remains unchanged; online creation still validates against installed CRDs and
+  strict server admission, and reports that distinction on stderr. Any other
+  byte difference, including another comment or whitespace, is refused by name.
+  The comparison is repeated before deployment but does not lock out subsequent
+  concurrent edits. Offline and `--dry-run` refuse any existing file. Input and
+  final YAML reject known credential shapes.
 - When the rendered artifact is written to a file (online creation, offline
   `--no-apply`, or online `--dry-run`), kmx also writes a Git-friendly agent
   bundle at `agents/<name>/` by default, or at `--bundle-path <directory>`.
@@ -568,7 +588,9 @@ delegation limits ([bundle format](agent-lift.md#coordination-in-agentyaml)). Us
   reuse an existing byte-identical bundle; if either file differs, creation
   refuses and names the differing file. A failed deploy leaves the bundle and
   the rendered artifact for retry, and **rerunning the same command is safe**:
-  both are kept when identical, and the cluster side reconciles as below.
+  bundle files must remain byte-identical; the rendered artifact may differ only
+  in its generated schema-source comment block. The cluster side reconciles as
+  below.
   With `--task` the rendered Task name is random, so the old artifact can never
   match: a `--task` rerun refuses it and needs a new `--out` path.
 - Offline defaults to `--schema-target v0.2.0`. Explicit
