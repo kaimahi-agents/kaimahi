@@ -122,15 +122,32 @@ The first image-build backend is intentionally narrow:
 It requires Docker with the buildx plugin. Authenticate Docker to any private
 registry containing the selected harness image before building.
 
+A downloaded kmx binary does not include the example files. With Git installed,
+get the tool-free incident-analyst fixture from the released source into a new
+`kmx-examples` directory:
+
+```sh
+git clone --depth 1 --branch v0.5.0 https://github.com/kaimahi-agents/kaimahi.git kmx-examples
+SUITE="$PWD/kmx-examples/internal/kmx/agentsuite/testdata/incident-analyst"
+```
+
+The checkout supplies the fixture only; keep using your installed kmx binary.
+No Go build is needed. Run the remaining commands in the same shell and working
+directory so `SUITE` still selects these files.
+
 With the classic Docker image store, the default `docker` builder can reject
 `--output type=oci` with `OCI exporter is not supported for the docker driver.`,
-even with attestations disabled. If you see this error, enable Docker's containerd
-image store, or create a `docker-container` builder and pass its name to KMX:
+even with attestations disabled. The example below explicitly uses a named
+`docker-container` builder. Create it before running that build:
 
 ```sh
 docker buildx create --name kmx-builder --driver docker-container
-# Add --builder kmx-builder to the kmx suite build command below.
+docker buildx inspect kmx-builder
 ```
+
+If `kmx-builder` already exists, inspect it and confirm its driver is
+`docker-container` instead of recreating it. To use another builder, replace
+`kmx-builder` in both the setup and the build's `--builder` flag.
 
 `--builder` selects an existing Buildx builder for this build without changing
 Docker's default builder. When omitted, Docker Buildx uses its existing builder
@@ -140,8 +157,6 @@ but it does not change that host's image store. The load/run example below
 requires Docker's containerd image store.
 
 ```zsh
-SUITE=./internal/kmx/agentsuite/testdata/incident-analyst
-
 kmx suite validate "$SUITE"
 
 read "AZURE_OPENAI_RESOURCE?Azure OpenAI resource name: "
