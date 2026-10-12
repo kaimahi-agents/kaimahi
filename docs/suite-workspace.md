@@ -44,14 +44,25 @@ reads are bounded, and credential-shaped content is refused.
 ## Publish
 
 ```sh
-kmx suite push --workspace . ghcr.io/me/my-agents:v1
+kmx suite push ghcr.io/me/my-agents:v1
 ```
+
+With one positional destination reference, push finds the nearest `workspace.yaml`
+by walking up from the current directory, including through Git repository
+boundaries. `--workspace <directory>` overrides discovery and selects that exact
+directory; it never falls back to the current directory or a parent workspace.
+Missing workspaces refuse with a hint to pass `--workspace`. An invalid,
+unreadable, nonregular or symlinked marker also refuses rather than falling back
+to a parent. Help and completion do not resolve workspaces.
 
 The command resolves an allowlisted snapshot into the existing AgentSuite format,
 validates it, prepares a private local OCI layout under KMX state, then copies
 that exact descriptor graph to the registry. It does not re-archive the prepared
-artifact during publication. Output includes the suite digest, a digest-pinned
-registry reference and `Required member images: []`.
+artifact during publication. A single stderr line names the absolute workspace
+path and prepared OCI manifest digest. Result stdout still includes the suite
+digest, a digest-pinned registry reference and `Required member images: []`.
+The manifest digest, not the canonical graph digest, binds authored cases as well
+as member content.
 
 The content includes exact member instructions and authored case files under
 `metadata/kmx/`, plus a versioned native execution declaration. Cases are published
@@ -97,7 +108,7 @@ Unsigned provenance is informational, not evaluation or promotion evidence.
 For offline transfer, the local target's parent directory must exist:
 
 ```sh
-kmx suite push --workspace . --to-layout ../suite-layout my-agents:v1
+kmx suite push --to-layout ../suite-layout my-agents:v1
 kmx suite pull my-agents:v1 --from-layout ../suite-layout --output ../extracted
 kmx suite validate ../extracted
 ```
@@ -109,8 +120,19 @@ index, including extracted-directory pushes. A competing invocation refuses;
 references from successful publications remain intact. An interrupted writer can
 leave a sibling lock directory: remove it only after verifying the publisher has
 stopped. Registry tag preflight remains separately non-atomic.
-Existing extracted-directory transfer remains `suite push DIRECTORY REFERENCE`;
-`--workspace` instead takes only one positional destination reference.
+Existing extracted-directory transfer remains `suite push DIRECTORY REFERENCE`
+and does not discover a workspace. With one reference, explicit selection is
+also available from anywhere:
+
+```sh
+kmx suite push --workspace ./my-agents ghcr.io/me/my-agents:v1
+```
+
+`--workspace` cannot be combined with the two-positional form. Workspace push
+refuses explicit cluster-context and container-engine flags. Other relative
+paths, including `--to-layout`, remain relative to the invocation directory,
+not the discovered workspace root. Creation still requires explicit
+`agent create --workspace`; discovery does not change its default behavior.
 
 Internally, verified packaged native inputs can be loaded without consulting live
 source or the preparation record, and publication can require an expected OCI

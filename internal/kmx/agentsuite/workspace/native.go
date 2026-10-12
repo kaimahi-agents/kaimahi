@@ -92,12 +92,9 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	var w sourceWorkspace
-	if err := strictYAML(wb, &w); err != nil {
-		return nil, fmt.Errorf("workspace.yaml: %w", err)
-	}
-	if w.SchemaVersion != 1 || !namePattern.MatchString(w.Name) || w.Name == "." || w.Name == ".." || w.BuildProfile != "build-profiles/default.json" {
-		return nil, errors.New("unsupported workspace schema/name/build profile")
+	w, err := parseSourceWorkspace(wb)
+	if err != nil {
+		return nil, err
 	}
 	mb, err := read(w.Member)
 	if err != nil {
