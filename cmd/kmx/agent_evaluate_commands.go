@@ -12,6 +12,7 @@ import (
 
 func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 	var opt app.EvaluateAgentBundleOptions
+	var suiteOpt app.EvaluateSuiteWorkspaceOptions
 	cmd := &cobra.Command{
 		Use:   "evaluate <bundle-dir>",
 		Short: "Run a bundle's eval/ cases on Orka or agentsessions and record a receipt",
@@ -34,8 +35,20 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 			"Reference runs print verdicts, IDs and digests only; --show-content explicitly prints answers\n" +
 			"and judge reasoning. Missing/expired/unsupported sources are unknown, never skipped.\n" +
 			"Exits non-zero unless every case passed. Sessions receipts do not satisfy lift gates yet.",
-		Args: usageArgs(1, 1, "kmx agent evaluate <bundle-dir> [--to-context <ctx> | --sessions <host:port>] [--case <id>]"),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("workspace") {
+				if len(args) != 0 {
+					return fmt.Errorf("--workspace does not accept positional bundle arguments")
+				}
+				return nil
+			}
+			return usageArgs(1, 1, "kmx agent evaluate <bundle-dir> [--to-context <ctx> | --sessions <host:port>] [--case <id>]")(cmd, args)
+		},
 	}
+	cmd.Flags().StringVar(&suiteOpt.Workspace, "workspace", "", "authored native suite workspace (no positional bundle argument)")
+	cmd.Flags().StringVar(&suiteOpt.ToNamespace, "to-namespace", "", "explicit native suite destination namespace (workspace mode only)")
+	cmd.Flags().StringVar(&suiteOpt.Inference, "inference", "", "existing read-only provider:NAME binding source (workspace mode only)")
+	cmd.Flags().StringVar(&suiteOpt.Out, "out", "", "new private receipt export outside the workspace/cache (workspace mode only)")
 	// --to-context, not --context, for the same reason as lift and status.
 	cmd.Flags().StringVar(&opt.ToContext, "to-context", "", "destination kubeconfig context (default: the bundle's remembered lift target)")
 	cmd.Flags().StringVar(&opt.Sessions, "sessions", "", "agentsessions host:port with the chat harness (instead of a deployed Orka target)")
@@ -58,11 +71,56 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.Case, "case", "", "run only the case with this id")
 	cmd.Flags().DurationVar(&opt.CaseTimeout, "case-timeout", 0, "time each case may take to reach a readable terminal result (default 5m, max 9m)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "19180", "free loopback port for the temporary result forward")
+	for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "out"} {
+		_ = cmd.RegisterFlagCompletionFunc(name, func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		})
+	}
 	runOrka := appRun(state, func(a *app.App) error {
 		opt.BundleDir = cmd.Flags().Arg(0)
 		return a.EvaluateAgentBundle(opt)
 	})
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("workspace") {
+			if state.contextFlag != "" || cmd.Flags().Changed("context") {
+				return fmt.Errorf("--workspace uses --to-context, not global --context")
+			}
+			for _, name := range []string{"sessions", "sessions-ca", "from-sessions", "source-sessions", "source-sessions-ca"} {
+				if cmd.Flags().Changed(name) {
+					return fmt.Errorf("--%s is not supported with --workspace", name)
+				}
+			}
+			for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "out"} {
+				if !cmd.Flags().Changed(name) {
+					return fmt.Errorf("--workspace requires explicit --%s", name)
+				}
+			}
+			for _, name := range []string{"case", "result-port", "judge-base-url", "judge-key-env"} {
+				value, _ := cmd.Flags().GetString(name)
+				if cmd.Flags().Changed(name) && strings.TrimSpace(value) == "" {
+					return fmt.Errorf("--%s requires a non-empty value", name)
+				}
+			}
+			suiteOpt.ToContext, suiteOpt.Case, suiteOpt.CaseTimeout = opt.ToContext, opt.Case, opt.CaseTimeout
+			suiteOpt.ResultPort, suiteOpt.JudgeBaseURL, suiteOpt.JudgeKeyEnv, suiteOpt.ShowContent = opt.ResultPort, opt.JudgeBaseURL, opt.JudgeKeyEnv, opt.ShowContent
+			if err := app.ValidateEvaluateSuiteWorkspaceOptions(suiteOpt); err != nil {
+				return err
+			}
+			// Resolve configuration at the explicit destination from the outset;
+			// never load a remembered source/bundle target for this mode.
+			state.contextFlag = suiteOpt.ToContext
+			a, err := state.operationApplication(cmd)
+			if err != nil {
+				return err
+			}
+			a.Run.Context = cmd.Context()
+			return a.EvaluateSuiteWorkspace(suiteOpt)
+		}
+		for _, name := range []string{"to-namespace", "inference", "out"} {
+			if cmd.Flags().Changed(name) {
+				return fmt.Errorf("--%s requires --workspace", name)
+			}
+		}
 		for _, name := range []string{"sessions", "sessions-ca", "judge-base-url", "judge-key-env", "from-sessions", "source-sessions", "source-sessions-ca"} {
 			if cmd.Flags().Changed(name) {
 				value, _ := cmd.Flags().GetString(name)

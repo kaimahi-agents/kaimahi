@@ -36,9 +36,24 @@ func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout st
 	if err != nil {
 		return oras.PushResult{}, err
 	}
-	prepared, err := workspace.Prepare(ctx, root, filepath.Join(state, "suites"))
+	// Publication holds the same private exclusion as evaluation selection
+	// through transfer/tagging. An evaluated pin is never replaced by Prepare.
+	writer, err := lockSuiteCandidate(root, state)
 	if err != nil {
 		return oras.PushResult{}, err
+	}
+	defer writer.Close()
+	prepared, err := writer.load(ctx)
+	if err != nil {
+		return oras.PushResult{}, err
+	}
+	if prepared == nil {
+		prepared, err = workspace.Prepare(ctx, root, filepath.Join(state, "suites"))
+		if err != nil {
+			return oras.PushResult{}, err
+		}
+	} else if workspace.CheckCurrent(ctx, root, prepared) != nil {
+		return oras.PushResult{}, suiteCandidateError("workspace changed since candidate selection; rerun evaluation before publication")
 	}
 	var options oras.PushOptions
 	var sourceWarning string
@@ -49,8 +64,11 @@ func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout st
 		}
 		options, sourceWarning = suitePushOptions(ctx, root, provenance, inputs)
 	}
+	if !writer.current() {
+		return oras.PushResult{}, suiteCandidateError("writer exclusion changed before publication")
+	}
 	if err := workspace.CheckCurrent(ctx, root, prepared); err != nil {
-		return oras.PushResult{}, err
+		return oras.PushResult{}, suiteCandidateError("workspace changed before transfer; rerun evaluation before publication")
 	}
 	var result oras.PushResult
 	if layout != "" {
@@ -63,6 +81,11 @@ func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout st
 	}
 	if result.Descriptor.Digest != prepared.Descriptor.Digest {
 		return oras.PushResult{}, fmt.Errorf("publication returned a different prepared suite identity")
+	}
+	// A late release failure may leave publication and a stale lock in place.
+	// Report it without rollback/retry or a misleading saved-success message.
+	if err := writer.Close(); err != nil {
+		return result, err
 	}
 	if sourceWarning != "" && result.Provenance != nil {
 		result.Warnings = append(result.Warnings, sourceWarning)
