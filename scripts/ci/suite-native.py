@@ -547,16 +547,20 @@ class Qualification:
         for mode in ("unmarked", "bundle", "mixed"):
             self.phase = "ownership-" + mode + "-prerequisite"
             changed = self.obj("provider", "native-proof")
-            ann = changed["metadata"].get("annotations", {})
+            original_ann = changed["metadata"].get("annotations", {})
+            ann = original_ann.copy()
             if mode == "unmarked":
                 ann = {k: v for k, v in ann.items() if not k.startswith("kaimahi.dev/suite")}
             else:
                 if mode == "bundle":
                     ann = {k: v for k, v in ann.items() if not k.startswith("kaimahi.dev/suite")}
                 ann["kaimahi.dev/bundle"] = "foreign"
-            changed["metadata"]["annotations"] = ann
             # Own test prerequisite mutation, outside the audited CLI boundary.
-            self.k("replace", "-f", "-", input=canonical(changed))
+            # Guard ownership atomically without racing status-only RV changes.
+            self.k("patch", "provider", "native-proof", "-n", NAMESPACE, "--type=json", "-p", canonical([
+                {"op": "test", "path": "/metadata/uid", "value": provider["metadata"]["uid"]},
+                {"op": "test", "path": "/metadata/annotations", "value": original_ann},
+                {"op": "replace", "path": "/metadata/annotations", "value": ann}]).decode())
             observed = self.obj("provider", "native-proof")
             if observed["metadata"].get("annotations", {}) != ann or observed["metadata"]["uid"] != provider["metadata"]["uid"]:
                 raise ValueError("ownership-prerequisite-not-observed")
@@ -574,8 +578,12 @@ class Qualification:
                 raise ValueError("specific-ownership-refusal-not-observed")
             self.phase = "ownership-" + mode + "-restore-prerequisite"
             current = self.obj("provider", "native-proof")
-            current["metadata"]["annotations"] = provider["metadata"]["annotations"]
-            self.k("replace", "-f", "-", input=canonical(current))
+            if current["metadata"].get("annotations", {}) != ann or current["metadata"]["uid"] != provider["metadata"]["uid"]:
+                raise ValueError("ownership-prerequisite-not-observed")
+            self.k("patch", "provider", "native-proof", "-n", NAMESPACE, "--type=json", "-p", canonical([
+                {"op": "test", "path": "/metadata/uid", "value": provider["metadata"]["uid"]},
+                {"op": "test", "path": "/metadata/annotations", "value": ann},
+                {"op": "replace", "path": "/metadata/annotations", "value": provider["metadata"]["annotations"]}]).decode())
         self.phase = "legacy-create-suite-ownership-refusal"
         before = len(audit.read_bytes())
         legacy = self.cli("--context", CONTEXT, "agent", "create", "native-proof", "--namespace", NAMESPACE, "--provider-type", "openai", "--model", "qwen-3.5-2b", "--secret", "qualification-model-key", "--base-url", self.source["spec"]["baseURL"], "--out", self.work / "legacy.yaml", "--bundle-path", self.work / "legacy", ok=(1,), timeout=120)

@@ -292,6 +292,7 @@ class GuardTests(unittest.TestCase):
                 (["-n", "orka-system", "create", "token", "foreign", "--duration=10m", "-o", "json"], b""),
                 (["-n", "orka-system", "create", "token", "orka-result-reader", "--dry-run=server", "--duration=10m", "-o", "json"], b""),
                 (["-n", "orka-system", "get", "secret", "qualification-model-key", "-o", "json"], b""),
+                (["patch", "provider", "native-proof", "-n", "orka-system", "--type=json", "-p", "[]"], b""),
                 (["-n", "orka-system", "get", "deploy", "--dry-run=server", "-o", "json"], b""),
                 (["-n", "orka-system", "get", "deploy", "-n", "orka-system", "-o", "json"], b""),
                 (["config", "view", "--raw", "-o", "json"], b""),
@@ -495,6 +496,186 @@ class GuardTests(unittest.TestCase):
                 self.assertEqual(qualifier.cleanup(), drift == "none")
                 self.assertEqual(deleted, [identity] if drift in ("none", "late-foreign") else [])
                 self.assertEqual(json.loads((pathlib.Path(directory) / "qualification.json").read_bytes())["qualified"], drift == "none")
+
+    def ownership_api_fixture(self, root, drift="status", at=1):
+        """Run the real ownership loop/exec path; unrelated CLI/Go work is inert."""
+        import json
+        qualifier = self.runner.Qualification(root)
+        original = {"apiVersion": "core.orka.ai/v1alpha1", "kind": "Provider",
+            "metadata": {"name": "native-proof", "namespace": "orka-system", "uid": "owned-provider",
+                "resourceVersion": "1", "annotations": {"kaimahi.dev/suite": "owned", "unrelated": "keep"}},
+            "spec": {"defaultModel": "qwen-3.5-2b"}, "status": {"ready": True, "updates": 0}}
+        state = root / "api.json"
+        state.write_text(json.dumps({"provider": original, "attempts": [], "writes": [], "drift": drift, "at": at}))
+        tool = qualifier.work / "bin/kubectl-real"
+        tool.write_text('#!' + sys.executable + '\n' + '''import copy,json,pathlib,sys
+state_path=pathlib.Path(''' + repr(str(state)) + ''')
+s=json.loads(state_path.read_text())
+a=sys.argv[1:]
+assert a[:2] == ["--context","kind-kmx-suite-native"]
+assert a[2] == "--cache-dir"
+a=a[4:]
+if a[:2] == ["-n","orka-system"]: a=a[2:]
+p=s["provider"]
+if a[:1] == ["get"]:
+    if a[1:3] == ["provider","native-proof"]: print(json.dumps(p))
+    elif a[1:3] == ["provider","qualification-inference"]: print('{"spec":{"baseURL":"http://fixture.invalid/v1"}}')
+    elif a[1:3] == ["agent","native-proof"]: print(json.dumps({"spec":{"systemPrompt":{"inline":"Answer arithmetic questions with only the decimal integer. Do not explain.\\n"}}}))
+    elif a[1:3] == ["secret","qualification-model-key"]: sys.stdout.write("secret-uid:1")
+    else: sys.exit(97)
+    sys.exit(0)
+assert a[0] in ("replace","patch")
+if "--patch-file=-" in a:
+    sys.stderr.write("patch file is not stdin")
+    sys.exit(1)
+body=json.loads(sys.stdin.buffer.read() if a[0] == "replace" else a[-1])
+s["attempts"].append({"args":a,"body":body})
+p["metadata"]["resourceVersion"]=str(int(p["metadata"]["resourceVersion"])+1)
+p["status"]["updates"]+=1
+if len(s["attempts"]) == s["at"]:
+    if s["drift"] == "uid": p["metadata"]["uid"]="foreign-provider"
+    elif s["drift"] == "annotations": p["metadata"]["annotations"]["foreign-owner"]="do-not-adopt"
+before=copy.deepcopy(p)
+if a[0] == "replace":
+    assert a == ["replace","-f","-"]
+    if body["metadata"]["resourceVersion"] != p["metadata"]["resourceVersion"]:
+        state_path.write_text(json.dumps(s))
+        sys.stderr.write("the object has been modified")
+        sys.exit(1)
+    s["provider"]=body
+    s["writes"].append({"before":before,"after":body})
+    state_path.write_text(json.dumps(s))
+    sys.exit(0)
+assert a[:-1] == ["patch","provider","native-proof","-n","orka-system","--type=json","-p"]
+candidate=copy.deepcopy(p)
+for op in body:
+    section,key=op["path"].strip("/").split("/")
+    if op["op"] == "test":
+        if section not in candidate or key not in candidate[section] or candidate[section][key] != op["value"]:
+            s["refusal"]="atomic-test"
+            state_path.write_text(json.dumps(s))
+            sys.stderr.write("atomic prerequisite test refused")
+            sys.exit(1)
+    elif op["op"] == "replace":
+        assert section in candidate and key in candidate[section]
+        candidate[section][key]=op["value"]
+    else: sys.exit(97)
+s["provider"]=candidate
+s["writes"].append({"before":before,"after":candidate})
+state_path.write_text(json.dumps(s))
+''')
+        tool.chmod(0o700)
+        qualifier.source = {"spec": {"baseURL": "http://fixture.invalid/v1"}}
+        qualifier.secret_metadata = b"secret-uid:1"
+        digest = "sha256:" + "a" * 64
+        receipt = {"subject": {"suiteDigest": digest, "requiredImages": []}, "runID": "b" * 32,
+                   "cases": [{"id": "arithmetic", "verdict": "pass"}]}
+        audit = qualifier.work / "audit.jsonl"
+        audit.write_bytes(b"".join(json.dumps({"verb": "create", "dryRun": False, "contextPinned": True,
+            "persistentWrite": True, "kind": kind}).encode() + b"\n" for kind in ("Provider", "Agent", "Task")))
+        def fake_cli(*args, **_kwargs):
+            stdout, stderr = b"", b""
+            if args[:2] == ("agent", "create"):
+                workspace = qualifier.work / "workspace"
+                (workspace / "eval").mkdir(parents=True)
+                (workspace / "eval/case.yaml").write_text("fixture")
+                member = workspace / "agents/native-proof"
+                member.mkdir(parents=True)
+                (member / "instructions.md").write_text("fixture")
+                (member / "member.yaml").write_text('model:\n  model: qwen-3.5-2b\n')
+            elif args[:2] == ("suite", "push"):
+                layout = pathlib.Path(args[args.index("--to-layout") + 1])
+                if layout.name.startswith("drift-"):
+                    return subprocess.CompletedProcess(args, 1, b"", b"rerun evaluation")
+                (layout / "blobs/sha256").mkdir(parents=True)
+                (layout / "blobs/sha256/fixture").write_bytes(b"exact packaged bytes")
+                (layout / "index.json").write_text(json.dumps({"manifests": [{"digest": digest}]}))
+            elif "evaluate" in args:
+                out = pathlib.Path(args[args.index("--out") + 1])
+                if out.name != "receipt.json":
+                    return subprocess.CompletedProcess(args, 1, b"", b"native preparation unavailable; no placement attempted")
+                out.write_text(json.dumps(receipt))
+                history = qualifier.work / ("kmx-home/suite-evidence/runs/eval-" + receipt["runID"] + ".json")
+                stdout = ("arithmetic: pass\nsuite evaluation full: pass\nS: " + digest + "\nrunID: " + receipt["runID"] +
+                    "\nrequiredImages: []\nhistory: " + str(history) + "\nreceipt: " + str(out) + "\n").encode()
+            elif "agent" in args and "create" in args:
+                return subprocess.CompletedProcess(args, 1, b"", b"has suite ownership markers")
+            elif args[:2] not in (("suite", "pull"), ("suite", "validate")):
+                raise AssertionError("unexpected CLI boundary call")
+            return subprocess.CompletedProcess(args, 0, stdout, stderr)
+        qualifier.cli = fake_cli
+        real_run = qualifier.run
+        def fake_verifier(*args, **kwargs):
+            if args[:3] != ("go", "test", "./internal/kmx/app"):
+                return real_run(*args, **kwargs)
+            mode = kwargs["env"].get("KMX_SUITE_NATIVE_REFUSAL")
+            (qualifier.work / ("refused-" + mode + ".json" if mode else "verified.json")).write_text("{}")
+            return subprocess.CompletedProcess(args, 0, b"--- PASS: TestLiveSuiteNativeEvidence\n", b"")
+        qualifier.run = fake_verifier
+        return qualifier, state, original
+
+    def test_ownership_prerequisites_and_restores_ignore_status_churn_without_other_writes(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            qualifier, state, original = self.ownership_api_fixture(pathlib.Path(directory))
+            try:
+                try:
+                    qualifier.qualify()
+                except ValueError:
+                    self.fail("status-only churn blocked ownership prerequisite: " + qualifier.summary.get("reason", "unknown"))
+                observed = json.loads(state.read_text())
+                self.assertTrue(qualifier.summary["qualified"])
+                self.assertEqual(len(observed["attempts"]), 6)
+                self.assertEqual(len(observed["writes"]), 6)
+                self.assertEqual(observed["provider"]["metadata"]["annotations"], original["metadata"]["annotations"])
+                self.assertEqual(observed["provider"]["status"]["updates"], 6)
+                self.assertEqual([w["after"]["metadata"]["annotations"] for w in observed["writes"]], [
+                    {"unrelated": "keep"}, original["metadata"]["annotations"],
+                    {"unrelated": "keep", "kaimahi.dev/bundle": "foreign"}, original["metadata"]["annotations"],
+                    {"kaimahi.dev/suite": "owned", "unrelated": "keep", "kaimahi.dev/bundle": "foreign"},
+                    original["metadata"]["annotations"]])
+                for attempt, write in zip(observed["attempts"], observed["writes"]):
+                    self.assertEqual([op["path"] for op in attempt["body"]],
+                        ["/metadata/uid", "/metadata/annotations", "/metadata/annotations"])
+                    self.assertEqual([op["op"] for op in attempt["body"]], ["test", "test", "replace"])
+                    self.assertEqual(attempt["body"][0]["value"], "owned-provider")
+                    self.assertEqual(attempt["body"][1]["value"], write["before"]["metadata"]["annotations"])
+                    before, after = write["before"], write["after"]
+                    before["metadata"].pop("annotations")
+                    after["metadata"].pop("annotations")
+                    self.assertEqual(before, after, "prerequisite changed more than annotations")
+            finally:
+                qualifier.cleanup()
+
+    def test_ownership_prerequisite_and_restore_refuse_uid_or_annotation_drift_atomically_without_retry(self):
+        import json
+        for drift in ("uid", "annotations"):
+            for at in range(1, 7):
+                mode = ("unmarked", "bundle", "mixed")[(at - 1) // 2]
+                phase = "prerequisite" if at % 2 else "restore-prerequisite"
+                with self.subTest(drift=drift, mode=mode, phase=phase), tempfile.TemporaryDirectory() as directory:
+                    qualifier, state, original = self.ownership_api_fixture(pathlib.Path(directory), drift, at)
+                    try:
+                        with self.assertRaisesRegex(ValueError, "^command-refused$"):
+                            qualifier.qualify()
+                        observed = json.loads(state.read_text())
+                        self.assertEqual(qualifier.phase, "ownership-" + mode + "-" + phase)
+                        self.assertEqual(len(observed["attempts"]), at, "refused prerequisite retried")
+                        self.assertEqual(observed["refusal"], "atomic-test", "unrelated failure accepted as ownership refusal")
+                        self.assertEqual(len(observed["writes"]), at - 1, "failed atomic guard mutated provider")
+                        expected = original if at == 1 else observed["writes"][-1]["after"]
+                        expected["metadata"]["resourceVersion"] = str(at + 1)
+                        expected["status"]["updates"] = at
+                        if drift == "uid":
+                            expected["metadata"]["uid"] = "foreign-provider"
+                        else:
+                            expected["metadata"]["annotations"]["foreign-owner"] = "do-not-adopt"
+                        self.assertEqual(observed["provider"], expected, "foreign object was adopted or restored")
+                        self.assertFalse(qualifier.summary["qualified"])
+                        self.assertEqual(qualifier.summary["reason"], "command-refused")
+                        self.assertNotIn("atomic prerequisite test refused", str(qualifier.summary))
+                    finally:
+                        qualifier.cleanup()
 
     def test_summary_never_retains_receipt_or_model_payload(self):
         receipt = {"subject": {"suiteDigest": "sha256:" + "a" * 64, "requiredImages": []},
