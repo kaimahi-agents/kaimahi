@@ -154,6 +154,11 @@ type orkaStagedResource struct {
 // It returns the Agent's identity so a lifecycle Deploy can name it. A
 // --dry-run create writes nothing and returns a zero identity.
 func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *scaffold.OrkaBundle, artifact func(provenance string) (string, error), resources *[]orkaStagedResource, reconcile *agentruntime.RenderedBundle) (agent orkaIdentity, err error) {
+	for _, doc := range []map[string]any{bundle.Provider, bundle.Agent} {
+		if err := refuseOrkaSuiteDocument(doc); err != nil {
+			return orkaIdentity{}, err
+		}
+	}
 	stage := "Validate schemas and prerequisites"
 	report := func(status string, err error) {
 		if a.operationProgress != nil {

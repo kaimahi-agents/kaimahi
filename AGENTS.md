@@ -38,8 +38,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   lift are not implemented. Create still defaults to live authoring; only explicit
   `--workspace` selects offline authoring. Preserve PortableAgent formats and
   old extracted-directory suite transfer; do not treat public graph validation
-  as native execution-profile validation. Registry workspace publication shares
-  unsigned suite provenance defaults/flags and records Git source only from
+  as native execution-profile validation. Private packaged-native preparation and
+  ownership-safe Provider/Agent placement have no CLI or execution qualification.
+  Any presence of a native suite ownership annotation reserves desired/live
+  resources against legacy adoption, copying, bundle authorization and retirement.
+  Registry workspace publication shares unsigned suite provenance defaults/flags and records Git source only from
   fingerprint-bound authored inputs matching HEAD; local layouts get no referrers.
 - Root `eval` is a helper-only group: offline `eval diff` and recorded-session
   case preparation via `kmx eval from-sessions`; execution stays
