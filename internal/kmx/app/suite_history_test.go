@@ -18,6 +18,27 @@ func suiteOutputFixture(t *testing.T, outName string) (string, string, string) {
 	out := filepath.Join(base, outName)
 	return workspace, state, out
 }
+func TestSuiteHistoryExplicitPrivatePolicyFile(t *testing.T) {
+	s, subject, receipt, policy := suiteEvidenceFixture(t)
+	path := filepath.Join(t.TempDir(), "promotion.json")
+	if err := os.WriteFile(path, mustSuiteCanonical(t, policy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := readSuitePromotionPolicyFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gateSuitePromotion(s, subject, subject, receipt, parsed); err != nil {
+		t.Fatal("explicit private policy did not satisfy its pinned gate")
+	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readSuitePromotionPolicyFile(path); err == nil {
+		t.Fatal("nonprivate operator policy file accepted")
+	}
+}
+
 func TestSuiteHistoryPrivateImmutableAndExport(t *testing.T) {
 	s, sub, r, _ := suiteEvidenceFixture(t)
 	workspace, state, out := suiteOutputFixture(t, "receipt.json")

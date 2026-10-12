@@ -126,9 +126,8 @@ func TestLiveSuiteNativeEvidence(t *testing.T) {
 			}
 		}
 	}
-	policyRaw, err := os.ReadFile(os.Getenv("KMX_SUITE_NATIVE_POLICY"))
-	policy, decodeErr := decodeSuitePromotionPolicy(policyRaw)
-	if err != nil || decodeErr != nil {
+	policy, err := readSuitePromotionPolicyFile(os.Getenv("KMX_SUITE_NATIVE_POLICY"))
+	if err != nil {
 		t.Fatal("explicit operator JSON policy unavailable")
 	}
 	decision, err := gateSuitePromotion(s, plan.Subject, plan.Subject, r, policy)
