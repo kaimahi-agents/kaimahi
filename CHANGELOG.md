@@ -31,6 +31,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   upgrade older strict receipt readers before exchanging these shapes.
   [Offline receipt boundary](docs/agent-lift.md#offline-kagent-receipt-boundary).
 
+- `kmx suite diff` compares extracted or OCI-layout AgentSuites semantically,
+  including supplemental packaged content and artifact identities, with unified,
+  split, and versioned JSON output plus affected-agent reporting. Identity-keyed
+  relationships ignore ordering, output construction is explicitly bounded, and
+  human rendering strips terminal and bidirectional controls.
+
 - `kmx agent create --workspace` authors one native-Orka AgentSuite member offline.
   `kmx suite push --workspace` prepares and publishes its exact OCI graph, including
   authored cases, with no member image build or cluster access. Existing bundle
