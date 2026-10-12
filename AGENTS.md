@@ -22,6 +22,13 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   longer accepts `--interactive`. `kmx targets` is the read-only capability view.
   Plane administration, model overlays, migration and their demo are removed;
   do not restore or regroup their commands.
+- Opt-in `agent create --workspace` authors one tool-free native-Orka suite member
+  offline; `suite push --workspace` copies its exact prepared OCI graph and authored
+  cases. The native member image requirement is empty. Neither command evaluates,
+  deploys, builds images or loads cluster settings. Workspace evaluation/release
+  lift are not implemented. Preserve default create, PortableAgent formats and
+  old extracted-directory suite transfer; do not treat public graph validation
+  as native execution-profile validation.
 - Recorded-session case preparation is `kmx agent eval from-sessions`; execution
   stays `kmx agent evaluate --from-sessions`. Keep reference manifests private,
   require named candidate/judge confirmation before recorded-content transfer,

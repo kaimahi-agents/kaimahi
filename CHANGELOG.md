@@ -22,6 +22,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- `kmx agent create --workspace` authors one native-Orka AgentSuite member offline.
+  `kmx suite push --workspace` prepares and publishes its exact OCI graph, including
+  authored cases, with no member image build or cluster access. Existing bundle
+  commands and suite transfer syntax are unchanged. Workspace evaluation and
+  release lift are not available. [Workspace guide](docs/suite-workspace.md).
+
 ### Fixed
 
 - `kmx targets --detect` accepts kubectl's `kind: List` Deployment responses,

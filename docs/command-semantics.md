@@ -78,6 +78,21 @@ explicit. Help/completion performs no reads, writes or inference. See
 [reference cases and the conservative diff limitation](agent-lift.md#recorded-sessions-as-reference-cases),
 tracked in [#403](https://github.com/kaimahi-agents/kaimahi/issues/403).
 
+## Offline suite workspace
+
+`agent create <name> --workspace <directory> --model <model> --instructions <file>`
+authors one tool-free native-Orka member offline. It accepts optional description,
+refuses live-create selectors and leaves default create/bundle output unchanged.
+No Kubernetes configuration, builder or model call is needed.
+
+`suite push --workspace <directory> <reference>` prepares that member and its
+shareable authored cases as an ordinary AgentSuite, then copies the exact OCI
+manifest/blob graph. Native member image requirements are empty. Registry auth,
+plain-HTTP and non-atomic tag replacement remain as documented. Old
+`suite push <directory> <reference>` retains extracted-artifact transfer behavior.
+Workspace evaluation and reference lift are not implemented; these commands
+create no evaluation or promotion evidence. See [suite workspace](suite-workspace.md).
+
 ## Vocabulary
 
 **Decided: keep Create → Prove → Lift.** Lift is the chosen lifecycle verb for

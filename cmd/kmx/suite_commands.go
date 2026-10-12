@@ -120,12 +120,13 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		return err
 	}
 
-	var target string
+	var target, pushWorkspace string
 	var pushPlainHTTP, pushForce bool
 	push := &cobra.Command{
 		Use:   "push <directory> <reference>",
 		Short: "Push an extracted AgentSuite to an OCI layout or registry",
 		Long: "Push an extracted AgentSuite to an OCI registry, or use --to-layout for a local OCI image layout.\n\n" +
+			"With --workspace <directory>, prepare one native-Orka member and its authored cases, then copy that exact OCI graph. Pass only the destination reference as a positional argument. No member images are required; this does not deploy or evaluate an Agent.\n\n" +
 			"Registry authentication is read from the standard Docker credential store for HTTPS and loopback HTTP.\n" +
 			"With --plain-http, non-loopback registries are unauthenticated; auth challenges are refused.\n" +
 			"Credentials are never sent over HTTP to non-loopback registries or token endpoints.\n\n" +
@@ -133,16 +134,30 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 			"The tag preflight check is NOT ATOMIC against concurrent pushers.",
 		Example: "  kmx suite push ./suite registry.example.com/team:v1\n" +
 			"  kmx suite push ./suite --to-layout ./layout agentsuites/team:v1",
-		Args: usageArgs(2, 2, "kmx suite push <directory> [--to-layout <layout>] [--plain-http] [--force] <reference>"),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("workspace") {
+				if strings.TrimSpace(pushWorkspace) == "" || len(args) != 1 {
+					return fmt.Errorf("workspace push requires non-empty --workspace and exactly one destination reference")
+				}
+				if state.contextFlag != "" {
+					return fmt.Errorf("--context cannot be used with --workspace")
+				}
+				if cmd.Flags().Changed("container-engine") {
+					return fmt.Errorf("--container-engine cannot be used with --workspace")
+				}
+				return nil
+			}
+			return usageArgs(2, 2, "kmx suite push <directory> [--to-layout <layout>] [--plain-http] [--force] <reference>")(cmd, args)
+		},
 	}
+	push.Flags().StringVar(&pushWorkspace, "workspace", "", "prepare and publish the exact native-Orka suite from this workspace")
+	_ = push.MarkFlagDirname("workspace")
 	push.Flags().StringVar(&target, "to-layout", "", "local OCI image-layout target directory")
 	push.Flags().BoolVar(&pushPlainHTTP, "plain-http", false, "use HTTP instead of HTTPS for a registry target")
 	push.Flags().BoolVar(&pushForce, "force", false, "allow replacing a registry tag with a different digest (non-atomic preflight)")
 	_ = push.MarkFlagDirname("to-layout")
 	push.RunE = func(cmd *cobra.Command, args []string) error {
 		a := &app.App{Out: cmd.OutOrStdout()}
-		var result agentsuite.PushResult
-		var err error
 		if cmd.Flags().Changed("to-layout") {
 			if target == "" {
 				return fmt.Errorf("--to-layout cannot be empty")
@@ -153,6 +168,13 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 			if pushForce {
 				return fmt.Errorf("--force cannot be used with --to-layout")
 			}
+		}
+		if cmd.Flags().Changed("workspace") {
+			return a.PushSuiteWorkspace(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce)
+		}
+		var result agentsuite.PushResult
+		var err error
+		if cmd.Flags().Changed("to-layout") {
 			result, err = a.PushSuite(cmd.Context(), args[0], target, args[1])
 		} else {
 			result, err = a.PushSuiteRegistry(cmd.Context(), args[0], args[1], pushPlainHTTP, pushForce)

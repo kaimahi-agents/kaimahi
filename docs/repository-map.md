@@ -49,14 +49,14 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
 | `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 51 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
-| `docs/` | 33 tracked files; native guides, design and history | — | maintainer and process docs |
+| `docs/` | 34 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (41 files) | **Installed** | Explicit context/local entry points and hidden compatibility routes, native agent creation and execution, Orka install/status, quickstart and local setup, guarded AKS lifecycle, interactive console/chat, read-only runtime targets, offline AgentSuite validation and artifact operations, exact kagent v0.10.2 create and explicit v0.10.3 bundle lift/status, Orka bundle lifecycle/evaluation and local-reference replay verification, typed evaluation assertions including explicitly configured two-sample `llmJudge`, multi-UID `agent eval from-sessions` extraction and `agent evaluate --from-sessions` fresh execution, offline v2 receipt comparison across revisions through `agent eval diff` with judge identity/score checks, agent-only replay with unverified judge counts, safe retirement and Task results. Root help describes creating and running agents on Kubernetes; root status reports only Orka. |
+| `cmd/kmx` (43 files) | **Installed** | Explicit context/local entry points and hidden compatibility routes, native agent creation and execution, Orka install/status, quickstart and local setup, guarded AKS lifecycle, interactive console/chat, read-only runtime targets, offline AgentSuite validation and artifact operations, opt-in one-member native workspace authoring and exact prepared-suite publication without images/evaluation/lift, exact kagent v0.10.2 create and explicit v0.10.3 bundle lift/status, Orka bundle lifecycle/evaluation and local-reference replay verification, typed evaluation assertions including explicitly configured two-sample `llmJudge`, multi-UID `agent eval from-sessions` extraction and `agent evaluate --from-sessions` fresh execution, offline v2 receipt comparison across revisions through `agent eval diff` with judge identity/score checks, agent-only replay with unverified judge counts, safe retirement and Task results. Root help describes creating and running agents on Kubernetes; root status reports only Orka. |
 
 ## `agentsuite/` — public specification package
 
@@ -90,8 +90,8 @@ directory has its own row.
 
 ## `internal/` — CLI packages and retained support
 
-`internal/kmx/` is seventeen packages at the top level (twenty-one Go packages
-including nested `runview/orka`, `agentsuite/agentkit`, `agentsuite/oras`, and
+`internal/kmx/` is seventeen packages at the top level (twenty-two Go packages
+including nested `runview/orka`, `agentsuite/agentkit`, `agentsuite/oras`, `agentsuite/workspace`, and
 `app/kubectlfake`).
 The short version counts top-level directories.
 The plane module and image-build helper are absent.
@@ -110,11 +110,12 @@ files or judge cases in the live CLI agent fixture.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 106 | Installed | Command orchestration, native Orka lifecycle and run views, version-bounded kagent v0.10.2 create/v0.10.3 bundle lift/status adapter and online proof, agent bundle persistence, lift/evaluation gates, Sessions evidence and replay verification, strict receipt verification, bounded OpenAI-compatible judge I/O in `agent_bundle_judge.go` with explicit transport/identity and two temperature-zero threshold-side samples, private immutable evaluation run history and offline payload-free receipt diff with judge identity/scores, private atomic reference-manifest append and recorded-input evaluation with named candidate/judge consent and default content suppression, agent-only replay that does not verify judge outcomes, Task execution/results, interactive console and shared chat UI, host inference, native platform operations, guarded cloud setup and historical ownership teardown. The eight kagent non-test files are `create_kagent.go`, `kagent_create_online.go`, `runtime_kagent_lifecycle.go`, `kagent_profile.go` and the four `kagent_bundle_{lift,deploy,receipt,status}.go` files. |
+| `kmx/app` | 107 | Installed | Offline native suite-member creation/publication orchestration, command orchestration, native Orka lifecycle and run views, version-bounded kagent v0.10.2 create/v0.10.3 bundle lift/status adapter and online proof, agent bundle persistence, lift/evaluation gates, Sessions evidence and replay verification, strict receipt verification, bounded OpenAI-compatible judge I/O in `agent_bundle_judge.go` with explicit transport/identity and two temperature-zero threshold-side samples, private immutable evaluation run history and offline payload-free receipt diff with judge identity/scores, private atomic reference-manifest append and recorded-input evaluation with named candidate/judge consent and default content suppression, agent-only replay that does not verify judge outcomes, Task execution/results, interactive console and shared chat UI, host inference, native platform operations, guarded cloud setup and historical ownership teardown. The eight kagent non-test files are `create_kagent.go`, `kagent_create_online.go`, `runtime_kagent_lifecycle.go`, `kagent_profile.go` and the four `kagent_bundle_{lift,deploy,receipt,status}.go` files. |
 | `kmx/agentsessions` | 6 | Installed | Read-only bounded Sessions availability probe, Sessions gRPC evaluation and read-only replay adapters, verified remote TLS transport and syntactic destination comparison, per-case chat execution, journal evidence projection, ephemeral invocation name/count correlation (20,000 records, 64 MiB, 256 pending calls) and bounded offline reference-chat reconstruction, strict single-read reference extraction/resolution without source payload persistence. Correlation is not tool capability: production tool assertions always remain unknown. No daemon startup, tool enablement, host implementation attestation, descriptor discovery or lift-gate integration. |
 | `kmx/agentsuite` | 8 | Installed | Builder-owned sandbox binding, bounded OCI image-archive metadata parsing, digest and attestation inspection, provider-neutral sandbox build planning, and provider-neutral packing, CAS, and artifact push/pull contracts; portable format validation remains in the public AgentSuite package. |
 | `kmx/agentsuite/agentkit` | 2 | Installed | Experimental AgentKit adapter for the provider-neutral sandbox builder contract; generates input for a digest-pinned AgentKit frontend, invokes the selected Docker buildx builder with the monolithic harness adapter, requests SBOM/provenance attestations where supported, and streams an OCI image-layout tar to App for inspection before publication while explicitly reporting that the runtime base is not composed. |
-| `kmx/agentsuite/oras` | 6 | Installed | ORAS-backed deterministic directory push, validated directory extraction, manifest construction, validation materialization, target-bound artifact push/pull, and remote repository binding through the Docker credential store; registry configuration, authentication, and transport policy remain outside the portable AgentSuite contracts. |
+| `kmx/agentsuite/oras` | 7 | Installed | Exact prepared-layout graph publication, ORAS-backed deterministic directory push, validated directory extraction, manifest construction, validation materialization, target-bound artifact push/pull, and remote repository binding through the Docker credential store; registry configuration, authentication, and transport policy remain outside the portable AgentSuite contracts. |
+| `kmx/agentsuite/workspace` | 4 | Installed | Closed one-member native-Orka workspace authoring, bounded confined source/case snapshotting, existing public-format resolution and strict native metadata, private atomic prepared OCI layouts and digest-verified reuse. Embedded real build-profile descriptors remain declared build inputs, not native member images. No builder, inference or cluster operations. |
 | `kmx/agentsuite/schema` | 1 | Checkout | Builder-owned Agent sandbox-binding schema; published with the source checkout, not embedded in or loaded by the binary. |
 | `kmx/agentsuite/testdata/incident-analyst` | 1 | Scaffolding | Internal builder-owned realistic, buildable incident-response example with real digest-pinned Linux amd64 image inputs; not a portable conformance fixture. |
 | `kmx/agentsuite/testdata/incident-analyst/agents` | 1 | Scaffolding | Tool-free incident analyst targeting an Azure OpenAI deployment named gpt-5-mini. |
@@ -255,12 +256,12 @@ validators, complete metadata frames/effective dry-run, all five specific negati
 calls through the actual qualifier and classifier/aggregator truth tables.
 None of these files is embedded or installed.
 
-## `docs/` — 33 tracked files, native guides and design/history
+## `docs/` — 34 tracked files, native guides and design/history
 
-**Guides and index (14):** `README.md`, `getting-started.md`, `kmx.md`,
+**Guides and index (15):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `releases.md`, `FAQ.md`, `orka.md`,
 `copilot-inference.md`, `interactive-chat.md`, `interactive-lift.md`,
-`orka-k8s-tool.md`, `bundle-format.md` and `runtime-adapters.md`.
+`orka-k8s-tool.md`, `bundle-format.md`, `runtime-adapters.md` and `suite-workspace.md`.
 
 **Maintainer and process (19):** `development.md`, `repository-map.md`,
 `entry-point-principles.md`,

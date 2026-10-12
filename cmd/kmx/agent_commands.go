@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 )
 
@@ -61,6 +62,7 @@ chat resolves against.`,
 
 func newAgentCreateCommand(state *commandState) *cobra.Command {
 	var opt app.CreateOptions
+	var workspaceRoot string
 	cmd := &cobra.Command{
 		Use:   "create [name]",
 		Short: "Create an Orka or kagent declarative Agent",
@@ -73,6 +75,11 @@ With --out -, explicitly set --bundle-path to also write an authored bundle.
 Omit the name for guided Orka creation in a terminal; kagent creation requires a name.
 Select explicitly the namespace the runtime controller watches. Provider type, model
 identifier and a separately provisioned Secret are required.
+With --workspace <directory>, named creation instead authors one native-Orka suite
+member offline. Only --model, --instructions (file) and --description are accepted;
+no cluster settings are loaded, no image is built and no Agent is deployed.
+Workspace evaluation and release lift are not yet available.
+
 This command does not build or deploy application images. Keep your Deployment
 or chart. Interactive agent chat and kmx agent list are Orka-only.
 
@@ -123,6 +130,8 @@ also capture Service-proxy request and response bodies.`,
     --provider-type openai --model qwen2.5:3b --secret local-provider-key \
     --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out - --bundle-path agents/preview`,
 	}
+	cmd.Flags().StringVar(&workspaceRoot, "workspace", "", "author one native-Orka suite member in this workspace, offline")
+	_ = cmd.MarkFlagDirname("workspace")
 	cmd.Flags().StringVar(&opt.Runtime, "runtime", "orka", "agent runtime: orka or kagent")
 	cmd.Flags().StringVar(&opt.KagentRuntime, "kagent-runtime", "go", "kagent declarative runtime: go or python")
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "explicit target namespace; the selected runtime controller must watch it (required)")
@@ -158,6 +167,18 @@ also capture Service-proxy request and response bodies.`,
 	_ = cmd.RegisterFlagCompletionFunc("provider-type", staticCompletion([]string{"openai", "anthropic", "azure-openai"}))
 	_ = cmd.RegisterFlagCompletionFunc("schema-target", staticCompletion([]string{"v0.2.0", "v0.1.3", "main"}))
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("workspace") {
+			if strings.TrimSpace(workspaceRoot) == "" || len(args) != 1 {
+				return fmt.Errorf("workspace creation requires a name and non-empty --workspace directory")
+			}
+			if err := validateWorkspaceCreateFlags(cmd, state); err != nil {
+				return err
+			}
+			if strings.TrimSpace(opt.Model) == "" || strings.TrimSpace(opt.Instructions) == "" {
+				return fmt.Errorf("workspace creation requires --model and --instructions <file>")
+			}
+			return nil
+		}
 		if strings.TrimSpace(opt.Runtime) != opt.Runtime {
 			return fmt.Errorf("--runtime must be exactly orka or kagent")
 		}
@@ -189,13 +210,22 @@ also capture Service-proxy request and response bodies.`,
 		}
 		return nil
 	}
-	cmd.RunE = appRun(state, func(a *app.App) error {
+	runNative := appRun(state, func(a *app.App) error {
 		if opt.Runtime == "orka" && len(cmd.Flags().Args()) == 0 {
 			return a.CreateAgentInteractive(opt)
 		}
 		opt.Name = cmd.Flags().Arg(0)
 		return a.CreateAgent(opt)
 	})
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("workspace") {
+			a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
+			return a.CreateSuiteMember(cmd.Context(), workspaceRoot, workspace.CreateOptions{
+				Name: args[0], Description: opt.Description, Model: opt.Model, InstructionsFile: opt.Instructions,
+			})
+		}
+		return runNative(cmd, args)
+	}
 	return cmd
 }
 

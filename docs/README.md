@@ -13,6 +13,7 @@ or comparing implementations.
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Author an agent: default native Orka, or explicit create for preinstalled exact Kagent v0.10.2 | [Native Orka create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-agent-create) |
 | Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](../agentsuite/spec.md) |
+| Author and publish one native-Orka suite member offline, without member images | [Suite workspace](suite-workspace.md) |
 | Discover models and configure native inference | [Models](models.md), [Copilot inference](copilot-inference.md), [Foundry inference](local-foundry-inference.md) |
 | Chat with an existing Orka Agent | [Interactive chat](interactive-chat.md) |
 | Lift/status on prepared Orka or explicit exact-v0.10.3 targets; run/evaluate/verify/retire on supported profiles | [Bundle lifecycle](agent-lift.md) |
