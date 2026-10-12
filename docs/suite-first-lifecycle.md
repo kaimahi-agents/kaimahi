@@ -59,7 +59,7 @@ Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/
 
 ## Explicit decisions
 
-- `suite push` produces the suite, every required member image, and an immutable link between them.
+- `suite push` produces the suite and every member image the selected execution path needs (none for native-Orka declarative members), with an immutable link to each.
 - Lift from a registry reference is deploy-only: no builder and no registry push credentials; missing images cause refusal, not an implicit build.
 - `lift .` is a convenience using the same identities and planning, not a second deployment engine.
 - A model binding chosen at lift changes the deployment and evaluation subject even when suite and images are unchanged.
