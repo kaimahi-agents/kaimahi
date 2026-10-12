@@ -14,10 +14,11 @@ import (
 // and deploys into a preinstalled Kagent; it does not add Kagent discovery or
 // chat behavior to the existing runtime registry.
 type kagentRuntimeAdapter struct {
-	app      *App
-	create   *CreateOptions
-	bindings *agentruntime.KagentBindings
-	lift     *kagentLiftOperation
+	app        *App
+	create     *CreateOptions
+	bindings   *agentruntime.KagentBindings
+	lift       *kagentLiftOperation
+	evaluation *kagentEvaluationOperation
 }
 
 var _ agentruntime.LifecycleAdapter = kagentRuntimeAdapter{}
@@ -34,7 +35,7 @@ func (kagentRuntimeAdapter) Open(context.Context, agentruntime.Target) (agentrun
 
 func (a kagentRuntimeAdapter) Capabilities() agentruntime.Capabilities {
 	configured := (a.create != nil || a.lift != nil) && a.bindings != nil
-	return agentruntime.Capabilities{Render: configured, Deploy: configured, Status: a.lift != nil && a.bindings != nil}
+	return agentruntime.Capabilities{Render: configured, Deploy: configured, Status: a.lift != nil && a.bindings != nil, Evaluate: a.evaluation != nil && configured}
 }
 
 func (kagentRuntimeAdapter) ConsumedExtensions() []agentruntime.ID {
@@ -130,8 +131,11 @@ func (a kagentRuntimeAdapter) Status(ctx context.Context, ref agentruntime.Agent
 	return a.app.kagentBundleStatus(ctx, ref, opt)
 }
 
-func (a kagentRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
-	return agentruntime.EvaluationReceipt{}, &agentruntime.UnsupportedVerbError{Runtime: a.ID(), Verb: agentruntime.VerbEvaluate}
+func (a kagentRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.AgentRef, request agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
+	if err := a.lifecycleVerbError(a.Capabilities().Evaluate, agentruntime.VerbEvaluate); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	return a.evaluateKagentCase(ctx, ref, request)
 }
 
 func kagentBundleFromRendered(rendered agentruntime.RenderedBundle) (*scaffold.KagentBundle, error) {

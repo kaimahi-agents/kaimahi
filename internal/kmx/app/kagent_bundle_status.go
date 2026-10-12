@@ -140,6 +140,12 @@ func kagentEvidenceState(err error) string {
 }
 
 func (a *App) kagentBundleStatus(ctx context.Context, ref agentruntime.AgentRef, opt agentruntime.StatusOptions) (agentruntime.Status, error) {
+	return a.observeKagentBundleStatus(ctx, ref, opt, nil)
+}
+
+// Evaluation consumes the evidence from the same checks as public Status.
+// Legacy callers keep their error-only acceptance of mixed qualified replicas.
+func (a *App) observeKagentBundleStatus(ctx context.Context, ref agentruntime.AgentRef, opt agentruntime.StatusOptions, observed *kagentEvaluationObservation) (agentruntime.Status, error) {
 	result := agentruntime.Status{Agent: ref}
 	finish := func(state, detail string) (agentruntime.Status, error) {
 		result.Fields = append(result.Fields, agentruntime.Field{Label: "state", Value: state}, agentruntime.Field{Label: "detail", Value: detail})
@@ -164,6 +170,9 @@ func (a *App) kagentBundleStatus(ctx context.Context, ref agentruntime.AgentRef,
 	service, err := a.preflightKagentInstallation(ctx, runtimeName, ref.Namespace)
 	if err != nil {
 		return finish("unreadable", "exact installed runtime qualification could not be proven")
+	}
+	if observed != nil && service.AuthMode != "unsecure" {
+		return finish("unreadable", "Kagent evaluation requires literal AUTH_MODE unsecure; trusted-proxy refused")
 	}
 	clusterUID, err := a.kagentClusterUID(ctx)
 	if err != nil {
@@ -256,7 +265,8 @@ func (a *App) kagentBundleStatus(ctx context.Context, ref agentruntime.AgentRef,
 			return finish(state, detail)
 		}
 	}
-	workload, err := a.kagentLiftWorkload(ctx, ref.Namespace, identities[1])
+	var images []kagentEvaluationImage
+	workload, err := a.observeKagentLiftWorkload(ctx, ref.Namespace, identities[1], &images)
 	if err != nil {
 		return finish(kagentEvidenceState(err), "owned workload readiness or identity could not be proven")
 	}
@@ -276,8 +286,20 @@ func (a *App) kagentBundleStatus(ctx context.Context, ref agentruntime.AgentRef,
 			return finish(state, detail)
 		}
 	}
-	if err = a.reverifyKagentPlatformAndCluster(ctx, service, clusterUID); err != nil {
+	var current kagentControllerService
+	if err = a.observeKagentPlatformAndCluster(ctx, service, clusterUID, &current); err != nil {
 		return finish("unreadable", "runtime or cluster changed during observation")
+	}
+	if observed != nil {
+		platform, err := kagentObservedEvaluationPlatform(a.selectedKagentProfile(), service, images)
+		final, finalErr := kagentObservedEvaluationPlatform(a.selectedKagentProfile(), current, images)
+		if err != nil || finalErr != nil || !reflect.DeepEqual(platform, final) {
+			return finish("unreadable", "mixed or changed qualified platform observations cannot bind evaluation")
+		}
+		if err = a.verifyKagentAgentCard(ctx, current, ref.Namespace, ref.Name); err != nil {
+			return finish("unreadable", "qualified AgentCard unavailable")
+		}
+		observed.Service, observed.Platform = current, platform
 	}
 	if expected == nil {
 		return finish("failed", "unbound: no complete selected-target deployment receipt; live readiness is not a saved deployment")

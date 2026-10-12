@@ -24,6 +24,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Explicit `kmx agent evaluate --runtime kagent --runtime-version v0.10.3`
+  runs authored cases against a receipt-bound Go placement, with desired
+  bindings and `--to-context`. Each case sends one fresh blocking A2A Task;
+  ambiguous sends are never retried, and lost attribution stops later sends.
+  auth: unsecure only, trusted-proxy refused. Python and promotion gates remain
+  unsupported; tool assertions stay unknown. The existing kind shard qualifies
+  product evaluation, fresh IDs, exact answer digests and repeat offline diff.
+  [Go evaluation and retention](docs/agent-lift.md#evaluating-exact-v0103-go-kagent).
+
 - `kmx suite push <reference>` finds the nearest ancestor `workspace.yaml` and
   publishes its prepared one-member native-Orka suite. `--workspace` overrides
   discovery without fallback. Workspace pushes print the absolute source path
@@ -34,7 +43,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `kmx agent eval diff` reads strict v2 receipts for exact-v0.10.3 Go kagent
   evaluations offline, with native A2A and deployment identity checks. Valid
   kagent receipts do not affect Orka gate/status selection and cannot satisfy an
-  Orka lift gate. kagent execution and promotion gates remain unsupported;
+  Orka lift gate. Promotion gates remain unsupported;
   upgrade older strict receipt readers before exchanging these shapes.
   [Offline receipt boundary](docs/agent-lift.md#offline-kagent-receipt-boundary).
 
@@ -69,7 +78,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - `kmx targets` describes the dedicated continuous Go kagent v0.10.3 lift/status
   qualification and its separate one-shot native A2A MCP proof. Supported
-  operations and Python's render-only boundary are unchanged.
+  operations now separately include the explicit Go evaluation above;
+  Python remains render-only.
 
 ### Breaking
 

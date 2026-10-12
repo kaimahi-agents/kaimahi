@@ -75,7 +75,7 @@ func TestTargetsOfflineDoesNotLoadConfigOrTools(t *testing.T) {
 					if !capability.Supported && capability.Reason == "" {
 						t.Fatalf("unexplained refusal: %+v", capability)
 					}
-					if want == "kagent" && capability.Supported && capability.Operation != "render" && capability.Operation != "deploy" && capability.Operation != "status" {
+					if want == "kagent" && capability.Supported && capability.Operation != "render" && capability.Operation != "deploy" && capability.Operation != "status" && capability.Operation != "evaluate" {
 						t.Fatalf("expanded Kagent support: %+v", capability)
 					}
 					if want == "kagent" && capability.Supported && capability.Operation == "status" && (!strings.Contains(capability.Reason, "v0.10.3 Go-only") || !strings.Contains(capability.Reason, "readiness")) {

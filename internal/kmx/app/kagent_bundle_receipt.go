@@ -107,7 +107,18 @@ func lockKagentLift(bundle *os.File) (func(), error) {
 	return func() { _ = unix.Unlinkat(int(bundle.Fd()), kagentLiftLock, unix.AT_REMOVEDIR) }, nil
 }
 
+type kagentReceiptSnapshot struct {
+	Raw          []byte
+	Parent, File os.FileInfo
+}
+
 func readKagentLiftReceiptAt(bundleDir *os.File, name string, target agentruntime.DeployTarget, clusterUID, bundle string) (*agentruntime.DeployReceipt, error) {
+	return readKagentLiftReceiptEvidenceAt(bundleDir, name, target, clusterUID, bundle, nil)
+}
+
+// Keep the validated original bytes and descriptor identities for evaluation,
+// rather than hashing a reserialized receipt or permitting identical replacement.
+func readKagentLiftReceiptEvidenceAt(bundleDir *os.File, name string, target agentruntime.DeployTarget, clusterUID, bundle string, snapshot *kagentReceiptSnapshot) (*agentruntime.DeployReceipt, error) {
 	dir, err := openKagentReceiptDir(bundleDir, false)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -158,6 +169,13 @@ func readKagentLiftReceiptAt(bundleDir *os.File, name string, target agentruntim
 		if p.Namespace != target.Namespace || p.Name == "" || p.UID == "" || p.ResourceVersion == "" || (p.Kind != "Secret" && p.Kind != "ConfigMap" && p.Kind != "RemoteMCPServer") || (p.Kind == "RemoteMCPServer" && !validOrkaMarkerDigest(p.SpecDigest)) {
 			return nil, fmt.Errorf("Kagent receipt dependency identity is incomplete")
 		}
+	}
+	if snapshot != nil {
+		parent, err := dir.Stat()
+		if err != nil {
+			return nil, err
+		}
+		*snapshot = kagentReceiptSnapshot{Raw: raw, Parent: parent, File: info}
 	}
 	return &r, nil
 }

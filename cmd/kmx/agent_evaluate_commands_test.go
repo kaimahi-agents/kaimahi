@@ -102,6 +102,32 @@ func TestAgentEvaluateSessionsBypassesClusterConfiguration(t *testing.T) {
 	}
 }
 
+func TestAgentEvaluateKagentSelectors(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--runtime", "kagent"}, "--runtime-version v0.10.3"},
+		{[]string{"--runtime", "kagent", "--runtime-version", "v0.10.2"}, "--runtime-version v0.10.3"},
+		{[]string{"--runtime", "kagent", "--runtime-version", "v0.10.3", "--sessions", "127.0.0.1:8080"}, "cannot be combined"},
+		{[]string{"--runtime", "kagent", "--runtime-version", "v0.10.3", "--result-port", "19180"}, "--result-port is only for Orka"},
+		{[]string{"--runtime", "kagent", "--runtime-version", ""}, "--runtime-version requires a non-empty"},
+		{[]string{"--runtime", "kagent", "--bindings", ""}, "--bindings requires a non-empty"},
+		{[]string{"--runtime-version", "v0.10.3"}, "require explicit --runtime kagent"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			out := &bytes.Buffer{}
+			cmd := newAgentEvaluateCommand(&commandState{app: &app.App{Out: out}})
+			cmd.SetOut(out)
+			cmd.SetErr(out)
+			cmd.SetArgs(append([]string{"unused-bundle"}, tc.args...))
+			if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func TestAgentEvaluateSessionsDoesNotUseDefaultOrkaPort(t *testing.T) {
 	cmd := newAgentEvaluateCommand(&commandState{app: &app.App{Out: &bytes.Buffer{}}})
 	cmd.SetArgs([]string{filepath.Join(t.TempDir(), "absent"), "--sessions", "127.0.0.1:8080"})

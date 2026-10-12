@@ -8,8 +8,9 @@ read-only plan before invoking this operation. A separately confirmed
 before retrying the checks; bundle lift itself never installs them.
 Orka remains the default. Explicit exact-v0.10.3 declarative bundle lift/status
 is a separate [kagent path](#exact-v0103-declarative-bundle-placement).
-kagent create receipts do not authorize reuse by that path. Evaluation, console
-bundle actions and interactive `/lift` remain Orka-only.
+kagent create receipts do not authorize reuse by that path. Explicit
+[Go evaluation](#evaluating-exact-v0103-go-kagent) uses the saved v0.10.3
+placement. Console bundle actions and interactive `/lift` remain Orka-only.
 
 ```console
 kmx agent lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--require-evaluated <context>] [--override-gate "reason"] [--plan]
@@ -90,8 +91,9 @@ this history and continue to read historical runtime-less Orka receipts.
 Read-only status distinguishes absent, unreadable, failed readiness, ready and
 drift. Pending or stale conditions are not ready; inspection without a saved
 receipt is unbound and cannot certify a saved deployment. Status never sends a
-message or records execution success. Standalone run/chat/eval, updates,
-retirement, diff and rollback remain unsupported. Dedicated CI continuously
+message or records execution success. Standalone run/chat, updates,
+retirement, native resource diff and rollback remain unsupported; bundle
+evaluation requires the explicit Go profile below. Dedicated CI continuously
 qualifies Go plan/lift/repeat/status/conflicts and independently sends one native
 A2A message against a keyless model/MCP fixture: one actual tool call, two model
 calls and one terminal answer. Deployment receipts remain readiness-only;
@@ -727,6 +729,54 @@ a full-case gate, even when the bundle has only one case.
 Evaluate is a gate: it exits non-zero unless every case passed, including when
 any case is `unknown`.
 
+## Evaluating exact-v0.10.3 Go kagent
+
+```bash
+kmx agent evaluate agents/reviewer --runtime kagent --runtime-version v0.10.3 \
+  --to-context target-context --bindings target-bindings.yaml
+```
+
+auth: unsecure only, trusted-proxy refused
+
+Evaluation requires an already installed exact v0.10.3 controller, a Go
+Agent, desired `KagentBindings` and a complete matching saved lift receipt.
+Python is refused. Repeat external bindings explicitly; `--to-namespace`,
+if supplied, must agree with them. No runtime/context inference or repair
+occurs. Default Orka and `--sessions` behavior are unchanged; session/reference
+flags and `--result-port` cannot be combined with kagent evaluation.
+
+Each case sends **one fresh blocking A2A Task**, with new request/message IDs
+and no previous Task/context in the request. No resend, result polling,
+resume or cancel follows an ambiguous response or timeout. `--case <id>`
+selects one case; the receipt marks that run as a partial case set.
+`--case-timeout` covers execution, attribution checks and judging.
+
+Before sending and after the response, KMX rechecks source, bindings, the
+complete case set, saved deployment evidence, target identities/readiness,
+dependencies and qualified controller/ADK images. A changed or unreadable
+binding makes the result unknown and stops later sends; remaining cases are
+recorded unknown rather than skipped. Native failed/canceled/rejected Tasks
+count as failure only while still attributable. A completed Task must contain
+one final text-bearing artifact; malformed, multiple-answer, direct Message
+and nonterminal replies are unknown. Assertions and answer SHA-256 use the
+exact decoded text. Answers print only after attribution is established;
+receipts retain IDs, verdicts and digests, never payloads.
+
+`contains`, `notContains`, RE2 `regex` and explicitly configured two-sample
+`llmJudge` reuse the existing assertion contracts. Judge transfer happens only
+after attributable completion. Tool assertions remain **unknown**, even when
+upstream structured events contain tool calls. Full prompts, answers and tool
+history are retained by kagent's database; upstream retention defaults to
+unlimited, and Service-proxy audit policy may retain request/response bodies.
+The destination guard discloses this before sending; keep receipts private.
+
+Passing receipts support offline `agent eval diff`, not promotion:
+kagent lift still refuses `lift-policy.yaml`, `--require-evaluated` and
+`--override-gate`. Orka gate/status selection excludes kagent evidence.
+The existing `e2e-kagent-lift` kind shard qualifies product evaluation,
+fresh native identities, exact answer digests, repeat diff and selected-case
+markers independently of deployment readiness.
+
 ## Evaluating on agentsessions
 
 ```console
@@ -1029,8 +1079,9 @@ namespace. Valid kagent latest evidence is excluded from Orka status and lift
 gates; malformed evidence still refuses a scanned gate. A kagent receipt never
 satisfies an Orka promotion requirement.
 
-**Offline reading is not execution support.** `kmx agent evaluate` does not yet
-run cases on kagent, and kagent lift still refuses evaluation gate flags and
+Receipt reading alone does not authorize execution or promotion.
+[Explicit Go evaluation](#evaluating-exact-v0103-go-kagent) requires a bound
+placement; kagent lift still refuses evaluation gate flags and
 `lift-policy.yaml`. Python, replay verification and cross-runtime comparison
 remain unsupported. Since kagent lift cannot update an Agent in place, diff
 across a replacement deployment is incompatible, not a revision regression.
