@@ -296,10 +296,10 @@ func orkaArtifactDiffersError(path string, task bool) error {
 
 // preflightOrkaArtifact refuses an existing artifact before anything is
 // written. documents, when set, are the rendered documents of a rerunnable
-// (applying) create, which may keep an existing artifact identical to what it
-// renders. The installed schema's provenance is not known until the cluster is
-// read, so the existing header's provenance stands in here, and the final
-// byte comparison happens again at emission.
+// (applying) create, which may keep an existing artifact matching every byte
+// except the generated schema-source block. Installed validation remains an
+// online gate; emission rechecks the artifact but does not lock it against
+// subsequent edits.
 func preflightOrkaArtifact(opt CreateOptions, documents [][]byte) error {
 	if opt.Out == "-" {
 		return nil
@@ -322,12 +322,8 @@ func preflightOrkaArtifact(opt CreateOptions, documents [][]byte) error {
 	if err != nil {
 		return err
 	}
-	provenance, ok := orkaArtifactProvenance(string(existing))
-	if !ok {
-		return orkaArtifactDiffersError(path, false)
-	}
-	document, err := scaffold.OrkaArtifact(provenance, documents)
-	if err != nil || document != string(existing) {
+	document, err := scaffold.OrkaArtifact("", documents)
+	if err != nil || !orkaArtifactsMatch(string(existing), document) {
 		return orkaArtifactDiffersError(path, false)
 	}
 	return nil
@@ -359,30 +355,53 @@ func orkaArtifactProvenance(artifact string) (string, bool) {
 	return strings.Join(lines, "\n"), true
 }
 
+// orkaArtifactsMatch exempts only the generated schema-source block. Require
+// the complete generated header on both artifacts before comparing the exact
+// document bytes, so other comments, whitespace and content remain collisions.
+func orkaArtifactsMatch(existing, document string) bool {
+	body := func(artifact string) (string, bool) {
+		provenance, ok := orkaArtifactProvenance(artifact)
+		if !ok {
+			return "", false
+		}
+		header, err := scaffold.OrkaArtifact(provenance, nil)
+		if err != nil {
+			return "", false
+		}
+		return strings.CutPrefix(artifact, header)
+	}
+	existingBody, existingOK := body(existing)
+	documentBody, documentOK := body(document)
+	return existingOK && documentOK && existingBody == documentBody
+}
+
 func (a *App) emitOrka(opt CreateOptions, document string) error {
 	return a.emitOrkaArtifact(opt, document, false)
 }
 
-// emitOrkaArtifact writes the artifact exclusively. keepIdentical lets a
-// rerunnable create keep an existing regular file whose bytes are exactly
-// this document; any other existing file is refused and left unchanged.
-func (a *App) emitOrkaArtifact(opt CreateOptions, document string, keepIdentical bool) error {
+// emitOrkaArtifact writes the artifact exclusively. keepMatching lets a
+// rerunnable create keep an existing regular file matching this document
+// except its generated schema-source block; the file is never rewritten.
+func (a *App) emitOrkaArtifact(opt CreateOptions, document string, keepMatching bool) error {
 	if opt.Out == "-" {
 		_, err := fmt.Fprint(a.Out, document)
 		return err
 	}
 	path := orkaArtifactPath(opt)
-	if keepIdentical {
+	if keepMatching {
 		if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
-			if existing, err := os.ReadFile(path); err == nil && string(existing) == document {
+			if existing, err := os.ReadFile(path); err == nil && orkaArtifactsMatch(string(existing), document) {
 				a.notef("kept %s; it matches this render", path)
+				if string(existing) != document {
+					a.notef("original schema-source comment retained; this invocation validated against installed CRDs and server admission")
+				}
 				return nil
 			}
 		}
 	}
 	if err := scaffold.WriteNew(path, document); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			if keepIdentical || opt.Task != "" && !opt.NoApply && !opt.DryRun {
+			if keepMatching || opt.Task != "" && !opt.NoApply && !opt.DryRun {
 				return orkaArtifactDiffersError(path, opt.Task != "")
 			}
 			return orkaArtifactExistsError(path)

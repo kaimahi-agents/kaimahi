@@ -24,6 +24,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- Applying `kmx agent create` without a Task can reuse its offline preview when
+  only the generated schema-source comment differs. The preview stays unchanged;
+  every other byte difference still refuses reuse, and online schema/admission
+  checks remain required.
+
+### Fixed
+
 - `kmx targets --detect` accepts kubectl's `kind: List` Deployment responses,
   reporting empty lists as absent and labelled controllers as present. Malformed
   responses and failed reads remain unreadable and exit nonzero.
