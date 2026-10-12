@@ -22,11 +22,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+## v0.5.1 — 2026-10-12
+
 ### Fixed
 
-- `kmx targets --detect` accepts kubectl's `kind: List` Deployment responses,
-  reporting empty lists as absent and labelled controllers as present. Malformed
-  responses and failed reads remain unreadable and exit nonzero.
+- `kmx targets --detect` accepts kubectl `List` Deployment responses, reporting empty lists as absent and labelled controllers as present.
+  Malformed responses and failed reads remain unreadable and exit nonzero. [Target detection](docs/runtime-adapters.md#read-only-target-view) ([#429](https://github.com/kaimahi-agents/kaimahi/pull/429)).
+
+- Homebrew formula tests check the binary's version instead of help prose; the release workflow runs the generated test before publication. [Formula test fix](https://github.com/kaimahi-agents/kaimahi/pull/426).
+
+- Orka lift-prerequisite recovery commands preserve and safely quote the selected destination context.
+  Prerequisite checks and installation defaults are unchanged. [Recovery advice](https://github.com/kaimahi-agents/kaimahi/pull/423).
 
 ## v0.5.0 — 2026-10-11
 

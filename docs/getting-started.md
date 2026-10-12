@@ -16,7 +16,7 @@ For a repeatable install, pin the release with Go or use the checksum-verified
 [release installer](releases.md#install):
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
 kmx version
 ```
 
