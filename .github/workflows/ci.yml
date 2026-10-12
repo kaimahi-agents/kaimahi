@@ -99,6 +99,8 @@ jobs:
       # worthless and watching its own self-test stay green.
       - name: Registry mirror helper self-tests
         run: python3 scripts/test_registry_mirrors.py
+      - name: Quickstart timing diagnostic self-tests
+        run: python3 scripts/test_quickstart_timing.py
       - name: Live eval gate and failure diagnostics self-tests
         run: |
           python3 scripts/test_eval_loop.py
@@ -784,6 +786,13 @@ jobs:
           done
           command -v docker >/dev/null || { echo "no container engine"; exit 1; }
           echo "this machine now has a container engine and nothing else kmx needs"
+      - name: Report quickstart runner resources
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          lscpu | grep -E '^(Architecture|CPU\(s\)|Model name):'
+          free -m
+          df -h / /tmp
+          docker version --format '{{.Server.Version}}'
       - name: One command — install kmx and answer a question
         id: quickstart
         if: steps.changes.outputs.docs_only != 'true'
@@ -797,6 +806,17 @@ jobs:
           elapsed=$(( $(date +%s) - start ))
           echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
           echo "time from one command to an answer: ${elapsed}s"
+      - name: Report first-answer pod and kubelet timings
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          args=(--kubectl "$HOME/.config/kmx/path/kubectl" --context kind-kmx-quickstart)
+          # Keep the resource-sampling window opt-in, not a delay on every PR.
+          if [ "$EVENT" = workflow_dispatch ]; then
+            args+=(--node kmx-quickstart-control-plane --kubelet-window 120)
+          fi
+          python3 scripts/ci/quickstart-timing.py "${args[@]}"
       - name: The agent actually answered, and nothing is governed yet
         if: steps.changes.outputs.docs_only != 'true'
         run: |
