@@ -976,8 +976,10 @@ jobs:
         run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
       - name: Tear down, and give the runner its tools back
         if: always() && steps.changes.outputs.docs_only != 'true'
+        env:
+          KIND_CLUSTER: kmx-quickstart
         run: |
-          "$HOME/.local/bin/kmx" down || true
+          "$HOME/.local/bin/kmx" --context kind-kmx-quickstart local down || true
           # Put back what was moved aside, so nothing after this job (or any
           # post step) meets a runner missing its own toolchain.
           for hidden in /usr/bin/*.kmx-ci-hidden /usr/local/bin/*.kmx-ci-hidden /usr/local/go/bin/*.kmx-ci-hidden; do
