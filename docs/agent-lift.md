@@ -185,9 +185,26 @@ from the model name. Create writes `agents/my-agent/` and scaffolds
 `eval/example.yaml`. Edit that case's input and expected answer before testing
 it. The destination must separately have Orka, its namespace, a Ready Provider,
 the Provider's Secret and any referenced Tools; lift installs none of them.
-Use `kmx agent lift agents/my-agent --to-context my-target --inference provider:local`
-after replacing `my-target` and `local` with the destination
-context and Ready Provider. `--plan` inspects intended changes without writing.
+First list Providers in the destination context and namespace (replace
+`my-target` with your destination context):
+
+```bash
+kubectl --context my-target --namespace orka-system get providers.core.orka.ai
+```
+
+Bare `kmx quickstart` creates the fixed `hello-world-agent` Provider;
+`kmx local up` prepares the `local` Provider. Neither name is a guarantee about
+another destination. Choose an existing Ready Provider from that destination,
+then replace `my-target` and the example Provider name below:
+
+```bash
+PROVIDER=hello-world-agent
+kmx agent lift agents/my-agent --to-context my-target --to-namespace orka-system --inference "provider:$PROVIDER" --plan
+```
+
+`--plan` inspects intended changes without writing and checks the selected
+Provider. Review the plan, then repeat the lift command without `--plan` to
+apply it. Listing a Provider alone does not prove it is Ready or can answer.
 Then use `kmx agent status agents/my-agent --to-context my-target` to inspect
 what is deployed and `kmx agent evaluate agents/my-agent --to-context my-target`
 to run the cases against that deployed digest. Each evaluation creates a Task
