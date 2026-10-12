@@ -25,8 +25,19 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 - Opt-in `agent create --workspace` authors one tool-free native-Orka suite member
   offline; `suite push --workspace` copies its exact prepared OCI graph and authored
   cases. The native member image requirement is empty. Neither command evaluates,
-  deploys, builds images or loads cluster settings. Workspace evaluation/release
-  lift are not implemented. Preserve default create, PortableAgent formats and
+  deploys, builds images or loads cluster settings. Opt-in `agent evaluate
+  --workspace` requires explicit `--to-context`, `--to-namespace`,
+  `--inference provider:NAME` and a new private `--out` outside source/cache.
+  It evaluates exact packaged S on pinned Orka v0.2.0 harness-v2, using an existing
+  read-only Provider/Secret and preprovisioned result access. Only suite-owned
+  Provider/Agent and type:ai Tasks are placed; no Secret/RBAC/runtime/image build.
+  Full complete pass is required; `--case` is diagnostic/ineligible. Output is
+  payload-free by default; `--show-content` is explicit. Candidate selection
+  persists before native work, but is not a pass. Push preserves selected S and
+  refuses source drift with rerun-evaluation advice. Private unsigned suite
+  evidence and the pure JSON promotion-policy gate do not imply authenticated
+  provenance, terminal Job lineage or destination execution. Registry-reference
+  release Lift is not implemented. Preserve default create, PortableAgent formats and
   old extracted-directory suite transfer; do not treat public graph validation
   as native execution-profile validation. Registry workspace publication shares
   unsigned suite provenance defaults/flags and records Git source only from

@@ -63,7 +63,9 @@ python3 scripts/test_kagent_lift_qualification.py -v
 python3 scripts/test_kagent_lift_audit.py -v
 python3 scripts/test_kagent_lift_qualify.py -v
 python3 scripts/test_kagent_lift_ci.py -v
-shellcheck scripts/ci/kagent-lift.sh
+python3 scripts/test_suite_native.py -v
+python3 scripts/test_suite_native_ci.py -v
+shellcheck scripts/ci/kagent-lift.sh scripts/ci/suite-native.sh
 actionlint .github/workflows/ci.yml
 ```
 
@@ -132,6 +134,56 @@ saved shell stderr; bootstrap and tool output remain private.
 The `e2e-kagent-lift` shard runs for relevant or unknown PR changes and always
 on main pushes, nightly and manual runs. Its required aggregator accepts only
 intentional skipped outcomes, never failed or cancelled shards.
+
+## Native suite qualification
+
+The checkout-only runner builds current `cmd/kmx` and uses a **new dedicated**
+`kmx-suite-native` kind cluster, private kubeconfig/discovery/Helm/registry state,
+explicit `kind-kmx-suite-native` selectors and matching named confirmation.
+It refuses a preexisting cluster and deletes only the recorded node/container
+identities with live ownership/namespace UID checks. A failed/ambiguous create
+or lost cleanup authority is not permission to remove anything else.
+Linux amd64, Go, Python/PyYAML and Docker daemon access are prerequisites. The
+runner downloads checksum-pinned kind 0.33.0, kubectl 1.35.0 and Helm 3.20.0,
+and SHA-256-verifies Orka's v0.2.0 chart before installing harness-v2. Its required
+Publisher/SCM proxy and AI-worker are Orka infrastructure; ACP provider images
+are disabled. Result ServiceAccount/RBAC and a test-inert Provider/Secret are
+explicit **test prerequisites**, not writes made by workspace evaluation.
+
+```sh
+SUITE_NATIVE_ARTIFACT_DIR=/tmp/my-new-native-proof bash scripts/ci/suite-native.sh
+```
+
+The artifact directory must be a new absolute path outside the repository with
+an existing parent. The runner owns only that directory and newly created
+scratch/resources. No user authentication or caller model endpoint is reused.
+AIKit `qwen3.5:2b` is pinned to
+`sha256:d838c5eebf533b5b73f67cc7f4984921f87d64d28e4a52d482740b667f46b8b4`;
+its CPU configuration and unscored warmup precede the scored native Task. There
+is no application/member image build, supervisor, AgentRuntime or Agent Deployment.
+
+The actual CLI must produce a full passing strict receipt for exact prepared S.
+A read-only native helper independently loads that package and live expected
+subject, verifies owned pair/Task identities and rereads the terminal result
+and assertions. It checks an explicit operator `.json` policy through the private
+pure gate; it never supplies an answer, fabricates a Task result or claims
+terminal Job lineage/destination execution. Exact-S local push/pull and source,
+ownership/legacy and policy/evidence refusal controls must also pass.
+A metadata-only executable audit refuses wrong contexts, Secret/RBAC/Deployment
+writes, ambiguous effective dry-run flags and unsupported mutation domains;
+CLI builder/installer traps must remain untouched.
+
+Commands run in owned bounded process groups; timeout/signals stop their forwards
+and descendants before cleanup. Only closed phase/reason codes leave a failure,
+never raw logs, prompts, answers, tokens or Secret values/hashes. The new artifact
+directory retains a payload-free qualification summary/audit and, **only after
+strict verification**, private native receipt/policy metadata. Unknown, skipped,
+partial, failed or cleanup-incomplete outcomes never claim qualification.
+The `e2e-suite-native` shard runs for native/shared dependencies or unknown PR
+diffs and on main/nightly/manual events. Its required aggregator accepts only
+intentional unrelated-PR skips, not failure/cancellation or missing dependencies.
+Hermetic ownership/privacy/timeout/audit/routing tests run in hygiene without a
+cluster. See [native suite behavior and trust](docs/suite-workspace.md).
 
 ## Comments
 

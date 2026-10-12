@@ -27,10 +27,22 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `kmx agent create --workspace` authors one native-Orka AgentSuite member offline.
   `kmx suite push --workspace` prepares and publishes its exact OCI graph, including
   authored cases, with no member image build or cluster access. Existing bundle
-  commands and suite transfer syntax are unchanged. Workspace evaluation and
-  release lift are not available. Registry workspace pushes share the default
+  commands and suite transfer syntax are unchanged. Registry-reference release
+  lift is not available. Registry workspace pushes share the default
   unsigned provenance policy, opt-out/required flags and matching-HEAD source
   commit claims; prepared graph bytes stay unchanged. [Workspace guide](docs/suite-workspace.md).
+
+- `kmx agent evaluate --workspace` runs the exact prepared one-member suite on
+  pinned native Orka v0.2.0 harness-v2 with explicit target, read-only Provider
+  inference binding and new private receipt export. Only a full complete pass
+  qualifies; `--case` is diagnostic, default output suppresses payloads and
+  `--show-content` is explicit. It builds no member images and writes no Secret
+  or RBAC. Publication preserves selected S and refuses changed source until
+  explicit re-evaluation. Private unsigned evidence and the pure JSON policy
+  gate do not claim destination execution; registry-reference release Lift
+  remains future work. Dedicated native CI qualifies real CPU AIKit execution,
+  exact-S local transfer and refusals. Default create/bundle operations and public
+  schemas/legacy receipts remain unchanged. [Native suite evaluation](docs/suite-workspace.md#evaluate-the-exact-candidate).
 
 - Registry `kmx suite push` attaches provenance by default, and `suite pull` shows the claimed kmx version and source commit when available; `--require-provenance` refuses to move the tag if attachment fails.
   Provenance is unsigned: anyone with push access can attach a claim. [Suite provenance](docs/kmx.md#suite-provenance).

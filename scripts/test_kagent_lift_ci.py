@@ -101,10 +101,10 @@ class WorkflowTests(unittest.TestCase):
     def aggregate(self, event, changed="false", overrides=None):
         agg = self.jobs["e2e-hello-world"]
         needs = {name: {"result": "success", "outputs": {}} for name in agg["needs"]}
-        needs["classify-change"] = {"result": "success", "outputs": {"kagent_changed": changed}}
+        needs["classify-change"] = {"result": "success", "outputs": {"kagent_changed": changed, "suite_native_changed": "true"}}
         if event == "schedule":
             for name in needs:
-                if name.startswith("e2e-") and name != "e2e-kagent-lift":
+                if name.startswith("e2e-") and name not in {"e2e-kagent-lift", "e2e-suite-native"}:
                     needs[name]["result"] = "skipped"
         needs.update(overrides or {})
         env = dict(os.environ, SHARDS=json.dumps(needs), EVENT=event)

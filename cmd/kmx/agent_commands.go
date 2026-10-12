@@ -78,7 +78,8 @@ identifier and a separately provisioned Secret are required.
 With --workspace <directory>, named creation instead authors one native-Orka suite
 member offline. Only --model, --instructions (file) and --description are accepted;
 no cluster settings are loaded, no image is built and no Agent is deployed.
-Workspace evaluation and release lift are not yet available.
+Evaluate with agent evaluate --workspace and explicit target/inference/private receipt selectors.
+Registry-reference release lift is not yet available.
 
 This command does not build or deploy application images. Keep your Deployment
 or chart. Interactive agent chat and kmx agent list are Orka-only.

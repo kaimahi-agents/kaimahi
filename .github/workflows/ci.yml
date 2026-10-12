@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       kagent_changed: ${{ steps.changes.outputs.kagent_changed }}
+      suite_native_changed: ${{ steps.changes.outputs.suite_native_changed }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -112,6 +113,11 @@ jobs:
           python3 scripts/test_kagent_lift_audit.py
           python3 scripts/test_kagent_lift_qualify.py
           python3 scripts/test_kagent_lift_ci.py
+      - name: Native suite ownership, privacy and CI routing self-tests
+        run: |
+          python3 scripts/test_suite_native.py
+          python3 scripts/test_suite_native_ci.py
+          shellcheck scripts/ci/suite-native.sh
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken
@@ -473,8 +479,9 @@ jobs:
           for job in shards + ["kmx-clone-free"]:
               steps = jobs[job]["steps"]
               total += len(steps)
-              if job == "e2e-kagent-lift":
-                  routed = "always() && (github.event_name != 'pull_request' || needs.classify-change.outputs.kagent_changed != 'false')"
+              if job in {"e2e-kagent-lift", "e2e-suite-native"}:
+                  output = "kagent_changed" if job == "e2e-kagent-lift" else "suite_native_changed"
+                  routed = f"always() && (github.event_name != 'pull_request' || needs.classify-change.outputs.{output} != 'false')"
                   if jobs[job].get("if") != routed or jobs[job].get("needs") != ["classify-change"]:
                       print(f"{job}: missing fail-closed job-level routing"); sys.exit(1)
                   if any(str(s.get("if", "")).strip() not in {"", "always()", "failure()"} for s in steps):
@@ -1929,9 +1936,33 @@ jobs:
           path: ${{ runner.temp }}/kmx-kagent-lift/qualification.json
           if-no-files-found: ignore
 
+  e2e-suite-native:
+    needs: [classify-change]
+    if: always() && (github.event_name != 'pull_request' || needs.classify-change.outputs.suite_native_changed != 'false')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Qualify actual native suite CLI against pinned Orka and AIKit
+        env:
+          SUITE_NATIVE_ARTIFACT_DIR: ${{ runner.temp }}/suite-native-proof
+        run: bash scripts/ci/suite-native.sh
+      - name: Payload-free native qualification and private operator evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: suite-native-qualification
+          path: ${{ runner.temp }}/suite-native-proof/*.json
+          if-no-files-found: error
+
   e2e-hello-world:
     runs-on: ubuntu-latest
-    needs: [classify-change, e2e-eval-loop, e2e-kagent-create, e2e-kagent-lift, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart]
+    needs: [classify-change, e2e-eval-loop, e2e-kagent-create, e2e-kagent-lift, e2e-suite-native, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart]
     if: always()
     steps:
       - name: Every e2e shard succeeded
@@ -1942,20 +1973,21 @@ jobs:
           python3 - <<'EOF'
           import json, os, sys
           needs = json.loads(os.environ["SHARDS"])
-          expected = {"e2e-eval-loop", "e2e-kagent-create", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}
+          expected = {"e2e-eval-loop", "e2e-kagent-create", "e2e-kagent-lift", "e2e-suite-native", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}
           classifier = needs.pop("classify-change", {})
           if classifier.get("result") != "success":
               print("classification did not succeed — refusing to report success"); sys.exit(1)
           if set(needs) != expected:
               print("missing or unexpected e2e shard dependencies — refusing success"); sys.exit(1)
-          changed = classifier.get("outputs", {}).get("kagent_changed", "")
+          routed = {"e2e-kagent-lift": "kagent_changed", "e2e-suite-native": "suite_native_changed"}
+          outputs = classifier.get("outputs", {})
           event = os.environ["EVENT"]
           bad = {}
           for job, outcome in sorted(needs.items()):
               result = outcome.get("result", "unknown")
               print(f"{job}: {result}")
-              intended_skip = job == "e2e-kagent-lift" and event == "pull_request" and changed == "false"
-              scheduled_skip = job != "e2e-kagent-lift" and event == "schedule"
+              intended_skip = job in routed and event == "pull_request" and outputs.get(routed[job], "") == "false"
+              scheduled_skip = job not in routed and event == "schedule"
               if result != "success" and not (result == "skipped" and (intended_skip or scheduled_skip)):
                   bad[job] = result
           if bad:

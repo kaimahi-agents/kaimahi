@@ -78,7 +78,7 @@ explicit. Help/completion performs no reads, writes or inference. See
 [reference cases and the conservative diff limitation](agent-lift.md#recorded-sessions-as-reference-cases),
 tracked in [#403](https://github.com/kaimahi-agents/kaimahi/issues/403).
 
-## Offline suite workspace
+## Native suite workspace
 
 `agent create <name> --workspace <directory> --model <model> --instructions <file>`
 authors one tool-free native-Orka member offline. It accepts optional description,
@@ -90,8 +90,29 @@ shareable authored cases as an ordinary AgentSuite, then copies the exact OCI
 manifest/blob graph. Native member image requirements are empty. Registry auth,
 plain-HTTP and non-atomic tag replacement remain as documented. Old
 `suite push <directory> <reference>` retains extracted-artifact transfer behavior.
-Workspace evaluation and reference lift are not implemented; these commands
-create no evaluation or promotion evidence. See [suite workspace](suite-workspace.md).
+Creation/publication do not execute or manufacture passing evidence.
+
+`agent evaluate --workspace <directory> --to-context <ctx> --to-namespace <ns>
+--inference provider:NAME --out <new-file>` is the native evaluation mode. It
+requires those explicit selectors and refuses positional bundles, global
+`--context`, Sessions selectors and model/runtime overrides. It runs exact
+packaged instructions/model/cases, placing only suite-owned Provider/Agent and
+`type: ai` Tasks on pinned Orka v0.2.0 harness-v2; the selected existing
+Provider/Secret are read-only and result RBAC is preprovisioned. Native member
+image requirements remain `[]`. It does not install a runtime or write Secrets.
+
+Full complete pass only; `--case` is diagnostic even when it covers a one-case
+suite. Output is metadata-only unless `--show-content` is explicit. `--out`
+exports new private suite evidence outside source/cache, not a legacy bundle
+receipt. The durable candidate pin is selected before native work, independent
+of pass status. Publishing preserves selected S and refuses source drift;
+explicit re-evaluation is the recovery path, not automatic replacement.
+
+The private unsigned receipt and operator-owned JSON pure-promotion gate are
+not authenticated provenance or destination execution. Registry-reference
+release Lift remains future work, with no exposed promotion-policy CLI flag.
+Public AgentSuite/PortableAgent schemas, legacy bundle/Sessions receipts and
+default create remain unchanged. See [suite workspace](suite-workspace.md).
 
 ## Vocabulary
 

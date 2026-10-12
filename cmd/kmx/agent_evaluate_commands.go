@@ -14,9 +14,21 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 	var opt app.EvaluateAgentBundleOptions
 	var suiteOpt app.EvaluateSuiteWorkspaceOptions
 	cmd := &cobra.Command{
-		Use:   "evaluate <bundle-dir>",
-		Short: "Run a bundle's eval/ cases on Orka or agentsessions and record a receipt",
-		Long: "Run each eval/*.yaml case as one Orka Task against the Agent deployed at the destination,\n" +
+		Use:   "evaluate [<bundle-dir>]",
+		Short: "Evaluate a native suite workspace or bundle and record private evidence",
+		Long: "With --workspace <directory>, evaluate the exact prepared native-Orka suite and all packaged cases.\n" +
+			"Explicit --to-context, --to-namespace, --inference provider:NAME and --out FILE are required;\n" +
+			"there is no positional bundle argument or global --context. The read-only Provider and its\n" +
+			"Secret must already exist, with pinned Orka v0.2.0 harness-v2 and result access/RBAC prepared.\n" +
+			"Place only the suite-owned Provider/Agent and run type:ai Tasks with exact packaged model\n" +
+			"and instructions; no model override, Secret writes, image build or runtime installation.\n" +
+			"requiredImages: []. Default output is verdicts, IDs and digests only; --show-content explicitly\n" +
+			"prints answers/judge reasoning, never storing them in evidence. Keep --out outside the workspace\n" +
+			"and cache; it must be a new private receipt. --case is diagnostic and always exits non-zero.\n" +
+			"Only a complete full passing run exits zero. Publishing retains selected S; source drift\n" +
+			"requires rerunning evaluation. Receipts are unsigned operator evidence, not provenance.\n" +
+			"Registry-reference release lift is not available.\n\n" +
+			"For positional bundles, run each eval/*.yaml case as one Orka Task against the Agent deployed at the destination,\n" +
 			"but only when that Agent carries the bundle's current portable digest. Answers are printed;\n" +
 			"the receipt in receipts/ records verdicts and answer digests, never answer text.\n" +
 			"With --sessions <host:port>, run each case as a new chat session instead, with the bundle's\n" +
@@ -34,7 +46,8 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 			"KAIMAHI_CONFIRM_JUDGE=<canonical-judge-base-url> before input/answer/rubric transfer.\n" +
 			"Reference runs print verdicts, IDs and digests only; --show-content explicitly prints answers\n" +
 			"and judge reasoning. Missing/expired/unsupported sources are unknown, never skipped.\n" +
-			"Exits non-zero unless every case passed. Sessions receipts do not satisfy lift gates yet.",
+			"Bundle runs exit non-zero unless every case passed. Sessions receipts do not satisfy lift gates yet.",
+		Example: "  kmx agent evaluate --workspace ./my-agents --to-context kind-proof --to-namespace orka-system \\\n    --inference provider:local --out ../evidence/run.json\n\n  kmx agent evaluate ./agents/greeter --to-context kind-proof",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("workspace") {
 				if len(args) != 0 {
@@ -50,13 +63,13 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&suiteOpt.Inference, "inference", "", "existing read-only provider:NAME binding source (workspace mode only)")
 	cmd.Flags().StringVar(&suiteOpt.Out, "out", "", "new private receipt export outside the workspace/cache (workspace mode only)")
 	// --to-context, not --context, for the same reason as lift and status.
-	cmd.Flags().StringVar(&opt.ToContext, "to-context", "", "destination kubeconfig context (default: the bundle's remembered lift target)")
+	cmd.Flags().StringVar(&opt.ToContext, "to-context", "", "destination kubeconfig context (explicit for workspace; default for bundles: remembered lift target)")
 	cmd.Flags().StringVar(&opt.Sessions, "sessions", "", "agentsessions host:port with the chat harness (instead of a deployed Orka target)")
 	cmd.Flags().StringVar(&opt.SessionsCA, "sessions-ca", "", "PEM CA file for verified TLS to the sessions host (loopback uses TLS when supplied)")
 	cmd.Flags().StringVar(&opt.FromSessions, "from-sessions", "", "private reference manifest instead of bundle eval/ inputs")
 	cmd.Flags().StringVar(&opt.SourceSessions, "source-sessions", "", "explicit source host:port matching the reference manifest")
 	cmd.Flags().StringVar(&opt.SourceSessionsCA, "source-sessions-ca", "", "PEM CA file for verified source TLS")
-	cmd.Flags().BoolVar(&opt.ShowContent, "show-content", false, "explicitly print reference-run answers and judge reasoning (sensitive)")
+	cmd.Flags().BoolVar(&opt.ShowContent, "show-content", false, "explicitly print workspace/reference-run answers and judge reasoning (sensitive)")
 	cmd.MarkFlagsRequiredTogether("from-sessions", "source-sessions")
 	_ = cmd.RegisterFlagCompletionFunc("source-sessions", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -68,7 +81,7 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		})
 	}
-	cmd.Flags().StringVar(&opt.Case, "case", "", "run only the case with this id")
+	cmd.Flags().StringVar(&opt.Case, "case", "", "run only this case; workspace selection is diagnostic and never qualifies")
 	cmd.Flags().DurationVar(&opt.CaseTimeout, "case-timeout", 0, "time each case may take to reach a readable terminal result (default 5m, max 9m)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "19180", "free loopback port for the temporary result forward")
 	for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "out"} {

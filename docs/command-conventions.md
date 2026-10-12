@@ -43,7 +43,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
 | `run` | Execute once and return the result. | `kmx agent run` |
 | `chat` | Open an interactive session. | `kmx agent chat <name>` |
-| `evaluate` | Run evaluation cases against a deployed revision. | `kmx agent evaluate <bundle-dir>` |
+| `evaluate` | Run cases against a bundle revision or exact prepared native suite. | `kmx agent evaluate <bundle-dir>`; `kmx agent evaluate --workspace <directory>` with explicit target/inference/private export |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `lift` | Move a proven agent bundle to a prepared remote destination. | `kmx agent lift <bundle-dir>` |
 | `retire` | Remove the workload resources a bundle owns. | `kmx agent retire <bundle-dir>` |
@@ -183,3 +183,4 @@ row when its rename lands.
 | `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain compatibility syntax; opt-in `suite push --workspace <directory> <reference>` has one positional destination and publishes a prepared native suite. |
 | `suite build --output <file>`, `suite pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |
 | `suite build --attestations` | Defaults to true; `--attestations=false` opts out of SBOM and provenance requests. | Keep the documented default; `--require-attestations` refuses missing or unsupported attestations. |
+| `agent evaluate --workspace` | No positional bundle; explicit `--to-context`, `--to-namespace`, `--inference provider:NAME`, `--out` are required. `--out` is a new private evidence file, not a report format. | Preserve positional bundle/Sessions behavior and receipts. Workspace output suppresses content by default; `--case` is diagnostic/ineligible. Candidate push retains S and refuses source drift. Registry-reference release Lift is future work. |

@@ -75,8 +75,21 @@ func TestWorkspaceEvaluateEvidenceContextBoundsBeforeConfiguration(t *testing.T)
 	}
 }
 
+func TestWorkspaceEvaluateHelpExplainsNativeAndLegacyContracts(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	if err := execute([]string{"agent", "evaluate", "--help"}, deps); err != nil || *loads != 0 {
+		t.Fatalf("help reached operations: %v", err)
+	}
+	for _, phrase := range []string{"evaluate [<bundle-dir>]", "exact prepared", "read-only Provider", "--to-namespace", "--inference", "--out", "diagnostic", "--show-content", "requiredImages: []", "release lift is not available", "bundle's current portable digest", "Answers are printed", "--from-sessions"} {
+		if !strings.Contains(out.String(), phrase) {
+			t.Errorf("help omits %q", phrase)
+		}
+	}
+}
+
 func TestWorkspaceEvaluateExplicitContextAndStaticHelp(t *testing.T) {
-	for _, args := range [][]string{{"agent", "evaluate", "--help"}, {"__complete", "agent", "evaluate", "--workspace", ""}, {"__complete", "agent", "evaluate", "--inference", ""}, {"__complete", "agent", "evaluate", "--to-context", ""}} {
+	for _, args := range [][]string{{"agent", "evaluate", "--help"}, {"__complete", "agent", "evaluate", "--workspace", ""}, {"__complete", "agent", "evaluate", "--inference", ""}, {"__complete", "agent", "evaluate", "--to-context", ""}, {"__complete", "agent", "evaluate", "--to-namespace", ""}, {"__complete", "agent", "evaluate", "--out", ""}} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
 		if e := execute(args, deps); e != nil || *loads != 0 {
