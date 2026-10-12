@@ -30,6 +30,9 @@ func (a *App) matchingOrkaResource(ctx context.Context, namespace string, desire
 	if err = json.Unmarshal(raw, &existing); err != nil {
 		return nil, err
 	}
+	if err := refuseSuiteOrkaOwnership(existing); err != nil {
+		return nil, err
+	}
 	meta, _ := existing["metadata"].(map[string]any)
 	uid, _ := meta["uid"].(string)
 	version, _ := meta["resourceVersion"].(string)

@@ -95,6 +95,8 @@ type bundleResourceStatus struct {
 	MarkerOwner    string `json:"markerOwner,omitempty"`
 	PortableDigest string `json:"portableDigest,omitempty"`
 	RenderedDigest string `json:"renderedDigest,omitempty"`
+	// Domain reservations remain private; status JSON keeps its legacy shape.
+	suiteOwned bool
 }
 
 // bundleTargetStatus is one target's reported state. Exactly one State value
@@ -435,6 +437,11 @@ func (a *App) observeBundleTarget(ctx context.Context, bundle, name, portableDig
 	result.Provider = describeOrkaResource(providerRaw)
 	result.Agent = describeOrkaResource(agentRaw)
 
+	if result.Provider.suiteOwned || result.Agent.suiteOwned {
+		result.State = bundleStateUnknown
+		result.Detail = "suite ownership markers; not a legacy bundle deployment"
+		return result
+	}
 	if !result.Provider.Found && !result.Agent.Found {
 		result.State = bundleStateNotDeployed
 		return result
@@ -540,7 +547,7 @@ func retiredReleasedResourcesMatch(bundle string, target bundleStatusTarget, clu
 		if !resource.live.Found {
 			continue
 		}
-		if resource.live.Marked || resource.live.UID == "" {
+		if resource.live.Marked || resource.live.suiteOwned || resource.live.UID == "" {
 			return false
 		}
 		matched := false
@@ -559,8 +566,9 @@ func retiredReleasedResourcesMatch(bundle string, target bundleStatusTarget, clu
 
 // describeOrkaResource reads UID, generation, readiness and the ownership
 // marker directly off one live object's raw JSON, independent of whether it
-// turns out to belong to this bundle. A missing or non-string marker value
-// is reported unmarked, never guessed at.
+// turns out to belong to this bundle. Suite-domain objects (even mixed or
+// incomplete), and missing or non-string bundle markers, are never accepted
+// as bundle ownership. Readiness remains an independent observation.
 func describeOrkaResource(raw []byte) bundleResourceStatus {
 	var result bundleResourceStatus
 	if len(raw) == 0 {
@@ -583,14 +591,15 @@ func describeOrkaResource(raw []byte) bundleResourceStatus {
 	}
 	result.UID = doc.Metadata.UID
 	result.Generation = doc.Metadata.Generation
-	if owner, ok := doc.Metadata.Annotations[orkaBundleMarker].(string); ok && owner != "" {
+	result.suiteOwned = orkaHasSuiteMarkers(doc.Metadata.Annotations)
+	if owner, ok := doc.Metadata.Annotations[orkaBundleMarker].(string); !result.suiteOwned && ok && owner != "" {
 		result.Marked = true
 		result.MarkerOwner = owner
 	}
-	if digest, ok := doc.Metadata.Annotations[orkaPortableMarker].(string); ok {
+	if digest, ok := doc.Metadata.Annotations[orkaPortableMarker].(string); !result.suiteOwned && ok {
 		result.PortableDigest = digest
 	}
-	if digest, ok := doc.Metadata.Annotations[orkaRenderedMarker].(string); ok {
+	if digest, ok := doc.Metadata.Annotations[orkaRenderedMarker].(string); !result.suiteOwned && ok {
 		result.RenderedDigest = digest
 	}
 	if doc.Status.Ready && doc.Metadata.Generation > 0 {

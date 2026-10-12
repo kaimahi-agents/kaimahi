@@ -464,6 +464,8 @@ func (a *App) orkaEvaluationRevisionError(ctx context.Context, ref agentruntime.
 	switch {
 	case !live.Found:
 		return fmt.Errorf("Agent %s/%s is not deployed; lift first", ref.Namespace, ref.Name)
+	case live.suiteOwned:
+		return fmt.Errorf("Agent %s/%s has suite ownership markers; refusing legacy evaluation", ref.Namespace, ref.Name)
 	case live.UID != ref.UID:
 		return fmt.Errorf("Agent %s/%s is no longer UID %s; the name now belongs to a different Agent", ref.Namespace, ref.Name, ref.UID)
 	case live.PortableDigest != portableDigest:

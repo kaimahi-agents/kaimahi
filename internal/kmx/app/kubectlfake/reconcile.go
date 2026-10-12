@@ -292,7 +292,7 @@ func (r Request) reconcile() {
 		if meta == nil || meta["name"] != name {
 			fail()
 		}
-		if len(call.Patch) >= 5 && call.Patch[0]["op"] == "test" && call.Patch[1]["path"] == "/metadata/uid" {
+		if len(call.Patch) >= 5 && call.Patch[0]["op"] == "test" && call.Patch[1]["path"] == "/metadata/uid" && call.Patch[2]["op"] == "remove" {
 			if r.Getenv("KMX_RETIRE_FAIL_PATCH_ONCE") == kind {
 				flag := filepath.Join(dir, "retire-failed-"+kind)
 				if _, err := os.Stat(flag); os.IsNotExist(err) {
@@ -322,9 +322,22 @@ func (r Request) reconcile() {
 			_, _ = r.Stdout.Write(body)
 			exit(0)
 		}
-		// Every marker-refresh patch tests resourceVersion then replaces only digests.
+		// Refreshes replace only their domain's digests under identity preconditions.
 		allowedPaths := map[string]bool{"/metadata/annotations/" + orkaAnnotationPointer(orkaPortableMarker): true, "/metadata/annotations/" + orkaAnnotationPointer(orkaRenderedMarker): true}
-		if len(call.Patch) != 3 || call.Patch[0]["op"] != "test" || call.Patch[0]["path"] != "/metadata/resourceVersion" {
+		firstReplace := 1
+		if len(call.Patch) == 5 {
+			if call.Patch[1]["op"] != "test" || call.Patch[1]["path"] != "/metadata/uid" || call.Patch[1]["value"] != meta["uid"] {
+				fail()
+			}
+			firstReplace = 2
+			allowedPaths = map[string]bool{}
+			for _, key := range []string{"kaimahi.dev/suite-digest", "kaimahi.dev/suite-binding-digest", "kaimahi.dev/suite-rendered-digest"} {
+				allowedPaths["/metadata/annotations/"+orkaAnnotationPointer(key)] = true
+			}
+		} else if len(call.Patch) != 3 {
+			fail()
+		}
+		if call.Patch[0]["op"] != "test" || call.Patch[0]["path"] != "/metadata/resourceVersion" {
 			fail()
 		}
 		if fmt.Sprint(call.Patch[0]["value"]) != fmt.Sprint(meta["resourceVersion"]) {
@@ -334,7 +347,7 @@ func (r Request) reconcile() {
 		if annotations == nil {
 			fail()
 		}
-		for _, op := range call.Patch[1:] {
+		for _, op := range call.Patch[firstReplace:] {
 			path, _ := op["path"].(string)
 			if op["op"] != "replace" || !allowedPaths[path] {
 				fail()
