@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha1"
 	"fmt"
 	"os"
 	"os/exec"
@@ -119,6 +120,55 @@ func TestWorkspaceSourceRevisionUsesPreparedAuthoredInputs(t *testing.T) {
 				t.Fatal("changed source reused old candidate inputs")
 			}
 		})
+	}
+}
+
+func TestWorkspaceSourceRevisionAllowsNestedMemberNamedInstructions(t *testing.T) {
+	root, source, _ := gitWorkspaceRepository(t, true)
+	file := filepath.Join(source, "agents/greeter/member.yaml")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, file, strings.Replace(string(data), "instructions: instructions.md", "instructions: notes/member.yaml", 1))
+	if err := os.Mkdir(filepath.Join(source, "agents/greeter/notes"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(source, "agents/greeter/instructions.md"), filepath.Join(source, "agents/greeter/notes/member.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", ".")
+	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "nested instructions")
+	prepared, err := workspace.Prepare(context.Background(), source, filepath.Join(t.TempDir(), "cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs, err := workspace.SourceFiles(context.Background(), source, prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, err := parseLsTree([]byte(runGit(t, root, "ls-tree", "-r", "-z", "--full-tree", "HEAD")), "workspaces/greeter", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 100; i++ {
+		if reason := matchWorkspaceTree(context.Background(), inputs, committed, sha1.New); reason != "" {
+			t.Fatalf("nested instructions confused member inventory: %s", reason)
+		}
+	}
+}
+
+func TestWorkspaceSourceRevisionIgnoresUnselectedGitlinks(t *testing.T) {
+	root, source, prepared := gitWorkspaceRepository(t, false)
+	commit := runGit(t, root, "rev-parse", "HEAD")
+	runGit(t, root, "update-index", "--add", "--cacheinfo", "160000,"+commit+",vendor/library")
+	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "unrelated submodule")
+	inputs, err := workspace.SourceFiles(context.Background(), source, prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revision, reason := sourceRevision(context.Background(), source, inputs); revision == nil {
+		t.Fatalf("unselected gitlink suppressed source commit: %s", reason)
 	}
 }
 

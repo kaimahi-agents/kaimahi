@@ -78,7 +78,9 @@ a referrer is attached by default before moving the tag, `--provenance=false` op
 out, and `--require-provenance` makes an attachment failure leave the tag unchanged.
 The source commit/path is recorded only when the frozen authored inputs match
 HEAD; generated cache files and unrelated files are excluded from that comparison.
-Dirty/non-Git source still publishes a source-less claim and explains why.
+Source commit detection requires Git 2.40+ (`check-attr --source`) to inspect HEAD's
+rewriting attributes without trusting live overrides. Older Git, dirty or non-Git
+source still publishes a source-less claim and explains why.
 Unsigned provenance is informational, not evaluation or promotion evidence.
 
 For offline transfer, the local target's parent directory must exist:

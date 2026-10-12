@@ -385,7 +385,9 @@ Registry `suite push --workspace` uses the same unsigned provenance policy and
 flags. Its commit check compares the fingerprint-bound raw authored inputs with
 HEAD, including executable bits, rewriting attributes and the complete case and
 one-member inventory. Unrelated files and Git internals are not selected inputs.
-Generated cache content is not the Git source. To reproduce a workspace claim,
+Generated cache content is not the Git source. Workspace commit detection requires
+Git 2.40+ for pinned-HEAD attribute checks; older Git safely omits the commit with
+an explanatory warning. To reproduce a workspace claim,
 check out the recorded commit with `-c core.autocrlf=false`, then run
 `kmx suite push --workspace SOURCE_PATH --to-layout NEW_LAYOUT v1` with the recorded
 kmx version and compare the suite digest. Dirty/non-Git source still gets a

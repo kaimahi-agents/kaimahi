@@ -95,7 +95,7 @@ func sourceRevision(ctx context.Context, dir string, inputs map[string]workspace
 	if err != nil {
 		return nil, "HEAD tree could not be read"
 	}
-	committed, err := parseLsTree(treeRaw, rel)
+	committed, err := parseLsTree(treeRaw, rel, inputs)
 	if err != nil {
 		return nil, err.Error()
 	}
@@ -136,7 +136,7 @@ func sourceRevision(ctx context.Context, dir string, inputs map[string]workspace
 		// Unselected .gitattributes edits must not mask rewriting rules at HEAD.
 		attrs, err := git(paths, "-C", root, "check-attr", "--source="+commit, "-z", "--stdin", "eol", "filter", "ident", "working-tree-encoding")
 		if err != nil {
-			return nil, "Git attributes at HEAD could not be read"
+			return nil, "Git attributes at HEAD could not be read; workspace source claims require Git 2.40+ with check-attr --source support"
 		}
 		if reason := checkoutRewrites(attrs); reason != "" {
 			return nil, reason
@@ -170,7 +170,7 @@ type committedEntry struct {
 }
 
 // parseLsTree maps suite-relative paths to HEAD mode and object ID.
-func parseLsTree(raw []byte, rel string) (map[string]committedEntry, error) {
+func parseLsTree(raw []byte, rel string, inputs map[string]workspace.SourceFile) (map[string]committedEntry, error) {
 	entries := map[string]committedEntry{}
 	prefix := ""
 	if rel != "." {
@@ -185,10 +185,17 @@ func parseLsTree(raw []byte, rel string) (map[string]committedEntry, error) {
 		if !ok || len(fields) != 3 || !strings.HasPrefix(name, prefix) {
 			return nil, errors.New("HEAD tree could not be parsed")
 		}
+		name = strings.TrimPrefix(name, prefix)
+		if inputs != nil {
+			_, selected := inputs[name]
+			if !selected && !strings.HasPrefix(name, "agents/") && !strings.HasPrefix(name, "eval/") {
+				continue
+			}
+		}
 		if fields[1] != "blob" {
 			return nil, errors.New("suite directory contains a Git submodule")
 		}
-		entries[strings.TrimPrefix(name, prefix)] = committedEntry{mode: fields[0], object: fields[2]}
+		entries[name] = committedEntry{mode: fields[0], object: fields[2]}
 	}
 	return entries, nil
 }
@@ -276,7 +283,7 @@ func matchCommittedTree(ctx context.Context, dir string, committed map[string]co
 func matchWorkspaceTree(ctx context.Context, inputs map[string]workspace.SourceFile, committed map[string]committedEntry, newHash func() hash.Hash) string {
 	member := ""
 	for name := range inputs {
-		if strings.HasPrefix(name, "agents/") && strings.HasSuffix(name, "/member.yaml") {
+		if strings.HasPrefix(name, "agents/") && strings.Count(name, "/") == 2 && strings.HasSuffix(name, "/member.yaml") {
 			member = path.Dir(name) + "/"
 		}
 	}
