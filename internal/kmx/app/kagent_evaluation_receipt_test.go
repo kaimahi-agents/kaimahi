@@ -25,7 +25,7 @@ var kagentEvaluationWire = strings.ReplaceAll(`{
  "platform":{"sourceCommit":"8878c39ac64421cb665c8e62ecc6411dd12f2fc2",
  "controllerImage":{"os":"linux","architecture":"amd64","digest":"8ca13042c21181ecf280d6f3ca005d58e216a0a56978bb8824fd73cc02b685d8"},
  "adkImage":{"os":"linux","architecture":"amd64","digest":"7f788d09d5f21ccc3068679310943dcf4f0df19e1a93960423810438f4238b24"},
- "controller":[{"Kind":"Service","Name":"kagent","Namespace":"kagent","UID":"controller-service","ResourceVersion":"10"},{"Kind":"Deployment","Name":"kagent-controller","Namespace":"kagent","UID":"controller-deploy","ResourceVersion":"11","Generation":1},{"Kind":"ConfigMap","Name":"kagent","Namespace":"kagent","UID":"controller-config","ResourceVersion":"12"}]},
+ "controller":[{"Kind":"Service","Name":"kagent","Namespace":"kagent","UID":"controller-service","ResourceVersion":"10"},{"Kind":"Deployment","Name":"kagent","Namespace":"kagent","UID":"controller-deploy","ResourceVersion":"11","Generation":1},{"Kind":"ConfigMap","Name":"kagent","Namespace":"kagent","UID":"controller-config","ResourceVersion":"12"}]},
  "snapshot":{"proofs":[{"Kind":"ModelConfig","Name":"sample","Namespace":"orka-system","UID":"model-uid","Generation":1,"SpecDigest":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},{"Kind":"Agent","Name":"sample","Namespace":"orka-system","UID":"agent-uid","Generation":1,"SpecDigest":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}],
  "workload":[{"Kind":"Deployment","Name":"sample","Namespace":"orka-system","UID":"workload-deploy","ResourceVersion":"20","Generation":1,"SpecDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"Kind":"Service","Name":"sample","Namespace":"orka-system","UID":"workload-service","ResourceVersion":"21"},{"Kind":"ServiceAccount","Name":"sample","Namespace":"orka-system","UID":"workload-account","ResourceVersion":"22"},{"Kind":"Secret","Name":"sample","Namespace":"orka-system","UID":"workload-secret","ResourceVersion":"23"}],
  "dependencies":[{"Kind":"Secret","Name":"model-key","Namespace":"orka-system","UID":"dependency-secret","ResourceVersion":"30","Key":"api-key"}]}},
@@ -469,15 +469,93 @@ func TestKagentEvaluationUniqueExecutionIDs(t *testing.T) {
 		})
 	}
 	r := kagentEvaluationFixture(t)
+	baseCase := r.Cases[0]
+	r.Cases = nil
 	for i := range 1000 {
-		c := r.Cases[0]
+		c := baseCase
 		c.ID = fmt.Sprintf("case-%d", i)
 		c.Execution = kagentEvaluationExecution{RPCID: fmt.Sprintf("rpc-%d", i), RequestMessageID: fmt.Sprintf("message-%d", i), TaskID: fmt.Sprintf("task-%d", i), ContextID: fmt.Sprintf("context-%d", i), State: "completed"}
 		r.Cases = append(r.Cases, c)
 	}
+	if _, ok := normalizeKagentEvaluation(r); !ok {
+		t.Fatal("1000 uniquely identified cases refused")
+	}
+	extra := baseCase
+	extra.ID = "case-1000"
+	extra.Execution = kagentEvaluationExecution{RPCID: "rpc-1000", RequestMessageID: "message-1000", TaskID: "task-1000", ContextID: "context-1000", State: "completed"}
+	r.Cases = append(r.Cases, extra)
 	if _, ok := normalizeKagentEvaluation(r); ok {
 		t.Fatal("more than 1000 cases accepted")
 	}
+}
+
+// A terminal observation is not attributable execution when the deployment
+// changed; native IDs must remain available without inventing a known verdict.
+func TestKagentEvaluationNativeFailureLostAttribution(t *testing.T) {
+	for _, state := range []string{"failed", "canceled", "rejected"} {
+		t.Run(state, func(t *testing.T) {
+			r := kagentEvaluationFixture(t)
+			kagentEvaluationVerdict(&r, "unknown", "evaluation execution unavailable")
+			r.Cases[0].Execution.State = state
+			n, err := readEvaluationDiffSource(diffWrite(t, r))
+			if err != nil || n.Result != "unknown" {
+				t.Fatalf("observed native failure lost unknown attribution: %v", err)
+			}
+			bundle := t.TempDir()
+			if err := writeKagentEvaluationReceipt(bundle, r); err != nil {
+				t.Fatalf("unknown attribution cannot be retained: %v", err)
+			}
+			if evidence, err := readBundleGateEvidence(bundle); err != nil || len(evidence) != 0 {
+				t.Fatalf("valid foreign unknown evidence poisoned gate: %v", err)
+			}
+		})
+	}
+}
+
+func TestKagentEvaluationControllerDeploymentBinding(t *testing.T) {
+	r := kagentEvaluationFixture(t)
+	r.Target.Platform.Controller[1].Name = "foreign-controller"
+	if _, err := readEvaluationDiffSource(diffWrite(t, r)); err == nil {
+		t.Fatal("controller Deployment not bound to Service accepted")
+	}
+}
+
+func TestKagentEvaluationSnapshotCrossSectionIdentity(t *testing.T) {
+	t.Run("conflicting secret", func(t *testing.T) {
+		r := kagentEvaluationFixture(t)
+		r.Target.Snapshot.Dependencies[0].Name = "sample"
+		if _, err := readEvaluationDiffSource(diffWrite(t, r)); err == nil {
+			t.Fatal("one Secret with contradictory workload/dependency UIDs accepted")
+		}
+	})
+	t.Run("coherent controller config reference", func(t *testing.T) {
+		r := kagentEvaluationFixture(t)
+		r.Target.Namespace = "kagent"
+		for _, resources := range [][]agentruntime.ResourceEvidence{r.Target.Snapshot.Proofs, r.Target.Snapshot.Workload, r.Target.Snapshot.Dependencies} {
+			for i := range resources {
+				resources[i].Namespace = "kagent"
+			}
+		}
+		r.Target.Snapshot.Dependencies = append(r.Target.Snapshot.Dependencies,
+			agentruntime.ResourceEvidence{Kind: "RemoteMCPServer", Name: "tool-server", Namespace: "kagent", UID: "mcp-uid", ResourceVersion: "31", Generation: 1, SpecDigest: strings.Repeat("e", 64)})
+		ref := r.Target.Platform.Controller[2]
+		ref.Key = "header"
+		r.Target.Snapshot.Dependencies = append(r.Target.Snapshot.Dependencies, ref)
+		if _, err := readEvaluationDiffSource(diffWrite(t, r)); err != nil {
+			t.Fatalf("coherent controller ConfigMap reference refused: %v", err)
+		}
+		for _, mutate := range []func(*agentruntime.ResourceEvidence){
+			func(p *agentruntime.ResourceEvidence) { p.ResourceVersion = "changed" },
+			func(p *agentruntime.ResourceEvidence) { p.UID = "replacement" },
+			func(p *agentruntime.ResourceEvidence) { p.Name = "another-config" },
+		} {
+			mutate(&r.Target.Snapshot.Dependencies[2])
+			if _, err := readEvaluationDiffSource(diffWrite(t, r)); err == nil {
+				t.Fatal("conflicting cross-section resource observation accepted")
+			}
+			r.Target.Snapshot.Dependencies[2] = ref
+		}
+	})
 }
 
 func TestKagentEvaluationPublicDiffTransitions(t *testing.T) {

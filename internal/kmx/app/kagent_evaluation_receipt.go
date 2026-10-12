@@ -163,7 +163,7 @@ func validKagentEvaluationPlatform(p kagentEvaluationPlatform) bool {
 			return false
 		}
 	}
-	return p.Controller[0].Name == p.Controller[2].Name
+	return p.Controller[0].Name == p.Controller[1].Name && p.Controller[0].Name == p.Controller[2].Name
 }
 
 func validKagentEvaluationSnapshot(t kagentEvaluationTarget) bool {
@@ -171,9 +171,27 @@ func validKagentEvaluationSnapshot(t kagentEvaluationTarget) bool {
 	if len(s.Proofs) != 2 || len(s.Workload) != 4 || len(s.Dependencies) == 0 || len(s.Dependencies) > 1000 {
 		return false
 	}
-	uids := map[string]bool{}
+	type resourceKey struct{ kind, namespace, name string }
+	seen := map[resourceKey]agentruntime.ResourceEvidence{}
+	uids := map[string]resourceKey{}
+	// A resource may appear in several sections, but every observation must
+	// agree. Referenced keys differ; the underlying object identity does not.
+	observe := func(p agentruntime.ResourceEvidence) bool {
+		key := resourceKey{p.Kind, p.Namespace, p.Name}
+		p.Key = ""
+		if previous, ok := seen[key]; ok {
+			return previous == p
+		}
+		if previous, ok := uids[p.UID]; ok && previous != key {
+			return false
+		}
+		seen[key], uids[p.UID] = p, key
+		return true
+	}
 	for _, p := range t.Platform.Controller {
-		uids[p.UID] = true
+		if !observe(p) {
+			return false
+		}
 	}
 	for i, kind := range []string{"ModelConfig", "Agent"} {
 		p := s.Proofs[i]
@@ -181,17 +199,15 @@ func validKagentEvaluationSnapshot(t kagentEvaluationTarget) bool {
 		if kind == "Agent" {
 			uid, generation = t.AgentUID, t.AgentGeneration
 		}
-		if !kagentEvaluationResource(p) || p.Kind != kind || p.Name != t.Agent || p.Namespace != t.Namespace || p.UID != uid || p.Generation != generation || !verificationDigest(p.SpecDigest) || p.Key != "" || uids[p.UID] {
+		if !kagentEvaluationResource(p) || p.Kind != kind || p.Name != t.Agent || p.Namespace != t.Namespace || p.UID != uid || p.Generation != generation || !verificationDigest(p.SpecDigest) || p.Key != "" || !observe(p) {
 			return false
 		}
-		uids[p.UID] = true
 	}
 	for i, kind := range []string{"Deployment", "Service", "ServiceAccount", "Secret"} {
 		p := s.Workload[i]
-		if !kagentEvaluationResource(p) || p.Kind != kind || p.Name != t.Agent || p.Namespace != t.Namespace || p.ResourceVersion == "" || p.Key != "" || uids[p.UID] {
+		if !kagentEvaluationResource(p) || p.Kind != kind || p.Name != t.Agent || p.Namespace != t.Namespace || p.ResourceVersion == "" || p.Key != "" || !observe(p) {
 			return false
 		}
-		uids[p.UID] = true
 		if kind == "Deployment" {
 			if p.Generation < 1 || !verificationDigest(p.SpecDigest) {
 				return false
@@ -204,8 +220,6 @@ func validKagentEvaluationSnapshot(t kagentEvaluationTarget) bool {
 	if s.Dependencies[0].Kind != "Secret" || s.Dependencies[0].Key == "" {
 		return false
 	}
-	type resourceKey struct{ kind, name string }
-	seen := map[resourceKey]agentruntime.ResourceEvidence{}
 	for _, p := range s.Dependencies {
 		if !kagentEvaluationResource(p) || p.Namespace != t.Namespace || p.ResourceVersion == "" || p.Key != "" && scaffold.ValidateKagentSecretKey(p.Key) != nil {
 			return false
@@ -222,21 +236,8 @@ func validKagentEvaluationSnapshot(t kagentEvaluationTarget) bool {
 		default:
 			return false
 		}
-		// Lift can repeat one dependency for several referenced keys. Its identity
-		// must agree; repeating or changing a key must not hide a replaced object.
-		key := resourceKey{p.Kind, p.Name}
-		identity := p
-		identity.Key = ""
-		if previous, ok := seen[key]; ok {
-			if previous != identity {
-				return false
-			}
-		} else {
-			if uids[p.UID] {
-				return false
-			}
-			uids[p.UID] = true
-			seen[key] = identity
+		if !observe(p) {
+			return false
 		}
 	}
 	return true
@@ -270,7 +271,7 @@ func validKagentEvaluationExecution(c kagentEvaluationResult) bool {
 		}
 		return c.Detail == evaluationResultUnavailable || c.Detail == evaluationExecutionUnavailable
 	case "failed", "canceled", "rejected":
-		return c.Detail == evaluationExecutionFailed && c.AnswerSHA256 == ""
+		return (c.Detail == evaluationExecutionFailed || c.Detail == evaluationExecutionUnavailable) && c.AnswerSHA256 == ""
 	case "submitted", "working", "input-required", "auth-required", "unknown":
 		return c.Detail == evaluationExecutionUnavailable && c.AnswerSHA256 == ""
 	default:
