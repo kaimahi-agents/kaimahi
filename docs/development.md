@@ -24,6 +24,13 @@ not this checkout. No databases, credentials, caches or deployed resources are
 deleted. Cloud ownership/teardown records and their tests remain. The old
 gateway, approvals/grants, workflow runner and connector fixtures remain retired.
 
+Packaged native suites also have a private App preparation seam: it observes an
+explicit target, Ready Provider/Secret binding and pinned installed Orka runtime,
+then validates and retains one exact unmarked render from `workspace.Load`.
+Secret reads project metadata and key presence, never values. Installed Agent,
+Provider and Task CRDs are validator prerequisites, not Task execution. This is
+read-only internal capability, not a workspace evaluation or placement CLI.
+
 ## Repository layout
 
 Consult the [repository map](repository-map.md) for tracked membership and caller
