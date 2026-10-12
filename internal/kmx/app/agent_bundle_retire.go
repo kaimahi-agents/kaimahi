@@ -372,7 +372,7 @@ func (a *App) alreadyRetiredBundle(ctx context.Context, bundle, contextName, nam
 				released = true
 			}
 		}
-		if !released || doc.Metadata.Annotations[orkaBundleMarker] != "" || doc.Metadata.Annotations[orkaPortableMarker] != "" || doc.Metadata.Annotations[orkaRenderedMarker] != "" || doc.Metadata.Annotations["kaimahi.dev/origin"] != "" {
+		if hasOrkaSuiteReservation(doc.Metadata.Annotations) || !released || doc.Metadata.Annotations[orkaBundleMarker] != "" || doc.Metadata.Annotations[orkaPortableMarker] != "" || doc.Metadata.Annotations[orkaRenderedMarker] != "" || doc.Metadata.Annotations["kaimahi.dev/origin"] != "" {
 			return false, nil
 		}
 	}
@@ -397,6 +397,9 @@ func (a *App) inspectPreviouslyReleased(ctx context.Context, namespace, kind, na
 		return false, fmt.Errorf("invalid %s/%s response", kind, name)
 	}
 	if doc.Kind != kind || doc.Metadata.Name != name || doc.Metadata.Namespace != namespace || doc.Metadata.UID != uid {
+		return false, nil
+	}
+	if hasOrkaSuiteReservation(doc.Metadata.Annotations) {
 		return false, nil
 	}
 	for _, key := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker, orkaOriginMarker} {
@@ -429,6 +432,9 @@ func (a *App) inspectRetireObject(ctx context.Context, namespace, kind, name str
 	}
 	if json.Unmarshal(raw, &obj) != nil || obj.Kind != kind || obj.Metadata.Name != name || obj.Metadata.Namespace != namespace || obj.Metadata.UID == "" || obj.Metadata.ResourceVersion == "" || obj.Metadata.DeletionTimestamp != nil {
 		return d, fmt.Errorf("invalid or terminating %s/%s identity; refusing retirement", kind, name)
+	}
+	if hasOrkaSuiteReservation(obj.Metadata.Annotations) {
+		return d, fmt.Errorf("%s/%s reserves native suite ownership; refusing retirement", kind, name)
 	}
 	owner := obj.Metadata.Annotations[orkaBundleMarker]
 	if owner != name {

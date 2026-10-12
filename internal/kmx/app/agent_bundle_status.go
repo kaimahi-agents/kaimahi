@@ -87,6 +87,7 @@ type bundleStatusTarget struct {
 // exposed for both Provider and Agent so a caller can see whether the two
 // objects agree, not only whether the Agent does.
 type bundleResourceStatus struct {
+	suiteReserved  bool
 	Found          bool   `json:"found"`
 	UID            string `json:"uid,omitempty"`
 	Generation     int64  `json:"generation,omitempty"`
@@ -540,7 +541,7 @@ func retiredReleasedResourcesMatch(bundle string, target bundleStatusTarget, clu
 		if !resource.live.Found {
 			continue
 		}
-		if resource.live.Marked || resource.live.UID == "" {
+		if resource.live.suiteReserved || resource.live.Marked || resource.live.UID == "" {
 			return false
 		}
 		matched := false
@@ -583,6 +584,7 @@ func describeOrkaResource(raw []byte) bundleResourceStatus {
 	}
 	result.UID = doc.Metadata.UID
 	result.Generation = doc.Metadata.Generation
+	result.suiteReserved = hasOrkaSuiteReservation(doc.Metadata.Annotations)
 	if owner, ok := doc.Metadata.Annotations[orkaBundleMarker].(string); ok && owner != "" {
 		result.Marked = true
 		result.MarkerOwner = owner
@@ -599,6 +601,9 @@ func describeOrkaResource(raw []byte) bundleResourceStatus {
 				result.Ready = true
 			}
 		}
+	}
+	if result.suiteReserved {
+		result.Marked, result.MarkerOwner, result.PortableDigest, result.RenderedDigest = false, "", "", ""
 	}
 	return result
 }

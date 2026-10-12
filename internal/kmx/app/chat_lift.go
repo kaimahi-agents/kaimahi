@@ -393,6 +393,11 @@ func (b *orkaChatBackend) liftBundle(ctx context.Context) (*scaffold.OrkaBundle,
 }
 
 func portableLiftBundle(agent, provider map[string]any, name, namespace string) (*scaffold.OrkaBundle, error) {
+	for _, doc := range []map[string]any{agent, provider} {
+		if err := refuseOrkaSuiteDocument(doc); err != nil {
+			return nil, err
+		}
+	}
 	// Keep source objects untouched while rewriting target references.
 	raw, err := json.Marshal([]map[string]any{agent, provider})
 	if err != nil {

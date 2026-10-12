@@ -648,6 +648,11 @@ func decodeOrkaDocument(raw []byte, want string) (map[string]any, error) {
 	if kind, _ := doc["kind"].(string); kind != want {
 		return nil, fmt.Errorf("rendered Orka document is %q where %q was expected", kind, want)
 	}
+	if want == "Provider" || want == "Agent" {
+		if err := refuseOrkaSuiteDocument(doc); err != nil {
+			return nil, err
+		}
+	}
 	return doc, nil
 }
 

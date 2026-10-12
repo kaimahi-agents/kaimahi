@@ -29,7 +29,16 @@ explicit target, Ready Provider/Secret binding and pinned installed Orka runtime
 then validates and retains one exact unmarked render from `workspace.Load`.
 Secret reads project metadata and key presence, never values. Installed Agent,
 Provider and Task CRDs are validator prerequisites, not Task execution. This is
-read-only internal capability, not a workspace evaluation or placement CLI.
+internal capability, not a workspace evaluation or placement CLI. Private placement
+consumes that prepared render, preflights both resources before confirmation,
+rechecks inputs and reviewed decisions, and conditionally creates or updates only
+same-owner native Provider/Agent resources. Verification binds current ownership,
+UID, generation, spec and Ready to each live snapshot. It returns no placement on
+failure; a late failure can leave resources for a later explicit invocation.
+All six native annotation keys reserve objects against legacy adoption, reuse,
+copying, bundle authorization and retirement, even with malformed values. These
+fences do not prohibit generic live-Agent status or execution. Fake readiness is
+not model execution or cluster qualification.
 
 ## Repository layout
 
