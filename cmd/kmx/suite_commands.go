@@ -137,7 +137,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 			"An existing registry tag with the same digest is a no-op, except that provenance is attached if none is visible;\n" +
 			"replacing a different digest requires --force. The tag preflight check is NOT ATOMIC against concurrent pushers.\n\n" +
 			"A registry push attaches unsigned SLSA provenance as an OCI referrer of the suite manifest before moving the tag.\n" +
-			"It records the kmx version and, when every packed file matches HEAD, the Git commit and path, so anyone can\n" +
+			"It records the kmx version and, when every packed file (or selected workspace input) matches HEAD, the Git commit and path, so anyone can\n" +
 			"check out, repack and compare digests. It is a claim, not a signature: anyone with push access can attach one.\n" +
 			"Sign the suite digest where you push, for example in CI. An attach failure is a warning unless\n" +
 			"--require-provenance is set. Registries without the referrers API also get a sha256-<digest> index tag.\n" +
@@ -197,7 +197,14 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 			}
 		}
 		if cmd.Flags().Changed("workspace") {
-			return a.PushSuiteWorkspace(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce)
+			result, err := a.PushSuiteWorkspace(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance)
+			if err != nil {
+				return &suiteDiagnosticError{err}
+			}
+			if target == "" {
+				return printPushedProvenance(cmd, result)
+			}
+			return nil
 		}
 		if cmd.Flags().Changed("to-layout") {
 			result, err = a.PushSuite(cmd.Context(), args[0], target, args[1])

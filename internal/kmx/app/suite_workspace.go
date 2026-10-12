@@ -22,49 +22,61 @@ func (a *App) CreateSuiteMember(ctx context.Context, root string, opt workspace.
 
 // PushSuiteWorkspace transfers the prepared OCI graph, never re-packing it at
 // publication. The native execution profile requires no member images.
-func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout string, plainHTTP, force bool) error {
+func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance) (oras.PushResult, error) {
 	if layout == "" {
 		parsed, err := registry.ParseReference(reference)
 		if err != nil {
-			return fmt.Errorf("parse AgentSuite registry reference: %w", err)
+			return oras.PushResult{}, fmt.Errorf("parse AgentSuite registry reference: %w", err)
 		}
 		if err := parsed.ValidateReferenceAsTag(); err != nil {
-			return fmt.Errorf("AgentSuite registry push requires a tag: %w", err)
+			return oras.PushResult{}, fmt.Errorf("AgentSuite registry push requires a tag: %w", err)
 		}
 	}
 	state, err := config.StateDir()
 	if err != nil {
-		return err
+		return oras.PushResult{}, err
 	}
 	prepared, err := workspace.Prepare(ctx, root, filepath.Join(state, "suites"))
 	if err != nil {
-		return err
+		return oras.PushResult{}, err
+	}
+	var options oras.PushOptions
+	var sourceWarning string
+	if layout == "" && provenance.Enabled {
+		inputs, err := workspace.SourceFiles(ctx, root, prepared)
+		if err != nil {
+			return oras.PushResult{}, err
+		}
+		options, sourceWarning = suitePushOptions(ctx, root, provenance, inputs)
 	}
 	if err := workspace.CheckCurrent(ctx, root, prepared); err != nil {
-		return err
+		return oras.PushResult{}, err
 	}
 	var result oras.PushResult
 	if layout != "" {
 		result, err = oras.PushLayout(ctx, prepared.Path, layout, reference, prepared.Descriptor)
 	} else {
-		result, err = oras.PushLayoutRegistry(ctx, prepared.Path, reference, plainHTTP, force, prepared.Descriptor)
+		result, err = oras.PushLayoutRegistry(ctx, prepared.Path, reference, plainHTTP, force, prepared.Descriptor, options)
 	}
 	if err != nil {
-		return err
+		return oras.PushResult{}, err
 	}
 	if result.Descriptor.Digest != prepared.Descriptor.Digest {
-		return fmt.Errorf("publication returned a different prepared suite identity")
+		return oras.PushResult{}, fmt.Errorf("publication returned a different prepared suite identity")
+	}
+	if sourceWarning != "" && result.Provenance != nil {
+		result.Warnings = append(result.Warnings, sourceWarning)
 	}
 	if _, err := fmt.Fprintf(a.Out, "Pushed native-Orka AgentSuite %s to %s (%s)\nRequired member images: []\n", prepared.Name, result.Path, result.Descriptor.Digest); err != nil {
-		return err
+		return result, err
 	}
 	if layout == "" {
 		parsed, err := registry.ParseReference(reference)
 		if err != nil {
-			return err
+			return result, err
 		}
 		_, err = fmt.Fprintf(a.Out, "Pin this AgentSuite: %s/%s@%s\n", parsed.Registry, parsed.Repository, result.Descriptor.Digest)
-		return err
+		return result, err
 	}
-	return nil
+	return result, nil
 }

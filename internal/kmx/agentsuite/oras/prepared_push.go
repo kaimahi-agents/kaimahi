@@ -12,7 +12,6 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/oci"
-	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry"
 )
 
@@ -86,7 +85,7 @@ func PushLayout(ctx context.Context, source, destination, reference string, expe
 
 // PushLayoutRegistry publishes an already prepared suite, preserving its manifest
 // and content bytes. Tag replacement uses the existing non-atomic preflight policy.
-func PushLayoutRegistry(ctx context.Context, source, reference string, plainHTTP, force bool, expected ocispec.Descriptor) (PushResult, error) {
+func PushLayoutRegistry(ctx context.Context, source, reference string, plainHTTP, force bool, expected ocispec.Descriptor, options PushOptions) (PushResult, error) {
 	parsed, err := registry.ParseReference(reference)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("parse AgentSuite registry reference: %w", err)
@@ -103,21 +102,7 @@ func PushLayoutRegistry(ctx context.Context, source, reference string, plainHTTP
 		return PushResult{}, err
 	}
 	result := PushResult{Path: reference, Reference: reference, Descriptor: descriptor, Report: report}
-	existing, err := repository.Resolve(ctx, tag)
-	if err == nil {
-		if existing.Digest == descriptor.Digest {
-			return result, nil
-		}
-		if !force {
-			return PushResult{}, fmt.Errorf("AgentSuite registry tag %q already points to %s; refusing to replace it with %s without --force", reference, existing.Digest, descriptor.Digest)
-		}
-	} else if !errors.Is(err, errdef.ErrNotFound) {
-		return PushResult{}, fmt.Errorf("check existing AgentSuite registry tag: %w", err)
-	}
-	if _, err := NewPusher(repository).Push(ctx, store, descriptor, tag); err != nil {
-		return PushResult{}, err
-	}
-	return result, nil
+	return pushRegistryGraph(ctx, store, repository, tag, force, options, result)
 }
 
 func preparedLayout(source string, expected ocispec.Descriptor) (*oci.Store, ocispec.Descriptor, *spec.Report, error) {

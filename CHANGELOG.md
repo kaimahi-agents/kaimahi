@@ -28,7 +28,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `kmx suite push --workspace` prepares and publishes its exact OCI graph, including
   authored cases, with no member image build or cluster access. Existing bundle
   commands and suite transfer syntax are unchanged. Workspace evaluation and
-  release lift are not available. [Workspace guide](docs/suite-workspace.md).
+  release lift are not available. Registry workspace pushes share the default
+  unsigned provenance policy, opt-out/required flags and matching-HEAD source
+  commit claims; prepared graph bytes stay unchanged. [Workspace guide](docs/suite-workspace.md).
 
 - Registry `kmx suite push` attaches provenance by default, and `suite pull` shows the claimed kmx version and source commit when available; `--require-provenance` refuses to move the tag if attachment fails.
   Provenance is unsigned: anyone with push access can attach a claim. [Suite provenance](docs/kmx.md#suite-provenance).

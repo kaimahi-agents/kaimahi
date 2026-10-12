@@ -36,6 +36,7 @@ type nativeRecord struct {
 type snapshot struct {
 	name, fingerprint string
 	files             map[string][]byte
+	source            map[string]SourceFile
 }
 
 func entries(r *os.Root, name string, limit int) ([]os.DirEntry, error) {
@@ -73,12 +74,19 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 	}
 	defer r.Close()
 	selected := map[string]string{}
+	source := map[string]SourceFile{}
 	read := func(name string) ([]byte, error) {
 		b, err := readBounded(r, name)
-		if err == nil {
-			selected[name] = godigest.FromBytes(b).String()
+		if err != nil {
+			return nil, err
 		}
-		return b, err
+		info, err := r.Lstat(name)
+		if err != nil {
+			return nil, err
+		}
+		selected[name] = godigest.FromBytes(b).String()
+		source[name] = SourceFile{Data: b, Mode: info.Mode()}
+		return b, nil
 	}
 	wb, err := read("workspace.yaml")
 	if err != nil {
@@ -162,7 +170,7 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &snapshot{w.Name, fingerprint, files}, nil
+	return &snapshot{name: w.Name, fingerprint: fingerprint, files: files, source: source}, nil
 }
 
 // resolve builds the public graph bottom-up. Profile pins are declared build

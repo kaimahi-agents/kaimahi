@@ -34,6 +34,11 @@ func suiteOutputRegistry(t *testing.T) (*httptest.Server, godigest.Digest) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return suiteOutputRegistryFromLayout(t, layoutRoot), result.Descriptor.Digest
+}
+
+func suiteOutputRegistryFromLayout(t *testing.T, layoutRoot string) *httptest.Server {
+	t.Helper()
 	store, err := oci.New(layoutRoot)
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +84,7 @@ func suiteOutputRegistry(t *testing.T) (*httptest.Server, godigest.Digest) {
 		}
 	}))
 	t.Cleanup(server.Close)
-	return server, result.Descriptor.Digest
+	return server
 }
 
 func TestSuiteRegistryPullPrintsPinForTagsOnly(t *testing.T) {

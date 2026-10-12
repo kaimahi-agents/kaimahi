@@ -24,6 +24,27 @@ type Prepared struct {
 	Descriptor  ocispec.Descriptor
 	Name        string
 }
+
+// SourceFile is a frozen authored input, before resolution or canonicalization.
+// Mode preserves Git's executable-bit comparison; source bytes bind the fingerprint.
+type SourceFile struct {
+	Data []byte
+	Mode fs.FileMode
+}
+
+// SourceFiles returns only authored inputs belonging to the selected candidate.
+// It does not expose generated cache files or unrelated workspace content.
+func SourceFiles(ctx context.Context, root string, prepared *Prepared) (map[string]SourceFile, error) {
+	s, err := loadSource(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	if s.fingerprint != prepared.Fingerprint {
+		return nil, errors.New("workspace source changed after preparation")
+	}
+	return s.source, nil
+}
+
 type cacheRecord struct {
 	Fingerprint string             `json:"fingerprint"`
 	Descriptor  ocispec.Descriptor `json:"descriptor"`

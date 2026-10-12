@@ -12,6 +12,7 @@ import (
 	agentsuitecore "github.com/kaimahi-agents/kaimahi/agentsuite"
 	suitebuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
 // SuiteBuildResult identifies one built sandbox image archive.
@@ -78,10 +79,25 @@ func (a *App) PushSuiteRegistry(
 	force bool,
 	provenance SuitePushProvenance,
 ) (agentsuite.PushResult, error) {
+	options, sourceWarning := suitePushOptions(ctx, source, provenance, nil)
+	result, err := agentsuite.PushRegistry(ctx, source, reference, plainHTTP, force, options)
+	if err == nil && sourceWarning != "" && result.Provenance != nil {
+		result.Warnings = append(result.Warnings, sourceWarning)
+	}
+	return result, err
+}
+
+func suitePushOptions(ctx context.Context, source string, provenance SuitePushProvenance, inputs map[string]workspace.SourceFile) (agentsuite.PushOptions, string) {
 	var options agentsuite.PushOptions
 	var sourceWarning string
 	if provenance.Enabled {
-		revision, reason := suiteSourceRevision(ctx, source)
+		var revision *agentsuite.ProvenanceSource
+		var reason string
+		if inputs == nil {
+			revision, reason = suiteSourceRevision(ctx, source)
+		} else {
+			revision, reason = sourceRevision(ctx, source, inputs)
+		}
 		if revision == nil {
 			sourceWarning = "AgentSuite provenance records no source commit: " + reason
 		}
@@ -91,11 +107,7 @@ func (a *App) PushSuiteRegistry(
 			Require:        provenance.Require,
 		}
 	}
-	result, err := agentsuite.PushRegistry(ctx, source, reference, plainHTTP, force, options)
-	if err == nil && sourceWarning != "" && result.Provenance != nil {
-		result.Warnings = append(result.Warnings, sourceWarning)
-	}
-	return result, err
+	return options, sourceWarning
 }
 
 // PullSuite pulls one referenced AgentSuite from an OCI image layout and

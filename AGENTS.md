@@ -28,7 +28,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   deploys, builds images or loads cluster settings. Workspace evaluation/release
   lift are not implemented. Preserve default create, PortableAgent formats and
   old extracted-directory suite transfer; do not treat public graph validation
-  as native execution-profile validation.
+  as native execution-profile validation. Registry workspace publication shares
+  unsigned suite provenance defaults/flags and records Git source only from
+  fingerprint-bound authored inputs matching HEAD; local layouts get no referrers.
 - Recorded-session case preparation is `kmx agent eval from-sessions`; execution
   stays `kmx agent evaluate --from-sessions`. Keep reference manifests private,
   require named candidate/judge confirmation before recorded-content transfer,

@@ -73,6 +73,14 @@ the same [registry policy](kmx.md#registry-authentication) as existing suite pus
 An unchanged prepared suite retains its digest through publication and pull.
 An existing different registry tag requires `--force`.
 
+Registry publication also follows the shared [unsigned provenance policy](kmx.md#suite-provenance):
+a referrer is attached by default before moving the tag, `--provenance=false` opts
+out, and `--require-provenance` makes an attachment failure leave the tag unchanged.
+The source commit/path is recorded only when the frozen authored inputs match
+HEAD; generated cache files and unrelated files are excluded from that comparison.
+Dirty/non-Git source still publishes a source-less claim and explains why.
+Unsigned provenance is informational, not evaluation or promotion evidence.
+
 For offline transfer, the local target's parent directory must exist:
 
 ```sh
@@ -81,7 +89,8 @@ kmx suite pull my-agents:v1 --from-layout ../suite-layout --output ../extracted
 kmx suite validate ../extracted
 ```
 
-`--plain-http` and `--force` are registry-only and refused with `--to-layout`.
+Local layouts receive no provenance. `--plain-http`, `--force`, explicit
+`--provenance` and `--require-provenance` are refused with `--to-layout`.
 Local layout publication excludes competing KMX writers before opening the target
 index, including extracted-directory pushes. A competing invocation refuses;
 references from successful publications remain intact. An interrupted writer can

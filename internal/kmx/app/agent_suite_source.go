@@ -20,12 +20,19 @@ import (
 	"time"
 
 	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
 // suiteSourceRevision returns the HEAD commit if it holds exactly the files
 // push packs from dir, or why not. Like lift, it compares bytes with HEAD:
 // git status can hide edits and ignores untracked files, which are packed.
 func suiteSourceRevision(ctx context.Context, dir string) (*agentsuite.ProvenanceSource, string) {
+	return sourceRevision(ctx, dir, nil)
+}
+
+// sourceRevision shares Git discovery and reproducibility checks. A workspace
+// supplies fingerprint-bound raw inputs; extracted suites match the whole tree.
+func sourceRevision(ctx context.Context, dir string, inputs map[string]workspace.SourceFile) (*agentsuite.ProvenanceSource, string) {
 	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	absolute, err := filepath.Abs(dir)
@@ -95,12 +102,23 @@ func suiteSourceRevision(ctx context.Context, dir string) (*agentsuite.Provenanc
 	if len(committed) == 0 {
 		return nil, "suite directory is not in HEAD"
 	}
-	if reason := matchCommittedTree(gitCtx, canonical, committed, newHash); reason != "" {
+	var reason string
+	if inputs == nil {
+		reason = matchCommittedTree(gitCtx, canonical, committed, newHash)
+	} else {
+		reason = matchWorkspaceTree(gitCtx, inputs, committed, newHash)
+	}
+	if reason != "" {
 		return nil, reason
 	}
 	// These attributes make a checkout differ from the blob.
 	var paths []byte
 	for name := range committed {
+		if inputs != nil {
+			if _, selected := inputs[name]; !selected {
+				continue
+			}
+		}
 		full := name
 		if rel != "." {
 			full = rel + "/" + name
@@ -113,6 +131,16 @@ func suiteSourceRevision(ctx context.Context, dir string) (*agentsuite.Provenanc
 	}
 	if reason := checkoutRewrites(attrs); reason != "" {
 		return nil, reason
+	}
+	if inputs != nil {
+		// Unselected .gitattributes edits must not mask rewriting rules at HEAD.
+		attrs, err := git(paths, "-C", root, "check-attr", "--source="+commit, "-z", "--stdin", "eol", "filter", "ident", "working-tree-encoding")
+		if err != nil {
+			return nil, "Git attributes at HEAD could not be read"
+		}
+		if reason := checkoutRewrites(attrs); reason != "" {
+			return nil, reason
+		}
 	}
 	source := &agentsuite.ProvenanceSource{Commit: commit, Path: rel}
 	if remote, err := git(nil, "remote", "get-url", "origin"); err == nil {
@@ -238,6 +266,44 @@ func matchCommittedTree(ctx context.Context, dir string, committed map[string]co
 	for _, directory := range directories {
 		if !nonEmpty[directory] {
 			return directory + " is an empty directory, which Git cannot record"
+		}
+	}
+	return ""
+}
+
+// matchWorkspaceTree compares frozen authored bytes, not generated OCI files or
+// a later live tree. HEAD must also reproduce the case and one-member inventory.
+func matchWorkspaceTree(ctx context.Context, inputs map[string]workspace.SourceFile, committed map[string]committedEntry, newHash func() hash.Hash) string {
+	member := ""
+	for name := range inputs {
+		if strings.HasPrefix(name, "agents/") && strings.HasSuffix(name, "/member.yaml") {
+			member = path.Dir(name) + "/"
+		}
+	}
+	for name := range committed {
+		if strings.HasPrefix(name, "eval/") {
+			if _, selected := inputs[name]; !selected {
+				return name + " is in HEAD but missing from selected cases"
+			}
+		}
+		if strings.HasPrefix(name, "agents/") && !strings.HasPrefix(name, member) {
+			return "HEAD does not reproduce the selected one-member inventory"
+		}
+	}
+	for name, file := range inputs {
+		if err := ctx.Err(); err != nil {
+			return err.Error()
+		}
+		want, tracked := committed[name]
+		if !tracked {
+			return name + " is not in HEAD"
+		}
+		mode := "100644"
+		if file.Mode.Perm()&0o111 != 0 {
+			mode = "100755"
+		}
+		if mode != want.mode || gitObjectID(newHash, file.Data) != want.object {
+			return name + " differs from HEAD"
 		}
 	}
 	return ""

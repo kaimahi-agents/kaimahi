@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
 func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
@@ -104,6 +107,80 @@ func TestWorkspaceSelectorsRejectEmptyAndAmbiguousSource(t *testing.T) {
 		}
 		if *loads != 0 {
 			t.Fatal("invalid source selection loaded config")
+		}
+	}
+}
+
+func TestWorkspaceRegistryPushProvenanceControls(t *testing.T) {
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
+	root := filepath.Join(t.TempDir(), "workspace")
+	input := filepath.Join(t.TempDir(), "instructions.md")
+	if err := os.WriteFile(input, []byte("Answer briefly.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Create(context.Background(), root, workspace.CreateOptions{Name: "greeter", Model: "test-model", InstructionsFile: input}); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := workspace.Prepare(context.Background(), root, filepath.Join(t.TempDir(), "cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := suiteOutputRegistryFromLayout(t, prepared.Path)
+	ref := strings.TrimPrefix(server.URL, "http://") + "/team/suite:prepared"
+	for _, tc := range []struct {
+		name              string
+		flags             []string
+		required, warning bool
+	}{
+		{"default", nil, false, true},
+		{"opt-out", []string{"--provenance=false"}, false, false},
+		{"required", []string{"--require-provenance"}, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "opt-out" {
+				t.Setenv("PATH", t.TempDir())
+			}
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			args := append([]string{"suite", "push", "--workspace", root, ref, "--plain-http"}, tc.flags...)
+			err := execute(args, deps)
+			if tc.required {
+				if err == nil || !strings.Contains(err.Error(), "tag was not changed") {
+					t.Fatalf("required attachment failure: %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := strings.Contains(diagnostics.String(), "provenance was not attached"); got != tc.warning {
+					t.Fatalf("default/opt-out warning = %q, want %t", diagnostics.String(), tc.warning)
+				}
+			}
+			if *loads != 0 {
+				t.Fatal("workspace provenance loaded operational configuration")
+			}
+		})
+	}
+}
+
+func TestWorkspaceProvenanceFlagsRefuseConflictsBeforePreparation(t *testing.T) {
+	for _, flags := range [][]string{
+		{"--provenance=false", "--require-provenance"},
+		{"--to-layout", "missing-layout", "--provenance=false"},
+		{"--to-layout", "missing-layout", "--require-provenance"},
+	} {
+		state := t.TempDir()
+		t.Setenv("KMX_HOME", state)
+		var out, diagnostics bytes.Buffer
+		deps, loads := testDependencies(&out, &diagnostics)
+		args := append([]string{"suite", "push", "--workspace", "missing-workspace", "team:v1"}, flags...)
+		if err := execute(args, deps); err == nil || !strings.Contains(err.Error(), "provenance") {
+			t.Fatalf("invalid provenance flags: %v", err)
+		}
+		entries, err := os.ReadDir(state)
+		if err != nil || len(entries) != 0 || *loads != 0 {
+			t.Fatal("invalid provenance flags prepared state or loaded config")
 		}
 	}
 }

@@ -368,9 +368,9 @@ section documents its build type, which the statement names as
 | `subject` | the suite name and its OCI manifest digest |
 | `runDetails.builder.id` | `https://github.com/kaimahi-agents/kaimahi/cmd/kmx`; `version.kmx` is the kmx version when known |
 | `resolvedDependencies` | one `gitCommit`, with a `git+https://` URI when `origin` is a credential-free HTTPS or `git@host:` remote; absent otherwise |
-| `externalParameters.sourcePath` | the suite directory relative to the repository root, when a commit is recorded |
+| `externalParameters.sourcePath` | the extracted suite or authored workspace directory relative to the repository root, when a commit is recorded |
 
-kmx records the commit only when every file it packs matches `HEAD` byte for
+For extracted directories, kmx records the commit only when every file it packs matches `HEAD` byte for
 byte, with the same executable bit, and nothing else is in the directory:
 untracked, ignored, edited, deleted and skip-worktree files, empty
 directories, and `eol`, `filter`, `ident` or `working-tree-encoding` Git
@@ -380,6 +380,16 @@ anyone can check the claim: check out the commit with
 with the recorded kmx version, and compare the suite digest. The origin URL
 and path are published with the suite; use `--provenance=false` if they are
 private.
+
+Registry `suite push --workspace` uses the same unsigned provenance policy and
+flags. Its commit check compares the fingerprint-bound raw authored inputs with
+HEAD, including executable bits, rewriting attributes and the complete case and
+one-member inventory. Unrelated files and Git internals are not selected inputs.
+Generated cache content is not the Git source. To reproduce a workspace claim,
+check out the recorded commit with `-c core.autocrlf=false`, then run
+`kmx suite push --workspace SOURCE_PATH --to-layout NEW_LAYOUT v1` with the recorded
+kmx version and compare the suite digest. Dirty/non-Git source still gets a
+source-less claim; `--require-provenance` requires attachment, not a source commit.
 
 The statement has no timestamps, so the same suite, source and kmx version
 always produce the same referrer. It is a claim, **not a signature**: anyone
