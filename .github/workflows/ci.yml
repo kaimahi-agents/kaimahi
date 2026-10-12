@@ -677,9 +677,9 @@ jobs:
       - name: The retired runtime is refused by name, not resolved to Orka
         run: |
           set -euo pipefail
-          go test ./internal/kmx/app ./cmd/kmx -run 'Retired' -count=1 -v | tee retirement.out
+          go test ./internal/kmx/app ./cmd/kmx -run 'Retired|TestLegacyAgentEditIsRemovedBeforeConfiguration' -count=1 -v | tee retirement.out
           grep -q -- '--- PASS: TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster' retirement.out
-          grep -q -- '--- PASS: TestLegacyRuntimeCommandsAreRetired' retirement.out
+          grep -q -- '--- PASS: TestLegacyAgentEditIsRemovedBeforeConfiguration' retirement.out
           ! grep -q -- '--- SKIP:' retirement.out
       - name: AgentSuite incremental artifact diff end to end
         run: |
