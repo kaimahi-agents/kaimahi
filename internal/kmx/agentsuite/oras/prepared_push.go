@@ -18,7 +18,7 @@ import (
 
 // PushLayout copies a prepared suite's exact OCI graph without re-archiving its
 // extracted content. Existing destination layouts retain unrelated references.
-func PushLayout(ctx context.Context, source, destination, reference string, expected ocispec.Descriptor) (PushResult, error) {
+func PushLayout(ctx context.Context, source, destination, reference string, expected ocispec.Descriptor) (result PushResult, err error) {
 	if reference == "" {
 		return PushResult{}, errors.New("AgentSuite push reference is required")
 	}
@@ -45,6 +45,11 @@ func PushLayout(ctx context.Context, source, destination, reference string, expe
 	if pathWithin(sourcePath, filepath.Join(parent, filepath.Base(destinationPath))) {
 		return PushResult{}, errors.New("AgentSuite target must be outside the prepared source layout")
 	}
+	release, err := lockLayoutPublication(ctx, destinationPath)
+	if err != nil {
+		return PushResult{}, err
+	}
+	defer finishLayoutPublication(release, &err)
 	targetPath := destinationPath
 	updated := false
 	info, err := os.Lstat(destinationPath)
