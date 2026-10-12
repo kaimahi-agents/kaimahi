@@ -256,7 +256,7 @@ func suiteNativeControllerRuntime(controller orkaDeployment, namespace string) (
 		return out, fmt.Errorf("native suite requires a live chart controller identity")
 	}
 	out.Helm = suiteNativeHelm(controller.Metadata.Labels)
-	if out.Helm.Chart != "orka-0.2.0" || out.Helm.Instance == "" || out.Helm.App != "orka" || out.Helm.ManagedBy != "Helm" || controller.Metadata.Labels["app.kubernetes.io/component"] != "controller" {
+	if !suiteNativePinnedHelm(out.Helm) || controller.Metadata.Labels["app.kubernetes.io/component"] != "controller" {
 		return out, fmt.Errorf("native suite requires the pinned Orka chart identity")
 	}
 	status, replicas := controller.Status, controller.Spec.Replicas
@@ -284,12 +284,21 @@ func suiteNativeControllerRuntime(controller orkaDeployment, namespace string) (
 			*field.dst = value
 		}
 	}
-	if controllers != 1 || out.Mode != "harness-v2" || out.WatchNamespace != namespace || out.AIWorkerImage != "ghcr.io/orka-agents/orka/ai-worker@"+orkaAIWorkerDigest || scaffold.ValidateObjectName(controller.Spec.Template.Spec.ServiceAccountName) != nil {
+	out.ControllerServiceAccount = controller.Spec.Template.Spec.ServiceAccountName
+	if controllers != 1 || !suiteNativePinnedRuntime(out, namespace) {
 		return out, fmt.Errorf("unsupported native controller mode, watch namespace, worker image or account")
 	}
 	out.ControllerName, out.ControllerUID, out.ControllerGeneration = controller.Metadata.Name, controller.Metadata.UID, controller.Metadata.Generation
 	out.ControllerReplicas, out.ControllerServiceAccount = replicas, controller.Spec.Template.Spec.ServiceAccountName
 	return out, nil
+}
+
+func suiteNativePinnedHelm(h suiteNativeHelmIdentity) bool {
+	return h.Chart == "orka-0.2.0" && h.Instance != "" && h.App == "orka" && h.ManagedBy == "Helm"
+}
+
+func suiteNativePinnedRuntime(r suiteNativeRuntime, namespace string) bool {
+	return suiteNativePinnedHelm(r.Helm) && r.ControllerImage == "ghcr.io/orka-agents/orka@"+orkaControllerDigest && r.Mode == "harness-v2" && r.WatchNamespace == namespace && r.AIWorkerImage == "ghcr.io/orka-agents/orka/ai-worker@"+orkaAIWorkerDigest && scaffold.ValidateObjectName(r.ControllerServiceAccount) == nil && scaffold.ValidateObjectName(r.WorkerAccount) == nil
 }
 
 func (a *App) readSuiteNativeRuntime(ctx context.Context, namespace string) (suiteNativeRuntime, error) {

@@ -40,6 +40,19 @@ copying, bundle authorization and retirement, even with malformed values. These
 fences do not prohibit generic live-Agent status or execution. Fake readiness is
 not model execution or cluster qualification.
 
+Private full-passing receipts project Task/answer and ordered case/assertion
+identities only, never prompts, answers, operands, reasons or diagnostics. Their
+constructor binds observed raw-case/input frames and successful placement to a
+verified package; later execution must bracket observations with native
+verification. The private export preflight retains one private anchored directory
+outside authored workspace/cache trees and publishes complete bytes with an
+exclusive hard link, not history or replacement. The private receipt-file push
+consumer parses before cache writes, compares exact S, and validates packaged
+subject/render/inventory coherence before provenance or transfer. Source
+fingerprint is authored spelling, not a durable publication lock. These unsigned
+observations prove neither authenticity nor cross-object atomicity. No workspace
+evaluation CLI or live execution producer is enabled.
+
 ## Repository layout
 
 Consult the [repository map](repository-map.md) for tracked membership and caller

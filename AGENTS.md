@@ -31,6 +31,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   old extracted-directory suite transfer; do not treat public graph validation
   as native execution-profile validation. Private packaged-native preparation and
   ownership-safe Provider/Agent placement have no CLI or execution qualification.
+  Private native passing receipts retain only full ordered passing metadata, export
+  once without replacement outside workspace/cache trees, and bind the private
+  receipt-file push consumer to exact S plus offline packaged coherence. There is
+  no native evaluation CLI or execution producer yet; unsigned receipts do not
+  prove authentication or drift absence.
   Any presence of a native suite ownership annotation reserves desired/live
   resources against legacy adoption, copying, bundle authorization and retirement.
   Registry workspace publication shares unsigned suite provenance defaults/flags and records Git source only from

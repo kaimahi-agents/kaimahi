@@ -30,6 +30,21 @@ func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout st
 // expectedS binds publication to the full packaged artifact, not merely its
 // public graph or source spelling. Nil is the explicit unevaluated path.
 func (a *App) pushSuiteWorkspace(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance, expectedS *digest.Digest) (oras.PushResult, error) {
+	return a.pushSuiteWorkspaceCore(ctx, root, reference, layout, plainHTTP, force, provenance, expectedS, nil)
+}
+
+// The file is parsed before state/cache preparation. There is no typed public
+// bypass, and authored fingerprint spelling is not a publication selection lock.
+func (a *App) pushSuiteWorkspaceEvaluated(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance, receiptFile string) (oras.PushResult, error) {
+	receipt, err := readSuitePassingReceipt(ctx, receiptFile)
+	if err != nil {
+		return oras.PushResult{}, err
+	}
+	expected := digest.Digest(receipt.Subject.SuiteDigest)
+	return a.pushSuiteWorkspaceCore(ctx, root, reference, layout, plainHTTP, force, provenance, &expected, receipt)
+}
+
+func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance, expectedS *digest.Digest, receipt *suitePassingReceipt) (oras.PushResult, error) {
 	var expected digest.Digest
 	if expectedS != nil {
 		expected = *expectedS
@@ -56,6 +71,15 @@ func (a *App) pushSuiteWorkspace(ctx context.Context, root, reference, layout st
 	}
 	if expectedS != nil && prepared.Descriptor.Digest != expected {
 		return oras.PushResult{}, fmt.Errorf("prepared suite does not match the expected publication identity")
+	}
+	if receipt != nil {
+		suite, err := workspace.Load(ctx, prepared)
+		if err != nil {
+			return oras.PushResult{}, err
+		}
+		if _, err := canonicalSuitePassingReceipt(ctx, receipt, suite); err != nil {
+			return oras.PushResult{}, err
+		}
 	}
 	var options oras.PushOptions
 	var sourceWarning string
