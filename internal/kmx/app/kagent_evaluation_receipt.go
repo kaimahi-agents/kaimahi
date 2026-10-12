@@ -292,6 +292,9 @@ func normalizeKagentEvaluation(r kagentEvaluationReceipt) (normalizedEvaluation,
 		if !validKagentEvaluationExecution(c) || !addEvaluationDiffCase(&n, c.ID, c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) {
 			return n, false
 		}
+		entry := n.Cases[c.ID]
+		entry.IdentityComplete = n.IdentityComplete
+		n.Cases[c.ID] = entry
 		for _, id := range []struct {
 			value string
 			seen  map[string]bool
