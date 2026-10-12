@@ -307,14 +307,3 @@ var (
 	_ RuntimeBuilder  = createOnlyRuntime{}
 	_ RuntimeDeployer = createOnlyRuntime{}
 )
-
-type suiteBuilder struct{}
-
-func (suiteBuilder) Package(context.Context, kmx.PackageSuiteRequest) (kmx.PackageSuiteResult, error) {
-	return kmx.PackageSuiteResult{}, nil
-}
-func (suiteBuilder) BuildSandbox(context.Context, kmx.BuildSandboxRequest) (kmx.AgentSandboxImage, error) {
-	return kmx.AgentSandboxImage{}, nil
-}
-
-var _ AgentSuiteBuilder = suiteBuilder{}

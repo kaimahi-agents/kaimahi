@@ -53,6 +53,10 @@ var evaluationCaseIDRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 // before any gate can quote them back, and aliases, merge keys and repeated
 // keys are refused rather than resolved.
 func ParseEvaluationCase(data []byte) (EvaluationCase, error) {
+	return parseEvaluationCase(data, false)
+}
+
+func parseEvaluationCase(data []byte, reference bool) (EvaluationCase, error) {
 	if err := refuseEvaluationSecretShape(string(data)); err != nil {
 		return EvaluationCase{}, err
 	}
@@ -80,6 +84,30 @@ func ParseEvaluationCase(data []byte) (EvaluationCase, error) {
 	// yaml.v3 skips null sequence entries before invoking element unmarshallers.
 	// Refuse them explicitly so a malformed authored assertion cannot disappear.
 	mapping := root.Content[0]
+	if reference {
+		for i := 0; i < len(mapping.Content); i += 2 {
+			key, value := mapping.Content[i].Value, mapping.Content[i+1]
+			switch key {
+			case "id":
+				if value.Kind != yaml.ScalarNode || value.Tag != "!!str" {
+					return EvaluationCase{}, fmt.Errorf("reference assertions id must be a string")
+				}
+			case "expectContains", "assertions":
+				if value.Kind != yaml.SequenceNode {
+					return EvaluationCase{}, fmt.Errorf("reference assertions must be sequences")
+				}
+				if key == "expectContains" {
+					for _, entry := range value.Content {
+						if entry.Kind != yaml.ScalarNode || entry.Tag != "!!str" {
+							return EvaluationCase{}, fmt.Errorf("reference expectation must be a string")
+						}
+					}
+				}
+			default:
+				return EvaluationCase{}, fmt.Errorf("reference assertions contain an unsupported field")
+			}
+		}
+	}
 	for i := 0; i < len(mapping.Content); i += 2 {
 		if mapping.Content[i].Value != "assertions" || mapping.Content[i+1].Kind != yaml.SequenceNode {
 			continue
@@ -99,7 +127,7 @@ func ParseEvaluationCase(data []byte) (EvaluationCase, error) {
 	if !evaluationCaseIDRE.MatchString(c.ID) {
 		return EvaluationCase{}, fmt.Errorf("evaluation case id must be 1-63 letters, digits, '.', '_' or '-', starting with a letter or digit")
 	}
-	if strings.TrimSpace(c.Input) == "" {
+	if !reference && strings.TrimSpace(c.Input) == "" {
 		return EvaluationCase{}, fmt.Errorf("evaluation case %s: input is required", c.ID)
 	}
 	if len(c.ExpectContains) == 0 && len(c.Assertions) == 0 {

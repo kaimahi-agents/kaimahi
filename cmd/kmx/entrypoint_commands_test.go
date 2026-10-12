@@ -57,6 +57,34 @@ func TestEntrypointsRejectInvalidArgumentsBeforeConfiguration(t *testing.T) {
 	}
 }
 
+func TestQuickstartHelpDistinguishesAnswerFromGuidedReadiness(t *testing.T) {
+	for _, args := range [][]string{{"quickstart", "--help"}, {"quickstart", "--interactive", "--help"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			if err := execute(args, deps); err != nil {
+				t.Fatal(err)
+			}
+			for _, text := range []string{
+				"Fixed mode", "hello-world-agent", "prints its answer",
+				"Guided mode (--interactive, experimental)",
+				"You may finish at Agent readiness without a model answer",
+				"The fixed-mode default question is not submitted in guided mode",
+				"not run for an existing Agent",
+				"deployed Provider, not host-backed chat inference",
+				"kmx quickstart -o json", "kmx quickstart --interactive",
+			} {
+				if !strings.Contains(out.String(), text) {
+					t.Errorf("help lacks %q", text)
+				}
+			}
+			if *loads != 0 {
+				t.Fatal("help loaded config")
+			}
+		})
+	}
+}
+
 func entrypointTools(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

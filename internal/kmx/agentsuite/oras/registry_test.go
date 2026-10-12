@@ -117,10 +117,10 @@ func TestRegistryPushPullOverHTTP(t *testing.T) {
 	}
 
 	reference := registryHost + "/team/suite:v1"
-	if _, err := PushRegistry(ctx, source, reference, false, false); err == nil {
+	if _, err := PushRegistry(ctx, source, reference, false, false, PushOptions{}); err == nil {
 		t.Fatal("PushRegistry() to an HTTP registry without plain HTTP opt-in succeeded")
 	}
-	pushed, err := PushRegistry(ctx, source, reference, true, false)
+	pushed, err := PushRegistry(ctx, source, reference, true, false, PushOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

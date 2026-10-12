@@ -14,6 +14,7 @@ import (
 	"github.com/aramase/agentsessions/controller"
 	"github.com/aramase/agentsessions/eventlog"
 	"github.com/aramase/agentsessions/harness/chatagent"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,7 +22,7 @@ import (
 )
 
 // ReferenceRevision identifies the local chat semantics, not the remote host's code.
-const ReferenceRevision = "v0.1.3-0.20261008190619-e680ea10d3b4"
+const ReferenceRevision = runtime.SessionReferenceHarnessVersion
 
 const (
 	maxVerifyRecords = 20000
@@ -49,11 +50,6 @@ type VerifyResult struct {
 // cancellation and RPC failures return unknown with a fixed, sanitized error.
 func (c *Client) VerifyCase(ctx context.Context, request VerifyRequest) (VerifyResult, error) {
 	result := VerifyResult{Status: "unknown"}
-	evidence := func(state, detail string) (VerifyResult, error) {
-		result.Status = state
-		result.Detail = detail
-		return result, nil
-	}
 	fail := func(code codes.Code, detail string) (VerifyResult, error) {
 		result.Detail = detail
 		return result, status.Error(code, detail)
@@ -67,37 +63,70 @@ func (c *Client) VerifyCase(ctx context.Context, request VerifyRequest) (VerifyR
 		return result, safeRPCError(err, result.Detail)
 	}
 	if request.Harness != "chat" {
-		return evidence("unsupported", "agentsessions: reference harness unavailable")
+		result.Status = "unsupported"
+		result.Detail = "agentsessions: reference harness unavailable"
+		return result, nil
 	}
 	if request.Head.Seq > maxVerifyRecords {
 		return fail(codes.ResourceExhausted, "agentsessions: journal exceeds verification bounds")
 	}
+	records, head, result, err := c.replayVerifiedJournal(ctx, request.SessionUID, request.Head.Seq)
+	if err != nil || result.Status != "" {
+		return result, err
+	}
+	if head != request.Head {
+		result.Status = "mismatch"
+		result.Detail = "agentsessions: receipt prefix head mismatch"
+		return result, nil
+	}
+	if !referenceChatInvocation(records) {
+		result.Status = "unsupported"
+		result.Detail = "agentsessions: reference invocation shape unavailable"
+		return result, nil
+	}
+	return referenceChatProof(ctx, records, request.Model, request.AnswerSHA256)
+}
 
+// replayVerifiedJournal is shared by receipt verification and reference reads.
+// A blank status means an intact bounded stream; callers still validate its
+// head, shape and request/output equivalence before trusting any payload.
+func (c *Client) replayVerifiedJournal(ctx context.Context, uid string, toSeq int64) ([]eventlog.Record, JournalHead, VerifyResult, error) {
+	result := VerifyResult{Status: "unknown"}
+	var records []eventlog.Record
+	var head JournalHead
+	evidence := func(state, detail string) ([]eventlog.Record, JournalHead, VerifyResult, error) {
+		result.Status = state
+		result.Detail = detail
+		return nil, head, result, nil
+	}
+	fail := func(code codes.Code, detail string) ([]eventlog.Record, JournalHead, VerifyResult, error) {
+		result.Detail = detail
+		return nil, head, result, status.Error(code, detail)
+	}
+	rpcFail := func(err error, detail string) ([]eventlog.Record, JournalHead, VerifyResult, error) {
+		result.Detail = detail
+		return nil, head, result, safeRPCError(err, detail)
+	}
 	// The SDK convenience method buffers without limits. Use its official stub
 	// and cancel the stream on every early refusal; never Exec, Resume or fence a
 	// live session. The caller chooses the connection, not journal metadata.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := c.sdk.Sessions().Replay(ctx, &v1.ReplayRequest{Session: request.SessionUID, FromSeq: 1, ToSeq: request.Head.Seq}, grpc.MaxCallRecvMsgSize(maxVerifyBytes))
+	stream, err := c.sdk.Sessions().Replay(ctx, &v1.ReplayRequest{Session: uid, FromSeq: 1, ToSeq: toSeq}, grpc.MaxCallRecvMsgSize(maxVerifyBytes))
 	if err != nil {
-		result.Detail = "agentsessions: replay request failed"
-		return result, safeRPCError(err, result.Detail)
+		return rpcFail(err, "agentsessions: replay request failed")
 	}
-	var records []eventlog.Record
-	var head JournalHead
 	total := 0
 	for {
 		if err := ctx.Err(); err != nil {
-			result.Detail = "agentsessions: verification context ended"
-			return result, safeRPCError(err, result.Detail)
+			return rpcFail(err, "agentsessions: verification context ended")
 		}
 		record, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			result.Detail = "agentsessions: replay stream failed"
-			return result, safeRPCError(err, result.Detail)
+			return rpcFail(err, "agentsessions: replay stream failed")
 		}
 		size := proto.Size(record)
 		if len(records) >= maxVerifyRecords || size > maxVerifyBytes-total {
@@ -107,12 +136,11 @@ func (c *Client) VerifyCase(ctx context.Context, request VerifyRequest) (VerifyR
 		if record == nil || len(record.ProtoReflect().GetUnknown()) != 0 || !validEvent(record.GetEvent()) {
 			return evidence("unsupported", "agentsessions: journal wire content unavailable")
 		}
-		if record.Seq != head.Seq+1 || record.Seq > request.Head.Seq || record.PrevHash != head.Hash {
+		if record.Seq != head.Seq+1 || record.Seq > toSeq || record.PrevHash != head.Hash {
 			return evidence("mismatch", "agentsessions: journal prefix integrity mismatch")
 		}
-		// The received protobuf is owned by this call. Clone before the domain
-		// conversion because opaque buffers/config are otherwise aliased, and
-		// NewFrom copies only the outer record slice.
+		// Clone before domain conversion because opaque buffers/config otherwise
+		// alias wire data, and NewFrom copies only the outer record slice.
 		isolated := proto.Clone(record).(*v1.LogRecord)
 		domain := eventlog.RecordFromProto(isolated)
 		hash, err := canon.HashRecord(domain.PrevHash, domain.Seq, domain.Event)
@@ -124,42 +152,43 @@ func (c *Client) VerifyCase(ctx context.Context, request VerifyRequest) (VerifyR
 		head = JournalHead{Seq: domain.Seq, Hash: hash}
 	}
 	if err := ctx.Err(); err != nil {
-		result.Detail = "agentsessions: verification context ended"
-		return result, safeRPCError(err, result.Detail)
+		return rpcFail(err, "agentsessions: verification context ended")
 	}
-	if head != request.Head {
-		return evidence("mismatch", "agentsessions: receipt prefix head mismatch")
+	result.Status = ""
+	return records, head, result, nil
+}
+
+// referenceChatProof uses only isolated records and the pinned harness. No
+// provider endpoint/client, tool executor, live store or live fence is available.
+func referenceChatProof(ctx context.Context, records []eventlog.Record, model, answerDigest string) (VerifyResult, error) {
+	result := VerifyResult{Status: "unknown", Records: len(records), ConfigSHA256: verifySHA256(records[0].Event.ExecutionStart.Config)}
+	evidence := func(state, detail string) (VerifyResult, error) {
+		result.Status = state
+		result.Detail = detail
+		return result, nil
 	}
-	if !referenceChatInvocation(records) {
-		return evidence("unsupported", "agentsessions: reference invocation shape unavailable")
+	fail := func(code codes.Code, detail string) (VerifyResult, error) {
+		result.Detail = detail
+		return result, status.Error(code, detail)
 	}
-	result.ConfigSHA256 = verifySHA256(records[0].Event.ExecutionStart.Config)
-	if records[2].Event.ModelCall.Model != request.Model {
+	if records[2].Event.ModelCall.Model != model {
 		return evidence("mismatch", "agentsessions: recorded model mismatch")
 	}
-
-	// Bound concatenation before calling upstream Message.Text, which otherwise
-	// creates an unbounded string. Text-only shape validation preserves every part.
-	var answer strings.Builder
-	for _, part := range records[3].Event.Message.Parts {
-		if len(part.Text.Text) > maxAnswerBytes-answer.Len() {
-			return fail(codes.ResourceExhausted, "agentsessions: committed answer exceeds 1 MiB")
-		}
-		answer.WriteString(part.Text.Text)
+	recorded, err := boundedReferenceText(records[3].Event.Message)
+	if err != nil {
+		return fail(codes.ResourceExhausted, "agentsessions: committed answer exceeds 1 MiB")
 	}
-	recorded := answer.String()
 	calls := 0
 	failOnCall := func(context.Context, api.ModelRequest) (api.ModelResponse, error) {
 		calls++
 		return api.ModelResponse{}, errors.New("agentsessions: live model forbidden")
 	}
-	// The controller mints a fence only on this isolated memory copy. No provider
-	// endpoint/client, tool executor, live store or live fence is available.
+	// The controller mints a fence only on this isolated memory copy.
 	replay, err := controller.New(eventlog.AsStore(eventlog.NewFrom(records)), failOnCall)
 	if err != nil {
 		return fail(codes.Internal, "agentsessions: reference reconstruction unavailable")
 	}
-	outputs, err := replay.Replay(ctx, chatagent.Harness{Model: request.Model})
+	outputs, err := replay.Replay(ctx, chatagent.Harness{Model: model})
 	result.ModelCalls = calls + replay.ModelInvocations()
 	if ctx.Err() != nil {
 		result.Detail = "agentsessions: verification context ended"
@@ -171,16 +200,29 @@ func (c *Client) VerifyCase(ctx context.Context, request VerifyRequest) (VerifyR
 	if err != nil {
 		return evidence("mismatch", "agentsessions: reference replay diverged")
 	}
-	// Replay checks fingerprints and complete consumption itself. Compare output
-	// count and exact text independently; receipt digests never normalize text.
+	// Replay checks fingerprints and complete consumption itself. Independently
+	// compare output count and exact text; receipt digests never normalize text.
 	if len(outputs) != 1 || outputs[0] != recorded {
 		return evidence("mismatch", "agentsessions: reconstructed outputs mismatch")
 	}
 	result.AnswerSHA256 = verifySHA256([]byte(outputs[0]))
-	if result.AnswerSHA256 != request.AnswerSHA256 {
+	if result.AnswerSHA256 != answerDigest {
 		return evidence("mismatch", "agentsessions: reconstructed answer digest mismatch")
 	}
 	return evidence("equivalent", "")
+}
+
+// Bound concatenation before upstream Message.Text can allocate unbounded text.
+// Call only after referenceTextMessage has validated every part.
+func boundedReferenceText(message *api.Message) (string, error) {
+	var text strings.Builder
+	for _, part := range message.Parts {
+		if len(part.Text.Text) > maxAnswerBytes-text.Len() {
+			return "", status.Error(codes.ResourceExhausted, "agentsessions: reference text exceeds 1 MiB")
+		}
+		text.WriteString(part.Text.Text)
+	}
+	return text.String(), nil
 }
 
 // Only the fresh, counted, single-turn, text-only chat shape is supported. This

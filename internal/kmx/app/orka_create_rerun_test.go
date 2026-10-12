@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 // orkaClusterWrites counts the calls, from index from onward, that could
@@ -86,6 +88,138 @@ func TestOrkaCreateRerunAfterProviderReadyTimeout(t *testing.T) {
 	for _, want := range []string{"Provider/sample (UID provider-uid) reused", "Created Agent/sample (UID agent-uid)", "kept " + opt.Out} {
 		if !strings.Contains(diagnostics.String(), want) {
 			t.Errorf("rerun output lacks %q:\n%s", want, diagnostics)
+		}
+	}
+}
+
+func TestOrkaCreatePreviewThenApplyKeepsArtifact(t *testing.T) {
+	a, opt, _, diagnostics, dir := orkaCreateFixture(t, "v0.2.0")
+	opt.NoApply = true
+	if err := a.CreateAgent(opt); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := os.ReadFile(opt.Out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(preview, []byte("# Orka v0.2.0 at ")) || len(orkaCalls(t, dir)) != 0 {
+		t.Fatal("preview did not use embedded schemas offline")
+	}
+	opt.NoApply = false
+	diagnostics.Reset()
+	if err := a.CreateAgent(opt); err != nil {
+		t.Fatalf("preview-to-apply refused: %v", err)
+	}
+	if got := orkaWriteKinds(orkaClusterWrites(t, dir, 0)); !slices.Equal(got, []string{"Provider", "Agent"}) {
+		t.Fatalf("applying preview wrote %v", got)
+	}
+	crds, admission := 0, 0
+	for _, call := range orkaCalls(t, dir) {
+		if slices.Contains(call.Args, "crd") {
+			crds++
+		}
+		if slices.Contains(call.Args, "--dry-run=server") && slices.Contains(call.Args, "--validate=strict") {
+			admission++
+		}
+	}
+	// Each resource has two create dry-runs and two ownership replace dry-runs:
+	// preflight, immediate pre-write inspection, Ready and final receipt checks.
+	if crds != 3 || admission != 8 {
+		t.Fatalf("preview bypassed online validation: CRDs=%d admission=%d", crds, admission)
+	}
+	if kept, err := os.ReadFile(opt.Out); err != nil || !bytes.Equal(kept, preview) {
+		t.Fatalf("applying changed the preview: %v", err)
+	}
+	if !strings.Contains(diagnostics.String(), "original schema-source comment retained; this invocation validated against installed CRDs and server admission") {
+		t.Fatalf("schema validation distinction not reported: %s", diagnostics)
+	}
+	before := len(orkaCalls(t, dir))
+	if err := a.CreateAgent(opt); err != nil {
+		t.Fatalf("rerun with retained preview refused: %v", err)
+	}
+	if writes := orkaClusterWrites(t, dir, before); len(writes) != 0 {
+		t.Fatalf("rerun wrote %v", orkaWriteKinds(writes))
+	}
+}
+
+func TestOrkaCreateRefusesArtifactEditObservedAtEmission(t *testing.T) {
+	a, opt, _, _, dir := orkaCreateFixture(t, "v0.2.0")
+	opt.NoApply = true
+	if err := a.CreateAgent(opt); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := os.ReadFile(opt.Out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := append(preview, []byte("# operator edit after preflight\n")...)
+	observed := false
+	a.operationProgress = func(stage, status string, _ error) {
+		if stage == "Validate server admission" && status == "active" {
+			observed = true
+			if err := os.WriteFile(opt.Out, edited, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	opt.NoApply = false
+	err = a.CreateAgent(opt)
+	if !observed || err == nil || !strings.Contains(err.Error(), opt.Out+" already exists and differs") {
+		t.Fatalf("late artifact edit not refused at emission: observed=%t err=%v", observed, err)
+	}
+	if writes := orkaClusterWrites(t, dir, 0); len(writes) != 0 {
+		t.Fatalf("wrote despite observed artifact edit: %v", orkaWriteKinds(writes))
+	}
+	if kept, err := os.ReadFile(opt.Out); err != nil || !bytes.Equal(kept, edited) {
+		t.Fatalf("changed edited preview: %v", err)
+	}
+}
+
+func TestOrkaArtifactReuseRefusesEveryOtherByteDifference(t *testing.T) {
+	// Include provenance-looking text inside resource content: it must not
+	// expand the one generated header block exempted from comparison.
+	documents := [][]byte{[]byte("kind: Agent\nspec:\n  instructions: |\n    # Orka bundle, scaffolded by kmx. Schema source:\n    # embedded\n")}
+	preview, err := scaffold.OrkaArtifact("embedded", documents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	online, err := scaffold.OrkaArtifact("installed", documents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "preview.yaml")
+	var diagnostics bytes.Buffer
+	a := &App{Err: &diagnostics}
+	opt := CreateOptions{Out: path}
+	if err := os.WriteFile(path, []byte(preview), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.emitOrkaArtifact(opt, online, true); err != nil {
+		t.Fatalf("provenance-only difference refused: %v", err)
+	}
+	if kept, err := os.ReadFile(path); err != nil || string(kept) != preview {
+		t.Fatalf("preview changed: %v", err)
+	}
+	start := strings.Index(preview, "# embedded\n")
+	end := start + len("# embedded\n")
+	for i := range len(preview) {
+		if i >= start && i < end {
+			continue
+		}
+		edited := []byte(preview)
+		edited[i] ^= 1
+		if err := os.WriteFile(path, edited, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := preflightOrkaArtifact(opt, documents); err == nil || !strings.Contains(err.Error(), path+" already exists and differs") {
+			t.Fatalf("byte %d difference passed preflight: %v", i, err)
+		}
+		err := a.emitOrkaArtifact(opt, online, true)
+		if err == nil || !strings.Contains(err.Error(), path+" already exists and differs") {
+			t.Fatalf("byte %d difference not refused: %v", i, err)
+		}
+		if kept, err := os.ReadFile(path); err != nil || !bytes.Equal(kept, edited) {
+			t.Fatalf("byte %d changed edited artifact: %v", i, err)
 		}
 	}
 }

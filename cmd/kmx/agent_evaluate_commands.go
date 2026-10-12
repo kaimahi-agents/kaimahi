@@ -27,6 +27,12 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 			"split/unavailable results are unknown. The case deadline includes judging; no retries.\n" +
 			"Input, answer and rubric go to the judge provider. Safe reasoning is printed to stdout,\n" +
 			"never stored in receipts; offline replay does not verify judge outcomes.\n" +
+			"With --from-sessions <manifest>, resolve recorded inputs from explicit --source-sessions.\n" +
+			"Recorded inputs will be sent to --sessions and retained in candidate journals: consent first\n" +
+			"with KAIMAHI_CONFIRM=<candidate-host:port>, even on loopback. Judges additionally require\n" +
+			"KAIMAHI_CONFIRM_JUDGE=<canonical-judge-base-url> before input/answer/rubric transfer.\n" +
+			"Reference runs print verdicts, IDs and digests only; --show-content explicitly prints answers\n" +
+			"and judge reasoning. Missing/expired/unsupported sources are unknown, never skipped.\n" +
 			"Exits non-zero unless every case passed. Sessions receipts do not satisfy lift gates yet.",
 		Args: usageArgs(1, 1, "kmx agent evaluate <bundle-dir> [--to-context <ctx> | --sessions <host:port>] [--case <id>]"),
 	}
@@ -34,6 +40,14 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.ToContext, "to-context", "", "destination kubeconfig context (default: the bundle's remembered lift target)")
 	cmd.Flags().StringVar(&opt.Sessions, "sessions", "", "agentsessions host:port with the chat harness (instead of a deployed Orka target)")
 	cmd.Flags().StringVar(&opt.SessionsCA, "sessions-ca", "", "PEM CA file for verified TLS to the sessions host (loopback uses TLS when supplied)")
+	cmd.Flags().StringVar(&opt.FromSessions, "from-sessions", "", "private reference manifest instead of bundle eval/ inputs")
+	cmd.Flags().StringVar(&opt.SourceSessions, "source-sessions", "", "explicit source host:port matching the reference manifest")
+	cmd.Flags().StringVar(&opt.SourceSessionsCA, "source-sessions-ca", "", "PEM CA file for verified source TLS")
+	cmd.Flags().BoolVar(&opt.ShowContent, "show-content", false, "explicitly print reference-run answers and judge reasoning (sensitive)")
+	cmd.MarkFlagsRequiredTogether("from-sessions", "source-sessions")
+	_ = cmd.RegisterFlagCompletionFunc("source-sessions", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	})
 	cmd.Flags().StringVar(&opt.JudgeBaseURL, "judge-base-url", "", "explicit OpenAI-compatible judge base URL (HTTPS except keyless literal loopback)")
 	cmd.Flags().StringVar(&opt.JudgeKeyEnv, "judge-key-env", "", "environment variable name containing the judge credential (HTTPS only)")
 	for _, name := range []string{"judge-base-url", "judge-key-env"} {
@@ -49,13 +63,19 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 		return a.EvaluateAgentBundle(opt)
 	})
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		for _, name := range []string{"sessions", "sessions-ca", "judge-base-url", "judge-key-env"} {
+		for _, name := range []string{"sessions", "sessions-ca", "judge-base-url", "judge-key-env", "from-sessions", "source-sessions", "source-sessions-ca"} {
 			if cmd.Flags().Changed(name) {
 				value, _ := cmd.Flags().GetString(name)
 				if strings.TrimSpace(value) == "" {
 					return fmt.Errorf("--%s requires a non-empty value", name)
 				}
 			}
+		}
+		if opt.FromSessions == "" && (cmd.Flags().Changed("source-sessions") || cmd.Flags().Changed("source-sessions-ca") || cmd.Flags().Changed("show-content")) {
+			return fmt.Errorf("--source-sessions, --source-sessions-ca and --show-content require --from-sessions")
+		}
+		if opt.FromSessions != "" && (opt.Sessions == "" || opt.SourceSessions == "") {
+			return fmt.Errorf("--from-sessions requires --sessions and --source-sessions")
 		}
 		if opt.Sessions != "" {
 			if cmd.Flags().Changed("to-context") {

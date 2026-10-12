@@ -1,8 +1,9 @@
-// `kmx agent status` — a read-only report of one Orka portable bundle's
-// deployment state across every destination it is known about. It writes
-// nothing: no receipt, no remembered selection, no cluster resource.
+// `kmx agent status` dispatches a portable bundle to Orka's known-target report
+// by default or to explicit Kagent status for one context and KagentBindings
+// namespace. It writes no receipt, remembered selection or cluster resource.
 //
-// Targets come from the bundle's own receipts (one per destination this
+// Known-target discovery and observation in this file are Orka-specific.
+// Orka targets come from the bundle's own receipts (one per destination this
 // bundle was ever lifted to), the remembered last-selected target, or an
 // explicit --to-context. An explicit --to-context that names no known receipt is
 // still read live; the report shows the cluster identity it actually finds
@@ -43,10 +44,12 @@ import (
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
-// BundleStatusOptions selects a bundle and, optionally, one destination
-// independent of any recorded history.
+// BundleStatusOptions selects a runtime and bundle independently of ambient
+// context. Orka optionally narrows recorded targets; Kagent requires explicit
+// context and version and reads its namespace from KagentBindings.
 type BundleStatusOptions struct {
 	BundleDir, Context, Namespace, Output string
+	Runtime, RuntimeVersion, Bindings     string
 }
 
 const (
@@ -129,9 +132,16 @@ type bundleStatusReport struct {
 	Targets        []bundleTargetStatus `json:"targets"`
 }
 
-// BundleStatus prints one bundle's deployment state and never writes
-// anything: no receipt, no remembered selection, no cluster resource.
+// BundleStatus dispatches to Orka's known-target report by default or explicit
+// Kagent single-target status. Neither writes a receipt, remembered selection
+// or cluster resource.
 func (a *App) BundleStatus(opt BundleStatusOptions) error {
+	if err := validateBundleRuntime(opt.Runtime, opt.RuntimeVersion, opt.Bindings); err != nil {
+		return err
+	}
+	if opt.Runtime == "kagent" {
+		return a.statusKagentBundle(opt)
+	}
 	format, err := bundleStatusFormat(opt.Output)
 	if err != nil {
 		return err
@@ -324,7 +334,7 @@ func loadBundleReceiptTargets(bundle string) ([]bundleStatusTarget, error) {
 			continue
 		}
 		var wrapped bundleLiftReceipt
-		if json.Unmarshal(raw, &wrapped) != nil {
+		if json.Unmarshal(raw, &wrapped) != nil || (wrapped.Receipt.Target.Runtime != "" && wrapped.Receipt.Target.Runtime != agentruntime.Orka) {
 			continue
 		}
 		target := wrapped.Receipt.Target
@@ -358,7 +368,7 @@ func readBundleReceiptAt(path string) (bundleLiftReceipt, bool) {
 	if json.Unmarshal(raw, &receipt) != nil {
 		return bundleLiftReceipt{}, false
 	}
-	if receipt.Receipt.Target.Context == "" || receipt.Receipt.Target.Namespace == "" {
+	if receipt.Receipt.Target.Context == "" || receipt.Receipt.Target.Namespace == "" || (receipt.Receipt.Target.Runtime != "" && receipt.Receipt.Target.Runtime != agentruntime.Orka) {
 		return bundleLiftReceipt{}, false
 	}
 	return receipt, true
@@ -758,8 +768,8 @@ func (a *App) printBundleStatusJSON(report bundleStatusReport) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(a.Out, string(body))
-	return nil
+	_, err = fmt.Fprintln(a.Out, string(body))
+	return err
 }
 
 func (a *App) printBundleStatusTable(report bundleStatusReport) {

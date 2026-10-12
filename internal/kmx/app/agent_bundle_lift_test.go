@@ -20,7 +20,12 @@ import (
 
 func liftBundleFixture(t *testing.T) (*App, LiftAgentBundleOptions, string, *bytes.Buffer) {
 	t.Helper()
-	adapter, _, dir := reconcileFixture(t)
+	return liftBundleFixtureMode(t, false)
+}
+
+func liftBundleFixtureMode(t *testing.T, inProcess bool) (*App, LiftAgentBundleOptions, string, *bytes.Buffer) {
+	t.Helper()
+	adapter, _, dir := reconcileFixtureMode(t, inProcess)
 	t.Setenv("KMX_LIFT_TEST", "1")
 	t.Setenv("KMX_HOME", filepath.Join(dir, "user-state"))
 	source, err := portableOrkaSource(*adapter.create)
@@ -156,12 +161,86 @@ func TestLiftBundleReportsIndependentOrkaAndNamespaceGaps(t *testing.T) {
 	if err == nil {
 		t.Fatal("missing prerequisites were accepted")
 	}
-	for _, want := range []string{"CRDs", "controller", "namespace", "kmx orka install"} {
+	for _, want := range []string{"CRDs", "controller", "namespace", "kmx --context kind-test orka install"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %s refusal: %v", want, err)
 		}
 	}
 	assertNoLiftWrites(t, dir, opt.BundleDir)
+}
+
+func TestLiftPrerequisiteAdvicePinsAndQuotesDestination(t *testing.T) {
+	for _, plan := range []bool{false, true} {
+		t.Run(map[bool]string{false: "apply", true: "plan"}[plan], func(t *testing.T) {
+			a, opt, dir, _ := liftBundleFixture(t)
+			const destination = "team's cluster; staging"
+			const quoted = `'team'"'"'s cluster; staging'`
+			a.Cfg.KubeContext = "unrelated-ambient-context"
+			opt.ToContext, opt.ToNamespace, opt.Plan = destination, "custom-agents", plan
+			t.Setenv("KMX_LIFT_MISSING", "crd,controller")
+			kubectl, err := exec.LookPath("kubectl")
+			if err != nil {
+				t.Fatal(err)
+			}
+			real := kubectl + ".real"
+			if err := os.Rename(kubectl, real); err != nil {
+				t.Fatal(err)
+			}
+			metadata, err := json.Marshal(map[string]any{
+				"current-context": "unrelated-ambient-context",
+				"clusters":        []any{map[string]any{"name": "test-cluster", "cluster": map[string]any{"server": "https://127.0.0.1:6443"}}},
+				"contexts":        []any{map[string]any{"name": destination, "context": map[string]any{"cluster": "test-cluster"}}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			log := filepath.Join(dir, "prerequisite-contexts")
+			t.Setenv("KMX_PREREQUISITE_CONTEXT_LOG", log)
+			// Record real routing before translating to the fake's fixed context.
+			wrapper := "#!/bin/sh\nprintf '%s\\n' \"$1\" \"$2\" >> \"$KMX_PREREQUISITE_CONTEXT_LOG\"\n" +
+				"if [ \"$4\" = config ]; then printf '%s' " + shellArg(string(metadata)) + "; exit 0; fi\n" +
+				"if [ \"$4\" = get ] && [ \"$5\" = namespace ] && [ \"$6\" = custom-agents ]; then printf '%s' '{}'; exit 0; fi\n" +
+				"shift 2\nexec " + shellArg(real) + " --context kind-test \"$@\"\n"
+			if err := os.WriteFile(kubectl, []byte(wrapper), 0700); err != nil {
+				t.Fatal(err)
+			}
+			err = a.LiftAgentBundle(opt)
+			if err == nil {
+				t.Fatal("missing destination prerequisites were accepted")
+			}
+			command := "kmx --context " + quoted + " orka install"
+			if got := strings.Count(err.Error(), command); got != 3 {
+				t.Errorf("got %d destination-pinned installer hints, want three: %v", got, err)
+			}
+			for _, want := range []string{"missing Orka CRDs", "controller is not Ready", "destination namespace custom-agents is missing or terminating", "prepares orka-system"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("refusal lacks %q: %v", want, err)
+				}
+			}
+			for _, misleading := range []string{"kmx orka install", "unrelated-ambient-context", "kmx aks up", "kagent", "prepares custom-agents"} {
+				if strings.Contains(err.Error(), misleading) {
+					t.Errorf("refusal has misleading advice %q: %v", misleading, err)
+				}
+			}
+			calls, err := os.ReadFile(log)
+			if err != nil {
+				t.Fatal(err)
+			}
+			arguments := strings.Split(strings.TrimSuffix(string(calls), "\n"), "\n")
+			if len(arguments) == 0 || len(arguments)%2 != 0 {
+				t.Fatalf("invalid context argument log: %q", calls)
+			}
+			for i := 0; i < len(arguments); i += 2 {
+				if arguments[i] != "--context" || arguments[i+1] != destination {
+					t.Fatalf("prerequisite query lost destination context: %q", arguments[i:i+2])
+				}
+			}
+			if a.Cfg.KubeContext != "unrelated-ambient-context" {
+				t.Fatal("lift changed ambient routing")
+			}
+			assertNoLiftWrites(t, dir, opt.BundleDir)
+		})
+	}
 }
 
 func TestLiftBundleRefusesInferenceProviderNameCollision(t *testing.T) {
@@ -376,7 +455,7 @@ func TestLiftToolsChecksEachDistinctPolicyWithOneWorkerDiscovery(t *testing.T) {
 
 func TestLiftBundleEveryPrerequisiteRefusesWithoutWrites(t *testing.T) {
 	for _, tc := range []struct{ gap, want string }{
-		{"crd", "kmx orka install"}, {"controller", "kmx orka install"}, {"namespace", "namespace"},
+		{"crd", "kmx --context kind-test orka install"}, {"controller", "kmx --context kind-test orka install"}, {"namespace", "namespace"},
 		{"provider", "Provider"}, {"provider-ready", "Ready"}, {"provider-key", "Secret reference"}, {"secret", "Secret"},
 		{"tool", "Tool/search"}, {"tool-available", "Available"},
 	} {

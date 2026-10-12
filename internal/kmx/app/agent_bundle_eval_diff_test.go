@@ -139,6 +139,133 @@ func TestEvaluationDiffSetChanges(t *testing.T) {
 	}
 }
 
+func diffUnavailableCase() sessionsEvaluationResult {
+	c := diffFixture("unknown").Cases[0]
+	c.ID = "unavailable"
+	c.Detail = evaluationExecutionUnavailable
+	c.SessionUID, c.Harness, c.Model, c.AnswerSHA256 = "", "", "", ""
+	c.JournalHead = sessionsJournalHead{}
+	return c
+}
+
+// A case that never ran must not hide the comparable cases, in either order.
+func TestEvaluationDiffMissingIdentityIsRowLocal(t *testing.T) {
+	for _, missingFirst := range []bool{false, true} {
+		for _, transition := range []struct{ before, after, status, failure string }{
+			{"pass", "pass", "stable", "evaluation comparison is incomplete"},
+			{"fail", "pass", "fix", "evaluation comparison is incomplete"},
+			{"pass", "fail", "regression", "evaluation comparison has regressions"},
+		} {
+			before, after := diffFixture(transition.before), diffFixture(transition.after)
+			before.Cases = append(before.Cases, diffUnavailableCase())
+			after.Cases = append(after.Cases, diffUnavailableCase())
+			before.Result, after.Result = "unknown", "unknown"
+			if transition.before == "fail" {
+				before.Result = "fail"
+			}
+			if transition.after == "fail" {
+				after.Result = "fail"
+			}
+			before.Target.Identity.Harness, before.Target.Identity.Model = "", ""
+			after.Target.Identity.Harness, after.Target.Identity.Model = "", ""
+			if missingFirst {
+				before.Cases[0], before.Cases[1] = before.Cases[1], before.Cases[0]
+				after.Cases[0], after.Cases[1] = after.Cases[1], after.Cases[0]
+			}
+			out, err := diffExecute(t, before, after)
+			if err == nil || err.Error() != transition.failure || !strings.Contains(out, "case-one\tassert-one\tcontains/contains\t"+transition.before+"/"+transition.after+"\t"+transition.status+"\t") || !strings.Contains(out, "unavailable\t-\t-/-\tunknown/unknown\tunknown\t") || strings.Contains(out, "incompatible") {
+				t.Fatalf("missingFirst=%t err=%v out=%s", missingFirst, err, out)
+			}
+		}
+	}
+}
+
+func TestEvaluationDiffAllCaseIdentitiesUnavailable(t *testing.T) {
+	for _, targetSummary := range []bool{false, true} {
+		r := diffFixture("unknown")
+		r.Cases = []sessionsEvaluationResult{diffUnavailableCase()}
+		if !targetSummary {
+			r.Target.Identity.Harness, r.Target.Identity.Model = "", ""
+		}
+		out, err := diffExecute(t, r, r)
+		if err == nil || err.Error() != "evaluation comparison is incompatible" || !strings.Contains(out, "runtime identity unavailable") {
+			t.Fatalf("err=%v out=%s", err, out)
+		}
+	}
+}
+
+// Empty writer summaries must not launder conflicting partial or mixed observations.
+func TestEvaluationDiffPresentCaseIdentitiesDisagree(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*sessionsEvaluationResult)
+	}{
+		{"model", func(c *sessionsEvaluationResult) { c.Model = "other-model"; c.Harness = "chat" }},
+		{"harness", func(c *sessionsEvaluationResult) { c.Harness = "other-harness"; c.Model = "local/model:1" }},
+		{"partial model", func(c *sessionsEvaluationResult) { c.Model = "other-model" }},
+		{"partial harness", func(c *sessionsEvaluationResult) { c.Harness = "other-harness" }},
+		{"mixed", func(c *sessionsEvaluationResult) { c.ModelMixed = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before, after := diffFixture("pass"), diffFixture("unknown")
+			c := diffUnavailableCase()
+			tc.change(&c)
+			after.Cases = append(after.Cases, c)
+			after.Target.Identity.Harness, after.Target.Identity.Model = "", ""
+			out, err := diffExecute(t, before, after)
+			if err == nil || err.Error() != "evaluation comparison is incompatible" || !strings.Contains(out, "runtime identity differs") {
+				t.Fatalf("err=%v out=%s", err, out)
+			}
+		})
+	}
+}
+
+func TestEvaluationDiffPartialObservationsDoNotInventCompleteIdentity(t *testing.T) {
+	r := diffFixture("unknown")
+	r.Target.Identity.Harness, r.Target.Identity.Model = "", ""
+	a, b := diffUnavailableCase(), diffUnavailableCase()
+	a.Harness, b.Model = "chat", "local/model:1"
+	b.ID = "other"
+	r.Cases = []sessionsEvaluationResult{a, b}
+	out, err := diffExecute(t, r, r)
+	if err == nil || !strings.Contains(out, "runtime identity unavailable") {
+		t.Fatalf("err=%v out=%s", err, out)
+	}
+}
+
+func TestEvaluationDiffMissingIdentityPreservesStructuralChanges(t *testing.T) {
+	before, after := diffFixture("pass"), diffFixture("unknown")
+	after.Cases[0] = diffFixture("pass").Cases[0]
+	after.Cases = append(after.Cases, diffUnavailableCase())
+	after.Cases[1].ID = "case-one"
+	after.Cases[0].ID, after.Cases[0].SessionUID = "comparable", "session-2"
+	c := diffFixture("pass").Cases[0]
+	c.ID, c.SessionUID = "comparable", "session-2"
+	before.Cases = append(before.Cases, c)
+	after.Target.Identity.Harness, after.Target.Identity.Model = "", ""
+	after.Cases[1].InputDigest = strings.Repeat("2", 64)
+	after.Cases[1].CaseDigest = strings.Repeat("3", 64)
+	after.Cases[1].Assertions[0].DefinitionDigest = strings.Repeat("4", 64)
+	removed := before.Cases[0].Assertions[0]
+	removed.ID = "removed"
+	before.Cases[0].Assertions = append(before.Cases[0].Assertions, removed)
+	added := after.Cases[1].Assertions[0]
+	added.ID = "added"
+	after.Cases[1].Assertions = append(after.Cases[1].Assertions, added)
+	out, err := diffExecute(t, before, after)
+	if err == nil || err.Error() != "evaluation comparison is incomplete" {
+		t.Fatalf("err=%v out=%s", err, out)
+	}
+	for _, status := range []string{"unknown", "inputChanged", "caseSourceChanged", "definitionChanged", "assertionAdded", "assertionRemoved", "stable"} {
+		if !strings.Contains(out, "\t"+status+"\t") {
+			t.Fatalf("missing %s: %s", status, out)
+		}
+	}
+	if strings.Contains(out, "lostEvidence") || strings.Contains(out, "gainedEvidence") {
+		t.Fatal(out)
+	}
+}
+
 func TestEvaluationDiffRuntimeCompatibility(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

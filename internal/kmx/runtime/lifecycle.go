@@ -9,6 +9,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // LifecycleAdapter declares its supported verbs statically through
@@ -35,7 +36,10 @@ type LifecycleAdapter interface {
 // desired-state deployment; runtimes that do not support it must refuse it.
 type RenderOptions struct{}
 type DeployOptions struct{ Reconcile bool }
-type StatusOptions struct{}
+type StatusOptions struct {
+	Desired  *RenderedBundle
+	Expected *DeployReceipt
+}
 
 // DeployResult carries a ready deployment's reference and history data. A
 // failed deploy has no receipt, even if some resources were written.
@@ -68,6 +72,23 @@ type DeployReceipt struct {
 	Bundle, PortableDigest, RenderedDigest string
 	Target                                 DeployTarget
 	Resources                              []ResourceResult
+	RuntimeVersion                         string             `json:",omitempty"`
+	ClusterUID                             string             `json:",omitempty"`
+	Ready                                  bool               `json:",omitempty"`
+	ObservedAt                             time.Time          `json:",omitzero"`
+	Proofs                                 []ResourceEvidence `json:",omitempty"`
+	Dependencies                           []ResourceEvidence `json:",omitempty"`
+	Workload                               []ResourceEvidence `json:",omitempty"`
+}
+
+// ResourceEvidence carries identity and non-secret spec evidence. Key is a
+// reference name only; credentials and their hashes never belong in history.
+type ResourceEvidence struct {
+	Kind, Name, Namespace, UID string
+	ResourceVersion            string `json:",omitempty"`
+	Generation                 int64  `json:",omitempty"`
+	SpecDigest                 string `json:",omitempty"`
+	Key                        string `json:",omitempty"`
 }
 
 // EvaluationJudge evaluates an entire case while the attributed answer remains

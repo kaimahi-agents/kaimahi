@@ -50,9 +50,14 @@ func TestTheKagentPayloadIsRefusedAsRetiredRatherThanUnknown(t *testing.T) {
 	if strings.Contains(err.Error(), "unknown --payload") {
 		t.Errorf("the retired payload is reported as a typo: %v", err)
 	}
-	for _, want := range []string{"--payload kagent", "retired", "--payload orka"} {
+	for _, want := range []string{"--payload kagent", "retired", "installer payload", "--payload orka", "kmx targets", "AKS provisioning", "kmx aks down"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+	for _, misleading := range []string{"removed from kmx", "creating or resuming one", "Kagent"} {
+		if strings.Contains(err.Error(), misleading) {
+			t.Errorf("the installer refusal misleadingly says %q: %v", misleading, err)
 		}
 	}
 	if err := ValidPayload(PayloadKagent); err == nil {

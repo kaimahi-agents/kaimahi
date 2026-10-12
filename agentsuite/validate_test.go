@@ -725,7 +725,24 @@ func TestValidateRemoteToolProviderRejectsTransportManagedAndDuplicateHeaders(t 
 
 func TestValidatePathAcceptsOCILayout(t *testing.T) {
 	contentRoot := writeMinimalSuite(t)
-	tarBytes := tarDirectory(t, contentRoot)
+	root := writeTestOCILayout(t, contentRoot)
+
+	report, err := ValidatePath(root)
+	if err != nil {
+		t.Fatalf("ValidatePath() error = %v", err)
+	}
+	if report.Name != "example" || report.Agents != 1 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+func writeTestOCILayout(t *testing.T, contentRoot string, manifestAnnotations ...map[string]string) string {
+	t.Helper()
+	return writeTestOCILayoutTar(t, tarDirectory(t, contentRoot), manifestAnnotations...)
+}
+
+func writeTestOCILayoutTar(t *testing.T, tarBytes []byte, manifestAnnotations ...map[string]string) string {
+	t.Helper()
 	var compressed bytes.Buffer
 	gzipWriter := gzip.NewWriter(&compressed)
 	if _, err := gzipWriter.Write(tarBytes); err != nil {
@@ -746,6 +763,9 @@ func TestValidatePathAcceptsOCILayout(t *testing.T) {
 		Config:        configDescriptor,
 		Layers:        []ociDescriptor{layerDescriptor},
 	}
+	if len(manifestAnnotations) > 0 {
+		manifest.Annotations = manifestAnnotations[0]
+	}
 	manifestBytes, err := json.Marshal(manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -762,14 +782,7 @@ func TestValidatePathAcceptsOCILayout(t *testing.T) {
 	}
 	mustWrite(t, root, "oci-layout", []byte(`{"imageLayoutVersion":"1.0.0"}`))
 	mustWrite(t, root, "index.json", indexBytes)
-
-	report, err := ValidatePath(root)
-	if err != nil {
-		t.Fatalf("ValidatePath() error = %v", err)
-	}
-	if report.Name != "example" || report.Agents != 1 {
-		t.Fatalf("unexpected report: %+v", report)
-	}
+	return root
 }
 
 func TestEmptyOCIConfigIsExact(t *testing.T) {

@@ -90,6 +90,85 @@ func TestAgentCreateHelpExplainsOrkaBoundary(t *testing.T) {
 	}
 }
 
+func TestAgentCreateHelpExplainsGuidedModeAndStdoutBundle(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	if err := execute([]string{"agent", "create", "--help"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{
+		"Omit the name for guided Orka creation",
+		"Named creation applies to the selected cluster by default",
+		"--out - writes YAML to stdout without applying",
+		"set --bundle-path to also write an authored bundle",
+		"kmx agent create",
+		"--base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out -",
+	} {
+		if !strings.Contains(out.String(), text) {
+			t.Errorf("help lacks %q", text)
+		}
+	}
+	if strings.Contains(out.String(), "stdout requires this flag") {
+		t.Fatal("help incorrectly requires bundle persistence for stdout")
+	}
+	if *loads != 0 {
+		t.Fatal("help loaded config")
+	}
+}
+
+func TestAgentHelpUsesLowercaseKagent(t *testing.T) {
+	for _, args := range [][]string{{"agent", "--help"}, {"agent", "create", "--help"}} {
+		var out, diagnostics bytes.Buffer
+		deps, loads := testDependencies(&out, &diagnostics)
+		if err := execute(args, deps); err != nil {
+			t.Fatal(err)
+		}
+		if len(args) == 2 {
+			if !strings.Contains(out.String(), "Create an Orka or kagent declarative Agent") {
+				t.Errorf("agent help does not use lowercase kagent in the create summary:\n%s", out.String())
+			}
+		} else if !strings.Contains(out.String(), "kagent") || strings.Contains(out.String(), "Kagent") {
+			t.Errorf("create help does not use lowercase kagent consistently:\n%s", out.String())
+		}
+		if *loads != 0 {
+			t.Fatal("help loaded config")
+		}
+	}
+}
+
+func TestAgentCreateHelpScopesRuntimeRequirements(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	if err := execute([]string{"agent", "create", "--help"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	_, orka, found := strings.Cut(out.String(), "Orka creation:\n")
+	if !found {
+		t.Fatal("help does not identify Orka-specific requirements")
+	}
+	orka, kagent, found := strings.Cut(orka, "kagent creation:\n")
+	if !found {
+		t.Fatal("help does not identify kagent-specific requirements")
+	}
+	kagent, _, _ = strings.Cut(kagent, "\nUsage:")
+	for _, text := range []string{"ServiceAccount", "Applying --task", "Offline output uses pinned v0.2.0 CRDs", "Dry-run tests neither access nor execution"} {
+		if !strings.Contains(orka, text) {
+			t.Errorf("Orka help lacks %q", text)
+		}
+	}
+	for _, text := range []string{"v0.10.2", "--description", "ModelConfig", "stores the full task prompt, history, and answer"} {
+		if !strings.Contains(kagent, text) {
+			t.Errorf("kagent help lacks %q", text)
+		}
+	}
+	if strings.Contains(kagent, "ServiceAccount") || strings.Contains(kagent, "Offline output uses pinned v0.2.0 CRDs") {
+		t.Fatal("kagent help applies Orka-specific prerequisites")
+	}
+	if *loads != 0 {
+		t.Fatal("help loaded config")
+	}
+}
+
 func TestAgentCreateHelpDisclosesKagentRetentionAndAuditRisk(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)

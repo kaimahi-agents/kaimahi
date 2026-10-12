@@ -60,7 +60,7 @@ func PreparePortableRender(source []byte, adapter LifecycleAdapter) (*PreparedPo
 		}
 	}
 	if len(paths) != 0 {
-		return nil, fmt.Errorf("runtime %s cannot honor behavior in %s", adapter.ID(), strings.Join(paths, ", "))
+		return nil, fmt.Errorf("%w: cannot honor behavior in %s", &UnsupportedVerbError{Runtime: adapter.ID(), Verb: VerbRender}, strings.Join(paths, ", "))
 	}
 	return &PreparedPortableRender{source: agent.Source(), target: adapter.ID(), consumed: declared, coordination: adapter.SupportsCoordination()}, nil
 }

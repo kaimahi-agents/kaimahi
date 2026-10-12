@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -44,6 +45,30 @@ func TestKubectlFixtureSharedProtocolMatchesApp(t *testing.T) {
 	}
 	if !maps.Equal(got, want) {
 		t.Fatalf("helper protocol=%v, want App protocol=%v", got, want)
+	}
+}
+
+func TestKagentBundleKeepsExecutableCaptureBoundary(t *testing.T) {
+	a, opt, dir := kagentLiftFixtureMode(t, "", false)
+	if a.captureCommand != nil {
+		t.Fatal("executable fixture installed an in-process hook")
+	}
+	marker := filepath.Join(dir, "kubectl-launches")
+	fakeTool(t, dir, "kubectl", "printf 'launch\\n' >> "+shellArg(marker)+"; "+kubectlFixture(t, "TestKagentKubectlHelper"))
+	if err := a.LiftAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	assertKagentWriteKinds(t, kagentCalls(t, dir), "ModelConfig", "Agent")
+	if got := readKagentStatusForTest(t, a, opt); got.State != "ready" || !got.Ready {
+		t.Fatalf("executable status = %+v, want ready", got)
+	}
+	beforeReuse := len(kagentCalls(t, dir))
+	if err := a.LiftAgentBundle(opt); err != nil {
+		t.Fatal(err)
+	}
+	assertKagentReadOnlyCalls(t, kagentCalls(t, dir)[beforeReuse:])
+	if raw, err := os.ReadFile(marker); err != nil || len(raw) == 0 {
+		t.Fatalf("kubectl executable was not launched: %v", err)
 	}
 }
 

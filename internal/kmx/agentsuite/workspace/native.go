@@ -1,0 +1,299 @@
+package workspace
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"maps"
+	"os"
+	"path"
+	"slices"
+	"strings"
+
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	godigest "github.com/opencontainers/go-digest"
+)
+
+const rendererVersion = "kmx.native-orka/v1"
+const nativePath = "metadata/kmx/native-orka.json"
+
+type caseRef struct {
+	Path   string `json:"path"`
+	Digest string `json:"digest"`
+}
+type nativeRecord struct {
+	SchemaVersion   int       `json:"schemaVersion"`
+	ExecutionMode   string    `json:"executionMode"`
+	Member          string    `json:"member"`
+	RendererVersion string    `json:"rendererVersion"`
+	RequiredImages  []string  `json:"requiredImages"`
+	Cases           []caseRef `json:"cases"`
+}
+type snapshot struct {
+	name, fingerprint string
+	files             map[string][]byte
+	source            map[string]SourceFile
+}
+
+func entries(r *os.Root, name string, limit int) ([]os.DirEntry, error) {
+	if err := confined(r, name); err != nil {
+		return nil, err
+	}
+	f, err := r.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	entries, err := f.ReadDir(limit + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if len(entries) > limit {
+		return nil, errors.New("source directory exceeds entry limit")
+	}
+	return entries, nil
+}
+func caseName(name string) bool {
+	return safeText(name) == nil && path.Base(name) == name && name != "." && name != ".." && !strings.Contains(name, "\\") && (strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml"))
+}
+func loadSource(ctx context.Context, root string) (*snapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	root, err := safeAbsolute(root)
+	if err != nil {
+		return nil, err
+	}
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	selected := map[string]string{}
+	source := map[string]SourceFile{}
+	read := func(name string) ([]byte, error) {
+		b, err := readBounded(r, name)
+		if err != nil {
+			return nil, err
+		}
+		info, err := r.Lstat(name)
+		if err != nil {
+			return nil, err
+		}
+		selected[name] = godigest.FromBytes(b).String()
+		source[name] = SourceFile{Data: b, Mode: info.Mode()}
+		return b, nil
+	}
+	wb, err := read("workspace.yaml")
+	if err != nil {
+		return nil, err
+	}
+	var w sourceWorkspace
+	if err := strictYAML(wb, &w); err != nil {
+		return nil, fmt.Errorf("workspace.yaml: %w", err)
+	}
+	if w.SchemaVersion != 1 || !namePattern.MatchString(w.Name) || w.Name == "." || w.Name == ".." || w.BuildProfile != "build-profiles/default.json" {
+		return nil, errors.New("unsupported workspace schema/name/build profile")
+	}
+	mb, err := read(w.Member)
+	if err != nil {
+		return nil, err
+	}
+	var m sourceMember
+	if err := strictYAML(mb, &m); err != nil {
+		return nil, fmt.Errorf("member: %w", err)
+	}
+	if w.Member != "agents/"+m.ID+"/member.yaml" {
+		return nil, errors.New("workspace must select one agents/ID/member.yaml")
+	}
+	agents, err := entries(r, "agents", 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(agents) != 1 || agents[0].Name() != m.ID || !agents[0].IsDir() {
+		return nil, errors.New("workspace must contain exactly one member")
+	}
+	// Check before joining: cleaning an authored '..' must not conceal an escape.
+	if !fs.ValidPath(m.Instructions) || strings.Contains(m.Instructions, "\\") {
+		return nil, errors.New("instructions path must be member-relative")
+	}
+	instructions, err := read(path.Dir(w.Member) + "/" + m.Instructions)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMember(m, instructions); err != nil {
+		return nil, err
+	}
+	profile, err := read(w.BuildProfile)
+	if err != nil {
+		return nil, err
+	}
+	caseEntries, err := entries(r, "eval", 128)
+	if err != nil {
+		return nil, err
+	}
+	cases := map[string][]byte{}
+	total := len(wb) + len(mb) + len(instructions) + len(profile)
+	for _, entry := range caseEntries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !caseName(entry.Name()) || !entry.Type().IsRegular() {
+			return nil, errors.New("eval entries must be regular YAML files without subdirectories")
+		}
+		b, err := read("eval/" + entry.Name())
+		if err != nil {
+			return nil, err
+		}
+		total += len(b)
+		if total > 8<<20 {
+			return nil, errors.New("workspace source exceeds 8 MiB")
+		}
+		cases[entry.Name()] = b
+	}
+	files, err := resolve(w.Name, m, instructions, profile, cases)
+	if err != nil {
+		return nil, err
+	}
+	framed, err := spec.Marshal(struct {
+		Renderer string            `json:"renderer"`
+		Files    map[string]string `json:"files"`
+	}{rendererVersion, selected})
+	if err != nil {
+		return nil, err
+	}
+	fingerprint, err := spec.Digest(framed)
+	if err != nil {
+		return nil, err
+	}
+	return &snapshot{name: w.Name, fingerprint: fingerprint, files: files, source: source}, nil
+}
+
+// resolve builds the public graph bottom-up. Profile pins are declared build
+// inputs required by that format, not images required by native execution.
+func resolve(name string, m sourceMember, instructions, profile []byte, cases map[string][]byte) (map[string][]byte, error) {
+	if !namePattern.MatchString(name) || name == "." || name == ".." {
+		return nil, errors.New("invalid workspace name")
+	}
+	if err := validateMember(m, instructions); err != nil {
+		return nil, err
+	}
+	var bp, approved spec.BuildProfile
+	if err := spec.Unmarshal(profile, &bp); err != nil {
+		// Strict JSON diagnostics may quote decoded keys or trailing content.
+		return nil, errors.New("invalid pinned build profile JSON")
+	}
+	if err := spec.Unmarshal(defaultProfile, &approved); err != nil {
+		return nil, err
+	}
+	bpBytes, err := spec.Marshal(bp)
+	if err != nil {
+		return nil, err
+	}
+	approvedBytes, err := spec.Marshal(approved)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(bpBytes, approvedBytes) {
+		return nil, errors.New("unsupported build profile; use the pinned default profile")
+	}
+	files := map[string][]byte{"instructions/" + m.ID + ".md": instructions, "build-profiles/default.json": bpBytes}
+	put := func(name string, value any) (string, error) {
+		b, err := spec.Marshal(value)
+		if err != nil {
+			return "", err
+		}
+		files[name] = b
+		return spec.Digest(b)
+	}
+	catalogPath := "tool-providers/catalog.json"
+	catalogDigest, err := put(catalogPath, spec.ToolProviderCatalog{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeToolProviderCatalog, ToolProviders: []spec.ManifestRef{}})
+	if err != nil {
+		return nil, err
+	}
+	agentPath := "agents/" + m.ID + ".json"
+	agentDigest, err := put(agentPath, spec.Agent{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: spec.FileRef{Path: "instructions/" + m.ID + ".md", Digest: godigest.FromBytes(instructions).String()}, Model: spec.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}})
+	if err != nil {
+		return nil, err
+	}
+	platform := spec.Platform{OS: "linux", Architecture: "amd64"}
+	compositionPath := "compositions/" + m.ID + "-linux-amd64.json"
+	compositionDigest, err := put(compositionPath, spec.Composition{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeComposition, Agent: m.ID, Platform: platform, BuildProfile: bp.ID, ToolProviders: []spec.ResolvedToolProvider{}})
+	if err != nil {
+		return nil, err
+	}
+	profileDigest, err := spec.Digest(bpBytes)
+	if err != nil {
+		return nil, err
+	}
+	_, err = put("agentsuite.json", spec.Suite{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeSuite, Name: name, Agents: []spec.ManifestRef{{ID: m.ID, Path: agentPath, Digest: agentDigest}}, ToolProviderCatalog: spec.ManifestRef{Path: catalogPath, Digest: catalogDigest}, Compositions: []spec.CompositionRef{{Agent: m.ID, Platform: platform, Path: compositionPath, Digest: compositionDigest}}, BuildProfiles: []spec.ManifestRef{{ID: bp.ID, Path: "build-profiles/default.json", Digest: profileDigest}}})
+	if err != nil {
+		return nil, err
+	}
+	if len(cases) == 0 || len(cases) > 128 {
+		return nil, errors.New("one to 128 authored cases are required")
+	}
+	record := nativeRecord{1, "native-orka", m.ID, rendererVersion, []string{}, []caseRef{}}
+	ids := map[string]bool{}
+	for _, name := range slices.Sorted(maps.Keys(cases)) {
+		if !caseName(name) {
+			return nil, errors.New("unsupported case filename")
+		}
+		c, err := runtime.ParseEvaluationCase(cases[name])
+		if err != nil {
+			return nil, fmt.Errorf("case %s: %w", name, err)
+		}
+		if ids[c.ID] {
+			return nil, errors.New("duplicate evaluation case ID")
+		}
+		ids[c.ID] = true
+		p := "metadata/kmx/eval/" + name
+		files[p] = cases[name]
+		record.Cases = append(record.Cases, caseRef{p, godigest.FromBytes(cases[name]).String()})
+	}
+	_, err = put(nativePath, record)
+	return files, err
+}
+
+// validateNative regenerates the supported graph and requires exact, full
+// allowlist coverage, so public-format extensions cannot silently disappear.
+func validateNative(files map[string][]byte) (string, error) {
+	var suite spec.Suite
+	if err := spec.Unmarshal(files["agentsuite.json"], &suite); err != nil {
+		return "", err
+	}
+	var record nativeRecord
+	if err := spec.Unmarshal(files[nativePath], &record); err != nil {
+		return "", err
+	}
+	if record.SchemaVersion != 1 || record.ExecutionMode != "native-orka" || record.RendererVersion != rendererVersion || record.RequiredImages == nil || len(record.RequiredImages) != 0 {
+		return "", errors.New("unsupported native metadata or required images")
+	}
+	var agent spec.Agent
+	if err := spec.Unmarshal(files["agents/"+record.Member+".json"], &agent); err != nil {
+		return "", err
+	}
+	m := sourceMember{ID: agent.ID, Description: agent.Description}
+	m.Model.Protocol, m.Model.Model = agent.Model.Protocol, agent.Model.Model
+	cases := map[string][]byte{}
+	for _, c := range record.Cases {
+		name := strings.TrimPrefix(c.Path, "metadata/kmx/eval/")
+		b, ok := files[c.Path]
+		if !ok || !caseName(name) || cases[name] != nil || godigest.FromBytes(b).String() != c.Digest {
+			return "", errors.New("native case path/digest/coverage mismatch")
+		}
+		cases[name] = b
+	}
+	expected, err := resolve(suite.Name, m, files["instructions/"+m.ID+".md"], files["build-profiles/default.json"], cases)
+	if err != nil {
+		return "", err
+	}
+	if !equalFiles(expected, files) {
+		return "", errors.New("unsupported native graph or incomplete case coverage")
+	}
+	return suite.Name, nil
+}

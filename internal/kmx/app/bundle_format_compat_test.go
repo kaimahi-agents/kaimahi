@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,7 +123,8 @@ extensions:
     runtime: go
 `)
 	_, err := agentruntime.PreparePortableRender(source, kagentRuntimeAdapter{})
-	if err == nil || !strings.Contains(err.Error(), "spec.coordination.allowedAgents") {
+	var unsupported *agentruntime.UnsupportedVerbError
+	if !errors.As(err, &unsupported) || unsupported.Runtime != agentruntime.Kagent || unsupported.Verb != agentruntime.VerbRender || !strings.Contains(err.Error(), "spec.coordination.allowedAgents") {
 		t.Fatalf("Kagent accepted core delegation without rendering it: %v", err)
 	}
 }

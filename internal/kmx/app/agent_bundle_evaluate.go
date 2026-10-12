@@ -41,9 +41,11 @@ import (
 // EvaluateAgentBundleOptions selects a bundle, an optional destination and
 // an optional single case.
 type EvaluateAgentBundleOptions struct {
-	BundleDir, ToContext, Case string
-	Sessions, SessionsCA       string
-	JudgeBaseURL, JudgeKeyEnv  string
+	BundleDir, ToContext, Case                     string
+	Sessions, SessionsCA                           string
+	JudgeBaseURL, JudgeKeyEnv                      string
+	FromSessions, SourceSessions, SourceSessionsCA string
+	ShowContent                                    bool
 	// CaseTimeout bounds execution, answer attribution, and both judge calls.
 	// The result session's token lasts ten minutes, so it is capped
 	// below that.
@@ -106,6 +108,23 @@ type bundleEvaluationCase struct {
 // EvaluateAgentBundle runs the bundle's cases against its deployed revision,
 // prints every answer, writes a receipt and fails unless every case passed.
 func (a *App) EvaluateAgentBundle(opt EvaluateAgentBundleOptions) error {
+	if err := validateReferenceEvaluationOptions(opt); err != nil {
+		return err
+	}
+	if opt.FromSessions != "" {
+		if err := confirmReferenceCandidate(opt.Sessions); err != nil {
+			return err
+		}
+		if err := confirmReferenceJudge(opt.JudgeBaseURL, opt.JudgeKeyEnv); err != nil {
+			return err
+		}
+		if err := a.evaluateAgentBundleSessions(opt); err != nil {
+			// Local parsers, filesystem errors and remote diagnostics can contain
+			// recorded content. The reference path exposes only fixed failures.
+			return fmt.Errorf("session-sourced evaluation unavailable or did not pass; inspect verdicts and private receipts")
+		}
+		return nil
+	}
 	if opt.SessionsCA != "" && opt.Sessions == "" {
 		return fmt.Errorf("--sessions-ca requires --sessions")
 	}

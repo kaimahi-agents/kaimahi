@@ -53,6 +53,48 @@ not receipts, and may contain answer text. Offline `agent eval diff` and
 `agent verify` do not select a judge endpoint or call a judge; replay explicitly
 reports judge assertions not verified. See [judge behavior and disclosure](agent-lift.md#explicit-llm-judge).
 
+## Recorded-session selectors (unreleased)
+
+`kmx agent eval from-sessions <session-uid>... --sessions <source>
+--assertions <case.yaml> --out <manifest.json>` reads source journals without
+inference. An existing output manifest means atomic append, never overwrite;
+duplicates refuse the whole operation. Assertions are authored without `input`.
+The `agent eval` group holds case preparation and offline diff, while execution
+remains `agent evaluate`; no new top-level verb or workspace model is introduced.
+
+`agent evaluate --from-sessions <manifest> --source-sessions <source>
+--sessions <candidate>` requires both explicit source and candidate selection,
+bypasses Kubernetes configuration, and refuses Orka-only selectors. Source CA
+uses `--source-sessions-ca`; candidate CA retains `--sessions-ca`. `--show-content`
+and source selectors require `--from-sessions`, never silently changing ordinary
+evaluation. Existing authored-input behavior is unchanged.
+
+Recorded inputs require named destination confirmation using
+`KAIMAHI_CONFIRM=<normalized-candidate-host:port>` even on loopback. Judges require
+separate `KAIMAHI_CONFIRM_JUDGE=<canonical-judge-base-url>`. Refusals name the
+transfer destination plainly; choosing an endpoint alone is not consent.
+Reference runs suppress answers and judge reasoning unless `--show-content` is
+explicit. Help/completion performs no reads, writes or inference. See
+[reference cases and row-local unknown comparisons](agent-lift.md#recorded-sessions-as-reference-cases).
+Missing case identity produces an `unknown` diff row without hiding comparable
+cases; unknown rows remain incomplete/nonzero. Observed identity disagreement
+or no complete observed case identity in either receipt remains incompatible.
+
+## Offline suite workspace
+
+`agent create <name> --workspace <directory> --model <model> --instructions <file>`
+authors one tool-free native-Orka member offline. It accepts optional description,
+refuses live-create selectors and leaves default create/bundle output unchanged.
+No Kubernetes configuration, builder or model call is needed.
+
+`suite push --workspace <directory> <reference>` prepares that member and its
+shareable authored cases as an ordinary AgentSuite, then copies the exact OCI
+manifest/blob graph. Native member image requirements are empty. Registry auth,
+plain-HTTP and non-atomic tag replacement remain as documented. Old
+`suite push <directory> <reference>` retains extracted-artifact transfer behavior.
+Workspace evaluation and reference lift are not implemented; these commands
+create no evaluation or promotion evidence. See [suite workspace](suite-workspace.md).
+
 ## Vocabulary
 
 **Decided: keep Create → Prove → Lift.** Lift is the chosen lifecycle verb for

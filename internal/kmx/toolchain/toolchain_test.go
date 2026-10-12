@@ -46,7 +46,7 @@ func tarGz(t *testing.T, member string, body []byte) []byte {
 // tools publish `<digest>  <name>`, and both must read the same.
 func TestExpectedDigestTakesOnlyTheFirstField(t *testing.T) {
 	want := digestOf([]byte("x"))
-	for _, file := range []string{want, want + "\n", want + "  kind-linux-amd64\n", want + "  /home/publisher/dist/archived.tar.gz\n"} {
+	for _, file := range []string{want, want + "\n", want + "  kind-linux-amd64\n", want + "  /home/user/dist/archived.tar.gz\n"} {
 		got, err := ExpectedDigest([]byte(file))
 		if err != nil {
 			t.Fatalf("%q: %v", file, err)

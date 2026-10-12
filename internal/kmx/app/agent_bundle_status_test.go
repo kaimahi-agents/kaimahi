@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -290,8 +292,11 @@ func TestBundleStatusUnreachableTargetDoesNotFailOrLeakStderr(t *testing.T) {
 		t.Fatalf("raw process output leaked into status: %q", target.Detail)
 	}
 	// The same guarantee holds through the public entry point.
-	if err := a.BundleStatus(opt); err != nil {
-		t.Fatalf("BundleStatus must exit zero for a target observation failure: %v", err)
+	for _, output := range []string{"table", "json"} {
+		opt.Output = output
+		if err := a.BundleStatus(opt); err != nil {
+			t.Fatalf("BundleStatus %s must exit zero for a target observation failure: %v", output, err)
+		}
 	}
 }
 
@@ -416,6 +421,20 @@ func TestBundleStatusPrintsTableAndJSON(t *testing.T) {
 	}
 	if !decoded.Targets[0].Provider.Ready || !decoded.Targets[0].Agent.Ready {
 		t.Fatalf("JSON output dropped Provider/Agent readiness: %+v", decoded.Targets[0])
+	}
+}
+
+func TestBundleStatusJSONReturnsWriteError(t *testing.T) {
+	a, opt, _, _, _ := bundleStatusFixture(t)
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	a.Out = writer
+	opt.Output = "json"
+	if err := a.BundleStatus(opt); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("JSON output error = %v, want %v", err, io.ErrClosedPipe)
 	}
 }
 

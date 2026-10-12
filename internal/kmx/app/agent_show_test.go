@@ -9,6 +9,8 @@ package app
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -204,6 +206,21 @@ func TestAgentShowJSONCarriesTheSameVerdicts(t *testing.T) {
 	}
 	if !strings.Contains(out, "not reached") {
 		t.Error("json does not say the Secret hop was never reached")
+	}
+}
+
+func TestAgentShowJSONReturnsWriteError(t *testing.T) {
+	f := newShowFixture(t)
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.app.Out = writer
+	opt := showOpts()
+	opt.Output = "json"
+	if err := f.app.ShowAgent("concierge", opt); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("JSON output error = %v, want %v", err, io.ErrClosedPipe)
 	}
 }
 

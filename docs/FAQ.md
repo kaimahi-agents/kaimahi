@@ -25,9 +25,9 @@ would install, not proof of what someone else installed. An unreadable
 cluster is not an empty cluster. See [Orka installation](orka.md) for
 inspection, no-write planning, dry-run and upgrade limits.
 
-## What Kagent support exists now?
+## What kagent support exists now?
 
-Orka remains the default. The only current Kagent capability is explicit
+Orka remains the default. The exact-v0.10.2 create profile is explicit
 `kmx agent create --runtime kagent <name>` against an already-installed exact
 v0.10.2. KMX never installs or upgrades it. This path renders a review artifact
 and portable bundle; `--out -` omits the bundle unless `--bundle-path` is set.
@@ -37,10 +37,14 @@ does not adopt/update existing objects or roll back partial writes. An optional
 `--task` sends one A2A message as the final step of that same create invocation;
 it is not a standalone or resumable chat capability.
 
-No Kagent chat, list, show, status, lift, evaluate, console, interactive
-`/lift`, quickstart, `up`, installer, or AKS payload was restored. Those
-commands remain Orka-only where applicable, and historical lift records remain
-teardown-only. See the [Kagent create contract](kmx.md#explicit-kagent-v0102-create).
+The separate exact-v0.10.3 profile permits explicit declarative bundle
+lift/status with desired bindings and a named context. It creates new resources
+or reuses a complete matching UID-bound deployment, never adopts or updates.
+Readiness receipts do not prove an answer. Dedicated CI continuously qualifies
+Go lift/status and a separate one-shot native A2A tool answer. See [exact-version placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
+Standalone chat/run/eval, list/show, console, interactive `/lift`, quickstart,
+`up`, installer and AKS payload remain unsupported. Historical AKS lift records
+remain teardown-only. See the [create contract](kmx.md#explicit-kagent-v0102-create).
 
 There is still no supported translation from Kagent YAML into an Orka Agent or
 BYO image. Native Orka resources remain the recommendation in

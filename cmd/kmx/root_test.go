@@ -315,12 +315,12 @@ func commandPaths(root *cobra.Command) []string {
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
-		"agent", "agent chat", "agent create", "agent edit", "agent eval", "agent eval diff", "agent evaluate", "agent lift", "agent list", "agent retire", "agent run", "agent show", "agent status", "agent verify",
+		"agent", "agent chat", "agent create", "agent edit", "agent eval", "agent eval diff", "agent eval from-sessions", "agent evaluate", "agent lift", "agent list", "agent retire", "agent run", "agent show", "agent status", "agent verify",
 		"aks", "aks up", "aks down", "completion", "ctx", "down",
 		"context", "context show", "context use", "local", "local up", "local down",
 		"lift", "lift down", "orka", "orka install", "orka status",
 		"quickstart", "quickstart-wizard",
-		"status", "suite", "suite build", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",
+		"status", "suite", "suite build", "suite diff", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",
 		"up", "version",
 	}
 	sort.Strings(want)

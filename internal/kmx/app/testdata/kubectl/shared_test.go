@@ -1,71 +1,42 @@
-// Package kubectl contains executable-boundary fixtures only. It intentionally
-// does not import App: each fake CLI invocation should initialize its protocol
-// fixture, not the terminal UI and other unrelated application dependencies.
+// Package kubectl contains executable-boundary fixtures independent of App.
 package kubectl
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"fmt"
 	"os"
-	"strings"
+	"slices"
 	"testing"
+
+	protocol "github.com/kaimahi-agents/kaimahi/internal/kmx/app/kubectlfake"
 )
 
-type orkaCall struct {
-	Args     []string
-	Document map[string]any
-	Patch    []map[string]any
-}
+type orkaCall = protocol.OrkaCall
 
 const (
-	OrkaNamespace      = "orka-system"
-	orkaResultAccount  = "orka-result-reader"
-	orkaPortableMarker = "kaimahi.dev/portable-digest"
-	orkaRenderedMarker = "kaimahi.dev/rendered-digest"
+	OrkaNamespace      = protocol.OrkaNamespace
+	orkaResultAccount  = protocol.OrkaResultAccount
+	orkaPortableMarker = protocol.OrkaPortableMarker
+	orkaRenderedMarker = protocol.OrkaRenderedMarker
 )
 
-func orkaTestToken() string { return "private-" + "session-token-never-print" }
-
-func orkaPlural(kind string) string { return strings.ToLower(kind) + "s.core.orka.ai" }
-
-func orkaAnnotationPointer(key string) string {
-	return strings.NewReplacer("~", "~0", "/", "~1").Replace(key)
-}
-
+func orkaTestToken() string { return protocol.OrkaToken() }
 func getenvLiftTest(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
+	return protocol.GetenvFallback(os.Getenv, key, fallback)
 }
 
-func workerController(name, chart, instance, managedBy, args string) string {
-	return fmt.Sprintf(`{"metadata":{"name":%q,"labels":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller","helm.sh/chart":%q,"app.kubernetes.io/instance":%q,"app.kubernetes.io/managed-by":%q}},"spec":{"template":{"spec":{"containers":[{"name":"controller","args":%s},{"name":"sidecar","args":["--ai-worker-service-account-name=wrong-sidecar"]}]}}}}`, name, chart, instance, managedBy, args)
-}
-
-func workerAccount(name, namespace, chart, instance, trust string) string {
-	return fmt.Sprintf(`{"metadata":{"name":%q,"namespace":%q,"labels":{"orka.ai/worker":"true","orka.ai/worker-trust":%q,"helm.sh/chart":%q,"app.kubernetes.io/instance":%q,"app.kubernetes.io/name":"orka","app.kubernetes.io/managed-by":"Helm"}}}`, name, namespace, trust, chart, instance)
-}
-
-func TestFixtureProtocolHelper(t *testing.T) {
-	if err := json.NewEncoder(os.Stdout).Encode(map[string]string{
-		"namespace":         OrkaNamespace,
-		"resultAccount":     orkaResultAccount,
-		"portableMarker":    orkaPortableMarker,
-		"renderedMarker":    orkaRenderedMarker,
-		"token":             orkaTestToken(),
-		"providerPlural":    orkaPlural("Provider"),
-		"annotationPointer": orkaAnnotationPointer("a~/b"),
-		"workerController":  workerController("controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=worker"]`),
-		"workerAccount":     workerAccount("worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"),
-	}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+func executableRequest(handler func(protocol.Request) error) {
+	args := os.Args[slices.Index(os.Args, "--")+1:]
+	err := handler(protocol.Request{Context: context.Background(), Args: args, Getenv: os.Getenv, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr})
+	if err != nil {
+		var status *protocol.ExitError
+		if errors.As(err, &status) {
+			os.Exit(status.Code)
+		}
+		os.Exit(2)
 	}
 	os.Exit(0)
 }
-
-func TestFixtureBuildModeHelper(t *testing.T) {
-	fmt.Printf("race=%t\n", fixtureRace)
-	os.Exit(0)
-}
+func TestFixtureProtocolHelper(t *testing.T)  { executableRequest(protocol.Pins) }
+func TestFixtureBuildModeHelper(t *testing.T) { fmt.Printf("race=%t\n", fixtureRace); os.Exit(0) }

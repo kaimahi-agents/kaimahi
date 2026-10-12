@@ -71,19 +71,37 @@ func newQuickstartCommand(state *commandState) *cobra.Command {
 	var interactive bool
 	cmd := &cobra.Command{
 		Use:   "quickstart",
-		Short: "From nothing to an agent answering a question",
-		Long: "From nothing to an agent answering a question.\n\n" +
-			"Without --interactive, deploys the fixed hello-world agent, asks it one question and prints the answer; repeatable and safe for automation.\n" +
-			"With --interactive, opens a guided terminal UI to author your own Orka agent and choose its model while the local runtime starts.",
+		Short: "Set up a local Orka environment and an agent",
+		Long: `Set up a local Orka environment and an agent.
+
+Fixed mode (without --interactive) deploys the fixed hello-world-agent,
+asks it one question and prints its answer. Use -o json for automation.
+
+Guided mode (--interactive, experimental) requires a terminal. Author a new Orka
+Agent or choose an existing one while the local runtime is prepared. Choose an
+inference source and model for chat, independently of local runtime setup.
+You may finish at Agent readiness without a model answer, or choose to enter chat.
+The fixed-mode default question is not submitted in guided mode.
+An explicit --task requests a first Orka Task when creating a new Agent. It is
+not run for an existing Agent. The first Task uses the Agent's deployed Provider, not host-backed chat inference.`,
+		Example: `  # Fixed first-answer path
+  kmx quickstart
+  kmx quickstart -o json
+
+  # Experimental guided setup (terminal required)
+  kmx quickstart --interactive
+
+  # Request a first Orka Task when authoring a new Agent
+  kmx quickstart --interactive --task "Who are you?"`,
 	}
 	flags := cmd.Flags()
-	flags.BoolVarP(&interactive, "interactive", "i", false, "author your own Orka agent in a guided terminal UI")
+	flags.BoolVarP(&interactive, "interactive", "i", false, "choose or author an Orka agent in an experimental guided terminal UI")
 	flags.StringVarP(&opt.Output, "output", "o", "text", "output: text|json (not with --interactive)")
 	// No --agent flag: quickstart deploys the hello-world manifest kmx
 	// carries, so a flag naming a different agent would deploy one thing and
 	// question another. Your own agent is --interactive or `kmx agent create`,
 	// and asking any agent anything is `kmx agent chat`.
-	flags.StringVar(&opt.Task, "task", config.DefaultTask, "the question to ask; with --interactive, an optional first Orka Task prompt that ignores this default")
+	flags.StringVar(&opt.Task, "task", config.DefaultTask, "fixed-mode question; with --interactive, optional first Orka Task for a new Agent only (fixed default ignored)")
 	flags.StringVar(&wizard.Create.Instructions, "instructions", "", "file containing the system message (--interactive only)")
 	flags.StringVar(&wizard.Create.Tools, "tools", "", "comma-separated Orka tool names (--interactive only; default: k8s-get-resources)")
 	flags.StringVar(&wizard.Create.Skills, "skills", "", "comma-separated explicit Orka skill names (--interactive only)")

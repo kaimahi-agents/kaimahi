@@ -20,7 +20,7 @@ ORDER = [
     ("documentation heading", r"^## Documentation$"),
     ("Development heading", r"^## Development$"),
     ("experimental notice", r"^> \[!IMPORTANT\]\n> \*\*Kaimahi is experimental and under active development\.\*\*"),
-    ("runtime ownership note", r"^> \[!NOTE\]\n> KMX is the Agent Builder and lifecycle layer, not a runtime or generic$"),
+    ("runtime ownership note", r"^> \[!NOTE\]\n> kmx is the Agent Builder and lifecycle layer, not a runtime or generic$"),
 ]
 BADGE_PATTERNS = [
     ("CI badge", r"actions/workflows/ci\.yml/badge\.svg\?branch=main"),
@@ -32,7 +32,7 @@ BADGE_PATTERNS = [
 INSTALL_COMMANDS = [
     ("Homebrew install", r"^brew install kaimahi-agents/tap/kmx$"),
     ("release installer", r"^curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/main/install\.sh \| sh$"),
-    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.4\.1$"),
+    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.5\.1$"),
 ]
 FIRST_ANSWER_COMMANDS = [("kmx quickstart", r"^kmx quickstart$")]
 JOURNEY_COMMANDS = [

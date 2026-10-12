@@ -19,8 +19,15 @@ import (
 
 func reconcileFixture(t *testing.T) (orkaRuntimeAdapter, agentruntime.RenderedBundle, string) {
 	t.Helper()
+	return reconcileFixtureMode(t, false)
+}
+
+func reconcileFixtureMode(t *testing.T, inProcess bool) (orkaRuntimeAdapter, agentruntime.RenderedBundle, string) {
+	t.Helper()
 	dir := t.TempDir()
-	fakeTool(t, dir, "kubectl", kubectlFixture(t, "TestReconcileKubectlHelper"))
+	if !inProcess {
+		fakeTool(t, dir, "kubectl", kubectlFixture(t, "TestReconcileKubectlHelper"))
+	}
 	fixtures, e := filepath.Abs("../orkaschema/fixtures")
 	if e != nil {
 		t.Fatal(e)
@@ -30,6 +37,10 @@ func reconcileFixture(t *testing.T) (orkaRuntimeAdapter, agentruntime.RenderedBu
 	t.Setenv("KMX_RECONCILE_FIXTURES", fixtures)
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: &run.Runner{}, Out: io.Discard, Err: io.Discard, waitTiming: fastWaitTiming()}
+	if inProcess {
+		a.captureCommand = reconcileCaptureFixture
+		forbidKubectlLaunch(t, dir)
+	}
 	opt := goldenNoTaskCreate("")
 	opt.Out = filepath.Join(dir, "bundle.yaml")
 	opt.BundlePath = filepath.Join(dir, "agents", "sample")

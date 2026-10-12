@@ -33,7 +33,7 @@ func (a *App) StatusWithOptions(opt StatusOptions) error {
 		return fmt.Errorf("status has no %s output: use table.\n"+
 			"  The structured document counted the retired runtime's Agents and model presets, and it is gone.\n"+
 			"  For machine-readable runtime facts, read the cluster directly:\n"+
-			"    kubectl --context %s -n %s get deploy,%s -o json", format, a.Cfg.KubeContext, OrkaNamespace, orkaProviderKind)
+			"    kubectl --context %s -n %s get deploy,%s -o json", format, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaProviderKind)
 	default:
 		return fmt.Errorf("status output %q is not supported — use table", opt.Output)
 	}

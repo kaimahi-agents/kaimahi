@@ -9,7 +9,106 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
+
+func TestChatInputLayoutPlainRows(t *testing.T) {
+	for _, tc := range []struct {
+		name, prompt, line, hint string
+		width, cursorRow         int
+		want                     []string
+	}{
+		{"wrapped", "YOU > ", "hello", "help", 8, 1, []string{"YOU > he", "llo"}},
+		{"exact width", "YOU > ", "hi", "help", 8, 1, []string{"YOU > hi", ""}},
+		{"narrow editing glyph", "", "界", "", 1, 0, []string{"?", ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := layoutChatInput(chatInputLayoutOptions{prompt: tc.prompt, line: tc.line, hint: tc.hint,
+				width: tc.width, height: 24, cursorRow: tc.cursorRow})
+			if !reflect.DeepEqual(got.rows, tc.want) || got.cursorRow != tc.cursorRow || got.cursorColumn != 0 || got.hint != tc.hint {
+				t.Fatalf("layout=%+v, want rows=%q cursorRow=%d hint=%q", got, tc.want, tc.cursorRow, tc.hint)
+			}
+		})
+	}
+}
+
+func TestChatInputLayoutPopupOffsetsTheEditorCursor(t *testing.T) {
+	got := layoutChatInput(chatInputLayoutOptions{
+		ui:         cliui.WithCapabilities(cliui.Capabilities{Rich: true, Width: 40}),
+		promptKind: cliui.FocusMessage, prompt: "YOU > ", line: "/", hint: "inline hint",
+		width: 40, height: 24, framed: true, cursorRow: 4, selected: 1,
+		matches: []slashCommand{{"/a", "/a alpha"}, {"/b", "/b beta"}, {"/c", "/c gamma"}},
+	})
+	if len(got.rows) != 8 || got.cursorRow != 6 || got.cursorColumn != 9 || got.hint != "" {
+		t.Fatalf("popup/editor layout=%+v, want 8 rows, cursor=(6,9), no inline hint", got)
+	}
+	if !strings.Contains(ansi.Strip(got.rows[2]), "› /b beta") || !strings.Contains(ansi.Strip(got.rows[6]), "YOU > /") {
+		t.Fatalf("selection or cursor row misplaced: %q", got.rows)
+	}
+}
+
+func TestChatInputLayoutClipsOnlyTheEditingViewport(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		height, cursorRow int
+		want              []string
+	}{
+		{"three rows", 4, 2, []string{strings.Repeat("x", 40), "[... input omitted ...]", ""}},
+		{"two rows", 3, 1, []string{"[... input omitted ...]", ""}},
+		{"one row", 2, 0, []string{"[... input omitted ...]"}},
+		{"minimum height", 1, 0, []string{"[... input omitted ...]"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := layoutChatInput(chatInputLayoutOptions{line: strings.Repeat("x", 200), width: 40, height: tc.height, cursorRow: 4})
+			if !reflect.DeepEqual(got.rows, tc.want) || got.cursorRow != tc.cursorRow {
+				t.Fatalf("clipped layout=%+v, want rows=%q cursorRow=%d", got, tc.want, tc.cursorRow)
+			}
+		})
+	}
+}
+
+func TestChatInputLayoutSubmissionPreservesNarrowGraphemes(t *testing.T) {
+	got := layoutChatInput(chatInputLayoutOptions{line: "\x1b[31m界e\u0301👩‍💻xy\x1b[0m", hint: "editing hint",
+		width: 1, height: 1, complete: true})
+	if text := strings.Join(got.rows, ""); text != "界e\u0301👩‍💻xy" {
+		t.Fatalf("submission was clipped or changed: %q", text)
+	}
+	if len(got.rows) <= 1 || got.hint != "" {
+		t.Fatalf("submission retained viewport clipping or an editing hint: %+v", got)
+	}
+}
+
+func TestChatInputLayoutBoxesOnlySubmittedMessages(t *testing.T) {
+	for _, tc := range []struct {
+		name, prompt, line string
+		kind               cliui.FocusKind
+		boxed              bool
+		want               []string
+	}{
+		{"message", "YOU > ", "hello", cliui.FocusMessage, true, nil},
+		{"slash command", "YOU > ", "/help", cliui.FocusMessage, false, []string{"YOU > /help"}},
+		{"empty", "YOU > ", "", cliui.FocusMessage, false, []string{"YOU > "}},
+		{"whitespace", "YOU > ", "   ", cliui.FocusMessage, false, []string{"YOU >    "}},
+		{"non-message input", "Answer: ", "yes", cliui.FocusQuestion, false, []string{"Answer: yes"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := layoutChatInput(chatInputLayoutOptions{ui: cliui.WithCapabilities(cliui.Capabilities{Rich: true, Width: 40}),
+				promptKind: tc.kind, prompt: tc.prompt, line: tc.line, hint: "editing hint",
+				width: 40, height: 24, framed: true, complete: true})
+			if got.hint != "" || got.cursorColumn != 0 {
+				t.Fatalf("submission retained editor state: %+v", got)
+			}
+			if tc.boxed {
+				if len(got.rows) != 3 || !strings.Contains(ansi.Strip(got.rows[0]), "─ YOU ") || !strings.Contains(ansi.Strip(got.rows[1]), "hello") {
+					t.Fatalf("message is not a durable transcript box: %q", got.rows)
+				}
+			} else if !reflect.DeepEqual(got.rows, tc.want) {
+				t.Fatalf("non-message submission=%q, want %q", got.rows, tc.want)
+			}
+		})
+	}
+}
 
 func commandNames(commands []slashCommand) []string {
 	names := make([]string, 0, len(commands))

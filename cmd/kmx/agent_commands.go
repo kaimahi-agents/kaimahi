@@ -6,13 +6,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 )
 
 func newAgentCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{Use: "agent", Short: "Create agents; inspect and chat with Orka agents", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentLiftCommand(state), newAgentRetireCommand(state), newAgentStatusCommand(state), newAgentEvaluateCommand(state), newAgentEvalCommand(), newAgentVerifyCommand(), newAgentRunCommand(state), newAgentChatCommand(state),
-		retiredCommand("edit", "kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>; inspect with kmx agent show <name> --namespace <namespace>"))
+		retiredCommand("edit", "kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>; inspect with kmx --context <ctx> agent show <name> --namespace <namespace>"))
 	return group
 }
 
@@ -61,12 +62,30 @@ chat resolves against.`,
 
 func newAgentCreateCommand(state *commandState) *cobra.Command {
 	var opt app.CreateOptions
-	cmd := &cobra.Command{Use: "create [name]", Short: "Create an Orka or Kagent declarative Agent", Long: `Create a declarative Orka Agent and its Provider as reviewable Kubernetes YAML.
-Select explicitly the namespace the Orka controller watches. Provider type, model
-identifier such as local/qwen2.5:3b, and a separately provisioned Secret are required.
+	var workspaceRoot string
+	cmd := &cobra.Command{
+		Use:   "create [name]",
+		Short: "Create an Orka or kagent declarative Agent",
+		Long: `Create an Orka or kagent Agent as reviewable Kubernetes YAML.
+
+Named creation applies to the selected cluster by default. Use --no-apply to
+validate and write local artifacts without applying, or --dry-run for server
+validation and local artifacts. --out - writes YAML to stdout without applying.
+With --out -, explicitly set --bundle-path to also write an authored bundle.
+Omit the name for guided Orka creation in a terminal; kagent creation requires a name.
+Select explicitly the namespace the runtime controller watches. Provider type, model
+identifier and a separately provisioned Secret are required.
+With --workspace <directory>, named creation instead authors one native-Orka suite
+member offline. Only --model, --instructions (file) and --description are accepted;
+no cluster settings are loaded, no image is built and no Agent is deployed.
+Workspace evaluation and release lift are not yet available.
+
 This command does not build or deploy application images. Keep your Deployment
-or chart.
-Interactive agent chat is Orka-only, and so is kmx agent list --namespace.
+or chart. Interactive agent chat and kmx agent list are Orka-only.
+
+Orka creation:
+The generated resources include a Provider and Agent. Model identifiers include
+local/qwen2.5:3b.
 For azure-openai, --base-url is the HTTPS Azure resource root (not /openai/v1),
 --azure-deployment is required and must equal --model: portable model.name names
 the deployment Orka sends to the Azure SDK. --azure-api-version is optional;
@@ -75,14 +94,6 @@ its key, with no trailing newline; Orka does not trim it. In Bash or Zsh,
 provision the existing Secret without printing the key:
 kubectl --context <ctx> -n <ns> create secret generic <name> --from-file=api-key=<(tr -d '\r\n' < <path>)
 Only pass --secret <name> to kmx; never pass the key in command arguments.
-
-With --runtime kagent, create targets a preinstalled exact Kagent v0.10.2 and
-requires a name and --description. --kagent-runtime selects go or python. Kagent tools use exactly
-one server:tool1,tool2 binding; its Secret skeleton is review-only, and online
-deployment creates ModelConfig then Agent without adoption or rollback. With
---task, Kagent stores the full task prompt, history, and answer in its database;
-default upstream session retention is unlimited. Kubernetes audit policy may
-also capture Service-proxy request and response bodies.
 
 Offline output uses pinned v0.2.0 CRDs by default (main selects an immutable snapshot), not
 cluster admission. Never bulk-apply the bundle or write its value-free Secret
@@ -96,9 +107,33 @@ account's full effective authority, not result-only scope; discarding it is not
 revocation. v0.1.3 authenticates result reads but does not enforce Task
 read RBAC; pinned main requires namespaced get on tasks.core.orka.ai. Results use
 loopback HTTP through a context-pinned port-forward. Fresh names and UID checks
-do not bind returned result bytes to a UID. Dry-run tests neither access nor execution.`}
+do not bind returned result bytes to a UID. Dry-run tests neither access nor execution.
+
+kagent creation:
+With --runtime kagent, create targets a preinstalled exact kagent v0.10.2 and
+requires a name and --description. --kagent-runtime selects go or python. kagent tools use exactly
+one server:tool1,tool2 binding; its Secret skeleton is review-only, and online
+deployment creates ModelConfig then Agent without adoption or rollback. With
+--task, kagent stores the full task prompt, history, and answer in its database;
+default upstream session retention is unlimited. Kubernetes audit policy may
+also capture Service-proxy request and response bodies.`,
+		Example: `  # Guided Orka creation (terminal required)
+  kmx agent create
+
+  # Offline YAML preview; no cluster access
+  kmx agent create preview --namespace orka-system \
+    --provider-type openai --model qwen2.5:3b --secret local-provider-key \
+    --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out -
+
+  # Also persist the authored bundle
+  kmx agent create preview --namespace orka-system \
+    --provider-type openai --model qwen2.5:3b --secret local-provider-key \
+    --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out - --bundle-path agents/preview`,
+	}
+	cmd.Flags().StringVar(&workspaceRoot, "workspace", "", "author one native-Orka suite member in this workspace, offline")
+	_ = cmd.MarkFlagDirname("workspace")
 	cmd.Flags().StringVar(&opt.Runtime, "runtime", "orka", "agent runtime: orka or kagent")
-	cmd.Flags().StringVar(&opt.KagentRuntime, "kagent-runtime", "go", "Kagent declarative runtime: go or python")
+	cmd.Flags().StringVar(&opt.KagentRuntime, "kagent-runtime", "go", "kagent declarative runtime: go or python")
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "explicit target namespace; the selected runtime controller must watch it (required)")
 	cmd.Flags().StringVar(&opt.Description, "description", "", "one-line description")
 	cmd.Flags().StringVar(&opt.ProviderType, "provider-type", "", "Provider type: openai, anthropic or azure-openai (required)")
@@ -109,11 +144,11 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.AzureDeployment, "azure-deployment", "", "Azure OpenAI deployment name (required for azure-openai; must match --model)")
 	cmd.Flags().StringVar(&opt.AzureAPIVersion, "azure-api-version", "", "Azure OpenAI API version (optional; omitted from YAML when unset)")
 	cmd.Flags().StringVar(&opt.Instructions, "instructions", "", "file containing the system message")
-	cmd.Flags().StringVar(&opt.Tools, "tools", "", "Orka: comma-separated names; Kagent: exactly one server:tool1,tool2 binding")
+	cmd.Flags().StringVar(&opt.Tools, "tools", "", "Orka: comma-separated names; kagent: exactly one server:tool1,tool2 binding")
 	cmd.Flags().StringVar(&opt.Skills, "skills", "", "comma-separated explicit Orka skill names")
 	cmd.Flags().BoolVar(&opt.Coordination, "coordination", false, "enable agent-to-agent delegation (requires --allowed-agent)")
 	cmd.Flags().StringArrayVar(&opt.AllowedAgents, "allowed-agent", nil, "Agent permitted as a delegation target in this namespace (repeat for each Agent)")
-	cmd.Flags().StringVar(&opt.Task, "task", "", "first prompt: Orka Task or one Kagent A2A message; applying authorizes execution")
+	cmd.Flags().StringVar(&opt.Task, "task", "", "first prompt: Orka Task or one kagent A2A message; applying authorizes execution")
 	cmd.Flags().StringVar(&opt.AgentRequestsPerMinute, "agent-requests-per-minute", "", "explicit positive Agent request limit (int32)")
 	cmd.Flags().StringVar(&opt.AgentTokensPerMinute, "agent-tokens-per-minute", "", "explicit positive Agent token limit (int64)")
 	cmd.Flags().StringVar(&opt.ProviderRequestsPerMinute, "provider-requests-per-minute", "", "explicit positive Provider request limit (int32)")
@@ -123,7 +158,7 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	cmd.Flags().StringVar(&opt.OrkaAPIService, "orka-api-service", "orka-api", "Orka API Service name exposing port 8080")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "19180", "free loopback port for the temporary result forward")
 	cmd.Flags().StringVar(&opt.Out, "out", "", "manifest output path ('-' for stdout)")
-	cmd.Flags().StringVar(&opt.BundlePath, "bundle-path", "", "portable bundle directory (default agents/<name>; stdout requires this flag)")
+	cmd.Flags().StringVar(&opt.BundlePath, "bundle-path", "", "authored bundle directory (default agents/<name>; with --out -, set explicitly to also write a bundle)")
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "write the manifest and stop")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation and local artifact; no cluster writes or execution")
 	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
@@ -132,6 +167,18 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 	_ = cmd.RegisterFlagCompletionFunc("provider-type", staticCompletion([]string{"openai", "anthropic", "azure-openai"}))
 	_ = cmd.RegisterFlagCompletionFunc("schema-target", staticCompletion([]string{"v0.2.0", "v0.1.3", "main"}))
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("workspace") {
+			if strings.TrimSpace(workspaceRoot) == "" || len(args) != 1 {
+				return fmt.Errorf("workspace creation requires a name and non-empty --workspace directory")
+			}
+			if err := validateWorkspaceCreateFlags(cmd, state); err != nil {
+				return err
+			}
+			if strings.TrimSpace(opt.Model) == "" || strings.TrimSpace(opt.Instructions) == "" {
+				return fmt.Errorf("workspace creation requires --model and --instructions <file>")
+			}
+			return nil
+		}
 		if strings.TrimSpace(opt.Runtime) != opt.Runtime {
 			return fmt.Errorf("--runtime must be exactly orka or kagent")
 		}
@@ -163,13 +210,22 @@ do not bind returned result bytes to a UID. Dry-run tests neither access nor exe
 		}
 		return nil
 	}
-	cmd.RunE = appRun(state, func(a *app.App) error {
+	runNative := appRun(state, func(a *app.App) error {
 		if opt.Runtime == "orka" && len(cmd.Flags().Args()) == 0 {
 			return a.CreateAgentInteractive(opt)
 		}
 		opt.Name = cmd.Flags().Arg(0)
 		return a.CreateAgent(opt)
 	})
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("workspace") {
+			a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
+			return a.CreateSuiteMember(cmd.Context(), workspaceRoot, workspace.CreateOptions{
+				Name: args[0], Description: opt.Description, Model: opt.Model, InstructionsFile: opt.Instructions,
+			})
+		}
+		return runNative(cmd, args)
+	}
 	return cmd
 }
 

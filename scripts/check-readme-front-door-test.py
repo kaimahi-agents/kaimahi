@@ -15,7 +15,7 @@ INSTALL = """brew install kaimahi-agents/tap/kmx
 # or
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 # or
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.1
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
 """
 JOURNEY = """`kmx quickstart` proves an answer.
 `kmx local up` provisions the runtime.
@@ -50,7 +50,7 @@ Build.
 > [!IMPORTANT]
 > **Kaimahi is experimental and under active development.** Interfaces may change.
 > [!NOTE]
-> KMX is the Agent Builder and lifecycle layer, not a runtime or generic
+> kmx is the Agent Builder and lifecycle layer, not a runtime or generic
 > governance control plane.
 """
 
@@ -65,7 +65,7 @@ for label, literal in [
     ("documentation heading", "## Documentation\n"),
     ("Development heading", "## Development\n"),
     ("experimental notice", "> [!IMPORTANT]\n> **Kaimahi is experimental and under active development.** Interfaces may change.\n"),
-    ("runtime ownership note", "> [!NOTE]\n> KMX is the Agent Builder and lifecycle layer, not a runtime or generic\n> governance control plane.\n"),
+    ("runtime ownership note", "> [!NOTE]\n> kmx is the Agent Builder and lifecycle layer, not a runtime or generic\n> governance control plane.\n"),
     ("CI badge", "actions/workflows/ci.yml/badge.svg?branch=main"),
     ("release badge", "img.shields.io/github/v/release/kaimahi-agents/kaimahi"),
     ("license badge", "img.shields.io/github/license/kaimahi-agents/kaimahi"),
@@ -74,7 +74,7 @@ for label, literal in [
 for label, literal in [
     ("Homebrew install", "brew install kaimahi-agents/tap/kmx\n"),
     ("release installer", "curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh\n"),
-    ("pinned Go install", "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.1\n"),
+    ("pinned Go install", "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1\n"),
     ("kmx quickstart", "kmx quickstart\n"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
@@ -89,11 +89,11 @@ for label, literal in [
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 CASES += [
     ("wrong tap", GOOD.replace("kaimahi-agents/tap/kmx", "other/tap/kmx"), "Homebrew install is missing"),
-    ("moving Go source", GOOD.replace("cmd/kmx@v0.4.1", "cmd/kmx@main"), "pinned Go install is missing"),
-    ("old Go release", GOOD.replace("cmd/kmx@v0.4.1", "cmd/kmx@v0.4.0"), "pinned Go install is missing"),
+    ("moving Go source", GOOD.replace("cmd/kmx@v0.5.1", "cmd/kmx@main"), "pinned Go install is missing"),
+    ("old Go release", GOOD.replace("cmd/kmx@v0.5.1", "cmd/kmx@v0.5.0"), "pinned Go install is missing"),
     ("wrong installer", GOOD.replace("kaimahi/main/install.sh", "other/main/install.sh"), "release installer is missing"),
     ("quickstart after suffix", GOOD.replace("kmx quickstart\n", "kmx quickstart-old\n"), "kmx quickstart is missing"),
-    ("legacy Go quickstart chaining", GOOD.replace("cmd/kmx@v0.4.1\n", "cmd/kmx@v0.4.1 && kmx quickstart\n"), "pinned Go install is missing"),
+    ("legacy Go quickstart chaining", GOOD.replace("cmd/kmx@v0.5.1\n", "cmd/kmx@v0.5.1 && kmx quickstart\n"), "pinned Go install is missing"),
     ("missing lift guide", GOOD.replace("See the [bundle lift guide](docs/agent-lift.md).\n", ""), "bundle lift guide is missing"),
     ("journey missing first block", GOOD.replace("```bash\n" + INSTALL + "```\n", ""), "Homebrew install is missing"),
     ("journey missing second block", GOOD.replace("```bash\nkmx quickstart\n```\n", ""), "kmx quickstart is missing"),

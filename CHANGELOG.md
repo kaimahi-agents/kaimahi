@@ -24,10 +24,99 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
-- `kmx agent evaluate` supports explicit `llmJudge` rubric/threshold/model/version assertions with `--judge-base-url` and optional `--judge-key-env` (environment name only), without model/endpoint defaults.
-  Two temperature-zero scores must agree on the threshold side; split or unavailable evidence is unknown. Receipts bind identity/policy/threshold and both scores without payloads; input/answer/rubric go to the chosen judge provider and terminal reasoning may contain answer text. Replay makes zero judge calls and explicitly leaves judge outcomes unverified. Older strict v2 readers must upgrade for judge receipts. [Judge configuration and privacy](docs/agent-lift.md#explicit-llm-judge).
+- `kmx agent eval diff` reads strict v2 receipts for exact-v0.10.3 Go kagent
+  evaluations offline, with native A2A and deployment identity checks. Valid
+  kagent receipts do not affect Orka gate/status selection and cannot satisfy an
+  Orka lift gate. kagent execution and promotion gates remain unsupported;
+  upgrade older strict receipt readers before exchanging these shapes.
+  [Offline receipt boundary](docs/agent-lift.md#offline-kagent-receipt-boundary).
 
-- `kmx context show/use` inspect and save context selection; `kmx local up/down` name the existing local kind setup and deletion operations. [Command names](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+- `kmx suite diff` compares extracted or OCI-layout AgentSuites semantically,
+  including supplemental packaged content and artifact identities, with unified,
+  split, and versioned JSON output plus affected-agent reporting. Identity-keyed
+  relationships ignore ordering, output construction is explicitly bounded, and
+  human rendering strips terminal and bidirectional controls.
+
+- `kmx agent create --workspace` authors one native-Orka AgentSuite member offline.
+  `kmx suite push --workspace` prepares and publishes its exact OCI graph, including
+  authored cases, with no member image build or cluster access. Existing bundle
+  commands and suite transfer syntax are unchanged. Workspace evaluation and
+  release lift are not available. Registry workspace pushes share the default
+  unsigned provenance policy, opt-out/required flags and matching-HEAD source
+  commit claims; prepared graph bytes stay unchanged. [Workspace guide](docs/suite-workspace.md).
+
+- Registry `kmx suite push` attaches provenance by default, and `suite pull` shows the claimed kmx version and source commit when available; `--require-provenance` refuses to move the tag if attachment fails.
+  Provenance is unsigned: anyone with push access can attach a claim. [Suite provenance](docs/kmx.md#suite-provenance).
+
+### Fixed
+
+- `kmx agent eval diff` reports cases without observed Sessions runtime identity
+  as individual `unknown` rows instead of hiding comparable cases. Unknown rows
+  still exit nonzero; conflicting identities or no complete observed identity
+  in either receipt remain incompatible. Receipt formats are unchanged.
+
+- Applying `kmx agent create` without a Task can reuse its offline preview when
+  only the generated schema-source comment differs. The preview stays unchanged;
+  every other byte difference still refuses reuse, and online schema/admission
+  checks remain required.
+
+- `kmx targets` describes the dedicated continuous Go kagent v0.10.3 lift/status
+  qualification and its separate one-shot native A2A MCP proof. Supported
+  operations and Python's render-only boundary are unchanged.
+
+### Breaking
+
+- The experimental, unwired `pkg/kmx.AgentSuites` Go contract now exposes the
+  cohesive `Validate`, `Build`, `RecoverBuild`, `Push` and `RecoverPush`
+  workflow with staged concrete values. This replaces its speculative
+  `Package`, per-member `BuildSandbox` and generic `Publish` methods. Installed
+  `kmx suite` commands and their output are unchanged. The initial Build/Push
+  contract is image-backed; valid native-Orka suites requiring zero member
+  images remain outside it until execution-profile artifact requirements are
+  modeled.
+
+### Upgrading
+
+- Consumers of the alpha `pkg/kmx` design package must adopt
+  `ValidatedAgentSuite`, `BuildSuiteResult`/`BuildSuiteProgress` and
+  `PushSuiteResult`. Builder selection, member planning and OCI transport now
+  remain internal capabilities rather than northbound workflow methods.
+
+## v0.5.1 — 2026-10-12
+
+### Fixed
+
+- `kmx targets --detect` accepts kubectl `List` Deployment responses, reporting empty lists as absent and labelled controllers as present.
+  Malformed responses and failed reads remain unreadable and exit nonzero. [Target detection](docs/runtime-adapters.md#read-only-target-view) ([#429](https://github.com/kaimahi-agents/kaimahi/pull/429)).
+
+- Homebrew formula tests check the binary's version instead of help prose; the release workflow runs the generated test before publication. [Formula test fix](https://github.com/kaimahi-agents/kaimahi/pull/426).
+
+- Orka lift-prerequisite recovery commands preserve and safely quote the selected destination context.
+  Prerequisite checks and installation defaults are unchanged. [Recovery advice](https://github.com/kaimahi-agents/kaimahi/pull/423).
+
+## v0.5.0 — 2026-10-11
+
+### Added
+
+- `kmx agent evaluate` supports `contains`, `notContains` and RE2 `regex` assertions alongside `expectContains`, and keeps immutable run receipts.
+  `toolCalled` and `toolNotCalled` syntax is accepted but currently reports unknown. [Evaluation assertions](docs/agent-lift.md#evaluating-a-deployed-revision).
+
+- `kmx agent eval diff <before.json> <after.json>` compares saved evaluations offline by case and assertion, showing regressions, fixes and lost evidence without rerunning models.
+  Comparison requires compatible full-case v2 receipts; regressions and incomplete comparisons exit nonzero. [Compare evaluations](docs/agent-lift.md#comparing-saved-evaluations-offline).
+
+- The console's `R` key shows recent Orka Tasks, task lanes and sanitized activity for the selected agent, context and namespace.
+  Discovery is bounded and reports missing or unreadable evidence without showing conversation payloads. [Interactive console](docs/interactive-chat.md).
+
+- The reusable kmx GitHub evaluation action runs a tracked bundle's cases through Sessions, optionally replay-checks receipts, and fails the job unless every case passes.
+  Sessions evaluation does not satisfy an Orka lift gate. [Run evals in CI](docs/agent-lift.md#run-evals-in-ci).
+
+- `kmx agent eval from-sessions <session-uid>...` extracts private single-turn UID/prefix references and authored assertions without copying recorded inputs or answers; existing `--out` manifests append atomically and refuse duplicates.
+  `agent evaluate --from-sessions` verifies source prefixes in memory and runs fresh candidate sessions, with named candidate/judge confirmation and payload-free output unless `--show-content` is explicit. Expired/unavailable references remain unknown; current diff conservatively makes the whole comparison incompatible when a case lacks runtime identity ([#403](https://github.com/kaimahi-agents/kaimahi/issues/403)). Ordinary authored-input evaluation and v2 receipt formats are unchanged. [Recorded cases and privacy](docs/agent-lift.md#recorded-sessions-as-reference-cases).
+
+- `kmx agent evaluate` supports explicit `llmJudge` rubric/threshold/model/version assertions with `--judge-base-url` and optional `--judge-key-env` (environment name only), without model/endpoint defaults.
+  Two temperature-zero scores must agree on the threshold side; split or unavailable evidence is unknown. Receipts bind identity/policy/threshold and both scores without payloads; input/answer/rubric go to the chosen judge provider and terminal reasoning may contain answer text. Replay makes zero judge calls and explicitly leaves judge outcomes unverified. [Judge configuration and privacy](docs/agent-lift.md#explicit-llm-judge).
+
+- v0.5.0 introduces `kmx context show/use` to inspect and save context selection, and `kmx local up/down` for the existing local kind setup and deletion operations. [Command names](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
 
 - `kmx targets` reports runtime capabilities offline, with optional Orka and Sessions probes. It selects, installs and deploys nothing; unreadable probes exit nonzero, distinct from absence. [Target view](docs/runtime-adapters.md#read-only-target-view).
 
@@ -48,7 +137,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `kmx agent create --runtime kagent <name>` creates on preinstalled exact kagent v0.10.2, optionally sending one task; Orka remains the default.
   Create-only, with no rollback or ambiguous retry; kagent and Service-proxy audits may retain conversation content. [Prerequisites and limits](docs/kmx.md#explicit-kagent-v0102-create).
 
-- Upcoming signed releases include `checksums.txt.sigstore.json`, a keyless cosign bundle for the four binaries' checksum manifest. Earlier releases and the Homebrew formula are not covered; installers still verify checksums, not signatures automatically. [Verify a release](docs/releases.md#verify-a-release) ([#387](https://github.com/kaimahi-agents/kaimahi/issues/387)).
+- Explicit `kmx agent lift` and `kmx agent status` with `--runtime kagent --runtime-version v0.10.3` support Go declarative bundles on an operator-prepared target with `--to-context` and desired `KagentBindings`.
+  Lift is create-only or complete UID-bound receipt reuse, with no adoption/update; receipts prove readiness, not execution. Dedicated CI qualifies Go plan/lift/repeat/status/conflicts and a separate one-shot native A2A MCP answer with payload-free evidence. [Version-qualified placement](docs/agent-lift.md#exact-v0103-declarative-bundle-placement).
+
+- v0.5.0 includes `checksums.txt.sigstore.json`, a keyless cosign bundle for the four binaries' checksum manifest.
+  Earlier releases and the Homebrew formula are not covered; installers still verify checksums, not signatures automatically. [Verify a release](docs/releases.md#verify-a-release).
 
 ### Changed
 
@@ -73,7 +166,25 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
-- Recovery commands preserve local and AKS selectors and no longer suggest deleted Make targets. Teardown is unchanged. [Recovery commands](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+- Recovery advice preserves local and AKS selectors and safely quotes the selected context, including status/Orka diagnostics and retired-edit migration hints.
+  Teardown is unchanged; advice no longer suggests deleted Make targets. [Recovery commands](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+
+- Message text after `--` stays positional data instead of being interpreted as a `--context` or legacy `-context` selector. [Context parsing fix](https://github.com/kaimahi-agents/kaimahi/pull/407).
+
+- Quickstart and native chat check Task-result read access before creating a Task, stopping on denied or malformed responses.
+  No Task is created on refusal; earlier setup may remain. [Result-access fix](https://github.com/kaimahi-agents/kaimahi/pull/365).
+
+- `kmx agent show` and bundle-aware `kmx agent status` return a failure when their JSON output cannot be written. [JSON output fix](https://github.com/kaimahi-agents/kaimahi/pull/415).
+
+- Creation and quickstart help distinguish offline rendering, optional bundle persistence, fixed-mode answers and guided readiness/chat.
+  Operations, defaults and flag names are unchanged. [Help improvements](https://github.com/kaimahi-agents/kaimahi/pull/416).
+
+- kagent refusal messages identify unsupported chat and the retired AKS installer payload, and point to `kmx targets` for supported operations.
+  Explicit bundle lift/status and historical AKS teardown remain available. [Runtime guidance](https://github.com/kaimahi-agents/kaimahi/pull/419).
+
+- `make build` delegates freshness checks to Go so source, embedded-data and build-option changes rebuild the CLI. [Build and verify](docs/development.md#build-and-verify).
+
+- `install.sh --help` prints its complete header instead of truncating instructions or showing script code. [Installer](install.sh).
 
 - Console Prepare can repair the quickstart Kubernetes Tool's scoped policy-reader grant.
   Install and lift refuse missing/ambiguous worker identity or ineffective authorization. [Repair instructions](docs/orka-k8s-tool.md#repair-a-missing-policy-reader-grant).
@@ -81,7 +192,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Breaking
 
 - Model-plane commands/assets, model-overlay/credential administration, `make plane-image`, `CRED`, `ADMIN_PORT`, `OPS_PORT` and AKS `boundary`/`credential`/`plane` phases are removed; setup no longer creates plane credentials or monitoring, status is Orka-only, and version drops the plane revision.
-  This deletes **no deployed databases, credentials, caches or resources**; native inference and historical AKS teardown remain. [Removal scope](CONTRIBUTING.md#local-verification).
+  This deletes **no deployed databases, credentials, caches or resources**; native inference and historical AKS teardown remain. [Removal scope](docs/kmx.md).
 
 - Registry `kmx suite push` requires `--force` to replace a tag's digest; its preflight guard is non-atomic.
   Authenticated push/pull requires HTTPS or loopback HTTP, including token endpoints/redirects; remote plain HTTP auth challenges are refused. [Registry safety](docs/kmx.md#registry-authentication).
@@ -94,8 +205,20 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Upgrading
 
-- Replace `kmx quickstart-wizard` with `kmx quickstart --interactive` and drop `--interactive` from `kmx agent chat`; tagged v0.4.1 and earlier still use the old wizard and require `agent chat --interactive`.
-  With v0.4.1 use `ctx/up/down`, not the unreleased `context/local` names. [Quickstart migration](docs/getting-started.md#create-your-own-agent-then-lift-it-from-chat), [command compatibility](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+- Replace `kmx quickstart-wizard` with `kmx quickstart --interactive` and drop `--interactive` from `kmx agent chat` in v0.5.0.
+  v0.4.1 and earlier retain the old wizard and require `agent chat --interactive`. [Quickstart migration](docs/getting-started.md#create-your-own-agent-then-lift-it-from-chat).
+
+- Use `kmx context show/use` and `kmx local up/down` in v0.5.0; `ctx/up/down` remain compatibility routes.
+  v0.4.1 and earlier require the old names. [Command compatibility](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
+
+- Remove retired plane/admin commands and configuration from automation; configure supported Orka agents with native inference instead.
+  Existing plane deployments and data need separate operator-owned retirement; upgrading kmx deletes none of them. [Native inference](docs/kmx.md#default-orka-contract), [removal scope](docs/kmx.md).
+
+- Use HTTPS for authenticated remote registry push/pull and add `--force` only when deliberately replacing a tag's digest.
+  The tag preflight guard is non-atomic. [Registry safety](docs/kmx.md#registry-authentication).
+
+- Upgrade receipt readers to v0.5.0 before exchanging `llmJudge` receipts.
+  Older strict v2 readers reject the added judge metadata. [Judge receipt compatibility](docs/agent-lift.md#explicit-llm-judge).
 
 - `CHAT_PORT` and `KMX_CHAT_PORT` are unsupported: Task-backed Orka chat and quickstart fail if fixed loopback port 19180 is occupied. Free that port instead. [Chat port](docs/aks.md#historical-resources-and-concurrent-checks).
 
@@ -974,33 +1097,9 @@ sections, not the intermediate instruction.
   again on the way out, for rows they did not write today. Real tool and
   upstream names are untouched — no quoting, no escaping, no change.
 
-- **`scripts/check-board.py`** — the coordination board's lane table said a
-  lane was unassigned when it had already shipped five times in six days, and
-  twice carried two rows for one lane that contradicted each other. Each time
-  it was found by eye and hand-patched. CI now runs the board against itself
-  on every pull request: no two rows for one lane, no row that says both
-  unassigned and merged, no ready-to-paste worker prompt for a lane the table
-  says shipped, no finished lane's delta sheet above a row saying nobody has
-  started, and every pull request the board calls merged is one that merged.
-
-  This is not cosmetic. A stale row invites a worker to rebuild something that
-  exists — one said unassigned for the lane that had shipped `kmx tools add`.
-
-  Whether a lane is *done* is a judgement and nothing here asks it. Whether the
-  board contradicts itself is not, and that is all this checks. One claim
-  reaches outside the document, to `git log`: a row claiming nothing has
-  shipped, for work a merge already describes in that row's own words. Pull
-  request titles carry no lane numbers, so the match is on the words the row
-  itself uses; on the board the day it was written it matched 17 rows to the
-  exact pull request each cites and none to a different one. It is keyless,
-  needs a full checkout, and names the claims it skipped when it does not have
-  one.
-
-  The board has one writer, so this lane did not edit it. What it found is
-  recorded in `scripts/board-open-drift.json` with what each item costs to
-  close — including the stale row that was live on main while this was being
-  written. An entry there that the board no longer earns fails the check too,
-  so the record cannot outlive the debt.
+- Contribution status validation catches duplicate or contradictory completion
+  records and incorrect merged pull-request references, helping contributors
+  avoid repeating work that has already shipped.
 
 - **`scripts/check-repository-map.py`** — `docs/repository-map.md` asserted
   several dozen facts about this tree and nothing checked any of them. CI now
@@ -1092,13 +1191,8 @@ sections, not the intermediate instruction.
   command-specific help, validation, and Bash/Zsh/Fish completion. Operational
   behavior, context guards, Make delegation, and machine-readable stdout remain
   in the existing application layer.
-- Documentation and code comments now say what a thing does rather than
-  citing the planning identifier that tracked it. A lane or decision number
-  is a coordination artifact nobody reading the code can resolve, so each
-  one is replaced by the mechanism or the rule it stood for — and where the
-  reference was carrying the argument, the reason is written out instead of
-  cited. Trailing pointers to a capability document are unchanged; the
-  planning board keeps its own identifiers.
+- Documentation and code comments describe behavior, constraints and rationale
+  directly, while retaining useful links to capability documentation.
 - **`kmx agent create` and the blueprint parser refuse a wider set of
   credential shapes**, and both now read one shared list rather than each
   keeping its own — so a shape added in one place is refused in all of them,
@@ -1123,51 +1217,11 @@ sections, not the intermediate instruction.
   Interactive quickstart output also shows its six-step plan and clearer phase
   boundaries; redirected and JSON output are unchanged.
 
-- **The board checker's self-test only worked while the board was broken.**
-  Three of its cases needed a finding standing open in
-  `scripts/board-open-drift.json`, so striking the last one off — the day its
-  design succeeds — turned the self-test red with nothing wrong. Two of the
-  three failed loudly. The third, that a claim skipped for want of a merge
-  ledger does not strike its open findings off, passed on an empty ledger
-  having compared nothing, and one deliberate breakage went unnoticed behind
-  it. All three now build their own contradictory board. The ledger is
-  asserted in both directions by name — the finding it recorded is gone, and a
-  second one it did not record is still reported — because recording *some*
-  problem is not enough: an entry the board no longer earns is itself a
-  problem. A fourth case, added here, is the only shape that shows the ledger
-  reads the lane and not just the claim: two lanes failing one claim, with one
-  of them recorded.
-
-- **A worker prompt whose identifier was not a number was invisible to the
-  board checker**, and the one on this board invited a fresh session to rename
-  `tomte` to `kaimahi` in a repository renamed six weeks earlier. Both reasons
-  are closed for prompts: the identifier pattern used where a row or a heading
-  *opens* now admits a worded lane, and a heading that says it is a prompt
-  whose lane cannot be read stops the run rather than being filed under
-  nothing. A pasteable prompt with no row was also silently exempt from the
-  shipped-lane claim; `every_prompt_has_a_row` owns that case, and the claim
-  that declines to answer it now says so. On the *row* side the class stays
-  open by choice — seventeen of sixty-three rows name no lane the checker can
-  read, and reporting them would name seventeen rows the board is not wrong
-  about. `Row`'s docstring says so, and says why.
-
-- **A retired prompt now has to cite the pull request its own row cites.**
-  Retiring a prompt writes a merge number into its heading by hand, once per
-  lane, and sixteen of those numbers are older than the merge ledger's first —
-  so the ledger cannot check them, and the document checking itself is the
-  only thing that can.
-
-- **The board's whole open drift is closed.** Thirty-eight prompt headings
-  invited a paste into a fresh CLI session; thirty-six of them sat under rows
-  saying the lane had merged, and each of those now reads `(RUN — merged as
-  #N; kept as the record of what the lane was asked for)`, keeping the prompt
-  text — which is what makes a lane's delta sheet checkable — and dropping the
-  invitation together with the sequencing conditions written beside it in the
-  same parenthesis. The two left pasteable, W42 and W43, are for lanes whose
-  rows say unassigned and mean it. W41's row, which said `unassigned` for work
-  that merged as #139 the same day, says so.
-  `scripts/board-open-drift.json` carries no open findings and records how
-  each was closed.
+- Contribution status validation now fails closed on malformed references and
+  checks that retired records cite the same merged pull request as their status
+  entries. Completed work is no longer presented as available to start.
+  Self-tests use independent fixtures and remain valid with no open findings,
+  including checks that resolved findings disappear and unrecorded ones remain.
 - Chat aborts enhanced input on resize without submitting the current message or
   approval. Session list shapes/empty states, active-renderer history boundaries,
   and duplicate tool-event display are corrected. Broad one-shot transport
@@ -1485,23 +1539,17 @@ sections, not the intermediate instruction.
   it starts, which seams it is deliberately not refreshing and what an expired
   one will look like. A live run is unchanged and still refreshes.
 
-- **`kmx down` no longer deletes a cluster under a banner saying it does
-  not exist.** `kind delete cluster` deletes by **container** name and never
-  opens the kubeconfig, so a kubeconfig that has never heard of the context
-  is not evidence there is nothing to delete — but the guard's "context not
-  created yet" allowance, which exists so `kmx up` can name the cluster it
-  is about to create, was accepted here too. A stale or re-pointed
-  `KUBECONFIG` plus `kmx down` therefore destroyed a real cluster, with no
-  confirmation, under a banner saying it had never been created. It cost a
-  lane a cluster.
-
-  `kmx down` now asks the container engine first. No cluster by that name:
-  it says so and deletes nothing. A cluster the kubeconfig describes: the
-  banner and no question, exactly as before, so CI and every ordinary
-  teardown are unchanged. A cluster the kubeconfig cannot vouch for: the
-  banner says so, and it takes `KAIMAHI_CONFIRM=<context>` or a typed
-  confirmation — which is also how a half-created cluster is removed after
-  a `kmx up` that died before writing its kubeconfig entry.
+- **`kmx down` checks cluster existence independently of the kubeconfig.**
+  `kind delete cluster` deletes by container name, so a missing context does
+  not prove the cluster is absent. Teardown checks the container engine first:
+  a failed check is an error, and a confirmed absent cluster deletes nothing.
+  A confirmed local kind cluster keeps the existing banner-only path;
+  an unreadable kubeconfig refuses teardown. Other cases identify the
+  uncertainty and require
+  `KAIMAHI_CONFIRM=<context>` or a typed context confirmation, refusing deletion
+  without a matching confirmation. This also supports cleanup after `kmx up`
+  fails before writing its kubeconfig entry. Deletion destroys all cluster
+  data; export anything needed first.
 - **`kmx workflow run` and `kmx credential renew` go through the context
   guard.** The documentation said every mutating command did; these two did
   not. `kmx workflow run` is the one that matters: it files approval

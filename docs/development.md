@@ -8,10 +8,11 @@ For work **on** Kaimahi; contribution/PR expectations are in
 
 **Orka remains the first-class/default platform.** Kaimahi tooling helps
 agents get onto it. `kmx agent create` without a runtime flag authors native
-Orka Provider + Agent resources with an optional Task. The explicit Kagent
-path is intentionally narrower: render and create against an already-installed
-exact v0.10.2, with no installer, upgrade, discovery, chat or later lifecycle
-verbs. It is not a conversion to Orka; see the
+Orka Provider + Agent resources with an optional Task. The explicit kagent
+path is intentionally narrower: create against preinstalled exact v0.10.2,
+and Go declarative bundle lift/status against preinstalled exact v0.10.3.
+There is no installer, upgrade, discovery, standalone chat or evaluation.
+It is not a conversion to Orka; see the
 [safety contract](kmx.md#kmx-agent-create). `orka.harness.v2` is outside the
 direction. Runtimes and harnesses own execution, enforcement and model access.
 
@@ -23,6 +24,13 @@ not this checkout. No databases, credentials, caches or deployed resources are
 deleted. Cloud ownership/teardown records and their tests remain. The old
 gateway, approvals/grants, workflow runner and connector fixtures remain retired.
 
+Packaged native suites also have a private App preparation seam: it observes an
+explicit target, Ready Provider/Secret binding and pinned installed Orka runtime,
+then validates and retains one exact unmarked render from `workspace.Load`.
+Secret reads project metadata and key presence, never values. Installed Agent,
+Provider and Task CRDs are validator prerequisites, not Task execution. This is
+read-only internal capability, not a workspace evaluation or placement CLI.
+
 ## Repository layout
 
 Consult the [repository map](repository-map.md) for tracked membership and caller
@@ -30,15 +38,16 @@ classification.
 
 | Path | Responsibility |
 |---|---|
-| `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, Orka and narrowly scoped Kagent create adapters, portable authoring, shared plumbing and embedded manifests |
+| `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, Orka and version-bounded kagent lifecycle adapter, portable authoring, shared plumbing and embedded manifests |
 | `pkg/kmx/` | experimental public lifecycle contracts, not wired into the installed CLI |
 | `k8s/ollama.yaml`, `k8s/orka-k8s-tool.yaml` | native local model and read-only Kubernetes Tool |
 | `scripts/`, `Makefile` | checks, packaging and repository helpers |
 | `.github/workflows/` | verification jobs and docs-only routing |
 
 The root CLI is the only Go module. Plain `make` builds `bin/kmx` only. The supported
-Kagent surface is the closed v0.10.2 create scaffold and lifecycle adapter, not
-a general legacy-YAML conversion layer.
+kagent surface is version-qualified create or declarative bundle lift/status,
+not a general legacy-YAML conversion layer. One production LifecycleAdapter
+owns both profiles; experimental public ports remain unwired.
 
 ## Build and verify
 
@@ -73,12 +82,26 @@ deadlines. Keep setup budgets intact and shorten only the wait under test;
 assert that the intended readiness, admission, or result boundary was reached.
 An unset timing hook must retain the production intervals and deadlines.
 
-The fake kubectl handlers live in `internal/kmx/app/testdata/kubectl`. App tests
-compile this lightweight executable once per package run instead of launching
-the full UI-bearing App test binary for every CLI call. It still runs as a real
-subprocess with the fixture's environment and call log. A `go test -race` App
-run also compiles the helper with `-race`; the build directory is removed when
-the package run finishes. Keep helper imports independent of App and UI code.
+The fake kubectl executable lives in `internal/kmx/app/testdata/kubectl`. App
+fixtures default to compiling this lightweight executable once per package run
+and running it with the fixture's environment and call log. A `go test -race`
+App run also compiles the helper with `-race`; its build directory is removed
+when the package run finishes. Keep helper imports independent of App and UI.
+
+Retire lifecycle tests and kagent bundle lift/status fixtures use in-process
+capture instead. They do not build or launch the kubectl helper: a failing
+executable sentinel catches accidental fallback.
+Both modes share the stateful reconcile and kagent handlers in
+`internal/kmx/app/kubectlfake`. Its unit tests are included in `go test ./...`
+and CI; installed commands do not import it. The App-local capture hook receives
+the prepared command and call context; argv, effective environment, stdin,
+bounded output, guards, deadlines and error classification stay at the normal
+production boundary. The hook is unset in installed commands. Protocol delays
+obey the context synchronously, without a goroutine timeout wrapper. Executable
+parity tests compare raw output, exit status, persisted state and ordered calls.
+Orka lift/reconcile and kagent create fixtures retain executable execution.
+`TestKagentBundleKeepsExecutableCaptureBoundary` also exercises kagent bundle
+lift, status and read-only reuse through the real helper.
 
 The workflow's hygiene job is authoritative for the full checker/self-test/
 mutation set; do not replace it with this focused list. The retained native
@@ -86,7 +109,10 @@ Orka Tool fixture tests exercise actual HTTP requests and health/refusal
 responses without a cluster. No plane-module or plane Postgres service job
 remains.
 [CI configuration](../.github/workflows/ci.yml) also checks its own guards and
-aggregator membership.
+aggregator membership. The retired-command scanner rejects concrete removed
+commands/assets, not kagent vocabulary or version claims. It uses bounded literal
+command tokenization and exact inert exceptions; production command tests own
+runtime selection and supported-operation validation.
 
 ### Local loop
 
@@ -106,9 +132,10 @@ with `bin/kmx agent create`, or use `bin/kmx quickstart --interactive` for guide
 creation. `kmx status` is the Orka-only runtime report; bundle-aware
 `agent status` is a separate command.
 
-KMX never installs or upgrades Kagent and drives it only when
-`agent create --runtime kagent` explicitly targets a preinstalled exact
-v0.10.2. The normal development loop remains Orka.
+KMX never installs or upgrades kagent. Explicit create targets exact v0.10.2;
+explicit bundle lift/status uses `--runtime kagent --runtime-version v0.10.3`,
+`--to-context` and validated `KagentBindings`. The normal development loop remains
+Orka; the profiles never fall back between installed runtimes.
 
 Pick a distinct cluster name and explicit context. Keep
 `CONTAINER_ENGINE=podman` consistent if selected; Docker and Podman inventories
@@ -120,8 +147,8 @@ has different [ownership rules](aks.md#teardown).
 
 The workflow emits `hygiene` and `e2e-hello-world` merge gates. The latter
 aggregates the native `e2e-quickstart`, `e2e-kagent-create`, `e2e-orka-runtime`,
-`e2e-orka-helm` and clusterless `e2e-eval-loop` shards. Plane-command shards,
-upgrade probes and the nested-module/Postgres job are removed.
+`e2e-orka-helm`, clusterless `e2e-eval-loop` and dedicated `e2e-kagent-lift`
+shards, plus successful change classification.
 Required-check rules are managed separately on GitHub: removing a workflow job
 does not change the active ruleset or satisfy a retired required context.
 
@@ -130,8 +157,11 @@ does not change the active ruleset or satisfy a retired required context.
 the `~/Library/Application Support` default and shared `KMX_HOME` override
 without duplicating cluster setup or the full Linux suite.
 Add probes to the shard owning their state lineage, or arrange independent setup.
-Every cluster step needs the docs-only guard; the aggregator uses `always()` and
-must depend on every shard. An unneeded failing shard would not gate a merge.
+Existing cluster steps retain docs-only guards. `e2e-kagent-lift` instead routes
+at job level: relevant/unknown PR changes run it, as do every main push, nightly
+and manual dispatch. The aggregator uses `always()`, requires classification and
+all six shards, and accepts only intentional skipped outcomes. A failed or
+cancelled shard is never an intentional skip.
 
 `e2e-eval-loop` is a required clusterless, secret-free evaluation boundary on
 non-docs-only changes. It runs digest-pinned AIKit Qwen3.5-2B on CPU and builds
@@ -203,6 +233,44 @@ prompt/answer-free two-resource receipt. No hosted credential is used.
 The workflow, not KMX, installs those charts. This proves no standalone Kagent
 operation beyond create's optional single A2A message, no managed-cluster path,
 and no hosted model provider.
+
+`e2e-kagent-lift` continuously qualifies Go declarative v0.10.3
+plan/lift/repeat/status and specific binding, missing-receipt and operator-drift
+refusals. The metadata-only kubectl audit checks complete ordered server-admission
+and persistent-create frames, effective dry-run strategy and resource identities;
+unsupported command forms leave a closed rejection and never forward. Negative
+calls must exit 1 with the exact final ordinary CLI error, not an unrelated failure.
+A separate one-shot native A2A message must return the fixture's random MCP sentinel
+with one actual tool call, two model calls and one terminal answer. Only identities,
+counts and hashes enter its private qualification artifact; readiness receipts
+remain separate. Python deployment, managed clusters and hosted providers remain
+unqualified.
+
+The checkout-only [qualification shell](../scripts/ci/kagent-lift.sh) defaults to
+`qualify`; build the final Go state with `go build -o bin/kmx ./cmd/kmx`, then
+run `bash scripts/ci/kagent-lift.sh`. Explicit `bootstrap` stops after readiness
+and discovery; run `bash scripts/ci/kagent-lift.sh bootstrap`
+on Linux amd64 with Docker. It downloads checksum-verified local tools, pins
+the kind node and official v0.10.3 OCI charts, disables optional workloads/UI
+and telemetry, and checks rendered and running image identities. Its
+[driver](../scripts/ci/kagent-lift.py) provisions a private dummy Secret and the
+[keyless model/MCP fixture](../scripts/ci/kagent-lift-fixture.py), then proves
+health and discovery with zero tool calls through an owned loopback forward.
+This is bootstrap characterization, not lift/native A2A qualification.
+
+The script refuses an existing `kmx-kagent-lift` cluster. Kubeconfig, Kubernetes
+discovery cache (`KUBECACHEDIR`), Helm config/cache/data, registry/repository/plugin
+paths and raw tool output stay in private temporary work, removed on exit.
+Inherited `HELM_KUBE*` connection/auth overrides are cleared. Chart pulls use a
+keyless private registry config, also scoped to Helm's Docker credential fallback;
+kind and Docker retain the caller's Docker configuration and daemon access.
+Closed phase/exit-status diagnostics identify failures without replaying payloads. Cleanup deletes the cluster only after successful creation;
+a failed kind create is ambiguous and left for inspection. No caller tools,
+Helm credentials, daemon configuration or unrelated clusters are changed.
+Hygiene unconditionally runs bootstrap, shell, HTTP fixture, qualification,
+metadata-audit and CI-routing tests, including the actual qualifier with hermetic
+external boundaries and unrelated failures injected at all five negative calls.
+It creates no cluster. The dedicated shard runs the live qualification.
 
 `kmx-clone-free` runs on main/manual dispatch, not as a required PR shard. It
 checks installation, bare `up` and native Orka creation with an actual Task

@@ -6,9 +6,10 @@ cluster. It takes a named destination and inference Provider. Interactive
 read-only plan before invoking this operation. A separately confirmed
 **Prepare target** action can install Orka or the quickstart Kubernetes Tool
 before retrying the checks; bundle lift itself never installs them.
-This command is intentionally Orka-only: a portable bundle authored by explicit
-Kagent create is refused before cluster reads. Kagent create receipts do not
-enable lift, status, evaluation, console bundle actions, or interactive `/lift`.
+Orka remains the default. Explicit exact-v0.10.3 declarative bundle lift/status
+is a separate [kagent path](#exact-v0103-declarative-bundle-placement).
+kagent create receipts do not authorize reuse by that path. Evaluation, console
+bundle actions and interactive `/lift` remain Orka-only.
 
 ```console
 kmx agent lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--require-evaluated <context>] [--override-gate "reason"] [--plan]
@@ -28,7 +29,73 @@ writes the Orka extension. Lift reads the definition from
 bundle's original bindings. The exact bytes of `agent.yaml`, including comments
 and whitespace, determine the portable digest. A rendered digest identifies
 the target-specific rendering. See [bundle format compatibility](bundle-format.md)
-for accepted versions, strict decoding and cross-version behavior.
+for accepted versions, strict decoding and cross-version behavior. These YAML
+bundles are distinct from AgentSuite definitions and sandbox images; see
+[which format goes where](bundle-format.md#which-format-goes-where).
+
+## Exact-v0.10.3 declarative bundle placement
+
+Select the already-installed target explicitly; no cluster or runtime is
+installed, upgraded or auto-selected:
+
+```bash
+kmx agent lift agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml --plan
+kmx agent lift agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml
+kmx agent status agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml -o json
+```
+
+Both commands use strict `KagentBindings`: destination namespace, model provider
+(`openai` or `anthropic`), optional credential-free baseURL and Secret name/key
+references. Without `--bindings`, they read the bundle's `bindings.yaml` only if
+it is `KagentBindings`. Supply external bindings again to status; status never
+infers desired configuration from live objects. `--to-namespace`, if supplied,
+must agree with bindings. No remembered Orka selection is read or changed;
+every invocation requires `--to-context`. Orka `--inference` and evaluation
+gates/overrides are refused.
+
+The portable instructions, description and model become a declarative Agent
+and its same-name ModelConfig. The Secret prerequisite is review-only and is
+never applied; provision it separately with a name different from the Agent.
+An explicit kagent extension can grant named tools on at most one existing
+same-namespace RemoteMCPServer. Coordination, skills, Orka-specific behavior,
+implicit tool grants, stdio tools and AgentSuite/image placement are refused,
+not dropped. The qualified v0.10.3 workload uses Go; Python qualification is a
+follow-up. Exact-v0.10.2 create retains its successful artifact and receipt
+contracts; refusal messages now distinguish readiness, drift and unreadable evidence.
+
+Before writing, lift proves the exact controller build, official imageIDs,
+served/storage schemas, namespace watch/RBAC and dependencies, then strictly
+server-dry-runs both new objects. Schema equality alone is insufficient:
+v0.10.2 and v0.10.3 share the Agent/ModelConfig schema hashes. Wrong, ambiguous
+or unreadable qualification refuses rather than falling through to another
+runtime. `--plan` writes no resources, artifact, receipt or selection.
+
+Placement is new-object-only: ModelConfig must become Accepted before Agent
+creation; Agent must become Accepted and Ready for its current generation with
+its verified owned workload. A repeat lift reuses only a complete matching
+saved deployment, primary/workload UIDs, ownership, desired spec/digests and
+dependencies. It performs no adoption, update or automatic rollback. Existing
+unowned objects, changed definitions/bindings, replacements, partial placement
+and missing receipts are conflicts. An ambiguous create stops without retry;
+inspect confirmed creations rather than rerunning a possibly accepted write.
+
+Private receipts under `receipts/kagent-v0.10.3/` bind cluster/namespace,
+resource UIDs, portable/rendered digests and readiness. They contain no prompts,
+answers or Secret values and are separate from evaluation/execution evidence.
+Incomplete deployments get no receipt. A receipt-write failure is reported as
+deployed but unrecorded and requires inspection; matching markers alone never
+authorize reuse. Keep receipts local, not in Git. No-flag Orka commands ignore
+this history and continue to read historical runtime-less Orka receipts.
+
+Read-only status distinguishes absent, unreadable, failed readiness, ready and
+drift. Pending or stale conditions are not ready; inspection without a saved
+receipt is unbound and cannot certify a saved deployment. Status never sends a
+message or records execution success. Standalone run/chat/eval, updates,
+retirement, diff and rollback remain unsupported. Dedicated CI continuously
+qualifies Go plan/lift/repeat/status/conflicts and independently sends one native
+A2A message against a keyless model/MCP fixture: one actual tool call, two model
+calls and one terminal answer. Deployment receipts remain readiness-only;
+lift and status themselves do not test an answer.
 
 ## Coordination in `agent.yaml`
 
@@ -120,9 +187,26 @@ from the model name. Create writes `agents/my-agent/` and scaffolds
 `eval/example.yaml`. Edit that case's input and expected answer before testing
 it. The destination must separately have Orka, its namespace, a Ready Provider,
 the Provider's Secret and any referenced Tools; lift installs none of them.
-Use `kmx agent lift agents/my-agent --to-context my-target --inference provider:local`
-after replacing `my-target` and `local` with the destination
-context and Ready Provider. `--plan` inspects intended changes without writing.
+First list Providers in the destination context and namespace (replace
+`my-target` with your destination context):
+
+```bash
+kubectl --context my-target --namespace orka-system get providers.core.orka.ai
+```
+
+Bare `kmx quickstart` creates the fixed `hello-world-agent` Provider;
+`kmx local up` prepares the `local` Provider. Neither name is a guarantee about
+another destination. Choose an existing Ready Provider from that destination,
+then replace `my-target` and the example Provider name below:
+
+```bash
+PROVIDER=hello-world-agent
+kmx agent lift agents/my-agent --to-context my-target --to-namespace orka-system --inference "provider:$PROVIDER" --plan
+```
+
+`--plan` inspects intended changes without writing and checks the selected
+Provider. Review the plan, then repeat the lift command without `--plan` to
+apply it. Listing a Provider alone does not prove it is Ready or can answer.
 Then use `kmx agent status agents/my-agent --to-context my-target` to inspect
 what is deployed and `kmx agent evaluate agents/my-agent --to-context my-target`
 to run the cases against that deployed digest. Each evaluation creates a Task
@@ -522,8 +606,10 @@ are recorded, never an invented average. Unavailable answers or failed agent
 execution make no judge calls. Direct runtime adapter callers without a judge
 port leave `llmJudge` unknown, never implicitly passing.
 
-Authoring a judge case and choosing its endpoint explicitly consents to sending
-**input, answer and rubric** to that judge. An external provider may retain
+For ordinary authored-input evaluation, authoring a judge case and choosing its
+endpoint explicitly consents to sending **input, answer and rubric** to that judge.
+[Recorded-session cases](#recorded-sessions-as-reference-cases) require separate
+named destination confirmation and suppress terminal content by default. An external provider may retain
 these payloads under its own policy; check access and retention before using
 private data. Receipts retain no payload or reasoning. Valid reasoning is
 credential-checked and safely rendered to terminal stdout, but it may repeat
@@ -723,6 +809,81 @@ when replay verification succeeds. Only matching Orka latest receipts can do
 so; v2 evidence must match the current assertion IDs/definitions as well as
 the existing revision, case-set and target checks.
 
+### Recorded sessions as reference cases
+
+Extract one or more **completed, fresh, single-turn text-chat** sessions using an
+assertion-only YAML file. Author `id`, `expectContains` and/or typed `assertions`
+with the same rules as ordinary cases, but omit `input`. Original answers are
+not truth: only the authored assertions determine the candidate verdict.
+
+```yaml
+id: capital
+assertions:
+  - id: expected-capital
+    type: contains
+    value: Paris
+```
+
+```bash
+kmx agent eval from-sessions session-uid-1 session-uid-2 \
+  --sessions 127.0.0.1:8080 --assertions capital.yaml --out private/references.json
+# Existing --out means atomic append to the same source store.
+# Duplicate UIDs or IDs refuse the whole add.
+kmx agent eval from-sessions session-uid-3 \
+  --sessions 127.0.0.1:8080 --assertions capital.yaml --out private/references.json
+KAIMAHI_CONFIRM=127.0.0.1:8081 kmx agent evaluate agents/my-agent \
+  --from-sessions private/references.json --source-sessions 127.0.0.1:8080 \
+  --sessions 127.0.0.1:8081
+```
+
+The source and candidate hosts must already be running. `--sessions-ca` supplies
+the candidate CA; `--source-sessions-ca` supplies the source CA. All selected
+UIDs use the supplied assertions. Case IDs combine the authored ID (truncated
+to 50 characters) with a stable 12-character store/UID digest suffix; batching
+and later append derive the same IDs. Keep the mode-0600 manifest private and
+outside Git. It contains references, low-entropy content digests and authored
+assertions, **not recorded inputs or answers**; this is not anonymization.
+
+Extraction reads at most six records to refuse multi-turn sources. Resolution
+reads exactly the recorded five-record prefix, verifies its contiguous hash
+chain, sequence/head, single-turn shape, model, config/input/answer digests and
+pinned chat compatibility, then retains input only in memory. The reference
+policy is `single-turn-text-chat-v1`; the compatibility token identifies local
+reference semantics, not an attested source host. Forks, resumed/interrupted
+turns, tools, attachments and unsupported schemas are refused. Source selection
+is explicit and must match the manifest store after syntactic normalization;
+no endpoint supplied by a manifest is automatically dialed.
+
+`--from-sessions` replaces `eval/` inputs for this run. Each resolved case runs
+in a **new candidate session** with the current bundle instructions. Missing,
+expired, altered or unsupported references produce `unknown` rows and no
+candidate/judge calls for that row; they are never skipped or exported. Existing
+assertion receipts and `agent eval diff` are reused; source, policy and assertion
+identities are included in the case/set digests. `--case <derived-id>` still
+selects one case and produces a partial receipt.
+
+Before any recorded input transfer, set **`KAIMAHI_CONFIRM` to the normalized
+candidate host:port**, even for loopback. An explicitly selected judge additionally
+requires **`KAIMAHI_CONFIRM_JUDGE` equal to its canonical base URL** (no trailing
+slash, lowercase host and no default port). This confirms input/answer/rubric
+transfer separately from the candidate; it never selects a default judge.
+Default stdout contains verdicts, IDs and digests only, including on success;
+errors never expose recorded content. `--show-content` explicitly allows answer
+text and judge reasoning on stdout. Protect those logs if enabled.
+
+References inherit source TTL. Candidate journals and judge providers receive
+copies under their own retention policies. Confirmation is not data-owner
+permission, tenant isolation, or region/retention enforcement; an authenticated,
+authorized source deployment is required for private traffic. Automatic deletion
+propagation is not implemented. No production export or multi-turn mode is
+supported.
+
+An unavailable source has no observed candidate runtime identity. In
+`agent eval diff`, that case gets its own `unknown` row while the remaining
+cases still compare. The comparison remains incomplete/nonzero; it is
+incompatible when either receipt has no complete observed case identity or
+when observed identities disagree, including mixed models.
+
 ### Verifying a sessions receipt
 
 ```console
@@ -797,8 +958,8 @@ proof, replacing any prior report. Only `equivalent` for every case exits zero;
 kmx agent eval diff <before.json> <after.json>
 ```
 
-Pass explicit latest receipts or immutable run files from either supported
-receipt family. This command reads only those local files: no kubeconfig or
+Pass explicit latest receipts or immutable run files from the Orka, Sessions
+or exact-v0.10.3 Go kagent receipt family. This command reads only those local files: no kubeconfig or
 runtime configuration, network request, model call or case rerun. Inputs must
 be regular, non-linked files, at most 1 MiB each. Unknown or duplicate JSON
 members (including case-folded spellings), malformed identities/digests,
@@ -807,8 +968,20 @@ duplicate case/assertion IDs and incoherent versions/results are refused.
 Both receipts must be v2 full-case runs with compatible runtime identity.
 Sessions compares syntactically normalized address, returned harness and
 journal-observed model, without DNS/alias equivalence. Orka compares cluster
-UID, namespace, Agent name/UID and model. Missing or mixed identity is
-incompatible, never inferred. **Different portable digests or Git commits
+UID, namespace, Agent name/UID and model. kagent compares runtime version,
+Go engine, cluster UID, namespace, Agent and ModelConfig UIDs, model route and
+qualified controller/ADK image pins. Context labels, execution IDs and resource
+generations do not select a producer. Replaced Agents or ModelConfigs,
+different runtimes, versions, engines or model routes are incompatible.
+
+Sessions requires at least one case with a complete observed harness/model
+pair in each receipt. A case missing identity on either side produces a
+case-level `unknown` row, not assertion verdict transitions; other cases still
+compare, and structural changes remain visible. All nonempty observations must
+agree, including partial observations; mixed models or disagreements make the
+whole comparison incompatible. No observed identity, or missing Orka/kagent
+target identity, is incompatible, never inferred from requested models or
+recorded sources. **Different portable digests or Git commits
 are allowed**: before/after revision identities are displayed for the operator.
 Legacy receipts are recognized but incompatible for assertion-level comparison;
 no assertion outcomes are synthesized from old aggregate verdicts.
@@ -841,7 +1014,36 @@ Evidence gains are also reported as an incomplete comparison, not a
 known-to-known comparison. A complete stable comparison or fixes can exit zero **even if both
 evaluations failed**; zero is not an evaluation-pass claim.
 
+### Offline kagent receipt boundary
+
+kagent v2 receipts keep the existing case, assertion and judge evidence, with
+native A2A request, Task and context identities rather than Kubernetes Task
+names/UIDs. They additionally bind the portable and rendered digests, selected
+deployment receipt digest, Agent/ModelConfig generations, qualified platform
+pins and workload/dependency snapshots. Tool assertions remain unknown;
+structured upstream events are not qualified assertion evidence.
+
+Private run archives use the same `receipts/runs/eval-<runID>.json` history;
+kagent latest files use a separate `receipts/eval-kagent-v0.10.3-<target>.json`
+namespace. Valid kagent latest evidence is excluded from Orka status and lift
+gates; malformed evidence still refuses a scanned gate. A kagent receipt never
+satisfies an Orka promotion requirement.
+
+**Offline reading is not execution support.** `kmx agent evaluate` does not yet
+run cases on kagent, and kagent lift still refuses evaluation gate flags and
+`lift-policy.yaml`. Python, replay verification and cross-runtime comparison
+remain unsupported. Since kagent lift cannot update an Agent in place, diff
+across a replacement deployment is incompatible, not a revision regression.
+Upgrade receipt readers before exchanging these shapes: older strict readers
+may reject them. Receipts contain no inputs, answers, assertion operands or
+credential values; they are forgeable local evidence, not execution
+attestations or files to commit.
+
 ## Run evals in CI
+
+The action's `bundle` input selects a directory containing `agent.yaml` and its
+`eval/*.yaml` cases, not an AgentSuite fixture or a sandbox image archive. See
+[which format goes where](bundle-format.md#which-format-goes-where).
 
 Use the [KMX eval action](../.github/actions/kmx-eval/action.yml) to run a
 bundle's complete case set, fail the job unless every case passes, and optionally

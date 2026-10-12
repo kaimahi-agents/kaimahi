@@ -13,7 +13,7 @@ import (
 )
 
 func TestRetireDeletesOwnedCreatedObjectsAndRemembersHistory(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestRetireDeletesOwnedCreatedObjectsAndRemembersHistory(t *testing.T) {
 }
 
 func TestRetirePlanNeverClearsRememberedSelection(t *testing.T) {
-	a, lift, _, _ := liftBundleFixture(t)
+	a, lift, _, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestRetirePlanNeverClearsRememberedSelection(t *testing.T) {
 }
 
 func TestRetireRetryClearsSelectionAfterRemovalFailure(t *testing.T) {
-	a, lift, _, _ := liftBundleFixture(t)
+	a, lift, _, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestRetireResolvesUniqueRecordedNamespaceAfterSelectionCleared(t *testing.T
 }
 
 func TestRetireAlreadyMissingObjectsRecordsCompletionAndForgetsSelection(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestRetireAlreadyMissingObjectsRecordsCompletionAndForgetsSelection(t *test
 }
 
 func TestRetirePlanUsesSameInspectionAndWritesNothing(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestRetirePlanUsesSameInspectionAndWritesNothing(t *testing.T) {
 }
 
 func TestRetireRefusesSameNamedBundleWithoutMatchingReceipt(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestRetireRefusesSameNamedBundleWithoutMatchingReceipt(t *testing.T) {
 }
 
 func TestRetireRefusesMarkersChangedSinceLastReceipt(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestRetireRefusesMarkersChangedSinceLastReceipt(t *testing.T) {
 }
 
 func TestRetireRefusesForeignAgentWithoutDeletingProvider(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestRetireRefusesForeignAgentWithoutDeletingProvider(t *testing.T) {
 }
 
 func TestRetireDoesNotCompleteWhileDeleteIsPending(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestRetireDoesNotCompleteWhileDeleteIsPending(t *testing.T) {
 }
 
 func TestRetireRechecksDependentsAfterGuardBeforeWriting(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestRetireRechecksDependentsAfterGuardBeforeWriting(t *testing.T) {
 }
 
 func TestRetireRetriesPartialReleaseWithoutTakingUnownedObject(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func TestRetireRetriesPartialReleaseWithoutTakingUnownedObject(t *testing.T) {
 }
 
 func TestRetireExplicitDeleteAdopted(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +401,7 @@ func TestRetireExplicitDeleteAdopted(t *testing.T) {
 }
 
 func TestRetireBlocksScheduledTaskWithoutWrites(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ func TestRetireBlocksScheduledTaskWithoutWrites(t *testing.T) {
 }
 
 func TestRetireReleasesCreatedProviderWhenAgentSurvives(t *testing.T) {
-	a, lift, dir, _ := liftBundleFixture(t)
+	a, lift, dir, _ := retireBundleFixture(t)
 	if err := a.LiftAgentBundle(lift); err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +479,7 @@ func TestRetireReleasesCreatedProviderWhenAgentSurvives(t *testing.T) {
 func TestRetireReleasesLegacyAndAdoptedObjects(t *testing.T) {
 	for _, origin := range []string{"", "adopted"} {
 		t.Run(origin, func(t *testing.T) {
-			a, lift, dir, _ := liftBundleFixture(t)
+			a, lift, dir, _ := retireBundleFixture(t)
 			if err := a.LiftAgentBundle(lift); err != nil {
 				t.Fatal(err)
 			}
