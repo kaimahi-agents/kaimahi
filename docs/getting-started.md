@@ -62,6 +62,9 @@ RBAC, and the fixed `hello-world-agent` Provider/Agent bundle. It asks a **fresh
 Task** and requires a readable answer; readiness alone is not an answer.
 The local model defaults to `qwen2.5:3b`; `MODEL` can override it.
 
+On an uncached first run, the default model downloads roughly **1.9GB**.
+Startup and first-answer latency depend on your network and host hardware.
+
 Quickstart is non-interactive: no model picker or prompt. The same settings select
 the same cluster, Provider and Agent. Reruns reuse an **exact** live-spec match
 only and stop rather than overwrite a changed Provider or Agent. A half-finished
