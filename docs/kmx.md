@@ -30,10 +30,10 @@ brew install kaimahi-agents/tap/kmx &&
 
 The fully qualified formula trusts only `kmx`. Homebrew installs the CLI, not
 Docker, Podman or Go; local kind still needs a container engine. To build the
-same release with Go 1.26+ instead:
+v0.5.0 release with Go 1.26+ instead:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.0
 kmx version
 kmx orka --help
 ```
@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 ```
 
 That installer puts the selected release in `~/.local/bin`, without sudo;
-`--version=v0.4.0` pins it, `--bin-dir=DIR` changes the destination, and
+`--version=v0.5.0` pins it, `--bin-dir=DIR` changes the destination, and
 `--quickstart` continues into `kmx quickstart`. A new shell may need
 `~/.local/bin` on `PATH`, or invoke `$HOME/.local/bin/kmx` directly. It checks the binary against
 a checksum from the **same** GitHub release over TLS: corruption detection, not
@@ -82,10 +82,10 @@ Use `kmx --help` and `kmx <command> --help` for flags and defaults. The Cobra tr
 also generates completion; this guide describes contracts rather than duplicating
 every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
-**Unreleased entry-point alignment:** `context show/use` and `local up/down`
-are the canonical grouped commands below. Tagged v0.4.1 uses `ctx [context]`
-and root `up/down`; those routes remain callable in newer builds with notices
-only on stderr. No removal release is scheduled. See the
+**Released in v0.5.0:** `context show/use` and `local up/down` are the canonical
+grouped commands below. Historically, v0.4.1 used `ctx [context]` and root
+`up/down`; those routes remain callable with notices only on stderr. No removal
+release is scheduled. See the
 [alignment record](command-semantics.md) for current versus proposed names.
 
 ### Current Orka path and explicit version-qualified operations
