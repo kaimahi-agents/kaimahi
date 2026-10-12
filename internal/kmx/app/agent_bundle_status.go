@@ -1,4 +1,4 @@
-// `kmx agent status` dispatches a portable bundle to Orka's known-target report
+// `kmx bundle status` dispatches a portable bundle to Orka's known-target report
 // by default or to explicit Kagent status for one context and KagentBindings
 // namespace. It writes no receipt, remembered selection or cluster resource.
 //
@@ -164,7 +164,7 @@ func bundleStatusFormat(output string) (string, error) {
 		format = "table"
 	}
 	if format != "table" && format != "json" {
-		return "", fmt.Errorf("agent status output %q is not supported — use table or json", output)
+		return "", fmt.Errorf("bundle status output %q is not supported — use table or json", output)
 	}
 	return format, nil
 }
@@ -610,7 +610,7 @@ func describeOrkaResource(raw []byte) bundleResourceStatus {
 
 // bundleFieldDrift renders agent.yaml against the destination's own live
 // Provider bindings and reuses planOrkaReconcile — the exact same read-only
-// comparison `kmx agent lift --plan` uses — to decide whether the live
+// comparison `kmx bundle lift --plan` uses — to decide whether the live
 // objects still match. It is called only once ownership is already
 // confirmed, so a refusal here means the object changed between reads, not a
 // marker problem.

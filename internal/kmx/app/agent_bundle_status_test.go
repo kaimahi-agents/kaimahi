@@ -381,6 +381,14 @@ func TestBundleStatusRefusesUnreadableOrInvalidBundle(t *testing.T) {
 	}
 }
 
+func TestBundleStatusUnsupportedOutputNamesCanonicalCommandBeforeConfig(t *testing.T) {
+	a := &App{}
+	err := a.BundleStatus(BundleStatusOptions{Output: "yaml"})
+	if err == nil || err.Error() != `bundle status output "yaml" is not supported — use table or json` {
+		t.Fatalf("expected canonical output format refusal before configuration, got %v", err)
+	}
+}
+
 func TestBundleStatusRejectsUnsupportedOutput(t *testing.T) {
 	a, opt, _, _, _ := bundleStatusFixture(t)
 	opt.Context, opt.Output = "kind-test", "yaml"
