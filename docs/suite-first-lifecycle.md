@@ -31,8 +31,8 @@ This is the #328 journey with its proposed behavior made explicit. It is not a r
 ```sh
 mkdir my-agents && cd my-agents && git init
 
-kmx agent create greeter --instructions "Greet people briefly."
-# proposed: author agents/greeter/ in this workspace, without creating a live agent
+kmx agent create greeter --workspace . --instructions "Greet people briefly."
+# exists today: start the workspace and author agents/greeter/, without creating a live agent
 kmx agent chat greeter
 # exists today: chat with a live Orka Agent; workspace-local execution is proposed
 kmx eval
@@ -48,6 +48,8 @@ kmx status
 ```
 
 The digest ellipsis stands for the actual printed digest. `--target prod` stands for a durable destination; its interface (context, namespace, inference binding) still needs agreement. Runtime is not a lift option: it comes from the member, chosen at create, and evaluation evidence binds it. Lift resolves the runtime, prints it, and refuses when the target can't run it or the evidence covers a different runtime. Runtime support must be qualified, not inferred from this example.
+
+After the first create, commands find the workspace by walking up from the current directory to `workspace.yaml`, the way git finds `.git`; `--workspace` overrides. Evaluate and push print the workspace and suite digest they used, because evidence binds to that suite. The first create needs `--workspace .`, like `git init`. Outside a workspace, `agent create` keeps today's live-agent meaning, and workspace commands refuse with a hint. Lift by digest never needs a workspace.
 
 | Current path | Mapping to this proposal |
 |---|---|
