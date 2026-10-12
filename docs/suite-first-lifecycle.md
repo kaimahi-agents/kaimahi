@@ -55,7 +55,7 @@ Everyday commands sit at the root; `kmx agent` goes away. With no released users
 
 | Current path | Mapping to this proposal |
 |---|---|
-| `agent create/chat/run/evaluate/lift/status` on main | Move to root `create`, `chat`, `run`, `eval`, `lift`, `status`. Create defaults to authoring; bundle evaluate and lift converge on the suite path while `agent.yaml` is read as a one-agent workspace. |
+| `agent create/chat/run/evaluate/lift/status` on main | Move to root `create`, `chat`, `run`, `eval`, `lift`, `status`. Create defaults to authoring. Legacy bundle commands move under `bundle` (#460) and are removed with `agent.yaml` once the suite path reaches parity. |
 | Image-backed path in drafts #448/#449 (#447; #342 closed) | Member authoring joins `create`; publication joins `push`; deployment converges on the single `lift` rather than a separate `suite lift`; invocation remains member-scoped run/chat, not lift. |
 | `suite push <directory> <reference>` on main | Exists today for validated suite-artifact transfer. `suite push --workspace . <reference>` (#437) prepares and publishes the exact native suite with no member images; root `push <reference>` with workspace discovery is proposed. |
 
@@ -75,7 +75,7 @@ Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/
 - Runtime comes from the member and is bound in evaluation evidence; lift resolves and prints it, and is not a way to switch runtimes.
 - For the packaged path (#430), only a complete passing run exports evidence. A failed or incomplete run exits nonzero and produces no receipt, so lift refuses a candidate for lack of matching passing evidence, not because a failure was recorded.
 - Lifting a previous digest again is a re-lift of that release, not a rollback of a deployed bad revision. Rollback needs the revision and retention records in #348/#346.
-- The current `agent.yaml` path keeps working until a one-member suite path (create, eval, push, lift to Orka) is proven end to end; then `agent.yaml` is read as a one-agent workspace.
+- `agent.yaml` bundles are removed, not read or migrated. They keep working only until the suite path reaches parity; no new bundle-only features meanwhile.
 
 ## What evaluation evidence binds to
 
@@ -87,9 +87,16 @@ OCI referrers provide distribution and discovery across machines. They do not es
 
 Core capabilities are **validate, resolve, build, package, store, deploy, observe and evaluate**. These are design categories, not proposed Go APIs or package names. The CLI can compose several in one command; machine consumers need stable identities, structured outcomes and diagnostics without parsing terminal text. `local up`, quickstart and console are developer conveniences over those capabilities. They should not force builders, registries, Kubernetes or interactive setup onto every consumer. The experimental interfaces from [#326](https://github.com/kaimahi-agents/kaimahi/pull/326) remain design evidence, not a stable SDK.
 
-## Existing `agent.yaml` bundles
+## Removing `agent.yaml` bundles
 
-Two options are to read a bundle as a one-agent workspace or require a one-time migration. Recommend the **one-agent reader first**: preserve authored bytes and original digests, avoid a compulsory rewrite, and resolve supported behavior into the same suite path. Do not silently drop runtime extensions, tools or delegation; refuse unsupported conversion with an actionable explanation. Creation bindings remain target data, not portable release credentials. An explicit migration can later help adopt richer workspace authoring, but must produce a deliberate new revision. Preserve [bundle readability rules](bundle-format.md) and [original receipt/gate semantics](agent-lift.md); never relabel old receipts as evidence for newly built images.
+There are no released users to protect, so bundles are removed rather than read as one-agent workspaces or migrated. That keeps one model and no converter code. Removal waits for parity on the suite path, in order:
+
+1. Native Orka: create, eval, push and lift by digest (#430).
+2. The lift gate on suite evidence, replacing `lift-policy.yaml` over bundle receipts.
+3. kagent as a suite target, replacing kagent bundle create, lift, status and evaluation.
+4. Live create, quickstart, console and interactive lift through create → lift.
+
+Then one deliberate breaking change deletes the `bundle` commands, bundle receipts and their code. Old receipts stop being readable; no new bundle-only features land in the meantime.
 
 ## Open questions
 
