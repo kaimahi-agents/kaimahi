@@ -139,9 +139,9 @@ Orka; the profiles never fall back between installed runtimes.
 
 Pick a distinct cluster name and explicit context. Keep
 `CONTAINER_ENGINE=podman` consistent if selected; Docker and Podman inventories
-are separate. `down` destroys all data in the named local cluster, including
-any historical database still present; export needed data first. Cloud cleanup
-has different [ownership rules](aks.md#teardown).
+are separate. `kmx local down` destroys all data in the named local cluster,
+including any historical database still present; export needed data first.
+Cloud cleanup has different [ownership rules](aks.md#teardown).
 
 ### What CI proves
 
@@ -207,7 +207,7 @@ Hygiene self-tests the evidence/provenance gates and failure diagnostics with
 `scripts/test_eval_runner.py`. This check proves no lift gate, host implementation
 attestation, cluster integration or hosted-model provider behavior.
 
-`e2e-orka-runtime` brings up kind, Ollama and the model with compatibility `kmx up --step`
+`e2e-orka-runtime` brings up kind, Ollama and the model with `kmx local up --step`
 component steps, installs pinned Orka and its keyless Provider, and requires a
 Provider → Agent → Task round trip to return an exact, non-empty local-model
 answer. It applies the committed native Orka
@@ -273,9 +273,9 @@ external boundaries and unrelated failures injected at all five negative calls.
 It creates no cluster. The dedicated shard runs the live qualification.
 
 `kmx-clone-free` runs on main/manual dispatch, not as a required PR shard. It
-checks installation, bare `up` and native Orka creation with an actual Task
-answer. Tags trigger the separate release workflow. None of these proves an
-AKS run: no Azure credentials belong in fork-exposed CI. A docs-only shortcut
+checks installation, `kmx local up` without `--step` and native Orka creation
+with an actual Task answer. Tags trigger the separate release workflow.
+None of these proves an AKS run: no Azure credentials belong in fork-exposed CI. A docs-only shortcut
 is not an end-to-end rerun.
 
 ### CI registry mirrors
@@ -299,9 +299,9 @@ containerd debug logging for the endpoint report.
 Compound quickstart and clone-free journeys use a CI-only Docker-named symlink
 wrapper. It forwards Docker calls unchanged, then hooks a successful kind-node
 creation identified by reserved kind cluster and node-role labels, configuring
-hosts and debug logging before kind returns. This keeps bare `up` and fetched-kind
-proof intact without changing KMX or kind. Clone-free CI fetches only this helper
-at the workflow SHA into `RUNNER_TEMP`; it does not check out the repository.
+hosts and debug logging before kind returns. This keeps full `kmx local up`
+and fetched-kind proof intact without changing KMX or kind. Clone-free CI
+fetches only this helper at the workflow SHA into `RUNNER_TEMP`; it does not check out the repository.
 
 Reports print only successful HTTP 200 endpoint responses: endpoint, image and
 manifest/blob category, without headers, query strings or payloads. A cache hit

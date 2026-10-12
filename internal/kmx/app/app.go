@@ -192,7 +192,7 @@ func (a *App) Command(args ...string) *exec.Cmd {
 // cannot is that kubectl is not installed. On a fresh machine the missing tool
 // is the whole story, and "cannot read the kubeconfig — refusing to act blind"
 // would otherwise read as something being wrong with the cluster. Every path
-// that classifies a context goes through here, `kmx ctx` included.
+// that classifies a context goes through here, `kmx context show` included.
 func (a *App) kubeconfig() (*guard.Kubeconfig, error) {
 	if err := run.MustExist("kubectl", "to read the kubeconfig and reach the cluster",
 		"https://kubernetes.io/docs/tasks/tools/"); err != nil {
@@ -229,7 +229,7 @@ func (a *App) GuardCreateIn(action, command, namespaces string) error {
 
 // GuardKnown is Guard for an action that must not take the "about to be
 // created" allowance: the kubeconfig has to actually describe the cluster,
-// or the operator confirms it by name. `kmx down` is the caller — see the
+// or the operator confirms it by name. `kmx local down` is the caller — see the
 // reasoning there and on guard.Request.MustBeKnown.
 func (a *App) GuardKnown(action, command string) error {
 	return a.guardWith(action, command, config.GuardNamespaceHint, true, false)

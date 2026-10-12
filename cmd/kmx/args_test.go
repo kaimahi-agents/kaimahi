@@ -13,8 +13,8 @@ func TestContextIsExtractedFromAnywhere(t *testing.T) {
 		wantKept []string
 		wantCtx  string
 	}{
-		{[]string{"--context", "kind-x", "up"}, []string{"up"}, "kind-x"},
-		{[]string{"up", "--context", "kind-x"}, []string{"up"}, "kind-x"},
+		{[]string{"--context", "kind-x", "local", "up"}, []string{"local", "up"}, "kind-x"},
+		{[]string{"local", "up", "--context", "kind-x"}, []string{"local", "up"}, "kind-x"},
 		{[]string{"agent", "chat", "hello", "hi", "-context=kind-x"}, []string{"agent", "chat", "hello", "hi"}, "kind-x"},
 	} {
 		kept, context, err := extractContext(tc.argv)
@@ -25,7 +25,7 @@ func TestContextIsExtractedFromAnywhere(t *testing.T) {
 			t.Fatalf("%v -> %v %q", tc.argv, kept, context)
 		}
 	}
-	for _, argv := range [][]string{{"up", "--context"}, {"up", "--context="}, {"up", "--context", " "}} {
+	for _, argv := range [][]string{{"local", "up", "--context"}, {"local", "up", "--context="}, {"local", "up", "--context", " "}} {
 		if _, _, err := extractContext(argv); err == nil {
 			t.Errorf("empty context accepted: %v", argv)
 		}
@@ -112,7 +112,7 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 		if child.Hidden {
 			// Retirement stubs and compatibility routes remain parseable but
 			// are not advertised alongside canonical commands.
-			if child.Name() != "quickstart-wizard" && child.Name() != "aks" && child.Name() != "ctx" && child.Name() != "up" && child.Name() != "down" {
+			if child.Name() != "quickstart-wizard" && child.Name() != "aks" {
 				t.Errorf("command %q is unexpectedly hidden", child.Name())
 			}
 			continue

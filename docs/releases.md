@@ -191,9 +191,12 @@ from:
 ## Upgrading kmx
 
 v0.5.1 uses `kmx context show/use` and `kmx local up/down` as the canonical
-commands. Historical v0.4.1 commands were `ctx` and root `up/down`; those remain
-callable compatibility routes with notices on stderr. See
-[command alignment](command-semantics.md) for the transition policy.
+commands. Historical v0.4.1 commands were `ctx` and root `up/down`; v0.5.1
+retained them as callable compatibility routes with notices on stderr. Current
+development builds remove root `ctx`, `up`, `down`, `lift` and `lift down`
+outright, without retirement stubs. Replace them with `context show/use`,
+`local up/down` and `aks up/down` respectively; no new root verb is introduced.
+See [command alignment](command-semantics.md) for the removal policy.
 
 Use `@latest` for the latest stable release, or pin the version you want:
 

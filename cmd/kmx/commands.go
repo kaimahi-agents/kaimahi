@@ -10,19 +10,6 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
-func newCtxCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{Use: "ctx [context]", Short: "Show or select the Kubernetes context", Args: usageArgs(0, 1, "kmx ctx [<context>]")}
-	cmd.RunE = appRun(state, func(a *app.App) error {
-		value := ""
-		if len(cmd.Flags().Args()) == 1 {
-			value = cmd.Flags().Arg(0)
-		}
-		return a.Ctx(value)
-	})
-	cmd.ValidArgsFunction = completeContexts
-	return cmd
-}
-
 func newContextCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{Use: "context", Short: "Show or select KMX's Kubernetes access context", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}

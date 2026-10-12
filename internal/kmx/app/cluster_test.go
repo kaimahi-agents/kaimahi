@@ -91,10 +91,10 @@ func TestClusterRefusesRatherThanReadingAFailedListingAsAbsence(t *testing.T) {
 //
 // The invented default only survives the guard in two shapes: a machine with
 // no clusters, and one where the name is already the context the operator is
-// pointed at. In both, `kmx up` has just verified this cluster is serving and
+// pointed at. In both, `kmx local up` has just verified this cluster is serving and
 // the operator asked for it — so turning the invention into a recorded choice
 // is exactly the point. Gating this on "did THIS run create it" would leave
-// the second `kmx up` resolving through the fallback again, which is the
+// the second `kmx local up` resolving through the fallback again, which is the
 // state the fallback exists to get out of.
 func TestAnExistingClusterAlsoRecordsTheInventedContext(t *testing.T) {
 	dir := t.TempDir()

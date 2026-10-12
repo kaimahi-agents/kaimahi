@@ -53,7 +53,7 @@ type orkaHelmValues struct {
 }
 
 // Installation refusals remain actionable without modifying cluster state.
-// `down` is for a disposable local kind cluster, never a production shortcut.
+// `local down` is for a disposable local kind cluster, never a production shortcut.
 func (a *App) orkaInstallRecovery() string {
 	return "Local kind cluster you own: `" + a.operationCommand("local", "down") + "` then `" + a.operationCommand("local", "up") + "` replaces it and loses Tasks, Secrets, PVC-backed volumes, model data and the plane ledger. " +
 		"AKS: back up Orka resources, Secrets, volumes/PVCs and any snapshot key without printing it; verify the recovery plan before an operator-managed fresh install (docs/orka.md)."

@@ -199,7 +199,7 @@ centralized on stderr. Only those tokens gain semantic color and weight. Their
 spaces, brackets, names, elapsed times, newlines, and native subprocess output
 stay unchanged. Buffer-based tests continue to assert the exact old transcript.
 
-This improves `quickstart`, `up`, `agent create`, and `lift` together.
+This improves `quickstart`, `local up`, `agent create`, and `aks up` together.
 
 ### 2. Safety prompts and guided input — guard implemented
 

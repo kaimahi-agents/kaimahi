@@ -42,7 +42,7 @@ const (
 	// OrkaPathNamespaces is the guard banner's namespace list for the
 	// supported Orka path: the model server and the Orka runtime, which are
 	// the only two namespaces `kmx quickstart`, the wizard and a bare
-	// `kmx up` write to. Other commands can write to caller-selected namespaces;
+	// `kmx local up` write to. Other commands can write to caller-selected namespaces;
 	// naming a namespace this path never touches would describe another command.
 	OrkaPathNamespaces = "ollama, " + OrkaNamespace
 
@@ -53,18 +53,18 @@ const (
 	// <p> is what makes a model called `<p>/<model>` resolvable.
 	orkaProviderKind = "providers.core.orka.ai"
 
-	// orkaModelNamespace is where `kmx up` puts the keyless model server
+	// orkaModelNamespace is where `kmx local up` puts the keyless model server
 	// the default Provider points at.
 	orkaModelNamespace = "ollama"
 
 	// orkaDefaultProvider and orkaDefaultModelURL are the keyless Provider
-	// `kmx up --step orka` wires and the in-cluster endpoint it resolves
+	// `kmx local up --step orka` wires and the in-cluster endpoint it resolves
 	// against. Quickstart creates its own fixed Provider for its Agent but
 	// shares this endpoint and the placeholder key with the local Provider.
 	orkaDefaultProvider = "local"
 	orkaDefaultModelURL = "http://ollama.ollama.svc.cluster.local:11434/v1"
 
-	// orkaResultAccount is the read-only Task result account `kmx up --step
+	// orkaResultAccount is the read-only Task result account `kmx local up --step
 	// orka` provisions. Task RESULTS are read over Orka's API with a
 	// short-lived token for this account, so the account has to exist before
 	// any command can retrieve one. It is provisioned by the runtime step and
@@ -226,12 +226,12 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 	return nil
 }
 
-// stepOrka is `kmx up --step orka`: the pinned runtime, its keyless Provider
+// stepOrka is `kmx local up --step orka`: the pinned runtime, its keyless Provider
 // and the account a Task result is read with.
 //
 // It is `kmx orka install`'s work without `kmx orka install`'s framing — the
 // same fetch, digest refusal, and chart-CRDs-before-Helm order
-// — because `up` supplies its own phase, guard and completion lines. Calling
+// — because `local up` supplies its own phase, guard and completion lines. Calling
 // OrkaInstall here would nest a four-phase command inside one phase of
 // another and end it with a second "COMPLETE".
 func (a *App) stepOrka() error {

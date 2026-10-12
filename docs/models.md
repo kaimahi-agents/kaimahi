@@ -92,7 +92,7 @@ configuration that run creates. `kmx local up --step orka` refuses to replace an
 existing `local` Provider whose endpoint differs; its error names an explicit
 `kmx orka install --model-url` command that **replaces the host route** if you
 choose to run it. Quickstart does not require that replacement. The follow-up
-commands printed after `up` carry no explicit host endpoint — the Provider
+commands printed after `kmx local up` carry no explicit host endpoint — the Provider
 holds it.
 
 `MODEL=<tag> kmx local up --step model` pulls another Ollama model into the pod; a
