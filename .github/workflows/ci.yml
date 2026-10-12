@@ -33,7 +33,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
+      - name: Changed lines contain no conflict markers or whitespace errors
+        id: whitespace
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request) base=HEAD^1 ;;
+            push)
+              case "$BEFORE" in
+                ""|0000000000000000000000000000000000000000)
+                  echo "No before commit for the push; cannot check its diff." >&2
+                  exit 1
+                  ;;
+              esac
+              base="$BEFORE"
+              if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+                git fetch --no-tags origin "$base"
+              fi
+              ;;
+            schedule|workflow_dispatch) base=HEAD^ ;;
+            *) echo "Unsupported diff-check event: $EVENT" >&2; exit 1 ;;
+          esac
+          # PR checkout is the merge commit: its actual first parent avoids
+          # including unrelated changes from a stale event base SHA.
+          base=$(git rev-parse --verify "$base^{commit}")
+          merge_base=$(git merge-base "$base" HEAD)
+          echo "Checking changed lines from $merge_base to HEAD"
+          git diff --check "$merge_base" HEAD
       - name: Classify script changes (fail closed)
         id: mutation_changes
         if: github.event_name == 'pull_request'
