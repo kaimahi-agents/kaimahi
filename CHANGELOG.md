@@ -33,6 +33,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   product evaluation, fresh IDs, exact answer digests and repeat offline diff.
   [Go evaluation and retention](docs/agent-lift.md#evaluating-exact-v0103-go-kagent).
 
+- `kmx suite push <reference>` finds the nearest ancestor `workspace.yaml` and
+  publishes its prepared one-member native-Orka suite. `--workspace` overrides
+  discovery without fallback. Workspace pushes print the absolute source path
+  and exact OCI manifest digest on stderr; result stdout, two-positional
+  extracted-directory transfer and agent creation defaults are unchanged.
+  [Workspace guide](docs/suite-workspace.md).
+
 - `kmx agent eval diff` reads strict v2 receipts for exact-v0.10.3 Go kagent
   evaluations offline, with native A2A and deployment identity checks. Valid
   kagent receipts do not affect Orka gate/status selection and cannot satisfy an

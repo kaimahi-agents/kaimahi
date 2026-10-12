@@ -151,10 +151,11 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	var target, pushWorkspace string
 	var pushPlainHTTP, pushForce, pushProvenance, pushRequireProvenance bool
 	push := &cobra.Command{
-		Use:   "push <directory> <reference>",
-		Short: "Push an extracted AgentSuite to an OCI layout or registry",
-		Long: "Push an extracted AgentSuite to an OCI registry, or use --to-layout for a local OCI image layout.\n\n" +
-			"With --workspace <directory>, prepare one native-Orka member and its authored cases, then copy that exact OCI graph. Pass only the destination reference as a positional argument. No member images are required; this does not deploy or evaluate an Agent.\n\n" +
+		Use:   "push [<directory>] <reference>",
+		Short: "Push a workspace or extracted AgentSuite to an OCI layout or registry",
+		Long: "Push an AgentSuite to an OCI registry, or use --to-layout for a local OCI image layout.\n\n" +
+			"With one destination reference, discover the nearest ancestor workspace.yaml from the current directory, or select an exact directory with --workspace <directory>. Prepare one native-Orka member and its authored cases, then copy that exact OCI graph. Stderr names the absolute workspace path and prepared OCI manifest digest. No member images are required; this does not deploy or evaluate an Agent.\n\n" +
+			"With two positional arguments, push the extracted source directory to the destination reference without workspace discovery.\n\n" +
 			"Local OCI layout publication refuses competing KMX writers before opening the destination. After an interrupted publication, inspect any reported writer lock and remove it only when no publisher is running.\n\n" +
 			"Registry authentication is read from the standard Docker credential store for HTTPS and loopback HTTP.\n" +
 			"With --plain-http, non-loopback registries are unauthenticated; auth challenges are refused.\n" +
@@ -167,25 +168,27 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 			"Sign the suite digest where you push, for example in CI. An attach failure is a warning unless\n" +
 			"--require-provenance is set. Registries without the referrers API also get a sha256-<digest> index tag.\n" +
 			"Local layouts get none: a conformant AgentSuite layout holds exactly one manifest.",
-		Example: "  kmx suite push ./suite registry.example.com/team:v1\n" +
+		Example: "  kmx suite push registry.example.com/team:v1\n" +
+			"  kmx suite push --workspace ./workspace --to-layout ./layout agentsuites/team:v1\n" +
+			"  kmx suite push ./suite registry.example.com/team:v1\n" +
 			"  kmx suite push ./suite --to-layout ./layout agentsuites/team:v1",
 		Args: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("workspace") {
-				if strings.TrimSpace(pushWorkspace) == "" || len(args) != 1 {
-					return fmt.Errorf("workspace push requires non-empty --workspace and exactly one destination reference")
-				}
+			if cmd.Flags().Changed("workspace") && (strings.TrimSpace(pushWorkspace) == "" || len(args) != 1) {
+				return fmt.Errorf("workspace push requires non-empty --workspace and exactly one destination reference")
+			}
+			if len(args) == 1 {
 				if state.contextFlag != "" {
-					return fmt.Errorf("--context cannot be used with --workspace")
+					return fmt.Errorf("--context cannot be used with workspace push")
 				}
 				if cmd.Flags().Changed("container-engine") {
-					return fmt.Errorf("--container-engine cannot be used with --workspace")
+					return fmt.Errorf("--container-engine cannot be used with workspace push")
 				}
 				return nil
 			}
-			return usageArgs(2, 2, "kmx suite push <directory> [--to-layout <layout>] [--plain-http] [--force] [--provenance=false] [--require-provenance] <reference>")(cmd, args)
+			return usageArgs(2, 2, "kmx suite push [<directory>] [--workspace <directory>] [--to-layout <layout>] [--plain-http] [--force] [--provenance=false] [--require-provenance] <reference>")(cmd, args)
 		},
 	}
-	push.Flags().StringVar(&pushWorkspace, "workspace", "", "prepare and publish the exact native-Orka suite from this workspace")
+	push.Flags().StringVar(&pushWorkspace, "workspace", "", "select exactly this workspace instead of nearest-ancestor discovery")
 	_ = push.MarkFlagDirname("workspace")
 	push.Flags().StringVar(&target, "to-layout", "", "local OCI image-layout target directory")
 	push.Flags().BoolVar(&pushPlainHTTP, "plain-http", false, "use HTTP instead of HTTPS for a registry target")
@@ -221,7 +224,8 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 				return fmt.Errorf("--provenance and --require-provenance cannot be used with --to-layout")
 			}
 		}
-		if cmd.Flags().Changed("workspace") {
+		if len(args) == 1 {
+			a.Err = cmd.ErrOrStderr()
 			result, err := a.PushSuiteWorkspace(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance)
 			if err != nil {
 				return &suiteDiagnosticError{err}

@@ -183,6 +183,6 @@ row when its rename lands.
 | Current command | Rule it breaks | Proposed |
 |---|---|---|
 | `--no-apply`, `--dry-run`, `--plan` | Preview flags whose effects differ by command. | Undecided; define each flag's effect before renaming. |
-| `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain compatibility syntax; opt-in `suite push --workspace <directory> <reference>` has one positional destination and publishes a prepared native suite. |
+| `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain compatibility syntax without workspace discovery; one-reference `suite push <reference>` discovers a workspace and publishes a prepared native suite. `--workspace <directory>` overrides discovery and cannot be combined with the two-positional form. |
 | `suite build --output <file>`, `suite pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |
 | `suite build --attestations` | Defaults to true; `--attestations=false` opts out of SBOM and provenance requests. | Keep the documented default; `--require-attestations` refuses missing or unsupported attestations. |

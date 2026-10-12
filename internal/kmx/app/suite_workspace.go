@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
@@ -21,10 +24,26 @@ func (a *App) CreateSuiteMember(ctx context.Context, root string, opt workspace.
 	return err
 }
 
-// PushSuiteWorkspace transfers the prepared OCI graph, never re-packing it at
-// publication. The native execution profile requires no member images.
+// PushSuiteWorkspace discovers a workspace from cwd when root is empty, or
+// selects root exactly. It transfers the prepared OCI graph without re-packing
+// at publication. The native execution profile requires no member images.
 func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance) (oras.PushResult, error) {
-	return a.pushSuiteWorkspace(ctx, root, reference, layout, plainHTTP, force, provenance, nil)
+	var start string
+	if !filepath.IsAbs(root) {
+		var err error
+		start, err = os.Getwd()
+		if err != nil {
+			return oras.PushResult{}, err
+		}
+	}
+	resolved, err := workspace.Resolve(start, root)
+	if err != nil {
+		if errors.Is(err, workspace.ErrNotFound) {
+			err = fmt.Errorf("no workspace found; pass --workspace <directory>: %w", err)
+		}
+		return oras.PushResult{}, err
+	}
+	return a.pushSuiteWorkspace(ctx, resolved, reference, layout, plainHTTP, force, provenance, nil)
 }
 
 // expectedS binds publication to the full packaged artifact, not merely its
@@ -50,6 +69,10 @@ func (a *App) pushSuiteWorkspace(ctx context.Context, root, reference, layout st
 	if err != nil {
 		return oras.PushResult{}, err
 	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return oras.PushResult{}, err
+	}
 	prepared, err := workspace.Prepare(ctx, root, filepath.Join(state, "suites"))
 	if err != nil {
 		return oras.PushResult{}, err
@@ -68,6 +91,13 @@ func (a *App) pushSuiteWorkspace(ctx context.Context, root, reference, layout st
 	}
 	if err := workspace.CheckCurrent(ctx, root, prepared); err != nil {
 		return oras.PushResult{}, err
+	}
+	diagnostics := a.Err
+	if diagnostics == nil {
+		diagnostics = io.Discard
+	}
+	if _, err := fmt.Fprintf(diagnostics, "Workspace: %q; AgentSuite: %s\n", root, prepared.Descriptor.Digest); err != nil {
+		return oras.PushResult{}, fmt.Errorf("write workspace publication identity: %w", err)
 	}
 	var result oras.PushResult
 	if layout != "" {
