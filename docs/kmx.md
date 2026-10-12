@@ -7,10 +7,12 @@ runtime owns execution, enforcement and model access; installing it alone does
 not prove an Agent can answer.
 
 The former broad kagent integration is not restored. Its installer steps,
-fixed manifests, chat, list/show, evaluation, console, quickstart, `local up` and
+fixed manifests, chat, list/show, console, quickstart, `local up` and
 AKS payload remain absent or retired. Explicit create targets preinstalled
-exact v0.10.2; explicit declarative bundle lift/status targets preinstalled
-exact v0.10.3. [Version-qualified placement](agent-lift.md#exact-v0103-declarative-bundle-placement)
+exact v0.10.2; explicit declarative bundle lift/status and receipt-bound Go
+bundle evaluation target preinstalled exact v0.10.3. Evaluation is unsecure-only;
+trusted-proxy is refused. Python execution, promotion gates and standalone
+chat/run remain unsupported. [Version-qualified placement](agent-lift.md#exact-v0103-declarative-bundle-placement)
 does not adopt or update resources. Historical AKS lift records remain
 readable for teardown only.
 Plane administration, model overlays, migration, governance and preset
