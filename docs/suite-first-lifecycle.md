@@ -65,6 +65,8 @@ Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/
 - A model binding chosen at lift changes the deployment and evaluation subject even when suite and images are unchanged.
 - Old bundle receipts stay readable for their original lifecycle but do not count as suite or image evidence.
 - Multi-agent evaluation needs a member-selection rule: every member, exported entrypoints, or a declared invocation closure remains open.
+- AgentSuite covers local and remote runs; local commands compose suite operations rather than adding a separate lifecycle. A quick local preview may skip packaging, but only a run of the exact packaged suite counts as promotion evidence.
+- The current `agent.yaml` path keeps working until a one-member suite path (create, eval, push, lift to Orka) is proven end to end; then `agent.yaml` is read as a one-agent workspace.
 
 ## What evaluation evidence binds to
 
