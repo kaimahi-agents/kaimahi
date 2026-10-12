@@ -127,7 +127,7 @@ get the tool-free incident-analyst fixture from the released source into a new
 `kmx-examples` directory:
 
 ```sh
-git clone --depth 1 --branch v0.5.0 https://github.com/kaimahi-agents/kaimahi.git kmx-examples
+git clone --depth 1 --branch v0.5.1 https://github.com/kaimahi-agents/kaimahi.git kmx-examples
 SUITE="$PWD/kmx-examples/internal/kmx/agentsuite/testdata/incident-analyst"
 ```
 
