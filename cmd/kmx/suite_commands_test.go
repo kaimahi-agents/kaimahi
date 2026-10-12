@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -187,6 +188,94 @@ func TestSuiteBuildShowsBuilderWarningsWithoutVerbose(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Built AgentSuite agent writer for linux/amd64") {
 		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestSuiteDiffUnifiedSplitAndJSON(t *testing.T) {
+	before := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
+	after := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "coordinator-workers"))
+	tests := []struct {
+		name string
+		args []string
+		want []string
+		json bool
+	}{
+		{
+			name: "unified",
+			args: []string{"suite", "diff", before, after},
+			want: []string{"AgentSuite diff: minimal -> coordinator-workers", "Summary:", "@@ + agent coordinator @@", "+ id: \"coordinator\"", "Affected agents"},
+		},
+		{
+			name: "split",
+			args: []string{"suite", "diff", before, after, "--view", "split"},
+			want: []string{"--- BEFORE", "+++ AFTER", "+ id: \"coordinator\""},
+		},
+		{
+			name: "json",
+			args: []string{"suite", "diff", before, after, "--output", "json"},
+			json: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			if err := execute(test.args, deps); err != nil {
+				t.Fatalf("execute(%v) error = %v\n%s", test.args, err, diagnostics.String())
+			}
+			if *loads != 0 {
+				t.Fatalf("offline suite diff loaded operational config %d time(s)", *loads)
+			}
+			if test.json {
+				var report agentsuite.DiffReport
+				if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+					t.Fatalf("decode JSON output: %v\n%s", err, out.String())
+				}
+				if !report.HasChanges() || report.Summary.Added == 0 || report.Summary.AgentsAffected == 0 {
+					t.Fatalf("unexpected JSON report: %+v", report)
+				}
+				return
+			}
+			for _, want := range test.want {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("output does not contain %q:\n%s", want, out.String())
+				}
+			}
+		})
+	}
+}
+
+func TestSuiteDiffRejectsViewWithJSON(t *testing.T) {
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	err := execute([]string{"suite", "diff", fixture, fixture, "--output", "json", "--view", "split"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "--view cannot be used with --output json") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSuiteDiffSanitizesArtifactErrors(t *testing.T) {
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
+	unsafePath := filepath.Join(fixture, "bad\x1b[31m\nname")
+	if err := os.WriteFile(unsafePath, []byte("unsafe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(unsafePath, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	err := execute([]string{"suite", "diff", fixture, fixture}, deps)
+	if err == nil {
+		t.Fatal("suite diff succeeded with an unsafe supplemental file")
+	}
+	if strings.ContainsAny(err.Error(), "\x1b\n\r\t") {
+		t.Fatalf("error contains terminal controls: %q", err)
+	}
+	var diagnostic *suiteDiagnosticError
+	if !errors.As(err, &diagnostic) {
+		t.Fatalf("error type = %T, want *suiteDiagnosticError", err)
 	}
 }
 
