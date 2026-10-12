@@ -14,11 +14,11 @@ These are distinct objects, not interchangeable names for one directory. “Rele
 
 | What the user calls it | Identity | What produces it (proposed command) | Mutable? | Where it lives |
 |---|---|---|---|---|
-| Workspace | Directory and authored revision; Git commit is provenance, not the resolved suite digest | `agent create` adds a member | Yes | Local directory, usually a Git repository |
-| Resolved AgentSuite | Canonical digest of `agentsuite.json`, rooting the digest-bound agent, ToolProvider, composition and build-profile graph | Resolution inside `suite push` or `lift .` | No; edits produce a new graph | Validated local content, then the artifact payload |
-| Member images (Agent Sandbox Images) | Runnable OCI manifest digest per member/platform, linked to the exact suite artifact, composition, build profile and sandbox binding; retain any index digest separately | Build inside `suite push` or `lift .` | No; rebuilding may produce new digests | Local image store/archive, then registry |
-| Release artifact | AgentSuite OCI manifest digest plus an immutable association to every required member image digest; association representation is open | Package inside `suite push` or `lift .` | No | Local content store or portable transfer package |
-| Published release | The same artifact and image identities, with retrieval references; a tag is a mutable locator, not identity | Publication inside `suite push` | Content no; tags/locations yes | OCI registry; offline transfer should preserve identities |
+| Workspace | Directory and authored revision; Git commit is provenance, not the resolved suite digest | `create` adds a member | Yes | Local directory, usually a Git repository |
+| Resolved AgentSuite | Canonical digest of `agentsuite.json`, rooting the digest-bound agent, ToolProvider, composition and build-profile graph | Resolution inside `push` or `lift .` | No; edits produce a new graph | Validated local content, then the artifact payload |
+| Member images (Agent Sandbox Images) | Runnable OCI manifest digest per member/platform, linked to the exact suite artifact, composition, build profile and sandbox binding; retain any index digest separately | Build inside `push` or `lift .` | No; rebuilding may produce new digests | Local image store/archive, then registry |
+| Release artifact | AgentSuite OCI manifest digest plus an immutable association to every required member image digest; association representation is open | Package inside `push` or `lift .` | No | Local content store or portable transfer package |
+| Published release | The same artifact and image identities, with retrieval references; a tag is a mutable locator, not identity | Publication inside `push` | Content no; tags/locations yes | OCI registry; offline transfer should preserve identities |
 | Target-bound deployment | Deployment ID tied to artifact, selected members/images, runtime installation, durable target and target/inference binding identities; exact aggregate identity is open | `lift REF` or `lift .` | Live state yes; changed inputs require a new recorded revision | Runtime placement/registration plus private operation and deployment records |
 | Evaluation evidence | Evaluation run ID and immutable subject/case-set identities, with per-case outcomes and execution references | `eval` against a selected execution environment | Completed evidence no; another run creates new evidence | Private evidence store; distributable attestations via OCI referrers |
 
@@ -31,44 +31,47 @@ This is the #328 journey with its proposed behavior made explicit. It is not a r
 ```sh
 mkdir my-agents && cd my-agents && git init
 
-kmx agent create greeter --instructions "Greet people briefly."
-# proposed: no workspace found, so offer to start one here; then author agents/greeter/ (today: --workspace .)
-kmx agent chat greeter
-# exists today: chat with a live Orka Agent; workspace-local execution is proposed
+kmx create greeter --instructions "Greet people briefly."
+# no workspace found, so offer to start one here; then author agents/greeter/
+kmx chat greeter
+# chat with a member; workspace-local execution is proposed
 kmx eval
-# proposed: evaluate the workspace's selected members and their case sets
-kmx suite push ghcr.io/me/my-agents:v1
-# proposed: resolve, pack, build every required member, push, print immutable identities
+# evaluate the exact packaged suite's selected members and their case sets
+kmx push ghcr.io/me/my-agents:v1
+# resolve, pack, build every required member, push, print immutable identities
 kmx lift ghcr.io/me/my-agents@sha256:... --target prod
-# proposed: retrieve, verify, plan, gate and place on a prepared target; never build
+# retrieve, verify, plan, gate and place on a prepared target; never build
 kmx lift . --target prod
-# proposed: convenience preparation followed by the same lift plan
+# convenience preparation followed by the same lift plan
 kmx status
-# exists today: Orka runtime report; suite deployment status is proposed
+# suite deployment status
 ```
 
 The digest ellipsis stands for the actual printed digest. `--target prod` stands for a durable destination; its interface (context, namespace, inference binding) still needs agreement. Runtime is not a lift option: it comes from the member, chosen at create, and evaluation evidence binds it. Lift resolves the runtime, prints it, and refuses when the target can't run it or the evidence covers a different runtime. Runtime support must be qualified, not inferred from this example.
 
-Commands find the workspace by walking up from the current directory to `workspace.yaml`, the way git finds `.git`; `--workspace` overrides. Evaluate and push print the workspace and suite digest they used, because evidence binds to that suite. When `agent create` finds no workspace, it asks in a terminal whether to start one in the current directory; without a terminal (CI, scripts) it refuses with a hint to pass `--workspace`. Other workspace commands refuse with the same hint. Lift by digest never needs a workspace. This makes authoring the default meaning of `agent create`; where today's live-agent create moves is an open question.
+Commands find the workspace by walking up from the current directory to `workspace.yaml`, the way git finds `.git`; `--workspace` overrides. Evaluate and push print the workspace and suite digest they used, because evidence binds to that suite. When `create` finds no workspace, it asks in a terminal whether to start one in the current directory; without a terminal (CI, scripts) it refuses with a hint to pass `--workspace`. Other workspace commands refuse with the same hint. Lift by digest never needs a workspace. This makes authoring the default meaning of `create`; where today's live-agent create moves is an open question.
+
+Everyday commands sit at the root; `kmx agent` goes away. With no released users to protect, this is the time for the breaking change. Less frequent operations stay under nouns: `suite diff|pull|validate`, `suite push DIRECTORY REFERENCE`, `eval diff`, `task`, `aks`, `local`, `orka`, `targets`. Root `lift` today is only a deprecated alias for `aks up`; it is removed before root `lift` takes the suite meaning. Today's root `status` Orka report moves to `orka status`.
 
 | Current path | Mapping to this proposal |
 |---|---|
-| `agent create/evaluate/lift` on main | Separate authoring from live creation; evaluate becomes workspace-level `eval`; bundle lift converges on suite-based `lift`. Default create applies to a target and writes a bundle; offline bundle generation already exists, but suite-member authoring is proposed. |
-| Image-backed path in drafts #448/#449 (#447; #342 closed) | Member authoring joins `agent create`; publication joins `suite push`; deployment converges on the single lift rather than a separate `suite lift`; invocation remains member-scoped run/chat, not lift. |
-| `suite push <directory> <reference>` on main | Exists today for validated suite-artifact transfer. `suite push --workspace . <reference>` (#437) prepares and publishes the exact native suite with no member images; the one-reference form without `--workspace` is proposed. |
+| `agent create/chat/run/evaluate/lift/status` on main | Move to root `create`, `chat`, `run`, `eval`, `lift`, `status`. Create defaults to authoring; bundle evaluate and lift converge on the suite path while `agent.yaml` is read as a one-agent workspace. |
+| Image-backed path in drafts #448/#449 (#447; #342 closed) | Member authoring joins `create`; publication joins `push`; deployment converges on the single `lift` rather than a separate `suite lift`; invocation remains member-scoped run/chat, not lift. |
+| `suite push <directory> <reference>` on main | Exists today for validated suite-artifact transfer. `suite push --workspace . <reference>` (#437) prepares and publishes the exact native suite with no member images; root `push <reference>` with workspace discovery is proposed. |
 
 Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/kaimahi/pull/302) and the [command alignment record](command-semantics.md) decided. Bare `kmx lift` today is deprecated AKS provisioning, not artifact lift. Reassigning it needs an explicit compatibility transition; this proposal does not change it. Follow the [command conventions](command-conventions.md), including aligned help, interactive labels, recovery commands and compatibility tests, when any spelling ships.
 
 ## Explicit decisions
 
-- `suite push` produces the suite and every member image the selected execution path needs (none for native-Orka declarative members), with an immutable link to each.
+- `push` produces the suite and every member image the selected execution path needs (none for native-Orka declarative members), with an immutable link to each.
 - Lift from a registry reference is deploy-only: no builder and no registry push credentials; missing images cause refusal, not an implicit build.
 - `lift .` is a convenience using the same identities and planning, not a second deployment engine.
 - A model binding chosen at lift changes the deployment and evaluation subject even when suite and images are unchanged.
 - Old bundle receipts stay readable for their original lifecycle but do not count as suite or image evidence.
 - Multi-agent evaluation needs a member-selection rule: every member, exported entrypoints, or a declared invocation closure remains open.
 - AgentSuite covers local and remote runs; local commands compose suite operations rather than adding a separate lifecycle. A quick local preview may skip packaging, but only a run of the exact packaged suite counts as promotion evidence.
-- Commands find the workspace from the current directory; `agent create` with no workspace offers to start one. Authoring is the default meaning of `agent create`.
+- Everyday commands are root verbs (`create`, `chat`, `run`, `eval`, `push`, `lift`, `status`); `kmx agent` is removed rather than aliased.
+- Commands find the workspace from the current directory; `create` with no workspace offers to start one. Authoring is the default meaning of `create`.
 - Runtime comes from the member and is bound in evaluation evidence; lift resolves and prints it, and is not a way to switch runtimes.
 - For the packaged path (#430), only a complete passing run exports evidence. A failed or incomplete run exits nonzero and produces no receipt, so lift refuses a candidate for lack of matching passing evidence, not because a failure was recorded.
 - Lifting a previous digest again is a re-lift of that release, not a rollback of a deployed bad revision. Rollback needs the revision and retention records in #348/#346.
@@ -95,5 +98,5 @@ Two options are to read a bundle as a one-agent workspace or require a one-time 
 3. Which members does `eval` select, and how is full coverage recorded? **Owner:** #350.
 4. Which signatures and policies permit promotion across targets or model bindings? **Owner:** #350; signer policy is not yet decided.
 5. How are target/binding identities, aggregate deployment revisions, partial outcomes, recovery and retained retirement recorded? **Owners:** #348, #346 and #347; session-runtime conformance belongs to #352.
-6. How do root `lift` compatibility, destination/inference flags and member run/chat selection converge without changing existing contracts silently? **Owners:** #301/#302 and #351, coordinated with #447.
-7. How does a lifted suite member get chatted with on its destination? Today's `agent chat` targets live Agents, and suite-owned objects deliberately refuse legacy access. **Owner:** #344.
+6. How do destination/inference flags and member run/chat selection converge with root `lift`? **Owners:** #301/#302 and #351, coordinated with #447.
+7. How does a lifted suite member get chatted with on its destination? Today's chat targets live Agents, and suite-owned objects deliberately refuse legacy access. **Owner:** #344.
