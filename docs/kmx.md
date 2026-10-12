@@ -30,10 +30,10 @@ brew install kaimahi-agents/tap/kmx &&
 
 The fully qualified formula trusts only `kmx`. Homebrew installs the CLI, not
 Docker, Podman or Go; local kind still needs a container engine. To build the
-same release with Go 1.26+ instead:
+v0.5.1 release with Go 1.26+ instead:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
 kmx version
 kmx orka --help
 ```
@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 ```
 
 That installer puts the selected release in `~/.local/bin`, without sudo;
-`--version=v0.4.0` pins it, `--bin-dir=DIR` changes the destination, and
+`--version=v0.5.1` pins it, `--bin-dir=DIR` changes the destination, and
 `--quickstart` continues into `kmx quickstart`. A new shell may need
 `~/.local/bin` on `PATH`, or invoke `$HOME/.local/bin/kmx` directly. It checks the binary against
 a checksum from the **same** GitHub release over TLS: corruption detection, not
@@ -82,10 +82,10 @@ Use `kmx --help` and `kmx <command> --help` for flags and defaults. The Cobra tr
 also generates completion; this guide describes contracts rather than duplicating
 every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
-**Unreleased entry-point alignment:** `context show/use` and `local up/down`
-are the canonical grouped commands below. Tagged v0.4.1 uses `ctx [context]`
-and root `up/down`; those routes remain callable in newer builds with notices
-only on stderr. No removal release is scheduled. See the
+**Released in v0.5.0:** `context show/use` and `local up/down` are the canonical
+grouped commands below. Historically, v0.4.1 used `ctx [context]` and root
+`up/down`; those routes remain callable with notices only on stderr. No removal
+release is scheduled. See the
 [alignment record](command-semantics.md) for current versus proposed names.
 
 ### Current Orka path and explicit version-qualified operations
@@ -97,9 +97,9 @@ only on stderr. No removal release is scheduled. See the
 | `kmx orka status` | read running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin |
 | `kmx agent create [name]` | default, unchanged Orka authoring: native Provider + Agent and optional Task. Explicit `--runtime kagent <name>` is create-only for an already-installed exact Kagent v0.10.2. Retrieve a real answer only with `--task`. [Create contract](#kmx-agent-create) |
 | `kmx suite build <directory> ...` | resolve one agent/platform composition and build an OCI image-layout tar through AgentKit using Docker buildx. The current implementation is explicitly experimental and non-conformant because it treats the selected harness image as a monolithic AgentKit adapter and does not compose the runtime-base image. |
-| `kmx suite push <directory> <registry/repository:tag>` | deterministically archive and validate an extracted AgentSuite, then push it to an OCI registry. An existing tag with the same digest is a no-op; a different digest requires `--force`. Prints the pushed digest. See [registry safety](#registry-authentication). |
-| `kmx suite push <directory> --to-layout <layout> <repository:tag>` | deterministically archive and validate an extracted AgentSuite, then add its referenced artifact to a local OCI image layout. New layouts are published atomically; existing layouts retain unrelated references. Output states whether the layout was created or updated. |
-| `kmx suite pull <registry/repository:tag-or-digest> --output <directory>` | pull and validate one AgentSuite from an OCI registry, then atomically extract it into a new directory. Prints the resolved digest; tag pulls also print a digest-pinned reference for repeatable pulls. See [registry safety](#registry-authentication). |
+| `kmx suite push <directory> <registry/repository:tag>` | deterministically archive and validate an extracted AgentSuite, then push it to an OCI registry. An existing tag with the same digest is a no-op; a different digest requires `--force`. It also attaches unsigned [suite provenance](#suite-provenance) before moving the tag; `--provenance=false` skips it and `--require-provenance` fails without moving the tag if it cannot be attached. Prints the pushed and provenance digests. See [registry safety](#registry-authentication). |
+| `kmx suite push <directory> --to-layout <layout> <repository:tag>` | deterministically archive and validate an extracted AgentSuite, then add its referenced artifact to a local OCI image layout. New layouts are published atomically; existing layouts retain unrelated references. Output states whether the layout was created or updated. No provenance is attached, since a conformant AgentSuite layout holds exactly one manifest. |
+| `kmx suite pull <registry/repository:tag-or-digest> --output <directory>` | pull and validate one AgentSuite from an OCI registry, then atomically extract it into a new directory. Prints the resolved digest and any [suite provenance](#suite-provenance) that names it, for information only; tag pulls also print a digest-pinned reference for repeatable pulls. See [registry safety](#registry-authentication). |
 | `kmx suite pull <repository:tag> --from-layout <layout> --output <directory>` | resolve and validate one AgentSuite reference from a local OCI image layout, then atomically extract its content into a new directory. Existing output is never replaced. |
 | `kmx suite validate <path>` | validate an extracted AgentSuite content directory or OCI image layout offline, including strict JSON, canonical identities, closed references, tool locks, build profiles and archive safety. `-o json` emits the validated summary. [AgentSuite specification](../agentsuite/spec.md) |
 | `kmx agent lift <bundle-dir>` | default Orka reconciliation; explicit `--runtime kagent --runtime-version v0.10.3` is new-object declarative placement or complete receipt-bound reuse. No adoption/update in that profile. `--plan` checks without writing. [Bundle lift](agent-lift.md) |
@@ -122,15 +122,32 @@ The first image-build backend is intentionally narrow:
 It requires Docker with the buildx plugin. Authenticate Docker to any private
 registry containing the selected harness image before building.
 
+A downloaded kmx binary does not include the example files. With Git installed,
+get the tool-free incident-analyst fixture from the released source into a new
+`kmx-examples` directory:
+
+```sh
+git clone --depth 1 --branch v0.5.1 https://github.com/kaimahi-agents/kaimahi.git kmx-examples
+SUITE="$PWD/kmx-examples/internal/kmx/agentsuite/testdata/incident-analyst"
+```
+
+The checkout supplies the fixture only; keep using your installed kmx binary.
+No Go build is needed. Run the remaining commands in the same shell and working
+directory so `SUITE` still selects these files.
+
 With the classic Docker image store, the default `docker` builder can reject
 `--output type=oci` with `OCI exporter is not supported for the docker driver.`,
-even with attestations disabled. If you see this error, enable Docker's containerd
-image store, or create a `docker-container` builder and pass its name to KMX:
+even with attestations disabled. The example below explicitly uses a named
+`docker-container` builder. Create it before running that build:
 
 ```sh
 docker buildx create --name kmx-builder --driver docker-container
-# Add --builder kmx-builder to the kmx suite build command below.
+docker buildx inspect kmx-builder
 ```
+
+If `kmx-builder` already exists, inspect it and confirm its driver is
+`docker-container` instead of recreating it. To use another builder, replace
+`kmx-builder` in both the setup and the build's `--builder` flag.
 
 `--builder` selects an existing Buildx builder for this build without changing
 Docker's default builder. When omitted, Docker Buildx uses its existing builder
@@ -140,8 +157,6 @@ but it does not change that host's image store. The load/run example below
 requires Docker's containerd image store.
 
 ```zsh
-SUITE=./internal/kmx/agentsuite/testdata/incident-analyst
-
 kmx suite validate "$SUITE"
 
 read "AZURE_OPENAI_RESOURCE?Azure OpenAI resource name: "
@@ -322,7 +337,8 @@ without an `Authorization` header; if it requests authentication, `kmx` refuses
 and requires HTTPS. Loopback development registries may use stored credentials.
 
 Registry push checks the existing tag's digest before writing. A new tag is
-created; re-pushing the same digest succeeds without writing; replacing a
+created; re-pushing the same digest succeeds without writing, except that
+[suite provenance](#suite-provenance) is attached if pull cannot see any; replacing a
 different digest is refused unless `--force` is supplied. This is a preflight
 check, **not atomic against concurrent pushers**: another writer can change the
 tag between the check and the push. Use distinct tags or registry-enforced
@@ -334,6 +350,58 @@ Push prints the artifact digest on success. Pull prints the resolved digest,
 and a pull by tag also prints a reference such as
 `registry.example.com/agentsuites/team@sha256:…` to pin subsequent pulls to that
 artifact rather than a mutable tag.
+
+#### Suite provenance
+
+A registry `kmx suite push` attaches an unsigned
+[in-toto](https://github.com/in-toto/attestation) statement with an
+[SLSA provenance v1](https://slsa.dev/spec/v1.0/provenance) predicate as an OCI
+referrer of the suite manifest (`artifactType: application/vnd.in-toto+json`,
+`subject`: the suite manifest). It is attached before the tag moves. This
+section documents its build type, which the statement names as
+`https://github.com/kaimahi-agents/kaimahi/blob/main/docs/kmx.md#suite-provenance`:
+
+| Field | Value |
+|---|---|
+| `subject` | the suite name and its OCI manifest digest |
+| `runDetails.builder.id` | `https://github.com/kaimahi-agents/kaimahi/cmd/kmx`; `version.kmx` is the kmx version when known |
+| `resolvedDependencies` | one `gitCommit`, with a `git+https://` URI when `origin` is a credential-free HTTPS or `git@host:` remote; absent otherwise |
+| `externalParameters.sourcePath` | the suite directory relative to the repository root, when a commit is recorded |
+
+kmx records the commit only when every file it packs matches `HEAD` byte for
+byte, with the same executable bit, and nothing else is in the directory:
+untracked, ignored, edited, deleted and skip-worktree files, empty
+directories, and `eol`, `filter`, `ident` or `working-tree-encoding` Git
+attributes all prevent it, and push prints why. Packing is deterministic, so
+anyone can check the claim: check out the commit with
+`-c core.autocrlf=false`, run `kmx suite push` of that path to a local layout
+with the recorded kmx version, and compare the suite digest. The origin URL
+and path are published with the suite; use `--provenance=false` if they are
+private.
+
+The statement has no timestamps, so the same suite, source and kmx version
+always produce the same referrer. It is a claim, **not a signature**: anyone
+with push access to the repository can attach one, and `kmx suite pull` shows
+it for information only. Sign the suite digest where you push, for example
+with keyless signing in CI. An attach failure is a warning unless
+`--require-provenance` is set, in which case the push fails and the tag does
+not move. Rerunning a push whose tag already names the digest writes nothing
+if pull can already see kmx provenance for it, and otherwise attaches it. Registries without the OCI referrers API also receive a
+`sha256-<digest>` index tag, which kmx updates but never deletes. Local OCI
+layouts get none, because a conformant AgentSuite layout holds exactly one
+manifest.
+
+Pull checks at most 64 in-toto referrers from at most four API pages. Referrer
+indexes, manifests and statements are limited to 1 MiB each. It checks each
+referrer that uses this build type: its subject and statement must name the pulled digest, its builder
+must be kmx, and every value it prints must be printable text without control
+or format characters. Malformed
+ones are warnings; other producers' attestations are skipped. A listing failure
+prints `Provenance: not checked` and does not block the pull. The 64-referrer
+limit applies to pull verification, not index updates: push preserves other
+producers' descriptors in a bounded fallback index. An attached claim beyond
+pull's limit may not be displayed, even with `--require-provenance`; that flag
+requires attachment, not visibility or trust.
 
 ### Runtime commands
 
