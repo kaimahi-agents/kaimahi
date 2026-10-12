@@ -82,7 +82,7 @@ func compiledTargets() []TargetInfo {
 		{ID: string(kagent.ID()), DisplayName: "Kagent", Kind: "adapter", SupportTier: "version-scoped",
 			QualifiedVersions: []TargetQualification{
 				{Version: scaffold.KagentVersion, Scope: "explicit create only", Evidence: "exact controller commit and OCI image checks; e2e-kagent-create"},
-				{Version: "v0.10.3", Scope: "explicit Go-only new placement and receipt-bound lift/status; Go/Python render", Evidence: "compiled exact pins; Go native A2A execution demonstrated once; dedicated continuous qualification not yet wired; deployment readiness is not execution proof"},
+				{Version: "v0.10.3", Scope: "explicit Go-only new placement and receipt-bound lift/status; Go/Python render", Evidence: "compiled exact pins; e2e-kagent-lift continuously qualifies Go plan/lift/repeat/status/conflicts and a separate one-shot native A2A MCP answer (one tool call, two model calls, one terminal answer); deployment readiness is not execution proof"},
 			},
 			Capabilities: lifecycleTargetCapabilities(kagent),
 			Detection:    TargetDetection{State: "not-probed", Scope: "explicit version-qualified commands only", Detail: "no Kagent discovery; create validates v0.10.2, explicit bundle lift/status validate v0.10.3"}},

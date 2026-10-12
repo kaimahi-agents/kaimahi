@@ -24,6 +24,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- `kmx targets` describes the dedicated continuous Go kagent v0.10.3 lift/status
+  qualification and its separate one-shot native A2A MCP proof. Supported
+  operations and Python's render-only boundary are unchanged.
+
 - `kmx targets --detect` accepts kubectl's `kind: List` Deployment responses,
   reporting empty lists as absent and labelled controllers as present. Malformed
   responses and failed reads remain unreadable and exit nonzero.
