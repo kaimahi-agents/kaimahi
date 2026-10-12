@@ -11,6 +11,23 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
+func TestCurrentBundleEvaluationHintUsesBundleRoute(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "demo")
+	if err := writeOrkaBundle(path, []byte("revision\n"), []byte("bindings\n")); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(path, "eval", "example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(data, []byte("# One evaluation case for kmx bundle evaluate.")) {
+		t.Fatalf("generated evaluation case teaches an unreachable route: %s", data)
+	}
+	if _, err := agentruntime.ParseEvaluationCase(data); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWriteOrkaBundleAllowsIdenticalRetryAndRefusesEditsByFilename(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agents", "demo")
 	if err := writeOrkaBundle(path, []byte("revision\n"), []byte("bindings\n")); err != nil {

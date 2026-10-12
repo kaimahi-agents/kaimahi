@@ -195,8 +195,18 @@ commands. Historical v0.4.1 commands were `ctx` and root `up/down`; v0.5.1
 retained them as callable compatibility routes with notices on stderr. Current
 development builds remove root `ctx`, `up`, `down`, `lift` and `lift down`
 outright, without retirement stubs. Replace them with `context show/use`,
-`local up/down` and `aks up/down` respectively; no new root verb is introduced.
-See [command alignment](command-semantics.md) for the removal policy.
+`local up/down` and `aks up/down` respectively.
+Current development builds also remove the entire `kmx agent` group, without
+aliases or stubs: use root `create/chat/run`, `orka show/list`, legacy
+`bundle evaluate/lift/retire/verify/status` and root `eval diff/from-sessions`
+helpers. Root `status` remains the table-only Orka runtime report, also available
+as `orka status`. Workspace publication moves from `suite push --workspace`
+to root `push [--workspace DIR] REF`; explicit `--workspace` is still required
+until discovery is implemented. Default create remains live; only explicit
+`create --workspace` authors offline. Root `eval` does not execute packaged
+cases, and root digest `lift` is not implemented.
+See the [exact old/new mapping](../CHANGELOG.md#upgrading) and
+[command alignment](command-semantics.md) for the removal policy.
 
 Use `@latest` for the latest stable release, or pin the version you want:
 

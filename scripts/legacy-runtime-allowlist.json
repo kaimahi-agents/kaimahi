@@ -40,11 +40,6 @@
     "reason": "Inert negative CI control for the retired checkout values asset, not official charts."
   },
   {
-    "path": "docs/kmx.md",
-    "text": "`kmx agent edit` is retired; its hidden stub points to kubectl.",
-    "reason": "Truthful retirement notice, not an instruction to edit through kmx."
-  },
-  {
     "path": "internal/kmx/app/lift.go",
     "text": "return nil, nil, fmt.Errorf(\"kmx aks up: %s/%s was provisioned with --payload kagent, which is retired.\\n\"+",
     "reason": "Refusal to resume historical cloud ownership records; teardown remains separate."

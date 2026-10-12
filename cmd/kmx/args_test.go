@@ -15,7 +15,7 @@ func TestContextIsExtractedFromAnywhere(t *testing.T) {
 	}{
 		{[]string{"--context", "kind-x", "local", "up"}, []string{"local", "up"}, "kind-x"},
 		{[]string{"local", "up", "--context", "kind-x"}, []string{"local", "up"}, "kind-x"},
-		{[]string{"agent", "chat", "hello", "hi", "-context=kind-x"}, []string{"agent", "chat", "hello", "hi"}, "kind-x"},
+		{[]string{"chat", "hello", "hi", "-context=kind-x"}, []string{"chat", "hello", "hi"}, "kind-x"},
 	} {
 		kept, context, err := extractContext(tc.argv)
 		if err != nil {
@@ -41,41 +41,41 @@ func TestContextExtractionStopsAtEndOfOptions(t *testing.T) {
 	}{
 		{
 			name:     "message is not a target selector",
-			argv:     []string{"agent", "chat", "hello", "--", "--context", "other"},
-			wantKept: []string{"agent", "chat", "hello", "--", "--context", "other"},
+			argv:     []string{"chat", "hello", "--", "--context", "other"},
+			wantKept: []string{"chat", "hello", "--", "--context", "other"},
 		},
 		{
 			name:     "leading selector survives message data",
-			argv:     []string{"--context", "kind-x", "agent", "chat", "hello", "--", "--context", "other"},
-			wantKept: []string{"agent", "chat", "hello", "--", "--context", "other"},
+			argv:     []string{"--context", "kind-x", "chat", "hello", "--", "--context", "other"},
+			wantKept: []string{"chat", "hello", "--", "--context", "other"},
 			wantCtx:  "kind-x",
 		},
 		{
 			name:     "interspersed inline selector survives message data",
-			argv:     []string{"agent", "chat", "hello", "--context=kind-x", "--", "--context=other"},
-			wantKept: []string{"agent", "chat", "hello", "--", "--context=other"},
+			argv:     []string{"chat", "hello", "--context=kind-x", "--", "--context=other"},
+			wantKept: []string{"chat", "hello", "--", "--context=other"},
 			wantCtx:  "kind-x",
 		},
 		{
 			name:     "legacy selectors respect the delimiter",
-			argv:     []string{"agent", "chat", "hello", "-context=kind-x", "--", "-context", "other"},
-			wantKept: []string{"agent", "chat", "hello", "--", "-context", "other"},
+			argv:     []string{"chat", "hello", "-context=kind-x", "--", "-context", "other"},
+			wantKept: []string{"chat", "hello", "--", "-context", "other"},
 			wantCtx:  "kind-x",
 		},
 		{
 			name:     "incomplete selector is literal message data",
-			argv:     []string{"agent", "chat", "hello", "--", "--context"},
-			wantKept: []string{"agent", "chat", "hello", "--", "--context"},
+			argv:     []string{"chat", "hello", "--", "--context"},
+			wantKept: []string{"chat", "hello", "--", "--context"},
 		},
 		{
 			name:     "empty inline selector is literal message data",
-			argv:     []string{"agent", "chat", "hello", "--", "--context="},
-			wantKept: []string{"agent", "chat", "hello", "--", "--context="},
+			argv:     []string{"chat", "hello", "--", "--context="},
+			wantKept: []string{"chat", "hello", "--", "--context="},
 		},
 		{
 			name:     "plain trailing delimiter is retained",
-			argv:     []string{"agent", "chat", "hello", "--"},
-			wantKept: []string{"agent", "chat", "hello", "--"},
+			argv:     []string{"chat", "hello", "--"},
+			wantKept: []string{"chat", "hello", "--"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -128,7 +128,7 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 	}
 	// The behavioral front-door checks pin the retained surface independently;
 	// this guard keeps the derived help check from passing on an empty tree.
-	if named == 0 || !strings.Contains(out.String(), "quickstart ") || !strings.Contains(out.String(), "agent ") {
+	if named == 0 || !strings.Contains(out.String(), "quickstart ") || !strings.Contains(out.String(), "create ") {
 		t.Fatalf("usage page lost its native front door (%d commands):\n%s", named, out.String())
 	}
 }

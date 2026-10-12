@@ -38,10 +38,10 @@ FIRST_ANSWER_COMMANDS = [("kmx quickstart", r"^kmx quickstart$")]
 JOURNEY_COMMANDS = [
     ("kmx local up", r"^`kmx local up`"),
     ("kmx quickstart --interactive", r"^`kmx quickstart --interactive`"),
-    ("kmx agent create", r"^`kmx agent create`"),
-    ("kmx agent lift", r"^`kmx agent lift`"),
-    ("kmx agent status", r"^`kmx agent status`"),
-    ("kmx agent evaluate", r"^`kmx agent evaluate`"),
+    ("kmx create", r"^`kmx create`"),
+    ("kmx run", r"^`kmx run`"),
+    ("kmx chat", r"^`kmx chat`"),
+    ("kmx push", r"^`kmx push`"),
     ("bundle lift guide", r"\[bundle lift guide\]\(docs/agent-lift\.md\)"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
@@ -95,7 +95,7 @@ def main(path: Path) -> int:
     if problem:
         print(problem, file=sys.stderr)
         return 1
-    print("README front door: runnable install, first answer, bundle journey and runtime boundary valid")
+    print("README front door: runnable install, first answer, root journey and runtime boundary valid")
     return 0
 
 

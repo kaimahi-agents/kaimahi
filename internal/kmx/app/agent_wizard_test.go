@@ -25,7 +25,7 @@ type sliceScanner struct {
 
 func TestOperationCommandsRoundTripShellArguments(t *testing.T) {
 	a := &App{Cfg: &config.Config{KubeContext: "kind-team's $(false); test"}}
-	args := []string{"agent", "chat", "my-agent", "a 'quote' and $(false); $HOME", ""}
+	args := []string{"chat", "my-agent", "a 'quote' and $(false); $HOME", ""}
 	command := a.operationCommand(args...)
 	// Replace only the executable with a shell function, so the printed
 	// command is parsed exactly as a pasted next action would be.
@@ -41,9 +41,9 @@ func TestOperationCommandsRoundTripShellArguments(t *testing.T) {
 
 func TestLocalOperationCommandsRetainClusterAndEngine(t *testing.T) {
 	a := &App{Cfg: &config.Config{KubeContext: "kind-custom", KindCluster: "custom", ContainerEngine: "podman"}}
-	for _, verb := range []string{"up", "plane", "down"} {
-		want := "KIND_CLUSTER=custom CONTAINER_ENGINE=podman kmx --context kind-custom " + verb
-		if got := a.operationCommand(verb); got != want {
+	for _, verb := range []string{"up", "down"} {
+		want := "KIND_CLUSTER=custom CONTAINER_ENGINE=podman kmx --context kind-custom local " + verb
+		if got := a.operationCommand("local", verb); got != want {
 			t.Fatalf("%s action lost its target: %s", verb, got)
 		}
 	}

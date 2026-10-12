@@ -5,7 +5,7 @@ are integrated. Runtime orchestration remains outside the wizard.
 
 ## Decision
 
-Prototype Bubble Tea and Bubbles in `kmx agent create`, the smallest complete
+Prototype Bubble Tea and Bubbles in `kmx create`, the smallest complete
 interactive workflow in the CLI. The implementation uses
 `charm.land/bubbletea/v2` v2.0.9 with the Bubbles v2 `textinput`, `help`, and
 `key` packages. It is inline rather than alternate-screen, reads from the

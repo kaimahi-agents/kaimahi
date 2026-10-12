@@ -10,10 +10,9 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 )
 
-func newAgentCommand(state *commandState) *cobra.Command {
-	group := &cobra.Command{Use: "agent", Short: "Create agents; inspect and chat with Orka agents", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
-	group.AddCommand(newAgentListCommand(state), newAgentShowCommand(state), newAgentCreateCommand(state), newAgentLiftCommand(state), newAgentRetireCommand(state), newAgentStatusCommand(state), newAgentEvaluateCommand(state), newAgentEvalCommand(), newAgentVerifyCommand(), newAgentRunCommand(state), newAgentChatCommand(state),
-		retiredCommand("edit", "kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>; inspect with kmx --context <ctx> agent show <name> --namespace <namespace>"))
+func newBundleCommand(state *commandState) *cobra.Command {
+	group := &cobra.Command{Use: "bundle", Short: "Evaluate, lift and inspect legacy agent bundles", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	group.AddCommand(newAgentLiftCommand(state), newAgentRetireCommand(state), newAgentStatusCommand(state), newAgentEvaluateCommand(state), newAgentVerifyCommand())
 	return group
 }
 
@@ -29,7 +28,7 @@ func newAgentShowCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <name>",
 		Short: "Show an Orka Agent and the chain it depends on",
-		Args:  usageArgs(1, 1, "kmx agent show <name> --namespace <namespace>"),
+		Args:  usageArgs(1, 1, "kmx orka show <name> --namespace <namespace>"),
 	}
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "namespace the Orka controller watches (required)")
 	cmd.Flags().StringVarP(&opt.Output, "output", "o", "table", "output: table|json")
@@ -46,11 +45,11 @@ func newAgentListCommand(state *commandState) *cobra.Command {
 		Short: "List the Orka Agents in a namespace",
 		Long: `List Orka Agent resources.
 
-These are the agents kmx agent create writes and kmx agent show inspects.
+These are the agents kmx create writes and kmx orka show inspects.
 
 --namespace selects the namespace the Orka controller watches. It defaults to
-the namespace the pinned installer uses, which is the same default kmx agent
-chat resolves against.`,
+the namespace the pinned installer uses, which is the same default kmx chat
+resolves against.`,
 		Args: cobra.NoArgs,
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table|json|yaml")
@@ -81,7 +80,7 @@ no cluster settings are loaded, no image is built and no Agent is deployed.
 Workspace evaluation and release lift are not yet available.
 
 This command does not build or deploy application images. Keep your Deployment
-or chart. Interactive agent chat and kmx agent list are Orka-only.
+or chart. Interactive kmx chat and kmx orka list are Orka-only.
 
 Orka creation:
 The generated resources include a Provider and Agent. Model identifiers include
@@ -118,15 +117,15 @@ deployment creates ModelConfig then Agent without adoption or rollback. With
 default upstream session retention is unlimited. Kubernetes audit policy may
 also capture Service-proxy request and response bodies.`,
 		Example: `  # Guided Orka creation (terminal required)
-  kmx agent create
+  kmx create
 
   # Offline YAML preview; no cluster access
-  kmx agent create preview --namespace orka-system \
+  kmx create preview --namespace orka-system \
     --provider-type openai --model qwen2.5:3b --secret local-provider-key \
     --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out -
 
   # Also persist the authored bundle
-  kmx agent create preview --namespace orka-system \
+  kmx create preview --namespace orka-system \
     --provider-type openai --model qwen2.5:3b --secret local-provider-key \
     --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out - --bundle-path agents/preview`,
 	}
@@ -186,10 +185,10 @@ also capture Service-proxy request and response bodies.`,
 			return fmt.Errorf("unsupported agent runtime; use orka or kagent")
 		}
 		if opt.Runtime == "kagent" && len(args) != 1 {
-			return fmt.Errorf("usage: kmx agent create <name> --runtime kagent [flags]")
+			return fmt.Errorf("usage: kmx create <name> --runtime kagent [flags]")
 		}
 		if len(args) > 1 {
-			return fmt.Errorf("usage: kmx agent create [<name>] [flags]")
+			return fmt.Errorf("usage: kmx create [<name>] [flags]")
 		}
 		if opt.Runtime != "kagent" && cmd.Flags().Changed("kagent-runtime") {
 			return fmt.Errorf("--kagent-runtime requires --runtime kagent")
@@ -232,8 +231,8 @@ also capture Service-proxy request and response bodies.`,
 func newAgentChatCommand(state *commandState) *cobra.Command {
 	var verbose bool
 	var runtime, namespace, azureDiscovery, bundles string
-	usage := "kmx agent chat [--namespace <namespace>] <name> [message]"
-	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with an Orka Agent", Long: "Open an interactive chat session with an Orka Agent. An optional message is sent as the first turn; for a one-shot Task use kmx agent run.", Args: usageArgs(1, -1, usage)}
+	usage := "kmx chat [--namespace <namespace>] <name> [message]"
+	cmd := &cobra.Command{Use: "chat <name> [message...]", Short: "Chat with an Orka Agent", Long: "Open an interactive chat session with an Orka Agent. An optional message is sent as the first turn; for a one-shot Task use kmx run.", Args: usageArgs(1, -1, usage)}
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "show chat WORKING and TIMING details")
 	cmd.Flags().StringVar(&runtime, "runtime", "auto", "agent runtime: auto (detect the Orka Agent) or orka")
 	cmd.Flags().StringVar(&namespace, "namespace", "", "Orka Agent namespace (default: "+app.OrkaNamespace+")")
@@ -248,10 +247,10 @@ func newAgentChatCommand(state *commandState) *cobra.Command {
 	cmd.ValidArgsFunction = completeLiveAgents
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("session") {
-			return fmt.Errorf("--session is retired: Orka chat has no resumable server-side session; use kmx agent chat --namespace <ns> <name>")
+			return fmt.Errorf("--session is retired: Orka chat has no resumable server-side session; use kmx chat --namespace <ns> <name>")
 		}
 		if cmd.Flags().Changed("json") {
-			return fmt.Errorf("--json is retired: there is no raw A2A JSON equivalent for an existing Agent; use kmx agent chat --namespace <ns> <name> for interactive chat")
+			return fmt.Errorf("--json is retired: there is no raw A2A JSON equivalent for an existing Agent; use kmx chat --namespace <ns> <name> for interactive chat")
 		}
 		return usageArgs(1, -1, usage)(cmd, args)
 	}

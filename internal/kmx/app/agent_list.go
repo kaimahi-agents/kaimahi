@@ -77,7 +77,7 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	if len(rows) == 0 {
 		fmt.Fprintln(a.Out, "  none")
 		a.notef("  Nothing in %s. `%s` makes one.", namespace,
-			a.operationCommand("agent", "create", "<name>", "--namespace", namespace))
+			a.operationCommand("create", "<name>", "--namespace", namespace))
 		return nil
 	}
 	humanTable(a.Out, orkaAgentColumns, rows)
@@ -120,7 +120,7 @@ func agentListFormat(output string) (string, error) {
 		format = "table"
 	}
 	if format != "table" && format != "json" && format != "yaml" {
-		return "", fmt.Errorf("agent list output %q is not supported — use table, json, or yaml", output)
+		return "", fmt.Errorf("orka list output %q is not supported — use table, json, or yaml", output)
 	}
 	return format, nil
 }

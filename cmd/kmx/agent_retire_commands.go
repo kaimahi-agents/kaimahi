@@ -10,7 +10,7 @@ func newAgentRetireCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "retire <bundle-dir>",
 		Short: "Remove or release a bundle's owned Agent and rendered Provider on a target",
-		Args:  usageArgs(1, 1, "kmx agent retire <bundle-dir> [--to-context <ctx>] [--to-namespace <ns>] [--plan] [--delete-adopted]"),
+		Args:  usageArgs(1, 1, "kmx bundle retire <bundle-dir> [--to-context <ctx>] [--to-namespace <ns>] [--plan] [--delete-adopted]"),
 	}
 	cmd.Flags().StringVar(&opt.ToContext, "to-context", "", "destination context (default: bundle's remembered target)")
 	cmd.Flags().StringVar(&opt.ToNamespace, "to-namespace", "", "destination namespace (default: remembered or uniquely recorded namespace, else orka-system)")

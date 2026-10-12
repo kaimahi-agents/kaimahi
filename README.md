@@ -44,13 +44,22 @@ This prepares local kind, Ollama and Orka, then prints a fresh Task's answer; fo
 
 `kmx quickstart --interactive` guides custom agent and model choices.
 
-`kmx agent create` defaults to Orka and writes an editable bundle on a prepared target.
+`kmx create` defaults to live Orka authoring and writes an editable bundle on a prepared target; explicit `--workspace` authors offline.
 
-`kmx agent lift` moves that bundle to a prepared destination, with Orka as the default.
+`kmx run` runs one Task against a deployed Orka Agent, with answer-only stdout; select it with `--agent <name>` and supply `--prompt <text>`.
 
-`kmx agent status` reports the deployed revision, readiness, drift and available evaluation evidence.
+`kmx chat` opens an interactive session with a named live Orka Agent; run and chat do not execute a local workspace.
 
-`kmx agent evaluate` tests the deployed Orka revision or an explicitly selected agentsessions host.
+`kmx push` publishes an already-authored [native-Orka workspace](docs/suite-workspace.md) using `--workspace DIR REF`, not a PortableAgent bundle. It neither evaluates nor deploys; explicit `--workspace` is currently required.
+
+`kmx bundle lift` moves that bundle to a prepared destination, with Orka as the default.
+
+`kmx bundle status` reports the deployed revision, readiness, drift and available evaluation evidence.
+
+`kmx bundle evaluate` tests the deployed Orka revision or an explicitly selected agentsessions host.
+
+These spellings require a current development build; tagged v0.5.1 still uses
+`kmx agent`. See [command migration](CHANGELOG.md#upgrading).
 
 Follow the [bundle lift guide](docs/agent-lift.md) for target preparation, receipts and evaluation.
 

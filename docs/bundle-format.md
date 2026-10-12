@@ -13,10 +13,10 @@ These inputs are not interchangeable:
 
 | Format | Files / example | Use it with |
 |---|---|---|
-| Portable YAML bundle | `agents/my-agent/agent.yaml`, `bindings.yaml` and `eval/*.yaml`, created by `kmx agent create` | `kmx agent lift`, `status` and `evaluate`. The [CI eval action](agent-lift.md#run-evals-in-ci) takes this bundle directory, not an image. Runtime-specific limits still apply. |
+| Portable YAML bundle | `agents/my-agent/agent.yaml`, `bindings.yaml` and `eval/*.yaml`, created by `kmx create` | `kmx bundle lift`, `bundle status` and `bundle evaluate`. The [CI eval action](agent-lift.md#run-evals-in-ci) takes this bundle directory, not an image. Runtime-specific limits still apply. |
 | Extracted AgentSuite definition | `agentsuite.json` and referenced JSON manifests, such as the tool-free incident-analyst fixture | `kmx suite validate`, `push` and `pull`. Use incident-analyst for the [experimental build example](kmx.md#experimental-agentsuite-image-build). |
 | AgentSuite OCI artifact / layout | The packaged definition distributed by `kmx suite push` and recovered by `kmx suite pull` | Distribution and offline format validation. This is not a runnable sandbox image. See the [AgentSuite specification](../agentsuite/spec.md). |
-| Sandbox image archive | `incident-analyst.oci.tar`, produced by the experimental `kmx suite build` example | Docker import and container serving under that example's image-store and inference prerequisites. It is not the YAML input to `agent evaluate` or the CI action, and current builder output is not AgentSuite-conformant. |
+| Sandbox image archive | `incident-analyst.oci.tar`, produced by the experimental `kmx suite build` example | Docker import and container serving under that example's image-store and inference prerequisites. It is not the YAML input to `bundle evaluate` or the CI action, and current builder output is not AgentSuite-conformant. |
 
 The specification's [coordinator-workers fixture](../agentsuite/testdata/coordinator-workers/)
 illustrates invocation edges. It is a format-validation example, not a build
@@ -76,7 +76,7 @@ reports `portable agent document: extensions must contain exactly one of
 
 ## Private recorded-session manifests
 
-`agent eval from-sessions` writes an external mode-0600 JSON manifest, not a
+`eval from-sessions` writes an external mode-0600 JSON manifest, not a
 portable bundle file. The strict contract uses `schemaVersion: 1`,
 `policy: single-turn-text-chat-v1`, and `cases`: each has a stable ID, authored
 `expectContains`/`assertions`, `assertionsDigest`, and `source` with `store`,
@@ -118,7 +118,7 @@ The **rendered digest** instead identifies the exact ordered rendered documents
 byte length. It depends on target bindings and the kmx renderer. An upgraded
 kmx can produce different output—and a different rendered digest—from the
 same `agent.yaml` against the same target; the portable digest still matches.
-Orka status compares the live Provider and Agent against today's target-specific
+Orka `bundle status` compares the live Provider and Agent against today's target-specific
 rendering using a server dry-run. With matching ownership markers it reports
 `drifted` and changed field **paths** when fields differ, or `in sync` when
 both fields and markers agree. A stale rendered-digest ownership marker on an
@@ -211,7 +211,7 @@ judge identity makes diff incomplete/nonzero, not a fix/regression, and valid
 comparable rows report both scores. Readability is not a general
 migration or cross-version compatibility promise for local evidence.
 
-Orka status skips malformed deployment receipts and reports `none` for evaluation
+Orka `bundle status` skips malformed deployment receipts and reports `none` for evaluation
 receipts with invalid JSON shape or mismatched target identity or digests.
 V2 receipts require valid per-case assertion and judge evidence even for
 recorded `fail` and `unknown` outcomes. A claimed evaluation pass additionally

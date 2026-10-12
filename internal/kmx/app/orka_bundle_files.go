@@ -196,9 +196,9 @@ func writeOrkaBundle(path string, agent, bindings []byte) error {
 }
 
 // exampleEvaluationCase is the one case a new bundle starts with. It is
-// deliberately trivial to satisfy, so a first `kmx agent evaluate` shows the
+// deliberately trivial to satisfy, so a first `kmx bundle evaluate` shows the
 // loop working before anyone writes a real case.
-const exampleEvaluationCase = `# One evaluation case for kmx agent evaluate. Each eval/*.yaml file is one
+const exampleEvaluationCase = `# One evaluation case for kmx bundle evaluate. Each eval/*.yaml file is one
 # case: kmx creates one Orka Task with this input against the deployed
 # revision, and the case passes when the Task succeeds and its answer
 # contains every expectContains string (exact, case-sensitive). Unknown

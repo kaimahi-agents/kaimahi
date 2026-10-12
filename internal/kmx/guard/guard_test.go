@@ -131,12 +131,12 @@ func TestRefusalHintNamesTheCommand(t *testing.T) {
 		Source:  config.SourceKubeCtx,
 		Action:  "create an agent",
 		Context: "aks-remote",
-		Command: "kmx agent create billing",
+		Command: "kmx create billing",
 	}, &out, nil)
 	if err == nil {
 		t.Fatal("want refusal")
 	}
-	if !strings.Contains(err.Error(), "KAIMAHI_CONFIRM=aks-remote kmx agent create billing") {
+	if !strings.Contains(err.Error(), "KAIMAHI_CONFIRM=aks-remote kmx create billing") {
 		t.Errorf("hint does not name the command: %v", err)
 	}
 }

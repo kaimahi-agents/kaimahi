@@ -12,12 +12,16 @@ evaluation and lift remain separate and unchanged.
 
 ## Create
 
+Root `create` still defaults to live authoring. Explicit `--workspace` selects
+this offline path; workspace discovery and default offline authoring are not
+implemented.
+
 ```sh
 mkdir my-agents && cd my-agents
 git init
 printf '%s\n' 'Answer briefly and in plain text.' > instructions.md
 
-kmx agent create greeter --workspace . \
+kmx create greeter --workspace . \
   --model qwen-3.5-2b --instructions ./instructions.md
 ```
 
@@ -44,8 +48,12 @@ reads are bounded, and credential-shaped content is refused.
 ## Publish
 
 ```sh
-kmx suite push --workspace . ghcr.io/me/my-agents:v1
+kmx push --workspace . ghcr.io/me/my-agents:v1
 ```
+
+Root `push [--workspace DIR] REF` currently requires explicit `--workspace`;
+bare push refuses with that hint rather than discovering a workspace. It replaces
+`suite push --workspace`, which is no longer accepted.
 
 The command resolves an allowlisted snapshot into the existing AgentSuite format,
 validates it, prepares a private local OCI layout under KMX state, then copies
@@ -97,7 +105,7 @@ Unsigned provenance is informational, not evaluation or promotion evidence.
 For offline transfer, the local target's parent directory must exist:
 
 ```sh
-kmx suite push --workspace . --to-layout ../suite-layout my-agents:v1
+kmx push --workspace . --to-layout ../suite-layout my-agents:v1
 kmx suite pull my-agents:v1 --from-layout ../suite-layout --output ../extracted
 kmx suite validate ../extracted
 ```
@@ -110,7 +118,7 @@ references from successful publications remain intact. An interrupted writer can
 leave a sibling lock directory: remove it only after verifying the publisher has
 stopped. Registry tag preflight remains separately non-atomic.
 Existing extracted-directory transfer remains `suite push DIRECTORY REFERENCE`;
-`--workspace` instead takes only one positional destination reference.
+root `push --workspace DIR` instead takes only one positional destination reference.
 
 Internally, verified packaged native inputs can be loaded without consulting live
 source or the preparation record, and publication can require an expected OCI

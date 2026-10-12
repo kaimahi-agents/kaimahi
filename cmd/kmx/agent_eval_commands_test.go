@@ -37,7 +37,7 @@ func TestAgentEvalDiffOfflineCLI(t *testing.T) {
 			deps, _ := testDependencies(&out, &diagnostics)
 			calls := 0
 			deps.loadConfig = func(string, string) (*config.Config, error) { calls++; return nil, errors.New("PRIVATE_CONFIG_CANARY") }
-			err := execute([]string{"agent", "eval", "diff", before, after}, deps)
+			err := execute([]string{"eval", "diff", before, after}, deps)
 			if calls != 0 || (err != nil) != tc.failure || !strings.Contains(out.String(), tc.want) {
 				t.Fatalf("calls=%d err=%v out=%s diagnostics=%s", calls, err, out.String(), diagnostics.String())
 			}
@@ -65,15 +65,15 @@ func fmtError(err error) string {
 }
 
 func TestAgentEvalDiffArgumentsAndEvaluatePreserved(t *testing.T) {
-	for _, args := range [][]string{{"agent", "eval", "diff"}, {"agent", "eval", "diff", "one"}, {"agent", "eval", "diff", "one", "two", "three"}} {
+	for _, args := range [][]string{{"eval", "diff"}, {"eval", "diff", "one"}, {"eval", "diff", "one", "two", "three"}} {
 		var out bytes.Buffer
 		deps, loads := testDependencies(&out, &out)
 		err := execute(args, deps)
-		if err == nil || !strings.Contains(err.Error(), "kmx agent eval diff") || *loads != 0 {
+		if err == nil || !strings.Contains(err.Error(), "kmx eval diff") || *loads != 0 {
 			t.Fatalf("%v loads=%d err=%v", args, *loads, err)
 		}
 	}
-	for _, args := range [][]string{{"agent", "eval", "--help"}, {"agent", "eval", "diff", "--help"}, {"agent", "evaluate", "--help"}} {
+	for _, args := range [][]string{{"eval", "--help"}, {"eval", "diff", "--help"}, {"bundle", "evaluate", "--help"}} {
 		var out bytes.Buffer
 		deps, loads := testDependencies(&out, &out)
 		if err := execute(args, deps); err != nil || *loads != 0 {
@@ -82,7 +82,7 @@ func TestAgentEvalDiffArgumentsAndEvaluatePreserved(t *testing.T) {
 		if args[1] == "evaluate" && !strings.Contains(out.String(), "--case-timeout") {
 			t.Fatal("existing evaluate command changed")
 		}
-		if args[1] == "eval" && !strings.Contains(out.String(), "diff") {
+		if args[0] == "eval" && !strings.Contains(out.String(), "diff") {
 			t.Fatal("diff missing from help")
 		}
 	}

@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"oras.land/oras-go/v2/registry/remote/errcode"
 )
 
 func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
@@ -22,7 +24,7 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 	t.Setenv("CONTAINER_ENGINE", "not-an-engine")
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"agent", "create", "greeter", "--workspace", root, "--instructions", instructions, "--model", "qwen-3.5-2b"}, deps); err != nil {
+	if err := execute([]string{"create", "greeter", "--workspace", root, "--instructions", instructions, "--model", "qwen-3.5-2b"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if *loads != 0 {
@@ -36,15 +38,20 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 	}
 	layout := filepath.Join(t.TempDir(), "layout")
 	out.Reset()
-	if err := execute([]string{"suite", "push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
+	prepared, err := workspace.Prepare(context.Background(), root, filepath.Join(t.TempDir(), "expected-cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := execute([]string{"push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	first := out.String()
-	if !strings.Contains(first, "sha256:") {
-		t.Fatalf("publication omitted suite identity: %s", first)
+	want := "Pushed native-Orka AgentSuite greeter to " + layout + " (" + prepared.Descriptor.Digest.String() + ")\nRequired member images: []\n"
+	if first != want || diagnostics.Len() != 0 {
+		t.Fatalf("publication changed output or identity: got %q want %q diagnostics=%q", first, want, &diagnostics)
 	}
 	out.Reset()
-	if err := execute([]string{"suite", "push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
+	if err := execute([]string{"push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != first {
@@ -73,7 +80,7 @@ func TestWorkspaceCreateRefusesModeConflictsBeforeConfigOrWrites(t *testing.T) {
 			root := t.TempDir()
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			args := []string{"agent", "create", "greeter", "--workspace", root, "--model", "qwen-3.5-2b", "--instructions", "missing-file", "--" + flag}
+			args := []string{"create", "greeter", "--workspace", root, "--model", "qwen-3.5-2b", "--instructions", "missing-file", "--" + flag}
 			if flag != "no-apply" && flag != "dry-run" {
 				args = append(args, "unused")
 			}
@@ -94,10 +101,10 @@ func TestWorkspaceCreateRefusesModeConflictsBeforeConfigOrWrites(t *testing.T) {
 
 func TestWorkspaceSelectorsRejectEmptyAndAmbiguousSource(t *testing.T) {
 	for _, args := range [][]string{
-		{"agent", "create", "greeter", "--workspace", ""},
-		{"agent", "create", "--workspace", "."},
-		{"suite", "push", "--workspace", "", "team:v1"},
-		{"suite", "push", "directory", "team:v1", "--workspace", "."},
+		{"create", "greeter", "--workspace", ""},
+		{"create", "--workspace", "."},
+		{"push", "--workspace", "", "team:v1"},
+		{"push", "directory", "team:v1", "--workspace", "."},
 	} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
@@ -143,15 +150,23 @@ func TestWorkspaceRegistryPushProvenanceControls(t *testing.T) {
 			}
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			args := append([]string{"suite", "push", "--workspace", root, ref, "--plain-http"}, tc.flags...)
+			args := append([]string{"push", "--workspace", root, ref, "--plain-http"}, tc.flags...)
 			err := execute(args, deps)
 			if tc.required {
 				if err == nil || !strings.Contains(err.Error(), "tag was not changed") {
 					t.Fatalf("required attachment failure: %v", err)
 				}
+				var response *errcode.ErrorResponse
+				if !errors.As(err, &response) || response.StatusCode != 405 {
+					t.Fatalf("root push lost registry error identity: %T %v", err, err)
+				}
 			} else {
 				if err != nil {
 					t.Fatal(err)
+				}
+				want := "Pushed native-Orka AgentSuite greeter to " + ref + " (" + prepared.Descriptor.Digest.String() + ")\nRequired member images: []\nPin this AgentSuite: " + strings.TrimSuffix(ref, ":prepared") + "@" + prepared.Descriptor.Digest.String() + "\n"
+				if out.String() != want {
+					t.Fatalf("registry output/identity changed: got %q want %q", &out, want)
 				}
 				if got := strings.Contains(diagnostics.String(), "provenance was not attached"); got != tc.warning {
 					t.Fatalf("default/opt-out warning = %q, want %t", diagnostics.String(), tc.warning)
@@ -174,7 +189,7 @@ func TestWorkspaceProvenanceFlagsRefuseConflictsBeforePreparation(t *testing.T) 
 		t.Setenv("KMX_HOME", state)
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
-		args := append([]string{"suite", "push", "--workspace", "missing-workspace", "team:v1"}, flags...)
+		args := append([]string{"push", "--workspace", "missing-workspace", "team:v1"}, flags...)
 		if err := execute(args, deps); err == nil || !strings.Contains(err.Error(), "provenance") {
 			t.Fatalf("invalid provenance flags: %v", err)
 		}
@@ -201,7 +216,7 @@ func TestWorkspacePathsRefuseCredentialShapesWithoutDisclosure(t *testing.T) {
 			}
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			err := execute([]string{"agent", "create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", input}, deps)
+			err := execute([]string{"create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", input}, deps)
 			if err == nil || strings.Contains(err.Error(), credential) || strings.Contains(out.String(), credential) || strings.Contains(diagnostics.String(), credential) {
 				t.Fatal("credential-shaped path was accepted or disclosed")
 			}
@@ -228,14 +243,14 @@ func TestWorkspaceProfileParseErrorsDoNotDiscloseContent(t *testing.T) {
 		t.Setenv("KMX_HOME", t.TempDir())
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
-		if err := execute([]string{"agent", "create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", input}, deps); err != nil {
+		if err := execute([]string{"create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", input}, deps); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(root, "build-profiles/default.json"), []byte(profile), 0600); err != nil {
 			t.Fatal(err)
 		}
 		out.Reset()
-		err := execute([]string{"suite", "push", "--workspace", root, "--to-layout", filepath.Join(t.TempDir(), "published"), "team:v1"}, deps)
+		err := execute([]string{"push", "--workspace", root, "--to-layout", filepath.Join(t.TempDir(), "published"), "team:v1"}, deps)
 		if err == nil || !strings.Contains(err.Error(), "profile") {
 			t.Fatal("invalid profile should refuse with a profile diagnostic")
 		}
@@ -250,9 +265,9 @@ func TestWorkspaceProfileParseErrorsDoNotDiscloseContent(t *testing.T) {
 
 func TestWorkspaceHelpAndCompletionHaveNoOperationalEffects(t *testing.T) {
 	for _, args := range [][]string{
-		{"agent", "create", "--help"}, {"suite", "push", "--help"},
-		{"__complete", "agent", "create", "--workspace", ""},
-		{"__complete", "suite", "push", "--workspace", ""},
+		{"create", "--help"}, {"push", "--help"}, {"suite", "push", "--help"},
+		{"__complete", "create", "--workspace", ""},
+		{"__complete", "push", "--workspace", ""},
 	} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)

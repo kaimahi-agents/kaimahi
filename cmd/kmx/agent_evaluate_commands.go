@@ -34,7 +34,7 @@ func newAgentEvaluateCommand(state *commandState) *cobra.Command {
 			"Reference runs print verdicts, IDs and digests only; --show-content explicitly prints answers\n" +
 			"and judge reasoning. Missing/expired/unsupported sources are unknown, never skipped.\n" +
 			"Exits non-zero unless every case passed. Sessions receipts do not satisfy lift gates yet.",
-		Args: usageArgs(1, 1, "kmx agent evaluate <bundle-dir> [--to-context <ctx> | --sessions <host:port>] [--case <id>]"),
+		Args: usageArgs(1, 1, "kmx bundle evaluate <bundle-dir> [--to-context <ctx> | --sessions <host:port>] [--case <id>]"),
 	}
 	// --to-context, not --context, for the same reason as lift and status.
 	cmd.Flags().StringVar(&opt.ToContext, "to-context", "", "destination kubeconfig context (default: the bundle's remembered lift target)")

@@ -123,7 +123,7 @@ and reconcile the single named-policy RoleBinding. API failures, indeterminate
 reviews and custom policies do not offer this repair; investigate them first.
 On an unknown/foreign Orka chart or an unreadable controller/account, verify
 the installation and chart version first;
-kmx will not infer a worker name. Then retry `kmx agent lift --plan` before
+kmx will not infer a worker name. Then retry `kmx bundle lift --plan` before
 deploying. Do not grant general policy-list access.
 
 ## Verification

@@ -394,7 +394,7 @@ func TestConsoleBundlePaneOpensScrollsAndCloses(t *testing.T) {
 		t.Fatalf("b did not open a loaded demo pane: %+v", m.bundle)
 	}
 	view := ansi.Strip(m.View().Content)
-	for _, want := range []string{"BUNDLE · assistant", "State: behind", "What kmx agent lift would change"} {
+	for _, want := range []string{"BUNDLE · assistant", "State: behind", "What kmx bundle lift would change"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the pane omits %q:\n%s", want, view)
 		}
@@ -469,7 +469,7 @@ func TestConsoleBundleDropsAResultForAPaneNoLongerOpen(t *testing.T) {
 func TestConsoleBundleExplainsEveryState(t *testing.T) {
 	for state, want := range map[string]string{
 		bundleStateInSync:      "What is running matches",
-		bundleStateBehind:      "What kmx agent lift would change",
+		bundleStateBehind:      "What kmx bundle lift would change",
 		bundleStateDrifted:     "Values are not shown",
 		bundleStateNotDeployed: "Lift the bundle to deploy it",
 		bundleStateForeign:     "belong to a different bundle",

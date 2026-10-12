@@ -7,13 +7,13 @@ For work **on** Kaimahi; contribution/PR expectations are in
 ## Direction and current implementation
 
 **Orka remains the first-class/default platform.** Kaimahi tooling helps
-agents get onto it. `kmx agent create` without a runtime flag authors native
+agents get onto it. `kmx create` without a runtime flag authors native
 Orka Provider + Agent resources with an optional Task. The explicit kagent
 path is intentionally narrower: create against preinstalled exact v0.10.2,
 and Go declarative bundle lift/status against preinstalled exact v0.10.3.
 There is no installer, upgrade, discovery, standalone chat or evaluation.
 It is not a conversion to Orka; see the
-[safety contract](kmx.md#kmx-agent-create). `orka.harness.v2` is outside the
+[safety contract](kmx.md#kmx-create). `orka.harness.v2` is outside the
 direction. Runtimes and harnesses own execution, enforcement and model access.
 
 Plane CLI administration, model overlays, credential exchange and workload
@@ -122,15 +122,16 @@ export KIND_CLUSTER=dev-local
 export KUBE_CTX=kind-dev-local
 bin/kmx quickstart
 bin/kmx status
-bin/kmx agent chat --namespace orka-system hello-world-agent
+bin/kmx chat --namespace orka-system hello-world-agent
 bin/kmx local down
 ```
 
 A bare `bin/kmx local up` installs the runtime without an Agent: kind, Ollama, the
 model and pinned Orka with its keyless `local` Provider. Author your own Agent
-with `bin/kmx agent create`, or use `bin/kmx quickstart --interactive` for guided
+with `bin/kmx create`, or use `bin/kmx quickstart --interactive` for guided
 creation. `kmx status` is the Orka-only runtime report; bundle-aware
-`agent status` is a separate command.
+`bundle status <bundle-dir>` is a separate command. `orka status` shares root
+status's table-only runtime contract; no root bundle or suite observer is added.
 
 KMX never installs or upgrades kagent. Explicit create targets exact v0.10.2;
 explicit bundle lift/status uses `--runtime kagent --runtime-version v0.10.3`,
@@ -166,7 +167,7 @@ cancelled shard is never an intentional skip.
 `e2e-eval-loop` is a required clusterless, secret-free evaluation boundary on
 non-docs-only changes. It runs digest-pinned AIKit Qwen3.5-2B on CPU and builds
 `agentsessionsd` at the module revision pinned by KMX. Through that sessions
-endpoint, `kmx agent evaluate` runs the tiny public bundle in
+endpoint, `kmx bundle evaluate` runs the tiny public bundle in
 `internal/kmx/app/testdata/live-eval-loop`: both cases must pass, containing
 the literal substrings `Paris` and `4` respectively, not exact answer wording.
 The capital case also exercises a Go RE2 pattern and `notContains` assertion.
@@ -189,7 +190,7 @@ happy cases prove general 2B judge quality. The proof prints safely rendered
 public fixture reasoning and saves actual payload-free rows in `judge-proof.json`.
 
 The shard then stops the model provider, keeps the daemon and journal alive, and
-requires `kmx agent verify` to report every case equivalent with zero model
+requires `kmx bundle verify` to report every case equivalent with zero model
 calls through local-reference replay.
 
 The job uses the same [eval action](../.github/actions/kmx-eval/action.yml)
@@ -353,6 +354,6 @@ OCI pulls and do not use these mirrors.
   PEP 604 annotations. Ignore rules such as `bin/` match at every depth; verify
   tracked membership and beware newly unignored files entering `stash -u`.
 
-Use `kmx orka status`, `kmx agent status`, Agent/Provider/Task conditions and
+Use `kmx orka status`, `kmx bundle status <bundle-dir>`, Agent/Provider/Task conditions and
 context-pinned controller logs. Never paste live infrastructure IDs into
 evidence: scan shapes and manually redact names too.

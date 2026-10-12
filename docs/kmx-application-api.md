@@ -183,9 +183,9 @@ omit or duplicate a composition. The result also refuses suites requiring
 standalone ToolProvider images because that output class is not yet represented.
 
 The native-Orka suite profile introduced by #437 declares `requiredImages: []`
-and can be validated and transferred without member images; #442 is proving its
-image-free evaluation path. That profile cannot reach this alpha `Build`/`Push`
-workflow. Before this becomes the general suite workflow, completeness must be
+and can be validated and transferred without member images; packaged image-free
+evaluation is not yet implemented in the installed CLI. That profile cannot
+reach this alpha `Build`/`Push` workflow. Before this becomes the general suite workflow, completeness must be
 derived from an explicit execution profile's required artifacts, including zero
 images, rather than inferred from composition count alone.
 
@@ -395,7 +395,7 @@ Potential CLI adapters are:
 | `kmx local up` / `kmx local down` | `AgentEnvironment` |
 | `kmx suite validate` | Conceptually `AgentSuites.Validate`; current command does not materialize the northbound result |
 | future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
-| `kmx agent lift/status/retire` | `AgentDeployments` |
+| `kmx bundle lift/status/retire` | `AgentDeployments` |
 
 Run/cancel, quickstart, durable progress streams, and network APIs remain
 deferred. Quickstart may eventually compose environment setup, direct revision

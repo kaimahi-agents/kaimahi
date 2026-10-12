@@ -73,7 +73,7 @@ func TestPlaneCommandsAreNotRegisteredOrDiscoverable(t *testing.T) {
 			}
 		}
 	}
-	want := []string{"agent", "completion", "console", "context", "help", "local", "orka", "quickstart", "status", "suite", "targets", "task", "version"}
+	want := []string{"bundle", "chat", "completion", "console", "context", "create", "eval", "help", "local", "orka", "push", "quickstart", "run", "status", "suite", "targets", "task", "version"}
 	sort.Strings(want)
 	for _, args := range [][]string{{}, {"--help"}, {"help"}, {"__complete", ""}} {
 		out.Reset()

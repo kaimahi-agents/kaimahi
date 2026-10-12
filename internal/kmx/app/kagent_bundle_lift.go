@@ -195,7 +195,7 @@ func (a *App) liftKagentBundle(opt LiftAgentBundleOptions) error {
 	ctx := worker.operationContext()
 	// Consent precedes installation reads and even dry-run admission calls.
 	guardOpt := CreateOptions{Name: kagentObjectName(targetBundle.Agent), Namespace: kagentObjectNamespace(targetBundle.Agent), DryRun: opt.Plan}
-	args := []string{"agent", "lift", opt.BundleDir, "--runtime", "kagent", "--runtime-version", "v0.10.3", "--to-context", opt.ToContext, "--to-namespace", guardOpt.Namespace}
+	args := []string{"bundle", "lift", opt.BundleDir, "--runtime", "kagent", "--runtime-version", "v0.10.3", "--to-context", opt.ToContext, "--to-namespace", guardOpt.Namespace}
 	if opt.Bindings != "" {
 		args = append(args, "--bindings", opt.Bindings)
 	}

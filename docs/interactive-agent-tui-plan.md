@@ -176,13 +176,13 @@ over the inventory for the selected agent. It answers one question: is what is
 running the definition in Git, and if not, what is different?
 
 The pane does not compare anything itself. It asks the same report
-[`kmx agent status`](agent-lift.md) prints, for exactly the selected row's
+[`kmx bundle status`](agent-lift.md#checking-deployed-status) prints, for exactly the selected row's
 context, kubeconfig and namespace, and draws that target's state:
 
 | State | The pane shows |
 |---|---|
 | `in sync` | That the running definition matches `agent.yaml`. A match is not proof the agent answers. |
-| `behind` | What `kmx agent lift` would change: a diff of `agent.yaml` from the deployed commit to the working copy, including uncommitted edits, because the working copy is what lift reads. |
+| `behind` | What `kmx bundle lift` would change: a diff of `agent.yaml` from the deployed commit to the working copy, including uncommitted edits, because the working copy is what lift reads. |
 | `drifted` | The live field paths that changed after the last lift. Values are not shown. |
 | `not deployed`, `belongs to another bundle`, `target changed`, `unknown` | What the state means and what to do. `unknown` says plainly that it is not the same as in sync. |
 
@@ -201,7 +201,7 @@ a branch, so the full id is found again with status's own search.
 
 **Finding the bundle.** A console row is a live agent and does not record where
 its files are. The pane looks for `agents/<name>/agent.yaml`, where
-`kmx agent create` writes, relative to where the console was started;
+`kmx create` writes, relative to where the console was started;
 `--bundles <dir>` names another directory. With no bundle there, the pane says
 where it looked instead of guessing. A bundle there that defines a different
 agent is refused rather than compared.
@@ -254,7 +254,7 @@ Cloud provisioning and live agent deployment reuse existing operations; this
 feature's tests do not create Azure resources or prove a live AKS deployment.
 
 The bundle pane is tested against the same fake kubectl and golden bundle as
-`kmx agent status`, with real Git repositories for the behind diff (rooted
+`kmx bundle status`, with real Git repositories for the behind diff (rooted
 both at the bundle and above it, as in `<repo>/agents/<name>`), including
 uncommitted edits. Tests prove it writes nothing (including `.git/index`,
 under the condition in which git would otherwise refresh it), pins every read

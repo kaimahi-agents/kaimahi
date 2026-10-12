@@ -17,7 +17,9 @@ func newAgentEvalCommand() *cobra.Command {
 			"Exits nonzero for regressions, lost or missing evidence, changed sets, or incompatible runtime identities.\n" +
 			"A complete stable comparison or fixes can exit zero even when both evaluations failed.\n" +
 			"Legacy receipts are recognized but cannot establish assertion-level comparisons.",
-		Args: usageArgs(2, 2, "kmx agent eval diff <before.json> <after.json>"),
+		Args: usageArgs(2, 2, "kmx eval diff <before.json> <after.json>"),
+		// Keep helpers cluster-independent and no-inference when eval gains an operational hook.
+		PersistentPreRunE: validateContainerEngineFlag,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			return a.DiffAgentEvaluations(app.EvaluationDiffOptions{Before: args[0], After: args[1]})
@@ -33,7 +35,8 @@ func newAgentEvalCommand() *cobra.Command {
 			"Duplicates refuse the whole operation. No inference, recorded inputs or answers are exported.\n" +
 			"Case IDs combine the authored id with a stable source UID digest. References inherit source TTL.\n" +
 			"Keep manifests private; endpoint selection is not data-owner authorization.",
-		Args: usageArgs(1, 1000, "kmx agent eval from-sessions <session-uid>... --sessions <source> --assertions <case.yaml> --out <manifest.json>"),
+		Args:              usageArgs(1, 1000, "kmx eval from-sessions <session-uid>... --sessions <source> --assertions <case.yaml> --out <manifest.json>"),
+		PersistentPreRunE: validateContainerEngineFlag,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opt.SessionUIDs = args
 			a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr(), Run: &run.Runner{Context: cmd.Context()}}

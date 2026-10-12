@@ -20,10 +20,10 @@ go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
 JOURNEY = """`kmx quickstart` proves an answer.
 `kmx local up` provisions the runtime.
 `kmx quickstart --interactive` creates your own Agent.
-`kmx agent create` writes a bundle.
-`kmx agent lift` deploys it.
-`kmx agent status` inspects it.
-`kmx agent evaluate` tests its deployed revision.
+`kmx create` authors an agent.
+`kmx run` proves one Task answer.
+`kmx chat` opens an interactive session.
+`kmx push` publishes a prepared workspace.
 See the [bundle lift guide](docs/agent-lift.md).
 """
 GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
@@ -81,10 +81,10 @@ for label, literal in [
 for label, literal in [
     ("kmx local up", "`kmx local up`"),
     ("kmx quickstart --interactive", "`kmx quickstart --interactive`"),
-    ("kmx agent create", "`kmx agent create`"),
-    ("kmx agent lift", "`kmx agent lift`"),
-    ("kmx agent status", "`kmx agent status`"),
-    ("kmx agent evaluate", "`kmx agent evaluate`"),
+    ("kmx create", "`kmx create`"),
+    ("kmx run", "`kmx run`"),
+    ("kmx chat", "`kmx chat`"),
+    ("kmx push", "`kmx push`"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 CASES += [
@@ -98,7 +98,10 @@ CASES += [
     ("journey missing first block", GOOD.replace("```bash\n" + INSTALL + "```\n", ""), "Homebrew install is missing"),
     ("journey missing second block", GOOD.replace("```bash\nkmx quickstart\n```\n", ""), "kmx quickstart is missing"),
     ("journey commands in prose only", GOOD.replace("```bash\nkmx quickstart\n```\n", "kmx quickstart\n"), "kmx quickstart is missing"),
-    ("bundle commands out of order", GOOD.replace("`kmx agent create` writes a bundle.\n`kmx agent lift` deploys it.", "`kmx agent lift` deploys it.\n`kmx agent create` writes a bundle."), "kmx agent lift is missing"),
+    ("root commands out of order", GOOD.replace("`kmx create` authors an agent.\n`kmx run` proves one Task answer.", "`kmx run` proves one Task answer.\n`kmx create` authors an agent."), "kmx run is missing"),
+    ("removed agent group cannot replace root create", GOOD.replace("`kmx create`", "`kmx agent create`"), "kmx create is missing"),
+    ("pending packaged eval cannot replace root run", GOOD.replace("`kmx run`", "`kmx eval`"), "kmx run is missing"),
+    ("pending packaged lift cannot replace publication", GOOD.replace("`kmx push`", "`kmx lift`"), "kmx push is missing"),
     ("headings out of order", GOOD.replace("## Status\nLimitations.\n## Documentation\nLinks.", "## Documentation\nLinks.\n## Status\nLimitations."), "documentation heading is missing"),
     ("install routes out of order", GOOD.replace("brew install kaimahi-agents/tap/kmx\n# or\ncurl", "curl").replace("install.sh | sh\n# or\ngo install", "install.sh | sh\n# or\nbrew install kaimahi-agents/tap/kmx\n# or\ngo install"), "release installer is missing"),
     ("empty document", "", "ketu icon is missing"),

@@ -14,7 +14,7 @@ func newAgentLiftCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lift <bundle-dir>",
 		Short: "Lift an agent bundle: Orka reconcile or explicit Kagent create-only deployment",
-		Args:  usageArgs(1, 1, "kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name> [--to-namespace <ns>] [--plan]"),
+		Args:  usageArgs(1, 1, "kmx bundle lift <bundle-dir> --to-context <ctx> --inference provider:<name> [--to-namespace <ns>] [--plan]"),
 	}
 	cmd.Flags().StringVar(&opt.Runtime, "runtime", "", "runtime (default: orka; kagent requires exact --runtime-version)")
 	cmd.Flags().StringVar(&opt.RuntimeVersion, "runtime-version", "", "explicit runtime version (kagent: v0.10.3)")

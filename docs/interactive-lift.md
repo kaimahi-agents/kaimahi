@@ -3,10 +3,10 @@
 For the custom first journey, see [getting started](getting-started.md).
 From a live Orka chat, `/lift` opens the target picker. The lift action in
 `kmx console` uses the same interactive flow. For an Agent with a local bundle,
-both are interactive front ends to [`kmx agent lift`](agent-lift.md), not a
+both are interactive front ends to [`kmx bundle lift`](agent-lift.md), not a
 copy of the live Agent. They look for `agents/<name>/agent.yaml` under the
 working directory, or `<root>/<name>/agent.yaml` with `--bundles <root>` on
-`kmx console` or `kmx agent chat`. The bundle must name the
+`kmx console` or `kmx chat`. The bundle must name the
 selected Agent. An invalid or incomplete bundle stops the operation instead
 of falling back to a live copy.
 
@@ -18,7 +18,7 @@ plan shows the target identity and per-resource create/reuse/update/adopt or
 refusal decisions before the final confirmation. Confirming runs the same
 bundle reconciliation as the CLI, stamps ownership markers, writes the local
 receipt and remembers the destination. After success the console prints the
-equivalent `kmx agent lift agents/<name> --to-context <ctx> --inference
+equivalent `kmx bundle lift agents/<name> --to-context <ctx> --inference
 provider:<name>` command (with `--to-namespace` when needed), saves the Agent
 locations and connects chat to the destination. Send a new message to verify
 it answers; a successful lift alone does not prove an answer.
@@ -42,7 +42,7 @@ Agent to provision Foundry.
 If no local bundle directory exists, `/lift` explicitly labels the fallback
 as a **live Agent copy**. This copies the source Agent's configuration and can
 prepare inference, but writes no bundle ownership markers or lift receipt:
-`kmx agent status` and `kmx agent evaluate` will not track that destination.
+`kmx bundle status` and `kmx bundle evaluate` will not track that destination.
 Capture a bundle separately before using those commands. An existing but
 invalid bundle never selects this route.
 
@@ -160,10 +160,10 @@ Agent, waiting for each to become Ready.
 Existing matching Agent and Provider configurations are reused during lift.
 Comparison uses a server-side dry-run replace to account for API defaults; no
 replacement is applied. Different specifications and terminating resources are
-reported as conflicts. Ordinary online Orka `agent create` instead reconciles
+reported as conflicts. Ordinary online Orka `create` instead reconciles
 bundle-owned resources and can adopt identical unmarked objects; conflicting
 objects and local artifacts are still refused. See the
-[create contract](kmx.md#kmx-agent-create) for rerun, dry-run and Task rules.
+[create contract](kmx.md#kmx-create) for rerun, dry-run and Task rules.
 The operation does not create AKS clusters. `kmx aks up` is the separate AKS provisioning
 workflow: it installs Orka with optional Azure monitoring add-ons, not a model
 plane. Use `kmx aks down` for its recorded ownership teardown; root AKS lift

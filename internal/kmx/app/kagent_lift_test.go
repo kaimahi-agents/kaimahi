@@ -219,11 +219,11 @@ func TestKagentLiftConsentRetryPreservesBundleInputs(t *testing.T) {
 			}
 			opt.Plan = plan
 			err := a.LiftAgentBundle(opt)
-			want := "KAIMAHI_CONFIRM=kind-test kmx --context kind-test agent lift " + opt.BundleDir + " --runtime kagent --runtime-version v0.10.3 --to-context kind-test --to-namespace agents --bindings '" + opt.Bindings + "'"
+			want := "KAIMAHI_CONFIRM=kind-test kmx --context kind-test bundle lift " + opt.BundleDir + " --runtime kagent --runtime-version v0.10.3 --to-context kind-test --to-namespace agents --bindings '" + opt.Bindings + "'"
 			if plan {
 				want += " --plan"
 			}
-			if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "agent create") {
+			if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), " create ") {
 				t.Fatalf("consent retry lost the explicit bundle operation: %v; want %s", err, want)
 			}
 			calls := kagentCalls(t, dir)
@@ -237,9 +237,9 @@ func TestKagentLiftConsentRetryPreservesBundleInputs(t *testing.T) {
 func TestKagentCreateConsentRetryRemainsPromptFree(t *testing.T) {
 	a, opt, _, diagnostics, dir := kagentCreateFixture(t, "remote-context")
 	opt.Task = "private task must not be echoed"
-	a.InvocationCommand = "kmx agent create sample --task " + opt.Task
+	a.InvocationCommand = "kmx create sample --task " + opt.Task
 	err := a.CreateAgent(opt)
-	if err == nil || !strings.Contains(err.Error(), "KAIMAHI_CONFIRM=kind-test kmx --context kind-test agent create sample --runtime kagent") {
+	if err == nil || !strings.Contains(err.Error(), "KAIMAHI_CONFIRM=kind-test kmx --context kind-test create sample --runtime kagent") {
 		t.Fatalf("historical create consent retry changed: %v", err)
 	}
 	if strings.Contains(err.Error(), opt.Task) || strings.Contains(diagnostics.String(), opt.Task) {

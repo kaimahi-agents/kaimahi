@@ -148,135 +148,6 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		return nil
 	}
 
-	var target, pushWorkspace string
-	var pushPlainHTTP, pushForce, pushProvenance, pushRequireProvenance bool
-	push := &cobra.Command{
-		Use:   "push <directory> <reference>",
-		Short: "Push an extracted AgentSuite to an OCI layout or registry",
-		Long: "Push an extracted AgentSuite to an OCI registry, or use --to-layout for a local OCI image layout.\n\n" +
-			"With --workspace <directory>, prepare one native-Orka member and its authored cases, then copy that exact OCI graph. Pass only the destination reference as a positional argument. No member images are required; this does not deploy or evaluate an Agent.\n\n" +
-			"Local OCI layout publication refuses competing KMX writers before opening the destination. After an interrupted publication, inspect any reported writer lock and remove it only when no publisher is running.\n\n" +
-			"Registry authentication is read from the standard Docker credential store for HTTPS and loopback HTTP.\n" +
-			"With --plain-http, non-loopback registries are unauthenticated; auth challenges are refused.\n" +
-			"Credentials are never sent over HTTP to non-loopback registries or token endpoints.\n\n" +
-			"An existing registry tag with the same digest is a no-op, except that provenance is attached if none is visible;\n" +
-			"replacing a different digest requires --force. The tag preflight check is NOT ATOMIC against concurrent pushers.\n\n" +
-			"A registry push attaches unsigned SLSA provenance as an OCI referrer of the suite manifest before moving the tag.\n" +
-			"It records the kmx version and, when every packed file (or selected workspace input) matches HEAD, the Git commit and path, so anyone can\n" +
-			"check out, repack and compare digests. It is a claim, not a signature: anyone with push access can attach one.\n" +
-			"Sign the suite digest where you push, for example in CI. An attach failure is a warning unless\n" +
-			"--require-provenance is set. Registries without the referrers API also get a sha256-<digest> index tag.\n" +
-			"Local layouts get none: a conformant AgentSuite layout holds exactly one manifest.",
-		Example: "  kmx suite push ./suite registry.example.com/team:v1\n" +
-			"  kmx suite push ./suite --to-layout ./layout agentsuites/team:v1",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("workspace") {
-				if strings.TrimSpace(pushWorkspace) == "" || len(args) != 1 {
-					return fmt.Errorf("workspace push requires non-empty --workspace and exactly one destination reference")
-				}
-				if state.contextFlag != "" {
-					return fmt.Errorf("--context cannot be used with --workspace")
-				}
-				if cmd.Flags().Changed("container-engine") {
-					return fmt.Errorf("--container-engine cannot be used with --workspace")
-				}
-				return nil
-			}
-			return usageArgs(2, 2, "kmx suite push <directory> [--to-layout <layout>] [--plain-http] [--force] [--provenance=false] [--require-provenance] <reference>")(cmd, args)
-		},
-	}
-	push.Flags().StringVar(&pushWorkspace, "workspace", "", "prepare and publish the exact native-Orka suite from this workspace")
-	_ = push.MarkFlagDirname("workspace")
-	push.Flags().StringVar(&target, "to-layout", "", "local OCI image-layout target directory")
-	push.Flags().BoolVar(&pushPlainHTTP, "plain-http", false, "use HTTP instead of HTTPS for a registry target")
-	push.Flags().BoolVar(&pushForce, "force", false, "allow replacing a registry tag with a different digest (non-atomic preflight)")
-	push.Flags().BoolVar(&pushProvenance, "provenance", true, "attach an unsigned provenance referrer to a registry push")
-	push.Flags().BoolVar(&pushRequireProvenance, "require-provenance", false, "fail without moving the tag if provenance cannot be attached")
-	_ = push.MarkFlagDirname("to-layout")
-	push.RunE = func(cmd *cobra.Command, args []string) error {
-		a := &app.App{Out: cmd.OutOrStdout()}
-		var result agentsuite.PushResult
-		var err error
-		if pushRequireProvenance && !pushProvenance {
-			return fmt.Errorf("--require-provenance cannot be used with --provenance=false")
-		}
-		provenance := app.SuitePushProvenance{Enabled: pushProvenance, Require: pushRequireProvenance}
-		if pushProvenance {
-			info, ok := state.deps.buildInfo()
-			if builderVersion := version.Resolve(info, ok).Version; builderVersion != version.Unknown {
-				provenance.BuilderVersion = builderVersion
-			}
-		}
-		if cmd.Flags().Changed("to-layout") {
-			if target == "" {
-				return fmt.Errorf("--to-layout cannot be empty")
-			}
-			if pushPlainHTTP {
-				return fmt.Errorf("--plain-http cannot be used with --to-layout")
-			}
-			if pushForce {
-				return fmt.Errorf("--force cannot be used with --to-layout")
-			}
-			if cmd.Flags().Changed("provenance") || pushRequireProvenance {
-				return fmt.Errorf("--provenance and --require-provenance cannot be used with --to-layout")
-			}
-		}
-		if cmd.Flags().Changed("workspace") {
-			result, err := a.PushSuiteWorkspace(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance)
-			if err != nil {
-				return &suiteDiagnosticError{err}
-			}
-			if target == "" {
-				return printPushedProvenance(cmd, result)
-			}
-			return nil
-		}
-		if cmd.Flags().Changed("to-layout") {
-			result, err = a.PushSuite(cmd.Context(), args[0], target, args[1])
-		} else {
-			result, err = a.PushSuiteRegistry(cmd.Context(), args[0], args[1], pushPlainHTTP, pushForce, provenance)
-		}
-		if err != nil {
-			return &suiteDiagnosticError{err}
-		}
-		if target == "" {
-			if _, err := fmt.Fprintf(
-				cmd.OutOrStdout(),
-				"Pushed AgentSuite %s to %s (%s)\n",
-				result.Report.Name,
-				result.Reference,
-				result.Descriptor.Digest,
-			); err != nil {
-				return err
-			}
-			return printPushedProvenance(cmd, result)
-		}
-		if result.Updated {
-			if _, err := fmt.Fprintf(
-				cmd.OutOrStdout(),
-				"Updated existing local OCI layout %s; unrelated references were preserved\n",
-				result.Path,
-			); err != nil {
-				return err
-			}
-		} else {
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Created local OCI layout %s\n", result.Path); err != nil {
-				return err
-			}
-		}
-		if _, err := fmt.Fprintf(
-			cmd.OutOrStdout(),
-			"Pushed AgentSuite %s to %s as %s (%s)\n",
-			result.Report.Name,
-			result.Path,
-			result.Reference,
-			result.Descriptor.Digest,
-		); err != nil {
-			return err
-		}
-		return nil
-	}
-
 	var pullSource, pullOutput string
 	var pullPlainHTTP bool
 	pull := &cobra.Command{
@@ -345,8 +216,155 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		}
 		return nil
 	}
-	group.AddCommand(build, diff, pull, push, validate)
+	group.AddCommand(build, diff, pull, newSuitePushCommand(state, false), validate)
 	return group
+}
+
+// newSuitePushCommand shares publication flags and safety contracts between
+// root workspace publication and the extracted-directory suite transfer.
+func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command {
+	var target, pushWorkspace string
+	var pushPlainHTTP, pushForce, pushProvenance, pushRequireProvenance bool
+	push := &cobra.Command{
+		Use:   "push <directory> <reference>",
+		Short: "Push an extracted AgentSuite to an OCI layout or registry",
+		Long: "Publish an AgentSuite to an OCI registry, or use --to-layout for a local OCI image layout.\n\n" +
+			"Local OCI layout publication refuses competing KMX writers before opening the destination. After an interrupted publication, inspect any reported writer lock and remove it only when no publisher is running.\n\n" +
+			"Registry authentication is read from the standard Docker credential store for HTTPS and loopback HTTP.\n" +
+			"With --plain-http, non-loopback registries are unauthenticated; auth challenges are refused.\n" +
+			"Credentials are never sent over HTTP to non-loopback registries or token endpoints.\n\n" +
+			"An existing registry tag with the same digest is a no-op, except that provenance is attached if none is visible;\n" +
+			"replacing a different digest requires --force. The tag preflight check is NOT ATOMIC against concurrent pushers.\n\n" +
+			"A registry push attaches unsigned SLSA provenance as an OCI referrer of the suite manifest before moving the tag.\n" +
+			"It records the kmx version and, when every packed file (or selected workspace input) matches HEAD, the Git commit and path, so anyone can\n" +
+			"check out, repack and compare digests. It is a claim, not a signature: anyone with push access can attach one.\n" +
+			"Sign the suite digest where you push, for example in CI. An attach failure is a warning unless\n" +
+			"--require-provenance is set. Registries without the referrers API also get a sha256-<digest> index tag.\n" +
+			"Local layouts get none: a conformant AgentSuite layout holds exactly one manifest.",
+		Example: "  kmx suite push ./suite registry.example.com/team:v1\n" +
+			"  kmx suite push ./suite --to-layout ./layout agentsuites/team:v1",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if workspaceMode {
+				if len(args) != 1 {
+					return fmt.Errorf("workspace push requires exactly one destination reference")
+				}
+				// Remove this selector refusal when the App handler supports workspace discovery.
+				if strings.TrimSpace(pushWorkspace) == "" {
+					return fmt.Errorf("workspace discovery is not available; use kmx push --workspace <directory> <reference>")
+				}
+				if state.contextFlag != "" {
+					return fmt.Errorf("--context cannot be used with --workspace")
+				}
+				if cmd.Flags().Changed("container-engine") {
+					return fmt.Errorf("--container-engine cannot be used with --workspace")
+				}
+				return nil
+			}
+			return usageArgs(2, 2, "kmx suite push <directory> [--to-layout <layout>] [--plain-http] [--force] [--provenance=false] [--require-provenance] <reference>")(cmd, args)
+		},
+	}
+	if workspaceMode {
+		push.Use = "push [--workspace <directory>] <reference>"
+		push.Short = "Push a native-Orka workspace to an OCI layout or registry"
+		push.Long = "Prepare one native-Orka workspace member and its authored cases, then copy that exact OCI graph.\n" +
+			"Pass only the destination reference as a positional argument. No member images are required; this does not deploy or evaluate an Agent.\n" +
+			"Workspace discovery is not available yet; select the source explicitly with --workspace <directory>.\n\n" + push.Long
+		push.Example = "  kmx push --workspace ./workspace registry.example.com/team:v1\n" +
+			"  kmx push --workspace ./workspace --to-layout ./layout agentsuites/team:v1"
+		push.Flags().StringVar(&pushWorkspace, "workspace", "", "prepare and publish the exact native-Orka suite from this workspace")
+		_ = push.MarkFlagDirname("workspace")
+	}
+	push.Flags().StringVar(&target, "to-layout", "", "local OCI image-layout target directory")
+	push.Flags().BoolVar(&pushPlainHTTP, "plain-http", false, "use HTTP instead of HTTPS for a registry target")
+	push.Flags().BoolVar(&pushForce, "force", false, "allow replacing a registry tag with a different digest (non-atomic preflight)")
+	push.Flags().BoolVar(&pushProvenance, "provenance", true, "attach an unsigned provenance referrer to a registry push")
+	push.Flags().BoolVar(&pushRequireProvenance, "require-provenance", false, "fail without moving the tag if provenance cannot be attached")
+	_ = push.MarkFlagDirname("to-layout")
+	push.RunE = func(cmd *cobra.Command, args []string) error {
+		a := &app.App{Out: cmd.OutOrStdout()}
+		var result agentsuite.PushResult
+		var err error
+		if pushRequireProvenance && !pushProvenance {
+			return fmt.Errorf("--require-provenance cannot be used with --provenance=false")
+		}
+		provenance := app.SuitePushProvenance{Enabled: pushProvenance, Require: pushRequireProvenance}
+		if pushProvenance {
+			info, ok := state.deps.buildInfo()
+			if builderVersion := version.Resolve(info, ok).Version; builderVersion != version.Unknown {
+				provenance.BuilderVersion = builderVersion
+			}
+		}
+		if cmd.Flags().Changed("to-layout") {
+			if target == "" {
+				return fmt.Errorf("--to-layout cannot be empty")
+			}
+			if pushPlainHTTP {
+				return fmt.Errorf("--plain-http cannot be used with --to-layout")
+			}
+			if pushForce {
+				return fmt.Errorf("--force cannot be used with --to-layout")
+			}
+			if cmd.Flags().Changed("provenance") || pushRequireProvenance {
+				return fmt.Errorf("--provenance and --require-provenance cannot be used with --to-layout")
+			}
+		}
+		if workspaceMode {
+			a.Err = cmd.ErrOrStderr()
+			result, err := a.PushSuiteWorkspace(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance)
+			if err != nil {
+				return &suiteDiagnosticError{err}
+			}
+			if target == "" {
+				return printPushedProvenance(cmd, result)
+			}
+			return nil
+		}
+		if cmd.Flags().Changed("to-layout") {
+			result, err = a.PushSuite(cmd.Context(), args[0], target, args[1])
+		} else {
+			result, err = a.PushSuiteRegistry(cmd.Context(), args[0], args[1], pushPlainHTTP, pushForce, provenance)
+		}
+		if err != nil {
+			return &suiteDiagnosticError{err}
+		}
+		if target == "" {
+			if _, err := fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"Pushed AgentSuite %s to %s (%s)\n",
+				result.Report.Name,
+				result.Reference,
+				result.Descriptor.Digest,
+			); err != nil {
+				return err
+			}
+			return printPushedProvenance(cmd, result)
+		}
+		if result.Updated {
+			if _, err := fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"Updated existing local OCI layout %s; unrelated references were preserved\n",
+				result.Path,
+			); err != nil {
+				return err
+			}
+		} else {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Created local OCI layout %s\n", result.Path); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintf(
+			cmd.OutOrStdout(),
+			"Pushed AgentSuite %s to %s as %s (%s)\n",
+			result.Report.Name,
+			result.Path,
+			result.Reference,
+			result.Descriptor.Digest,
+		); err != nil {
+			return err
+		}
+		return nil
+	}
+	return push
 }
 
 func printPushedProvenance(cmd *cobra.Command, result agentsuite.PushResult) error {

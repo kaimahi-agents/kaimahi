@@ -26,7 +26,7 @@ requested data:         stdout
 Much of `kmx`'s readable output is also an interface consumed by the project:
 
 - release jobs parse `kmx version` exactly;
-- quickstart JSON, agent list/status JSON, manifests, completion and Task answers
+- quickstart JSON, Orka list/bundle status JSON, manifests, completion and Task answers
   are machine formats.
 
 Styling and richer layouts are destination-specific. Existing redirected
@@ -38,11 +38,11 @@ frozen by this rule: the audit exceptions below apply in plain and rich modes.
 | Surface | Default human format | Machine/raw format | Compatibility rule |
 |---|---|---|---|
 | `quickstart` | phases, answer, governance warning, action tree | `-o json` | JSON stdout is one document; rich output is text mode only. |
-| root `status` / `orka status` | Orka runtime fields and tables | table only | Running controller identity, Deployments, CRDs and Providers; no plane suffix or legacy object counts. Bundle-aware `agent status` separately supports JSON. |
-| `agent list` | heading and table | `-o json\|yaml` | Structured modes remain kubectl-native and are never decoded or restyled. |
-| `agent create` | phases, capabilities, next actions | `--out -` YAML | Manifest stdout is an artifact and permanently bypasses presentation. |
+| root `status` / `orka status` | Orka runtime fields and tables | table only | Running controller identity, Deployments, CRDs and Providers; no plane suffix or legacy object counts. `bundle status <bundle-dir>` separately supports JSON; root status is not a bundle or suite observer. |
+| `orka list` | heading and table | `-o json\|yaml` | Structured modes remain kubectl-native and are never decoded or restyled. |
+| `create` | phases, capabilities, next actions | `--out -` YAML | Manifest stdout is an artifact and permanently bypasses presentation. |
 | `completion` | none | shell source / Cobra protocol | Permanently raw and executable. |
-| agent chat | interactive Orka session | none | One-shot chat and raw A2A `--json` output are retired. Enhanced input requires capable input/output terminals; scanner fallback is supported. |
+| `chat` | interactive Orka session | none | One-shot chat and raw A2A `--json` output are retired. Enhanced input requires capable input/output terminals; scanner fallback is supported. |
 | context | fields | plain redirected text | Rich fields on a TTY; exact existing alignment when redirected. |
 | progress and guard | phases and decision callout | plain stderr transcript | Progress delimiters and plain guard geometry remain; corrected action/confirmation commands apply in both modes. |
 | version | fixed prose | release parser input | Keep exact plain format; only TTY token styling is safe. |
@@ -124,7 +124,7 @@ indentation to imply ownership.
 
 The layout example uses `Width`, `lipgloss.Width`, `JoinHorizontal`, and
 `JoinVertical` to compose columns, then clamps the result to the physical
-terminal width. This can improve wide reports such as `kmx agent list`:
+terminal width. This can improve wide reports such as `kmx orka list`:
 
 - related summaries side by side when there is room;
 - one vertical flow on narrow terminals;
@@ -182,7 +182,7 @@ in this client; use the runtime's supported operator path instead.
 
 Retired `--json` and `--session` flags are refused before application loading.
 An optional message after the Agent name is the first interactive turn, not a
-one-shot invocation; use `kmx agent run` for one Task.
+one-shot invocation; use `kmx run` for one Task.
 
 `NO_COLOR`, `TERM=dumb` and non-terminal input/output select the line-oriented
 path. Scanner input remains available when enhanced input is unavailable.
@@ -199,7 +199,7 @@ centralized on stderr. Only those tokens gain semantic color and weight. Their
 spaces, brackets, names, elapsed times, newlines, and native subprocess output
 stay unchanged. Buffer-based tests continue to assert the exact old transcript.
 
-This improves `quickstart`, `local up`, `agent create`, and `aks up` together.
+This improves `quickstart`, `local up`, `create`, and `aks up` together.
 
 ### 2. Safety prompts and guided input — guard implemented
 
@@ -207,7 +207,7 @@ Implemented:
 
 - context-guard action and confirmation emphasis.
 
-The `agent create` wizard now uses Bubble Tea for eligible terminals; its
+The `create` wizard now uses Bubble Tea for eligible terminals; its
 input and cancellation boundaries are in [charm-ux-followup-plan.md](charm-ux-followup-plan.md).
 
 Keep refusal wording and copyable remediation commands plain and atomic.
@@ -224,10 +224,10 @@ Less common surviving operator journeys remain candidates.
 Do not mechanically style every `notef` call. Many include multiline native
 output, errors, or commands that users copy.
 
-### 4. Status and agent list — modeled reports implemented
+### 4. Status and Orka list — modeled reports implemented
 
 Status has grouped fields, counted tables, and explicit state/number styling;
-agent list uses the same report renderer. Retained reports keep their redirected
+Orka list uses the same report renderer. Retained reports keep their redirected
 table geometry; managed-tool governance fields are explicitly retired. Unknown
 conditions and readiness verdicts are corrected in both human modes, as detailed
 below.

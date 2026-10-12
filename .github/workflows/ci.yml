@@ -306,7 +306,7 @@ jobs:
                "the retired preset switch selects the legacy runtime"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b"),
                "the retired source editor edits a legacy Agent"),
-              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:agent\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b"),
+              (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:chat|run|orka\s+(?:list|show)|bundle\s+(?:evaluate|verify|retire)|agent\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b"),
                "an unsupported command aimed at the alternate runtime"),
               (re.compile(r"--payload(?:=|\s+)kagent\b"), "the retired alternate-runtime AKS payload"),
               (re.compile(r"\bKAGENT_VERSION\b|kagent-(?:values|tool-server|tools|shim|cli)\b|\bkagent(?:cli|compat)\b"),
@@ -324,21 +324,24 @@ jobs:
               "kmx --context=kind-x agent edit hello-world",
               "kmx agent chat --runtime kagent hello-world",
               "kmx agent list --runtime=kagent",
+              "kmx chat --runtime kagent hello-world",
+              "kmx orka list --runtime=kagent",
+              "kmx bundle evaluate ./bundle --runtime kagent",
               "kmx aks up --payload kagent",
               "KAGENT_VERSION=0.10.2",
               "helm install -f kagent-values.yaml kagent",
           ]
           must_not_match = [
-              "kmx agent chat --namespace orka-system hello-world-agent",
-              "kmx agent chat --runtime orka hello-world-agent",
-              "kmx agent list --namespace orka-system",
-              "kmx agent create orka-hello --namespace orka-system",
-              "kmx agent create kagent-hello --runtime kagent --namespace agents",
-              "kmx agent lift ./bundle --runtime kagent --runtime-version v0.10.3",
-              "kmx agent status ./bundle --runtime kagent --runtime-version v0.10.3",
+              "kmx chat --namespace orka-system hello-world-agent",
+              "kmx chat --runtime orka hello-world-agent",
+              "kmx orka list --namespace orka-system",
+              "kmx create orka-hello --namespace orka-system",
+              "kmx create kagent-hello --runtime kagent --namespace agents",
+              "kmx bundle lift ./bundle --runtime kagent --runtime-version v0.10.3",
+              "kmx bundle status ./bundle --runtime kagent --runtime-version v0.10.3",
               "kmx local up",
               "kmx --context kind-x local up",
-              "kmx agent run demo --namespace orka-system",
+              "kmx run demo --namespace orka-system",
               "kubectl get ns kagent",
               "kubectl -n agents get agents.kagent.dev",
               "kubectl get agents.core.orka.ai -n orka-system",
@@ -419,13 +422,13 @@ jobs:
                    "the retired preset switch"),
                    (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+agent\s+edit\b",
                     "the retired source editor"),
-                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:agent\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b",
+                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:chat|run|orka\s+(?:list|show)|bundle\s+(?:evaluate|verify|retire)|agent\s+(?:chat|list|show|evaluate)|console|quickstart(?:-wizard)?|status)\b[^\n]*--runtime(?:=|\s+)kagent\b",
                     "an unsupported command aimed at the alternate runtime"),
                    (r"--payload(?:=|\s+)kagent\b", "the retired alternate-runtime AKS payload"),
                    (r"\bKAGENT_VERSION\b|kagent-(?:values|tool-server|tools|shim|cli)\b|\bkagent(?:cli|compat)\b",
                     "a retired alternate-runtime installer, CLI, shim, preset, or moving version pin")]
-          for sample in ["kmx agent lift ./bundle --runtime kagent --runtime-version v0.10.3",
-                         "kmx agent status ./bundle --runtime kagent --runtime-version v0.10.3"]:
+          for sample in ["kmx bundle lift ./bundle --runtime kagent --runtime-version v0.10.3",
+                         "kmx bundle status ./bundle --runtime kagent --runtime-version v0.10.3"]:
               if any(re.search(pattern, sample) for pattern, _ in forbidden):
                   problems.append("supported version-qualified command refused: " + sample)
           for pattern, why in forbidden:
@@ -843,14 +846,15 @@ jobs:
           assert r["answer"].strip(), "no answer in the structured output"
           assert r["agent"] == "hello-world-agent", r
           assert "orka-system" in r["manifest"], r["manifest"]
+          assert "docs/kmx.md#kmx-create" in r["manifest"], r["manifest"]
           assert "kagent" not in r["manifest"], r["manifest"]
           assert r["context"] == "kind-kmx-quickstart", r
           assert r["elapsed_seconds"] > 0, r
           commands = [shlex.split(n) for n in r["next"]]
           assert len(commands) == 3, r["next"]
           assert [argv[:3] for argv in commands] == [["kmx", "--context", r["context"]]] * 3, commands
-          assert commands[0][3:5] == ["agent", "chat"], commands
-          assert commands[1][3:] == ["agent", "create"], commands
+          assert commands[0][3:4] == ["chat"], commands
+          assert commands[1][3:] == ["create"], commands
           assert commands[2][3:] == ["orka", "status"], commands
           print("second run:", round(r["elapsed_seconds"], 1), "s ·", r["answer"][:80])
           EOF
@@ -1199,7 +1203,7 @@ jobs:
           mkdir -p "$fixture/fail-bin"
           kubectl_path=$(command -v kubectl)
           for tool in helm kagent; do
-            printf '#!/bin/sh\necho "%s must not be invoked by kmx agent create" >&2\nexit 97\n' "$tool" > "$fixture/fail-bin/$tool"
+            printf '#!/bin/sh\necho "%s must not be invoked by kmx create" >&2\nexit 97\n' "$tool" > "$fixture/fail-bin/$tool"
             chmod +x "$fixture/fail-bin/$tool"
           done
           test "$(PATH="$fixture/fail-bin:$PATH" command -v helm)" = "$fixture/fail-bin/helm"
@@ -1211,7 +1215,7 @@ jobs:
           bundle="$fixture/bundle"
           PATH="$fixture/fail-bin:/usr/bin:/bin" KMX_TOOLCHAIN=off \
             "$GITHUB_WORKSPACE/bin/kmx" --context kind-kmx-kagent-create \
-            agent create live-kagent --runtime kagent --namespace agents \
+            create live-kagent --runtime kagent --namespace agents \
             --description 'Deterministic live Kagent create proof' \
             --provider-type openai --model fixture --secret model-key \
             --base-url http://model.agents.svc.cluster.local:9000/v1 \
@@ -1684,7 +1688,7 @@ jobs:
           kubectl --context kind-kmx-orka -n orka-system set env deployment/orka-tool-model \
             ORKA_HEALTH_DEPLOYMENT_MARKER="$health_marker" >/dev/null
           kubectl --context kind-kmx-orka -n orka-system rollout status deploy/orka-tool-model --timeout=180s
-          bin/kmx --context kind-kmx-orka agent create orka-tool-proof \
+          bin/kmx --context kind-kmx-orka create orka-tool-proof \
             --namespace orka-system --provider-type openai --model tool-fixture \
             --secret local-provider-key \
             --base-url http://orka-tool-model.orka-system.svc.cluster.local:8080/v1 \
@@ -1706,7 +1710,7 @@ jobs:
         run: |
           set -euo pipefail
           # Reuse the installer's Secret; never invent a Provider key here.
-          bin/kmx --context kind-kmx-orka agent create orka-hello \
+          bin/kmx --context kind-kmx-orka create orka-hello \
             --namespace orka-system --provider-type openai --model qwen2.5:3b \
             --secret local-provider-key \
             --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
@@ -1841,7 +1845,7 @@ jobs:
             ORKA_HEALTH_DEPLOYMENT_MARKER="$health_marker" >/dev/null
           kubectl --context kind-helm-release-orka -n orka-system rollout status deploy/orka-tool-model --timeout=180s >/dev/null
           go build -o /tmp/orka-helm-kmx ./cmd/kmx
-          /tmp/orka-helm-kmx --context kind-helm-release-orka agent create orka-tool-proof \
+          /tmp/orka-helm-kmx --context kind-helm-release-orka create orka-tool-proof \
             --namespace orka-system --provider-type openai --model tool-fixture \
             --secret local-provider-key \
             --base-url http://orka-tool-model.orka-system.svc.cluster.local:8080/v1 \
@@ -2085,7 +2089,7 @@ jobs:
         env:
           KIND_CLUSTER: kmx-clone-free
         run: kmx local up
-      - name: agent create — native Orka Task returns an actual local-model answer
+      - name: create — native Orka Task returns an actual local-model answer
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey
         run: |
@@ -2095,7 +2099,7 @@ jobs:
           # naming one the bring-up made is the whole point of this step.
           # This step exercises agent creation through the supported
           # Orka path, not through retired governance commands.
-          kmx --context kind-kmx-clone-free agent create orka-hello \
+          kmx --context kind-kmx-clone-free create orka-hello \
             --namespace orka-system --provider-type openai --model qwen2.5:3b \
             --secret local-provider-key \
             --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \

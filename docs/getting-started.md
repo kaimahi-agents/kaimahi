@@ -24,6 +24,9 @@ Put Go's binary directory on PATH. Inspect the effective context with
 `kmx context show` or select one with `kmx context use <context>`.
 See [release upgrades](releases.md#upgrading-kmx) when moving from an older version,
 and [command alignment](command-semantics.md) for compatibility and retirement details.
+The root `create/chat/run` and `bundle` commands below require a current
+development build; tagged v0.5.1 still uses `kmx agent`.
+See the [exact migration mapping](../CHANGELOG.md#upgrading).
 
 ## Prerequisites
 
@@ -107,7 +110,7 @@ Cancelling stops active work but leaves completed resources in place. Review the
 [tool and RBAC boundary](orka-k8s-tool.md) before using a shared cluster.
 
 See [interactive lift](interactive-lift.md) for target discovery and confirmation,
-and [bundle lift](agent-lift.md) for `kmx agent lift` and `kmx agent evaluate`.
+and [bundle lift](agent-lift.md) for `kmx bundle lift` and `kmx bundle evaluate`.
 
 ### The whole runtime
 
@@ -116,8 +119,8 @@ To prepare the runtime without creating an Agent, use `kmx local up` instead of 
 ```bash
 kmx local up
 kmx orka status
-# After quickstart or agent create has created this Agent:
-kmx agent chat --namespace orka-system hello-world-agent
+# After quickstart or create has created this Agent:
+kmx chat --namespace orka-system hello-world-agent
 ```
 
 `kmx local up` brings up kind, keyless Ollama with the configured `MODEL`, and pinned
@@ -147,7 +150,7 @@ does not repoint existing tools. Interactive `/help` lists local controls.
 For explicit native Orka authoring, preview a Provider + Agent bundle offline:
 
 ```bash
-kmx agent create my-agent --namespace orka-system \
+kmx create my-agent --namespace orka-system \
   --provider-type openai --model qwen2.5:3b --secret local-provider-key \
   --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --no-apply
 ```
@@ -159,8 +162,11 @@ and ordered readiness waits. `--dry-run` checks admission, **not execution**.
 Only optional `--task` with an existing result ServiceAccount tests a real answer;
 create does not provision that account or RBAC. Follow the
 [context-pinned first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
-and [create safety contract](kmx.md#kmx-agent-create).
-No-name terminal invocation offers a wizard. `agent chat` and `agent list --namespace <ns>`
+and [create safety contract](kmx.md#kmx-create).
+Create still defaults to live authoring; explicit `--workspace` selects
+[offline suite-member authoring](suite-workspace.md). Workspace discovery and
+default offline authoring are not implemented.
+No-name terminal invocation offers a wizard. `chat` and `orka list --namespace <ns>`
 are Orka-only; edit a live Agent with `kubectl edit agents.core.orka.ai`.
 BYO images, model-preset and MCP conversion are not provided.
 

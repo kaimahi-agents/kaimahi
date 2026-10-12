@@ -45,7 +45,7 @@ func TestCompletionScriptsUseCobraProtocol(t *testing.T) {
 func TestSchemaTargetCompletionIncludesPinnedDefault(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, loads := testDependencies(&out, &errOut)
-	if err := execute([]string{"__complete", "agent", "create", "--schema-target", ""}, deps); err != nil {
+	if err := execute([]string{"__complete", "create", "--schema-target", ""}, deps); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"v0.2.0", "v0.1.3", "main", ":4"} {
@@ -88,7 +88,7 @@ func TestCompletionExcludesRetiredApprovalCommands(t *testing.T) {
 		want      []string
 		forbidden []string
 	}{
-		{[]string{"__complete", ""}, []string{"agent", "quickstart", "status", ":4"}, []string{"approve", "approvals", "deny", "request", "grants", "audit", "budget", "credential", "flow", "watch"}},
+		{[]string{"__complete", ""}, []string{"create", "chat", "run", "bundle", "eval", "push", "quickstart", "status", ":4"}, []string{"approve", "approvals", "deny", "request", "grants", "audit", "budget", "credential", "flow", "watch"}},
 		{[]string{"__complete", "ap"}, []string{":4"}, []string{"approve", "approvals"}},
 		{[]string{"__complete", "au"}, []string{":4"}, []string{"audit"}},
 	} {

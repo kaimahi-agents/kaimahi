@@ -26,6 +26,7 @@ func TestNoProductionCodeSuggestsARetiredCommand(t *testing.T) {
 	// replacement is named so a failure says what to write, not merely what
 	// not to.
 	retired := map[string]string{
+		"agent":       "use root create/chat/run, orka show/list, bundle lifecycle or eval",
 		"govern":      "native Agents use their runtime Provider directly",
 		"use":         "there is no legacy preset switch",
 		"plane":       "native setup uses kmx local up or kmx orka install",
@@ -73,10 +74,8 @@ func TestNoProductionCodeSuggestsARetiredCommand(t *testing.T) {
 			}
 			checked++
 			verb := strings.Trim(lit.Value, `"`)
-			if verb == "agent" && len(call.Args) > 1 {
-				if sub, ok := call.Args[1].(*ast.BasicLit); ok && sub.Kind == token.STRING && strings.Trim(sub.Value, `"`) == "create" {
-					foundNative = true
-				}
+			if verb == "create" {
+				foundNative = true
 			}
 			if instead, dead := retired[verb]; dead {
 				t.Errorf("%s: suggests the retired command `kmx %s` — %s",
@@ -88,7 +87,7 @@ func TestNoProductionCodeSuggestsARetiredCommand(t *testing.T) {
 	// Without this the scan could pass by reading nothing at all, which is
 	// exactly how a guard like this rots.
 	if checked == 0 || !foundNative {
-		t.Fatalf("scan lost native agent-create calls (%d verbs checked) — it is passing vacuously", checked)
+		t.Fatalf("scan lost native root create calls (%d verbs checked) — it is passing vacuously", checked)
 	}
 }
 
@@ -124,7 +123,7 @@ func TestTheCommandReferenceDoesNotInstructARetiredCommand(t *testing.T) {
 // exactly what these files should say, and a whole-file search would refuse
 // the sentence that documents the retirement.
 func TestNoOperatorFacingStringNamesARetiredCommand(t *testing.T) {
-	retired := []string{"kmx govern", "kmx use", "kmx agent edit", "kmx plane", "kmx migrate", "kmx models", "kmx credential", "kmx credentials", "kmx ledger", "kmx budget", "kmx flow", "kmx watch", "kmx backup", "kmx restore", "kmx metrics"}
+	retired := []string{"kmx govern", "kmx use", "kmx agent ", "kmx plane", "kmx migrate", "kmx models", "kmx credential", "kmx credentials", "kmx ledger", "kmx budget", "kmx flow", "kmx watch", "kmx backup", "kmx restore", "kmx metrics"}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)

@@ -11,11 +11,11 @@ func newAgentStatusCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status <bundle-dir>",
 		Short: "Report Orka known targets or one explicitly selected Kagent target, without writing anything",
-		Args:  usageArgs(1, 1, "kmx agent status <bundle-dir> [--to-context <ctx>] [--to-namespace <ns>] [-o table|json]"),
+		Args:  usageArgs(1, 1, "kmx bundle status <bundle-dir> [--to-context <ctx>] [--to-namespace <ns>] [-o table|json]"),
 	}
 	// --to-context, not --context: the root --context flag selects kmx's own
 	// ambient invocation context, but a bundle's destinations are independent
-	// of it — the same distinction `kmx agent lift --to-context` already makes.
+	// of it — the same distinction `kmx bundle lift --to-context` already makes.
 	cmd.Flags().StringVar(&opt.Runtime, "runtime", "", "runtime (default: orka; kagent requires exact --runtime-version)")
 	cmd.Flags().StringVar(&opt.RuntimeVersion, "runtime-version", "", "explicit runtime version (kagent: v0.10.3)")
 	cmd.Flags().StringVar(&opt.Bindings, "bindings", "", "KagentBindings file (default: bundle bindings.yaml); repeat external lift bindings explicitly")

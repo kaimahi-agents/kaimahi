@@ -8,8 +8,8 @@ import (
 
 func TestAgentBundleKagentFlagsReachExplicitRoute(t *testing.T) {
 	for _, args := range [][]string{
-		{"agent", "lift", "missing-bundle", "--runtime", "kagent", "--runtime-version", "v0.10.3", "--bindings", "missing-bindings"},
-		{"agent", "status", "missing-bundle", "--runtime", "kagent", "--runtime-version", "v0.10.3", "--bindings", "missing-bindings"},
+		{"bundle", "lift", "missing-bundle", "--runtime", "kagent", "--runtime-version", "v0.10.3", "--bindings", "missing-bindings"},
+		{"bundle", "status", "missing-bundle", "--runtime", "kagent", "--runtime-version", "v0.10.3", "--bindings", "missing-bindings"},
 	} {
 		var out, diagnostics bytes.Buffer
 		deps, _ := testDependencies(&out, &diagnostics)
@@ -25,7 +25,7 @@ func TestAgentBundleKagentFlagsReachExplicitRoute(t *testing.T) {
 
 func TestAgentStatusKagentSelectionFlags(t *testing.T) {
 	root := newRootCommand(&commandState{deps: productionDependencies()})
-	cmd, _, err := root.Find([]string{"agent", "status"})
+	cmd, _, err := root.Find([]string{"bundle", "status"})
 	if err != nil {
 		t.Fatal(err)
 	}

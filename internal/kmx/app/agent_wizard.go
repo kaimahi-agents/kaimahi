@@ -76,7 +76,7 @@ func (a *App) CreateAgentInteractive(opt CreateOptions) error {
 func (a *App) collectCreateAgentInteractive(opt CreateOptions) (CreateOptions, bool, error) {
 	errFile, visible := a.Err.(*os.File)
 	if a.Stdin == nil || !visible || !term.IsTerminal(int(a.Stdin.Fd())) || !term.IsTerminal(int(errFile.Fd())) {
-		return opt, false, fmt.Errorf("kmx agent create needs a name in non-interactive input: kmx agent create <name> [flags]")
+		return opt, false, fmt.Errorf("kmx create needs a name in non-interactive input: kmx create <name> [flags]")
 	}
 	if os.Getenv("TERM") == "dumb" {
 		completed, err := collectCreateOptions(bufio.NewScanner(a.Stdin), a.Err, opt)

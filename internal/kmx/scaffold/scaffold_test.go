@@ -14,6 +14,12 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+func TestMissingNameOffersRootCreate(t *testing.T) {
+	if err := ValidateName(""); err == nil || !strings.Contains(err.Error(), "kmx create <name>") {
+		t.Fatalf("missing-name recovery does not use root create: %v", err)
+	}
+}
+
 func TestNameValidation(t *testing.T) {
 	for _, good := range []string{"a", "billing", "billing-investigator", "agent-7", "hello-world", "hello-tools"} {
 		if err := ValidateName(good); err != nil {

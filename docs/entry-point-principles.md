@@ -22,7 +22,7 @@ Generated YAML should remain readable, diffable and usable with the
 underlying tools. Do not conceal ownership inside an entry point.
 
 Authoring defaults to native Orka. [orka.md](orka.md) records that recommendation,
-while `kmx agent create --runtime kagent <name>` provides one deliberately
+while `kmx create --runtime kagent <name>` provides one deliberately
 narrow direct target for an already-installed exact Kagent v0.10.2. It does not
 translate existing resources to Orka or establish a general cross-runtime
 lifecycle. The isolated conversion spike that once explored translation is

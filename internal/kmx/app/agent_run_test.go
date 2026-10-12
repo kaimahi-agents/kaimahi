@@ -440,7 +440,7 @@ func TestRunAgentDoesNotWriteBundleReceipt(t *testing.T) {
 func TestRunAgentPromptIsRedactedFromRemoteGuard(t *testing.T) {
 	f := runFixture(t)
 	t.Setenv("KMX_EVAL_REMOTE", "1")
-	f.app.InvocationCommand = "kmx agent run --prompt private prompt --context kind-test"
+	f.app.InvocationCommand = "kmx run --prompt private prompt --context kind-test"
 	err := f.app.RunAgent(runOption(f))
 	if err == nil {
 		t.Fatal("remote guard accepted")
@@ -448,7 +448,7 @@ func TestRunAgentPromptIsRedactedFromRemoteGuard(t *testing.T) {
 	if strings.Contains(err.Error()+f.app.Err.(*bytes.Buffer).String(), "private prompt") {
 		t.Fatalf("prompt leaked: %v %s", err, f.app.Err)
 	}
-	want := "kmx agent run " + shellArg(f.bundle) + " --to-context kind-test --wait 30s --result-port " + f.opt.ResultPort + " --prompt-file -"
+	want := "kmx run " + shellArg(f.bundle) + " --to-context kind-test --wait 30s --result-port " + f.opt.ResultPort + " --prompt-file -"
 	if !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), " --agent ") || strings.Contains(err.Error(), "<redacted>") {
 		t.Fatalf("guard retry lost bundle selection or exposed prompt: %v", err)
 	}
@@ -470,7 +470,7 @@ func TestRunAgentRemoteGuardPreservesRememberedBundleDestination(t *testing.T) {
 	opt := runOption(f)
 	opt.ToContext = ""
 	err = f.app.RunAgent(opt)
-	if err == nil || !strings.Contains(err.Error(), "kmx agent run "+shellArg(f.bundle)+" --to-context kind-test --wait 30s --result-port "+f.opt.ResultPort+" --prompt-file -") {
+	if err == nil || !strings.Contains(err.Error(), "kmx run "+shellArg(f.bundle)+" --to-context kind-test --wait 30s --result-port "+f.opt.ResultPort+" --prompt-file -") {
 		t.Fatalf("remembered destination not restored in retry: %v", err)
 	}
 	if f.taskCreates(t) != 0 {

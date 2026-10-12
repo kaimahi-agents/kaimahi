@@ -89,7 +89,7 @@ func newAgentTUIModel(opt AgentTUIOptions) agentTUIModel {
 // then restores the dashboard and refreshes both inventories on return.
 func (a *App) AgentTUI(opt AgentTUIOptions) error {
 	if a.Stdin == nil || !isTerminalFile(a.Stdin) || !isInteractiveTerminal(a.Out) || os.Getenv("TERM") == "dumb" {
-		return fmt.Errorf("kmx console requires an interactive terminal on stdin and stdout; use kmx agent list for piped output")
+		return fmt.Errorf("kmx console requires an interactive terminal on stdin and stdout; use kmx orka list for piped output")
 	}
 	if opt.Namespace == "" {
 		opt.Namespace = OrkaNamespace
@@ -974,7 +974,7 @@ func (m agentTUIModel) View() tea.View {
 	var body string
 	switch {
 	case m.form != nil:
-		lines := []string{"Create remote AKS environment", "", "Uses the current Azure account; the lift review shows the subscription.", "Creates a resource group, registry and AKS cluster, then continues agent lift.", ""}
+		lines := []string{"Create remote AKS environment", "", "Uses the current Azure account; the lift review shows the subscription.", "Creates a resource group, registry and AKS cluster, then continues legacy bundle lift.", ""}
 		for i, label := range agentTUIFormLabels {
 			value := m.form[i]
 			if i == m.formStep {

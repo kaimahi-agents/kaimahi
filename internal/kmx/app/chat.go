@@ -48,7 +48,7 @@ func (a *App) ChatWithOptions(opt ChatOptions) error {
 	// Orka chat is always a session: a Task is created, polled for its own
 	// result over a single connection, and never resubmitted. An initial
 	// message is the first turn of that session, not a one-shot; the one-shot
-	// Task is kmx agent run.
+	// Task is kmx run.
 	if err := a.preflight(depKubectl); err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func checkChatRuntime(name string) error {
 		return nil
 	case "kagent":
 		return fmt.Errorf("--runtime kagent is unsupported for chat.\n" +
-			"  Run kmx targets to see supported runtime operations; kmx agent chat is Orka-only.")
+			"  Run kmx targets to see supported runtime operations; kmx chat is Orka-only.")
 	default:
 		return fmt.Errorf("unknown chat runtime %q; use auto or orka", name)
 	}

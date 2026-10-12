@@ -23,7 +23,7 @@ func newAgentVerifyCommand() *cobra.Command {
 			"Proves local reference equivalence, not the original host implementation or version.\n" +
 			"Non-loopback connections require verified TLS; --sessions-ca adds a private CA.\n" +
 			"Sessions verification does not satisfy Orka lift or status gates.",
-		Args: usageArgs(1, 1, "kmx agent verify <sessions-receipt.json> --sessions <host:port> [--sessions-ca <pem>] [--timeout 5m]"),
+		Args: usageArgs(1, 1, "kmx bundle verify <sessions-receipt.json> --sessions <host:port> [--sessions-ca <pem>] [--timeout 5m]"),
 	}
 	cmd.Flags().StringVar(&opt.Sessions, "sessions", "", "operator-selected agentsessions host:port matching the receipt (required)")
 	cmd.Flags().StringVar(&opt.SessionsCA, "sessions-ca", "", "PEM CA file for verified TLS to the sessions host")

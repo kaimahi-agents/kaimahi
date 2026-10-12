@@ -1,6 +1,6 @@
-# `kmx agent lift`
+# `kmx bundle lift`
 
-`kmx agent lift` deploys an existing on-disk agent bundle to a prepared Orka
+`kmx bundle lift` deploys an existing on-disk agent bundle to a prepared Orka
 cluster. It takes a named destination and inference Provider. Interactive
 `/lift` in chat or `kmx console` selects those inputs and shows the same
 read-only plan before invoking this operation. A separately confirmed
@@ -9,10 +9,12 @@ before retrying the checks; bundle lift itself never installs them.
 Orka remains the default. Explicit exact-v0.10.3 declarative bundle lift/status
 is a separate [kagent path](#exact-v0103-declarative-bundle-placement).
 kagent create receipts do not authorize reuse by that path. Evaluation, console
-bundle actions and interactive `/lift` remain Orka-only.
+bundle actions and interactive `/lift` remain Orka-only. This is the legacy
+PortableAgent lifecycle, not packaged-suite lift; root digest `lift` and packaged
+root evaluation are not implemented. Root `eval` currently holds helpers only.
 
 ```console
-kmx agent lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--require-evaluated <context>] [--override-gate "reason"] [--plan]
+kmx bundle lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--require-evaluated <context>] [--override-gate "reason"] [--plan]
 ```
 
 The bundle contains `agent.yaml` (the portable definition) and
@@ -22,7 +24,7 @@ description, instructions and model render exactly as they do with an
 apiVersion-only Orka extension. Named helper delegation can also be authored
 in portable `spec.coordination.allowedAgents`. Orka-specific tools, skills,
 rate limits and optional delegation limits require the Orka extension; a target
-that does not consume them refuses the named fields rather than dropping them. `kmx agent create` still
+that does not consume them refuses the named fields rather than dropping them. `kmx create` still
 writes the Orka extension. Lift reads the definition from
 `agent.yaml`, resolves **new** target bindings, and renders with
 `RenderOrkaBundleFile`. It does not copy a Secret or take inference from the
@@ -39,9 +41,9 @@ Select the already-installed target explicitly; no cluster or runtime is
 installed, upgraded or auto-selected:
 
 ```bash
-kmx agent lift agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml --plan
-kmx agent lift agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml
-kmx agent status agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml -o json
+kmx bundle lift agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml --plan
+kmx bundle lift agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml
+kmx bundle status agents/reviewer --runtime kagent --runtime-version v0.10.3 --to-context target-context --bindings target-bindings.yaml -o json
 ```
 
 Both commands use strict `KagentBindings`: destination namespace, model provider
@@ -163,7 +165,7 @@ portable definition. Lift also refuses a target whose installed Agent CRD does
 not support coordination. The upstream `autonomous` field is not supported yet:
 it starts a repeated Job loop and needs a separate design.
 
-`kmx agent create --coordination --allowed-agent helper` authors `enabled: true`
+`kmx create --coordination --allowed-agent helper` authors `enabled: true`
 and the named helper; repeat `--allowed-agent` for additional helpers. Edit the
 bundle for optional limits. Lift the helper before the coordinator. The pinned
 Orka installation binds delegation worker RBAC only in its release namespace
@@ -179,7 +181,7 @@ Provider Secret, create a bundle like this (replace the source context and
 Secret name with your own):
 
 ```bash
-kmx agent create my-agent --context source-context --namespace orka-system --provider-type openai --model qwen2.5:3b --secret my-provider-secret --base-url http://ollama.ollama.svc.cluster.local:11434/v1
+kmx create my-agent --context source-context --namespace orka-system --provider-type openai --model qwen2.5:3b --secret my-provider-secret --base-url http://ollama.ollama.svc.cluster.local:11434/v1
 ```
 
 The `--base-url` must be reachable from the creation cluster; it is not inferred
@@ -201,14 +203,14 @@ then replace `my-target` and the example Provider name below:
 
 ```bash
 PROVIDER=hello-world-agent
-kmx agent lift agents/my-agent --to-context my-target --to-namespace orka-system --inference "provider:$PROVIDER" --plan
+kmx bundle lift agents/my-agent --to-context my-target --to-namespace orka-system --inference "provider:$PROVIDER" --plan
 ```
 
 `--plan` inspects intended changes without writing and checks the selected
 Provider. Review the plan, then repeat the lift command without `--plan` to
 apply it. Listing a Provider alone does not prove it is Ready or can answer.
-Then use `kmx agent status agents/my-agent --to-context my-target` to inspect
-what is deployed and `kmx agent evaluate agents/my-agent --to-context my-target`
+Then use `kmx bundle status agents/my-agent --to-context my-target` to inspect
+what is deployed and `kmx bundle evaluate agents/my-agent --to-context my-target`
 to run the cases against that deployed digest. Each evaluation creates a Task
 that can have external effects and is never retried; a passing receipt is
 evidence for that revision and case set, not a general safety proof. To make
@@ -316,12 +318,12 @@ it is separate from the portable revision digest, which covers only
 `agent.yaml`.
 
 For an ad-hoc gate without changing the policy, pass
-`--require-evaluated <context>` to `kmx agent lift`. It adds a requirement for
+`--require-evaluated <context>` to `kmx bundle lift`. It adds a requirement for
 this invocation (it does not replace a policy rule). This names an evaluation
 receipt's context label to select the required evaluation target; its recorded
 cluster UID and namespace establish identity. No receipt or several identities
 sharing that label is refused, without contacting that cluster. A context label alone must never satisfy the gate. Run a full
-`kmx agent evaluate <bundle-dir> --to-context <staging-context>` first;
+`kmx bundle evaluate <bundle-dir> --to-context <staging-context>` first;
 `--case` produces a single-case receipt and does not satisfy a full-case gate,
 even when `eval/` has only one case.
 The evaluation destination must already have this same portable revision
@@ -342,7 +344,7 @@ or independently attest the receipt. Local receipts are forgeable and are
 **not intended to be committed**; protect them accordingly. The committed
 policy travels with teammates, but receipts do not: a teammate without their
 own matching passing receipt must lift to staging and evaluate there before
-lifting to production. Neither a lift receipt nor a `kmx agent status` display
+lifting to production. Neither a lift receipt nor a `kmx bundle status` display
 of `pass` substitutes for full matching evaluation evidence. An evaluation
 receipt's context is a label; cluster UID and namespace are the gate identity.
 Receipts written before the cluster UID and full-case-run marker were recorded
@@ -351,7 +353,7 @@ cannot satisfy this gate; rerun the complete evaluation to generate new evidence
 | Gate condition | Refusal and next step |
 |---|---|
 | Policy cannot be decoded, or the ad-hoc context has no recorded identity or matches several | Correct the policy or run a full evaluation for an unambiguous context; do not infer identity from a matching name. |
-| No local receipt for the required cluster UID and namespace, or only a different target's receipt | Lift the bundle to the required evaluation destination and run `kmx agent evaluate` there. |
+| No local receipt for the required cluster UID and namespace, or only a different target's receipt | Lift the bundle to the required evaluation destination and run `kmx bundle evaluate` there. |
 | Receipt is `fail` or `unknown`, covers only a `--case` selection, or lacks passing results for every current case | Fix the cases or target and run the **full** evaluation again; an individual passing case is insufficient. |
 | Receipt's portable digest or case-set digest differs from the current bundle | Lift and evaluate the changed revision or cases again. |
 
@@ -388,10 +390,10 @@ to the staging UID/namespace:
 
 ```bash
 # Bootstrap staging first: evaluate requires a deployed matching revision.
-kmx agent lift agents/my-agent --to-context staging --to-namespace orka-system --inference provider:staging-provider
-kmx agent evaluate agents/my-agent --to-context staging
+kmx bundle lift agents/my-agent --to-context staging --to-namespace orka-system --inference provider:staging-provider
+kmx bundle evaluate agents/my-agent --to-context staging
 # The committed policy requires the staging result before the production write.
-kmx agent lift agents/my-agent --to-context production --to-namespace orka-system --inference provider:production-provider
+kmx bundle lift agents/my-agent --to-context production --to-namespace orka-system --inference provider:production-provider
 ```
 
 Keep the commands in the same CI workspace so the local evaluation receipt is
@@ -448,7 +450,7 @@ revision: the portable digest covers **only** the bytes of `agent.yaml`, and
 `receipts/` does not affect Git cleanliness of `agent.yaml`. Keep lift and
 evaluation receipts local, not in Git: neither is an attestation, and an
 override reason stored in a lift receipt may contain operational details.
-A later `kmx agent create` rerun can reuse the bundle even when `receipts/`
+A later `kmx create` rerun can reuse the bundle even when `receipts/`
 is present.
 No receipt is written by `--plan` or by a failed deployment. If deployment
 and receipt writing succeed but saving the remembered target fails, the
@@ -456,13 +458,13 @@ command returns an error and the receipt remains on disk.
 
 The receipt binds deployment outcomes and target identities to the portable
 and rendered digests; it is not proof that an Agent answered a Task. Use
-[`kmx agent evaluate`](#evaluating-a-deployed-revision) for execution evidence
+[`kmx bundle evaluate`](#evaluating-a-deployed-revision) for execution evidence
 bound to the same digest.
 
 ## Evaluating a deployed revision
 
 ```console
-kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>] [--case-timeout 5m] [--judge-base-url <url>] [--judge-key-env <env-name>]
+kmx bundle evaluate <bundle-dir> [--to-context <ctx>] [--case <id>] [--case-timeout 5m] [--judge-base-url <url>] [--judge-key-env <env-name>]
 ```
 
 Evaluation cases live beside the bundle in `eval/*.yaml`, one case per file:
@@ -564,10 +566,10 @@ Supply transport separately, for either Orka or sessions evaluation:
 
 ```bash
 # The judge endpoint is operator-managed; this command does not start it.
-kmx agent evaluate agents/my-agent --sessions 127.0.0.1:8080 \
+kmx bundle evaluate agents/my-agent --sessions 127.0.0.1:8080 \
   --judge-base-url http://127.0.0.1:18089/v1
 # JUDGE_API_KEY is injected by your secret store; only its name appears here.
-kmx agent evaluate agents/my-agent --to-context staging \
+kmx bundle evaluate agents/my-agent --to-context staging \
   --judge-base-url https://judge.example.com/v1 --judge-key-env JUDGE_API_KEY
 ```
 
@@ -635,7 +637,7 @@ oversized suite or use `--case <id>` to run **one** case, not an arbitrary subse
 A single-case receipt does not satisfy a full-case lift gate.
 
 Cases test a revision; they do not define it, so they are **not** part of the
-portable digest. `kmx agent create` scaffolds one
+portable digest. `kmx create` scaffolds one
 trivial `eval/example.yaml` in a new bundle, and a create rerun accepts any
 `eval/` directory without touching its cases.
 
@@ -648,7 +650,7 @@ that digest. Because every case executes a Task, evaluate then passes the same
 remote-context guard as other Orka writes.
 
 Each case is one Orka Task against that Agent, created and read the way
-`kmx agent create --task` does it: the `orka-result-reader` account over a
+`kmx create --task` does it: the `orka-result-reader` account over a
 pinned loopback port-forward (`--result-port`, default 19180). Each case waits
 for a terminal state and any judge calls within `--case-timeout` (default 5m,
 at most 9m). A case
@@ -730,7 +732,7 @@ any case is `unknown`.
 ## Evaluating on agentsessions
 
 ```console
-kmx agent evaluate <bundle-dir> --sessions 127.0.0.1:8080 [--case <id>] [--case-timeout 5m] [--judge-base-url <url>] [--judge-key-env <env-name>]
+kmx bundle evaluate <bundle-dir> --sessions 127.0.0.1:8080 [--case <id>] [--case-timeout 5m] [--judge-base-url <url>] [--judge-key-env <env-name>]
 ```
 
 This selects an agentsessions host instead of a deployed Orka target. No
@@ -743,7 +745,7 @@ For example, with an already-running local OpenAI-compatible Ollama endpoint:
 
 ```console
 agentsessionsd -addr 127.0.0.1:8080 -journal ./evaluation.db -model qwen2.5:3b -model-base-url http://127.0.0.1:11434/v1
-kmx agent evaluate agents/my-agent --sessions 127.0.0.1:8080
+kmx bundle evaluate agents/my-agent --sessions 127.0.0.1:8080
 ```
 
 Each case creates one new session, labeled with the portable and case-set
@@ -825,13 +827,13 @@ assertions:
 ```
 
 ```bash
-kmx agent eval from-sessions session-uid-1 session-uid-2 \
+kmx eval from-sessions session-uid-1 session-uid-2 \
   --sessions 127.0.0.1:8080 --assertions capital.yaml --out private/references.json
 # Existing --out means atomic append to the same source store.
 # Duplicate UIDs or IDs refuse the whole add.
-kmx agent eval from-sessions session-uid-3 \
+kmx eval from-sessions session-uid-3 \
   --sessions 127.0.0.1:8080 --assertions capital.yaml --out private/references.json
-KAIMAHI_CONFIRM=127.0.0.1:8081 kmx agent evaluate agents/my-agent \
+KAIMAHI_CONFIRM=127.0.0.1:8081 kmx bundle evaluate agents/my-agent \
   --from-sessions private/references.json --source-sessions 127.0.0.1:8080 \
   --sessions 127.0.0.1:8081
 ```
@@ -858,7 +860,7 @@ no endpoint supplied by a manifest is automatically dialed.
 in a **new candidate session** with the current bundle instructions. Missing,
 expired, altered or unsupported references produce `unknown` rows and no
 candidate/judge calls for that row; they are never skipped or exported. Existing
-assertion receipts and `agent eval diff` are reused; source, policy and assertion
+assertion receipts and `eval diff` are reused; source, policy and assertion
 identities are included in the case/set digests. `--case <derived-id>` still
 selects one case and produces a partial receipt.
 
@@ -879,7 +881,7 @@ propagation is not implemented. No production export or multi-turn mode is
 supported.
 
 An unavailable source has no observed candidate runtime identity. In
-`agent eval diff`, that case gets its own `unknown` row while the remaining
+`eval diff`, that case gets its own `unknown` row while the remaining
 cases still compare. The comparison remains incomplete/nonzero; it is
 incompatible when either receipt has no complete observed case identity or
 when observed identities disagree, including mixed models.
@@ -887,7 +889,7 @@ when observed identities disagree, including mixed models.
 ### Verifying a sessions receipt
 
 ```console
-kmx agent verify <sessions-receipt.json> --sessions 127.0.0.1:8080 [--sessions-ca ca.pem] [--timeout 5m]
+kmx bundle verify <sessions-receipt.json> --sessions 127.0.0.1:8080 [--sessions-ca ca.pem] [--timeout 5m]
 ```
 
 Verification reads each case's journal prefix through the receipt's recorded
@@ -955,7 +957,7 @@ proof, replacing any prior report. Only `equivalent` for every case exits zero;
 ## Comparing saved evaluations offline
 
 ```console
-kmx agent eval diff <before.json> <after.json>
+kmx eval diff <before.json> <after.json>
 ```
 
 Pass explicit latest receipts or immutable run files from the Orka, Sessions
@@ -1029,7 +1031,7 @@ namespace. Valid kagent latest evidence is excluded from Orka status and lift
 gates; malformed evidence still refuses a scanned gate. A kagent receipt never
 satisfies an Orka promotion requirement.
 
-**Offline reading is not execution support.** `kmx agent evaluate` does not yet
+**Offline reading is not execution support.** `kmx bundle evaluate` does not yet
 run cases on kagent, and kagent lift still refuses evaluation gate flags and
 `lift-policy.yaml`. Python, replay verification and cross-runtime comparison
 remain unsupported. Since kagent lift cannot update an Agent in place, diff
@@ -1178,12 +1180,12 @@ first and use the [staging-to-production sequence](#requiring-evaluation-before-
 ## Running an existing Agent
 
 ```console
-kmx agent run agents/my-agent --prompt "Summarize the release" [--to-context <ctx>] [--wait 5m]
-kmx agent run --agent my-agent [--namespace orka-system] [--context <ctx>] --prompt-file prompt.txt
+kmx run agents/my-agent --prompt "Summarize the release" [--to-context <ctx>] [--wait 5m]
+kmx run --agent my-agent [--namespace orka-system] [--context <ctx>] --prompt-file prompt.txt
 kmx task result <task-name> [--context <ctx>] [--namespace orka-system] [--wait 5m]
 ```
 
-`agent run` executes one AI Task against a live Agent without creating or
+`run` executes one AI Task against a live Agent without creating or
 updating the Agent, changing the bundle, or writing a receipt. Supply exactly
 one of `--prompt` and `--prompt-file`; `--prompt-file -` reads stdin. Bundle
 mode selects the explicit `--to-context` or the remembered target, checking
@@ -1194,7 +1196,7 @@ commit first, so the answer is not mistaken for one from the current bundle.
 `--agent` selects a live Agent directly, whether or not it has a bundle;
 `--namespace` defaults to `orka-system`, and `--context` selects the cluster.
 
-For `agent run`, bundle state and commit, result authority notice, Task name
+For `run`, bundle state and commit, result authority notice, Task name
 and any recovery command go to **stderr**. `task result` reports the phase
 there too. Only the answer goes to **stdout**, so redirecting
 `> answer.txt` will not mix it with status. The Task name is written before
@@ -1211,7 +1213,7 @@ for up to 5m (accepted range: 10s–9m), using a fresh result session for the
 answer. The phase is printed only when it changes. A pending Task, or a
 Succeeded Task whose answer is not yet available, exits **2** (not finished).
 A Failed or Cancelled Task exits **1**; a readable successful answer exits
-**0**. A timed-out `agent run` also exits **2**. Access or malformed-result
+**0**. A timed-out `run` also exits **2**. Access or malformed-result
 errors exit **1**, not **2**.
 After a timeout, the Task may still be running: retrieve it by name rather
 than re-running the prompt, which would create another Task. Result sessions
@@ -1221,7 +1223,7 @@ loopback port-forward; do not grant it more access than needed.
 ## Retiring a bundle from a target
 
 ```console
-kmx agent retire <bundle-dir> [--to-context <ctx>] [--to-namespace <ns>] [--plan] [--delete-adopted]
+kmx bundle retire <bundle-dir> [--to-context <ctx>] [--to-namespace <ns>] [--plan] [--delete-adopted]
 ```
 
 Retire uses the bundle's remembered destination or an explicit context, pins
@@ -1285,8 +1287,12 @@ no retire action; adding one is a separate follow-up.
 ## Checking deployed status
 
 ```console
-kmx agent status <bundle-dir> [--to-context <ctx>] [-o table|json]
+kmx bundle status <bundle-dir> [--to-context <ctx>] [-o table|json]
 ```
+
+This bundle deployment report is separate from root `status` / `orka status`,
+which retain the table-only Orka runtime report. There is no root bundle status
+or suite observer.
 
 Status reads `agent.yaml`, the local Git history, receipts and the remembered
 selection, then inspects the live Provider and Agent per target. The portable

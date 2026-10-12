@@ -12,18 +12,23 @@ should be named and shaped. Apply them to new commands and to renames.
 ## 1. Grammar
 
 ```text
+kmx <verb> [object] [flags]
 kmx <noun> <verb> [object] [flags]
 ```
 
-- **Noun first, then verb.** The noun is the resource or domain the command
-  acts on (`agent`, `task`, `suite`, `orka`). The verb is the
-  action, taken from the vocabulary in section 2. Example: `kmx agent create`.
-- **Singular nouns.** Use `agent list`, not `agents`. A plural may exist only
-  as a hidden alias.
-- **Bare top-level verbs are reserved for whole-tool workflows** that are not
-  about one resource: `quickstart`, `status`, `console`, `version`,
-  `completion`. Add a new one only when no resource noun fits, and say why
-  in the change that adds it.
+- **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
+  `push`. Root `eval` is currently a helper-only group (`diff`, `from-sessions`),
+  not packaged evaluation. Root `lift` is not implemented.
+- **Resource and domain operations use noun first, then verb:** `task result`,
+  `suite build/diff/push/pull/validate`, `orka install/status/show/list` and legacy
+  `bundle evaluate/lift/retire/verify/status`. `kmx agent` is removed entirely,
+  with no alias or retirement stub.
+- **Singular nouns.** Use `orka list`, not `orkas`. A plural may exist only
+  as an explicitly approved hidden alias.
+- **Whole-tool entry points** include `quickstart`, `status`, `console`, `version`
+  and `completion`. Root `status` currently retains the same table-only Orka
+  runtime report as `orka status`; it is not bundle status or a suite observer.
+  New root verbs need an explicit workflow decision, not a synonym.
 - **At most two nouns deep.** `kmx <noun> <noun> <verb>` is the limit.
 - **A group without a verb prints help.** A noun on its own never acts.
 - **Lowercase, hyphen-separated words.** The canonical name is never an
@@ -35,18 +40,18 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 
 | Verb | Meaning | Example |
 |---|---|---|
-| `list` | Read many resources, one summary row each. | `kmx agent list` |
-| `show` | Read one resource and what it depends on, from live state. | `kmx agent show <name>` |
-| `status` | Report readiness, health or drift. | `kmx orka status`, `kmx agent status <bundle-dir>` |
-| `create` | Make a new resource on a cluster. | `kmx agent create` |
+| `list` | Read many resources, one summary row each. | `kmx orka list` |
+| `show` | Read one resource and what it depends on, from live state. | `kmx orka show <name>` |
+| `status` | Report readiness, health or drift. | `kmx orka status`, `kmx bundle status <bundle-dir>` |
+| `create` | Make a new live resource by default; explicit workspace mode authors offline. | `kmx create [name]`, `kmx create <name> --workspace <dir>` |
 | `install` | Install runtime software onto a cluster. | `kmx orka install` |
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
-| `run` | Execute once and return the result. | `kmx agent run` |
-| `chat` | Open an interactive session. | `kmx agent chat <name>` |
-| `evaluate` | Run evaluation cases against a deployed revision. | `kmx agent evaluate <bundle-dir>` |
+| `run` | Execute once and return the result. | `kmx run` |
+| `chat` | Open an interactive session. | `kmx chat <name>` |
+| `evaluate` | Run evaluation cases against a deployed revision. | `kmx bundle evaluate <bundle-dir>` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
-| `lift` | Move a proven agent bundle to a prepared remote destination. | `kmx agent lift <bundle-dir>` |
-| `retire` | Remove the workload resources a bundle owns. | `kmx agent retire <bundle-dir>` |
+| `lift` | Move a proven agent bundle to a prepared remote destination. | `kmx bundle lift <bundle-dir>` |
+| `retire` | Remove the workload resources a bundle owns. | `kmx bundle retire <bundle-dir>` |
 | `result` | Retrieve the outcome of an existing execution. | `kmx task result <task>` |
 
 Keep these distinctions:
@@ -137,7 +142,7 @@ Keep these distinctions:
 - **Modes are arguments, not separate commands.** On the CLI, use
   `kmx quickstart --interactive`, not a separate `quickstart-wizard`. In
   slash commands, prefer `/verbose on|off` over separate on and off commands.
-- **A command with only one mode takes no mode flag.** `kmx agent chat` is
+- **A command with only one mode takes no mode flag.** `kmx chat` is
   always a session, so it has no `--interactive`.
 - **Common keys mean the same thing everywhere:** `?` help, `esc` back or
   cancel, `ctrl+c` quit, `enter` select, `j`/`k` or arrows to move.
@@ -162,8 +167,9 @@ names the replacement, or remove a flag that no longer does anything. Record
 the removal and replacements under **Breaking** and **Upgrading** in the CHANGELOG.
 Root `ctx`, `up`, `down`, `lift` and `lift down` are removed outright, without
 stubs; use `context show/use`, `local up/down` and `aks up/down`. Removing the
-AKS aliases frees root `lift` for future suite lift; it does not implement a new
-root verb or suite lift command.
+AKS aliases frees root `lift` for future suite lift; that command is not implemented.
+The entire `agent` group is also removed outright, without an alias or stub;
+see the [implemented mapping](command-semantics.md#implemented-workflow-command-mapping-unreleased).
 
 Update these in the same change:
 
@@ -183,6 +189,6 @@ row when its rename lands.
 | Current command | Rule it breaks | Proposed |
 |---|---|---|
 | `--no-apply`, `--dry-run`, `--plan` | Preview flags whose effects differ by command. | Undecided; define each flag's effect before renaming. |
-| `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain compatibility syntax; opt-in `suite push --workspace <directory> <reference>` has one positional destination and publishes a prepared native suite. |
+| `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain extracted-artifact transfer syntax; root `push [--workspace <directory>] <reference>` publishes a prepared native suite with one positional destination. Discovery is not implemented, so `--workspace` is currently required. |
 | `suite build --output <file>`, `suite pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |
 | `suite build --attestations` | Defaults to true; `--attestations=false` opts out of SBOM and provenance requests. | Keep the documented default; `--require-attestations` refuses missing or unsupported attestations. |

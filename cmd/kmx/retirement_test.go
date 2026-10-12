@@ -24,73 +24,20 @@ func TestApprovalCommandsAreRetiredBeforeConfiguration(t *testing.T) {
 	}
 }
 
-// Retired invocations fail locally with a migration path, before configuration
-// loading or cluster access. Hidden stubs remain parseable for old scripts.
-func TestLegacyRuntimeCommandsAreRetired(t *testing.T) {
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
-		{[]string{"agent", "edit", "hello-world"}, "kmx agent edit is retired; use kubectl"},
-		{[]string{"agent", "edit", "hello-world", "--file", "agent.yaml"}, "kmx agent edit is retired; use kubectl"},
+// The former edit stub is removed with the agent parent, including its old flags
+// and help path. It must not load configuration or print a migration stub.
+func TestLegacyAgentEditIsRemovedBeforeConfiguration(t *testing.T) {
+	for _, args := range [][]string{
+		{"agent", "edit", "hello-world"},
+		{"agent", "edit", "hello-world", "--file", "agent.yaml"},
+		{"agent", "edit", "--help"},
 	} {
-		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
 			deps, loads := testDependencies(&out, &errOut)
-			err := execute(tc.args, deps)
-			if err == nil || !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("retired command must name replacement %q: %v: %v", tc.want, tc.args, err)
-			}
-			for _, want := range []string{
-				"kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>",
-				"kmx --context <ctx> agent show <name> --namespace <namespace>",
-			} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("retirement advice lost the selector in %q: %v", want, err)
-				}
-			}
-			if *loads != 0 {
-				t.Fatalf("retired command loaded operational configuration: %v", tc.args)
-			}
-		})
-	}
-	var out, errOut bytes.Buffer
-	deps, _ := testDependencies(&out, &errOut)
-	root := newRootCommand(&commandState{deps: deps})
-	for _, path := range [][]string{{"agent", "edit"}} {
-		cmd, _, err := root.Find(path)
-		if err != nil || !cmd.Hidden {
-			t.Errorf("retired command %v must exist but be hidden: %v", path, err)
-		}
-	}
-}
-
-func TestRetiredCommandHelpShowsMigrationBeforeConfiguration(t *testing.T) {
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
-		{[]string{"agent", "edit", "--help"}, "kmx agent edit is retired; use kubectl --context"},
-	} {
-		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			var out, errOut bytes.Buffer
-			deps, loads := testDependencies(&out, &errOut)
-			if err := execute(tc.args, deps); err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(out.String(), tc.want) {
-				t.Fatalf("help did not show migration %q: %q", tc.want, out.String())
-			}
-			for _, want := range []string{
-				"kubectl --context <ctx> -n <namespace> edit agents.core.orka.ai <name>",
-				"kmx --context <ctx> agent show <name> --namespace <namespace>",
-			} {
-				if !strings.Contains(out.String(), want) {
-					t.Errorf("retirement help lost the selector in %q: %s", want, out.String())
-				}
-			}
-			if *loads != 0 {
-				t.Fatalf("retired help loaded operational configuration: %v", tc.args)
+			err := execute(args, deps)
+			if err == nil || !strings.Contains(err.Error(), "unknown command \"agent\"") || *loads != 0 || out.Len() != 0 || errOut.Len() != 0 {
+				t.Fatalf("removed edit: err=%v loads=%d stdout=%q stderr=%q", err, *loads, &out, &errOut)
 			}
 		})
 	}
@@ -101,16 +48,16 @@ func TestLegacyChatTransportFlagsAreRetired(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"agent", "chat", "hello-world", "--session", "abc"}, "--session"},
-		{[]string{"agent", "chat", "hello-world", "--json"}, "--json"},
-		{[]string{"agent", "chat", "--session", "abc"}, "--session"},
-		{[]string{"agent", "chat", "--json"}, "--json"},
+		{[]string{"chat", "hello-world", "--session", "abc"}, "--session"},
+		{[]string{"chat", "hello-world", "--json"}, "--json"},
+		{[]string{"chat", "--session", "abc"}, "--session"},
+		{[]string{"chat", "--json"}, "--json"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
 			deps, loads := testDependencies(&out, &errOut)
 			err := execute(tc.args, deps)
-			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), "kmx agent chat --namespace") {
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), "kmx chat --namespace") {
 				t.Fatalf("retired flag must name the chat replacement: %v: %v", tc.args, err)
 			}
 			if *loads != 0 {
@@ -120,15 +67,15 @@ func TestLegacyChatTransportFlagsAreRetired(t *testing.T) {
 	}
 	var out, errOut bytes.Buffer
 	deps, loads := testDependencies(&out, &errOut)
-	err := execute([]string{"agent", "chat", "hello-world", "--json"}, deps)
-	if err == nil || !strings.Contains(err.Error(), "no raw A2A JSON equivalent for an existing Agent") || strings.Contains(err.Error(), "agent create --task") {
+	err := execute([]string{"chat", "hello-world", "--json"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "no raw A2A JSON equivalent for an existing Agent") || strings.Contains(err.Error(), "create --task") {
 		t.Fatalf("retired --json must describe the existing-Agent limitation, not suggest creating another: %v", err)
 	}
 	if *loads != 0 {
 		t.Fatal("retired --json loaded operational configuration")
 	}
 	root := newRootCommand(&commandState{deps: deps})
-	cmd, _, err := root.Find([]string{"agent", "chat"})
+	cmd, _, err := root.Find([]string{"chat"})
 	if err != nil {
 		t.Fatal(err)
 	}

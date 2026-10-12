@@ -24,7 +24,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
-- `kmx agent eval diff` reads strict v2 receipts for exact-v0.10.3 Go kagent
+- `kmx eval diff` reads strict v2 receipts for exact-v0.10.3 Go kagent
   evaluations offline, with native A2A and deployment identity checks. Valid
   kagent receipts do not affect Orka gate/status selection and cannot satisfy an
   Orka lift gate. kagent execution and promotion gates remain unsupported;
@@ -37,10 +37,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   relationships ignore ordering, output construction is explicitly bounded, and
   human rendering strips terminal and bidirectional controls.
 
-- `kmx agent create --workspace` authors one native-Orka AgentSuite member offline.
-  `kmx suite push --workspace` prepares and publishes its exact OCI graph, including
+- `kmx create --workspace` authors one native-Orka AgentSuite member offline.
+  `kmx push --workspace DIR REF` prepares and publishes its exact OCI graph, including
   authored cases, with no member image build or cluster access. Existing bundle
-  commands and suite transfer syntax are unchanged. Workspace evaluation and
+  behavior and extracted-directory suite transfer are unchanged. Workspace evaluation and
   release lift are not available. Registry workspace pushes share the default
   unsigned provenance policy, opt-out/required flags and matching-HEAD source
   commit claims; prepared graph bytes stay unchanged. [Workspace guide](docs/suite-workspace.md).
@@ -50,12 +50,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
-- `kmx agent eval diff` reports cases without observed Sessions runtime identity
+- `kmx eval diff` reports cases without observed Sessions runtime identity
   as individual `unknown` rows instead of hiding comparable cases. Unknown rows
   still exit nonzero; conflicting identities or no complete observed identity
   in either receipt remain incompatible. Receipt formats are unchanged.
 
-- Applying `kmx agent create` without a Task can reuse its offline preview when
+- Applying `kmx create` without a Task can reuse its offline preview when
   only the generated schema-source comment differs. The preview stays unchanged;
   every other byte difference still refuses reuse, and online schema/admission
   checks remain required.
@@ -65,6 +65,21 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   operations and Python's render-only boundary are unchanged.
 
 ### Breaking
+
+- Removed the entire `kmx agent` group, without aliases or retirement stubs.
+  Everyday operations are root `create/chat/run`; live inspection is
+  `orka show/list`; legacy bundle operations are
+  `bundle evaluate/lift/retire/verify/status`; evaluation helpers are root
+  `eval diff/from-sessions`. Existing handlers, selectors, stdout and exit
+  contracts are preserved. Root `status` stays the table-only Orka runtime
+  report, also available as `orka status`, not a bundle or suite observer.
+- Removed workspace mode from `kmx suite push`; use root
+  `kmx push [--workspace DIR] REF`. Until workspace discovery is available,
+  bare root push refuses and requires explicit `--workspace`. Extracted-directory
+  `suite push DIRECTORY REFERENCE` and `suite build/diff/pull/validate` remain.
+  Create still defaults to live authoring; `create --workspace` is explicitly
+  offline. Root `eval` is helper-only; packaged evaluation and root digest
+  `lift` are not implemented.
 
 - Removed `kmx lift`; use `kmx aks up` for AKS provisioning.
 - Removed `kmx lift down`; use `kmx aks down` for AKS teardown.
@@ -84,8 +99,32 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Upgrading
 
 - Update scripts using the removed root aliases to their replacements above.
-  Local, AKS and context operations retain their existing behavior; no new root
-  lifecycle verbs are introduced.
+  Local, AKS and context operations retain their existing behavior.
+- Replace command prefixes as follows, retaining arguments and applicable flags:
+
+  | Old | New |
+  |---|---|
+  | `kmx agent create [name]` | `kmx create [name]` |
+  | `kmx agent chat <name> [message...]` | `kmx chat <name> [message...]` |
+  | `kmx agent run [<bundle-dir>]` | `kmx run [<bundle-dir>]` |
+  | `kmx agent show <name>` | `kmx orka show <name>` |
+  | `kmx agent list` | `kmx orka list` |
+  | `kmx agent evaluate <bundle-dir>` | `kmx bundle evaluate <bundle-dir>` |
+  | `kmx agent lift <bundle-dir>` | `kmx bundle lift <bundle-dir>` |
+  | `kmx agent retire <bundle-dir>` | `kmx bundle retire <bundle-dir>` |
+  | `kmx agent verify <sessions-receipt.json>` | `kmx bundle verify <sessions-receipt.json>` |
+  | `kmx agent status <bundle-dir>` | `kmx bundle status <bundle-dir>` |
+  | `kmx agent eval diff <before.json> <after.json>` | `kmx eval diff <before.json> <after.json>` |
+  | `kmx agent eval from-sessions <session-uid>...` | `kmx eval from-sessions <session-uid>...` |
+  | `kmx suite push --workspace DIR REF` | `kmx push --workspace DIR REF` |
+
+  Bare `kmx agent` and `kmx agent eval` no longer exist; `kmx eval` prints
+  helper-group help. The hidden editor retirement stub is also removed with its parent;
+  edit live Orka resources with `kubectl --context <ctx> -n <ns> edit agents.core.orka.ai <name>`.
+  Task retrieval remains `kmx task result`; no root `result` is added.
+  These spellings require a current development build; tagged v0.5.1 retains
+  the `agent` routes. Workspace authoring/publication are unreleased.
+  PortableAgent formats, receipts and runtime support are unchanged.
 
 - Consumers of the alpha `pkg/kmx` design package must adopt
   `ValidatedAgentSuite`, `BuildSuiteResult`/`BuildSuiteProgress` and

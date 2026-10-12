@@ -165,10 +165,10 @@ def run(args: argparse.Namespace) -> None:
         report_path.unlink(missing_ok=True)
         return
     if args.mode == "evaluate":
-        command = [args.kmx, "agent", "evaluate", str(args.bundle), "--sessions", args.sessions,
+        command = [args.kmx, "bundle", "evaluate", str(args.bundle), "--sessions", args.sessions,
                    "--case-timeout", args.case_timeout]
     else:
-        command = [args.kmx, "agent", "verify", str(receipt_path), "--sessions", args.sessions,
+        command = [args.kmx, "bundle", "verify", str(receipt_path), "--sessions", args.sessions,
                    "--timeout", args.verify_timeout]
     try:
         result = invoke_kmx(command, args.command_timeout)

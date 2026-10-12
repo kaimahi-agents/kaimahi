@@ -30,7 +30,7 @@ func newOrkaCommand(state *commandState) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	group.AddCommand(newOrkaInstallCommand(state), newOrkaStatusCommand(state))
+	group.AddCommand(newOrkaInstallCommand(state), newOrkaStatusCommand(state), newAgentShowCommand(state), newAgentListCommand(state))
 	return group
 }
 
@@ -58,10 +58,5 @@ func newOrkaInstallCommand(state *commandState) *cobra.Command {
 }
 
 func newOrkaStatusCommand(state *commandState) *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Report what Orka has installed, and what it can resolve",
-		Args:  cobra.NoArgs,
-		RunE:  appRun(state, func(a *app.App) error { return a.OrkaStatus() }),
-	}
+	return newStatusCommand(state)
 }

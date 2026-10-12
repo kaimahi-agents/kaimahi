@@ -3,7 +3,7 @@
 Model selection is separate from runtime selection. Native Orka Agents use
 Providers; interactive host inference can instead use detected local models,
 Copilot or Foundry without rewriting the stored Orka Provider. See
-[Orka installation](orka.md), [agent create](kmx.md#kmx-agent-create),
+[Orka installation](orka.md), [kmx create](kmx.md#kmx-create),
 [Copilot inference](copilot-inference.md) and
 [Foundry inference](local-foundry-inference.md).
 
@@ -15,7 +15,7 @@ the selected provider and runtime.
 ## Storing an API key
 
 Native Orka Providers reference an existing namespaced Kubernetes Secret.
-Provision it separately; `agent create` accepts only its name and key reference,
+Provision it separately; `create` accepts only its name and key reference,
 not key bytes. Never put keys in command arguments, checked-in YAML, ConfigMaps
 or logs. The metadata-only Secret skeleton in rendered output must not be applied.
 

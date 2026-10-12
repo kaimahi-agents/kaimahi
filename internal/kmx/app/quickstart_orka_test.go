@@ -93,11 +93,11 @@ func TestQuickstartFollowUpsAreOrkaActions(t *testing.T) {
 		t.Fatalf("follow-ups are %q", next)
 	}
 	for i, want := range []string{
-		"agent chat hello-world-agent --runtime orka --namespace orka-system",
-		"agent create",
-		"orka status",
+		"kmx --context kind-test chat hello-world-agent --runtime orka --namespace orka-system 'ask it something else'",
+		"kmx --context kind-test create",
+		"kmx --context kind-test orka status",
 	} {
-		if !strings.Contains(next[i], want) {
+		if next[i] != want {
 			t.Errorf("follow-up %d is %q, want it to offer %q", i, next[i], want)
 		}
 	}
@@ -193,7 +193,7 @@ func TestQuickstartDriftedBundleOffersRemedies(t *testing.T) {
 	if !strings.Contains(err.Error(), "different configuration") {
 		t.Fatalf("lost the underlying drift explanation: %v", err)
 	}
-	if !strings.Contains(err.Error(), "kmx agent create") {
+	if !strings.Contains(err.Error(), "kmx create") {
 		t.Fatalf("missing the keep-and-rename remedy: %v", err)
 	}
 	if !strings.Contains(err.Error(), "delete the fixed "+QuickstartAgent) {
@@ -213,7 +213,7 @@ func TestQuickstartReadFailureDoesNotSuggestDeletingTheAgent(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "kubectl request failed") {
 		t.Fatalf("the read failure was not reported: %v", err)
 	}
-	if strings.Contains(err.Error(), "delete") || strings.Contains(err.Error(), "kmx agent create") {
+	if strings.Contains(err.Error(), "delete") || strings.Contains(err.Error(), "kmx create") {
 		t.Fatalf("an unreadable object was presented as drift: %v", err)
 	}
 }

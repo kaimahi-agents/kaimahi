@@ -113,7 +113,7 @@ func readRunPromptFile(path string) (string, error) {
 
 func (a *App) RunAgent(opt RunAgentOptions) error {
 	if a.Cfg == nil || a.Run == nil || a.Out == nil || a.Err == nil {
-		return fmt.Errorf("agent run requires configured kubectl and streams")
+		return fmt.Errorf("run requires configured kubectl and streams")
 	}
 	if (opt.BundleDir == "") == (opt.Agent == "") {
 		return fmt.Errorf("select exactly one bundle directory or --agent")
@@ -175,7 +175,7 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 			contextName = remembered.Context
 		}
 		if contextName == "" {
-			return fmt.Errorf("agent run requires --to-context (no target remembered for this bundle)")
+			return fmt.Errorf("run requires --to-context (no target remembered for this bundle)")
 		}
 		if remembered.Context == contextName && remembered.Namespace != "" {
 			namespace = remembered.Namespace
@@ -238,10 +238,10 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	// The guard's retry preserves the destination and execution flags, but
 	// reads the prompt anew instead of repeating its potentially private text.
 	if bundle != "" {
-		worker.InvocationCommand = fmt.Sprintf("kmx agent run %s --to-context %s --wait %s --result-port %s --prompt-file -",
+		worker.InvocationCommand = fmt.Sprintf("kmx run %s --to-context %s --wait %s --result-port %s --prompt-file -",
 			shellArg(opt.BundleDir), shellArg(worker.Cfg.KubeContext), shellArg(timeout.String()), shellArg(port))
 	} else {
-		worker.InvocationCommand = worker.operationCommand("agent", "run", "--agent", name, "--namespace", namespace,
+		worker.InvocationCommand = worker.operationCommand("run", "--agent", name, "--namespace", namespace,
 			"--wait", timeout.String(), "--result-port", port, "--prompt-file", "-")
 	}
 	if err := worker.guardOrkaMutation(ctx, CreateOptions{Name: name, Namespace: namespace}, "execute one AI Task against Agent "+name+" in "+namespace); err != nil {

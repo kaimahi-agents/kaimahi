@@ -1197,7 +1197,7 @@ func TestOrkaNextStepsPinTheClusterAndKeepTheKeyOutOfArgv(t *testing.T) {
 			a.notef("  printf %%s \"$ORKA_API_KEY\" | kubectl --context %s -n %s \\\n"+
 				"      create secret generic <name> --from-file=api-key=/dev/stdin",
 				shellArg(a.Cfg.KubeContext), OrkaNamespace)
-			a.notef("  %s", a.operationCommand("agent", "create", "<agent>",
+			a.notef("  %s", a.operationCommand("create", "<agent>",
 				"--namespace", OrkaNamespace, "--provider-type", "openai",
 				"--model", "<model>", "--secret", "<name>", "--base-url", "<endpoint>"))
 		}},

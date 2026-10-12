@@ -11,7 +11,7 @@ import (
 )
 
 func orkaCreateArgs() []string {
-	return []string{"agent", "create", "sample", "--namespace", "orka-system", "--provider-type", "openai", "--model", "qwen2.5:3b", "--secret", "local-provider-key", "--base-url", "http://ollama.ollama.svc.cluster.local:11434/v1", "--out", "-"}
+	return []string{"create", "sample", "--namespace", "orka-system", "--provider-type", "openai", "--model", "qwen2.5:3b", "--secret", "local-provider-key", "--base-url", "http://ollama.ollama.svc.cluster.local:11434/v1", "--out", "-"}
 }
 
 func TestAgentCreateOrkaOfflineWithoutToolsOnPATH(t *testing.T) {
@@ -74,7 +74,7 @@ func TestAgentCreateRejectsLegacyFlagsAndSyntax(t *testing.T) {
 func TestAgentCreateHelpExplainsOrkaBoundary(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"agent", "create", "--help"}, deps); err != nil {
+	if err := execute([]string{"create", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	for _, text := range []string{"Orka", "Provider", "watches", "ServiceAccount", "v0.2.0 (default)", "v0.1.3", "full", "--schema-target", "--skills"} {
@@ -93,7 +93,7 @@ func TestAgentCreateHelpExplainsOrkaBoundary(t *testing.T) {
 func TestAgentCreateHelpExplainsGuidedModeAndStdoutBundle(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"agent", "create", "--help"}, deps); err != nil {
+	if err := execute([]string{"create", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	for _, text := range []string{
@@ -101,7 +101,7 @@ func TestAgentCreateHelpExplainsGuidedModeAndStdoutBundle(t *testing.T) {
 		"Named creation applies to the selected cluster by default",
 		"--out - writes YAML to stdout without applying",
 		"set --bundle-path to also write an authored bundle",
-		"kmx agent create",
+		"kmx create",
 		"--base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out -",
 	} {
 		if !strings.Contains(out.String(), text) {
@@ -117,15 +117,15 @@ func TestAgentCreateHelpExplainsGuidedModeAndStdoutBundle(t *testing.T) {
 }
 
 func TestAgentHelpUsesLowercaseKagent(t *testing.T) {
-	for _, args := range [][]string{{"agent", "--help"}, {"agent", "create", "--help"}} {
+	for _, args := range [][]string{{"--help"}, {"create", "--help"}} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
 		if err := execute(args, deps); err != nil {
 			t.Fatal(err)
 		}
-		if len(args) == 2 {
+		if len(args) == 1 {
 			if !strings.Contains(out.String(), "Create an Orka or kagent declarative Agent") {
-				t.Errorf("agent help does not use lowercase kagent in the create summary:\n%s", out.String())
+				t.Errorf("root help does not use lowercase kagent in the create summary:\n%s", out.String())
 			}
 		} else if !strings.Contains(out.String(), "kagent") || strings.Contains(out.String(), "Kagent") {
 			t.Errorf("create help does not use lowercase kagent consistently:\n%s", out.String())
@@ -139,7 +139,7 @@ func TestAgentHelpUsesLowercaseKagent(t *testing.T) {
 func TestAgentCreateHelpScopesRuntimeRequirements(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"agent", "create", "--help"}, deps); err != nil {
+	if err := execute([]string{"create", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	_, orka, found := strings.Cut(out.String(), "Orka creation:\n")
@@ -172,7 +172,7 @@ func TestAgentCreateHelpScopesRuntimeRequirements(t *testing.T) {
 func TestAgentCreateHelpDisclosesKagentRetentionAndAuditRisk(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"agent", "create", "--help"}, deps); err != nil {
+	if err := execute([]string{"create", "--help"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	for _, text := range []string{
@@ -192,21 +192,21 @@ func TestAgentCreateHelpDisclosesKagentRetentionAndAuditRisk(t *testing.T) {
 func TestAgentCreateUnnamedReachesWizardRatherThanRequiredFlags(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
-	err := execute([]string{"agent", "create"}, deps)
+	err := execute([]string{"create"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "non-interactive") {
 		t.Fatalf("wizard unreachable: %v", err)
 	}
 }
 
 func kagentCreateArgs() []string {
-	return []string{"agent", "create", "sample", "--runtime", "kagent", "--namespace", "agents", "--description", "Sample agent", "--provider-type", "openai", "--model", "gpt-4o-mini", "--secret", "model-key", "--out", "-"}
+	return []string{"create", "sample", "--runtime", "kagent", "--namespace", "agents", "--description", "Sample agent", "--provider-type", "openai", "--model", "gpt-4o-mini", "--secret", "model-key", "--out", "-"}
 }
 
 func TestAgentCreateRuntimeFlagsDefaultsAndCompletion(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
 	root := newRootCommand(&commandState{deps: deps})
-	cmd, _, err := root.Find([]string{"agent", "create"})
+	cmd, _, err := root.Find([]string{"create"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,8 +220,8 @@ func TestAgentCreateRuntimeFlagsDefaultsAndCompletion(t *testing.T) {
 		args  []string
 		wants []string
 	}{
-		{[]string{"__complete", "agent", "create", "--runtime", ""}, []string{"orka", "kagent", ":4"}},
-		{[]string{"__complete", "agent", "create", "--kagent-runtime", ""}, []string{"go", "python", ":4"}},
+		{[]string{"__complete", "create", "--runtime", ""}, []string{"orka", "kagent", ":4"}},
+		{[]string{"__complete", "create", "--kagent-runtime", ""}, []string{"go", "python", ":4"}},
 	} {
 		out.Reset()
 		if err := execute(tc.args, deps); err != nil {
@@ -278,7 +278,7 @@ func TestAgentCreateKagentOfflineWithoutPATH(t *testing.T) {
 func TestAgentCreateKagentRequiresNameBeforeConfigLoad(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	err := execute([]string{"agent", "create", "--runtime", "kagent"}, deps)
+	err := execute([]string{"create", "--runtime", "kagent"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "requires") && !strings.Contains(err.Error(), "usage") {
 		t.Fatalf("missing Kagent name error = %v", err)
 	}
@@ -290,7 +290,7 @@ func TestAgentCreateKagentRequiresNameBeforeConfigLoad(t *testing.T) {
 func TestAgentCreateUnknownRuntimeFailsBeforeConfigLoad(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	err := execute([]string{"agent", "create", "sample", "--runtime", "unknown"}, deps)
+	err := execute([]string{"create", "sample", "--runtime", "unknown"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "unsupported agent runtime") {
 		t.Fatalf("unknown runtime error = %v", err)
 	}

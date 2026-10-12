@@ -264,11 +264,11 @@ The intended conceptual mapping is:
 | `kmx local down` | `AgentEnvironment.Down` |
 | `kmx suite validate` | Related to `AgentSuites.Validate`, but current command does not materialize its staged result |
 | `kmx suite build` | Current one-member experimental command is not `AgentSuites.Build` |
-| `kmx suite push` | Current definition/workspace transfer is not `AgentSuites.Push` |
+| `kmx suite push` / root `kmx push --workspace DIR REF` | Current extracted-definition/workspace transfer is not `AgentSuites.Push` |
 | Future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
-| `kmx agent lift` | `AgentDeployments.Lift` |
-| `kmx agent status` | `AgentDeployments.Status` |
-| `kmx agent retire` | `AgentDeployments.Retire` |
+| `kmx bundle lift` | `AgentDeployments.Lift` |
+| `kmx bundle status` | `AgentDeployments.Status` |
+| `kmx bundle retire` | `AgentDeployments.Retire` |
 
 This is a product-level direction, not shared implementation today. The current
 CLI does not call these northbound interfaces. It also provides `kmx suite pull`
@@ -312,7 +312,7 @@ kmx quickstart
 kmx quickstart --interactive
 
 # Author an agent against an already prepared target.
-kmx agent create
+kmx create
 ```
 
 Tagged v0.4.1 and earlier use `kmx quickstart-wizard` for custom authoring;

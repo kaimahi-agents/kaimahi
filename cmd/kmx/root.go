@@ -91,6 +91,15 @@ func execute(argv []string, deps dependencies) error {
 	}
 	state := &commandState{deps: deps, contextFlag: contextFlag, argv: append([]string(nil), argv...)}
 	root := newRootCommand(state)
+	root.InitDefaultHelpCmd()
+	help, _, _ := root.Find([]string{"help"})
+	// Cobra otherwise reports an unknown help topic on stdout but exits zero.
+	help.Args = func(_ *cobra.Command, args []string) error {
+		if len(args) > 0 && args[0] == "agent" {
+			return fmt.Errorf("unknown command %q for %q", args[0], root.Name())
+		}
+		return nil
+	}
 	root.SetArgs(argv)
 	return root.Execute()
 }
@@ -110,24 +119,27 @@ func newRootCommand(state *commandState) *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().String("context", "", "act on this kube context for one command (may appear anywhere)")
 	root.PersistentFlags().StringVar(&state.containerEngineFlag, "container-engine", "", "kind container engine: docker or podman (overrides CONTAINER_ENGINE)")
-	engineFlag := root.PersistentFlags().Lookup("container-engine")
-	root.PersistentPreRunE = func(*cobra.Command, []string) error {
-		if engineFlag.Changed && strings.TrimSpace(state.containerEngineFlag) == "" {
-			return fmt.Errorf("--container-engine requires docker or podman")
-		}
-		return nil
-	}
+	root.PersistentPreRunE = validateContainerEngineFlag
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
 	root.AddCommand(
 		newVersionCommand(state), newCompletionCommand(root), newContextCommand(state), newLocalCommand(state),
 		newQuickstartCommand(state), newAKSCommand(state),
 		newConsoleCommand(state), newOrkaCommand(state),
-		newStatusCommand(state), newAgentCommand(state), newTaskCommand(state),
-		newSuiteCommand(state), newTargetsCommand(state),
+		newStatusCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
+		newBundleCommand(state), newAgentEvalCommand(), newTaskCommand(state),
+		newSuiteCommand(state), newSuitePushCommand(state, true), newTargetsCommand(state),
 		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),
 	)
 	return root
+}
+
+func validateContainerEngineFlag(cmd *cobra.Command, _ []string) error {
+	flag := cmd.Flag("container-engine")
+	if flag != nil && flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
+		return fmt.Errorf("--container-engine requires docker or podman")
+	}
+	return nil
 }
 
 // Keep retired spellings parseable but absent from help and completion.

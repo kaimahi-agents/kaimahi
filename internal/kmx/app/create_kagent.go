@@ -76,7 +76,7 @@ func (a *App) createKagentAgent(opt CreateOptions) error {
 			return err
 		}
 		a.notef("Kagent bundle not applied. It targets exact Kagent v0.10.2.")
-		a.notef("Provision the Secret key separately; never apply its metadata-only skeleton. Use kmx agent create online to validate the live exact version and dependencies, create ModelConfig, wait for current-generation Accepted, then create Agent and wait for Accepted and Ready.")
+		a.notef("Provision the Secret key separately; never apply its metadata-only skeleton. Use kmx create online to validate the live exact version and dependencies, create ModelConfig, wait for current-generation Accepted, then create Agent and wait for Accepted and Ready.")
 		return nil
 	}
 	if err := a.preflight(depKubectl); err != nil {

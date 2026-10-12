@@ -1,6 +1,6 @@
 package app
 
-// `kmx agent show` — one screen for "will this agent actually work, and if
+// `kmx orka show` — one screen for "will this agent actually work, and if
 // not, which hop is broken".
 //
 // An Orka Agent depends on a Provider, which depends on a Secret, and the
@@ -28,10 +28,10 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
-// ShowOptions are `kmx agent show`'s knobs.
+// ShowOptions are `kmx orka show`'s knobs.
 type ShowOptions struct {
 	// Namespace the Orka controller watches. Required for the same reason
-	// `kmx agent create` requires it: Orka watches namespaces explicitly,
+	// `kmx create` requires it: Orka watches namespaces explicitly,
 	// and a default that guessed wrong would report "not found" about a
 	// namespace the operator never meant.
 	Namespace string
@@ -132,7 +132,7 @@ const unknownHop = "unknown"
 // ShowAgent renders one Orka Agent and the chain it depends on.
 func (a *App) ShowAgent(name string, opt ShowOptions) error {
 	if strings.TrimSpace(opt.Namespace) == "" {
-		return fmt.Errorf("kmx agent show %s: --namespace is required.\n"+
+		return fmt.Errorf("kmx orka show %s: --namespace is required.\n"+
 			"  Orka watches namespaces explicitly, so there is no safe default to guess:\n"+
 			"  a wrong one would report \"not found\" about a namespace you never meant", name)
 	}
@@ -141,7 +141,7 @@ func (a *App) ShowAgent(name string, opt ShowOptions) error {
 		format = "table"
 	}
 	if format != "table" && format != "json" {
-		return fmt.Errorf("agent show output %q is not supported — use table or json", opt.Output)
+		return fmt.Errorf("orka show output %q is not supported — use table or json", opt.Output)
 	}
 	if opt.Tasks <= 0 {
 		opt.Tasks = 5
@@ -172,8 +172,8 @@ func (a *App) readOrkaAgent(namespace, name string) (*orkaAgentSpec, error) {
 			return nil, fmt.Errorf("no Orka Agent %q in namespace %s.\n"+
 				"  `%s` shows what is there; `%s` makes one",
 				name, namespace,
-				a.operationCommand("agent", "list", "--namespace", namespace),
-				a.operationCommand("agent", "create", "<name>", "--namespace", namespace))
+				a.operationCommand("orka", "list", "--namespace", namespace),
+				a.operationCommand("create", "<name>", "--namespace", namespace))
 		}
 		return nil, fmt.Errorf("cannot read Orka Agent %q in namespace %s: %w", name, namespace, err)
 	}

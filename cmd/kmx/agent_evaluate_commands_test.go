@@ -86,7 +86,7 @@ func TestAgentEvaluateSessionsBypassesClusterConfiguration(t *testing.T) {
 				calls++
 				return nil, configErr
 			}
-			args := []string{"agent", "evaluate", filepath.Join(t.TempDir(), "absent")}
+			args := []string{"bundle", "evaluate", filepath.Join(t.TempDir(), "absent")}
 			if sessions {
 				args = append(args, "--sessions", "127.0.0.1:8080")
 			}

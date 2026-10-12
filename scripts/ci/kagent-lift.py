@@ -513,7 +513,7 @@ def qualify(binary, work):
 
     def cli(verb, *extra, expected_refusal=None, with_bindings=True):
         selected = flags if with_bindings else flags[:-2]
-        result = subprocess.run([str(binary), "agent", verb, str(bundle), *selected, *extra],
+        result = subprocess.run([str(binary), "bundle", verb, str(bundle), *selected, *extra],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
         if expected_refusal is not None:
             lines = [line for line in result.stderr.splitlines() if line.strip()]

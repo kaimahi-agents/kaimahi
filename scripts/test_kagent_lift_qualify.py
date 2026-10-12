@@ -63,6 +63,8 @@ class QualifyTests(unittest.TestCase):
                     target.update(state="drift", ready=False, detail="desired source or bindings differ from saved deployment")
                 return dict(receipt, bundle="lift-proof", runtime="kagent", runtimeVersion="v0.10.3", portableDigest="a" * 64, renderedDigest="b" * 64, targets=[target])
             def cli(argv, **kwargs):
+                self.assertEqual(argv[:2], [str(binary), "bundle"])
+                self.assertIn(argv[2], ("lift", "status"))
                 verb = argv[2]
                 missing = not (work / "external-bindings.yaml").exists()
                 report = status() if not missing else None

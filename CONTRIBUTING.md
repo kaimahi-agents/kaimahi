@@ -18,7 +18,7 @@ contribution cannot provide the requested behavior. Runtimes and harnesses own
 execution, enforcement and model access; KMX should not duplicate them.
 
 kagent support is intentionally version-bounded: explicit
-`kmx agent create --runtime kagent <name>` targets preinstalled exact v0.10.2;
+`kmx create --runtime kagent <name>` targets preinstalled exact v0.10.2;
 explicit bundle lift/status with `--runtime kagent --runtime-version v0.10.3`
 targets preinstalled exact v0.10.3. Lift creates new Go declarative resources or
 reuses a complete matching UID-bound deployment; it does not adopt or update.

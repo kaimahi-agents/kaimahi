@@ -197,7 +197,7 @@ def command_hits(parts):
             hits.add("retired cloud kagent payload")
         if cloud and CLOUD_STEPS.intersection(flags.get("--step", [])):
             hits.add("retired cloud phase")
-        if words[:2] == ["agent", "chat"] and {"--session", "--json"}.intersection(flags):
+        if (words[:1] == ["chat"] or words[:2] == ["agent", "chat"]) and {"--session", "--json"}.intersection(flags):
             hits.add("retired chat transport flag")
     return hits
 
@@ -358,6 +358,9 @@ def selftest():
         'kmx local up --step tools-agent', 'kmx quickstart --legacy-kagent',
         'kmx lift --payload=kagent', 'kmx aks up --step plane', 'kmx lift --step credential',
         'kmx agent chat demo --session="abc"', 'kmx agent --context x chat --json=false',
+        'kmx chat demo --session="abc"', 'kmx --context x chat --json=false',
+        'args := []string{"chat", "demo", "--session", "abc"}',
+        'a.operationCommand("chat", name, "--json")',
         'kmx agent create demo; kmx govern demo', 'kmx context use x && kmx use orka',
         'kmx up --step \\\n "kagent"', 'kmx \\\n --context x \\\n agent edit demo',
         'kmx agent status demo # --runtime-version v0.10.3\nkmx govern demo',
@@ -408,6 +411,8 @@ def selftest():
         'kmx agent status demo --runtime kagent && echo --runtime-version v0.10.3',
         'kmx agent status demo --runtime kagent\n# --runtime-version v0.10.3',
         'kmx local up --step orka', 'kmx aks up --payload orka --step verify',
+        'kmx run demo --json', 'kmx chat demo # --session abc',
+        'kmx chat demo && echo --json', 'kmx chat demo --json-output',
         'kmx agent run demo --json', 'kmx agent chat demo # --session abc',
         'kmx agent chat demo && echo --json', 'echo use; kmx context show',
         'type KagentLift struct { KagentBindings ModelConfig } // kagent.dev/v1alpha2',
