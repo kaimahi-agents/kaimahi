@@ -108,6 +108,69 @@ func TestWorkspaceSelectorsRejectEmptyAndAmbiguousSource(t *testing.T) {
 	}
 }
 
+func TestWorkspacePathsRefuseCredentialShapesWithoutDisclosure(t *testing.T) {
+	credential := "ghp_" + strings.Repeat("x", 36)
+	for _, field := range []string{"workspace", "instructions"} {
+		t.Run(field, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "workspace")
+			input := filepath.Join(t.TempDir(), "instructions.md")
+			if err := os.WriteFile(input, []byte("Answer briefly.\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if field == "workspace" {
+				root = filepath.Join(t.TempDir(), credential)
+			} else {
+				input = filepath.Join(t.TempDir(), credential)
+			}
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			err := execute([]string{"agent", "create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", input}, deps)
+			if err == nil || strings.Contains(err.Error(), credential) || strings.Contains(out.String(), credential) || strings.Contains(diagnostics.String(), credential) {
+				t.Fatal("credential-shaped path was accepted or disclosed")
+			}
+			if *loads != 0 {
+				t.Fatal("invalid workspace path loaded configuration")
+			}
+		})
+	}
+}
+
+func TestWorkspaceProfileParseErrorsDoNotDiscloseContent(t *testing.T) {
+	credential := "ghp_" + strings.Repeat("x", 36)
+	escaped := "\\u0067" + credential[1:]
+	for _, profile := range []string{
+		`{"` + credential + `":"unused"}`,
+		`{"` + escaped + `":"unused"}`,
+		`{} "` + credential + `"`,
+	} {
+		root := t.TempDir()
+		input := filepath.Join(t.TempDir(), "instructions.md")
+		if err := os.WriteFile(input, []byte("Answer briefly.\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("KMX_HOME", t.TempDir())
+		var out, diagnostics bytes.Buffer
+		deps, loads := testDependencies(&out, &diagnostics)
+		if err := execute([]string{"agent", "create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", input}, deps); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "build-profiles/default.json"), []byte(profile), 0600); err != nil {
+			t.Fatal(err)
+		}
+		out.Reset()
+		err := execute([]string{"suite", "push", "--workspace", root, "--to-layout", filepath.Join(t.TempDir(), "published"), "team:v1"}, deps)
+		if err == nil || !strings.Contains(err.Error(), "profile") {
+			t.Fatal("invalid profile should refuse with a profile diagnostic")
+		}
+		if strings.Contains(err.Error(), credential) || strings.Contains(out.String(), credential) || strings.Contains(diagnostics.String(), credential) {
+			t.Fatal("profile parse diagnostic disclosed content")
+		}
+		if *loads != 0 {
+			t.Fatal("invalid profile loaded target configuration")
+		}
+	}
+}
+
 func TestWorkspaceHelpAndCompletionHaveNoOperationalEffects(t *testing.T) {
 	for _, args := range [][]string{
 		{"agent", "create", "--help"}, {"suite", "push", "--help"},

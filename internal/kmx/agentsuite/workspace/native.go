@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
+	"slices"
 	"strings"
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
@@ -174,7 +176,8 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases ma
 	}
 	var bp, approved spec.BuildProfile
 	if err := spec.Unmarshal(profile, &bp); err != nil {
-		return nil, err
+		// Strict JSON diagnostics may quote decoded keys or trailing content.
+		return nil, errors.New("invalid pinned build profile JSON")
 	}
 	if err := spec.Unmarshal(defaultProfile, &approved); err != nil {
 		return nil, err
@@ -228,7 +231,7 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases ma
 	}
 	record := nativeRecord{1, "native-orka", m.ID, rendererVersion, []string{}, []caseRef{}}
 	ids := map[string]bool{}
-	for _, name := range sortedKeys(cases) {
+	for _, name := range slices.Sorted(maps.Keys(cases)) {
 		if !caseName(name) {
 			return nil, errors.New("unsupported case filename")
 		}

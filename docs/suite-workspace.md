@@ -22,13 +22,16 @@ kmx agent create greeter --workspace . \
 ```
 
 `--instructions` names a file, not inline text. Its nonblank bytes are copied
-unchanged into the member. `--description` is optional. This mode refuses cluster,
+unchanged into the member. `--description` is optional and single-line. Instructions use the native block-text
+policy: LF and tabs are allowed; CR and other control characters are refused,
+not normalized. This mode refuses cluster,
 Provider, runtime, output, tools and Task flags, rather than ignoring them.
 Creation refuses existing workspace/member directories, including PortableAgent
 bundles; it does not overwrite or migrate them.
 
-The source consists of `workspace.yaml`, a member under `agents/greeter/`, its
-instructions and `eval/*.yaml`, and a pinned build profile. The member's model
+The source consists of `workspace.yaml`, `agents/greeter/member.yaml`, its
+member-relative instruction file, workspace-root `eval/*.yaml`, and a pinned
+build profile. The member's model
 is exact; there is no deployment-time model substitution. Edit source values,
 instructions and authored cases, not computed digest strings. The example case
 is public arithmetic using existing evaluation-case syntax, not proof that your
@@ -59,8 +62,9 @@ identity; old evidence cannot qualify the changed content.
 
 The OCI manifest digest binds all the content-layer bytes, including cases.
 The canonical `agentsuite.json` graph digest alone does not bind supplemental
-metadata. No outer package envelope is used. The public specification still
-requires an empty composition and pinned build-profile records. Those records
+metadata. No outer package envelope is used. The public format still
+requires a composition and pinned build-profile records; this tool-free native
+profile emits a composition with no ToolProviders. Those profile records
 are declared image-build inputs, not dependencies fetched or executed by native
 Orka placement, and do not imply sandbox-image conformance.
 
@@ -78,6 +82,11 @@ kmx suite validate ../extracted
 ```
 
 `--plain-http` and `--force` are registry-only and refused with `--to-layout`.
+Local layout publication excludes competing KMX writers before opening the target
+index, including extracted-directory pushes. A competing invocation refuses;
+references from successful publications remain intact. An interrupted writer can
+leave a sibling lock directory: remove it only after verifying the publisher has
+stopped. Registry tag preflight remains separately non-atomic.
 Existing extracted-directory transfer remains `suite push DIRECTORY REFERENCE`;
 `--workspace` instead takes only one positional destination reference.
 

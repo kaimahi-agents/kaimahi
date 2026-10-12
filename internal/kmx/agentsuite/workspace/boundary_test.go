@@ -2,6 +2,7 @@ package workspace_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -186,6 +187,28 @@ func TestPrepareInterruptedStageAndSourceDrift(t *testing.T) {
 				t.Fatalf("partial preparation published or leaked: %v", entries)
 			}
 		})
+	}
+}
+
+func TestPrepareRefusesVersionCoercionAndEncodedSourcePaths(t *testing.T) {
+	for _, version := range []string{"1.9", "1.0", "true", "\"1\""} {
+		t.Run("version "+version, func(t *testing.T) {
+			root, cache := createWorkspace(t)
+			p := filepath.Join(root, "workspace.yaml")
+			writeFile(t, p, strings.Replace(string(readFile(t, p)), "schemaVersion: 1", "schemaVersion: "+version, 1))
+			if _, err := workspace.Prepare(context.Background(), root, cache); err == nil || !strings.Contains(err.Error(), "schemaVersion") {
+				t.Fatalf("coerced source version should refuse: %v", err)
+			}
+		})
+	}
+	root, cache := createWorkspace(t)
+	p := filepath.Join(root, "workspace.yaml")
+	credential := "ghp_" + strings.Repeat("x", 36)
+	encoded := base64.StdEncoding.EncodeToString([]byte(credential))
+	writeFile(t, p, strings.Replace(string(readFile(t, p)), "agents/greeter/member.yaml", "!!binary "+encoded, 1))
+	_, err := workspace.Prepare(context.Background(), root, cache)
+	if err == nil || strings.Contains(err.Error(), credential) || !strings.Contains(err.Error(), "source") {
+		t.Fatal("encoded source path must refuse without leaking its decoded value")
 	}
 }
 

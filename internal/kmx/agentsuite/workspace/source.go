@@ -65,11 +65,20 @@ func validateMember(m sourceMember, instructions []byte) error {
 	if strings.TrimSpace(string(instructions)) == "" {
 		return errors.New("instructions must not be blank")
 	}
+	if err := scaffold.ValidateBlockText(string(instructions)); err != nil {
+		return fmt.Errorf("instructions: %w", err)
+	}
+	if err := scaffold.ValidateSingleLineText(m.Description); err != nil {
+		return fmt.Errorf("description: %w", err)
+	}
 	return nil
 }
 
 // safeAbsolute refuses symlink components, including existing ancestors of a new path.
 func safeAbsolute(value string) (string, error) {
+	if err := safeText(value); err != nil {
+		return "", err
+	}
 	if value == "" {
 		return "", errors.New("path is required")
 	}
@@ -262,8 +271,8 @@ func strictYAML(b []byte, out any) error {
 	}
 	var visit func(*yaml.Node, int) error
 	visit = func(n *yaml.Node, depth int) error {
-		if depth > 32 || n.Kind == yaml.AliasNode || n.Anchor != "" || n.Tag == "!!null" {
-			return errors.New("unsupported YAML alias, anchor, null or excessive nesting")
+		if depth > 32 || n.Kind == yaml.AliasNode || n.Anchor != "" || n.Tag == "!!null" || n.Tag == "!!binary" {
+			return errors.New("unsupported source YAML alias, anchor, null, binary or excessive nesting")
 		}
 		if err := safeText(n.Value); err != nil {
 			return err
@@ -275,6 +284,14 @@ func strictYAML(b []byte, out any) error {
 					return errors.New("unsupported or duplicate YAML key")
 				}
 				seen[c.Value] = true
+				value := n.Content[i+1]
+				if c.Value == "schemaVersion" {
+					if value.Kind != yaml.ScalarNode || value.Tag != "!!int" {
+						return errors.New("schemaVersion must be an integer scalar")
+					}
+				} else if value.Kind == yaml.ScalarNode && value.Tag != "!!str" {
+					return errors.New("source fields must be strings, without scalar coercion")
+				}
 			}
 			if err := visit(c, depth+1); err != nil {
 				return err

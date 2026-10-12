@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
@@ -31,14 +30,6 @@ type cacheRecord struct {
 	Name        string             `json:"name"`
 }
 
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	return keys
-}
 func equalFiles(a, b map[string][]byte) bool {
 	if len(a) != len(b) {
 		return false
