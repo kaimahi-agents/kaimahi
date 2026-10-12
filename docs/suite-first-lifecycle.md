@@ -39,15 +39,15 @@ kmx eval
 # proposed: evaluate the workspace's selected members and their case sets
 kmx suite push ghcr.io/me/my-agents:v1
 # proposed: resolve, pack, build every required member, push, print immutable identities
-kmx lift ghcr.io/me/my-agents@sha256:... --target orka
+kmx lift ghcr.io/me/my-agents@sha256:... --target prod
 # proposed: retrieve, verify, plan, gate and place on a prepared target; never build
-kmx lift . --target orka
+kmx lift . --target prod
 # proposed: convenience preparation followed by the same lift plan
 kmx status
 # exists today: Orka runtime report; suite deployment status is proposed
 ```
 
-The digest ellipsis stands for the actual printed digest. `--target orka` sketches runtime selection, not a durable destination ID; destination and inference selection still need an agreed interface. Runtime support must be qualified, not inferred from this example.
+The digest ellipsis stands for the actual printed digest. `--target prod` stands for a durable destination; its interface (context, namespace, inference binding) still needs agreement. Runtime is not a lift option: it comes from the member, chosen at create, and evaluation evidence binds it. Lift resolves the runtime, prints it, and refuses when the target can't run it or the evidence covers a different runtime. Runtime support must be qualified, not inferred from this example.
 
 | Current path | Mapping to this proposal |
 |---|---|
