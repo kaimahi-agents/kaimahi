@@ -22,6 +22,8 @@ type EvaluationDiffOptions struct{ Before, After string }
 
 type evaluationDiffIdentity struct {
 	Runtime, Address, Harness, Model, ClusterUID, Namespace, Agent, AgentUID string
+	RuntimeVersion, Engine, ModelConfigUID, SourceCommit                     string
+	ControllerImage, ADKImage                                                kagentEvaluationImage
 }
 
 type normalizedEvaluation struct {
@@ -152,6 +154,12 @@ func readEvaluationDiffSource(path string) (normalizedEvaluation, error) {
 		return d.Decode(&extra) == io.EOF
 	}
 	switch target.Target.Runtime {
+	case string(agentruntime.Kagent):
+		n, ok := parseKagentEvaluation(raw)
+		if !ok {
+			return invalid()
+		}
+		return n, nil
 	case "agentsessions":
 		var r sessionsEvaluationReceipt
 		if !decode(&r) {

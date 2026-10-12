@@ -74,8 +74,12 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   proves one native A2A MCP answer; receipts still prove readiness, not execution.
   Lift creates new objects or reuses a complete
   matching UID-bound receipt without adoption, update or retry of ambiguous
-  writes. Readiness is not execution proof. Do not infer installation,
-  discovery, chat/run/evaluation, retirement or console support from this slice.
+  writes. Readiness is not execution proof. Offline `agent eval diff` reads
+  strict v2 kagent Go receipts with native A2A identities; valid kagent evidence
+  is excluded from Orka gate/status selection. This does not enable kagent
+  execution, promotion gates or Python. Do not infer installation,
+  discovery, chat/run/evaluation, retirement or console support from receipt
+  reading or placement.
 
 ## Verification
 

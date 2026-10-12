@@ -67,6 +67,11 @@ version or optional operation. Native readiness alone is not semantic proof.
 | orka | `supported`: render, deploy/reconcile, status, evaluation, chat, one-shot run and native workload retire. Retire deletes/releases workload resources, not retained registrations or target infrastructure. | [v0.2.0 source](https://github.com/orka-agents/orka/tree/5f4eb543b2b35a3afb8e7ea01f5f53985e25d4c1); chart SHA-256 `b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79`; controller `ghcr.io/orka-agents/orka@sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370`. Required Orka CI proves a native result, not every optional capability. | Operator or an explicit KMX Orka environment command; targets does neither. |
 
 No standalone `logs`, arbitrary `diff` or `rollback` capability is advertised.
+Offline `kmx agent eval diff` also reads strict exact-v0.10.3 Go kagent v2
+receipts; this is receipt comparison, not kagent execution, promotion gates,
+replay or native resource diff. Valid kagent evidence is excluded from Orka
+gate/status selection. Older strict readers may reject the new receipt shape.
+
 Orka status reports drift; that is not a universal diff API. The view explains
 unsupported operations without invoking them.
 

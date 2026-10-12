@@ -97,6 +97,11 @@ func readBundleGateEvidence(bundle string) ([]bundleGateEvidence, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read evaluation receipts: %w", err)
 	}
+	dir, err := os.Open(filepath.Join(bundle, "receipts"))
+	if err != nil {
+		return nil, fmt.Errorf("read evaluation receipts")
+	}
+	defer dir.Close()
 	var evidence []bundleGateEvidence
 	for _, entry := range entries {
 		if !strings.HasPrefix(entry.Name(), "eval-") || !strings.HasSuffix(entry.Name(), ".json") {
@@ -105,13 +110,49 @@ func readBundleGateEvidence(bundle string) ([]bundleGateEvidence, error) {
 		if !entry.Type().IsRegular() {
 			return nil, fmt.Errorf("evaluation receipt %s must be a regular file", entry.Name())
 		}
-		raw, err := os.ReadFile(filepath.Join(bundle, "receipts", entry.Name()))
+		path := filepath.Join(bundle, "receipts", entry.Name())
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() || info.Size() > maxSessionsReceiptBytes {
+			return nil, fmt.Errorf("invalid evaluation receipt %s", entry.Name())
+		}
+		file, err := openKagentFile(dir, entry.Name())
 		if err != nil {
-			return nil, fmt.Errorf("read evaluation receipt %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("read evaluation receipt %s", entry.Name())
+		}
+		opened, statErr := file.Stat()
+		if statErr != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+			file.Close()
+			return nil, fmt.Errorf("invalid evaluation receipt %s", entry.Name())
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(file, maxSessionsReceiptBytes+1))
+		file.Close()
+		current, statErr := os.Lstat(path)
+		if readErr != nil || statErr != nil || !current.Mode().IsRegular() || !os.SameFile(opened, current) || len(raw) > maxSessionsReceiptBytes {
+			return nil, fmt.Errorf("invalid evaluation receipt %s", entry.Name())
+		}
+		// Dispatch before decoding Orka identities: foreign native evidence must
+		// be fully validated, but never eligible for Orka context/gate/status.
+		var discriminant struct {
+			Target struct {
+				Runtime string `json:"runtime"`
+			} `json:"target"`
+		}
+		if json.Unmarshal(raw, &discriminant) != nil {
+			return nil, fmt.Errorf("invalid evaluation receipt %s", entry.Name())
+		}
+		switch discriminant.Target.Runtime {
+		case string(agentruntime.Kagent):
+			if _, ok := parseKagentEvaluation(raw); !ok {
+				return nil, fmt.Errorf("invalid evaluation receipt %s", entry.Name())
+			}
+			continue
+		case string(agentruntime.Orka), "agentsessions":
+		default:
+			return nil, fmt.Errorf("invalid evaluation receipt %s", entry.Name())
 		}
 		var receipt bundleEvaluationReceipt
-		if err := json.Unmarshal(raw, &receipt); err != nil {
-			return nil, fmt.Errorf("invalid evaluation receipt %s: %w", entry.Name(), err)
+		if json.Unmarshal(raw, &receipt) != nil {
+			return nil, fmt.Errorf("invalid evaluation receipt %s", entry.Name())
 		}
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		decoder.DisallowUnknownFields()

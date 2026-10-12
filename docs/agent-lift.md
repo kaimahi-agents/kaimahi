@@ -958,8 +958,8 @@ proof, replacing any prior report. Only `equivalent` for every case exits zero;
 kmx agent eval diff <before.json> <after.json>
 ```
 
-Pass explicit latest receipts or immutable run files from either supported
-receipt family. This command reads only those local files: no kubeconfig or
+Pass explicit latest receipts or immutable run files from the Orka, Sessions
+or exact-v0.10.3 Go kagent receipt family. This command reads only those local files: no kubeconfig or
 runtime configuration, network request, model call or case rerun. Inputs must
 be regular, non-linked files, at most 1 MiB each. Unknown or duplicate JSON
 members (including case-folded spellings), malformed identities/digests,
@@ -968,14 +968,20 @@ duplicate case/assertion IDs and incoherent versions/results are refused.
 Both receipts must be v2 full-case runs with compatible runtime identity.
 Sessions compares syntactically normalized address, returned harness and
 journal-observed model, without DNS/alias equivalence. Orka compares cluster
-UID, namespace, Agent name/UID and model. Sessions requires at least one case
-with a complete observed harness/model pair in each receipt. A case missing
-identity on either side produces a case-level `unknown` row, not assertion
-verdict transitions; other cases still compare, and structural changes remain
-visible. All nonempty observations must agree, including partial observations;
-mixed models or disagreements make the whole comparison incompatible. No
-observed identity, or missing Orka target identity, is incompatible, never
-inferred from requested models or recorded sources. **Different portable digests or Git commits
+UID, namespace, Agent name/UID and model. kagent compares runtime version,
+Go engine, cluster UID, namespace, Agent and ModelConfig UIDs, model route and
+qualified controller/ADK image pins. Context labels, execution IDs and resource
+generations do not select a producer. Replaced Agents or ModelConfigs,
+different runtimes, versions, engines or model routes are incompatible.
+
+Sessions requires at least one case with a complete observed harness/model
+pair in each receipt. A case missing identity on either side produces a
+case-level `unknown` row, not assertion verdict transitions; other cases still
+compare, and structural changes remain visible. All nonempty observations must
+agree, including partial observations; mixed models or disagreements make the
+whole comparison incompatible. No observed identity, or missing Orka/kagent
+target identity, is incompatible, never inferred from requested models or
+recorded sources. **Different portable digests or Git commits
 are allowed**: before/after revision identities are displayed for the operator.
 Legacy receipts are recognized but incompatible for assertion-level comparison;
 no assertion outcomes are synthesized from old aggregate verdicts.
@@ -1007,6 +1013,31 @@ inputs/definitions/source, lost evidence and remaining unknowns exit nonzero.
 Evidence gains are also reported as an incomplete comparison, not a
 known-to-known comparison. A complete stable comparison or fixes can exit zero **even if both
 evaluations failed**; zero is not an evaluation-pass claim.
+
+### Offline kagent receipt boundary
+
+kagent v2 receipts keep the existing case, assertion and judge evidence, with
+native A2A request, Task and context identities rather than Kubernetes Task
+names/UIDs. They additionally bind the portable and rendered digests, selected
+deployment receipt digest, Agent/ModelConfig generations, qualified platform
+pins and workload/dependency snapshots. Tool assertions remain unknown;
+structured upstream events are not qualified assertion evidence.
+
+Private run archives use the same `receipts/runs/eval-<runID>.json` history;
+kagent latest files use a separate `receipts/eval-kagent-v0.10.3-<target>.json`
+namespace. Valid kagent latest evidence is excluded from Orka status and lift
+gates; malformed evidence still refuses a scanned gate. A kagent receipt never
+satisfies an Orka promotion requirement.
+
+**Offline reading is not execution support.** `kmx agent evaluate` does not yet
+run cases on kagent, and kagent lift still refuses evaluation gate flags and
+`lift-policy.yaml`. Python, replay verification and cross-runtime comparison
+remain unsupported. Since kagent lift cannot update an Agent in place, diff
+across a replacement deployment is incompatible, not a revision regression.
+Upgrade receipt readers before exchanging these shapes: older strict readers
+may reject them. Receipts contain no inputs, answers, assertion operands or
+credential values; they are forgeable local evidence, not execution
+attestations or files to commit.
 
 ## Run evals in CI
 

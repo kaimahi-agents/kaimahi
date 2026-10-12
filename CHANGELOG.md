@@ -24,6 +24,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- `kmx agent eval diff` reads strict v2 receipts for exact-v0.10.3 Go kagent
+  evaluations offline, with native A2A and deployment identity checks. Valid
+  kagent receipts do not affect Orka gate/status selection and cannot satisfy an
+  Orka lift gate. kagent execution and promotion gates remain unsupported;
+  upgrade older strict receipt readers before exchanging these shapes.
+  [Offline receipt boundary](docs/agent-lift.md#offline-kagent-receipt-boundary).
+
 - `kmx agent create --workspace` authors one native-Orka AgentSuite member offline.
   `kmx suite push --workspace` prepares and publishes its exact OCI graph, including
   authored cases, with no member image build or cluster access. Existing bundle
