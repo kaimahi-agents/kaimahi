@@ -36,20 +36,27 @@ func (a *App) detectOrkaTarget() TargetDetection {
 	}
 	// A successful but empty/malformed API response is not an empty collection.
 	var list struct {
-		Kind  string            `json:"kind"`
-		Items *[]orkaDeployment `json:"items"`
+		Kind  string `json:"kind"`
+		Items *[]struct {
+			Kind string `json:"kind"`
+			orkaDeployment
+		} `json:"items"`
 	}
-	if err := json.Unmarshal(data, &list); err != nil || list.Kind != "DeploymentList" || list.Items == nil {
+	if err := json.Unmarshal(data, &list); err != nil || (list.Kind != "DeploymentList" && list.Kind != "List") || list.Items == nil {
 		return unreadableTarget(scope, "malformed", "invalid DeploymentList response", "inspect the selected Kubernetes API and kubectl transport")
 	}
 	var candidates []orkaDeployment
 	for _, d := range *list.Items {
+		// Generic kubectl lists carry the resource kind on each item.
+		if list.Kind == "List" && d.Kind != "Deployment" {
+			return unreadableTarget(scope, "malformed", "invalid Deployment item in List response", "inspect the selected Kubernetes API response")
+		}
 		if d.Metadata.Name == "" {
 			return unreadableTarget(scope, "malformed", "Deployment identity unavailable", "inspect the selected Kubernetes API response")
 		}
 		labels := d.Metadata.Labels
 		if labels["app.kubernetes.io/name"] == "orka" && (labels["app.kubernetes.io/component"] == "controller" || labels["control-plane"] == "controller-manager") {
-			candidates = append(candidates, d)
+			candidates = append(candidates, d.orkaDeployment)
 		}
 	}
 	if len(candidates) == 0 {
