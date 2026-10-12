@@ -32,10 +32,6 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   unsigned provenance policy, opt-out/required flags and matching-HEAD source
   commit claims; prepared graph bytes stay unchanged. [Workspace guide](docs/suite-workspace.md).
 
-- Internal native-suite loading uses verified packaged inputs, with an optional
-  exact-manifest publication guard. No workspace evaluation or release lift is
-  added to the CLI.
-
 - Registry `kmx suite push` attaches provenance by default, and `suite pull` shows the claimed kmx version and source commit when available; `--require-provenance` refuses to move the tag if attachment fails.
   Provenance is unsigned: anyone with push access can attach a claim. [Suite provenance](docs/kmx.md#suite-provenance).
 
