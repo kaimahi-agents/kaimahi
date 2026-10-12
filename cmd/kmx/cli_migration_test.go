@@ -100,7 +100,8 @@ func TestCLIMigrationPushRefusalsPrecedeConfigurationAndPreparation(t *testing.T
 		args []string
 		want string
 	}{
-		{[]string{"push", "team:v1"}, "--workspace"},
+		{[]string{"push", "team:v1"}, "no workspace found"},
+		{[]string{"push", "directory", "team:v1"}, "exactly one"},
 		{[]string{"push", "--workspace=", "team:v1"}, "--workspace"},
 		{[]string{"push", "--workspace", "missing", "directory", "team:v1"}, "exactly one"},
 		{[]string{"push", "--workspace", "missing", "team:v1", "--context", "kind-demo"}, "--context"},
@@ -113,6 +114,7 @@ func TestCLIMigrationPushRefusalsPrecedeConfigurationAndPreparation(t *testing.T
 		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
 			state := t.TempDir()
 			t.Setenv("KMX_HOME", state)
+			t.Chdir(t.TempDir())
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
 			err := execute(tc.args, deps)
@@ -262,27 +264,42 @@ esac
 	}
 }
 
-func TestCLIMigrationBarePushDoesNotDiscoverCurrentWorkspace(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "workspace.yaml"), []byte("invalid canary\n"), 0600); err != nil {
+func TestCLIMigrationPushMalformedNearestMarkerStopsDiscovery(t *testing.T) {
+	root, state := t.TempDir(), t.TempDir()
+	t.Setenv("KMX_HOME", state)
+	instructions := filepath.Join(t.TempDir(), "instructions.md")
+	if err := os.WriteFile(instructions, []byte("Answer briefly.\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(old) })
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	err = execute([]string{"push", "team:v1"}, deps)
-	if err == nil || !strings.Contains(err.Error(), "--workspace") || strings.Contains(err.Error(), "canary") || *loads != 0 {
-		t.Fatalf("bare push attempted discovery: err=%v loads=%d", err, *loads)
+	if err := execute([]string{"create", "greeter", "--workspace", root, "--model", "test-model", "--instructions", instructions}, deps); err != nil {
+		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(root)
-	if err != nil || len(entries) != 1 {
-		t.Fatalf("bare push changed workspace: %v %v", entries, err)
+	nearest := filepath.Join(root, "nested")
+	cwd := filepath.Join(nearest, "deep")
+	if err := os.MkdirAll(cwd, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nearest, "workspace.yaml"), []byte("invalid canary: [\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
+	out.Reset()
+	layout := filepath.Join(t.TempDir(), "layout")
+	// A valid ancestor must not hide an invalid nearer marker, even when the
+	// destination is a registry that would otherwise require network access.
+	for _, flags := range [][]string{nil, {"--to-layout", layout}} {
+		err := execute(append([]string{"push", "registry.invalid/team:v1"}, flags...), deps)
+		if err == nil || !strings.Contains(err.Error(), "invalid workspace descriptor") || strings.Contains(err.Error(), "canary") || *loads != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
+			t.Fatalf("nearest marker refusal: err=%v loads=%d stdout=%q stderr=%q", err, *loads, &out, &diagnostics)
+		}
+	}
+	if _, err := os.Stat(layout); !os.IsNotExist(err) {
+		t.Fatal("malformed marker wrote destination")
+	}
+	entries, err := os.ReadDir(state)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("malformed marker prepared workspace state: %v %v", entries, err)
 	}
 }

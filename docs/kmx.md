@@ -106,7 +106,7 @@ evaluation and root digest `lift` are not implemented. See the
 | `kmx orka status` | same table-only Orka runtime report as root `status`: running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin. `-o table` only |
 | `kmx create [name]` | default, unchanged live Orka authoring: native Provider + Agent and optional Task. Explicit `--runtime kagent <name>` is create-only for an already-installed exact Kagent v0.10.2. Retrieve a real answer only with `--task`. [Create contract](#kmx-create) |
 | `kmx create <name> --workspace <directory> --model <model> --instructions <file>` | author one tool-free native-Orka suite member offline, without cluster configuration or image construction. Optional `--description`; other create-mode flags refuse. [Workspace guide](suite-workspace.md) |
-| `kmx push [--workspace <directory>] <reference>` | currently requires explicit `--workspace`; bare push refuses with a hint because discovery is not implemented. Prepare a validated one-member native suite with authored cases, then copy its exact OCI graph to a registry or `--to-layout` target. Required member images are empty. Does not evaluate or deploy. Existing registry policy applies. [Workspace guide](suite-workspace.md) |
+| `kmx push [--workspace <directory>] <reference>` | discover the nearest ancestor `workspace.yaml`, or select an exact root without fallback with `--workspace`; prepare its validated one-member native suite and authored cases, then copy its exact OCI graph to a registry or `--to-layout` target. Print the absolute workspace and OCI manifest digest on stderr. Required member images are empty. Does not evaluate or deploy. Existing registry policy applies. [Workspace guide](suite-workspace.md) |
 | `kmx suite build <directory> ...` | resolve one agent/platform composition and build an OCI image-layout tar through AgentKit using Docker buildx. The current implementation is explicitly experimental and non-conformant because it treats the selected harness image as a monolithic AgentKit adapter and does not compose the runtime-base image. |
 | `kmx suite push <directory> <registry/repository:tag>` | deterministically archive and validate an extracted AgentSuite, then push it to an OCI registry. An existing tag with the same digest is a no-op; a different digest requires `--force`. It also attaches unsigned [suite provenance](#suite-provenance) before moving the tag; `--provenance=false` skips it and `--require-provenance` fails without moving the tag if it cannot be attached. Prints the pushed and provenance digests. See [registry safety](#registry-authentication). |
 | `kmx suite push <directory> --to-layout <layout> <repository:tag>` | deterministically archive and validate an extracted AgentSuite, then add its referenced artifact to a local OCI image layout. New layouts are published atomically; existing layouts retain unrelated references. Output states whether the layout was created or updated. No provenance is attached, since a conformant AgentSuite layout holds exactly one manifest. |
@@ -586,8 +586,9 @@ retains the existing bytes, calls, wizard, flags, and behavior. Kagent is
 explicit-only: `kmx create --runtime kagent <name>`. Runtime selection is
 independent of `--provider-type`, which selects the model provider used by that
 runtime. Create still defaults to live authoring. Explicit `--workspace` selects
-[offline native suite-member authoring](suite-workspace.md); discovery and
-default offline authoring are not implemented.
+[offline native suite-member authoring](suite-workspace.md); create does not
+discover a workspace or default to offline authoring. Root `push` discovers an
+already-authored workspace; this does not change create's default.
 
 ### Default Orka contract
 

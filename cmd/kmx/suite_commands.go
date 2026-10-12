@@ -248,15 +248,14 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 				if len(args) != 1 {
 					return fmt.Errorf("workspace push requires exactly one destination reference")
 				}
-				// Remove this selector refusal when the App handler supports workspace discovery.
-				if strings.TrimSpace(pushWorkspace) == "" {
-					return fmt.Errorf("workspace discovery is not available; use kmx push --workspace <directory> <reference>")
+				if cmd.Flags().Changed("workspace") && strings.TrimSpace(pushWorkspace) == "" {
+					return fmt.Errorf("workspace push requires non-empty --workspace")
 				}
 				if state.contextFlag != "" {
-					return fmt.Errorf("--context cannot be used with --workspace")
+					return fmt.Errorf("--context cannot be used with workspace push")
 				}
 				if cmd.Flags().Changed("container-engine") {
-					return fmt.Errorf("--container-engine cannot be used with --workspace")
+					return fmt.Errorf("--container-engine cannot be used with workspace push")
 				}
 				return nil
 			}
@@ -267,11 +266,12 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 		push.Use = "push [--workspace <directory>] <reference>"
 		push.Short = "Push a native-Orka workspace to an OCI layout or registry"
 		push.Long = "Prepare one native-Orka workspace member and its authored cases, then copy that exact OCI graph.\n" +
-			"Pass only the destination reference as a positional argument. No member images are required; this does not deploy or evaluate an Agent.\n" +
-			"Workspace discovery is not available yet; select the source explicitly with --workspace <directory>.\n\n" + push.Long
-		push.Example = "  kmx push --workspace ./workspace registry.example.com/team:v1\n" +
-			"  kmx push --workspace ./workspace --to-layout ./layout agentsuites/team:v1"
-		push.Flags().StringVar(&pushWorkspace, "workspace", "", "prepare and publish the exact native-Orka suite from this workspace")
+			"Pass only the destination reference as a positional argument. Discover the nearest ancestor workspace.yaml from the current directory, or select an exact root without fallback with --workspace <directory>.\n" +
+			"Stderr names the absolute workspace path and prepared OCI manifest digest. No member images are required; this does not deploy or evaluate an Agent.\n\n" + push.Long
+		push.Example = "  kmx push registry.example.com/team:v1\n" +
+			"  kmx push --to-layout ./layout agentsuites/team:v1\n" +
+			"  kmx push --workspace ./workspace registry.example.com/team:v1"
+		push.Flags().StringVar(&pushWorkspace, "workspace", "", "select exactly this workspace instead of nearest-ancestor discovery")
 		_ = push.MarkFlagDirname("workspace")
 	}
 	push.Flags().StringVar(&target, "to-layout", "", "local OCI image-layout target directory")

@@ -29,14 +29,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Root `status` and `orka status` retain the same table-only Orka runtime report;
   do not add root bundle status or a suite observer.
 - Opt-in `create --workspace` authors one tool-free native-Orka suite member
-  offline; root `push [--workspace DIR] REF` copies its exact prepared OCI graph
-  and authored cases. Bare push currently refuses with an explicit `--workspace`
-  hint; workspace discovery is not implemented. `suite push DIRECTORY REFERENCE`
-  remains extracted-directory transfer and no longer accepts `--workspace`.
-  The native member image requirement is empty. Neither offline command
-  evaluates, deploys, builds images or loads cluster settings. Workspace evaluation/release
-  lift are not implemented. Create still defaults to live authoring; only explicit
-  `--workspace` selects offline authoring. Preserve PortableAgent formats and
+  offline; root `push [--workspace DIR] REF` discovers the nearest ancestor
+  `workspace.yaml`, or selects an exact root without fallback with `--workspace`.
+  Workspace push names its absolute root and prepared OCI manifest digest on
+  stderr, then copies that exact graph and authored cases.
+  `suite push DIRECTORY REFERENCE` remains extracted-directory transfer without
+  discovery and no longer accepts `--workspace`. The native member image
+  requirement is empty. Neither offline command evaluates, deploys, builds images
+  or loads cluster settings. Workspace evaluation/release lift are not implemented.
+  Create still defaults to live authoring; only explicit `--workspace` selects
+  offline authoring. Preserve PortableAgent formats and
   old extracted-directory suite transfer; do not treat public graph validation
   as native execution-profile validation. Private packaged-native preparation and
   ownership-safe Provider/Agent placement have no CLI or execution qualification.

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"oras.land/oras-go/v2/content/oci"
 	"oras.land/oras-go/v2/registry/remote/errcode"
 )
 
@@ -36,26 +38,60 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "workspace.yaml")); err != nil {
 		t.Fatal(err)
 	}
+	nested := filepath.Join(root, "nested", "deep")
+	if err := os.MkdirAll(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(nested)
 	layout := filepath.Join(t.TempDir(), "layout")
 	out.Reset()
 	prepared, err := workspace.Prepare(context.Background(), root, filepath.Join(t.TempDir(), "expected-cache"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := execute([]string{"push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
+	// An explicit nested root without a marker must not fall back to the valid
+	// ancestor that the following bare push will discover.
+	if err := execute([]string{"push", "--workspace", ".", "--to-layout", layout, "team:v1"}, deps); !errors.Is(err, workspace.ErrNotFound) {
+		t.Fatalf("exact override fell back or lost error identity: %v", err)
+	}
+	if _, err := os.Stat(layout); !os.IsNotExist(err) || *loads != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
+		t.Fatal("missing exact override wrote destination, loaded config or emitted output")
+	}
+	if err := execute([]string{"push", "--to-layout", layout, "team:v1"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	first := out.String()
-	want := "Pushed native-Orka AgentSuite greeter to " + layout + " (" + prepared.Descriptor.Digest.String() + ")\nRequired member images: []\n"
-	if first != want || diagnostics.Len() != 0 {
-		t.Fatalf("publication changed output or identity: got %q want %q diagnostics=%q", first, want, &diagnostics)
+	store, err := oci.New(layout)
+	if err != nil {
+		t.Fatal(err)
 	}
+	descriptor, err := store.Resolve(context.Background(), "team:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if descriptor.Digest != prepared.Descriptor.Digest {
+		t.Fatalf("publication changed prepared identity: got %s want %s", descriptor.Digest, prepared.Descriptor.Digest)
+	}
+	identity := fmt.Sprintf("Workspace: %q; AgentSuite: %s\n", root, prepared.Descriptor.Digest)
+	if diagnostics.String() != identity {
+		t.Fatalf("workspace diagnostic = %q, want %q", diagnostics.String(), identity)
+	}
+	wantOut := fmt.Sprintf("Pushed native-Orka AgentSuite greeter to %s (%s)\nRequired member images: []\n", layout, prepared.Descriptor.Digest)
+	if first != wantOut {
+		t.Fatalf("workspace result changed: %q, want %q", first, wantOut)
+	}
+	unrelated := t.TempDir()
+	if err := os.WriteFile(filepath.Join(unrelated, "workspace.yaml"), []byte("broken: [\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(unrelated)
+	diagnostics.Reset()
 	out.Reset()
 	if err := execute([]string{"push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
 		t.Fatal(err)
 	}
-	if out.String() != first {
-		t.Fatalf("repeat publication changed result: %q -> %q", first, out.String())
+	if out.String() != first || diagnostics.String() != identity {
+		t.Fatalf("repeat publication changed result/diagnostic: %q, %q", out.String(), diagnostics.String())
 	}
 	if *loads != 0 {
 		t.Fatal("workspace publication loaded operational configuration")
@@ -168,6 +204,10 @@ func TestWorkspaceRegistryPushProvenanceControls(t *testing.T) {
 				if out.String() != want {
 					t.Fatalf("registry output/identity changed: got %q want %q", &out, want)
 				}
+				identity := fmt.Sprintf("Workspace: %q; AgentSuite: %s\n", root, prepared.Descriptor.Digest)
+				if !strings.HasPrefix(diagnostics.String(), identity) || strings.Count(diagnostics.String(), "Workspace:") != 1 {
+					t.Fatalf("registry workspace identity = %q; want %q once", diagnostics.String(), identity)
+				}
 				if got := strings.Contains(diagnostics.String(), "provenance was not attached"); got != tc.warning {
 					t.Fatalf("default/opt-out warning = %q, want %t", diagnostics.String(), tc.warning)
 				}
@@ -277,5 +317,59 @@ func TestWorkspaceHelpAndCompletionHaveNoOperationalEffects(t *testing.T) {
 		if *loads != 0 {
 			t.Fatal("workspace help/completion loaded operational config")
 		}
+	}
+}
+
+func TestWorkspacePushRoutingAndArity(t *testing.T) {
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
+	for _, tc := range []struct {
+		name  string
+		route []string
+		args  []string
+		want  string
+	}{
+		{"missing", []string{"push"}, []string{"team:v1"}, "no workspace found"},
+		{"context", []string{"push"}, []string{"team:v1", "--context", "unused"}, "--context"},
+		{"engine", []string{"push"}, []string{"team:v1", "--container-engine", "docker"}, "--container-engine"},
+		{"no destination", []string{"push"}, nil, "exactly one"},
+		{"two positional", []string{"push"}, []string{fixture, "team:v1"}, "exactly one"},
+		{"extra positional", []string{"push"}, []string{"one", "two", "three"}, "exactly one"},
+		{"blank override", []string{"push"}, []string{"team:v1", "--workspace", " "}, "non-empty --workspace"},
+		{"ambiguous override", []string{"push"}, []string{"directory", "team:v1", "--workspace", "."}, "exactly one"},
+		{"suite one positional", []string{"suite", "push"}, []string{"team:v1"}, "usage:"},
+		{"suite workspace removed", []string{"suite", "push"}, []string{"team:v1", "--workspace", "."}, "unknown flag: --workspace"},
+		{"extracted bypass", []string{"suite", "push"}, []string{fixture, "team:v1"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, state := t.TempDir(), t.TempDir()
+			if tc.want == "" {
+				if err := os.WriteFile(filepath.Join(root, "workspace.yaml"), []byte("broken: [\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Chdir(root)
+			t.Setenv("KMX_HOME", state)
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			layout := filepath.Join(t.TempDir(), "layout")
+			args := append(append(append([]string(nil), tc.route...), "--to-layout", layout), tc.args...)
+			err := execute(args, deps)
+			if tc.name == "missing" && !errors.Is(err, workspace.ErrNotFound) {
+				t.Fatalf("discovery lost missing-workspace identity: %v", err)
+			}
+			if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+				t.Fatalf("refusal = %v; want %q", err, tc.want)
+			}
+			if tc.want == "" && (err != nil || !strings.Contains(out.String(), "Pushed AgentSuite minimal")) {
+				t.Fatalf("extracted route changed: %q, %v", out.String(), err)
+			}
+			if _, err := os.Stat(layout); tc.want != "" && !os.IsNotExist(err) {
+				t.Fatal("routing refusal wrote destination")
+			}
+			entries, statErr := os.ReadDir(state)
+			if statErr != nil || len(entries) != 0 || *loads != 0 || diagnostics.Len() != 0 || (tc.want != "" && out.Len() != 0) {
+				t.Fatal("routing loaded config, prepared state, or emitted unexpected output", statErr)
+			}
+		})
 	}
 }

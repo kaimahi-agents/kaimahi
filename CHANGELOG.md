@@ -24,6 +24,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- `kmx push <reference>` finds the nearest ancestor `workspace.yaml` and
+  publishes its prepared one-member native-Orka suite. `--workspace` overrides
+  discovery without fallback. Workspace pushes print the absolute source path
+  and exact OCI manifest digest on stderr; result stdout, two-positional
+  extracted-directory transfer and agent creation defaults are unchanged.
+  [Workspace guide](docs/suite-workspace.md) ([#454](https://github.com/kaimahi-agents/kaimahi/pull/454)).
+
 - `kmx eval diff` reads strict v2 receipts for exact-v0.10.3 Go kagent
   evaluations offline, with native A2A and deployment identity checks. Valid
   kagent receipts do not affect Orka gate/status selection and cannot satisfy an
@@ -74,9 +81,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   contracts are preserved. Root `status` stays the table-only Orka runtime
   report, also available as `orka status`, not a bundle or suite observer.
 - Removed workspace mode from `kmx suite push`; use root
-  `kmx push [--workspace DIR] REF`. Until workspace discovery is available,
-  bare root push refuses and requires explicit `--workspace`. Extracted-directory
-  `suite push DIRECTORY REFERENCE` and `suite build/diff/pull/validate` remain.
+  `kmx push [--workspace DIR] REF`. Bare root push discovers the nearest ancestor
+  workspace; explicit `--workspace` selects an exact root without fallback.
+  Extracted-directory `suite push DIRECTORY REFERENCE` and
+  `suite build/diff/pull/validate` remain.
   Create still defaults to live authoring; `create --workspace` is explicitly
   offline. Root `eval` is helper-only; packaged evaluation and root digest
   `lift` are not implemented.
@@ -117,6 +125,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   | `kmx agent eval diff <before.json> <after.json>` | `kmx eval diff <before.json> <after.json>` |
   | `kmx agent eval from-sessions <session-uid>...` | `kmx eval from-sessions <session-uid>...` |
   | `kmx suite push --workspace DIR REF` | `kmx push --workspace DIR REF` |
+  | `kmx suite push REF` | `kmx push REF` |
 
   Bare `kmx agent` and `kmx agent eval` no longer exist; `kmx eval` prints
   helper-group help. The hidden editor retirement stub is also removed with its parent;

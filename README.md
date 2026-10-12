@@ -50,7 +50,7 @@ This prepares local kind, Ollama and Orka, then prints a fresh Task's answer; fo
 
 `kmx chat` opens an interactive session with a named live Orka Agent; run and chat do not execute a local workspace.
 
-`kmx push` publishes an already-authored [native-Orka workspace](docs/suite-workspace.md) using `--workspace DIR REF`, not a PortableAgent bundle. It neither evaluates nor deploys; explicit `--workspace` is currently required.
+`kmx push` publishes an already-authored [native-Orka workspace](docs/suite-workspace.md) with one destination `REF`, not a PortableAgent bundle. It discovers the nearest ancestor `workspace.yaml`; `--workspace DIR` selects an exact root without fallback. It neither evaluates nor deploys.
 
 `kmx bundle lift` moves that bundle to a prepared destination, with Orka as the default.
 

@@ -164,8 +164,9 @@ create does not provision that account or RBAC. Follow the
 [context-pinned first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
 and [create safety contract](kmx.md#kmx-create).
 Create still defaults to live authoring; explicit `--workspace` selects
-[offline suite-member authoring](suite-workspace.md). Workspace discovery and
-default offline authoring are not implemented.
+[offline suite-member authoring](suite-workspace.md). Create does not discover a
+workspace or default to offline authoring. Root `push` discovers an already-authored
+workspace without changing create's default.
 No-name terminal invocation offers a wizard. `chat` and `orka list --namespace <ns>`
 are Orka-only; edit a live Agent with `kubectl edit agents.core.orka.ai`.
 BYO images, model-preset and MCP conversion are not provided.

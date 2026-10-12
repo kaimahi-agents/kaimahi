@@ -200,9 +200,10 @@ Current development builds also remove the entire `kmx agent` group, without
 aliases or stubs: use root `create/chat/run`, `orka show/list`, legacy
 `bundle evaluate/lift/retire/verify/status` and root `eval diff/from-sessions`
 helpers. Root `status` remains the table-only Orka runtime report, also available
-as `orka status`. Workspace publication moves from `suite push --workspace`
-to root `push [--workspace DIR] REF`; explicit `--workspace` is still required
-until discovery is implemented. Default create remains live; only explicit
+as `orka status`. Workspace publication moves from one-reference `suite push`
+to root `push [--workspace DIR] REF`, which discovers the nearest ancestor
+`workspace.yaml`; `--workspace` selects an exact root without fallback.
+Default create remains live; only explicit
 `create --workspace` authors offline. Root `eval` does not execute packaged
 cases, and root digest `lift` is not implemented.
 See the [exact old/new mapping](../CHANGELOG.md#upgrading) and
