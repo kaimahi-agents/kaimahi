@@ -147,8 +147,8 @@ type orkaStagedResource struct {
 // inspection and writes, so resources carrying this bundle's markers are
 // reused or updated, identical unmarked ones adopted and anything else
 // refused, and a matching existing artifact is kept with its original schema
-// attribution. Every byte outside that generated block must match. The optional Task stays
-// create-only and still runs only after both are Ready. Without it (lift, and
+// attribution. Every byte outside that generated block must match. The optional
+// Task stays create-only and still runs only after both are Ready. Without it (lift, and
 // --dry-run) every resource must be absent, as it always had to be.
 //
 // It returns the Agent's identity so a lifecycle Deploy can name it. A

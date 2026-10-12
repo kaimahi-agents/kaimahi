@@ -29,8 +29,6 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   every other byte difference still refuses reuse, and online schema/admission
   checks remain required.
 
-### Fixed
-
 - `kmx targets --detect` accepts kubectl's `kind: List` Deployment responses,
   reporting empty lists as absent and labelled controllers as present. Malformed
   responses and failed reads remain unreadable and exit nonzero.
