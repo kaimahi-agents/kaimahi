@@ -316,12 +316,12 @@ func commandPaths(root *cobra.Command) []string {
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
 		"agent", "agent chat", "agent create", "agent edit", "agent eval", "agent eval diff", "agent eval from-sessions", "agent evaluate", "agent lift", "agent list", "agent retire", "agent run", "agent show", "agent status", "agent verify",
-		"aks", "aks up", "aks down", "completion", "ctx", "down",
+		"aks", "aks up", "aks down", "completion",
 		"context", "context show", "context use", "local", "local up", "local down",
-		"lift", "lift down", "orka", "orka install", "orka status",
+		"orka", "orka install", "orka status",
 		"quickstart", "quickstart-wizard",
 		"status", "suite", "suite build", "suite diff", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",
-		"up", "version",
+		"version",
 	}
 	sort.Strings(want)
 

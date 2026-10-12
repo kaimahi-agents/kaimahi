@@ -156,10 +156,14 @@ Keep these distinctions:
    replacement.
 
 While KMX has no external users, a rename may retire the old name in the
-same change instead of keeping it callable: leave a hidden stub that refuses
-before loading configuration and names the replacement, or remove a flag that
-no longer does anything, and record it under **Breaking** and **Upgrading** in
-the CHANGELOG.
+same change instead of keeping it callable: remove the alias outright, leave
+an explicitly chosen hidden stub that refuses before loading configuration and
+names the replacement, or remove a flag that no longer does anything. Record
+the removal and replacements under **Breaking** and **Upgrading** in the CHANGELOG.
+Root `ctx`, `up`, `down`, `lift` and `lift down` are removed outright, without
+stubs; use `context show/use`, `local up/down` and `aks up/down`. Removing the
+AKS aliases frees root `lift` for future suite lift; it does not implement a new
+root verb or suite lift command.
 
 Update these in the same change:
 
@@ -178,7 +182,6 @@ row when its rename lands.
 
 | Current command | Rule it breaks | Proposed |
 |---|---|---|
-| `lift` (top level) | Deprecated alias of `aks up` that reuses the agent verb. | Undecided; retained for now. |
 | `--no-apply`, `--dry-run`, `--plan` | Preview flags whose effects differ by command. | Undecided; define each flag's effect before renaming. |
 | `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain compatibility syntax; opt-in `suite push --workspace <directory> <reference>` has one positional destination and publishes a prepared native suite. |
 | `suite build --output <file>`, `suite pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |

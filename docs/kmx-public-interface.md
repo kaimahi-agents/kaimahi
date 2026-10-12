@@ -76,9 +76,9 @@ The package also exposes the request, result, reference, and receipt values used
 by these interfaces. Important durable identities include `TargetRef`,
 `RuntimeRef`, `DeploymentRef`, and the receipt types.
 
-## Equivalent of `kmx up`
+## Equivalent of `kmx local up`
 
-The public Go equivalent of the product operation `kmx up` is
+The public Go equivalent of the product operation `kmx local up` is
 `AgentEnvironment.Up`:
 
 ```go
@@ -130,7 +130,7 @@ The setup mode makes target ownership intent explicit:
 | `EnvironmentResolveOrProvision` | Reuse an existing target, or provision only after established absence |
 
 `EnvironmentResolveOrProvision` is the closest match for the convergent behavior
-normally expected from `kmx up`. A resolution error is not treated as absence:
+normally expected from `kmx local up`. A resolution error is not treated as absence:
 authentication, authorization, timeout, malformed-response, throttling, and
 network failures must not trigger provisioning.
 
@@ -260,8 +260,8 @@ The intended conceptual mapping is:
 
 | CLI operation | Go service operation |
 |---|---|
-| `kmx up` | `AgentEnvironment.Up` |
-| `kmx down` | `AgentEnvironment.Down` |
+| `kmx local up` | `AgentEnvironment.Up` |
+| `kmx local down` | `AgentEnvironment.Down` |
 | `kmx suite validate` | Related to `AgentSuites.Validate`, but current command does not materialize its staged result |
 | `kmx suite build` | Current one-member experimental command is not `AgentSuites.Build` |
 | `kmx suite push` | Current definition/workspace transfer is not `AgentSuites.Push` |
@@ -282,11 +282,11 @@ For an end-to-end local runtime, use the CLI:
 ```bash
 export KIND_CLUSTER=kmx-local
 export KUBE_CTX=kind-kmx-local
-kmx up
+kmx local up
 kmx status
 ```
 
-A bare `kmx up` runs these steps in order:
+`kmx local up` without `--step` runs these steps in order:
 
 ```text
 cluster -> ollama -> model -> orka
@@ -295,13 +295,13 @@ cluster -> ollama -> model -> orka
 One step can be selected explicitly:
 
 ```bash
-kmx up --step cluster
-kmx up --step ollama
-kmx up --step model
-kmx up --step orka
+kmx local up --step cluster
+kmx local up --step ollama
+kmx local up --step model
+kmx local up --step orka
 ```
 
-`kmx up` prepares the runtime but does not create an agent. Use one of these
+`kmx local up` prepares the runtime but does not create an agent. Use one of these
 afterward:
 
 ```bash

@@ -12,7 +12,7 @@ import (
 // kmx applies manifests from inside the binary, because it is installed with
 // `go install` and run outside a clone. Two things can silently break that: a
 // mistyped embed pattern (the file is simply absent at run time, on the
-// operator's machine, half way through `kmx up`), and an edit to k8s/ that
+// operator's machine, half way through `kmx local up`), and an edit to k8s/ that
 // nobody rebuilt against. Assert both here, where it costs nothing.
 func TestEmbeddedManifestsAreTheOnesInTheTree(t *testing.T) {
 	for _, name := range []string{"ollama.yaml", "orka-k8s-tool.yaml"} {

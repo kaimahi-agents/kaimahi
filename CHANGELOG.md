@@ -66,6 +66,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- Removed `kmx lift`; use `kmx aks up` for AKS provisioning.
+- Removed `kmx lift down`; use `kmx aks down` for AKS teardown.
+- Removed `kmx up`; use `kmx local up` for local runtime setup.
+- Removed `kmx down`; use `kmx local down` for local cluster deletion.
+- Removed `kmx ctx`; use `kmx context show` or `kmx context use <context>`.
+
 - The experimental, unwired `pkg/kmx.AgentSuites` Go contract now exposes the
   cohesive `Validate`, `Build`, `RecoverBuild`, `Push` and `RecoverPush`
   workflow with staged concrete values. This replaces its speculative
@@ -76,6 +82,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   modeled.
 
 ### Upgrading
+
+- Update scripts using the removed root aliases to their replacements above.
+  Local, AKS and context operations retain their existing behavior; no new root
+  lifecycle verbs are introduced.
 
 - Consumers of the alpha `pkg/kmx` design package must adopt
   `ValidatedAgentSuite`, `BuildSuiteResult`/`BuildSuiteProgress` and

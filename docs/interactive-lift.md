@@ -166,8 +166,8 @@ objects and local artifacts are still refused. See the
 [create contract](kmx.md#kmx-agent-create) for rerun, dry-run and Task rules.
 The operation does not create AKS clusters. `kmx aks up` is the separate AKS provisioning
 workflow: it installs Orka with optional Azure monitoring add-ons, not a model
-plane. The deprecated `kmx lift`
-still works and requires `--payload`.
+plane. Use `kmx aks down` for its recorded ownership teardown; root AKS lift
+aliases are removed.
 
 After success chat connects to the lifted Agent on the destination, resets retry
 history and uses its remote Provider. The source location is also saved, so

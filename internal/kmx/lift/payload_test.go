@@ -9,18 +9,16 @@ import (
 	"testing"
 )
 
-// `lift` bills money and installs a platform. A default would mean somebody's
-// existing script quietly changed which one it deploys the day the project's
-// direction moved — so the refusal is the feature. It survives the retirement
-// of the second payload: the reason was never "there are two".
-func TestAPayloadIsRequiredAndNeverDefaulted(t *testing.T) {
+// AKS setup defaults an omitted flag to Orka, but an explicitly empty payload
+// must be refused rather than silently selecting a platform.
+func TestAnEmptyPayloadIsRefused(t *testing.T) {
 	o := created()
 	o.Payload = ""
 	err := o.Validate()
 	if err == nil {
 		t.Fatal("a lift with no payload was accepted")
 	}
-	for _, want := range []string{"--payload is required", "orka", "bills money"} {
+	for _, want := range []string{"kmx aks up", "--payload must not be empty", "--payload orka"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not mention %q: %v", want, err)
 		}

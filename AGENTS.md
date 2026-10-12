@@ -13,9 +13,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Proposed spellings are not implemented capabilities.
 - Canonical context commands are `kmx context show` and
   `kmx context use <context>`; canonical local setup/teardown commands are
-  `kmx local up/down`. The old `ctx`, `up`, and `down` spellings are compatibility
-  routes. Current agent deployment remains `kmx agent lift`; current cloud and
-  runtime setup remain `kmx aks up/down` and `kmx orka install/status`.
+  `kmx local up/down`. Root `ctx`, `up`, `down`, `lift` and `lift down`
+  are removed outright, not compatibility routes or retirement stubs. Current
+  agent deployment remains `kmx agent lift`; current cloud and runtime setup
+  remain `kmx aks up/down` and `kmx orka install/status`.
   The AKS group is a hidden compatibility route, not a public root domain.
   Guided quickstart is `kmx quickstart --interactive` (`-i`); the old wizard
   command is a retirement stub. `kmx agent chat` is always interactive and no
@@ -42,8 +43,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   chosen agent lifecycle verb: retain `kmx agent lift` and interactive `/lift`,
   and use Lift in corresponding help and menu labels rather than renaming the
   operation to deploy. Deployment remains a technical description of its effect.
-  Bare `kmx lift` is still the deprecated AKS compatibility route; changing its
-  meaning requires a separate compatibility decision.
+  Root `lift` is freed for a future suite lift workflow, but no new root
+  verb or suite lift command is implemented. Use `kmx aks up/down` for AKS.
 - Prefer singular resource/domain groups and explicit actions. Avoid introducing
   another synonym for an existing operation. CLI, chat and console should use
   the same operation vocabulary where their scopes match.
@@ -54,7 +55,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 - Update command registration, help, completion, relevant chat/console labels,
   generated next/recovery commands, primary docs and CHANGELOG in the same slice.
   Record changed defaults and compatibility/removal policy. Keep old routes
-  callable until an announced transition; notices belong on stderr.
+  callable until an announced transition unless an outright removal is explicitly
+  approved; record that removal and its replacements. Notices belong on stderr.
 - Preserve report/artifact/answer stdout and exit contracts. Test meaningful
   selection, refusal and compatibility behavior, not just matching help strings.
   Help and completion must not perform operational mutations.

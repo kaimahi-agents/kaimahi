@@ -19,7 +19,7 @@ func unreadableTarget(scope, code, message, action string) TargetDetection {
 func (a *App) detectOrkaTarget() TargetDetection {
 	const scope = "controller Deployments in orka-system"
 	if a.Cfg == nil || a.Cfg.KubeContext == "" || a.Run == nil {
-		return unreadableTarget(scope, "configuration_unreadable", "Kubernetes context configuration unavailable", "check --context, KUBE_CTX or the saved kmx ctx selection")
+		return unreadableTarget(scope, "configuration_unreadable", "Kubernetes context configuration unavailable", "check --context, KUBE_CTX or the saved kmx context use selection")
 	}
 	contextName := a.Cfg.KubeContext
 	if len(contextName) > 256 || secretshapes.Match(contextName) != nil {

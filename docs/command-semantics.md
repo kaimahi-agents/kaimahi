@@ -7,24 +7,26 @@ distinguishes implemented alignment from proposed follow-ups.
 
 ## Implemented entry-point alignment (unreleased)
 
-| Canonical command | Compatibility input | Contract |
-|---|---|---|
-| `kmx context show` | `kmx ctx` | Read the effective context, selection source and posture. |
-| `kmx context use <context>` | `kmx ctx <context>` | Remember KMX's access selection after the existing context guard; never change kubectl current-context. |
-| `kmx local up` | `kmx up` | Provision the local kind environment, model and Orka; no agent. The existing `--step` choices remain. |
-| `kmx local down` | `kmx down` | Delete the named local kind cluster, including its data, under the existing context/container-engine guard. |
+| Command | Contract |
+|---|---|
+| `kmx context show` | Read the effective context, selection source and posture. |
+| `kmx context use <context>` | Remember KMX's access selection after the existing context guard; never change kubectl current-context. |
+| `kmx local up` | Provision the local kind environment, model and Orka; no agent. The existing `--step` choices remain. |
+| `kmx local down` | Delete the named local kind cluster, including its data, under the existing context/container-engine guard. |
+| `kmx aks up/down` | Retain the guarded AKS provisioning/teardown operations and historical ownership records; hidden from root help and completion. |
 
 Bare `context` and `local` display help. Canonical commands use the existing
-operations, settings, saved-selection file and guards. Old spellings remain
-callable and emit deprecation notices only on stderr; help and completion lead
-with the canonical names. No removal release has been scheduled. Tagged v0.4.1
-uses the compatibility spellings; the canonical names require a newer build.
+operations, settings, saved-selection file and guards. Root `ctx`, `up`, `down`,
+`lift` and `lift down` are removed outright, with no compatibility aliases or
+retirement stubs. Use `context show/use`, `local up/down` and `aks up/down`
+respectively. Tagged v0.4.1 used the old context/local spellings; the grouped
+commands require a newer build.
 
 The redirected context report retains its `source: kmx ctx` provenance label
 for saved selections as a compatibility format. That label is not a next-step
 command. Generated selection and local teardown instructions use the canonical
-spellings. Invocation-specific confirmation may repeat the compatibility
-command the caller actually supplied to preserve its exact arguments.
+spellings. Invocation-specific confirmation preserves the caller's selectors
+and exact arguments.
 
 Generated local commands preserve `KIND_CLUSTER`, `CONTAINER_ENGINE` and
 `--context`. AKS retry/teardown instructions use the common effective-option
@@ -104,10 +106,10 @@ interactive `/lift`; use **Lift** consistently in help, menu labels and the
 product narrative. Do not rename the agent command to `deploy`. “Deployment”
 remains useful technical language for the resulting resources and receipts.
 
-The current bare `kmx lift` spelling is the deprecated AKS provisioning route,
-not a shorthand for `kmx agent lift`. This vocabulary decision does not change
-that route's arguments or behavior; any reassignment needs an explicit
-compatibility transition coordinated with #223.
+Removing the root AKS aliases frees `lift` for a future suite lift workflow.
+No new root verb or suite lift command is implemented; `kmx agent lift` remains
+the agent operation, and `kmx aks up/down` remains the AKS route. Removal does
+not change AKS arguments, ownership records, recovery or teardown behavior.
 
 - **Context:** a kubeconfig access selection; not a durable cluster identity.
 - **Target:** selected runtime, cluster identity, namespace and deployment
@@ -131,8 +133,9 @@ The guided live-copy fallback is explicitly untracked, not a bundle deployment.
 The command inventory is pinned by the command-tree and entry-point tests in
 [`cmd/kmx`](../cmd/kmx). Context show/use split read and selection operations;
 local up/down scope the existing kind operations. Root discovery hides the AKS
-compatibility group and the old context/local spellings, while direct invocation
-remains available. Help and internal completion are not operational leaves.
+compatibility group, which remains directly callable. Removed root aliases are
+neither registered nor suggested by help or completion. Help and internal
+completion are not operational leaves.
 
 Other implemented alignment in development builds includes
 `quickstart --interactive` (`-i`) and intrinsically interactive `agent chat`.
@@ -207,8 +210,9 @@ preserve raw and answer-only stdout.
 7. **Preview terms:** distinguish artifact rendering, no-write planning and
    server validation, including downloads/cache/local files and which resources
    admission actually checks. Do not mechanically alias `--no-apply` modes.
-8. **Removal timing:** announce a breaking minor release before removing
-   compatibility routes. No date/version is selected by this slice.
+8. **Remaining compatibility routes:** follow the announced breaking-release
+   policy for future removals. The root context/local/AKS aliases are already
+   removed outright; no retirement stubs remain. The hidden AKS group is retained.
 
 ## Keeping future work aligned
 

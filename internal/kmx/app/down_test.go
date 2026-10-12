@@ -98,7 +98,7 @@ func TestDownStillDeletesAClusterTheKubeconfigDescribes(t *testing.T) {
 }
 
 // Nothing to delete is not a refusal and not a deletion. Saying so before
-// the guard runs keeps `kmx down` on an already-clean machine from asking
+// the guard runs keeps `kmx local down` on an already-clean machine from asking
 // a question about a cluster that is not there.
 func TestDownSaysSoWhenThereIsNoSuchCluster(t *testing.T) {
 	elsewhere := `{"clusters":[],"contexts":[],"current-context":""}`

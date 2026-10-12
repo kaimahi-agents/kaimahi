@@ -7,7 +7,7 @@ runtime owns execution, enforcement and model access; installing it alone does
 not prove an Agent can answer.
 
 The former broad kagent integration is not restored. Its installer steps,
-fixed manifests, chat, list/show, evaluation, console, quickstart, `up` and
+fixed manifests, chat, list/show, evaluation, console, quickstart, `local up` and
 AKS payload remain absent or retired. Explicit create targets preinstalled
 exact v0.10.2; explicit declarative bundle lift/status targets preinstalled
 exact v0.10.3. [Version-qualified placement](agent-lift.md#exact-v0103-declarative-bundle-placement)
@@ -84,8 +84,9 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
 **Released in v0.5.0:** `context show/use` and `local up/down` are the canonical
 grouped commands below. Historically, v0.4.1 used `ctx [context]` and root
-`up/down`; those routes remain callable with notices only on stderr. No removal
-release is scheduled. See the
+`up/down`. Current development builds remove root `ctx`, `up`, `down`, `lift`
+and `lift down` outright, without retirement stubs. Use `context show/use`,
+`local up/down` and `aks up/down`; no new root verb is introduced. See the
 [alignment record](command-semantics.md) for current versus proposed names.
 
 ### Current Orka path and explicit version-qualified operations
@@ -469,7 +470,7 @@ requires attachment, not visibility or trust.
 | `kmx quickstart` | kind + keyless Ollama + pinned Orka v0.2.0 Helm chart + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Kagent installation or plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
 | `kmx quickstart --interactive` (`-i`) | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. Flags for the other quickstart mode are refused before configuration loads. The retired `kmx quickstart-wizard` spelling refuses and names this command. |
 | `kmx local up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
-| `kmx aks up` / `kmx aks down` | Temporary compatibility route, hidden from root help and shell completion; not a first-class KMX domain. Setup provisions AKS and installs Orka only, with optional Azure monitoring add-ons; the owner configures the model Provider. It does not deploy a model plane or capture its credentials. Teardown preserves cleanup of recorded owned resources, including historical runs. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The deprecated `kmx lift` / `kmx lift down` still work; `kmx lift` still requires `--payload`. [AKS](aks.md) |
+| `kmx aks up` / `kmx aks down` | Temporary compatibility route, hidden from root help and shell completion; not a first-class KMX domain. Setup provisions AKS and installs Orka only, with optional Azure monitoring add-ons; the owner configures the model Provider. It does not deploy a model plane or capture its credentials. Teardown preserves cleanup of recorded owned resources, including historical runs. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The root AKS aliases are removed; use `kmx aks up` / `kmx aks down`. [AKS](aks.md) |
 | `kmx agent list` | Orka Agents in one namespace: readiness, Provider and resolved model. `--namespace <ns>` selects it and defaults to `orka-system`; table/JSON/YAML |
 | `kmx agent show <name>` | one Orka Agent and the chain it depends on: Provider readiness, the Secret the Provider names (**presence only — the value is never read**), the model actually resolved, the tools including disabled ones, and recent Tasks. Requires `--namespace`, because Orka watches namespaces explicitly. An unread hop is reported `unknown`, never as absent (`--namespace`, `--output table\|json`, `--tasks`) |
 | `kmx agent chat <name> [message]` | interactive Orka session (`--runtime auto\|orka`, `--namespace`, default `orka-system`). Chat is always a session: an optional message is its first turn, and the one-shot Task is `kmx agent run`. The former `--interactive` flag is removed; Kagent chat is not restored by its create capability |
@@ -711,7 +712,7 @@ This is a narrow lifecycle adapter for **render and create only**. It targets an
 already-installed exact Kagent v0.10.2; KMX never installs, upgrades, repairs,
 or otherwise manages kagent infrastructure. This profile does not change the
 default runtime or enable standalone chat, list, show, evaluation, console,
-interactive `/lift`, quickstart, `up`, installer or AKS payload support.
+interactive `/lift`, quickstart, `local up`, installer or AKS payload support.
 Bundle lift/status requires the separate explicit v0.10.3 profile; create's
 exact v0.10.2 successful artifact/receipt contract is retained. Old AKS lift
 records remain teardown-only.

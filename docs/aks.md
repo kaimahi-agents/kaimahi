@@ -55,8 +55,9 @@ looking for a spelling instead of a replacement. An existing legacy lift can
 still be inspected and torn down with `kmx aks down`; what is refused is
 creating or resuming one.
 
-The deprecated `kmx lift` still requires `--payload` so existing scripts cannot
-silently change platform. Both names use the same run records and teardown.
+Root `lift` and `lift down` aliases are removed outright. Use `kmx aks up`
+and `kmx aks down`; existing run records and historical ownership teardown
+remain unchanged.
 
 **This is a fresh-install path, not a version upgrade.** An existing v0.1.3
 manifest installation or foreign Helm release is refused. On an existing AKS

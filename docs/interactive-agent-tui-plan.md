@@ -238,7 +238,7 @@ deployment review and progress panes. Both return to a refreshed overview.
 
 `/lift <agent> new` collects resource group, AKS cluster, globally unique registry
 name and Azure region. It then restores the terminal for the existing
-`kmx lift --payload orka --step cluster` provisioning flow, which reviews the
+`kmx aks up --payload orka --step cluster` provisioning flow, which reviews the
 current Azure account and confirms the named cluster. Existing AKS defaults
 apply (one `Standard_B4ms` node, Cilium, 64 GiB disk, monitoring enabled).
 After provisioning it continues the same agent lift flow on that cluster,

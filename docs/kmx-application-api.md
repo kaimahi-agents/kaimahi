@@ -392,7 +392,7 @@ Potential CLI adapters are:
 
 | CLI operation | Service |
 |---|---|
-| `kmx up` / `kmx down` | `AgentEnvironment` |
+| `kmx local up` / `kmx local down` | `AgentEnvironment` |
 | `kmx suite validate` | Conceptually `AgentSuites.Validate`; current command does not materialize the northbound result |
 | future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
 | `kmx agent lift/status/retire` | `AgentDeployments` |
