@@ -28,6 +28,9 @@ type PushResult struct {
 	Updated    bool
 	Descriptor ocispec.Descriptor
 	Report     *spec.Report
+	// Provenance is set for registry pushes only; a layout holds one manifest.
+	Provenance *Provenance
+	Warnings   []string
 }
 
 // Push deterministically packages an extracted AgentSuite directory and
