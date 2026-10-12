@@ -81,9 +81,9 @@ and running it with the fixture's environment and call log. A `go test -race`
 App run also compiles the helper with `-race`; its build directory is removed
 when the package run finishes. Keep helper imports independent of App and UI.
 
-Retire lifecycle tests and `TestKagentStatusFinalReadinessAndWorkloadCategories`
-explicitly use in-process capture fixtures instead. They do not build or launch
-the kubectl helper: a failing executable sentinel catches accidental fallback.
+Retire lifecycle tests and kagent bundle lift/status fixtures use in-process
+capture instead. They do not build or launch the kubectl helper: a failing
+executable sentinel catches accidental fallback.
 Both modes share the stateful reconcile and kagent handlers in
 `internal/kmx/app/kubectlfake`. Its unit tests are included in `go test ./...`
 and CI; installed commands do not import it. The App-local capture hook receives
@@ -92,7 +92,9 @@ bounded output, guards, deadlines and error classification stay at the normal
 production boundary. The hook is unset in installed commands. Protocol delays
 obey the context synchronously, without a goroutine timeout wrapper. Executable
 parity tests compare raw output, exit status, persisted state and ordered calls.
-Other lift, reconcile and create tests retain executable fixtures.
+Orka lift/reconcile and kagent create fixtures retain executable execution.
+`TestKagentBundleKeepsExecutableCaptureBoundary` also exercises kagent bundle
+lift, status and read-only reuse through the real helper.
 
 The workflow's hygiene job is authoritative for the full checker/self-test/
 mutation set; do not replace it with this focused list. The retained native

@@ -102,9 +102,9 @@ Cluster-independent decisions live in packages; shell-out orchestration lives in
 panes use `chat_lift*.go`. Counts exclude Go test files but include non-Go data.
 The test-only kubectl executable under `app/testdata/kubectl` is built separately
 by App tests, not installed with kmx. Its reconcile and kagent protocol is shared
-with explicit in-process retire/status fixtures; default fixtures and dedicated
-parity/boundary tests still execute the helper. The protocol has no App imports
-and is not reachable from installed code. Judge integration tests and the opt-in
+with in-process retire and kagent bundle lift/status fixtures; Orka lift/reconcile,
+kagent create and dedicated parity/boundary tests still execute the helper.
+The protocol has no App imports and is not reachable from installed code. Judge integration tests and the opt-in
 live production-client proof are test scaffolding, not additional production
 files or judge cases in the live CLI agent fixture.
 
