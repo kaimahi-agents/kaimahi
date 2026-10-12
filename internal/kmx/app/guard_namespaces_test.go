@@ -58,8 +58,8 @@ func TestGuardCreateInScopesTheBannerAndOrdinaryGuardsDoNot(t *testing.T) {
 		call func(*App) error
 	}{
 		{"Guard", func(a *App) error { return a.Guard("act", "kmx status") }},
-		{"GuardCreate", func(a *App) error { return a.GuardCreate("act", "kmx up --step cluster") }},
-		{"GuardKnown", func(a *App) error { return a.GuardKnown("act", "kmx down") }},
+		{"GuardCreate", func(a *App) error { return a.GuardCreate("act", "kmx local up --step cluster") }},
+		{"GuardKnown", func(a *App) error { return a.GuardKnown("act", "kmx local down") }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			banner := guardBanner(t, tc.call)
@@ -83,15 +83,15 @@ func TestQuickstartGuardBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
 	assertOrkaOnlyBanner(t, "the quickstart banner", errOut.String())
 }
 
-// A bare `kmx up` is the Orka runtime and nothing else — CI greps its
+// A bare `kmx local up` is the Orka runtime and nothing else — CI greps its
 // transcript for the legacy runtime too.
 func TestBareUpGuardBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
 	a, errOut, _ := upFixture(t)
 	a.guarded = false
 	if err := a.Up(""); err != nil {
-		t.Fatalf("a bare Orka-only `kmx up` failed: %v\n%s", err, errOut)
+		t.Fatalf("a bare Orka-only `kmx local up` failed: %v\n%s", err, errOut)
 	}
-	assertOrkaOnlyBanner(t, "the bare `kmx up` banner", errOut.String())
+	assertOrkaOnlyBanner(t, "the bare `kmx local up` banner", errOut.String())
 }
 
 // Every addressable step is on the Orka path now, so every one of them gets
@@ -106,7 +106,7 @@ func TestEveryUpStepBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
 			if err := a.Up(step); err != nil {
 				t.Fatalf("the %s step failed: %v\n%s", step, err, errOut)
 			}
-			assertOrkaOnlyBanner(t, "the `kmx up --step "+step+"` banner", errOut.String())
+			assertOrkaOnlyBanner(t, "the `kmx local up --step "+step+"` banner", errOut.String())
 		})
 	}
 }

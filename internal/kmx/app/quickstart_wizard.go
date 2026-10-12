@@ -360,7 +360,7 @@ func (a *App) quickstartWizardOrka(report func(quickstartSetupEvent)) error {
 		err := a.applySecretIn(OrkaNamespace, body, "kickstart-provider-key")
 		if err == nil {
 			// The runtime's own grant, not a second spelling of it: a wizard
-			// copy would be free to drift from the account `kmx up --step orka`
+			// copy would be free to drift from the account `kmx local up --step orka`
 			// provisions and the one `agent create` names, and a Role that
 			// differs by path is a grant nobody reviews as one.
 			err = a.orkaResultReader()

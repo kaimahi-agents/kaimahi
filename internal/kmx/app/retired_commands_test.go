@@ -28,7 +28,7 @@ func TestNoProductionCodeSuggestsARetiredCommand(t *testing.T) {
 	retired := map[string]string{
 		"govern":      "native Agents use their runtime Provider directly",
 		"use":         "there is no legacy preset switch",
-		"plane":       "native setup uses kmx up or kmx orka install",
+		"plane":       "native setup uses kmx local up or kmx orka install",
 		"migrate":     "native Agents use their runtime Provider directly",
 		"models":      "model selection belongs to native Provider setup",
 		"credential":  "native Provider Secrets are provisioned separately",

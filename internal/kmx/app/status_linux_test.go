@@ -51,7 +51,7 @@ func reportApp(t *testing.T, out io.Writer, script string) *App {
 		Run: &run.Runner{Stdout: out, Stderr: io.Discard}}
 }
 
-// `kmx ctx` explains incomplete local setup and its repair path. Keep that
+// `kmx context show` explains incomplete local setup and its repair path. Keep that
 // context guidance separate from `kmx status`, which delegates to the native
 // Orka status report.
 func TestCtxShowsHowToCompleteMissingDefaultSetup(t *testing.T) {

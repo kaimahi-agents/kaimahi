@@ -14,7 +14,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// The fake cluster boundary for `kmx up`. The legacy read answers the way a
+// The fake cluster boundary for `kmx local up`. The legacy read answers the way a
 // cluster WITHOUT the kagent CRDs answers — "the server doesn't have a
 // resource type" — so any run that touches it fails, and a run that completes
 // has demonstrably not touched it.
@@ -110,7 +110,7 @@ func upCalls(t *testing.T, args string) string {
 	return string(body)
 }
 
-// `kmx up` is the Orka runtime and nothing else, so it must never ask this
+// `kmx local up` is the Orka runtime and nothing else, so it must never ask this
 // cluster about the legacy runtime. The fake answers that read the way a
 // cluster with no kagent CRD answers — the command completing at all is the
 // proof that it was not asked.
@@ -150,11 +150,11 @@ func TestOrkaUpRefusesUnreadyOwnedReleaseBeforeModelPull(t *testing.T) {
 func TestBareOrkaUpCompletesWithoutQueryingTheLegacyRuntime(t *testing.T) {
 	a, errOut, args := upFixture(t)
 	if err := a.Up(""); err != nil {
-		t.Fatalf("a bare Orka-only `kmx up` failed: %v\n%s", err, errOut)
+		t.Fatalf("a bare Orka-only `kmx local up` failed: %v\n%s", err, errOut)
 	}
 	calls := upCalls(t, args)
 	if strings.Contains(calls, "kagent") || strings.Contains(calls, "modelconfigs") {
-		t.Errorf("a bare `kmx up` read the legacy runtime:\n%s", calls)
+		t.Errorf("a bare `kmx local up` read the legacy runtime:\n%s", calls)
 	}
 	for _, want := range []string{"COMPLETE", "Runtime setup finished", "[4/4]"} {
 		if !strings.Contains(errOut.String(), want) {
@@ -162,11 +162,11 @@ func TestBareOrkaUpCompletesWithoutQueryingTheLegacyRuntime(t *testing.T) {
 		}
 	}
 	if strings.Contains(errOut.String(), "Collect runtime status") {
-		t.Errorf("a bare `kmx up` still collects the legacy status:\n%s", errOut)
+		t.Errorf("a bare `kmx local up` still collects the legacy status:\n%s", errOut)
 	}
 }
 
-// `up --step orka` owns `local`; quickstart owns only its fixed bundle.
+// `local up --step orka` owns `local`; quickstart owns only its fixed bundle.
 // Neither order may silently replace an existing local host route.
 func TestQuickstartAndHostOrkaUpKeepLocalEndpointInBothOrders(t *testing.T) {
 	const hostURL = "http://172.18.0.1:11434/v1"
@@ -254,7 +254,7 @@ func TestBareUpWaitsForCurrentGenerationProviderReady(t *testing.T) {
 func TestOrkaOnlyUpPointsAtNativeAuthoring(t *testing.T) {
 	a, errOut, _ := upFixture(t)
 	if err := a.Up(""); err != nil {
-		t.Fatalf("a bare Orka-only `kmx up` failed: %v\n%s", err, errOut)
+		t.Fatalf("a bare Orka-only `kmx local up` failed: %v\n%s", err, errOut)
 	}
 	if !strings.Contains(errOut.String(), "kmx --context kind-test agent create") {
 		t.Errorf("the Orka-only run offers no native authoring route:\n%s", errOut)

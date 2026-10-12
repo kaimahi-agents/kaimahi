@@ -125,7 +125,7 @@ func (r *Record) MayRemoveScraperPolicy() bool {
 //
 // Without it, teardown on a cluster we do not own is destructive in a way that
 // is easy to miss: an operator who already had Container Insights running gets
-// it switched off by a `kmx lift down` that was only ever meant to remove what
+// it switched off by a `kmx aks down` that was only ever meant to remove what
 // the lift added. Turning somebody's monitoring off is not as bad as deleting
 // their workspace, but it is the same mistake — acting on a resource because
 // we touched it rather than because we made it.

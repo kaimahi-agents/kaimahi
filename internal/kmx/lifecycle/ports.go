@@ -168,33 +168,6 @@ type PlatformDeprovisionRecoverer interface {
 	RecoverDeprovision(context.Context, kmx.OperationID) (kmx.TeardownReceipt, error)
 }
 
-// AgentSuiteValidator validates the closed AgentSuite content graph.
-type AgentSuiteValidator interface {
-	Validate(context.Context, kmx.ValidateSuiteRequest) (kmx.SuiteReport, error)
-}
-
-// AgentSuiteBuilder performs deterministic, network-free OCI construction.
-type AgentSuiteBuilder interface {
-	Package(context.Context, kmx.PackageSuiteRequest) (kmx.PackageSuiteResult, error)
-	BuildSandbox(context.Context, kmx.BuildSandboxRequest) (kmx.AgentSandboxImage, error)
-}
-
-type AgentSuiteBuildRecoverer interface {
-	RecoverPackage(context.Context, kmx.OperationID) (kmx.PackageSuiteResult, error)
-	RecoverBuildSandbox(context.Context, kmx.OperationID) (kmx.AgentSandboxImage, error)
-}
-
-// OCIArtifactPublisher is the separate networked registry transport.
-type OCIArtifactPublisher interface {
-	// Publish changes only Artifact.Location. Digest, MediaType, and
-	// ArtifactType remain identical to the validated input.
-	Publish(context.Context, kmx.PublishArtifactRequest) (kmx.OCIArtifactRef, error)
-}
-
-type OCIArtifactPublishRecoverer interface {
-	RecoverPublish(context.Context, kmx.OperationID) (kmx.OCIArtifactRef, error)
-}
-
 type RuntimeDescriptor struct {
 	ID          kmx.RuntimeID
 	DisplayName string

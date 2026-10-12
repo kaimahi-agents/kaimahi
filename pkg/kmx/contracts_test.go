@@ -288,8 +288,11 @@ func TestAgentSuiteArtifactAndSandboxImageValidation(t *testing.T) {
 	if err := suite.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	if got := suite.Ref(); got.Manifest != suite.Manifest.Digest {
+		t.Fatalf("AgentSuite artifact ref = %+v", got)
+	}
 	report := SuiteReport{
-		Name: "team", Agents: 2, Compositions: 1,
+		Name: "team", Agents: 1, Compositions: 1,
 		CompositionSelections: []SuiteCompositionSelection{{
 			Agent: "writer", Platform: SandboxPlatform{OS: "linux", Architecture: "amd64"},
 			BuildProfile: "default",
@@ -300,37 +303,191 @@ func TestAgentSuiteArtifactAndSandboxImageValidation(t *testing.T) {
 	if err != nil || selection.BuildProfile != "default" {
 		t.Fatalf("Composition selection = %+v, %v", selection, err)
 	}
-	request := BuildSandboxRequest{
-		Operation: "sandbox-1", Suite: suite, Agent: "writer",
-		Platform:     SandboxPlatform{OS: "linux", Architecture: "amd64"},
-		BuildProfile: selection.BuildProfile,
-		Composition:  selection.Digest,
-		Output:       "/tmp/writer-image-layout",
-	}
+	validated := ValidatedAgentSuite{Artifact: suite, Report: report}
+	request := BuildSuiteRequest{Operation: "build-1", Suite: validated}
 	if err := request.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	result := PackageSuiteResult{Artifact: suite, Report: report}
+	result := validated
 	data, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var decodedResult PackageSuiteResult
+	var decodedResult ValidatedAgentSuite
 	if err := json.Unmarshal(data, &decodedResult); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(decodedResult, result) {
-		t.Fatalf("package result round trip = %#v, want %#v", decodedResult, result)
+		t.Fatalf("validated suite round trip = %#v, want %#v", decodedResult, result)
 	}
 	bad := suite
 	bad.Manifest.Digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	if err := bad.Validate(); err == nil {
 		t.Fatal("AgentSuite artifact accepted a non-OCI digest")
 	}
-	request.Platform.Architecture = "riscv64"
+	request.Suite.Report.CompositionSelections[0].Platform.Architecture = "riscv64"
 	if err := request.Validate(); err == nil {
-		t.Fatal("sandbox build accepted a platform outside the AgentSuite draft")
+		t.Fatal("suite build accepted a platform outside the AgentSuite draft")
 	}
+}
+
+func TestAgentSuitesBuildAndPushStagesPreserveIdentities(t *testing.T) {
+	validated, images := suiteBuildFixture()
+	build := BuildSuiteResult{Operation: "build-1", Suite: validated, Images: images}
+	if err := build.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	buildRequest := BuildSuiteRequest{Operation: build.Operation, Suite: validated}
+	if err := build.ValidateAgainst(buildRequest); err != nil {
+		t.Fatal(err)
+	}
+	wrongBuild := build
+	wrongBuild.Operation = "build-2"
+	if err := wrongBuild.ValidateAgainst(buildRequest); err == nil {
+		t.Fatal("build validation accepted another operation")
+	}
+	for name, value := range map[string]any{
+		"validated suite": validated,
+		"build result":    build,
+		"build progress":  BuildSuiteProgress{Operation: build.Operation, Suite: validated, Images: images, Complete: true},
+	} {
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatalf("marshal %s: %v", name, err)
+		}
+		decoded := reflect.New(reflect.TypeOf(value)).Interface()
+		if err := json.Unmarshal(data, decoded); err != nil {
+			t.Fatalf("unmarshal %s: %v", name, err)
+		}
+		switch got := reflect.ValueOf(decoded).Elem().Interface().(type) {
+		case ValidatedAgentSuite:
+			if got.Ref() != validated.Ref() || !sameSuiteReport(got.Report, validated.Report) {
+				t.Fatalf("%s round trip changed identity or report", name)
+			}
+		case BuildSuiteResult:
+			if got.Operation != build.Operation || got.Suite.Ref() != build.Suite.Ref() ||
+				!sameSuiteReport(got.Suite.Report, build.Suite.Report) || !reflect.DeepEqual(got.Images, build.Images) {
+				t.Fatalf("%s round trip changed operation, identity, report or images", name)
+			}
+		case BuildSuiteProgress:
+			if got.Operation != build.Operation || !got.Complete || got.Suite.Ref() != build.Suite.Ref() ||
+				!sameSuiteReport(got.Suite.Report, build.Suite.Report) || !reflect.DeepEqual(got.Images, build.Images) {
+				t.Fatalf("%s round trip changed operation, state, identity, report or images", name)
+			}
+		default:
+			t.Fatalf("unexpected staged value type %T", got)
+		}
+	}
+
+	progress := BuildSuiteProgress{Operation: build.Operation, Suite: validated, Images: images[:1]}
+	if err := progress.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := progress.ValidateAgainst(buildRequest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := progress.Result(); err == nil {
+		t.Fatal("incomplete build progress produced a result")
+	}
+	progress.Complete = true
+	if err := progress.Validate(); err == nil {
+		t.Fatal("complete build progress accepted a missing member image")
+	}
+
+	pushRequest := PushSuiteRequest{Operation: "push-1", Build: build, Destination: "registry.example/team"}
+	pushed := PushSuiteResult{Operation: pushRequest.Operation, Destination: pushRequest.Destination, Suite: validated, Images: append([]AgentSandboxImage(nil), images...)}
+	pushed.Suite.Artifact.Manifest.Location = pushRequest.Destination
+	for i := range pushed.Images {
+		pushed.Images[i].Image.Location = pushRequest.Destination
+	}
+	if err := pushed.ValidateAgainst(pushRequest); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(pushed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decodedPush PushSuiteResult
+	if err := json.Unmarshal(data, &decodedPush); err != nil {
+		t.Fatal(err)
+	}
+	if err := decodedPush.ValidateAgainst(pushRequest); err != nil {
+		t.Fatalf("persisted push result no longer matches request: %v", err)
+	}
+	pushed.Images[0].Image.Digest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	if err := pushed.ValidateAgainst(pushRequest); err == nil {
+		t.Fatal("push validation accepted a substituted member image")
+	}
+	pushed = decodedPush
+	pushed.Destination = "registry.example/another-team"
+	if err := pushed.ValidateAgainst(pushRequest); err == nil {
+		t.Fatal("push validation accepted another destination")
+	}
+	pushed = decodedPush
+	pushed.Images[0].Image.Location = "/tmp/local-image"
+	if err := pushed.ValidateAgainst(pushRequest); err == nil {
+		t.Fatal("push validation accepted a local member-image location")
+	}
+}
+
+func TestAgentSuitesBuildRejectsMismatchedAndUnsupportedOutputs(t *testing.T) {
+	validated, images := suiteBuildFixture()
+	tests := []struct {
+		name   string
+		mutate func(*ValidatedAgentSuite, *[]AgentSandboxImage)
+	}{
+		{"no images", func(_ *ValidatedAgentSuite, images *[]AgentSandboxImage) { *images = nil }},
+		{"missing image", func(_ *ValidatedAgentSuite, images *[]AgentSandboxImage) { *images = (*images)[:1] }},
+		{"duplicate image", func(_ *ValidatedAgentSuite, images *[]AgentSandboxImage) { (*images)[1] = (*images)[0] }},
+		{"foreign suite", func(_ *ValidatedAgentSuite, images *[]AgentSandboxImage) {
+			(*images)[0].SuiteManifest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+		}},
+		{"wrong composition", func(_ *ValidatedAgentSuite, images *[]AgentSandboxImage) {
+			(*images)[0].Composition = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+		}},
+		{"standalone tool image", func(suite *ValidatedAgentSuite, _ *[]AgentSandboxImage) { suite.Report.ToolCompositions = 1 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			suite := validated
+			suite.Report.CompositionSelections = append([]SuiteCompositionSelection(nil), validated.Report.CompositionSelections...)
+			got := append([]AgentSandboxImage(nil), images...)
+			test.mutate(&suite, &got)
+			if err := (BuildSuiteResult{Operation: "build-1", Suite: suite, Images: got}).Validate(); err == nil {
+				t.Fatal("invalid suite build succeeded")
+			}
+		})
+	}
+}
+
+func suiteBuildFixture() (ValidatedAgentSuite, []AgentSandboxImage) {
+	suiteDigest := OCIManifestDigest("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	platform := SandboxPlatform{OS: "linux", Architecture: "amd64"}
+	selections := []SuiteCompositionSelection{
+		{Agent: "coordinator", Platform: platform, BuildProfile: "default", Digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+		{Agent: "writer", Platform: platform, BuildProfile: "default", Digest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+	}
+	validated := ValidatedAgentSuite{
+		Artifact: AgentSuiteArtifact{Manifest: OCIArtifactRef{
+			Location: "/tmp/team-suite-layout", Digest: suiteDigest,
+			MediaType: MediaTypeOCIImageManifest, ArtifactType: ArtifactTypeAgentSuite,
+		}},
+		Report: SuiteReport{Name: "team", Agents: 2, Compositions: 2, Capabilities: []string{}, CompositionSelections: selections},
+	}
+	images := make([]AgentSandboxImage, len(selections))
+	for i, selection := range selections {
+		imageDigest := OCIManifestDigest("sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+		if i == 1 {
+			imageDigest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+		}
+		images[i] = AgentSandboxImage{
+			Image:         OCIArtifactRef{Location: "/tmp/" + selection.Agent + "-image", Digest: imageDigest, MediaType: MediaTypeOCIImageManifest},
+			SuiteManifest: suiteDigest, Agent: selection.Agent, Platform: selection.Platform,
+			BuildProfile: selection.BuildProfile, Composition: selection.Digest,
+			Binding: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		}
+	}
+	return validated, images
 }
 
 func TestSuiteReportRejectsDuplicateCompositionSelection(t *testing.T) {
@@ -345,6 +502,30 @@ func TestSuiteReportRejectsDuplicateCompositionSelection(t *testing.T) {
 	}
 	if err := report.Validate(); err == nil {
 		t.Fatal("SuiteReport accepted duplicate agent/platform selections")
+	}
+}
+
+func TestSuiteReportRejectsIncoherentCountsAndPlatforms(t *testing.T) {
+	selection := SuiteCompositionSelection{
+		Agent: "writer", Platform: SandboxPlatform{OS: "linux", Architecture: "amd64"},
+		BuildProfile: "default",
+		Digest:       "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	}
+	tests := []SuiteReport{
+		{Name: "team", Agents: 2, Compositions: 1, CompositionSelections: []SuiteCompositionSelection{selection}},
+		{Name: "team", Agents: int(^uint(0) >> 1), Compositions: 1, CompositionSelections: []SuiteCompositionSelection{selection}},
+		{Name: "team", Agents: 1, Tools: -1, Compositions: 1, CompositionSelections: []SuiteCompositionSelection{selection}},
+		{Name: "team", Agents: 1, ToolCompositions: -1, Compositions: 1, CompositionSelections: []SuiteCompositionSelection{selection}},
+		{Name: "team", Agents: 1, Compositions: 1, CompositionSelections: []SuiteCompositionSelection{selection}, AgentPlatforms: []SuiteAgentPlatform{{Agent: "other", Platforms: []SandboxPlatform{selection.Platform}}}},
+		{Name: "team", Agents: 1, Compositions: 1, Capabilities: []string{"bad_capability"}, CompositionSelections: []SuiteCompositionSelection{selection}},
+		{Name: "team", Agents: 1, Compositions: 1, Capabilities: []string{"z", "a"}, CompositionSelections: []SuiteCompositionSelection{selection}},
+		{Name: "team", Agents: 1, Compositions: 1, Capabilities: []string{"a", "a"}, CompositionSelections: []SuiteCompositionSelection{selection}},
+		{Name: "team", Agents: 1, Compositions: 1, Capabilities: []string{string([]byte{0xff})}, CompositionSelections: []SuiteCompositionSelection{selection}},
+	}
+	for i, report := range tests {
+		if err := report.Validate(); err == nil {
+			t.Errorf("incoherent report %d succeeded", i)
+		}
 	}
 }
 

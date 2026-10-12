@@ -64,6 +64,34 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   qualification and its separate one-shot native A2A MCP proof. Supported
   operations and Python's render-only boundary are unchanged.
 
+### Breaking
+
+- Removed `kmx lift`; use `kmx aks up` for AKS provisioning.
+- Removed `kmx lift down`; use `kmx aks down` for AKS teardown.
+- Removed `kmx up`; use `kmx local up` for local runtime setup.
+- Removed `kmx down`; use `kmx local down` for local cluster deletion.
+- Removed `kmx ctx`; use `kmx context show` or `kmx context use <context>`.
+
+- The experimental, unwired `pkg/kmx.AgentSuites` Go contract now exposes the
+  cohesive `Validate`, `Build`, `RecoverBuild`, `Push` and `RecoverPush`
+  workflow with staged concrete values. This replaces its speculative
+  `Package`, per-member `BuildSandbox` and generic `Publish` methods. Installed
+  `kmx suite` commands and their output are unchanged. The initial Build/Push
+  contract is image-backed; valid native-Orka suites requiring zero member
+  images remain outside it until execution-profile artifact requirements are
+  modeled.
+
+### Upgrading
+
+- Update scripts using the removed root aliases to their replacements above.
+  Local, AKS and context operations retain their existing behavior; no new root
+  lifecycle verbs are introduced.
+
+- Consumers of the alpha `pkg/kmx` design package must adopt
+  `ValidatedAgentSuite`, `BuildSuiteResult`/`BuildSuiteProgress` and
+  `PushSuiteResult`. Builder selection, member planning and OCI transport now
+  remain internal capabilities rather than northbound workflow methods.
+
 ## v0.5.1 — 2026-10-12
 
 ### Fixed

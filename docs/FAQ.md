@@ -43,7 +43,7 @@ or reuses a complete matching UID-bound deployment, never adopts or updates.
 Readiness receipts do not prove an answer. Dedicated CI continuously qualifies
 Go lift/status and a separate one-shot native A2A tool answer. See [exact-version placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
 Standalone chat/run/eval, list/show, console, interactive `/lift`, quickstart,
-`up`, installer and AKS payload remain unsupported. Historical AKS lift records
+`local up`, installer and AKS payload remain unsupported. Historical AKS lift records
 remain teardown-only. See the [create contract](kmx.md#explicit-kagent-v0102-create).
 
 There is still no supported translation from Kagent YAML into an Orka Agent or
@@ -102,6 +102,6 @@ command arguments or committed YAML.
 ### A local model disappeared after a restart
 
 The local Ollama model cache is an `emptyDir`; a pod restart may require another
-model pull. Pod restarts are not cluster deletion. `kmx down` removes the whole
+model pull. Pod restarts are not cluster deletion. `kmx local down` removes the whole
 named kind cluster and its persistent data. Export needed resources, Secrets and
 volumes before replacing it; see [Orka's data-retention limits](orka.md#limits-stated).

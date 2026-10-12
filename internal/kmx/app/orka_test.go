@@ -970,7 +970,7 @@ func orkaDeploy(name string, edit func(meta, spec, status map[string]any)) map[s
 
 // OrkaStatus is a VIEW: it prints "not installed" and returns nil, which is
 // right for a person asking and wrong for a caller deciding whether a lift
-// succeeded. `lift --payload orka` verify consults OrkaReady for exactly this
+// succeeded. `aks up --payload orka` verify consults OrkaReady for exactly this
 // reason, and these are the three answers that must differ.
 func TestOrkaReadyRefusesAnAbsentOrka(t *testing.T) {
 	f := newOrkaFixture(t, nil)
@@ -1260,7 +1260,7 @@ func TestTheNoTelemetryPhaseLabelPromisesNoAnswer(t *testing.T) {
 	}
 }
 
-// `kmx up --step orka` is the step that OWNS the Task result identity.
+// `kmx local up --step orka` is the step that OWNS the Task result identity.
 //
 // Result reads go over Orka's API with a short-lived token for this account,
 // so it has to exist before any command can retrieve an answer — and the
@@ -1313,7 +1313,7 @@ func TestUpOrkaStepOwnsTheResultAccountAndItsExactGrant(t *testing.T) {
 
 // Every path that needs the Task result identity writes the SAME grant.
 //
-// `kmx up --step orka`, `kmx quickstart --interactive` and the lift deployment all
+// `kmx local up --step orka`, `kmx quickstart --interactive` and the lift deployment all
 // provision the account results are read with, and a copy per path is free to
 // drift: a Role whose extent depends on which command wrote it is a grant
 // nobody reviews as one. The wizard used to carry its own literal; both
@@ -1342,7 +1342,7 @@ func TestEveryPathWritesTheSameResultReaderGrant(t *testing.T) {
 		t.Fatalf("step orka: %v", err)
 	}
 	if !strings.Contains(step.applied(t), grant) {
-		t.Errorf("`kmx up --step orka` wrote a different result-reader grant:\n%s", step.applied(t))
+		t.Errorf("`kmx local up --step orka` wrote a different result-reader grant:\n%s", step.applied(t))
 	}
 
 	wizard := newOrkaFixture(t, installer)
@@ -1387,7 +1387,7 @@ func TestEveryPathWritesTheSameResultReaderGrant(t *testing.T) {
 
 // A Provider pointed somewhere other than the in-cluster default is the
 // caller's own endpoint — a host Ollama reached over the kind gateway, say,
-// which `kmx up` verified is reachable FROM the cluster and deployed no
+// which `kmx local up` verified is reachable FROM the cluster and deployed no
 // in-cluster Ollama for. Refusing it because an `ollama` Service that has
 // nothing to do with it is absent would refuse a route that works.
 func TestOrkaProviderChecksTheInClusterServiceOnlyForTheInClusterEndpoint(t *testing.T) {

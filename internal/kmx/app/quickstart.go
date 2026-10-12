@@ -65,9 +65,9 @@ type quickstartStep struct {
 // Quickstart is the whole distance from a machine with a container engine to
 // an agent answering a question, in one command.
 //
-// It is not a new journey. Every step is `kmx up`'s, in `kmx up`'s order,
+// It is not a new journey. Every step is `kmx local up`'s, in `kmx local up`'s order,
 // with the same waits and the same fail-closed checks — what it ADDS is the
-// one thing `up` deliberately does not: a fixed Orka Agent and a question
+// one thing `local up` deliberately does not: a fixed Orka Agent and a question
 // put to it. The runtime is Orka; nothing on this path installs, reads or
 // depends on the retired runtime.
 //

@@ -254,7 +254,7 @@ jobs:
       # ever exercise the one branch it runs on (local kind). These tests
       # build their own kubeconfig, so all of them are covered keyless in
       # seconds: local kind proceeds, an unwritten kind context proceeds
-      # (that is `kmx up` on an empty machine), and a typo, a kind-NAMED
+      # (that is `kmx local up` on an empty machine), and a typo, a kind-NAMED
       # remote, a remote with no confirmation, and a confirmation naming a
       # different context are all refused.
       - name: Context guard fails closed
@@ -292,7 +292,7 @@ jobs:
           # Keep this list explicit so rewriting a shard cannot silently
           # remove it from the guard.
           converted = ["e2e-quickstart"]
-          # A bare `kmx up` installs Orka. Bounded exact-v0.10.2 create and
+          # A bare `kmx local up` installs Orka. Bounded exact-v0.10.2 create and
           # exact-v0.10.3 declarative lift/status do not let these converted
           # Orka shards install the alternate runtime or use unsupported verbs.
           # API-group text is not globally forbidden; these controls name
@@ -336,8 +336,8 @@ jobs:
               "kmx agent create kagent-hello --runtime kagent --namespace agents",
               "kmx agent lift ./bundle --runtime kagent --runtime-version v0.10.3",
               "kmx agent status ./bundle --runtime kagent --runtime-version v0.10.3",
-              "kmx up",
               "kmx local up",
+              "kmx --context kind-x local up",
               "kmx agent run demo --namespace orka-system",
               "kubectl get ns kagent",
               "kubectl -n agents get agents.kagent.dev",
@@ -854,19 +854,19 @@ jobs:
           assert commands[2][3:] == ["orka", "status"], commands
           print("second run:", round(r["elapsed_seconds"], 1), "s ·", r["answer"][:80])
           EOF
-      # `kmx up` on the same cluster is the RUNTIME and nothing more: it
+      # `kmx local up` on the same cluster is the RUNTIME and nothing more: it
       # must reconcile Orka without deploying an agent, and without bringing
       # back a legacy runtime that no longer has a caller.
-      - name: kmx up is the runtime, and deploys no agent
+      - name: kmx local up is the runtime, and deploys no agent
         if: steps.changes.outputs.docs_only != 'true'
         env:
           KIND_CLUSTER: kmx-quickstart
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
-          kmx up 2>&1 | tee up-after-quickstart.out
+          kmx local up 2>&1 | tee up-after-quickstart.out
           if grep -qi 'kagent' up-after-quickstart.out; then
-            echo "a bare kmx up still names the legacy runtime:"
+            echo "a bare kmx local up still names the legacy runtime:"
             grep -i kagent up-after-quickstart.out; exit 1
           fi
           k="$HOME/.config/kmx/path/kubectl"
@@ -1408,7 +1408,7 @@ jobs:
         run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
       # Component steps only. `kmx orka install` is the command under test
       # here, and the next step runs it with its digest verification and its
-      # Provider's readiness asserted — a bare `kmx up` would have installed
+      # Provider's readiness asserted — a bare `kmx local up` would have installed
       # Orka already, and that step would then be asserting about somebody
       # else's work. The other half of this shard's point is what the Orka
       # path does NOT install: no legacy namespace or harness wrapper.
@@ -1419,11 +1419,11 @@ jobs:
           if kind get clusters | grep -qx kmx-orka; then
             echo 'refusing to reuse or delete an existing kind cluster'; exit 1
           fi
-          bin/kmx up --step cluster
+          bin/kmx local up --step cluster
           echo 'KMX_ORKA_RUNTIME_CREATED=1' >> "$GITHUB_ENV"
           python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster "$KIND_CLUSTER"
-          bin/kmx up --step ollama
-          bin/kmx up --step model
+          bin/kmx local up --step ollama
+          bin/kmx local up --step model
           # Fail closed on the premise. If a later edit made any of the three
           # steps above pull in the legacy runtime, every Orka claim below
           # would still pass while proving something else entirely.
@@ -2090,7 +2090,7 @@ jobs:
         working-directory: /home/runner/journey
         run: |
           # Reuse the installer's Secret, never its shared Provider/local.
-          # `--result-service-account` names the account `kmx up --step orka`
+          # `--result-service-account` names the account `kmx local up --step orka`
           # provisioned: create itself provisions no account and no RBAC, so
           # naming one the bring-up made is the whole point of this step.
           # This step exercises agent creation through the supported

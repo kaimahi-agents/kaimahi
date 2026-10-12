@@ -2,9 +2,9 @@
 
 **Status:** Experimental design evidence
 
-**Scope:** The alpha northbound contracts in [`pkg/kmx`](../pkg/kmx) and their
-implementation-only ports in `internal/kmx/lifecycle`. They are not wired to the
-CLI, do not replace `internal/kmx/runtime`, and make no compatibility commitment.
+**Scope:** The alpha northbound contracts in [`pkg/kmx`](../pkg/kmx) and focused
+implementation-only ports under `internal/kmx`. They are not wired to the CLI,
+do not replace `internal/kmx/runtime`, and make no compatibility commitment.
 
 **Companion guide:** [KMX application API](kmx-application-api.md) is the
 authoritative signature, example, persistence, and management-port reference.
@@ -58,7 +58,9 @@ AgentEnvironment -> Target -> Runtime ------------------+
 
 The guiding relationship is:
 
-> `AgentSuites` ships portable definitions and derives runnable sandbox images.
+> `AgentSuites` validates one immutable definition, builds the complete member-
+> image set required by the initial image-backed execution profile, and pushes
+> those identities without rebuilding.
 > `AgentEnvironment` prepares a target and runtime. `AgentDeployments` places an
 > authored revision or sandbox image there without transferring ownership
 > authority between those concerns.
@@ -145,25 +147,43 @@ The verbs form separate lifecycle pairs:
 | Scope | Establish | Remove |
 |---|---|---|
 | Agent environment | `Up` | `Down` |
-| AgentSuite artifact | `Package` | Registry retention policy |
-| Agent sandbox image | `BuildSandbox` | Registry retention policy |
+| AgentSuite build set | `Build` | Registry retention policy |
+| Published build set | `Push` | Registry retention policy |
 | Agent deployment | `Lift` | `Retire` |
 | Local target configuration | `Register` | `Forget` |
 
 `AgentEnvironment.Up` composes target setup with runtime installation, but its
 mode is explicit: resolve only, provision only, or resolve then provision after
 an established absence. Internal resolution returns `Found: false` as data;
-operational errors never become absence. `AgentSuites` owns definition
-validation, OCI packaging, and sandbox-image derivation, but not deployment.
+operational errors never become absence. `AgentSuites` owns validation and the
+initial image-backed build/push workflow, but not concrete builders, storage
+transports, image-free execution profiles or deployment.
 `Forget` is deliberately not `Down`: forgetting a bring-your-own target removes
 local configuration and never mutates the target.
 
 ### AgentSuite is part of the shipping lifecycle
 
 An AgentSuite Artifact is immutable definition and packaging data. It is an OCI
-artifact but is not directly runnable. `AgentSuites.BuildSandbox` derives a
-runnable OCI image for exactly one suite digest, agent, platform, build profile,
-composition, and embedded sandbox-binding digest.
+artifact but is not directly runnable. `AgentSuites.Validate` materializes the
+exact checked graph; `Build` returns one sandbox image for every composition the
+current alpha result can represent; `Push` relocates those identities without
+rebuilding. Incomplete recovery progress may contain a verified subset, but a
+complete result cannot omit a composition.
+
+This first completeness rule is intentionally profile-specific. The native-Orka
+profile from #437 declares `requiredImages: []`, and #442 is proving image-free
+evaluation for that valid suite shape; it remains outside this image-backed
+Build/Push contract. A future general workflow derives its required artifact set
+from an explicit execution profile, including profiles that require zero member
+images.
+
+The current staged build/push results do not define an aggregate release root.
+They are not a settled `AgentSuiteRelease` or a suite-level deployment source.
+
+Staged suite values are evidence returned by the selected `AgentSuites`
+implementation, not self-authenticating proof. Build and Push rematerialize the
+immutable artifact and rederive the closed graph before accepting a report or a
+claim of completeness.
 
 `AgentDeployments.Lift` accepts one `DeploymentSource`: either an authored
 `AgentRevision` or a derived `AgentSandboxImage`. The mutually exclusive union
@@ -212,8 +232,9 @@ The model distinguishes:
 
 ```text
 AgentDeployments.BuildRevision -> validated AgentRevision
-AgentSuites                     -> AgentSuiteArtifact -> AgentSandboxImage
-internal RuntimeBuilder         -> DeploymentSource -> runtime-native bundle
+AgentSuites.Validate           -> ValidatedAgentSuite
+AgentSuites.Build/Push         -> complete image-backed member set
+internal RuntimeBuilder        -> DeploymentSource -> runtime-native bundle
 ```
 
 `AgentRevision` itself is an immutable byte identity; constructing one does not
@@ -225,9 +246,9 @@ installation and target binding to identify the same exact target before native
 building.
 
 Validation reports expose one exact composition selection per `(agent,
-platform)`, including the selected build profile and composition digest. Sandbox
-construction consumes that selection instead of asking callers to guess a
-digest.
+platform)`, including the selected build profile and composition digest. Build
+implementations consume every selection instead of asking callers to guess
+digests or exposing member builders in the northbound interface.
 
 ## Ownership and safety
 
@@ -283,12 +304,13 @@ binding/rendered/deploy identities.
 
 ### Persistence is explicit
 
-Values carrying source, local paths, bindings, or native artifact bytes are
-in-process values and reject JSON encoding and decoding. Durable references and
-validated receipts cross processes. In particular, `AgentSandboxImage` carries a
-retrieval location, while location-free `AgentSandboxRef` is persisted inside
-`DeploymentSourceRef`; publication and relocation do not change deployment
-identity. The application guide contains the full
+Values carrying source bytes, bindings or native artifact bytes are in-process
+values and reject JSON encoding and decoding. Staged suite operation values may
+persist private retrieval hints but are revalidated after decoding; location-free
+references and validated receipts are durable identity. In particular,
+`AgentSandboxImage` carries a retrieval location, while location-free
+`AgentSandboxRef` is persisted inside `DeploymentSourceRef`; publication and
+relocation do not change deployment identity. The application guide contains the full
 [persistence matrix](kmx-application-api.md#persistence-boundary).
 
 ### Absence and unreadability are distinct
@@ -316,7 +338,7 @@ Architecture tests enforce:
 - no imports from internal implementation packages;
 - rejection of known concrete implementation names in exported and serialized
   surfaces;
-- exact destructive workflow method sets and receipt-scoped signatures.
+- exact northbound workflow method sets and receipt-scoped destructive signatures.
 - no implementation ports or runtime-native artifact declarations in `pkg/kmx`;
 - an internal lifecycle dependency closure containing only `pkg/kmx` and the
   standard library.
@@ -329,11 +351,12 @@ future abstraction is neutral. Semantic review remains necessary.
 The first production proof should remain smaller than the full model:
 
 1. Implement one AgentEnvironment, AgentSuites, and AgentDeployments service over
-   the ports.
+   focused internal ports; do not mirror the complete northbound method set in a
+   southbound interface.
 2. Adapt one real Orka build, deploy, status, and retire path.
 3. Add one in-memory platform/runtime fake and a shared base conformance suite.
-4. Adapt the current AgentSuite validator, then implement OCI packaging and one
-   sandbox-image derivation path.
+4. Adapt the current AgentSuite validator, then implement an immutable validated
+   snapshot and a complete conformant suite build/push path.
 5. Persist operation and deployment evidence for recovery from another process.
 6. Prove retirement cannot invoke target or cloud teardown.
 7. Validate common semantics against another real runtime before declaring them
