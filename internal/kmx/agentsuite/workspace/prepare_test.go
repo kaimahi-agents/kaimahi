@@ -1,8 +1,10 @@
 package workspace_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -97,6 +99,12 @@ func TestPrepareExactNativeArtifactAndReuse(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	workspaceFile := filepath.Join(root, "workspace.yaml")
+	writeFile(t, workspaceFile, "# Equivalent source spelling\n"+string(readFile(t, workspaceFile)))
+	spelled, err := workspace.Prepare(context.Background(), root, cache)
+	if err != nil || spelled.Descriptor.Digest != p.Descriptor.Digest || spelled.Fingerprint == p.Fingerprint {
+		t.Fatal("source spelling changed S or preserved the source fingerprint", err)
+	}
 }
 
 func TestAuthoredEditsChangeDescriptorAndPublicationRefusesStale(t *testing.T) {
@@ -129,6 +137,9 @@ func TestAuthoredEditsChangeDescriptorAndPublicationRefusesStale(t *testing.T) {
 			}
 			if before.Descriptor.Digest == after.Descriptor.Digest || before.Fingerprint == after.Fingerprint {
 				t.Fatal("edit did not change identity")
+			}
+			if edit == "case" && !bytes.Equal(readFile(t, filepath.Join(extract(t, before), "agentsuite.json")), readFile(t, filepath.Join(extract(t, after), "agentsuite.json"))) {
+				t.Fatal("case-only edit changed G")
 			}
 		})
 	}
@@ -245,6 +256,9 @@ func TestCacheCorruptionDescriptorMismatchAndCancellationRefuse(t *testing.T) {
 	}
 	if err := workspace.Verify(ctx, p); err != context.Canceled {
 		t.Fatalf("canceled verification: %v", err)
+	}
+	if loaded, err := workspace.Load(ctx, p); loaded != nil || !errors.Is(err, context.Canceled) {
+		t.Fatal("Load lost cancellation identity", err)
 	}
 	manifest := filepath.Join(p.Path, "blobs/sha256", p.Descriptor.Digest.Encoded())
 	if err := os.Chmod(manifest, 0o600); err != nil {

@@ -8,6 +8,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/opencontainers/go-digest"
 	"oras.land/oras-go/v2/registry"
 )
 
@@ -23,6 +24,19 @@ func (a *App) CreateSuiteMember(ctx context.Context, root string, opt workspace.
 // PushSuiteWorkspace transfers the prepared OCI graph, never re-packing it at
 // publication. The native execution profile requires no member images.
 func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance) (oras.PushResult, error) {
+	return a.pushSuiteWorkspace(ctx, root, reference, layout, plainHTTP, force, provenance, nil)
+}
+
+// expectedS binds publication to the full packaged artifact, not merely its
+// public graph or source spelling. Nil is the explicit unevaluated path.
+func (a *App) pushSuiteWorkspace(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance, expectedS *digest.Digest) (oras.PushResult, error) {
+	var expected digest.Digest
+	if expectedS != nil {
+		expected = *expectedS
+		if err := expected.Validate(); err != nil || expected.Algorithm() != digest.SHA256 {
+			return oras.PushResult{}, fmt.Errorf("expected suite identity must be a valid SHA256 digest")
+		}
+	}
 	if layout == "" {
 		parsed, err := registry.ParseReference(reference)
 		if err != nil {
@@ -39,6 +53,9 @@ func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout st
 	prepared, err := workspace.Prepare(ctx, root, filepath.Join(state, "suites"))
 	if err != nil {
 		return oras.PushResult{}, err
+	}
+	if expectedS != nil && prepared.Descriptor.Digest != expected {
+		return oras.PushResult{}, fmt.Errorf("prepared suite does not match the expected publication identity")
 	}
 	var options oras.PushOptions
 	var sourceWarning string

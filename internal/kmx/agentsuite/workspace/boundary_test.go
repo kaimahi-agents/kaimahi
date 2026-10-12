@@ -37,7 +37,7 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 			case "nonempty images":
 				b = strings.ReplaceAll(b, `"requiredImages":[]`, `"requiredImages":["member-image"]`)
 			case "unknown metadata":
-				b = strings.TrimSuffix(b, "}") + `,"extra":true}`
+				b = strings.TrimSuffix(b, "}") + `,"private-metadata-canary":"private-metadata-content"}`
 			case "duplicate metadata":
 				b = strings.TrimSuffix(b, "}") + `,"member":"greeter"}`
 			case "renderer":
@@ -132,6 +132,13 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 			}
 			if err := workspace.Verify(context.Background(), &candidate); err == nil {
 				t.Fatalf("accepted invalid native content %s", change)
+			}
+			loaded, err := workspace.Load(context.Background(), &candidate)
+			if err == nil || loaded != nil {
+				t.Fatal("Load returned invalid native content or a partial result")
+			}
+			if strings.Contains(err.Error(), "private-metadata-canary") || strings.Contains(err.Error(), "private-metadata-content") {
+				t.Fatal("Load exposed private metadata in its diagnostic")
 			}
 		})
 	}

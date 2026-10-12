@@ -101,6 +101,12 @@ stopped. Registry tag preflight remains separately non-atomic.
 Existing extracted-directory transfer remains `suite push DIRECTORY REFERENCE`;
 `--workspace` instead takes only one positional destination reference.
 
+Internally, verified packaged native inputs can be loaded without consulting live
+source or the preparation record, and publication can require an expected OCI
+manifest digest. This identity check alone is not evaluation evidence or release
+authorization; the installed CLI still has no workspace evaluation or registry
+release lift.
+
 Preparation state is outside authored source, under the KMX state directory
 (`KMX_HOME` overrides it). Cache corruption refuses reuse. Keep this state private;
 it is not a receipt, evaluation pass or promotion authorization.
