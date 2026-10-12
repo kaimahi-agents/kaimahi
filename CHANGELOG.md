@@ -22,6 +22,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Fixed
+
+- `kmx targets --detect` accepts kubectl's `kind: List` Deployment responses,
+  reporting empty lists as absent and labelled controllers as present. Malformed
+  responses and failed reads remain unreadable and exit nonzero.
+
 ## v0.5.0 — 2026-10-11
 
 ### Added

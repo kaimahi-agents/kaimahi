@@ -135,6 +135,9 @@ docker buildx create --name kmx-builder --driver docker-container
 `--builder` selects an existing Buildx builder for this build without changing
 Docker's default builder. When omitted, Docker Buildx uses its existing builder
 selection. Disabling attestations does not fix an unsupported OCI exporter.
+A `docker-container` builder can export an OCI archive on a classic-store host,
+but it does not change that host's image store. The load/run example below
+requires Docker's containerd image store.
 
 ```zsh
 SUITE=./internal/kmx/agentsuite/testdata/incident-analyst
@@ -188,8 +191,28 @@ SBOM blob path. Run that command to read the complete in-toto SPDX statement
 without a registry or network access. These BuildKit attestations are not signed
 identity evidence; KMX does not sign user-built images.
 
-Create an Azure OpenAI deployment named `gpt-5-mini` in Azure AI Foundry. Then
-load the image and inject its API key only when the container starts:
+Before loading the archive, check the selected Docker daemon's image store:
+
+```sh
+docker info -f '{{ .DriverStatus }}'
+```
+
+The output must include `driver-type io.containerd.snapshotter.v1`. Docker's
+classic image store cannot load this attested OCI archive; `docker load` can
+fail with `invalid archive: does not contain a manifest.json`. An alternate
+buildx builder fixes export, not import. Do not disable attestations to work
+around the image-store requirement.
+
+If the daemon still uses the classic store, stop before `docker load`. Follow
+Docker's [Engine](https://docs.docker.com/engine/storage/containerd/) or
+[Desktop](https://docs.docker.com/desktop/features/containerd/) guidance to
+choose the containerd image store. Switching stores hides the previous store's
+images and containers until you switch back; review that impact before changing
+a shared daemon. kmx does not change the daemon's settings.
+
+With the containerd image store selected, create an Azure OpenAI deployment
+named `gpt-5-mini` in Azure AI Foundry. Then load the image and inject its API
+key only when the container starts:
 
 ```zsh
 docker load -i incident-analyst.oci.tar

@@ -33,7 +33,10 @@ deploy a runtime, and does not change other commands' defaults.
   namespaces. It uses existing `--context`, `KUBE_CTX`, saved `kmx ctx`, or kind
   context resolution and an available kubectl; it downloads nothing. A labelled
   controller is `present`; a successful list with no matching controller is
-  `absent` within that namespace. Only the exact pinned controller image digest
+  `absent` within that namespace. Both kubectl's `List` and the API's
+  `DeploymentList` envelopes are accepted; missing or null `items` is malformed,
+  and generic `List` items must identify themselves as Deployments.
+  Only the exact pinned controller image digest
   identifies a qualified version. Tags, sidecar images and foreign digests
   leave the version unknown. Presence proves neither readiness nor a result.
 - `--sessions` independently reads one Session page and discards its metadata.
