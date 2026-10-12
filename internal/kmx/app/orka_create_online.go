@@ -146,8 +146,9 @@ type orkaStagedResource struct {
 // that create rerunnable: Provider and Agent go through reconcile Deploy's
 // inspection and writes, so resources carrying this bundle's markers are
 // reused or updated, identical unmarked ones adopted and anything else
-// refused, and an identical existing artifact is kept. The optional Task stays
-// create-only and still runs only after both are Ready. Without it (lift, and
+// refused, and a matching existing artifact is kept with its original schema
+// attribution. Every byte outside that generated block must match. The optional
+// Task stays create-only and still runs only after both are Ready. Without it (lift, and
 // --dry-run) every resource must be absent, as it always had to be.
 //
 // It returns the Agent's identity so a lifecycle Deploy can name it. A
@@ -262,7 +263,7 @@ func (a *App) createOrkaStaged(ctx context.Context, opt CreateOptions, bundle *s
 		}
 	}
 	if !a.liftReuse {
-		// Only a rerunnable create may keep an identical artifact: a Task's
+		// Only a rerunnable create may keep a matching artifact: a Task's
 		// random identity means its artifact never matches a later run.
 		if err := a.emitOrkaArtifact(opt, document, reconcile != nil && bundle.Task == nil); err != nil {
 			return orkaIdentity{}, err

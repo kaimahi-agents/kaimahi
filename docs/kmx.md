@@ -573,9 +573,14 @@ delegation limits ([bundle format](agent-lift.md#coordination-in-agentyaml)). Us
   unless `--bundle-path` explicitly names a bundle directory. `--no-apply`
   writes an exclusive local rendered artifact. Default artifact file:
   `agents/<name>.yaml`. An existing rendered artifact is never overwritten:
-  an applying create keeps one that is byte-identical to what it renders and
-  refuses, naming the file, one that differs; offline and `--dry-run` refuse any
-  existing file. Input and final YAML reject known credential shapes.
+  an applying create without `--task` keeps one matching every byte except the
+  generated schema-source comment block. The preview's original attribution
+  remains unchanged; online creation still validates against installed CRDs and
+  strict server admission, and reports that distinction on stderr. Any other
+  byte difference, including another comment or whitespace, is refused by name.
+  The comparison is repeated before deployment but does not lock out subsequent
+  concurrent edits. Offline and `--dry-run` refuse any existing file. Input and
+  final YAML reject known credential shapes.
 - When the rendered artifact is written to a file (online creation, offline
   `--no-apply`, or online `--dry-run`), kmx also writes a Git-friendly agent
   bundle at `agents/<name>/` by default, or at `--bundle-path <directory>`.
@@ -595,7 +600,9 @@ delegation limits ([bundle format](agent-lift.md#coordination-in-agentyaml)). Us
   reuse an existing byte-identical bundle; if either file differs, creation
   refuses and names the differing file. A failed deploy leaves the bundle and
   the rendered artifact for retry, and **rerunning the same command is safe**:
-  both are kept when identical, and the cluster side reconciles as below.
+  bundle files must remain byte-identical; the rendered artifact may differ only
+  in its generated schema-source comment block. The cluster side reconciles as
+  below.
   With `--task` the rendered Task name is random, so the old artifact can never
   match: a `--task` rerun refuses it and needs a new `--out` path.
 - Offline defaults to `--schema-target v0.2.0`. Explicit

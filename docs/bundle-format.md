@@ -7,6 +7,24 @@ evaluation evidence. kmx is pre-1.0: these are the rules of the
 current reader, not a guarantee that every pre-1.0 release can read every
 other release's output.
 
+## Which format goes where
+
+These inputs are not interchangeable:
+
+| Format | Files / example | Use it with |
+|---|---|---|
+| Portable YAML bundle | `agents/my-agent/agent.yaml`, `bindings.yaml` and `eval/*.yaml`, created by `kmx agent create` | `kmx agent lift`, `status` and `evaluate`. The [CI eval action](agent-lift.md#run-evals-in-ci) takes this bundle directory, not an image. Runtime-specific limits still apply. |
+| Extracted AgentSuite definition | `agentsuite.json` and referenced JSON manifests, such as the tool-free incident-analyst fixture | `kmx suite validate`, `push` and `pull`. Use incident-analyst for the [experimental build example](kmx.md#experimental-agentsuite-image-build). |
+| AgentSuite OCI artifact / layout | The packaged definition distributed by `kmx suite push` and recovered by `kmx suite pull` | Distribution and offline format validation. This is not a runnable sandbox image. See the [AgentSuite specification](../agentsuite/spec.md). |
+| Sandbox image archive | `incident-analyst.oci.tar`, produced by the experimental `kmx suite build` example | Docker import and container serving under that example's image-store and inference prerequisites. It is not the YAML input to `agent evaluate` or the CI action, and current builder output is not AgentSuite-conformant. |
+
+The specification's [coordinator-workers fixture](../agentsuite/testdata/coordinator-workers/)
+illustrates invocation edges. It is a format-validation example, not a build
+example for today's tool-free AgentKit adapter. A valid Suite can use features
+that this narrow builder does not support; validation is not a promise that it
+can build or run that Suite. Neither example converts an `agent.yaml` bundle
+into an AgentSuite.
+
 ## What a reader accepts
 
 | File | Current rule |

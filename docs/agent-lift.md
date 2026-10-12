@@ -29,7 +29,9 @@ writes the Orka extension. Lift reads the definition from
 bundle's original bindings. The exact bytes of `agent.yaml`, including comments
 and whitespace, determine the portable digest. A rendered digest identifies
 the target-specific rendering. See [bundle format compatibility](bundle-format.md)
-for accepted versions, strict decoding and cross-version behavior.
+for accepted versions, strict decoding and cross-version behavior. These YAML
+bundles are distinct from AgentSuite definitions and sandbox images; see
+[which format goes where](bundle-format.md#which-format-goes-where).
 
 ## Exact-v0.10.3 declarative bundle placement
 
@@ -185,9 +187,26 @@ from the model name. Create writes `agents/my-agent/` and scaffolds
 `eval/example.yaml`. Edit that case's input and expected answer before testing
 it. The destination must separately have Orka, its namespace, a Ready Provider,
 the Provider's Secret and any referenced Tools; lift installs none of them.
-Use `kmx agent lift agents/my-agent --to-context my-target --inference provider:local`
-after replacing `my-target` and `local` with the destination
-context and Ready Provider. `--plan` inspects intended changes without writing.
+First list Providers in the destination context and namespace (replace
+`my-target` with your destination context):
+
+```bash
+kubectl --context my-target --namespace orka-system get providers.core.orka.ai
+```
+
+Bare `kmx quickstart` creates the fixed `hello-world-agent` Provider;
+`kmx local up` prepares the `local` Provider. Neither name is a guarantee about
+another destination. Choose an existing Ready Provider from that destination,
+then replace `my-target` and the example Provider name below:
+
+```bash
+PROVIDER=hello-world-agent
+kmx agent lift agents/my-agent --to-context my-target --to-namespace orka-system --inference "provider:$PROVIDER" --plan
+```
+
+`--plan` inspects intended changes without writing and checks the selected
+Provider. Review the plan, then repeat the lift command without `--plan` to
+apply it. Listing a Provider alone does not prove it is Ready or can answer.
 Then use `kmx agent status agents/my-agent --to-context my-target` to inspect
 what is deployed and `kmx agent evaluate agents/my-agent --to-context my-target`
 to run the cases against that deployed digest. Each evaluation creates a Task
@@ -983,6 +1002,10 @@ known-to-known comparison. A complete stable comparison or fixes can exit zero *
 evaluations failed**; zero is not an evaluation-pass claim.
 
 ## Run evals in CI
+
+The action's `bundle` input selects a directory containing `agent.yaml` and its
+`eval/*.yaml` cases, not an AgentSuite fixture or a sandbox image archive. See
+[which format goes where](bundle-format.md#which-format-goes-where).
 
 Use the [KMX eval action](../.github/actions/kmx-eval/action.yml) to run a
 bundle's complete case set, fail the job unless every case passes, and optionally
