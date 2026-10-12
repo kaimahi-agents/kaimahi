@@ -258,7 +258,7 @@ func (a *App) stepCluster() (err error) {
 			}
 			return a.waitClusterServing()
 		}
-		if err := a.Run.Run("kind", "create", "cluster", "--name", a.Cfg.KindCluster); err != nil {
+		if err := a.createKindCluster(); err != nil {
 			return err
 		}
 		return a.waitClusterServing()
@@ -285,11 +285,25 @@ func (a *App) stepCluster() (err error) {
 		if err := a.Run.Run("podman", append([]string{"start"}, names...)...); err != nil {
 			return err
 		}
-	} else if err := a.Run.Run("kind", "create", "cluster", "--name", a.Cfg.KindCluster); err != nil {
+	} else if err := a.createKindCluster(); err != nil {
 		return err
 	}
 
 	return a.waitClusterServing()
+}
+
+func (a *App) createKindCluster() error {
+	// A shorter kubelet sync is intended to limit Orka's webhook Secret
+	// projection jitter on new small local clusters; existing nodes stay untouched.
+	cfg := []byte(`apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+kubeadmConfigPatches:
+- |
+  apiVersion: kubelet.config.k8s.io/v1beta1
+  kind: KubeletConfiguration
+  syncFrequency: 5s
+`)
+	return a.Run.RunStdin(cfg, "kind", "create", "cluster", "--name", a.Cfg.KindCluster, "--config", "-")
 }
 
 func (a *App) ensureKindContext() error {

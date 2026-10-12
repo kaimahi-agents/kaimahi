@@ -48,6 +48,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Registry `kmx suite push` attaches provenance by default, and `suite pull` shows the claimed kmx version and source commit when available; `--require-provenance` refuses to move the tag if attachment fails.
   Provenance is unsigned: anyone with push access can attach a claim. [Suite provenance](docs/kmx.md#suite-provenance).
 
+### Changed
+
+- Future local kind nodes created by `kmx quickstart` or `kmx local up` use a
+  5s kubelet sync frequency on Docker and Podman. Existing or recovered clusters
+  and AKS nodes are not modified. This is intended to reduce webhook Secret
+  projection waits, with more node-wide periodic reconciliation work; Orka's
+  upstream projection coupling remains unfixed.
+
 ### Fixed
 
 - `kmx agent eval diff` reports cases without observed Sessions runtime identity

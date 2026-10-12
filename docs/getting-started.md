@@ -65,6 +65,13 @@ The local model defaults to `qwen2.5:3b`; `MODEL` can override it.
 On an uncached first run, the default model downloads roughly **1.9GB**.
 Startup and first-answer latency depend on your network and host hardware.
 
+New local kind nodes created by `kmx quickstart` or `kmx local up` use a **5s
+kubelet sync frequency** with either Docker or Podman. This default is intended
+to reduce waits for Orka's webhook Secret file projection; it does not fix
+Orka's upstream coupling to projection. The shorter node-wide cadence means
+more periodic reconciliation work. It applies only to future KMX-created local
+nodes: existing or recovered clusters and AKS nodes are not modified.
+
 Quickstart is non-interactive: no model picker or prompt. The same settings select
 the same cluster, Provider and Agent. Reruns reuse an **exact** live-spec match
 only and stop rather than overwrite a changed Provider or Agent. A half-finished
