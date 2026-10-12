@@ -37,12 +37,18 @@ type contentEntry struct {
 }
 
 type contentSet struct {
-	entries map[string]contentEntry
-	folded  map[string]string
+	entries        map[string]contentEntry
+	folded         map[string]string
+	sourceType     string
+	artifactDigest string
 }
 
 func loadDirectory(root string) (*contentSet, error) {
-	set := &contentSet{entries: map[string]contentEntry{}, folded: map[string]string{}}
+	set := &contentSet{
+		entries:    map[string]contentEntry{},
+		folded:     map[string]string{},
+		sourceType: "directory",
+	}
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return nil, err
