@@ -189,6 +189,27 @@ func TestKagentEvaluateExactAnswerAndFreshIDs(t *testing.T) {
 	}
 }
 
+func TestKagentEvaluateRefusesInvalidHistoryDirectoryBeforeSend(t *testing.T) {
+	for _, link := range []bool{false, true} {
+		t.Run(fmt.Sprint(link), func(t *testing.T) {
+			a, opt, dir := kagentEvaluateLiftFixture(t)
+			path := filepath.Join(opt.BundleDir, "receipts", "runs")
+			var err error
+			if link {
+				err = os.Symlink(t.TempDir(), path)
+			} else {
+				err = os.WriteFile(path, []byte("not a directory"), 0600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = a.EvaluateAgentBundle(opt); err == nil || !strings.Contains(err.Error(), "history directory unavailable") || len(evaluationSends(t, dir)) != 0 {
+				t.Fatalf("invalid history allowed execution: %v", err)
+			}
+		})
+	}
+}
+
 func TestKagentEvaluateOutputFailureStopsWithoutResend(t *testing.T) {
 	a, opt, dir := kagentEvaluateLiftFixture(t)
 	a.Out = evaluationDiffFailWriter{}

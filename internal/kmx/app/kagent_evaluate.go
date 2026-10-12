@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -113,6 +114,9 @@ func (a *App) evaluateKagentBundle(opt EvaluateAgentBundleOptions) error {
 	}
 	if err = checkLiftReceiptsDir(bundle); err != nil {
 		return fmt.Errorf("Kagent evaluation private receipt directory unavailable")
+	}
+	if info, err := os.Lstat(filepath.Join(bundle, "receipts", "runs")); !os.IsNotExist(err) && (err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
+		return fmt.Errorf("Kagent evaluation history directory unavailable; requires a directory, not a link")
 	}
 	root, err := openKagentStatusBundle(bundle, adapter.lift.bundleInfo)
 	if err != nil {
