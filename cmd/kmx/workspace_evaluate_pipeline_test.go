@@ -31,6 +31,8 @@ func TestWorkspaceEvaluateActualCLIPipeline(t *testing.T) {
 	t.Setenv("KMX_WORKSPACE_CLI_FIXTURE", dir)
 	t.Setenv("KMX_RECONCILE_DIR", dir)
 	t.Setenv("KMX_TOOLCHAIN", "off")
+	// Re-executed race helpers must not spend the case deadline in Go's exit delay.
+	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	fixturePath, e := filepath.Abs("../../internal/kmx/orkaschema/fixtures")
 	if e != nil {
 		t.Fatal(e)
