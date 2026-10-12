@@ -22,15 +22,28 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- Registry `kmx suite push` attaches provenance by default, and `suite pull` shows the claimed kmx version and source commit when available; `--require-provenance` refuses to move the tag if attachment fails.
+  Provenance is unsigned: anyone with push access can attach a claim. [Suite provenance](docs/kmx.md#suite-provenance).
+
 ### Fixed
 
 - `kmx targets` describes the dedicated continuous Go kagent v0.10.3 lift/status
   qualification and its separate one-shot native A2A MCP proof. Supported
   operations and Python's render-only boundary are unchanged.
 
-- `kmx targets --detect` accepts kubectl's `kind: List` Deployment responses,
-  reporting empty lists as absent and labelled controllers as present. Malformed
-  responses and failed reads remain unreadable and exit nonzero.
+## v0.5.1 — 2026-10-12
+
+### Fixed
+
+- `kmx targets --detect` accepts kubectl `List` Deployment responses, reporting empty lists as absent and labelled controllers as present.
+  Malformed responses and failed reads remain unreadable and exit nonzero. [Target detection](docs/runtime-adapters.md#read-only-target-view) ([#429](https://github.com/kaimahi-agents/kaimahi/pull/429)).
+
+- Homebrew formula tests check the binary's version instead of help prose; the release workflow runs the generated test before publication. [Formula test fix](https://github.com/kaimahi-agents/kaimahi/pull/426).
+
+- Orka lift-prerequisite recovery commands preserve and safely quote the selected destination context.
+  Prerequisite checks and installation defaults are unchanged. [Recovery advice](https://github.com/kaimahi-agents/kaimahi/pull/423).
 
 ## v0.5.0 — 2026-10-11
 

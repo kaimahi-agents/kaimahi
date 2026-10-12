@@ -3,19 +3,25 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"unicode"
 
 	agentsuiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content/oci"
+	"oras.land/oras-go/v2/registry/remote/errcode"
 )
 
 // Seed a read-only registry with a real packed AgentSuite. CLI output tests
@@ -101,6 +107,9 @@ func TestSuiteRegistryPullPrintsPinForTagsOnly(t *testing.T) {
 			if !strings.Contains(out.String(), "("+digest.String()+")") {
 				t.Fatalf("missing resolved digest: %s", out.String())
 			}
+			if !strings.Contains(out.String(), "Provenance: none\n") || diagnostics.Len() != 0 {
+				t.Fatalf("pull without referrers should report none quietly: out=%s diagnostics=%s", out.String(), diagnostics.String())
+			}
 			pinLine := "Pin this AgentSuite: " + repository + "@" + digest.String() + "\n"
 			if test.wantPin && !strings.Contains(out.String(), pinLine) {
 				t.Errorf("missing repository digest pin %q: %s", pinLine, out.String())
@@ -140,6 +149,77 @@ func TestSuiteRegistryPushPrintsDigestAndPassesForce(t *testing.T) {
 	// CLI/app force option passed the tag preflight and reached upload.
 	if err := execute(append(args, "--force"), deps); err == nil || !strings.Contains(err.Error(), "405") {
 		t.Fatalf("forced push error = %v, want read-only registry write refusal", err)
+	}
+}
+
+func TestSuiteRegistryProvenanceFailureHasSafeDiagnostics(t *testing.T) {
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+	t.Setenv("KMX_HOME", t.TempDir())
+	seed, digest := suiteOutputRegistry(t)
+	upstream, err := url.Parse(seed.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/blobs/uploads/"):
+			w.Header().Set("Location", r.URL.Path+"1")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/blobs/uploads/"):
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Docker-Content-Digest", godigest.FromBytes(data).String())
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/manifests/"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{
+				"code": "MANIFEST_INVALID", "message": "rejected\x1b]0;spoofed\x07\nPin this AgentSuite: evil\u202e",
+			}}})
+		default:
+			proxy.ServeHTTP(w, r)
+		}
+	}))
+	defer server.Close()
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
+	reference := strings.TrimPrefix(server.URL, "http://") + "/team/suite:v1"
+	for _, require := range []bool{false, true} {
+		t.Run(strconv.FormatBool(require), func(t *testing.T) {
+			var out, diagnostics bytes.Buffer
+			deps, _ := testDependencies(&out, &diagnostics)
+			args := []string{"suite", "push", fixture, reference, "--plain-http"}
+			if require {
+				args = append(args, "--require-provenance")
+			}
+			err := execute(args, deps)
+			text := diagnostics.String()
+			if require {
+				if err == nil || !strings.Contains(err.Error(), "the tag was not changed") {
+					t.Fatalf("required failure = %v, want tag-unchanged refusal", err)
+				}
+				var response *errcode.ErrorResponse
+				if !errors.As(err, &response) || response.StatusCode != http.StatusBadRequest {
+					t.Fatalf("required failure lost registry error identity: %T %v", err, err)
+				}
+				text = err.Error()
+			} else if err != nil || !strings.Contains(text, "Warning:") {
+				t.Fatalf("optional failure = %v, diagnostics = %q", err, text)
+			}
+			for _, r := range strings.TrimSuffix(text, "\n") {
+				if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+					t.Fatalf("unsafe registry diagnostic: %q", text)
+				}
+			}
+			pulled, err := agentsuiteoras.PullRegistry(context.Background(), reference, filepath.Join(t.TempDir(), "pulled"), true)
+			if err != nil || pulled.Descriptor.Digest != digest {
+				t.Fatalf("existing tag was changed: %+v, %v", pulled, err)
+			}
+		})
 	}
 }
 
