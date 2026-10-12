@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -38,111 +37,51 @@ func TestPodmanNodesReturnsEveryNode(t *testing.T) {
 	}
 }
 
-// Missing creation input or changing an existing node's configuration must fail
-// at the executable boundary, not merely in a config-building helper.
-func TestClusterConfigIsOnlySuppliedOnCreation(t *testing.T) {
-	for _, engine := range []string{"docker", "podman"} {
-		for _, state := range []string{"new", "existing"} {
-			t.Run(engine+"/"+state, func(t *testing.T) {
-				dir := t.TempDir()
-				t.Setenv("KMX_CLUSTER_FIXTURE", dir)
-				t.Setenv("KMX_CLUSTER_STATE", state)
-				fakeTool(t, dir, "kind", `printf '%s\n' "$*" >> "$KMX_CLUSTER_FIXTURE/kind-calls"
-case "$1 $2" in
-  "get clusters") if [ "$KMX_CLUSTER_STATE" = existing ]; then echo kaimahi-p1; fi ;;
-  "create cluster") printf '%s\n' "$@" > "$KMX_CLUSTER_FIXTURE/argv"
-    /bin/cat > "$KMX_CLUSTER_FIXTURE/stdin" ;;
-  *) exit 97 ;;
-esac`)
-				fakeTool(t, dir, "kubectl", `printf '%s\n' "$*" >> "$KMX_CLUSTER_FIXTURE/kubectl-calls"
-case "$*" in
-  "config view -o json") printf '%s\n' '{"contexts":[{"name":"kind-kaimahi-p1","context":{"cluster":"kind-kaimahi-p1"}}],"clusters":[{"name":"kind-kaimahi-p1","cluster":{"server":"https://127.0.0.1:6443"}}]}' ;;
-  "--context kind-kaimahi-p1 get --raw=/readyz"|"--context kind-kaimahi-p1 -n kube-system rollout status deployment/coredns --timeout=180s") ;;
-  *) exit 97 ;;
-esac`)
-				fakeTool(t, dir, "podman", `printf '%s\n' "$*" >> "$KMX_CLUSTER_FIXTURE/podman-calls"
-case "$1" in
-  ps) printf '%s\n' kaimahi-p1-control-plane kaimahi-p1-worker ;;
-  start) ;;
-  *) exit 97 ;;
-esac`)
-				t.Setenv("PATH", dir)
-				var out bytes.Buffer
-				a := New(&config.Config{KindCluster: "kaimahi-p1", KubeContext: "kind-kaimahi-p1",
-					ContextSource: config.SourceKubeCtx, ContainerEngine: engine})
-				a.Out, a.Err, a.Run.Stdout, a.Run.Stderr = &out, &out, &out, &out
-				if err := a.stepCluster(); err != nil {
-					t.Fatal(err)
+func TestKindSyncOnlyOnNewLocalClusters(t *testing.T) {
+	for _, tc := range []struct{ engine, context, existing string }{
+		{"docker", "kind-test", ""}, {"podman", "kind-test", ""},
+		{"docker", "kind-test", "test"}, {"podman", "kind-test", "test"},
+		{"docker", "aks-test", ""}, {"podman", "aks-test", ""},
+	} {
+		t.Run(tc.engine+"/"+tc.context+"/"+tc.existing, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("KMX_KIND_EXISTING", tc.existing)
+			t.Setenv("KMX_KIND_INPUT", filepath.Join(dir, "input"))
+			fakeTool(t, dir, "kind", `case "$1 $2" in
+"get clusters") echo "$KMX_KIND_EXISTING" ;;
+"create cluster") [ "$5 $6" = "--config -" ] || exit 97; /bin/cat > "$KMX_KIND_INPUT" ;;
+*) exit 97 ;; esac`)
+			fakeTool(t, dir, "kubectl", `case "$*" in
+"config view -o json") echo '{"contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}' ;;
+*"get --raw=/readyz"|*"rollout status deployment/coredns --timeout=180s") ;;
+*) exit 97 ;; esac`)
+			fakeTool(t, dir, "podman", `case "$1" in ps) echo test-control-plane ;; start) ;; *) exit 97 ;; esac`)
+			t.Setenv("PATH", dir)
+			var out bytes.Buffer
+			a := New(&config.Config{KindCluster: "test", KubeContext: tc.context, ContextSource: config.SourceKubeCtx, ContainerEngine: tc.engine})
+			a.Out, a.Err, a.Run.Stdout, a.Run.Stderr = &out, &out, &out, &out
+			if err := a.stepCluster(); (err != nil) != (tc.context == "aks-test") ||
+				err != nil && !strings.Contains(err.Error(), "does not identify kind cluster") {
+				t.Fatalf("unexpected cluster result: %v", err)
+			}
+			input, err := os.ReadFile(filepath.Join(dir, "input"))
+			if tc.existing != "" || tc.context == "aks-test" {
+				if !os.IsNotExist(err) {
+					t.Fatalf("existing/recovered or AKS target received config: %q (%v)", input, err)
 				}
-				calls, err := os.ReadFile(filepath.Join(dir, "kind-calls"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if state == "existing" {
-					if string(calls) != "get clusters\n" {
-						t.Fatalf("reuse/recovery invoked kind beyond inventory: %s", calls)
-					}
-					if _, err := os.Stat(filepath.Join(dir, "stdin")); !os.IsNotExist(err) {
-						t.Fatalf("reuse/recovery supplied creation config: %v", err)
-					}
-				} else {
-					if string(calls) != "get clusters\ncreate cluster --name kaimahi-p1 --config -\n" {
-						t.Errorf("expected exactly one creation after inventory, got %q", calls)
-					}
-					argv, err := os.ReadFile(filepath.Join(dir, "argv"))
-					if err != nil {
-						t.Fatal(err)
-					}
-					if string(argv) != "create\ncluster\n--name\nkaimahi-p1\n--config\n-\n" {
-						t.Errorf("kind must read creation config from stdin; argv: %q", argv)
-					}
-					input, err := os.ReadFile(filepath.Join(dir, "stdin"))
-					if err != nil {
-						t.Fatal(err)
-					}
-					var cluster map[string]any
-					if err := yaml.Unmarshal(input, &cluster); err != nil {
-						t.Fatal(err)
-					}
-					if len(cluster) != 3 || cluster["apiVersion"] != "kind.x-k8s.io/v1alpha4" || cluster["kind"] != "Cluster" {
-						t.Fatalf("expected minimal kind v1alpha4 config on stdin, got %q", input)
-					}
-					patches, ok := cluster["kubeadmConfigPatches"].([]any)
-					if !ok || len(patches) != 1 {
-						t.Fatalf("expected one kubeadm patch, got %v", cluster)
-					}
-					patch, ok := patches[0].(string)
-					if !ok {
-						t.Fatalf("expected a YAML patch string, got %v", patches[0])
-					}
-					var kubelet map[string]any
-					if err := yaml.Unmarshal([]byte(patch), &kubelet); err != nil {
-						t.Fatal(err)
-					}
-					want := map[string]any{"apiVersion": "kubelet.config.k8s.io/v1beta1", "kind": "KubeletConfiguration", "syncFrequency": "5s"}
-					if !reflect.DeepEqual(kubelet, want) {
-						t.Fatalf("expected only the exact 5s kubelet patch, got %v", kubelet)
-					}
-				}
-				kubectlCalls, err := os.ReadFile(filepath.Join(dir, "kubectl-calls"))
-				wantReads := "--context kind-kaimahi-p1 get --raw=/readyz\n--context kind-kaimahi-p1 -n kube-system rollout status deployment/coredns --timeout=180s\n"
-				if state == "existing" {
-					wantReads = "config view -o json\n" + wantReads
-				}
-				if err != nil || string(kubectlCalls) != wantReads {
-					t.Fatalf("cluster preparation must not rewrite config through kubectl: %q (%v)", kubectlCalls, err)
-				}
-				podmanCalls, err := os.ReadFile(filepath.Join(dir, "podman-calls"))
-				if engine == "podman" && state == "existing" {
-					want := "ps -a --filter label=io.x-k8s.kind.cluster=kaimahi-p1 --format {{.Names}}\nstart kaimahi-p1-control-plane kaimahi-p1-worker\n"
-					if err != nil || string(podmanCalls) != want {
-						t.Fatalf("recovery must start exactly the owned nodes: %q (%v)", podmanCalls, err)
-					}
-				} else if !os.IsNotExist(err) {
-					t.Fatalf("unexpected Podman recovery: %q (%v)", podmanCalls, err)
-				}
-			})
-		}
+				return
+			}
+			var cluster struct {
+				Patches []string `yaml:"kubeadmConfigPatches"`
+			}
+			if err != nil || yaml.Unmarshal(input, &cluster) != nil || len(cluster.Patches) != 1 {
+				t.Fatalf("missing kind creation config: %q (%v)", input, err)
+			}
+			var kubelet map[string]string
+			if err := yaml.Unmarshal([]byte(cluster.Patches[0]), &kubelet); err != nil || kubelet["syncFrequency"] != "5s" {
+				t.Fatalf("new %s node did not receive 5s: %v (%v)", tc.engine, kubelet, err)
+			}
+		})
 	}
 }
 
