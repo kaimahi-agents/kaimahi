@@ -359,10 +359,22 @@ func (a *App) liftPrerequisites(ctx context.Context, namespace string) error {
 	return errors.Join(gaps...)
 }
 
+type liftProviderIdentity struct {
+	UID, ResourceVersion string
+	Generation           int64
+}
+
 func (a *App) liftProviderBindings(ctx context.Context, namespace, provider string) (agentruntime.OrkaBindings, error) {
+	bindings, _, err := a.readLiftProviderBindings(ctx, namespace, provider)
+	return bindings, err
+}
+
+// The legacy wrapper keeps its bindings and defaults; suite callers additionally
+// retain the source identity without copying unused spec or status payloads.
+func (a *App) readLiftProviderBindings(ctx context.Context, namespace, provider string) (bindings agentruntime.OrkaBindings, identity liftProviderIdentity, err error) {
 	raw, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", "providers.core.orka.ai", provider, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
-		return agentruntime.OrkaBindings{}, fmt.Errorf("cannot inspect destination Provider/%s: %w", provider, err)
+		return bindings, identity, fmt.Errorf("cannot inspect destination Provider/%s: %w", provider, err)
 	}
 	var selected struct {
 		Kind     string `json:"kind"`
@@ -371,6 +383,7 @@ func (a *App) liftProviderBindings(ctx context.Context, namespace, provider stri
 			Namespace         string  `json:"namespace"`
 			UID               string  `json:"uid"`
 			Generation        int64   `json:"generation"`
+			ResourceVersion   string  `json:"resourceVersion"`
 			DeletionTimestamp *string `json:"deletionTimestamp"`
 		} `json:"metadata"`
 		Spec struct {
@@ -391,7 +404,7 @@ func (a *App) liftProviderBindings(ctx context.Context, namespace, provider stri
 		} `json:"status"`
 	}
 	if json.Unmarshal(raw, &selected) != nil || selected.Kind != "Provider" || selected.Metadata.Name != provider || selected.Metadata.Namespace != namespace || selected.Metadata.UID == "" || selected.Metadata.Generation < 1 || selected.Metadata.DeletionTimestamp != nil {
-		return agentruntime.OrkaBindings{}, fmt.Errorf("destination Provider/%s is missing or has invalid identity; create a Ready Provider before lifting", provider)
+		return bindings, identity, fmt.Errorf("destination Provider/%s is missing or has invalid identity; create a Ready Provider before lifting", provider)
 	}
 	ready := false
 	for _, condition := range selected.Status.Conditions {
@@ -400,18 +413,19 @@ func (a *App) liftProviderBindings(ctx context.Context, namespace, provider stri
 		}
 	}
 	if !selected.Status.Ready || !ready {
-		return agentruntime.OrkaBindings{}, fmt.Errorf("destination Provider/%s is not Ready for its current generation", provider)
+		return bindings, identity, fmt.Errorf("destination Provider/%s is not Ready for its current generation", provider)
 	}
 	// Render defaults an absent key to api-key for shorthand create. A lift
 	// must not silently replace the selected Provider's actual reference.
 	if selected.Spec.SecretRef.Key == "" {
-		return agentruntime.OrkaBindings{}, fmt.Errorf("destination Provider/%s has no explicit Secret reference key", provider)
+		return bindings, identity, fmt.Errorf("destination Provider/%s has no explicit Secret reference key", provider)
 	}
-	bindings := agentruntime.OrkaBindings{Namespace: namespace, Provider: agentruntime.OrkaProviderBindings{Type: selected.Spec.Type, BaseURL: selected.Spec.BaseURL, Azure: agentruntime.OrkaAzureBindings{DeploymentName: selected.Spec.Azure.DeploymentName, APIVersion: selected.Spec.Azure.APIVersion}, SecretRef: agentruntime.OrkaSecretRefBindings{Name: selected.Spec.SecretRef.Name, Key: selected.Spec.SecretRef.Key}}}
+	bindings = agentruntime.OrkaBindings{Namespace: namespace, Provider: agentruntime.OrkaProviderBindings{Type: selected.Spec.Type, BaseURL: selected.Spec.BaseURL, Azure: agentruntime.OrkaAzureBindings{DeploymentName: selected.Spec.Azure.DeploymentName, APIVersion: selected.Spec.Azure.APIVersion}, SecretRef: agentruntime.OrkaSecretRefBindings{Name: selected.Spec.SecretRef.Name, Key: selected.Spec.SecretRef.Key}}}
 	if err := agentruntime.ValidateOrkaBindings(bindings); err != nil {
-		return agentruntime.OrkaBindings{}, fmt.Errorf("destination Provider/%s has invalid bindings (type, endpoint or Secret reference): %w", provider, err)
+		return agentruntime.OrkaBindings{}, identity, fmt.Errorf("destination Provider/%s has invalid bindings (type, endpoint or Secret reference): %w", provider, err)
 	}
-	return bindings, nil
+	identity = liftProviderIdentity{UID: selected.Metadata.UID, Generation: selected.Metadata.Generation, ResourceVersion: selected.Metadata.ResourceVersion}
+	return bindings, identity, nil
 }
 
 func (a *App) liftToolsAvailable(ctx context.Context, namespace string, bundle *scaffold.OrkaBundle) error {
