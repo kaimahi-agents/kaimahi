@@ -119,11 +119,16 @@ func nativeFixture(t *testing.T, profiles ...workspace.RuntimeProfile) (*App, *w
 	return a, suite, f
 }
 
-func TestSuiteNativeRefusesKagentBeforeOrkaEffects(t *testing.T) {
-	a, suite, f := nativeFixture(t, workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"})
-	prepared, err := a.prepareSuiteNative(t.Context(), suite, OrkaNamespace, "inference")
-	if err == nil || !strings.Contains(err.Error(), "Orka") || prepared != nil || f.calls != 0 {
-		t.Fatalf("kagent reached Orka reads/render: %v, calls %d", err, f.calls)
+func TestSuiteNativeRefusesUnsupportedRuntimeBeforeOrkaEffects(t *testing.T) {
+	for _, profile := range []workspace.RuntimeProfile{{ID: "kagent", Version: "v0.10.3", Engine: "go"}, {}} {
+		t.Run(profile.ID, func(t *testing.T) {
+			a, suite, f := nativeFixture(t, workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"})
+			suite.Runtime = profile
+			prepared, err := a.prepareSuiteNative(t.Context(), suite, OrkaNamespace, "inference")
+			if err == nil || !strings.Contains(err.Error(), "Orka") || prepared != nil || f.calls != 0 {
+				t.Fatalf("unsupported runtime reached Orka reads/render: %v, calls %d", err, f.calls)
+			}
+		})
 	}
 }
 

@@ -121,10 +121,8 @@ func (a *App) prepareSuiteNative(ctx context.Context, suite *workspace.NativeSui
 	return &suiteNativePrepared{Subject: subject, bundle: bundle, documents: documents}, nil
 }
 
-// Loaded inputs always carry an explicit runtime. Zero remains compatible only
-// with trusted internal Orka fixtures; it is never supplied by the loader.
 func suiteNativeOrkaInput(suite *workspace.NativeSuite) bool {
-	return suite != nil && (suite.Runtime == (workspace.RuntimeProfile{}) || suite.Runtime == (workspace.RuntimeProfile{ID: "orka"}))
+	return suite != nil && suite.Runtime == (workspace.RuntimeProfile{ID: "orka"})
 }
 
 func suiteNativeDigest(domain string, value any) (string, error) {
