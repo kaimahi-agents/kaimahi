@@ -3,16 +3,18 @@
 Working notes on the project name: what has been proposed, what is actually
 available, and what is still owed before any name is treated as final.
 
-**Two things here are now claimed.** A GitHub organization named for the
+**Three things here are now claimed.** A GitHub organization named for the
 project, `kaimahi-agents`, exists and hosts the repo (2026-09-01). The public
 repository `kaimahi-agents/homebrew-tap` and its Homebrew formula `kmx` were
 explicitly approved and created on 2026-09-29; the short tap name is
-`kaimahi-agents/tap`. No other package or domain has been registered. An
-organization or package name is a public
-claim on a name that is still provisional — a stronger one than the repo
-rename was — and at the time it was made both gates set on the name (a
-cultural read and trademark counsel) were still open, which made them more
-urgent for it, not less. Claiming anything further is an outward-facing
+`kaimahi-agents/tap`. The user owns `kaimahi.dev`, registered on
+2026-10-10; it is the domain for KMX labels and API groups, including
+`kmx.kaimahi.dev/installed`. No other package or domain has been registered. An
+organization, package or domain name is a public claim — a stronger one
+than a repo rename. When the organization was created, both gates set on
+the name (a cultural read and trademark counsel) were still open, which
+made them more urgent for it, not less. The cultural read has since cleared;
+trademark counsel has not been taken, as recorded below. Claiming anything further is an outward-facing
 action that needs the user's explicit approval naming the exact artifact.
 
 ## The candidates
@@ -117,8 +119,10 @@ FYI, in plain terms:
 
 ## Availability, verified 2026-09-01
 
-Checked live against each registry's API, not inferred. **This decays** —
-re-verify before acting on it.
+Historical snapshot, checked live against each registry's API, not inferred.
+The table is retained as the 2026-09-01 record; `kaimahi.dev` was subsequently
+registered on 2026-10-10 as noted above. **This decays** — re-verify unclaimed
+namespaces before acting on it.
 
 | Registry / namespace | `kaimahi` | Notes |
 |---|---|---|
@@ -137,7 +141,8 @@ re-verify before acting on it.
 `kaimahi.com` being held since 2009 by an unrelated party is the one
 material finding beyond the first availability check, which only looked at
 `.dev` and `.io`. It does not block the project name — `.dev` is the
-conventional choice here and is free — but it does mean the `.com` is not a fallback, and a
+conventional choice here and was free at that check (now owned by the user) —
+but it does mean the `.com` is not a fallback, and a
 trademark search should account for whoever holds it.
 
 ## Previous name: tomte

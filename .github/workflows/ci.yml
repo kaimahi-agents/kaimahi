@@ -969,7 +969,7 @@ jobs:
           v = json.load(sys.stdin)
           assert v["controller"]["mode"] == "harness-v2", v
           assert v["fullnameOverride"] == "orka-api", v
-          assert v["labels"]["kmx.kaimahi.ai/installed"] == "true", v
+          assert v["labels"]["kmx.kaimahi.dev/installed"] == "true", v
           '
       # Rerunning is how an agent in a harness uses this command. The third
       # run must REUSE the exact bundle it already wrote — not recreate it,
@@ -1653,7 +1653,7 @@ jobs:
           v = json.load(sys.stdin)
           assert v["controller"]["mode"] == "harness-v2", v
           assert v["fullnameOverride"] == "orka-api", v
-          assert v["labels"]["kmx.kaimahi.ai/installed"] == "true", v
+          assert v["labels"]["kmx.kaimahi.dev/installed"] == "true", v
           '
           if kubectl --context kind-kmx-orka -n orka-system get deploy orka-agent-harness-wrapper --ignore-not-found -o name | grep -q .; then
             echo "the harness wrapper was installed instead of harness-v2"; exit 1
