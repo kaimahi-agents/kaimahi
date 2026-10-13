@@ -7,10 +7,10 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	godigest "github.com/opencontainers/go-digest"
@@ -71,6 +71,7 @@ type PreparedReleaseLift struct {
 	native   *suiteNativePrepared
 	receipt  *suitePassingReceipt
 	summary  ReleaseLiftSummary
+	started  atomic.Bool
 }
 
 func (p *PreparedReleaseLift) Summary() ReleaseLiftSummary {
@@ -103,35 +104,15 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 	if opt.ToNamespace == "" {
 		opt.ToNamespace = OrkaNamespace
 	}
-	ref, digest, pinned := strings.Cut(opt.Reference, "@")
-	provider := strings.TrimPrefix(opt.Inference, "provider:")
-	if a == nil || a.Cfg == nil || a.Run == nil || !pinned || ref == "" || !spec.IsValidDigest(digest) ||
-		!verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil ||
-		!strings.HasPrefix(opt.Inference, "provider:") || scaffold.ValidateObjectName(provider) != nil ||
-		scaffold.ValidateNamespace(opt.ToNamespace) != nil || opt.Evidence == "" || opt.FromLayout != "" && opt.PlainHTTP {
+	if a == nil || a.Cfg == nil || a.Run == nil || ValidateReleaseLiftOptions(opt) != nil {
 		return nil, ErrReleaseLift
 	}
-	receipt, err := readSuitePassingReceipt(ctx, opt.Evidence)
+	provider := strings.TrimPrefix(opt.Inference, "provider:")
+	inputs, err := readReleaseLiftInputs(ctx, opt)
 	if err != nil {
 		return nil, err
 	}
-	var artifact *suiteoras.Artifact
-	if opt.FromLayout != "" {
-		artifact, err = suiteoras.ReadArtifactLayout(ctx, opt.FromLayout, digest)
-	} else {
-		artifact, err = suiteoras.ReadArtifactRegistry(ctx, opt.Reference, opt.PlainHTTP)
-	}
-	if err != nil {
-		return nil, err
-	}
-	suite, err := workspace.LoadArtifact(ctx, artifact)
-	if err != nil {
-		return nil, err
-	}
-	evidence, err := canonicalSuitePassingReceipt(ctx, receipt, suite)
-	if err != nil {
-		return nil, err
-	}
+	artifact, suite, receipt, evidence := inputs.artifact, inputs.suite, inputs.receipt, inputs.evidence
 	worker := *a.withRunContext(ctx)
 	cfg := *a.Cfg
 	cfg.KubeContext, cfg.ContextSource = opt.ToContext, config.SourceFlag
@@ -173,6 +154,22 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 	}
 	s.PlanDigest = godigest.FromBytes(review).String()
 	return &PreparedReleaseLift{options: opt, artifact: artifact, native: native, receipt: receipt, summary: s}, nil
+}
+
+// ValidateReleaseLiftOptions checks selectors without config, retrieval or I/O.
+func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
+	if opt.ToNamespace == "" {
+		opt.ToNamespace = OrkaNamespace
+	}
+	ref, digest, pinned := strings.Cut(opt.Reference, "@")
+	provider := strings.TrimPrefix(opt.Inference, "provider:")
+	if !pinned || !verificationIdentity(ref) || !spec.IsValidDigest(digest) ||
+		!verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil ||
+		!strings.HasPrefix(opt.Inference, "provider:") || scaffold.ValidateObjectName(provider) != nil ||
+		scaffold.ValidateNamespace(opt.ToNamespace) != nil || strings.TrimSpace(opt.Evidence) == "" || opt.FromLayout != "" && opt.PlainHTTP {
+		return ErrReleaseLift
+	}
+	return nil
 }
 
 func releaseLiftTarget(t suiteNativeTarget) ReleaseLiftTarget {

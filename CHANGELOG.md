@@ -24,12 +24,25 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Deploy-only `kmx lift <ref>@<digest>` from a registry or local `--from-layout`.
+  Explicit private full-passing `--evidence`, `--to-context` and Ready native
+  `--inference provider:NAME` are required. Default gate binds the exact evaluated
+  target; `--promote` explicitly permits a same-suite/member/model/runtime
+  destination whose openai Provider declares that model, with source-only evidence
+  disclosure. `--plan` uses GETs only; apply guards before admission and only creates
+  absent resources or reuses exact evaluated UID/generation/spec proof. No source,
+  build/repack/push, runtime/model override, update, adoption or ambiguous retry.
+  Text/JSON outcomes distinguish created, reused, unknown and not-attempted from
+  readiness, retaining partial acknowledged identities without rollback/cleanup.
+  Newly created/recreated resources need fresh evaluation before subsequent reuse.
+  Signing/authentication is not claimed; live lift qualification remains separate.
+
 - Internal read-only digest-lift planning for one-member native suites: bounded
   exact registry/local-layout retrieval, source-free closed packaged loading,
   mandatory private passing-receipt coherence and exact target/binding/runtime
   checks. GET-only review refuses resource drift/adoption and retains evaluated
   UID/generation/spec proof. No CLI, apply, admission, cross-target promotion or
-  authenticated-evidence claim is enabled. [Planning boundary](docs/suite-workspace.md#internal-digest-lift-planning-boundary).
+  authenticated-evidence claim is enabled. [Planning boundary](docs/suite-workspace.md#digest-lift).
 
 - One-member workspace authoring/prepare/load supports explicit kagent v0.10.3
   Go/linux-amd64 alongside default Orka. Runtime is bound in private native
@@ -147,9 +160,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Extracted-directory `suite push DIRECTORY REFERENCE` and
   `suite build/diff/pull/validate` remain.
   Root `eval` now adds full workspace evaluation as described above;
-  standalone packaged evaluation and root digest `lift` are not implemented.
+  standalone packaged evaluation remains unimplemented. Root digest suite `lift`
+  is now supported as described above, separate from bundle and infrastructure lift.
 
-- Removed `kmx lift`; use `kmx aks up` for AKS provisioning.
+- Removed the AKS-provisioning `kmx lift` alias; use `kmx aks up`. Root
+  `lift <ref>@<digest>` now means deploy-only packaged-suite lift.
 - Removed `kmx lift down`; use `kmx aks down` for AKS teardown.
 - Removed `kmx up`; use `kmx local up` for local runtime setup.
 - Removed `kmx down`; use `kmx local down` for local cluster deletion.

@@ -12,7 +12,7 @@ import (
 
 func TestRemovedRootAliasesRejectBeforeConfiguration(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
-	for _, path := range [][]string{{"lift"}, {"lift", "down"}, {"up"}, {"down"}, {"ctx"}, {"ctx", "kind-demo"}} {
+	for _, path := range [][]string{{"up"}, {"down"}, {"ctx"}, {"ctx", "kind-demo"}} {
 		for _, suffix := range [][]string{nil, {"--help"}, {"--unknown-flag"}} {
 			args := append(append([]string(nil), path...), suffix...)
 			t.Run(strings.Join(args, "_"), func(t *testing.T) {
@@ -46,7 +46,7 @@ func TestEntrypointHelpAndCompletionAreNonOperational(t *testing.T) {
 			if args[0] == "--help" {
 				for _, line := range strings.Split(out.String(), "\n") {
 					fields := strings.Fields(line)
-					if len(fields) > 1 && (fields[0] == "ctx" || fields[0] == "up" || fields[0] == "down" || fields[0] == "lift") {
+					if len(fields) > 1 && (fields[0] == "ctx" || fields[0] == "up" || fields[0] == "down") {
 						t.Fatalf("removed root route advertised: %s", line)
 					}
 				}
@@ -59,7 +59,7 @@ func TestEntrypointHelpAndCompletionAreNonOperational(t *testing.T) {
 				}
 				for _, line := range strings.Split(out.String(), "\n") {
 					name, _, _ := strings.Cut(line, "\t")
-					if name == "ctx" || name == "up" || name == "down" || name == "lift" {
+					if name == "ctx" || name == "up" || name == "down" {
 						t.Fatalf("removed root route advertised: %s", line)
 					}
 				}

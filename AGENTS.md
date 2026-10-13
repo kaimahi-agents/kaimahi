@@ -13,7 +13,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Proposed spellings are not implemented capabilities.
 - Canonical context commands are `kmx context show` and
   `kmx context use <context>`; canonical local setup/teardown commands are
-  `kmx local up/down`. Root `ctx`, `up`, `down`, `lift` and `lift down`
+  `kmx local up/down`. Root `ctx`, `up`, `down`, the AKS `lift` alias and `lift down`
   are removed outright, not compatibility routes or retirement stubs. Current
   bundle deployment remains `kmx bundle lift`; current cloud and runtime setup
   remain `kmx aks up/down` and `kmx orka install/status`.
@@ -46,8 +46,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   `suite push DIRECTORY REFERENCE` remains extracted-directory transfer without
   discovery and no longer accepts `--workspace`. The native member image
   requirement is empty. Neither offline command evaluates, deploys, builds images
-  or loads cluster settings. Workspace evaluation is root `eval`; release lift
-  remains unimplemented.
+  or loads cluster settings. Workspace evaluation is root `eval`; deploy-only release lift is root
+  `lift <ref>@<digest>` with explicit private `--evidence`.
   `create --live` explicitly selects unchanged resource/bundle creation for both
   Orka and kagent, including `--no-apply`, `--dry-run` and `--out -` previews;
   no-name `create --live` is the live Orka wizard. `--runtime kagent` alone authors
@@ -66,9 +66,17 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Internal explicit promotion requires identical packaged identity/runtime and a
   Ready openai Provider declaring the same model; destination resources must be
   absent. Source evidence remains distinct, not destination evaluation or signer
-  authorization. No admission, writes, Tasks or placement records occur; summaries
-  contain identities and cannot mutate retained inputs. Root lift and apply remain
-  unimplemented. General suite transfer is unchanged.
+  authorization. Planning makes no admission, writes, Tasks or placement records;
+  summaries contain identities and cannot mutate retained inputs. ApplyReleaseLift
+  is guarded and single-use, rechecks artifact/evidence/target/owned proof, preflights
+  both creates after the guard, and only conditionally creates or exactly reuses.
+  Partial outcomes retain acknowledged UIDs and readiness separately; no update,
+  adoption, retry, rollback or cleanup. VerifyReleaseLiftPlacement rechecks an opaque
+  success before caller invocation. Created/recreated UIDs require fresh evaluation
+  before later receipt-bound reuse. Root lift supports registry/local --from-layout,
+  --plan and text/JSON, with explicit --to-context/--inference/--evidence; --promote
+  discloses source-only evidence. Runtime/model are packaged, never overridden.
+  Help/completion is inert. General suite transfer is unchanged.
   Native inference is openai-type Provider only, not host Foundry/Copilot execution.
   Private native passing receipts retain only full ordered passing metadata, export
   once without replacement outside workspace/cache trees, and bind the private
@@ -89,8 +97,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   No model/runtime override, judge/subset/content mode or standalone package
   reference is accepted. Offline `eval diff` and recorded-session preparation
   via `eval from-sessions` retain their cluster-independent hooks; recorded
-  execution stays `bundle evaluate --from-sessions`. Root digest lift is not
-  implemented. The checkout-only native qualifier runs in the existing exclusively owned
+  execution stays `bundle evaluate --from-sessions`. Root digest lift consumes
+  the explicit private full-passing receipt, without sending evaluation Tasks. The checkout-only native qualifier runs in the existing exclusively owned
   Orka shard, after legacy model proof, with private captures and metadata-only
   artifacts. A passing run qualifies that fixed workspace scenario; hermetic
   tests alone do not establish runtime/model execution.
@@ -103,7 +111,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   chosen agent lifecycle verb: retain `kmx bundle lift` and interactive `/lift`,
   and use Lift in corresponding help and menu labels rather than renaming the
   operation to deploy. Deployment remains a technical description of its effect.
-  Root `lift` is reserved for a future suite lift workflow, not implemented.
+  Root `lift` is deploy-only packaged-suite lift, not an AKS provisioning alias.
   Use `kmx aks up/down` for AKS.
 - Prefer singular resource/domain groups and explicit actions. Avoid introducing
   another synonym for an existing operation. CLI, chat and console should use

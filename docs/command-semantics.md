@@ -17,7 +17,7 @@ distinguishes implemented alignment from proposed follow-ups.
 
 Bare `context` and `local` display help. Canonical commands use the existing
 operations, settings, saved-selection file and guards. Root `ctx`, `up`, `down`,
-`lift` and `lift down` are removed outright, with no compatibility aliases or
+the AKS `lift` alias and `lift down` are removed outright, with no compatibility aliases or
 retirement stubs. Use `context show/use`, `local up/down` and `aks up/down`
 respectively. Tagged v0.4.1 used the old context/local spellings; the grouped
 commands require a newer build.
@@ -56,7 +56,9 @@ aliases or retirement stubs. Use kubectl to edit live Orka resources. Root
 `bundle status <bundle-dir>` is separate. There is no root bundle status or suite
 observer. Root `eval` executes a full native workspace inventory with explicit
 inference/target/output selection and retains its helpers. Standalone packaged
-evaluation and root digest `lift` are not implemented. `task result` and
+evaluation remains unimplemented. Root digest `lift` deploys a packaged native
+suite with explicit private evidence, GET-only `--plan`, strict guarded apply and
+explicit source-only `--promote`; no model/runtime override, update or adoption. `task result` and
 `suite push DIRECTORY REFERENCE`, `suite build/diff/pull/validate` are unchanged.
 These spellings require a current development build; tagged v0.5.1 retains the
 `agent` routes. Workspace authoring/publication are unreleased. Existing operation handlers, arguments, applicable flags,
@@ -159,9 +161,8 @@ interactive `/lift`; use **Lift** consistently in help, menu labels and the
 product narrative. Do not rename the agent command to `deploy`. “Deployment”
 remains useful technical language for the resulting resources and receipts.
 
-Removing the root AKS aliases reserves `lift` for a future suite lift workflow.
-Root `lift` is not implemented; `kmx bundle lift` remains the PortableAgent
-operation, and `kmx aks up/down` remains the AKS route. Removal does
+Root `lift <ref>@<digest>` is deploy-only suite lift. `kmx bundle lift` remains
+the PortableAgent operation, and `kmx aks up/down` remains the AKS route. Removal does
 not change AKS arguments, ownership records, recovery or teardown behavior.
 
 - **Context:** a kubeconfig access selection; not a durable cluster identity.

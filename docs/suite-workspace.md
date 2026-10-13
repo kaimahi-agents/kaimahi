@@ -274,11 +274,24 @@ Internally, verified packaged native inputs can be loaded without consulting liv
 source or the preparation record, and publication can require an expected OCI
 manifest digest. This identity check alone is not evaluation evidence or release
 authorization. Workspace evaluation adds passing observations through the CLI;
-registry release lift remains unavailable.
+root digest lift consumes that explicit private file before deployment.
 
-## Internal digest-lift planning boundary
+## Digest lift
 
-Internal release planning can read an exact SHA256 suite manifest from a registry
+```sh
+kmx lift registry.example/suite@sha256:<digest> --to-context prod \
+  --inference provider:inference --evidence ../private/passing.json --promote --plan
+kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
+  --inference provider:inference --evidence ../private/passing.json -o json
+```
+
+Use a complete SHA256 digest, not a mutable tag. Destination runtime must already
+be installed; Provider/Secret must already exist and be Ready. `--to-namespace`
+defaults to `orka-system`; registry HTTP requires explicit `--plain-http`, which
+conflicts with `--from-layout`. There is no model/runtime override or workspace
+selector. Help/completion does not load operational configuration.
+
+Release planning reads an exact SHA256 suite manifest from a registry
 or local OCI layout without authored source, a preparation fingerprint or a build.
 It retains original packaged bytes; it never re-archives or publishes them.
 Only the selected layout graph is read, not unrelated references. The reader
@@ -297,11 +310,42 @@ current-generation readiness. Replacement, drift, adoption and unknown state
 refuse. Planning makes GETs only: no server dry-run/admission, Tasks, writes or
 placement records. Returned summaries cannot mutate the retained plan.
 
-This is an internal read-only boundary, not a runnable `kmx lift` command or write
-authority. Guarded apply and explicit cross-target promotion are not available.
+`--plan` prints the identity-only review without mutation guard or admission.
+Apply consumes that opaque review and its digest once, refreshes artifact/evidence
+and destination observations, runs the normal target guard, then preflights both
+absent creates before the first persistent write. Provider reaches current Ready
+before Agent creation. Only conditional CREATE or exact receipt-bound reuse is
+allowed: no update, adoption, marker repair, execution retry, rollback or cleanup.
+Owned status-only resource-version churn is tolerated; selected inference Provider
+and Secret versions remain exact. Every boundary rechecks the pair and prerequisites.
+
+`--promote` is required when target/binding differs. Packaged S/G/member/model/
+renderer/profile/composition/images must match, as must the pinned runtime version,
+images and mode. The selected Ready `openai` Provider must explicitly declare
+`defaultModel` equal to the packaged model, with UID/generation/resourceVersion
+coherence. This is a declaration, not a backend-equivalence or execution probe.
+Destination objects must be absent: source evaluation UIDs cannot authorize their
+reuse. The original evidence is never rewritten. Output discloses:
+`Evidence: passed on <source target>, not evaluated on this target`.
+For an identical subject, `--promote` still uses the normal exact gate and makes
+no misleading source-only claim.
+
+Text or `-o json` results report placement identities and per-resource outcomes:
+`created`, `reused`, `unknown` or `not-attempted`, separately from `ready`. An
+acknowledged creation can be `created` with a UID but `ready: false` if the wait
+fails/cancels. Partial results exit nonzero and resources may remain. Ambiguous
+CREATE returns unknown, without a recovery read, resend or invented UID.
+Created/recreated UIDs require a fresh full evaluation before later receipt-bound
+lift reuse. Readiness does not prove a fresh answer or destination evaluation.
+Opaque in-process success results support read-only invocation revalidation via
+`VerifyReleaseLiftPlacement`; serialized JSON does not confer placement authority.
+
 Unsigned private receipts establish supplied observations, not signer
-authentication or destination execution proof. Native `openai` Providers are the
-only inference binding supported here; host Foundry/Copilot execution is not covered.
+authentication or authenticated deployment approval. General promotion policy/
+signing remains separate. Native `openai` Providers are the only inference
+binding supported here; host Foundry/Copilot execution and operational kagent/
+image lift are not covered. Existing bundle lift is unchanged. Hermetic tests do
+not establish real cluster lift qualification.
 
 Preparation state is outside authored source, under the KMX state directory
 (`KMX_HOME` overrides it). Cache corruption refuses reuse. Keep this state private;

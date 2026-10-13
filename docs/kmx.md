@@ -89,7 +89,7 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
 **Released in v0.5.0:** `context show/use` and `local up/down` are the canonical
 grouped commands below. Historically, v0.4.1 used `ctx [context]` and root
-`up/down`. Current development builds remove root `ctx`, `up`, `down`, `lift`
+`up/down`. Current development builds remove root `ctx`, `up`, `down`, the AKS `lift` alias
 and `lift down` outright, without retirement stubs. Use `context show/use`,
 `local up/down` and `aks up/down` for those operations.
 Everyday operations are now root `create/chat/run`, live Orka inspection is
@@ -98,8 +98,13 @@ These routes and root workspace `push` require a current development build;
 tagged v0.5.1 still uses the `agent` routes. Workspace authoring/publication
 are unreleased.
 Root `eval` evaluates a full native Orka workspace and retains offline `diff` and
-`from-sessions` helpers. Standalone packaged evaluation and root digest `lift`
-are not implemented. See the
+`from-sessions` helpers. Standalone packaged evaluation remains unimplemented.
+Root `lift <ref>@<digest>` deploys an evaluated native suite from a registry or
+`--from-layout`, with explicit `--to-context`, `--inference provider:NAME` and
+private `--evidence FILE`. `--plan` is GET-only; `--promote` explicitly selects
+source-only evidence for an eligible different destination. No model/runtime
+override, build, repack, publish, update or adoption. Reports support `-o json`.
+See [digest lift](suite-workspace.md#digest-lift) for gates and partial outcomes. See the
 [alignment record](command-semantics.md) for current versus proposed names.
 
 ### Current Orka path and explicit version-qualified operations

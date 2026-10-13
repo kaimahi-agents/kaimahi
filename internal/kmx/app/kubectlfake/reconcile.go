@@ -424,7 +424,10 @@ func (r Request) reconcile() {
 		}
 	} else if slices.Contains(args, "create") {
 		if slices.Contains(args, "--dry-run=server") {
-			fmt.Fprint(r.Stdout, "{}")
+			// CREATE dry-run returns its admitted object without persisting it.
+			if err := json.NewEncoder(r.Stdout).Encode(call.Document); err != nil {
+				fail()
+			}
 			exit(0)
 		}
 		if _, e := os.Stat(path); e == nil {
@@ -437,7 +440,7 @@ func (r Request) reconcile() {
 				fail()
 			}
 		}
-		meta["uid"] = strings.ToLower(kind) + "-uid"
+		meta["uid"] = strings.ToLower(kind) + "-uid" + r.Getenv("KMX_RECONCILE_UID_SUFFIX")
 		meta["generation"] = 1
 		meta["resourceVersion"] = "1"
 	} else {

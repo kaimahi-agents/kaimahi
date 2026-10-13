@@ -18,7 +18,7 @@ kmx <noun> <verb> [object] [flags]
 
 - **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
   `push` and full-workspace `eval`. Root `eval` also retains helpers (`diff`,
-  `from-sessions`); standalone packaged evaluation and root `lift` are not implemented.
+  `from-sessions`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
   `suite build/diff/push/pull/validate`, `orka install/status/show/list` and legacy
   `bundle evaluate/lift/retire/verify/status`. `kmx agent` is removed entirely,
@@ -51,7 +51,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `eval` | Place and evaluate the full native workspace inventory. | `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>` |
 | `evaluate` | Run legacy bundle evaluation cases against a deployed revision. | `kmx bundle evaluate <bundle-dir>` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
-| `lift` | Move a proven agent bundle to a prepared remote destination. | `kmx bundle lift <bundle-dir>` |
+| `lift` | Deploy an exact suite digest using explicit native evidence; bundle lift remains separate. | `kmx lift <ref>@<digest> --to-context <ctx> --inference provider:NAME --evidence FILE` |
 | `retire` | Remove the workload resources a bundle owns. | `kmx bundle retire <bundle-dir>` |
 | `result` | Retrieve the outcome of an existing execution. | `kmx task result <task>` |
 
@@ -173,9 +173,9 @@ same change instead of keeping it callable: remove the alias outright, leave
 an explicitly chosen hidden stub that refuses before loading configuration and
 names the replacement, or remove a flag that no longer does anything. Record
 the removal and replacements under **Breaking** and **Upgrading** in the CHANGELOG.
-Root `ctx`, `up`, `down`, `lift` and `lift down` are removed outright, without
-stubs; use `context show/use`, `local up/down` and `aks up/down`. Removing the
-AKS aliases frees root `lift` for future suite lift; that command is not implemented.
+Root `ctx`, `up`, `down`, the AKS `lift` alias and `lift down` are removed
+outright, without stubs; use `context show/use`, `local up/down` and `aks up/down`.
+Root `lift <ref>@<digest>` now means deploy-only suite lift, not infrastructure setup.
 The entire `agent` group is also removed outright, without an alias or stub;
 see the [implemented mapping](command-semantics.md#implemented-workflow-command-mapping-unreleased).
 
