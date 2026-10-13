@@ -57,8 +57,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   PortableAgent formats and old extracted-directory suite transfer; do not treat public graph validation
   as native execution-profile validation. Private packaged-native preparation and
   ownership-safe Provider/Agent placement feed full-workspace root evaluation;
-  the existing Orka CI shard now carries a bounded native qualifier, but real
-  execution qualification remains pending until its runtime/model run passes.
+  the existing Orka CI shard runs a bounded two-case native qualifier against
+  the pinned runtime/model, distinct from hermetic command tests.
   Private native passing receipts retain only full ordered passing metadata, export
   once without replacement outside workspace/cache trees, and bind the private
   receipt-file push consumer to exact S plus offline packaged coherence. There is
@@ -81,8 +81,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   execution stays `bundle evaluate --from-sessions`. Root digest lift is not
   implemented. The checkout-only native qualifier runs in the existing exclusively owned
   Orka shard, after legacy model proof, with private captures and metadata-only
-  artifacts. Its real execution claim remains pending and separate from
-  hermetic tests.
+  artifacts. A passing run qualifies that fixed workspace scenario; hermetic
+  tests alone do not establish runtime/model execution.
   Keep reference manifests private, require named candidate/judge confirmation before recorded-content transfer,
   and suppress answer/reasoning output unless `--show-content` is explicit.
   Expired sources are unknown, never a skip or export. Offline eval diff keeps

@@ -64,9 +64,9 @@ existing model configuration and installer Secret reference in the same owned
 cluster. One full-workspace evaluation is followed by independent live readback,
 exact-S local-layout transfer and ownership/unsupported-evaluator refusal audits.
 Private command captures are never artifacts; only passing receipt metadata and
-a scalar qualification report are uploaded. Real native qualification remains
-pending until that scenario executes successfully; hermetic tests alone do not
-establish it. This adds no release lift or standalone packaged evaluation.
+a scalar qualification report are uploaded. A successful run qualifies the fixed
+two-case native workspace scenario; hermetic tests alone do not establish runtime
+execution. This adds no release lift or standalone packaged evaluation.
 
 ## Repository layout
 

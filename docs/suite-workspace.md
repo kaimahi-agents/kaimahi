@@ -11,8 +11,8 @@ Orka remains the authoring default; `--runtime kagent` authors the private Go
 v0.10.3/linux-amd64 profile only. Both `eval` and `push --evaluation` refuse it
 with `kagent evaluation on the suite path isn't available yet`.
 kagent suite placement, evaluation, status and promotion remain unsupported.
-Orka evaluation is covered by hermetic command/Task tests; real native CLI qualification
-is deferred. Standalone registry-package evaluation and registry-reference lift
+Orka evaluation has hermetic command/Task tests and a pinned two-case native
+workspace CI qualifier. Standalone registry-package evaluation and registry-reference lift
 are not available. Existing `agent.yaml` creation, evaluation and lift remain
 separate and unchanged.
 
@@ -163,9 +163,9 @@ It attempts one full evaluation without retry, independently reads live identity
 spec and result evidence, transfers exact S through a local layout, and checks
 ownership, case-mutation and unsupported-evaluator refusals. Only passing receipt
 metadata and a scalar qualification report may be uploaded. Runtime/model and
-Kubernetes audit storage can still retain inputs. Real qualification is pending
-until this scenario passes; hermetic tests do not establish it. Release-reference
-Lift and standalone package evaluation remain unavailable.
+Kubernetes audit storage can still retain inputs. A successful run qualifies this
+fixed scenario; hermetic tests alone do not establish runtime/model execution.
+Release-reference Lift and standalone package evaluation remain unavailable.
 
 ## Publish
 

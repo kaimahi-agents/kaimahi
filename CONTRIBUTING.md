@@ -157,8 +157,8 @@ full-workspace evaluation without retry. Independent live identities/specs,
 result hashes, exact local-layout transfer and refusal audits gate its metadata
 artifacts. Only `artifacts/passing.json` and scalar `artifacts/qualification.json`
 are uploaded on success; raw captures are private. Existing cluster deletion owns
-all runtime/model cleanup. Harness tests are not evidence of real execution;
-native qualification remains pending until this scenario passes against the runtime.
+all runtime/model cleanup. A successful run qualifies this fixed two-case
+native workspace scenario. Harness tests alone are not evidence of real execution.
 
 ## Comments
 
