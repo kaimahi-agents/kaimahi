@@ -34,17 +34,19 @@ type suitePassingReceipt struct {
 	CasesDigest       string                   `json:"casesDigest"`
 	Result            string                   `json:"result"`
 	Cases             []suitePassingCase       `json:"cases"`
+	Kagent            *suiteKagentPassingProof `json:"kagent,omitempty"`
 }
 type suitePassingCase struct {
-	ID           string                  `json:"id"`
-	Path         string                  `json:"path"`
-	CaseDigest   string                  `json:"caseDigest"`
-	InputDigest  string                  `json:"inputDigest"`
-	TaskName     string                  `json:"taskName"`
-	TaskUID      string                  `json:"taskUID"`
-	AnswerDigest string                  `json:"answerDigest"`
-	Verdict      string                  `json:"verdict"`
-	Assertions   []suitePassingAssertion `json:"assertions"`
+	ID              string                    `json:"id"`
+	Path            string                    `json:"path"`
+	CaseDigest      string                    `json:"caseDigest"`
+	InputDigest     string                    `json:"inputDigest"`
+	TaskName        string                    `json:"taskName,omitempty"`
+	TaskUID         string                    `json:"taskUID,omitempty"`
+	AnswerDigest    string                    `json:"answerDigest"`
+	Verdict         string                    `json:"verdict"`
+	Assertions      []suitePassingAssertion   `json:"assertions"`
+	KagentExecution *suiteKagentCaseExecution `json:"kagentExecution,omitempty"`
 }
 type suitePassingAssertion struct {
 	ID               string `json:"id"`
@@ -78,6 +80,9 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 		return nil, "", errSuitePassingReceipt
 	}
 	budget := 32768 + 6*maxSuitePassingEndpointBytes + len(modelJSON)
+	if suite.Runtime.ID == "kagent" {
+		budget += 32768
+	}
 	seen := map[string]bool{}
 	for _, file := range suite.Cases {
 		c, err := agentruntime.ParseEvaluationCase(file.Bytes)
@@ -97,6 +102,10 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 		}
 		projected := metadata
 		projected.TaskName, projected.TaskUID, projected.AnswerDigest = strings.Repeat("x", 256), strings.Repeat("\\", 256), strings.Repeat("0", 64)
+		if suite.Runtime.ID == "kagent" {
+			projected.TaskName, projected.TaskUID = "", ""
+			projected.KagentExecution = &suiteKagentCaseExecution{strings.Repeat("x", 36), strings.Repeat("x", 40), strings.Repeat("x", 256), strings.Repeat("x", 256), "completed", 1, suiteKagentAnswerAttribution}
+		}
 		wire, err := spec.Marshal(projected)
 		if err != nil {
 			return nil, "", errSuitePassingReceipt
@@ -159,8 +168,8 @@ func newSuitePassingReceipt(ctx context.Context, prepared *workspace.Prepared, p
 }
 
 func parseSuitePassingReceipt(raw []byte) (*suitePassingReceipt, error) {
-	var r suitePassingReceipt
-	if len(raw) > maxSuitePassingReceiptBytes || spec.Unmarshal(raw, &r) != nil {
+	r, parseErr := parseSuitePassingWire(raw)
+	if len(raw) > maxSuitePassingReceiptBytes || parseErr != nil {
 		return nil, errSuitePassingReceipt
 	}
 	// Canonical raw versus the closed typed projection detects absent fields and
@@ -186,29 +195,46 @@ func parseSuitePassingReceipt(raw []byte) (*suitePassingReceipt, error) {
 }
 
 func basicSuitePassingReceipt(r *suitePassingReceipt) error {
-	if r == nil || r.SchemaVersion != 1 || r.Domain != "kmx.native-suite.passing/v1" || r.ExecutionMode != "native-orka" || !evaluationRunID(r.RunID) || r.Result != "pass" || r.Cases == nil || r.Subject.RequiredImages == nil {
+	if r == nil || r.SchemaVersion != 1 || r.Domain != "kmx.native-suite.passing/v1" || (r.ExecutionMode != "native-orka" && r.ExecutionMode != "native-kagent") || !evaluationRunID(r.RunID) || r.Result != "pass" || r.Cases == nil {
 		return errSuitePassingReceipt
 	}
-	if !validSuitePassingSubject(r.Subject) {
-		return errSuitePassingReceipt
-	}
-	if r.Provider.UID == r.Agent.UID {
+	if r.ExecutionMode == "native-orka" {
+		if r.Kagent != nil || !validSuitePassingSubject(r.Subject) || r.Provider.UID == r.Agent.UID {
+			return errSuitePassingReceipt
+		}
+	} else if !reflect.DeepEqual(r.Subject, suiteNativeSubject{}) || r.Provider != (suiteNativeOwnedResource{}) || r.Agent != (suiteNativeOwnedResource{}) || !validSuiteKagentPassingProof(r.Kagent) {
 		return errSuitePassingReceipt
 	}
 	if !suitePrefixedDigest(r.SourceFingerprint) || !verificationDigest(r.CasesDigest) || len(r.Cases) == 0 {
 		return errSuitePassingReceipt
 	}
-	for _, owned := range []suiteNativeOwnedResource{r.Provider, r.Agent} {
+	ownedResources := []suiteNativeOwnedResource{}
+	if r.ExecutionMode == "native-orka" {
+		ownedResources = []suiteNativeOwnedResource{r.Provider, r.Agent}
+	}
+	for _, owned := range ownedResources {
 		if !verificationIdentity(owned.UID) || owned.Generation < 1 || !verificationDigest(owned.SpecDigest) {
 			return errSuitePassingReceipt
 		}
 	}
 	ids, paths, tasks, uids := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, c := range r.Cases {
-		if !evaluationEvidenceID.MatchString(c.ID) || !verificationIdentity(c.ID) || !suiteCasePath(c.Path) || !verificationDigest(c.CaseDigest) || !verificationDigest(c.InputDigest) || scaffold.ValidateObjectName(c.TaskName) != nil || !verificationIdentity(c.TaskName) || !verificationIdentity(c.TaskUID) || !verificationDigest(c.AnswerDigest) || c.AnswerDigest == agentruntime.EvaluationAnswerDigest("") || c.Verdict != "pass" || len(c.Assertions) == 0 || ids[c.ID] || paths[c.Path] || tasks[c.TaskName] || uids[c.TaskUID] {
+		if !evaluationEvidenceID.MatchString(c.ID) || !verificationIdentity(c.ID) || !suiteCasePath(c.Path) || !verificationDigest(c.CaseDigest) || !verificationDigest(c.InputDigest) || !verificationDigest(c.AnswerDigest) || c.AnswerDigest == agentruntime.EvaluationAnswerDigest("") || c.Verdict != "pass" || len(c.Assertions) == 0 || ids[c.ID] || paths[c.Path] {
 			return errSuitePassingReceipt
 		}
-		ids[c.ID], paths[c.Path], tasks[c.TaskName], uids[c.TaskUID] = true, true, true, true
+		if r.ExecutionMode == "native-orka" {
+			if c.KagentExecution != nil || scaffold.ValidateObjectName(c.TaskName) != nil || !verificationIdentity(c.TaskName) || !verificationIdentity(c.TaskUID) || tasks[c.TaskName] || uids[c.TaskUID] {
+				return errSuitePassingReceipt
+			}
+			tasks[c.TaskName], uids[c.TaskUID] = true, true
+		} else {
+			e := c.KagentExecution
+			if c.TaskName != "" || c.TaskUID != "" || e == nil || !suiteKagentRequestID(e.RPCID, "rpc-") || !suiteKagentRequestID(e.RequestMessageID, "message-") || !safeKagentEvaluationID(e.TaskID) || !safeKagentEvaluationID(e.ContextID) || e.State != "completed" || e.UserTurns != 1 || e.AnswerAttribution != suiteKagentAnswerAttribution || tasks[e.TaskID] || uids[e.ContextID] || tasks[e.RPCID] || uids[e.RequestMessageID] {
+				return errSuitePassingReceipt
+			}
+			tasks[e.TaskID], uids[e.ContextID], tasks[e.RPCID], uids[e.RequestMessageID] = true, true, true, true
+		}
+		ids[c.ID], paths[c.Path] = true, true
 		assertions := map[string]bool{}
 		for _, a := range c.Assertions {
 			if !evaluationEvidenceID.MatchString(a.ID) || !verificationIdentity(a.ID) || assertions[a.ID] || (a.Type != "contains" && a.Type != "notContains" && a.Type != "regex") || !verificationDigest(a.DefinitionDigest) || a.EvaluatorVersion != suitePassingEvaluatorVersion || a.Verdict != "pass" {
@@ -241,7 +267,11 @@ func canonicalSuitePassingInventory(ctx context.Context, r *suitePassingReceipt,
 	if err := basicSuitePassingReceipt(r); err != nil {
 		return nil, err
 	}
-	if err := coherentSuitePassingSubject(r.Subject, suite); err != nil {
+	if r.ExecutionMode == "native-kagent" {
+		if err := coherentSuiteKagentPassingProof(r.Kagent, suite); err != nil {
+			return nil, err
+		}
+	} else if err := coherentSuitePassingSubject(r.Subject, suite); err != nil {
 		return nil, err
 	}
 	if r.CasesDigest != casesDigest || len(r.Cases) != len(inventory) {
@@ -250,6 +280,7 @@ func canonicalSuitePassingInventory(ctx context.Context, r *suitePassingReceipt,
 	for i, expected := range inventory {
 		row := r.Cases[i]
 		row.TaskName, row.TaskUID, row.AnswerDigest = "", "", ""
+		row.KagentExecution = nil
 		if !reflect.DeepEqual(row, expected.Metadata) {
 			return nil, errSuitePassingReceipt
 		}

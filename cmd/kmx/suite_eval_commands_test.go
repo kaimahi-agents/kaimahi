@@ -11,6 +11,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 func suiteEvalSource(t *testing.T) (string, string) {
@@ -154,13 +155,130 @@ func TestSuiteEvalConfiguredTargetAndRetryIdentity(t *testing.T) {
 	}
 }
 
+func suiteKagentCLIArgs(t *testing.T, extension string) ([]string, string, string) {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "workspace")
+	input := filepath.Join(t.TempDir(), "instructions.md")
+	if err := os.WriteFile(input, []byte("PRIVATE_CLI_CANARY"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	if err := execute([]string{"create", "greeter", "--workspace", root, "--runtime", "kagent", "--model", "fixture-suite", "--instructions", input}, deps); err != nil || *loads != 0 {
+		t.Fatalf("offline kagent authoring: %v loads=%d", err, *loads)
+	}
+	if err := os.WriteFile(filepath.Join(root, "eval/second"+extension), []byte("id: second\ninput: private\nassertions: [{id: text, type: contains, value: answer}]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	private := t.TempDir()
+	if err := os.Chmod(private, 0700); err != nil {
+		t.Fatal(err)
+	}
+	binding := agentruntime.KagentBindings{APIVersion: agentruntime.KagentBindingsAPIVersion, Kind: agentruntime.KagentBindingsKind, Namespace: "agents", ModelConfig: agentruntime.KagentModelConfigBindings{Provider: "openai", SecretRef: agentruntime.KagentSecretRefBindings{Name: "model-key", Key: "api-key"}}}
+	raw, err := agentruntime.EncodeKagentBindings(binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(private, "bindings"+extension)
+	if err := os.WriteFile(file, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return []string{"eval", "--workspace", root, "--to-context", "kind-target", "--bindings", file, "--out", filepath.Join(private, "passing.json")}, root, file
+}
+
+func TestSuiteKagentEvalOfflineConfigurationBoundary(t *testing.T) {
+	for _, extension := range []string{".yaml", ".yml"} {
+		t.Run(extension, func(t *testing.T) {
+			t.Setenv("KMX_HOME", t.TempDir())
+			args, _, _ := suiteKagentCLIArgs(t, extension)
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			boundary := errors.New("kagent configured boundary")
+			deps.loadConfig = func(ctx, engine string) (*config.Config, error) {
+				*loads++
+				if ctx != "kind-target" {
+					t.Fatalf("wrong context %q", ctx)
+				}
+				return nil, boundary
+			}
+			deps.newApp = func(*config.Config) *app.App { t.Fatal("constructed Orka/configured App"); return nil }
+			err := execute(args, deps)
+			if !errors.Is(err, boundary) || *loads != 1 {
+				t.Fatalf("offline preparation did not reach intended boundary: %v loads=%d", err, *loads)
+			}
+			if _, err := os.Stat(args[len(args)-1]); !os.IsNotExist(err) {
+				t.Fatal("preparation exported passing evidence")
+			}
+		})
+	}
+}
+
+func TestSuiteKagentEvalRefusesBeforeConfiguration(t *testing.T) {
+	for _, tc := range []struct{ name, want string }{
+		{"both selectors", "exactly one inference or bindings selector"},
+		{"no selector", "exactly one inference or bindings selector"},
+		{"Orka selector", "native kagent evaluation requires --bindings"},
+		{"namespace", "native kagent namespace must agree with bindings"},
+		{"result port", "native kagent evaluation requires --bindings and refuses --result-port"},
+		{"malformed binding", "native kagent requires bounded confined author-owned bindings"},
+		{"tool assertion", "unsupported native suite evaluator"},
+		{"judge assertion", "unsupported native suite evaluator"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("KMX_HOME", t.TempDir())
+			args, root, binding := suiteKagentCLIArgs(t, ".yml")
+			switch tc.name {
+			case "both selectors":
+				args = append(args, "--inference", "provider:inference")
+			case "no selector":
+				args = append(args[:5], args[7:]...)
+			case "Orka selector":
+				args[5], args[6] = "--inference", "provider:inference"
+			case "namespace":
+				args = append(args, "--to-namespace", "other")
+			case "result port":
+				args = append(args, "--result-port", "19180")
+			case "malformed binding":
+				if err := os.WriteFile(binding, []byte("PRIVATE_CLI_CANARY: malformed\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "tool assertion", "judge assertion":
+				assertion := "id: tool, type: toolCalled, tool: private"
+				if tc.name == "judge assertion" {
+					assertion = "id: judge, type: llmJudge, rubric: private, minScore: 50, judgeModel: pinned-model, judgeVersion: v1"
+				}
+				if err := os.WriteFile(filepath.Join(root, "eval/example.yaml"), []byte("id: unsupported\ninput: private\nassertions: [{"+assertion+"}]\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			deps.newApp = func(*config.Config) *app.App { t.Fatal("refusal reached App"); return nil }
+			err := execute(args, deps)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || *loads != 0 {
+				t.Fatalf("intended refusal %q: %v loads=%d", tc.want, err, *loads)
+			}
+			if strings.Contains(fmtError(err)+out.String()+diagnostics.String(), "PRIVATE_CLI_CANARY") {
+				t.Fatal("private source escaped")
+			}
+		})
+	}
+}
+
 func TestSuiteEvalHelpersHelpAndCompletionRemainOffline(t *testing.T) {
-	for _, args := range [][]string{{"eval", "--help"}, {"eval", "from-sessions", "--help"}, {"__complete", "eval", "--"}, {"eval", "from-sessions", "uid", "--sessions", "127.0.0.1:8080", "--assertions", "missing.yaml", "--out", "private.json"}} {
+	for _, args := range [][]string{{"eval", "--help"}, {"eval", "diff", "--help"}, {"eval", "from-sessions", "--help"}, {"__complete", "eval", "--"}, {"__complete", "eval", "diff", ""}, {"eval", "from-sessions", "uid", "--sessions", "127.0.0.1:8080", "--assertions", "missing.yaml", "--out", "private.json"}} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
 		err := execute(args, deps)
 		if *loads != 0 {
 			t.Fatalf("helper loaded config: %v", args)
+		}
+		if len(args) == 2 && args[0] == "eval" && args[1] == "--help" {
+			for _, text := range []string{"--bindings", "--inference", "unsecure", "trusted-proxy", "--result-port"} {
+				if !strings.Contains(out.String(), text) {
+					t.Fatalf("missing runtime boundary in help: %q", text)
+				}
+			}
 		}
 		if args[0] != "__complete" && args[len(args)-1] == "private.json" {
 			if err == nil || !strings.Contains(err.Error(), "assertion") {

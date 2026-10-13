@@ -84,7 +84,7 @@ func TestSuitePassingReceiptRefusesKagentBeforeFabrication(t *testing.T) {
 	}
 }
 
-func TestKagentWorkspaceRefusesSuiteEvaluationAndEvaluatedPush(t *testing.T) {
+func TestOrkaEvidenceCannotAuthorizeKagentWorkspace(t *testing.T) {
 	t.Setenv("KMX_HOME", privateSuiteDir(t))
 	root, prepared, suite, placement, observations := passingFixture(t)
 	receipt, err := newSuitePassingReceipt(t.Context(), prepared, placement, observations)
@@ -123,7 +123,7 @@ func TestKagentWorkspaceRefusesSuiteEvaluationAndEvaluatedPush(t *testing.T) {
 					t.Fatal("unsupported runtime emitted publication output")
 				}
 			}
-			if err == nil || err.Error() != "kagent evaluation on the suite path isn't available yet" {
+			if err == nil {
 				t.Fatalf("wrong runtime refusal: %v", err)
 			}
 			if _, err := os.Stat(destination); !os.IsNotExist(err) {

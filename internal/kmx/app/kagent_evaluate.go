@@ -34,6 +34,7 @@ type kagentEvaluationOperation struct {
 	Tasks, Contexts map[string]bool
 	Sent            bool
 	OutputFailed    bool
+	RequireHistory  bool
 }
 
 func kagentObservedEvaluationPlatform(profile kagentProfile, service kagentControllerService, images []kagentEvaluationImage) (kagentEvaluationPlatform, error) {
@@ -294,7 +295,6 @@ func (a kagentRuntimeAdapter) evaluateKagentCase(ctx context.Context, ref agentr
 		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Kagent evaluation requires fresh request identity and active case deadline")
 	}
 	c := agentruntime.EvaluationCase{ID: request.CaseID, Input: request.Input, ExpectContains: request.ExpectContains, Assertions: request.Assertions}
-	result := kagentUnknownEvaluation(ctx, c, execution, request.Judge)
 	observe := func() (kagentEvaluationObservation, error) {
 		var observed kagentEvaluationObservation
 		if err := op.Recheck(); err != nil {
@@ -309,28 +309,46 @@ func (a kagentRuntimeAdapter) evaluateKagentCase(ctx context.Context, ref agentr
 		}
 		return observed, nil
 	}
+	beforeAssertions := func(answer string) error {
+		_, err := fmt.Fprintln(a.app.Out, safeTerminal(answer))
+		if err != nil {
+			op.OutputFailed = true
+		}
+		return err
+	}
+	result, _, err := a.app.executeKagentEvaluationCase(ctx, ref, c, execution, op, observe, beforeAssertions, request.Judge)
+	return result, err
+}
+
+// The observer owns attribution and local-input checks. This common core owns
+// only one-shot transport, native identity uniqueness and text assertions.
+func (a *App) executeKagentEvaluationCase(ctx context.Context, ref agentruntime.AgentRef, c agentruntime.EvaluationCase, execution kagentEvaluationExecution, op *kagentEvaluationOperation, observe func() (kagentEvaluationObservation, error), beforeAssertions func(string) error, judge agentruntime.EvaluationJudge) (agentruntime.EvaluationReceipt, string, error) {
+	result := kagentUnknownEvaluation(ctx, c, execution, judge)
 	observed, err := observe()
 	if err != nil {
-		return agentruntime.EvaluationReceipt{}, err
+		return agentruntime.EvaluationReceipt{}, "", err
 	}
-	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": execution.RPCID, "method": "message/send", "params": map[string]any{"message": map[string]any{"kind": "message", "role": "user", "messageId": execution.RequestMessageID, "parts": []any{map[string]any{"kind": "text", "text": request.Input}}}, "configuration": map[string]any{"blocking": true}}})
+	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": execution.RPCID, "method": "message/send", "params": map[string]any{"message": map[string]any{"kind": "message", "role": "user", "messageId": execution.RequestMessageID, "parts": []any{map[string]any{"kind": "text", "text": c.Input}}}, "configuration": map[string]any{"blocking": true}}})
 	if err != nil {
-		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Kagent evaluation request unavailable")
+		return agentruntime.EvaluationReceipt{}, "", fmt.Errorf("Kagent evaluation request unavailable")
 	}
 	deadline, _ := ctx.Deadline()
 	remaining := time.Until(deadline)
 	if remaining <= 0 {
-		return agentruntime.EvaluationReceipt{}, fmt.Errorf("Kagent evaluation deadline exhausted before send")
+		return agentruntime.EvaluationReceipt{}, "", fmt.Errorf("Kagent evaluation deadline exhausted before send")
 	}
 	path := kagentServiceProxyPath(observed.Service, "/api/a2a/"+url.PathEscape(ref.Namespace)+"/"+url.PathEscape(ref.Name))
 	op.Sent = true
-	raw, sendErr := a.app.kagentCaptureWithTimeout(ctx, remaining, remaining.String(), body, "create", "--raw", path, "-f", "-")
+	raw, sendErr := a.kagentCaptureWithTimeout(ctx, remaining, remaining.String(), body, "create", "--raw", path, "-f", "-")
 	answer := ""
 	var parseErr error
 	if sendErr == nil {
-		execution, answer, parseErr = parseKagentEvaluationResponse(raw, execution, request.Input)
+		execution, answer, parseErr = parseKagentEvaluationResponse(raw, execution, c.Input)
+		if op.RequireHistory && !suiteKagentResponseHistory(raw) {
+			parseErr = fmt.Errorf("Kagent suite requires attributable history")
+		}
 		if execution.TaskID != "" && (op.Tasks[execution.TaskID] || op.Contexts[execution.ContextID]) {
-			execution = op.Requests[request.CaseID]
+			execution = op.Requests[c.ID]
 			parseErr = fmt.Errorf("Kagent evaluation returned reused native identity")
 		}
 		if execution.TaskID != "" {
@@ -341,29 +359,31 @@ func (a kagentRuntimeAdapter) evaluateKagentCase(ctx context.Context, ref agentr
 	// Attribution takes precedence over both a native failure and an answer.
 	if _, err = observe(); err != nil {
 		result.Stop = true
-		return result, nil
+		return result, answer, nil
 	}
 	if sendErr != nil || parseErr != nil {
 		result.Stop = true
-		return result, nil
+		return result, answer, nil
 	}
 	switch execution.State {
 	case "failed", "canceled", "rejected":
 		result.Verdict = agentruntime.EvaluationFail
 		result.Detail = evaluationExecutionFailed
 	case "completed":
-		if _, err := fmt.Fprintln(a.app.Out, safeTerminal(answer)); err != nil {
-			op.OutputFailed, result.Stop = true, true
-			return result, nil
+		// Preserve the legacy output-success gate before any judge transfer or
+		// passing assertion. Suite callers supply no payload-output callback.
+		if beforeAssertions != nil && beforeAssertions(answer) != nil {
+			result.Stop = true
+			return result, answer, nil
 		}
 		result.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(answer)
 		result.Detail = ""
-		result.Assertions = evaluateCaseWithJudge(ctx, c, agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true, ToolSupported: false}, request.Judge)
+		result.Assertions = evaluateCaseWithJudge(ctx, c, agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true, ToolSupported: false}, judge)
 		result.Verdict = agentruntime.EvaluationAssertionsVerdict(result.Assertions)
 	default:
 		result.Stop = true
 	}
-	return result, nil
+	return result, answer, nil
 }
 
 type kagentEvaluationCaseSnapshot struct {

@@ -17,6 +17,7 @@ import (
 )
 
 var ErrReleaseLift = errors.New("release lift planning refused; no native admission or placement")
+var errReleaseLiftKagentEvidence = errors.New("release lift does not support native-kagent evidence")
 
 // ReleaseLiftOptions selects retrieval, access and evidence, never runtime/model.
 // FromLayout uses the digest in Reference; otherwise Reference is a registry ref.
@@ -95,11 +96,22 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 					}
 				}
 			}
+			if errors.Is(err, errReleaseLiftKagentEvidence) {
+				cause = errors.Join(cause, errReleaseLiftKagentEvidence)
+			}
 			err = errors.Join(ErrReleaseLift, cause)
 		}
 	}()
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	// Fence the closed runtime branch before configuration or Orka fields.
+	receipt, err := readSuitePassingReceipt(ctx, opt.Evidence)
+	if err != nil {
+		return nil, err
+	}
+	if receipt.ExecutionMode == "native-kagent" {
+		return nil, errReleaseLiftKagentEvidence
 	}
 	if opt.ToNamespace == "" {
 		opt.ToNamespace = OrkaNamespace

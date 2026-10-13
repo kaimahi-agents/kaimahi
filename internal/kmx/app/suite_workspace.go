@@ -164,7 +164,7 @@ func (a *App) pushSuiteWorkspaceEvaluated(ctx context.Context, root, reference, 
 	if err != nil {
 		return oras.PushResult{}, err
 	}
-	expected := digest.Digest(receipt.Subject.SuiteDigest)
+	expected := digest.Digest(receipt.suiteDigest())
 	return a.pushSuiteWorkspaceCore(ctx, root, reference, layout, plainHTTP, force, provenance, &expected, receipt)
 }
 
@@ -200,9 +200,6 @@ func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layou
 	suite, err := workspace.Load(ctx, prepared)
 	if err != nil {
 		return oras.PushResult{}, err
-	}
-	if receipt != nil && suite.Runtime.ID == "kagent" {
-		return oras.PushResult{}, errSuiteKagentEvaluationUnavailable
 	}
 	if expectedS != nil && prepared.Descriptor.Digest != expected {
 		return oras.PushResult{}, fmt.Errorf("prepared suite does not match the expected publication identity")

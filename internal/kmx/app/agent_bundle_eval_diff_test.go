@@ -43,7 +43,11 @@ func diffTempDir(t *testing.T) string {
 
 func diffWriteRaw(t *testing.T, raw []byte) string {
 	t.Helper()
-	path := filepath.Join(diffTempDir(t), "receipt.json")
+	dir := diffTempDir(t)
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "receipt.json")
 	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}

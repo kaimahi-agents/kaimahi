@@ -31,15 +31,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 - Root `create <name>` authors one tool-free native suite member offline
   by default: Orka unless `--runtime kagent` selects exact v0.10.3 Go/linux-amd64.
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
-  kagent author/prepare/load/push exposes no suite placement/evaluation/status/gates;
-  `eval` and evaluated push explicitly refuse its verified runtime profile.
+  Root eval supports the packaged kagent profile with author-owned --bindings;
+  evaluated push consumes matching runtime-specific full-passing suite evidence.
+  Suite status/lift/gates remain unavailable; evidence never crosses runtimes.
   Private runtime-specific kagent prepare/place/observe helpers are separate from
   W250's common release-lift/dispatch/evidence seam. They create new ModelConfig
   and Agent objects or reuse a complete caller-retained observation read-only;
   occupied unrecorded/changed targets refuse, never adopt/update/rollback.
   Observations are in-memory placement proofs, not persisted/evaluation receipts.
-  The runtime's literal auth mode is observed without native sends; future
-  evaluation remains unsecure-only, trusted-proxy refused.
+  Placement observes the literal auth mode without native sends; evaluation
+  requires unsecure before admission and each send, trusted-proxy refused.
   Orka-only consumers refuse that profile. RemoteMCP/Python remain unsupported.
   Missing runtime in old source stays Orka only. Create and `push [--workspace DIR] REF` share nearest-ancestor
   `workspace.yaml` discovery; `--workspace DIR` selects an exact root without
@@ -96,8 +97,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   resources against legacy adoption, copying, bundle authorization and retirement.
   Registry workspace publication shares unsigned suite provenance defaults/flags and records Git source only from
   fingerprint-bound authored inputs matching HEAD; local layouts get no referrers.
-- Root `eval` evaluates the full native Orka workspace inventory with explicit
-  `--to-context`, `--inference provider:NAME` and new private `--out`, using local
+- Root `eval` evaluates the full packaged Orka/kagent workspace inventory with
+  explicit `--to-context` and new private `--out`; Orka uses --inference
+  provider:NAME, kagent uses author-owned --bindings FILE, never both. Namespace
+  must match kagent bindings and kagent refuses --result-port. It uses local
   flags and a nonpersistent operational hook. Unsupported/budget/output checks
   run before config; one fresh outer guard covers pair placement and all Tasks.
   Fail/unknown/drift/cancel/output errors stop later sends with no partial export.

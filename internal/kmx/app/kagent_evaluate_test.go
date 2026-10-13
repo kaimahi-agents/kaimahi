@@ -250,7 +250,7 @@ func TestKagentEvaluateOutputFailureStopsWithoutResend(t *testing.T) {
 		t.Fatalf("output failure lost or exposed: %v", err)
 	}
 	r, _ := readKagentEvaluationForTest(t, opt)
-	if len(evaluationSends(t, dir)) != 1 || r.Cases[0].Execution.State != "completed" || r.Cases[1].Verdict != "unknown" {
+	if len(evaluationSends(t, dir)) != 1 || r.Cases[0].Execution.State != "completed" || r.Cases[0].Verdict != "unknown" || r.Cases[0].AnswerSHA256 != "" || r.Cases[1].Verdict != "unknown" {
 		t.Fatalf("output failure sent more work or lost observed identity: %+v", r.Cases)
 	}
 }
@@ -340,14 +340,17 @@ func TestKagentEvaluateAmbiguousSendStopsRemainingCases(t *testing.T) {
 	}
 }
 
-func TestKagentEvaluatePostDriftNeverJudges(t *testing.T) {
-	for _, scenario := range []string{"eval-post-drift", "eval-failed-drift"} {
+func TestKagentEvaluateUnsafeAnswerNeverJudges(t *testing.T) {
+	for _, scenario := range []string{"eval-post-drift", "eval-failed-drift", "eval-success"} {
 		t.Run(scenario, func(t *testing.T) {
 			a, opt, dir := kagentEvaluateLiftFixture(t)
 			var calls atomic.Int32
 			judge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); http.Error(w, "unexpected judge", 500) }))
 			defer judge.Close()
 			opt.JudgeBaseURL = judge.URL
+			if scenario == "eval-success" {
+				a.Out = evaluationDiffFailWriter{}
+			}
 			for _, id := range []string{"one", "two"} {
 				data := "id: " + id + "\ninput: input\nassertions:\n  - id: quality\n    type: llmJudge\n    rubric: Check answer.\n    judgeModel: judge-fixture\n    judgeVersion: v1\n    minScore: 50\n"
 				if err := os.WriteFile(filepath.Join(opt.BundleDir, "eval", id+".yaml"), []byte(data), 0600); err != nil {
