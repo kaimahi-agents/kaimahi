@@ -11,6 +11,8 @@ import (
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
+var errSuiteKagentOccupied = errors.New("suite Kagent target occupied without complete caller-retained proof; no adoption or updates")
+
 // Observation is caller-retained, in-memory authority only. Resource proofs are
 // payload-free fingerprints; the private prepared frame owns normalized specs.
 type suiteKagentObservation struct {
@@ -49,6 +51,9 @@ func (a *App) placeSuiteKagent(ctx context.Context, p *suiteKagentPrepared, expe
 				return result, fmt.Errorf("%s: %w", message, cancellation)
 			}
 		}
+		if errors.Is(cause, errSuiteKagentOccupied) {
+			return result, errors.Join(errors.New(message), errSuiteKagentOccupied)
+		}
 		return result, errors.New(message)
 	}
 	if expected != nil {
@@ -74,7 +79,7 @@ func (a *App) placeSuiteKagent(ctx context.Context, p *suiteKagentPrepared, expe
 				return fmt.Errorf("suite Kagent primary absence unknown")
 			}
 			if obj != nil {
-				return fmt.Errorf("suite Kagent target occupied without complete caller-retained proof; no adoption or updates")
+				return errSuiteKagentOccupied
 			}
 		}
 		if w.kagentGeneratedChildrenAbsent(ctx, ns, p.subject.Member) != nil {

@@ -95,6 +95,13 @@ func (a *App) recheckReleaseLiftInputs(ctx context.Context, p *PreparedReleaseLi
 	if gate != p.summary.Gate || model != p.summary.ServingModel {
 		return ErrReleaseLiftApply
 	}
+	// The same-subject gate consumes current.Subject without further I/O.
+	// Reuse this recheck's freshly read, fully compared inputs, not a prior
+	// recheck's observations. Promotion performs an extra Provider read, so
+	// its post-gate inspection must remain fresh.
+	if gate == "same-subject" {
+		return nil
+	}
 	return a.verifySuiteNativeInputs(ctx, p.native.Subject)
 }
 

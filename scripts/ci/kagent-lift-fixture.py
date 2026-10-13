@@ -98,7 +98,7 @@ class Handler(BaseHTTPRequestHandler):
                 response["error"] = {"code": -32602, "message": "tool is not allowed"}
             else:
                 with self.server.state.lock:
-                    pending = [row for row in self.server.state.cases if row["tool_calls"] == 0]
+                    pending = [row for row in self.server.state.cases if row["tool_calls"] == 0 and row["terminal_answers"] == 0]
                     if len(pending) != 1:
                         raise ValueError("one pending model tool call required")
                     pending[0]["tool_calls"] = 1
@@ -152,7 +152,19 @@ class Handler(BaseHTTPRequestHandler):
         input_hash = hashlib.sha256(content.encode()).hexdigest()
         returned = [message for message in messages if message.get("role") == "tool"]
         with self.server.state.lock:
-            if returned:
+            if request.get("model") == "fixture-suite":
+                # The Go ADK advertises its built-in ask_user even without any
+                # authored tool binding. Never request it or an external tool.
+                if tools not in ([], ["ask_user"]) or returned:
+                    raise ValueError("suite fixture requires a fresh turn with no tool execution")
+                answer = "KMX suite proof: " + self.server.state.sentinel
+                row = {"call_id": "call-" + secrets.token_hex(16), "input_sha256": input_hash,
+                       "model_calls": 0, "tool_calls": 0, "terminal_answers": 1, "user_turns": 1,
+                       "answer_sha256": hashlib.sha256(answer.encode()).hexdigest()}
+                self.server.state.cases.append(row)
+                self.server.state.terminal_answers += 1
+                message, finish = {"role": "assistant", "content": answer}, "stop"
+            elif returned:
                 rows = [row for row in self.server.state.cases if row["call_id"] == returned[-1].get("tool_call_id")]
                 # MCP may be serialized as text or a JSON envelope by the ADK.
                 if len(returned) != 1 or len(rows) != 1 or rows[0]["input_sha256"] != input_hash or rows[0]["tool_calls"] != 1 or rows[0]["terminal_answers"] != 0 or not isinstance(returned[0].get("content"), str) or self.server.state.sentinel not in returned[0]["content"]:

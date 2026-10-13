@@ -107,7 +107,9 @@ def classify(argv, data):
     if verb == "create" and "--raw" in options:
         # A2A Service-proxy POST is native execution, not object creation.
         # No other raw endpoint earns exemption from the mutation audit.
-        require(options["--raw"] == "/api/v1/namespaces/kagent/services/http:kagent-controller:8083/proxy/api/a2a/agents/lift-proof")
+        require(options["--raw"] in {
+            "/api/v1/namespaces/kagent/services/http:kagent-controller:8083/proxy/api/a2a/agents/lift-proof",
+            "/api/v1/namespaces/kagent/services/http:kagent-controller:8083/proxy/api/a2a/agents/suite-eval-proof"})
         require(not positionals and not dry_run_seen and options.get("-f", options.get("--filename")) == "-"
                 and set(options) <= leading | {"--raw", "-f", "--filename"} and 0 < len(data) <= LIMIT)
         return None

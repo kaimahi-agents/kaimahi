@@ -32,6 +32,7 @@ class AuditTests(unittest.TestCase):
     def test_only_bound_a2a_service_proxy_post_is_not_object_create(self):
         route = "/api/v1/namespaces/kagent/services/http:kagent-controller:8083/proxy/api/a2a/agents/lift-proof"
         body = b'{"jsonrpc":"2.0","method":"message/send","params":{"private":"payload"}}'
+        self.assertIsNone(self.audit.classify(["create", "--raw", route.replace("lift-proof", "suite-eval-proof"), "-f", "-"], body))
         with tempfile.TemporaryDirectory() as temp:
             work = pathlib.Path(temp)
             real = work / "real"

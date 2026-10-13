@@ -22,6 +22,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+- Packaged tool-free kagent v0.10.3 Go/linux-amd64 workspaces now evaluate
+  through root `eval --bindings FILE`: one fresh blocking A2A Task per ordered
+  case, unsecure auth only, no retries, answer output or bundle conversion.
+  Strict full-passing suite evidence has a separate typed kagent branch;
+  evaluated push requires exact manifest S and the same packaged runtime.
+  Offline suite receipt diff refuses mixed runtimes. Existing Orka receipt
+  serialization, evaluation and lift remain compatible; kagent suite lift is
+  not enabled. Unsupported judge/tool assertions still refuse offline.
+
 ### Added
 
 - Deploy-only `kmx lift <ref>@<digest>` from a registry or local `--from-layout`.
@@ -128,6 +137,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   upstream projection coupling remains unfixed.
 
 ### Fixed
+
+- Same-subject native release lift reuses its freshly compared input snapshot
+  within each recheck instead of inspecting the same inputs twice. Every
+  pre-write boundary and final placement verification still reads the API;
+  promotion retains its extra post-gate inspection. Installed schema reads now
+  precede the live input snapshot. No gate, timeout or retry policy changes.
 
 - Quickstart checks current-generation Agent readiness when reconnecting to an
   existing Agent whose Kubernetes tool reference needs no change. A stale or

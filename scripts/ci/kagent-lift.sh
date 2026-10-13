@@ -150,6 +150,8 @@ done
 ln -s "$work/bin/kubectl" "$work/fail-bin/kubectl"
 phase=qualify
 KMX_QUALIFICATION_DIAGNOSTIC_FD=4 PATH="$work/fail-bin:$PATH" python3 "$root/scripts/ci/kagent-lift.py" qualify "$root/bin/kmx" "$work"
+phase=suite-evaluation
+PATH="$work/fail-bin:$PATH" python3 "$root/scripts/ci/suite-kagent.py" "$root/bin/kmx" "$work"
 # Qualify runtime-specific private helpers without taking over release lift.
 # The existing fixture, cluster and private logs remain the only infrastructure.
 phase=suite-helpers
@@ -160,3 +162,4 @@ test ! -e "$work/installer-attempt"
 phase=artifact
 mkdir -p "${RUNNER_TEMP:-/tmp}/kmx-kagent-lift"
 cp "$work/qualification.json" "${RUNNER_TEMP:-/tmp}/kmx-kagent-lift/qualification.json"
+cp "$work/suite-qualification.json" "${RUNNER_TEMP:-/tmp}/kmx-kagent-lift/suite-qualification.json"
