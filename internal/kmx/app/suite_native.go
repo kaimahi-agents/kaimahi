@@ -70,14 +70,6 @@ func (a *App) prepareSuiteNative(ctx context.Context, suite *workspace.NativeSui
 	if strings.TrimSpace(suite.Model) == "" || strings.TrimSpace(string(suite.Instructions)) == "" {
 		return nil, fmt.Errorf("native suite requires exact nonblank packaged model and instructions")
 	}
-	target, binding, runtime, err := a.readSuiteNativeInputs(ctx, namespace, selectedProvider)
-	if err != nil {
-		return nil, err
-	}
-	bundle, err := scaffold.GenerateOrka(scaffold.OrkaSpec{Name: suite.MemberID, Namespace: namespace, Description: suite.Description, Model: suite.Model, Instructions: string(suite.Instructions), ProviderType: binding.Provider.Type, BaseURL: binding.Provider.BaseURL, SecretName: binding.Provider.SecretName, SecretKey: binding.Provider.SecretKey})
-	if err != nil {
-		return nil, err
-	}
 	// Installed's three CRDs are validator prerequisites; no Task is rendered.
 	crds := map[string][]byte{}
 	for _, kind := range []string{"Agent", "Provider", "Task"} {
@@ -88,6 +80,16 @@ func (a *App) prepareSuiteNative(ctx context.Context, suite *workspace.NativeSui
 		crds[kind] = raw
 	}
 	validator, err := orkaschema.Installed(crds)
+	if err != nil {
+		return nil, err
+	}
+	// Inspect live inputs after schema I/O. The returned subject is this
+	// preparation's fresh snapshot, not observations retained from a plan.
+	target, binding, runtime, err := a.readSuiteNativeInputs(ctx, namespace, selectedProvider)
+	if err != nil {
+		return nil, err
+	}
+	bundle, err := scaffold.GenerateOrka(scaffold.OrkaSpec{Name: suite.MemberID, Namespace: namespace, Description: suite.Description, Model: suite.Model, Instructions: string(suite.Instructions), ProviderType: binding.Provider.Type, BaseURL: binding.Provider.BaseURL, SecretName: binding.Provider.SecretName, SecretKey: binding.Provider.SecretKey})
 	if err != nil {
 		return nil, err
 	}

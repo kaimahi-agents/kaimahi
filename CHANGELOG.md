@@ -129,6 +129,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- Same-subject native release lift reuses its freshly compared input snapshot
+  within each recheck instead of inspecting the same inputs twice. Every
+  pre-write boundary and final placement verification still reads the API;
+  promotion retains its extra post-gate inspection. Installed schema reads now
+  precede the live input snapshot. No gate, timeout or retry policy changes.
+
 - Quickstart checks current-generation Agent readiness when reconnecting to an
   existing Agent whose Kubernetes tool reference needs no change. A stale or
   unavailable Agent no longer reaches the Ready screen through that reuse path.
