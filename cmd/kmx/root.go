@@ -127,7 +127,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newQuickstartCommand(state), newAKSCommand(state),
 		newConsoleCommand(state), newOrkaCommand(state),
 		newStatusCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
-		newBundleCommand(state), newAgentEvalCommand(), newTaskCommand(state),
+		newBundleCommand(state), newAgentEvalCommand(state), newTaskCommand(state),
 		newSuiteCommand(state), newSuitePushCommand(state, true), newTargetsCommand(state),
 		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),
 	)

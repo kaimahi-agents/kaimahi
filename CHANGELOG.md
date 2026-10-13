@@ -24,6 +24,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Root `kmx eval` evaluates the full ordered inventory of one tool-free native
+  workspace, with explicit `--to-context`, `--inference provider:NAME` and a new
+  private `--out` file. Offline inventory/budget/output checks precede cluster
+  configuration; one guard covers owned Provider/Agent placement and one fresh,
+  never-retried Task per case. Fail/unknown/drift/cancel/output errors stop later
+  sends. Only a full pass exports payload-free metadata. Root
+  `push --evaluation FILE` checks its strict private receipt and exact manifest
+  identity before publication. No receipt format change, package evaluation,
+  judge/subset/content mode, installer or release lift is added. Existing bundle
+  evaluation, eval helpers and ordinary/extracted push behavior remain separate.
+  Hermetic tests do not establish real native CLI qualification.
+  [Workspace evaluation](docs/suite-workspace.md#evaluate-the-whole-workspace).
+
 - Explicit `kmx bundle evaluate --runtime kagent --runtime-version v0.10.3`
   runs authored cases against a receipt-bound Go placement, with desired
   bindings and `--to-context`. Each case sends one fresh blocking A2A Task;
@@ -56,8 +69,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `kmx create --workspace` authors one native-Orka AgentSuite member offline.
   `kmx push --workspace DIR REF` prepares and publishes its exact OCI graph, including
   authored cases, with no member image build or cluster access. Existing bundle
-  behavior and extracted-directory suite transfer are unchanged. Workspace evaluation and
-  release lift are not available. Registry workspace pushes share the default
+  behavior and extracted-directory suite transfer are unchanged. Release lift
+  is not available; full workspace evaluation is described above. Registry workspace pushes share the default
   unsigned provenance policy, opt-out/required flags and matching-HEAD source
   commit claims; prepared graph bytes stay unchanged. [Workspace guide](docs/suite-workspace.md).
 
@@ -104,8 +117,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Extracted-directory `suite push DIRECTORY REFERENCE` and
   `suite build/diff/pull/validate` remain.
   Create still defaults to live authoring; `create --workspace` is explicitly
-  offline. Root `eval` is helper-only; packaged evaluation and root digest
-  `lift` are not implemented.
+  offline. Root `eval` now adds full workspace evaluation as described above;
+  standalone packaged evaluation and root digest `lift` are not implemented.
 
 - Removed `kmx lift`; use `kmx aks up` for AKS provisioning.
 - Removed `kmx lift down`; use `kmx aks down` for AKS teardown.

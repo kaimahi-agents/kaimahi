@@ -456,21 +456,28 @@ type orkaObject struct {
 }
 
 func (a *App) createOrkaObject(ctx context.Context, namespace string, doc map[string]any) (orkaIdentity, error) {
+	id, _, err := a.createOrkaObjectObserved(ctx, namespace, doc)
+	return id, err
+}
+
+// Keep the CREATE observation available to callers that bind admitted behavior.
+// A failed or ambiguous create is never followed by a recovery read.
+func (a *App) createOrkaObjectObserved(ctx context.Context, namespace string, doc map[string]any) (orkaIdentity, []byte, error) {
 	id := orkaIdentity{Kind: doc["kind"].(string), Name: orkaObjectName(doc)}
 	body, err := json.Marshal(doc)
 	if err != nil {
-		return id, err
+		return id, nil, err
 	}
 	raw, err := a.orkaCapture(ctx, body, "-n", namespace, "create", "--validate=strict", "-f", "-", "-o", "json")
 	if err != nil {
-		return id, fmt.Errorf("create %s/%s failed or was ambiguous; it may exist or be running. No execution retry, adoption or cleanup: %w", id.Kind, id.Name, err)
+		return id, nil, fmt.Errorf("create %s/%s failed or was ambiguous; it may exist or be running. No execution retry, adoption or cleanup: %w", id.Kind, id.Name, err)
 	}
 	var object orkaObject
 	if err := json.Unmarshal(raw, &object); err != nil || object.Kind != id.Kind || object.Metadata.Name != id.Name || object.Metadata.Namespace != namespace || object.Metadata.UID == "" || object.Metadata.Generation < 1 {
-		return id, fmt.Errorf("create %s/%s returned no valid identity; it may exist or be running. No retry", id.Kind, id.Name)
+		return id, nil, fmt.Errorf("create %s/%s returned no valid identity; it may exist or be running. No retry", id.Kind, id.Name)
 	}
 	id.UID, id.Generation = object.Metadata.UID, object.Metadata.Generation
-	return id, nil
+	return id, raw, nil
 }
 
 func (a *App) readOrkaObject(ctx context.Context, namespace string, id orkaIdentity) (*orkaObject, error) {

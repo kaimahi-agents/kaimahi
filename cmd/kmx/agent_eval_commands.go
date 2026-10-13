@@ -1,14 +1,90 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-func newAgentEvalCommand() *cobra.Command {
-	group := &cobra.Command{Use: "eval", Short: "Prepare reference cases and compare saved evaluation evidence", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+func newAgentEvalCommand(state *commandState) *cobra.Command {
+	var native app.SuiteWorkspaceEvaluationOptions
+	group := &cobra.Command{
+		Use: "eval", Short: "Evaluate a native workspace or prepare and compare saved evidence",
+		Long: "Evaluate every authored case in one tool-free native-Orka workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
+			"Requires preinstalled Orka, an inference Provider/Secret and result-access ServiceAccount/RBAC. No runtime or model override, judge, subset or content output.\n" +
+			"Each case submits one fresh Task, never retried. Failure, unknown, drift or cancellation stops later cases without exporting a receipt; resources may remain.\n" +
+			"--out must be a new file in an existing private directory outside workspace/cache trees. Only full passing metadata is exported, unsigned and not a policy gate.\n" +
+			"Case inputs are sent to the runtime and model; upstream storage/audit policy may retain them. Real native CLI execution qualification remains separate from hermetic checks.",
+		Example: "  kmx eval --to-context kind-demo --inference provider:inference --out ../private/passing.json\n" +
+			"  kmx eval --workspace ./workspace --to-context remote --to-namespace orka-system --inference provider:inference --out ../private/passing.json",
+		Args: func(_ *cobra.Command, args []string) error {
+			if len(args) != 0 {
+				return fmt.Errorf("native evaluation accepts no positional references")
+			}
+			return nil
+		},
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateContainerEngineFlag(cmd, args); err != nil {
+				return err
+			}
+			if state.contextFlag != "" || cmd.Flags().Changed("context") {
+				return fmt.Errorf("--context cannot be used with native eval; use --to-context")
+			}
+			for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "out", "result-port"} {
+				if flag := cmd.Flag(name); flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
+					return fmt.Errorf("native eval requires non-empty --%s", name)
+				}
+			}
+			if native.CaseTimeout <= 0 {
+				return fmt.Errorf("native evaluation requires a positive --case-timeout")
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, _ []string) (err error) {
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			prepared, err := app.PrepareSuiteWorkspaceEvaluation(ctx, native)
+			if err != nil {
+				return err
+			}
+			defer func() { err = errors.Join(err, prepared.Close()) }()
+			selected := *state
+			selected.contextFlag = native.ToContext
+			a, err := selected.operationApplication(cmd)
+			if err != nil {
+				return err
+			}
+			a.Cfg.ContextSource = config.SourceFlag
+			// Native retry advice must not synthesize the refused global --context.
+			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine), "kmx"}
+			for _, arg := range state.argv {
+				parts = append(parts, quoteShell(arg))
+			}
+			a.InvocationCommand = strings.Join(parts, " ")
+			return a.EvaluateSuiteWorkspace(ctx, prepared)
+		},
+	}
+	group.Flags().StringVar(&native.Workspace, "workspace", "", "select an exact workspace root instead of nearest-ancestor discovery")
+	group.Flags().StringVar(&native.ToContext, "to-context", "", "explicit native evaluation context")
+	group.Flags().StringVar(&native.ToNamespace, "to-namespace", app.OrkaNamespace, "native evaluation namespace")
+	group.Flags().StringVar(&native.Inference, "inference", "", "existing inference Provider, as provider:NAME")
+	group.Flags().StringVar(&native.Out, "out", "", "new private full-passing receipt file outside workspace/cache")
+	group.Flags().DurationVar(&native.CaseTimeout, "case-timeout", 5*time.Minute, "deadline per case, at most 9m")
+	group.Flags().StringVar(&native.ResultPort, "result-port", "19180", "local loopback result-forward port")
+	_ = group.MarkFlagDirname("workspace")
+	for _, name := range []string{"to-context", "inference", "out"} {
+		_ = group.MarkFlagRequired(name)
+	}
 	diff := &cobra.Command{
 		Use:   "diff <before.json> <after.json>",
 		Short: "Compare assertion outcomes in two saved evaluation receipts",

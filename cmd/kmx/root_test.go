@@ -268,7 +268,7 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 }
 
 func TestBareGroupsShowCobraHelpWithoutLoadingConfig(t *testing.T) {
-	for _, group := range []string{"bundle", "eval", "orka", "suite", "task"} {
+	for _, group := range []string{"bundle", "orka", "suite", "task"} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
 		deps.loadConfig = func(string, string) (*config.Config, error) {

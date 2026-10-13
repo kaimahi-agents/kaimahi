@@ -17,8 +17,8 @@ kmx <noun> <verb> [object] [flags]
 ```
 
 - **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
-  `push`. Root `eval` is currently a helper-only group (`diff`, `from-sessions`),
-  not packaged evaluation. Root `lift` is not implemented.
+  `push` and full-workspace `eval`. Root `eval` also retains helpers (`diff`,
+  `from-sessions`); standalone packaged evaluation and root `lift` are not implemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
   `suite build/diff/push/pull/validate`, `orka install/status/show/list` and legacy
   `bundle evaluate/lift/retire/verify/status`. `kmx agent` is removed entirely,
@@ -48,7 +48,8 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
 | `run` | Execute once and return the result. | `kmx run` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
-| `evaluate` | Run evaluation cases against a deployed revision. | `kmx bundle evaluate <bundle-dir>` |
+| `eval` | Place and evaluate the full native workspace inventory. | `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>` |
+| `evaluate` | Run legacy bundle evaluation cases against a deployed revision. | `kmx bundle evaluate <bundle-dir>` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `lift` | Move a proven agent bundle to a prepared remote destination. | `kmx bundle lift <bundle-dir>` |
 | `retire` | Remove the workload resources a bundle owns. | `kmx bundle retire <bundle-dir>` |
