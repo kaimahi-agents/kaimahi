@@ -106,6 +106,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- Quickstart checks current-generation Agent readiness when reconnecting to an
+  existing Agent whose Kubernetes tool reference needs no change. A stale or
+  unavailable Agent no longer reaches the Ready screen through that reuse path.
+
 - `kmx eval diff` reports cases without observed Sessions runtime identity
   as individual `unknown` rows instead of hiding comparable cases. Unknown rows
   still exit nonzero; conflicting identities or no complete observed identity
