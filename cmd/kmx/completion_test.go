@@ -88,7 +88,7 @@ func TestCompletionExcludesRetiredApprovalCommands(t *testing.T) {
 		want      []string
 		forbidden []string
 	}{
-		{[]string{"__complete", ""}, []string{"create", "chat", "run", "bundle", "eval", "push", "quickstart", "status", ":4"}, []string{"approve", "approvals", "deny", "request", "grants", "audit", "budget", "credential", "flow", "watch"}},
+		{[]string{"__complete", ""}, []string{"create", "chat", "run", "eval", "push", "quickstart", "status", ":4"}, []string{"approve", "approvals", "deny", "request", "grants", "audit", "budget", "credential", "flow", "watch"}},
 		{[]string{"__complete", "ap"}, []string{":4"}, []string{"approve", "approvals"}},
 		{[]string{"__complete", "au"}, []string{":4"}, []string{"audit"}},
 	} {

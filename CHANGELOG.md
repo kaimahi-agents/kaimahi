@@ -66,6 +66,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- `kmx bundle` (legacy `agent.yaml` lift, status, evaluate, retire, verify) is hidden from
+  help and completion ahead of its removal; the commands still run.
+
 - Future local kind nodes created by `kmx quickstart` or `kmx local up` use a
   5s kubelet sync frequency on Docker and Podman. Existing or recovered clusters
   and AKS nodes are not modified. This is intended to reduce webhook Secret
