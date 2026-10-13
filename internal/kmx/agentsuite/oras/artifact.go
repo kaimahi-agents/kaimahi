@@ -97,8 +97,8 @@ func ReadArtifactLayout(ctx context.Context, layout, digest string) (a *Artifact
 	return readArtifact(ctx, source, selected, digest)
 }
 
-// ReadArtifactRegistry uses existing pull authentication/transport, never push
-// credentials, mutable tags, referrer discovery or external descriptor URLs.
+// ReadArtifactRegistry uses existing registry credentials/transport for pull-only
+// operations, without publication, tags, referrers or external descriptor URLs.
 func ReadArtifactRegistry(ctx context.Context, reference string, plainHTTP bool) (a *Artifact, err error) {
 	defer func() { err = artifactError(ctx, err) }()
 	parsed, err := registry.ParseReference(reference)
@@ -252,6 +252,15 @@ func artifactFiles(ctx context.Context, compressed []byte) (map[string][]byte, e
 	for entries := 0; ; entries++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		// Next consumes PAX/GNU metadata internally, so inspect each physical
+		// header before allowing it to hide records from type/count checks.
+		offset := (len(raw) - stream.Len() + 511) / 512 * 512
+		if offset+512 <= len(raw) {
+			kind := raw[offset+156]
+			if kind != tar.TypeReg && kind != tar.TypeRegA && kind != tar.TypeDir {
+				return nil, ErrArtifact
+			}
 		}
 		h, err := reader.Next()
 		if errors.Is(err, io.EOF) {
