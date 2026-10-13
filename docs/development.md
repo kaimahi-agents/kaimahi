@@ -57,7 +57,16 @@ prepares workspace/inventory/export offline before configuration, then consents
 once to native pair placement and all ordered one-shot Tasks. Only a full pass
 exports privately. `push --evaluation FILE` uses the strict file consumer;
 ordinary push and legacy bundle evaluation remain separate. Hermetic tests cover
-these paths; real native CLI qualification remains deferred.
+these paths. The existing Orka runtime shard now invokes the bounded
+[suite qualifier](../scripts/ci/suite-native.py) after its legacy model proof.
+It uses the [fixed CPU AIKit workload](../scripts/ci/native-suite-model.yaml),
+existing model configuration and installer Secret reference in the same owned
+cluster. One full-workspace evaluation is followed by independent live readback,
+exact-S local-layout transfer and ownership/unsupported-evaluator refusal audits.
+Private command captures are never artifacts; only passing receipt metadata and
+a scalar qualification report are uploaded. A successful run qualifies the fixed
+two-case native workspace scenario; hermetic tests alone do not establish runtime
+execution. This adds no release lift or standalone packaged evaluation.
 
 ## Repository layout
 
