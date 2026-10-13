@@ -177,8 +177,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   | `kmx suite push --workspace DIR REF` | `kmx push --workspace DIR REF` |
   | `kmx suite push REF` | `kmx push REF` |
 
-  Bare `kmx agent` and `kmx agent eval` no longer exist; `kmx eval` prints
-  helper-group help. The hidden editor retirement stub is also removed with its parent;
+  Bare `kmx agent` and `kmx agent eval` no longer exist. Workspace `kmx eval`
+  requires `--to-context`, `--inference` and `--out`; use `kmx eval --help` for
+  help and evaluation helpers. The hidden editor retirement stub is also removed with its parent;
   edit live Orka resources with `kubectl --context <ctx> -n <ns> edit agents.core.orka.ai <name>`.
   Task retrieval remains `kmx task result`; no root `result` is added.
   These spellings require a current development build; tagged v0.5.1 retains
