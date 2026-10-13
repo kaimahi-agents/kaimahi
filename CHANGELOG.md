@@ -41,8 +41,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   exact registry/local-layout retrieval, source-free closed packaged loading,
   mandatory private passing-receipt coherence and exact target/binding/runtime
   checks. GET-only review refuses resource drift/adoption and retains evaluated
-  UID/generation/spec proof. No CLI, apply, admission, cross-target promotion or
-  authenticated-evidence claim is enabled. [Planning boundary](docs/suite-workspace.md#digest-lift).
+  UID/generation/spec proof. No authenticated-evidence claim is made.
+  [Planning boundary](docs/suite-workspace.md#digest-lift).
 
 - One-member workspace authoring/prepare/load supports explicit kagent v0.10.3
   Go/linux-amd64 alongside default Orka. Runtime is bound in private native
