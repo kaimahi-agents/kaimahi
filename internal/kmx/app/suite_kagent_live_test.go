@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
@@ -30,7 +31,7 @@ func TestLiveSuiteKagentPlacement(t *testing.T) {
 	var output bytes.Buffer
 	runner := run.Default()
 	runner.Stdout, runner.Stderr, runner.Echo = &output, &output, false
-	a := &App{Cfg: &config.Config{KubeContext: "kind-kmx-kagent-lift"}, Run: runner, Out: &output, Err: &output}
+	a := &App{Cfg: &config.Config{KubeContext: "kind-kmx-kagent-lift", ContextSource: config.SourceFlag}, Run: runner, Out: &output, Err: &output}
 	if err := requireLiveLocalKind(t.Context(), a); err != nil {
 		t.Fatal("suite helper qualification target is not local kind")
 	}
@@ -38,6 +39,9 @@ func TestLiveSuiteKagentPlacement(t *testing.T) {
 	writes := 0
 	a.captureCommand = func(_ context.Context, cmd *exec.Cmd) error {
 		for _, arg := range cmd.Args {
+			if arg == "auth" { // can-i create is a read, not an admission
+				break
+			}
 			if arg == "create" || arg == "apply" || arg == "replace" || arg == "patch" || arg == "delete" {
 				writes++
 				break
@@ -47,10 +51,21 @@ func TestLiveSuiteKagentPlacement(t *testing.T) {
 	}
 	counts := func() map[string]any {
 		t.Helper()
-		raw, err := a.kagentCapture(t.Context(), nil, "get", "--raw", "/api/v1/namespaces/agents/services/http:lift-fixture:9000/proxy/evidence")
+		// Do not append kubectl's timeout query: Service proxy forwards it to
+		// the fixture's closed /evidence route. Bound the subprocess instead.
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		defer cancel()
+		prepared := a.Command("get", "--raw", "/api/v1/namespaces/agents/services/http:lift-fixture:9000/proxy/evidence")
+		cmd := exec.CommandContext(ctx, prepared.Path, prepared.Args[1:]...)
+		cmd.Env = prepared.Env
+		out := &orkaBoundedBuffer{remaining: 1 << 20}
+		cmd.Stdout, cmd.Stderr = out, &output
+		if err := a.executeCapture(ctx, cmd); err != nil {
+			t.Fatalf("cannot observe bounded deterministic fixture counters: %v", err)
+		}
 		var evidence map[string]any
-		if err != nil || json.Unmarshal(raw, &evidence) != nil {
-			t.Fatal("cannot observe bounded deterministic fixture counters")
+		if err := json.Unmarshal(out.buffer.Bytes(), &evidence); err != nil {
+			t.Fatalf("fixture counter response is not JSON: %v", err)
 		}
 		return evidence
 	}
@@ -74,11 +89,11 @@ func TestLiveSuiteKagentPlacement(t *testing.T) {
 	binding := agentruntime.KagentBindings{APIVersion: agentruntime.KagentBindingsAPIVersion, Kind: agentruntime.KagentBindingsKind, Namespace: "agents", ModelConfig: agentruntime.KagentModelConfigBindings{Provider: "openai", BaseURL: "http://lift-fixture.agents.svc.cluster.local:9000/v1", SecretRef: agentruntime.KagentSecretRefBindings{Name: "lift-model-key", Key: "api-key"}}}
 	prepared, err := a.prepareSuiteKagent(t.Context(), suite, binding)
 	if err != nil || writes != 0 {
-		t.Fatal("suite preparation failed or performed admission/mutation")
+		t.Fatalf("suite preparation failed or performed admission/mutation: %v (effects %d)", err, writes)
 	}
 	placed, err := a.placeSuiteKagent(t.Context(), prepared, nil)
 	if err != nil || placed.Observation == nil || len(placed.Outcomes) != 2 {
-		t.Fatal("suite placement failed; inspect private shard logs")
+		t.Fatalf("suite placement failed; inspect private shard logs: %v (outcomes %+v)", err, placed.Outcomes)
 	}
 	for _, resource := range placed.Outcomes {
 		if resource.Outcome != agentruntime.ResourceCreated || resource.UID == "" || resource.Generation < 1 {
@@ -88,7 +103,7 @@ func TestLiveSuiteKagentPlacement(t *testing.T) {
 	baselineWrites := writes
 	repeated, err := a.placeSuiteKagent(t.Context(), prepared, placed.Observation)
 	if err != nil || writes != baselineWrites || !reflect.DeepEqual(repeated.Observation, placed.Observation) {
-		t.Fatal("record-bound suite repeat changed identities or wrote resources")
+		t.Fatalf("record-bound suite repeat changed identities or wrote resources: %v (effects %d -> %d)", err, baselineWrites, writes)
 	}
 	if _, err = a.placeSuiteKagent(t.Context(), prepared, nil); err == nil || !strings.Contains(err.Error(), "occupied") || writes != baselineWrites {
 		t.Fatal("occupied suite target was admitted or adopted without proof")

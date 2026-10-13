@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -37,13 +38,23 @@ func (a *App) placeSuiteKagent(ctx context.Context, p *suiteKagentPrepared, expe
 	for _, proof := range p.proofs {
 		result.Outcomes = append(result.Outcomes, suiteKagentOutcome{Kind: proof.Kind, Name: proof.Name, Namespace: ns, Outcome: "not-attempted"})
 	}
-	fail := func() (suiteKagentPlacement, error) {
-		return result, fmt.Errorf("suite Kagent placement refused or failed; retained outcomes require inspection, no retry or later writes")
+	fail := func(stage string, cause error) (suiteKagentPlacement, error) {
+		message := "suite Kagent placement failed at " + stage + "; retained outcomes require inspection, no retry or later writes"
+		// Preserve cancellation identity, not untrusted subprocess/payload text.
+		if ctx.Err() != nil {
+			return result, fmt.Errorf("%s: %w", message, ctx.Err())
+		}
+		for _, cancellation := range []error{context.Canceled, context.DeadlineExceeded} {
+			if errors.Is(cause, cancellation) {
+				return result, fmt.Errorf("%s: %w", message, cancellation)
+			}
+		}
+		return result, errors.New(message)
 	}
 	if expected != nil {
 		observed, e := w.observeSuiteKagent(ctx, p, expected)
 		if e != nil {
-			return fail()
+			return fail("retained-proof reuse", e)
 		}
 		result.Observation = observed
 		for i, id := range observed.Resources {
@@ -75,8 +86,8 @@ func (a *App) placeSuiteKagent(ctx context.Context, p *suiteKagentPrepared, expe
 		return result, err
 	}
 	// Consent is never preparation and always precedes server admission.
-	if w.guardKagentOperation(ctx, ns, "place private suite Kagent ModelConfig and Agent", "") != nil {
-		return fail()
+	if e := w.guardKagentOperation(ctx, ns, "place private suite Kagent ModelConfig and Agent", ""); e != nil {
+		return fail("destination consent", e)
 	}
 	admitted := make([]kagentObjectProof, len(p.documents))
 	for i, doc := range p.documents {
@@ -88,17 +99,20 @@ func (a *App) placeSuiteKagent(ctx context.Context, p *suiteKagentPrepared, expe
 		}
 		body, e := json.Marshal(doc)
 		if e != nil {
-			return fail()
+			return fail("document encoding", e)
 		}
 		admitCtx, cancel := w.waitContext(ctx, "kagent-admission", 0)
 		raw, e := w.kagentCapture(admitCtx, body, "-n", ns, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
+		if e != nil && admitCtx.Err() != nil {
+			e = admitCtx.Err()
+		}
 		cancel()
 		if e != nil {
-			return fail()
+			return fail("admission request", e)
 		}
 		admitted[i], e = validateKagentAdmissionProof(raw, doc, p.proofs[i])
 		if e != nil {
-			return fail()
+			return fail("admission proof", e)
 		}
 	}
 	ids := make([]kagentIdentity, 0, len(p.documents))
@@ -115,13 +129,13 @@ func (a *App) placeSuiteKagent(ctx context.Context, p *suiteKagentPrepared, expe
 		} else {
 			obj, e := w.readKagentObject(ctx, ns, ids[0])
 			if e != nil {
-				return fail()
+				return fail("created ModelConfig proof", e)
 			}
 			if state, _ := kagentPrimaryReadiness(obj, ids[0]); state != "" {
-				return fail()
+				return fail("created ModelConfig readiness", nil)
 			}
 			if w.kagentAbsent(ctx, ns, doc) != nil || w.kagentGeneratedChildrenAbsent(ctx, ns, p.subject.Member) != nil {
-				return fail()
+				return fail("Agent/child absence", nil)
 			}
 		}
 		result.Outcomes[i].Outcome = "unknown"
@@ -132,33 +146,36 @@ func (a *App) placeSuiteKagent(ctx context.Context, p *suiteKagentPrepared, expe
 			result.Outcomes[i].Outcome = agentruntime.ResourceCreated
 		}
 		if e != nil {
-			return fail()
+			return fail("conditional create "+id.Kind, e)
 		}
 		ids = append(ids, id)
 		readyCtx, cancel := w.waitContext(ctx, "kagent-readiness-"+id.Kind, kagentReadinessTimeout)
 		e = w.waitKagentReady(readyCtx, ns, id)
+		if e != nil && readyCtx.Err() != nil {
+			e = readyCtx.Err()
+		}
 		cancel()
 		if e != nil {
-			return fail()
+			return fail("created "+id.Kind+" readiness", e)
 		}
 	}
 	expected = &suiteKagentObservation{Subject: p.subject}
 	for _, id := range ids {
 		digest, e := kagentSpecFingerprint(id.Proof.Spec)
 		if e != nil {
-			return fail()
+			return fail("created spec fingerprint", e)
 		}
 		expected.Resources = append(expected.Resources, agentruntime.ResourceEvidence{Kind: id.Kind, Name: id.Name, Namespace: ns, UID: id.UID, Generation: id.Generation, SpecDigest: digest})
 	}
 	children, images, e := w.suiteKagentChildren(ctx, ns, ids[1])
 	if e != nil {
-		return fail()
+		return fail("generated workload proof", e)
 	}
 	expected.Children = children
 	expected.Images = images
 	observed, e := w.observeSuiteKagent(ctx, p, expected)
 	if e != nil {
-		return fail()
+		return fail("final placement proof", e)
 	}
 	result.Observation = observed
 	return result, nil

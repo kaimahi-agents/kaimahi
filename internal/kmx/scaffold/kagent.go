@@ -94,6 +94,16 @@ func ValidateKagentSecretKey(key string) error {
 // GenerateKagent builds a review-only Secret/ModelConfig/Agent bundle for the
 // exact v0.10.2 API without cluster or schema I/O.
 func GenerateKagent(spec KagentSpec) (*KagentBundle, error) {
+	return generateKagent(spec, false)
+}
+
+// GenerateSuiteKagent preserves a suite member's optional description. The
+// legacy review-bundle entry point still requires an explicit description.
+func GenerateSuiteKagent(spec KagentSpec) (*KagentBundle, error) {
+	return generateKagent(spec, true)
+}
+
+func generateKagent(spec KagentSpec, optionalDescription bool) (*KagentBundle, error) {
 	inputs := []string{spec.Name, spec.Namespace, spec.Description, spec.Runtime, spec.Instructions,
 		spec.ProviderType, spec.Model, spec.BaseURL, spec.SecretName, spec.SecretKey}
 	for _, binding := range spec.Tools {
@@ -111,7 +121,7 @@ func GenerateKagent(spec KagentSpec) (*KagentBundle, error) {
 	if err := ValidateNamespace(spec.Namespace); err != nil {
 		return nil, fmt.Errorf("an explicit Kagent namespace is required: %w", err)
 	}
-	if strings.TrimSpace(spec.Description) == "" {
+	if !optionalDescription && strings.TrimSpace(spec.Description) == "" {
 		return nil, fmt.Errorf("Kagent description is required")
 	}
 	if err := ValidateSingleLineText(spec.Description); err != nil {
@@ -146,7 +156,7 @@ func GenerateKagent(spec KagentSpec) (*KagentBundle, error) {
 	}
 
 	bundle := buildKagentBundle(spec)
-	if err := bundle.Validate(); err != nil {
+	if err := bundle.validate(optionalDescription); err != nil {
 		return nil, err
 	}
 	return bundle, nil
@@ -273,6 +283,10 @@ func kagentResource(apiVersion, kind, name, namespace string) map[string]any {
 // explicit runtime and MCP allowlists, hardened pod shape, and value-free
 // Secret independently of the upstream CRD's weaker optional defaults.
 func (b *KagentBundle) Validate() error {
+	return b.validate(false)
+}
+
+func (b *KagentBundle) validate(optionalDescription bool) error {
 	if b == nil || b.Secret == nil || b.ModelConfig == nil || b.Agent == nil {
 		return fmt.Errorf("a Kagent bundle requires a metadata-only Secret, ModelConfig and Agent")
 	}
@@ -347,7 +361,7 @@ func (b *KagentBundle) Validate() error {
 		return fmt.Errorf("Agent.spec must explicitly describe a Declarative agent")
 	}
 	description, ok := agentSpec["description"].(string)
-	if !ok || strings.TrimSpace(description) == "" {
+	if !ok || (!optionalDescription && strings.TrimSpace(description) == "") {
 		return fmt.Errorf("Agent.spec.description must be explicitly stated and nonempty")
 	}
 	declarative, ok := agentSpec["declarative"].(map[string]any)

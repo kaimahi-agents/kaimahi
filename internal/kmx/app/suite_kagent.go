@@ -63,7 +63,7 @@ func (a *App) prepareSuiteKagent(ctx context.Context, s *workspace.NativeSuite, 
 		profile = *a.kagentProfile
 	}
 	worker.kagentProfile = &profile
-	bundle, err := scaffold.GenerateKagent(scaffold.KagentSpec{Name: s.MemberID, Namespace: b.Namespace, Description: s.Description, Runtime: "go", Instructions: string(s.Instructions), ProviderType: b.ModelConfig.Provider, Model: s.Model, BaseURL: b.ModelConfig.BaseURL, SecretName: b.ModelConfig.SecretRef.Name, SecretKey: b.ModelConfig.SecretRef.Key})
+	bundle, err := scaffold.GenerateSuiteKagent(scaffold.KagentSpec{Name: s.MemberID, Namespace: b.Namespace, Description: s.Description, Runtime: "go", Instructions: string(s.Instructions), ProviderType: b.ModelConfig.Provider, Model: s.Model, BaseURL: b.ModelConfig.BaseURL, SecretName: b.ModelConfig.SecretRef.Name, SecretKey: b.ModelConfig.SecretRef.Key})
 	if err != nil {
 		return nil, fmt.Errorf("suite Kagent packaged behavior cannot be rendered")
 	}

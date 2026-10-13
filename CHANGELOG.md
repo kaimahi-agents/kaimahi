@@ -38,7 +38,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   metadata and the exact OCI manifest; publication copies that prepared graph
   without images or cluster effects. Invalid/unsupported runtime declarations
   refuse; Orka-only preparation/evidence consumers do not execute kagent input.
-  Suite kagent placement/evaluation/gates and RemoteMCP remain future slices.
+  CLI/release-lift kagent placement, suite evaluation/gates and RemoteMCP
+  remain future slices.
   Existing live kagent v0.10.2 create is unchanged.
   [Offline native workspace profiles](docs/suite-workspace.md).
 

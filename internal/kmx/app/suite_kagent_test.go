@@ -57,6 +57,22 @@ func TestSuiteKagentPrepareExactReadOnly(t *testing.T) {
 	}
 }
 
+func TestSuiteKagentPreservesEmptyOptionalDescription(t *testing.T) {
+	a, s, b, dir := suiteKagentFixture(t, "")
+	s.Description = ""
+	p, err := a.prepareSuiteKagent(t.Context(), s, b)
+	if err != nil {
+		t.Fatal("valid optional description refused", err)
+	}
+	if description, exists := p.bundle.Agent["spec"].(map[string]any)["description"]; exists && description != "" {
+		t.Fatal("empty packaged description substituted")
+	}
+	if err := p.bundle.Validate(); err == nil || !strings.Contains(err.Error(), "description") {
+		t.Fatal("legacy review-bundle validation was weakened", err)
+	}
+	assertKagentReadOnlyCalls(t, kagentCalls(t, dir))
+}
+
 func TestSuiteKagentPrepareRefusesUnsupported(t *testing.T) {
 	for _, tc := range []struct {
 		name, scenario string
@@ -175,6 +191,29 @@ func TestSuiteKagentDriftBeforeEveryEffect(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSuiteKagentAdmissionCancellationRetainsReason(t *testing.T) {
+	a, s, b, dir := suiteKagentFixture(t, "")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	capture := a.captureCommand
+	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+		if slices.Contains(cmd.Args, "--dry-run=server") {
+			cancel()
+			return context.Canceled
+		}
+		return capture(ctx, cmd)
+	}
+	p, err := a.prepareSuiteKagent(ctx, s, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.placeSuiteKagent(ctx, p, nil)
+	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "admission request") || result.Observation != nil {
+		t.Fatalf("cancellation reason lost: %v", err)
+	}
+	assertKagentWriteKinds(t, kagentCalls(t, dir))
 }
 
 func TestSuiteKagentSecondCreateTransportFailure(t *testing.T) {
