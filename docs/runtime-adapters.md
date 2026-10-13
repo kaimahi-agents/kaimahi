@@ -77,8 +77,12 @@ proof required for read-only reuse. Root suite `eval --bindings FILE` now execut
 all packaged cases with fresh blocking A2A Tasks and exports only full passing
 runtime-specific suite evidence. It requires auth: unsecure only; trusted-proxy
 is refused before admission/send. No Secret is created. The placement helpers
-remain separate from the release-lift seam; suite kagent status/lift/gates remain
-unavailable and Orka lift refuses kagent evidence. The declared build-profile images are inert, not Go ADK dependencies.
+feed the shared release-lift seam: root digest lift consumes runtime-matching
+suite evidence and author-owned bindings, creates new ModelConfig/Agent resources
+only, and refuses any occupied target. Explicit same-package/model/profile promotion
+retains AuthMode and the full controller/Go image digest/platform inventories;
+source evidence is not destination evaluation or authenticated authorization.
+Suite status/retirement remain unavailable and Orka evidence never authorizes kagent. The declared build-profile images are inert, not Go ADK dependencies.
 Live v0.10.2 create and v0.10.3 bundle operations above are unchanged.
 
 No standalone `logs`, arbitrary `diff` or `rollback` capability is advertised.

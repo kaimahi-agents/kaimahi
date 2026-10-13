@@ -100,8 +100,10 @@ are unreleased.
 Root `eval` evaluates a full packaged native Orka/kagent workspace and retains offline `diff` and
 `from-sessions` helpers. Standalone packaged evaluation remains unimplemented.
 Root `lift <ref>@<digest>` deploys an evaluated native suite from a registry or
-`--from-layout`, with explicit `--to-context`, `--inference provider:NAME` and
-private `--evidence FILE`. `--plan` is GET-only; `--promote` explicitly selects
+`--from-layout`, with explicit `--to-context` and private `--evidence FILE`.
+Orka requires `--inference provider:NAME`; packaged kagent instead requires
+author-owned `--bindings FILE`. Kagent is create-only and refuses occupied targets,
+even when evaluation UIDs match; evidence never crosses runtimes. `--plan` is GET-only; `--promote` explicitly selects
 source-only evidence for an eligible different destination. No model/runtime
 override, build, repack, publish, update or adoption. Reports support `-o json`.
 See [digest lift](suite-workspace.md#digest-lift) for gates and partial outcomes. See the

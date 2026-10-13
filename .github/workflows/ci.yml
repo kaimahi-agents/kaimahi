@@ -143,6 +143,7 @@ jobs:
           python3 scripts/test_kagent_lift_qualify.py
           python3 scripts/test_kagent_lift_ci.py
           python3 scripts/test_suite_native.py
+          python3 scripts/test_suite_kagent.py
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken

@@ -28,6 +28,7 @@ type ReleaseLiftResult struct {
 	State     string               `json:"state"`
 	Resources []ReleaseLiftOutcome `json:"resources"`
 	placement *suiteNativePlacement
+	kagent    *releaseLiftKagentPlacement
 }
 
 type releaseLiftInputs struct {
@@ -79,6 +80,12 @@ func (a *App) recheckReleaseLiftInputs(ctx context.Context, p *PreparedReleaseLi
 		return err
 	}
 	if godigest.FromBytes(in.evidence).String() != p.summary.EvidenceDigest {
+		return ErrReleaseLiftApply
+	}
+	if p.kagent != nil {
+		return a.recheckReleaseLiftKagentInputs(ctx, p, in)
+	}
+	if in.suite.Runtime.ID != "orka" || in.receipt.ExecutionMode != "native-orka" {
 		return ErrReleaseLiftApply
 	}
 	current, err := a.prepareSuiteNative(ctx, in.suite, p.options.ToNamespace, strings.TrimPrefix(p.options.Inference, "provider:"))
@@ -152,10 +159,13 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			if cause == nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 				cause = errContext(err)
 			}
+			if errors.Is(err, errSuiteKagentOccupied) {
+				cause = errors.Join(cause, errSuiteKagentOccupied)
+			}
 			err = errors.Join(ErrReleaseLiftApply, cause)
 		}
 	}()
-	if a == nil || a.Cfg == nil || a.Run == nil || p == nil || p.native == nil || reviewedDigest == "" || reviewedDigest != p.summary.PlanDigest {
+	if a == nil || a.Cfg == nil || a.Run == nil || p == nil || (p.native == nil) == (p.kagent == nil) || reviewedDigest == "" || reviewedDigest != p.summary.PlanDigest {
 		return result, ErrReleaseLiftApply
 	}
 	result.Summary = p.Summary()
@@ -169,55 +179,51 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 		return result, ErrReleaseLiftApply
 	}
 	worker := a.releaseLiftWorker(ctx, p.options)
-	created := make([]suiteNativeOwnedResource, 2)
+	if p.kagent != nil {
+		// Preserve the closed qualified profile, but use this invocation's App
+		// transports and context rather than a preparation-time worker.
+		profile := p.kagent.prepared.worker.selectedKagentProfile()
+		worker.kagentProfile = &profile
+	}
+	created := make([]releaseLiftEffect, 2)
 	recheck := func() error {
 		if err := worker.recheckReleaseLiftInputs(ctx, p); err != nil {
 			return err
 		}
-		return worker.checkReleaseLiftLeaves(ctx, p, created)
+		return worker.checkReleaseLiftRuntimeLeaves(ctx, p, created)
 	}
 	if err := recheck(); err != nil {
 		return result, err
 	}
-	if err := worker.guardOrkaMutation(ctx, CreateOptions{Name: p.summary.Member, Namespace: p.summary.Target.Namespace}, "create absent or reuse exact evaluated suite Provider and Agent in "+p.summary.Target.Namespace); err != nil {
+	if err := worker.guardReleaseLift(ctx, p); err != nil {
 		guardFailure = true
 		return result, err
 	}
 	if err := recheck(); err != nil {
 		return result, err
 	}
-	docs := make([]map[string]any, 0, 2)
-	for _, desired := range []map[string]any{p.native.bundle.Provider, p.native.bundle.Agent} {
-		doc, err := cloneOrkaDoc(desired)
-		if err != nil {
-			return result, err
-		}
-		addOrkaMarker(doc, suiteNativeOwner(p.native.Subject).markers())
-		docs = append(docs, doc)
+	docs, err := p.releaseDocuments()
+	if err != nil {
+		return result, err
 	}
+	admitted := make([]releaseLiftAdmission, len(docs))
 	// Preflight both creations before the first persistent write. Reuse never
 	// enters admission, and no Secret skeleton or Task belongs to this path.
 	for i, doc := range docs {
 		if p.summary.Resources[i].Action != "create" {
 			continue
 		}
-		body, err := json.Marshal(doc)
-		if err != nil {
+		if err := recheck(); err != nil {
 			return result, err
 		}
-		raw, err := worker.orkaCapture(ctx, body, "-n", p.summary.Target.Namespace, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
+		admitted[i], err = worker.admitReleaseLift(ctx, p, i, doc)
 		if err != nil {
-			return result, err
-		}
-		if _, err := releaseLiftAdmitted(p.native.Subject, doc, raw, false); err != nil {
 			return result, err
 		}
 	}
 	if err := recheck(); err != nil {
 		return result, err
 	}
-	placement := &suiteNativePlacement{Subject: p.native.Subject}
-	proofs := []*suiteNativeOwnedResource{&placement.Provider, &placement.Agent}
 	for i, doc := range docs {
 		if err := recheck(); err != nil {
 			return result, err
@@ -228,18 +234,11 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			// recovery GET, retry, adoption, rollback or invented acknowledged UID.
 			result.State, row.Outcome = "partial", "unknown"
 			row.UID, row.Generation, row.ResourceVersion, row.SpecDigest = "", 0, "", ""
-			id, raw, err := worker.createOrkaObjectObserved(ctx, p.summary.Target.Namespace, doc)
+			created[i], err = worker.createReleaseLift(ctx, p, doc, admitted[i], row)
 			if err != nil {
 				return result, err
 			}
-			row.Outcome, row.UID, row.Generation = "created", id.UID, id.Generation
-			proof, err := releaseLiftAdmitted(p.native.Subject, doc, raw, true)
-			if err != nil {
-				return result, err
-			}
-			created[i] = proof
-			row.SpecDigest = proof.SpecDigest
-			if err := worker.waitOrkaReady(ctx, p.summary.Target.Namespace, id); err != nil {
+			if err := worker.waitReleaseLift(ctx, p, doc, created[i]); err != nil {
 				return result, err
 			}
 		} else {
@@ -248,20 +247,28 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 		if err := recheck(); err != nil {
 			return result, err
 		}
-		row.Ready = true
-		proof := releaseLiftProof(p, i)
-		if created[i].UID != "" {
-			proof = created[i]
-		}
-		*proofs[i] = proof
+		// Agent readiness includes its exact source workload inventory; defer
+		// that credit until the complete private final proof succeeds.
+		row.Ready = p.kagent == nil || i == 0
 	}
 	if err := recheck(); err != nil {
 		return result, err
 	}
-	if err := worker.verifySuiteNative(ctx, placement); err != nil {
+	if err := worker.finishReleaseLift(ctx, p, created, &result); err != nil {
 		return result, err
 	}
-	result.State, result.placement = "ready", placement
+	// Final full input/name checkpoint also binds artifact, E and binding-file
+	// identity after the workload proof and before granting success authority.
+	if p.kagent != nil {
+		if err := recheck(); err != nil {
+			result.kagent = nil
+			return result, err
+		}
+	}
+	if p.kagent != nil {
+		result.Resources[1].Ready = true
+	}
+	result.State = "ready"
 	return result, nil
 }
 
@@ -310,8 +317,22 @@ func (a *App) VerifyReleaseLiftPlacement(ctx context.Context, result ReleaseLift
 			err = errors.Join(ErrReleaseLiftApply, ctx.Err())
 		}
 	}()
-	if a == nil || a.Cfg == nil || a.Run == nil || result.State != "ready" || result.placement == nil {
+	if a == nil || a.Cfg == nil || a.Run == nil || result.State != "ready" || (result.placement == nil) == (result.kagent == nil) {
 		return ErrReleaseLiftApply
+	}
+	if result.kagent != nil {
+		k := result.kagent
+		if k.bindings.recheck() != nil {
+			return ErrReleaseLiftApply
+		}
+		worker := a.releaseLiftWorker(ctx, ReleaseLiftOptions{ToContext: k.prepared.subject.Target.Context})
+		profile := k.prepared.worker.selectedKagentProfile()
+		worker.kagentProfile = &profile
+		_, err := worker.observeSuiteKagent(ctx, k.prepared, k.observation)
+		if err != nil {
+			return err
+		}
+		return k.bindings.recheck()
 	}
 	worker := a.releaseLiftWorker(ctx, ReleaseLiftOptions{ToContext: result.placement.Subject.Target.Context})
 	return worker.verifySuiteNative(ctx, result.placement)

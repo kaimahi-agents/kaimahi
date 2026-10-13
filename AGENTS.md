@@ -33,7 +33,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
   Root eval supports the packaged kagent profile with author-owned --bindings;
   evaluated push consumes matching runtime-specific full-passing suite evidence.
-  Suite status/lift/gates remain unavailable; evidence never crosses runtimes.
+  Suite status/retirement remain unavailable; digest lift uses the common release
+  seam with runtime-matching evidence and author-owned kagent bindings. Kagent
+  lift is create-only, refusing occupied primaries/children even with matching
+  evaluated UIDs; evidence never crosses runtimes.
   Private runtime-specific kagent prepare/place/observe helpers are separate from
   W250's common release-lift/dispatch/evidence seam. They create new ModelConfig
   and Agent objects or reuse a complete caller-retained observation read-only;
@@ -75,7 +78,15 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Ready openai Provider declaring the same model; destination resources must be
   absent. Source evidence remains distinct, not destination evaluation or signer
   authorization. Planning makes no admission, writes, Tasks or placement records;
-  summaries contain identities and cannot mutate retained inputs. ApplyReleaseLift
+  summaries contain identities and cannot mutate retained inputs. Kagent uses
+  --bindings, never --inference, and derives namespace from the anchored bindings.
+  Explicit promotion projects only approved physical identities/refs/installation
+  fields; package/member/model/profile/provider kind/AuthMode and the full
+  controller plus Go image digest/platform inventories remain exact. Unknown
+  fields compare by default. Go workload image proof is observed after creation;
+  mismatch leaves partial resources with no successful placement authority.
+  No lift Tasks/model calls, fake Provider or destination evaluation is implied.
+  ApplyReleaseLift
   is guarded and single-use, rechecks artifact/evidence/target/owned proof, preflights
   both creates after the guard, and only conditionally creates or exactly reuses.
   Partial outcomes retain acknowledged UIDs and readiness separately; no update,

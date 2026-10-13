@@ -11,19 +11,17 @@ import (
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	godigest "github.com/opencontainers/go-digest"
 )
 
 var ErrReleaseLift = errors.New("release lift planning refused; no native admission or placement")
-var errReleaseLiftKagentEvidence = errors.New("release lift does not support native-kagent evidence")
 
 // ReleaseLiftOptions selects retrieval, access and evidence, never runtime/model.
 // FromLayout uses the digest in Reference; otherwise Reference is a registry ref.
 type ReleaseLiftOptions struct {
-	Reference, FromLayout, ToContext, ToNamespace, Inference, Evidence string
-	PlainHTTP, Promote                                                 bool
+	Reference, FromLayout, ToContext, ToNamespace, Inference, Evidence, Bindings string
+	PlainHTTP, Promote                                                           bool
 }
 
 type ReleaseLiftTarget struct {
@@ -70,6 +68,7 @@ type PreparedReleaseLift struct {
 	options  ReleaseLiftOptions
 	artifact *suiteoras.Artifact
 	native   *suiteNativePrepared
+	kagent   *releaseLiftKagent
 	receipt  *suitePassingReceipt
 	summary  ReleaseLiftSummary
 	started  atomic.Bool
@@ -96,25 +95,14 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 					}
 				}
 			}
-			if errors.Is(err, errReleaseLiftKagentEvidence) {
-				cause = errors.Join(cause, errReleaseLiftKagentEvidence)
+			if errors.Is(err, errSuiteKagentOccupied) {
+				cause = errors.Join(cause, errSuiteKagentOccupied)
 			}
 			err = errors.Join(ErrReleaseLift, cause)
 		}
 	}()
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	// Fence the closed runtime branch before configuration or Orka fields.
-	receipt, err := readSuitePassingReceipt(ctx, opt.Evidence)
-	if err != nil {
-		return nil, err
-	}
-	if receipt.ExecutionMode == "native-kagent" {
-		return nil, errReleaseLiftKagentEvidence
-	}
-	if opt.ToNamespace == "" {
-		opt.ToNamespace = OrkaNamespace
 	}
 	if a == nil || a.Cfg == nil || a.Run == nil || ValidateReleaseLiftOptions(opt) != nil {
 		return nil, ErrReleaseLift
@@ -125,10 +113,21 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 		return nil, err
 	}
 	artifact, suite, receipt, evidence := inputs.artifact, inputs.suite, inputs.receipt, inputs.evidence
-	worker := *a.withRunContext(ctx)
-	cfg := *a.Cfg
-	cfg.KubeContext, cfg.ContextSource = opt.ToContext, config.SourceFlag
-	worker.Cfg = &cfg
+	// Closed packaged runtime and canonical E select the only allowed selector
+	// before any cluster observation. Evidence never supplies an Orka alias.
+	worker := a.releaseLiftWorker(ctx, opt)
+	if suite.Runtime.ID == "kagent" {
+		if opt.Bindings == "" || receipt.ExecutionMode != "native-kagent" {
+			return nil, ErrReleaseLift
+		}
+		return worker.prepareReleaseLiftKagent(ctx, opt, inputs)
+	}
+	if opt.Bindings != "" || receipt.ExecutionMode != "native-orka" {
+		return nil, ErrReleaseLift
+	}
+	if opt.ToNamespace == "" {
+		opt.ToNamespace = OrkaNamespace
+	}
 	native, err := worker.prepareSuiteNative(ctx, suite, opt.ToNamespace, provider)
 	if err != nil {
 		return nil, err
@@ -170,15 +169,14 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 
 // ValidateReleaseLiftOptions checks selectors without config, retrieval or I/O.
 func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
-	if opt.ToNamespace == "" {
-		opt.ToNamespace = OrkaNamespace
-	}
 	ref, digest, pinned := strings.Cut(opt.Reference, "@")
 	provider := strings.TrimPrefix(opt.Inference, "provider:")
 	if !pinned || !verificationIdentity(ref) || !spec.IsValidDigest(digest) ||
 		!verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil ||
-		!strings.HasPrefix(opt.Inference, "provider:") || scaffold.ValidateObjectName(provider) != nil ||
-		scaffold.ValidateNamespace(opt.ToNamespace) != nil || strings.TrimSpace(opt.Evidence) == "" || opt.FromLayout != "" && opt.PlainHTTP {
+		(opt.Inference == "") == (opt.Bindings == "") ||
+		opt.Inference != "" && (!strings.HasPrefix(opt.Inference, "provider:") || scaffold.ValidateObjectName(provider) != nil) ||
+		opt.Bindings != "" && strings.TrimSpace(opt.Bindings) == "" ||
+		opt.ToNamespace != "" && scaffold.ValidateNamespace(opt.ToNamespace) != nil || strings.TrimSpace(opt.Evidence) == "" || opt.FromLayout != "" && opt.PlainHTTP {
 		return ErrReleaseLift
 	}
 	return nil

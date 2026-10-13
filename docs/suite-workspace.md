@@ -314,7 +314,13 @@ kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
 ```
 
 Use a complete SHA256 digest, not a mutable tag. Destination runtime must already
-be installed. The selected inference Provider and its referenced Secret must
+be installed. Orka uses `--inference provider:NAME`; packaged kagent instead uses
+an author-owned `--bindings FILE`. The selectors are mutually exclusive and the
+verified packaged runtime must match the evidence. Kagent derives its namespace
+from the bindings; an explicit `--to-namespace` must agree. The bindings' parent,
+file identity and exact bytes are rechecked around effects.
+
+For Orka, the selected inference Provider and its referenced Secret must
 already exist; that inference Provider must be Ready for its current generation,
 and the Secret must contain its referenced key. The suite-owned destination
 Provider may be absent and created by apply. `--to-namespace` defaults to
@@ -337,19 +343,22 @@ private full-passing native receipt. It checks packaged coherence and exact
 observed target, inference and runtime equality. It returns a typed identity-only
 review: absent resources may be planned for creation; existing resources require
 all exact suite markers and the evaluated UID/generation/whole-spec proof with
-current-generation readiness. Replacement, drift, adoption and unknown state
+current-generation readiness on Orka. Kagent is create-only: any occupied primary
+or generated child refuses, even if its markers and evaluated UID match. Passing
+evidence is never retained in-process placement/reuse authority. Replacement, drift, adoption and unknown state
 refuse. Planning makes GETs only: no server dry-run/admission, Tasks, writes or
 placement records. Returned summaries cannot mutate the retained plan.
 
 `--plan` prints the identity-only review without mutation guard or admission.
 Apply consumes that opaque review and its digest once, refreshes artifact/evidence
 and destination observations, runs the normal target guard, then preflights both
-absent creates before the first persistent write. Provider reaches current Ready
-before Agent creation. Only conditional CREATE or exact receipt-bound reuse is
+absent creates before the first persistent write. Orka Provider reaches current
+Ready, or kagent ModelConfig current-generation Accepted, before Agent creation.
+Kagent Agent must also be Ready. Only conditional CREATE or Orka exact receipt-bound reuse is
 allowed: no update, adoption, marker repair, execution retry, rollback or cleanup.
 Owned status-only resource-version churn is tolerated; selected inference Provider
 and Secret versions remain exact. Before each write and after each Ready wait,
-the pair and prerequisites are rechecked.
+the pair and prerequisites are rechecked, including before each server dry-run.
 
 `--promote` is required when target/binding differs. Packaged S/G/member/model/
 renderer/profile/composition/images must match, as must the pinned runtime version,
@@ -374,10 +383,45 @@ Opaque in-process success results support read-only invocation revalidation via
 
 Unsigned private receipts establish supplied observations, not signer
 authentication or authenticated deployment approval. General promotion policy/
-signing remains separate. Native `openai` Providers are the only inference
-binding supported here; host Foundry/Copilot execution and operational kagent/
-image lift are not covered. Existing bundle lift is unchanged. Hermetic tests do
-not establish real cluster lift qualification.
+signing remains separate. Orka uses native `openai` Providers; kagent uses explicit
+OpenAI ModelConfig bindings. Host Foundry/Copilot execution and image lift are not
+covered. Existing bundle lift is unchanged. Hermetic tests alone do not establish
+real cluster lift qualification.
+
+### Kagent digest lift
+
+```sh
+kmx lift suite@sha256:<digest> --from-layout ./oci --to-context prod \
+  --bindings ./prod-bindings.yaml --evidence ../private/kagent-passing.json --promote --plan
+```
+
+The supported profile is exact v0.10.3 Go/linux-amd64, tool-free and OpenAI-compatible,
+with no member images. Lift uses the same `PrepareReleaseLift`, `ApplyReleaseLift`
+and `VerifyReleaseLiftPlacement` seam as Orka, not the legacy bundle engine. It
+creates only ModelConfig and Agent; namespace, runtime and referenced Secret/key
+are operator prerequisites. It sends no A2A Tasks, model calls or tool calls.
+
+Default gating requires the exact prepared subject. Explicit `--promote` permits
+only destination context/cluster/namespace identities, endpoint/Secret references,
+and physical installation names/UIDs, deployment generation, controller account,
+selector and watch scope to differ. Packaged identity/member/model/profile,
+bindings schema/provider kind, AuthMode, controller image and full observed
+controller digest/platform inventory, plus Go registry/repository/tag, remain
+exact. Unknown future fields compare by default. The new ModelConfig declares
+the packaged model; this is not independent proof of backend model equivalence.
+Unsecure source evidence cannot authorize a trusted-proxy destination.
+
+The private plan retains the full evaluated Go image digest/platform inventory.
+Before creation it can qualify configured pins, not observe a nonexistent Agent.
+Final placement and opaque Verify require the actual generated workload inventory
+to match exactly. A mismatch leaves a partial result/resources, never a successful
+placement, and triggers no cleanup or retry. Public result JSON is not restart
+or reuse authority. Kagent suite status/retirement and authenticated promotion
+policy remain unavailable; evidence never crosses runtimes.
+
+The existing pinned kind shard exercises create, two-case evaluation, exact local
+publication, source-free GET-only lift planning, explicit new-target promotion and
+occupied repeat refusal, with zero additional native execution traffic.
 
 Preparation state is outside authored source, under the KMX state directory
 (`KMX_HOME` overrides it). Cache corruption refuses reuse. Keep this state private;
