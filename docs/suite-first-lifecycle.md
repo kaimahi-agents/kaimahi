@@ -103,8 +103,8 @@ There are no released users to protect, so bundles are removed rather than read 
 
 1. Native Orka: create, eval, push and lift by digest (#430).
 2. The lift gate on suite evidence, replacing `lift-policy.yaml` over bundle receipts.
-3. kagent as a suite target, replacing kagent bundle create, lift, status and evaluation.
-4. Live create, quickstart, console and interactive lift through create → lift.
+3. kagent as a suite target, replacing kagent bundle create, lift, status and evaluation. kagent remote MCP tools are not a precondition: they may be unavailable for a while and return on the suite path.
+4. Quickstart, console and interactive lift through create → lift, so `create --live` can go.
 
 Then one deliberate breaking change deletes the `bundle` commands, bundle receipts and their code. Old receipts stop being readable; no new bundle-only features land in the meantime.
 
