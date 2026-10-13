@@ -135,6 +135,19 @@ Ordinary push remains explicitly unevaluated. Extracted-directory `suite push`
 does not gain this flag. `eval diff/from-sessions` and `bundle evaluate` retain
 their existing formats and behavior; native receipts are not bundle lift gates.
 
+### Qualification boundary
+
+The existing Orka runtime CI shard now includes a checkout-only native scenario
+using the pinned CPU AIKit model, the two public capital/arithmetic cases and the
+installer's existing Secret reference in its exclusively owned kind cluster.
+It attempts one full evaluation without retry, independently reads live identity,
+spec and result evidence, transfers exact S through a local layout, and checks
+ownership, case-mutation and unsupported-evaluator refusals. Only passing receipt
+metadata and a scalar qualification report may be uploaded. Runtime/model and
+Kubernetes audit storage can still retain inputs. Real qualification is pending
+until this scenario passes; hermetic tests do not establish it. Release-reference
+Lift and standalone package evaluation remain unavailable.
+
 ## Publish
 
 ```sh
