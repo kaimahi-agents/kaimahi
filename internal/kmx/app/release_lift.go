@@ -22,7 +22,7 @@ var ErrReleaseLift = errors.New("release lift planning refused; no native admiss
 // FromLayout uses the digest in Reference; otherwise Reference is a registry ref.
 type ReleaseLiftOptions struct {
 	Reference, FromLayout, ToContext, ToNamespace, Inference, Evidence string
-	PlainHTTP                                                          bool
+	PlainHTTP, Promote                                                 bool
 }
 
 type ReleaseLiftTarget struct {
@@ -50,6 +50,9 @@ type ReleaseLiftSummary struct {
 	Model          string                `json:"model"`
 	Runtime        string                `json:"runtime"`
 	Target         ReleaseLiftTarget     `json:"target"`
+	SourceTarget   ReleaseLiftTarget     `json:"sourceTarget"`
+	Promote        bool                  `json:"promote"`
+	ServingModel   string                `json:"servingModel,omitempty"`
 	Inference      string                `json:"inference"`
 	BindingDigest  string                `json:"bindingDigest"`
 	RenderedDigest string                `json:"renderedDigest"`
@@ -137,12 +140,17 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 	if err != nil {
 		return nil, err
 	}
-	if !reflect.DeepEqual(receipt.Subject, native.Subject) {
-		return nil, ErrReleaseLift
+	gate, servingModel, err := worker.releaseLiftGate(ctx, receipt.Subject, native.Subject, opt.Promote)
+	if err != nil {
+		return nil, err
 	}
-	s := ReleaseLiftSummary{Suite: suite.Name, SuiteDigest: suite.Digest, Member: suite.MemberID, Model: suite.Model, Runtime: "orka", Target: releaseLiftTarget(native.Subject.Target), Inference: opt.Inference, BindingDigest: native.Subject.BindingDigest, RenderedDigest: native.Subject.RenderedDigest, EvidenceDigest: godigest.FromBytes(evidence).String(), EvidenceRunID: receipt.RunID, Gate: "same-subject"}
+	s := ReleaseLiftSummary{Suite: suite.Name, SuiteDigest: suite.Digest, Member: suite.MemberID, Model: suite.Model, Runtime: suite.Runtime.ID, Target: releaseLiftTarget(native.Subject.Target), SourceTarget: releaseLiftTarget(receipt.Subject.Target), Promote: opt.Promote, ServingModel: servingModel, Inference: opt.Inference, BindingDigest: native.Subject.BindingDigest, RenderedDigest: native.Subject.RenderedDigest, EvidenceDigest: godigest.FromBytes(evidence).String(), EvidenceRunID: receipt.RunID, Gate: gate}
 	for i, doc := range []map[string]any{native.bundle.Provider, native.bundle.Agent} {
 		proof := []suiteNativeOwnedResource{receipt.Provider, receipt.Agent}[i]
+		if gate == "promotion" {
+			// Source execution UIDs cannot authorize existing destination objects.
+			proof = suiteNativeOwnedResource{}
+		}
 		resource, err := worker.inspectReleaseLiftResource(ctx, native.Subject, doc, proof)
 		if err != nil {
 			return nil, err
