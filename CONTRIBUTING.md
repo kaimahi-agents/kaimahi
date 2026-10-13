@@ -76,6 +76,7 @@ python3 scripts/test_kagent_lift_qualification.py -v
 python3 scripts/test_kagent_lift_audit.py -v
 python3 scripts/test_kagent_lift_qualify.py -v
 python3 scripts/test_kagent_lift_ci.py -v
+python3 scripts/test_suite_native.py -v
 shellcheck scripts/ci/kagent-lift.sh
 actionlint .github/workflows/ci.yml
 ```
@@ -145,6 +146,19 @@ saved shell stderr; bootstrap and tool output remain private.
 The `e2e-kagent-lift` shard runs for relevant or unknown PR changes and always
 on main pushes, nightly and manual runs. Its required aggregator accepts only
 intentional skipped outcomes, never failed or cancelled shards.
+
+The existing `e2e-orka-runtime` shard also runs
+`python3 scripts/ci/suite-native.py kind-kmx-orka "$RUNNER_TEMP/kmx-suite-native"`
+after its legacy Ollama answer proof. The checkout-only qualifier requires the
+shard's exclusive cluster-creation flag and a matching `KIND_CLUSTER`, refuses
+existing work/model fixtures, and uses a fresh private KMX home. It adds the pinned
+CPU AIKit model inside that owned cluster, warms it, then attempts one native
+full-workspace evaluation without retry. Independent live identities/specs,
+result hashes, exact local-layout transfer and refusal audits gate its metadata
+artifacts. Only `artifacts/passing.json` and scalar `artifacts/qualification.json`
+are uploaded on success; raw captures are private. Existing cluster deletion owns
+all runtime/model cleanup. A successful run qualifies this fixed two-case
+native workspace scenario. Harness tests alone are not evidence of real execution.
 
 ## Comments
 
