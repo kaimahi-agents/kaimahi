@@ -168,7 +168,7 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 }
 
 func releaseLiftTarget(t suiteNativeTarget) ReleaseLiftTarget {
-	return ReleaseLiftTarget{Context: t.Context, ClusterUID: t.ClusterUID, Namespace: t.Namespace, NamespaceUID: t.NamespaceUID}
+	return ReleaseLiftTarget(t)
 }
 
 func (a *App) inspectReleaseLiftResource(ctx context.Context, subject suiteNativeSubject, desired map[string]any, proof suiteNativeOwnedResource) (ReleaseLiftResource, error) {

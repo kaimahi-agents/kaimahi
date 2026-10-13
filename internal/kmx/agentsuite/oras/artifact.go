@@ -258,7 +258,8 @@ func artifactFiles(ctx context.Context, compressed []byte) (map[string][]byte, e
 		offset := (len(raw) - stream.Len() + 511) / 512 * 512
 		if offset+512 <= len(raw) {
 			kind := raw[offset+156]
-			if kind != tar.TypeReg && kind != tar.TypeRegA && kind != tar.TypeDir {
+			// A NUL type byte is the legacy regular-file encoding.
+			if kind != tar.TypeReg && kind != 0 && kind != tar.TypeDir {
 				return nil, ErrArtifact
 			}
 		}
