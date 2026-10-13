@@ -271,8 +271,14 @@ AIKit workload in that exclusively owned cluster and installs the
 readback, hash, intent/completion audit, refusal and privacy checks. A successful
 scenario qualifies the fixed two-case workspace path, exact registry/local root
 CLI lift reuse with source withheld, separate fresh answer Tasks and no-effect
-lift refusals against the pinned model/runtime. It does not qualify promotion,
-absent-resource CLI creation or partial outcomes. Passing artifacts contain only
+lift refusals against the pinned model/runtime. It also qualifies registry
+promotion into an absent pair on a second exclusively owned kind cluster, with
+GET-only planning, ordered admission/creation, independent readback, one fresh
+Task and no-effect model-mismatch refusal. Both pinned Orka installations use
+orka-system; destination inference has its own Provider/Secret and shares the
+source model through a fixture-only private-network NodePort with no host mapping.
+Source evidence remains distinct from destination evaluation. Partial outcomes
+are not qualified. Passing artifacts contain only
 private receipt metadata and payload-free qualification evidence. Existing cluster deletion
 owns runtime/model cleanup. These files are checkout-only scaffolding, not an
 installer or new CLI/API capability.

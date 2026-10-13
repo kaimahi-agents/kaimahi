@@ -127,6 +127,68 @@ def verify_lift_result(result, receipt, evidence):
                 "specDigest": owned["SpecDigest"]}.items()), "lift-result")
 
 
+def private_model_route(source, destination, internal_ip, port):
+    networks = [node["NetworkSettings"]["Networks"]["kind"] for node in (source, destination)]
+    require(networks[0]["NetworkID"] and networks[0]["NetworkID"] == networks[1]["NetworkID"] and
+            networks[0]["IPAddress"] == internal_ip and internal_ip != networks[1]["IPAddress"], "model-private-network")
+    require(30000 <= port <= 32767 and all(not node["NetworkSettings"].get("Ports", {}).get(str(port) + "/tcp")
+            for node in (source, destination)), "model-host-mapping")
+    return "http://" + internal_ip + ":" + str(port) + "/v1"
+
+
+def verify_promote_effects(frames, member):
+    require(all(f["verb"] != "blocked" and f.get("returnCode", 0) == 0 and not f.get("taskAttempt") for f in frames), "promote-audit")
+    effects = [f for f in frames if f.get("admission") or f["persistent"]]
+    require([(f["verb"], f["resource"], f["name"], f["admission"], f["persistent"]) for f in effects] ==
+            [("create", kind, member, True, persistent) for persistent in (False, True) for kind in ("Provider", "Agent")], "promote-effects")
+    require(effects[0]["stdinDigest"] == effects[2]["stdinDigest"] and
+            effects[1]["stdinDigest"] == effects[3]["stdinDigest"], "promote-admitted-input")
+
+
+def verify_promote_completion_order(frames):
+    effects = [(i, f) for i, f in enumerate(frames) if f.get("admission") or f["persistent"]]
+    completed = [i for i, f in effects if f["stage"] == "complete" and not f["persistent"]]
+    writes = [i for i, f in effects if f["stage"] == "intent" and f["persistent"]]
+    finished_writes = [i for i, f in effects if f["stage"] == "complete" and f["persistent"]]
+    require(len(completed) == len(writes) == len(finished_writes) == 2 and max(completed) < min(writes) and
+            all(f["returnCode"] == 0 for _, f in effects if f["stage"] == "complete"), "promote-completion-order")
+
+
+def verify_model_only_change(before, after, model):
+    require(before["spec"]["defaultModel"] == model and after["spec"]["defaultModel"] == "unevaluated-model" and
+            after["spec"] == {**before["spec"], "defaultModel": "unevaluated-model"} and
+            after["metadata"]["uid"] == before["metadata"]["uid"] and
+            after["metadata"]["generation"] > before["metadata"]["generation"], "promote-model-only-change")
+
+
+def verify_promote_summary(summary, receipt, evidence, destination, specs, inference="native-suite-inference"):
+    source = receipt["subject"]
+    target = {k[0].lower() + k[1:]: v for k, v in destination["Target"].items()}
+    expected = {"suite": source["Suite"], "suiteDigest": source["SuiteDigest"], "member": source["Member"],
+                "model": source["Model"], "runtime": "orka", "target": target,
+                "sourceTarget": {k[0].lower() + k[1:]: v for k, v in source["Target"].items()},
+                "promote": True, "gate": "promotion", "servingModel": source["Model"],
+                "inference": "provider:" + inference, "bindingDigest": destination["BindingDigest"],
+                "renderedDigest": destination["RenderedDigest"], "evidenceDigest": "sha256:" + sha(evidence),
+                "evidenceRunID": receipt["runID"]}
+    require(all(summary.get(k) == v for k, v in expected.items()) and
+            target["clusterUID"] != source["Target"]["ClusterUID"] and
+            target["namespaceUID"] != source["Target"]["NamespaceUID"] and
+            target["context"] != source["Target"]["Context"], "promote-summary")
+    require(re.fullmatch(r"sha256:[0-9a-f]{64}", summary.get("planDigest", "")), "promote-plan-digest")
+    require(summary["resources"] == [{"kind": kind, "name": source["Member"], "action": "create",
+            "specDigest": native_digest("kmx.native-orka.spec/v1", specs[kind])} for kind in ("Provider", "Agent")], "promote-create-plan")
+
+
+def verify_promote_result(result, receipt, evidence, destination, specs):
+    verify_promote_summary(result["summary"], receipt, evidence, destination, specs)
+    require(result["state"] == "ready" and len(result["resources"]) == 2, "promote-ready")
+    for row, planned, kind in zip(result["resources"], result["summary"]["resources"], ("Provider", "Agent")):
+        require(all(row.get(k) == v for k, v in planned.items()) and row["outcome"] == "created" and row["ready"] is True and
+                row["uid"] and row["uid"] != receipt[kind.lower()]["UID"] and row["generation"] == 1, "promote-created-result")
+    require(result["resources"][0]["uid"] != result["resources"][1]["uid"], "promote-created-uids")
+
+
 def verify_fresh_answer(stdout, case):
     result_digest(stdout)
     answer = stdout[:-1].decode("utf-8")
@@ -208,7 +270,7 @@ def verify_transfer(layout, extracted, subject, cases):
     return graph
 
 
-def verify_runtime(expected, controller, worker):
+def observed_runtime(controller, worker):
     meta, spec, status = controller["metadata"], controller["spec"], controller["status"]
     pod = spec["template"]["spec"]
     containers = [c for c in pod["containers"] if c["name"] == "controller"]
@@ -222,7 +284,7 @@ def verify_runtime(expected, controller, worker):
               "ControllerImage": container["image"], "Mode": flags["controller-mode"], "WatchNamespace": flags["watch-namespace"],
               "AIWorkerImage": flags["ai-worker-image"], "WorkerAccount": flags["ai-worker-service-account-name"],
               "WorkerAccountUID": worker["metadata"]["uid"], "Helm": helm}
-    require(actual == expected and not container.get("command") and not meta.get("deletionTimestamp"), "runtime-identity")
+    require(not container.get("command") and not meta.get("deletionTimestamp"), "runtime-identity")
     require(actual["Mode"] == "harness-v2" and actual["WatchNamespace"] == "orka-system" and helm["Chart"] == "orka-0.2.0" and
             container["image"] == "ghcr.io/orka-agents/orka@sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370" and
             actual["AIWorkerImage"] == "ghcr.io/orka-agents/orka/ai-worker@sha256:814d7149308e62730df59759c5137667cad04520c94cc50ff56e5028fdc8bcd4", "runtime-pin")
@@ -231,15 +293,21 @@ def verify_runtime(expected, controller, worker):
     wm = worker["metadata"]
     require(wm["name"] == actual["WorkerAccount"] and wm["namespace"] == "orka-system" and not wm.get("deletionTimestamp") and
             wm["labels"]["orka.ai/worker"] == "true" and wm["labels"]["orka.ai/worker-trust"] == "ai", "runtime-worker")
+    return actual
+
+
+def verify_runtime(expected, controller, worker):
+    require(observed_runtime(controller, worker) == expected, "runtime-identity")
 
 
 class Qualification:
-    def __init__(self, context, work):
+    def __init__(self, context, work, promotion_context=None):
         # The owned CI fixture uses one kubeconfig file. Capture its selection
         # before private HOME/cwd would redirect kubectl and client-go defaults.
         kubeconfig = pathlib.Path(os.environ.get("KUBECONFIG") or pathlib.Path.home() / ".kube/config").absolute()
         require(kubeconfig.is_file(), "kubeconfig")
         self.context, self.work = context, private_root(work)
+        self.promotion_context = promotion_context
         self.repo = pathlib.Path(__file__).resolve().parents[2]
         self.kmx, self.kubectl = str(self.repo / "bin/kmx"), shutil.which("kubectl")
         require(self.kubectl and pathlib.Path(self.kmx).is_file(), "tools")
@@ -284,9 +352,12 @@ class Qualification:
     def cli(self, *args, **kwargs):
         return self.command([self.kmx, *args], product=True, **kwargs)
 
-    def frames(self):
+    def raw_frames(self):
         path = self.work / "audit.jsonl"
-        return self.audit.completed([json.loads(line) for line in path.read_bytes().splitlines()]) if path.exists() else []
+        return [json.loads(line) for line in path.read_bytes().splitlines()] if path.exists() else []
+
+    def frames(self):
+        return self.audit.completed(self.raw_frames())
 
     def provision(self):
         self.phase = "model"
@@ -390,13 +461,15 @@ class Qualification:
         docs = json.loads(self.kube("-n", "orka-system", "get", "tasks.core.orka.ai", "-o", "json"))["items"]
         return {d["metadata"]["name"]: d for d in docs if d.get("spec", {}).get("agentRef", {}).get("name") == member}
 
-    def lift(self, reference, receipt_path, layout=None, plan=False, evidence=True, success=True, inference="native-suite-inference"):
+    def lift(self, reference, receipt_path, layout=None, plan=False, evidence=True, success=True, inference="native-suite-inference", promote=False):
         args = ["lift", reference, "--to-context", self.context, "--to-namespace", "orka-system", "--inference", "provider:" + inference, "-o", "json"]
         args += ["--from-layout", layout] if layout else ["--plain-http"]
         if evidence:
             args += ["--evidence", receipt_path]
         if plan:
             args += ["--plan"]
+        if promote:
+            args += ["--promote"]
         return self.cli(*args, success=success, timeout=180)
 
     def fresh_run(self, transport, receipt, case):
@@ -454,11 +527,174 @@ class Qualification:
                         self.pair_proof(receipt)
                     results[transport] = self.fresh_run(transport, receipt, yaml.safe_load(cases[sorted(cases)[0]]))
                     results[transport].update({"plans": 1, "reuseApplies": 2, "admissions": 0, "nativeWrites": 0})
+                if self.promotion_context:
+                    results["promotion"] = self.promote_qualification(registry, receipt_path, receipt, cases)
             finally:
                 hidden.chmod(0o700)
                 hidden.rename(workspace)
         require(snapshot(workspace) == original and snapshot(layout) == layout_before and receipt_path.read_bytes() == evidence, "lift-input-changed")
         return results
+
+    def promote_qualification(self, reference, receipt_path, receipt, cases):
+        self.phase = "promote-setup"
+        destination = Qualification(self.promotion_context, self.work / "promotion")
+        member, evidence = receipt["subject"]["Member"], receipt_path.read_bytes()
+        self.live_subject(receipt["subject"])
+        self.pair_proof(receipt)
+        source_tasks = self.member_tasks(member)
+        source_pair = {kind: self.get(kind.lower() + "s.core.orka.ai", member) for kind in ("Provider", "Agent")}
+        destination.empty_member(member)
+        nodes = []
+        for qualifier in (self, destination):
+            inventory = json.loads(qualifier.kube("get", "nodes", "-o", "json"))["items"]
+            require(len(inventory) == 1, "promote-node-count")
+            node = inventory[0]
+            require(node["metadata"]["name"] == qualifier.context.removeprefix("kind-") + "-control-plane", "promote-node-owner")
+            addresses = [a["address"] for a in node["status"]["addresses"] if a["type"] == "InternalIP"]
+            require(len(addresses) == 1, "promote-node-address")
+            inspected = json.loads(self.command(["docker", "inspect", node["metadata"]["name"]]).stdout)
+            require(len(inspected) == 1, "promote-node-container")
+            nodes.append((addresses[0], inspected[0]))
+        endpoint = private_model_route(nodes[0][1], nodes[1][1], nodes[0][0], 30891)
+        name = "native-suite-promote-model"
+        require(not self.kube("-n", "orka-system", "get", "service", name, "--ignore-not-found", "-o", "name").strip(), "promote-service-exists")
+        self.kube("create", "-f", "-", raw=canonical({"apiVersion": "v1", "kind": "Service",
+                  "metadata": {"name": name, "namespace": "orka-system"}, "spec": {"type": "NodePort",
+                  "selector": {"app": "native-suite-aikit"}, "ports": [{"name": "http", "port": 8080, "targetPort": "http", "nodePort": 30891}]}}))
+        observed_service = self.get("service", name)
+        require(observed_service["spec"]["type"] == "NodePort" and observed_service["spec"]["ports"][0]["nodePort"] == 30891 and
+                observed_service["spec"]["selector"] == {"app": "native-suite-aikit"}, "promote-service-route")
+        # Keyless fixture prerequisite, independently created in the owned target;
+        # never copy the source Secret or read its data into the qualifier.
+        secret_name = "native-suite-provider-key"
+        require(not destination.kube("-n", "orka-system", "get", "secret", secret_name, "--ignore-not-found", "-o", "name").strip(), "promote-secret-exists")
+        destination.kube("create", "-f", "-", raw=canonical({"apiVersion": "v1", "kind": "Secret",
+                         "metadata": {"name": secret_name, "namespace": "orka-system"}, "type": "Opaque", "stringData": {"api-key": "keyless"}}))
+        for provider_name in ("native-suite-inference", "native-suite-model-mismatch"):
+            model = receipt["subject"]["Model"]
+            require(not destination.kube("-n", "orka-system", "get", "providers.core.orka.ai", provider_name,
+                    "--ignore-not-found", "-o", "name").strip(), "promote-inference-exists")
+            destination.kube("create", "-f", "-", raw=canonical({"apiVersion": "core.orka.ai/v1alpha1", "kind": "Provider",
+                             "metadata": {"name": provider_name, "namespace": "orka-system"}, "spec": {"type": "openai", "defaultModel": model,
+                             "baseURL": endpoint, "secretRef": {"name": secret_name, "key": "api-key"}}}))
+            for _ in range(30):
+                selected = destination.get("providers.core.orka.ai", provider_name)
+                if selected.get("status", {}).get("ready") is True:
+                    break
+                time.sleep(1)
+            require(selected.get("status", {}).get("ready") is True and selected["spec"]["defaultModel"] == model, "promote-inference-ready")
+        subject, specs = destination.promotion_subject(receipt, source_pair)
+        require(subject["Binding"]["Provider"]["UID"] != receipt["subject"]["Binding"]["Provider"]["UID"] and
+                subject["Binding"]["Secret"]["UID"] != receipt["subject"]["Binding"]["Secret"]["UID"], "promote-own-binding")
+        def control(expected_subject=subject, expected_specs=specs, inference="native-suite-inference"):
+            start = len(destination.frames())
+            result = destination.lift(reference, receipt_path, plan=True, promote=True, inference=inference)
+            destination.audit.verify_read_only(destination.frames()[start:])
+            verify_promote_summary(json.loads(result.stdout), receipt, evidence, expected_subject, expected_specs, inference)
+            destination.empty_member(member)
+
+        self.phase = "promote-plan"
+        control()
+        alternate = "native-suite-model-mismatch"
+        alternate_subject, alternate_specs = destination.promotion_subject(receipt, source_pair, inference=alternate)
+        control(alternate_subject, alternate_specs, alternate)
+        self.phase = "promote-model-mismatch"
+        before_model = destination.get("providers.core.orka.ai", alternate)
+        destination.kube("-n", "orka-system", "patch", "providers.core.orka.ai", alternate, "--type=merge",
+                         "-p", json.dumps({"spec": {"defaultModel": "unevaluated-model"}}))
+        for _ in range(30):
+            after_model = destination.get("providers.core.orka.ai", alternate)
+            if after_model.get("status", {}).get("ready") is True and any(c["type"] == "Ready" and c["status"] == "True" and
+                    c.get("observedGeneration") == after_model["metadata"]["generation"] for c in after_model.get("status", {}).get("conditions", [])):
+                break
+            time.sleep(1)
+        verify_model_only_change(before_model, after_model, receipt["subject"]["Model"])
+        require(after_model.get("status", {}).get("ready") is True and any(c["type"] == "Ready" and c["status"] == "True" and
+                c.get("observedGeneration") == after_model["metadata"]["generation"] for c in after_model.get("status", {}).get("conditions", [])), "promote-mismatch-ready")
+        tasks_before = destination.task_inventory()
+        start = len(destination.frames())
+        rejected = destination.lift(reference, receipt_path, inference="native-suite-model-mismatch", promote=True, success=False)
+        frames = destination.frames()[start:]
+        verify_refusal(rejected.returncode, rejected.stderr, frames, "release lift planning refused")
+        destination.audit.verify_read_only(frames)
+        require(any(f["verb"] == "get" and f["resource"] == "providers.core.orka.ai" and
+                f["name"] == "native-suite-model-mismatch" for f in frames), "promote-mismatch-inspected")
+        destination.empty_member(member)
+        require(destination.task_inventory() == tasks_before, "promote-denial-task-drift")
+        control()
+        self.phase = "promote-create"
+        start = len(destination.raw_frames())
+        result = json.loads(destination.lift(reference, receipt_path, promote=True).stdout)
+        raw_frames = destination.raw_frames()[start:]
+        verify_promote_completion_order(raw_frames)
+        verify_promote_effects(destination.audit.completed(raw_frames), member)
+        verify_promote_result(result, receipt, evidence, subject, specs)
+        require(destination.task_inventory() == tasks_before, "promote-create-task")
+        placement = {"subject": subject}
+        for row in result["resources"]:
+            placement[row["kind"].lower()] = {"UID": row["uid"], "Generation": row["generation"], "SpecDigest": row["specDigest"]}
+        destination.live_subject(subject)
+        destination.pair_proof(placement)
+        self.phase = "promote-answer"
+        answer = destination.fresh_run("promotion", placement, yaml.safe_load(cases[sorted(cases)[0]]))
+        require(answer["uid"] not in {d["metadata"]["uid"] for d in source_tasks.values()}, "promote-task-source-uid")
+        destination.live_subject(subject)
+        self.live_subject(receipt["subject"])
+        self.pair_proof(receipt)
+        require(self.member_tasks(member) == source_tasks and receipt_path.read_bytes() == evidence, "promote-source-drift")
+        return {"transport": "registry", "gate": "promotion", "sourceOnlyEvidence": True, "destinationEvaluated": False,
+                "sourceTarget": result["summary"]["sourceTarget"], "target": result["summary"]["target"],
+                "bindingDigest": subject["BindingDigest"], "renderedDigest": subject["RenderedDigest"],
+                "resources": [{k: row[k] for k in ("kind", "uid", "generation", "specDigest")} for row in result["resources"]],
+                "plans": 3, "admissions": 4, "nativeWrites": 2, "taskAttempts": 0, "freshAnswer": answer,
+                "refusal": {"name": "model-mismatch", "admissions": 0, "nativeWrites": 0, "taskAttempts": 0}}
+
+    def empty_member(self, member):
+        for resource in ("providers.core.orka.ai", "agents.core.orka.ai"):
+            require(not self.kube("-n", "orka-system", "get", resource, member, "--ignore-not-found", "-o", "name").strip(), "promote-member-exists")
+
+    def task_inventory(self):
+        return json.loads(self.kube("-n", "orka-system", "get", "tasks.core.orka.ai", "-o", "json"))["items"]
+
+    def promotion_subject(self, receipt, source_pair, inference="native-suite-inference"):
+        # Independently render the fixture's expected payload through the existing
+        # offline renderer. Digest lift still runs source-free in the private cwd;
+        # this reference render grants no placement/evaluation authority.
+        subject = copy.deepcopy(receipt["subject"])
+        subject["Target"] = {"Context": self.context, "Namespace": "orka-system",
+                             "ClusterUID": self.get_namespace_uid("kube-system"), "NamespaceUID": self.get_namespace_uid("orka-system")}
+        provider = self.get("providers.core.orka.ai", inference)
+        meta, spec = provider["metadata"], provider["spec"]
+        bound = {"Name": meta["name"], "Namespace": meta["namespace"], "UID": meta["uid"], "Generation": meta["generation"],
+                 "ResourceVersion": meta["resourceVersion"], "Type": spec["type"], "BaseURL": spec["baseURL"],
+                 "SecretName": spec["secretRef"]["name"], "SecretKey": spec["secretRef"]["key"]}
+        secret = json.loads(self.kube("-n", "orka-system", "get", "secret", bound["SecretName"], "-o", self.audit.SECRET_METADATA))
+        require(not secret["Terminating"], "promote-secret-terminating")
+        subject["Binding"] = {"Provider": bound, "Secret": {**secret["Metadata"], "Key": bound["SecretKey"], "KeyPresent": True}}
+        controller = self.get("deployment", "orka-api-controller")
+        subject["Runtime"] = observed_runtime(controller, self.get("serviceaccount", "orka-api-ai-worker"))
+        subject["BindingDigest"] = native_digest("kmx.native-orka.binding/v1", {k: subject[k] for k in ("Model", "RequiredImages", "Binding", "Runtime")})
+        instructions, rendered = self.work / "reference-instructions.txt", self.work / (inference + "-reference-render.yaml")
+        instructions.write_text(source_pair["Agent"]["spec"]["systemPrompt"]["inline"])
+        description = source_pair["Agent"]["metadata"].get("annotations", {}).get("kaimahi.dev/description", "")
+        start = len(self.frames())
+        self.cli("--context", self.context, "create", "--live", subject["Member"], "--namespace", "orka-system", "--model", subject["Model"],
+                 "--provider-type", "openai", "--base-url", bound["BaseURL"], "--secret", bound["SecretName"], "--secret-key", bound["SecretKey"],
+                 "--instructions", instructions, "--description", description, "--no-apply", "--out", rendered, "--bundle-path", self.work / (inference + "-reference-bundle"))
+        require(len(self.frames()) == start, "promote-reference-cluster-io")
+        documents = re.split(b"^---\\n", rendered.read_bytes(), flags=re.MULTILINE)[1:]
+        parsed = [yaml.safe_load(raw) for raw in documents]
+        require([doc["kind"] for doc in parsed] == ["Secret", "Provider", "Agent"], "promote-reference-documents")
+        specs = {doc["kind"]: doc["spec"] for doc in parsed[1:]}
+        require(specs["Agent"] == source_pair["Agent"]["spec"] and specs["Provider"] ==
+                {**source_pair["Provider"]["spec"], "baseURL": bound["BaseURL"], "secretRef": {"name": bound["SecretName"], "key": bound["SecretKey"]}}, "promote-reference-specs")
+        subject["PayloadDigest"] = sha(b"".join(frame("rendered/%03d.yaml" % i, raw) for i, raw in enumerate(documents)))
+        subject["RenderedDigest"] = native_digest("kmx.native-orka.revision/v1", {**subject, "RenderedDigest": ""})
+        self.live_subject(subject, inference=inference)
+        return subject, specs
+
+    def get_namespace_uid(self, name):
+        return json.loads(self.kube("get", "namespace", name, "-o", "json"))["metadata"]["uid"]
 
     def lift_denials(self, layout, changed_layout, changed_s, receipt_path, receipt):
         self.phase = "lift-denials"
@@ -548,12 +784,12 @@ class Qualification:
                         "--inference", "provider:native-suite-inference", "--case-timeout", "5m", "--out", output,
                         timeout=660, success=success)
 
-    def live_subject(self, subject):
+    def live_subject(self, subject, inference="native-suite-inference"):
         target = {"Context": self.context, "Namespace": "orka-system",
                   "ClusterUID": json.loads(self.kube("get", "namespace", "kube-system", "-o", "json"))["metadata"]["uid"],
                   "NamespaceUID": json.loads(self.kube("get", "namespace", "orka-system", "-o", "json"))["metadata"]["uid"]}
         require(subject["Target"] == target, "target-identity")
-        selected = self.get("providers.core.orka.ai", "native-suite-inference")
+        selected = self.get("providers.core.orka.ai", inference)
         meta, spec = selected["metadata"], selected["spec"]
         provider = {"Name": meta["name"], "Namespace": meta["namespace"], "UID": meta["uid"], "Generation": meta["generation"],
                     "ResourceVersion": meta["resourceVersion"], "Type": spec["type"], "BaseURL": spec["baseURL"],
@@ -687,16 +923,18 @@ class Qualification:
             summary.update({"task" + str(i + 1) + k.capitalize(): v for k, v in task.items()})
         (artifacts / "qualification.json").write_bytes(canonical(summary))
         shutil.copyfile(receipt_path, artifacts / "passing.json")
-        print("native qualification: full pass; exact transfer; registry/local CLI lift reuse, fresh Tasks and refusals verified")
+        print("native qualification: full pass; exact transfer; registry/local CLI lift reuse, promotion, fresh Tasks and refusals verified")
 
 
 def main():
     qualification = None
     try:
         os.umask(0o077)
-        require(len(sys.argv) == 3 and re.fullmatch(r"kind-[a-z0-9-]+", sys.argv[1]) and
-                sys.argv[1] == "kind-" + os.environ.get("KIND_CLUSTER", "") and os.environ.get("KMX_ORKA_RUNTIME_CREATED") == "1", "owned-context")
-        qualification = Qualification(sys.argv[1], sys.argv[2])
+        require(len(sys.argv) == 4 and re.fullmatch(r"kind-[a-z0-9-]+", sys.argv[1]) and
+                sys.argv[1] == "kind-" + os.environ.get("KIND_CLUSTER", "") and os.environ.get("KMX_ORKA_RUNTIME_CREATED") == "1" and
+                sys.argv[2] == "kind-kmx-orka-promote" and sys.argv[1] != sys.argv[2] and
+                os.environ.get("KMX_ORKA_PROMOTION_CREATED") == "1", "owned-context")
+        qualification = Qualification(sys.argv[1], sys.argv[3], promotion_context=sys.argv[2])
         qualification.qualify()
         return 0
     except BaseException:

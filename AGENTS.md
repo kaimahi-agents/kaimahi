@@ -121,7 +121,14 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   execution stays `bundle evaluate --from-sessions`. Root digest lift consumes
   the explicit private full-passing receipt, without sending evaluation Tasks. The checkout-only native qualifier runs in the existing exclusively owned
   Orka shard, after legacy model proof, with private captures and metadata-only
-  artifacts. A passing run qualifies that fixed workspace scenario; hermetic
+  artifacts. Its second exclusively owned kind cluster has one pinned Orka in
+  orka-system and its own inference Provider/Secret; it shares the source AIKit
+  endpoint through a fixture-only private-network NodePort, never a host mapping
+  or another model workload. Registry --promote qualifies GET-only planning,
+  absent-pair CLI creation, independent destination readback and one fresh Task;
+  model mismatch refuses with zero admission/write/Task attempts. Source evidence
+  is not destination evaluation. Keep the shard's existing timeout budget.
+  A passing run qualifies that fixed workspace scenario; hermetic
   tests alone do not establish runtime/model execution.
   Keep reference manifests private, require named candidate/judge confirmation before recorded-content transfer,
   and suppress answer/reasoning output unless `--show-content` is explicit.
