@@ -111,13 +111,13 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 }
 
 func TestWorkspaceCreateRefusesModeConflictsBeforeConfigOrWrites(t *testing.T) {
-	for _, flag := range []string{"namespace", "provider-type", "secret", "base-url", "out", "bundle-path", "tools", "task", "runtime", "no-apply", "dry-run", "context", "container-engine"} {
+	for _, flag := range []string{"namespace", "provider-type", "secret", "base-url", "out", "bundle-path", "tools", "task", "runtime", "no-apply", "dry-run", "context", "container-engine", "live"} {
 		t.Run(flag, func(t *testing.T) {
 			root := t.TempDir()
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
 			args := []string{"create", "greeter", "--workspace", root, "--model", "qwen-3.5-2b", "--instructions", "missing-file", "--" + flag}
-			if flag != "no-apply" && flag != "dry-run" {
+			if flag != "no-apply" && flag != "dry-run" && flag != "live" {
 				args = append(args, "unused")
 			}
 			err := execute(args, deps)
@@ -130,6 +130,42 @@ func TestWorkspaceCreateRefusesModeConflictsBeforeConfigOrWrites(t *testing.T) {
 			entries, err := os.ReadDir(root)
 			if err != nil || len(entries) != 0 {
 				t.Fatalf("invalid create wrote files: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
+func TestCreateDefaultModeRefusalsBeforeConfigOrWrites(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"name required", nil, "requires a name"},
+		{"one name", []string{"one", "two"}, "requires a name"},
+		{"invalid name", []string{"Invalid", "--model", "exact", "--instructions", "input"}, "name"},
+		{"required source", []string{"member"}, "--model and --instructions"},
+		{"nonterminal", []string{"member", "--model", "exact", "--instructions", "input"}, "--workspace"},
+		{"no implicit kagent", []string{"member", "--runtime", "kagent"}, "--live --runtime kagent"},
+		{"context", []string{"member", "--context", "unused"}, "--live"},
+		{"false live is offline", []string{"member", "--live=false", "--namespace", "unused"}, "--live"},
+		{"empty workspace", []string{"member", "--workspace="}, "non-empty --workspace"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			if err := os.WriteFile("input", []byte("Answer briefly.\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			err := execute(append([]string{"create"}, tc.args...), deps)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil || len(entries) != 1 || *loads != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
+				t.Fatalf("refusal wrote files/output or loaded config: %v, %v, %d, %q, %q", entries, err, *loads, &out, &diagnostics)
 			}
 		})
 	}
@@ -304,9 +340,15 @@ func TestWorkspaceProfileParseErrorsDoNotDiscloseContent(t *testing.T) {
 }
 
 func TestWorkspaceHelpAndCompletionHaveNoOperationalEffects(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.WriteFile("workspace.yaml", []byte("broken: [\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{
 		{"create", "--help"}, {"push", "--help"}, {"suite", "push", "--help"},
 		{"__complete", "create", "--workspace", ""},
+		{"__complete", "create", "--l"},
 		{"__complete", "push", "--workspace", ""},
 	} {
 		var out, diagnostics bytes.Buffer

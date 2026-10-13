@@ -196,7 +196,7 @@ func TestLiftNextStepsOfferNativeOrkaWithoutPlaneAdvice(t *testing.T) {
 				t.Errorf("retired advice %q:\n%s", forbidden, out.String())
 			}
 		}
-		for _, want := range []string{"orka status", "kmx --context cluster create", "no Provider", "COSTS MONEY", "aks down"} {
+		for _, want := range []string{"orka status", "kmx --context cluster create --live", "no Provider", "COSTS MONEY", "aks down"} {
 			if !strings.Contains(out.String(), want) {
 				t.Errorf("missing native next step %q:\n%s", want, out.String())
 			}

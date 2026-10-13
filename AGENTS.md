@@ -28,18 +28,27 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   `kmx agent` is removed entirely, without an alias or retirement stub.
   Root `status` and `orka status` retain the same table-only Orka runtime report;
   do not add root bundle status or a suite observer.
-- Opt-in `create --workspace` authors one tool-free native-Orka suite member
-  offline; root `push [--workspace DIR] REF` discovers the nearest ancestor
-  `workspace.yaml`, or selects an exact root without fallback with `--workspace`.
+- Root `create <name>` authors one tool-free native-Orka suite member offline
+  by default. Create and `push [--workspace DIR] REF` share nearest-ancestor
+  `workspace.yaml` discovery; `--workspace DIR` selects an exact root without
+  fallback and create initializes a missing marker there without prompting.
+  Without a workspace, terminal create asks `Start one here? [Y/n]`; nonterminal
+  or redirected use refuses with a `--workspace` hint. Invalid nearest markers
+  fail closed. Authoring requires exact `--model` and file-valued `--instructions`;
+  a second member refuses without changing authored files. Help/completion is inert.
   Workspace push names its absolute root and prepared OCI manifest digest on
   stderr, then copies that exact graph and authored cases.
   `suite push DIRECTORY REFERENCE` remains extracted-directory transfer without
   discovery and no longer accepts `--workspace`. The native member image
   requirement is empty. Neither offline command evaluates, deploys, builds images
   or loads cluster settings. Workspace evaluation/release lift are not implemented.
-  Create still defaults to live authoring; only explicit `--workspace` selects
-  offline authoring. Preserve PortableAgent formats and
-  old extracted-directory suite transfer; do not treat public graph validation
+  `create --live` explicitly selects unchanged resource/bundle creation for both
+  Orka and kagent, including `--no-apply`, `--dry-run` and `--out -` previews;
+  no-name `create --live` is the live Orka wizard. `--runtime kagent` alone is
+  not a compatibility route. Live-only flags without `--live` refuse before
+  configuration or writes; `--workspace` conflicts with `--live`. Quickstart,
+  console and direct App.CreateAgent operations remain live. Preserve
+  PortableAgent formats and old extracted-directory suite transfer; do not treat public graph validation
   as native execution-profile validation. Private packaged-native preparation and
   ownership-safe Provider/Agent placement have no CLI or execution qualification.
   Private native passing receipts retain only full ordered passing metadata, export

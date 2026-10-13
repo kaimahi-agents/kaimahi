@@ -154,7 +154,7 @@ func (m agentTUIModel) creationView() string {
 	height := min(26, m.height-2)
 	inner := width - 4
 	fit := func(s string) string { return ansi.Truncate(tuiOneLine(s), inner, "…") }
-	rows := []string{fit("CREATE AGENT · " + p.env.Name), fit("Namespace: " + p.wizard.opt.Namespace + " · Server: " + valueOr(p.server, "checking…"))}
+	rows := []string{fit("CREATE AGENT · LIVE (--live) · " + p.env.Name), fit("Namespace: " + p.wizard.opt.Namespace + " · Server: " + valueOr(p.server, "checking…"))}
 	switch {
 	case p.finished:
 		message := "Agent created: " + p.wizard.opt.Name

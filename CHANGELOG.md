@@ -36,8 +36,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `kmx push <reference>` finds the nearest ancestor `workspace.yaml` and
   publishes its prepared one-member native-Orka suite. `--workspace` overrides
   discovery without fallback. Workspace pushes print the absolute source path
-  and exact OCI manifest digest on stderr; result stdout, two-positional
-  extracted-directory transfer and agent creation defaults are unchanged.
+  and exact OCI manifest digest on stderr; result stdout and two-positional
+  extracted-directory transfer are unchanged.
   [Workspace guide](docs/suite-workspace.md) ([#454](https://github.com/kaimahi-agents/kaimahi/pull/454)).
 
 - `kmx eval diff` reads strict v2 receipts for exact-v0.10.3 Go kagent
@@ -53,7 +53,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   relationships ignore ordering, output construction is explicitly bounded, and
   human rendering strips terminal and bidirectional controls.
 
-- `kmx create --workspace` authors one native-Orka AgentSuite member offline.
+- Default `kmx create <name>` authors one native-Orka AgentSuite member offline.
   `kmx push --workspace DIR REF` prepares and publishes its exact OCI graph, including
   authored cases, with no member image build or cluster access. Existing bundle
   behavior and extracted-directory suite transfer are unchanged. Workspace evaluation and
@@ -79,7 +79,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   still exit nonzero; conflicting identities or no complete observed identity
   in either receipt remain incompatible. Receipt formats are unchanged.
 
-- Applying `kmx create` without a Task can reuse its offline preview when
+- Applying `kmx create --live` without a Task can reuse its offline preview when
   only the generated schema-source comment differs. The preview stays unchanged;
   every other byte difference still refuses reuse, and online schema/admission
   checks remain required.
@@ -90,6 +90,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Python remains render-only.
 
 ### Breaking
+
+- Root `kmx create` now defaults to offline workspace authoring, requiring a
+  member name, exact `--model` and file-valued `--instructions`. It shares
+  current-directory discovery with push, offers terminal initialization with
+  `Start one here? [Y/n]`, and refuses nonterminal initialization without an
+  explicit `--workspace DIR`. An exact override initializes without prompting;
+  invalid nearest markers and a second member refuse without modifying source.
+  Resource/bundle creation now requires `--live` for **both Orka and kagent**,
+  including `--no-apply`, `--dry-run` and `--out -` previews. There is no implicit
+  compatibility dispatch from `--runtime kagent`. `--workspace` conflicts with
+  `--live`; quickstart and console creation remain live. Formats are unchanged.
 
 - Removed the entire `kmx agent` group, without aliases or retirement stubs.
   Everyday operations are root `create/chat/run`; live inspection is
@@ -103,8 +114,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   workspace; explicit `--workspace` selects an exact root without fallback.
   Extracted-directory `suite push DIRECTORY REFERENCE` and
   `suite build/diff/pull/validate` remain.
-  Create still defaults to live authoring; `create --workspace` is explicitly
-  offline. Root `eval` is helper-only; packaged evaluation and root digest
+  Root `eval` is helper-only; packaged evaluation and root digest
   `lift` are not implemented.
 
 - Removed `kmx lift`; use `kmx aks up` for AKS provisioning.
@@ -124,13 +134,22 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Upgrading
 
+- Add `--live` to scripts that create Orka or kagent resources or PortableAgent
+  bundles, including native previews. Use `kmx create --live` for the existing
+  no-name live Orka wizard, and `kmx create --live --runtime kagent <name>` for
+  exact-v0.10.2 creation. A runtime flag alone no longer selects that path.
+  For default offline authoring, supply a name, model and instructions file;
+  use `--workspace DIR` to select or initialize an exact root in automation.
+  Existing one-member workspaces cannot accept a second member; choose a new
+  root. See the [workspace guide](docs/suite-workspace.md).
+
 - Update scripts using the removed root aliases to their replacements above.
   Local, AKS and context operations retain their existing behavior.
 - Replace command prefixes as follows, retaining arguments and applicable flags:
 
   | Old | New |
   |---|---|
-  | `kmx agent create [name]` | `kmx create [name]` |
+  | `kmx agent create [name]` | `kmx create --live [name]` |
   | `kmx agent chat <name> [message...]` | `kmx chat <name> [message...]` |
   | `kmx agent run [<bundle-dir>]` | `kmx run [<bundle-dir>]` |
   | `kmx agent show <name>` | `kmx orka show <name>` |

@@ -2,8 +2,10 @@
 
 [Orka](orka.md) remains the first-class platform and the default for every
 existing workflow. Kaimahi's front door is `kmx orka` for installation/status
-and root `kmx create` for native Provider + Agent authoring. The selected
-runtime owns execution, enforcement and model access; installing it alone does
+and root `kmx create` for offline workspace authoring. Explicit
+`kmx create --live` retains native Provider + Agent and PortableAgent bundle
+creation. The selected runtime owns execution, enforcement and model access;
+installing it alone does
 not prove an Agent can answer.
 
 The former broad kagent integration is not restored. Its installer steps,
@@ -106,8 +108,8 @@ evaluation and root digest `lift` are not implemented. See the
 | `kmx targets [-o table\|json] [--detect] [--sessions <host:port>]` | offline compiled support by default; explicit read-only probes report present/absent/unreadable separately from qualified versions. No runtime selection, installation or deployment. [Target view and support matrix](runtime-adapters.md#read-only-target-view) |
 | `kmx orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
 | `kmx orka status` | same table-only Orka runtime report as root `status`: running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin. `-o table` only |
-| `kmx create [name]` | default, unchanged live Orka authoring: native Provider + Agent and optional Task. Explicit `--runtime kagent <name>` is create-only for an already-installed exact Kagent v0.10.2. Retrieve a real answer only with `--task`. [Create contract](#kmx-create) |
-| `kmx create <name> --workspace <directory> --model <model> --instructions <file>` | author one tool-free native-Orka suite member offline, without cluster configuration or image construction. Optional `--description`; other create-mode flags refuse. [Workspace guide](suite-workspace.md) |
+| `kmx create <name> --model <model> --instructions <file> [--workspace <directory>]` | default offline authoring of one tool-free native-Orka suite member. Discover the nearest ancestor workspace, or select/initialize an exact root with `--workspace`. Optional `--description`; live-only flags and a second member refuse. No cluster configuration or image construction. [Workspace guide](suite-workspace.md) |
+| `kmx create --live [name]` | unchanged live Orka resource/bundle creation, or its no-name terminal wizard. Explicit `--live --runtime kagent <name>` is create-only for preinstalled exact Kagent v0.10.2. `--live` is also required for `--no-apply`, `--dry-run` and `--out -` previews. Retrieve a real answer only with `--task`. [Live contract](#default-orka-contract) |
 | `kmx push [--workspace <directory>] <reference>` | discover the nearest ancestor `workspace.yaml`, or select an exact root without fallback with `--workspace`; prepare its validated one-member native suite and authored cases, then copy its exact OCI graph to a registry or `--to-layout` target. Print the absolute workspace and OCI manifest digest on stderr. Required member images are empty. Does not evaluate or deploy. Existing registry policy applies. [Workspace guide](suite-workspace.md) |
 | `kmx suite build <directory> ...` | resolve one agent/platform composition and build an OCI image-layout tar through AgentKit using Docker buildx. The current implementation is explicitly experimental and non-conformant because it treats the selected harness image as a monolithic AgentKit adapter and does not compose the runtime-base image. |
 | `kmx suite push <directory> <registry/repository:tag>` | deterministically archive and validate an extracted AgentSuite, then push it to an OCI registry. An existing tag with the same digest is a no-op; a different digest requires `--force`. It also attaches unsigned [suite provenance](#suite-provenance) before moving the tag; `--provenance=false` skips it and `--require-provenance` fails without moving the tag if it cannot be attached. Prints the pushed and provenance digests. See [registry safety](#registry-authentication). |
@@ -583,19 +585,31 @@ and agents, no guard/download/forward/mutation. Static completion works offline.
 
 ## `kmx create`
 
-Orka remains the default. Omitting `--runtime`, or passing `--runtime orka`,
-retains the existing bytes, calls, wizard, flags, and behavior. Kagent is
-explicit-only: `kmx create --runtime kagent <name>`. Runtime selection is
-independent of `--provider-type`, which selects the model provider used by that
-runtime. Create still defaults to live authoring. Explicit `--workspace` selects
-[offline native suite-member authoring](suite-workspace.md); create does not
-discover a workspace or default to offline authoring. Root `push` discovers an
-already-authored workspace; this does not change create's default.
+Default `kmx create <name> --model <model> --instructions <file>` authors one
+tool-free native-Orka workspace member offline. Model and file-valued
+instructions are required; description is optional. Create and root `push`
+share nearest-ancestor `workspace.yaml` discovery. `--workspace DIR` selects an
+exact root without fallback and initializes a missing workspace there without
+prompting. Without a workspace, terminal create offers `Start one here? [Y/n]`;
+nonterminal or redirected use refuses with a `--workspace` hint. Invalid nearest
+markers and a second member fail closed without changing source. A name is
+required; no offline authoring wizard is provided. See the
+[workspace guide](suite-workspace.md) for the full source and prompt contract.
+
+`--live` explicitly selects the separate resource/PortableAgent bundle path,
+including `--no-apply`, `--dry-run` and `--out -` previews. Orka remains its
+default runtime; kagent requires `kmx create --live --runtime kagent <name>`.
+Runtime selection is independent of `--provider-type`, which selects model
+access. Live-only flags without `--live` refuse before configuration or writes;
+`--runtime kagent` alone does not dispatch to live creation. `--live` conflicts
+with `--workspace` and bypasses discovery even below an invalid marker.
+Quickstart and console creation remain live. Help and completion never discover,
+prompt, mutate or load operational configuration.
 
 ### Default Orka contract
 
-Every default Orka bundle contains a new, same-name Provider and referencing
-Agent in `core.orka.ai/v1alpha1`, a metadata-only Secret skeleton, and optionally
+With `--live`, every default Orka bundle contains a new, same-name Provider and
+referencing Agent in `core.orka.ai/v1alpha1`, a metadata-only Secret skeleton, and optionally
 a fresh Task. It does not install Orka or adopt the installer's shared Provider.
 Start with the [first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
 for a context-pinned local run, separately provisioned result account, and the
@@ -604,7 +618,7 @@ release/main authorization and connection limits.
 For offline preview, without tools, kubeconfig reads or cluster calls:
 
 ```bash
-kmx create preview --namespace orka-system \
+kmx create --live preview --namespace orka-system \
   --provider-type openai --model qwen2.5:3b --secret local-provider-key \
   --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out -
 ```
@@ -630,7 +644,7 @@ LF and CRLF line endings without putting the key on the command line or printing
 ```bash
 kubectl --context <ctx> -n <ns> create secret generic <name> \
   --from-file=api-key=<(tr -d '\r\n' < <path>)
-kmx --context <ctx> create my-azure-agent --namespace <ns> \
+kmx --context <ctx> create --live my-azure-agent --namespace <ns> \
   --provider-type azure-openai --model <deployment> --azure-deployment <deployment> \
   --azure-api-version <version> --base-url https://example.openai.azure.com \
   --secret <name>
@@ -723,8 +737,8 @@ delegation limits ([bundle format](agent-lift.md#coordination-in-agentyaml)). Us
   availability for protection against later local-port reuse; initial connection
   trust is still local. See the [full limits](orka.md#author-an-orka-agent-and-get-an-answer).
 
-No-name terminal use offers a wizard for missing required inputs and explicit
-Apply/Cancel; Escape/Ctrl-C cancel without writing. `TERM=dumb` uses linear
+No-name `kmx create --live` terminal use offers a wizard for missing required
+inputs and explicit Apply/Cancel; Escape/Ctrl-C cancel without writing. `TERM=dumb` uses linear
 prompts. Non-interactive use requires a name. No agent name is reserved: the
 embedded examples that occupied `hello-world` and `hello-tools` are gone.
 
@@ -748,7 +762,7 @@ records remain teardown-only.
 An offline review needs no cluster, kubeconfig read, or tool on `PATH`:
 
 ```bash
-kmx create reviewer --runtime kagent --namespace agents \
+kmx create --live reviewer --runtime kagent --namespace agents \
   --description 'Reviews changes' --provider-type openai \
   --model gpt-4o-mini --secret reviewer-key \
   --instructions instructions.txt --out -
@@ -842,13 +856,15 @@ cluster and resource identities and portable/rendered digests, never prompt or
 answer text or system instructions. This receipt does not authorize later
 lifecycle reuse. Explicit v0.10.3 bundle placement requires its own qualified
 target and UID-bound receipt; an existing v0.10.2 deployment is a conflict,
-never adopted or upgraded. Evaluation, console bundle operations and
-interactive `/lift` remain Orka-only.
+never adopted or upgraded. This v0.10.2 create profile does not enable
+evaluation; explicit [v0.10.3 Go bundle evaluation](agent-lift.md#evaluating-exact-v0103-go-kagent)
+is separate. Console bundle operations and interactive `/lift` remain Orka-only.
 
 ### Editing an agent
 
 The hidden editor retirement stub is removed with the entire `agent` group.
-`kmx create` writes reviewable YAML you own, and a live Orka Agent
+`kmx create --live` writes reviewable resource/bundle YAML you own; default
+create authors workspace source. A live Orka Agent
 is edited as the Kubernetes resource it is:
 
 ```bash
@@ -889,7 +905,7 @@ response text and stop uncertain animation after resize.
 
 There is no one-shot Kagent **chat** transport: the former chat invoke, its
 connection-refused/EOF/reset retries and resumable `--session` remain removed.
-The separate create-only `--runtime kagent --task` path sends once and never
+The separate create-only `--live --runtime kagent --task` path sends once and never
 retries an ambiguous result. Interactive Orka `/retry` explicitly resends; that
 does not promise exactly-once execution.
 

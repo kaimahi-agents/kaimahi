@@ -40,7 +40,7 @@ frozen by this rule: the audit exceptions below apply in plain and rich modes.
 | `quickstart` | phases, answer, governance warning, action tree | `-o json` | JSON stdout is one document; rich output is text mode only. |
 | root `status` / `orka status` | Orka runtime fields and tables | table only | Running controller identity, Deployments, CRDs and Providers; no plane suffix or legacy object counts. `bundle status <bundle-dir>` separately supports JSON; root status is not a bundle or suite observer. |
 | `orka list` | heading and table | `-o json\|yaml` | Structured modes remain kubectl-native and are never decoded or restyled. |
-| `create` | phases, capabilities, next actions | `--out -` YAML | Manifest stdout is an artifact and permanently bypasses presentation. |
+| `create --live` | phases, capabilities, next actions | `--out -` YAML | Manifest stdout is an artifact and permanently bypasses presentation. |
 | `completion` | none | shell source / Cobra protocol | Permanently raw and executable. |
 | `chat` | interactive Orka session | none | One-shot chat and raw A2A `--json` output are retired. Enhanced input requires capable input/output terminals; scanner fallback is supported. |
 | context | fields | plain redirected text | Rich fields on a TTY; exact existing alignment when redirected. |
@@ -199,7 +199,7 @@ centralized on stderr. Only those tokens gain semantic color and weight. Their
 spaces, brackets, names, elapsed times, newlines, and native subprocess output
 stay unchanged. Buffer-based tests continue to assert the exact old transcript.
 
-This improves `quickstart`, `local up`, `create`, and `aks up` together.
+This improves `quickstart`, `local up`, `create --live`, and `aks up` together.
 
 ### 2. Safety prompts and guided input — guard implemented
 
@@ -207,7 +207,7 @@ Implemented:
 
 - context-guard action and confirmation emphasis.
 
-The `create` wizard now uses Bubble Tea for eligible terminals; its
+The `create --live` wizard now uses Bubble Tea for eligible terminals; its
 input and cancellation boundaries are in [charm-ux-followup-plan.md](charm-ux-followup-plan.md).
 
 Keep refusal wording and copyable remediation commands plain and atomic.

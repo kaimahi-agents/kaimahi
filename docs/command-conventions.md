@@ -43,7 +43,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `list` | Read many resources, one summary row each. | `kmx orka list` |
 | `show` | Read one resource and what it depends on, from live state. | `kmx orka show <name>` |
 | `status` | Report readiness, health or drift. | `kmx orka status`, `kmx bundle status <bundle-dir>` |
-| `create` | Make a new live resource by default; explicit workspace mode authors offline. | `kmx create [name]`, `kmx create <name> --workspace <dir>` |
+| `create` | Author one workspace member offline by default; `--live` explicitly creates resources and a PortableAgent bundle. | `kmx create <name> --model <model> --instructions <file>`, `kmx create --live [name]` |
 | `install` | Install runtime software onto a cluster. | `kmx orka install` |
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
 | `run` | Execute once and return the result. | `kmx run` |
@@ -82,6 +82,8 @@ Keep these distinctions:
 | `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`. Machine formats print exactly one document. |
 | `-i`, `--interactive` | Switch a command that has a scripted mode to its guided terminal mode. Not used on commands that are only interactive. |
 | `--out` | Path for written artifacts. Never reuse `--output` for a path. |
+| `--live` | Select resource/bundle creation, including its previews and no-name Orka wizard; mandatory for both runtimes. Conflicts with `--workspace`. |
+| `--workspace` | Exact workspace root without discovery fallback; default create initializes it if absent, and push requires an existing workspace. |
 | `--plan` | Read the target and print what would change. No writes. |
 | `--no-apply` | Render artifacts locally. No cluster writes. |
 | `--dry-run` | Server-side validation. No persistent cluster writes. |
@@ -102,10 +104,15 @@ Keep these distinctions:
 
 ## 4. Safety
 
-- **Name the target before writing.** Every mutation prints the context, how
-  it was chosen, the server and the namespaces on stderr, then runs the guard.
+- **Name the target before cluster writes.** Every cluster mutation prints the
+  context, how it was chosen, the server and the namespaces on stderr, then runs the guard.
   A local kind cluster proceeds. A remote context needs typed confirmation or
   `KAIMAHI_CONFIRM=<context>`. A non-interactive run without consent refuses.
+- **Offline create resolves the workspace before writing.** Without a workspace,
+  terminal use asks `Start one here? [Y/n]`; nonterminal or redirected use
+  refuses with a `--workspace` hint. Invalid nearest markers and second members
+  refuse without changing source. Exact model and file-valued instructions are
+  required; no offline wizard or implicit live dispatch is provided.
 - **Read-only commands never prompt.**
 - **Help and completion never mutate.** Completion lookups are bounded and
   read-only.

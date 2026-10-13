@@ -76,7 +76,7 @@ func (a *App) CreateAgentInteractive(opt CreateOptions) error {
 func (a *App) collectCreateAgentInteractive(opt CreateOptions) (CreateOptions, bool, error) {
 	errFile, visible := a.Err.(*os.File)
 	if a.Stdin == nil || !visible || !term.IsTerminal(int(a.Stdin.Fd())) || !term.IsTerminal(int(errFile.Fd())) {
-		return opt, false, fmt.Errorf("kmx create needs a name in non-interactive input: kmx create <name> [flags]")
+		return opt, false, fmt.Errorf("kmx create --live needs a name in non-interactive input: kmx create --live <name> [flags]")
 	}
 	if os.Getenv("TERM") == "dumb" {
 		completed, err := collectCreateOptions(bufio.NewScanner(a.Stdin), a.Err, opt)
@@ -194,7 +194,7 @@ func collectCreateOptions(scanner lineScanner, out io.Writer, opt CreateOptions)
 		fmt.Fprintln(out, createTaskAuthorityNotice)
 	}
 	for {
-		apply, err := promptValue(scanner, out, fmt.Sprintf("Create Agent %q (Orka agent) in namespace %q? (Y/n)", opt.Name, opt.Namespace), "y", true)
+		apply, err := promptValue(scanner, out, fmt.Sprintf("Create Agent %q (live Orka agent) in namespace %q? (Y/n)", opt.Name, opt.Namespace), "y", true)
 		if err != nil {
 			return opt, err
 		}

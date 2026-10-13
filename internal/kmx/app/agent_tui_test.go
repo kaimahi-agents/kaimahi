@@ -597,7 +597,7 @@ func TestAgentTUIEmptyEnvironmentCreation(t *testing.T) {
 		m.columns[1].Agents = nil
 		m.columns[1].Env.Kubeconfig = "/remote/config"
 		m.width = 160
-		if !strings.Contains(ansi.Strip(m.View().Content), "<no agents here, n to create a new one>") {
+		if !strings.Contains(ansi.Strip(m.View().Content), "<no live agents here, n to create a new one>") {
 			t.Fatal("missing empty entry")
 		}
 		m = tuiKey(m, 'n', "n")

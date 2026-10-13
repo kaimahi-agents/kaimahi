@@ -39,6 +39,7 @@ JOURNEY_COMMANDS = [
     ("kmx local up", r"^`kmx local up`"),
     ("kmx quickstart --interactive", r"^`kmx quickstart --interactive`"),
     ("kmx create", r"^`kmx create`"),
+    ("kmx create --live", r"^`kmx create --live`"),
     ("kmx run", r"^`kmx run`"),
     ("kmx chat", r"^`kmx chat`"),
     ("kmx push", r"^`kmx push`"),

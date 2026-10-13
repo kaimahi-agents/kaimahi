@@ -24,7 +24,8 @@ resources and list Agents and Providers. Tool details additionally
 read Orka Tools; ConfigMap-backed prompts read their referenced ConfigMap key.
 The console reads `agents.core.orka.ai` in `--namespace` (default `orka-system`)
 and nothing else. It is an Orka workspace: every operation it offers — list,
-create, chat, inference, tools, lift — is an Orka operation.
+live creation, chat, inference, tools, lift — is an Orka operation. Console
+creation stays live; it does not author or execute a local suite workspace.
 
 Without context flags, each column remembers its last `/env` selection. The
 remote column next prefers the last lift destination, then the configured kmx
@@ -201,7 +202,7 @@ a branch, so the full id is found again with status's own search.
 
 **Finding the bundle.** A console row is a live agent and does not record where
 its files are. The pane looks for `agents/<name>/agent.yaml`, where
-`kmx create` writes, relative to where the console was started;
+`kmx create --live` writes, relative to where the console was started;
 `--bundles <dir>` names another directory. With no bundle there, the pane says
 where it looked instead of guessing. A bundle there that defines a different
 agent is refused rather than compared.
@@ -212,8 +213,8 @@ it has since moved the selection; closing or reloading cancels a read still
 running. `j`/`k` and PgUp/PgDn scroll, Esc or Enter
 closes. The menu entry is last, so no existing action changes position.
 The console inventories Orka only. A Kagent bundle may exist after explicit
-create, but this pane intentionally refuses it before cluster reads; it is not
-offered as a comparison or lift target. Demo mode shows `behind`, `drifted` and
+`create --live --runtime kagent`, but this pane intentionally refuses it before
+cluster reads; it is not offered as a comparison or lift target. Demo mode shows `behind`, `drifted` and
 `unknown` from sample data.
 
 ## Chat and lift

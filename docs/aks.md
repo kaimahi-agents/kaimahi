@@ -81,7 +81,7 @@ exists, so the phase installs the platform and names the step that is yours:
 ```bash
 printf %s "$ORKA_API_KEY" | kubectl --context <cluster> -n orka-system \
   create secret generic <name> --from-file=api-key=/dev/stdin
-kmx --context <cluster> create <agent> --namespace orka-system \
+kmx --context <cluster> create --live <agent> --namespace orka-system \
   --provider-type openai --model <model> --secret <name> --base-url <endpoint>
 ```
 

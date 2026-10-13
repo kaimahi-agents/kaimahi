@@ -160,7 +160,7 @@ Agent, waiting for each to become Ready.
 Existing matching Agent and Provider configurations are reused during lift.
 Comparison uses a server-side dry-run replace to account for API defaults; no
 replacement is applied. Different specifications and terminating resources are
-reported as conflicts. Ordinary online Orka `create` instead reconciles
+reported as conflicts. Ordinary online Orka `create --live` instead reconciles
 bundle-owned resources and can adopt identical unmarked objects; conflicting
 objects and local artifacts are still refused. See the
 [create contract](kmx.md#kmx-create) for rerun, dry-run and Task rules.

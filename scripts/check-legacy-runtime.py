@@ -406,7 +406,7 @@ def selftest():
     current = [
         'args := []string{"context", "use", "kind-demo"}',
         'kmx context use "remote team"', 'kmx --context use context show',
-        'kmx agent create demo --runtime kagent', 'kmx agent lift demo --runtime kagent',
+        'kmx create --live demo --runtime kagent', 'kmx agent lift demo --runtime kagent',
         'kmx agent status demo --runtime kagent # --runtime-version v0.10.3',
         'kmx agent status demo --runtime kagent && echo --runtime-version v0.10.3',
         'kmx agent status demo --runtime kagent\n# --runtime-version v0.10.3',
@@ -424,7 +424,7 @@ def selftest():
         'kmx context use "agent edit"', 'kmx --namespace use context show',
         'kmx context use x; echo --legacy-kagent', 'kmx agent chat demo --message "invoke"',
         'a.operationCommand("context", "use", context)',
-        'a.operationCommand("agent", "create", name, "--runtime", "kagent")',
+        'a.operationCommand("create", "--live", name, "--runtime", "kagent")',
         'exec.Command("kubectl", "get", "agents.kagent.dev")',
         'use := &cobra.Command{Use: "use <context>"}',
         'retiredCommand("edit", "kubectl --context <ctx> edit agents.core.orka.ai")',

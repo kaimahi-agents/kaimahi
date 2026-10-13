@@ -343,7 +343,7 @@ func TestCreateWizardModelCancelKeysAndVisibleSelection(t *testing.T) {
 	if !strings.Contains(view, "> Apply") || !strings.Contains(view, "  Cancel") {
 		t.Fatalf("confirmation is not an explicit visible selection:\n%s", view)
 	}
-	if !strings.Contains(view, `Create Agent "demo" (Orka agent)?`) {
+	if !strings.Contains(view, `Create Agent "demo" (live Orka agent)?`) {
 		t.Fatalf("confirmation does not lead with the agent:\n%s", view)
 	}
 	m = updateCreateWizard(t, m, wizardKey('j'))

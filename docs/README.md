@@ -11,9 +11,9 @@ or comparing implementations.
 | Set up the current development CLI and understand prerequisites | [Getting started](getting-started.md) |
 | Inspect compiled runtime support and qualification evidence with `kmx targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
-| Author an agent: default native Orka, or explicit create for preinstalled exact Kagent v0.10.2 | [Native Orka create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-create) |
+| Create live resources and bundles: `kmx create --live` for Orka, or add `--runtime kagent` for preinstalled exact v0.10.2 | [Native Orka create](orka.md#author-an-orka-agent-and-get-an-answer), [CLI contract](kmx.md#kmx-create) |
 | Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](../agentsuite/spec.md) |
-| Author and publish one native-Orka suite member offline, without member images | [Suite workspace](suite-workspace.md) |
+| Author one native-Orka suite member offline with default `kmx create`, then publish it with `kmx push`, without member images | [Suite workspace](suite-workspace.md) |
 | Discover models and configure native inference | [Models](models.md), [Copilot inference](copilot-inference.md), [Foundry inference](local-foundry-inference.md) |
 | Chat with an existing Orka Agent | [Interactive chat](interactive-chat.md) |
 | Lift/status on prepared Orka or explicit exact-v0.10.3 targets; run/evaluate/verify/retire on supported profiles | [Bundle lifecycle](agent-lift.md) |
@@ -23,8 +23,9 @@ or comparing implementations.
 | Install a tagged release or understand version and upgrade limits | [Releases](releases.md) |
 | Diagnose installation, inference, or runtime problems | [FAQ](FAQ.md) |
 
-Native Orka authoring remains the default and the recommendation in
-[orka.md](orka.md). Bounded kagent profiles target preinstalled exact v0.10.2
+Default create authors offline workspace source; explicit `--live` selects
+resource/bundle creation and its previews. Native Orka remains the recommendation
+in [orka.md](orka.md). Bounded kagent profiles target preinstalled exact v0.10.2
 for create and exact v0.10.3 for declarative bundle lift/status. Neither is a
 YAML translation over Orka or a restoration of the former broad command surface.
 Standalone run/chat/eval, updates, retirement and image placement remain

@@ -89,21 +89,27 @@ func TestCreateRefusesExistingArtifacts(t *testing.T) {
 }
 
 func TestCreateRejectsInvalidInput(t *testing.T) {
+	credential := "ghp_" + strings.Repeat("x", 36)
 	for _, test := range []struct{ name, model, text string }{
 		{"", "model", "instructions"}, {"../escape", "model", "instructions"},
 		{"with.dots", "model", "instructions"}, {"with_underscore", "model", "instructions"}, {"trailing-", "model", "instructions"},
 		{"greeter", "", "instructions"}, {"greeter", " model ", "instructions"},
-		{"greeter", "model", "  \n"}, {"greeter", "model", "ghp_" + strings.Repeat("x", 36)},
+		{"greeter", "model", "  \n"}, {"greeter", "model", credential},
+		{credential, "model", "instructions"},
 	} {
-		t.Run(test.name+test.model, func(t *testing.T) {
+		t.Run(strings.ReplaceAll(test.name, credential, "credential-name")+test.model, func(t *testing.T) {
 			input := filepath.Join(t.TempDir(), "input.md")
 			writeFile(t, input, test.text)
 			root := filepath.Join(t.TempDir(), "workspace")
-			if err := workspace.Create(context.Background(), root, workspace.CreateOptions{Name: test.name, Model: test.model, InstructionsFile: input}); err == nil {
+			err := workspace.Create(context.Background(), root, workspace.CreateOptions{Name: test.name, Model: test.model, InstructionsFile: input})
+			if err == nil {
 				t.Fatal("accepted invalid input")
 			}
-			if _, err := os.Stat(filepath.Join(root, "workspace.yaml")); !os.IsNotExist(err) {
-				t.Fatal("published invalid workspace")
+			if strings.Contains(err.Error(), credential) {
+				t.Fatal("error echoed credential-shaped input")
+			}
+			if _, err := os.Stat(root); !os.IsNotExist(err) {
+				t.Fatal("invalid input created workspace directory")
 			}
 		})
 	}

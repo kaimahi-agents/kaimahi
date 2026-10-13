@@ -145,28 +145,52 @@ func readBounded(r *os.Root, name string) ([]byte, error) {
 	return b, nil
 }
 
+// ValidateCreateOptions checks authored inputs without creating any files.
+// Interactive callers use it before offering workspace initialization.
+func ValidateCreateOptions(opt CreateOptions) error {
+	_, _, err := createInput(opt)
+	return err
+}
+
+func createInput(opt CreateOptions) (sourceMember, []byte, error) {
+	m := sourceMember{ID: opt.Name, Description: opt.Description, Instructions: "instructions.md"}
+	if err := safeText(opt.Name); err != nil {
+		return m, nil, err
+	}
+	if err := scaffold.ValidateName(opt.Name); err != nil {
+		return m, nil, err
+	}
+	if strings.TrimSpace(opt.Model) == "" || strings.TrimSpace(opt.InstructionsFile) == "" {
+		return m, nil, errors.New("workspace creation requires --model and --instructions <file>")
+	}
+	m.Model.Protocol, m.Model.Model = "openai-compatible", opt.Model
+	input, err := safeAbsolute(opt.InstructionsFile)
+	if err != nil {
+		return m, nil, err
+	}
+	inputRoot, err := os.OpenRoot(filepath.Dir(input))
+	if err != nil {
+		return m, nil, err
+	}
+	instructions, err := readBounded(inputRoot, filepath.Base(input))
+	inputRoot.Close()
+	if err != nil {
+		return m, nil, err
+	}
+	if err := validateMember(m, instructions); err != nil {
+		return m, nil, err
+	}
+	return m, instructions, nil
+}
+
 // Create stages complete files and publishes the descriptor last. Exclusive links
 // refuse overwrites; rollback removes only directories created by this call.
 func Create(ctx context.Context, root string, opt CreateOptions) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	m := sourceMember{ID: opt.Name, Description: opt.Description, Instructions: "instructions.md"}
-	m.Model.Protocol, m.Model.Model = "openai-compatible", opt.Model
-	input, err := safeAbsolute(opt.InstructionsFile)
+	m, instructions, err := createInput(opt)
 	if err != nil {
-		return err
-	}
-	inputRoot, err := os.OpenRoot(filepath.Dir(input))
-	if err != nil {
-		return err
-	}
-	instructions, err := readBounded(inputRoot, filepath.Base(input))
-	inputRoot.Close()
-	if err != nil {
-		return err
-	}
-	if err := validateMember(m, instructions); err != nil {
 		return err
 	}
 	root, err = safeAbsolute(root)

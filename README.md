@@ -44,7 +44,9 @@ This prepares local kind, Ollama and Orka, then prints a fresh Task's answer; fo
 
 `kmx quickstart --interactive` guides custom agent and model choices.
 
-`kmx create` defaults to live Orka authoring and writes an editable bundle on a prepared target; explicit `--workspace` authors offline.
+`kmx create` authors one [native-Orka workspace member](docs/suite-workspace.md) offline, with an exact `--model` and file-valued `--instructions`. It discovers the nearest ancestor `workspace.yaml`; `--workspace DIR` selects or initializes an exact root.
+
+`kmx create --live` creates Orka resources and an editable PortableAgent bundle on a prepared target; without a name it opens the live wizard. Both Orka and explicit kagent creation require `--live`, including `--no-apply` and `--out -` previews.
 
 `kmx run` runs one Task against a deployed Orka Agent, with answer-only stdout; select it with `--agent <name>` and supply `--prompt <text>`.
 
@@ -52,7 +54,7 @@ This prepares local kind, Ollama and Orka, then prints a fresh Task's answer; fo
 
 `kmx push` publishes an already-authored [native-Orka workspace](docs/suite-workspace.md) with one destination `REF`, not a PortableAgent bundle. It discovers the nearest ancestor `workspace.yaml`; `--workspace DIR` selects an exact root without fallback. It neither evaluates nor deploys.
 
-`kmx bundle lift` moves that bundle to a prepared destination, with Orka as the default.
+`kmx bundle lift` moves a live-create PortableAgent bundle to a prepared destination, with Orka as the default; it does not deploy a workspace.
 
 `kmx bundle status` reports the deployed revision, readiness, drift and available evaluation evidence.
 

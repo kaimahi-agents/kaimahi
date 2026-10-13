@@ -308,7 +308,7 @@ func TestQuickstartStartsWithExistingAgentOrNewChoice(t *testing.T) {
 		existing: []quickstartExistingAgent{{Name: "existing", Namespace: OrkaNamespace}},
 		models:   []localModel{{Provider: "bundled", Model: "qwen2.5:3b"}}}
 	view := ansi.Strip(m.View().Content)
-	for _, want := range []string{"1/4", "Create a new agent", `Use existing Agent existing`} {
+	for _, want := range []string{"1/4", "Create a new live agent", `Use existing Agent existing`} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("start choice missing %q:\n%s", want, view)
 		}

@@ -748,7 +748,7 @@ func (m quickstartWizardModel) compactQuestion(width, height int) string {
 	switch {
 	case m.agentStep:
 		title = "1/4 · Start with"
-		choices = append(choices, "Create a new agent")
+		choices = append(choices, "Create a new live agent")
 		for _, a := range m.existing {
 			label := "Use existing Agent " + a.Name
 			if width < 60 {
