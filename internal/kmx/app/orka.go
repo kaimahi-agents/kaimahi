@@ -12,6 +12,7 @@ package app
 // nothing here and owns none of it.
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -480,10 +482,18 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 		}
 	}
 
+	provider := orkaProviderManifest(opt)
+	matches, err := a.orkaProviderMatches(a.operationContext(), opt, provider)
+	if err != nil {
+		return err
+	}
+	if matches {
+		a.notef("Provider %q already matches; leaving its binding resourceVersion unchanged.", opt.Provider)
+		return nil
+	}
 	if err := a.orkaKeylessProviderSecret(opt.Provider); err != nil {
 		return err
 	}
-	provider := orkaProviderManifest(opt)
 
 	quiet := *a.Run
 	quiet.Echo = false
@@ -495,6 +505,49 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 	a.notef("Provider %q resolves %s/%s against %s — no API key anywhere.",
 		opt.Provider, opt.Provider, opt.Model, opt.ModelURL)
 	return nil
+}
+
+// Normalize the complete desired spec without applying it. A first client-side
+// apply after quickstart's CREATE would otherwise change binding identity merely
+// by adding bookkeeping, even when the Provider's behavior already matches.
+func (a *App) orkaProviderMatches(ctx context.Context, opt OrkaOptions, manifest string) (bool, error) {
+	raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", orkaProviderKind, opt.Provider, "--ignore-not-found=true", "-o", "json")
+	if err != nil {
+		return false, fmt.Errorf("cannot inspect Provider %s/%s for runtime reuse: %w", OrkaNamespace, opt.Provider, err)
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return false, nil
+	}
+	var live, desired map[string]any
+	if json.Unmarshal(raw, &live) != nil || yaml.Unmarshal([]byte(manifest), &desired) != nil {
+		return false, fmt.Errorf("invalid Provider %s/%s runtime reuse input", OrkaNamespace, opt.Provider)
+	}
+	meta, _ := live["metadata"].(map[string]any)
+	uid, _ := meta["uid"].(string)
+	version, _ := meta["resourceVersion"].(string)
+	_, specObject := live["spec"].(map[string]any)
+	if live["apiVersion"] != desired["apiVersion"] || live["kind"] != "Provider" || meta["name"] != opt.Provider || meta["namespace"] != OrkaNamespace || uid == "" || version == "" || meta["deletionTimestamp"] != nil || !specObject {
+		return false, fmt.Errorf("invalid Provider %s/%s identity for runtime reuse", OrkaNamespace, opt.Provider)
+	}
+	candidate := map[string]any{"apiVersion": desired["apiVersion"], "kind": "Provider", "metadata": meta, "spec": desired["spec"]}
+	body, err := json.Marshal(candidate)
+	if err != nil {
+		return false, err
+	}
+	raw, err = a.orkaCapture(ctx, body, "-n", OrkaNamespace, "replace", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
+	if err != nil {
+		return false, fmt.Errorf("cannot normalize Provider %s/%s for runtime reuse: %w", OrkaNamespace, opt.Provider, err)
+	}
+	var admitted map[string]any
+	if json.Unmarshal(raw, &admitted) != nil {
+		return false, fmt.Errorf("invalid Provider %s/%s runtime normalization", OrkaNamespace, opt.Provider)
+	}
+	observed, _ := admitted["metadata"].(map[string]any)
+	_, specObject = admitted["spec"].(map[string]any)
+	if admitted["apiVersion"] != desired["apiVersion"] || admitted["kind"] != "Provider" || observed["name"] != opt.Provider || observed["namespace"] != OrkaNamespace || observed["uid"] != uid || observed["resourceVersion"] != version || !specObject {
+		return false, fmt.Errorf("Provider %s/%s identity changed during runtime normalization", OrkaNamespace, opt.Provider)
+	}
+	return reflect.DeepEqual(live["spec"], admitted["spec"]), nil
 }
 
 func orkaProviderManifest(opt OrkaOptions) string {

@@ -3,6 +3,9 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -73,6 +76,28 @@ func TestQuickstartSuiteSourceExactReuse(t *testing.T) {
 // and merged read-only lift planning. Only cluster/result transport is simulated.
 func TestQuickstartPreparesExactSuiteLift(t *testing.T) {
 	a, _, _, f := nativeEvaluationFixture(t)
+	reads := f.nativeReads
+	source := reads.objects["providers.core.orka.ai/inference"]
+	source["apiVersion"] = "core.orka.ai/v1alpha1"
+	source["spec"].(map[string]any)["secretRef"].(map[string]any)["name"] = "inference-provider-key"
+	secret := reads.objects["secret/model-secret"]
+	secret["metadata"].(map[string]any)["name"] = "inference-provider-key"
+	reads.objects["secret/inference-provider-key"] = secret
+	capture := a.captureCommand
+	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+		if slices.Contains(cmd.Args, "replace") && slices.Contains(cmd.Args, "--dry-run=server") {
+			raw, err := io.ReadAll(cmd.Stdin)
+			if err != nil {
+				return err
+			}
+			cmd.Stdin = bytes.NewReader(raw)
+			var doc map[string]any
+			if json.Unmarshal(raw, &doc) == nil && doc["metadata"].(map[string]any)["name"] == "inference" {
+				return json.NewEncoder(cmd.Stdout).Encode(doc)
+			}
+		}
+		return capture(ctx, cmd)
+	}
 	a.Cfg.Model = "packaged-model"
 	a.Cfg.KubeContext = "kind-test"
 	// The shared reconcile fixture stores one pair by kind; its seeded greeter
@@ -103,6 +128,11 @@ func TestQuickstartPreparesExactSuiteLift(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatal("preparation polluted answer/JSON stdout")
 	}
+	// This is local up's Provider writer, between fresh evaluations. It must
+	// normalize and reuse the source instead of applying bookkeeping over it.
+	if err := a.orkaProvider(OrkaOptions{Provider: "inference", Model: "provider-default", ModelURL: "https://model.example.invalid/v1"}); err != nil {
+		t.Fatal(err)
+	}
 	second, err := a.prepareQuickstartSuite(t.Context(), "provider:inference", f.opt.ResultPort)
 	if err != nil {
 		t.Fatal(err)
@@ -110,13 +140,49 @@ func TestQuickstartPreparesExactSuiteLift(t *testing.T) {
 	if first.Evidence == second.Evidence || first.Plan.Summary().SuiteDigest != second.Plan.Summary().SuiteDigest {
 		t.Fatal("rerun reused evidence export or changed S")
 	}
-	for _, path := range []string{first.Evidence, second.Evidence} {
-		if _, err := readSuitePassingReceipt(t.Context(), path); err != nil {
+	third, err := a.prepareQuickstartSuite(t.Context(), "provider:inference", f.opt.ResultPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, tasks, taskUIDs := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, path := range []string{first.Evidence, second.Evidence, third.Evidence} {
+		receipt, err := readSuitePassingReceipt(t.Context(), path)
+		if err != nil {
 			t.Fatalf("incomplete evidence: %v", err)
+		}
+		if runs[receipt.RunID] || tasks[receipt.Cases[0].TaskName] || taskUIDs[receipt.Cases[0].TaskUID] {
+			t.Fatal("reused evaluation attribution or receipt identity")
+		}
+		runs[receipt.RunID], tasks[receipt.Cases[0].TaskName], taskUIDs[receipt.Cases[0].TaskUID] = true, true, true
+		if receipt.Subject.Binding.Provider.ResourceVersion != "1" {
+			t.Fatal("runtime writer changed source binding identity")
+		}
+	}
+	for _, row := range third.Plan.Summary().Resources {
+		if row.Action != "reuse" {
+			t.Fatalf("third evaluation did not reuse placement: %+v", row)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(root, "agent.yaml")); !os.IsNotExist(err) {
 		t.Fatal("caller manufactured a legacy bundle")
+	}
+}
+
+func TestNativePlacementRefusalPreservesIdentityWithoutPayload(t *testing.T) {
+	for _, cancellation := range []error{nil, context.Canceled, context.DeadlineExceeded} {
+		cause := errors.Join(&suiteNativeReuseRefusal{"Provider", "sample"}, fmt.Errorf("%s", nativeCanary), cancellation)
+		got := suiteEvaluationError(t.Context(), cause, true)
+		var refusal *suiteNativeReuseRefusal
+		if !errors.As(got, &refusal) || !errors.Is(got, errSuiteNativeEvaluation) || cancellation != nil && !errors.Is(got, cancellation) {
+			t.Fatalf("lost refusal or cancellation identity: %v", got)
+		}
+		if strings.Contains(got.Error(), nativeCanary) || strings.Contains(got.Error(), "outcome unknown") {
+			t.Fatal("payload escaped or placement phase lost")
+		}
+	}
+	got := suiteEvaluationError(t.Context(), fmt.Errorf("%s", nativeCanary), true)
+	if strings.Contains(got.Error(), nativeCanary) {
+		t.Fatal("untrusted diagnostic escaped")
 	}
 }
 
@@ -145,6 +211,9 @@ func TestQuickstartSuiteEvaluationStopsBeforeTasksOnDrift(t *testing.T) {
 	err = a.evaluateSuiteWorkspace(t.Context(), p, true)
 	if err == nil || writes != 0 {
 		t.Fatalf("strict eval changed drifted pair or sent a Task: writes=%d err=%v", writes, err)
+	}
+	if !strings.Contains(err.Error(), "Provider/greeter differs from the reviewed suite") {
+		t.Fatalf("placement refusal was replaced by an unattributed evaluation error: %v", err)
 	}
 	if _, err := os.Stat(opt.Out); !os.IsNotExist(err) {
 		t.Fatal("refused evaluation exported evidence")

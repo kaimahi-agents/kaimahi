@@ -884,47 +884,6 @@ jobs:
           # Full suite eval/lift precedes the separate fresh answer Task.
           grep -q 'Install Orka v' quickstart.out
           grep -q 'Deploy the hello-world-agent agent' quickstart.out
-      # Running it twice is how an agent in a harness will use it: run,
-      # read, decide, run again. The second run must be safe, and must still
-      # end with an answer — this time as the JSON a machine reads.
-      - name: Safe to run twice, and machine-readable
-        if: steps.changes.outputs.docs_only != 'true'
-        env:
-          KIND_CLUSTER: kmx-quickstart
-        run: |
-          set -euo pipefail
-          export PATH="$HOME/.local/bin:$PATH"
-          # Show what the run said if anything below fails: a step that hides
-          # its own evidence costs a whole CI cycle to diagnose.
-          trap 'echo "--- stderr ---"; tail -40 quickstart2.err; echo "--- stdout (first 400 bytes) ---"; head -c 400 quickstart.json' ERR
-          kmx quickstart --output json > quickstart.json 2> quickstart2.err
-          # stdout must be ONE json document and nothing else — the caller is
-          # a parser, not a person.
-          head -c 1 quickstart.json | grep -q '{'
-          python3 - <<'EOF'
-          import json, shlex, sys
-          r = json.load(open("quickstart.json"))
-          assert r["ok"] is True, r
-          assert r["governed"] is False, "the fast path must not claim governance"
-          assert r["answer"].strip(), "no answer in the structured output"
-          assert r["agent"] == "hello-world-agent", r
-          assert "orka-system" in r["manifest"], r["manifest"]
-          assert r["suite_digest"].startswith("sha256:"), r
-          assert r["suite_digest"] in r["manifest"], r
-          for key in ("workspace", "layout", "evidence"):
-              assert r[key], r
-          assert not __import__("pathlib").Path(r["workspace"], "agent.yaml").exists(), r
-          assert "kagent" not in r["manifest"], r["manifest"]
-          assert r["context"] == "kind-kmx-quickstart", r
-          assert r["elapsed_seconds"] > 0, r
-          commands = [shlex.split(n) for n in r["next"]]
-          assert len(commands) == 3, r["next"]
-          assert [argv[:3] for argv in commands] == [["kmx", "--context", r["context"]]] * 3, commands
-          assert commands[0][3:4] == ["chat"], commands
-          assert commands[1][3:] == ["create", "--help"], commands
-          assert commands[2][3:] == ["orka", "status"], commands
-          print("second run:", round(r["elapsed_seconds"], 1), "s ·", r["answer"][:80])
-          EOF
       # `kmx local up` on the same cluster is the RUNTIME and nothing more: it
       # must reconcile Orka without deploying an agent, and without bringing
       # back a legacy runtime that no longer has a caller.
@@ -935,7 +894,11 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
+          k="$HOME/.config/kmx/path/kubectl"
+          source_before=$("$k" --context kind-kmx-quickstart -n orka-system get providers.core.orka.ai local -o jsonpath='{.metadata.resourceVersion}')
           kmx local up 2>&1 | tee up-after-quickstart.out
+          source_after=$("$k" --context kind-kmx-quickstart -n orka-system get providers.core.orka.ai local -o jsonpath='{.metadata.resourceVersion}')
+          test "$source_before" = "$source_after"
           if grep -qi 'kagent' up-after-quickstart.out; then
             echo "a bare kmx local up still names the legacy runtime:"
             grep -i kagent up-after-quickstart.out; exit 1
@@ -976,6 +939,46 @@ jobs:
           assert v["fullnameOverride"] == "orka-api", v
           assert v["labels"]["kmx.kaimahi.dev/installed"] == "true", v
           '
+      # Repeat after runtime setup without changing the source binding identity.
+      # Each run still evaluates all cases and requests a separate fresh answer.
+      - name: Safe to run twice, and machine-readable
+        if: steps.changes.outputs.docs_only != 'true'
+        env:
+          KIND_CLUSTER: kmx-quickstart
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          # Show what the run said if anything below fails: a step that hides
+          # its own evidence costs a whole CI cycle to diagnose.
+          trap 'echo "--- stderr ---"; tail -40 quickstart2.err; echo "--- stdout (first 400 bytes) ---"; head -c 400 quickstart.json' ERR
+          kmx quickstart --output json > quickstart.json 2> quickstart2.err
+          # stdout must be ONE json document and nothing else — the caller is
+          # a parser, not a person.
+          head -c 1 quickstart.json | grep -q '{'
+          python3 - <<'EOF'
+          import json, shlex, sys
+          r = json.load(open("quickstart.json"))
+          assert r["ok"] is True, r
+          assert r["governed"] is False, "the fast path must not claim governance"
+          assert r["answer"].strip(), "no answer in the structured output"
+          assert r["agent"] == "hello-world-agent", r
+          assert "orka-system" in r["manifest"], r["manifest"]
+          assert r["suite_digest"].startswith("sha256:"), r
+          assert r["suite_digest"] in r["manifest"], r
+          for key in ("workspace", "layout", "evidence"):
+              assert r[key], r
+          assert not __import__("pathlib").Path(r["workspace"], "agent.yaml").exists(), r
+          assert "kagent" not in r["manifest"], r["manifest"]
+          assert r["context"] == "kind-kmx-quickstart", r
+          assert r["elapsed_seconds"] > 0, r
+          commands = [shlex.split(n) for n in r["next"]]
+          assert len(commands) == 3, r["next"]
+          assert [argv[:3] for argv in commands] == [["kmx", "--context", r["context"]]] * 3, commands
+          assert commands[0][3:4] == ["chat"], commands
+          assert commands[1][3:] == ["create", "--help"], commands
+          assert commands[2][3:] == ["orka", "status"], commands
+          print("second run:", round(r["elapsed_seconds"], 1), "s ·", r["answer"][:80])
+          EOF
       # Rerunning is how an agent in a harness uses this command. The third
       # run must REUSE the exact suite placement — not recreate it,
       # and not refuse it — and must still produce a fresh Task and answer.
@@ -1019,7 +1022,7 @@ jobs:
           if kmx quickstart > drift.out 2>&1; then
             echo "a drifted Agent was overwritten instead of refused"; cat drift.out; exit 1
           fi
-          grep -q 'native evaluation' drift.out
+          grep -q 'native placement refused: Agent/hello-world-agent differs from the reviewed suite' drift.out
           tasks_after=$("$k" --context kind-kmx-quickstart -n orka-system get tasks.core.orka.ai -o name | wc -l)
           test "$tasks_after" -eq "$tasks_before"
           prompt=$("$k" --context kind-kmx-quickstart -n orka-system get \

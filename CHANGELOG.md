@@ -150,6 +150,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- Repeating `kmx local up` after quickstart leaves an already-matching inference Provider and its Secret untouched, avoiding bookkeeping-only resourceVersion changes that invalidate strict suite reuse. Native binding identity still includes resourceVersion. Strict placement refusals retain their safe resource-specific reason without exposing model or subprocess payloads.
+
 - Same-subject native release lift reuses its freshly compared input snapshot
   within each recheck instead of inspecting the same inputs twice. Every
   pre-write boundary and final placement verification still reads the API;

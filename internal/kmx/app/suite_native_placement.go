@@ -124,9 +124,19 @@ func (a *App) placeSuiteNativeMode(ctx context.Context, p *suiteNativePrepared, 
 	return placement, nil
 }
 
+// Only this payload-free placement refusal may cross the evaluation diagnostic
+// boundary. Subprocess errors and authored/model content remain suppressed.
+type suiteNativeReuseRefusal struct{ kind, name string }
+
+func (e *suiteNativeReuseRefusal) Error() string {
+	return fmt.Sprintf("native placement refused: %s/%s differs from the reviewed suite; edit source, then eval, push and lift explicitly instead of repairing live drift; resources may remain; no retry or cleanup", safeTerminal(e.kind), safeTerminal(e.name))
+}
+
+func (*suiteNativeReuseRefusal) Unwrap() error { return errSuiteNativeEvaluation }
+
 func checkSuiteNativeReuse(check orkaReconcileCheck, strict bool) error {
 	if strict && (check.markerRefresh || check.outcome != agentruntime.ResourceCreated && check.outcome != agentruntime.ResourceReused) {
-		return fmt.Errorf("%s/%s differs from the reviewed suite; edit source, then eval, push and lift explicitly instead of repairing live drift", check.id.Kind, check.id.Name)
+		return &suiteNativeReuseRefusal{check.id.Kind, check.id.Name}
 	}
 	return nil
 }
