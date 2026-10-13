@@ -42,6 +42,7 @@ cleanup() {
     else
       printf 'Go lift/repeat/status/conflict and one native A2A MCP execution qualified\n' >&3
       printf 'native_a2a_counts=tool:1 model:2 terminal:1\n' >&3
+      printf 'private suite kagent prepare/place/observe qualified; no additional execution calls\n' >&3
     fi
   fi
   exit "$result"
@@ -149,6 +150,11 @@ done
 ln -s "$work/bin/kubectl" "$work/fail-bin/kubectl"
 phase=qualify
 KMX_QUALIFICATION_DIAGNOSTIC_FD=4 PATH="$work/fail-bin:$PATH" python3 "$root/scripts/ci/kagent-lift.py" qualify "$root/bin/kmx" "$work"
+# Qualify runtime-specific private helpers without taking over release lift.
+# The existing fixture, cluster and private logs remain the only infrastructure.
+phase=suite-helpers
+(cd "$root" && KMX_SUITE_KAGENT_LIVE=1 KMX_LIVE_KIND_CONTEXT=kind-kmx-kagent-lift \
+  PATH="$work/fail-bin:$PATH" go test ./internal/kmx/app -run '^TestLiveSuiteKagentPlacement$' -count=1 -timeout=8m)
 phase=installer-audit
 test ! -e "$work/installer-attempt"
 phase=artifact

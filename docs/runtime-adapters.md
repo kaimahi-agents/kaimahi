@@ -71,9 +71,12 @@ version or optional operation. Native readiness alone is not semantic proof.
 The [offline workspace path](suite-workspace.md) also authors, packages, loads
 and publishes a one-member, tool-free kagent v0.10.3 Go/linux-amd64 declaration.
 Runtime is KMX-private metadata bound to the OCI manifest, not a public format
-field or deployment-time selector. This does not enable suite kagent placement,
-evaluation, status or gates; Orka-only native preparation/receipt consumers
-refuse it. The declared build-profile images are inert, not Go ADK dependencies.
+field or deployment-time selector. Private suite-owned kagent runtime helpers
+now prepare, place new objects and observe them, with complete caller-retained
+proof required for read-only reuse. They are not a release-lift seam or installed
+CLI capability: suite kagent evaluation, status and gates remain unavailable;
+Orka-only native preparation/receipt consumers refuse it. No placement state is
+persisted, no Secret is created, and no native/model call is made. The declared build-profile images are inert, not Go ADK dependencies.
 Live v0.10.2 create and v0.10.3 bundle operations above are unchanged.
 
 No standalone `logs`, arbitrary `diff` or `rollback` capability is advertised.

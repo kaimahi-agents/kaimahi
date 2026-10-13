@@ -24,6 +24,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Private suite-owned kagent v0.10.3 Go/linux-amd64 preparation, create-only
+  placement and observation helpers consume the verified packaged member and
+  explicit OpenAI bindings. Suite ownership is isolated from legacy resources;
+  occupied/unrecorded or changed targets refuse. Repeat placement requires a
+  complete caller-retained observation and is read-only. Partial outcomes retain
+  known identities without claiming success or rollback. No persisted receipt,
+  model/Task execution, suite CLI, lift gate or runtime-dispatch seam is added.
+  [Native workspace profiles](docs/suite-workspace.md).
+
 - One-member workspace authoring/prepare/load supports explicit kagent v0.10.3
   Go/linux-amd64 alongside default Orka. Runtime is bound in private native
   metadata and the exact OCI manifest; publication copies that prepared graph

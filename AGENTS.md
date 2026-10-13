@@ -31,8 +31,15 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 - Root `create <name>` authors one tool-free native suite member offline
   by default: Orka unless `--runtime kagent` selects exact v0.10.3 Go/linux-amd64.
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
-  kagent author/prepare/load/push enables no suite placement/evaluation/status/gates;
+  kagent author/prepare/load/push exposes no suite placement/evaluation/status/gates;
   `eval` and evaluated push explicitly refuse its verified runtime profile.
+  Private runtime-specific kagent prepare/place/observe helpers are separate from
+  W250's common release-lift/dispatch/evidence seam. They create new ModelConfig
+  and Agent objects or reuse a complete caller-retained observation read-only;
+  occupied unrecorded/changed targets refuse, never adopt/update/rollback.
+  Observations are in-memory placement proofs, not persisted/evaluation receipts.
+  The runtime's literal auth mode is observed without native sends; future
+  evaluation remains unsecure-only, trusted-proxy refused.
   Orka-only consumers refuse that profile. RemoteMCP/Python remain unsupported.
   Missing runtime in old source stays Orka only. Create and `push [--workspace DIR] REF` share nearest-ancestor
   `workspace.yaml` discovery; `--workspace DIR` selects an exact root without
