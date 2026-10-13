@@ -100,6 +100,9 @@ func TestReleaseLiftAdmissionAndCreateRaces(t *testing.T) {
 			if want == 1 && (result.State != "partial" || result.Resources[1].Outcome != "not-attempted") {
 				t.Fatalf("bad partial: %+v", result)
 			}
+			if tc == "create collision" && (result.Resources[0].Outcome != "unknown" || result.Resources[0].UID != "") {
+				t.Fatal("conditional collision invented an acknowledged placement")
+			}
 			if tc == "create response" && result.Resources[0].SpecDigest != "" {
 				t.Fatal("unverified create response credited the reviewed spec")
 			}

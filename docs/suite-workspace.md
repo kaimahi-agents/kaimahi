@@ -317,7 +317,8 @@ absent creates before the first persistent write. Provider reaches current Ready
 before Agent creation. Only conditional CREATE or exact receipt-bound reuse is
 allowed: no update, adoption, marker repair, execution retry, rollback or cleanup.
 Owned status-only resource-version churn is tolerated; selected inference Provider
-and Secret versions remain exact. Every boundary rechecks the pair and prerequisites.
+and Secret versions remain exact. Before each write and after each Ready wait,
+the pair and prerequisites are rechecked.
 
 `--promote` is required when target/binding differs. Packaged S/G/member/model/
 renderer/profile/composition/images must match, as must the pinned runtime version,
