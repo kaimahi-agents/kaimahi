@@ -152,6 +152,18 @@ class LiftProofs(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 Q.verify_lift_result(bad, self.receipt, b"receipt")
 
+    def test_terminal_spec_patch_preserves_object_model_and_changes_name(self):
+        for spec in ({"providerRef": {"name": "member"}}, {"model": {"name": "evaluated", "temperature": 0}}):
+            doc = {"spec": copy.deepcopy(spec)}
+            patch = Q.spec_drift_patch(doc)
+            self.assertIsInstance(patch["spec"]["model"], dict)
+            self.assertEqual(patch["spec"]["model"]["name"], "unevaluated-model")
+            if "model" in spec:
+                self.assertEqual(patch["spec"]["model"]["temperature"], 0)
+            self.assertEqual(doc["spec"], spec)
+        with self.assertRaises(ValueError):
+            Q.spec_drift_patch({"spec": {"model": "invalid-shape"}})
+
     def test_counterfactual_control_uses_same_reconstruction_and_preserves_original(self):
         subject = self.receipt["subject"]
         subject["RenderedDigest"] = Q.native_digest("kmx.native-orka.revision/v1", {**subject, "RenderedDigest": ""})

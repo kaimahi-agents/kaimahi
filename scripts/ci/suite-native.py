@@ -140,6 +140,13 @@ def verify_fresh_answer(stdout, case):
         require(passed, "fresh-answer")
 
 
+def spec_drift_patch(doc):
+    model = copy.deepcopy(doc["spec"].get("model", {}))
+    require(isinstance(model, dict) and model.get("name") != "unevaluated-model", "spec-drift-shape")
+    model["name"] = "unevaluated-model"
+    return {"spec": {"model": model}}
+
+
 def namespace_evidence(receipt, namespace_uid):
     # Counterfactual only: never replace the live runtime namespace. A positive
     # original-UID control follows this identical reconstruction before denial.
@@ -520,8 +527,13 @@ class Qualification:
         control(receipt_path, receipt)
         # Last: spec generation cannot be restored to the evaluated identity.
         # No later reuse/evaluation/readiness claim uses this altered pair.
-        self.kube("-n", "orka-system", "patch", "agents.core.orka.ai", member, "--type=merge",
-                  "-p", json.dumps({"spec": {"model": "unevaluated-model"}}))
+        agent = self.get("agents.core.orka.ai", member)
+        patch = spec_drift_patch(agent)
+        self.kube("-n", "orka-system", "patch", "agents.core.orka.ai", member, "--type=merge", "-p", json.dumps(patch))
+        changed = self.get("agents.core.orka.ai", member)
+        require(changed["metadata"]["uid"] == agent["metadata"]["uid"] and
+                changed["metadata"]["generation"] > agent["metadata"]["generation"] and
+                changed["spec"]["model"] == patch["spec"]["model"], "spec-drift-not-admitted")
         refusal("terminal-spec-drift")
         return outcomes
 
