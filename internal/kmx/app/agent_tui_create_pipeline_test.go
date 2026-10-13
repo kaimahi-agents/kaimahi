@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -164,6 +167,89 @@ func TestConsoleCreationRealNativePipeline(t *testing.T) {
 				t.Fatal("Ready claimed answer")
 			}
 		})
+	}
+}
+
+type suiteWorkspaceReportTestModel struct {
+	agentTUIModel
+	initial tea.Cmd
+}
+
+func (m suiteWorkspaceReportTestModel) Init() tea.Cmd { return m.initial }
+
+func TestConsoleCreationPartialResultVisibleAndReportedAfterClose(t *testing.T) {
+	for _, wizard := range []bool{false, true} {
+		for _, cancelling := range []bool{false, true} {
+			t.Run(fmt.Sprintf("wizard=%t/cancelling=%t", wizard, cancelling), func(t *testing.T) {
+				var diagnostics bytes.Buffer
+				a := &App{Err: &diagnostics}
+				m := newAgentTUIModel(AgentTUIOptions{Demo: true})
+				m = tuiKey(m, 'n', "n")
+				var workers sync.WaitGroup
+				a.bindSuiteWorkspaceReviewWorkers(t.Context(), &m, &workers)
+				// Use the real worker binding, supplying the partial observation at
+				// the UI boundary; operation tests cover Apply itself.
+				delivery, cancel := m.startCreateLift(consoleWorkspaceLiftRequest{})
+				defer cancel()
+				msg := <-delivery
+				workers.Wait()
+				p := m.creation
+				p.running, p.executionStarted, p.cancelling = true, true, cancelling
+				p.stage = "applying"
+				msg.pane = p
+				msg.result = ReleaseLiftResult{State: "partial", Summary: ReleaseLiftSummary{Model: nativeCanary}, Resources: []ReleaseLiftOutcome{
+					{ReleaseLiftResource: ReleaseLiftResource{Kind: "Provider", Name: "owned-provider", UID: "\x1b[31mcreated-uid\x1b[0m", SpecDigest: nativeCanary}, Outcome: "created", Ready: false},
+					{ReleaseLiftResource: ReleaseLiftResource{Kind: "Agent", Name: "owned-agent"}, Outcome: "not-attempted", Ready: false},
+				}}
+				next, _ := m.Update(msg)
+				m = next.(agentTUIModel)
+				view := ansi.Strip(m.creationView())
+				for _, want := range []string{"partial", "Provider/owned-provider: created", "created-uid", "Agent/owned-agent: not-attempted", "Ready=false"} {
+					if !strings.Contains(view, want) {
+						t.Errorf("finished pane omitted %q: %s", want, view)
+					}
+				}
+				if diagnostics.Len() != 0 || p.ready || strings.Contains(view, nativeCanary) {
+					t.Fatal("report leaked while active, exposed content or claimed Ready")
+				}
+				var closed tea.Model
+				var closeCmd tea.Cmd
+				closeKey := tea.KeyPressMsg{Code: tea.KeyEnter}
+				if cancelling {
+					closeKey.Code = tea.KeyEsc
+				}
+				if wizard {
+					closed, closeCmd = (suiteWorkspaceReviewModel{agentTUIModel: m, pane: p}).Update(closeKey)
+				} else {
+					closed, closeCmd = m.Update(closeKey)
+					closeCmd = tea.Sequence(closeCmd, tea.Quit)
+				}
+				if closeCmd == nil {
+					t.Fatal("close lost report command")
+				}
+				// Exercise actual Bubble Tea terminal-release/command transport.
+				wrapper := suiteWorkspaceReportTestModel{initial: closeCmd}
+				if wizard {
+					wrapper.agentTUIModel = closed.(suiteWorkspaceReviewModel).agentTUIModel
+				} else {
+					wrapper.agentTUIModel = closed.(agentTUIModel)
+				}
+				transportCtx, stop := context.WithTimeout(t.Context(), 3*time.Second)
+				defer stop()
+				if _, err := tea.NewProgram(wrapper, tea.WithInput(strings.NewReader("")), tea.WithOutput(io.Discard), tea.WithoutRenderer(), tea.WithContext(transportCtx)).Run(); err != nil {
+					t.Fatal(err)
+				}
+				report := diagnostics.String()
+				for _, want := range []string{"partial", "Provider/owned-provider: created; observed Ready=false; UID=created-uid", "Agent/owned-agent: not-attempted; observed Ready=false; UID="} {
+					if !strings.Contains(report, want) {
+						t.Errorf("close diagnostics omitted %q: %s", want, report)
+					}
+				}
+				if strings.Contains(report, nativeCanary) || strings.Contains(report, "\x1b") || strings.Count(report, "created-uid") != 1 {
+					t.Fatal("report exposed content/control bytes or repeated identities")
+				}
+			})
+		}
 	}
 }
 

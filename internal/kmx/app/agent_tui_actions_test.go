@@ -17,6 +17,9 @@ func TestConsoleMutationMenusRefuseWithoutDispatch(t *testing.T) {
 		if m.action != nil || m.inference != nil {
 			t.Fatalf("mutation editor dispatched for %c", key)
 		}
+		if strings.Contains(m.status, "lift is not yet available") {
+			t.Fatal("retirement remedy denies the implemented suite lift")
+		}
 		for _, want := range []string{"authored", "workspace", "eval", "push", "lift"} {
 			if !strings.Contains(m.status, want) {
 				t.Errorf("missing remedy %q: %s", want, m.status)

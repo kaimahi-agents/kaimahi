@@ -28,6 +28,28 @@ func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	return deps, &loads
 }
 
+func TestQuickstartHelpLabelsUnsupportedSuiteFlags(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, loads := testDependencies(&out, &errOut)
+	if err := execute([]string{"quickstart", "--help"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	if *loads != 0 {
+		t.Fatal("help loaded operational configuration")
+	}
+	for _, flag := range []string{"--skills", "--result-service-account", "--out"} {
+		found := false
+		for _, line := range strings.Split(out.String(), "\n") {
+			if strings.Contains(line, flag+" ") && strings.Contains(line, "unsupported") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("unsupported flag %s advertised as operational", flag)
+		}
+	}
+}
+
 func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {
 	for _, args := range [][]string{{}, {"--help"}, {"help"}, {"version"}, {"completion", "bash"}} {
 		var out, errOut bytes.Buffer

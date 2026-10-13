@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -37,7 +38,15 @@ func (a *App) bindSuiteWorkspaceReviewWorkers(ctx context.Context, m *agentTUIMo
 		workCtx, stop := context.WithCancel(ctx)
 		result := make(chan agentTUICreateResult, 1)
 		workers.Add(1)
-		go func() { defer workers.Done(); result <- a.consoleWorkspaceLift(workCtx, request) }()
+		go func() {
+			defer workers.Done()
+			msg := a.consoleWorkspaceLift(workCtx, request)
+			msg.report = func(observed ReleaseLiftResult) error {
+				_, err := fmt.Fprintln(a.Err, suiteWorkspaceLiftOutcomeSummary(observed))
+				return err
+			}
+			result <- msg
+		}()
 		return result, stop
 	}
 }
@@ -53,7 +62,7 @@ func (m suiteWorkspaceReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.agentTUIModel.Update(msg)
 	m.agentTUIModel = next.(agentTUIModel)
 	if m.creation == nil {
-		return m, tea.Quit
+		return m, tea.Sequence(cmd, tea.Quit)
 	}
 	return m, cmd
 }
@@ -165,6 +174,7 @@ type agentTUICreateResult struct {
 	err       error
 	pane      *agentTUICreatePane
 	operation int
+	report    func(ReleaseLiftResult) error
 }
 
 // Consent is scoped to the retained source, selected context/server, namespace
@@ -240,7 +250,38 @@ type agentTUICreatePane struct {
 	frame                                                  int
 	err                                                    error
 	cancel                                                 context.CancelFunc
+	report                                                 func(ReleaseLiftResult) error
 }
+
+// Only observed identities and outcomes survive terminal close, never source,
+// specifications, execution content or the raw worker error.
+func suiteWorkspaceLiftOutcomeSummary(result ReleaseLiftResult) string {
+	var text strings.Builder
+	fmt.Fprintf(&text, "Lift state: %s", tuiOneLine(result.State))
+	for _, row := range result.Resources {
+		fmt.Fprintf(&text, "\n%s/%s: %s; observed Ready=%t; UID=%s", tuiOneLine(row.Kind), tuiOneLine(row.Name), tuiOneLine(row.Outcome), row.Ready, tuiOneLine(row.UID))
+	}
+	return text.String()
+}
+
+// Exec releases Bubble Tea's terminal before writing to the App's diagnostic
+// stream. Keep that bound writer rather than accepting the process stderr.
+type suiteWorkspaceLiftReport struct {
+	pane   *agentTUICreatePane
+	report func(ReleaseLiftResult) error
+}
+
+func (r suiteWorkspaceLiftReport) Run() error {
+	if err := r.report(r.pane.result); err != nil {
+		r.pane.err = errors.Join(r.pane.err, fmt.Errorf("report lift outcomes: %w", err))
+		r.pane.ready = false
+		return err
+	}
+	return nil
+}
+func (suiteWorkspaceLiftReport) SetStdin(io.Reader)  {}
+func (suiteWorkspaceLiftReport) SetStdout(io.Writer) {}
+func (suiteWorkspaceLiftReport) SetStderr(io.Writer) {}
 
 func (p *agentTUICreatePane) reviewLines(width int) []string {
 	if p.stage == "plan" {
@@ -280,7 +321,8 @@ func (m agentTUIModel) updateCreatePane(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.cancel = nil
 		}
 		if p.stage == "applying" {
-			p.result = msg.result
+			p.result, p.report = msg.result, msg.report
+			p.scroll = 0
 		}
 		if p.cancelling {
 			p.finished = true
@@ -344,6 +386,11 @@ func (m agentTUIModel) updateCreatePane(msg tea.Msg) (tea.Model, tea.Cmd) {
 				p.cancel()
 			}
 			m.creation = nil
+			if p.finished && len(p.result.Resources) > 0 && p.report != nil {
+				report := p.report
+				p.report = nil
+				return m, tea.Exec(suiteWorkspaceLiftReport{pane: p, report: report}, nil)
+			}
 			return m, nil
 		}
 		if p.finished {
@@ -501,6 +548,9 @@ func (m agentTUIModel) creationView() string {
 			if p.executionStarted || p.review != nil {
 				message = "Stopped · resources may remain; no retry/cleanup. " + p.err.Error()
 			}
+		}
+		if len(p.result.Resources) > 0 {
+			message = suiteWorkspaceLiftOutcomeSummary(p.result) + "\n" + message
 		}
 		body := agentTUIIndentedText(message, inner, 0)
 		rows = append(rows, body[:min(len(body), height-6)]...)

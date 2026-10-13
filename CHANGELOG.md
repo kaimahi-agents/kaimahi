@@ -174,7 +174,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   change `kmx local up`, quickstart, local teardown, AgentSuite commands or any
   installed behavior.
 
-- The quickstart wizard no longer installs/auto-attaches the Kubernetes inventory tool or offers host Foundry/Copilot inference. Explicit tool/host requests refuse before setup with a supported Provider/tool-free remedy. Existing-agent selection reconnects without changing tool references.
+- The quickstart wizard no longer installs/auto-attaches the Kubernetes inventory tool or offers host Foundry/Copilot inference. Explicit tool/host requests refuse before setup with a supported Provider/tool-free remedy. Existing-agent selection reconnects without changing tool references. Guided `--skills`, `--out` and `--result-service-account` shortcuts are unsupported; author with `kmx create --workspace DIR` and configure native result access separately.
 - Console creation now selects an authored native-Orka workspace, reviews source/all cases and obtains explicit eval/placement consent, then applies and verifies a separately reviewed exact Lift plan. Console/chat in-place Agent tools/inference editing is retired and refuses without cluster mutation. Default quickstart and `create --live` are not removed by this change.
 
 - Orka chart installs now use `kmx.kaimahi.dev/installed`, matching the KMX
