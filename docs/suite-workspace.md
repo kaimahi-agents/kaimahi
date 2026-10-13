@@ -173,6 +173,33 @@ manifest digest. This identity check alone is not evaluation evidence or release
 authorization; the installed CLI still has no workspace evaluation or registry
 release lift.
 
+## Internal digest-lift planning boundary
+
+Internal release planning can read an exact SHA256 suite manifest from a registry
+or local OCI layout without authored source, a preparation fingerprint or a build.
+It retains original packaged bytes; it never re-archives or publishes them.
+Only the selected layout graph is read, not unrelated references. The reader
+bounds the manifest to 1 MiB, the exact empty config to two bytes, compressed
+content to 9 MiB, raw decompressed tar to 10 MiB, 256 entries, 135 regular files,
+1 MiB per file and 8 MiB total file content before public/native validation.
+Links, special files, PAX records, unsafe/duplicate paths and trailing or multiple
+gzip streams refuse. Existing general suite push/pull limits are unchanged.
+
+The application `PrepareReleaseLift` operation requires an explicitly selected
+private full-passing native receipt. It checks packaged coherence and exact
+observed target, inference and runtime equality. It returns a typed identity-only
+review: absent resources may be planned for creation; existing resources require
+all exact suite markers and the evaluated UID/generation/whole-spec proof with
+current-generation readiness. Replacement, drift, adoption and unknown state
+refuse. Planning makes GETs only: no server dry-run/admission, Tasks, writes or
+placement records. Returned summaries cannot mutate the retained plan.
+
+This is an internal read-only boundary, not a runnable `kmx lift` command or write
+authority. Guarded apply and explicit cross-target promotion are not available.
+Unsigned private receipts establish supplied observations, not signer
+authentication or destination execution proof. Native `openai` Providers are the
+only inference binding supported here; host Foundry/Copilot execution is not covered.
+
 Preparation state is outside authored source, under the KMX state directory
 (`KMX_HOME` overrides it). Cache corruption refuses reuse. Keep this state private;
 it is not a receipt, evaluation pass or promotion authorization.

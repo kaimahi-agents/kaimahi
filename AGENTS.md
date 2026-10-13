@@ -51,6 +51,14 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   PortableAgent formats and old extracted-directory suite transfer; do not treat public graph validation
   as native execution-profile validation. Private packaged-native preparation and
   ownership-safe Provider/Agent placement have no CLI or execution qualification.
+  Internal PrepareReleaseLift plans an exact digest from a registry or read-only
+  OCI layout, with bounded ingestion before validation and no source fingerprint.
+  It requires explicit private full-passing native evidence, exact observed
+  subject equality and GET-only absent-or-receipt-bound owned-resource inspection.
+  No admission, writes, Tasks or placement records occur; summaries contain
+  identities and cannot mutate retained inputs. This is not root lift or apply;
+  cross-target promotion is not implemented. General suite transfer is unchanged.
+  Native inference is openai-type Provider only, not host Foundry/Copilot execution.
   Private native passing receipts retain only full ordered passing metadata, export
   once without replacement outside workspace/cache trees, and bind the private
   receipt-file push consumer to exact S plus offline packaged coherence. There is

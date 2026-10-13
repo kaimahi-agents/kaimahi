@@ -24,6 +24,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Internal read-only digest-lift planning for one-member native suites: bounded
+  exact registry/local-layout retrieval, source-free closed packaged loading,
+  mandatory private passing-receipt coherence and exact target/binding/runtime
+  checks. GET-only review refuses resource drift/adoption and retains evaluated
+  UID/generation/spec proof. No CLI, apply, admission, cross-target promotion or
+  authenticated-evidence claim is enabled. [Planning boundary](docs/suite-workspace.md#internal-digest-lift-planning-boundary).
+
 - Explicit `kmx bundle evaluate --runtime kagent --runtime-version v0.10.3`
   runs authored cases against a receipt-bound Go placement, with desired
   bindings and `--to-context`. Each case sends one fresh blocking A2A Task;
