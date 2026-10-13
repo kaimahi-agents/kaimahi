@@ -54,7 +54,7 @@ This prepares local kind, Ollama and Orka, then prints a fresh Task's answer; fo
 
 `kmx push` publishes an already-authored [native-Orka workspace](docs/suite-workspace.md) with one destination `REF`, not a PortableAgent bundle. It discovers the nearest ancestor `workspace.yaml`; `--workspace DIR` selects an exact root without fallback. It neither evaluates nor deploys.
 
-The legacy `kmx bundle` commands (lift, status, evaluate for `create --live` bundles) are hidden from help and will be removed once lift by digest replaces them.
+The legacy `kmx bundle` commands (lift, status, evaluate, retire and verify, for `create --live` bundles) are hidden from help and completion but still run until lift by digest replaces them.
 
 These spellings require a current development build; tagged v0.5.1 still uses
 `kmx agent`. See [command migration](CHANGELOG.md#upgrading).

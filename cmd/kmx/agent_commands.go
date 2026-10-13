@@ -13,7 +13,7 @@ import (
 func newBundleCommand(state *commandState) *cobra.Command {
 	// Hidden: legacy agent.yaml bundles are removed once digest lift and the
 	// quickstart/console callers reach suite-path parity.
-	group := &cobra.Command{Use: "bundle", Short: "Legacy agent.yaml bundles, being removed; use create, eval, push and lift", Hidden: true, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	group := &cobra.Command{Use: "bundle", Short: "Legacy agent.yaml bundles (being removed)", Hidden: true, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 	group.AddCommand(newAgentLiftCommand(state), newAgentRetireCommand(state), newAgentStatusCommand(state), newAgentEvaluateCommand(state), newAgentVerifyCommand())
 	return group
 }
