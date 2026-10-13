@@ -258,12 +258,15 @@ func TestAgentCreateExplicitOrkaMatchesDefaultBytes(t *testing.T) {
 	}
 }
 
-func TestAgentCreateKagentOfflineWithoutPATH(t *testing.T) {
+func TestCreateLiveKagentKeepsV0102Path(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	var out, diagnostics bytes.Buffer
-	deps, _ := testDependencies(&out, &diagnostics)
+	deps, loads := testDependencies(&out, &diagnostics)
 	if err := execute(kagentCreateArgs(), deps); err != nil {
 		t.Fatal(err)
+	}
+	if *loads != 1 || !strings.Contains(out.String(), "exact Kagent v0.10.2") {
+		t.Fatalf("live path changed runtime/config routing: loads=%d output=%s", *loads, &out)
 	}
 	decoder := yaml.NewDecoder(&out)
 	for _, kind := range []string{"Secret", "ModelConfig", "Agent"} {

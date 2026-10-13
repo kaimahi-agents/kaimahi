@@ -15,6 +15,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
+var errSuiteKagentEvaluationUnavailable = errors.New("kagent evaluation on the suite path isn't available yet")
+
 // SuiteWorkspaceEvaluationOptions selects a full native workspace invocation.
 // No runtime, model, judge or subset can override its packaged behavior.
 type SuiteWorkspaceEvaluationOptions struct {
@@ -83,6 +85,9 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	suite, err := workspace.Load(ctx, prepared)
 	if err != nil {
 		return nil, suiteEvaluationError(ctx, err, false)
+	}
+	if suite.Runtime.ID == "kagent" {
+		return nil, errSuiteKagentEvaluationUnavailable
 	}
 	inventory, _, err := suitePassingInventory(suite)
 	if err != nil {

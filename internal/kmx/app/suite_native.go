@@ -55,11 +55,11 @@ type suiteNativePrepared struct {
 // Load owns packaged-input validation; preparation takes only the render frame
 // it needs. Installed-schema support and readiness do not prove admission or auth.
 func (a *App) prepareSuiteNative(ctx context.Context, suite *workspace.NativeSuite, namespace, selectedProvider string) (*suiteNativePrepared, error) {
+	if !suiteNativeOrkaInput(suite) {
+		return nil, fmt.Errorf("native suite preparation supports only the Orka profile")
+	}
 	if err := a.validateSuiteNativeSelectors(namespace, selectedProvider); err != nil {
 		return nil, err
-	}
-	if suite == nil {
-		return nil, fmt.Errorf("native suite packaged input is required")
 	}
 	if selectedProvider == suite.MemberID {
 		return nil, fmt.Errorf("selected Provider collides with the native member Provider")
@@ -119,6 +119,10 @@ func (a *App) prepareSuiteNative(ctx context.Context, suite *workspace.NativeSui
 		return nil, err
 	}
 	return &suiteNativePrepared{Subject: subject, bundle: bundle, documents: documents}, nil
+}
+
+func suiteNativeOrkaInput(suite *workspace.NativeSuite) bool {
+	return suite != nil && suite.Runtime == (workspace.RuntimeProfile{ID: "orka"})
 }
 
 func suiteNativeDigest(domain string, value any) (string, error) {

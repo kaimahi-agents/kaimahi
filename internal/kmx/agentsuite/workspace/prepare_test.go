@@ -145,6 +145,25 @@ func TestAuthoredEditsChangeDescriptorAndPublicationRefusesStale(t *testing.T) {
 	}
 }
 
+func TestPrepareRejectsInvalidRuntimeBeforeCacheWrites(t *testing.T) {
+	for _, declaration := range []string{
+		"null", "{}", "{id: unknown}", "{id: kagent}", "{id: kagent, version: v0.10.3}",
+		"{id: kagent, version: v0.10.2, engine: go}", "{id: kagent, version: v0.10.3, engine: python}",
+		"{id: orka, version: ''}", "{id: orka, engine: ''}", "{id: kagent, version: v0.10.3, engine: go, extra: ignored}",
+	} {
+		t.Run(declaration, func(t *testing.T) {
+			root, cache := createWorkspace(t)
+			setMemberRuntime(t, root, "runtime: "+declaration+"\n")
+			if _, err := workspace.Prepare(t.Context(), root, cache); err == nil {
+				t.Fatal("invalid runtime accepted")
+			}
+			if _, err := os.Stat(cache); !os.IsNotExist(err) {
+				t.Fatal("invalid runtime wrote cache")
+			}
+		})
+	}
+}
+
 func TestPrepareRejectsUnsupportedOrUnsafeSources(t *testing.T) {
 	for _, test := range []struct{ name, path, replace string }{
 		{"workspace unknown", "workspace.yaml", "target: secret-cluster\n"},

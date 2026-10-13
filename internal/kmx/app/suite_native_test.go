@@ -26,12 +26,16 @@ type nativeReadFixture struct {
 	change  func(string, int, map[string]any) error
 }
 
-func nativeFixture(t *testing.T) (*App, *workspace.NativeSuite, *nativeReadFixture) {
+func nativeFixture(t *testing.T, profiles ...workspace.RuntimeProfile) (*App, *workspace.NativeSuite, *nativeReadFixture) {
 	t.Helper()
 	input := filepath.Join(t.TempDir(), "instructions.md")
 	writeFile(t, input, "  Answer briefly.\n\nKeep whitespace.\n\n")
 	root := filepath.Join(t.TempDir(), "workspace")
-	if err := workspace.Create(t.Context(), root, workspace.CreateOptions{Name: "greeter", Model: "packaged-model", Description: "Public description", InstructionsFile: input}); err != nil {
+	opt := workspace.CreateOptions{Name: "greeter", Model: "packaged-model", Description: "Public description", InstructionsFile: input}
+	if len(profiles) > 0 {
+		opt.Runtime = profiles[0]
+	}
+	if err := workspace.Create(t.Context(), root, opt); err != nil {
 		t.Fatal(err)
 	}
 	p, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
@@ -113,6 +117,19 @@ func nativeFixture(t *testing.T) (*App, *workspace.NativeSuite, *nativeReadFixtu
 		return json.NewEncoder(cmd.Stdout).Encode(obj)
 	}
 	return a, suite, f
+}
+
+func TestSuiteNativeRefusesUnsupportedRuntimeBeforeOrkaEffects(t *testing.T) {
+	for _, profile := range []workspace.RuntimeProfile{{ID: "kagent", Version: "v0.10.3", Engine: "go"}, {}} {
+		t.Run(profile.ID, func(t *testing.T) {
+			a, suite, f := nativeFixture(t, workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"})
+			suite.Runtime = profile
+			prepared, err := a.prepareSuiteNative(t.Context(), suite, OrkaNamespace, "inference")
+			if err == nil || !strings.Contains(err.Error(), "Orka") || prepared != nil || f.calls != 0 {
+				t.Fatalf("unsupported runtime reached Orka reads/render: %v, calls %d", err, f.calls)
+			}
+		})
+	}
 }
 
 func TestSuiteNativeExactPackagedRender(t *testing.T) {

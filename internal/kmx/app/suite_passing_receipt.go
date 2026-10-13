@@ -124,6 +124,9 @@ func newSuitePassingReceipt(ctx context.Context, prepared *workspace.Prepared, p
 	if err != nil {
 		return nil, err
 	}
+	if !suiteNativeOrkaInput(suite) {
+		return nil, errSuitePassingReceipt
+	}
 	inventory, casesDigest, err := suitePassingInventory(suite)
 	if err != nil {
 		return nil, err
@@ -288,7 +291,7 @@ func validSuitePassingSubject(s suiteNativeSubject) bool {
 }
 
 func coherentSuitePassingSubject(s suiteNativeSubject, suite *workspace.NativeSuite) error {
-	if suite == nil || s.Suite != suite.Name || s.SuiteDigest != suite.Digest || s.GraphDigest != suite.GraphDigest || s.Member != suite.MemberID || s.MemberDigest != suite.MemberDigest || s.InstructionsDigest != suite.InstructionsDigest || s.CompositionDigest != suite.CompositionDigest || s.BuildProfileDigest != suite.BuildProfileDigest || s.Model != suite.Model || s.Renderer != suite.RendererVersion || !reflect.DeepEqual(s.RequiredImages, suite.RequiredImages) {
+	if !suiteNativeOrkaInput(suite) || s.Suite != suite.Name || s.SuiteDigest != suite.Digest || s.GraphDigest != suite.GraphDigest || s.Member != suite.MemberID || s.MemberDigest != suite.MemberDigest || s.InstructionsDigest != suite.InstructionsDigest || s.CompositionDigest != suite.CompositionDigest || s.BuildProfileDigest != suite.BuildProfileDigest || s.Model != suite.Model || s.Renderer != suite.RendererVersion || !reflect.DeepEqual(s.RequiredImages, suite.RequiredImages) {
 		return errSuitePassingReceipt
 	}
 	binding, err := suiteNativeDigest("kmx.native-orka.binding/v1", struct {
