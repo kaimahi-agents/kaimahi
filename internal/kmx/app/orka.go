@@ -24,6 +24,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -274,13 +275,37 @@ func (a *App) stepOrka() error {
 	return a.orkaResultReader()
 }
 
-// Quickstart needs the pinned runtime and placeholder Provider Secret, not the local
-// Provider: its fixed agent bundle creates a separate Provider of its own.
+// Native evaluation needs a separate inference binding. Existing local routes
+// are read-only; an absent Provider is created once, never applied over a race.
 func (a *App) stepQuickstartOrka() error {
 	if err := a.prepareOrkaRuntime(); err != nil {
 		return err
 	}
 	if err := a.ensureQuickstartProviderSecret(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(a.operationContext(), 5*time.Minute)
+	defer cancel()
+	current, err := a.readStepOrkaProvider(ctx, orkaDefaultProvider)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		opt := orkaDefaults(OrkaOptions{Model: a.Cfg.Model})
+		if a.selectedLocalModel != nil {
+			opt.Model, opt.ModelURL = a.selectedLocalModel.Model, strings.TrimSuffix(a.selectedLocalModel.Endpoint, "/")+"/v1"
+		}
+		var doc map[string]any
+		if err := yaml.Unmarshal([]byte(orkaProviderManifest(opt)), &doc); err != nil {
+			return err
+		}
+		id, err := a.createOrkaObject(ctx, OrkaNamespace, doc)
+		if err != nil {
+			return err
+		}
+		current = &stepOrkaProvider{orkaIdentity: id}
+	}
+	if err := a.waitOrkaReady(ctx, OrkaNamespace, current.orkaIdentity); err != nil {
 		return err
 	}
 	return a.orkaResultReader()
@@ -458,8 +483,23 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 	if err := a.orkaKeylessProviderSecret(opt.Provider); err != nil {
 		return err
 	}
+	provider := orkaProviderManifest(opt)
+
+	quiet := *a.Run
+	quiet.Echo = false
+	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (Provider %s -> %s)\n",
+		a.Cfg.KubeContext, opt.Provider, opt.ModelURL)
+	if err := quiet.RunStdin([]byte(provider), "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
+		return err
+	}
+	a.notef("Provider %q resolves %s/%s against %s — no API key anywhere.",
+		opt.Provider, opt.Provider, opt.Model, opt.ModelURL)
+	return nil
+}
+
+func orkaProviderManifest(opt OrkaOptions) string {
 	secret := opt.Provider + "-provider-key"
-	provider := fmt.Sprintf(`apiVersion: core.orka.ai/v1alpha1
+	return fmt.Sprintf(`apiVersion: core.orka.ai/v1alpha1
 kind: Provider
 metadata:
   name: %s
@@ -474,17 +514,6 @@ spec:
     name: %s
     key: api-key
 `, opt.Provider, OrkaNamespace, opt.ModelURL, opt.Model, secret)
-
-	quiet := *a.Run
-	quiet.Echo = false
-	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (Provider %s -> %s)\n",
-		a.Cfg.KubeContext, opt.Provider, opt.ModelURL)
-	if err := quiet.RunStdin([]byte(provider), "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
-		return err
-	}
-	a.notef("Provider %q resolves %s/%s against %s — no API key anywhere.",
-		opt.Provider, opt.Provider, opt.Model, opt.ModelURL)
-	return nil
 }
 
 // Reuse an existing Secret without replacing a host route's key. Only an

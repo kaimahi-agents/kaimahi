@@ -538,14 +538,8 @@ func TestAgentTUIEditActionsAndInferencePatch(t *testing.T) {
 		if key == 't' {
 			want = "tools"
 		}
-		if key == 'f' {
-			if m.action != nil || m.inference == nil || m.inference.agent.Name != "assistant" || m.inference.env.Name != "kind-local-demo" {
-				t.Fatal("inference should open a targeted overlay")
-			}
-			continue
-		}
-		if m.action == nil || m.action.kind != want || m.action.source.Name != "kind-local-demo" || m.action.agent.Name != "assistant" {
-			t.Fatalf("action=%+v", m.action)
+		if m.action != nil || m.inference != nil || !strings.Contains(m.status, "authored member/workspace") {
+			t.Fatalf("%s must refuse without opening an editor: action=%+v status=%s", want, m.action, m.status)
 		}
 	}
 	original := map[string]any{"name": "old", "maxTokens": 100}
@@ -583,8 +577,8 @@ func TestAgentTUIToolActionAvailableWithoutConfiguredTools(t *testing.T) {
 		}
 		m.opt.Demo = false
 		m = tuiKey(m, 't', "t")
-		if m.action == nil || m.action.kind != "tools" || m.action.source != m.columns[column].Env {
-			t.Fatalf("tool-free agent failed to open targeted editor: %+v", m.action)
+		if m.action != nil || !strings.Contains(m.status, "authored member/workspace") {
+			t.Fatalf("tool-free agent did not refuse editing: action=%+v status=%s", m.action, m.status)
 		}
 	}
 }
@@ -601,7 +595,7 @@ func TestAgentTUIEmptyEnvironmentCreation(t *testing.T) {
 			t.Fatal("missing empty entry")
 		}
 		m = tuiKey(m, 'n', "n")
-		if m.action != nil || m.creation == nil || m.creation.env.Kubeconfig != "/remote/config" || m.creation.wizard.opt.Namespace != "agents" || m.creation.loading == demo {
+		if m.action != nil || m.creation == nil || m.creation.env.Kubeconfig != "/remote/config" || m.creation.namespace != "agents" || m.creation.running {
 			t.Fatalf("creation pane=%+v", m.creation)
 		}
 	}
@@ -775,105 +769,14 @@ esac`)
 	}
 }
 
-func TestAgentTUICreationOverlayReusesWizardAndStaysInConsole(t *testing.T) {
-	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
-	m = tuiKey(m, 'n', "n")
-	for _, size := range [][2]int{{64, 18}, {80, 24}, {120, 40}} {
-		m.width, m.height = size[0], size[1]
-		view := m.View().Content
-		if lipgloss.Width(view) > m.width || lipgloss.Height(view) > m.height {
-			t.Fatalf("creation overflow %v: %dx%d", size, lipgloss.Width(view), lipgloss.Height(view))
-		}
-		if !strings.Contains(ansi.Strip(view), "CREATE AGENT") || !strings.Contains(ansi.Strip(view), "REMOTE") {
-			t.Fatal("creation replaced inventory rather than overlaying it")
-		}
-	}
-	for _, value := range []string{"Help me inspect workloads", "inspector", "openai", "test-model", "existing-secret"} {
-		m.creation.wizard.input.SetValue(value)
-		m = tuiKey(m, tea.KeyEnter, "")
-	}
-	if m.creation.wizard.step != createConfirm {
-		t.Fatalf("wizard did not reach review: %+v", m.creation.wizard)
-	}
-	m = tuiKey(m, tea.KeyEnter, "")
-	if !m.creation.finished || m.creation.running || m.action != nil {
-		t.Fatal("demo review dispatched or closed console")
-	}
-	m = tuiKey(m, tea.KeyEnter, "")
-	if m.creation != nil {
-		t.Fatal("completion did not close pane")
-	}
-	m = tuiKey(m, 'n', "n")
-	m = tuiKey(m, 'j', "j")
-	if m.columns[0].Selection != 0 || m.creation.wizard.input.Value() != "j" {
-		t.Fatal("form input reached inventory")
-	}
-	m = tuiKey(m, tea.KeyEsc, "")
-	if m.creation != nil {
-		t.Fatal("escape did not close form")
-	}
-}
-
-func TestAgentTUICreationSubmissionAndCancellation(t *testing.T) {
-	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
-	m.focus = 1
-	m = tuiKey(m, 'n', "n")
-	m.opt.Demo = false
-	m.creation.server = "reviewed.example.com"
-	m.creation.wizard.opt = CreateOptions{Name: "inspector", Namespace: "agents"}
-	m.creation.wizard.step = createConfirm
-	started, cancelled := false, false
-	result := make(chan agentTUICreateResult, 1)
-	m.startCreate = func(env agentTUIEnvironment, server string, opt CreateOptions) (<-chan agentTUICreateResult, context.CancelFunc) {
-		started = true
-		if env.Name != "remote-demo" || server != "reviewed.example.com" || opt.Name != "inspector" || opt.Namespace != "agents" {
-			t.Fatal("submission lost target or options")
-		}
-		return result, func() { cancelled = true }
-	}
-	m.loadInventory = func(agentTUIEnvironment) ([]agentTUIAgent, error) { return nil, nil }
-	m = tuiKey(m, tea.KeyEnter, "")
-	if !started || !m.creation.running {
-		t.Fatal("submission did not start background creation")
-	}
-	m = tuiKey(m, tea.KeyEsc, "")
-	if !cancelled || !m.creation.cancelling || !m.creation.running {
-		t.Fatal("cancellation returned before operation stopped")
-	}
-	next, _ := m.Update(agentTUICreateResult{err: context.Canceled})
-	m = next.(agentTUIModel)
-	if !m.creation.finished || m.creation.running {
-		t.Fatal("result did not finish pane")
-	}
-	m = tuiKey(m, tea.KeyEsc, "")
-	if m.creation != nil || m.action != nil {
-		t.Fatal("cancelled creation left console")
-	}
-}
-
-func TestAgentTUICreationRefusesChangedServer(t *testing.T) {
-	dir := t.TempDir()
-	fakeTool(t, dir, "kubectl", `case "$*" in
- *'config view'*) printf '%s' '{"contexts":[{"name":"remote","context":{"cluster":"r"}}],"clusters":[{"name":"r","cluster":{"server":"https://changed.example.com"}}]}' ;;
- *) exit 1 ;;
-esac`)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	a := &App{Cfg: &config.Config{}, Run: &run.Runner{}}
-	err := a.consoleCreateAgent(t.Context(), agentTUIEnvironment{Name: "remote"}, "reviewed.example.com", CreateOptions{Name: "inspector"})
-	if err == nil || !strings.Contains(err.Error(), "server changed") {
-		t.Fatalf("changed target not refused: %v", err)
-	}
-}
-
 func TestConsoleCreationTimerOnlyRunsDuringWork(t *testing.T) {
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 	m = tuiKey(m, 'n', "n")
-	for _, state := range []string{"form", "finished", "loading", "running"} {
-		m.creation.loading = state == "loading"
+	for _, state := range []string{"form", "finished", "running"} {
 		m.creation.running = state == "running"
 		m.creation.finished = state == "finished"
 		_, cmd := m.Update(quickstartTickMsg{})
-		if (cmd != nil) != (state == "loading" || state == "running") {
+		if (cmd != nil) != (state == "running") {
 			t.Fatalf("timer running in %s", state)
 		}
 	}

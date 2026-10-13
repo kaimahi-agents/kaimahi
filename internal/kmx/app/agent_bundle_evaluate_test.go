@@ -28,6 +28,7 @@ type evalFixture struct {
 	dir, bundle                      string
 	name, digest                     string
 	out                              *bytes.Buffer
+	nativeReads                      *nativeReadFixture
 	answers                          map[string]string
 	resultStatus                     int
 	resultDisconnect, resultHoldBody bool

@@ -83,7 +83,7 @@ A name is required; there is no offline authoring wizard. For the separate live
 Orka wizard use `kmx create --live`. Live creation bypasses workspace discovery,
 even below an invalid marker. `--live --no-apply` and `--live --out -` retain the
 old resource/PortableAgent bundle formats, not this workspace format. Quickstart
-and console creation remain live. See the [live contract](kmx.md#default-orka-contract).
+creation composes fixed source, full eval, exact local publication, reviewed Apply and placement Verify before a fresh requested answer. Console creation selects an already authored native-Orka workspace, reviews instructions, exact model and every case, and selects a named Ready openai Provider. It requires explicit execution consent (typed destination context for remote targets), then reviews the retained exact Lift plan before single-use Apply/Verify. The explicit source root/fingerprint and complete API URI are rechecked; Ready placement is not an answer. Evaluation/partial errors may leave resources, without automatic retry or cleanup. Scaffold arithmetic is not quality proof for arbitrary instructions; author appropriate public cases. See the [live contract](kmx.md#default-orka-contract).
 
 The source consists of `workspace.yaml`, `agents/greeter/member.yaml`, its
 member-relative instruction file, workspace-root `eval/*.yaml`, and a pinned

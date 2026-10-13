@@ -34,6 +34,12 @@ case "$*" in
       *"name: local-provider-key"*) printf 'write\n' >> "$KMX_TEST_ARGS.secret" ;;
     esac
     exit 0 ;;
+  *"create --validate=strict -f - -o json"*)
+    body=$(cat)
+    url=$(printf '%s' "$body" | grep -o '"baseURL":"[^"]*"' | cut -d'"' -f4)
+    printf '  baseURL: %s\n' "$url" > "$KMX_TEST_ARGS.provider"
+    printf '{"kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":2}}'
+    exit 0 ;;
   *"get providers.core.orka.ai local --ignore-not-found=true -o json"*|*"get providers.core.orka.ai local -o json"*)
     if [ "$KMX_TEST_PROVIDER_READ" = failed ]; then exit 1; fi
     url="$KMX_TEST_PROVIDER_URL"
@@ -166,8 +172,8 @@ func TestBareOrkaUpCompletesWithoutQueryingTheLegacyRuntime(t *testing.T) {
 	}
 }
 
-// `local up --step orka` owns `local`; quickstart owns only its fixed bundle.
-// Neither order may silently replace an existing local host route.
+// Quickstart may create an absent inference binding, but existing routes and
+// Secrets stay read-only. Both orders retain a verified selected host route.
 func TestQuickstartAndHostOrkaUpKeepLocalEndpointInBothOrders(t *testing.T) {
 	const hostURL = "http://172.18.0.1:11434/v1"
 	for _, order := range []string{"host then quickstart", "quickstart then host"} {
@@ -186,8 +192,8 @@ func TestQuickstartAndHostOrkaUpKeepLocalEndpointInBothOrders(t *testing.T) {
 				t.Fatalf("quickstart Orka setup: %v", err)
 			}
 			quickstartCalls := strings.TrimPrefix(upCalls(t, args), before)
-			if strings.Contains(quickstartCalls, "get providers.core.orka.ai local") {
-				t.Errorf("quickstart read local Provider: %s", quickstartCalls)
+			if !strings.Contains(quickstartCalls, "get providers.core.orka.ai local") {
+				t.Errorf("quickstart did not observe its inference binding: %s", quickstartCalls)
 			}
 			if strings.Contains(quickstartCalls, "get svc ollama") {
 				t.Errorf("quickstart tried to wire local Provider: %s", quickstartCalls)
@@ -197,12 +203,15 @@ func TestQuickstartAndHostOrkaUpKeepLocalEndpointInBothOrders(t *testing.T) {
 				t.Fatalf("quickstart must create an absent Secret but leave an existing one untouched: before=%q after=%q (%v)", secretBefore, secretAfter, err)
 			}
 			if order == "quickstart then host" {
-				if _, err := os.Stat(args + ".provider"); !os.IsNotExist(err) {
-					t.Fatalf("quickstart wrote local Provider: %v", err)
+				if _, err := os.Stat(args + ".provider"); err != nil {
+					t.Fatalf("quickstart did not create the missing local Provider: %v", err)
 				}
 				if err := a.Up("orka"); err != nil {
 					t.Fatalf("host up after quickstart: %v", err)
 				}
+			}
+			if order == "host then quickstart" && strings.Contains(quickstartCalls, "create --validate=strict") {
+				t.Fatal("quickstart rewrote the existing host Provider")
 			}
 			applied, err := os.ReadFile(args + ".provider")
 			if err != nil || !strings.Contains(string(applied), "baseURL: "+hostURL) {

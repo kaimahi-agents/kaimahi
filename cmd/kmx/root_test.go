@@ -491,7 +491,7 @@ func TestQuickstartRoutesEachMode(t *testing.T) {
 		want string
 	}{
 		{[]string{"quickstart", "--interactive"}, "kmx quickstart --interactive requires an interactive terminal"},
-		{[]string{"quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "kmx quickstart --interactive requires an interactive terminal"},
+		{[]string{"quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "quickstart tool shortcuts are retired"},
 		{[]string{"quickstart", "-i"}, "kmx quickstart --interactive requires an interactive terminal"},
 		{[]string{"quickstart", "-i", "--azure-discovery", "sdk"}, "kmx quickstart --interactive requires an interactive terminal"},
 		{[]string{"quickstart", "-o", "yaml"}, "unknown --output"},

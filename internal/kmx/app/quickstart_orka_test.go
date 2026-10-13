@@ -94,7 +94,7 @@ func TestQuickstartFollowUpsAreOrkaActions(t *testing.T) {
 	}
 	for i, want := range []string{
 		"kmx --context kind-test chat hello-world-agent --runtime orka --namespace orka-system 'ask it something else'",
-		"kmx --context kind-test create --live",
+		"kmx --context kind-test create --help",
 		"kmx --context kind-test orka status",
 	} {
 		if next[i] != want {

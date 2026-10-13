@@ -23,7 +23,7 @@ share current-directory workspace discovery; scripts can initialize an exact
 root with `--workspace DIR`. Existing one-member workspaces refuse a second
 create without modifying source. Resource/bundle creation and previews require
 `--live` for both runtimes; `--runtime kagent` alone never selects live mode.
-Quickstart, console and direct App.CreateAgent callers stay live. See the
+Quickstart and console creation use native suite source → full eval → exact local publication → reviewed lift Apply/Verify. Console requires explicit source/case and execution consent; Ready placement is not an answer. Direct App.CreateAgent remains the legacy live path. Wizard auto-tools/host Foundry/Copilot modes and in-place Agent edits are retired; keep ordinary chat/run independent of mutation shortcuts. See the
 [workspace guide](docs/suite-workspace.md) for prompting and failure boundaries.
 
 kagent support is intentionally version-bounded: explicit

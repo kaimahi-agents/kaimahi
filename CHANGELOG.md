@@ -159,6 +159,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   change `kmx local up`, quickstart, local teardown, AgentSuite commands or any
   installed behavior.
 
+- The quickstart wizard no longer installs/auto-attaches the Kubernetes inventory tool or offers host Foundry/Copilot inference. Explicit tool/host requests refuse before setup with a supported Provider/tool-free remedy. Existing-agent selection reconnects without changing tool references.
+- Console creation now selects an authored native-Orka workspace, reviews source/all cases and obtains explicit eval/placement consent, then applies and verifies a separately reviewed exact Lift plan. Console/chat in-place Agent tools/inference editing is retired and refuses without cluster mutation. Default quickstart and `create --live` are not removed by this change.
+
 - Orka chart installs now use `kmx.kaimahi.dev/installed`, matching the KMX
   label/API-group domain. Clusters installed by an older kmx retain
   `kmx.kaimahi.ai/installed` in their Helm values and are no longer recognized
@@ -222,6 +225,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   replacement yet for its removed inspection, registration, teardown or
   recovery APIs; continue using the installed commands or implementation-owned
   operations until those contracts have production evidence.
+
+- Author with `kmx create --workspace DIR`, review/edit member instructions and appropriate public cases, then use `kmx eval` and `kmx push --evaluation FILE`. The console composes that workflow after explicit source/case and destination/Provider review, execution consent and a second retained Lift plan review. Ready means placement, not an answer; late failures may leave resources. Select an existing Ready Orka `openai` Provider serving the exact suite model for native evidence/lift; host Foundry/Copilot execution is not a substitute. Tools return later through suite ToolProviders. Existing resources are not migrated or patched.
 
 - Add `--live` to scripts that create Orka or kagent resources or PortableAgent
   bundles, including native previews. Use `kmx create --live` for the existing

@@ -43,6 +43,12 @@ func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 	default:
 		return fmt.Errorf("unknown Azure discovery %q; use cli or sdk", opt.AzureDiscovery)
 	}
+	if opt.Inference == "foundry" || opt.Inference == "copilot" {
+		return fmt.Errorf("quickstart host Foundry/Copilot modes are retired; use an existing Ready destination Orka openai Provider with an exact model in the authored suite workspace, then eval → push → lift")
+	}
+	if err := validateQuickstartSourceOptions(opt.Create); err != nil {
+		return err
+	}
 	a.azureDiscoveryMode = opt.AzureDiscovery
 	if _, err := quickstartInference(opt.Inference, "detected-later"); err != nil {
 		return err
@@ -64,19 +70,9 @@ func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 	}
 
 	create := opt.Create
-	quickstartAgentTools(&create)
 	create.descriptionDefault = "Hello world agent"
 	if create.Namespace == "" {
 		create.Namespace = OrkaNamespace
-	}
-	if create.ProviderType == "" {
-		create.ProviderType = "openai"
-	}
-	if create.Secret == "" {
-		create.Secret = "kickstart-provider-key"
-	}
-	if create.SecretKey == "" {
-		create.SecretKey = "api-key"
 	}
 	existing := a.quickstartExistingAgents()
 
@@ -111,31 +107,38 @@ func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 	if imported != nil {
 		completed.Name, completed.Namespace = imported.Name, imported.Namespace
 	}
-	a.copilotCLI = setup.copilotCLI
-	a.chatInference, a.copilotModel = setup.chatInference, setup.copilotModel
-	if a.chatInference == "foundry" {
-		backend := &orkaChatBackend{app: a, agent: completed.Name, namespace: completed.Namespace}
-		if err := backend.configureFoundryChat(a.operationContext()); err != nil {
+	a.chatInference = "local"
+	// Shared review owns execution consent and real Apply/Verify, not live create.
+	if imported == nil {
+		root, err := a.authorQuickstartSource(a.operationContext(), completed)
+		if root != "" {
+			a.notef("Authored workspace: %s. Source is retained; scaffold cases are not quality proof.", root)
+		}
+		if err != nil {
+			return err
+		}
+		result, err := a.runSuiteWorkspaceReview(a.operationContext(), root, completed.Namespace)
+		if err != nil {
 			if errors.Is(err, context.Canceled) {
+				a.notef("Quickstart cancelled. Authored source and completed resources remain; evaluation or placement may already have occurred.")
 				return nil
 			}
 			return err
 		}
-		// The persisted Provider is a valid deferred local fallback. Foundry
-		// execution uses the host credential/client, not this placeholder key.
-		completed.Model = a.Cfg.Model
-		completed.BaseURL = "http://ollama.ollama.svc.cluster.local:11434/v1"
-	}
-	deploy := func(worker *App) error { return worker.CreateAgent(completed) }
-	if imported != nil {
-		deploy = func(worker *App) error { return worker.attachQuickstartK8sTool(completed.Name, completed.Namespace) }
-	}
-	if err := a.runQuickstartDeploymentWork(completed.Name, deploy); err != nil {
-		if errors.Is(err, errCreateCancelled) {
-			a.notef("Quickstart cancelled. Active deployment work was stopped; completed resources were left in place.")
-			return nil
+		if completed.Task != "" {
+			answer, err := a.answerSuitePlacement(a.operationContext(), result, completed.Task)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(a.Out, answer); err != nil {
+				return err
+			}
 		}
-		return err
+	}
+	if imported != nil {
+		if err := a.checkQuickstartExistingAgent(a.operationContext(), completed.Name, completed.Namespace); err != nil {
+			return err
+		}
 	}
 	location := a.Cfg.KubeContext
 	if strings.HasPrefix(target.Posture, "local") {
@@ -149,6 +152,22 @@ func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 		return a.quickstartOrkaChat(completed.Name, completed.Namespace)
 	}
 	a.complete("Agent is ready", started)
+	return nil
+}
+
+// Reconnecting never repairs tool references, but a name alone is not Ready.
+func (a *App) checkQuickstartExistingAgent(ctx context.Context, name, namespace string) error {
+	raw, err := a.orkaCapture(ctx, nil, "-n", namespace, "get", orkaPlural("Agent"), name, "--ignore-not-found=true", "-o", "json")
+	if err != nil {
+		return fmt.Errorf("cannot check existing Agent readiness: %w", err)
+	}
+	var live orkaObject
+	if json.Unmarshal(raw, &live) != nil || live.Kind != "Agent" || live.Metadata.Name != name || live.Metadata.Namespace != namespace || live.Metadata.UID == "" || live.Metadata.Generation < 1 || live.Metadata.DeletionTimestamp != nil {
+		return fmt.Errorf("existing Agent identity is unavailable; refresh and select a live Agent")
+	}
+	if !orkaCurrentGenerationReady(&live, live.Metadata.Generation) {
+		return fmt.Errorf("existing Agent is not Ready at its current generation; inspect it before reconnecting")
+	}
 	return nil
 }
 
@@ -216,7 +235,7 @@ type quickstartSetupEvent struct {
 }
 
 func (a *App) quickstartWizardModels() []localModel {
-	models := []localModel{{Provider: "bundled", Model: a.Cfg.Model}, {Provider: "foundry", Model: "Azure Foundry"}}
+	models := []localModel{{Provider: "bundled", Model: a.Cfg.Model}}
 	env := a.localModels
 	if env == nil {
 		env = a.defaultLocalModelEnvironment()
@@ -247,25 +266,12 @@ func (a *App) quickstartWizardSetup(modelPick <-chan *localModel, report func(qu
 		return err
 	}
 	report(quickstartSetupEvent{step: 0, status: "active"})
-	a.copilotCLI = detectCopilotCLI()
 	models := a.quickstartWizardModels()
 	if err := a.operationContext().Err(); err != nil {
 		return err
 	}
-	note := "No Copilot CLI detected; chat will use the local Orka model."
-	if a.copilotCLI != "" {
-		login := copilotLoginStatus(a.operationContext(), a.copilotCLI)
-		note = "Copilot CLI installed · " + login
-		if login == "logged in" {
-			models = append(models, localModel{Provider: "copilot", Model: "auto"})
-			note += " · auto model"
-		}
-	}
+	note := "Native Orka inference; host Foundry/Copilot quickstart modes are retired. Review the authored workspace and every scaffold case, then select a Ready destination Orka openai Provider with the exact model before eval → push → lift."
 	report(quickstartSetupEvent{step: 0, status: "done", models: models, note: note})
-	if err := run(1, a.stepCluster); err != nil {
-		return err
-	}
-	report(quickstartSetupEvent{step: 2, status: "waiting"})
 	var choice *localModel
 	select {
 	case <-a.operationContext().Done():
@@ -275,25 +281,20 @@ func (a *App) quickstartWizardSetup(modelPick <-chan *localModel, report func(qu
 	if choice == nil {
 		return fmt.Errorf("inference selection is required")
 	}
+	if choice.Provider == "foundry" || choice.Provider == "copilot" {
+		return fmt.Errorf("quickstart host Foundry/Copilot modes are retired; use an existing Ready destination Orka openai Provider with an exact model via authored suite eval → push → lift")
+	}
 	a.chatInference = "local"
-	if choice.Provider == "foundry" {
-		a.chatInference = "foundry"
-		for step := 2; step <= 4; step++ {
-			report(quickstartSetupEvent{step: step, status: "skipped", note: "Foundry hosted inference; no local model download. Configure Azure login after setup."})
-		}
-		return a.quickstartWizardOrka(report)
-	}
-	if choice.Provider == "copilot" {
-		a.chatInference, a.copilotModel = "copilot", choice.Model
-		// Local resources remain available for an explicit comparison later.
-		choice = &localModel{Provider: "bundled", Model: a.Cfg.Model}
-	}
 	if choice.Provider == "existing" {
-		for step := 2; step <= 4; step++ {
-			report(quickstartSetupEvent{step: step, status: "skipped", note: "Using the existing Agent Provider."})
+		for step := 1; step <= 5; step++ {
+			report(quickstartSetupEvent{step: step, status: "skipped", note: "Using the existing Agent Provider without changing tool references."})
 		}
-		return a.quickstartWizardOrka(report)
+		return nil
 	}
+	if err := run(1, a.stepCluster); err != nil {
+		return err
+	}
+	report(quickstartSetupEvent{step: 2, status: "waiting"})
 	if choice != nil && choice.Provider != "bundled" {
 		report(quickstartSetupEvent{step: 2, status: "active", note: "Checking the selected host runtime from kind..."})
 		selected := *choice // Verification owns its copy, never the UI's selection.
@@ -348,33 +349,14 @@ func (a *App) prewarmHostQuickstartModel(model *localModel) error {
 }
 
 func (a *App) quickstartWizardOrka(report func(quickstartSetupEvent)) error {
-	return func() error {
-		report(quickstartSetupEvent{step: 5, status: "active"})
-		if err := a.OrkaInstall(OrkaOptions{Provider: "-"}); err != nil {
-			report(quickstartSetupEvent{step: 5, status: "failed", err: err})
-			return err
-		}
-		body := secretManifest("kickstart-provider-key", OrkaNamespace,
-			map[string]string{"api-key": "not-used-by-this-endpoint"},
-			map[string]string{"app.kubernetes.io/managed-by": "kmx"})
-		err := a.applySecretIn(OrkaNamespace, body, "kickstart-provider-key")
-		if err == nil {
-			// The runtime's own grant, not a second spelling of it: a wizard
-			// copy would be free to drift from the account `kmx local up --step orka`
-			// provisions and the one `agent create` names, and a Role that
-			// differs by path is a grant nobody reviews as one.
-			err = a.orkaResultReader()
-		}
-		if err == nil {
-			err = a.installQuickstartK8sTool()
-		}
-		status := "done"
-		if err != nil {
-			status = "failed"
-		}
-		report(quickstartSetupEvent{step: 5, status: status, err: err})
-		return err
-	}()
+	report(quickstartSetupEvent{step: 5, status: "active"})
+	err := a.stepQuickstartOrka()
+	status := "done"
+	if err != nil {
+		status = "failed"
+	}
+	report(quickstartSetupEvent{step: 5, status: status, err: err})
+	return err
 }
 
 type quickstartWizardModel struct {
@@ -505,7 +487,6 @@ func (m quickstartWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.chosen = &choice
 			}
 			m.create.opt.Model = choice.Model
-			m.create.opt.BaseURL = strings.TrimSuffix(choice.Endpoint, "/") + "/v1"
 		}
 		if msg.models != nil {
 			m.models = msg.models
@@ -577,8 +558,8 @@ func (m quickstartWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	updated, cmd := m.create.Update(msg)
-	m.create = updated.(createWizardModel)
+	updated, cmd := updateQuickstartSourceForm(m.create, msg)
+	m.create = updated
 	if m.create.step == createName {
 		m.create.input.Validate = func(value string) error {
 			if err := validateAgentName(value); err != nil {
@@ -620,16 +601,6 @@ func (m *quickstartWizardModel) chooseModel(choice localModel) {
 	m.chosen = &choice
 	if choice.Provider != "copilot" && choice.Provider != "existing" && choice.Provider != "foundry" {
 		m.create.opt.Model = choice.Model
-		if choice.Endpoint != "" {
-			m.create.opt.BaseURL = strings.TrimSuffix(choice.Endpoint, "/") + "/v1"
-		}
-	}
-	if choice.Provider == "copilot" || choice.Provider == "foundry" {
-		m.create.opt.Model = m.defaultModel.Model
-		m.create.opt.BaseURL = m.defaultModel.Endpoint + "/v1"
-	}
-	if choice.Provider == "bundled" {
-		m.create.opt.BaseURL = "http://ollama.ollama.svc.cluster.local:11434/v1"
 	}
 	m.modelPick <- m.chosen
 	m.modelStep = false
@@ -637,7 +608,7 @@ func (m *quickstartWizardModel) chooseModel(choice localModel) {
 		m.formDone = true
 		return
 	}
-	m.create.startMissingStep()
+	startQuickstartSourceField(&m.create)
 }
 
 func (m *quickstartWizardModel) filterInferenceChoices() {
@@ -648,14 +619,8 @@ func (m *quickstartWizardModel) filterInferenceChoices() {
 	if m.imported != nil {
 		choices = append(choices, localModel{Provider: "existing", Model: "Current Agent Provider"})
 	}
-	copilotAdded := false
 	for _, model := range m.models {
-		if model.Provider == "copilot" {
-			if !copilotAdded {
-				choices = append([]localModel{{Provider: "copilot", Model: "auto"}}, choices...)
-				copilotAdded = true
-			}
-		} else if m.imported == nil || model.Provider == "foundry" {
+		if m.imported == nil && model.Provider != "foundry" && model.Provider != "copilot" {
 			choices = append(choices, model)
 		}
 	}
@@ -686,7 +651,7 @@ func (m quickstartWizardModel) View() tea.View {
 }
 
 func (m quickstartWizardModel) compactInfrastructure(width int) string {
-	labels := []string{"Detect models", "Kind cluster", "Model runtime", "Download model", "Load model", "Orka + tools"}
+	labels := []string{"Detect models", "Kind cluster", "Model runtime", "Download model", "Load model", "Orka"}
 	if m.chosen != nil && m.chosen.Provider == "copilot" {
 		labels[2], labels[3], labels[4] = "Configuring model", "Configuring model", "Configuring model"
 	}
@@ -748,7 +713,7 @@ func (m quickstartWizardModel) compactQuestion(width, height int) string {
 	switch {
 	case m.agentStep:
 		title = "1/4 · Start with"
-		choices = append(choices, "Create a new live agent")
+		choices = append(choices, "Author a new suite workspace")
 		for _, a := range m.existing {
 			label := "Use existing Agent " + a.Name
 			if width < 60 {
@@ -774,11 +739,11 @@ func (m quickstartWizardModel) compactQuestion(width, height int) string {
 	case m.create.step == createConfirm:
 		title = "4/4 · Review"
 		o := m.create.opt
-		rows = []string{o.Name + " · " + o.Namespace, o.ProviderType + " · " + o.Model, "Endpoint: " + o.BaseURL, "Tools: " + o.Tools, "Secret: " + o.Secret, "Output: " + o.Out}
+		rows = []string{o.Name + " · " + o.Namespace, "Exact model: " + o.Model, "Instructions: " + valueOr(o.Instructions, "generated from purpose"), "Source and every scaffold case are reviewed next.", "No evaluation or placement consent yet."}
 		selection = m.create.selection
-		choices = []string{"Apply", "Cancel"}
+		choices = []string{"Author source", "Cancel"}
 	default:
-		labels := map[createWizardStep]string{createDescription: "Description", createName: "Agent name", createNamespace: "Namespace", createProviderType: "Provider type", createModel: "Model", createSecret: "Secret name", createResultAccount: "Result ServiceAccount"}
+		labels := map[createWizardStep]string{createDescription: "Description", createName: "Agent name", createNamespace: "Namespace", createProviderType: "Provider type", createModel: "Model", createSecret: "Secret name", createResultAccount: "Result ServiceAccount", quickstartInstructionsPurpose: "Instructions purpose"}
 		title = "3/4 · " + labels[m.create.step]
 		input := m.create.input
 		input.SetWidth(max(1, inner-2))
@@ -947,7 +912,7 @@ func quickstartProgressBar(status string, frame int) string {
 }
 
 func runQuickstartWizard(in io.Reader, out io.Writer, opt CreateOptions, existing []quickstartExistingAgent, target quickstartTarget, defaultModel localModel, modelPick chan<- *localModel, cancelSetup context.CancelFunc, setup func(func(quickstartSetupEvent)) error, checks ...quickstartNameCheck) (CreateOptions, *quickstartExistingAgent, bool, error, error) {
-	create, err := newCreateWizardModel(opt)
+	create, err := newQuickstartSourceForm(opt)
 	if err != nil {
 		return opt, nil, false, nil, err
 	}
