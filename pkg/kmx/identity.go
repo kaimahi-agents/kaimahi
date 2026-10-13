@@ -10,6 +10,7 @@ import (
 // cannot be interchanged accidentally.
 type (
 	PlatformID            string
+	EnvironmentID         string
 	RuntimeID             string
 	RuntimeInstallationID string
 	TargetID              string

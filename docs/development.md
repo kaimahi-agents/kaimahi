@@ -76,7 +76,7 @@ classification.
 | Path | Responsibility |
 |---|---|
 | `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, Orka and version-bounded kagent lifecycle adapter, portable authoring, shared plumbing and embedded manifests |
-| `pkg/kmx/` | experimental public lifecycle contracts, not wired into the installed CLI |
+| `pkg/kmx/` | experimental public setup-only environment plus suite/deployment contracts, not wired into the installed CLI |
 | `k8s/ollama.yaml`, `k8s/orka-k8s-tool.yaml` | native local model and read-only Kubernetes Tool |
 | `scripts/`, `Makefile` | checks, packaging and repository helpers |
 | `.github/workflows/` | verification jobs and docs-only routing |

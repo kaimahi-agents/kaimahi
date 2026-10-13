@@ -332,10 +332,10 @@ func (r RetireRequest) Validate() error {
 	return r.Deployment.Validate()
 }
 
-// AgentDeployments manages runtime placements in an AgentEnvironment. It has no
-// operation capable of provisioning or deprovisioning target infrastructure.
-// Retire derives its subject from deployment evidence instead of accepting
-// another independently supplied deployment reference.
+// AgentDeployments manages runtime placements on exact targets resolved outside
+// the setup-only AgentEnvironment contract. It has no environment setup or
+// teardown operation. Retire derives its subject from deployment evidence
+// instead of accepting another independently supplied deployment reference.
 type AgentDeployments interface {
 	BuildRevision(context.Context, BuildRequest) (BuildResult, error)
 	Lift(context.Context, LiftRequest) (DeploymentReceipt, error)

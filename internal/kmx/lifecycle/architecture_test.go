@@ -29,12 +29,8 @@ func TestDependencyClosureContainsOnlyPublicContractAndStandardLibrary(t *testin
 	}
 }
 
-func TestDestructivePortsKeepReceiptScopesSeparate(t *testing.T) {
+func TestRetirementPortKeepsReceiptScope(t *testing.T) {
 	t.Parallel()
-	assertMethodSignature(t,
-		reflect.TypeOf((*lifecycle.PlatformDeprovisioner)(nil)).Elem(),
-		"Deprovision", reflect.TypeOf(lifecycle.DeprovisionRequest{}), reflect.TypeOf(kmx.TeardownReceipt{}),
-	)
 	assertMethodSignature(t,
 		reflect.TypeOf((*lifecycle.RuntimeRetirer)(nil)).Elem(),
 		"Retire", reflect.TypeOf(kmx.RetireRequest{}), reflect.TypeOf(kmx.RetirementReceipt{}),

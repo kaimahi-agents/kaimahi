@@ -10,7 +10,11 @@ native Orka evaluation of one tool-free member with an exact OpenAI-compatible m
 Orka remains the authoring default; `--runtime kagent` authors the private Go
 v0.10.3/linux-amd64 profile only. Both `eval` and `push --evaluation` refuse it
 with `kagent evaluation on the suite path isn't available yet`.
-kagent suite placement, evaluation, status and promotion remain unsupported.
+Private kagent preparation, new-object placement and observation helpers consume
+this packaged profile. They are not wired to a CLI or the release-lift seam;
+suite evaluation, status and promotion remain unavailable. Occupied targets
+refuse without a complete caller-retained observation; qualified repeat is
+read-only, not update/adoption or restart recovery.
 Orka evaluation has hermetic command/Task tests and a pinned two-case native
 workspace CI qualifier. Standalone registry-package evaluation and registry-reference lift
 are not available. Existing `agent.yaml` creation, evaluation and lift remain

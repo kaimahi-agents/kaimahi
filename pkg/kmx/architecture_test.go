@@ -93,6 +93,22 @@ var forbiddenImplementationNames = map[string]bool{
 	"TargetObservation":            true,
 }
 
+var removedEnvironmentNames = map[string]bool{
+	"DownRequest":           true,
+	"EnvironmentMode":       true,
+	"InfrastructureReceipt": true,
+	"RuntimeOptions":        true,
+	"RuntimeReceipt":        true,
+	"TargetOwnership":       true,
+	"TargetSnapshot":        true,
+	"TargetSpec":            true,
+	"TargetState":           true,
+	"TeardownReceipt":       true,
+	"UpProgress":            true,
+	"UpRequest":             true,
+	"UpResult":              true,
+}
+
 func TestProductionSurfaceIsImplementationNeutral(t *testing.T) {
 	t.Parallel()
 	interfaces := map[string]bool{}
@@ -183,6 +199,9 @@ func inspectTopLevelName(t *testing.T, path, name string) {
 	if forbiddenImplementationNames[name] {
 		t.Errorf("%s exports implementation-only name %q", path, name)
 	}
+	if removedEnvironmentNames[name] {
+		t.Errorf("%s restores deferred environment contract %q", path, name)
+	}
 	inspectExportedName(t, path, name)
 }
 
@@ -225,13 +244,14 @@ func inspectSerializedName(t *testing.T, path, rawTag string) {
 
 func TestWorkflowSignaturesKeepCapabilitiesAndReceiptScopesSeparate(t *testing.T) {
 	t.Parallel()
-	assertMethodSet(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "Down", "Forget", "Inspect", "RecoverDown", "RecoverUp", "Register", "Up")
+	assertStructFields(t, reflect.TypeOf(kmx.EnvironmentSpec{}), "Name")
+	assertStructFields(t, reflect.TypeOf(kmx.EnvironmentRef{}), "ID")
+	assertStructFields(t, reflect.TypeOf(kmx.Environment{}), "Ref", "Spec")
+	assertMethodSet(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "Up")
 	assertMethodSet(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "BuildRevision", "Lift", "RecoverLift", "RecoverRetire", "Retire", "Status")
 	assertMethodSet(t, reflect.TypeOf((*kmx.AgentSuites)(nil)).Elem(), "Build", "Push", "RecoverBuild", "RecoverPush", "Validate")
-	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "Down", reflect.TypeOf(kmx.DownRequest{}), reflect.TypeOf(kmx.TeardownReceipt{}))
+	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "Up", reflect.TypeOf(kmx.EnvironmentSpec{}), reflect.TypeOf(kmx.Environment{}))
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "Retire", reflect.TypeOf(kmx.RetireRequest{}), reflect.TypeOf(kmx.RetirementReceipt{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "RecoverUp", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.UpProgress{}))
-	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentEnvironment)(nil)).Elem(), "RecoverDown", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.TeardownReceipt{}))
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "RecoverLift", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.DeploymentReceipt{}))
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentDeployments)(nil)).Elem(), "RecoverRetire", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.RetirementReceipt{}))
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentSuites)(nil)).Elem(), "Validate", reflect.TypeOf(kmx.ValidateSuiteRequest{}), reflect.TypeOf(kmx.ValidatedAgentSuite{}))
@@ -239,6 +259,18 @@ func TestWorkflowSignaturesKeepCapabilitiesAndReceiptScopesSeparate(t *testing.T
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentSuites)(nil)).Elem(), "RecoverBuild", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.BuildSuiteProgress{}))
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentSuites)(nil)).Elem(), "Push", reflect.TypeOf(kmx.PushSuiteRequest{}), reflect.TypeOf(kmx.PushSuiteResult{}))
 	assertMethodSignature(t, reflect.TypeOf((*kmx.AgentSuites)(nil)).Elem(), "RecoverPush", reflect.TypeOf(kmx.OperationID("")), reflect.TypeOf(kmx.PushSuiteResult{}))
+}
+
+func assertStructFields(t *testing.T, value reflect.Type, want ...string) {
+	t.Helper()
+	if value.NumField() != len(want) {
+		t.Fatalf("%s has %d fields, want %d", value, value.NumField(), len(want))
+	}
+	for i, name := range want {
+		if value.Field(i).Name != name {
+			t.Fatalf("%s field %d = %s, want %s", value, i, value.Field(i).Name, name)
+		}
+	}
 }
 
 func assertMethodSet(t *testing.T, contract reflect.Type, want ...string) {

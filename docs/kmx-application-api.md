@@ -6,9 +6,11 @@
 and the [AgentSuite Artifact Specification](../agentsuite/spec.md)
 
 **Implementation status:** `pkg/kmx` defines only the three northbound interfaces
-and their caller-facing values. `internal/kmx/lifecycle` defines platform and
-runtime ports, runtime-native intermediate artifacts, deploy options, recovery
-SPIs, and receipt factories. Existing installed suite commands validate and
+and their caller-facing values. `AgentEnvironment` currently has one setup
+operation; target resolution, inspection, teardown and recovery are deliberately
+not public methods. `internal/kmx/lifecycle` defines deployment-runtime ports,
+runtime-native intermediate artifacts, deploy options, recovery SPIs, and
+receipt factories. Existing installed suite commands validate and
 transfer definition artifacts and experimentally build one member image, but do
 not implement this suite-wide northbound workflow. There is no exported
 composition root or end-to-end implementation of these interfaces.
@@ -29,7 +31,7 @@ Their responsibilities are deliberately separate:
 
 | Interface | Owns | Does not own |
 |---|---|---|
-| `AgentEnvironment` | Destination target and runtime setup | Agent definition or deployment |
+| `AgentEnvironment` | Establish one logical environment | Exact target/runtime resolution, inspection, teardown, agent definition or deployment |
 | `AgentSuites` | Validate one exact definition, build its image-backed member set, and push those immutable outputs | Image-free execution profiles, destination mutation or implementation-specific build/storage controls |
 | `AgentDeployments` | Build direct revisions and lift/status/retire deployable sources | Target teardown or OCI publication |
 
@@ -46,83 +48,45 @@ CLI / UI / controller / in-process service
                       |
             KMX orchestration/stores
                       |
-             Platform / Suite / Runtime SPIs
+             Environment / Suite / Runtime implementations
 ```
 
-Consumers do not construct concrete target, suite-builder, or runtime adapters.
+Consumers do not select concrete environment, suite-builder, or runtime adapters.
 
 ## Agent environment
 
-`AgentEnvironment` prepares and manages a destination:
+`AgentEnvironment` establishes one logical environment:
 
 ```go
 type AgentEnvironment interface {
-    Up(context.Context, UpRequest) (UpResult, error)
-    RecoverUp(context.Context, OperationID) (UpProgress, error)
-    Register(context.Context, TargetSpec) (TargetRef, error)
-    Inspect(context.Context, TargetRef) (TargetSnapshot, error)
-    Down(context.Context, DownRequest) (TeardownReceipt, error)
-    RecoverDown(context.Context, OperationID) (TeardownReceipt, error)
-    Forget(context.Context, TargetRef) error
+    Up(context.Context, EnvironmentSpec) (Environment, error)
 }
 ```
 
-### Prepare a destination
+### Establish an environment
 
 ```go
-setup, err := controller.environment.Up(ctx, kmx.UpRequest{
-    Operation: "setup-local-001",
-    Mode:      kmx.EnvironmentProvision,
-    Target: kmx.TargetSpec{
-        Name:     "local",
-        Platform: "local-default",
-        Profile:  "development",
-    },
-    Runtime: "default-runtime",
+environment, err := controller.environment.Up(ctx, kmx.EnvironmentSpec{
+    Name: "local",
 })
 ```
 
-`Up` composes target resolution or provisioning with runtime installation. A
-platform-qualified `TargetRef` is the durable destination identity; `local`,
-`staging`, and `production` remain friendly configuration names.
+`EnvironmentSpec` contains only a logical name. It has no Kubernetes context,
+platform, runtime, inference, container-engine or implementation selector. The
+injected implementation owns those setup mechanics and returns an `Environment`
+with a durable logical `EnvironmentRef` plus the accepted specification.
 
-`UpRequest.Mode` makes target intent explicit:
+An environment is not a `TargetRef`. A later target-resolution contract must
+bind an established environment to the exact runtime installation, physical
+destination and deployment scope required by a deployment operation. Recreating an
+environment may therefore preserve its logical environment identity while
+producing a different target identity.
 
-- `EnvironmentResolve` resolves an existing target and never provisions;
-- `EnvironmentProvision` provisions without attempting resolution;
-- `EnvironmentResolveOrProvision` provisions only after the resolver returns
-  `TargetResolution{Found: false}`.
-
-At the internal boundary, resolver errors are not absence. Authentication,
-authorization, timeout, malformed-response, throttling, and network failures
-propagate unchanged and never trigger provisioning.
-
-If provisioning succeeds but runtime setup fails, `RecoverUp` returns durable
-`UpProgress` containing the infrastructure receipt. The caller can explicitly
-resume or tear down without losing ownership evidence.
-
-### Existing destinations
-
-`Register` records an existing target without claiming infrastructure ownership.
-`Forget` removes only that registration. A registered target has no
-`InfrastructureReceipt` and therefore cannot be brought down by KMX.
-
-### Teardown
-
-```go
-receipt, err := controller.environment.Down(ctx, kmx.DownRequest{
-    Operation:      "teardown-local-001",
-    Infrastructure: *setup.Infrastructure,
-})
-```
-
-This example uses `EnvironmentProvision`, so successful setup must carry the
-infrastructure evidence required by `Down`. A resolved or registered target has
-no such receipt and can only be forgotten, not deprovisioned.
-
-`Down` verifies platform-owned evidence before mutation. Workloads may disappear
-as a consequence of deleting an owned target, but `Down` does not fabricate
-runtime retirement receipts or claim each retirement workflow ran.
+This first interface intentionally does not promise inspection, teardown,
+registration, operation recovery or ownership receipts. Those methods require
+production persistence and fail-closed semantics before they become public
+contract. The current `kmx local down`, AKS ownership records and context
+selection remain separate installed behavior.
 
 ## AgentSuite shipping lifecycle
 
@@ -223,7 +187,8 @@ policy, transport, retention and orphan cleanup remain internal concerns.
 
 ## Agent deployment lifecycle
 
-`AgentDeployments` manages placements in an `AgentEnvironment`:
+`AgentDeployments` manages placements on exact targets. The setup-only
+`AgentEnvironment` contract does not yet resolve those targets:
 
 ```go
 type AgentDeployments interface {
@@ -269,7 +234,7 @@ the same manifest therefore does not change `DeploymentSourceRef`.
 
 ```go
 binding, err := kmx.NewTargetBinding(
-    setup.Target,
+    target,
     "example.dev/v1alpha1",
     "RuntimeBinding",
     bindingBytes,
@@ -279,14 +244,16 @@ deployment, err := controller.deployments.Lift(ctx, kmx.LiftRequest{
     Operation: "lift-writer-001",
     Source:    deployable,
     Binding:   binding,
-    Runtime:   setup.Runtime.Runtime,
+    Runtime:   runtime.Runtime,
     Options:   kmx.LiftOptions{Reconcile: true},
 })
 ```
 
-Target identity comes from the binding; the request cannot carry a second
-destination that disagrees. KMX resolves the runtime installation and invokes
-the runtime build/deploy ports. The caller never passes a concrete adapter.
+Here `target` and `runtime` are exact values obtained outside the current
+environment contract. Target identity comes from the binding; the request cannot
+carry a second destination that disagrees. KMX resolves the runtime installation
+and invokes the runtime build/deploy ports. The caller never passes a concrete
+adapter.
 
 ### Status and retire
 
@@ -299,8 +266,8 @@ retired, err := controller.deployments.Retire(ctx, kmx.RetireRequest{
 })
 ```
 
-Retirement verifies deployment and native ownership evidence. It receives no
-infrastructure receipt and cannot deprovision the environment.
+Retirement verifies deployment and native ownership evidence. It has no
+environment teardown capability.
 
 ## Unknown outcomes and recovery
 
@@ -317,10 +284,12 @@ if errors.As(err, &unknown) {
 }
 ```
 
-Equivalent recovery exists for environment setup/teardown, suite build/push,
-deployment, and retirement. Recovery reads
+Equivalent recovery exists for suite build/push, deployment, and retirement.
+Recovery reads
 durable operation/native evidence and does not blindly repeat a non-idempotent
 mutation. Successful receipts are returned only after outcomes are established.
+Environment setup recovery is deferred until an implementation proves its
+operation identity and persistence semantics.
 
 ## Internal management ports
 
@@ -330,29 +299,29 @@ values:
 | Concern | Interfaces |
 |---|---|
 | Direct revision validation | `RevisionBuilder` |
-| Existing or provisioned target | `PlatformResolver`, `PlatformProvisioner`, `PlatformInspector`, `PlatformDeprovisioner` and recovery ports |
 | AgentSuite validation, planning and immutable snapshots | Existing focused ports under `internal/kmx/agentsuite` |
 | Member construction and OCI graph transfer | Existing `SandboxBuilder`, packer, storage and transfer ports under `internal/kmx/agentsuite` |
-| Runtime installation | `RuntimeInstaller`, `RuntimeInstallRecoverer` |
 | Runtime-native rendering | `RuntimeBuilder` |
 | Deployment | `RuntimeDeployer`, `RuntimeDeployRecoverer` |
 | Observation | `RuntimeObserver` |
 | Retirement | `RuntimeRetirer`, `RuntimeRetireRecoverer` |
 
-An existing-target implementation can resolve and inspect without gaining
-provision/deprovision authority. A create-only runtime can build/deploy without
-fake status or retirement methods.
+Environment setup currently has no mirrored southbound SPI. A future
+implementation should compose only the narrow setup capabilities it needs. A
+create-only runtime can build/deploy without fake status or retirement methods.
 
 ## Persistence boundary
 
 Exact-byte source and runtime-native values remain in process. Staged suite
 values may be serialized only as private operation state and can include
 retrieval hints; their location-free refs are durable identity and must be
-revalidated after decoding. Validated receipts cross processes:
+revalidated after decoding. Validated durable values and receipts cross
+processes:
 
 ```text
 In process                 Persisted
 ----------                 ---------
+EnvironmentSpec            Environment / EnvironmentRef
 AgentSource                authored source file
 AgentRevision              AgentRevisionRef
 SuiteSource                ValidatedAgentSuite / AgentSuiteArtifact identity
@@ -392,19 +361,28 @@ Potential CLI adapters are:
 
 | CLI operation | Service |
 |---|---|
-| `kmx local up` / `kmx local down` | `AgentEnvironment` |
+| bare `kmx local up` | Conceptually `AgentEnvironment.Up`; current command is not wired to the interface |
+| `kmx local down` | No current `AgentEnvironment` method; installed teardown behavior is unchanged |
 | `kmx suite validate` | Conceptually `AgentSuites.Validate`; current command does not materialize the northbound result |
 | future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
 | `kmx bundle lift/status/retire` | `AgentDeployments` |
 
-Run/cancel, quickstart, durable progress streams, and network APIs remain
-deferred. Quickstart may eventually compose environment setup, direct revision
+Environment inspection/teardown/recovery, exact target resolution, run/cancel,
+quickstart, durable progress streams, and network APIs remain deferred.
+Quickstart may eventually compose environment setup, direct revision
 build/lift, and a separate run lifecycle while remaining an explicitly local
 runtime recipe.
 
-The current native-Orka workspace path is deliberately separate: its execution
-profile requires no member image and does not implement this first image-backed
-northbound Build/Push contract.
+The installed local suite journey already composes independently:
+
+```text
+kmx create -> kmx local up -> kmx eval -> kmx push
+```
+
+That is evidence for keeping workspace/AgentSuite identity separate from
+environment setup, not evidence that the commands use the northbound interfaces.
+The native execution profile requires no member image and does not implement the
+first image-backed northbound Build/Push contract.
 
 ## Evidence required before stability
 
@@ -415,10 +393,10 @@ northbound Build/Push contract.
    current experimental AgentKit output does not qualify.
 4. A sandbox image's suite/agent/platform/composition binding is reverified at
    deployment.
-5. Orka and an in-memory fake pass shared environment/deployment conformance.
+5. Bare local setup and a second in-process consumer use the same environment implementation, and an in-memory fake passes its setup conformance.
 6. Lift in one process and status/recovery/retire in another use persisted
    identities.
-7. Same operation ID with different input returns a typed conflict.
-8. A registered target can be forgotten but not brought down.
-9. Retirement cannot invoke platform deprovisioning.
+7. Same deployment operation ID with different input returns a typed conflict.
+8. Environment teardown and recovery are added only with persisted ownership evidence.
+9. Retirement cannot invoke environment teardown.
 10. A second real runtime validates every claimed common deployment semantic.

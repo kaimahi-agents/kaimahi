@@ -31,8 +31,15 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 - Root `create <name>` authors one tool-free native suite member offline
   by default: Orka unless `--runtime kagent` selects exact v0.10.3 Go/linux-amd64.
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
-  kagent author/prepare/load/push enables no suite placement/evaluation/status/gates;
+  kagent author/prepare/load/push exposes no suite placement/evaluation/status/gates;
   `eval` and evaluated push explicitly refuse its verified runtime profile.
+  Private runtime-specific kagent prepare/place/observe helpers are separate from
+  W250's common release-lift/dispatch/evidence seam. They create new ModelConfig
+  and Agent objects or reuse a complete caller-retained observation read-only;
+  occupied unrecorded/changed targets refuse, never adopt/update/rollback.
+  Observations are in-memory placement proofs, not persisted/evaluation receipts.
+  The runtime's literal auth mode is observed without native sends; future
+  evaluation remains unsecure-only, trusted-proxy refused.
   Orka-only consumers refuse that profile. RemoteMCP/Python remain unsupported.
   Missing runtime in old source stays Orka only. Create and `push [--workspace DIR] REF` share nearest-ancestor
   `workspace.yaml` discovery; `--workspace DIR` selects an exact root without
@@ -131,6 +138,12 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 - A context supplies access. A target includes the selected runtime, cluster
   identity and namespace. Inference is independent. Unknown is not absent;
   ready is not answered or evaluated; retry is not result retrieval.
+- Experimental `pkg/kmx.AgentEnvironment` is setup-only and unwired:
+  `Up(EnvironmentSpec)` establishes a logical `Environment`, not a context,
+  exact target, runtime selection, inference binding or teardown authority.
+  Bare `kmx local up` is only its current conceptual mapping. Do not claim CLI
+  integration, inspection, persistence, recovery or down semantics until those
+  capabilities have production implementations and evidence.
 - Preserve historical release records and explicit compatibility tests when
   updating current examples. Do not bulk-rename historical text or serialized
   state. Generated recovery commands must preserve selectors and shell quoting.

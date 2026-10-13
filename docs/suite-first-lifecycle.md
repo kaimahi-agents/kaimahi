@@ -91,11 +91,11 @@ The alpha Go interfaces group these into three areas, which map onto the everyda
 
 | Interface | Responsibility | Commands |
 |---|---|---|
-| `AgentEnvironment` | Prepare where agents can run, local or remote | `local`, `context`, `targets` |
+| `AgentEnvironment` | Establish one logical environment; target resolution and teardown remain deferred | conceptually bare `local up` |
 | `AgentSuites` | Produce and publish what runs: validate, build, push (#443) | `push`, `suite …` |
 | `AgentDeployments` | Place and manage it on a target | `lift`, `status` |
 
-The selected runtime (Orka, kagent, AgentSessions) executes; evaluation is separately scoped evidence. Three interfaces is the current shape, not a permanent invariant. Still open: whether `AgentEnvironment` is a public core capability or mainly a development workflow, and evolving `AgentDeployments` from one member image toward suite-scoped deployment.
+The selected runtime (Orka, kagent, AgentSessions) executes; evaluation is separately scoped evidence. Three interfaces is the current alpha shape, not a permanent invariant. `AgentEnvironment` deliberately starts with setup only and does not turn a context into a durable target. Still open: wiring it to a second consumer, resolving an exact suite target from an established environment, and evolving `AgentDeployments` from one member image toward suite-scoped deployment.
 
 ## Removing `agent.yaml` bundles
 

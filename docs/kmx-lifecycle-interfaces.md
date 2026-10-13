@@ -44,7 +44,8 @@ Agent source -> Agent revision ------------------------+
 AgentSuite source -> AgentSuite OCI artifact            |
                     -> Agent Sandbox Image --------------+-> Deployment
                                                         |
-AgentEnvironment -> Target -> Runtime ------------------+
+AgentEnvironment ---------------------------------------+
+Target -> Runtime --------------------------------------+
 ```
 
 | Concept | Responsibility |
@@ -52,6 +53,7 @@ AgentEnvironment -> Target -> Runtime ------------------+
 | Agent revision | Immutable authored bytes identified by the portable digest |
 | AgentSuite | OCI-distributed definition of agents, tools, compositions, and build profiles |
 | Agent Sandbox Image | Runnable OCI image derived for one suite agent and platform |
+| Environment | Established logical setup, without exact placement identity |
 | Target | Durable destination identity supplied or resolved by a platform |
 | Runtime | Builds, deploys, observes, and retires runtime-native workloads |
 | Deployment | One revision or sandbox image bound to one runtime installation on one target |
@@ -61,9 +63,10 @@ The guiding relationship is:
 > `AgentSuites` validates one immutable definition, builds the complete member-
 > image set required by the initial image-backed execution profile, and pushes
 > those identities without rebuilding.
-> `AgentEnvironment` prepares a target and runtime. `AgentDeployments` places an
-> authored revision or sandbox image there without transferring ownership
-> authority between those concerns.
+> `AgentEnvironment` establishes a logical environment without selecting an
+> exact target or runtime. `AgentDeployments` places an authored revision or
+> sandbox image on separately resolved target/runtime identities without
+> transferring authority between those concerns.
 
 ## Naming choices
 
@@ -75,6 +78,7 @@ The package name already establishes ownership, so exported names remain concise
 kmx.AgentRevision
 kmx.AgentSuiteArtifact
 kmx.AgentSandboxImage
+kmx.EnvironmentRef
 kmx.TargetRef
 kmx.RuntimeRef
 kmx.DeploymentRef
@@ -84,10 +88,12 @@ They are not repeated as `KMXAgentRevision` or `KMXTargetRef`. KMX remains
 explicit at external boundaries: package path, CLI, API group, labels,
 documentation, and any future protocol or media-type names.
 
-### Target is the durable abstraction
+### Environment and target are different identities
 
-`Target` is the contract. `local`, `staging`, and `production` are friendly
-configuration names, not target kinds or durable identity.
+`EnvironmentRef` identifies a logical setup such as `local`, while `TargetRef`
+identifies an exact deployment destination. Replacing the physical destination
+may preserve logical environment identity, but it must produce a different
+target identity so old deployment or evaluation evidence cannot follow it.
 
 The model deliberately does not define:
 
@@ -97,33 +103,33 @@ remote == AKS
 ```
 
 Local and remote describe topology from a caller's perspective. Kind, AKS, and
-an existing cluster are possible platform implementations. A local target may
-later use another implementation, and a remote target may be AKS, another
-managed service, or a cluster KMX does not own.
+an existing cluster are possible environment implementations. A local
+environment may later use another implementation, and a remote environment may
+use AKS, another managed service, or a cluster KMX does not own.
 
-`TargetRef` is therefore qualified by `PlatformID` and `TargetID`. The friendly
-name remains in configuration and snapshots, so renaming an alias does not
-change durable identity.
+`EnvironmentSpec` contains only its logical name. It carries no context,
+platform, runtime, inference or implementation selector. `TargetRef` remains
+qualified by `PlatformID` and `TargetID`; resolving one from an environment is a
+separate deferred capability.
 
-### Platform and runtime are independent
+### Environment implementation and runtime are independent
 
-Within this contract, platform answers **where the destination comes from** and
-runtime answers **how the agent executes there**. This is narrower than informal
-uses of "platform" elsewhere in the project.
+The environment implementation answers **how a logical setup is established**;
+the runtime answers **how the agent executes on an exact target**. Neither is an
+author-facing selector in `EnvironmentSpec`.
 
 ```text
-Platform                   Runtime
---------                   -------
-resolve target             install on target
-provision target           build native artifact
-inspect target             deploy artifact
-deprovision target         observe deployment
+Environment implementation Runtime
+-------------------------- -------
+establish logical setup    build native artifact
+                           deploy artifact
+                           observe deployment
                            retire deployment
 ```
 
-This permits the same runtime on a locally provisioned target or an existing
-remote target. Model inference remains another independent binding; it is not a
-platform or runtime selector.
+Future target resolution may permit the same runtime on a locally established
+environment or an existing remote environment. Model inference remains another
+independent binding; it is not an environment or runtime selector.
 
 ### Deployment is not a run
 
@@ -146,20 +152,17 @@ The verbs form separate lifecycle pairs:
 
 | Scope | Establish | Remove |
 |---|---|---|
-| Agent environment | `Up` | `Down` |
+| Agent environment | `Up` | Deferred |
 | AgentSuite build set | `Build` | Registry retention policy |
 | Published build set | `Push` | Registry retention policy |
 | Agent deployment | `Lift` | `Retire` |
-| Local target configuration | `Register` | `Forget` |
 
-`AgentEnvironment.Up` composes target setup with runtime installation, but its
-mode is explicit: resolve only, provision only, or resolve then provision after
-an established absence. Internal resolution returns `Found: false` as data;
-operational errors never become absence. `AgentSuites` owns validation and the
-initial image-backed build/push workflow, but not concrete builders, storage
-transports, image-free execution profiles or deployment.
-`Forget` is deliberately not `Down`: forgetting a bring-your-own target removes
-local configuration and never mutates the target.
+`AgentEnvironment.Up` accepts an `EnvironmentSpec` and returns an established
+`Environment`. It does not expose internal setup phases or imply that target,
+runtime, inference, ownership, inspection, teardown or recovery semantics have
+been settled. `AgentSuites` owns validation and the initial image-backed
+build/push workflow, but not concrete builders, storage transports, image-free
+execution profiles or deployment.
 
 ### AgentSuite is part of the shipping lifecycle
 
@@ -195,10 +198,10 @@ used at any compatible destination.
 A runtime is not only a builder. Runtime-specific translation is one capability,
 followed by deployment, observation, and optional retirement.
 
-The internal SPI therefore uses narrow interfaces in `internal/kmx/lifecycle`:
+The internal deployment SPI therefore uses narrow interfaces in
+`internal/kmx/lifecycle`:
 
 ```text
-RuntimeInstaller
 RuntimeBuilder
 RuntimeDeployer
 RuntimeObserver
@@ -258,23 +261,19 @@ Receipts are separated by responsibility:
 
 | Receipt | Records | Accepted by |
 |---|---|---|
-| `InfrastructureReceipt` | Target infrastructure provisioned by a platform | Target `Down` |
-| `RuntimeReceipt` | Runtime installation or reconciliation | Runtime recovery evidence; uninstall is deferred |
 | `DeploymentReceipt` | Deployable source, binding, artifact, and deployment identity | Agent `Retire` |
 | `RetirementReceipt` | Established workload retirement | Evidence consumers |
-| `TeardownReceipt` | Established target teardown | Evidence consumers |
 
-The destructive signatures encode the primary safety rule:
+The retained destructive signature encodes its safety boundary:
 
 ```go
-Down(context.Context, DownRequest) (TeardownReceipt, error)
 Retire(context.Context, RetireRequest) (RetirementReceipt, error)
 ```
 
-Neither operation accepts another independently supplied target or deployment
-that could disagree with its scoped receipt. `DownRequest` contains an
-`InfrastructureReceipt`; `RetireRequest` contains a `DeploymentReceipt`. A
-deployment receipt cannot be passed to target teardown.
+`RetireRequest` contains a `DeploymentReceipt` rather than another independently
+supplied deployment identity that could disagree. Environment teardown is not
+part of the alpha contract; adding it requires its own ownership evidence and
+must not accept deployment receipts as authority.
 
 Receipts are local evidence, not authentication or cryptographic attestation.
 Before mutation, implementations must verify receipt identity and native
@@ -315,16 +314,16 @@ relocation do not change deployment identity. The application guide contains the
 
 ### Absence and unreadability are distinct
 
-`TargetAbsent` and `DeploymentAbsent` are successful observations. A target or
-deployment that cannot be read because of authentication, authorization,
-timeout, malformed response, throttling, or network failure returns an error.
-It must not be reported as absent.
+`DeploymentAbsent` is a successful observation. A deployment that cannot be
+read because of authentication, authorization, timeout, malformed response,
+throttling, or network failure returns an error. It must not be reported as
+absent. Future environment inspection must preserve the same distinction.
 
-Every remotely mutating northbound request has a caller-known `OperationID`. A
-mutation that may have reached the remote system but whose result cannot be
-established returns `OutcomeUnknownError` carrying that ID. Callers use the
-corresponding recovery method; they do not assume failure or repeat a
-non-idempotent operation.
+Remotely mutating suite and deployment requests have caller-known
+`OperationID`s. A mutation that may have reached the remote system but whose
+result cannot be established returns `OutcomeUnknownError` carrying that ID.
+Callers use the corresponding recovery method; they do not assume failure or
+repeat a non-idempotent operation. Environment recovery is deferred.
 
 ## Neutrality boundary
 
@@ -338,7 +337,7 @@ Architecture tests enforce:
 - no imports from internal implementation packages;
 - rejection of known concrete implementation names in exported and serialized
   surfaces;
-- exact northbound workflow method sets and receipt-scoped destructive signatures.
+- exact northbound workflow method sets and the receipt-scoped retirement signature;
 - no implementation ports or runtime-native artifact declarations in `pkg/kmx`;
 - an internal lifecycle dependency closure containing only `pkg/kmx` and the
   standard library.
@@ -350,15 +349,14 @@ future abstraction is neutral. Semantic review remains necessary.
 
 The first production proof should remain smaller than the full model:
 
-1. Implement one AgentEnvironment, AgentSuites, and AgentDeployments service over
-   focused internal ports; do not mirror the complete northbound method set in a
-   southbound interface.
+1. Implement one `AgentEnvironment.Up` service over focused internal setup
+   capabilities; do not mirror it in a broad southbound interface.
 2. Adapt one real Orka build, deploy, status, and retire path.
-3. Add one in-memory platform/runtime fake and a shared base conformance suite.
+3. Add one in-memory environment fake and shared deployment-runtime conformance.
 4. Adapt the current AgentSuite validator, then implement an immutable validated
    snapshot and a complete conformant suite build/push path.
-5. Persist operation and deployment evidence for recovery from another process.
-6. Prove retirement cannot invoke target or cloud teardown.
+5. Persist suite/deployment operation evidence for recovery from another process.
+6. Prove retirement cannot invoke environment or cloud teardown.
 7. Validate common semantics against another real runtime before declaring them
    stable.
 
@@ -371,6 +369,7 @@ create-only integration.
 The alpha contract deliberately defers:
 
 - a universal client containing every lifecycle operation;
+- environment inspection, teardown, ownership and recovery until an implementation proves them;
 - dynamic plugins or downloadable runtime negotiation;
 - capability-based scheduling before multiple runtimes prove common meanings;
 - generic log, event, output, and artifact streams without consumers;
@@ -389,8 +388,8 @@ model.
 ### Use local and remote as the main abstractions
 
 Rejected because they describe topology, not stable identity, capabilities,
-ownership, or teardown authority. `local` remains a useful target alias or
-profile.
+ownership, or teardown authority. `local` remains a useful logical environment
+name.
 
 ### Make kind and AKS public target types
 
@@ -416,11 +415,12 @@ Rejected because provider already means cloud provider, inference provider, and
 an Orka resource. `Platform`, `Runtime`, and `Target` state the responsibilities
 more precisely.
 
-### Let retire and down accept refs plus receipts
+### Add environment teardown before ownership is implemented
 
-Rejected because two independently supplied identities can disagree. Each
-destructive operation derives its subject from the receipt in its own ownership
-domain.
+Deferred because current local and cloud teardown have different ownership and
+recovery models. A future destructive operation must derive its subject from
+evidence in its own ownership domain rather than accept independently supplied
+identities that can disagree.
 
 ### Serialize every value
 
@@ -442,7 +442,7 @@ Benefits:
 - runtime differences are represented by optional capabilities rather than
   approximated behavior;
 - durable identity crosses CLI invocations without exposing native resources;
-- workload retirement and target teardown have separate, type-checked evidence;
+- workload retirement cannot be mistaken for environment teardown authority;
 - local and managed targets can share lifecycle vocabulary without sharing
   ownership rules.
 
@@ -453,7 +453,7 @@ Costs and risks:
   alone;
 - the public alpha package temporarily overlaps the production internal
   lifecycle contract;
-- target, runtime installation, and deployment storage still need a production
+- environment, target, runtime installation, and deployment storage still need a production
   composition layer;
 - names and state models may change after real conformance evidence.
 

@@ -3,7 +3,6 @@ package lifecycle
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -159,18 +158,6 @@ func TestRuntimeIntermediatesRefuseJSON(t *testing.T) {
 
 func TestReceiptFactoriesDeriveMutationSubjects(t *testing.T) {
 	at := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
-	target := kmx.TargetRef{Platform: "example", ID: "target-1"}
-	infrastructure, err := NewInfrastructureReceipt("infra-1", "up-1", target, at)
-	if err != nil {
-		t.Fatal(err)
-	}
-	teardown, err := NewTeardownReceipt("down-1", "down-operation-1", infrastructure, at)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if teardown.Target != target {
-		t.Fatal("teardown did not derive its target from infrastructure evidence")
-	}
 	bundle, err := NewRuntimeBundle(runtimeInput(t), []RuntimeDocument{ApplyDocument([]byte("artifact"))})
 	if err != nil {
 		t.Fatal(err)
@@ -186,110 +173,6 @@ func TestReceiptFactoriesDeriveMutationSubjects(t *testing.T) {
 	if retirement.Deployment != deployment.Deployment {
 		t.Fatal("retirement did not derive its deployment from deployment evidence")
 	}
-}
-
-type managedPlatform struct{}
-
-func (managedPlatform) Describe() PlatformDescriptor { return PlatformDescriptor{ID: "managed"} }
-func (managedPlatform) Resolve(context.Context, kmx.TargetSpec) (TargetResolution, error) {
-	return TargetResolution{}, nil
-}
-func (managedPlatform) Provision(context.Context, ProvisionRequest) (kmx.InfrastructureReceipt, error) {
-	return kmx.InfrastructureReceipt{}, nil
-}
-func (managedPlatform) Inspect(context.Context, kmx.TargetRef) (TargetObservation, error) {
-	return TargetObservation{}, nil
-}
-func (managedPlatform) Deprovision(context.Context, DeprovisionRequest) (kmx.TeardownReceipt, error) {
-	return kmx.TeardownReceipt{}, nil
-}
-
-var (
-	_ Platform              = managedPlatform{}
-	_ PlatformResolver      = managedPlatform{}
-	_ PlatformProvisioner   = managedPlatform{}
-	_ PlatformInspector     = managedPlatform{}
-	_ PlatformDeprovisioner = managedPlatform{}
-)
-
-type resolvingPlatform struct {
-	resolution TargetResolution
-	err        error
-	receipt    *kmx.InfrastructureReceipt
-	provisions int
-}
-
-func (p *resolvingPlatform) Resolve(context.Context, kmx.TargetSpec) (TargetResolution, error) {
-	return p.resolution, p.err
-}
-
-func (p *resolvingPlatform) Provision(_ context.Context, request ProvisionRequest) (kmx.InfrastructureReceipt, error) {
-	p.provisions++
-	if p.receipt != nil {
-		return *p.receipt, nil
-	}
-	target := kmx.TargetRef{Platform: request.Target.Platform, ID: "target-1"}
-	return NewInfrastructureReceipt("infra-1", request.Operation, target, timeForTest())
-}
-
-func TestResolveTargetRejectsMismatchedImplementationEvidence(t *testing.T) {
-	request := kmx.UpRequest{
-		Operation: "up-1", Mode: kmx.EnvironmentResolve,
-		Target: kmx.TargetSpec{Name: "local", Platform: "example"}, Runtime: "runtime",
-	}
-	platform := &resolvingPlatform{resolution: TargetResolution{
-		Found: true, Target: kmx.TargetRef{Platform: "another", ID: "target-1"},
-	}}
-	if _, _, err := ResolveTarget(t.Context(), request, platform, platform); err == nil {
-		t.Fatal("resolver output for another platform was accepted")
-	}
-	request.Mode = kmx.EnvironmentProvision
-	bad := kmx.InfrastructureReceipt{}
-	platform.receipt = &bad
-	if _, _, err := ResolveTarget(t.Context(), request, platform, platform); err == nil {
-		t.Fatal("invalid provision receipt was accepted")
-	}
-	bad = kmx.InfrastructureReceipt{
-		ID: "infra-1", Operation: "another-operation",
-		Target: kmx.TargetRef{Platform: "example", ID: "target-1"}, RecordedAt: timeForTest(),
-	}
-	platform.receipt = &bad
-	if _, _, err := ResolveTarget(t.Context(), request, platform, platform); err == nil {
-		t.Fatal("provision receipt for another operation was accepted")
-	}
-	bad.Operation = request.Operation
-	bad.Target.Platform = "another"
-	platform.receipt = &bad
-	if _, _, err := ResolveTarget(t.Context(), request, platform, platform); err == nil {
-		t.Fatal("provision receipt for another platform was accepted")
-	}
-}
-
-func TestResolveOrProvisionFallsBackOnlyOnEstablishedAbsence(t *testing.T) {
-	request := kmx.UpRequest{
-		Operation: "up-1", Mode: kmx.EnvironmentResolveOrProvision,
-		Target: kmx.TargetSpec{Name: "local", Platform: "example"}, Runtime: "runtime",
-	}
-	unreadable := errors.New("target read denied")
-	platform := &resolvingPlatform{err: unreadable}
-	if _, _, err := ResolveTarget(t.Context(), request, platform, platform); !errors.Is(err, unreadable) {
-		t.Fatalf("resolver error = %v, want unchanged denial", err)
-	}
-	if platform.provisions != 0 {
-		t.Fatal("resolver error triggered provisioning")
-	}
-	platform.err = nil
-	resolution, receipt, err := ResolveTarget(t.Context(), request, platform, platform)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !resolution.Found || receipt == nil || platform.provisions != 1 {
-		t.Fatalf("absence result = %+v, receipt=%+v, provisions=%d", resolution, receipt, platform.provisions)
-	}
-}
-
-func timeForTest() time.Time {
-	return time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 }
 
 type createOnlyRuntime struct{}

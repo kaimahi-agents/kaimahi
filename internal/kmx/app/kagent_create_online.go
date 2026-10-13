@@ -520,6 +520,9 @@ func kagentWriteDocuments(bundle *scaffold.KagentBundle, rendered agentruntime.R
 	}
 	docs := make([]map[string]any, 0, 2)
 	for _, renderedDoc := range []map[string]any{bundle.ModelConfig, bundle.Agent} {
+		if err := refuseOrkaSuiteDocument(renderedDoc); err != nil {
+			return nil, err
+		}
 		doc, err := cloneOrkaDoc(renderedDoc)
 		if err != nil {
 			return nil, fmt.Errorf("prepare Kagent %s write payload: %w", renderedDoc["kind"], err)
@@ -1407,6 +1410,7 @@ type kagentObjectProof struct {
 	APIVersion, Kind, Name, Namespace string
 	Spec                              any
 	Markers                           map[string]string
+	suite                             *suiteKagentOwnership
 }
 
 type kagentObject struct {
@@ -1426,6 +1430,10 @@ func validateKagentAdmission(raw []byte, desired map[string]any, namespace strin
 	if err != nil {
 		return proof, err
 	}
+	return validateKagentAdmissionProof(raw, desired, proof)
+}
+
+func validateKagentAdmissionProof(raw []byte, desired map[string]any, proof kagentObjectProof) (kagentObjectProof, error) {
 	var admitted struct {
 		APIVersion string `json:"apiVersion"`
 		Kind       string `json:"kind"`
@@ -1464,15 +1472,14 @@ func validateKagentAdmission(raw []byte, desired map[string]any, namespace strin
 }
 
 func expectedKagentObjectProof(desired map[string]any, namespace string) (kagentObjectProof, error) {
-	proof := kagentObjectProof{
-		APIVersion: fmt.Sprint(desired["apiVersion"]), Kind: fmt.Sprint(desired["kind"]),
-		Name: kagentObjectName(desired), Namespace: namespace,
+	if err := refuseOrkaSuiteDocument(desired); err != nil {
+		return kagentObjectProof{}, err
 	}
-	metadata, ok := desired["metadata"].(map[string]any)
-	if !ok || metadata["namespace"] != namespace || proof.APIVersion != scaffold.KagentAPIVersion ||
-		(proof.Kind != "ModelConfig" && proof.Kind != "Agent") || proof.Name == "" {
-		return proof, fmt.Errorf("reviewed object has an invalid identity")
+	proof, err := commonKagentObjectProof(desired, namespace)
+	if err != nil {
+		return proof, err
 	}
+	metadata := desired["metadata"].(map[string]any)
 	annotations, err := kagentStringMap(metadata["annotations"])
 	if err != nil {
 		return proof, err
@@ -1490,6 +1497,19 @@ func expectedKagentObjectProof(desired map[string]any, namespace string) (kagent
 			return proof, fmt.Errorf("reviewed runtime version marker is not supported")
 		}
 		proof.Markers[kagentVersionMarker] = version
+	}
+	return proof, nil
+}
+
+func commonKagentObjectProof(desired map[string]any, namespace string) (kagentObjectProof, error) {
+	proof := kagentObjectProof{
+		APIVersion: fmt.Sprint(desired["apiVersion"]), Kind: fmt.Sprint(desired["kind"]),
+		Name: kagentObjectName(desired), Namespace: namespace,
+	}
+	metadata, ok := desired["metadata"].(map[string]any)
+	if !ok || metadata["namespace"] != namespace || proof.APIVersion != scaffold.KagentAPIVersion ||
+		(proof.Kind != "ModelConfig" && proof.Kind != "Agent") || proof.Name == "" {
+		return proof, fmt.Errorf("reviewed object has an invalid identity")
 	}
 	spec, ok := desired["spec"].(map[string]any)
 	if !ok {
@@ -1543,6 +1563,13 @@ func canonicalKagentJSONValue(value any) (any, error) {
 }
 
 func validateKagentProofSpecAndMarkers(rawSpec json.RawMessage, annotations map[string]string, proof kagentObjectProof) error {
+	if proof.suite != nil {
+		if err := proof.suite.check(annotations); err != nil {
+			return err
+		}
+	} else if hasOrkaSuiteReservation(annotations) {
+		return fmt.Errorf("suite reservation blocks legacy Kagent proof")
+	}
 	actual, err := canonicalKagentJSONValue(json.RawMessage(rawSpec))
 	if err != nil || !reflect.DeepEqual(actual, proof.Spec) {
 		version := "v0.10.2"
@@ -1595,13 +1622,15 @@ func (a *App) createKagentObject(ctx context.Context, namespace string, doc map[
 		object.Metadata.Generation < 1 || object.Metadata.DeletionTimestamp != nil {
 		return id, fmt.Errorf("create %s/%s returned no valid identity; it may exist and was not retried", id.Kind, id.Name)
 	}
+	// A valid server identity survives a later proof failure; this does not
+	// authorize reuse or claim readiness of the created object.
+	id.UID, id.Generation = object.Metadata.UID, object.Metadata.Generation
 	if err := validateKagentProofSpecAndMarkers(object.Spec, object.Metadata.Annotations, proof); err != nil {
 		return id, fmt.Errorf("create %s/%s returned a mutated admitted object; it may exist and no task or receipt was attempted: %w", id.Kind, id.Name, err)
 	}
-	if proof.Markers[kagentVersionMarker] != "" && object.Metadata.Labels["app.kubernetes.io/managed-by"] != "kmx" {
+	if (proof.Markers[kagentVersionMarker] != "" || proof.suite != nil) && object.Metadata.Labels["app.kubernetes.io/managed-by"] != "kmx" {
 		return id, fmt.Errorf("Kagent create response changed ownership; no retry or receipt")
 	}
-	id.UID, id.Generation = object.Metadata.UID, object.Metadata.Generation
 	return id, nil
 }
 
@@ -1621,7 +1650,7 @@ func (a *App) readKagentObject(ctx context.Context, namespace string, id kagentI
 	if object.Metadata.DeletionTimestamp != nil {
 		return nil, kagentFailure("drift", fmt.Errorf("%s/%s UID %s is terminating; refusing stale state", id.Kind, id.Name, id.UID))
 	}
-	if id.Proof.Markers[kagentVersionMarker] != "" && object.Metadata.Labels["app.kubernetes.io/managed-by"] != "kmx" {
+	if (id.Proof.Markers[kagentVersionMarker] != "" || id.Proof.suite != nil) && object.Metadata.Labels["app.kubernetes.io/managed-by"] != "kmx" {
 		return nil, kagentFailure("drift", fmt.Errorf("Kagent primary managed-by ownership label changed"))
 	}
 	if err := validateKagentProofSpecAndMarkers(object.Spec, object.Metadata.Annotations, id.Proof); err != nil {

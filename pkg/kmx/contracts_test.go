@@ -137,22 +137,57 @@ func TestDurableRefsRejectInvalidUTF8AndRoundTrip(t *testing.T) {
 	}
 }
 
-func TestUpResultRejectsContradictoryEvidence(t *testing.T) {
-	at := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
-	target := TargetRef{Platform: "example", ID: "target-1"}
-	runtime := RuntimeRef{Runtime: "runtime", Installation: "install-1", Target: target}
-	infrastructure := InfrastructureReceipt{ID: "infra-1", Operation: "up-1", Target: target, RecordedAt: at}
-	runtimeReceipt := RuntimeReceipt{ID: "runtime-1", Operation: "up-1", Runtime: runtime, RecordedAt: at}
-	result := UpResult{
-		Operation: "up-1", Target: target, Runtime: runtime,
-		Infrastructure: &infrastructure, RuntimeReceipt: runtimeReceipt,
+func TestEnvironmentValuesValidateAndRoundTrip(t *testing.T) {
+	environment := Environment{
+		Ref:  EnvironmentRef{ID: "local"},
+		Spec: EnvironmentSpec{Name: "local"},
 	}
-	if err := result.Validate(); err != nil {
+	if err := environment.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	result.Runtime.Target.ID = "another-target"
-	if err := result.Validate(); err == nil {
-		t.Fatal("UpResult accepted contradictory target and runtime identities")
+	data, err := json.Marshal(environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(data), `{"ref":{"id":"local"},"spec":{"name":"local"}}`; got != want {
+		t.Fatalf("environment JSON = %s, want %s", got, want)
+	}
+	var decoded Environment
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded != environment {
+		t.Fatalf("environment round trip = %#v, want %#v", decoded, environment)
+	}
+	for name, value := range map[string]any{
+		"spec":        EnvironmentSpec{},
+		"reference":   EnvironmentRef{},
+		"environment": Environment{Ref: environment.Ref},
+	} {
+		if _, err := json.Marshal(value); err == nil {
+			t.Errorf("invalid %s serialized", name)
+		}
+	}
+	if err := json.Unmarshal([]byte(`{"ref":{"id":"local"},"spec":{}}`), &decoded); err == nil {
+		t.Fatal("environment decoded without a name")
+	}
+	if err := json.Unmarshal([]byte(`{"name":"local","runtime":"orka"}`), new(EnvironmentSpec)); err == nil {
+		t.Fatal("EnvironmentSpec accepted an implementation selector")
+	}
+	for _, raw := range []string{
+		`{"Name":"local"}`,
+		`{"name":"local","name":"other"}`,
+	} {
+		if err := json.Unmarshal([]byte(raw), new(EnvironmentSpec)); err == nil {
+			t.Fatalf("EnvironmentSpec accepted ambiguous JSON %s", raw)
+		}
+	}
+	if raw := `{"ref":{"id":"local","id":"other"},"spec":{"name":"local"}}`; json.Unmarshal([]byte(raw), &decoded) == nil {
+		t.Fatalf("Environment accepted ambiguous nested JSON %s", raw)
+	}
+	invalid := EnvironmentRef{ID: EnvironmentID(string([]byte{0xff}))}
+	if _, err := json.Marshal(invalid); err == nil {
+		t.Fatal("EnvironmentRef accepted invalid UTF-8")
 	}
 }
 
@@ -526,30 +561,5 @@ func TestSuiteReportRejectsIncoherentCountsAndPlatforms(t *testing.T) {
 		if err := report.Validate(); err == nil {
 			t.Errorf("incoherent report %d succeeded", i)
 		}
-	}
-}
-
-func TestUpProgressPreservesPartialInfrastructureEvidence(t *testing.T) {
-	at := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
-	target := TargetRef{Platform: "example", ID: "target-1"}
-	infrastructure := InfrastructureReceipt{ID: "infra-1", Operation: "up-1", Target: target, RecordedAt: at}
-	progress := UpProgress{Operation: "up-1", Target: target, Infrastructure: &infrastructure}
-	if err := progress.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	data, err := json.Marshal(progress)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded UpProgress
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(decoded, progress) {
-		t.Fatalf("progress round trip = %#v, want %#v", decoded, progress)
-	}
-	progress.Complete = true
-	if err := progress.Validate(); err == nil {
-		t.Fatal("UpProgress accepted complete setup without a runtime receipt")
 	}
 }

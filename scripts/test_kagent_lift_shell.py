@@ -38,6 +38,8 @@ elif name == "kind" and args[:2] == ["delete", "cluster"]:
     key = "cluster-cleanup"
 elif name == "helm" and args and args[0] == "pull":
     key = "chart-pull"
+elif name == "go":
+    key = "suite-helpers"
 if key in os.environ.get("FAIL", "").split(","):
     print("private-bootstrap-payload")
     print("private-bootstrap-payload", file=sys.stderr)
@@ -63,6 +65,10 @@ elif name == "kind" and args == ["version", "-q"]:
     print("0.33.0")
 elif name == "helm" and args[:1] == ["version"]:
     print("v3.20.0")
+elif name == "go":
+    assert args == ["test", "./internal/kmx/app", "-run", "^TestLiveSuiteKagentPlacement$", "-count=1", "-timeout=8m"]
+    assert os.environ["KMX_SUITE_KAGENT_LIVE"] == "1"
+    assert os.environ["KMX_LIVE_KIND_CONTEXT"] == "kind-kmx-kagent-lift"
 elif name == "driver" and args[0] == "qualify":
     work = pathlib.Path(args[2])
     assert os.environ["KMX_HOME"] == str(work / "kmx-home")
@@ -92,7 +98,7 @@ class ShellTests(unittest.TestCase):
         self.double.chmod(0o700)
         tools = self.base / "tools"
         tools.mkdir()
-        for name in ("curl", "sha256sum", "tar", "uname"):
+        for name in ("curl", "sha256sum", "tar", "uname", "go"):
             (tools / name).symlink_to(self.double)
         self.runner = self.base / "runner"
         self.runner.mkdir()
@@ -257,10 +263,14 @@ class ShellTests(unittest.TestCase):
                 shutil.rmtree(self.runner / "kmx-kagent-lift")
 
     def test_qualification_failure_does_not_leave_success_artifact(self):
-        result, records = self.run_shell((), "qualify")
-        self.assertEqual(result.returncode, 23)
-        self.assertIn("phase=qualify exitstatus=23", result.stderr)
-        self.assert_owned_cleanup(records, 1)
+        for phase in ("qualify", "suite-helpers"):
+            with self.subTest(phase=phase):
+                self.calls.unlink(missing_ok=True)
+                result, records = self.run_shell((), phase)
+                self.assertEqual(result.returncode, 23)
+                self.assertIn("phase=" + phase + " exitstatus=23", result.stderr)
+                self.assert_owned_cleanup(records, 1)
+                self.assertFalse((self.runner / "kmx-kagent-lift/qualification.json").exists())
 
     def test_real_python_boundary_reports_only_closed_qualifier_phase_and_reason(self):
         driver = self.root / "scripts/ci/kagent-lift.py"

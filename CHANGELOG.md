@@ -37,6 +37,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Newly created/recreated resources need fresh evaluation before subsequent reuse.
   Signing/authentication is not claimed; live lift qualification remains separate.
 
+- Private suite-owned kagent v0.10.3 Go/linux-amd64 preparation, create-only
+  placement and observation helpers consume the verified packaged member and
+  explicit OpenAI bindings. Suite ownership is isolated from legacy resources;
+  occupied/unrecorded or changed targets refuse. Repeat placement requires a
+  complete caller-retained observation and is read-only. Partial outcomes retain
+  known identities without claiming success or rollback. No persisted receipt,
+  model/Task execution, suite CLI, lift gate or runtime-dispatch seam is added.
+  [Native workspace profiles](docs/suite-workspace.md).
+
 - Internal read-only digest-lift planning for one-member native suites: bounded
   exact registry/local-layout retrieval, source-free closed packaged loading,
   mandatory private passing-receipt coherence and exact target/binding/runtime
@@ -49,7 +58,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   metadata and the exact OCI manifest; publication copies that prepared graph
   without images or cluster effects. Invalid/unsupported runtime declarations
   refuse; Orka-only preparation/evidence consumers do not execute kagent input.
-  Suite kagent placement/evaluation/gates and RemoteMCP remain future slices.
+  CLI/release-lift kagent placement, suite evaluation/gates and RemoteMCP
+  remain future slices.
   Existing live kagent v0.10.2 create is unchanged.
   [Offline native workspace profiles](docs/suite-workspace.md).
 
@@ -119,6 +129,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- Quickstart checks current-generation Agent readiness when reconnecting to an
+  existing Agent whose Kubernetes tool reference needs no change. A stale or
+  unavailable Agent no longer reaches the Ready screen through that reuse path.
+
 - `kmx eval diff` reports cases without observed Sessions runtime identity
   as individual `unknown` rows instead of hiding comparable cases. Unknown rows
   still exit nonzero; conflicting identities or no complete observed identity
@@ -135,6 +149,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Python remains render-only.
 
 ### Breaking
+
+- The experimental, unwired Go `AgentEnvironment` API now models one
+  object-to-object setup operation: `EnvironmentSpec -> Up -> Environment`.
+  Logical `EnvironmentRef` identity is separate from exact deployment
+  `TargetRef` identity. The old `UpRequest`/`UpResult`, inspection,
+  registration, teardown and recovery methods, their setup receipts and unused
+  management ports are removed without compatibility aliases. This does not
+  change `kmx local up`, quickstart, local teardown, AgentSuite commands or any
+  installed behavior.
 
 - Orka chart installs now use `kmx.kaimahi.dev/installed`, matching the KMX
   label/API-group domain. Clusters installed by an older kmx retain
@@ -193,6 +216,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   modeled.
 
 ### Upgrading
+
+- Go consumers of the experimental `AgentEnvironment` API should pass
+  `EnvironmentSpec{Name: ...}` to `Up` and consume `Environment`. There is no
+  replacement yet for its removed inspection, registration, teardown or
+  recovery APIs; continue using the installed commands or implementation-owned
+  operations until those contracts have production evidence.
 
 - Add `--live` to scripts that create Orka or kagent resources or PortableAgent
   bundles, including native previews. Use `kmx create --live` for the existing
