@@ -93,6 +93,11 @@ func TestCreateSuiteMemberTerminalConfirmation(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("confirmation did not finish")
 			}
+			if tc.name == "upper yes" {
+				if !strings.Contains(out.String(), `unsafe\n\x1b[31m\u202e`) || strings.Count(out.String(), "\n") != 1 || strings.ContainsAny(out.String(), "\r\x1b\u202e") {
+					t.Fatalf("unsafe workspace was not escaped to one status line: %q", out.String())
+				}
+			}
 			entries, err := os.ReadDir(root)
 			if err != nil || (len(entries) != 0) != tc.create || (out.Len() != 0) != tc.create || hidden.Len() != 0 {
 				t.Fatalf("wrong filesystem/output effects: %v, %v, %q, %q", entries, err, &out, &hidden)

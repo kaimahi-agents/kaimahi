@@ -52,11 +52,7 @@ func (a *App) CreateSuiteMember(ctx context.Context, root string, opt workspace.
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		label := start
-		if strings.IndexFunc(label, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
-			label = strconv.Quote(label)
-		}
-		if _, err := fmt.Fprintf(a.Err, "No workspace found in %s. Start one here? [Y/n] ", label); err != nil {
+		if _, err := fmt.Fprintf(a.Err, "No workspace found in %s. Start one here? [Y/n] ", workspacePathLabel(start)); err != nil {
 			return err
 		}
 		// Stay in cooked mode: normal terminal signals handle interruption.
@@ -97,8 +93,15 @@ func (a *App) CreateSuiteMember(ctx context.Context, root string, opt workspace.
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(a.Out, "Created native-Orka AgentSuite workspace %s with member %s (not deployed)\n", root, opt.Name)
+	_, err = fmt.Fprintf(a.Out, "Created native-Orka AgentSuite workspace %s with member %s (not deployed)\n", workspacePathLabel(root), opt.Name)
 	return err
+}
+
+func workspacePathLabel(path string) string {
+	if strings.IndexFunc(path, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
+		return strconv.Quote(path)
+	}
+	return path
 }
 
 // PushSuiteWorkspace discovers a workspace from cwd when root is empty, or
