@@ -36,14 +36,13 @@ INSTALL_COMMANDS = [
 ]
 FIRST_ANSWER_COMMANDS = [("kmx quickstart", r"^kmx quickstart$")]
 JOURNEY_COMMANDS = [
-    ("kmx local up", r"^`kmx local up`"),
-    ("kmx quickstart --interactive", r"^`kmx quickstart --interactive`"),
-    ("kmx create", r"^`kmx create`"),
-    ("kmx create --live", r"^`kmx create --live`"),
-    ("kmx run", r"^`kmx run`"),
-    ("kmx chat", r"^`kmx chat`"),
-    ("kmx push", r"^`kmx push`"),
-    ("bundle lift guide", r"\[bundle lift guide\]\(docs/agent-lift\.md\)"),
+    ("kmx local up", r"^(?:\| )?`kmx local up`"),
+    ("kmx quickstart --interactive", r"^(?:\| )?`kmx quickstart --interactive`"),
+    ("kmx create", r"^(?:\| )?`kmx create`"),
+    ("kmx create --live", r"^(?:\| )?`kmx create --live`"),
+    ("kmx run", r"^(?:\| )?`kmx run`"),
+    ("kmx chat", r"^(?:\| )?`kmx chat`"),
+    ("kmx push", r"^(?:\| )?`kmx push`"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)

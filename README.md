@@ -32,34 +32,33 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
 ```
 
-**Latest release first answer:** start with the fixed, non-interactive local demonstration:
+**Get your first answer:** run the local quickstart with preset settings and no interactive prompts:
 
 ```bash
 kmx quickstart
 ```
 
-This prepares local kind, Ollama and Orka, then prints a fresh Task's answer; follow [getting started](docs/getting-started.md) to select your own cluster/context.
+This sets up a local test environment and prints an agent's answer. See [getting started](docs/getting-started.md) to use your own cluster.
 
-`kmx local up` prepares the runtime without creating an agent.
+| Command | Purpose |
+|---|---|
+| `kmx local up` | Prepare the runtime without creating an agent. |
+| `kmx quickstart --interactive` | Choose your own agent and model through the guided wizard. |
+| `kmx create` | Author one [native workspace member](docs/suite-workspace.md) offline. |
+| `kmx create --live` | Create runtime resources and an editable PortableAgent bundle on a prepared target; omit the name to open the live wizard. |
+| `kmx run` | Run one Task and return its answer. |
+| `kmx chat` | Open an interactive session with a named live Agent. |
+| `kmx push` | Publish an authored native workspace to `REF`, without evaluation or deployment. |
 
-`kmx quickstart --interactive` guides custom agent and model choices.
+**Workspace authoring:** create needs an exact `--model` and an `--instructions`
+file. Create and push share [workspace discovery](docs/suite-workspace.md#create);
+`--workspace DIR` selects a directory explicitly.
 
-`kmx create` authors one [native-Orka workspace member](docs/suite-workspace.md) offline, with an exact `--model` and file-valued `--instructions`. It discovers the nearest ancestor `workspace.yaml`; `--workspace DIR` selects or initializes an exact root.
+**Live operations:** resource creation requires `--live`, even for previews.
+Run and chat use deployed agents on the default runtime, not workspaces.
+`kmx run --agent <name> --prompt <text>` prints only the answer.
 
-`kmx create --live` creates Orka resources and an editable PortableAgent bundle on a prepared target; without a name it opens the live wizard. Both Orka and explicit kagent creation require `--live`, including `--no-apply` and `--out -` previews.
-
-`kmx run` runs one Task against a deployed Orka Agent, with answer-only stdout; select it with `--agent <name>` and supply `--prompt <text>`.
-
-`kmx chat` opens an interactive session with a named live Orka Agent; run and chat do not execute a local workspace.
-
-`kmx push` publishes an already-authored [native-Orka workspace](docs/suite-workspace.md) with one destination `REF`, not a PortableAgent bundle. It discovers the nearest ancestor `workspace.yaml`; `--workspace DIR` selects an exact root without fallback. It neither evaluates nor deploys.
-
-The legacy `kmx bundle` commands (lift, status, evaluate, retire and verify, for `create --live` bundles) are hidden from help and completion but still run until lift by digest replaces them.
-
-These spellings require a current development build; tagged v0.5.1 still uses
-`kmx agent`. See [command migration](CHANGELOG.md#upgrading).
-
-Follow the [bundle lift guide](docs/agent-lift.md) for target preparation, receipts and evaluation.
+Follow the [lift operation guide](docs/agent-lift.md) for target preparation, receipts and evaluation.
 
 ## Quickstart
 
@@ -69,11 +68,11 @@ For your own agent, run the experimental wizard:
 kmx quickstart --interactive
 ```
 
-Choose **Chat with agent**, check a local answer, then enter `/lift` to a prepared Orka target; after connecting, send a **new message** to prove it answers there.
+Choose **Chat with agent**, check a local answer, then enter `/lift` to a prepared target on the default runtime; after connecting, send a **new message** to prove it answers there.
 See [releases and versions](docs/releases.md) for installation and upgrades.
 
 **Safety:** use a dedicated test cluster and review [getting started](docs/getting-started.md).
-Both paths create cluster resources and result-reader RBAC; the wizard adds a [read-only inventory Tool with cross-namespace permissions](docs/orka-k8s-tool.md).
+Both paths create cluster resources and result-reader RBAC; the wizard adds a [read-only inventory Tool with cross-namespace permissions](docs/getting-started.md#create-your-own-agent-then-lift-it-from-chat).
 Setup starts while the form is open, and cancellation leaves completed resources in place.
 Bundle-backed `/lift` needs a prepared target, a **Ready Provider and its Secret**, and referenced Tools; it creates neither a cluster nor cloud inference.
 Hosted model calls can incur charges; review [interactive lift](docs/interactive-lift.md) for preparation and recovery.
@@ -81,10 +80,9 @@ Hosted model calls can incur charges; review [interactive lift](docs/interactive
 
 ## Runtime Contract
 
-[Orka](https://github.com/orka-agents/orka) is the default runtime; kagent v0.10.3
-bundle lift/status is supported on a prepared cluster.
-See [runtime support](docs/runtime-adapters.md) and
-[bundle lift](docs/agent-lift.md#exact-v0103-declarative-bundle-placement) for flags and limits.
+See [runtime support](docs/runtime-adapters.md) for the default runtime.
+kagent v0.10.3 bundle lift/status is supported on a prepared cluster;
+see [bundle lift](docs/agent-lift.md#exact-v0103-declarative-bundle-placement) for flags and limits.
 
 ## Status
 

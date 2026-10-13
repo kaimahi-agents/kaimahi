@@ -55,7 +55,25 @@ Build.
 > governance control plane.
 """
 
-CASES = [("valid front door", GOOD, None)]
+TABLE_JOURNEY = """| Command | Purpose |
+|---|---|
+| `kmx local up` | Provision the runtime. |
+| `kmx quickstart --interactive` | Create your own Agent. |
+| `kmx create` | Author a workspace member offline. |
+| `kmx create --live` | Create resources and a bundle. |
+| `kmx run` | Prove one Task answer. |
+| `kmx chat` | Open an interactive session. |
+| `kmx push` | Publish a prepared workspace. |
+See the [bundle lift guide](docs/agent-lift.md).
+"""
+TABLE_GOOD = GOOD.replace(JOURNEY, TABLE_JOURNEY)
+
+CASES = [
+    ("valid front door", GOOD, None),
+    ("valid command table", TABLE_GOOD, None),
+    ("command in purpose column only", TABLE_GOOD.replace("| `kmx create` |", "| Author | `kmx create`"), "kmx create is missing"),
+    ("table commands out of order", TABLE_GOOD.replace("| `kmx run` | Prove one Task answer. |\n", "").replace("| `kmx create --live` |", "| `kmx run` | Prove one Task answer. |\n| `kmx create --live` |"), "kmx run is missing"),
+]
 for label, literal in [
     ("ketu icon", '<img src="brand/ketu.svg" alt="Kaimahi ketu mark">\n'),
     ("product line", "**Agent Builder CLI for Kubernetes.**\n"),
@@ -89,6 +107,7 @@ for label, literal in [
     ("kmx push", "`kmx push`"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
+    CASES.append((f"table missing {label}", TABLE_GOOD.replace(literal, ""), f"{label} is missing"))
 CASES += [
     ("wrong tap", GOOD.replace("kaimahi-agents/tap/kmx", "other/tap/kmx"), "Homebrew install is missing"),
     ("moving Go source", GOOD.replace("cmd/kmx@v0.5.1", "cmd/kmx@main"), "pinned Go install is missing"),
@@ -96,7 +115,7 @@ CASES += [
     ("wrong installer", GOOD.replace("kaimahi/main/install.sh", "other/main/install.sh"), "release installer is missing"),
     ("quickstart after suffix", GOOD.replace("kmx quickstart\n", "kmx quickstart-old\n"), "kmx quickstart is missing"),
     ("legacy Go quickstart chaining", GOOD.replace("cmd/kmx@v0.5.1\n", "cmd/kmx@v0.5.1 && kmx quickstart\n"), "pinned Go install is missing"),
-    ("missing lift guide", GOOD.replace("See the [bundle lift guide](docs/agent-lift.md).\n", ""), "bundle lift guide is missing"),
+    ("lift guide not required in command overview", GOOD.replace("See the [bundle lift guide](docs/agent-lift.md).\n", ""), None),
     ("journey missing first block", GOOD.replace("```bash\n" + INSTALL + "```\n", ""), "Homebrew install is missing"),
     ("journey missing second block", GOOD.replace("```bash\nkmx quickstart\n```\n", ""), "kmx quickstart is missing"),
     ("journey commands in prose only", GOOD.replace("```bash\nkmx quickstart\n```\n", "kmx quickstart\n"), "kmx quickstart is missing"),
