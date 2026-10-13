@@ -93,8 +93,15 @@ func (a *App) CreateSuiteMember(ctx context.Context, root string, opt workspace.
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(a.Out, "Created native-Orka AgentSuite workspace %s with member %s (not deployed)\n", workspacePathLabel(root), opt.Name)
+	_, err = fmt.Fprintf(a.Out, "Created %s AgentSuite workspace %s with member %s (not deployed)\n", nativeSuiteLabel(opt.Runtime), workspacePathLabel(root), opt.Name)
 	return err
+}
+
+func nativeSuiteLabel(profile workspace.RuntimeProfile) string {
+	if profile.ID == "kagent" {
+		return "native-kagent v0.10.3 Go"
+	}
+	return "native-Orka"
 }
 
 func workspacePathLabel(path string) string {
@@ -190,14 +197,17 @@ func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layou
 	if err != nil {
 		return oras.PushResult{}, err
 	}
+	suite, err := workspace.Load(ctx, prepared)
+	if err != nil {
+		return oras.PushResult{}, err
+	}
+	if receipt != nil && suite.Runtime.ID == "kagent" {
+		return oras.PushResult{}, errSuiteKagentEvaluationUnavailable
+	}
 	if expectedS != nil && prepared.Descriptor.Digest != expected {
 		return oras.PushResult{}, fmt.Errorf("prepared suite does not match the expected publication identity")
 	}
 	if receipt != nil {
-		suite, err := workspace.Load(ctx, prepared)
-		if err != nil {
-			return oras.PushResult{}, err
-		}
 		if _, err := canonicalSuitePassingReceipt(ctx, receipt, suite); err != nil {
 			return oras.PushResult{}, err
 		}
@@ -236,7 +246,7 @@ func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layou
 	if sourceWarning != "" && result.Provenance != nil {
 		result.Warnings = append(result.Warnings, sourceWarning)
 	}
-	if _, err := fmt.Fprintf(a.Out, "Pushed native-Orka AgentSuite %s to %s (%s)\nRequired member images: []\n", prepared.Name, result.Path, result.Descriptor.Digest); err != nil {
+	if _, err := fmt.Fprintf(a.Out, "Pushed %s AgentSuite %s to %s (%s)\nRequired member images: []\n", nativeSuiteLabel(suite.Runtime), prepared.Name, result.Path, result.Descriptor.Digest); err != nil {
 		return result, err
 	}
 	if layout == "" {

@@ -19,15 +19,20 @@ import (
 
 // Public format acceptance alone must not certify native execution semantics.
 func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
-	for _, change := range []string{"null images", "missing images", "nonempty images", "unknown metadata", "duplicate metadata", "renderer", "case digest", "case escape", "case omission", "unlisted case", "private file", "secret model", "secret instructions", "model bindings"} {
+	for _, change := range []string{"null images", "missing images", "nonempty images", "unknown metadata", "duplicate metadata", "renderer", "case digest", "case escape", "case omission", "unlisted case", "private file", "secret model", "secret instructions", "model bindings", "kagent both profiles", "kagent missing metadata", "kagent cross runtime", "kagent wrong version", "kagent wrong engine", "kagent missing runtime", "kagent null runtime", "kagent wrong contract", "kagent wrong renderer"} {
 		t.Run(change, func(t *testing.T) {
 			root, cache := createWorkspace(t)
+			metadata := "native-orka.json"
+			if strings.HasPrefix(change, "kagent ") {
+				setMemberRuntime(t, root, "runtime: {id: kagent, version: v0.10.3, engine: go}\n")
+				metadata = "native-kagent.json"
+			}
 			p, err := workspace.Prepare(context.Background(), root, cache)
 			if err != nil {
 				t.Fatal(err)
 			}
 			out := extract(t, p)
-			name := filepath.Join(out, "metadata/kmx/native-orka.json")
+			name := filepath.Join(out, "metadata/kmx", metadata)
 			b := string(readFile(t, name))
 			switch change {
 			case "null images":
@@ -53,6 +58,37 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 					t.Fatal(err)
 				}
 				b = string(bb)
+			case "kagent both profiles":
+				writeFile(t, filepath.Join(out, "metadata/kmx/native-orka.json"), b)
+			case "kagent missing metadata":
+				if err := os.Remove(name); err != nil {
+					t.Fatal(err)
+				}
+			case "kagent cross runtime":
+				b = strings.ReplaceAll(b, `"id":"kagent"`, `"id":"orka"`)
+			case "kagent wrong version":
+				b = strings.ReplaceAll(b, `"version":"v0.10.3"`, `"version":"v0.10.2"`)
+			case "kagent wrong engine":
+				b = strings.ReplaceAll(b, `"engine":"go"`, `"engine":"python"`)
+			case "kagent missing runtime", "kagent null runtime":
+				var record map[string]any
+				if err := json.Unmarshal([]byte(b), &record); err != nil {
+					t.Fatal(err)
+				}
+				if change == "kagent missing runtime" {
+					delete(record, "runtime")
+				} else {
+					record["runtime"] = nil
+				}
+				raw, err := json.Marshal(record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				b = string(raw)
+			case "kagent wrong contract":
+				b = strings.ReplaceAll(b, "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai/v1", "kmx.unknown/v1")
+			case "kagent wrong renderer":
+				b = strings.ReplaceAll(b, "kmx.native-kagent/v1", "kmx.native-orka/v1")
 			case "case escape":
 				b = strings.ReplaceAll(b, "metadata/kmx/eval/example.yaml", "../eval/example.yaml")
 			case "case omission":
@@ -108,7 +144,9 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 				}
 				writeFile(t, filepath.Join(out, "agentsuite.json"), string(sb))
 			}
-			writeFile(t, name, b)
+			if change != "kagent missing metadata" {
+				writeFile(t, name, b)
+			}
 			layout := filepath.Join(t.TempDir(), "layout")
 			result, err := suiteoras.Push(context.Background(), out, layout, "modified")
 			if err != nil {

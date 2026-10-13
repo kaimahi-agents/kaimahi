@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,6 +47,90 @@ func passingFixture(t *testing.T) (string, *workspace.Prepared, *workspace.Nativ
 		observations = append(observations, suitePassingObservation{CaseDigest: agentruntime.EvaluationCaseDigest(file.Bytes), InputDigest: agentruntime.EvaluationInputDigest(c.Input), EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: c.ID, Verdict: agentruntime.EvaluationPass, TaskName: "task-" + c.ID, TaskUID: "uid-" + c.ID, AnswerSHA256: agentruntime.EvaluationAnswerDigest("4"), Assertions: rows, Matched: []string{nativeCanary}}})
 	}
 	return root, prepared, suite, placement, observations
+}
+
+type refusingSuiteEntropy struct{ calls int }
+
+func (r *refusingSuiteEntropy) Read(p []byte) (int, error) { r.calls++; return len(p), nil }
+
+func TestSuitePassingReceiptRefusesKagentBeforeFabrication(t *testing.T) {
+	root, _, orka, placement, observations := passingFixture(t)
+	member := filepath.Join(root, "agents/greeter/member.yaml")
+	raw, err := os.ReadFile(member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, member, strings.Split(string(raw), "\nruntime:")[0]+"\nruntime: {id: kagent, version: v0.10.3, engine: go}\n")
+	prepared, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	suite, err := workspace.Load(t.Context(), prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// All other identities remain coherent, so only the runtime guard can refuse.
+	orka.Runtime = suite.Runtime
+	if err := coherentSuitePassingSubject(placement.Subject, orka); !errors.Is(err, errSuitePassingReceipt) {
+		t.Errorf("coherence accepted kagent: %v", err)
+	}
+	entropy := &refusingSuiteEntropy{}
+	previous := rand.Reader
+	rand.Reader = entropy
+	t.Cleanup(func() { rand.Reader = previous })
+	receipt, err := newSuitePassingReceipt(t.Context(), prepared, placement, observations)
+	if !errors.Is(err, errSuitePassingReceipt) || receipt != nil || entropy.calls != 0 {
+		t.Fatalf("constructed Orka receipt or consumed RNG: %v, reads %d", err, entropy.calls)
+	}
+}
+
+func TestKagentWorkspaceRefusesSuiteEvaluationAndEvaluatedPush(t *testing.T) {
+	t.Setenv("KMX_HOME", privateSuiteDir(t))
+	root, prepared, suite, placement, observations := passingFixture(t)
+	receipt, err := newSuitePassingReceipt(t.Context(), prepared, placement, observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := canonicalSuitePassingReceipt(t.Context(), receipt, suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(privateSuiteDir(t), "passing.json")
+	if err := os.WriteFile(file, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	member := filepath.Join(root, "agents/greeter/member.yaml")
+	data, err := os.ReadFile(member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, member, strings.Split(string(data), "\nruntime:")[0]+"\nruntime: {id: kagent, version: v0.10.3, engine: go}\n")
+	for _, operation := range []string{"eval", "push --evaluation"} {
+		t.Run(operation, func(t *testing.T) {
+			destination := filepath.Join(privateSuiteDir(t), "output")
+			if operation == "eval" {
+				p, prepareErr := PrepareSuiteWorkspaceEvaluation(t.Context(), SuiteWorkspaceEvaluationOptions{Workspace: root, ToContext: "kind-target", Inference: "provider:inference", Out: destination})
+				if p != nil {
+					p.Close()
+					t.Fatal("kagent reached Orka evaluation preparation")
+				}
+				err = prepareErr
+			} else {
+				var out bytes.Buffer
+				a := &App{Out: &out, Err: &out}
+				_, err = a.PushSuiteWorkspaceEvaluated(t.Context(), root, "suite:v1", destination, false, false, SuitePushProvenance{}, file)
+				if out.Len() != 0 {
+					t.Fatal("unsupported runtime emitted publication output")
+				}
+			}
+			if err == nil || err.Error() != "kagent evaluation on the suite path isn't available yet" {
+				t.Fatalf("wrong runtime refusal: %v", err)
+			}
+			if _, err := os.Stat(destination); !os.IsNotExist(err) {
+				t.Fatal("unsupported runtime published output")
+			}
+		})
+	}
 }
 
 func TestSuitePassingReceiptRejectsIncompleteObservations(t *testing.T) {

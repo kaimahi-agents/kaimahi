@@ -28,8 +28,13 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   `kmx agent` is removed entirely, without an alias or retirement stub.
   Root `status` and `orka status` retain the same table-only Orka runtime report;
   do not add root bundle status or a suite observer.
-- Root `create <name>` authors one tool-free native-Orka suite member offline
-  by default. Create and `push [--workspace DIR] REF` share nearest-ancestor
+- Root `create <name>` authors one tool-free native suite member offline
+  by default: Orka unless `--runtime kagent` selects exact v0.10.3 Go/linux-amd64.
+  Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
+  kagent author/prepare/load/push enables no suite placement/evaluation/status/gates;
+  `eval` and evaluated push explicitly refuse its verified runtime profile.
+  Orka-only consumers refuse that profile. RemoteMCP/Python remain unsupported.
+  Missing runtime in old source stays Orka only. Create and `push [--workspace DIR] REF` share nearest-ancestor
   `workspace.yaml` discovery; `--workspace DIR` selects an exact root without
   fallback and create initializes a missing marker there without prompting.
   Without a workspace, terminal create asks `Start one here? [Y/n]`; nonterminal
@@ -45,8 +50,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   remains unimplemented.
   `create --live` explicitly selects unchanged resource/bundle creation for both
   Orka and kagent, including `--no-apply`, `--dry-run` and `--out -` previews;
-  no-name `create --live` is the live Orka wizard. `--runtime kagent` alone is
-  not a compatibility route. Live-only flags without `--live` refuse before
+  no-name `create --live` is the live Orka wizard. `--runtime kagent` alone authors
+  the offline v0.10.3 Go member; live kagent create stays exact v0.10.2. Live-only flags without `--live` refuse before
   configuration or writes; `--workspace` conflicts with `--live`. Quickstart,
   console and direct App.CreateAgent operations remain live. Preserve
   PortableAgent formats and old extracted-directory suite transfer; do not treat public graph validation
@@ -72,7 +77,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   resources against legacy adoption, copying, bundle authorization and retirement.
   Registry workspace publication shares unsigned suite provenance defaults/flags and records Git source only from
   fingerprint-bound authored inputs matching HEAD; local layouts get no referrers.
-- Root `eval` evaluates the full native workspace inventory with explicit
+- Root `eval` evaluates the full native Orka workspace inventory with explicit
   `--to-context`, `--inference provider:NAME` and new private `--out`, using local
   flags and a nonpersistent operational hook. Unsupported/budget/output checks
   run before config; one fresh outer guard covers pair placement and all Tasks.

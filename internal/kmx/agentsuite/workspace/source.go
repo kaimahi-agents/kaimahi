@@ -1,4 +1,4 @@
-// Package workspace resolves the closed, tool-free native-Orka authoring profile.
+// Package workspace resolves closed, tool-free native authoring profiles.
 // It performs no inference, image building, or cluster operations.
 package workspace
 
@@ -29,7 +29,48 @@ const maxFile = 1 << 20
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
-type CreateOptions struct{ Name, Description, Model, InstructionsFile string }
+// RuntimeProfile is KMX-private selection metadata, not a public AgentSuite SPI.
+// The zero value is accepted only as the historical Orka authoring default.
+type RuntimeProfile struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+	Engine  string `json:"engine"`
+}
+
+type sourceRuntime struct {
+	ID      string  `yaml:"id"`
+	Version *string `yaml:"version,omitempty"`
+	Engine  *string `yaml:"engine,omitempty"`
+}
+
+func (r RuntimeProfile) validate() error {
+	if r == (RuntimeProfile{ID: "orka"}) || r == (RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) {
+		return nil
+	}
+	return errors.New("runtime must be orka without version/engine or exact kagent v0.10.3 go")
+}
+
+func (r *sourceRuntime) profile() (RuntimeProfile, error) {
+	if r == nil {
+		return RuntimeProfile{ID: "orka"}, nil
+	}
+	profile := RuntimeProfile{ID: r.ID}
+	if r.ID == "orka" && (r.Version != nil || r.Engine != nil) {
+		return profile, errors.New("Orka runtime forbids version and engine fields")
+	}
+	if r.Version != nil {
+		profile.Version = *r.Version
+	}
+	if r.Engine != nil {
+		profile.Engine = *r.Engine
+	}
+	return profile, profile.validate()
+}
+
+type CreateOptions struct {
+	Name, Description, Model, InstructionsFile string
+	Runtime                                    RuntimeProfile
+}
 type sourceWorkspace struct {
 	SchemaVersion int    `yaml:"schemaVersion"`
 	Name          string `yaml:"name"`
@@ -44,6 +85,7 @@ type sourceMember struct {
 		Protocol string `yaml:"protocol"`
 		Model    string `yaml:"model"`
 	} `yaml:"model"`
+	Runtime *sourceRuntime `yaml:"runtime,omitempty"`
 }
 
 func safeText(value string) error {
@@ -53,6 +95,9 @@ func safeText(value string) error {
 	return nil
 }
 func validateMember(m sourceMember, instructions []byte) error {
+	if _, err := m.Runtime.profile(); err != nil {
+		return err
+	}
 	if err := safeText(m.ID + "\n" + m.Description + "\n" + m.Model.Model + "\n" + string(instructions)); err != nil {
 		return err
 	}
@@ -153,7 +198,18 @@ func ValidateCreateOptions(opt CreateOptions) error {
 }
 
 func createInput(opt CreateOptions) (sourceMember, []byte, error) {
-	m := sourceMember{ID: opt.Name, Description: opt.Description, Instructions: "instructions.md"}
+	profile := opt.Runtime
+	if profile == (RuntimeProfile{}) {
+		profile.ID = "orka"
+	}
+	if err := profile.validate(); err != nil {
+		return sourceMember{}, nil, err
+	}
+	declared := &sourceRuntime{ID: profile.ID}
+	if profile.ID == "kagent" {
+		declared.Version, declared.Engine = &profile.Version, &profile.Engine
+	}
+	m := sourceMember{ID: opt.Name, Description: opt.Description, Instructions: "instructions.md", Runtime: declared}
 	if err := safeText(opt.Name); err != nil {
 		return m, nil, err
 	}

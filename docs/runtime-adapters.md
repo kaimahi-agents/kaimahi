@@ -68,6 +68,14 @@ version or optional operation. Native readiness alone is not semantic proof.
 | kagent | Exact v0.10.2: render/create and optional A2A turn within create. Exact v0.10.3: declarative bundle render/lift/status; new objects or receipt-bound read-only reuse, no adoption or updates. Explicit v0.10.3 receipt-bound Go evaluation sends fresh blocking A2A Tasks (unsecure only; trusted-proxy refused). No standalone run/chat, discovery, promotion gates, retirement, native resource diff or rollback. | v0.10.2 [source `68df64f671800c37c4204d81ebe0dd66ec35d223`](https://github.com/kagent-dev/kagent/tree/68df64f671800c37c4204d81ebe0dd66ec35d223), controller index `6adeef9ac70056e5871773a78233a77f12d1357f9f3484aaee59fe8abc6450b9`; v0.10.3 [source `8878c39ac64421cb665c8e62ecc6411dd12f2fc2`](https://github.com/kagent-dev/kagent/tree/8878c39ac64421cb665c8e62ecc6411dd12f2fc2), controller index `b2572a59386b6bac1f5e652e135fdad54c0ee603d3f9ee60eb7c80bbaedf9b76`. [CI](../.github/workflows/ci.yml) qualifies v0.10.2 create. Dedicated [Go lift CI](../scripts/ci/kagent-lift.sh) continuously qualifies v0.10.3 plan/lift/repeat/status/conflicts, a separate one-shot native A2A MCP answer, and product evaluation with fresh Task/context IDs, answer digests, repeat offline diff and selected-case markers. Native A2A/evaluation evidence is separate from deployment readiness; v0.10.3 Python qualification remains unsupported. | Operator supplies runtime, namespace, model Secret and RemoteMCPServer; CI installs externally. |
 | orka | `supported`: render, deploy/reconcile, status, evaluation, chat, one-shot run and native workload retire. Retire deletes/releases workload resources, not retained registrations or target infrastructure. | [v0.2.0 source](https://github.com/orka-agents/orka/tree/5f4eb543b2b35a3afb8e7ea01f5f53985e25d4c1); chart SHA-256 `b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79`; controller `ghcr.io/orka-agents/orka@sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370`. Required Orka CI proves a native result, not every optional capability. | Operator or an explicit KMX Orka environment command; targets does neither. |
 
+The [offline workspace path](suite-workspace.md) also authors, packages, loads
+and publishes a one-member, tool-free kagent v0.10.3 Go/linux-amd64 declaration.
+Runtime is KMX-private metadata bound to the OCI manifest, not a public format
+field or deployment-time selector. This does not enable suite kagent placement,
+evaluation, status or gates; Orka-only native preparation/receipt consumers
+refuse it. The declared build-profile images are inert, not Go ADK dependencies.
+Live v0.10.2 create and v0.10.3 bundle operations above are unchanged.
+
 No standalone `logs`, arbitrary `diff` or `rollback` capability is advertised.
 Offline `kmx eval diff` also reads strict exact-v0.10.3 Go kagent v2
 receipts; this is receipt comparison, not promotion gates, replay or native

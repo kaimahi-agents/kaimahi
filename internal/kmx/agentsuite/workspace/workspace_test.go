@@ -42,6 +42,13 @@ func createWorkspace(t *testing.T) (string, string) {
 	return root, filepath.Join(dir, "cache")
 }
 
+func setMemberRuntime(t *testing.T, root, declaration string) {
+	t.Helper()
+	name := filepath.Join(root, "agents/greeter/member.yaml")
+	base := strings.Split(string(readFile(t, name)), "\nruntime:")[0]
+	writeFile(t, name, strings.TrimSpace(base)+"\n"+declaration)
+}
+
 func extract(t *testing.T, p *workspace.Prepared) string {
 	t.Helper()
 	out := filepath.Join(t.TempDir(), "suite")
@@ -66,6 +73,40 @@ func TestCreateOfflineExactInstructionsAndValidCase(t *testing.T) {
 	}
 	for _, name := range []string{"workspace.yaml", "agents/greeter/member.yaml", "build-profiles/default.json"} {
 		readFile(t, filepath.Join(root, name))
+	}
+}
+
+func TestCreateAuthorsExplicitRuntime(t *testing.T) {
+	for _, profile := range []workspace.RuntimeProfile{{}, {ID: "orka"}, {ID: "kagent", Version: "v0.10.3", Engine: "go"}} {
+		t.Run(profile.ID, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "workspace")
+			input := filepath.Join(t.TempDir(), "instructions.md")
+			writeFile(t, input, "Answer briefly.\n")
+			if err := workspace.Create(t.Context(), root, workspace.CreateOptions{Name: "greeter", Model: "test-model", InstructionsFile: input, Runtime: profile}); err != nil {
+				t.Fatal(err)
+			}
+			member := string(readFile(t, filepath.Join(root, "agents/greeter/member.yaml")))
+			id := profile.ID
+			if id == "" {
+				id = "orka"
+			}
+			if !strings.Contains(member, "runtime:\n    id: "+id) {
+				t.Fatal("new authoring omitted explicit runtime", member)
+			}
+		})
+	}
+}
+
+func TestCreateRefusesInvalidRuntimeBeforeWrites(t *testing.T) {
+	for _, profile := range []workspace.RuntimeProfile{{ID: "unknown"}, {ID: "kagent"}, {ID: "orka", Engine: "go"}, {ID: "kagent", Version: "v0.10.2", Engine: "go"}, {ID: "kagent", Version: "v0.10.3", Engine: "python"}} {
+		root := filepath.Join(t.TempDir(), "workspace")
+		err := workspace.Create(t.Context(), root, workspace.CreateOptions{Name: "greeter", Model: "test-model", InstructionsFile: "missing-file", Runtime: profile})
+		if err == nil || !strings.Contains(err.Error(), "runtime") {
+			t.Fatalf("runtime not validated before input read: %v", err)
+		}
+		if _, err := os.Stat(root); !os.IsNotExist(err) {
+			t.Fatal("invalid runtime wrote workspace")
+		}
 	}
 }
 
