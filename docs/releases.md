@@ -203,9 +203,17 @@ helpers. Root `status` remains the table-only Orka runtime report, also availabl
 as `orka status`. Workspace publication moves from one-reference `suite push`
 to root `push [--workspace DIR] REF`, which discovers the nearest ancestor
 `workspace.yaml`; `--workspace` selects an exact root without fallback.
-Default create remains live; only explicit
-`create --workspace` authors offline. Root `eval` does not execute packaged
-cases, and root digest `lift` is not implemented.
+Default `create <name>` now authors one native-Orka workspace member offline,
+requiring an exact model and an instructions file. Create and push share
+nearest-ancestor discovery; explicit `--workspace DIR` selects/initializes an
+exact root without prompting. Terminal initialization asks `Start one here? [Y/n]`;
+nonterminal use needs `--workspace`. Invalid markers and a second member refuse
+without modifying source. Scripts that create resources or PortableAgent bundles
+must add `--live` for both runtimes, including `--no-apply`, `--dry-run` and
+`--out -` previews. `--runtime kagent` alone is not a compatibility route.
+Use `kmx create --live` for the live Orka wizard; quickstart and console stay
+live. See [workspace authoring](suite-workspace.md). Root `eval` does not execute
+packaged cases, and root digest `lift` is not implemented.
 See the [exact old/new mapping](../CHANGELOG.md#upgrading) and
 [command alignment](command-semantics.md) for the removal policy.
 

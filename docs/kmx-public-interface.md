@@ -311,8 +311,8 @@ kmx quickstart
 # Interactive custom authoring on current development builds.
 kmx quickstart --interactive
 
-# Author an agent against an already prepared target.
-kmx create
+# Create live resources and a bundle against an already prepared target.
+kmx create --live
 ```
 
 Tagged v0.4.1 and earlier use `kmx quickstart-wizard` for custom authoring;

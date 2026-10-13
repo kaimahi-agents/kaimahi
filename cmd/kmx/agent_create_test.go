@@ -11,10 +11,15 @@ import (
 )
 
 func orkaCreateArgs() []string {
-	return []string{"create", "sample", "--namespace", "orka-system", "--provider-type", "openai", "--model", "qwen2.5:3b", "--secret", "local-provider-key", "--base-url", "http://ollama.ollama.svc.cluster.local:11434/v1", "--out", "-"}
+	return []string{"create", "--live", "sample", "--namespace", "orka-system", "--provider-type", "openai", "--model", "qwen2.5:3b", "--secret", "local-provider-key", "--base-url", "http://ollama.ollama.svc.cluster.local:11434/v1", "--out", "-"}
 }
 
 func TestAgentCreateOrkaOfflineWithoutToolsOnPATH(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "workspace.yaml"), []byte("broken: [\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
 	t.Setenv("PATH", t.TempDir())
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
@@ -97,11 +102,11 @@ func TestAgentCreateHelpExplainsGuidedModeAndStdoutBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, text := range []string{
-		"Omit the name for guided Orka creation",
-		"Named creation applies to the selected cluster by default",
+		"With --live, omit the name for guided Orka creation",
+		"Live named creation applies to the selected cluster by default",
 		"--out - writes YAML to stdout without applying",
 		"set --bundle-path to also write an authored bundle",
-		"kmx create",
+		"kmx create --live",
 		"--base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out -",
 	} {
 		if !strings.Contains(out.String(), text) {
@@ -124,7 +129,7 @@ func TestAgentHelpUsesLowercaseKagent(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(args) == 1 {
-			if !strings.Contains(out.String(), "Create an Orka or kagent declarative Agent") {
+			if !strings.Contains(out.String(), "Author an offline workspace member, or create live Orka or kagent agents") {
 				t.Errorf("root help does not use lowercase kagent in the create summary:\n%s", out.String())
 			}
 		} else if !strings.Contains(out.String(), "kagent") || strings.Contains(out.String(), "Kagent") {
@@ -192,14 +197,14 @@ func TestAgentCreateHelpDisclosesKagentRetentionAndAuditRisk(t *testing.T) {
 func TestAgentCreateUnnamedReachesWizardRatherThanRequiredFlags(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
-	err := execute([]string{"create"}, deps)
+	err := execute([]string{"create", "--live"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "non-interactive") {
 		t.Fatalf("wizard unreachable: %v", err)
 	}
 }
 
 func kagentCreateArgs() []string {
-	return []string{"create", "sample", "--runtime", "kagent", "--namespace", "agents", "--description", "Sample agent", "--provider-type", "openai", "--model", "gpt-4o-mini", "--secret", "model-key", "--out", "-"}
+	return []string{"create", "--live", "sample", "--runtime", "kagent", "--namespace", "agents", "--description", "Sample agent", "--provider-type", "openai", "--model", "gpt-4o-mini", "--secret", "model-key", "--out", "-"}
 }
 
 func TestAgentCreateRuntimeFlagsDefaultsAndCompletion(t *testing.T) {
@@ -278,7 +283,7 @@ func TestAgentCreateKagentOfflineWithoutPATH(t *testing.T) {
 func TestAgentCreateKagentRequiresNameBeforeConfigLoad(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	err := execute([]string{"create", "--runtime", "kagent"}, deps)
+	err := execute([]string{"create", "--live", "--runtime", "kagent"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "requires") && !strings.Contains(err.Error(), "usage") {
 		t.Fatalf("missing Kagent name error = %v", err)
 	}
@@ -290,7 +295,7 @@ func TestAgentCreateKagentRequiresNameBeforeConfigLoad(t *testing.T) {
 func TestAgentCreateUnknownRuntimeFailsBeforeConfigLoad(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	err := execute([]string{"create", "sample", "--runtime", "unknown"}, deps)
+	err := execute([]string{"create", "--live", "sample", "--runtime", "unknown"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "unsupported agent runtime") {
 		t.Fatalf("unknown runtime error = %v", err)
 	}

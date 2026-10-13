@@ -223,7 +223,7 @@ func TestCobraRejectsInvalidFlagRelationshipsBeforeApplicationConstruction(t *te
 		want string
 	}{
 		{"orka execution modes", []string{"orka", "install", "--no-apply", "--dry-run"}, "none of the others can be"},
-		{"create execution modes", []string{"create", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
+		{"create execution modes", []string{"create", "--live", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

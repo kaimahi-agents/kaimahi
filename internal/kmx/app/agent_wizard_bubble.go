@@ -287,7 +287,7 @@ func (m createWizardModel) View() tea.View {
 	}
 
 	var body strings.Builder
-	body.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Cyan).Render("Create an agent") + "\n\n")
+	body.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Cyan).Render("Create a live agent (--live)") + "\n\n")
 	switch m.step {
 	case createDescription:
 		body.WriteString("Description\n")
@@ -319,7 +319,7 @@ func (m createWizardModel) View() tea.View {
 		if m.opt.Task != "" {
 			body.WriteString("\n" + createTaskAuthorityNotice + "\n")
 		}
-		fmt.Fprintf(&body, "\nCreate Agent %q (Orka agent)?\n", displayWizardValue(m.opt.Name))
+		fmt.Fprintf(&body, "\nCreate Agent %q (live Orka agent)?\n", displayWizardValue(m.opt.Name))
 		choices := []string{"Apply", "Cancel"}
 		for i, choice := range choices {
 			marker := "  "

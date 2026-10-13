@@ -1,27 +1,107 @@
 package app
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/term"
 	"oras.land/oras-go/v2/registry"
 )
 
 // CreateSuiteMember authors a workspace offline, without loading target settings.
 func (a *App) CreateSuiteMember(ctx context.Context, root string, opt workspace.CreateOptions) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := workspace.ValidateCreateOptions(opt); err != nil {
+		return err
+	}
+	var start string
+	if !filepath.IsAbs(root) {
+		var err error
+		start, err = os.Getwd()
+		if err != nil {
+			return err
+		}
+	}
+	_, err := workspace.Resolve(start, root)
+	if err == nil {
+		return fmt.Errorf("workspace has a one-member limit; create in a new --workspace <directory>")
+	}
+	if !errors.Is(err, workspace.ErrNotFound) {
+		return err
+	}
+	if root == "" {
+		errFile, visible := a.Err.(*os.File)
+		if a.Stdin == nil || !visible || !term.IsTerminal(int(a.Stdin.Fd())) || !term.IsTerminal(int(errFile.Fd())) {
+			return fmt.Errorf("no workspace found; pass --workspace <directory> to initialize without a terminal")
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(a.Err, "No workspace found in %s. Start one here? [Y/n] ", workspacePathLabel(start)); err != nil {
+			return err
+		}
+		// Stay in cooked mode: normal terminal signals handle interruption.
+		// Read synchronously so cancellation cannot leave a detached stdin reader.
+		scanner := bufio.NewScanner(a.Stdin)
+		scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+			// EOF without Enter is not consent, even after whitespace or Y.
+			if atEOF && bytes.IndexByte(data, '\n') < 0 {
+				return 0, nil, io.ErrUnexpectedEOF
+			}
+			return bufio.ScanLines(data, atEOF)
+		})
+		read := scanner.Scan()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !read {
+			if err := scanner.Err(); err != nil {
+				return fmt.Errorf("read workspace confirmation: %w", err)
+			}
+			return fmt.Errorf("workspace confirmation required; no files created")
+		}
+		switch strings.ToLower(strings.TrimSpace(scanner.Text())) {
+		case "", "y", "yes":
+			root = start
+		case "n", "no":
+			return fmt.Errorf("workspace initialization cancelled; no files created")
+		default:
+			return fmt.Errorf("workspace confirmation must be Y or n; no files created")
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := workspace.Create(ctx, root, opt); err != nil {
 		return err
 	}
-	_, err := fmt.Fprintf(a.Out, "Created native-Orka AgentSuite workspace %s with member %s (not deployed)\n", root, opt.Name)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(a.Out, "Created native-Orka AgentSuite workspace %s with member %s (not deployed)\n", workspacePathLabel(root), opt.Name)
 	return err
+}
+
+func workspacePathLabel(path string) string {
+	if strings.IndexFunc(path, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
+		return strconv.Quote(path)
+	}
+	return path
 }
 
 // PushSuiteWorkspace discovers a workspace from cwd when root is empty, or

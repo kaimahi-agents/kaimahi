@@ -20,7 +20,8 @@ go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
 JOURNEY = """`kmx quickstart` proves an answer.
 `kmx local up` provisions the runtime.
 `kmx quickstart --interactive` creates your own Agent.
-`kmx create` authors an agent.
+`kmx create` authors a workspace member offline.
+`kmx create --live` creates resources and a bundle on a prepared target.
 `kmx run` proves one Task answer.
 `kmx chat` opens an interactive session.
 `kmx push` publishes a prepared workspace.
@@ -82,6 +83,7 @@ for label, literal in [
     ("kmx local up", "`kmx local up`"),
     ("kmx quickstart --interactive", "`kmx quickstart --interactive`"),
     ("kmx create", "`kmx create`"),
+    ("kmx create --live", "`kmx create --live`"),
     ("kmx run", "`kmx run`"),
     ("kmx chat", "`kmx chat`"),
     ("kmx push", "`kmx push`"),
@@ -98,7 +100,8 @@ CASES += [
     ("journey missing first block", GOOD.replace("```bash\n" + INSTALL + "```\n", ""), "Homebrew install is missing"),
     ("journey missing second block", GOOD.replace("```bash\nkmx quickstart\n```\n", ""), "kmx quickstart is missing"),
     ("journey commands in prose only", GOOD.replace("```bash\nkmx quickstart\n```\n", "kmx quickstart\n"), "kmx quickstart is missing"),
-    ("root commands out of order", GOOD.replace("`kmx create` authors an agent.\n`kmx run` proves one Task answer.", "`kmx run` proves one Task answer.\n`kmx create` authors an agent."), "kmx run is missing"),
+    ("root commands out of order", GOOD.replace("`kmx create --live` creates resources and a bundle on a prepared target.\n`kmx run` proves one Task answer.", "`kmx run` proves one Task answer.\n`kmx create --live` creates resources and a bundle on a prepared target."), "kmx run is missing"),
+    ("runtime flag cannot replace live mode", GOOD.replace("`kmx create --live`", "`kmx create --runtime kagent`"), "kmx create --live is missing"),
     ("removed agent group cannot replace root create", GOOD.replace("`kmx create`", "`kmx agent create`"), "kmx create is missing"),
     ("pending packaged eval cannot replace root run", GOOD.replace("`kmx run`", "`kmx eval`"), "kmx run is missing"),
     ("pending packaged lift cannot replace publication", GOOD.replace("`kmx push`", "`kmx lift`"), "kmx push is missing"),

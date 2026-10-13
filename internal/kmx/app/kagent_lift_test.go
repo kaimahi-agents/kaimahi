@@ -237,9 +237,9 @@ func TestKagentLiftConsentRetryPreservesBundleInputs(t *testing.T) {
 func TestKagentCreateConsentRetryRemainsPromptFree(t *testing.T) {
 	a, opt, _, diagnostics, dir := kagentCreateFixture(t, "remote-context")
 	opt.Task = "private task must not be echoed"
-	a.InvocationCommand = "kmx create sample --task " + opt.Task
+	a.InvocationCommand = "kmx create --live sample --task " + opt.Task
 	err := a.CreateAgent(opt)
-	if err == nil || !strings.Contains(err.Error(), "KAIMAHI_CONFIRM=kind-test kmx --context kind-test create sample --runtime kagent") {
+	if err == nil || !strings.Contains(err.Error(), "KAIMAHI_CONFIRM=kind-test kmx --context kind-test create --live sample --runtime kagent") {
 		t.Fatalf("historical create consent retry changed: %v", err)
 	}
 	if strings.Contains(err.Error(), opt.Task) || strings.Contains(diagnostics.String(), opt.Task) {

@@ -15,7 +15,7 @@ published tag, not the tip of `main`.
 
 No. Installation creates platform resources and, by default, a local Provider.
 It does not adopt an existing application or redirect its traffic. Author an
-Agent with [`kmx create`](kmx.md#kmx-create); use a Task to prove an
+Agent with [`kmx create --live`](kmx.md#default-orka-contract); use a Task to prove an
 answer. Execution and enforcement belong to the selected runtime.
 
 ## Why does status show a version different from the pin?
@@ -28,8 +28,11 @@ inspection, no-write planning, dry-run and upgrade limits.
 ## What kagent support exists now?
 
 Orka remains the default. The exact-v0.10.2 create profile is explicit
-`kmx create --runtime kagent <name>` against an already-installed exact
-v0.10.2. KMX never installs or upgrades it. This path renders a review artifact
+`kmx create --live --runtime kagent <name>` against an already-installed exact
+v0.10.2. `--live` is required even for offline previews; the runtime flag alone
+does not select live creation. Default create authors an
+[offline workspace member](suite-workspace.md). KMX never installs or upgrades
+kagent. This live path renders a review artifact
 and portable bundle; `--out -` omits the bundle unless `--bundle-path` is set.
 Offline rendering needs neither an installation nor a cluster Secret. Online
 creation requires both and can create a new ModelConfig then a new Agent; it
