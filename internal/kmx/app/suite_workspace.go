@@ -115,12 +115,30 @@ func workspacePathLabel(path string) string {
 // selects root exactly. It transfers the prepared OCI graph without re-packing
 // at publication. The native execution profile requires no member images.
 func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance) (oras.PushResult, error) {
+	resolved, err := resolveSuiteWorkspace(root)
+	if err != nil {
+		return oras.PushResult{}, err
+	}
+	return a.pushSuiteWorkspace(ctx, resolved, reference, layout, plainHTTP, force, provenance, nil)
+}
+
+// PushSuiteWorkspaceEvaluated consumes a private receipt file; there is no typed
+// public bypass of its strict full-passing coherence and exact-S checks.
+func (a *App) PushSuiteWorkspaceEvaluated(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance, receiptFile string) (oras.PushResult, error) {
+	resolved, err := resolveSuiteWorkspace(root)
+	if err != nil {
+		return oras.PushResult{}, err
+	}
+	return a.pushSuiteWorkspaceEvaluated(ctx, resolved, reference, layout, plainHTTP, force, provenance, receiptFile)
+}
+
+func resolveSuiteWorkspace(root string) (string, error) {
 	var start string
 	if !filepath.IsAbs(root) {
 		var err error
 		start, err = os.Getwd()
 		if err != nil {
-			return oras.PushResult{}, err
+			return "", err
 		}
 	}
 	resolved, err := workspace.Resolve(start, root)
@@ -128,9 +146,9 @@ func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout st
 		if errors.Is(err, workspace.ErrNotFound) {
 			err = fmt.Errorf("no workspace found; pass --workspace <directory>: %w", err)
 		}
-		return oras.PushResult{}, err
+		return "", err
 	}
-	return a.pushSuiteWorkspace(ctx, resolved, reference, layout, plainHTTP, force, provenance, nil)
+	return resolved, nil
 }
 
 // expectedS binds publication to the full packaged artifact, not merely its
@@ -179,21 +197,20 @@ func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layou
 	if err != nil {
 		return oras.PushResult{}, err
 	}
+	suite, err := workspace.Load(ctx, prepared)
+	if err != nil {
+		return oras.PushResult{}, err
+	}
+	if receipt != nil && suite.Runtime.ID == "kagent" {
+		return oras.PushResult{}, errSuiteKagentEvaluationUnavailable
+	}
 	if expectedS != nil && prepared.Descriptor.Digest != expected {
 		return oras.PushResult{}, fmt.Errorf("prepared suite does not match the expected publication identity")
 	}
 	if receipt != nil {
-		suite, err := workspace.Load(ctx, prepared)
-		if err != nil {
-			return oras.PushResult{}, err
-		}
 		if _, err := canonicalSuitePassingReceipt(ctx, receipt, suite); err != nil {
 			return oras.PushResult{}, err
 		}
-	}
-	suite, err := workspace.Load(ctx, prepared)
-	if err != nil {
-		return oras.PushResult{}, err
 	}
 	var options oras.PushOptions
 	var sourceWarning string

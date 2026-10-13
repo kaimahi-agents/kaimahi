@@ -54,8 +54,9 @@ The entire `kmx agent` group is removed, including its hidden edit stub, with no
 aliases or retirement stubs. Use kubectl to edit live Orka resources. Root
 `status` and `orka status` retain the same table-only Orka runtime report;
 `bundle status <bundle-dir>` is separate. There is no root bundle status or suite
-observer. Root `eval` prints helper-group help and does not execute packaged
-cases; root digest `lift` is not implemented. `task result` and
+observer. Root `eval` executes a full native workspace inventory with explicit
+inference/target/output selection and retains its helpers. Standalone packaged
+evaluation and root digest `lift` are not implemented. `task result` and
 `suite push DIRECTORY REFERENCE`, `suite build/diff/pull/validate` are unchanged.
 These spellings require a current development build; tagged v0.5.1 retains the
 `agent` routes. Workspace authoring/publication are unreleased. Existing operation handlers, arguments, applicable flags,
@@ -86,8 +87,9 @@ reports judge assertions not verified. See [judge behavior and disclosure](agent
 --assertions <case.yaml> --out <manifest.json>` reads source journals without
 inference. An existing output manifest means atomic append, never overwrite;
 duplicates refuse the whole operation. Assertions are authored without `input`.
-The root `eval` group holds case preparation and offline diff only; execution
-remains `bundle evaluate`. Packaged evaluation is not implemented.
+These helpers stay cluster-independent. Recorded-session execution remains
+`bundle evaluate`; root `eval` separately executes full native workspace cases.
+Standalone packaged evaluation is not implemented.
 
 `bundle evaluate --from-sessions <manifest> --source-sessions <source>
 --sessions <candidate>` requires both explicit source and candidate selection,
@@ -137,8 +139,16 @@ replacement remain as documented. Old `suite push <directory> <reference>` retai
 extracted-artifact transfer behavior without workspace discovery; suite push no
 longer accepts `--workspace` or one positional reference. Root push refuses two
 positional arguments.
-Workspace evaluation and reference lift are not implemented; these commands
-create no evaluation or promotion evidence. See [suite workspace](suite-workspace.md).
+Root `eval --to-context CTX --inference provider:NAME --out FILE` performs offline
+workspace/inventory/output preparation before configuration, then one guarded
+owned native placement and one fresh Task per ordered case. Only full passing
+metadata is exported once to a private file outside workspace/cache; failure,
+unknown, drift, cancellation or output error stops later sends. No package
+reference, subset, judge or content output is accepted. `push --evaluation FILE`
+checks strict private receipt coherence and exact manifest S before publication;
+ordinary push is unevaluated. Receipts are unsigned observations, not policy gates.
+Hermetic command/Task tests do not qualify real native CLI execution. Reference
+lift remains unavailable. See [suite workspace](suite-workspace.md).
 
 ## Vocabulary
 

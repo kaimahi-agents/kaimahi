@@ -31,8 +31,8 @@ Packaged native suites also have a private App preparation seam: it observes an
 explicit target, Ready Provider/Secret binding and pinned installed Orka runtime,
 then validates and retains one exact unmarked render from `workspace.Load`.
 Secret reads project metadata and key presence, never values. Installed Agent,
-Provider and Task CRDs are validator prerequisites, not Task execution. This is
-internal capability, not a workspace evaluation or placement CLI. Private placement
+Provider and Task CRDs are validator prerequisites, not execution proof. Root
+workspace evaluation consumes this private preparation capability. Private placement
 consumes that prepared render, preflights both resources before confirmation,
 rechecks inputs and reviewed decisions, and conditionally creates or updates only
 same-owner native Provider/Agent resources. Verification binds current ownership,
@@ -46,15 +46,18 @@ not model execution or cluster qualification.
 Private full-passing receipts project Task/answer and ordered case/assertion
 identities only, never prompts, answers, operands, reasons or diagnostics. Their
 constructor binds observed raw-case/input frames and successful placement to a
-verified package; later execution must bracket observations with native
-verification. The private export preflight retains one private anchored directory
+verified package; execution brackets observations with native verification. The private export preflight retains one private anchored directory
 outside authored workspace/cache trees and publishes complete bytes with an
 exclusive hard link, not history or replacement. The private receipt-file push
 consumer parses before cache writes, compares exact S, and validates packaged
 subject/render/inventory coherence before provenance or transfer. Source
 fingerprint is authored spelling, not a durable publication lock. These unsigned
-observations prove neither authenticity nor cross-object atomicity. No workspace
-evaluation CLI or live execution producer is enabled.
+observations prove neither authenticity nor cross-object atomicity. Root `eval`
+prepares workspace/inventory/export offline before configuration, then consents
+once to native pair placement and all ordered one-shot Tasks. Only a full pass
+exports privately. `push --evaluation FILE` uses the strict file consumer;
+ordinary push and legacy bundle evaluation remain separate. Hermetic tests cover
+these paths; real native CLI qualification remains deferred.
 
 ## Repository layout
 

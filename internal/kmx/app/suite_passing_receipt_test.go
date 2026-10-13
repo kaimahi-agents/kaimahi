@@ -84,6 +84,55 @@ func TestSuitePassingReceiptRefusesKagentBeforeFabrication(t *testing.T) {
 	}
 }
 
+func TestKagentWorkspaceRefusesSuiteEvaluationAndEvaluatedPush(t *testing.T) {
+	t.Setenv("KMX_HOME", privateSuiteDir(t))
+	root, prepared, suite, placement, observations := passingFixture(t)
+	receipt, err := newSuitePassingReceipt(t.Context(), prepared, placement, observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := canonicalSuitePassingReceipt(t.Context(), receipt, suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(privateSuiteDir(t), "passing.json")
+	if err := os.WriteFile(file, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	member := filepath.Join(root, "agents/greeter/member.yaml")
+	data, err := os.ReadFile(member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, member, strings.Split(string(data), "\nruntime:")[0]+"\nruntime: {id: kagent, version: v0.10.3, engine: go}\n")
+	for _, operation := range []string{"eval", "push --evaluation"} {
+		t.Run(operation, func(t *testing.T) {
+			destination := filepath.Join(privateSuiteDir(t), "output")
+			if operation == "eval" {
+				p, prepareErr := PrepareSuiteWorkspaceEvaluation(t.Context(), SuiteWorkspaceEvaluationOptions{Workspace: root, ToContext: "kind-target", Inference: "provider:inference", Out: destination})
+				if p != nil {
+					p.Close()
+					t.Fatal("kagent reached Orka evaluation preparation")
+				}
+				err = prepareErr
+			} else {
+				var out bytes.Buffer
+				a := &App{Out: &out, Err: &out}
+				_, err = a.PushSuiteWorkspaceEvaluated(t.Context(), root, "suite:v1", destination, false, false, SuitePushProvenance{}, file)
+				if out.Len() != 0 {
+					t.Fatal("unsupported runtime emitted publication output")
+				}
+			}
+			if err == nil || err.Error() != "kagent evaluation on the suite path isn't available yet" {
+				t.Fatalf("wrong runtime refusal: %v", err)
+			}
+			if _, err := os.Stat(destination); !os.IsNotExist(err) {
+				t.Fatal("unsupported runtime published output")
+			}
+		})
+	}
+}
+
 func TestSuitePassingReceiptRejectsIncompleteObservations(t *testing.T) {
 	for _, change := range []string{"fail", "unknown", "no task", "empty answer", "empty answer hash", "wrong case", "assertion fail", "incomplete placement", "case frame", "input frame", "unavailable detail", "owned uid collision", "repeated name", "repeated uid", "missing case", "case order", "assertion order", "canceled"} {
 		t.Run(change, func(t *testing.T) {
