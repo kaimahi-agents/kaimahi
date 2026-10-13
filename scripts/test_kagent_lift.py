@@ -166,6 +166,26 @@ class BootstrapTests(unittest.TestCase):
             self.driver.bootstrap()
         self.assertEqual(paths, ["http://loopback/healthz", "initialize", "tools/list", "http://loopback/evidence"])
 
+    def test_suite_destination_is_provisioned_before_observation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            work = pathlib.Path(temp)
+            namespaces, secrets = [], []
+            def kube(*args, **kwargs):
+                if args[:2] == ("create", "namespace"):
+                    namespaces.append(args[2])
+                if "secret" in args:
+                    secrets.append(args[1])
+                    path = pathlib.Path(next(a.split("=", 2)[2] for a in args if a.startswith("--from-file=")))
+                    self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                return b""
+            accepted = {"status": {"conditions": [{"type": "Accepted", "status": "True"}],
+                                   "discoveredTools": [{"name": "read_sentinel"}]}}
+            with mock.patch.object(self.driver, "kube", side_effect=kube), mock.patch.object(self.driver, "get", return_value=accepted):
+                self.driver.provision(work)
+            self.assertEqual(namespaces, ["agents", "suite-destination"])
+            self.assertEqual(secrets, namespaces)
+            self.assertEqual(list(work.iterdir()), [])
+
     def test_dummy_secret_file_is_private_and_removed_even_on_create_failure(self):
         with tempfile.TemporaryDirectory() as temp:
             work = pathlib.Path(temp)

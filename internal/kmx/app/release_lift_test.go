@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	godigest "github.com/opencontainers/go-digest"
 )
 
 func releaseLiftFixture(t *testing.T) (*App, *nativeReadFixture, ReleaseLiftOptions, *suiteNativePrepared) {
@@ -66,6 +69,79 @@ func releaseLiftFixture(t *testing.T) (*App, *nativeReadFixture, ReleaseLiftOpti
 	}
 	opt := ReleaseLiftOptions{Reference: "suite@" + suite.Digest, FromLayout: p.Path, ToContext: "kind-test", ToNamespace: OrkaNamespace, Inference: "provider:inference", Evidence: evidence}
 	return a, f, opt, native
+}
+
+func TestReleaseLiftOrkaLegacySummaryGolden(t *testing.T) {
+	a, _, opt, _ := releaseLiftFixture(t)
+	opt.ToNamespace = "" // Legacy Orka default remains independent of KG bindings.
+	p, err := a.PrepareReleaseLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := p.Summary()
+	if s.Target.Namespace != "orka-system" || p.options.ToNamespace != "orka-system" {
+		t.Fatal("lost legacy namespace default")
+	}
+	for _, tc := range []struct {
+		value any
+		wire  string
+	}{
+		{ReleaseLiftTarget{"ctx", "cluster", "orka-system", "ns-uid"}, `{"context":"ctx","clusterUID":"cluster","namespace":"orka-system","namespaceUID":"ns-uid"}`},
+		{ReleaseLiftResource{"Provider", "greeter", "reuse", "uid", 1, "2", "spec"}, `{"kind":"Provider","name":"greeter","action":"reuse","uid":"uid","generation":1,"resourceVersion":"2","specDigest":"spec"}`},
+	} {
+		if raw, err := json.Marshal(tc.value); err != nil || string(raw) != tc.wire {
+			t.Fatalf("legacy review metadata wire changed: %s %v", raw, err)
+		}
+	}
+	// Exact pre-KG wire projection from a63cb7f0; fixture E run IDs are random.
+	// Do not derive the field inventory from the current Summary type.
+	legacy := struct {
+		Suite          string                `json:"suite"`
+		SuiteDigest    string                `json:"suiteDigest"`
+		Member         string                `json:"member"`
+		Model          string                `json:"model"`
+		Runtime        string                `json:"runtime"`
+		Target         ReleaseLiftTarget     `json:"target"`
+		SourceTarget   ReleaseLiftTarget     `json:"sourceTarget"`
+		Promote        bool                  `json:"promote"`
+		ServingModel   string                `json:"servingModel,omitempty"`
+		Inference      string                `json:"inference"`
+		BindingDigest  string                `json:"bindingDigest"`
+		RenderedDigest string                `json:"renderedDigest"`
+		EvidenceDigest string                `json:"evidenceDigest"`
+		EvidenceRunID  string                `json:"evidenceRunID"`
+		Gate           string                `json:"gate"`
+		Resources      []ReleaseLiftResource `json:"resources"`
+		PlanDigest     string                `json:"planDigest"`
+	}{s.Suite, s.SuiteDigest, s.Member, s.Model, "orka", s.Target, s.SourceTarget,
+		false, "", opt.Inference, s.BindingDigest, s.RenderedDigest, s.EvidenceDigest,
+		s.EvidenceRunID, "same-subject", s.Resources, ""}
+	// Reviewed bytes include the empty planDigest and capitalized envelope keys.
+	review, err := spec.Marshal(struct {
+		Domain string
+		Plan   any
+	}{"kmx.release-lift.plan/v1", legacy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := s
+	current.PlanDigest = ""
+	currentReview, err := spec.Marshal(struct {
+		Domain string
+		Plan   ReleaseLiftSummary
+	}{"kmx.release-lift.plan/v1", current})
+	if err != nil || !bytes.Equal(currentReview, review) {
+		t.Fatalf("legacy canonical review bytes changed: %v", err)
+	}
+	legacy.PlanDigest = godigest.FromBytes(review).String()
+	want, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := json.Marshal(s)
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("legacy Orka wire/review digest changed: err=%v\ngot %s\nwant %s", err, got, want)
+	}
 }
 
 func TestPrepareReleaseLiftGetOnlyPlan(t *testing.T) {
