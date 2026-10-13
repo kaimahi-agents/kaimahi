@@ -2,9 +2,11 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -100,16 +102,60 @@ func TestSuiteKagentPassingReceiptRiskMutations(t *testing.T) {
 	}
 }
 
-func TestSuiteKagentEvidenceCannotLiftAndPushRequiresCoherence(t *testing.T) {
+func TestReleaseLiftSelectorRuntimeFencesBeforeCluster(t *testing.T) {
+	orka, _, oo, _ := releaseLiftFixture(t)
+	kg, ko, _, _ := releaseKagentFixture(t)
+	// Successful controls establish coherent real S/E, selectors and configured Apps.
+	for _, pair := range []struct {
+		a *App
+		o ReleaseLiftOptions
+	}{{orka, oo}, {kg, ko}} {
+		if _, err := pair.a.PrepareReleaseLift(t.Context(), pair.o); err != nil {
+			t.Fatal("invalid runtime fence control", err)
+		}
+	}
+	calls := 0
+	trap := func(context.Context, *exec.Cmd) error {
+		calls++
+		return errors.New("unexpected cluster/guard/admission/native call")
+	}
+	orka.captureCommand, kg.captureCommand = trap, trap
+	for _, tc := range []struct {
+		name    string
+		a       *App
+		opt     ReleaseLiftOptions
+		offline bool
+		change  func(*ReleaseLiftOptions)
+	}{
+		{"both selectors", kg, ko, true, func(o *ReleaseLiftOptions) { o.Inference = oo.Inference }},
+		{"neither selector", kg, ko, true, func(o *ReleaseLiftOptions) { o.Bindings = "" }},
+		{"KG package with inference", kg, ko, false, func(o *ReleaseLiftOptions) { o.Bindings, o.Inference = "", oo.Inference }},
+		{"Orka package with bindings", orka, oo, false, func(o *ReleaseLiftOptions) { o.Inference, o.Bindings = "", ko.Bindings }},
+		{"Orka E with KG package", kg, ko, false, func(o *ReleaseLiftOptions) { o.Evidence = oo.Evidence }},
+		{"KG E with Orka package", orka, oo, false, func(o *ReleaseLiftOptions) { o.Evidence = ko.Evidence }},
+		{"explicit namespace disagrees with bindings", kg, ko, false, func(o *ReleaseLiftOptions) { o.ToNamespace = "other" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bad := tc.opt
+			tc.change(&bad)
+			e := ValidateReleaseLiftOptions(bad)
+			if tc.offline && !errors.Is(e, ErrReleaseLift) || !tc.offline && e != nil {
+				t.Fatalf("wrong offline selector boundary: %v", e)
+			}
+			calls = 0
+			p, err := tc.a.PrepareReleaseLift(t.Context(), bad)
+			if p != nil || !errors.Is(err, ErrReleaseLift) || calls != 0 {
+				t.Fatalf("runtime/selector fence: plan=%v err=%v calls=%d", p, err, calls)
+			}
+		})
+	}
+}
+
+func TestSuiteKagentPushRequiresCoherence(t *testing.T) {
 	r := suiteDiffFixtures(t)["native-kagent"]
 	raw, err := spec.Marshal(r)
 	if err != nil {
 		t.Fatal(err)
-	}
-	evidence := diffWriteRaw(t, raw)
-	plan, err := (&App{}).PrepareReleaseLift(t.Context(), ReleaseLiftOptions{Evidence: evidence})
-	if plan != nil || !errors.Is(err, ErrReleaseLift) || !errors.Is(err, errReleaseLiftKagentEvidence) {
-		t.Fatalf("kagent reached config/artifact/Orka consumer: %v", err)
 	}
 	opt := suiteKagentEvaluationOptions(t)
 	for _, change := range []string{"passing", "incoherent", "other S"} {

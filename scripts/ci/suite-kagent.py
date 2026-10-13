@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
 
@@ -26,6 +27,47 @@ def cli(binary, args, refusal=None):
         sys.stderr.buffer.write(result.stderr)
         raise driver.QualificationError("suite CLI exit did not match " + args[0] + " qualification expectation")
     return result
+
+
+def qualify_lift(binary, work, layout, receipt, bindings, evidence, fixture, expected_counts):
+    # Source and authored files are unnecessary: lift reads only exact S and E.
+    subject = evidence["kagent"]["observation"]["Subject"]
+    common = ["lift", "suite:v1@" + subject["SuiteDigest"], "--from-layout", str(layout),
+              "--to-context", driver.CONTEXT, "--evidence", str(receipt), "-o", "json"]
+    occupied = b"suite Kagent target occupied without complete caller-retained proof; no adoption or updates"
+    audit = work / "kubectl-mutations.jsonl"
+    before = driver.audit_frames(audit)
+    cli(binary, common + ["--bindings", str(bindings), "--plan"], refusal=occupied)
+    destination = work / "suite-destination-bindings.yaml"
+    destination.write_text(bindings.read_text().replace("namespace: agents\n", "namespace: suite-destination\n"))
+    args = common + ["--bindings", str(destination), "--promote"]
+    plan = json.loads(cli(binary, args + ["--plan"]).stdout)
+    require(plan["runtime"] == "kagent" and plan["suiteDigest"] == subject["SuiteDigest"]
+            and plan["gate"] == "promotion" and plan["sourceTarget"]["namespace"] == "agents"
+            and plan["target"]["namespace"] == "suite-destination"
+            and [r["kind"] for r in plan["resources"]] == ["ModelConfig", "Agent"]
+            and all(r["action"] == "create" for r in plan["resources"]), "lift plan runtime/target/actions differ")
+    require(driver.audit_frames(audit) == before, "GET-only lift plan attempted mutation")
+    result = json.loads(cli(binary, args).stdout)
+    require(result["state"] == "ready" and result["summary"]["runtime"] == "kagent"
+            and result["summary"]["suiteDigest"] == subject["SuiteDigest"]
+            and result["summary"]["member"] == subject["Member"]
+            and result["summary"]["model"] == subject["Model"], "lift placement exact package identity differs")
+    require([r["kind"] for r in result["resources"]] == ["ModelConfig", "Agent"]
+            and all(r["outcome"] == "created" and r["ready"] and r["uid"] and r["generation"] > 0
+                    for r in result["resources"]), "lift did not report complete new ready resources")
+    for row in result["resources"]:
+        kind = "modelconfigs.kagent.dev" if row["kind"] == "ModelConfig" else "agents.kagent.dev"
+        actual = driver.get(kind, row["name"], namespace="suite-destination")["metadata"]
+        require(actual["uid"] == row["uid"] and actual["generation"] == row["generation"], "lift acknowledged identities differ from actual resources")
+    after = driver.audit_frames(audit)
+    expected = [(strategy, kind) for strategy in ("server", "none") for kind in ("ModelConfig", "Agent")]
+    require(len(after) == len(before) + 4 and all(frame == {"verb": "create", "dry_run": strategy,
+            "resources": [{"apiVersion": "kagent.dev/v1alpha2", "kind": kind, "namespace": "suite-destination", "name": subject["Member"]}]}
+            for frame, (strategy, kind) in zip(after[len(before):], expected)), "lift admission/create order or ownership differs")
+    cli(binary, args, refusal=occupied)
+    require(driver.audit_frames(audit) == after and driver.http_json(fixture + "/evidence") == expected_counts,
+            "lift repeat mutated or lift invoked native model/tools/Tasks")
 
 
 def qualify(binary, work):
@@ -80,9 +122,15 @@ def qualify(binary, work):
         stale_layout = work / "stale-layout"
         cli(binary, ["push", "--workspace", str(root), "--evaluation", str(receipt), "--to-layout", str(stale_layout), "suite:v1"], refusal=b"prepared suite does not match the expected publication identity")
         require(not stale_layout.exists(), "stale suite evidence authorized publication")
+        # Remove authored source before lifting: S/E/layout, not the workspace,
+        # authorize this source-only promotion into a new prepared namespace.
+        shutil.rmtree(root)
+        instructions.unlink()
+        qualify_lift(binary, work, layout, receipt, bindings, evidence, fixture, after)
     driver.require(receipt.stat().st_mode & 0o777 == 0o600, "suite passing receipt is not private")
     (work / "suite-qualification.json").write_text(json.dumps({"runtime": "kagent", "version": "v0.10.3", "engine": "go",
         "executionMode": "native-kagent", "cases": 2, "modelCalls": 2, "toolCalls": 0, "judgeCalls": 0,
+        "liftState": "ready", "liftNewResources": 2, "liftModelCalls": 0, "liftToolCalls": 0,
         "receiptSHA256": hashlib.sha256(receipt.read_bytes()).hexdigest()}, sort_keys=True) + "\n")
 
 

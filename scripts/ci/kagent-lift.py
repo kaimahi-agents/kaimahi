@@ -175,13 +175,16 @@ def fixture_manifest():
 
 
 def provision(work):
-    kube("create", "namespace", NAMESPACE, phase="namespace-create")
+    namespaces = (NAMESPACE, "suite-destination")
+    for namespace in namespaces:
+        kube("create", "namespace", namespace, phase="namespace-create")
     # Dummy authority is created independently. Never put its value in argv.
     secret = work / "dummy-key"
     secret.write_text(secrets.token_hex(24))
     secret.chmod(0o600)
     try:
-        kube("-n", NAMESPACE, "create", "secret", "generic", "lift-model-key", "--from-file=api-key=" + str(secret), phase="secret-create")
+        for namespace in namespaces:
+            kube("-n", namespace, "create", "secret", "generic", "lift-model-key", "--from-file=api-key=" + str(secret), phase="secret-create")
     finally:
         secret.unlink()
     kube("-n", NAMESPACE, "apply", "-f", "-", data=yaml.safe_dump_all(fixture_manifest()).encode(), phase="fixture-apply")

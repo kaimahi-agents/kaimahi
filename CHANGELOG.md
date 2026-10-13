@@ -22,6 +22,18 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+- Root digest `lift` supports packaged kagent v0.10.3 Go/linux-amd64 suites through
+  the existing prepare/apply/verify engine, with runtime-matching full-passing
+  evidence and author-owned `--bindings FILE` (exclusive with Orka `--inference`).
+  Kagent creates only new ModelConfig/Agent objects and refuses occupied primaries
+  or generated children even with matching evaluated UIDs. Explicit source-only
+  promotion keeps package/member/model/profile/provider kind/AuthMode and full
+  controller/Go image digest/platform inventories exact; only approved physical
+  target/binding/installation fields may differ. Unknown fields compare by default.
+  Lift makes no native execution calls; partial outcomes retain acknowledged
+  identities without retry, adoption, updates or cleanup. Orka summaries/digests,
+  receipt-bound reuse and legacy bundle/v0.10.2 create behavior remain unchanged.
+
 - Packaged tool-free kagent v0.10.3 Go/linux-amd64 workspaces now evaluate
   through root `eval --bindings FILE`: one fresh blocking A2A Task per ordered
   case, unsecure auth only, no retries, answer output or bundle conversion.
