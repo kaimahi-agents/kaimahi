@@ -42,6 +42,7 @@ the removed conversion spike are not evidence of one.
 - [Command conventions](command-conventions.md): naming, flag, output and compatibility rules for kmx commands.
 - [Charm boundary](charm-ux-followup-plan.md): the implemented creation wizard and its limits.
 - [Interactive agent TUI](interactive-agent-tui-plan.md): two-environment overview, keyboard navigation, slash-command completion and demo mode.
+- [Suite-first lifecycle proposal](suite-first-lifecycle.md): workspace, release, deployment and evaluation objects and everyday root commands; direction, partly implemented.
 - [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md): rationale for the experimental target, platform, runtime, deployment and receipt boundaries.
 - [KMX application API](kmx-application-api.md): how another Go layer uses AgentEnvironment, AgentSuites and AgentDeployments while management ports remain internal.
 - [KMX public interface summary](kmx-public-interface.md): the current layering, `kmx local up` equivalent, recovery, teardown and CLI-to-Go mapping.

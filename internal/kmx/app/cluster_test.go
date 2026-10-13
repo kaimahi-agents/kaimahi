@@ -47,15 +47,18 @@ func TestKindSyncOnlyOnNewLocalClusters(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("KMX_KIND_EXISTING", tc.existing)
 			t.Setenv("KMX_KIND_INPUT", filepath.Join(dir, "input"))
+			t.Setenv("KMX_KIND_ARGV", filepath.Join(dir, "kind-argv"))
+			t.Setenv("KMX_PODMAN_ARGV", filepath.Join(dir, "podman-argv"))
 			fakeTool(t, dir, "kind", `case "$1 $2" in
 "get clusters") echo "$KMX_KIND_EXISTING" ;;
-"create cluster") [ "$5 $6" = "--config -" ] || exit 97; /bin/cat > "$KMX_KIND_INPUT" ;;
+"create cluster") printf '%s\000' "$@" > "$KMX_KIND_ARGV"; /bin/cat > "$KMX_KIND_INPUT" ;;
 *) exit 97 ;; esac`)
 			fakeTool(t, dir, "kubectl", `case "$*" in
 "config view -o json") echo '{"contexts":[{"name":"kind-test","context":{"cluster":"kind-test"}}],"clusters":[{"name":"kind-test","cluster":{"server":"https://127.0.0.1:6443"}}]}' ;;
 *"get --raw=/readyz"|*"rollout status deployment/coredns --timeout=180s") ;;
 *) exit 97 ;; esac`)
-			fakeTool(t, dir, "podman", `case "$1" in ps) echo test-control-plane ;; start) ;; *) exit 97 ;; esac`)
+			fakeTool(t, dir, "podman", `printf '%s\000' "$@" >> "$KMX_PODMAN_ARGV"
+case "$1" in ps) echo test-control-plane ;; start) ;; *) exit 97 ;; esac`)
 			t.Setenv("PATH", dir)
 			var out bytes.Buffer
 			a := New(&config.Config{KindCluster: "test", KubeContext: tc.context, ContextSource: config.SourceKubeCtx, ContainerEngine: tc.engine})
@@ -70,6 +73,13 @@ func TestKindSyncOnlyOnNewLocalClusters(t *testing.T) {
 					t.Fatalf("existing/recovered or AKS target received config: %q (%v)", input, err)
 				}
 				return
+			}
+			argv, argvErr := os.ReadFile(filepath.Join(dir, "kind-argv"))
+			if argvErr != nil || string(argv) != "create\x00cluster\x00--name\x00test\x00--config\x00-\x00" {
+				t.Fatalf("unexpected kind creation argv: %q (%v)", argv, argvErr)
+			}
+			if argv, err := os.ReadFile(filepath.Join(dir, "podman-argv")); !os.IsNotExist(err) {
+				t.Fatalf("new cluster must use kind, not direct Podman recovery: %q (%v)", argv, err)
 			}
 			var cluster struct {
 				Patches []string `yaml:"kubeadmConfigPatches"`

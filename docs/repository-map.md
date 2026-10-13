@@ -52,7 +52,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
 | `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 51 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
-| `docs/` | 34 tracked files; native guides, design and history | — | maintainer and process docs |
+| `docs/` | 35 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
@@ -259,21 +259,22 @@ validators, complete metadata frames/effective dry-run, all five specific negati
 calls through the actual qualifier and classifier/aggregator truth tables.
 None of these files is embedded or installed.
 
-## `docs/` — 34 tracked files, native guides and design/history
+## `docs/` — 35 tracked files, native guides and design/history
 
 **Guides and index (15):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `releases.md`, `FAQ.md`, `orka.md`,
 `copilot-inference.md`, `interactive-chat.md`, `interactive-lift.md`,
 `orka-k8s-tool.md`, `bundle-format.md`, `runtime-adapters.md` and `suite-workspace.md`.
 
-**Maintainer and process (19):** `development.md`, `repository-map.md`,
+**Maintainer and process (20):** `development.md`, `repository-map.md`,
 `entry-point-principles.md`,
 `cli-ux-plan.md`, `command-conventions.md`, `charm-ux-followup-plan.md`,
 `interactive-agent-tui-plan.md`, `NAMING.md`, `kmx-lifecycle-interfaces.md`,
 `kmx-application-api.md`, `kmx-public-interface.md`,
 `azure-discovery-performance.md`, `copilot-performance.md`, `orka-latency.md`,
 `orka-startup-performance.md`, `local-foundry-inference.md`,
-`chat-performance-profile.md`, `agent-lift.md` and `command-semantics.md`.
+`chat-performance-profile.md`, `agent-lift.md`, `command-semantics.md` and
+`suite-first-lifecycle.md`.
 
 ## `brand/` — identity assets
 

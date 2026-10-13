@@ -837,6 +837,22 @@ jobs:
           elapsed=$(( $(date +%s) - start ))
           echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
           echo "time from one command to an answer: ${elapsed}s"
+      - name: Verify effective kubelet sync frequency
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          "$HOME/.config/kmx/path/kubectl" --context kind-kmx-quickstart --request-timeout=10s \
+            get --raw /api/v1/nodes/kmx-quickstart-control-plane/proxy/configz 2>/dev/null |
+            python3 -c '
+          import json, sys
+          try:
+              frequency = json.load(sys.stdin)["kubeletconfig"]["syncFrequency"]
+          except (ValueError, KeyError, TypeError):
+              sys.exit("effective kubelet configuration unavailable")
+          if frequency != "5s":
+              sys.exit("effective kubelet syncFrequency must be 5s")
+          print("effective kubelet syncFrequency: 5s")
+          '
       - name: The agent actually answered, and nothing is governed yet
         if: steps.changes.outputs.docs_only != 'true'
         run: |
