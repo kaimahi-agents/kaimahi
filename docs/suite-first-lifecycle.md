@@ -6,7 +6,7 @@
 
 The workspace is what people author; the suite is the portable release and lifecycle object. Everyday commands stay few, while their internals are split into small capabilities.
 
-This develops the [walkthrough](https://github.com/kaimahi-agents/kaimahi/issues/328#issuecomment-6104051141) and Tatsinnit's reply, alongside the [lifecycle interface decision](kmx-lifecycle-interfaces.md), not as a replacement for it. Follow-ups belong to [#344](https://github.com/kaimahi-agents/kaimahi/issues/344). The merged [#355](https://github.com/kaimahi-agents/kaimahi/pull/355) makes the portable format public in `agentsuite/`; construction and transfer remain internal. The image-backed prototype from #342 is being split into drafts #448 and #449 (tracked in [#447](https://github.com/kaimahi-agents/kaimahi/issues/447)); it should arrive through the same lift as the native path, not a second one.
+This develops the [walkthrough](https://github.com/kaimahi-agents/kaimahi/issues/328#issuecomment-6104051141) and Tatsinnit's reply, alongside the [lifecycle interface decision](kmx-lifecycle-interfaces.md), not as a replacement for it. Follow-ups belong to [#344](https://github.com/kaimahi-agents/kaimahi/issues/344). The merged [#355](https://github.com/kaimahi-agents/kaimahi/pull/355) makes the portable format public in `agentsuite/`; construction and transfer remain internal. The image-backed prototype from #342 is being split into drafts #448 and #449 (tracked in [#447](https://github.com/kaimahi-agents/kaimahi/issues/447)); it comes in through root `lift`, the same as the native path, not a second command (agreed on #404).
 
 ## What the user holds
 
@@ -56,7 +56,7 @@ Everyday commands sit at the root; `kmx agent` goes away. With no released users
 | Current path | Mapping to this proposal |
 |---|---|
 | `agent create/chat/run/evaluate/lift/status` on main | Move to root `create`, `chat`, `run`, `eval`, `lift`, `status`. Create defaults to authoring. Legacy bundle commands move under `bundle` (#460) and are removed with `agent.yaml` once the suite path reaches parity. |
-| Image-backed path in drafts #448/#449 (#447; #342 closed) | Member authoring joins `create`; publication joins `push`; deployment converges on the single `lift` rather than a separate `suite lift`; invocation remains member-scoped run/chat, not lift. |
+| Image-backed path in drafts #448/#449 (#447; #342 closed) | Member authoring joins `create`; publication joins `push`; deployment uses root `lift` rather than a separate `suite lift` (agreed); invocation remains member-scoped run/chat, not lift. |
 | `suite push <directory> <reference>` on main | Exists today for validated suite-artifact transfer. `suite push --workspace . <reference>` (#437) prepares and publishes the exact native suite with no member images; root `push <reference>` with workspace discovery is proposed. |
 
 Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/kaimahi/pull/302) and the [command alignment record](command-semantics.md) decided. Bare `kmx lift` today is deprecated AKS provisioning, not artifact lift. Reassigning it needs an explicit compatibility transition; this proposal does not change it. Follow the [command conventions](command-conventions.md), including aligned help, interactive labels, recovery commands and compatibility tests, when any spelling ships.
@@ -86,6 +86,16 @@ OCI referrers provide distribution and discovery across machines. They do not es
 ## Local development versus core
 
 Core capabilities are **validate, resolve, build, package, store, deploy, observe and evaluate**. These are design categories, not proposed Go APIs or package names. The CLI can compose several in one command; machine consumers need stable identities, structured outcomes and diagnostics without parsing terminal text. `local up`, quickstart and console are developer conveniences over those capabilities. They should not force builders, registries, Kubernetes or interactive setup onto every consumer. The experimental interfaces from [#326](https://github.com/kaimahi-agents/kaimahi/pull/326) remain design evidence, not a stable SDK.
+
+The alpha Go interfaces group these into three areas, which map onto the everyday commands:
+
+| Interface | Responsibility | Commands |
+|---|---|---|
+| `AgentEnvironment` | Prepare where agents can run, local or remote | `local`, `context`, `targets` |
+| `AgentSuites` | Produce and publish what runs: validate, build, push (#443) | `push`, `suite …` |
+| `AgentDeployments` | Place and manage it on a target | `lift`, `status` |
+
+The selected runtime (Orka, kagent, AgentSessions) executes; evaluation is separately scoped evidence. Three interfaces is the current shape, not a permanent invariant. Still open: whether `AgentEnvironment` is a public core capability or mainly a development workflow, and evolving `AgentDeployments` from one member image toward suite-scoped deployment.
 
 ## Removing `agent.yaml` bundles
 
