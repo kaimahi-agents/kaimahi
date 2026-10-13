@@ -290,8 +290,11 @@ kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
 ```
 
 Use a complete SHA256 digest, not a mutable tag. Destination runtime must already
-be installed; Provider/Secret must already exist and be Ready. `--to-namespace`
-defaults to `orka-system`; registry HTTP requires explicit `--plain-http`, which
+be installed. The selected inference Provider and its referenced Secret must
+already exist; that inference Provider must be Ready for its current generation,
+and the Secret must contain its referenced key. The suite-owned destination
+Provider may be absent and created by apply. `--to-namespace` defaults to
+`orka-system`; registry HTTP requires explicit `--plain-http`, which
 conflicts with `--from-layout`. There is no model/runtime override or workspace
 selector. Help/completion does not load operational configuration.
 
