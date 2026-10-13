@@ -116,6 +116,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- Orka chart installs now use `kmx.kaimahi.dev/installed`, matching the KMX
+  label/API-group domain. Clusters installed by an older kmx retain
+  `kmx.kaimahi.ai/installed` in their Helm values and are no longer recognized
+  as kmx-owned for repeat installation; there is no legacy-label fallback.
+  For a disposable local kind cluster you own, run `kmx local down` then
+  `kmx local up` with the same context and cluster settings to reinstall.
+  This deletes the cluster and its Tasks, Secrets, volumes and model data.
+  On a persistent cluster, back up Orka resources, Secrets, volumes and the
+  snapshot key before an operator-managed fresh install; see
+  [Orka installation](docs/orka.md#preserve-the-charts-generated-snapshot-key).
+  Relabeling live objects with `kubectl label` alone does not update the saved
+  Helm values used for ownership checks.
+
 - Root `kmx create` now defaults to offline workspace authoring, requiring a
   member name, exact `--model` and file-valued `--instructions`. It shares
   current-directory discovery with push, offers terminal initialization with

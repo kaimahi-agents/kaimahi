@@ -359,7 +359,7 @@ func TestOrkaInstallRefusesForeignOrMismatchedHelmRelease(t *testing.T) {
 func pinnedOrkaHelmValues(t *testing.T, mutate func(map[string]any)) string {
 	t.Helper()
 	values := map[string]any{
-		"labels":           map[string]any{orkaChartLabel: "true"},
+		"labels":           map[string]any{"kmx.kaimahi.dev/installed": "true"},
 		"fullnameOverride": "orka-api",
 		"controller": map[string]any{
 			"mode": "harness-v2", "image": map[string]any{"digest": orkaControllerDigest},
@@ -557,6 +557,23 @@ func TestOrkaInstallRepeatRefusesUnreadyController(t *testing.T) {
 	}
 }
 
+func TestOrkaInstallRefusesOldLabelWithoutWrites(t *testing.T) {
+	chart := orkaChart(t)
+	f := newOrkaFixture(t, chart)
+	f.app.orkaInstallerDigest = digestOf(chart)
+	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
+	t.Setenv("KMX_TEST_HELM_VALUES", pinnedOrkaHelmValues(t, func(v map[string]any) {
+		v["labels"] = map[string]any{"kmx.kaimahi.ai/installed": "true"}
+	}))
+	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
+	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Fatalf("old marker authorized installation: %v", err)
+	}
+	if writes := f.writes(t); writes != "" {
+		t.Fatalf("old marker caused writes: %s", writes)
+	}
+}
+
 func TestOrkaInstallRefusesUnmarkedChart(t *testing.T) {
 	chart := orkaChart(t)
 	f := newOrkaFixture(t, chart)
@@ -594,7 +611,7 @@ func TestOrkaInstallAppliesChartCRDsBeforeHelm(t *testing.T) {
 	if !strings.Contains(f.applied(t), "name: tasks.core.orka.ai") {
 		t.Errorf("chart CRDs were not submitted to kubectl:\n%s", f.applied(t))
 	}
-	for _, want := range []string{"--kube-context kind-kaimahi-p1", "-n orka-system", "--create-namespace", "--wait", "--timeout 10m", "controller.mode=harness-v2", "--set-string labels.kmx\\.kaimahi\\.ai/installed=true"} {
+	for _, want := range []string{"--kube-context kind-kaimahi-p1", "-n orka-system", "--create-namespace", "--wait", "--timeout 10m", "controller.mode=harness-v2", "--set-string labels.kmx\\.kaimahi\\.dev/installed=true"} {
 		if !strings.Contains(calls[helm:], want) {
 			t.Errorf("Helm install omitted %q:\n%s", want, calls[helm:])
 		}
