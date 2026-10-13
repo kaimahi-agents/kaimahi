@@ -6,17 +6,27 @@ kagent declarations require no member images; authoring and publication do not c
 run a model or invoke Docker/buildx.
 
 **Supported:** offline creation, preparation and publication of one tool-free
-member with an exact OpenAI-compatible model. Orka remains the authoring
-default; explicit kagent authoring is Go v0.10.3, linux/amd64 only. kagent suite
-placement, evaluation, status and promotion are not enabled by this profile.
-Workspace evaluation and registry-reference lift are not available. Existing `agent.yaml` creation,
+member with an exact OpenAI-compatible model. Orka remains the authoring default;
+`--runtime kagent` selects Go v0.10.3/linux-amd64. This does not enable suite
+kagent placement, evaluation, status or promotion. Workspace evaluation and
+registry-reference lift are not available. Existing `agent.yaml` creation,
 evaluation and lift remain separate and unchanged.
 
 ## Create
 
-Root `create` still defaults to live authoring. Explicit `--workspace` selects
-this offline path. Create does not discover a workspace or default to offline
-authoring; root `push` discovers an already-authored workspace.
+Root `kmx create <name>` authors offline by default. Create and root `push`
+share discovery: walk upward from the current directory to the nearest
+`workspace.yaml`, including across Git repository boundaries. `--workspace DIR`
+selects that exact root without fallback; if no marker exists there, create
+initializes it explicitly without prompting.
+
+Without a workspace, terminal create asks on stderr:
+`No workspace found in <dir>. Start one here? [Y/n]`. Enter, `y` or `yes`
+(case-insensitive) initializes the current directory. `n`/`no`, EOF, invalid
+responses and interruption create nothing. Nonterminal input or redirected
+diagnostics refuse with a `--workspace` hint; use an explicit root in scripts.
+An invalid, unreadable, symlinked, oversized or nonregular nearest marker fails
+closed, without fallback or an initialization offer.
 
 ```sh
 mkdir my-agents && cd my-agents
@@ -30,26 +40,43 @@ kmx create greeter --workspace . \
 To author the offline kagent profile instead:
 
 ```sh
-kmx create greeter --workspace . --runtime kagent --runtime-version v0.10.3 \
-  --kagent-runtime go --model fixture-model --instructions ./instructions.md
+kmx create greeter --workspace . --runtime kagent --model fixture-model --instructions ./instructions.md
 ```
 
-The runtime is an authored member declaration, not a deployment-time switch.
-`runtime.id`, `runtime.version` and `runtime.engine` select the closed profile;
-kagent requires exact `v0.10.3` and `go`. Python, unsupported versions and
-contradictory/partial declarations refuse before authoring. `--runtime-version`
-is workspace-only; existing live kagent create stays exact v0.10.2.
-Missing runtime in existing source means historical Orka only, never inferred
+Omit `--workspace` to use the same discovery/terminal-initialization rules.
+Runtime is an authored member declaration, not a deployment-time switch.
+The private `runtime.id`, `runtime.version` and `runtime.engine` select exact
+kagent `v0.10.3`/`go`. Optional `--runtime-version v0.10.3` and
+`--kagent-runtime go` may state that fixed profile explicitly; unsupported
+versions, Python and contradictory/partial declarations refuse. These authoring
+selectors do not change the `--live --runtime kagent` v0.10.2 path.
+Missing runtime in existing source remains historical Orka only, never inferred
 kagent. Push and load derive the declared runtime, not a live target.
 
 `--instructions` names a file, not inline text. Its nonblank bytes are copied
-unchanged into the member. `--description` is optional and single-line. Instructions use the native block-text
-policy: LF and tabs are allowed; CR and other control characters are refused,
-not normalized. This mode refuses cluster,
-Provider, output, tools and Task flags, rather than ignoring them. Runtime
-selection on this path authors source only; it does not load cluster settings.
-Creation refuses existing workspace/member directories, including PortableAgent
-bundles; it does not overwrite or migrate them.
+unchanged into the member. `--description` is optional and single-line.
+Instructions use the native block-text policy: LF and tabs are allowed; CR and other control characters are refused,
+not normalized. `--model` is required and exact; there is no inferred default.
+This mode refuses cluster, Provider, output, tools and Task flags with a
+`--live` remedy, rather than ignoring them or inferring live mode.
+`--workspace` and `--live` conflict; an explicitly empty `--workspace` refuses.
+Required fields and mode conflicts are checked before initialization.
+
+A workspace supports only one member. Creating a second member refuses and
+suggests a new `--workspace` directory, preserving authored files, metadata and
+cases. Existing member directories, including PortableAgent bundles, are never
+overwritten or migrated. For the same first creation using discovery instead
+of an exact root, omit `--workspace`:
+
+```sh
+kmx create greeter --model qwen-3.5-2b --instructions ./instructions.md
+```
+
+A name is required; there is no offline authoring wizard. For the separate live
+Orka wizard use `kmx create --live`. Live creation bypasses workspace discovery,
+even below an invalid marker. `--live --no-apply` and `--live --out -` retain the
+old resource/PortableAgent bundle formats, not this workspace format. Quickstart
+and console creation remain live. See the [live contract](kmx.md#default-orka-contract).
 
 The source consists of `workspace.yaml`, `agents/greeter/member.yaml`, its
 member-relative instruction file, workspace-root `eval/*.yaml`, and a pinned
@@ -104,14 +131,13 @@ metadata/kmx/eval/example.yaml
 
 `native-orka.json` inventories the member, renderer version, required images,
 and every packaged case path and digest. The alternative kagent declaration is
-`metadata/kmx/native-kagent.json`, carrying its runtime/version/engine and
-versioned private execution-profile identity with the same complete case
-inventory. Exactly one supported profile must cover the member; extra or
-conflicting profile files refuse. Explicit Orka source and omitted historical
-Orka source retain the same prepared content/manifest identity. These are KMX native-profile supplemental
+`metadata/kmx/native-kagent.json`, binding its runtime/version/engine and immutable
+execution-profile identity to the same complete case inventory. Exactly one
+supported native profile is required. Explicit Orka and historical omitted Orka
+source retain the same prepared content/manifest identity. These are KMX native-profile supplemental
 files in the OCI content layer, not public AgentSuite record types. Runtime
-selection changes the OCI manifest identity even when the canonical public graph
-digest is unchanged. No public runtime field or critical extension is introduced.
+selection changes the OCI manifest identity even when the public graph digest
+is unchanged; no public runtime field or critical extension is introduced.
 
 The OCI manifest digest binds all the content-layer bytes, including cases.
 The canonical `agentsuite.json` graph digest alone does not bind supplemental
@@ -121,9 +147,7 @@ profile emits a composition with no ToolProviders. Those profile records
 are declared image-build inputs, not dependencies fetched or executed by native
 Orka/kagent placement, and do not imply sandbox-image conformance. Their
 AgentKit/Python harness pins are inert declared build inputs, not Go ADK
-execution dependencies. The kagent native profile names its own closed,
-versioned execution contract; actual installed runtime/image qualification
-belongs to the later suite-placement slice.
+execution dependencies; the private kagent profile names its own closed contract.
 
 Authentication, `--plain-http` and non-atomic tag replacement with `--force` use
 the same [registry policy](kmx.md#registry-authentication) as existing suite push.
@@ -166,8 +190,8 @@ kmx push --workspace ./my-agents ghcr.io/me/my-agents:v1
 Root push refuses two positional arguments and explicit cluster-context and
 container-engine flags. Other relative paths, including `--to-layout`, remain
 relative to the invocation directory, not the discovered workspace root.
-Creation still requires explicit `create --workspace`; discovery does not change
-its default behavior.
+Create uses the same discovery and exact-root override. Help and completion
+neither resolve workspaces nor prompt, mutate files or load cluster settings.
 
 Internally, verified packaged native inputs can be loaded without consulting live
 source or the preparation record, and publication can require an expected OCI

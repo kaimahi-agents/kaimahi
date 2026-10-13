@@ -26,7 +26,7 @@ description, instructions and model render exactly as they do with an
 apiVersion-only Orka extension. Named helper delegation can also be authored
 in portable `spec.coordination.allowedAgents`. Orka-specific tools, skills,
 rate limits and optional delegation limits require the Orka extension; a target
-that does not consume them refuses the named fields rather than dropping them. `kmx create` still
+that does not consume them refuses the named fields rather than dropping them. `kmx create --live` still
 writes the Orka extension. Lift reads the definition from
 `agent.yaml`, resolves **new** target bindings, and renders with
 `RenderOrkaBundleFile`. It does not copy a Secret or take inference from the
@@ -168,7 +168,7 @@ portable definition. Lift also refuses a target whose installed Agent CRD does
 not support coordination. The upstream `autonomous` field is not supported yet:
 it starts a repeated Job loop and needs a separate design.
 
-`kmx create --coordination --allowed-agent helper` authors `enabled: true`
+`kmx create --live --coordination --allowed-agent helper` authors `enabled: true`
 and the named helper; repeat `--allowed-agent` for additional helpers. Edit the
 bundle for optional limits. Lift the helper before the coordinator. The pinned
 Orka installation binds delegation worker RBAC only in its release namespace
@@ -184,7 +184,7 @@ Provider Secret, create a bundle like this (replace the source context and
 Secret name with your own):
 
 ```bash
-kmx create my-agent --context source-context --namespace orka-system --provider-type openai --model qwen2.5:3b --secret my-provider-secret --base-url http://ollama.ollama.svc.cluster.local:11434/v1
+kmx create --live my-agent --context source-context --namespace orka-system --provider-type openai --model qwen2.5:3b --secret my-provider-secret --base-url http://ollama.ollama.svc.cluster.local:11434/v1
 ```
 
 The `--base-url` must be reachable from the creation cluster; it is not inferred
@@ -453,7 +453,7 @@ revision: the portable digest covers **only** the bytes of `agent.yaml`, and
 `receipts/` does not affect Git cleanliness of `agent.yaml`. Keep lift and
 evaluation receipts local, not in Git: neither is an attestation, and an
 override reason stored in a lift receipt may contain operational details.
-A later `kmx create` rerun can reuse the bundle even when `receipts/`
+A later `kmx create --live` rerun can reuse the bundle even when `receipts/`
 is present.
 No receipt is written by `--plan` or by a failed deployment. If deployment
 and receipt writing succeed but saving the remembered target fails, the
@@ -640,7 +640,7 @@ oversized suite or use `--case <id>` to run **one** case, not an arbitrary subse
 A single-case receipt does not satisfy a full-case lift gate.
 
 Cases test a revision; they do not define it, so they are **not** part of the
-portable digest. `kmx create` scaffolds one
+portable digest. `kmx create --live` scaffolds one
 trivial `eval/example.yaml` in a new bundle, and a create rerun accepts any
 `eval/` directory without touching its cases.
 
@@ -653,7 +653,7 @@ that digest. Because every case executes a Task, evaluate then passes the same
 remote-context guard as other Orka writes.
 
 Each case is one Orka Task against that Agent, created and read the way
-`kmx create --task` does it: the `orka-result-reader` account over a
+`kmx create --live --task` does it: the `orka-result-reader` account over a
 pinned loopback port-forward (`--result-port`, default 19180). Each case waits
 for a terminal state and any judge calls within `--case-timeout` (default 5m,
 at most 9m). A case

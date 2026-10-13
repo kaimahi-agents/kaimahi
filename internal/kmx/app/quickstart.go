@@ -19,7 +19,7 @@ import (
 // quickstart deploys one known bundle and then asks THAT agent the question.
 // A name that could differ from the thing being deployed would let the
 // command answer about something it did not create. Authoring your own is
-// `kmx create`; asking any agent anything is `kmx chat`.
+// `kmx create --live`; asking any agent anything is `kmx chat`.
 const QuickstartAgent = "hello-world-agent"
 
 // QuickstartOptions configure the shortest path to a first answer.
@@ -235,7 +235,7 @@ func (a *App) stepQuickstartAgent() error {
 		id, err := a.matchingOrkaResource(ctx, opt.Namespace, doc)
 		if err != nil {
 			if errors.Is(err, errOrkaConfigurationDrift) {
-				return fmt.Errorf("%w; keep the drifted resource and run `kmx create` under a different name, or delete the fixed %s so quickstart recreates it", err, QuickstartAgent)
+				return fmt.Errorf("%w; keep the drifted resource and run `kmx create --live` under a different name, or delete the fixed %s so quickstart recreates it", err, QuickstartAgent)
 			}
 			return err
 		}
@@ -283,7 +283,7 @@ func (a *App) quickstartAnswer(task string) (string, error) {
 func (a *App) quickstartFollowups() []string {
 	return []string{
 		a.operationCommand("chat", QuickstartAgent, "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
-		a.operationCommand("create"),
+		a.operationCommand("create", "--live"),
 		a.operationCommand("orka", "status"),
 	}
 }

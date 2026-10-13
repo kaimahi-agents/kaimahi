@@ -18,7 +18,7 @@ var UpSteps = []string{"cluster", "ollama", "model", "orka"}
 
 // UpDefaultSteps is what a bare `kmx local up` runs: a cluster, a keyless model
 // server and the pinned Orka runtime. It deploys no agent — `kmx quickstart`
-// is the command that ends with one answering, and `kmx create` is the
+// is the command that ends with one answering, and `kmx create --live` is the
 // one that authors your own.
 //
 // It holds the same four names as UpSteps, and that is the point rather than
@@ -95,7 +95,7 @@ func (a *App) Up(step string) error {
 
 	if step == "" {
 		a.complete("Runtime setup finished", started)
-		a.notef("\nTRY   %s", a.operationCommand("create"))
+		a.notef("\nTRY   %s", a.operationCommand("create", "--live"))
 	}
 	return nil
 }

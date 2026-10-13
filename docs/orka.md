@@ -11,7 +11,7 @@ certificate. kmx fetches the pinned release chart rather than requiring an
 Orka checkout or a manually created wrapper credential.
 
 Installation does not author an Agent or run a Task. Author a native Orka Agent with
-[`kmx create`](kmx.md#kmx-create) and prove an answer with a Task.
+[`kmx create --live`](kmx.md#default-orka-contract) and prove an answer with a Task.
 Installation and authoring are deliberately separate operations.
 
 ## The command
@@ -107,7 +107,8 @@ an adopter should learn that here, not at their first model call.
 
 ## Author an Orka Agent and get an answer
 
-`create` defaults to live Orka resources; it does not install Orka. The
+`create --live` creates Orka resources by default; it does not install Orka.
+Default `create` instead authors an [offline workspace member](suite-workspace.md). The
 separate explicit Kagent create path is documented in the
 [CLI contract](kmx.md#explicit-kagent-v0102-create) and does not change this
 guide. On the local kind path the runtime is already there: `kmx local up` and `kmx quickstart` both
@@ -128,7 +129,7 @@ created. Choose unused names and output paths; creation refuses collisions.
 Task execution requires an existing result account. `kmx orka install`
 provisions the account, Role and RoleBinding below; so does
 `kmx local up --step orka` and every run that includes that step — a bare
-`kmx local up` and `kmx quickstart`. `create` only NAMES an account and
+`kmx local up` and `kmx quickstart`. `create --live` only NAMES an account and
 never provisions RBAC. On a cluster whose Orka arrived through upstream tools,
 an operator with RBAC creation permission can provision the account separately.
 Skip these three RBAC creation commands if KMX already provisioned it; they
@@ -141,7 +142,7 @@ kubectl --context kind-kaimahi-p1 -n orka-system create role orka-result-reader 
 kubectl --context kind-kaimahi-p1 -n orka-system create rolebinding orka-result-reader \
   --role=orka-result-reader --serviceaccount=orka-system:orka-result-reader
 
-kmx --context kind-kaimahi-p1 create orka-hello \
+kmx --context kind-kaimahi-p1 create --live orka-hello \
   --namespace orka-system --provider-type openai --model qwen2.5:3b \
   --secret local-provider-key \
   --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
@@ -158,8 +159,8 @@ asserted the actual answer, rather than calling Ready an execution result.
 
 The generated `agents/orka-hello.yaml` includes a **value-free Secret skeleton
 that must never be written**. The command does not write it or provision RBAC.
-Without `--task`, only Provider/Agent readiness is tested. Use `--out -` or
-`--no-apply` for fully offline generation; [the canonical create guide](kmx.md#kmx-create)
+Without `--task`, only Provider/Agent readiness is tested. Use `--live --out -` or
+`--live --no-apply` for fully offline resource generation; [the canonical create guide](kmx.md#kmx-create)
 covers explicit inputs, pinned schemas, ordered manual creation and collisions.
 
 **Authority is broader than the name "result reader" suggests.** kmx requests a
@@ -202,8 +203,8 @@ Both setup paths install Orka, so neither needs a separate `kmx orka install`.
 
 ## Authoring an agent for Orka
 
-Installing Orka and authoring an agent are separate steps. The default
-`kmx create` path emits native Orka resources; installing Orka does not
+Installing Orka and authoring an agent are separate steps. The
+`kmx create --live` path emits native Orka resources; installing Orka does not
 convert existing files written for another runtime's API group.
 
 For a new agent that will run on Orka, **author Orka's native
@@ -290,4 +291,4 @@ traffic. Configure its runtime and model access through the upstream interfaces.
 
 ## See also
 
-- [kmx create](kmx.md#kmx-create) — native Orka authoring and Task result contract
+- [kmx create --live](kmx.md#default-orka-contract) — native Orka resources and Task result contract

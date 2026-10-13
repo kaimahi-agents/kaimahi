@@ -17,8 +17,17 @@ the pull request, explain why configuration, integration or an upstream
 contribution cannot provide the requested behavior. Runtimes and harnesses own
 execution, enforcement and model access; KMX should not duplicate them.
 
+Root `kmx create <name>` authors one native-Orka workspace member offline by
+default, requiring an exact model and an instructions file. Create and push
+share current-directory workspace discovery; scripts can initialize an exact
+root with `--workspace DIR`. Existing one-member workspaces refuse a second
+create without modifying source. Resource/bundle creation and previews require
+`--live` for both runtimes; `--runtime kagent` alone never selects live mode.
+Quickstart, console and direct App.CreateAgent callers stay live. See the
+[workspace guide](docs/suite-workspace.md) for prompting and failure boundaries.
+
 kagent support is intentionally version-bounded: explicit
-`kmx create --runtime kagent <name>` targets preinstalled exact v0.10.2;
+`kmx create --live --runtime kagent <name>` targets preinstalled exact v0.10.2;
 explicit Go bundle lift/status/evaluate with `--runtime kagent --runtime-version v0.10.3`
 targets preinstalled exact v0.10.3. Lift creates new Go declarative resources or
 reuses a complete matching UID-bound deployment; it does not adopt or update.

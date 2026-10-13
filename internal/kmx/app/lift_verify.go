@@ -61,7 +61,7 @@ func (a *App) liftNextSteps(opt lift.Options) {
 
 `, a.operationCommand("orka", "status"),
 		shellArg(a.Cfg.KubeContext), OrkaNamespace,
-		a.operationCommand("create", "<agent>", "--namespace", OrkaNamespace,
+		a.operationCommand("create", "--live", "<agent>", "--namespace", OrkaNamespace,
 			"--provider-type", "openai", "--model", "<model>", "--secret", "<name>",
 			"--base-url", "<endpoint>"))
 	if opt.Observability {

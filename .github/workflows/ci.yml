@@ -370,8 +370,8 @@ jobs:
               "kmx chat --namespace orka-system hello-world-agent",
               "kmx chat --runtime orka hello-world-agent",
               "kmx orka list --namespace orka-system",
-              "kmx create orka-hello --namespace orka-system",
-              "kmx create kagent-hello --runtime kagent --namespace agents",
+              "kmx create --live orka-hello --namespace orka-system",
+              "kmx create --live kagent-hello --runtime kagent --namespace agents",
               "kmx bundle lift ./bundle --runtime kagent --runtime-version v0.10.3",
               "kmx bundle status ./bundle --runtime kagent --runtime-version v0.10.3",
               "kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3 --to-context target-context",
@@ -907,7 +907,7 @@ jobs:
           assert len(commands) == 3, r["next"]
           assert [argv[:3] for argv in commands] == [["kmx", "--context", r["context"]]] * 3, commands
           assert commands[0][3:4] == ["chat"], commands
-          assert commands[1][3:] == ["create"], commands
+          assert commands[1][3:] == ["create", "--live"], commands
           assert commands[2][3:] == ["orka", "status"], commands
           print("second run:", round(r["elapsed_seconds"], 1), "s ·", r["answer"][:80])
           EOF
@@ -1270,7 +1270,7 @@ jobs:
           bundle="$fixture/bundle"
           PATH="$fixture/fail-bin:/usr/bin:/bin" KMX_TOOLCHAIN=off \
             "$GITHUB_WORKSPACE/bin/kmx" --context kind-kmx-kagent-create \
-            create live-kagent --runtime kagent --namespace agents \
+            create --live live-kagent --runtime kagent --namespace agents \
             --description 'Deterministic live Kagent create proof' \
             --provider-type openai --model fixture --secret model-key \
             --base-url http://model.agents.svc.cluster.local:9000/v1 \
@@ -1743,7 +1743,7 @@ jobs:
           kubectl --context kind-kmx-orka -n orka-system set env deployment/orka-tool-model \
             ORKA_HEALTH_DEPLOYMENT_MARKER="$health_marker" >/dev/null
           kubectl --context kind-kmx-orka -n orka-system rollout status deploy/orka-tool-model --timeout=180s
-          bin/kmx --context kind-kmx-orka create orka-tool-proof \
+          bin/kmx --context kind-kmx-orka create --live orka-tool-proof \
             --namespace orka-system --provider-type openai --model tool-fixture \
             --secret local-provider-key \
             --base-url http://orka-tool-model.orka-system.svc.cluster.local:8080/v1 \
@@ -1765,7 +1765,7 @@ jobs:
         run: |
           set -euo pipefail
           # Reuse the installer's Secret; never invent a Provider key here.
-          bin/kmx --context kind-kmx-orka create orka-hello \
+          bin/kmx --context kind-kmx-orka create --live orka-hello \
             --namespace orka-system --provider-type openai --model qwen2.5:3b \
             --secret local-provider-key \
             --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
@@ -1900,7 +1900,7 @@ jobs:
             ORKA_HEALTH_DEPLOYMENT_MARKER="$health_marker" >/dev/null
           kubectl --context kind-helm-release-orka -n orka-system rollout status deploy/orka-tool-model --timeout=180s >/dev/null
           go build -o /tmp/orka-helm-kmx ./cmd/kmx
-          /tmp/orka-helm-kmx --context kind-helm-release-orka create orka-tool-proof \
+          /tmp/orka-helm-kmx --context kind-helm-release-orka create --live orka-tool-proof \
             --namespace orka-system --provider-type openai --model tool-fixture \
             --secret local-provider-key \
             --base-url http://orka-tool-model.orka-system.svc.cluster.local:8080/v1 \
@@ -2154,7 +2154,7 @@ jobs:
           # naming one the bring-up made is the whole point of this step.
           # This step exercises agent creation through the supported
           # Orka path, not through retired governance commands.
-          kmx --context kind-kmx-clone-free create orka-hello \
+          kmx --context kind-kmx-clone-free create --live orka-hello \
             --namespace orka-system --provider-type openai --model qwen2.5:3b \
             --secret local-provider-key \
             --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \

@@ -94,7 +94,7 @@ func TestQuickstartFollowUpsAreOrkaActions(t *testing.T) {
 	}
 	for i, want := range []string{
 		"kmx --context kind-test chat hello-world-agent --runtime orka --namespace orka-system 'ask it something else'",
-		"kmx --context kind-test create",
+		"kmx --context kind-test create --live",
 		"kmx --context kind-test orka status",
 	} {
 		if next[i] != want {
@@ -193,7 +193,7 @@ func TestQuickstartDriftedBundleOffersRemedies(t *testing.T) {
 	if !strings.Contains(err.Error(), "different configuration") {
 		t.Fatalf("lost the underlying drift explanation: %v", err)
 	}
-	if !strings.Contains(err.Error(), "kmx create") {
+	if !strings.Contains(err.Error(), "kmx create --live") {
 		t.Fatalf("missing the keep-and-rename remedy: %v", err)
 	}
 	if !strings.Contains(err.Error(), "delete the fixed "+QuickstartAgent) {

@@ -110,7 +110,7 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 	}
 }
 
-func TestWorkspaceKagentCreateAndPushStayOffline(t *testing.T) {
+func TestCreateWithoutLiveAuthorsKagentMember(t *testing.T) {
 	root, input, layout := t.TempDir(), filepath.Join(t.TempDir(), "input.md"), filepath.Join(t.TempDir(), "layout")
 	if err := os.WriteFile(input, []byte("Exact instructions.\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -119,12 +119,16 @@ func TestWorkspaceKagentCreateAndPushStayOffline(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"create", "greeter", "--workspace", root, "--runtime", "kagent", "--runtime-version", "v0.10.3", "--model", "fixture", "--instructions", input}, deps); err != nil {
+	if err := execute([]string{"create", "greeter", "--workspace", root, "--runtime", "kagent", "--model", "fixture", "--instructions", input}, deps); err != nil {
 		t.Fatal(err)
 	}
 	prepared, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	suite, err := workspace.Load(t.Context(), prepared)
+	if err != nil || suite.Runtime != (workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) {
+		t.Fatalf("wrong authored runtime: %v, %v", suite, err)
 	}
 	if err = execute([]string{"push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
 		t.Fatal(err)
@@ -141,7 +145,7 @@ func TestWorkspaceKagentCreateAndPushStayOffline(t *testing.T) {
 
 func TestWorkspaceRuntimeSelectorsRefuseBeforeConfigOrWrites(t *testing.T) {
 	for _, flags := range [][]string{
-		{"--runtime", "kagent"}, {"--runtime", "kagent", "--runtime-version", "v0.10.2"},
+		{"--runtime", "kagent", "--runtime-version", "v0.10.2"},
 		{"--runtime", "kagent", "--runtime-version", "v0.10.3", "--kagent-runtime", "python"},
 		{"--runtime", "orka", "--runtime-version", "v0.10.3"}, {"--kagent-runtime", "go"}, {"--runtime-version", ""},
 	} {
@@ -158,19 +162,19 @@ func TestWorkspaceRuntimeSelectorsRefuseBeforeConfigOrWrites(t *testing.T) {
 	}
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"create", "greeter", "--runtime", "kagent", "--runtime-version", "v0.10.3"}, deps); err == nil || !strings.Contains(err.Error(), "workspace") || *loads != 0 {
+	if err := execute([]string{"create", "--live", "greeter", "--runtime", "kagent", "--runtime-version", "v0.10.3"}, deps); err == nil || !strings.Contains(err.Error(), "offline authoring") || *loads != 0 {
 		t.Fatalf("suite selector changed live create: %v", err)
 	}
 }
 
 func TestWorkspaceCreateRefusesModeConflictsBeforeConfigOrWrites(t *testing.T) {
-	for _, flag := range []string{"namespace", "provider-type", "secret", "base-url", "out", "bundle-path", "tools", "task", "runtime", "no-apply", "dry-run", "context", "container-engine"} {
+	for _, flag := range []string{"namespace", "provider-type", "secret", "base-url", "out", "bundle-path", "tools", "task", "runtime", "no-apply", "dry-run", "context", "container-engine", "live"} {
 		t.Run(flag, func(t *testing.T) {
 			root := t.TempDir()
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
 			args := []string{"create", "greeter", "--workspace", root, "--model", "qwen-3.5-2b", "--instructions", "missing-file", "--" + flag}
-			if flag != "no-apply" && flag != "dry-run" {
+			if flag != "no-apply" && flag != "dry-run" && flag != "live" {
 				args = append(args, "unused")
 			}
 			err := execute(args, deps)
@@ -183,6 +187,43 @@ func TestWorkspaceCreateRefusesModeConflictsBeforeConfigOrWrites(t *testing.T) {
 			entries, err := os.ReadDir(root)
 			if err != nil || len(entries) != 0 {
 				t.Fatalf("invalid create wrote files: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
+func TestCreateDefaultModeRefusalsBeforeConfigOrWrites(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"name required", nil, "requires a name"},
+		{"one name", []string{"one", "two"}, "requires a name"},
+		{"invalid name", []string{"Invalid", "--model", "exact", "--instructions", "input"}, "name"},
+		{"required source", []string{"member"}, "--model and --instructions"},
+		{"nonterminal", []string{"member", "--model", "exact", "--instructions", "input"}, "--workspace"},
+		{"kagent requires source", []string{"member", "--runtime", "kagent"}, "--model and --instructions"},
+		{"kagent nonterminal", []string{"member", "--runtime", "kagent", "--model", "exact", "--instructions", "input"}, "--workspace"},
+		{"context", []string{"member", "--context", "unused"}, "--live"},
+		{"false live is offline", []string{"member", "--live=false", "--namespace", "unused"}, "--live"},
+		{"empty workspace", []string{"member", "--workspace="}, "non-empty --workspace"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			if err := os.WriteFile("input", []byte("Answer briefly.\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			err := execute(append([]string{"create"}, tc.args...), deps)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil || len(entries) != 1 || *loads != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
+				t.Fatalf("refusal wrote files/output or loaded config: %v, %v, %d, %q, %q", entries, err, *loads, &out, &diagnostics)
 			}
 		})
 	}
@@ -357,9 +398,15 @@ func TestWorkspaceProfileParseErrorsDoNotDiscloseContent(t *testing.T) {
 }
 
 func TestWorkspaceHelpAndCompletionHaveNoOperationalEffects(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.WriteFile("workspace.yaml", []byte("broken: [\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{
 		{"create", "--help"}, {"push", "--help"}, {"suite", "push", "--help"},
 		{"__complete", "create", "--workspace", ""},
+		{"__complete", "create", "--l"},
 		{"__complete", "push", "--workspace", ""},
 	} {
 		var out, diagnostics bytes.Buffer

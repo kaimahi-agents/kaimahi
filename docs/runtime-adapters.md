@@ -1,8 +1,10 @@
 # Runtime support
 
-Orka is the current default for create, chat, lift and quickstart. kagent has
-explicit create for preinstalled exact v0.10.2 and declarative bundle lift/status
-for preinstalled exact v0.10.3. agentsessions is eval-only
+Orka is the current default for `create --live`, chat, bundle lift and quickstart.
+Default `create` authors one native-Orka workspace member offline; `--live` is
+required for both runtimes' resource/bundle creation, including previews. kagent
+has explicit live create for preinstalled exact v0.10.2 and declarative bundle
+lift/status for preinstalled exact v0.10.3. agentsessions is eval-only
 until its lifecycle adapter lands; local reference-chat verification accompanies
 that evaluation path. None of these facts sets a preference in `kmx targets`.
 

@@ -210,7 +210,7 @@ func (a *App) kagentCaptureWithTimeout(ctx context.Context, timeout time.Duratio
 func (a *App) guardKagentCreate(ctx context.Context, opt CreateOptions) error {
 	// Do not reuse InvocationCommand here: it can contain the --task prompt.
 	// The mutation guard must never echo that prompt into diagnostics.
-	command := a.operationCommand("create", opt.Name, "--runtime", "kagent")
+	command := a.operationCommand("create", "--live", opt.Name, "--runtime", "kagent")
 	action := "create Kagent ModelConfig and Agent in " + opt.Namespace
 	if opt.Task != "" {
 		action += "; send one A2A message; Kagent stores the full task prompt, history, and answer in its database, default upstream session retention is unlimited, and Kubernetes audit policy may capture Service-proxy request and response bodies"

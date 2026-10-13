@@ -12,7 +12,7 @@ import (
 
 func TestAgentCreateAzureOfflineCLIEmitsOnlyReferencedSecret(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agents", "sample")
-	args := []string{"create", "sample", "--namespace", "orka-system", "--provider-type", "azure-openai", "--model", "chat-prod", "--azure-deployment", "chat-prod", "--base-url", "https://example.openai.azure.com", "--secret", "target-key", "--out", "-", "--bundle-path", path}
+	args := []string{"create", "--live", "sample", "--namespace", "orka-system", "--provider-type", "azure-openai", "--model", "chat-prod", "--azure-deployment", "chat-prod", "--base-url", "https://example.openai.azure.com", "--secret", "target-key", "--out", "-", "--bundle-path", path}
 	var out, diagnostics bytes.Buffer
 	deps, _ := testDependencies(&out, &diagnostics)
 	if err := execute(args, deps); err != nil {

@@ -86,7 +86,7 @@ not run for an existing Agent. The first Task uses the Agent's deployed Provider
 	flags.StringVarP(&opt.Output, "output", "o", "text", "output: text|json (not with --interactive)")
 	// No --agent flag: quickstart deploys the hello-world manifest kmx
 	// carries, so a flag naming a different agent would deploy one thing and
-	// question another. Your own agent is --interactive or `kmx create`,
+	// question another. Your own live agent is --interactive or `kmx create --live`,
 	// and asking any agent anything is `kmx chat`.
 	flags.StringVar(&opt.Task, "task", config.DefaultTask, "fixed-mode question; with --interactive, optional first Orka Task for a new Agent only (fixed default ignored)")
 	flags.StringVar(&wizard.Create.Instructions, "instructions", "", "file containing the system message (--interactive only)")

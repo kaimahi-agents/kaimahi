@@ -7,9 +7,12 @@ For work **on** Kaimahi; contribution/PR expectations are in
 ## Direction and current implementation
 
 **Orka remains the first-class/default platform.** Kaimahi tooling helps
-agents get onto it. `kmx create` without a runtime flag authors native
-Orka Provider + Agent resources with an optional Task. The explicit kagent
-path is intentionally narrower: create against preinstalled exact v0.10.2,
+agents get onto it. Default `kmx create <name>` authors one native-Orka
+workspace member offline, requiring an exact model and an instructions file.
+Create and push share workspace discovery; exact `--workspace` initializes
+without prompting. Resource/bundle creation, including previews and the no-name
+wizard, requires `kmx create --live`. Quickstart and console stay live.
+The explicit kagent path is intentionally narrower: create against preinstalled exact v0.10.2,
 and Go declarative bundle lift/status against preinstalled exact v0.10.3.
 There is no installer, upgrade, discovery, standalone chat or evaluation.
 It is not a conversion to Orka; see the
@@ -150,7 +153,7 @@ bin/kmx local down
 
 A bare `bin/kmx local up` installs the runtime without an Agent: kind, Ollama, the
 model and pinned Orka with its keyless `local` Provider. Author your own Agent
-with `bin/kmx create`, or use `bin/kmx quickstart --interactive` for guided
+with `bin/kmx create --live`, or use `bin/kmx quickstart --interactive` for guided
 creation. `kmx status` is the Orka-only runtime report; bundle-aware
 `bundle status <bundle-dir>` is a separate command. `orka status` shares root
 status's table-only runtime contract; no root bundle or suite observer is added.

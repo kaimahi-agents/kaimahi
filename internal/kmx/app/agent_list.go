@@ -77,7 +77,7 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	if len(rows) == 0 {
 		fmt.Fprintln(a.Out, "  none")
 		a.notef("  Nothing in %s. `%s` makes one.", namespace,
-			a.operationCommand("create", "<name>", "--namespace", namespace))
+			a.operationCommand("create", "--live", "<name>", "--namespace", namespace))
 		return nil
 	}
 	humanTable(a.Out, orkaAgentColumns, rows)

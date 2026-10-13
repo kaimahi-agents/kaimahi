@@ -946,7 +946,7 @@ func (m agentTUIModel) View() tea.View {
 		header += " · discovering environments…"
 	}
 	header = accent.Render(header)
-	footer := []string{fit("h/l ←/→ columns · j/k ↑/↓ agents · / commands · n create · r refresh · R runs · ? help · q quit")}
+	footer := []string{fit("h/l ←/→ columns · j/k ↑/↓ agents · / commands · n create live · r refresh · R runs · ? help · q quit")}
 	if m.status != "" {
 		footer = append([]string{fit(m.status)}, footer...)
 	}
@@ -988,7 +988,7 @@ func (m agentTUIModel) View() tea.View {
 		body = "KEYS & COMMANDS\n\n" +
 			"h/l or ←/→  switch columns; j/k or ↑/↓  select agent\n" +
 			"<enter> actions · i inspect · b bundle · R recent runs (Orka) · c chat · L lift local agent · r refresh\n\n" +
-			"n create agent in the focused environment\n" +
+			"n create live agent (--live) in the focused environment\n" +
 			"/inspect [agent]     details in the focused column\n" +
 			"/chat [agent]        open chat, /exit returns here\n" +
 			"/lift <agent> <env>  lift a local native Orka agent\n" +
@@ -1116,7 +1116,7 @@ func (m agentTUIModel) columnView(index, width, height int) string {
 		lines = append(lines, border.Render("  "+strings.Repeat("─", max(0, inner-2))))
 	}
 	if len(c.Agents) == 0 && !c.Loading && c.Error == "" && c.Env.Name != "" {
-		empty := "<no agents here, n to create a new one>"
+		empty := "<no live agents here, n to create a new one>"
 		for _, line := range strings.Split(ansi.Hardwrap(empty, inner, true), "\n") {
 			if m.focus == index {
 				line = selected.Render(line)

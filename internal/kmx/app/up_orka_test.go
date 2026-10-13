@@ -256,7 +256,7 @@ func TestOrkaOnlyUpPointsAtNativeAuthoring(t *testing.T) {
 	if err := a.Up(""); err != nil {
 		t.Fatalf("a bare Orka-only `kmx local up` failed: %v\n%s", err, errOut)
 	}
-	if !strings.Contains(errOut.String(), "kmx --context kind-test create") {
+	if !strings.Contains(errOut.String(), "kmx --context kind-test create --live") {
 		t.Errorf("the Orka-only run offers no native authoring route:\n%s", errOut)
 	}
 	for _, command := range []string{"plane", "migrate"} {

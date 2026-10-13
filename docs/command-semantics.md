@@ -40,7 +40,7 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 
 | Previous route | Current route | Contract |
 |---|---|---|
-| `agent create [name]` | `create [name]` | Live Orka authoring remains the default; explicit `--workspace` authors offline. Exact kagent v0.10.2 create stays opt-in. |
+| `agent create [name]` | `create --live [name]` | Preserve resource/bundle creation with explicit `--live` for both runtimes; exact kagent v0.10.2 stays opt-in. Default `create <name>` now authors one native-Orka workspace member offline. |
 | `agent chat <name> [message...]` | `chat <name> [message...]` | Interactive Orka session, not workspace execution. |
 | `agent run [<bundle-dir>]` | `run [<bundle-dir>]` | One Task; retain `--agent` selection, answer-only stdout and pending/result contracts. |
 | `agent show <name>` / `agent list` | `orka show <name>` / `orka list` | Live Orka detail/inventory, not workspace inspection. Show still requires namespace. |
@@ -109,10 +109,22 @@ or no complete observed case identity in either receipt remains incompatible.
 
 ## Offline suite workspace
 
-`create <name> --workspace <directory> --model <model> --instructions <file>`
-authors one tool-free native-Orka member offline. It accepts optional description,
-refuses live-create selectors and leaves default create/bundle output unchanged.
-No Kubernetes configuration, builder or model call is needed.
+`create <name> --model <model> --instructions <file> [--workspace <directory>]`
+authors one tool-free native-Orka member offline by default. Model and an
+instructions file are required; description is optional. Create and push share
+nearest-ancestor workspace discovery. An exact `--workspace` override initializes
+a missing workspace without a prompt. Without a workspace, terminal create asks
+`Start one here? [Y/n]`; nonterminal or redirected use refuses with an explicit
+`--workspace` hint. Invalid nearest markers refuse without fallback; an existing
+one-member workspace refuses a second member without changing source.
+
+`create --live` preserves the resource/bundle path and no-name Orka wizard,
+including native `--no-apply`, `--dry-run` and `--out -` previews. Both runtimes
+require `--live`; `--runtime kagent` alone is not a compatibility route. Live-only
+flags refuse before configuration/writes, and `--workspace` conflicts with
+`--live`. Live mode bypasses discovery; quickstart and console remain live.
+Help/completion does not resolve, prompt, mutate or load operational configuration.
+Default authoring needs no Kubernetes configuration, builder or model call.
 
 `push <reference>` discovers the nearest ancestor `workspace.yaml`;
 `--workspace <directory>` instead selects that exact directory, without fallback.
@@ -124,7 +136,7 @@ member image requirements are empty. Registry auth, plain-HTTP and non-atomic ta
 replacement remain as documented. Old `suite push <directory> <reference>` retains
 extracted-artifact transfer behavior without workspace discovery; suite push no
 longer accepts `--workspace` or one positional reference. Root push refuses two
-positional arguments. This does not change create's default.
+positional arguments.
 Workspace evaluation and reference lift are not implemented; these commands
 create no evaluation or promotion evidence. See [suite workspace](suite-workspace.md).
 
@@ -231,9 +243,10 @@ preserve raw and answer-only stdout.
    generic runtime setup family; a name cannot imply installer support.
 3. **Capability view:** `kmx targets` is implemented for #289; retain that
    spelling and its read-only/offline-default contract rather than adding synonyms.
-4. **Authoring/execution verbs:** reconcile applying `create` with offline
-   `new`, `evaluate` with `test`, and root `run` with canvas-service `run start`
-   through #276 and its authoring/execution work. Their scopes differ.
+4. **Authoring/execution verbs:** default `create` now authors offline;
+   `create --live` retains applying creation. Reconcile `evaluate` with `test`
+   and root `run` with canvas-service `run start` through #276 and its
+   authoring/execution work. Their scopes differ.
 5. **Runtime selection:** settle operator/saved configuration versus public
    selection through #224/#238; retain current capabilities in rename slices.
 6. **Target flags:** decide `--to-*` versus `--context/--namespace` with bundle

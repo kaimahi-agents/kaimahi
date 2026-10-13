@@ -21,8 +21,11 @@ unmet upstream need.
 Generated YAML should remain readable, diffable and usable with the
 underlying tools. Do not conceal ownership inside an entry point.
 
-Authoring defaults to native Orka. [orka.md](orka.md) records that recommendation,
-while `kmx create --runtime kagent <name>` provides one deliberately
+Default `kmx create` authors one native-Orka workspace member offline;
+[the workspace guide](suite-workspace.md) records discovery and explicit-root
+initialization. `kmx create --live` retains resource/bundle creation and its
+previews. [orka.md](orka.md) records the native runtime recommendation,
+while `kmx create --live --runtime kagent <name>` provides one deliberately
 narrow direct target for an already-installed exact Kagent v0.10.2. It does not
 translate existing resources to Orka or establish a general cross-runtime
 lifecycle. The isolated conversion spike that once explored translation is

@@ -290,6 +290,9 @@ func TestKagentOfflineArtifactAndPortableBundleNeedNoPATH(t *testing.T) {
 	if err := a.CreateAgent(opt); err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(diagnostics.String(), "kmx create --live --runtime kagent") {
+		t.Fatalf("offline advice must select kagent explicitly: %s", &diagnostics)
+	}
 	wantBundle, err := scaffold.GenerateKagent(scaffold.KagentSpec{
 		Name: "sample", Namespace: "agents", Description: "Sample Kagent agent",
 		Runtime: "go", Instructions: "Answer briefly.", ProviderType: "openai",

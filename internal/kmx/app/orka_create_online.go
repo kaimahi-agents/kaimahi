@@ -94,7 +94,7 @@ func (a *App) guardOrkaMutation(ctx context.Context, opt CreateOptions, reconcil
 	}
 	command := a.InvocationCommand
 	if command == "" {
-		command = a.operationCommand("create", opt.Name)
+		command = a.operationCommand("create", "--live", opt.Name)
 	}
 	action := "create Orka Provider and Agent in " + opt.Namespace
 	if opt.Task != "" && !opt.DryRun {
