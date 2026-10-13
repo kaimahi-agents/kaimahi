@@ -33,6 +33,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   model/Task execution, suite CLI, lift gate or runtime-dispatch seam is added.
   [Native workspace profiles](docs/suite-workspace.md).
 
+- Internal read-only digest-lift planning for one-member native suites: bounded
+  exact registry/local-layout retrieval, source-free closed packaged loading,
+  mandatory private passing-receipt coherence and exact target/binding/runtime
+  checks. GET-only review refuses resource drift/adoption and retains evaluated
+  UID/generation/spec proof. No CLI, apply, admission, cross-target promotion or
+  authenticated-evidence claim is enabled. [Planning boundary](docs/suite-workspace.md#internal-digest-lift-planning-boundary).
+
 - One-member workspace authoring/prepare/load supports explicit kagent v0.10.3
   Go/linux-amd64 alongside default Orka. Runtime is bound in private native
   metadata and the exact OCI manifest; publication copies that prepared graph
@@ -125,6 +132,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Python remains render-only.
 
 ### Breaking
+
+- Orka chart installs now use `kmx.kaimahi.dev/installed`, matching the KMX
+  label/API-group domain. Clusters installed by an older kmx retain
+  `kmx.kaimahi.ai/installed` in their Helm values and are no longer recognized
+  as kmx-owned for repeat installation; there is no legacy-label fallback.
+  For a disposable local kind cluster you own, run `kmx local down` then
+  `kmx local up` with the same context and cluster settings to reinstall.
+  This deletes the cluster and its Tasks, Secrets, volumes and model data.
+  On a persistent cluster, back up Orka resources, Secrets, volumes and the
+  snapshot key before an operator-managed fresh install; see
+  [Orka installation](docs/orka.md#preserve-the-charts-generated-snapshot-key).
+  Relabeling live objects with `kubectl label` alone does not update the saved
+  Helm values used for ownership checks.
 
 - Root `kmx create` now defaults to offline workspace authoring, requiring a
   member name, exact `--model` and file-valued `--instructions`. It shares

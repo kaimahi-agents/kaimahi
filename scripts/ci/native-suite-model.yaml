@@ -1,0 +1,62 @@
+# Purpose-built CPU fixture in the Orka shard's exclusively owned cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: native-suite-aikit
+  namespace: orka-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: native-suite-aikit
+  template:
+    metadata:
+      labels:
+        app: native-suite-aikit
+    spec:
+      containers:
+        - name: model
+          image: ghcr.io/kaito-project/aikit/qwen3.5:2b@sha256:d838c5eebf533b5b73f67cc7f4984921f87d64d28e4a52d482740b667f46b8b4
+          imagePullPolicy: IfNotPresent
+          args: ["--config-file=/config.yaml"]
+          env:
+            - name: LOCALAI_FORCE_META_BACKEND_CAPABILITY
+              value: cpu
+          resources:
+            requests:
+              cpu: "1"
+              memory: 3Gi
+            limits:
+              cpu: "4"
+              memory: 4Gi
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /config.yaml
+              subPath: config.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: native-suite-aikit
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: native-suite-aikit
+  namespace: orka-system
+spec:
+  type: ClusterIP
+  selector:
+    app: native-suite-aikit
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

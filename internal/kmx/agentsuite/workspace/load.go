@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
 
 // PackagedCase holds the full authored bytes bound by native case metadata.
@@ -47,6 +48,26 @@ func Load(ctx context.Context, p *Prepared) (*NativeSuite, error) {
 		// Strict verifier diagnostics can quote untrusted metadata keys or values.
 		return nil, errors.New("packaged native suite verification failed")
 	}
+	return loadNativeFiles(ctx, files, p.Descriptor.Digest.String())
+}
+
+// LoadArtifact validates the closed native profile from a digest-verified
+// snapshot. Source fingerprints, names and preparation records are not inputs.
+func LoadArtifact(ctx context.Context, artifact *suiteoras.Artifact) (*NativeSuite, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if artifact == nil {
+		return nil, errors.New("packaged native suite verification failed")
+	}
+	files := artifact.Files()
+	if _, err := validateNative(files); err != nil {
+		return nil, errors.New("packaged native suite verification failed")
+	}
+	return loadNativeFiles(ctx, files, artifact.Descriptor().Digest.String())
+}
+
+func loadNativeFiles(ctx context.Context, files map[string][]byte, digest string) (*NativeSuite, error) {
 	var suite spec.Suite
 	if err := spec.Unmarshal(files["agentsuite.json"], &suite); err != nil {
 		return nil, errors.New("invalid packaged suite manifest")
@@ -63,10 +84,10 @@ func Load(ctx context.Context, p *Prepared) (*NativeSuite, error) {
 	if err != nil {
 		return nil, errors.New("invalid packaged graph identity")
 	}
-	// verify guarantees exactly one member, composition and profile, with a
-	// complete ordered case inventory. Its fresh map shares no durable cache data.
+	// Both entry points guarantee exactly one member, composition and profile,
+	// with complete ordered cases and a caller-owned map of verified bytes.
 	result := &NativeSuite{
-		Digest:             p.Descriptor.Digest.String(),
+		Digest:             digest,
 		GraphDigest:        graphDigest,
 		Name:               suite.Name,
 		MemberID:           member.ID,

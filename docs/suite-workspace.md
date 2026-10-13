@@ -11,12 +11,12 @@ Orka remains the authoring default; `--runtime kagent` authors the private Go
 v0.10.3/linux-amd64 profile only. Both `eval` and `push --evaluation` refuse it
 with `kagent evaluation on the suite path isn't available yet`.
 Private kagent preparation, new-object placement and observation helpers consume
-this packaged profile. They are not wired to a CLI or W250's release-lift seam;
+this packaged profile. They are not wired to a CLI or the release-lift seam;
 suite evaluation, status and promotion remain unavailable. Occupied targets
 refuse without a complete caller-retained observation; qualified repeat is
 read-only, not update/adoption or restart recovery.
-Orka evaluation is covered by hermetic command/Task tests; real native CLI qualification
-is deferred. Standalone registry-package evaluation and registry-reference lift
+Orka evaluation has hermetic command/Task tests and a pinned two-case native
+workspace CI qualifier. Standalone registry-package evaluation and registry-reference lift
 are not available. Existing `agent.yaml` creation, evaluation and lift remain
 separate and unchanged.
 
@@ -158,6 +158,19 @@ Ordinary push remains explicitly unevaluated. Extracted-directory `suite push`
 does not gain this flag. `eval diff/from-sessions` and `bundle evaluate` retain
 their existing formats and behavior; native receipts are not bundle lift gates.
 
+### Qualification boundary
+
+The existing Orka runtime CI shard now includes a checkout-only native scenario
+using the pinned CPU AIKit model, the two public capital/arithmetic cases and the
+installer's existing Secret reference in its exclusively owned kind cluster.
+It attempts one full evaluation without retry, independently reads live identity,
+spec and result evidence, transfers exact S through a local layout, and checks
+ownership, case-mutation and unsupported-evaluator refusals. Only passing receipt
+metadata and a scalar qualification report may be uploaded. Runtime/model and
+Kubernetes audit storage can still retain inputs. A successful run qualifies this
+fixed scenario; hermetic tests alone do not establish runtime/model execution.
+Release-reference Lift and standalone package evaluation remain unavailable.
+
 ## Publish
 
 ```sh
@@ -266,6 +279,33 @@ source or the preparation record, and publication can require an expected OCI
 manifest digest. This identity check alone is not evaluation evidence or release
 authorization. Workspace evaluation adds passing observations through the CLI;
 registry release lift remains unavailable.
+
+## Internal digest-lift planning boundary
+
+Internal release planning can read an exact SHA256 suite manifest from a registry
+or local OCI layout without authored source, a preparation fingerprint or a build.
+It retains original packaged bytes; it never re-archives or publishes them.
+Only the selected layout graph is read, not unrelated references. The reader
+bounds the manifest to 1 MiB, the exact empty config to two bytes, compressed
+content to 9 MiB, raw decompressed tar to 10 MiB, 256 entries, 135 regular files,
+1 MiB per file and 8 MiB total file content before public/native validation.
+Links, special files, PAX records, unsafe/duplicate paths and trailing or multiple
+gzip streams refuse. Existing general suite push/pull limits are unchanged.
+
+The application `PrepareReleaseLift` operation requires an explicitly selected
+private full-passing native receipt. It checks packaged coherence and exact
+observed target, inference and runtime equality. It returns a typed identity-only
+review: absent resources may be planned for creation; existing resources require
+all exact suite markers and the evaluated UID/generation/whole-spec proof with
+current-generation readiness. Replacement, drift, adoption and unknown state
+refuse. Planning makes GETs only: no server dry-run/admission, Tasks, writes or
+placement records. Returned summaries cannot mutate the retained plan.
+
+This is an internal read-only boundary, not a runnable `kmx lift` command or write
+authority. Guarded apply and explicit cross-target promotion are not available.
+Unsigned private receipts establish supplied observations, not signer
+authentication or destination execution proof. Native `openai` Providers are the
+only inference binding supported here; host Foundry/Copilot execution is not covered.
 
 Preparation state is outside authored source, under the KMX state directory
 (`KMX_HOME` overrides it). Cache corruption refuses reuse. Keep this state private;

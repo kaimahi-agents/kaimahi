@@ -142,6 +142,7 @@ jobs:
           python3 scripts/test_kagent_lift_audit.py
           python3 scripts/test_kagent_lift_qualify.py
           python3 scripts/test_kagent_lift_ci.py
+          python3 scripts/test_suite_native.py
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken
@@ -968,7 +969,7 @@ jobs:
           v = json.load(sys.stdin)
           assert v["controller"]["mode"] == "harness-v2", v
           assert v["fullnameOverride"] == "orka-api", v
-          assert v["labels"]["kmx.kaimahi.ai/installed"] == "true", v
+          assert v["labels"]["kmx.kaimahi.dev/installed"] == "true", v
           '
       # Rerunning is how an agent in a harness uses this command. The third
       # run must REUSE the exact bundle it already wrote — not recreate it,
@@ -1441,7 +1442,9 @@ jobs:
   e2e-orka-runtime:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Sequential AIKit cold pull/startup (8m), warmup (3m), and two 5m cases
+    # follow the unchanged Ollama proof; no evaluation retry is permitted.
+    timeout-minutes: 45
     env:
       KIND_CLUSTER: kmx-orka
       KUBE_CTX: kind-kmx-orka
@@ -1650,7 +1653,7 @@ jobs:
           v = json.load(sys.stdin)
           assert v["controller"]["mode"] == "harness-v2", v
           assert v["fullnameOverride"] == "orka-api", v
-          assert v["labels"]["kmx.kaimahi.ai/installed"] == "true", v
+          assert v["labels"]["kmx.kaimahi.dev/installed"] == "true", v
           '
           if kubectl --context kind-kmx-orka -n orka-system get deploy orka-agent-harness-wrapper --ignore-not-found -o name | grep -q .; then
             echo "the harness wrapper was installed instead of harness-v2"; exit 1
@@ -1786,10 +1789,31 @@ jobs:
           phase=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | \
             python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-hello"]; assert len(matches)==1, matches; print(matches[0].get("status",{}).get("phase",""))')
           test "$phase" = Succeeded
+      - name: Native suite — qualify workspace evaluation and exact transfer
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          echo 'KMX_NATIVE_STARTED=1' >> "$GITHUB_ENV"
+          python3 scripts/ci/suite-native.py kind-kmx-orka "$RUNNER_TEMP/kmx-suite-native"
+      - name: Upload only passing native metadata
+        if: steps.changes.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-suite-qualification
+          path: |
+            ${{ runner.temp }}/kmx-suite-native/artifacts/passing.json
+            ${{ runner.temp }}/kmx-suite-native/artifacts/qualification.json
+          if-no-files-found: error
+      - name: Native qualification failure — payload-free status
+        if: failure() && steps.changes.outputs.docs_only != 'true'
+        run: |
+          if [ "${KMX_NATIVE_STARTED:-}" = 1 ]; then
+            echo 'native qualification failed; private payloads and diagnostics withheld'
+          fi
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'
         run: |
-          if [ "${KMX_ORKA_RUNTIME_CREATED:-}" = 1 ]; then
+          # Wide legacy diagnostics must never inspect the native scenario.
+          if [ "${KMX_ORKA_RUNTIME_CREATED:-}" = 1 ] && [ "${KMX_NATIVE_STARTED:-}" != 1 ]; then
             kubectl --context kind-kmx-orka get pods -A || true
             kubectl --context kind-kmx-orka -n orka-system get providers.core.orka.ai,agents.core.orka.ai,tasks.core.orka.ai,tools.core.orka.ai -o wide || true
             for deployment in orka-api-controller kmx-k8s-tool; do
