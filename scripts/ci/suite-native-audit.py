@@ -7,6 +7,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import uuid
 
 SECRET_METADATA = 'go-template={"Kind":{{printf "%q" .kind}},"Metadata":{"Name":{{printf "%q" .metadata.name}},"Namespace":{{printf "%q" .metadata.namespace}},"UID":{{printf "%q" .metadata.uid}},"ResourceVersion":{{printf "%q" .metadata.resourceVersion}}},"Terminating":{{if .metadata.deletionTimestamp}}true{{else}}false{{end}}}'
 PRESENCE = re.compile(r'go-template=secret\n\{\{range \$key, \$_ := \.data\}\}\{\{if eq \$key "[-._a-zA-Z0-9]+"\}\}present\{\{end\}\}\{\{end\}\}')
@@ -75,7 +76,43 @@ def classify(args, raw=b""):
     if name and not re.fullmatch(r"[a-zA-Z0-9._-]{1,253}", name):
         raise ValueError("audit-name")
     return {"verb": verb, "resource": resource, "name": name, "persistent": persistent,
+            "admission": verb in {"create", "replace"} and "--dry-run=client" not in tail,
+            "taskAttempt": resource == "Task" and verb in {"create", "replace"},
             "stdinDigest": hashlib.sha256(raw).hexdigest(), "stdinBytes": len(raw)}
+
+
+def completed(frames):
+    """Join request intent/completion; interrupted attempts cannot disappear."""
+    pending, result, order = {}, {}, []
+    for frame in frames:
+        identity, stage = frame.get("requestID"), frame.get("stage")
+        if not identity or stage not in {"intent", "complete"} or frame["verb"] == "blocked":
+            raise ValueError("audit-frame")
+        if stage == "intent":
+            if identity in pending or identity in result:
+                raise ValueError("audit-repeat")
+            pending[identity] = frame
+            order.append(identity)
+        else:
+            intent = pending.pop(identity, None)
+            if intent is None or intent["verb"] == "port-forward":
+                raise ValueError("audit-completion")
+            expected = {k: v for k, v in intent.items() if k != "stage"}
+            actual = {k: v for k, v in frame.items() if k not in {"stage", "returnCode"}}
+            if expected != actual or not isinstance(frame.get("returnCode"), int):
+                raise ValueError("audit-completion")
+            result[identity] = frame
+    for identity, intent in pending.items():
+        if intent["verb"] != "port-forward":
+            raise ValueError("audit-interrupted")
+        result[identity] = intent
+    return [result[identity] for identity in order]
+
+
+def verify_read_only(frames):
+    if any(f["verb"] not in {"get", "config", "version"} or f.get("returnCode") != 0 or
+           f["persistent"] or f.get("admission") or f.get("taskAttempt") for f in frames):
+        raise ValueError("audit-readonly")
 
 
 def verify(frames, member, rows):
@@ -106,13 +143,14 @@ def main():
         args = sys.argv[1:]
         check_scope(args, os.environ["KMX_NATIVE_CONTEXT"])
         raw = sys.stdin.buffer.read() if "-f" in args else b""
-        frame = classify(args, raw)
+        frame = {**classify(args, raw), "requestID": uuid.uuid4().hex}
         real = os.environ["KMX_NATIVE_KUBECTL"]
+        append({**frame, "stage": "intent"})
         if frame["verb"] == "port-forward":
-            append(frame)  # intent only; the existing client proves owned bind
+            # The existing client proves owned bind; execv owns its lifecycle.
             os.execv(real, [real, *args])
         code = subprocess.run([real, *args], input=raw if "-f" in args else None, check=False).returncode
-        append({**frame, "returnCode": code})
+        append({**frame, "stage": "complete", "returnCode": code})
         return code
     except Exception:
         append({"verb": "blocked", "resource": "boundary", "name": "", "persistent": False})

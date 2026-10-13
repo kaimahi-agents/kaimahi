@@ -143,6 +143,7 @@ jobs:
           python3 scripts/test_kagent_lift_qualify.py
           python3 scripts/test_kagent_lift_ci.py
           python3 scripts/test_suite_native.py
+          python3 scripts/test_suite_native_lift.py
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken
@@ -1789,7 +1790,7 @@ jobs:
           phase=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | \
             python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-hello"]; assert len(matches)==1, matches; print(matches[0].get("status",{}).get("phase",""))')
           test "$phase" = Succeeded
-      - name: Native suite — qualify workspace evaluation and exact transfer
+      - name: Native suite — qualify evaluation, exact transfer and CLI lift
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           echo 'KMX_NATIVE_STARTED=1' >> "$GITHUB_ENV"

@@ -405,7 +405,7 @@ class AuditTests(unittest.TestCase):
             result = subprocess.run([str(wrapper), "--context", "kind-owned", "get", "pods"], env=env, capture_output=True, timeout=10)
             self.assertEqual(result.returncode, 0)
             self.assertEqual(result.stdout, b"PRIVATE_API_CANARY\n")  # private parent capture only
-            frames = [json.loads(line) for line in audit.read_text().splitlines()]
+            frames = A.completed([json.loads(line) for line in audit.read_text().splitlines()])
             self.assertEqual(frames[0].get("returnCode"), 0, "audit must record actual command success")
             self.assertNotIn("PRIVATE_API_CANARY", audit.read_text())
             builder = root / "docker"

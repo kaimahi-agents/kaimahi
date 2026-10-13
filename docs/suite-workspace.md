@@ -164,12 +164,25 @@ The existing Orka runtime CI shard now includes a checkout-only native scenario
 using the pinned CPU AIKit model, the two public capital/arithmetic cases and the
 installer's existing Secret reference in its exclusively owned kind cluster.
 It attempts one full evaluation without retry, independently reads live identity,
-spec and result evidence, transfers exact S through a local layout, and checks
-ownership, case-mutation and unsupported-evaluator refusals. Only passing receipt
-metadata and a scalar qualification report may be uploaded. Runtime/model and
+spec and result evidence, and transfers exact S through a local layout and a
+pinned private Distribution registry. With authored source withheld, root CLI
+`lift --plan`, apply and repeat apply must reuse the exact evaluated pair without
+admission, writes or Tasks for both transports. A separate `run --agent` creates
+one fresh Task per transport; authored text assertions, input/result digests and
+pair identity are independently checked. This is separate execution qualification,
+not invocation authorization conferred by serialized lift output.
+
+Refusals cover missing evidence, different S with the same G, a coherent private
+namespace-UID counterfactual (not destructive namespace replacement), foreign
+ownership, a distinct Ready inference identity and terminal spec drift. Altered
+evidence has an original-identity positive control. The product audit records
+request intent before forwarding, distinguishes admission from persistent writes
+and Task attempts, and refuses incomplete/failed requests. Only passing receipt
+metadata and a payload-free qualification report may be uploaded. Runtime/model and
 Kubernetes audit storage can still retain inputs. A successful run qualifies this
 fixed scenario; hermetic tests alone do not establish runtime/model execution.
-Release-reference Lift and standalone package evaluation remain unavailable.
+Standalone package evaluation remains unavailable. Promotion, absent-resource CLI
+creation and partial CLI outcomes are not established by this fixed reuse scenario.
 
 ## Publish
 

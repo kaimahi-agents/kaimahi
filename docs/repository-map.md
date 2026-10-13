@@ -51,7 +51,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `pkg/` | — | — | experimental KMX environment setup, AgentSuite and deployment contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
-| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 55 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
+| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 56 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
 | `docs/` | 35 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -194,9 +194,9 @@ Packaging tests require every retained asset to be readable and reject retired
 plane, egress and observability assets. Setup does not deploy a model plane,
 custom scrape configuration or workbook.
 
-## `scripts/` — 59 tracked files, native helpers and scaffolding
+## `scripts/` — 60 tracked files, native helpers and scaffolding
 
-**Reference coverage:** 49 of the 59 are named by something outside themselves,
+**Reference coverage:** 50 of the 60 are named by something outside themselves,
 and 10 are named by nothing. The ten mutation specifications are discovered by
 glob. Map and repository-map checker mentions are not caller evidence; textual
 references, including script cross-references and test data, are not necessarily
@@ -207,7 +207,7 @@ invocations or active CI coverage.
 | Class | Count | Files |
 |---|---|---|
 | **Embedded packaging** — native provisioning, guard and Tool helpers | 4 | `aks-up.sh`, `aks-down.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
-| **Scaffolding** — checkers, self-tests and release packaging | 30 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py`, `test_kagent_lift_qualification.py`, `test_kagent_lift_audit.py`, `test_kagent_lift_qualify.py`, `test_kagent_lift_ci.py`, `test_suite_native.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 31 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_eval_loop.py`, `test_eval_runner.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py`, `test_kagent_lift_qualification.py`, `test_kagent_lift_audit.py`, `test_kagent_lift_qualify.py`, `test_kagent_lift_ci.py`, `test_suite_native.py`, `test_suite_native_lift.py` |
 | **Scaffolding** — native/eval CI and qualification fixtures | 14 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `live-eval-loop.sh`, `eval-loop.py`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py`, `kagent-lift.sh`, `kagent-lift.py`, `kagent-lift-fixture.py`, `kagent-lift-audit.py`, `suite-native.py`, `suite-native-audit.py`, `native-suite-model.yaml` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
 | **Scaffolding** — retired-command scanner's exact inert exceptions | 1 | `legacy-runtime-allowlist.json` |
@@ -264,10 +264,13 @@ None of these files is embedded or installed.
 shard after its legacy Ollama proof. It creates the fixed `native-suite-model.yaml`
 AIKit workload in that exclusively owned cluster and installs the
 `suite-native-audit.py` product command wrapper. Hygiene calls
-`test_suite_native.py` for hermetic independent-readback, hash, audit, refusal and
-privacy checks. A successful scenario qualifies the fixed two-case workspace
-path against the pinned model/runtime. Passing artifacts contain only private
-receipt metadata and scalar qualification evidence. Existing cluster deletion
+`test_suite_native.py` and `test_suite_native_lift.py` for hermetic independent
+readback, hash, intent/completion audit, refusal and privacy checks. A successful
+scenario qualifies the fixed two-case workspace path, exact registry/local root
+CLI lift reuse with source withheld, separate fresh answer Tasks and no-effect
+lift refusals against the pinned model/runtime. It does not qualify promotion,
+absent-resource CLI creation or partial outcomes. Passing artifacts contain only
+private receipt metadata and payload-free qualification evidence. Existing cluster deletion
 owns runtime/model cleanup. These files are checkout-only scaffolding, not an
 installer or new CLI/API capability.
 
