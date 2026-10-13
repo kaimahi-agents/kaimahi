@@ -28,8 +28,14 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   `kmx agent` is removed entirely, without an alias or retirement stub.
   Root `status` and `orka status` retain the same table-only Orka runtime report;
   do not add root bundle status or a suite observer.
-- Opt-in `create --workspace` authors one tool-free native-Orka suite member
-  offline; root `push [--workspace DIR] REF` discovers the nearest ancestor
+- Opt-in `create --workspace` authors one tool-free native suite member
+  offline: Orka by default, or explicit kagent v0.10.3 Go/linux-amd64 with
+  `--runtime kagent --runtime-version v0.10.3`. Runtime is member-owned and
+  packaged in KMX-private supplemental metadata, not a public AgentSuite field.
+  Native kagent author/prepare/load/push does not enable suite placement,
+  evaluation, status or gates; existing Orka-only consumers refuse that profile.
+  Python/RemoteMCP suite authoring remains unsupported. Missing runtime in old
+  workspace source stays Orka only; live kagent create stays exact v0.10.2. Root `push [--workspace DIR] REF` discovers the nearest ancestor
   `workspace.yaml`, or selects an exact root without fallback with `--workspace`.
   Workspace push names its absolute root and prepared OCI manifest digest on
   stderr, then copies that exact graph and authored cases.

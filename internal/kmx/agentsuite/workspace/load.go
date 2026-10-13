@@ -30,6 +30,8 @@ type NativeSuite struct {
 	CompositionDigest  string
 	BuildProfileDigest string
 	RendererVersion    string
+	Runtime            RuntimeProfile
+	ExecutionProfile   string
 	Cases              []PackagedCase
 	RequiredImages     []string
 }
@@ -49,8 +51,8 @@ func Load(ctx context.Context, p *Prepared) (*NativeSuite, error) {
 	if err := spec.Unmarshal(files["agentsuite.json"], &suite); err != nil {
 		return nil, errors.New("invalid packaged suite manifest")
 	}
-	var native nativeRecord
-	if err := spec.Unmarshal(files[nativePath], &native); err != nil {
+	native, profile, err := nativeProfile(files)
+	if err != nil {
 		return nil, errors.New("invalid packaged native metadata")
 	}
 	var member spec.Agent
@@ -76,6 +78,8 @@ func Load(ctx context.Context, p *Prepared) (*NativeSuite, error) {
 		CompositionDigest:  suite.Compositions[0].Digest,
 		BuildProfileDigest: suite.BuildProfiles[0].Digest,
 		RendererVersion:    native.RendererVersion,
+		Runtime:            profile,
+		ExecutionProfile:   native.ExecutionProfile,
 		Cases:              make([]PackagedCase, 0, len(native.Cases)),
 		RequiredImages:     []string{},
 	}

@@ -1,13 +1,15 @@
-# Author and publish a one-member native-Orka suite
+# Author and publish a one-member native suite
 
 A workspace is editable source. Its prepared AgentSuite is an immutable OCI
-artifact, identified by its manifest digest. The native-Orka execution profile
-requires no member images; authoring and publication do not contact Kubernetes,
+artifact, identified by its manifest digest. Native Orka and exact-v0.10.3 Go
+kagent declarations require no member images; authoring and publication do not contact Kubernetes,
 run a model or invoke Docker/buildx.
 
 **Supported:** offline creation, preparation and publication of one tool-free
-member with an exact OpenAI-compatible model. Workspace evaluation and
-registry-reference lift are not available. Existing `agent.yaml` creation,
+member with an exact OpenAI-compatible model. Orka remains the authoring
+default; explicit kagent authoring is Go v0.10.3, linux/amd64 only. kagent suite
+placement, evaluation, status and promotion are not enabled by this profile.
+Workspace evaluation and registry-reference lift are not available. Existing `agent.yaml` creation,
 evaluation and lift remain separate and unchanged.
 
 ## Create
@@ -25,11 +27,27 @@ kmx create greeter --workspace . \
   --model qwen-3.5-2b --instructions ./instructions.md
 ```
 
+To author the offline kagent profile instead:
+
+```sh
+kmx agent create greeter --workspace . --runtime kagent --runtime-version v0.10.3 \
+  --kagent-runtime go --model fixture-model --instructions ./instructions.md
+```
+
+The runtime is an authored member declaration, not a deployment-time switch.
+`runtime.id`, `runtime.version` and `runtime.engine` select the closed profile;
+kagent requires exact `v0.10.3` and `go`. Python, unsupported versions and
+contradictory/partial declarations refuse before authoring. `--runtime-version`
+is workspace-only; existing live kagent create stays exact v0.10.2.
+Missing runtime in existing source means historical Orka only, never inferred
+kagent. Push and load derive the declared runtime, not a live target.
+
 `--instructions` names a file, not inline text. Its nonblank bytes are copied
 unchanged into the member. `--description` is optional and single-line. Instructions use the native block-text
 policy: LF and tabs are allowed; CR and other control characters are refused,
 not normalized. This mode refuses cluster,
-Provider, runtime, output, tools and Task flags, rather than ignoring them.
+Provider, output, tools and Task flags, rather than ignoring them. Runtime
+selection on this path authors source only; it does not load cluster settings.
 Creation refuses existing workspace/member directories, including PortableAgent
 bundles; it does not overwrite or migrate them.
 
@@ -85,8 +103,15 @@ metadata/kmx/eval/example.yaml
 ```
 
 `native-orka.json` inventories the member, renderer version, required images,
-and every packaged case path and digest. These are KMX native-Orka supplemental
-files in the OCI content layer, not public AgentSuite record types.
+and every packaged case path and digest. The alternative kagent declaration is
+`metadata/kmx/native-kagent.json`, carrying its runtime/version/engine and
+versioned private execution-profile identity with the same complete case
+inventory. Exactly one supported profile must cover the member; extra or
+conflicting profile files refuse. Explicit Orka source and omitted historical
+Orka source retain the same prepared content/manifest identity. These are KMX native-Orka supplemental
+files in the OCI content layer, not public AgentSuite record types. Runtime
+selection changes the OCI manifest identity even when the canonical public graph
+digest is unchanged. No public runtime field or critical extension is introduced.
 
 The OCI manifest digest binds all the content-layer bytes, including cases.
 The canonical `agentsuite.json` graph digest alone does not bind supplemental
@@ -94,7 +119,11 @@ metadata. No outer package envelope is used. The public format still
 requires a composition and pinned build-profile records; this tool-free native
 profile emits a composition with no ToolProviders. Those profile records
 are declared image-build inputs, not dependencies fetched or executed by native
-Orka placement, and do not imply sandbox-image conformance.
+Orka/kagent placement, and do not imply sandbox-image conformance. Their
+AgentKit/Python harness pins are inert declared build inputs, not Go ADK
+execution dependencies. The kagent native profile names its own closed,
+versioned execution contract; actual installed runtime/image qualification
+belongs to the later suite-placement slice.
 
 Authentication, `--plain-http` and non-atomic tag replacement with `--force` use
 the same [registry policy](kmx.md#registry-authentication) as existing suite push.

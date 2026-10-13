@@ -144,6 +144,80 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 	}
 }
 
+func TestVerifyRefusesConflictingKagentProfiles(t *testing.T) {
+	root, cache := createWorkspace(t)
+	setMemberRuntime(t, root, "runtime: {id: kagent, version: v0.10.3, engine: go}\n")
+	p, err := workspace.Prepare(t.Context(), root, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []string{"both profiles", "missing metadata", "cross runtime", "wrong version", "wrong engine", "missing runtime", "null runtime", "wrong contract", "wrong renderer"} {
+		t.Run(change, func(t *testing.T) {
+			out := extract(t, p)
+			name := filepath.Join(out, "metadata/kmx/native-kagent.json")
+			raw := string(readFile(t, name))
+			var record map[string]any
+			if err := json.Unmarshal([]byte(raw), &record); err != nil {
+				t.Fatal(err)
+			}
+			runtime := record["runtime"].(map[string]any)
+			switch change {
+			case "both profiles":
+				writeFile(t, filepath.Join(out, "metadata/kmx/native-orka.json"), raw)
+			case "missing metadata":
+				if err := os.Remove(name); err != nil {
+					t.Fatal(err)
+				}
+			case "cross runtime":
+				runtime["id"] = "orka"
+			case "wrong version":
+				runtime["version"] = "v0.10.2"
+			case "wrong engine":
+				runtime["engine"] = "python"
+			case "missing runtime":
+				delete(record, "runtime")
+			case "null runtime":
+				record["runtime"] = nil
+			case "wrong contract":
+				record["executionProfile"] = "kmx.unknown/v1"
+			case "wrong renderer":
+				record["rendererVersion"] = "kmx.native-orka/v1"
+			}
+			if change != "missing metadata" {
+				b, err := json.Marshal(record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, name, string(b))
+			}
+			layout := filepath.Join(t.TempDir(), "layout")
+			packed, err := suiteoras.Push(t.Context(), out, layout, "invalid")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := filepath.WalkDir(layout, func(name string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if d.IsDir() {
+					return os.Chmod(name, 0o700)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			candidate := *p
+			candidate.Path, candidate.Descriptor = layout, packed.Descriptor
+			if err := workspace.Verify(t.Context(), &candidate); err == nil {
+				t.Fatal("invalid private profile verified")
+			}
+			if loaded, err := workspace.Load(t.Context(), &candidate); loaded != nil || err == nil {
+				t.Fatal("invalid profile supplied inherited runtime")
+			}
+		})
+	}
+}
+
 type observeContext struct {
 	context.Context
 	observe func() error

@@ -24,6 +24,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- One-member workspace authoring/prepare/load supports explicit kagent v0.10.3
+  Go/linux-amd64 alongside default Orka. Runtime is bound in private native
+  metadata and the exact OCI manifest; publication copies that prepared graph
+  without images or cluster effects. Invalid/unsupported runtime declarations
+  refuse; Orka-only preparation/evidence consumers do not execute kagent input.
+  Suite kagent placement/evaluation/gates and RemoteMCP remain future slices.
+  Existing live kagent v0.10.2 create is unchanged.
+  [Offline native workspace profiles](docs/suite-workspace.md).
+
 - Explicit `kmx bundle evaluate --runtime kagent --runtime-version v0.10.3`
   runs authored cases against a receipt-bound Go placement, with desired
   bindings and `--to-context`. Each case sends one fresh blocking A2A Task;
