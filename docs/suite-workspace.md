@@ -6,18 +6,17 @@ kagent declarations require no member images; authoring and publication do not c
 run a model or invoke Docker/buildx.
 
 **Implemented:** offline creation, preparation and publication, and full-inventory
-native Orka evaluation of one tool-free member with an exact OpenAI-compatible model.
-Orka remains the authoring default; `--runtime kagent` authors the private Go
-v0.10.3/linux-amd64 profile only. Both `eval` and `push --evaluation` refuse it
-with `kagent evaluation on the suite path isn't available yet`.
-Private kagent preparation, new-object placement and observation helpers consume
-this packaged profile. They are not wired to a CLI or the release-lift seam;
-suite evaluation, status and promotion remain unavailable. Occupied targets
+native Orka or exact kagent v0.10.3 Go/linux-amd64 evaluation of one tool-free
+member with an exact OpenAI-compatible model. Orka remains the authoring default;
+`--runtime kagent` authors the private profile. Root eval derives that packaged
+runtime and uses explicit author-owned bindings; evaluated push accepts only
+matching runtime-specific passing evidence. Kagent suite status, lift and
+promotion remain unavailable. Occupied targets
 refuse without a complete caller-retained observation; qualified repeat is
 read-only, not update/adoption or restart recovery.
 Orka evaluation has hermetic command/Task tests and a pinned two-case native
-workspace CI qualifier. Standalone registry-package evaluation and registry-reference lift
-are not available. Existing `agent.yaml` creation, evaluation and lift remain
+workspace CI qualifier. Standalone registry-package evaluation and kagent
+registry-reference lift are not available; Orka digest lift is described below. Existing `agent.yaml` creation, evaluation and lift remain
 separate and unchanged.
 
 ## Create
@@ -115,7 +114,8 @@ kmx push --evaluation ../private-evidence/passing.json ghcr.io/me/my-agents:v1
 
 Root `eval` discovers the nearest workspace, or selects an exact root without
 fallback using `--workspace DIR`. It accepts no positional package reference.
-`--to-context`, `--inference provider:NAME` and `--out` are required. Namespace
+`--to-context` and `--out` are required. Orka requires `--inference provider:NAME`;
+kagent instead requires `--bindings FILE`, never both. For Orka, namespace
 is `orka-system` by default (`--to-namespace`); `--result-port` defaults to
 `19180`, and each case has a separate `--case-timeout` (default 5m, maximum 9m).
 Explicit empty selectors and global `--context` are refused. No runtime/model
@@ -133,7 +133,26 @@ writes are never recovered, retried or resent. Placement, runtime, target and
 binding observations bracket execution; source and placement are checked again
 before export. These observations do not prove drift absence or authentication.
 
-The temporary result session uses the selected ServiceAccount's **full effective
+Kagent uses a closed author-owned `KagentBindings` file (namespace, OpenAI
+provider/baseURL, separately provisioned Secret name/explicit key). The model
+comes only from the packaged member. Explicit `--to-namespace` must agree with
+bindings; `--result-port` refuses. For example:
+
+```sh
+kmx eval --workspace ./kagent-workspace --to-context kind-demo \
+  --bindings ./private/kagent-bindings.yaml --out ../private-evidence/kagent-pass.json
+```
+
+Kagent evaluation requires **auth: unsecure only, trusted-proxy refused** before
+admission and before native sends. It creates new suite-owned ModelConfig/Agent
+objects; occupied unrecorded targets refuse, never adopt/update/delete-recreate.
+Each case sends one fresh blocking A2A Task with no prior Task/context IDs.
+Ambiguous transport, foreign history, reused native identities or changed
+placement/runtime/binding stop later sends. Consent discloses full prompt,
+answer and history retention in kagent's database (upstream default unlimited),
+Service-proxy audit bodies and model transfers. No auth settings are modified.
+
+For Orka, the temporary result session uses the selected ServiceAccount's **full effective
 authority**. Discarding its bearer is not revocation; Task-read enforcement is
 unverified for v0.2.0. One pinned loopback connection is opened per case, without
 reconnect. Prompts, answers, assertion operands and reasoning stay out of KMX
@@ -155,8 +174,13 @@ or provenance. Equivalent authored spelling with the same artifact identity is
 allowed; a changed case/model/instruction artifact is refused. Unsigned receipts
 are observations, not authentication, policy gates or release authorization.
 Ordinary push remains explicitly unevaluated. Extracted-directory `suite push`
-does not gain this flag. `eval diff/from-sessions` and `bundle evaluate` retain
-their existing formats and behavior; native receipts are not bundle lift gates.
+does not gain this flag. `eval diff` reads strict passing suite receipts and
+compares only compatible same-runtime subjects/case inventories; Orka/kagent
+comparison refuses as incompatible, never as equivalent behavior. Comparison
+also requires identical observed ownership. Separate kagent CLI runs create
+fresh resources, so their receipts are incompatible rather than a cross-run
+behavior comparison. Orka lift consumers reject kagent evidence. `eval from-sessions` and `bundle evaluate`
+retain their separate formats and behavior; native receipts are not bundle gates.
 
 ### Qualification boundary
 
@@ -169,7 +193,7 @@ ownership, case-mutation and unsupported-evaluator refusals. Only passing receip
 metadata and a scalar qualification report may be uploaded. Runtime/model and
 Kubernetes audit storage can still retain inputs. A successful run qualifies this
 fixed scenario; hermetic tests alone do not establish runtime/model execution.
-Release-reference Lift and standalone package evaluation remain unavailable.
+Kagent release-reference lift and standalone package evaluation remain unavailable.
 
 ## Publish
 

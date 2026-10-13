@@ -32,6 +32,8 @@ with open(os.environ["CALLS"], "a") as log:
 key = name
 if name == "driver":
     key = args[0]
+elif name == "suite-driver":
+    key = "suite-evaluation"
 elif name == "kind" and args[:2] == ["create", "cluster"]:
     key = "kind-create"
 elif name == "kind" and args[:2] == ["delete", "cluster"]:
@@ -65,6 +67,9 @@ elif name == "kind" and args == ["version", "-q"]:
     print("0.33.0")
 elif name == "helm" and args[:1] == ["version"]:
     print("v3.20.0")
+elif name == "suite-driver":
+    work = pathlib.Path(args[1])
+    (work / "suite-qualification.json").write_text('{"proof":true}')
 elif name == "go":
     assert args == ["test", "./internal/kmx/app", "-run", "^TestLiveSuiteKagentPlacement$", "-count=1", "-timeout=8m"]
     assert os.environ["KMX_SUITE_KAGENT_LIVE"] == "1"
@@ -93,6 +98,7 @@ class ShellTests(unittest.TestCase):
         shutil.copyfile(SOURCE, ci / SOURCE.name)
         driver = ci / "kagent-lift.py"
         driver.write_text(DOUBLE.replace('name = pathlib.Path(sys.argv[0]).name', 'name = "driver"'))
+        (ci / "suite-kagent.py").write_text(DOUBLE.replace('name = pathlib.Path(sys.argv[0]).name', 'name = "suite-driver"'))
         self.double = self.base / "double"
         self.double.write_text(DOUBLE)
         self.double.chmod(0o700)
@@ -263,7 +269,7 @@ class ShellTests(unittest.TestCase):
                 shutil.rmtree(self.runner / "kmx-kagent-lift")
 
     def test_qualification_failure_does_not_leave_success_artifact(self):
-        for phase in ("qualify", "suite-helpers"):
+        for phase in ("qualify", "suite-evaluation", "suite-helpers"):
             with self.subTest(phase=phase):
                 self.calls.unlink(missing_ok=True)
                 result, records = self.run_shell((), phase)

@@ -15,13 +15,11 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
-var errSuiteKagentEvaluationUnavailable = errors.New("kagent evaluation on the suite path isn't available yet")
-
 // SuiteWorkspaceEvaluationOptions selects a full native workspace invocation.
 // No runtime, model, judge or subset can override its packaged behavior.
 type SuiteWorkspaceEvaluationOptions struct {
-	Workspace, ToContext, ToNamespace, Inference, Out, ResultPort string
-	CaseTimeout                                                   time.Duration
+	Workspace, ToContext, ToNamespace, Inference, Bindings, Out, ResultPort string
+	CaseTimeout                                                             time.Duration
 }
 
 // PreparedSuiteWorkspaceEvaluation owns its offline source snapshot and anchored
@@ -34,6 +32,7 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	root      string
 	options   SuiteWorkspaceEvaluationOptions
 	started   bool
+	bindings  *suiteKagentBindingSnapshot
 }
 
 func (p *PreparedSuiteWorkspaceEvaluation) Close() error {
@@ -50,19 +49,11 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if opt.ToNamespace == "" {
-		opt.ToNamespace = OrkaNamespace
-	}
 	if opt.CaseTimeout == 0 {
 		opt.CaseTimeout = 5 * time.Minute
 	}
-	if opt.ResultPort == "" {
-		opt.ResultPort = "19180"
-	}
-	provider := strings.TrimPrefix(opt.Inference, "provider:")
-	port, portErr := strconv.Atoi(opt.ResultPort)
-	if !verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil || !strings.HasPrefix(opt.Inference, "provider:") || scaffold.ValidateObjectName(provider) != nil || scaffold.ValidateNamespace(opt.ToNamespace) != nil || opt.Out == "" || opt.CaseTimeout <= 0 || opt.CaseTimeout > 9*time.Minute || portErr != nil || port < 1 || port > 65535 || strconv.Itoa(port) != opt.ResultPort {
-		return nil, errors.New("native evaluation requires explicit context, provider:NAME, private output, valid namespace, port and bounded case timeout")
+	if !verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil || (opt.Inference == "") == (opt.Bindings == "") || opt.Out == "" || opt.CaseTimeout <= 0 || opt.CaseTimeout > 9*time.Minute {
+		return nil, errors.New("native evaluation requires explicit context, exactly one inference or bindings selector, private output and bounded case timeout")
 	}
 	root, err := resolveSuiteWorkspace(opt.Workspace)
 	if err != nil {
@@ -86,8 +77,31 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, suiteEvaluationError(ctx, err, false)
 	}
+	var bindings *suiteKagentBindingSnapshot
 	if suite.Runtime.ID == "kagent" {
-		return nil, errSuiteKagentEvaluationUnavailable
+		if opt.Bindings == "" || opt.ResultPort != "" {
+			return nil, errors.New("native kagent evaluation requires --bindings and refuses --result-port")
+		}
+		bindings, err = snapshotSuiteKagentBindings(opt.Bindings)
+		if err != nil {
+			return nil, err
+		}
+		if opt.ToNamespace != "" && opt.ToNamespace != bindings.binding.Namespace {
+			return nil, errors.New("native kagent namespace must agree with bindings")
+		}
+		opt.ToNamespace = bindings.binding.Namespace
+	} else {
+		if opt.ToNamespace == "" {
+			opt.ToNamespace = OrkaNamespace
+		}
+		if opt.ResultPort == "" {
+			opt.ResultPort = "19180"
+		}
+		provider := strings.TrimPrefix(opt.Inference, "provider:")
+		port, portErr := strconv.Atoi(opt.ResultPort)
+		if opt.Bindings != "" || !strings.HasPrefix(opt.Inference, "provider:") || scaffold.ValidateObjectName(provider) != nil || scaffold.ValidateNamespace(opt.ToNamespace) != nil || portErr != nil || port < 1 || port > 65535 || strconv.Itoa(port) != opt.ResultPort {
+			return nil, errors.New("native evaluation requires Orka provider:NAME, valid namespace and port")
+		}
 	}
 	inventory, _, err := suitePassingInventory(suite)
 	if err != nil {
@@ -97,7 +111,7 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, err
 	}
-	return &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, output: output, root: root, options: opt}, nil
+	return &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, output: output, root: root, options: opt, bindings: bindings}, nil
 }
 
 // Check the read-only session prerequisites before pair writes. The bearer and
@@ -138,7 +152,11 @@ func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	mayHaveChanged, guardRefusal := false, false
 	defer func() {
 		if err != nil && !guardRefusal {
+			occupied := errors.Is(err, errSuiteKagentOccupied)
 			err = suiteEvaluationError(ctx, err, mayHaveChanged)
+			if occupied {
+				err = errors.Join(err, errSuiteKagentOccupied)
+			}
 		}
 	}()
 	if p == nil || p.output == nil || p.started || a.Cfg == nil || a.Run == nil || a.Cfg.KubeContext != p.options.ToContext {
@@ -147,6 +165,9 @@ func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	p.started = true
 	worker := *a.withRunContext(ctx)
 	worker.guarded = false
+	if p.suite.Runtime.ID == "kagent" {
+		return worker.evaluateSuiteKagentWorkspace(ctx, p, &mayHaveChanged, &guardRefusal)
+	}
 	kubectl := depKubectl
 	kubectl.fetchable = false
 	if err := worker.preflight(kubectl); err != nil {

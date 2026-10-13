@@ -107,6 +107,24 @@ class FixtureTests(unittest.TestCase):
             self.assertNotIn(sentinel, json.dumps(row))
         self.assertEqual(len(set(call_ids)), 2)
 
+    def test_suite_model_is_tool_free_and_records_one_fresh_turn(self):
+        for stream in (False, True):
+            reply = self.request("/v1/chat/completions", {"model": "fixture-suite", "tools": [],
+                "stream": stream, "messages": [{"role": "user", "content": "suite input"}]})
+            choice = reply[0]["choices"][0]["delta"] if stream else reply["choices"][0]["message"]
+            self.assertTrue(choice["content"].startswith("KMX suite proof: "))
+            row = self.request("/evidence")["cases"][-1]
+            self.assertEqual((row["model_calls"], row["tool_calls"], row["terminal_answers"], row["user_turns"]), (1, 0, 1, 1))
+            self.assertEqual(row["answer_sha256"], hashlib.sha256(choice["content"].encode()).hexdigest())
+
+    def test_suite_model_does_not_execute_the_builtin_question_tool(self):
+        reply = self.request("/v1/chat/completions", {"model": "fixture-suite",
+            "tools": [{"type": "function", "function": {"name": "ask_user"}}],
+            "messages": [{"role": "user", "content": "suite input"}]})
+        self.assertEqual(reply["choices"][0]["finish_reason"], "stop")
+        self.assertNotIn("tool_calls", reply["choices"][0]["message"])
+        self.assertEqual(self.request("/evidence")["tool_calls"], 0)
+
     def test_reused_conversation_is_refused_without_execution(self):
         messages = [{"role": "user", "content": "old"}, {"role": "user", "content": "new"}]
         with self.assertRaises(urllib.error.HTTPError) as error:

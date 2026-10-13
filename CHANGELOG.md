@@ -22,6 +22,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+- Packaged tool-free kagent v0.10.3 Go/linux-amd64 workspaces now evaluate
+  through root `eval --bindings FILE`: one fresh blocking A2A Task per ordered
+  case, unsecure auth only, no retries, answer output or bundle conversion.
+  Strict full-passing suite evidence has a separate typed kagent branch;
+  evaluated push requires exact manifest S and the same packaged runtime.
+  Offline suite receipt diff refuses mixed runtimes. Existing Orka receipt
+  serialization, evaluation and lift remain compatible; kagent suite lift is
+  not enabled. Unsupported judge/tool assertions still refuse offline.
+
 ### Added
 
 - Deploy-only `kmx lift <ref>@<digest>` from a registry or local `--from-layout`.

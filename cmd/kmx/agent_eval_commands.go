@@ -20,8 +20,8 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	var native app.SuiteWorkspaceEvaluationOptions
 	group := &cobra.Command{
 		Use: "eval", Short: "Evaluate a native workspace or prepare and compare saved evidence",
-		Long: "Evaluate every authored case in one tool-free native-Orka workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
-			"Requires preinstalled Orka, an inference Provider/Secret and result-access ServiceAccount/RBAC. No runtime or model override, judge, subset or content output.\n" +
+		Long: "Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
+			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override, judge, subset or content output.\n" +
 			"Each case submits one fresh Task, never retried. Failure, unknown, drift or cancellation stops later cases without exporting a receipt; resources may remain.\n" +
 			"--out must be a new file in an existing private directory outside workspace/cache trees. Only full passing metadata is exported, unsigned and not a policy gate.\n" +
 			"Case inputs are sent to the runtime and model; upstream storage/audit policy may retain them. Real native CLI execution qualification remains separate from hermetic checks.",
@@ -40,7 +40,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			if state.contextFlag != "" || cmd.Flags().Changed("context") {
 				return fmt.Errorf("--context cannot be used with native eval; use --to-context")
 			}
-			for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "out", "result-port"} {
+			for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "bindings", "out", "result-port"} {
 				if flag := cmd.Flag(name); flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 					return fmt.Errorf("native eval requires non-empty --%s", name)
 				}
@@ -53,7 +53,14 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) (err error) {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			prepared, err := app.PrepareSuiteWorkspaceEvaluation(ctx, native)
+			selectedNative := native
+			if !cmd.Flags().Changed("to-namespace") {
+				selectedNative.ToNamespace = ""
+			}
+			if !cmd.Flags().Changed("result-port") {
+				selectedNative.ResultPort = ""
+			}
+			prepared, err := app.PrepareSuiteWorkspaceEvaluation(ctx, selectedNative)
 			if err != nil {
 				return err
 			}
@@ -78,17 +85,19 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	group.Flags().StringVar(&native.ToContext, "to-context", "", "explicit native evaluation context")
 	group.Flags().StringVar(&native.ToNamespace, "to-namespace", app.OrkaNamespace, "native evaluation namespace")
 	group.Flags().StringVar(&native.Inference, "inference", "", "existing inference Provider, as provider:NAME")
+	group.Flags().StringVar(&native.Bindings, "bindings", "", "author-owned KagentBindings file for the packaged kagent runtime")
+	_ = group.MarkFlagFilename("bindings")
 	group.Flags().StringVar(&native.Out, "out", "", "new private full-passing receipt file outside workspace/cache")
 	group.Flags().DurationVar(&native.CaseTimeout, "case-timeout", 5*time.Minute, "deadline per case, at most 9m")
 	group.Flags().StringVar(&native.ResultPort, "result-port", "19180", "local loopback result-forward port")
 	_ = group.MarkFlagDirname("workspace")
-	for _, name := range []string{"to-context", "inference", "out"} {
+	for _, name := range []string{"to-context", "out"} {
 		_ = group.MarkFlagRequired(name)
 	}
 	diff := &cobra.Command{
 		Use:   "diff <before.json> <after.json>",
 		Short: "Compare assertion outcomes in two saved evaluation receipts",
-		Long: "Compare saved v2 evaluation receipts without cluster configuration, network access, or model calls.\n" +
+		Long: "Compare private native suite passing evidence or saved v2 evaluation receipts without cluster configuration, network access, or model calls.\n" +
 			"Reports revision identities and every case/assertion change; never prints answers or assertion operands.\n" +
 			"Exits nonzero for regressions, lost or missing evidence, changed sets, or incompatible runtime identities.\n" +
 			"A complete stable comparison or fixes can exit zero even when both evaluations failed.\n" +
