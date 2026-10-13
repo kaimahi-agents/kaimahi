@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
 func releaseLiftFixture(t *testing.T) (*App, *nativeReadFixture, ReleaseLiftOptions, *suiteNativePrepared) {
@@ -228,5 +230,27 @@ func TestPrepareReleaseLiftRefusesChangedSubjectAndPlacement(t *testing.T) {
 				t.Fatal("untrusted diagnostic exposed")
 			}
 		})
+	}
+}
+
+func TestPrepareReleaseLiftDoesNotSubstituteOrkaForKagent(t *testing.T) {
+	a, f, opt, _ := releaseLiftFixture(t)
+	root := filepath.Join(t.TempDir(), "workspace")
+	input := filepath.Join(t.TempDir(), "instructions.md")
+	writeFile(t, input, "Answer briefly.\n")
+	if err := workspace.Create(t.Context(), root, workspace.CreateOptions{Name: "greeter", Model: "exact-model", InstructionsFile: input, Runtime: workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt.Reference, opt.FromLayout = "suite@"+p.Descriptor.Digest.String(), p.Path
+	before := f.calls
+	if _, err := a.PrepareReleaseLift(t.Context(), opt); !errors.Is(err, ErrReleaseLift) {
+		t.Fatalf("Orka evidence authorized kagent: %v", err)
+	}
+	if f.calls != before {
+		t.Fatal("kagent candidate reached Orka destination inspection")
 	}
 }
