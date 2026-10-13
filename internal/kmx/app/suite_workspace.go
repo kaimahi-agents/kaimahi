@@ -20,8 +20,15 @@ func (a *App) CreateSuiteMember(ctx context.Context, root string, opt workspace.
 	if err := workspace.Create(ctx, root, opt); err != nil {
 		return err
 	}
-	_, err := fmt.Fprintf(a.Out, "Created native-Orka AgentSuite workspace %s with member %s (not deployed)\n", root, opt.Name)
+	_, err := fmt.Fprintf(a.Out, "Created %s AgentSuite workspace %s with member %s (not deployed)\n", nativeSuiteLabel(opt.Runtime), root, opt.Name)
 	return err
+}
+
+func nativeSuiteLabel(profile workspace.RuntimeProfile) string {
+	if profile.ID == "kagent" {
+		return "native-kagent v0.10.3 Go"
+	}
+	return "native-Orka"
 }
 
 // PushSuiteWorkspace discovers a workspace from cwd when root is empty, or
@@ -104,6 +111,10 @@ func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layou
 			return oras.PushResult{}, err
 		}
 	}
+	suite, err := workspace.Load(ctx, prepared)
+	if err != nil {
+		return oras.PushResult{}, err
+	}
 	var options oras.PushOptions
 	var sourceWarning string
 	if layout == "" && provenance.Enabled {
@@ -138,7 +149,7 @@ func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layou
 	if sourceWarning != "" && result.Provenance != nil {
 		result.Warnings = append(result.Warnings, sourceWarning)
 	}
-	if _, err := fmt.Fprintf(a.Out, "Pushed native-Orka AgentSuite %s to %s (%s)\nRequired member images: []\n", prepared.Name, result.Path, result.Descriptor.Digest); err != nil {
+	if _, err := fmt.Fprintf(a.Out, "Pushed %s AgentSuite %s to %s (%s)\nRequired member images: []\n", nativeSuiteLabel(suite.Runtime), prepared.Name, result.Path, result.Descriptor.Digest); err != nil {
 		return result, err
 	}
 	if layout == "" {

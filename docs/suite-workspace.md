@@ -30,7 +30,7 @@ kmx create greeter --workspace . \
 To author the offline kagent profile instead:
 
 ```sh
-kmx agent create greeter --workspace . --runtime kagent --runtime-version v0.10.3 \
+kmx create greeter --workspace . --runtime kagent --runtime-version v0.10.3 \
   --kagent-runtime go --model fixture-model --instructions ./instructions.md
 ```
 
@@ -108,7 +108,7 @@ and every packaged case path and digest. The alternative kagent declaration is
 versioned private execution-profile identity with the same complete case
 inventory. Exactly one supported profile must cover the member; extra or
 conflicting profile files refuse. Explicit Orka source and omitted historical
-Orka source retain the same prepared content/manifest identity. These are KMX native-Orka supplemental
+Orka source retain the same prepared content/manifest identity. These are KMX native-profile supplemental
 files in the OCI content layer, not public AgentSuite record types. Runtime
 selection changes the OCI manifest identity even when the canonical public graph
 digest is unchanged. No public runtime field or critical extension is introduced.

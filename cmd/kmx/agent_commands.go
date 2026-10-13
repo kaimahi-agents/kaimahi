@@ -61,7 +61,8 @@ resolves against.`,
 
 func newAgentCreateCommand(state *commandState) *cobra.Command {
 	var opt app.CreateOptions
-	var workspaceRoot string
+	var workspaceRoot, workspaceVersion string
+	var workspaceRuntime workspace.RuntimeProfile
 	cmd := &cobra.Command{
 		Use:   "create [name]",
 		Short: "Create an Orka or kagent declarative Agent",
@@ -74,9 +75,12 @@ With --out -, explicitly set --bundle-path to also write an authored bundle.
 Omit the name for guided Orka creation in a terminal; kagent creation requires a name.
 Select explicitly the namespace the runtime controller watches. Provider type, model
 identifier and a separately provisioned Secret are required.
-With --workspace <directory>, named creation instead authors one native-Orka suite
-member offline. Only --model, --instructions (file) and --description are accepted;
-no cluster settings are loaded, no image is built and no Agent is deployed.
+With --workspace <directory>, named creation instead authors one native suite
+member offline: Orka by default, or kagent v0.10.3 Go via --runtime kagent
+--runtime-version v0.10.3. This does not enable suite placement or evaluation.
+Workspace authoring accepts --model, --instructions (file), --description and
+the runtime selectors above. Operational create flags are refused. No cluster
+settings are loaded, no image is built and no Agent is deployed.
 Workspace evaluation and release lift are not yet available.
 
 This command does not build or deploy application images. Keep your Deployment
@@ -129,10 +133,12 @@ also capture Service-proxy request and response bodies.`,
     --provider-type openai --model qwen2.5:3b --secret local-provider-key \
     --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out - --bundle-path agents/preview`,
 	}
-	cmd.Flags().StringVar(&workspaceRoot, "workspace", "", "author one native-Orka suite member in this workspace, offline")
+	cmd.Flags().StringVar(&workspaceRoot, "workspace", "", "author one tool-free native suite member in this workspace, offline")
 	_ = cmd.MarkFlagDirname("workspace")
 	cmd.Flags().StringVar(&opt.Runtime, "runtime", "orka", "agent runtime: orka or kagent")
-	cmd.Flags().StringVar(&opt.KagentRuntime, "kagent-runtime", "go", "kagent declarative runtime: go or python")
+	cmd.Flags().StringVar(&opt.KagentRuntime, "kagent-runtime", "go", "kagent declarative runtime (workspace: Go only; live create: go or python)")
+	cmd.Flags().StringVar(&workspaceVersion, "runtime-version", "", "workspace-only runtime profile (kagent: v0.10.3)")
+	_ = cmd.RegisterFlagCompletionFunc("runtime-version", staticCompletion([]string{"v0.10.3"}))
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "explicit target namespace; the selected runtime controller must watch it (required)")
 	cmd.Flags().StringVar(&opt.Description, "description", "", "one-line description")
 	cmd.Flags().StringVar(&opt.ProviderType, "provider-type", "", "Provider type: openai, anthropic or azure-openai (required)")
@@ -173,10 +179,22 @@ also capture Service-proxy request and response bodies.`,
 			if err := validateWorkspaceCreateFlags(cmd, state); err != nil {
 				return err
 			}
+			workspaceRuntime = workspace.RuntimeProfile{ID: opt.Runtime}
+			if opt.Runtime == "kagent" {
+				if workspaceVersion != "v0.10.3" || opt.KagentRuntime != "go" {
+					return fmt.Errorf("workspace kagent requires --runtime-version v0.10.3 and --kagent-runtime go")
+				}
+				workspaceRuntime.Version, workspaceRuntime.Engine = workspaceVersion, opt.KagentRuntime
+			} else if opt.Runtime != "orka" || cmd.Flags().Changed("runtime-version") || cmd.Flags().Changed("kagent-runtime") {
+				return fmt.Errorf("workspace --runtime must be orka without version/engine or exact kagent v0.10.3 go")
+			}
 			if strings.TrimSpace(opt.Model) == "" || strings.TrimSpace(opt.Instructions) == "" {
 				return fmt.Errorf("workspace creation requires --model and --instructions <file>")
 			}
 			return nil
+		}
+		if cmd.Flags().Changed("runtime-version") {
+			return fmt.Errorf("--runtime-version is only for --workspace authoring; live kagent create remains v0.10.2")
 		}
 		if strings.TrimSpace(opt.Runtime) != opt.Runtime {
 			return fmt.Errorf("--runtime must be exactly orka or kagent")
@@ -220,7 +238,7 @@ also capture Service-proxy request and response bodies.`,
 		if cmd.Flags().Changed("workspace") {
 			a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			return a.CreateSuiteMember(cmd.Context(), workspaceRoot, workspace.CreateOptions{
-				Name: args[0], Description: opt.Description, Model: opt.Model, InstructionsFile: opt.Instructions,
+				Name: args[0], Description: opt.Description, Model: opt.Model, InstructionsFile: opt.Instructions, Runtime: workspaceRuntime,
 			})
 		}
 		return runNative(cmd, args)
