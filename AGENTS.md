@@ -41,7 +41,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   `suite push DIRECTORY REFERENCE` remains extracted-directory transfer without
   discovery and no longer accepts `--workspace`. The native member image
   requirement is empty. Neither offline command evaluates, deploys, builds images
-  or loads cluster settings. Workspace evaluation/release lift are not implemented.
+  or loads cluster settings. Workspace evaluation is root `eval`; release lift
+  remains unimplemented.
   `create --live` explicitly selects unchanged resource/bundle creation for both
   Orka and kagent, including `--no-apply`, `--dry-run` and `--out -` previews;
   no-name `create --live` is the live Orka wizard. `--runtime kagent` alone is
@@ -50,7 +51,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   console and direct App.CreateAgent operations remain live. Preserve
   PortableAgent formats and old extracted-directory suite transfer; do not treat public graph validation
   as native execution-profile validation. Private packaged-native preparation and
-  ownership-safe Provider/Agent placement have no CLI or execution qualification.
+  ownership-safe Provider/Agent placement feed full-workspace root evaluation;
+  real native CLI execution qualification remains deferred.
   Internal PrepareReleaseLift plans an exact digest from a registry or read-only
   OCI layout, with bounded ingestion before validation and no source fingerprint.
   It requires explicit private full-passing native evidence, exact observed
@@ -62,16 +64,24 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Private native passing receipts retain only full ordered passing metadata, export
   once without replacement outside workspace/cache trees, and bind the private
   receipt-file push consumer to exact S plus offline packaged coherence. There is
-  no native evaluation CLI or execution producer yet; unsigned receipts do not
-  prove authentication or drift absence.
+  a full-workspace native evaluation CLI with one fresh never-retried Task per
+  ordered case. Root `push --evaluation FILE` uses that private file consumer;
+  ordinary push stays unevaluated. Unsigned receipts do not prove authentication
+  or drift absence.
   Any presence of a native suite ownership annotation reserves desired/live
   resources against legacy adoption, copying, bundle authorization and retirement.
   Registry workspace publication shares unsigned suite provenance defaults/flags and records Git source only from
   fingerprint-bound authored inputs matching HEAD; local layouts get no referrers.
-- Root `eval` is a helper-only group: offline `eval diff` and recorded-session
-  case preparation via `kmx eval from-sessions`; execution stays
-  `kmx bundle evaluate --from-sessions`. Packaged root evaluation and digest lift
-  are not implemented; do not claim root `eval` executes or root `lift` exists.
+- Root `eval` evaluates the full native workspace inventory with explicit
+  `--to-context`, `--inference provider:NAME` and new private `--out`, using local
+  flags and a nonpersistent operational hook. Unsupported/budget/output checks
+  run before config; one fresh outer guard covers pair placement and all Tasks.
+  Fail/unknown/drift/cancel/output errors stop later sends with no partial export.
+  No model/runtime override, judge/subset/content mode or standalone package
+  reference is accepted. Offline `eval diff` and recorded-session preparation
+  via `eval from-sessions` retain their cluster-independent hooks; recorded
+  execution stays `bundle evaluate --from-sessions`. Root digest lift is not
+  implemented. Real native CLI qualification remains separate from hermetic tests.
   Keep reference manifests private, require named candidate/judge confirmation before recorded-content transfer,
   and suppress answer/reasoning output unless `--show-content` is explicit.
   Expired sources are unknown, never a skip or export. Offline eval diff keeps

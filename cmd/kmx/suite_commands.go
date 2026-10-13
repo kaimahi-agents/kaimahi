@@ -223,7 +223,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 // newSuitePushCommand shares publication flags and safety contracts between
 // root workspace publication and the extracted-directory suite transfer.
 func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command {
-	var target, pushWorkspace string
+	var target, pushWorkspace, evaluation string
 	var pushPlainHTTP, pushForce, pushProvenance, pushRequireProvenance bool
 	push := &cobra.Command{
 		Use:   "push <directory> <reference>",
@@ -251,6 +251,9 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 				if cmd.Flags().Changed("workspace") && strings.TrimSpace(pushWorkspace) == "" {
 					return fmt.Errorf("workspace push requires non-empty --workspace")
 				}
+				if cmd.Flags().Changed("evaluation") && strings.TrimSpace(evaluation) == "" {
+					return fmt.Errorf("workspace push requires non-empty --evaluation")
+				}
 				if state.contextFlag != "" {
 					return fmt.Errorf("--context cannot be used with workspace push")
 				}
@@ -267,11 +270,13 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 		push.Short = "Push a native-Orka workspace to an OCI layout or registry"
 		push.Long = "Prepare one native-Orka workspace member and its authored cases, then copy that exact OCI graph.\n" +
 			"Pass only the destination reference as a positional argument. Discover the nearest ancestor workspace.yaml from the current directory, or select an exact root without fallback with --workspace <directory>.\n" +
-			"Stderr names the absolute workspace path and prepared OCI manifest digest. No member images are required; this does not deploy or evaluate an Agent.\n\n" + push.Long
+			"Stderr names the absolute workspace path and prepared OCI manifest digest. No member images are required; this does not deploy or evaluate an Agent.\n" +
+			"--evaluation consumes a private full-passing native receipt file and refuses a different exact suite manifest or incoherent case inventory before transfer. Unsigned observations are not authentication or a policy gate.\n\n" + push.Long
 		push.Example = "  kmx push registry.example.com/team:v1\n" +
 			"  kmx push --to-layout ./layout agentsuites/team:v1\n" +
 			"  kmx push --workspace ./workspace registry.example.com/team:v1"
 		push.Flags().StringVar(&pushWorkspace, "workspace", "", "select exactly this workspace instead of nearest-ancestor discovery")
+		push.Flags().StringVar(&evaluation, "evaluation", "", "private full-passing native receipt file bound to this exact suite")
 		_ = push.MarkFlagDirname("workspace")
 	}
 	push.Flags().StringVar(&target, "to-layout", "", "local OCI image-layout target directory")
@@ -310,7 +315,11 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 		}
 		if workspaceMode {
 			a.Err = cmd.ErrOrStderr()
-			result, err := a.PushSuiteWorkspace(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance)
+			if cmd.Flags().Changed("evaluation") {
+				result, err = a.PushSuiteWorkspaceEvaluated(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance, evaluation)
+			} else {
+				result, err = a.PushSuiteWorkspace(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance)
+			}
 			if err != nil {
 				return &suiteDiagnosticError{err}
 			}

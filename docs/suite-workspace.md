@@ -5,10 +5,12 @@ artifact, identified by its manifest digest. The native-Orka execution profile
 requires no member images; authoring and publication do not contact Kubernetes,
 run a model or invoke Docker/buildx.
 
-**Supported:** offline creation, preparation and publication of one tool-free
-member with an exact OpenAI-compatible model. Workspace evaluation and
-registry-reference lift are not available. Existing `agent.yaml` creation,
-evaluation and lift remain separate and unchanged.
+**Implemented:** offline creation, preparation and publication, and full-inventory
+native evaluation of one tool-free member with an exact OpenAI-compatible model.
+Evaluation is covered by hermetic command/Task tests; real native CLI qualification
+is deferred. Standalone registry-package evaluation and registry-reference lift
+are not available. Existing `agent.yaml` creation, evaluation and lift remain
+separate and unchanged.
 
 ## Create
 
@@ -71,6 +73,67 @@ chosen agent/model answers it.
 Tools, skills, delegation, additional members and unsupported source fields are
 refused. Paths must stay within the workspace, without symlink traversal. Source
 reads are bounded, and credential-shaped content is refused.
+
+## Evaluate the whole workspace
+
+Provision the pinned Orka v0.2.0 harness-v2 runtime, a Ready OpenAI-compatible
+inference Provider with its referenced Secret, and the existing result-access
+ServiceAccount/Task-get grant separately. Evaluation does not install or upgrade
+anything, build images or write Secrets. The packaged member model is exact;
+the selected Provider's default model does not replace it. Required member
+images remain `[]`.
+
+```sh
+mkdir -m 700 ../private-evidence
+kmx eval --to-context kind-demo --inference provider:inference \
+  --out ../private-evidence/passing.json
+kmx push --evaluation ../private-evidence/passing.json ghcr.io/me/my-agents:v1
+```
+
+Root `eval` discovers the nearest workspace, or selects an exact root without
+fallback using `--workspace DIR`. It accepts no positional package reference.
+`--to-context`, `--inference provider:NAME` and `--out` are required. Namespace
+is `orka-system` by default (`--to-namespace`); `--result-port` defaults to
+`19180`, and each case has a separate `--case-timeout` (default 5m, maximum 9m).
+Explicit empty selectors and global `--context` are refused. No runtime/model
+substitution, judge, case subset or `--show-content` is available. Only `contains`,
+`notContains` and `regex` assertions are supported. Unsupported evaluators,
+receipt-budget overflow and invalid output destinations refuse offline before
+loading cluster configuration.
+
+One mutation guard covers both ownership-safe Provider/Agent placement and all
+ordered evaluation Tasks. Remote targets require the existing named confirmation;
+local kind targets retain the existing banner. Only a same-owner native pair can
+be reused or updated; legacy/unowned/foreign resources are not adopted. Every
+case sends one fresh Task exactly once, using the exact authored input. Ambiguous
+writes are never recovered, retried or resent. Placement, runtime, target and
+binding observations bracket execution; source and placement are checked again
+before export. These observations do not prove drift absence or authentication.
+
+The temporary result session uses the selected ServiceAccount's **full effective
+authority**. Discarding its bearer is not revocation; Task-read enforcement is
+unverified for v0.2.0. One pinned loopback connection is opened per case, without
+reconnect. Prompts, answers, assertion operands and reasoning stay out of KMX
+terminal summaries and receipts, but runtime/model storage and Kubernetes audit
+policy may retain them. Published suites themselves contain authored inputs.
+
+Failure, unknown results, drift, cancellation or output failure stops later cases
+and exits nonzero. No incomplete/diagnostic receipt is exported; resources may
+remain, with no automatic retry or cleanup. Only a full ordered pass publishes one
+new private receipt file (0600) into an existing private directory (0700), outside
+workspace and cache trees. Existing destinations are never replaced. A late
+publication or summary failure can leave a complete output file; inspect it rather
+than assuming failure removed it. Receipts contain identities, digests and
+assertion verdicts only, not payloads or evaluation history.
+
+`push --evaluation FILE` reads that strict private file and requires the exact
+prepared manifest digest plus full offline case/subject coherence before transfer
+or provenance. Equivalent authored spelling with the same artifact identity is
+allowed; a changed case/model/instruction artifact is refused. Unsigned receipts
+are observations, not authentication, policy gates or release authorization.
+Ordinary push remains explicitly unevaluated. Extracted-directory `suite push`
+does not gain this flag. `eval diff/from-sessions` and `bundle evaluate` retain
+their existing formats and behavior; native receipts are not bundle lift gates.
 
 ## Publish
 
@@ -170,8 +233,8 @@ neither resolve workspaces nor prompt, mutate files or load cluster settings.
 Internally, verified packaged native inputs can be loaded without consulting live
 source or the preparation record, and publication can require an expected OCI
 manifest digest. This identity check alone is not evaluation evidence or release
-authorization; the installed CLI still has no workspace evaluation or registry
-release lift.
+authorization. Workspace evaluation adds passing observations through the CLI;
+registry release lift remains unavailable.
 
 ## Internal digest-lift planning boundary
 
