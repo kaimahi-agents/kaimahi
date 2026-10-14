@@ -17,7 +17,6 @@ import (
 func TestCLIMigrationRoutesAndOfflineHelp(t *testing.T) {
 	for _, path := range [][]string{
 		{"create"}, {"chat"}, {"run"}, {"orka", "show"}, {"orka", "list"},
-		{"bundle", "evaluate"}, {"bundle", "lift"}, {"bundle", "retire"}, {"bundle", "verify"}, {"bundle", "status"},
 		{"eval"}, {"eval", "diff"}, {"eval", "from-sessions"}, {"push"}, {"task", "result"},
 	} {
 		t.Run(strings.Join(path, "_"), func(t *testing.T) {

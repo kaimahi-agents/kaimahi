@@ -9,12 +9,12 @@ import (
 
 func validateWorkspaceCreateFlags(cmd *cobra.Command, state *commandState) error {
 	if state.contextFlag != "" {
-		return fmt.Errorf("--context requires --live; it cannot be used with offline workspace creation")
+		return fmt.Errorf("--context cannot be used with offline workspace creation")
 	}
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "workspace", "model", "instructions", "description", "live", "runtime", "runtime-version", "kagent-runtime":
+		case "workspace", "model", "instructions", "description", "runtime", "runtime-version", "kagent-runtime":
 		default:
 			if invalid == "" {
 				invalid = flag.Name
@@ -22,7 +22,7 @@ func validateWorkspaceCreateFlags(cmd *cobra.Command, state *commandState) error
 		}
 	})
 	if invalid != "" {
-		return fmt.Errorf("--%s requires --live; it cannot be used with offline workspace creation", invalid)
+		return fmt.Errorf("--%s cannot be used with offline workspace creation", invalid)
 	}
 	return nil
 }

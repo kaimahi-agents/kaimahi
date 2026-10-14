@@ -1,19 +1,16 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -130,15 +127,9 @@ func readEvaluationDiffSource(path string) (normalizedEvaluation, error) {
 	if err != nil || len(raw) > maxSessionsReceiptBytes || !utf8.Valid(raw) || !unambiguousSessionsReceiptJSON(raw) {
 		return invalid()
 	}
-	// Inspect only the discriminant before choosing a typed receipt. The full
-	// decoder below rejects every field outside that runtime's schema.
+	// Only native full-passing evidence is accepted; old receipts have no reader.
 	var target struct {
-		Domain        string `json:"domain"`
-		SchemaVersion int    `json:"schemaVersion"`
-		RunID         string `json:"runID"`
-		Target        struct {
-			Runtime string `json:"runtime"`
-		} `json:"target"`
+		Domain string `json:"domain"`
 	}
 	if json.Unmarshal(raw, &target) != nil {
 		return invalid()
@@ -157,272 +148,20 @@ func readEvaluationDiffSource(path string) (normalizedEvaluation, error) {
 		}
 		return n, nil
 	}
-	legacyOrka := target.Target.Runtime == string(agentruntime.Orka) && target.SchemaVersion == 0 && target.RunID == ""
-	if !evaluationReceiptJSONShape(raw, target.SchemaVersion, target.RunID, legacyOrka) {
-		return invalid()
-	}
-	decode := func(receipt any) bool {
-		d := json.NewDecoder(bytes.NewReader(raw))
-		d.DisallowUnknownFields()
-		if d.Decode(receipt) != nil {
-			return false
-		}
-		var extra any
-		return d.Decode(&extra) == io.EOF
-	}
-	switch target.Target.Runtime {
-	case string(agentruntime.Kagent):
-		n, ok := parseKagentEvaluation(raw)
-		if !ok {
-			return invalid()
-		}
-		return n, nil
-	case "agentsessions":
-		var r sessionsEvaluationReceipt
-		if !decode(&r) {
-			return invalid()
-		}
-		n, ok := normalizeSessionsEvaluation(r)
-		if !ok {
-			return invalid()
-		}
-		return n, nil
-	case string(agentruntime.Orka):
-		var r bundleEvaluationReceipt
-		if !decode(&r) {
-			return invalid()
-		}
-		n, ok := normalizeOrkaEvaluation(r)
-		if !ok {
-			return invalid()
-		}
-		return n, nil
-	default:
-		return invalid()
-	}
-}
-
-// Go's typed decoder accepts null as scalar zero. The only nullable members
-// produced by old receipts were Orka cases' matched/missing arrays. Keep that
-// wire compatibility without accepting null versions, identities or v2 rows.
-func evaluationDiffNullJSON(raw []byte, legacyOrka bool) bool {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	var scan func(scope string, nullable bool) bool
-	scan = func(scope string, nullable bool) bool {
-		token, err := decoder.Token()
-		if err != nil {
-			return false
-		}
-		if token == nil {
-			return nullable
-		}
-		delimiter, container := token.(json.Delim)
-		if !container {
-			return true
-		}
-		for decoder.More() {
-			childScope := ""
-			allowedNull := false
-			if delimiter == '{' {
-				member, err := decoder.Token()
-				key, ok := member.(string)
-				if err != nil || !ok {
-					return false
-				}
-				if scope == "root" && strings.EqualFold(key, "cases") {
-					childScope = "cases"
-				}
-				allowedNull = legacyOrka && scope == "case" && (strings.EqualFold(key, "matched") || strings.EqualFold(key, "missing"))
-			} else if scope == "cases" {
-				childScope = "case"
-			}
-			if !scan(childScope, allowedNull) {
-				return false
-			}
-		}
-		_, err = decoder.Token()
-		return err == nil
-	}
-	if !scan("root", false) {
-		return false
-	}
-	_, err := decoder.Token()
-	return err == io.EOF
-}
-
-var evaluationDiffName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,255}$`)
-var evaluationDiffCommit = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
-
-func diffIdentity(value string) bool {
-	return evaluationDiffName.MatchString(value) && verificationIdentity(value)
-}
-func diffOptionalIdentity(value string) bool { return value == "" || diffIdentity(value) }
-func diffOptionalDigest(value string) bool   { return value == "" || verificationDigest(value) }
-func diffOptionalModel(value string) bool    { return value == "" || verificationIdentity(value) }
-
-func evaluationDiffMetadata(version int, runID, bundle, portable, cases, commit, result string, full bool) (normalizedEvaluation, bool) {
-	n := normalizedEvaluation{Version: version, RunID: runID, Bundle: bundle, PortableDigest: portable, CasesDigest: cases, GitCommit: commit, Result: result, FullCaseSet: full, Cases: map[string]normalizedEvaluationCase{}}
-	ok := evaluationReceiptVersion(version, runID) && evaluationEvidenceID.MatchString(bundle) && verificationIdentity(bundle) && verificationDigest(portable) && verificationDigest(cases) && (commit == "uncommitted" || evaluationDiffCommit.MatchString(commit)) && (result == "pass" || result == "fail" || result == "unknown")
-	return n, ok
-}
-
-func addEvaluationDiffCase(n *normalizedEvaluation, id, caseDigest, inputDigest, verdict, detail string, rows []agentruntime.EvaluationAssertionResult) bool {
-	if !evaluationEvidenceID.MatchString(id) || !verificationIdentity(id) {
-		return false
-	}
-	if _, exists := n.Cases[id]; exists {
-		return false
-	}
-	if verdict != "pass" && verdict != "fail" && verdict != "unknown" {
-		return false
-	}
-	if n.Version == 2 {
-		if !evaluationCaseEvidence(caseDigest, inputDigest, verdict, detail, rows) {
-			return false
-		}
-	} else if caseDigest != "" || inputDigest != "" || len(rows) != 0 {
-		return false
-	}
-	c := normalizedEvaluationCase{CaseDigest: caseDigest, InputDigest: inputDigest, Verdict: verdict, Assertions: map[string]agentruntime.EvaluationAssertionResult{}}
-	for _, row := range rows {
-		c.Assertions[row.ID] = row
-	}
-	n.Cases[id] = c
-	return true
-}
-
-func evaluationDiffAggregate(n normalizedEvaluation) bool {
-	if len(n.Cases) == 0 || len(n.Cases) > 1000 {
-		return false
-	}
-	var cases []bundleEvaluationResult
-	for _, c := range n.Cases {
-		cases = append(cases, bundleEvaluationResult{Verdict: c.Verdict})
-	}
-	return bundleEvaluationOverall(cases) == n.Result
-}
-
-func normalizeSessionsEvaluation(r sessionsEvaluationReceipt) (normalizedEvaluation, bool) {
-	n, ok := evaluationDiffMetadata(r.SchemaVersion, r.RunID, r.Bundle, r.PortableDigest, r.CasesDigest, r.GitCommit, r.Result, r.FullCaseSet)
-	if !ok {
-		return n, false
-	}
-	identity := r.Target.Identity
-	address, err := agentsessions.NormalizeAddress(identity.Address)
-	if err != nil || identity.Version != 1 || identity.Provenance != "host-reported" || !diffOptionalIdentity(identity.Harness) || !diffOptionalModel(identity.Model) {
-		return n, false
-	}
-	n.Identity = evaluationDiffIdentity{Runtime: "agentsessions", Address: address}
-	// Target summaries omit both missing and conflicting observations. Derive
-	// compatibility from case evidence without changing the receipt format.
-	observe := func(common *string, value string) {
-		if value == "" {
-			return
-		}
-		if *common != "" && *common != value {
-			n.IdentityConflict = true
-		}
-		*common = value
-	}
-	sessions := map[string]bool{}
-	for _, c := range r.Cases {
-		if !addEvaluationDiffCase(&n, c.ID, c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) || !diffOptionalIdentity(c.SessionUID) || !diffOptionalIdentity(c.Harness) || !diffOptionalModel(c.Model) || !diffOptionalDigest(c.AnswerSHA256) || c.JournalHead.Seq < 0 || !diffOptionalDigest(c.JournalHead.Hash) {
-			return n, false
-		}
-		if c.SessionUID != "" {
-			if sessions[c.SessionUID] {
-				return n, false
-			}
-			sessions[c.SessionUID] = true
-		}
-		if (c.JournalHead.Seq == 0) != (c.JournalHead.Hash == "") || c.SessionUID == "" && c.JournalHead.Seq != 0 || c.ModelMixed && c.Model != "" {
-			return n, false
-		}
-		completed := c.Detail == "" && r.SchemaVersion == 2
-		if completed && (c.SessionUID == "" || c.Harness == "" || c.Model == "" || c.ModelMixed || c.JournalHead.Seq < 1 || c.AnswerSHA256 == "") {
-			return n, false
-		}
-		if c.Detail == evaluationExecutionFailed && (c.SessionUID == "" || c.JournalHead.Seq < 1) {
-			return n, false
-		}
-		observe(&n.Identity.Harness, c.Harness)
-		observe(&n.Identity.Model, c.Model)
-		n.IdentityConflict = n.IdentityConflict || c.ModelMixed
-		entry := n.Cases[c.ID]
-		entry.IdentityComplete = !c.ModelMixed && c.Harness != "" && c.Model != ""
-		n.Cases[c.ID] = entry
-		n.IdentityComplete = n.IdentityComplete || entry.IdentityComplete
-		if identity.Harness != "" && c.Harness != "" && identity.Harness != c.Harness || identity.Model != "" && c.Model != "" && identity.Model != c.Model {
-			return n, false
-		}
-	}
-	return n, evaluationDiffAggregate(n)
-}
-
-func normalizeOrkaEvaluation(r bundleEvaluationReceipt) (normalizedEvaluation, bool) {
-	n, ok := evaluationDiffMetadata(r.SchemaVersion, r.RunID, r.Bundle, r.PortableDigest, r.CasesDigest, r.GitCommit, r.Result, r.FullCaseSet)
-	if !ok {
-		return n, false
-	}
-	target := r.Target
-	if target.Context != "" && !verificationIdentity(target.Context) || !diffOptionalIdentity(target.ClusterUID) || !diffOptionalIdentity(target.Namespace) || !diffOptionalIdentity(target.Agent) || !diffOptionalIdentity(target.AgentUID) || !diffOptionalModel(target.Model) {
-		return n, false
-	}
-	n.Identity = evaluationDiffIdentity{Runtime: string(agentruntime.Orka), ClusterUID: target.ClusterUID, Namespace: target.Namespace, Agent: target.Agent, AgentUID: target.AgentUID, Model: target.Model}
-	n.IdentityComplete = target.ClusterUID != "" && target.Namespace != "" && target.Agent != "" && target.AgentUID != "" && target.Model != ""
-	tasks, names := map[string]bool{}, map[string]bool{}
-	for _, c := range r.Cases {
-		if !addEvaluationDiffCase(&n, c.ID, c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) || !diffOptionalIdentity(c.TaskName) || !diffOptionalIdentity(c.TaskUID) || !diffOptionalDigest(c.AnswerSHA256) {
-			return n, false
-		}
-		if r.SchemaVersion == 2 && (len(c.Matched) != 0 || len(c.Missing) != 0) {
-			return n, false
-		}
-		if c.TaskUID != "" && c.TaskName == "" {
-			return n, false
-		}
-		if c.TaskUID != "" {
-			if tasks[c.TaskUID] {
-				return n, false
-			}
-			tasks[c.TaskUID] = true
-		}
-		if c.TaskName != "" {
-			if names[c.TaskName] {
-				return n, false
-			}
-			names[c.TaskName] = true
-		}
-		entry := n.Cases[c.ID]
-		entry.IdentityComplete = n.IdentityComplete
-		n.Cases[c.ID] = entry
-		if r.SchemaVersion == 2 {
-			if c.Detail != evaluationExecutionUnavailable && (c.TaskName == "" || c.TaskUID == "") {
-				return n, false
-			}
-			if c.Detail == "" && c.AnswerSHA256 == "" {
-				return n, false
-			}
-		}
-	}
-	return n, evaluationDiffAggregate(n)
+	return invalid()
 }
 
 func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport {
 	r := evaluationDiffReport{Before: before, After: after, CaseSetChanged: before.CasesDigest != after.CasesDigest}
 	switch {
-	case (before.SuiteIdentity == "") != (after.SuiteIdentity == ""):
-		r.IncompatibleReason = "different receipt family"
-	case before.SuiteIdentity != "" && before.Identity.Runtime != after.Identity.Runtime:
+	case before.Identity.Runtime != after.Identity.Runtime:
 		r.IncompatibleReason = "runtime identity differs"
-	case before.SuiteIdentity != "" && before.SuiteIdentity != after.SuiteIdentity:
+	case before.SuiteIdentity != after.SuiteIdentity:
 		r.IncompatibleReason = "prepared suite subject differs"
-	case before.SuiteIdentity != "" && (before.CasesDigest != after.CasesDigest || before.SuiteInventory != after.SuiteInventory):
+	case before.CasesDigest != after.CasesDigest || before.SuiteInventory != after.SuiteInventory:
 		r.IncompatibleReason = "suite case inventory differs"
 	case before.Bundle != after.Bundle:
 		r.IncompatibleReason = "different bundle"
-	case before.SuiteIdentity == "" && (before.Version != 2 || after.Version != 2):
-		r.IncompatibleReason = "legacy receipt has no assertion evidence"
 	case !before.FullCaseSet || !after.FullCaseSet:
 		r.IncompatibleReason = "partial case set"
 	case before.IdentityConflict || after.IdentityConflict:
@@ -562,11 +301,7 @@ func writeEvaluationDiffReport(out io.Writer, r evaluationDiffReport) error {
 		label string
 		n     normalizedEvaluation
 	}{{"before", r.Before}, {"after", r.After}} {
-		if item.n.SuiteIdentity != "" {
-			fmt.Fprintf(&text, "%s: suite %s runtime %s schema %d run %s\nsuiteDigest: %s\ncasesDigest: %s\nfullCaseSet: %t\n", item.label, item.n.Bundle, item.n.Identity.Runtime, item.n.Version, item.n.RunID, item.n.PortableDigest, item.n.CasesDigest, item.n.FullCaseSet)
-			continue
-		}
-		fmt.Fprintf(&text, "%s: bundle %s runtime %s schema %d run %s\nportableDigest: %s\nGitCommit: %s\ncasesDigest: %s\nfullCaseSet: %t\n", item.label, item.n.Bundle, item.n.Identity.Runtime, item.n.Version, orDash(item.n.RunID), item.n.PortableDigest, item.n.GitCommit, item.n.CasesDigest, item.n.FullCaseSet)
+		fmt.Fprintf(&text, "%s: suite %s runtime %s schema %d run %s\nsuiteDigest: %s\ncasesDigest: %s\nfullCaseSet: %t\n", item.label, item.n.Bundle, item.n.Identity.Runtime, item.n.Version, item.n.RunID, item.n.PortableDigest, item.n.CasesDigest, item.n.FullCaseSet)
 	}
 	fmt.Fprintf(&text, "caseSetChanged: %t\n", r.CaseSetChanged)
 	if r.IncompatibleReason != "" {

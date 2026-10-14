@@ -43,7 +43,7 @@ func TestCaptureExecutorDefaultsToCommandAndIsInstanceLocal(t *testing.T) {
 }
 
 func TestCaptureHookGetsPreparedCommandAndEffectiveEnvironmentPerCall(t *testing.T) {
-	for _, kind := range []string{"orka", "kagent", "dependents"} {
+	for _, kind := range []string{"orka", "kagent"} {
 		t.Run(kind, func(t *testing.T) {
 			a := captureTestApp()
 			t.Setenv("CAPTURE_AMBIENT", "initial")
@@ -61,9 +61,6 @@ func TestCaptureHookGetsPreparedCommandAndEffectiveEnvironmentPerCall(t *testing
 					t.Fatal("capture deadline lost")
 				}
 				expectedArgs := []string{"--context", "kind-test", "--request-timeout=10s", "get", "agent"}
-				if kind == "dependents" {
-					expectedArgs = []string{"--context", "kind-test", "--request-timeout=10s", "get", "agents.core.orka.ai", "--all-namespaces", "-o=go-template=" + retireDependentsProjection()}
-				}
 				if !slices.Equal(cmd.Args[1:], expectedArgs) {
 					t.Fatalf("args=%v", cmd.Args)
 				}
@@ -71,11 +68,7 @@ func TestCaptureHookGetsPreparedCommandAndEffectiveEnvironmentPerCall(t *testing
 				if r.Getenv("CAPTURE_AMBIENT") != expectedAmbient || r.Getenv("CAPTURE_DUP") != "last" || r.Getenv("CAPTURE_REMOVED") != "" {
 					t.Fatal("effective env lost")
 				}
-				if kind == "dependents" {
-					if cmd.Stdin != nil {
-						t.Fatal("dependent listing unexpectedly has stdin")
-					}
-				} else {
+				{
 					raw, err := io.ReadAll(cmd.Stdin)
 					if err != nil || string(raw) != "request input" {
 						t.Fatalf("stdin=%q %v", raw, err)
@@ -85,9 +78,6 @@ func TestCaptureHookGetsPreparedCommandAndEffectiveEnvironmentPerCall(t *testing
 					t.Fatal("prepared I/O or wait bound lost")
 				}
 				response := "response"
-				if kind == "dependents" {
-					response = "0\n"
-				}
 				_, err := fmt.Fprint(cmd.Stdout, response)
 				return err
 			}
@@ -101,12 +91,6 @@ func TestCaptureHookGetsPreparedCommandAndEffectiveEnvironmentPerCall(t *testing
 					raw, err = a.orkaCapture(parent, []byte("request input"), "get", "agent")
 				case "kagent":
 					raw, err = a.kagentCaptureWithTimeout(parent, time.Second, "10s", []byte("request input"), "get", "agent")
-				case "dependents":
-					items, listErr := a.retireListDependents(parent, "agents.core.orka.ai")
-					if listErr != nil || len(items) != 0 {
-						t.Fatalf("listing: %v %v", items, listErr)
-					}
-					continue
 				}
 				if err != nil || string(raw) != "response" {
 					t.Fatalf("capture: %q %v", raw, err)
@@ -117,7 +101,7 @@ func TestCaptureHookGetsPreparedCommandAndEffectiveEnvironmentPerCall(t *testing
 }
 
 func TestCaptureHookPreservesCancellationAndSafeClassifiers(t *testing.T) {
-	for _, kind := range []string{"orka", "kagent", "dependents"} {
+	for _, kind := range []string{"orka", "kagent"} {
 		for _, tc := range []struct{ name, stderr, want string }{
 			{"forbidden", "Error from server (Forbidden): agents is forbidden: private-token-must-not-escape", "forbidden"},
 			{"transport", "transport private-token-must-not-escape", "failed"},
@@ -142,8 +126,6 @@ func TestCaptureHookPreservesCancellationAndSafeClassifiers(t *testing.T) {
 					_, err = a.orkaCapture(ctx, nil, "get", "agent")
 				case "kagent":
 					_, err = a.kagentCaptureWithTimeout(ctx, time.Second, "10s", nil, "get", "agent")
-				case "dependents":
-					_, err = a.retireListDependents(ctx, "agents.core.orka.ai")
 				}
 				if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), "private") {
 					t.Fatalf("classification: %v", err)
@@ -158,7 +140,6 @@ func TestCaptureHookPreservesCancellationAndSafeClassifiers(t *testing.T) {
 	cancel()
 	_, _ = a.orkaCapture(ctx, nil, "get", "agent")
 	_, _ = a.kagentCaptureWithTimeout(ctx, time.Second, "10s", nil, "get", "agent")
-	_, _ = a.retireListDependents(ctx, "agents.core.orka.ai")
 	if called {
 		t.Fatal("already cancelled request executed")
 	}
@@ -177,7 +158,7 @@ func TestCaptureHookDeadlineIsSynchronous(t *testing.T) {
 // The protocol still reports ignored writer failures through the hook; no
 // truncated successful response may escape either capture's output bounds.
 func TestCaptureHookRejectsProtocolStdoutAndStderrOverflow(t *testing.T) {
-	for _, kind := range []string{"orka", "kagent", "dependents"} {
+	for _, kind := range []string{"orka", "kagent"} {
 		for _, stream := range []string{"stdout", "stderr"} {
 			t.Run(kind+"/"+stream, func(t *testing.T) {
 				a := captureTestApp()
@@ -210,24 +191,10 @@ func TestCaptureHookRejectsProtocolStdoutAndStderrOverflow(t *testing.T) {
 						a.Cfg.KubeContext = "wrong"
 						_, err = a.kagentCaptureWithTimeout(t.Context(), time.Second, "10s", nil, "config", "view")
 					}
-				case "dependents":
-					// Drive the same bounded writers with a protocol request that emits a
-					// large namespace response, independently of projection parsing.
-					original := a.captureCommand
-					a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
-						cmd.Args = []string{"kubectl", "--context", "kind-test", "get", "namespace", "kube-system"}
-						if stream == "stderr" {
-							cmd.Args[2] = "wrong"
-						}
-						return original(ctx, cmd)
-					}
-					_, err = a.retireListDependents(t.Context(), "agents.core.orka.ai")
+
 				}
 				if err == nil || strings.Contains(err.Error(), "private") {
 					t.Fatalf("overflow concealed: %v", err)
-				}
-				if kind == "dependents" && !strings.Contains(err.Error(), "size limit") {
-					t.Fatalf("overflow misclassified: %v", err)
 				}
 			})
 		}

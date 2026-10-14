@@ -11,7 +11,7 @@ certificate. kmx fetches the pinned release chart rather than requiring an
 Orka checkout or a manually created wrapper credential.
 
 Installation does not author an Agent or run a Task. Author a native Orka Agent with
-[`kmx create --live`](kmx.md#default-orka-contract) and prove an answer with a Task.
+[native workspace authoring](suite-workspace.md), full eval, publication and digest Lift.
 Installation and authoring are deliberately separate operations.
 
 ## The command
@@ -107,89 +107,23 @@ an adopter should learn that here, not at their first model call.
 
 ## Author an Orka Agent and get an answer
 
-`create --live` creates Orka resources by default; it does not install Orka.
-Default `create` instead authors an [offline workspace member](suite-workspace.md). The
-separate explicit Kagent create path is documented in the
-[CLI contract](kmx.md#explicit-kagent-v0102-create) and does not change this
-guide. On the local kind path the runtime is already there: `kmx local up` and `kmx quickstart` both
-install the pinned release and leave the Ollama model in place, so author
-against that **same** context. On a cluster kmx did not bring up, install it
-first:
+[Root create](kmx.md#kmx-create) authors native workspace source offline. Prepare
+the runtime/model/Ready openai Provider and result access separately; create
+never bootstraps them. Review authored cases, run full native eval, publish the
+exact graph with matching private evidence and Lift its digest. See the
+[workspace lifecycle](suite-workspace.md). Suite status/retirement are unavailable.
 
-```bash
-kmx --context kind-kaimahi-p1 orka install
-```
+Quickstart composes setup and this native lifecycle, verifies placement and then
+sends a separate fresh answer Task. Console Ready is placement only. Independent
+live Orka Agents can use `run --agent` and chat; suite-owned Agents refuse legacy
+invocation. `task result` reads existing Task phase/answer without resending.
 
-The installer provisions `local-provider-key` separately. Create will reference
-it by name and key only, and will create a **new Provider named `orka-hello`**;
-it never adopts or updates the installer's shared Provider `local`. This is a
-new Agent/Task example, not a continuation command for an Agent you already
-created. Choose unused names and output paths; creation refuses collisions.
-
-Task execution requires an existing result account. `kmx orka install`
-provisions the account, Role and RoleBinding below; so does
-`kmx local up --step orka` and every run that includes that step — a bare
-`kmx local up` and `kmx quickstart`. `create --live` only NAMES an account and
-never provisions RBAC. On a cluster whose Orka arrived through upstream tools,
-an operator with RBAC creation permission can provision the account separately.
-Skip these three RBAC creation commands if KMX already provisioned it; they
-contain names only, not token values:
-
-```bash
-kubectl --context kind-kaimahi-p1 -n orka-system create serviceaccount orka-result-reader
-kubectl --context kind-kaimahi-p1 -n orka-system create role orka-result-reader \
-  --verb=get --resource=tasks.core.orka.ai
-kubectl --context kind-kaimahi-p1 -n orka-system create rolebinding orka-result-reader \
-  --role=orka-result-reader --serviceaccount=orka-system:orka-result-reader
-
-kmx --context kind-kaimahi-p1 create --live orka-hello \
-  --namespace orka-system --provider-type openai --model qwen2.5:3b \
-  --secret local-provider-key \
-  --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
-  --task 'Reply with exactly this text: Orka says hello.' \
-  --result-service-account orka-result-reader
-```
-
-This creates Provider → waits for current-generation Ready → creates Agent →
-waits → creates a fresh Task → retrieves its actual answer. A local kind run
-in an earlier v0.1.3 run returned stdout `Orka says hello.` with exit 0, using
-Ollama and no paid endpoint (US$0). That is a demonstrated release run, **not**
-a v0.2.0 chart or AKS proof. The historical clone-free CI journey also
-asserted the actual answer, rather than calling Ready an execution result.
-
-The generated `agents/orka-hello.yaml` includes a **value-free Secret skeleton
-that must never be written**. The command does not write it or provision RBAC.
-Without `--task`, only Provider/Agent readiness is tested. Use `--live --out -` or
-`--live --no-apply` for fully offline resource generation; [the canonical create guide](kmx.md#kmx-create)
-covers explicit inputs, pinned schemas, ordered manual creation and collisions.
-
-**Authority is broader than the name "result reader" suggests.** kmx requests a
-ten-minute token; the API server determines the actual granted lifetime. The
-token has this account's full effective authority, and discarding it is not
-revocation. An earlier v0.1.3 release authenticated result reads without enforcing
-Task-read RBAC; the pinned old main snapshot requires namespaced Task-get. Do
-not infer v0.2.0 authorization from the older result: retain the namespaced
-grant. Results travel via a loopback HTTP port-forward; UID checks do not bind
-the returned bytes to a UID. kmx pins one TCP connection and stops if it
-or the forward is lost, rather than reconnecting or resubmitting the Task. This
-trades reconnect availability for protection against later local-port reuse;
-the initial bind and connection are still local trust, not cryptographic process
-authentication. Dry-run does not test access or execution.
-
-[`kmx orka list --namespace <ns>`](kmx.md#kmx-orka-list) lists Orka Agents; an omitted namespace reads
-`orka-system`, the namespace the pinned installer uses. Existing Orka Agents are
-used through the interactive chat:
-
-```bash
-kmx chat --namespace <ns> <name>
-```
-
-Orka chat is always a session; a message after the name is its first turn. Use
-`kmx run --agent <name> --prompt-file -` for a one-shot Task, and
-`kmx task result <task> --wait 5m` to retrieve a later answer. A live Agent is
-edited with `kubectl edit agents.core.orka.ai` and read back with
-[`kmx orka show <name> --namespace <ns>`](kmx.md#kmx-orka-show). No automatic MCP translation, application image deployment
-or governance is added here.
+Result reads require a separately provisioned namespaced Task-get account.
+KMX installation/local setup provisions `orka-result-reader`; upstream-installed
+runtime owners must arrange it separately. Tokens carry the account's effective
+authority and discarding one is not revocation. Results use a context-pinned
+loopback forward/connection and stop on connection loss, not resubmit. Ready
+or admission alone does not prove model execution or result-read access.
 
 ## The whole journey, from nothing
 
@@ -204,7 +138,7 @@ Both setup paths install Orka, so neither needs a separate `kmx orka install`.
 ## Authoring an agent for Orka
 
 Installing Orka and authoring an agent are separate steps. The
-`kmx create --live` path emits native Orka resources; installing Orka does not
+native workspace path prepares native Orka resources; installing Orka does not
 convert existing files written for another runtime's API group.
 
 For a new agent that will run on Orka, **author Orka's native
@@ -238,10 +172,9 @@ traffic. Configure its runtime and model access through the upstream interfaces.
   kmx's `orka-api`. Result reads retain their own API and RBAC checks.
 - **Rate limits are not supported by v0.2.0 CRDs.** Orka removed
   `Provider.spec.rateLimit` and `Agent.spec.rateLimit`; kmx does not silently
-  drop requested limits. Offline `--schema-target v0.2.0` and online create/lift
-  against that release refuse those fields. Explicit v0.1.3 schema selection
-  and existing v0.1.3 installations still accept legacy limit-bearing bundles.
-  Remove the limits deliberately before moving a bundle to a fresh v0.2.0
+  drop requested limits. Native workspace profiles reject unsupported fields;
+  live create schema-selection/previews and old bundle readers are removed.
+  Historical limit-bearing resources need operator review before a fresh v0.2.0
   target; there is no equivalent rate-limit mapping in kmx yet.
 - **One pinned install.** `v0.2.0` chart, harness-v2, release `orka`, namespace
   `orka-system`, fullname `orka-api`. A recognized matching kmx installation
@@ -291,4 +224,4 @@ traffic. Configure its runtime and model access through the upstream interfaces.
 
 ## See also
 
-- [kmx create --live](kmx.md#default-orka-contract) — native Orka resources and Task result contract
+- [Native workspace lifecycle](suite-workspace.md) — source, eval, evaluated push and digest Lift

@@ -281,22 +281,6 @@ func (m chatPicker) View() tea.View {
 	return tea.NewView(header + body.String())
 }
 
-// A plan must not be confirmable when this picker would silently drop any
-// of its decisions. Use the same wrapping and title budget as View.
-func chatPickerTitleFits(title string, width, height int, header bool) bool {
-	if width <= 0 {
-		width = 88
-	}
-	available := 24
-	if height > 0 {
-		available = max(8, min(24, height-1))
-	}
-	if header {
-		available = max(8, available-3)
-	}
-	return len(chatPickerTitleLines(title, max(6, min(96, width))-4)) <= max(1, available-8)
-}
-
 func chatPickerTitleLines(title string, width int) []string {
 	var lines []string
 	for i, raw := range strings.Split(safeTerminal(title), "\n") {

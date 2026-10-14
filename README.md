@@ -31,8 +31,9 @@ and Lift.
 
 **Create → Prove → Lift** is implemented on current `main` for one-member native
 Orka and exact-v0.10.3 Go kagent suites. The commands remain unreleased. Bounded
-CI qualifies root Lift for Orka exact reuse and kagent fresh-target creation; root
-Lift qualification does not prove every promotion, creation or partial-outcome path.
+CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion
+and kagent fresh-target creation; it does not prove every promotion, creation or
+partial-outcome path.
 
 > [!NOTE]
 > The table below describes the current development build, which is unreleased.
@@ -42,10 +43,10 @@ Lift qualification does not prove every promotion, creation or partial-outcome p
 
 | Stage | Current development build |
 |---|---|
-| **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline. It does not contact Kubernetes, build an image, or run a model. |
-| **Prove** | `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT` runs ordered native Orka cases once, stops later cases after the first non-pass, and writes private evidence only when all cases pass. |
+| **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
+| **Prove** | Orka uses `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, with no cluster selectors. Each runs ordered cases once, stops later cases after the first non-pass, and writes private evidence only when all cases pass. |
 | **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx push REF` remains explicitly unevaluated. Neither form deploys. |
-| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; hidden `kmx bundle lift` remains the separate legacy PortableAgent operation. |
+| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; suite status and retirement remain unavailable. |
 
 Create and push discover the nearest ancestor `workspace.yaml`; `--workspace DIR`
 selects an exact root without fallback. Read the [workspace lifecycle](docs/suite-workspace.md)
@@ -75,7 +76,7 @@ kmx quickstart
 
 `kmx quickstart` creates a local kind environment, starts Ollama and pinned Orka,
 and succeeds only after a fresh Task returns a readable answer. Use
-`kmx quickstart --interactive` for the experimental guided live-agent path.
+`kmx quickstart --interactive` for guided native workspace authoring, full eval, publication and reviewed Lift.
 Follow [getting started](docs/getting-started.md) for prerequisites and explicit
 context selection.
 
@@ -85,8 +86,8 @@ context selection.
 |---|---|
 | Workspace | Default `kmx create`, root `eval`, and root `push` operate on editable source. Digest-based root `lift` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
 | Local environment | `kmx local up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
-| Live Agent | `kmx create --live` creates runtime resources and a PortableAgent bundle. `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. |
-| Legacy bundle | Hidden but callable `kmx bundle ...` commands retain PortableAgent lift, status, evaluation, verification and retirement until suite-path parity. They are not AgentSuite commands. |
+| Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task on an independent live Orka Agent; `kmx chat NAME` opens an Orka session. Suite-owned Agents refuse legacy invocation; neither is workspace-local execution. |
+| Legacy bundle | Removed outright: user `agent.yaml` readers/writers, commands and receipts, `create --live` including previews/wizard, run's bundle mode and `--bundles` flags. Old receipts are unreadable; no conversion, migration or on-disk/resource deletion. Public AgentSuite implementation bundles are a different format and remain supported. |
 
 ## Runtime Boundaries
 
@@ -95,13 +96,18 @@ separate model-access binding; selecting one does not select the other.
 
 - **Orka** is the default runtime. Its packaged workspace path supports
   evaluation, evaluated publication and root digest Lift with exact evaluated
-  reuse; it also owns live create, run, chat and the legacy bundle lifecycle.
-- **kagent** support is exact-version and operation-specific: v0.10.2 live
-  create; v0.10.3 Go packaged workspace authoring, `eval --bindings`, evaluated
-  publication, create-only root digest Lift, and legacy bundle
-  lift/status/evaluation. Packaged status and retirement are unavailable.
-- **agentsessions** is evaluation and replay integration for the legacy bundle
-  path, not a KMX deployment target.
+  reuse; independent live Orka run and chat remain.
+- **kagent** support is exact-version and operation-specific: v0.10.3
+  Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated
+  publication and create-only root digest Lift. Standalone run/chat, Python,
+  RemoteMCP, suite status and retirement remain unavailable.
+- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary
+  push and explicit private `eval --development-host FILE`: one fresh
+  Session/config/Exec per case, full-pass private proof and exact-S evaluated
+  push. This unauthenticated literal-loopback development path loads no cluster
+  settings; it supports no tools/judge, Lift/chat/status or remote lifecycle.
+  Receipt diff refuses its proof. Read-only reference extraction/export and
+  availability probing remain separate; legacy bundle evaluation/replay is removed.
 
 The [runtime support matrix](docs/runtime-adapters.md#revision-pinned-support-and-qualification-matrix)
 records exact pins and evidence rather than claiming feature parity.
@@ -116,9 +122,12 @@ records exact pins and evidence rather than claiming feature parity.
 - Readiness, a readable answer, and passing evaluation are different evidence.
 - `kmx status` and `kmx orka status` report Orka runtime state, not AgentSuite
   deployment status.
-- Quickstart and guided live creation add cluster resources and result-reader
-  RBAC. The wizard also adds a [read-only Kubernetes Tool with cross-namespace
-  permissions](docs/orka-k8s-tool.md).
+- Quickstart adds cluster resources and result-reader RBAC, then authors, fully
+  evaluates, publishes and Lifts a tool-free native suite. Placement verification
+  precedes its separate fresh answer Task. Console Ready means placement only.
+- Chat `/lift` and console Lift only print `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`; no release GUI or live-copy fallback remains.
+- Automatic wizard tools and live tools/inference editing are retired; ordinary
+  host Foundry/Copilot chat controls remain independent.
 - Cancellation can leave completed resources in place. `kmx local down` deletes
   the entire named local cluster and its data.
 - Unsigned evaluation receipts and provenance are observations, not
@@ -137,7 +146,6 @@ records exact pins and evidence rather than claiming feature parity.
 | Understand exact runtime support | [Runtime support](docs/runtime-adapters.md) |
 | Find every implemented command | [`kmx` reference](docs/kmx.md) |
 | Read the portable artifact contract | [AgentSuite specification](agentsuite/spec.md) |
-| Operate the old `agent.yaml` path | [Legacy PortableAgent bundle lifecycle](docs/agent-lift.md) |
 | Select models and inference | [Models](docs/models.md), [Copilot](docs/copilot-inference.md), [Foundry](docs/local-foundry-inference.md) |
 | Install or upgrade | [Releases](docs/releases.md) |
 | Browse all guides | [Documentation index](docs/README.md) |

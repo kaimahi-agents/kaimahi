@@ -13,13 +13,11 @@ import (
 
 // ChatOptions selects the Orka Agent a chat session is opened against.
 type ChatOptions struct {
-	Agent          string
-	Task           string
-	Verbose        bool
-	Runtime        string
-	Namespace      string
-	AzureDiscovery string
-	Bundles        string
+	Agent     string
+	Task      string
+	Verbose   bool
+	Runtime   string
+	Namespace string
 }
 
 // ChatWithOptions opens the interactive Orka session. Task, when set, is
@@ -34,15 +32,8 @@ type ChatOptions struct {
 // teach people to type past confirmations.
 func (a *App) ChatWithOptions(opt ChatOptions) error {
 	a.chatVerbose = opt.Verbose
-	a.bundleRoot = opt.Bundles
-	if opt.AzureDiscovery != "" {
-		a.azureDiscoveryMode = opt.AzureDiscovery
-	}
 	if err := checkChatRuntime(opt.Runtime); err != nil {
 		return err
-	}
-	if opt.AzureDiscovery != "" && opt.AzureDiscovery != "cli" && opt.AzureDiscovery != "sdk" {
-		return fmt.Errorf("unknown Azure discovery %q; use cli or sdk", opt.AzureDiscovery)
 	}
 	agent := opt.Agent
 	// Orka chat is always a session: a Task is created, polled for its own
@@ -81,8 +72,6 @@ func checkChatRuntime(name string) error {
 
 type orkaChatBackend struct {
 	liftHeader       *liftHeader
-	bundleRoot       string
-	azureDiscovery   *azureSDKDiscovery
 	app              *App
 	agent, namespace string
 	chatContext      context.Context

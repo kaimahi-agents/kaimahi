@@ -1,16 +1,15 @@
 package app
 
 import (
-	"context"
 	"fmt"
-
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 )
 
 func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, error) {
+	if action.kind == "lift" {
+		return agentTUIEnvironment{}, fmt.Errorf("%s", interactiveLiftRetirement)
+	}
 	source := action.source.app(a)
 	source.InvocationCommand = ""
-	source.bundleRoot = action.bundles
 	if action.kind == "chat" {
 		if !action.source.Local {
 			source.chatInference = "local"
@@ -38,7 +37,7 @@ func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, err
 		}
 		// Console agents are native Orka Agents; naming the runtime explicitly
 		// keeps chat off the discovery path rather than re-resolving the agent.
-		return agentTUIEnvironment{}, source.ChatWithOptions(ChatOptions{Agent: action.agent.Name, Namespace: action.agent.Namespace, Runtime: "orka", Bundles: action.bundles})
+		return agentTUIEnvironment{}, source.ChatWithOptions(ChatOptions{Agent: action.agent.Name, Namespace: action.agent.Namespace, Runtime: "orka"})
 	}
 	if action.kind == "tools" {
 		if action.agent.External {
@@ -46,61 +45,5 @@ func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, err
 		}
 		return agentTUIEnvironment{}, fmt.Errorf("%s", agentMutationRetirement)
 	}
-	if action.kind != "lift" || !action.agent.canLift() || !action.source.Local {
-		return agentTUIEnvironment{}, fmt.Errorf("unsupported agent action")
-	}
-	// Validate local bundle identity before a new cloud target can be provisioned.
-	if _, _, err := consoleAgentBundle(action.bundles, action.agent.Name); err != nil {
-		return action.target, fmt.Errorf("local bundle is invalid; refusing lift: %w", err)
-	}
-	target := action.target
-	if action.create != nil {
-		// The existing cluster phase owns cloud account review, confirmation,
-		// provisioning records and retry advice. Run it with the terminal restored.
-		worker := action.source.app(a)
-		worker.InvocationCommand = ""
-		if err := worker.Lift(*action.create); err != nil {
-			return target, err
-		}
-		target = agentTUIEnvironment{Name: action.create.Cluster}
-	}
-	if target.Name == "" || target.Local || target.Name == action.source.Name {
-		return target, fmt.Errorf("lift requires a different remote environment")
-	}
-	b := &orkaChatBackend{app: source, agent: action.agent.Name, namespace: action.agent.Namespace, bundleRoot: action.bundles}
-	defer b.Close()
-	renderer := newChatRenderer(a.Out)
-	renderer.enterFullScreen()
-	defer renderer.leaveFullScreen()
-	ctx := a.operationContext()
-	chosen := chatLiftTarget{Context: target.Name, Kubeconfig: target.Kubeconfig, DefaultKubeconfig: target.Kubeconfig == ""}
-	if action.create != nil {
-		var err error
-		chosen, err = source.agentTUICreatedTarget(ctx, *action.create)
-		if err != nil {
-			return target, err
-		}
-	}
-	err := b.liftAgentTo(ctx, renderer, chosen)
-	// The lift flow saves a durable kubeconfig even for newly provisioned AKS.
-	if locations, loadErr := loadAgentLocations(); loadErr == nil {
-		for _, l := range locations {
-			if l.Context == chosen.Context && l.Agent == action.agent.Name && l.Namespace == action.agent.Namespace {
-				target = agentTUIEnvironment{Name: l.Context, Kubeconfig: l.Kubeconfig}
-				break
-			}
-		}
-	}
-	return target, err
-}
-
-func (a *App) agentTUICreatedTarget(ctx context.Context, opt lift.Options) (chatLiftTarget, error) {
-	if err := ctx.Err(); err != nil {
-		return chatLiftTarget{}, err
-	}
-	account, err := a.azAccount()
-	if err != nil {
-		return chatLiftTarget{}, err
-	}
-	return chatLiftTarget{Context: opt.Cluster, Subscription: account.ID, ResourceGroup: opt.ResourceGroup, Cluster: opt.Cluster, Location: opt.Location}, nil
+	return agentTUIEnvironment{}, fmt.Errorf("unsupported agent action")
 }

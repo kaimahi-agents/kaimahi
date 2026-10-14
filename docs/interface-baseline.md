@@ -10,13 +10,13 @@ Visible product commands:
 
 ```text
 kmx
-├── create [name]
+├── create <name>
 ├── eval
 │   ├── diff <before.json> <after.json>
 │   └── from-sessions <session-uid>...
 ├── push <reference>
 ├── lift <ref>@<digest>
-├── run [<bundle-dir>]
+├── run --agent <name>
 ├── chat <name> [message...]
 ├── quickstart
 ├── status
@@ -45,14 +45,13 @@ kmx
 └── version
 ```
 
-`eval` is both an operational workspace command and the parent of two offline
-helpers. Cobra also supplies `help`.
+`eval` is an operational workspace command with offline diff and independent
+read-only reference extraction/export helpers. Cobra also supplies `help`.
 
 Hidden but callable:
 
 | Route | Contract |
 |---|---|
-| `kmx bundle evaluate/lift/retire/status/verify` | Legacy PortableAgent lifecycle; active until suite parity, not an AgentSuite command |
 | `kmx aks up/down` | Guarded AKS compatibility path with historical ownership records |
 | `kmx quickstart-wizard` | Retirement stub directing callers to `quickstart --interactive` |
 
@@ -60,6 +59,9 @@ Removed outright: `kmx agent`, root `ctx`, `up`, `down`, the former
 AKS-provisioning meaning of root `lift`, and `lift down`. They are not
 compatibility aliases. Root `lift <ref>@<digest>` is now the distinct deploy-only
 one-member packaged native Orka/exact-v0.10.3 Go kagent operation.
+User `agent.yaml` readers/writers/receipts, `bundle` commands, `create --live`
+including previews/wizard, root run bundle mode and `--bundles` flags are also
+removed outright. Old bundle receipts are unreadable; no migration/resource deletion.
 
 ## Everyday object flow
 
@@ -67,21 +69,16 @@ one-member packaged native Orka/exact-v0.10.3 Go kagent operation.
 Workspace --create/eval--> AgentSuite artifact --push--> OCI location
                                                     |
                                                     +-> exact-digest native lift
-
-create --live -----------> Runtime resources + PortableAgent bundle
-                                               -> hidden bundle lifecycle
 ```
 
 | Command | Primary object | Current effect |
 |---|---|---|
 | `create` | Workspace | Author one offline member; no cluster or model call |
-| `eval` | Workspace/prepared AgentSuite | Place exact packaged Orka or exact-v0.10.3 Go kagent content, run cases in order, and stop later cases after the first non-pass |
+| `eval` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE`; stop later cases after the first non-pass |
 | `push` | Prepared AgentSuite | Transfer exact OCI graph; optional full-passing receipt check; no deployment |
 | `lift` | Exact supported packaged native AgentSuite | Deploy by immutable digest with explicit private evidence and target; Orka uses `--inference`, kagent uses `--bindings`; GET-only with `--plan` |
-| `create --live` | Runtime resources + PortableAgent bundle | Explicit legacy/live path |
 | `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |
 | `status`, `orka status` | Orka installation | Table-only runtime report, not suite deployment status |
-| `bundle status` | Legacy PortableAgent deployment | Readiness, revision, drift and evaluation evidence |
 
 ## Workspace versus live
 
@@ -90,15 +87,17 @@ Default `create` requires one name, exact `--model`, and file-valued
 selects or initializes one exact root. The current source profile has a
 one-member limit.
 
-`--live` changes the operation rather than selecting another workspace mode. It
-is required for resource creation, previews, no-name wizard use, and exact
-kagent v0.10.2 live create. `--workspace` and `--live` conflict.
-
-Root `eval` is packaged native workspace execution, not legacy bundle evaluation.
-Orka uses `--inference`; exact-v0.10.3 Go kagent uses `--bindings`. Both can
-produce runtime-specific evidence for evaluated push. Legacy bundle evaluation
-remains `kmx bundle evaluate` and can explicitly select exact kagent v0.10.3 Go
-or agentsessions within their qualified boundaries.
+Live create/previews/wizard are removed; their flags are unknown before config.
+Root eval runs full native authored cases only: Orka uses `--inference`, kagent
+uses `--bindings`; pinned AgentSessions chat instead requires a private
+`--development-host FILE`, with no cluster selectors or fallback. All export only
+runtime-specific full-passing evidence. No judge, subset, recorded Sessions input
+or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
+AgentSessions evidence is explicitly refused by diff and Lift;
+`eval from-sessions` is reference extraction/export without a native consumer.
+Suite-owned live resources refuse legacy invocation. Chat `/lift` and console
+Lift only print `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+No new GUI or source-less copying. Console Ready means placement, not an answer.
 
 ## Context, environment, target and inference
 
@@ -118,10 +117,9 @@ or deploy a runtime.
 
 | Runtime/integration | Implemented KMX scope |
 |---|---|
-| Orka | Default runtime; setup, live create, run/chat, workspace evaluation/evaluated publication, exact-digest native Lift, and legacy bundle lifecycle |
-| kagent v0.10.2 | Explicit live create and optional one-shot A2A only; KMX does not install it |
-| kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Lift; legacy bundle lift/status/evaluation; no packaged status/retirement |
-| agentsessions | Pinned-chat suite author/prepare/load/push; explicit loopback operator-observed development eval/full-pass evidence and exact-S evaluated push; legacy bundle evaluation and zero-call reference replay. No registry/auth, Lift/chat/status or remote lifecycle |
+| Orka | Default runtime; setup, independent live run/chat, workspace evaluation/evaluated publication and exact-digest native Lift; no suite status/retirement |
+| kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Lift; no packaged status/retirement |
+| agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case, no tools/judge, cluster settings, registry/auth or remote lifecycle; Lift/chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. |
 
 Support is operation- and version-specific. See the [runtime support
 matrix](runtime-adapters.md#revision-pinned-support-and-qualification-matrix).
@@ -171,7 +169,7 @@ Important limits:
 ## Compatibility and evidence
 
 - Latest stable v0.5.1 retains the former `kmx agent ...` routes. Root
-  create/eval/push/lift and hidden bundle routes are unreleased development behavior.
+  create/eval/push/lift and bundle retirement are unreleased development behavior.
 - Help and completion must remain inert.
 - Unknown is not absent; readiness is not a result; a result is not evaluation.
 - Answers and report documents own stdout. Progress, warnings and notices use

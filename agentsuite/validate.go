@@ -572,6 +572,7 @@ func validateIdentifierList(name string, values []string) error {
 
 func validateToolProvider(provider ToolProvider, raw []byte, content *contentSet) error {
 	var errs []error
+	errs = append(errs, validateRawToolPolicyFields(raw))
 	if provider.SchemaVersion != SpecVersion || provider.MediaType != MediaTypeToolProvider {
 		errs = append(errs, errors.New("unsupported schemaVersion or mediaType"))
 	}
@@ -605,6 +606,14 @@ func validateToolProvider(provider ToolProvider, raw []byte, content *contentSet
 			}
 			effects[effect] = true
 		}
+		if err := validateToolEffectApproval(tool); err != nil {
+			errs = append(errs, fmt.Errorf("tool %q: %w", tool.Name, err))
+		}
+		if tool.DelegatedAuthorization != nil {
+			if err := validateDelegatedAuthorization(*tool.DelegatedAuthorization); err != nil {
+				errs = append(errs, fmt.Errorf("tool %q delegated authorization: %w", tool.Name, err))
+			}
+		}
 	}
 	if len(provider.Variants) == 0 && provider.Remote == nil {
 		errs = append(errs, errors.New("tool provider must declare bundled variants, remote MCP, or both"))
@@ -633,6 +642,34 @@ func validateToolProvider(provider ToolProvider, raw []byte, content *contentSet
 		errs = append(errs, validateRemoteToolProvider(*provider.Remote))
 	}
 	errs = append(errs, validateExtensions(provider.Extensions))
+	return errors.Join(errs...)
+}
+
+// validateRawToolPolicyFields preserves presence distinctions that disappear
+// when optional JSON fields decode to Go zero values.
+func validateRawToolPolicyFields(rawProvider []byte) error {
+	var document struct {
+		Tools []map[string]json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(rawProvider, &document); err != nil {
+		return err
+	}
+	var errs []error
+	for i, tool := range document.Tools {
+		for _, field := range []string{"effect", "approval"} {
+			raw, present := tool[field]
+			if !present {
+				continue
+			}
+			var value string
+			if err := json.Unmarshal(raw, &value); err != nil || value == "" {
+				errs = append(errs, fmt.Errorf("tool %d %s must be a non-empty string", i, field))
+			}
+		}
+		if raw, present := tool["delegatedAuthorization"]; present && strings.TrimSpace(string(raw)) == "null" {
+			errs = append(errs, fmt.Errorf("tool %d delegatedAuthorization must not be null", i))
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -678,6 +715,37 @@ func validateRemoteToolProvider(remote RemoteToolProvider) error {
 			errs = append(errs, fmt.Errorf("remote network destination %q is invalid or duplicated", network.DestinationRef))
 		}
 		destinations[network.DestinationRef] = true
+	}
+	return errors.Join(errs...)
+}
+
+func validateToolEffectApproval(tool Tool) error {
+	var errs []error
+	if tool.Effect != "" && tool.Effect != "read-only" && tool.Effect != "mutating" {
+		errs = append(errs, errors.New("effect must be read-only or mutating"))
+	}
+	if tool.Approval != "" && tool.Approval != "required" && tool.Approval != "policy-controlled" {
+		errs = append(errs, errors.New("approval must be required or policy-controlled"))
+	}
+	if tool.DelegatedAuthorization != nil && (tool.Effect == "" || tool.Approval == "") {
+		errs = append(errs, errors.New("delegated authorization requires explicit tool effect and approval"))
+	}
+	return errors.Join(errs...)
+}
+
+func validateDelegatedAuthorization(auth DelegatedAuthorization) error {
+	var errs []error
+	if !identifierPattern.MatchString(auth.Service) {
+		errs = append(errs, errors.New("delegated authorization service is invalid"))
+	}
+	if !capabilityPattern.MatchString(auth.Scope) {
+		errs = append(errs, errors.New("delegated authorization scope is invalid"))
+	}
+	if auth.Credential.Resolution != "runtime-brokered" {
+		errs = append(errs, errors.New("delegated authorization credential resolution must be runtime-brokered"))
+	}
+	if !identifierPattern.MatchString(auth.Credential.BindingRef) {
+		errs = append(errs, errors.New("delegated authorization credential bindingRef is invalid"))
 	}
 	return errors.Join(errs...)
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""External pinned bootstrap, Go lift/status, native A2A and product eval proof.
+"""External pinned bootstrap and independent upstream Go MCP/A2A smoke.
 
 All external output is private. Public failures use closed phases and codes.
 """
@@ -53,7 +53,7 @@ def require(condition, message, *, reason="qualification-check-failed"):
         raise QualificationError(message, reason=reason)
 
 
-PHASES = {"operator-patch", "cluster-inventory", "node-container-inspect", "node-image-inspect", "resource-get",
+PHASES = {"fixture-create", "cluster-inventory", "node-container-inspect", "node-image-inspect", "resource-get",
           "namespace-create", "secret-create", "fixture-apply", "fixture-ready", "controller-version"}
 
 
@@ -340,12 +340,6 @@ def validate_read_only(phase, before, after, local_before, local_after, writes, 
     require(writes == expected_writes, phase + " changed mutation audit")
 
 
-def filesystem(*roots):
-    # Directory identities detect local state created by --plan/status too.
-    return {str(path): (stat.S_IMODE(path.stat().st_mode), None if path.is_dir() else hashlib.sha256(path.read_bytes()).hexdigest())
-            for root in roots for path in ([root] + sorted(root.rglob("*"))) if path.exists()}
-
-
 def validate_a2a(response, evidence):
     require(response.get("jsonrpc") == "2.0" and response.get("id") == "kmx-lift-once" and "error" not in response,
             "native A2A returned an invalid/error response; do not resend")
@@ -387,206 +381,99 @@ def one_message(endpoint, fixture):
         "message": {"kind": "message", "role": "user", "messageId": "kmx-lift-one-message",
                     "parts": [{"kind": "text", "text": "Use the allowed tool and return its result."}]},
         "configuration": {"blocking": True}}}
+    require(before.get("judge_calls") == 0 and before.get("cases") == [], "fixture was already judged/executed; do not resend")
     response = http_json(endpoint, request)
-    return validate_a2a(response, http_json(fixture + "/evidence"))
+    observed = http_json(fixture + "/evidence")
+    proof = validate_a2a(response, observed)
+    rows = observed.get("cases", [])
+    require(observed.get("judge_calls") == 0 and len(rows) == 1, "independent smoke fixture inventory differs")
+    row = rows[0]
+    require(tuple(row.get(key) for key in ("model_calls", "tool_calls", "terminal_answers", "user_turns")) == (2, 1, 1, 1)
+            and row.get("input_sha256") == hashlib.sha256(request["params"]["message"]["parts"][0]["text"].encode()).hexdigest()
+            and row.get("answer_sha256") == proof["answer_sha256"], "native answer/input/counters differ from recorded fixture case")
+    proof.update(terminal_answers=1, judge_calls=0, rpc_id=request["id"],
+                 request_message_id=request["params"]["message"]["messageId"])
+    return proof
 
 
-def bundle_files(work):
-    bundle = work / "bundle"
-    bundle.mkdir(mode=0o700)
-    agent = {"apiVersion": "kmx.kaimahi.dev/v1alpha1", "kind": "PortableAgent", "metadata": {"name": NAME},
-             "spec": {"description": "Deterministic Go lift qualification", "instructions": "Use the allowed tool and return its result.",
-                      "model": {"name": "fixture"}},
-             "extensions": {"kagent": {"apiVersion": "kagent.dev/v1alpha2", "runtime": "go", "tools": [{
-                 "server": {"kind": "RemoteMCPServer", "name": "lift-tools"}, "toolNames": ["read_sentinel"]}]}}}
-    (bundle / "agent.yaml").write_text(yaml.safe_dump(agent, sort_keys=False))
-    bindings = {"apiVersion": "kmx.kaimahi.dev/v1alpha1", "kind": "KagentBindings", "namespace": NAMESPACE,
-                "modelConfig": {"provider": "openai", "baseURL": "http://lift-fixture.agents.svc.cluster.local:9000/v1",
-                                "secretRef": {"name": "lift-model-key", "key": "api-key"}}}
-    # Status must read author-owned external bindings, never infer live values.
-    path = work / "external-bindings.yaml"
-    path.write_text(yaml.safe_dump(bindings, sort_keys=False))
-    return bundle, path
+def runtime_fixture_manifest():
+    # Checkout CI setup only: upstream objects, not PortableAgent or a KMX
+    # compatibility/release engine. The independently provisioned key is a ref.
+    deployment = {
+        "podSecurityContext": {"runAsNonRoot": True, "seccompProfile": {"type": "RuntimeDefault"}},
+        "securityContext": {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]},
+                            "readOnlyRootFilesystem": True},
+        "volumes": [{"name": "tmp", "emptyDir": {}}],
+        "volumeMounts": [{"name": "tmp", "mountPath": "/tmp"}],
+    }
+    return [
+        {"apiVersion": "kagent.dev/v1alpha2", "kind": "ModelConfig",
+         "metadata": {"name": NAME, "namespace": NAMESPACE},
+         "spec": {"provider": "OpenAI", "model": "fixture", "apiKeySecret": "lift-model-key",
+                  "apiKeySecretKey": "api-key",
+                  "openAI": {"baseUrl": "http://lift-fixture.agents.svc.cluster.local:9000/v1"}}},
+        {"apiVersion": "kagent.dev/v1alpha2", "kind": "Agent",
+         "metadata": {"name": NAME, "namespace": NAMESPACE},
+         "spec": {"description": "Independent upstream Go MCP smoke", "type": "Declarative",
+                  "declarative": {"runtime": "go", "modelConfig": NAME,
+                      "systemMessage": "Use the allowed tool and return its result.", "deployment": deployment,
+                      "tools": [{"type": "McpServer", "mcpServer": {"apiGroup": "kagent.dev",
+                          "kind": "RemoteMCPServer", "name": "lift-tools", "toolNames": ["read_sentinel"]}}]}}},
+    ]
 
 
-def hash_bytes(data):
-    return hashlib.sha256(data).hexdigest()
+def runtime_fixture():
+    kinds = ("modelconfigs.kagent.dev", "agents.kagent.dev")
+    require(all(get(kind, NAME, optional=True) is None for kind in kinds), "independent smoke fixture is occupied")
+    for obj in runtime_fixture_manifest():
+        kube("-n", NAMESPACE, "create", "-f", "-", data=yaml.safe_dump(obj).encode(), phase="fixture-create")
+    # Reuse the bootstrap discovery budget; polling readiness never resends a
+    # create or native message. This is fixture startup, not product placement.
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        ready = True
+        for kind in kinds:
+            obj = get(kind, NAME)
+            metadata = obj["metadata"]
+            require(metadata.get("uid") and metadata.get("generation", 0) > 0 and not metadata.get("deletionTimestamp"),
+                    "runtime fixture identity is missing or terminating")
+            conditions = obj.get("status", {}).get("conditions", [])
+            expected = ("Accepted", "Ready") if kind == "agents.kagent.dev" else ("Accepted",)
+            ready = ready and all(any(c.get("type") == condition and c.get("status") == "True"
+                and (c.get("observedGeneration") == metadata["generation"]
+                     or kind == "modelconfigs.kagent.dev" and c.get("observedGeneration", 0) == 0)
+                for c in conditions) for condition in expected)
+        if ready:
+            return
+        time.sleep(1)
+    raise QualificationError("independent runtime fixture never became Accepted/Ready")
 
 
-def framed_digest(entries):
-    return hash_bytes(b"".join(name.encode() + b" " + str(len(data)).encode() + b"\n" + data + b"\n" for name, data in entries))
-
-
-def evaluation_cases(bundle):
-    directory = bundle / "eval"
-    directory.mkdir(mode=0o700)
-    cases = []
-    for ordinal in ("one", "two"):
-        case = {"id": "case-" + ordinal, "input": "Use the allowed tool and return its result. Qualification case " + ordinal + ".",
-                "expectContains": ["KMX MCP proof:"]}
-        if ordinal == "one":
-            case["assertions"] = [{"id": "quality", "type": "llmJudge", "rubric": "Return the allowed tool result.",
-                                    "minScore": 50, "judgeModel": "fixture-judge", "judgeVersion": "1"}]
-        path = directory / (case["id"] + ".yaml")
-        path.write_text(yaml.safe_dump(case, sort_keys=False))
-        path.chmod(0o600)
-        cases.append((path, case))
-    return cases
-
-
-def closed(value, fields):
-    require(isinstance(value, dict) and set(value) <= set(fields.split()), "evaluation evidence is not payload-free")
-
-
-def private_file(path):
-    info = path.lstat()
-    require(stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1
-            and info.st_size <= 1024 * 1024, "evaluation receipt must be a bounded private regular file")
-    return path.read_bytes()
-
-
-def validate_evaluation(report, cases, receipt, deployment_digest, live, uid, images, observed, seen, judge_url):
-    closed(report, "schemaVersion runID bundle portableDigest renderedDigest deploymentReceiptDigest casesDigest fullCaseSet gitCommit target result cases")
-    require(report.get("schemaVersion") == 2 and report.get("bundle") == NAME and report.get("result") == "pass",
-            "product evaluation is not a passing v2 receipt")
-    require(report.get("portableDigest") == receipt["PortableDigest"] and report.get("renderedDigest") == receipt["RenderedDigest"]
-            and report.get("deploymentReceiptDigest") == deployment_digest, "evaluation source/deployment digests differ")
-    require(report.get("casesDigest") == framed_digest([("eval/" + path.name, path.read_bytes()) for path, _ in cases]),
-            "evaluation case set digest differs")
-    target = report.get("target", {})
-    closed(target, "runtime runtimeVersion engine context clusterUID namespace agent agentUID agentGeneration modelConfigUID modelConfigGeneration model platform snapshot")
-    expected = {"runtime": "kagent", "runtimeVersion": "v0.10.3", "engine": "go", "context": CONTEXT,
-                "clusterUID": uid, "namespace": NAMESPACE, "agent": NAME, "model": "fixture"}
-    for field, kind in (("agent", "Agent"), ("modelConfig", "ModelConfig")):
-        expected[field + "UID"] = live[kind + "/" + NAME]["uid"]
-        expected[field + "Generation"] = live[kind + "/" + NAME]["generation"]
-    require(all(target.get(key) == value for key, value in expected.items()), "evaluation actual target identity differs")
-    platform = target.get("platform", {})
-    closed(platform, "sourceCommit controllerImage adkImage controller")
-    require(platform.get("sourceCommit") == "8878c39ac64421cb665c8e62ecc6411dd12f2fc2", "evaluation platform source differs")
-    for field, role in (("controllerImage", "controller"), ("adkImage", "kagent")):
-        require(platform.get(field) == {"os": "linux", "architecture": "amd64", "digest": images[role]},
-                "evaluation platform image differs from actual running imageID")
-    resource_fields = "Kind Name Namespace UID Generation ResourceVersion SpecDigest Key"
-    controller = platform.get("controller", [])
-    require(len(controller) == 3, "evaluation controller platform snapshot is incomplete")
-    for row, kind in zip(controller, ("Service", "Deployment", "ConfigMap")):
-        closed(row, resource_fields)
-        identity = live[kind + "/kagent-controller"]
-        require(row.get("Kind") == kind and row.get("Name") == "kagent-controller" and row.get("Namespace") == "kagent"
-                and row.get("UID") == identity["uid"] and row.get("Generation", 0) == identity["generation"]
-                and row.get("ResourceVersion"), "evaluation controller platform snapshot differs")
-    snap = target.get("snapshot", {})
-    closed(snap, "proofs workload dependencies")
-    for key, saved in (("proofs", "Proofs"), ("workload", "Workload"), ("dependencies", "Dependencies")):
-        rows = snap.get(key, [])
-        require(len(rows) == len(receipt[saved]) and bool(rows), "evaluation snapshot is incomplete")
-        for row, previous in zip(rows, receipt[saved]):
-            closed(row, resource_fields)
-            require(all(row.get(field, "" if isinstance(value, str) else 0) == value for field, value in previous.items()),
-                    "evaluation snapshot differs from bound deployment")
-    require(len(report.get("cases", [])) == len(cases) == len(observed), "evaluation case counts differ")
-    projected = []
-    for row, (path, case), native in zip(report["cases"], cases, observed):
-        closed(row, "id verdict caseDigest inputDigest assertions execution answerSHA256 detail")
-        require(row.get("id") == case["id"] and row.get("verdict") == "pass" and not row.get("detail")
-                and row.get("caseDigest") == hash_bytes(path.read_bytes()) and row.get("inputDigest") == hash_bytes(case["input"].encode()),
-                "evaluation case identity/digests differ")
-        require(tuple(native.get(key) for key in ("model_calls", "tool_calls", "terminal_answers", "user_turns")) == (2, 1, 1, 1)
-                and native.get("input_sha256") == row["inputDigest"], "fixture case counts/fresh user history differ")
-        require(row.get("answerSHA256") == native.get("answer_sha256") and re.fullmatch(r"[0-9a-f]{64}", row.get("answerSHA256", "")),
-                "evaluation complete answer hash differs from fixture")
-        execution = row.get("execution", {})
-        closed(execution, "rpcID requestMessageID taskID contextID state")
-        require(execution.get("state") == "completed", "evaluation native task did not complete")
-        for field in ("rpcID", "requestMessageID", "taskID", "contextID"):
-            value = execution.get(field, "")
-            require(isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,255}", value)
-                    and value not in seen[field], "evaluation IDs are not fresh across runs/cases")
-            seen[field].add(value)
-        assertions = row.get("assertions", [])
-        require(len(assertions) == 1 + len(case.get("assertions", [])), "evaluation assertion evidence is incomplete")
-        for index, assertion in enumerate(assertions):
-            closed(assertion, "id type definitionDigest verdict reason judge")
-            require(assertion.get("verdict") == "pass", "evaluation assertion did not pass")
-            if index == 0:
-                require(assertion.get("id") == "expectContains.0" and assertion.get("type") == "contains"
-                        and assertion.get("reason") == "assertion satisfied" and "judge" not in assertion
-                        and assertion.get("definitionDigest") == framed_digest([("type", b"contains"), ("operand", b"KMX MCP proof:")]),
-                        "evaluation contains definition differs")
-            else:
-                authored = case["assertions"][index - 1]
-                judge = assertion.get("judge", {})
-                closed(judge, "model modelVersion provenance evaluatorDigest configurationDigest minScore scores")
-                require(assertion.get("id") == authored["id"] and assertion.get("type") == "llmJudge"
-                        and judge.get("model") == "fixture-judge" and judge.get("modelVersion") == "1"
-                        and judge.get("provenance") == "user-declared" and judge.get("minScore") == 50 and judge.get("scores") == [100, 100]
-                        and re.fullmatch(r"[0-9a-f]{64}", judge.get("evaluatorDigest", "")), "evaluation two-sample judge differs")
-                evaluator = judge["evaluatorDigest"].encode()
-                require(judge.get("configurationDigest") == framed_digest([("endpoint", judge_url.encode()), ("model", b"fixture-judge"), ("modelVersion", b"1"), ("evaluatorDigest", evaluator)])
-                        and assertion.get("definitionDigest") == framed_digest([("type", b"llmJudge"), ("operand", authored["rubric"].encode()), ("minScore", b"50"), ("judgeModel", b"fixture-judge"), ("judgeVersion", b"1"), ("evaluatorDigest", evaluator)]),
-                        "evaluation judge digests differ")
-        projected.append({key: row[key] for key in ("id", "caseDigest", "inputDigest", "answerSHA256", "execution")})
-    return projected
-
-
-def product_evaluations(cli, binary, bundle, home, receipt, live, uid, images, fixture, execution):
-    cases = evaluation_cases(bundle)
-    deploy = list((bundle / "receipts/kagent-v0.10.3").glob("*.json"))
-    require(len(deploy) == 1, "one bound deployment receipt required for evaluation")
-    deployment_digest = hash_bytes(private_file(deploy[0]))
-    key = hash_bytes(("kagent\x00v0.10.3\x00" + CONTEXT + "\x00" + NAMESPACE + "\x00" + uid).encode())
-    latest = bundle / ("receipts/eval-kagent-v0.10.3-" + key + ".json")
-    seen = {field: set() for field in ("rpcID", "requestMessageID", "taskID", "contextID")}
-    seen["taskID"].add(execution["native_id"])
-    seen["contextID"].add(execution["native_context_id"])
-    runs, archives = [], {}
-    for phase, selected in (("product-evaluate", False), ("repeat-evaluate", False), ("selected-evaluate", True)):
-        qualification_phase(phase)
-        local = filesystem(bundle, home)
-        before = http_json(fixture + "/evidence")
-        require(len(before.get("cases", [])) == before.get("terminal_answers"), "fixture case counts are incomplete")
-        chosen = cases[:1] if selected else cases
-        # Normal CLI answers/reasoning are captured, never emitted by qualifier.
-        cli("evaluate", "--judge-base-url", fixture + "/v1", *(["--case", "case-one"] if selected else []))
-        after = http_json(fixture + "/evidence")
-        counts = {field: after.get(field, 0) - before.get(field, 0) for field in ("tool_calls", "model_calls", "terminal_answers", "judge_calls")}
-        require(counts == {"tool_calls": len(chosen), "model_calls": 2 * len(chosen), "terminal_answers": len(chosen), "judge_calls": 2},
-                "product evaluation fixture case counts differ")
-        current = set((bundle / "receipts/runs").glob("eval-*.json"))
-        require(all(path in current and private_file(path) == raw for path, raw in archives.items()), "immutable evaluation archive changed")
-        new = current - set(archives)
-        require(len(new) == 1, "one fresh evaluation archive per run required")
-        path = new.pop()
-        raw = private_file(path)
-        report = json.loads(raw)
-        run_id = report.get("runID", "")
-        require(isinstance(run_id, str) and re.fullmatch(r"[0-9a-f]{32}", run_id) and path.name == "eval-" + run_id + ".json"
-                and path.parent == bundle / "receipts/runs" and run_id not in {r["run_id"] for r in runs}, "evaluation archive/run identity differs")
-        require(private_file(latest) == raw, "evaluation latest differs from new archive")
-        require(report.get("fullCaseSet") is (not selected), "evaluation full/selected case set marker differs")
-        for directory in (bundle / "receipts", path.parent):
-            info = directory.lstat()
-            require(stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o700, "evaluation history directories are not private")
-        rows = validate_evaluation(report, chosen, receipt, deployment_digest, live, uid, images,
-                                   after["cases"][len(before["cases"]):], seen, fixture + "/v1")
-        updated = filesystem(bundle, home)
-        allowed = {str(path.parent), str(path), str(latest)}
-        require(all(local.get(key) == updated.get(key) for key in set(local) | set(updated) if key not in allowed),
-                "evaluation changed non-receipt local evidence")
-        archives[path] = raw
-        runs.append({"run_id": run_id, "full_case_set": not selected, "receipt_sha256": hash_bytes(raw), "cases": rows, "counts": counts})
-        if len(runs) == 2:
-            qualification_phase("offline-eval-diff")
-            result = subprocess.run([str(binary), "eval", "diff", str(next(iter(archives))), str(path)],
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
-            require(result.returncode == 0, "offline repeated evaluation diff failed", reason=cli_failure_reason(result.stderr))
-            require(filesystem(bundle, home) == updated and http_json(fixture + "/evidence") == after,
-                    "offline evaluation diff changed evidence or invoked fixture")
-    evidence = http_json(fixture + "/evidence")
-    totals = {field: evidence[field] for field in ("tool_calls", "model_calls", "terminal_answers", "judge_calls")}
-    require(totals == {"tool_calls": 6, "model_calls": 12, "terminal_answers": 6, "judge_calls": 6}, "native plus product fixture counts differ")
-    return {"runs": runs, "fixture_counts": totals}
+def verify_control_endpoint():
+    controller = get("deployment", "kagent-controller", "kagent")
+    service = get("service", "kagent-controller", "kagent")
+    metadata, spec, status = controller["metadata"], controller["spec"], controller.get("status", {})
+    require(metadata.get("uid") and not metadata.get("deletionTimestamp") and spec.get("replicas", 1) == 1
+            and status.get("observedGeneration") == metadata.get("generation")
+            and all(status.get(field) == 1 for field in ("readyReplicas", "updatedReplicas", "availableReplicas")),
+            "controller rollout is incomplete")
+    containers = spec["template"]["spec"]["containers"]
+    require(len(containers) == 1 and containers[0]["name"] == "controller"
+            and containers[0]["image"] == "ghcr.io/kagent-dev/kagent/controller:0.10.3@sha256:" + CONTROLLER,
+            "controller endpoint workload is not pinned")
+    auth = [env for env in containers[0].get("env", []) if env.get("name") == "AUTH_MODE"]
+    require(len(auth) == 1 and auth[0].get("value") == "unsecure" and not auth[0].get("valueFrom"),
+            "native smoke requires exactly one literal unsecure AUTH_MODE")
+    selector = spec["selector"]["matchLabels"]
+    require(selector and service["metadata"].get("uid") and not service["metadata"].get("deletionTimestamp")
+            and service["spec"].get("selector") == selector
+            and all(spec["template"]["metadata"]["labels"].get(key) == value for key, value in selector.items()),
+            "control Service selector differs from pinned controller")
+    # The pinned chart names the Service port controller; HTTP is the proxy
+    # scheme, not this name (the Deployment container port is named http).
+    ports = [port for port in service["spec"]["ports"] if port.get("name") == "controller"]
+    require(len(ports) == 1 and ports[0].get("port") == 8083 and ports[0].get("targetPort") == 8083
+            and ports[0].get("protocol", "TCP") == "TCP", "control Service HTTP endpoint differs")
 
 
 def kubectl_audit(work):
@@ -605,68 +492,8 @@ def audit_frames(audit):
     return [json.loads(line) for line in audit.read_text().splitlines()] if audit.exists() else []
 
 
-def validate_receipt(bundle, identities, cluster_uid):
-    files = list((bundle / "receipts/kagent-v0.10.3").glob("*.json"))
-    require(len(files) == 1 and stat.S_IMODE(files[0].stat().st_mode) == 0o600, "one private lift receipt required")
-    wrapped = json.loads(files[0].read_text())
-    receipt = wrapped["receipt"]
-    require(set(wrapped) <= {"receipt", "gitCommit", "gateOverrideReason", "gateFailedCondition"}
-            and set(receipt) <= {"Bundle", "PortableDigest", "RenderedDigest", "Target", "Resources", "RuntimeVersion",
-                                 "ClusterUID", "Ready", "ObservedAt", "Proofs", "Dependencies", "Workload"},
-            "deployment receipt is not the closed payload-free schema")
-    require(receipt["Target"] == {"Runtime": "kagent", "Context": CONTEXT, "Namespace": NAMESPACE}, "receipt target differs")
-    require(receipt["Bundle"] == NAME and receipt["RuntimeVersion"] == "v0.10.3" and receipt["ClusterUID"] == cluster_uid
-            and receipt["Ready"] is True and receipt["ObservedAt"], "receipt qualification identity is incomplete")
-    require(len(receipt["Resources"]) == 2 and len(receipt["Proofs"]) == 2 and len(receipt["Workload"]) == 4,
-            "receipt primary/workload proof incomplete")
-    for section in ("Resources", "Proofs", "Workload", "Dependencies"):
-        expected_kinds = {"ModelConfig", "Agent"} if section in {"Resources", "Proofs"} else (
-            {"Deployment", "Service", "ServiceAccount", "Secret"} if section == "Workload" else None)
-        if expected_kinds:
-            require({r["Kind"] for r in receipt[section]} == expected_kinds, "receipt resource kinds are incomplete")
-        for resource in receipt[section]:
-            require(set(resource) <= {"Kind", "Name", "Namespace", "UID", "Generation", "Outcome", "ResourceVersion", "SpecDigest", "Key"},
-                    "deployment resource evidence is not payload-free")
-            identity = identities[resource["Kind"] + "/" + resource["Name"]]
-            require(resource["UID"] == identity["uid"] and resource["Namespace"] == NAMESPACE, "receipt resource identity differs")
-    for kind in ("Agent", "ModelConfig"):
-        obj = get(kind.lower() + "s.kagent.dev", NAME)
-        annotations = obj["metadata"].get("annotations", {})
-        require(obj["metadata"].get("labels", {}).get("app.kubernetes.io/managed-by") == "kmx", "ownership label missing")
-        require(annotations.get("kaimahi.dev/bundle") == NAME and annotations.get("kaimahi.dev/runtime-version") == "v0.10.3",
-                "ownership bundle/version marker missing")
-        for field, marker in (("PortableDigest", "portable-digest"), ("RenderedDigest", "rendered-digest")):
-            require(re.fullmatch(r"[0-9a-f]{64}", receipt[field]) is not None
-                    and annotations.get("kaimahi.dev/" + marker) == receipt[field], "receipt digest differs from ownership")
-    return receipt
-
-
-CLI_FAILURE_PATTERNS = (
-    (b"pod does not have exactly one controller container using", "controller-pod-reference-mismatch"),
-    (b"controller Deployment does not use official image", "controller-deployment-reference-mismatch"),
-    (b"ready pod controller container image identity does not match", "controller-running-image-unqualified"),
-    (b"Deployment is not a complete current-generation rollout", "controller-rollout-incomplete"),
-    (b"Deployment selected an invalid or non-running pod", "controller-pod-state-invalid"),
-    (b"Kagent pod node", "controller-node-platform-unqualified"),
-    (b"Kagent pod image digest differs", "controller-platform-digest-mismatch"),
-    (b"controller workload:", "controller-workload-unqualified"),
-    (b"openAPIV3Schema SHA-256 differs", "crd-schema-mismatch"),
-    (b"strict Kagent server dry-run", "server-dryrun-refused"),
-    (b"dependency", "dependency-unqualified"),
-    (b"ModelConfig", "modelconfig-unqualified"), (b"Agent", "agent-unqualified"),
-)
-
-
-def cli_failure_reason(raw):
-    # Closed codes only; never replay even surrounding text from known errors.
-    return next((code for pattern, code in CLI_FAILURE_PATTERNS if pattern in raw), "unclassified-cli-error")
-
-
-QUALIFICATION_PHASES = {"setup", "absent-status", "plan", "new-lift", "repeat-lift", "ready-status",
-                        "native-a2a-one-shot", "product-evaluate", "repeat-evaluate", "selected-evaluate", "offline-eval-diff",
-                        "bindings-and-receipt-conflicts", "operator-drift-conflict"}
-QUALIFICATION_REASONS = {code for _, code in CLI_FAILURE_PATTERNS} | {
-    "qualification-check-failed", "expected-refusal-not-observed", "unclassified-cli-error", "unclassified-qualifier-error"}
+QUALIFICATION_PHASES = {"setup", "runtime-fixture", "native-a2a-one-shot"}
+QUALIFICATION_REASONS = {"qualification-check-failed", "unclassified-qualifier-error"}
 QUALIFICATION_PHASE = "setup"
 
 
@@ -689,142 +516,35 @@ def qualification_failure(error):
 
 
 def qualify(binary, work):
+    # The binary argument is retained for the shell's paired suite phase only;
+    # this upstream runtime/MCP smoke never invokes any KMX command.
     qualification_phase("setup")
-    require(binary.is_file(), "build matching bin/kmx after Go writes settle")
-    bundle, bindings = bundle_files(work)
     audit = kubectl_audit(work)
-    home = pathlib.Path(os.environ["KMX_HOME"])
-    flags = ["--runtime", "kagent", "--runtime-version", "v0.10.3", "--to-context", CONTEXT, "--bindings", str(bindings)]
-
-    def cli(verb, *extra, expected_refusal=None, with_bindings=True):
-        selected = flags if with_bindings else flags[:-2]
-        result = subprocess.run([str(binary), "bundle", verb, str(bundle), *selected, *extra],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
-        if expected_refusal is not None:
-            lines = [line for line in result.stderr.splitlines() if line.strip()]
-            require(result.returncode == 1 and bool(lines) and lines[-1] == expected_refusal.encode(),
-                    "KMX " + verb + " expected refusal not observed exit=" + str(result.returncode),
-                    reason="expected-refusal-not-observed")
-        else:
-            require(result.returncode == 0,
-                    "KMX " + verb + " unexpected exit=" + str(result.returncode), reason=cli_failure_reason(result.stderr))
-        return result.stdout
-
-    def frame(kind, strategy, verb="create"):
-        return {"verb": verb, "dry_run": strategy, "resources": [{"apiVersion": "kagent.dev/v1alpha2",
-                "kind": kind, "namespace": "agents", "name": "lift-proof"}]}
-
-    expected = []
-    def read_only(phase, live, local):
-        validate_read_only(phase, live, snapshot(), local, filesystem(bundle, home), audit_frames(audit), expected)
-
-    before, local = snapshot(), filesystem(bundle, home)
-    qualification_phase("absent-status")
-    absent = json.loads(cli("status", "-o", "json"))
-    require(len(absent.get("targets", [])) == 1 and absent["targets"][0]["state"] == "absent"
-            and absent["targets"][0].get("noReceipt") is True, "new target must report absent without a receipt")
-    read_only("absent status", before, local)
-    qualification_phase("plan")
-    cli("lift", "--plan")
-    expected += [frame(kind, "server") for kind in ("ModelConfig", "Agent")]
-    read_only("plan", before, local)
-    qualification_phase("new-lift")
-    cli("lift")
-    expected += [frame(kind, strategy) for strategy in ("server", "none") for kind in ("ModelConfig", "Agent")]
-    require(audit_frames(audit) == expected, "new lift mutation audit differs from ordered admission/create metadata")
+    verify_control_endpoint()
+    qualification_phase("runtime-fixture")
+    runtime_fixture()
+    expected = [{"verb": "create", "dry_run": "none", "resources": [{
+        "apiVersion": "kagent.dev/v1alpha2", "kind": kind, "namespace": NAMESPACE, "name": NAME}]}
+        for kind in ("ModelConfig", "Agent")]
+    require(audit_frames(audit) == expected, "runtime fixture mutation audit differs")
     images = verify_images(include_agent=True)
     live = snapshot()
+    require(all(kind + "/" + NAME in live for kind in ("ModelConfig", "Agent")), "runtime primary identity missing")
     uid = get("namespace", "kube-system", namespace=None)["metadata"]["uid"]
-    receipt = validate_receipt(bundle, live, uid)
-    local = filesystem(bundle, home)
-    qualification_phase("repeat-lift")
-    cli("lift")
-    read_only("repeat lift", live, local)
-    qualification_phase("ready-status")
-    status = json.loads(cli("status", "-o", "json"))
-    validate_status(status, live, uid)
-    require(status["portableDigest"] == receipt["PortableDigest"] and status["renderedDigest"] == receipt["RenderedDigest"],
-            "status digests differ from saved deployment")
-    read_only("status", live, local)
-    # Independently native: no KMX execution command, hosted account or resend.
     qualification_phase("native-a2a-one-shot")
     with forward("lift-fixture", 9000) as fixture, forward("kagent-controller", 8083, "kagent") as controller:
+        verify_control_endpoint()
         execution = one_message(controller + "/api/a2a/agents/" + NAME, fixture)
-    read_only("native execution", live, local)
-    with forward("lift-fixture", 9000) as fixture:
-        evaluation = product_evaluations(cli, binary, bundle, home, receipt, live, uid, images, fixture, execution)
-    local = filesystem(bundle, home)
-    read_only("product evaluation", live, local)
-    qualification_phase("bindings-and-receipt-conflicts")
-    original = bindings.read_bytes()
-    changed = yaml.safe_load(original)
-    changed["modelConfig"]["baseURL"] = "http://unused.invalid/v1"
-    bindings.write_text(yaml.safe_dump(changed))
-    local = filesystem(bundle, home)
-    cli("lift", expected_refusal="Kagent receipt-bound reuse conflict: drift (desired source or bindings differ from saved deployment)")
-    changed_status = json.loads(cli("status", "-o", "json"))
-    validate_refusal_status(changed_status, "drift", False, "desired source or bindings differ from saved deployment")
-    read_only("changed bindings", live, local)
-    bindings.write_bytes(original)
-    bindings.rename(work / "saved-bindings.yaml")
-    local = filesystem(bundle, home)
-    missing = "open Kagent bounded regular file, not a link: no such file or directory"
-    cli("status", "-o", "json", expected_refusal=missing)
-    cli("status", "-o", "json", expected_refusal=missing, with_bindings=False)
-    read_only("missing bindings", live, local)
-    (work / "saved-bindings.yaml").rename(bindings)
-    history = bundle / "receipts/kagent-v0.10.3"
-    saved = bundle / "saved-history"
-    history.rename(saved)
-    local = filesystem(bundle, home)
-    cli("lift", expected_refusal="Kagent lift conflict: primary already exists without a complete matching receipt; no adoption or updates")
-    unbound = json.loads(cli("status", "-o", "json"))
-    validate_refusal_status(unbound, "failed", True, "unbound: no complete selected-target deployment receipt; live readiness is not a saved deployment")
-    read_only("missing receipt", live, local)
-    saved.rename(history)
-    qualification_phase("operator-drift-conflict")
-    kube("-n", NAMESPACE, "patch", "agents.kagent.dev", NAME, "--type=merge",
-         "-p", '{"spec":{"description":"operator changed"}}', phase="operator-patch")
-    expected += [frame("Agent", "none", "patch")]
-    require(audit_frames(audit) == expected, "operator patch mutation audit differs")
-    drift, local = snapshot(), filesystem(bundle, home)
-    cli("lift", expected_refusal="Kagent receipt-bound reuse conflict: drift (primary ownership, digest or admitted spec differs from desired)")
-    drift_status = json.loads(cli("status", "-o", "json"))
-    validate_refusal_status(drift_status, "drift", False, "primary ownership, digest or admitted spec differs from desired")
-    read_only("operator drift", drift, local)
-    artifact = {"kind": "KagentLiftQualification", "runtime": "kagent", "runtime_version": "v0.10.3", "engine": "go",
-                "cluster_uid": uid, "context": CONTEXT, "namespace": NAMESPACE, "bundle": NAME,
-                "portable_digest": receipt["PortableDigest"], "rendered_digest": receipt["RenderedDigest"],
-                "identities": live, "images": images, "execution": execution, "evaluation": evaluation,
-                "proofs": {"plan_no_writes": True, "create_only": True, "repeat_read_only": True,
-                           "status_identity": True, "conflict_no_mutation": True, "native_a2a_mcp": True,
-                           "product_evaluation": True, "repeat_diff_offline": True, "selected_case_marker": True}}
-    (work / "qualification.json").write_text(json.dumps(artifact, indent=2) + "\n")
-    (work / "qualification.json").chmod(0o600)
+    validate_read_only("native execution", live, snapshot(), {}, {}, audit_frames(audit), expected)
+    require(verify_images(include_agent=True) == images, "native execution changed running image evidence")
+    artifact = {"kind": "KagentRuntimeSmokeQualification", "runtime": "kagent", "runtime_version": "v0.10.3",
+                "engine": "go", "cluster_uid": uid, "context": CONTEXT, "namespace": NAMESPACE, "agent": NAME,
+                "identities": live, "images": images, "execution": execution,
+                "fixture_counts": {key: execution[key] for key in ("tool_calls", "model_calls", "terminal_answers", "judge_calls")}}
+    path = work / "qualification.json"
+    path.write_text(json.dumps(artifact, indent=2) + "\n")
+    path.chmod(0o600)
     print("native_a2a_counts=tool:1 model:2 terminal:1", flush=True)
-
-
-def status_ready(status):
-    targets = status.get("targets", [])
-    return len(targets) == 1 and targets[0].get("state") == "ready" and targets[0].get("ready") is True
-
-
-def validate_refusal_status(status, state, no_receipt, detail):
-    targets = status.get("targets", [])
-    require(len(targets) == 1 and targets[0].get("state") == state and targets[0].get("ready") is False
-            and bool(targets[0].get("noReceipt")) == no_receipt and targets[0].get("detail") == detail,
-            "adjacent status did not report the specific refusal state/detail")
-
-
-def validate_status(status, identities, cluster_uid):
-    require(status_ready(status), "status did not report one ready target")
-    require(status.get("bundle") == NAME and status.get("runtime") == "kagent" and status.get("runtimeVersion") == "v0.10.3",
-            "status bundle/runtime/version differs")
-    target = status["targets"][0]
-    require(target.get("context") == CONTEXT and target.get("namespace") == NAMESPACE
-            and target.get("clusterUID") == cluster_uid and not target.get("noReceipt"), "status is not receipt-bound to target")
-    for field, kind in (("agentUID", "Agent"), ("modelConfigUID", "ModelConfig"), ("deploymentUID", "Deployment")):
-        require(target.get(field) == identities[kind + "/" + NAME]["uid"], "status resource identity differs")
 
 
 def diagnostics():
@@ -884,5 +604,5 @@ if __name__ == "__main__":
         # Network/YAML/tool exception text may contain payloads. Only our own
         # fixed reasons (and a closed generic category) are public.
         detail = str(error) if isinstance(error, QualificationError) else "unclassified-bootstrap-error"
-        print("kagent bootstrap failed: " + detail + "; lift/native A2A NOT qualified", file=sys.stderr)
+        print("kagent bootstrap failed: " + detail + "; runtime MCP/native A2A NOT qualified", file=sys.stderr)
         raise SystemExit(1) from None

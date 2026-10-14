@@ -384,92 +384,44 @@ class QualificationTests(unittest.TestCase):
             with self.subTest(output=output, frames=frames), self.assertRaises(ValueError):
                 Q.verify_collision_refusal(1, output, frames, "ci-native-collision")
 
-    def test_refusal_tail_prepares_complete_bundle_and_does_not_repeat_positive_eval(self):
-        self.assertTrue(hasattr(Q.Qualification, "refusals"), "refusal tail is not independently callable")
-        import yaml
+    def test_refusal_tail_creates_raw_collision_without_legacy_cli(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             qualifier = Q.Qualification.__new__(Q.Qualification)
-            qualifier.work, qualifier.repo, qualifier.context = root, ROOT, "kind-owned"
-            qualifier.secret_ref = {"name": "local-provider-key", "key": "api-key"}
-            workspace, instructions = root / "workspace", root / "instructions.txt"
-            (workspace / "eval").mkdir(parents=True)
-            instructions.write_text("Public instructions")
-            cases = {"one.yaml": b'id: one\ninput: Public question\nexpectContains: ["answer"]\n'}
-            (workspace / "eval/one.yaml").write_bytes(cases["one.yaml"])
-            events = []
-            qualifier.frames = lambda: []
-            def boundary(*args, **kwargs):
-                events.append(tuple(str(a) for a in args))
-                if "create" in args:
-                    self.assertIn("--live", args)
-                    self.assertIn("--no-apply", args)
-                    self.assertNotIn("--task", args)
-                    bundle = pathlib.Path(args[args.index("--bundle-path") + 1])
-                    bundle.mkdir()
-                    for name in ("agent.yaml", "bindings.yaml"):
-                        document = yaml.safe_load((ROOT / "internal/kmx/app/testdata/bundle-format/main" / name).read_bytes())
-                        if name == "agent.yaml":
-                            document["metadata"]["name"] = "ci-native-suite"
-                        (bundle / name).write_text(yaml.safe_dump(document))
-                    return subprocess.CompletedProcess(args, 0, b"", b"")
-                self.assertEqual(args[:2], ("bundle", "lift"))
-                bundle = pathlib.Path(args[2])
-                self.assertEqual(yaml.safe_load((bundle / "agent.yaml").read_bytes())["kind"], "PortableAgent")
-                self.assertEqual(yaml.safe_load((bundle / "bindings.yaml").read_bytes())["kind"], "OrkaBindings")
-                raise RuntimeError("reached-complete-ownership-route")
-            qualifier.cli = boundary
-            qualifier.evaluation = lambda *a, **k: self.fail("positive evaluation must not run in refusal tail")
-            with self.assertRaisesRegex(RuntimeError, "reached-complete-ownership-route"):
-                qualifier.refusals(workspace, instructions, cases, {"Member": "ci-native-suite"})
-            self.assertEqual(len(events), 2)
-
-    def test_refusal_tail_collision_has_fresh_paths_after_legacy_refusal_stages_bundle(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            qualifier = Q.Qualification.__new__(Q.Qualification)
-            qualifier.work, qualifier.context = root, "kind-owned"
+            qualifier.work, qualifier.context, qualifier.repo = root, "kind-owned", ROOT
+            renderer = root / "native-reference"
+            subprocess.run(["go", "-C", str(ROOT), "build", "-o", str(renderer),
+                            str(ROOT / "scripts/ci/orka-native-reference.go")], check=True, capture_output=True, timeout=60)
+            def command(args, raw=None, **kwargs):
+                self.assertEqual(args, [ROOT / "bin/orka-native-reference"])
+                return subprocess.run([str(renderer)], input=raw, env={}, capture_output=True, timeout=60)
+            qualifier.command = command
             qualifier.secret_ref = {"name": "local-provider-key", "key": "api-key"}
             workspace = root / "workspace"
             (workspace / "eval").mkdir(parents=True)
-            cases = {"one.yaml": b'id: one\ninput: Public question\nexpectContains: ["answer"]\n'}
+            instructions = root / "instructions.txt"
+            instructions.write_text("Public instructions")
+            cases = {"one.yaml": b'id: one\\ninput: Public question\\nexpectContains: ["answer"]\\n'}
             (workspace / "eval/one.yaml").write_bytes(cases["one.yaml"])
             qualifier.frames = lambda: []
-            qualifier.evaluation = lambda *a, **k: self.fail("refusal setup must not resend positive Tasks")
-            qualifier.kube = lambda *a, **k: self.fail("fixture must stop before Kubernetes")
-            def boundary(*args, **kwargs):
-                if args[:2] == ("bundle", "lift"):
-                    return subprocess.CompletedProcess(args, 1, b"", b"reserves native suite ownership")
-                self.assertEqual(args[2:4], ("create", "--live"))
-                self.assertNotIn("--task", args)
-                member = args[4]
-                out = pathlib.Path(args[args.index("--out") + 1])
-                bundle = pathlib.Path(args[args.index("--bundle-path") + 1])
-                # Live create stages its bundle BEFORE ownership refusal.
-                self.assertFalse(bundle.exists(), "bundle agent.yaml differs; refusing to overwrite it")
-                bundle.mkdir()
-                (bundle / "agent.yaml").write_text(member)
-                (bundle / "bindings.yaml").write_text("OrkaBindings")
-                if "--no-apply" in args:
-                    out.write_text(member)
-                    return subprocess.CompletedProcess(args, 0, b"", b"")
-                if member == "ci-native-suite":
-                    self.assertFalse(kwargs.get("success", True))
-                    return subprocess.CompletedProcess(args, 1, b"", b"reserves native suite ownership")
-                self.assertEqual(member, "ci-native-collision")
-                self.assertNotIn("--no-apply", args)
-                self.assertEqual((out.name, bundle.name), ("collision-legacy.yaml", "collision-legacy-bundle"))
-                raise RuntimeError("collision-create-reached")
-            qualifier.cli = boundary
-            with self.assertRaisesRegex(RuntimeError, "collision-create-reached"):
-                qualifier.refusals(workspace, root / "instructions.txt", cases, {"Member": "ci-native-suite"})
-            for path, expected in (("native-copy.yaml", "ci-native-suite"),
-                                   ("native-copy-bundle/agent.yaml", "ci-native-suite"),
-                                   ("legacy-bundle/agent.yaml", "ci-native-suite"),
-                                   ("legacy-bundle/bindings.yaml", "OrkaBindings"),
-                                   ("collision-legacy-bundle/agent.yaml", "ci-native-collision")):
-                with self.subTest(path=path):
-                    self.assertEqual((root / path).read_text(), expected)
+            qualifier.cli = lambda *a, **k: self.fail("removed CLI lifecycle invoked")
+            written = []
+            def kube(*args, **kwargs):
+                self.assertEqual(args, ("create", "-f", "-"))
+                written.append(json.loads(kwargs["raw"]))
+                return b""
+            qualifier.kube = kube
+            qualifier.author = lambda *a: None
+            qualifier.get = lambda *a: {"metadata": {"uid": "fixture-" + a[0]}}
+            def evaluation(*args, **kwargs):
+                self.assertFalse(kwargs["success"])
+                raise RuntimeError("collision-evaluation-reached")
+            qualifier.evaluation = evaluation
+            with self.assertRaisesRegex(RuntimeError, "collision-evaluation-reached"):
+                qualifier.refusals(workspace, instructions, cases, {"Member": "ci-native-suite"})
+            self.assertEqual([doc["kind"] for doc in written], ["Provider", "Agent"])
+            self.assertTrue(all(doc["metadata"]["name"] == "ci-native-collision" for doc in written))
+            self.assertTrue(all("annotations" not in doc["metadata"] for doc in written))
 
     def test_private_root_refuses_adoption_and_symlink_ancestors(self):
         self.assertTrue(hasattr(Q, "private_root"), "private scenario root is missing")

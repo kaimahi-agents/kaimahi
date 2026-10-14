@@ -289,3 +289,27 @@ func TestLiveInstallQuickstartK8sTool(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func liftContextCluster(kube *guard.Kubeconfig, contextName string) (string, error) {
+	cluster := ""
+	count := 0
+	for _, item := range kube.Contexts {
+		if item.Name == contextName {
+			cluster = item.Context.Cluster
+			count++
+		}
+	}
+	if count != 1 || cluster == "" {
+		return "", fmt.Errorf("destination context %s is missing or ambiguous in kubeconfig", contextName)
+	}
+	count = 0
+	for _, item := range kube.Clusters {
+		if item.Name == cluster && item.Cluster.Server != "" {
+			count++
+		}
+	}
+	if count != 1 {
+		return "", fmt.Errorf("destination context %s has no unique cluster in kubeconfig", contextName)
+	}
+	return cluster, nil
+}

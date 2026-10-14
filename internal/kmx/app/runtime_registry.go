@@ -45,22 +45,8 @@ func (a *App) openRuntimeChat(opt ChatOptions, name, namespace string) error {
 	return fmt.Errorf("unsupported runtime %q", opt.Runtime)
 }
 
-// orkaRuntimeAdapter is both the chat Adapter and the lifecycle adapter for
-// Orka. create is the command's own flags and is set only by a create: the
-// chat registration leaves it nil, and Capabilities declines Render and
-// Deploy for an instance that has none.
-type orkaRuntimeAdapter struct {
-	app      *App
-	create   *CreateOptions
-	bindings *agentruntime.OrkaBindings
-	// resultPort is the loopback port Evaluate forwards Task results through;
-	// empty means the default 19180.
-	resultPort string
-	// staged routes a reconcile Deploy through the create command's staged
-	// path, which adds artifact emission, progress and the optional Task
-	// after reconciling Provider and Agent. Lift's reconcile has none of those.
-	staged bool
-}
+// orkaRuntimeAdapter discovers and opens independent live Orka chat sessions.
+type orkaRuntimeAdapter struct{ app *App }
 
 func (orkaRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Orka }
 func (a orkaRuntimeAdapter) Probe(ctx context.Context, target agentruntime.Target) (agentruntime.Probe, error) {
@@ -101,7 +87,7 @@ func (a orkaRuntimeAdapter) Probe(ctx context.Context, target agentruntime.Targe
 	return agentruntime.Probe{Found: true, Agent: agentruntime.AgentRef{Runtime: a.ID(), Context: target.Context, Namespace: namespace, Kind: "agents.core.orka.ai", Name: target.Name, UID: agent.Metadata.UID}}, nil
 }
 func (a orkaRuntimeAdapter) Open(ctx context.Context, target agentruntime.Target) (agentruntime.Session, error) {
-	return &orkaRuntimeSession{backend: &orkaChatBackend{app: a.app, agent: target.Name, namespace: target.Namespace, bundleRoot: a.app.bundleRoot}}, nil
+	return &orkaRuntimeSession{backend: &orkaChatBackend{app: a.app, agent: target.Name, namespace: target.Namespace}}, nil
 }
 
 func resolveRegisteredRuntime(ctx context.Context, registrations []runtimeRegistration, target agentruntime.Target) (agentruntime.AgentRef, error) {

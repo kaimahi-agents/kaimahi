@@ -127,26 +127,6 @@ func TestInteractiveCommandsExposeVerboseFlag(t *testing.T) {
 	}
 }
 
-func TestQuickstartExposesAzureDiscoveryAlternative(t *testing.T) {
-	var out, diagnostics bytes.Buffer
-	deps, _ := testDependencies(&out, &diagnostics)
-	root := newRootCommand(&commandState{deps: deps})
-	cmd, _, err := root.Find([]string{"quickstart"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	flag := cmd.Flags().Lookup("azure-discovery")
-	if flag == nil || flag.DefValue != "cli" {
-		t.Fatal("CLI default or discovery alternative missing")
-	}
-	if err := cmd.ParseFlags([]string{"--azure-discovery", "sdk"}); err != nil {
-		t.Fatal(err)
-	}
-	if value, _ := cmd.Flags().GetString("azure-discovery"); value != "sdk" {
-		t.Fatalf("value=%q", value)
-	}
-}
-
 func TestContainerEngineFlagOverridesEnvironmentBeforeAppConstruction(t *testing.T) {
 	for _, argv := range [][]string{
 		{"--container-engine", "podman", "status"},
@@ -215,9 +195,9 @@ func TestNativeCommandRecordsResolvedEngineInInvocation(t *testing.T) {
 	deps.loadConfig = func(_, engine string) (*config.Config, error) {
 		return &config.Config{KubeContext: "kind-demo", KindCluster: "demo", ContainerEngine: engine}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"bundle", "retire", "demo", "--plan", "--container-engine", "podman"}}
+	state := &commandState{deps: deps, argv: []string{"orka", "show", "demo", "--namespace", "team", "--container-engine", "podman"}}
 	root := newRootCommand(state)
-	issue, _, err := root.Find([]string{"bundle", "retire"})
+	issue, _, err := root.Find([]string{"orka", "show"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +225,6 @@ func TestCobraRejectsInvalidFlagRelationshipsBeforeApplicationConstruction(t *te
 		want string
 	}{
 		{"orka execution modes", []string{"orka", "install", "--no-apply", "--dry-run"}, "none of the others can be"},
-		{"create execution modes", []string{"create", "--live", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -268,9 +247,9 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	deps.loadConfig = func(string, string) (*config.Config, error) {
 		return &config.Config{KubeContext: "kind-other", KindCluster: "other", ContainerEngine: "podman"}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"bundle", "retire", "a'b; $(bad)", "--to-namespace", "team", "--plan"}}
+	state := &commandState{deps: deps, argv: []string{"orka", "show", "a'b; $(bad)", "--namespace", "team"}}
 	root := newRootCommand(state)
-	cmd, _, err := root.Find([]string{"bundle", "retire"})
+	cmd, _, err := root.Find([]string{"orka", "show"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,14 +262,14 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman kmx --context kind-other bundle retire 'a'\"'\"'b; $(bad)' --to-namespace team --plan"
+	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman kmx --context kind-other orka show 'a'\"'\"'b; $(bad)' --namespace team"
 	if invocation != want {
 		t.Fatalf("retry lost target or arguments:\n got: %s\nwant: %s", invocation, want)
 	}
 }
 
 func TestBareGroupsShowCobraHelpWithoutLoadingConfig(t *testing.T) {
-	for _, group := range []string{"bundle", "orka", "suite", "task"} {
+	for _, group := range []string{"orka", "suite", "task"} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
 		deps.loadConfig = func(string, string) (*config.Config, error) {
@@ -338,7 +317,6 @@ func commandPaths(root *cobra.Command) []string {
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
 		"create", "chat", "run", "eval", "eval diff", "eval from-sessions", "push", "lift",
-		"bundle", "bundle evaluate", "bundle lift", "bundle retire", "bundle status", "bundle verify",
 		"aks", "aks up", "aks down", "completion",
 		"context", "context show", "context use", "local", "local up", "local down",
 		"orka", "orka install", "orka status", "orka show", "orka list",
@@ -388,7 +366,7 @@ func TestInterspersedFlagsAreOwnedByCobra(t *testing.T) {
 		want []string
 	}{
 		{[]string{"chat", "hello", "who", "--verbose"}, []string{"hello", "who"}},
-		{[]string{"bundle", "retire", "demo", "--to-namespace", "team", "--plan"}, []string{"demo"}},
+		{[]string{"orka", "show", "demo", "--namespace", "team"}, []string{"demo"}},
 		{[]string{"task", "result", "demo", "--wait", "1m"}, []string{"demo"}},
 	} {
 		cmd, args, err := root.Find(tc.path)
@@ -515,7 +493,6 @@ func TestQuickstartRoutesEachMode(t *testing.T) {
 		{[]string{"quickstart", "--interactive"}, "kmx quickstart --interactive requires an interactive terminal"},
 		{[]string{"quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "quickstart tool shortcuts are retired"},
 		{[]string{"quickstart", "-i"}, "kmx quickstart --interactive requires an interactive terminal"},
-		{[]string{"quickstart", "-i", "--azure-discovery", "sdk"}, "kmx quickstart --interactive requires an interactive terminal"},
 		{[]string{"quickstart", "-o", "yaml"}, "unknown --output"},
 		{[]string{"quickstart", "--task", "hi", "-o", "yaml"}, "unknown --output"},
 	} {
