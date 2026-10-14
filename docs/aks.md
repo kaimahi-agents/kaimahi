@@ -84,11 +84,12 @@ exists, so the phase installs the platform and names the step that is yours:
 ```bash
 printf %s "$ORKA_API_KEY" | kubectl --context <cluster> -n orka-system \
   create secret generic <name> --from-file=api-key=/dev/stdin
-kmx --context <cluster> create --live <agent> --namespace orka-system \
-  --provider-type openai --model <model> --secret <name> --base-url <endpoint>
+# Configure a native openai Provider through the installed runtime's schema;
+# root create authors workspace source offline, not live Provider credentials.
 ```
 
-Both commands **name the cluster**. `kmx aks up` moves only its own process's
+The Secret command **names the cluster**. Provider configuration must use that
+same explicit destination. `kmx aks up` moves only its own process's
 context, so if your current-context is still a local kind cluster, an unpinned
 pair sends the Secret one way and the Agent the other — and the half that lands
 locally looks like success. The key is read from **stdin** rather than passed as
@@ -97,9 +98,10 @@ written to shell history; `printf` keeps the trailing newline out of the Secret,
 and a newline there corrupts the Authorization header on every request. See
 [models](models.md) for the same approach.
 
-The endpoint is your model backend, not the Kaimahi model seam. To lift a
-bundle onto an existing Ready Provider, use [`kmx bundle lift`](agent-lift.md)
-with `--inference provider:<name>`.
+The endpoint is your model backend. Once an openai Provider is Ready and serves
+the exact authored model, use [native workspace eval/evaluated push/digest Lift](suite-workspace.md)
+with private full-passing evidence and explicit target/inference. Live create,
+user bundles and interactive Lift are removed; AKS setup remains independent.
 
 The banner names the account, subscription name and destination. `--plan` stops
 after preflight/account inspection, without creating cloud resources. A real

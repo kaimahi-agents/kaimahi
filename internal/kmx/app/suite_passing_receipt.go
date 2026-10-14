@@ -19,6 +19,7 @@ import (
 const maxSuitePassingReceiptBytes = 1 << 20
 const maxSuitePassingEndpointBytes = 16 << 10
 const suitePassingEvaluatorVersion = "kmx.text-assertions/v1"
+const suitePassingJudgeVersion = "kmx.llm-judge/v1"
 
 var errSuitePassingReceipt = errors.New("invalid native passing receipt")
 
@@ -51,11 +52,12 @@ type suitePassingCase struct {
 	SessionsExecution *suiteSessionsCaseExecution `json:"agentsessionsExecution,omitempty"`
 }
 type suitePassingAssertion struct {
-	ID               string `json:"id"`
-	Type             string `json:"type"`
-	DefinitionDigest string `json:"definitionDigest"`
-	EvaluatorVersion string `json:"evaluatorVersion"`
-	Verdict          string `json:"verdict"`
+	ID               string                                `json:"id"`
+	Type             string                                `json:"type"`
+	DefinitionDigest string                                `json:"definitionDigest"`
+	EvaluatorVersion string                                `json:"evaluatorVersion"`
+	Verdict          string                                `json:"verdict"`
+	Judge            *agentruntime.EvaluationJudgeEvidence `json:"judge,omitempty"`
 }
 type suitePassingObservation struct {
 	CaseDigest, InputDigest string
@@ -97,10 +99,10 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 		seen[c.ID] = true
 		metadata := suitePassingCase{ID: c.ID, Path: file.Path, CaseDigest: agentruntime.EvaluationCaseDigest(file.Bytes), InputDigest: agentruntime.EvaluationInputDigest(c.Input), Verdict: "pass", Assertions: []suitePassingAssertion{}}
 		for _, a := range agentruntime.EvaluationCaseAssertions(c) {
-			if a.Type != "contains" && a.Type != "notContains" && a.Type != "regex" {
+			if a.Type != "contains" && a.Type != "notContains" && a.Type != "regex" && (a.Type != "llmJudge" || (suite.Runtime.ID != "orka" && suite.Runtime.ID != "kagent")) {
 				return nil, "", errors.New("unsupported native suite evaluator")
 			}
-			metadata.Assertions = append(metadata.Assertions, suitePassingAssertion{a.ID, a.Type, agentruntime.EvaluationAssertionDigest(a), suitePassingEvaluatorVersion, "pass"})
+			metadata.Assertions = append(metadata.Assertions, suitePassingAssertionDefinition(a))
 		}
 		projected := metadata
 		projected.TaskName, projected.TaskUID, projected.AnswerDigest = strings.Repeat("x", 256), strings.Repeat("\\", 256), strings.Repeat("0", 64)
@@ -117,6 +119,12 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 			return nil, "", errSuitePassingReceipt
 		}
 		budget += len(wire) + 1
+		for _, a := range c.Assertions {
+			if a.Type == "llmJudge" {
+				// Escaped 256-byte model/version identities, fixed digests and two scores.
+				budget += 4096
+			}
+		}
 		if budget > maxSuitePassingReceiptBytes {
 			return nil, "", errors.New("native suite receipt exceeds projection budget")
 		}
@@ -160,7 +168,7 @@ func newSuitePassingReceipt(ctx context.Context, prepared *workspace.Prepared, p
 		row.Verdict = string(observed.Verdict)
 		row.Assertions = make([]suitePassingAssertion, 0, len(observed.Assertions))
 		for _, a := range observed.Assertions {
-			row.Assertions = append(row.Assertions, suitePassingAssertion{a.ID, a.Type, a.DefinitionDigest, suitePassingEvaluatorVersion, string(a.Verdict)})
+			row.Assertions = append(row.Assertions, suitePassingAssertionResult(a))
 		}
 		if observed.CaseID != row.ID || observed.CaseDigest != row.CaseDigest || observed.InputDigest != row.InputDigest || observed.Detail != "" {
 			return nil, errSuitePassingReceipt
@@ -273,7 +281,7 @@ func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 		ids[c.ID], paths[c.Path] = true, true
 		assertions := map[string]bool{}
 		for _, a := range c.Assertions {
-			if !evaluationEvidenceID.MatchString(a.ID) || !verificationIdentity(a.ID) || assertions[a.ID] || (a.Type != "contains" && a.Type != "notContains" && a.Type != "regex") || !verificationDigest(a.DefinitionDigest) || a.EvaluatorVersion != suitePassingEvaluatorVersion || a.Verdict != "pass" {
+			if !evaluationEvidenceID.MatchString(a.ID) || !verificationIdentity(a.ID) || assertions[a.ID] || (a.Type != "contains" && a.Type != "notContains" && a.Type != "regex" && (a.Type != "llmJudge" || r.ExecutionMode == "native-agentsessions")) || !verificationDigest(a.DefinitionDigest) || a.EvaluatorVersion != suiteAssertionEvaluatorVersion(a.Type) || a.Verdict != "pass" || !agentruntime.EvaluationJudgeEvidenceValid(agentruntime.EvaluationAssertionResult{Type: a.Type, Verdict: agentruntime.EvaluationVerdict(a.Verdict), Judge: a.Judge}) {
 				return errSuitePassingReceipt
 			}
 			assertions[a.ID] = true
@@ -322,6 +330,14 @@ func canonicalSuitePassingInventory(ctx context.Context, r *suitePassingReceipt,
 		row.TaskName, row.TaskUID, row.AnswerDigest = "", "", ""
 		row.KagentExecution = nil
 		row.SessionsExecution = nil
+		row.Assertions = append([]suitePassingAssertion(nil), row.Assertions...)
+		for j, assertion := range row.Assertions {
+			if assertion.Judge != nil {
+				identity := *assertion.Judge
+				identity.Scores, identity.ConfigurationDigest = nil, ""
+				row.Assertions[j].Judge = &identity
+			}
+		}
 		if !reflect.DeepEqual(row, expected.Metadata) {
 			return nil, errSuitePassingReceipt
 		}

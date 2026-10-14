@@ -123,11 +123,11 @@ func newRootCommand(state *commandState) *cobra.Command {
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
 	root.AddCommand(
-		newVersionCommand(state), newCompletionCommand(root), newContextCommand(state), newLocalCommand(state),
+		newVersionCommand(state), newCompletionCommand(root), newContextCommand(state), newLocalCommand(state), newDestinationsCommand(state),
 		newQuickstartCommand(state), newAKSCommand(state),
 		newConsoleCommand(state), newOrkaCommand(state),
 		newStatusCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
-		newBundleCommand(state), newAgentEvalCommand(state), newReleaseLiftCommand(state), newTaskCommand(state),
+		newAgentEvalCommand(state), newReleaseLiftCommand(state), newTaskCommand(state),
 		newSuiteCommand(state), newSuitePushCommand(state, true), newTargetsCommand(state),
 		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),
 	)

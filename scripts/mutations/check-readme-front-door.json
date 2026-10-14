@@ -1,6 +1,6 @@
 {
   "checker": "check-readme-front-door.py",
-  "why": "The KMX front door must separate stable quickstart from the unreleased suite journey, retain honest lift/runtime boundaries, and link the developer path; fixture pairs detect lost markers and ordering.",
+  "why": "The KMX front door must describe the released suite journey, retain honest lift/runtime boundaries, and link the developer path; fixture pairs detect lost markers and ordering.",
   "verify": ["python3", "scripts/check-readme-front-door-test.py"],
   "signature": "check-readme-front-door self-test:",
   "mutations": [

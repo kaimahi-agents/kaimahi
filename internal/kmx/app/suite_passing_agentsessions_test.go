@@ -59,6 +59,18 @@ func TestSuiteSessionsPassingRoundTripAndCoherence(t *testing.T) {
 	if r.suiteDigest() != p.suite.Digest || bytes.Contains(raw, []byte(`"subject":null`)) || bytes.Contains(raw, []byte(`"provider"`)) || bytes.Contains(raw, []byte(`"output"`)) {
 		t.Fatalf("incorrect metadata projection: %s", raw)
 	}
+	var wire map[string]any
+	if json.Unmarshal(raw, &wire) != nil {
+		t.Fatal("invalid Sessions wire")
+	}
+	for _, c := range wire["cases"].([]any) {
+		for _, a := range c.(map[string]any)["assertions"].([]any) {
+			row := a.(map[string]any)
+			if len(row) != 5 || row["evaluatorVersion"] != "kmx.text-assertions/v1" || row["judge"] != nil {
+				t.Fatal("text-only Sessions assertion wire changed")
+			}
+		}
+	}
 	parsed, err := parseSuitePassingReceipt(raw)
 	if err != nil {
 		t.Fatal(err)

@@ -103,8 +103,6 @@ func TestNativeSuiteEvaluationDiff(t *testing.T) {
 	for _, pair := range [][2]any{
 		{fixtures["native-orka"], fixtures["native-kagent"]},
 		{fixtures["native-kagent"], fixtures["native-orka"]},
-		{fixtures["native-orka"], diffOrkaFixture()},
-		{fixtures["native-kagent"], diffFixture("pass")},
 	} {
 		out, err := diffExecute(t, pair[0], pair[1])
 		if err == nil || err.Error() != "evaluation comparison is incompatible" || !strings.Contains(out, "comparison incompatible:") || strings.Contains(out, "	stable	") {

@@ -11,7 +11,6 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
-	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 func TestTargetsCapabilitiesMatchLifecycleDeclarations(t *testing.T) {
@@ -23,24 +22,20 @@ func TestTargetsCapabilitiesMatchLifecycleDeclarations(t *testing.T) {
 	if err := json.Unmarshal(a.Out.(*bytes.Buffer).Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	for i, adapter := range []agentruntime.LifecycleAdapter{
-		kagentRuntimeAdapter{lift: &kagentLiftOperation{}, bindings: &agentruntime.KagentBindings{}, evaluation: &kagentEvaluationOperation{}},
-		orkaRuntimeAdapter{create: &CreateOptions{}},
-	} {
-		caps := adapter.Capabilities()
-		want := map[string]bool{"render": caps.Render, "deploy": caps.Deploy, "status": caps.Status, "evaluate": caps.Evaluate}
-		for _, got := range report.Targets[i+1].Capabilities {
-			if supported, ok := want[got.Operation]; ok && got.Supported != supported {
-				t.Fatalf("%s %s: report=%t adapter=%t", adapter.ID(), got.Operation, got.Supported, supported)
+	for _, target := range report.Targets {
+		for _, cap := range target.Capabilities {
+			if cap.Operation == "render" || cap.Operation == "deploy" || cap.Operation == "status" || cap.Operation == "retire" || cap.Operation == "evaluate" {
+				t.Fatalf("retired lifecycle advertised: %+v", cap)
 			}
 		}
 	}
+
 }
 
 func TestTargetsKagentEvaluationRemainsVersionScoped(t *testing.T) {
 	kagent := compiledTargets()[1]
 	for _, capability := range kagent.Capabilities {
-		if capability.Operation == "evaluate" && (!capability.Supported || !strings.Contains(capability.Reason, "unsecure")) {
+		if capability.Operation == "eval" && (!capability.Supported || !strings.Contains(capability.Reason, "native authored workspace")) {
 			t.Fatalf("missing scoped evaluation: %+v", capability)
 		}
 		if (capability.Operation == "chat" || capability.Operation == "run" || capability.Operation == "verify") && capability.Supported {

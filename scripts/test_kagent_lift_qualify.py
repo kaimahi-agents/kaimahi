@@ -1,236 +1,215 @@
 #!/usr/bin/env python3
-"""Exercise the actual qualifier with narrow external boundary doubles."""
+"""Exercise the actual independent runtime smoke at external IO boundaries."""
 import contextlib
+import copy
 import hashlib
 import importlib.util
 import io
 import json
 import os
 import pathlib
-import subprocess
 import tempfile
 import unittest
 from unittest import mock
 
+import yaml
+
 SOURCE = pathlib.Path(__file__).resolve().parent / "ci/kagent-lift.py"
-REFUSALS = [
-    "Kagent receipt-bound reuse conflict: drift (desired source or bindings differ from saved deployment)",
-    "open Kagent bounded regular file, not a link: no such file or directory",
-    "open Kagent bounded regular file, not a link: no such file or directory",
-    "Kagent lift conflict: primary already exists without a complete matching receipt; no adoption or updates",
-    "Kagent receipt-bound reuse conflict: drift (primary ownership, digest or admitted spec differs from desired)",
-]
+
+# Unmodified controller Service from the pinned kagent 0.10.3 Helm render.
+# Only API-server identity fields are added by the hermetic replay below.
+CONTROLLER_SERVICE = """\
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagent-controller
+  namespace: kagent
+  labels:
+    helm.sh/chart: kagent-0.10.3
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/version: "0.10.3"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/component: controller
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8083
+      targetPort: 8083
+      protocol: TCP
+      name: controller
+  selector:
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/component: controller
+"""
 
 
 class QualifyTests(unittest.TestCase):
-    def run_qualify(self, defect=None, negative=0):
-        spec = importlib.util.spec_from_file_location("driver", SOURCE)
+    def exercise(self, defect=None):
+        spec = importlib.util.spec_from_file_location("kagent_smoke", SOURCE)
         driver = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(driver)
-        with tempfile.TemporaryDirectory() as temp:
-            work = pathlib.Path(temp)
-            home = work / "home"
-            home.mkdir()
-            binary = work / "kmx"
-            binary.touch()
+        sentinel = "kmx-mcp-private-smoke-marker"
+        answer = "KMX MCP proof: " + sentinel
+        sha = lambda value: hashlib.sha256(value.encode()).hexdigest()
+        evidence = {"model_calls": 2, "tool_calls": 1, "terminal_answers": 1, "judge_calls": 0,
+                    "sentinel_sha256": sha(sentinel), "cases": [{"call_id": "call-one", "model_calls": 2,
+                    "tool_calls": 1, "terminal_answers": 1, "user_turns": 1,
+                    "input_sha256": sha("Use the allowed tool and return its result."), "answer_sha256": sha(answer)}]}
+        empty = dict(evidence, model_calls=0, tool_calls=0, terminal_answers=0, cases=[])
+        response = {"jsonrpc": "2.0", "id": "kmx-lift-once", "result": {"kind": "task", "id": "actual-task",
+                    "contextId": "actual-context", "status": {"state": "completed"},
+                    "artifacts": [{"parts": [{"kind": "text", "text": answer}]}]}}
+        service = yaml.safe_load(CONTROLLER_SERVICE)
+        service["metadata"].update(uid="controller-service", resourceVersion="1")
+        labels = copy.deepcopy(service["spec"]["selector"])
+        container = {"name": "controller", "image": "ghcr.io/kagent-dev/kagent/controller:0.10.3@sha256:" + driver.CONTROLLER,
+                     "env": [{"name": "AUTH_MODE", "value": "unsecure"}]}
+        controller = {"kind": "Deployment", "metadata": {"name": "kagent-controller", "namespace": "kagent",
+                      "uid": "controller-uid", "generation": 1, "resourceVersion": "1"}, "spec": {"replicas": 1,
+                      "selector": {"matchLabels": labels}, "template": {"metadata": {"labels": labels},
+                      "spec": {"containers": [container]}}}, "status": {"observedGeneration": 1, "readyReplicas": 1,
+                      "updatedReplicas": 1, "availableReplicas": 1}}
+        if defect == "auth": container["env"][0]["value"] = "trusted-proxy"
+        if defect == "auth-from": container["env"][0]["valueFrom"] = {"secretKeyRef": {"name": "override"}}
+        if defect == "auth-duplicate": container["env"].append(dict(container["env"][0]))
+        if defect == "selector": service["spec"]["selector"] = {"app": "unrelated"}
+        if defect == "port": service["spec"]["ports"][0]["targetPort"] = 9000
+        if defect == "port-name": service["spec"]["ports"][0]["name"] = "http"
+        if defect == "service-port": service["spec"]["ports"][0]["port"] = 9000
+        if defect == "protocol": service["spec"]["ports"][0]["protocol"] = "UDP"
+        if defect == "duplicate-port": service["spec"]["ports"].append(dict(service["spec"]["ports"][0]))
+        if defect == "rollout": controller["status"]["observedGeneration"] = 0
+        if defect == "controller-image": container["image"] = "unqualified/image:latest"
+        if defect == "counters": evidence["tool_calls"] = 2
+        if defect == "case-counts": evidence["cases"][0]["user_turns"] = 2
+        if defect == "case-input": evidence["cases"][0]["input_sha256"] = "f" * 64
+        if defect == "case-answer": evidence["cases"][0]["answer_sha256"] = "f" * 64
+        if defect == "judge": evidence["judge_calls"] = 1
+        if defect == "rpc": response["error"] = {"message": "private failure"}
+        if defect == "task-id": response["result"]["id"] = ""
+        if defect == "warm": empty["tool_calls"] = 1
+        objects, frames, creates, sends = {}, [], [], []
+        objects[("deployment", "kagent-controller", "kagent")] = controller
+        objects[("service", "kagent-controller", "kagent")] = service
+        identity_reads = 0
+
+        with tempfile.TemporaryDirectory() as directory:
+            work = pathlib.Path(directory)
             (work / "bin").mkdir()
-            real = work / "bin/kubectl"
-            real.write_text("#!/bin/sh\nexit 0\n")
-            real.chmod(0o700)
             (work / "fail-bin").mkdir()
-            (work / "fail-bin/kubectl").symlink_to(real)
-            state = {"live": False, "drift": False, "negative": 0, "evals": 0}
-            identities = {kind + "/lift-proof": {"uid": kind + "-uid", "generation": int(kind in {"ModelConfig", "Agent", "Deployment"})} for kind in
-                          ("ModelConfig", "Agent", "Deployment", "Service", "ServiceAccount", "Secret")}
-            identities.update({kind + "/kagent-controller": {"uid": "controller-" + kind, "generation": int(kind == "Deployment")} for kind in ("Service", "Deployment", "ConfigMap")})
-            references = [{"Kind": kind, "Name": "lift-proof", "Namespace": "agents", "UID": kind + "-uid", **({"Generation": 1, "SpecDigest": "c" * 64} if kind in {"ModelConfig", "Agent", "Deployment"} else {}), **({"ResourceVersion": "1"} if kind not in {"Agent", "ModelConfig"} else {})} for kind in ("ModelConfig", "Agent", "Deployment", "Service", "ServiceAccount", "Secret")]
-            receipt = {"PortableDigest": "a" * 64, "RenderedDigest": "b" * 64, "Proofs": references[:2], "Workload": references[2:], "Dependencies": [{"Kind": "Secret", "Name": "model-key", "Namespace": "agents", "UID": "key-uid", "ResourceVersion": "1", "Key": "api-key"}]}
-            sentinel = "kmx-mcp-hermetic-sentinel"
-            answer = "KMX MCP proof: " + sentinel
-            counts = {"tool_calls": 0, "model_calls": 0, "terminal_answers": 0, "judge_calls": 0, "cases": [], "sentinel_sha256": hashlib.sha256(sentinel.encode()).hexdigest()}
-            def sha(data):
-                return hashlib.sha256(data).hexdigest()
-            def frames(entries):
-                return b"".join(name.encode() + b" " + str(len(data)).encode() + b"\n" + data + b"\n" for name, data in entries)
-            def observed_case(prompt):
-                counts["model_calls"] += 2
-                counts["tool_calls"] += 1
-                counts["terminal_answers"] += 1
-                counts["cases"].append({"call_id": "call-" + str(counts["tool_calls"]), "input_sha256": sha(prompt.encode()), "answer_sha256": sha(answer.encode()), "model_calls": 2, "tool_calls": 1, "terminal_answers": 1, "user_turns": 1})
-            def evaluation(argv):
-                import yaml
-                state["evals"] += 1
-                n = state["evals"]
-                self.assertEqual(argv[4:12], ["--runtime", "kagent", "--runtime-version", "v0.10.3", "--to-context", "kind-kmx-kagent-lift", "--bindings", str(work / "external-bindings.yaml")])
-                self.assertIn("--judge-base-url", argv)
-                cases = [(p, p.read_bytes(), yaml.safe_load(p.read_text())) for p in sorted((work / "bundle/eval").glob("*.yaml"))]
-                if "--case" in argv:
-                    cases = [entry for entry in cases if entry[2]["id"] == argv[argv.index("--case") + 1]]
-                rows = []
-                for index, (_, raw, case) in enumerate(cases):
-                    observed_case(case["input"])
-                    assertions = [{"id": "expectContains.0", "type": "contains", "verdict": "pass", "reason": "assertion satisfied", "definitionDigest": sha(frames([("type", b"contains"), ("operand", b"KMX MCP proof:")]))}]
-                    for assertion in case.get("assertions", []):
-                        counts["judge_calls"] += 2
-                        policy = "d" * 64
-                        assertions.append({"id": assertion["id"], "type": "llmJudge", "verdict": "pass", "reason": "judge threshold satisfied", "definitionDigest": sha(frames([("type", b"llmJudge"), ("operand", assertion["rubric"].encode()), ("minScore", b"50"), ("judgeModel", b"fixture-judge"), ("judgeVersion", b"1"), ("evaluatorDigest", policy.encode())])), "judge": {"model": "fixture-judge", "modelVersion": "1", "provenance": "user-declared", "minScore": 50, "scores": [100, 100], "evaluatorDigest": policy, "configurationDigest": sha(frames([("endpoint", b"http://127.0.0.1/v1"), ("model", b"fixture-judge"), ("modelVersion", b"1"), ("evaluatorDigest", policy.encode())]))}})
-                    token = str(n) + "-" + str(index)
-                    rows.append({"id": case["id"], "verdict": "pass", "caseDigest": sha(raw), "inputDigest": sha(case["input"].encode()), "answerSHA256": sha(answer.encode()), "assertions": assertions, "execution": {"rpcID": "rpc-" + token, "requestMessageID": "message-" + token, "taskID": "task-" + token, "contextID": "context-" + token, "state": "completed"}})
-                all_cases = [entry[0] for entry in cases]
-                target = {"runtime": "kagent", "runtimeVersion": "v0.10.3", "engine": "go", "context": driver.CONTEXT, "namespace": "agents", "clusterUID": "cluster-1", "agent": "lift-proof", "agentUID": "Agent-uid", "agentGeneration": 1, "modelConfigUID": "ModelConfig-uid", "modelConfigGeneration": 1, "model": "fixture", "platform": {"sourceCommit": "8878c39ac64421cb665c8e62ecc6411dd12f2fc2", "controllerImage": {"os": "linux", "architecture": "amd64", "digest": driver.CONTROLLER}, "adkImage": {"os": "linux", "architecture": "amd64", "digest": driver.GO_ADK}, "controller": [{"Kind": kind, "Name": "kagent-controller", "Namespace": "kagent", "UID": "controller-" + kind, "ResourceVersion": "1", **({"Generation": 1} if kind == "Deployment" else {})} for kind in ("Service", "Deployment", "ConfigMap")]}, "snapshot": {"proofs": receipt["Proofs"], "workload": receipt["Workload"], "dependencies": receipt["Dependencies"]}}
-                run_id = str(n) * 32
-                report = {"schemaVersion": 2, "runID": run_id, "bundle": "lift-proof", "portableDigest": "a" * 64, "renderedDigest": "b" * 64, "deploymentReceiptDigest": sha((work / "bundle/receipts/kagent-v0.10.3/lift.json").read_bytes()), "casesDigest": sha(frames([("eval/" + p.name, p.read_bytes()) for p in all_cases])), "fullCaseSet": "--case" not in argv, "gitCommit": "uncommitted", "result": "pass", "target": target, "cases": rows}
-                if defect == "reused-native" and n == 2: rows[0]["execution"]["taskID"] = "task-1-0"
-                elif defect == "answer-hash": rows[0]["answerSHA256"] = "e" * 64
-                elif defect == "partial-marker" and n == 3: report["fullCaseSet"] = True
-                elif defect == "payload": rows[0]["answer"] = sentinel
-                elif defect == "platform": target["platform"]["sourceCommit"] = "e" * 40
-                elif defect == "snapshot": target["snapshot"]["dependencies"] = []
-                elif defect == "case-counts": counts["cases"][-1]["model_calls"] = 1
-                elif defect == "extra-user": counts["cases"][-1]["user_turns"] = 2
-                root = work / "bundle/receipts"
-                runs = root / "runs"
-                runs.mkdir(exist_ok=True, mode=0o700)
-                latest_key = sha(b"kagent\x00v0.10.3\x00kind-kmx-kagent-lift\x00agents\x00cluster-1")
-                latest = root / ("eval-kagent-v0.10.3-" + latest_key + ".json")
-                archive = runs / ("eval-" + run_id + ".json")
-                raw = json.dumps(report).encode()
-                for path in (archive, latest):
-                    path.write_bytes(raw)
-                    path.chmod(0o600 if defect != "public-file" else 0o644)
-                if defect == "archive-overwrite" and n == 2:
-                    (runs / ("eval-" + "1" * 32 + ".json")).write_bytes(raw)
-                return subprocess.CompletedProcess(argv, 0, (answer + "\nhistory: " + str(archive) + "\nreceipt: " + str(latest) + "\n").encode(), b"")
-            def snapshot():
-                return dict(identities, drift={"uid": "operator"}) if state["drift"] else identities if state["live"] else {}
-            def frame(kind, strategy, verb="create"):
-                return {"verb": verb, "dry_run": strategy, "resources": [{"apiVersion": "kagent.dev/v1alpha2", "kind": kind, "namespace": "agents", "name": "lift-proof"}]}
-            def append(frames):
-                with (work / "kubectl-mutations.jsonl").open("a") as out:
-                    for item in frames:
-                        out.write(json.dumps(item) + "\n")
-            def status():
-                target = {"context": driver.CONTEXT, "namespace": "agents", "clusterUID": "cluster-1", "ready": True, "state": "ready", "agentUID": "Agent-uid", "modelConfigUID": "ModelConfig-uid", "deploymentUID": "Deployment-uid"}
-                if not state["live"]:
-                    target.update(state="absent", ready=False, noReceipt=True)
-                elif state["drift"]:
-                    target.update(state="drift", ready=False, detail="primary ownership, digest or admitted spec differs from desired")
-                elif not (work / "bundle/receipts/kagent-v0.10.3").exists():
-                    target.update(state="failed", ready=False, noReceipt=True, detail="unbound: no complete selected-target deployment receipt; live readiness is not a saved deployment")
-                elif "unused.invalid" in (work / "external-bindings.yaml").read_text():
-                    target.update(state="drift", ready=False, detail="desired source or bindings differ from saved deployment")
-                return dict(receipt, bundle="lift-proof", runtime="kagent", runtimeVersion="v0.10.3", portableDigest="a" * 64, renderedDigest="b" * 64, targets=[target])
-            def cli(argv, **kwargs):
-                self.assertEqual(argv[0], str(binary))
-                if argv[1] == "eval":
-                    self.assertEqual(argv[2], "diff")
-                    self.assertEqual(len(argv), 5, "diff requires two positional receipts, not flags")
-                    paths = [pathlib.Path(path) for path in argv[3:]]
-                    self.assertTrue(all(p.parent.name == "runs" for p in paths), "diff must compare archives, not overwritten latest")
-                    return subprocess.CompletedProcess(argv, 0, b"unchanged\n", b"")
-                self.assertEqual(argv[1], "bundle")
-                self.assertIn(argv[2], ("lift", "status", "evaluate"))
-                verb = argv[2]
-                if verb == "evaluate":
-                    return evaluation(argv)
-                missing = not (work / "external-bindings.yaml").exists()
-                report = status() if not missing else None
-                refused = missing or (verb == "lift" and state["live"] and report["targets"][0]["state"] != "ready")
-                if refused:
-                    index = state["negative"]
-                    state["negative"] += 1
-                    code, stderr = 1, REFUSALS[index].encode() + b"\n"
-                    if index == negative:
-                        if defect == "unrelated": stderr = b"unexpected selector failure\n"
-                        elif defect == "panic": code = 2
-                        elif defect == "signal": code = -15
-                        elif defect == "installer": code = 97
-                        elif defect == "trailing": stderr += b"unexpected final error\n"
-                    return subprocess.CompletedProcess(argv, code, b"", stderr)
-                if verb == "lift" and not state["live"]:
-                    frames = [frame(kind, "server") for kind in ("ModelConfig", "Agent")]
-                    if defect == "reordered": frames.reverse()
-                    elif defect == "persistent-plan": frames[0]["dry_run"] = "none"
-                    elif defect == "wrong-resource": frames[0]["resources"][0]["name"] = "outside-snapshot"
-                    elif defect == "rejected": frames.append({"rejected": "unsupported-kubectl-invocation"})
-                    append(frames)
-                    if "--plan" not in argv:
-                        append([frame(kind, "none") for kind in ("ModelConfig", "Agent")])
-                        state["live"] = True
-                        (work / "bundle/receipts/kagent-v0.10.3").mkdir(parents=True, mode=0o700)
-                        (work / "bundle/receipts").chmod(0o700)
-                        lift = work / "bundle/receipts/kagent-v0.10.3/lift.json"
-                        lift.write_text(json.dumps({"receipt": receipt}))
-                        lift.chmod(0o600)
-                return subprocess.CompletedProcess(argv, 0, json.dumps(status()).encode(), b"")
-            def kube(*args, **kwargs):
-                self.assertIn("patch", args)
-                append([frame("Agent", "none", "patch")])
-                state["drift"] = True
-                return b""
-            response = {"jsonrpc": "2.0", "id": "kmx-lift-once", "result": {"kind": "task", "id": "task-1", "contextId": "context-1", "status": {"state": "completed"}, "artifacts": [{"parts": [{"kind": "text", "text": answer}]}]}}
-            http_calls = []
+            (work / "bin/kubectl").write_text("unused hermetic external boundary")
+            (work / "fail-bin/kubectl").symlink_to(work / "bin/kubectl")
+            # Any product invocation, including legacy bundle/create --live or
+            # readers/evaluation/status, fails this runtime-only smoke test.
+            binary = work / "kmx"
+            binary.write_text("not executable: independent smoke must not invoke KMX")
+
+            def kube(*args, phase, data=None):
+                self.assertEqual(args, ("-n", "agents", "create", "-f", "-"))
+                obj = yaml.safe_load(data)
+                creates.append(copy.deepcopy(obj))
+                self.assertEqual(obj["apiVersion"], "kagent.dev/v1alpha2")
+                self.assertEqual(obj["metadata"], {"name": "lift-proof", "namespace": "agents"})
+                self.assertNotIn("kaimahi.dev/bundle", json.dumps(obj))
+                kind = obj["kind"]
+                frames.append({"verb": "create", "dry_run": "none", "resources": [{"apiVersion": "kagent.dev/v1alpha2",
+                              "kind": kind, "namespace": "agents", "name": "lift-proof"}]})
+                obj["metadata"].update(uid=kind + "-actual-uid", generation=1, resourceVersion="1")
+                obj["status"] = {"conditions": [{"type": cond, "status": "True", "observedGeneration": 1}
+                                  for cond in (("Accepted", "Ready") if kind == "Agent" else ("Accepted",))]}
+                objects[("agents.kagent.dev" if kind == "Agent" else "modelconfigs.kagent.dev", "lift-proof", "agents")] = obj
+                return b"{}"
+
+            def get(kind, name=None, namespace="agents", optional=False):
+                nonlocal identity_reads
+                if kind == "namespace": return {"metadata": {"uid": "actual-cluster"}}
+                key = (kind, name, namespace)
+                obj = copy.deepcopy(objects.get(key))
+                if defect == "occupied" and optional and name == "lift-proof":
+                    return {"metadata": {"uid": "preexisting"}}
+                if obj and kind == "agents.kagent.dev":
+                    identity_reads += 1
+                    if defect == "identity-drift" and sends: obj["metadata"]["uid"] = "replaced"
+                    if defect == "missing-uid": obj["metadata"].pop("uid")
+                    if defect == "terminating": obj["metadata"]["deletionTimestamp"] = "now"
+                return obj
+
+            @contextlib.contextmanager
+            def forward(service, port, namespace="agents"):
+                self.assertIn((service, port, namespace), (("lift-fixture", 9000, "agents"), ("kagent-controller", 8083, "kagent")))
+                yield "http://127.0.0.1:" + str(port)
+
             def http(url, data=None):
-                http_calls.append(data["method"] if data else "evidence")
-                if data:
-                    observed_case(data["params"]["message"]["parts"][0]["text"])
+                if data is not None:
+                    self.assertEqual(url, "http://127.0.0.1:8083/api/a2a/agents/lift-proof")
+                    self.assertEqual(data["method"], "message/send")
+                    self.assertTrue(data["params"]["configuration"]["blocking"])
+                    sends.append(data)
                     return response
-                return json.loads(json.dumps(counts))
-            with mock.patch.dict(os.environ, KMX_HOME=str(home)), mock.patch.object(driver.subprocess, "run", side_effect=cli), mock.patch.object(driver, "snapshot", side_effect=snapshot), mock.patch.object(driver, "verify_images", return_value={"controller": driver.CONTROLLER, "kagent": driver.GO_ADK}), mock.patch.object(driver, "get", return_value={"metadata": {"uid": "cluster-1"}}), mock.patch.object(driver, "validate_receipt", return_value=receipt), mock.patch.object(driver, "kube", side_effect=kube), mock.patch.object(driver, "forward", return_value=contextlib.nullcontext("http://127.0.0.1")), mock.patch.object(driver, "http_json", side_effect=http), contextlib.redirect_stdout(io.StringIO()) as out:
-                error = None
-                try:
+                self.assertEqual(url, "http://127.0.0.1:9000/evidence")
+                return evidence if sends else empty
+
+            def images(include_agent=False):
+                self.assertTrue(include_agent)
+                if defect == "images": raise driver.QualificationError("image mismatch")
+                return {"controller": driver.CONTROLLER, "kagent": driver.GO_ADK,
+                        "postgresql": driver.POSTGRES, "fixture": driver.FIXTURE}
+
+            with mock.patch.dict(os.environ, KMX_HOME=str(work / "kmx-home")), \
+                    mock.patch.object(driver, "kube", side_effect=kube), mock.patch.object(driver, "get", side_effect=get), \
+                    mock.patch.object(driver, "audit_frames", side_effect=lambda _: copy.deepcopy(frames)), \
+                    mock.patch.object(driver, "verify_images", side_effect=images), \
+                    mock.patch.object(driver, "forward", side_effect=forward), mock.patch.object(driver, "http_json", side_effect=http), \
+                    mock.patch.object(driver.subprocess, "run", side_effect=AssertionError("runtime smoke invoked product CLI")), \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                if defect is None:
                     driver.qualify(binary, work)
-                except ValueError as failure:
-                    error = str(failure)
+                elif defect in ("port-name", "service-port", "protocol", "duplicate-port"):
+                    with self.assertRaisesRegex(driver.QualificationError, "control Service HTTP endpoint differs"):
+                        driver.qualify(binary, work)
+                else:
+                    with self.assertRaises(ValueError): driver.qualify(binary, work)
             artifact = work / "qualification.json"
-            return error, json.loads(artifact.read_text()) if artifact.exists() else None, http_calls, out.getvalue()
+            self.assertEqual(artifact.exists(), defect is None, "failure published success evidence")
+            self.assertLessEqual(len(sends), 1, "ambiguous smoke was resent")
+            self.assertFalse(any(path.name == "agent.yaml" or path.name == "receipts" for path in work.rglob("*")))
+            if defect is not None:
+                if defect in ("auth", "auth-from", "auth-duplicate", "selector", "port", "port-name", "service-port", "protocol", "duplicate-port", "rollout", "controller-image", "images", "occupied", "missing-uid", "terminating", "warm"):
+                    self.assertEqual(sends, [], "failed fence admitted a native send")
+                return
+            self.assertEqual([obj["kind"] for obj in creates], ["ModelConfig", "Agent"])
+            self.assertEqual(creates[0]["spec"], {"provider": "OpenAI", "model": "fixture", "apiKeySecret": "lift-model-key",
+                             "apiKeySecretKey": "api-key", "openAI": {"baseUrl": "http://lift-fixture.agents.svc.cluster.local:9000/v1"}})
+            declarative = creates[1]["spec"]["declarative"]
+            self.assertEqual(declarative["runtime"], "go")
+            self.assertEqual(declarative["modelConfig"], "lift-proof")
+            self.assertEqual(declarative["tools"], [{"type": "McpServer", "mcpServer": {"apiGroup": "kagent.dev",
+                             "kind": "RemoteMCPServer", "name": "lift-tools", "toolNames": ["read_sentinel"]}}])
+            self.assertEqual(declarative["deployment"]["securityContext"]["capabilities"], {"drop": ["ALL"]})
+            self.assertEqual(len(sends), 1)
+            proof = json.loads(artifact.read_text())
+            self.assertEqual(artifact.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(proof["kind"], "KagentRuntimeSmokeQualification")
+            self.assertEqual(proof["execution"]["native_id"], "actual-task")
+            self.assertEqual(proof["execution"]["native_context_id"], "actual-context")
+            self.assertEqual(proof["fixture_counts"], {"tool_calls": 1, "model_calls": 2, "terminal_answers": 1, "judge_calls": 0})
+            self.assertEqual(proof["identities"]["Agent/lift-proof"]["uid"], "Agent-actual-uid")
+            for private in (sentinel, "Use the allowed tool", "systemMessage", "apiKeySecret", "evaluation", "receipt", "bundle"):
+                self.assertNotIn(private, artifact.read_text() + out.getvalue())
 
-    def test_actual_qualifier_baseline_is_complete_and_payload_free(self):
-        error, artifact, calls, output = self.run_qualify()
-        self.assertIsNone(error, error)
-        self.assertEqual(set(artifact), {"kind", "runtime", "runtime_version", "engine", "cluster_uid", "context", "namespace", "bundle", "portable_digest", "rendered_digest", "identities", "images", "execution", "evaluation", "proofs"})
-        self.assertEqual(calls.count("message/send"), 1)
-        self.assertEqual(artifact["execution"]["tool_calls"], 1)
-        self.assertEqual(artifact["execution"]["model_calls"], 2)
-        self.assertNotIn("kmx-mcp-hermetic-sentinel", json.dumps(artifact) + output)
-        self.assertEqual(artifact["evaluation"]["fixture_counts"], {"tool_calls": 6, "model_calls": 12, "terminal_answers": 6, "judge_calls": 6})
-        self.assertEqual([r["full_case_set"] for r in artifact["evaluation"]["runs"]], [True, True, False])
-        self.assertEqual([len(r["cases"]) for r in artifact["evaluation"]["runs"]], [2, 2, 1])
+    def test_pinned_chart_service_qualifies_raw_fixture_and_one_native_send(self):
+        self.exercise()
 
-    def test_product_proof_refuses_uncorrelated_private_or_incomplete_evidence(self):
-        for defect, reason in (("reused-native", "fresh"), ("answer-hash", "answer"),
-                               ("partial-marker", "case set"), ("payload", "payload-free"),
-                               ("platform", "platform"), ("snapshot", "snapshot"),
-                               ("case-counts", "case counts"), ("extra-user", "case counts"),
-                               ("public-file", "private"), ("archive-overwrite", "archive")):
-            with self.subTest(defect=defect):
-                error, artifact, _, output = self.run_qualify(defect)
-                self.assertIsNotNone(error, "defective product evidence was accepted")
-                self.assertIn(reason, error)
-                self.assertIsNone(artifact)
-                self.assertNotIn("kmx-mcp-hermetic-sentinel", error + output)
+    def test_runtime_fences_refuse_without_native_send_or_artifact(self):
+        for defect in ("auth", "auth-from", "auth-duplicate", "selector", "port", "port-name", "service-port", "protocol", "duplicate-port", "rollout", "controller-image", "images", "occupied", "missing-uid", "terminating", "warm"):
+            with self.subTest(defect=defect): self.exercise(defect)
 
-    def test_all_five_unrelated_negative_failures_refuse_artifact(self):
-        for index in range(5):
-            with self.subTest(index=index):
-                error, artifact, _, output = self.run_qualify("unrelated", index)
-                self.assertIsNotNone(error, "unrelated failure was accepted")
-                self.assertIsNone(artifact)
-                self.assertNotIn("unexpected selector failure", error + output)
-
-    def test_complete_ordered_metadata_including_swallowed_rejections_is_required(self):
-        for defect in ("reordered", "persistent-plan", "wrong-resource", "rejected"):
-            with self.subTest(defect=defect):
-                error, artifact, _, _ = self.run_qualify(defect)
-                self.assertIn("mutation audit", error)
-                self.assertIsNone(artifact)
-
-    def test_wrong_exit_and_later_final_error_are_not_expected_refusal(self):
-        for defect in ("panic", "signal", "installer", "trailing"):
-            with self.subTest(defect=defect):
-                error, artifact, _, _ = self.run_qualify(defect)
-                self.assertIsNotNone(error, "incorrect failure was accepted")
-                self.assertIsNone(artifact)
+    def test_ambiguous_or_uncorrelated_execution_never_resends_or_exports(self):
+        for defect in ("rpc", "task-id", "counters", "case-counts", "case-input", "case-answer", "judge", "identity-drift"):
+            with self.subTest(defect=defect): self.exercise(defect)
 
 
 if __name__ == "__main__":

@@ -15,12 +15,11 @@ backend, renderer and command loop:
 ```sh
 kmx chat hello-world-agent
 kmx chat --runtime orka --namespace orka-system hello-world-agent
-kmx chat --azure-discovery sdk hello-world-agent
 ```
 
 The default runtime selection discovers Orka's API and checks the named Agent
 in `orka-system` (or `--namespace`). A matching Orka Agent uses the wizard chat
-shell: sticky agent/location header, tools, `/agent`, `/lift`, inference selection,
+shell: sticky agent/location header, tools, `/agent`, inference selection,
 verbose controls, response timings and reusable connections. Discovery/read errors
 are reported rather than silently connecting to a different runtime.
 
@@ -52,6 +51,11 @@ and the completion selection. It redraws the sticky header and anchors a fresh
 editor below the existing transcript rather than erasing with obsolete cursor
 coordinates. Resize itself never submits a message or approval. The non-full-screen
 raw-input fallback retains its conservative resize-abort behavior.
+
+Chat `/lift` and console Lift only print
+`Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+They perform no release workflow or source-less copy. Host Foundry/Copilot
+controls remain independent; live source tools/inference editing is retired.
 
 ## Message editing and scrollback
 

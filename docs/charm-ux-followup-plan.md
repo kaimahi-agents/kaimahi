@@ -1,7 +1,10 @@
 # Charm UX follow-up
 
-Status: implemented; native Orka field collection and local/PTY verification
-are integrated. Runtime orchestration remains outside the wizard.
+Status: historical implemented live-create wizard record; that wizard and its
+previews are now removed outright. Native workspace create requires authored
+model/instructions; quickstart/console use source/case review and native
+eval/publication/reviewed Lift. Earlier implementation details below are not
+current live-create instructions. See [current create](kmx.md#kmx-create).
 
 ## Decision
 

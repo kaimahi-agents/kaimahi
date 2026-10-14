@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,14 +13,18 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 // SuiteWorkspaceEvaluationOptions selects a full native workspace invocation.
-// No runtime, model, judge or subset can override its packaged behavior.
+// Runtime, model and assertions remain packaged; judge transport is explicit.
 type SuiteWorkspaceEvaluationOptions struct {
 	Workspace, ToContext, ToNamespace, Inference, Bindings, Out, ResultPort, DevelopmentHost string
 	CaseTimeout                                                                              time.Duration
+	JudgeBaseURL, JudgeKeyEnv                                                                string
+	// ExpectedRuntime is a destination declaration, never a runtime override.
+	ExpectedRuntime string
 }
 
 // PreparedSuiteWorkspaceEvaluation owns its offline source snapshot and anchored
@@ -34,6 +39,7 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	started   bool
 	bindings  *suiteKagentBindingSnapshot
 	sessions  *suiteSessionsHostSnapshot
+	judge     agentruntime.EvaluationJudge
 }
 
 func (p *PreparedSuiteWorkspaceEvaluation) Close() error {
@@ -85,6 +91,9 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, suiteEvaluationError(ctx, err, false)
 	}
+	if opt.ExpectedRuntime != "" && opt.ExpectedRuntime != suite.Runtime.ID {
+		return nil, errors.New("destination runtime declaration does not match packaged runtime")
+	}
 	var sessions *suiteSessionsHostSnapshot
 	if suite.Runtime.ID == "agentsessions" {
 		if opt.DevelopmentHost == "" {
@@ -129,11 +138,22 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, err
 	}
+	if suite.Runtime.ID == "agentsessions" && (opt.JudgeBaseURL != "" || opt.JudgeKeyEnv != "") {
+		return nil, errors.New("development host evaluation refuses judge configuration")
+	}
+	cases := make([]agentruntime.EvaluationCase, len(inventory))
+	for i, frame := range inventory {
+		cases[i] = frame.Case
+	}
+	judge, err := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: opt.JudgeBaseURL, KeyEnv: opt.JudgeKeyEnv}, cases, io.Discard)
+	if err != nil {
+		return nil, err
+	}
 	output, err := preflightSuitePassingExport(ctx, opt.Out, root, cache)
 	if err != nil {
 		return nil, err
 	}
-	return &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, output: output, root: root, options: opt, bindings: bindings, sessions: sessions}, nil
+	return &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, output: output, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge}, nil
 }
 
 // Check the read-only session prerequisites before pair writes. The bearer and
@@ -192,6 +212,19 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 		return errSuiteNativeEvaluation
 	}
 	p.started = true
+	if p.judge != nil {
+		count := 0
+		for _, frame := range p.inventory {
+			for _, assertion := range frame.Case.Assertions {
+				if assertion.Type == "llmJudge" {
+					count += 2
+				}
+			}
+		}
+		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each case deadline. Identity/version are user-declared, not provider attestation. Endpoint omitted from recovery advice; supply it again. Reasoning is discarded.\n", count); err != nil {
+			return err
+		}
+	}
 	worker := *a.withRunContext(ctx)
 	worker.guarded = false
 	if p.suite.Runtime.ID == "kagent" {
@@ -252,7 +285,7 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 			return err
 		}
 		caseCtx, cancel := context.WithTimeout(ctx, p.options.CaseTimeout)
-		observation, caseErr := worker.evaluateSuiteNative(caseCtx, placement, frame, p.options.ResultPort)
+		observation, caseErr := worker.evaluateSuiteNative(caseCtx, placement, frame, p.options.ResultPort, p.judge)
 		cancel()
 		if _, err := fmt.Fprintf(worker.Out, "%s: %s\n", frame.Case.ID, observation.Verdict); err != nil {
 			return err

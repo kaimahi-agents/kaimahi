@@ -9,7 +9,7 @@ import (
 )
 
 func TestQuickstartNameDebounceDropsOldInputAndResults(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{Description: "Demo", Namespace: OrkaNamespace})
+	create, err := newQuickstartSourceForm(CreateOptions{Description: "Demo", Namespace: OrkaNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestQuickstartNameDebounceDropsOldInputAndResults(t *testing.T) {
 }
 
 func TestQuickstartNameEnterWaitsForCheck(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{Description: "Demo", Namespace: OrkaNamespace, ProviderType: "openai", Model: "test", Secret: "key"})
+	create, err := newQuickstartSourceForm(CreateOptions{Description: "Demo", Namespace: OrkaNamespace, ProviderType: "openai", Model: "test", Secret: "key"})
 	if err != nil {
 		t.Fatal(err)
 	}

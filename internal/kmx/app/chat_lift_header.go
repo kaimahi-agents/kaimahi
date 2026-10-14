@@ -43,17 +43,6 @@ func (h liftHeader) view(width int) string {
 	return strings.Join(append(rows, fit(bar)), "\n")
 }
 
-func (b *orkaChatBackend) liftStage(step int, target string) {
-	if b.liftHeader == nil {
-		return
-	}
-	b.liftHeader.step = step
-	if target != "" {
-		b.liftHeader.target = target
-	}
-	b.paintLiftHeader()
-}
-
 func (b *orkaChatBackend) paintLiftHeader() {
 	if b.liftHeader == nil || !isInteractiveTerminal(b.app.Out) {
 		return

@@ -327,7 +327,7 @@ func TestSuitePassingReceiptCoherence(t *testing.T) {
 
 func TestSuitePassingInventoryPreflight(t *testing.T) {
 	_, _, suite, _, _ := passingFixture(t)
-	for _, kind := range []string{"toolCalled", "llmJudge", "budget"} {
+	for _, kind := range []string{"toolCalled", "budget"} {
 		t.Run(kind, func(t *testing.T) {
 			modified := *suite
 			if kind == "budget" {
@@ -343,9 +343,6 @@ func TestSuitePassingInventoryPreflight(t *testing.T) {
 				}
 			} else {
 				definition := "- {id: a, type: toolCalled, tool: public}"
-				if kind == "llmJudge" {
-					definition = "- {id: a, type: llmJudge, rubric: public, minScore: 50, judgeModel: judge, judgeVersion: v1}"
-				}
 				data := []byte("id: unsupported\ninput: public\nassertions:\n" + definition + "\n")
 				modified.Cases = []workspace.PackagedCase{{Path: "metadata/kmx/eval/unsupported.yaml", Digest: "sha256:" + agentruntime.EvaluationCaseDigest(data), Bytes: data}}
 			}

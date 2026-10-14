@@ -21,8 +21,6 @@ const (
 	quickstartK8sToolAuthority = "https://1.1.1.1/resources"
 )
 
-const quickstartK8sInstructions = "For questions about live Kubernetes resources, call k8s-get-resources and answer only from its output. Never invent resource names. Copy resource names exactly. This tool lists resources read-only; it cannot change the cluster."
-
 // The controller's configured worker account is authoritative; matching chart
 // identity and AI trust labels keep an unrelated account from gaining access.
 func (a *App) orkaAIWorkerAccount(ctx context.Context) (string, error) {

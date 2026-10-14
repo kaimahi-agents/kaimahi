@@ -51,7 +51,7 @@ func TestQuickstartWizardSuiteRefusesLegacyOptionsBeforeWork(t *testing.T) {
 // The source form must not call live-create finishFields: that renders a bundle
 // and asks for credentials unrelated to an authored member.
 func TestQuickstartWizardSuiteFormOnlyCollectsSource(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{Description: "Describe incidents", Namespace: OrkaNamespace, Model: "exact-model"})
+	create, err := newQuickstartSourceForm(CreateOptions{Description: "Describe incidents", Namespace: OrkaNamespace, Model: "exact-model"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,12 +79,21 @@ func TestQuickstartWizardSuiteAuthorsOnlyPrivateSource(t *testing.T) {
 	for _, file := range []bool{false, true} {
 		t.Run(fmt.Sprintf("file=%v", file), func(t *testing.T) {
 			f := newOrkaFixture(t, nil)
-			home := t.TempDir()
+			// Darwin's system temporary path can contain a symlink. Select its
+			// physical directory without weakening the production ancestry guard.
+			home, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
 			t.Setenv("KMX_HOME", home)
 			instructions := "Report only verified incidents.\nDo not invent details.\n"
 			opt := CreateOptions{Name: "incident-helper", Description: "Explain incidents", Namespace: "team", Model: "exact-model", InstructionText: instructions}
 			if file {
-				input := filepath.Join(t.TempDir(), "source.md")
+				inputRoot, err := filepath.EvalSymlinks(t.TempDir())
+				if err != nil {
+					t.Fatal(err)
+				}
+				input := filepath.Join(inputRoot, "source.md")
 				if err := os.WriteFile(input, []byte(instructions), 0600); err != nil {
 					t.Fatal(err)
 				}

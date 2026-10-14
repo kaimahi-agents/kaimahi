@@ -10,8 +10,7 @@ import (
 
 type orkaSuiteOwnership struct{ Suite, Digest, Member, Renderer, BindingDigest, RenderedDigest string }
 type orkaPlacementIdentity struct {
-	portableDigest, renderedDigest string
-	suite                          *orkaSuiteOwnership
+	suite *orkaSuiteOwnership
 }
 
 func suiteNativeOwner(s suiteNativeSubject) *orkaSuiteOwnership {

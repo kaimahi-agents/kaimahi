@@ -22,27 +22,6 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
-- Root digest `lift` supports packaged kagent v0.10.3 Go/linux-amd64 suites through
-  the existing prepare/apply/verify engine, with runtime-matching full-passing
-  evidence and author-owned `--bindings FILE` (exclusive with Orka `--inference`).
-  Kagent creates only new ModelConfig/Agent objects and refuses occupied primaries
-  or generated children even with matching evaluated UIDs. Explicit source-only
-  promotion keeps package/member/model/profile/provider kind/AuthMode and full
-  controller/Go image digest/platform inventories exact; only approved physical
-  target/binding/installation fields may differ. Unknown fields compare by default.
-  Lift makes no native execution calls; partial outcomes retain acknowledged
-  identities without retry, adoption, updates or cleanup. Orka summaries/digests,
-  receipt-bound reuse and legacy bundle/v0.10.2 create behavior remain unchanged.
-
-- Packaged tool-free kagent v0.10.3 Go/linux-amd64 workspaces now evaluate
-  through root `eval --bindings FILE`: one fresh blocking A2A Task per ordered
-  case, unsecure auth only, no retries, answer output or bundle conversion.
-  Strict full-passing suite evidence has a separate typed kagent branch;
-  evaluated push requires exact manifest S and the same packaged runtime.
-  Offline suite receipt diff refuses mixed runtimes. Existing Orka receipt
-  serialization, evaluation and lift remain compatible. Root kagent digest Lift
-  is described above. Unsupported judge/tool assertions still refuse offline.
-
 ### Added
 
 - AgentSuite draft evaluation storage: producers SHOULD embed optional
@@ -54,308 +33,149 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   OCI association; validation does not execute cases. KMX private authoring,
   receipt formats and command plumbing are unchanged.
 
-- Packaged AgentSessions chat members support root `eval --development-host FILE`
-  on explicit literal-loopback, unauthenticated operator-observed hosts. One
-  fresh Session and explicit config/Exec per ordered case, bounded canonical
-  chat/model-request proof, no retry or cluster configuration. Only a complete
-  pass exports private runtime-specific evidence for exact-S evaluated push;
-  changed source, failed/unknown/partial/drift/canceled runs stop before exporting
-  a new pass. As with native receipts, a late post-link publication error can
-  leave a complete passing file; the CLI reports “output may exist”, without
-  automatic rollback or destination deletion. Journal retention and the
-  development trust warning are disclosed. Registry,
-  auth, Lift, chat/status, tools/judge and remote lifecycle remain unsupported.
-  Demonstrated once on the pinned daemon with an instruction-sensitive model
-  fixture; replay leaves independent model-call counts unchanged. Not real-LLM
-  quality or authenticated attestation. [Development evaluation](docs/suite-workspace.md#agentsessions-development-evaluation).
+- Root `kmx eval` supports authored `llmJudge` assertions on packaged Orka/kagent
+  suites with explicit `--judge-base-url` and optional `--judge-key-env`.
+  Two independent temperature-zero samples must agree on the threshold side;
+  unavailable, malformed or split outcomes are unknown and export no passing
+  receipt. Judgment shares the existing case deadline, with attribution checked
+  afterward. Preflight states the two-request cost and data transfer.
+  Private receipts bind declared judge model/version, policy, threshold, endpoint
+  configuration hash and both scores; reasoning and raw judge URLs stay out of
+  receipts and terminal recovery commands. Text-only receipts are unchanged;
+  upgrade readers before exchanging judge receipts. AgentSessions judging remains
+  unsupported. The existing native Orka CI shard includes one open-ended rubric
+  case alongside its two text cases, reusing the pinned AIKit workload and existing
+  timeout budgets. Runner tests validate owned-forward cleanup and independently
+  check the declared judge identity/configuration and both receipt scores.
+  Hermetic tests alone are not live semantic judge proof.
+  [Suite judge configuration](docs/suite-workspace.md#evaluate-the-whole-workspace)
 
-- AgentSuite callable Tools can declare credential-independent `effect`
-  (`read-only` or `mutating`) and `approval` (`required` or
-  `policy-controlled`). Tools requiring delegated-user authorization also name
-  a service, scope, and unresolved runtime-brokered credential binding without
-  packaging a live connection, consent state, or credential. The schema and
-  reference validator require explicit effect and approval for delegated Tools;
-  this specifies portable metadata and fail-closed runtime obligations, not a
-  KMX credential broker or approval implementation.
-
-- Offline `kmx create --runtime agentsessions` authors one tool-free built-in
-  chat member, pinned to upstream commit
-  `ca85f47a2ec17ca6e16029cfa69419cfe29442b3` (merged #120/#124). Preparation,
-  source-free loading and ordinary push preserve exact manifest S, empty member
-  images and complete ordered cases. Runtime/config semantics remain private
-  metadata, not public AgentSuite fields. Development suite evaluation and
-  evaluated push are described above; Lift, chat/status and live create remain
-  unsupported. Orka/kagent execution
-  and evidence consumers refuse this profile. [Workspace guide](docs/suite-workspace.md).
-
-- Deploy-only `kmx lift <ref>@<digest>` from a registry or local `--from-layout`.
-  Explicit private full-passing `--evidence` and `--to-context` are required;
-  Orka uses Ready `--inference provider:NAME`, kagent uses author-owned
-  `--bindings FILE`. Default gate binds the exact evaluated target; `--promote`
-  explicitly permits a same-suite/member/model/runtime destination with
-  source-only evidence disclosure. `--plan` uses GETs only. Orka creates absent
-  resources or reuses exact evaluated UID/generation/spec proof; kagent creates
-  only absent resources and refuses every occupied target. No source,
-  build/repack/push, runtime/model override, update, adoption or ambiguous retry.
-  Text/JSON outcomes distinguish created, reused, unknown and not-attempted from
-  readiness, retaining partial acknowledged identities without rollback/cleanup.
-  Newly created/recreated resources need fresh evaluation before subsequent reuse.
-  Signing/authentication is not claimed. Bounded CI qualifies Orka exact reuse
-  and kagent fresh-target creation, not every promotion, creation or partial path.
-
-- Private suite-owned kagent v0.10.3 Go/linux-amd64 preparation, create-only
-  placement and observation helpers consume the verified packaged member and
-  explicit OpenAI bindings. Suite ownership is isolated from legacy resources;
-  occupied/unrecorded or changed targets refuse. Repeat placement requires a
-  complete caller-retained observation and is read-only. Partial outcomes retain
-  known identities without claiming success or rollback. These helpers now feed
-  packaged eval and common root Lift; no model/Task execution is added by Lift.
-  [Native workspace profiles](docs/suite-workspace.md).
-
-- Internal read-only digest-lift planning for one-member native suites: bounded
-  exact registry/local-layout retrieval, source-free closed packaged loading,
-  mandatory private passing-receipt coherence and exact target/binding/runtime
-  checks. GET-only review refuses resource drift/adoption and retains evaluated
-  UID/generation/spec proof. No authenticated-evidence claim is made.
-  [Planning boundary](docs/suite-workspace.md#digest-lift).
-
-- One-member workspace authoring/prepare/load supports explicit kagent v0.10.3
-  Go/linux-amd64 alongside default Orka. Runtime is bound in private native
-  metadata and the exact OCI manifest; publication copies that prepared graph
-  without images or cluster effects. Invalid/unsupported runtime declarations
-  refuse; Orka-only preparation/evidence consumers do not execute kagent input.
-  Packaged kagent evaluation/evaluated push and root Lift are described above;
-  RemoteMCP remains a future slice.
-  Existing live kagent v0.10.2 create is unchanged.
-  [Offline native workspace profiles](docs/suite-workspace.md).
-
-- Root `kmx eval` evaluates the full ordered inventory of one tool-free native
-  Orka workspace, with explicit `--to-context`, `--inference provider:NAME` and a new
-  private `--out` file. Offline inventory/budget/output checks precede cluster
-  configuration; one guard covers owned Provider/Agent placement and one fresh,
-  never-retried Task per case. Fail/unknown/drift/cancel/output errors stop later
-  sends. Only a full pass exports payload-free metadata. Root
-  `push --evaluation FILE` checks its strict private receipt and exact manifest
-  identity before publication. No receipt format change, package evaluation,
-  judge/subset/content mode, installer or release lift is added. Existing bundle
-  evaluation, eval helpers and ordinary/extracted push behavior remain separate.
-  Hermetic tests do not establish real native CLI qualification.
-  [Workspace evaluation](docs/suite-workspace.md#evaluate-the-whole-workspace).
-
-- Explicit `kmx bundle evaluate --runtime kagent --runtime-version v0.10.3`
-  runs authored cases against a receipt-bound Go placement, with desired
-  bindings and `--to-context`. Each case sends one fresh blocking A2A Task;
-  ambiguous sends are never retried, and lost attribution stops later sends.
-  auth: unsecure only, trusted-proxy refused. Python and promotion gates remain
-  unsupported; tool assertions stay unknown. The existing kind shard qualifies
-  product evaluation, fresh IDs, exact answer digests and repeat offline diff.
-  [Go evaluation and retention](docs/agent-lift.md#evaluating-exact-v0103-go-kagent).
-
-- `kmx push <reference>` finds the nearest ancestor `workspace.yaml` and
-  publishes its prepared one-member native-Orka suite. `--workspace` overrides
-  discovery without fallback. Workspace pushes print the absolute source path
-  and exact OCI manifest digest on stderr; result stdout and two-positional
-  extracted-directory transfer are unchanged.
-  [Workspace guide](docs/suite-workspace.md) ([#454](https://github.com/kaimahi-agents/kaimahi/pull/454)).
-
-- `kmx eval diff` reads strict v2 receipts for exact-v0.10.3 Go kagent
-  evaluations offline, with native A2A and deployment identity checks. Valid
-  kagent receipts do not affect Orka gate/status selection and cannot satisfy an
-  Orka lift gate. Promotion gates remain unsupported;
-  upgrade older strict receipt readers before exchanging these shapes.
-  [Offline receipt boundary](docs/agent-lift.md#offline-kagent-receipt-boundary).
-
-- `kmx suite diff` compares extracted or OCI-layout AgentSuites semantically,
-  including supplemental packaged content and artifact identities, with unified,
-  split, and versioned JSON output plus affected-agent reporting. Identity-keyed
-  relationships ignore ordering, output construction is explicitly bounded, and
-  human rendering strips terminal and bidirectional controls.
-
-- Default `kmx create <name>` authors one native-Orka AgentSuite member offline.
-  `kmx push --workspace DIR REF` prepares and publishes its exact OCI graph, including
-  authored cases, with no member image build or cluster access. Existing bundle
-  behavior and extracted-directory suite transfer are unchanged. This author/push
-  slice performs no deployment; root exact-digest Lift is described above. Full
-  workspace evaluation is described above. Registry workspace pushes share the default
-  unsigned provenance policy, opt-out/required flags and matching-HEAD source
-  commit claims; prepared graph bytes stay unchanged. [Workspace guide](docs/suite-workspace.md).
-
-- Registry `kmx suite push` attaches provenance by default, and `suite pull` shows the claimed kmx version and source commit when available; `--require-provenance` refuses to move the tag if attachment fails.
-  Provenance is unsigned: anyone with push access can attach a claim. [Suite provenance](docs/kmx.md#suite-provenance).
-
-### Changed
-
-- The repository front door now separates the stable v0.5.1 quickstart from the
-  unreleased suite-first development path, leads with a compact
-  Create/Prove/Publish/Lift table, names runtime boundaries explicitly,
-  and labels `agent.yaml` guidance as legacy. New developer-facing codebase and
-  interface guides document current package flows, command surfaces and the
-  setup-only `AgentEnvironment` boundary. README self-tests enforce the release
-  warning, table columns/order, full-pass evidence, non-deploying push, exact
-  digest-Lift command, deploy-only behavior and GET-only planning.
-
-- `kmx bundle` (legacy `agent.yaml` lift, status, evaluate, retire, verify) is hidden from
-  help and completion ahead of its removal; the commands still run.
-
-- Future local kind nodes created by `kmx quickstart` or `kmx local up` use a
-  5s kubelet sync frequency on Docker and Podman. Existing or recovered clusters
-  and AKS nodes are not modified. This is intended to reduce webhook Secret
-  projection waits, with more node-wide periodic reconciliation work; Orka's
-  upstream projection coupling remains unfixed.
-
-### Fixed
-
-- Repeating `kmx local up` after quickstart leaves an already-matching inference Provider and its Secret untouched, avoiding bookkeeping-only resourceVersion changes that invalidate strict suite reuse. Native binding identity still includes resourceVersion. Strict placement refusals retain their safe resource-specific reason without exposing model or subprocess payloads.
-
-- Same-subject native release lift reuses its freshly compared input snapshot
-  within each recheck instead of inspecting the same inputs twice. Every
-  pre-write boundary and final placement verification still reads the API;
-  promotion retains its extra post-gate inspection. Installed schema reads now
-  precede the live input snapshot. No gate, timeout or retry policy changes.
-
-- Quickstart checks current-generation Agent readiness when reconnecting to an
-  existing Agent whose Kubernetes tool reference needs no change. A stale or
-  unavailable Agent no longer reaches the Ready screen through that reuse path.
-
-- `kmx eval diff` reports cases without observed Sessions runtime identity
-  as individual `unknown` rows instead of hiding comparable cases. Unknown rows
-  still exit nonzero; conflicting identities or no complete observed identity
-  in either receipt remain incompatible. Receipt formats are unchanged.
-
-- Applying `kmx create --live` without a Task can reuse its offline preview when
-  only the generated schema-source comment differs. The preview stays unchanged;
-  every other byte difference still refuses reuse, and online schema/admission
-  checks remain required.
-
-- `kmx targets` describes the dedicated continuous Go kagent v0.10.3 lift/status
-  qualification and its separate one-shot native A2A MCP proof. Supported
-  operations now separately include the explicit Go evaluation above;
-  Python remains render-only.
-
-### Breaking
-
-- The experimental, unwired Go `AgentEnvironment` API now models one
-  object-to-object setup operation: `EnvironmentSpec -> Up -> Environment`.
-  Logical `EnvironmentRef` identity is separate from exact deployment
-  `TargetRef` identity. The old `UpRequest`/`UpResult`, inspection,
-  registration, teardown and recovery methods, their setup receipts and unused
-  management ports are removed without compatibility aliases. This does not
-  change `kmx local up`, quickstart, local teardown, AgentSuite commands or any
-  installed behavior.
-
-- The quickstart wizard no longer installs/auto-attaches the Kubernetes inventory tool or offers host Foundry/Copilot inference. Explicit tool/host requests refuse before setup with a supported Provider/tool-free remedy. Existing-agent selection reconnects without changing tool references. Guided `--skills`, `--out` and `--result-service-account` shortcuts are unsupported; author with `kmx create --workspace DIR` and configure native result access separately.
-- Console creation now selects an authored native-Orka workspace, reviews source/all cases and obtains explicit eval/placement consent, then applies and verifies a separately reviewed exact Lift plan. Console/chat in-place Agent tools/inference editing is retired and refuses without cluster mutation. Default quickstart and `create --live` are not removed by this change.
-
-- Orka chart installs now use `kmx.kaimahi.dev/installed`, matching the KMX
-  label/API-group domain. Clusters installed by an older kmx retain
-  `kmx.kaimahi.ai/installed` in their Helm values and are no longer recognized
-  as kmx-owned for repeat installation; there is no legacy-label fallback.
-  For a disposable local kind cluster you own, run `kmx local down` then
-  `kmx local up` with the same context and cluster settings to reinstall.
-  This deletes the cluster and its Tasks, Secrets, volumes and model data.
-  On a persistent cluster, back up Orka resources, Secrets, volumes and the
-  snapshot key before an operator-managed fresh install; see
-  [Orka installation](docs/orka.md#preserve-the-charts-generated-snapshot-key).
-  Relabeling live objects with `kubectl label` alone does not update the saved
-  Helm values used for ownership checks.
-
-- Root `kmx create` now defaults to offline workspace authoring, requiring a
-  member name, exact `--model` and file-valued `--instructions`. It shares
-  current-directory discovery with push, offers terminal initialization with
-  `Start one here? [Y/n]`, and refuses nonterminal initialization without an
-  explicit `--workspace DIR`. An exact override initializes without prompting;
-  invalid nearest markers and a second member refuse without modifying source.
-  Resource/bundle creation now requires `--live` for **both Orka and kagent**,
-  including `--no-apply`, `--dry-run` and `--out -` previews. There is no implicit
-  compatibility dispatch from `--runtime kagent`. `--workspace` conflicts with
-  `--live`; quickstart and console creation remain live. Formats are unchanged.
-
-- Removed the entire `kmx agent` group, without aliases or retirement stubs.
-  Everyday operations are root `create/chat/run`; live inspection is
-  `orka show/list`; legacy bundle operations are
-  `bundle evaluate/lift/retire/verify/status`; evaluation helpers are root
-  `eval diff/from-sessions`. Existing handlers, selectors, stdout and exit
-  contracts are preserved. Root `status` stays the table-only Orka runtime
-  report, also available as `orka status`, not a bundle or suite observer.
-- Removed workspace mode from `kmx suite push`; use root
-  `kmx push [--workspace DIR] REF`. Bare root push discovers the nearest ancestor
-  workspace; explicit `--workspace` selects an exact root without fallback.
-  Extracted-directory `suite push DIRECTORY REFERENCE` and
-  `suite build/diff/pull/validate` remain.
-  Root `eval` now adds full workspace evaluation as described above;
-  standalone packaged evaluation remains unimplemented. Root digest suite `lift`
-  is now supported as described above, separate from bundle and infrastructure lift.
-
-- Removed the AKS-provisioning `kmx lift` alias; use `kmx aks up`. Root
-  `lift <ref>@<digest>` now means deploy-only packaged-suite lift.
-- Removed `kmx lift down`; use `kmx aks down` for AKS teardown.
-- Removed `kmx up`; use `kmx local up` for local runtime setup.
-- Removed `kmx down`; use `kmx local down` for local cluster deletion.
-- Removed `kmx ctx`; use `kmx context show` or `kmx context use <context>`.
-
-- The experimental, unwired `pkg/kmx.AgentSuites` Go contract now exposes the
-  cohesive `Validate`, `Build`, `RecoverBuild`, `Push` and `RecoverPush`
-  workflow with staged concrete values. This replaces its speculative
-  `Package`, per-member `BuildSandbox` and generic `Publish` methods. Installed
-  `kmx suite` commands and their output are unchanged. The initial Build/Push
-  contract is image-backed; valid native-Orka suites requiring zero member
-  images remain outside it until execution-profile artifact requirements are
-  modeled.
+- Named workspace destinations in optional, credential-free `kmx.yaml` supply
+  selectors to `eval/lift --to NAME`. Explicit invocation flags override saved
+  fields; values resolve once and cannot be redirected by later config edits.
+  Runtime remains package-owned. Eval may use saved `evalTarget`; digest Lift
+  never guesses a destination, and explicit-reference Lift without `--to`
+  remains workspace-independent. Root workspace push and named Lift can use an
+  exact-host registry HTTP policy, with explicit false overriding it. Existing
+  evidence, promotion, remote guards and registry authentication remain unchanged.
+- Root `kmx ctx` returns after its removal in v0.6.0, with new list-only
+  `ctx [--check] [-o table|json]` semantics for named destinations, not a
+  current/default selection. The old context-switching alias remains removed:
+  `ctx <context>` and `ctx use <name>` are still refused. Optional checks read
+  local context names and anonymous registry reachability; they are not
+  runtime/inference readiness or evaluation proof. `kmx targets` remains the
+  separate runtime-capability view. Composed eval/push/Lift is not implemented;
+  kagent remains excluded until its candidate cleanup is qualified.
 
 ### Upgrading
 
-- Go consumers of the experimental `AgentEnvironment` API should pass
-  `EnvironmentSpec{Name: ...}` to `Up` and consume `Environment`. There is no
-  replacement yet for its removed inspection, registration, teardown or
-  recovery APIs; continue using the installed commands or implementation-owned
-  operations until those contracts have production evidence.
+- Optionally add workspace-root `kmx.yaml` for named destinations and use
+  `kmx ctx` to list them, then `eval/lift --to NAME`. No default/current Lift
+  selection or context switch is introduced. Existing explicit selectors work
+  without config. Keep supplying eval `--out`, a push reference and Lift
+  digest/`--evidence`; configuration does not enable the composed workflow.
+  See [named destinations](docs/suite-workspace.md#named-destinations).
 
-- Author with `kmx create --workspace DIR`, review/edit member instructions and appropriate public cases, then use `kmx eval` and `kmx push --evaluation FILE`. The console composes that workflow after explicit source/case and destination/Provider review, execution consent and a second retained Lift plan review. Ready means placement, not an answer; late failures may leave resources. Select an existing Ready Orka `openai` Provider serving the exact suite model for native evidence/lift; host Foundry/Copilot execution is not a substitute. Tools return later through suite ToolProviders. Existing resources are not migrated or patched.
+## v0.6.0 — 2026-10-14
 
-- Add `--live` to scripts that create Orka or kagent resources or PortableAgent
-  bundles, including native previews. Use `kmx create --live` for the existing
-  no-name live Orka wizard, and `kmx create --live --runtime kagent <name>` for
-  exact-v0.10.2 creation. A runtime flag alone no longer selects that path.
-  For default offline authoring, supply a name, model and instructions file;
-  use `--workspace DIR` to select or initialize an exact root in automation.
-  Existing one-member workspaces cannot accept a second member; choose a new
-  root. See the [workspace guide](docs/suite-workspace.md).
+### Added
 
-- Update scripts using the removed root aliases to their replacements above.
-  Local, AKS and context operations retain their existing behavior.
-- Replace command prefixes as follows, retaining arguments and applicable flags:
+- **Create → Prove → Publish → Lift:** `kmx create NAME` authors one tool-free
+  workspace member; `kmx eval` evaluates all cases and exports a private receipt
+  only on a full pass; `kmx push --evaluation FILE REF` publishes the exact suite.
+  Create/eval/push discover the nearest `workspace.yaml`; `--workspace DIR`
+  selects an exact root. Orka is default; kagent supports exact v0.10.3
+  Go/linux-amd64 with author-owned bindings. [Workspace guide](docs/suite-workspace.md).
 
-  | Old | New |
-  |---|---|
-  | `kmx agent create [name]` | `kmx create --live [name]` |
-  | `kmx agent chat <name> [message...]` | `kmx chat <name> [message...]` |
-  | `kmx agent run [<bundle-dir>]` | `kmx run [<bundle-dir>]` |
-  | `kmx agent show <name>` | `kmx orka show <name>` |
-  | `kmx agent list` | `kmx orka list` |
-  | `kmx agent evaluate <bundle-dir>` | `kmx bundle evaluate <bundle-dir>` |
-  | `kmx agent lift <bundle-dir>` | `kmx bundle lift <bundle-dir>` |
-  | `kmx agent retire <bundle-dir>` | `kmx bundle retire <bundle-dir>` |
-  | `kmx agent verify <sessions-receipt.json>` | `kmx bundle verify <sessions-receipt.json>` |
-  | `kmx agent status <bundle-dir>` | `kmx bundle status <bundle-dir>` |
-  | `kmx agent eval diff <before.json> <after.json>` | `kmx eval diff <before.json> <after.json>` |
-  | `kmx agent eval from-sessions <session-uid>...` | `kmx eval from-sessions <session-uid>...` |
-  | `kmx suite push --workspace DIR REF` | `kmx push --workspace DIR REF` |
-  | `kmx suite push REF` | `kmx push REF` |
+- `kmx lift REF@sha256:DIGEST` deploys an immutable suite with explicit passing
+  evidence and destination selectors. `--plan` is GET-only; `--promote` permits
+  a matching destination with source-only evidence, not destination evaluation.
+  Orka can reuse exact evaluated resources; kagent refuses occupied targets.
+  Lift runs no model and does not update, adopt or roll back resources.
 
-  Bare `kmx agent` and `kmx agent eval` no longer exist. Workspace `kmx eval`
-  requires `--to-context`, `--out`, and exactly one runtime-derived selector:
-  Orka `--inference` or packaged kagent `--bindings`; use `kmx eval --help` for
-  help and evaluation helpers. The hidden editor retirement stub is also removed with its parent;
-  edit live Orka resources with `kubectl --context <ctx> -n <ns> edit agents.core.orka.ai <name>`.
-  Task retrieval remains `kmx task result`; no root `result` is added.
-  These spellings require a current development build; tagged v0.5.1 retains
-  the `agent` routes. Workspace authoring/publication are unreleased.
-  PortableAgent formats, receipts and runtime support are unchanged.
+- Pinned AgentSessions chat supports offline packaging and explicit loopback
+  `eval --development-host FILE`, with full-pass evidence for evaluated push.
+  Hosts are unauthenticated and retain cleartext journals; this development proof
+  cannot authorize Lift or receipt diff. [Development evaluation](docs/suite-workspace.md#agentsessions-development-evaluation).
 
-- Consumers of the alpha `pkg/kmx` design package must adopt
-  `ValidatedAgentSuite`, `BuildSuiteResult`/`BuildSuiteProgress` and
-  `PushSuiteResult`. Builder selection, member planning and OCI transport now
-  remain internal capabilities rather than northbound workflow methods.
+- `kmx suite diff` compares extracted suites and OCI layouts semantically.
+  Registry suite push attaches **unsigned** provenance by default; it is not
+  authenticated attestation.
+
+- AgentSuite Tools gain effect, approval and delegated-user authorization
+  metadata. This specifies runtime obligations, not a credential broker or
+  runtime approval implementation.
+
+### Changed
+
+- Quickstart and console creation now use native suite evaluation, publication
+  and reviewed Lift. Console Ready means placement, not an answer.
+- New local kind clusters use a five-second kubelet sync cadence; existing
+  clusters are unchanged. Repeated local setup preserves matching inference
+  resources, and quickstart checks current Agent readiness before reconnecting.
+
+### Breaking
+
+- Legacy `bundle` commands, user `agent.yaml` workflows/receipts,
+  `create --live` and previews, bundle-mode run, `--bundles`, and the old
+  evaluation CI action are removed; suite status/retirement have no replacement.
+  **Instead:** author with `kmx create NAME --workspace DIR --model MODEL --instructions FILE`,
+  review cases, then eval/push/Lift; retain a historical release for old workflows.
+
+- The `kmx agent` group is removed without aliases or stubs.
+  **Instead:** use root `create/chat/run`, `orka show/list`, and
+  `eval diff/from-sessions`; `run --agent NAME` addresses independent live
+  Orka Agents, not suite-owned objects.
+
+- Root `ctx/up/down` and the old infrastructure `lift/lift down` aliases are removed.
+  **Instead:** use `context show/use`, `local up/down` and `aks up/down`;
+  root `lift` now means digest-pinned suite deployment.
+
+- Workspace mode is removed from `kmx suite push`.
+  **Instead:** use `kmx push [--workspace DIR] REF`; extracted-directory
+  `suite push DIRECTORY REF` remains.
+
+- `eval diff` accepts only full-passing Orka/kagent suite receipts, not old
+  bundle or AgentSessions receipts.
+  **Instead:** generate fresh suite evidence; no old-receipt conversion exists.
+
+- Chat `/lift` and the old console Lift action are retired, with no live-copy fallback.
+  **Instead:** use root digest Lift with explicit evidence; console creation
+  separately composes the native workflow.
+
+- Chat/quickstart `--azure-discovery` is removed.
+  **Instead:** select the destination context explicitly and provision AKS
+  separately with `kmx aks up`.
+
+- Guided tool/host-inference shortcuts, `--skills`, `--out` and
+  `--result-service-account`, and in-place tools/inference editing are retired.
+  **Instead:** author tool-free workspace source, select a Ready Orka `openai`
+  Provider for its exact model, and configure native result access separately;
+  manage live resources with Kubernetes tooling.
+
+- Orka installs using the old `kmx.kaimahi.ai/installed` Helm label are no
+  longer recognized as kmx-owned; the label is now `kmx.kaimahi.dev/installed`.
+  **Instead:** back up before replacing an owned disposable local cluster
+  (`local down` deletes its data), or arrange an operator-managed fresh
+  persistent installation; relabeling live objects alone is insufficient.
+
+- `targets -o json` changes capability names to
+  `create/eval/push/lift/chat/run/inspect/diff` (AgentSessions also has `export`),
+  Orka/kagent `kind` to `native-profile`, and AgentSessions tier to
+  `development-only`; `schemaVersion` remains 1.
+  **Instead:** update JSON consumers to the new names and per-operation support flags.
+
+- Alpha Go APIs remove speculative environment-management methods and replace
+  the old AgentSuites package/build/publish methods with staged operations.
+  **Instead:** adopt `EnvironmentSpec → Up → Environment` and
+  `AgentSuites.Validate/Build/RecoverBuild/Push/RecoverPush`; removed environment
+  inspection/teardown/recovery methods have no replacement.
+
+### Upgrading
+
+Upgrading the CLI migrates or deletes no saved files or deployed resources.
+Old receipts remain readable only by the historical release that understands
+them. See [upgrade instructions and cluster backup boundaries](docs/releases.md#upgrading-kmx).
 
 ## v0.5.1 — 2026-10-12
 
@@ -374,22 +194,22 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Added
 
 - `kmx agent evaluate` supports `contains`, `notContains` and RE2 `regex` assertions alongside `expectContains`, and keeps immutable run receipts.
-  `toolCalled` and `toolNotCalled` syntax is accepted but currently reports unknown. [Evaluation assertions](docs/agent-lift.md#evaluating-a-deployed-revision).
+  `toolCalled` and `toolNotCalled` syntax is accepted but currently reports unknown. [Evaluation assertions](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#evaluating-a-deployed-revision).
 
 - `kmx agent eval diff <before.json> <after.json>` compares saved evaluations offline by case and assertion, showing regressions, fixes and lost evidence without rerunning models.
-  Comparison requires compatible full-case v2 receipts; regressions and incomplete comparisons exit nonzero. [Compare evaluations](docs/agent-lift.md#comparing-saved-evaluations-offline).
+  Comparison requires compatible full-case v2 receipts; regressions and incomplete comparisons exit nonzero. [Compare evaluations](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#comparing-saved-evaluations-offline).
 
 - The console's `R` key shows recent Orka Tasks, task lanes and sanitized activity for the selected agent, context and namespace.
   Discovery is bounded and reports missing or unreadable evidence without showing conversation payloads. [Interactive console](docs/interactive-chat.md).
 
 - The reusable kmx GitHub evaluation action runs a tracked bundle's cases through Sessions, optionally replay-checks receipts, and fails the job unless every case passes.
-  Sessions evaluation does not satisfy an Orka lift gate. [Run evals in CI](docs/agent-lift.md#run-evals-in-ci).
+  Sessions evaluation does not satisfy an Orka lift gate. [Run evals in CI](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#run-evals-in-ci).
 
 - `kmx agent eval from-sessions <session-uid>...` extracts private single-turn UID/prefix references and authored assertions without copying recorded inputs or answers; existing `--out` manifests append atomically and refuse duplicates.
-  `agent evaluate --from-sessions` verifies source prefixes in memory and runs fresh candidate sessions, with named candidate/judge confirmation and payload-free output unless `--show-content` is explicit. Expired/unavailable references remain unknown; current diff conservatively makes the whole comparison incompatible when a case lacks runtime identity ([#403](https://github.com/kaimahi-agents/kaimahi/issues/403)). Ordinary authored-input evaluation and v2 receipt formats are unchanged. [Recorded cases and privacy](docs/agent-lift.md#recorded-sessions-as-reference-cases).
+  `agent evaluate --from-sessions` verifies source prefixes in memory and runs fresh candidate sessions, with named candidate/judge confirmation and payload-free output unless `--show-content` is explicit. Expired/unavailable references remain unknown; current diff conservatively makes the whole comparison incompatible when a case lacks runtime identity ([#403](https://github.com/kaimahi-agents/kaimahi/issues/403)). Ordinary authored-input evaluation and v2 receipt formats are unchanged. [Recorded cases and privacy](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#recorded-sessions-as-reference-cases).
 
 - `kmx agent evaluate` supports explicit `llmJudge` rubric/threshold/model/version assertions with `--judge-base-url` and optional `--judge-key-env` (environment name only), without model/endpoint defaults.
-  Two temperature-zero scores must agree on the threshold side; split or unavailable evidence is unknown. Receipts bind identity/policy/threshold and both scores without payloads; input/answer/rubric go to the chosen judge provider and terminal reasoning may contain answer text. Replay makes zero judge calls and explicitly leaves judge outcomes unverified. [Judge configuration and privacy](docs/agent-lift.md#explicit-llm-judge).
+  Two temperature-zero scores must agree on the threshold side; split or unavailable evidence is unknown. Receipts bind identity/policy/threshold and both scores without payloads; input/answer/rubric go to the chosen judge provider and terminal reasoning may contain answer text. Replay makes zero judge calls and explicitly leaves judge outcomes unverified. [Judge configuration and privacy](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#explicit-llm-judge).
 
 - v0.5.0 introduces `kmx context show/use` to inspect and save context selection, and `kmx local up/down` for the existing local kind setup and deletion operations. [Command names](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
 
@@ -401,19 +221,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Output is **not AgentSuite-conformant**; use `--require-attestations` to refuse missing attestations and never pass a key value to `--model-api-key-env`. [Build limits](docs/kmx.md#experimental-agentsuite-image-build).
 
 - `kmx agent evaluate --sessions <host:port>` evaluates bundles on a Sessions chat host; `kmx agent verify --sessions <host:port>` replays receipts locally with zero live model calls.
-  This is eval-only and reference verification, not host attestation or a lift gate; remote hosts require verified TLS, and host journals retain conversation content. [Sessions evaluation and verification](docs/agent-lift.md#evaluating-on-agentsessions).
+  This is eval-only and reference verification, not host attestation or a lift gate; remote hosts require verified TLS, and host journals retain conversation content. [Sessions evaluation and verification](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#evaluating-on-agentsessions).
 
 - Portable agents can declare an explicit `spec.coordination.allowedAgents` helper allowlist for Orka delegation.
-  Older readers and kagent refuse this field: upgrade readers before using it with Orka. [Bundle compatibility](docs/bundle-format.md).
+  Older readers and kagent refuse this field: upgrade readers before using it with Orka. [Bundle compatibility](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/bundle-format.md).
 
 - Core-only bundles may omit `extensions` or use `extensions: {}`.
-  `extensions: null` and unsupported runtime behavior are refused, not silently dropped. [Bundle compatibility](docs/bundle-format.md#what-a-reader-accepts).
+  `extensions: null` and unsupported runtime behavior are refused, not silently dropped. [Bundle compatibility](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/bundle-format.md#what-a-reader-accepts).
 
 - `kmx agent create --runtime kagent <name>` creates on preinstalled exact kagent v0.10.2, optionally sending one task; Orka remains the default.
-  Create-only, with no rollback or ambiguous retry; kagent and Service-proxy audits may retain conversation content. [Prerequisites and limits](docs/kmx.md#explicit-kagent-v0102-create).
+  Create-only, with no rollback or ambiguous retry; kagent and Service-proxy audits may retain conversation content. [Prerequisites and limits](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/kmx.md#explicit-kagent-v0102-create).
 
 - Explicit `kmx agent lift` and `kmx agent status` with `--runtime kagent --runtime-version v0.10.3` support Go declarative bundles on an operator-prepared target with `--to-context` and desired `KagentBindings`.
-  Lift is create-only or complete UID-bound receipt reuse, with no adoption/update; receipts prove readiness, not execution. Dedicated CI qualifies Go plan/lift/repeat/status/conflicts and a separate one-shot native A2A MCP answer with payload-free evidence. [Version-qualified placement](docs/agent-lift.md#exact-v0103-declarative-bundle-placement).
+  Lift is create-only or complete UID-bound receipt reuse, with no adoption/update; receipts prove readiness, not execution. Dedicated CI qualifies Go plan/lift/repeat/status/conflicts and a separate one-shot native A2A MCP answer with payload-free evidence. [Version-qualified placement](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#exact-v0103-declarative-bundle-placement).
 
 - v0.5.0 includes `checksums.txt.sigstore.json`, a keyless cosign bundle for the four binaries' checksum manifest.
   Earlier releases and the Homebrew formula are not covered; installers still verify checksums, not signatures automatically. [Verify a release](docs/releases.md#verify-a-release).
@@ -424,20 +244,20 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Notices go to stderr with no removal scheduled; hidden `kmx aks up/down` remains callable. [Command compatibility](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
 
 - `kmx agent run` submits one Task without rewriting a deployed bundle or live Orka Agent; `kmx task result` retrieves its phase/answer without resending, with answer-only run stdout.
-  Timed-out Tasks remain retrievable; pending results exit 2, failed/cancelled results exit 1. [Run and retrieve results](docs/agent-lift.md#running-an-existing-agent).
+  Timed-out Tasks remain retrievable; pending results exit 2, failed/cancelled results exit 1. [Run and retrieve results](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#running-an-existing-agent).
 
-- Native Orka coordination supports same-namespace helpers, concurrency/depth limits and drift checks. Lift/`--plan` refuse missing helpers or coordination schema; autonomous Job loops remain unsupported. [Configure coordination](docs/agent-lift.md#coordination-in-agentyaml).
+- Native Orka coordination supports same-namespace helpers, concurrency/depth limits and drift checks. Lift/`--plan` refuse missing helpers or coordination schema; autonomous Job loops remain unsupported. [Configure coordination](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#coordination-in-agentyaml).
 
 - Orka create and its wizards accept native `azure-openai` inference.
-  Supply a matching deployment/model, HTTPS resource root and existing Secret; lift requires a matching Ready Provider, while `/openai/v1` remains `openai`. [Azure inputs](docs/kmx.md#default-orka-contract).
+  Supply a matching deployment/model, HTTPS resource root and existing Secret; lift requires a matching Ready Provider, while `/openai/v1` remains `openai`. [Azure inputs](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/kmx.md#default-orka-contract).
 
 - Bundle lift can require a passing staging evaluation through `lift-policy.yaml` or `--require-evaluated <context>`.
-  Missing, stale, partial, failed or unknown evidence blocks lift; receipts are forgeable local evidence: **do not commit them**. [Evaluation gates](docs/agent-lift.md#requiring-evaluation-before-lift).
+  Missing, stale, partial, failed or unknown evidence blocks lift; receipts are forgeable local evidence: **do not commit them**. [Evaluation gates](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#requiring-evaluation-before-lift).
 
-- `kmx agent lift --override-gate "reason"` explicitly bypasses only an evaluation gate and prints/records the reason and bypassed condition. Interactive `/lift` and console refuse before deployment review, with no silent bypass. [Gate overrides](docs/agent-lift.md#requiring-evaluation-before-lift).
+- `kmx agent lift --override-gate "reason"` explicitly bypasses only an evaluation gate and prints/records the reason and bypassed condition. Interactive `/lift` and console refuse before deployment review, with no silent bypass. [Gate overrides](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#requiring-evaluation-before-lift).
 
 - `kmx agent retire` checks dependents, deletes created objects and releases adopted/legacy objects.
-  `--delete-adopted` opts into deleting adopted objects; the selected Provider, its Secret and existing Tasks remain untouched. [Retirement and ownership](docs/agent-lift.md#retiring-a-bundle-from-a-target).
+  `--delete-adopted` opts into deleting adopted objects; the selected Provider, its Secret and existing Tasks remain untouched. [Retirement and ownership](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#retiring-a-bundle-from-a-target).
 
 ### Fixed
 
@@ -462,7 +282,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `install.sh --help` prints its complete header instead of truncating instructions or showing script code. [Installer](install.sh).
 
 - Console Prepare can repair the quickstart Kubernetes Tool's scoped policy-reader grant.
-  Install and lift refuse missing/ambiguous worker identity or ineffective authorization. [Repair instructions](docs/orka-k8s-tool.md#repair-a-missing-policy-reader-grant).
+  Install and lift refuse missing/ambiguous worker identity or ineffective authorization. [Repair instructions](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/orka-k8s-tool.md#repair-a-missing-policy-reader-grant).
 
 ### Breaking
 
@@ -481,19 +301,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Upgrading
 
 - Replace `kmx quickstart-wizard` with `kmx quickstart --interactive` and drop `--interactive` from `kmx agent chat` in v0.5.0.
-  v0.4.1 and earlier retain the old wizard and require `agent chat --interactive`. [Quickstart migration](docs/getting-started.md#create-your-own-agent-then-lift-it-from-chat).
+  v0.4.1 and earlier retain the old wizard and require `agent chat --interactive`. [Quickstart migration](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/getting-started.md#create-your-own-agent-then-lift-it-from-chat).
 
 - Use `kmx context show/use` and `kmx local up/down` in v0.5.0; `ctx/up/down` remain compatibility routes.
   v0.4.1 and earlier require the old names. [Command compatibility](docs/command-semantics.md#implemented-entry-point-alignment-unreleased).
 
 - Remove retired plane/admin commands and configuration from automation; configure supported Orka agents with native inference instead.
-  Existing plane deployments and data need separate operator-owned retirement; upgrading kmx deletes none of them. [Native inference](docs/kmx.md#default-orka-contract), [removal scope](docs/kmx.md).
+  Existing plane deployments and data need separate operator-owned retirement; upgrading kmx deletes none of them. [Native inference](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/kmx.md#default-orka-contract), [removal scope](docs/kmx.md).
 
 - Use HTTPS for authenticated remote registry push/pull and add `--force` only when deliberately replacing a tag's digest.
   The tag preflight guard is non-atomic. [Registry safety](docs/kmx.md#registry-authentication).
 
 - Upgrade receipt readers to v0.5.0 before exchanging `llmJudge` receipts.
-  Older strict v2 readers reject the added judge metadata. [Judge receipt compatibility](docs/agent-lift.md#explicit-llm-judge).
+  Older strict v2 readers reject the added judge metadata. [Judge receipt compatibility](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#explicit-llm-judge).
 
 - `CHAT_PORT` and `KMX_CHAT_PORT` are unsupported: Task-backed Orka chat and quickstart fail if fixed loopback port 19180 is occupied. Free that port instead. [Chat port](docs/aks.md#historical-resources-and-concurrent-checks).
 

@@ -1,5 +1,11 @@
 # Interactive agent console
 
+> Historical UI record: bundle comparison (`b`/`--bundles`) and live create are
+> removed. Chat `/lift` and console Lift only print the digest-Lift move notice;
+> no GUI/copy fallback remains. Console creation uses native workspace review,
+> full eval/publication and reviewed Lift; Ready is placement only. See the
+> [current CLI](kmx.md). Earlier bundle panes below describe the superseded UI.
+
 `kmx console` displays one local kind environment and one remote Kubernetes
 environment side by side. It requires an interactive terminal, at least 64×18.
 
@@ -177,7 +183,7 @@ over the inventory for the selected agent. It answers one question: is what is
 running the definition in Git, and if not, what is different?
 
 The pane does not compare anything itself. It asks the same report
-[`kmx bundle status`](agent-lift.md#checking-deployed-status) prints, for exactly the selected row's
+[`kmx bundle status`](https://github.com/kaimahi-agents/kaimahi/blob/4f91f248a542f379cad7163dec5d3ba4b981295d/docs/agent-lift.md#checking-deployed-status) prints, for exactly the selected row's
 context, kubeconfig and namespace, and draws that target's state:
 
 | State | The pane shows |

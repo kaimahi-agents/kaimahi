@@ -314,6 +314,12 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 			}
 		}
 		if workspaceMode {
+			if target == "" {
+				pushWorkspace, pushPlainHTTP, err = resolveWorkspacePushTransport(cmd, pushWorkspace, args[0], pushPlainHTTP)
+				if err != nil {
+					return err
+				}
+			}
 			a.Err = cmd.ErrOrStderr()
 			if cmd.Flags().Changed("evaluation") {
 				result, err = a.PushSuiteWorkspaceEvaluated(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance, evaluation)

@@ -96,10 +96,8 @@ not run for an existing Agent. The first Task uses the Agent's deployed Provider
 	flags.StringVar(&wizard.Create.ResultServiceAccount, "result-service-account", "", "unsupported guided result override; configure native result access separately")
 	flags.StringVar(&wizard.Create.Out, "out", "", "unsupported guided manifest output; use kmx create --workspace DIR")
 	flags.BoolVar(&wizard.Verbose, "verbose", false, "show chat WORKING and TIMING details (--interactive only)")
-	flags.StringVar(&wizard.AzureDiscovery, "azure-discovery", "cli", "AKS cluster listing: cli or sdk (DefaultAzureCredential) (--interactive only)")
 	flags.StringVar(&wizard.Inference, "inference", "auto", "legacy discovery hint; the guided setup always requires an explicit source/model selection (--interactive only)")
 	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"text", "json"}))
-	_ = cmd.RegisterFlagCompletionFunc("azure-discovery", staticCompletion([]string{"cli", "sdk"}))
 	_ = cmd.RegisterFlagCompletionFunc("inference", staticCompletion([]string{"auto", "local"}))
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if err := cobra.NoArgs(cmd, args); err != nil {
@@ -123,7 +121,7 @@ not run for an existing Agent. The first Task uses the Agent's deployed Provider
 
 // quickstartInteractiveOnly are the flags that shape the guided setup. They
 // mean nothing to the fixed hello-world run.
-var quickstartInteractiveOnly = []string{"instructions", "tools", "skills", "result-service-account", "out", "verbose", "azure-discovery", "inference"}
+var quickstartInteractiveOnly = []string{"instructions", "tools", "skills", "result-service-account", "out", "verbose", "inference"}
 
 // quickstartModeFlags refuses a flag that belongs to the other quickstart
 // mode. It runs as argument validation, before any configuration is loaded.

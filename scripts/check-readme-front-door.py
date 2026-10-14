@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that the README separates stable quickstart from suite-first main."""
+"""Check that the README describes the released suite-first workflow."""
 from __future__ import annotations
 
 import re
@@ -27,7 +27,7 @@ BADGE_PATTERNS = [
 INSTALL_COMMANDS = [
     ("Homebrew install", r"^brew install kaimahi-agents/tap/kmx$"),
     ("release installer", r"^curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/main/install\.sh \| sh$"),
-    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.5\.1$"),
+    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.6\.0$"),
 ]
 FIRST_ANSWER_COMMANDS = [
     ("kmx version", r"^kmx version$"),
@@ -41,7 +41,7 @@ JOURNEY_ROWS = [
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)
-JOURNEY_HEADER = "| Stage | Current development build |"
+JOURNEY_HEADER = "| Stage | v0.6.0 |"
 JOURNEY_SEPARATOR = "|---|---|"
 DEVELOPER_LINKS = [
     ("developer guide", "[developer guide](docs/development.md)"),
@@ -132,11 +132,10 @@ def check(text: str) -> str | None:
     if table_problem is not None:
         return "README front door: " + table_problem
     table_at = journey.find(JOURNEY_HEADER)
-    warning = "The table below describes the current development build, which is unreleased."
-    release = "The latest tagged release is v0.5.1 and still uses `kmx agent ...`"
-    warning_at, release_at = journey.find(warning), journey.find(release)
-    if warning_at < 0 or release_at < 0 or not (warning_at < release_at < table_at):
-        return "README front door: release/main warning must precede the suite journey table"
+    release = "The table below is available in v0.6.0."
+    release_at = journey.find(release)
+    if not 0 <= release_at < table_at:
+        return "README front door: v0.6.0 release note must precede the suite journey table"
     for index, (label, purpose_pattern) in enumerate(JOURNEY_ROWS):
         if rows[index][0] != label or re.search(purpose_pattern, rows[index][1]) is None:
             return f"README front door: {label} row is missing or out of order"
@@ -157,9 +156,9 @@ def check(text: str) -> str | None:
     if "kagent refuses occupied targets" not in rows[3][1]:
         return "README front door: Lift row must preserve kagent create-only placement"
     normalized_preamble = " ".join(journey[:table_at].split())
-    if "qualifies root Lift for Orka exact reuse and kagent fresh-target creation" not in normalized_preamble:
+    if "qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation" not in normalized_preamble:
         return "README front door: Lift qualification scope is missing"
-    if "root Lift qualification does not prove every promotion, creation or partial-outcome path" not in normalized_preamble:
+    if "it does not prove every promotion, creation or partial-outcome path" not in normalized_preamble:
         return "README front door: Lift qualification limits are missing"
 
     answer = section_after(text, matches["first-answer heading"])
@@ -179,8 +178,8 @@ def check(text: str) -> str | None:
     for label, required in {
         "Workspace": ["`kmx create`", "root `eval`", "root `push`", "does not consume workspace source", "separate private evidence"],
         "Local environment": ["`kmx local up`", "without creating an Agent", "setup-only", "not wired"],
-        "Live Agent": ["`kmx create --live`", "`kmx run --agent NAME --prompt TEXT`", "`kmx chat NAME`"],
-        "Legacy bundle": ["Hidden but callable", "PortableAgent", "They are not AgentSuite commands"],
+        "Live Agent": ["`kmx run --agent NAME --prompt TEXT`", "`kmx chat NAME`", "Suite-owned Agents refuse legacy invocation"],
+        "Legacy bundle": ["Removed outright", "`agent.yaml` readers/writers", "Old receipts are unreadable", "no conversion, migration or on-disk/resource deletion", "Public AgentSuite implementation bundles"],
     }.items():
         if any(marker not in paths[label] for marker in required):
             return f"README front door: {label} path boundary is missing"
@@ -190,16 +189,15 @@ def check(text: str) -> str | None:
     if runtime_boundary not in " ".join(runtime.split()):
         return "README front door: runtime/inference distinction is missing"
     for label, pattern in [
-        ("Orka default", r"\*\*Orka\*\* is the default runtime\..*packaged workspace path supports\s+evaluation, evaluated publication and root digest Lift with exact evaluated\s+reuse;.*live create, run, chat.*legacy bundle lifecycle"),
-        ("kagent version boundary", r"\*\*kagent\*\* support is exact-version.*v0\.10\.2 live\s+create; v0\.10\.3 Go packaged workspace authoring, `eval --bindings`, evaluated\s+publication, create-only root digest Lift, and legacy bundle\s+lift/status/evaluation\. Packaged status and retirement are unavailable\."),
-        ("agentsessions boundary", r"\*\*agentsessions\*\* is evaluation and replay integration for the legacy bundle\s+path, not a KMX deployment target\."),
+        ("Orka default", r"\*\*Orka\*\* is the default runtime\..*packaged workspace path supports\s+evaluation, evaluated publication and root digest Lift with exact evaluated\s+reuse;.*independent live Orka run and chat remain"),
+        ("kagent version boundary", r"\*\*kagent\*\* support is exact-version.*v0\.10\.3\s+Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated\s+publication and create-only root digest Lift\. Standalone run/chat, Python,\s+RemoteMCP, suite status and retirement remain unavailable\."),
+        ("agentsessions boundary", r"\*\*agentsessions\*\* supports pinned-chat offline suite create/prepare/load/ordinary\s+push and explicit private `eval --development-host FILE`: one fresh\s+Session/config/Exec per case, full-pass private proof and exact-S evaluated\s+push\..*literal-loopback development path loads no cluster\s+settings; it supports no tools/judge, Lift/chat/status or remote lifecycle\.\s+Receipt diff refuses its proof\."),
     ]:
         if re.search(pattern, runtime, re.S) is None:
             return f"README front door: {label} is missing"
 
-    legacy_links = re.findall(r"\[([^]]+)\]\(docs/agent-lift\.md(?:#[^)]+)?\)", text)
-    if not legacy_links or any("legacy" not in label.lower() or not re.search(r"bundle|portableagent", label, re.I) for label in legacy_links):
-        return "README front door: agent-lift links must be labeled as legacy bundle guidance"
+    if re.search(r"\]\(docs/agent-lift\.md(?:#[^)]+)?\)", text):
+        return "README front door: removed agent-lift guide remains linked"
 
     development = section_after(text, matches["development heading"])
     for label, link in DEVELOPER_LINKS:

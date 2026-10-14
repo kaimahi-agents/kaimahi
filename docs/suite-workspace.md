@@ -20,15 +20,98 @@ refuses, even with matching evaluated UIDs. Suite status and retirement remain
 unavailable. Evaluation placement refuses occupied targets without a complete
 caller-retained observation; qualified repeat is read-only, not update/adoption
 or restart recovery.
-Orka evaluation has hermetic command/Task tests and a pinned two-case native
+Orka evaluation has hermetic command/Task tests and a pinned three-case native
 workspace CI qualifier. Packaged kagent evaluation has hermetic coverage and
 pinned exact-v0.10.3 CLI qualification. Root exact-digest Lift retrieves the
 package from a registry or local layout and separately consumes matching private
 full-passing evidence. Orka uses `--inference`; kagent uses author-owned
 `--bindings`. Bounded CI qualifies Orka exact registry/layout reuse and kagent
 fresh-target creation/occupied refusal. Standalone registry-package evaluation
-remains unavailable. Existing `agent.yaml` creation, evaluation and lift remain
-separate and unchanged.
+remains unavailable. Legacy user `agent.yaml` creation, evaluation, lift and
+receipts are removed; no conversion or migration is provided.
+
+## Named destinations
+
+Keep operational selectors in optional workspace-root `kmx.yaml`, separate from
+source `workspace.yaml`. Define them once rather than repeating cluster selectors:
+
+```yaml
+version: 1
+evalTarget: dev
+publishRepository: registry.example/team/agents
+targets:
+  dev:
+    context: kind-demo-dev
+    namespace: orka-system
+    runtime: orka
+    inference: provider:inference
+  prod:
+    context: production
+    namespace: orka-system
+    runtime: orka
+    inference: provider:inference
+    evaluationTarget: dev
+registries:
+  '127.0.0.1:5001':
+    plainHTTP: true
+```
+
+```sh
+kmx ctx
+kmx ctx --check -o json
+kmx eval --to dev --out ../private/passing.json
+kmx push --evaluation ../private/passing.json registry.example/team/agents:v1
+kmx lift registry.example/team/agents@sha256:<digest> --to prod \
+  --evidence ../private/passing.json --promote --plan
+```
+
+`ctx` lists names, cluster contexts, namespaces, declared runtimes,
+inference/bindings references and the saved registry/repository, alphabetically.
+It is **list-only**, with no current/default pointer or switching; `ctx prod`
+and `ctx use prod` refuse. `context show/use` still manages the separate access
+selection. `targets` still reports runtime capabilities, not named destinations.
+`ctx --workspace DIR` selects an exact workspace root for the report.
+
+Listing is offline and does not load cluster configuration or inspect bindings
+or Secrets. `--check` only checks local context-name presence using an installed
+kubectl and anonymous registry `/v2/` reachability with bounded time/output. It
+never runs an auth helper, follows a redirect, writes operational state, installs
+tools or makes a model call. Authentication-required is not repository access;
+runtime/inference/bindings are explicitly not checked. Independent rows remain
+visible if a check is unknown or fails; the command then exits nonzero.
+
+`eval --to NAME` and digest `lift --to NAME` resolve concrete selectors once,
+print them and their source, then retain those values for the entire invocation.
+Editing `kmx.yaml` during confirmation cannot change that operation. Existing
+source/binding-file/runtime/remote-state checks still apply. Explicit `--to-context`,
+`--to-namespace`, `--inference` or `--bindings` overrides the corresponding saved
+value; inference and bindings remain mutually exclusive. Saved relative bindings
+paths are config-relative; explicit flag paths remain invocation-relative.
+Runtime is an expectation checked against the package, never a runtime switch.
+
+Eval may use saved `evalTarget` when no destination is explicitly selected; it
+never guesses from a name, kubectl current-context or remembered access selection.
+Lift has no default destination. Explicit-reference Lift without `--to` remains
+source/workspace-independent. AgentSessions development evaluation ignores these
+cluster defaults and refuses named destination selection.
+
+Root workspace registry push and named Lift may use an **exact registry-host**
+`plainHTTP` policy; explicit `--plain-http=false` wins. TLS remains the default;
+there is no HTTP fallback after TLS failure, and existing credential restrictions
+remain. Local layouts and extracted-directory `suite push` are unchanged.
+The config is closed, bounded and credential-free (Secret references only);
+invalid or unreadable nearest state refuses rather than falling back. No user
+config merging. Operational config is excluded from prepared S, source fingerprint
+and published content.
+
+This is selector configuration, not environment installation or deployment
+identity. `publishRepository` and `evaluationTarget` record intent for later
+composition; this CLI still requires a push reference, eval `--out`, and Lift
+digest/private evidence. It does not automatically eval or push during Lift.
+**Kagent stays out of composed Lift until its own candidate-scoped evaluation
+and ownership-safe cleanup are qualified**; standalone explicit kagent operations
+retain their existing boundaries. Named selectors never grant promotion or bypass
+remote context confirmation; `--promote` still discloses source-only evidence.
 
 ## Create
 
@@ -66,7 +149,6 @@ Runtime is a member declaration, not a deployment-time switch. The private
 `runtime.id`, `runtime.version` and `runtime.engine` select exact `v0.10.3`/`go`.
 Optional `--runtime-version v0.10.3` and `--kagent-runtime go` may state the fixed
 profile explicitly; Python and unsupported/contradictory declarations refuse.
-These selectors do not change the `--live --runtime kagent` v0.10.2 path.
 Missing runtime in existing source stays historical Orka only; push/load derive
 the packaged runtime, not a live target.
 
@@ -94,10 +176,9 @@ host qualification. Existing Orka/kagent evidence cannot authorize this profile.
 unchanged into the member. `--description` is optional and single-line.
 Instructions use the native block-text policy: LF and tabs are allowed; CR and other control characters are refused,
 not normalized. `--model` is required and exact; there is no inferred default.
-This mode refuses cluster, Provider, output, tools and Task flags with a
-`--live` remedy, rather than ignoring them or inferring live mode.
-`--workspace` and `--live` conflict; an explicitly empty `--workspace` refuses.
-Required fields and mode conflicts are checked before initialization.
+Live-only flags and `--live` itself are unknown before configuration loads;
+create never bootstraps runtime/model or reads cluster settings. An explicitly
+empty `--workspace` refuses. Required fields are checked before initialization.
 
 A workspace supports only one member. Creating a second member refuses and
 suggests a new `--workspace` directory, preserving authored files, metadata and
@@ -109,11 +190,14 @@ of an exact root, omit `--workspace`:
 kmx create greeter --model qwen-3.5-2b --instructions ./instructions.md
 ```
 
-A name is required; there is no offline authoring wizard. For the separate live
-Orka wizard use `kmx create --live`. Live creation bypasses workspace discovery,
-even below an invalid marker. `--live --no-apply` and `--live --out -` retain the
-old resource/PortableAgent bundle formats, not this workspace format. Quickstart
-creation composes fixed source, full eval, exact local publication, reviewed Apply and placement Verify before a fresh requested answer. Console creation selects an already authored native-Orka workspace, reviews instructions, exact model and every case, and selects a named Ready openai Provider. It requires explicit execution consent (typed destination context for remote targets), then reviews the retained exact Lift plan before single-use Apply/Verify. The explicit source root/fingerprint and complete API URI are rechecked; Ready placement is not an answer. Evaluation/partial errors may leave resources, without automatic retry or cleanup. Scaffold arithmetic is not quality proof for arbitrary instructions; author appropriate public cases. See the [live contract](kmx.md#default-orka-contract).
+A name is required; live create/previews/wizard are removed. Quickstart composes
+fixed source, full eval, exact publication, reviewed Apply and placement Verify
+before a separate fresh answer Task. Console selects authored native-Orka source,
+reviews instructions/model/all cases, selects a Ready openai Provider, obtains
+execution consent and reviews the exact retained Lift plan before Apply/Verify.
+Source fingerprint and complete API URI are rechecked. Console Ready means
+placement only. Partial/evaluation errors can leave resources without retry/cleanup.
+Author appropriate cases; scaffold arithmetic is not arbitrary-agent quality proof.
 
 The source consists of `workspace.yaml`, `agents/greeter/member.yaml`, its
 member-relative instruction file, workspace-root `eval/*.yaml`, and a pinned
@@ -230,15 +314,53 @@ kmx push --evaluation ../private-evidence/passing.json ghcr.io/me/my-agents:v1
 
 Root `eval` discovers the nearest workspace, or selects an exact root without
 fallback using `--workspace DIR`. It accepts no positional package reference.
-`--to-context` and `--out` are required. Orka requires `--inference provider:NAME`;
+A destination context (explicit `--to-context`, named `--to`, or saved `evalTarget`)
+and `--out` are required. Orka requires `--inference provider:NAME`, directly or
+through the named destination;
 kagent instead requires `--bindings FILE`, never both. For Orka, namespace
 is `orka-system` by default (`--to-namespace`); `--result-port` defaults to
 `19180`, and each case has a separate `--case-timeout` (default 5m, maximum 9m).
 Explicit empty selectors and global `--context` are refused. No runtime/model
-substitution, judge, case subset or `--show-content` is available. Only `contains`,
-`notContains` and `regex` assertions are supported. Unsupported evaluators,
+substitution, case subset or `--show-content` is available. Orka/kagent support
+`contains`, `notContains`, `regex` and explicitly configured `llmJudge` assertions. Unsupported evaluators,
 receipt-budget overflow and invalid output destinations refuse offline before
 loading cluster configuration.
+
+For an open-ended answer, author a judge assertion in the ordinary case file:
+
+```yaml
+id: explanation
+input: Explain why the sky appears blue.
+assertions:
+  - id: quality
+    type: llmJudge
+    rubric: Explain scattering of sunlight without claiming the sky emits blue light.
+    minScore: 70
+    judgeModel: my-judge-model
+    judgeVersion: pinned-v1
+```
+
+Select an explicit OpenAI-compatible endpoint with `--judge-base-url` and,
+optionally, nominate its HTTPS credential environment variable with
+`--judge-key-env`. There is no endpoint or agent-model fallback. HTTPS is required
+except keyless HTTP at literal loopback. Input, attributed answer and rubric go
+to that provider. Preflight states the cost: **two independent temperature-zero
+requests per judge assertion**, sharing the existing per-case deadline. Both
+scores at/above the threshold pass, both below fail, and disagreement, malformed
+or unavailable responses are unknown. There are no retries or extra candidate
+Tasks. Native attribution is checked again after judging; late drift/deadline
+prevents a case pass and export. Reasoning is discarded, never printed.
+
+Passing receipt rows retain the authored model/version, threshold, policy digest,
+both scores and a configuration hash binding the canonical endpoint. Raw judge
+URLs are omitted from receipts and refusal recovery commands; supply the endpoint
+again when retrying. This is user-declared identity, not provider attestation.
+Changed authored identity invalidates exact-suite evidence; changed endpoint-bound
+identity makes receipt comparisons incompatible. Offline push/lift do not select
+or contact a current judge endpoint. Text-only receipt encoding stays unchanged;
+upgrade receipt readers before exchanging judge receipts. AgentSessions
+`--development-host` continues to refuse judges. The assertion fields are unchanged
+and can map directly to authored JSON cases; this does not migrate the case tree.
 
 One mutation guard covers runtime-specific placement and all ordered evaluation
 Tasks: Orka `Provider/Agent`, or kagent `ModelConfig/Agent`. Remote targets require
@@ -284,7 +406,8 @@ new private receipt file (0600) into an existing private directory (0700), outsi
 workspace and cache trees. Existing destinations are never replaced. A late
 publication or summary failure can leave a complete output file; inspect it rather
 than assuming failure removed it. Receipts contain identities, digests and
-assertion verdicts only, not payloads or evaluation history.
+assertion verdicts and bounded judge identity/scores only, not payloads or
+evaluation history.
 
 `push --evaluation FILE` reads that strict private file and requires the exact
 prepared manifest digest plus full offline case/subject coherence before transfer
@@ -298,8 +421,9 @@ comparison refuses as incompatible, never as equivalent behavior. Comparison
 also requires identical observed ownership. Separate kagent CLI runs create
 fresh resources, so their receipts are incompatible rather than a cross-run
 behavior comparison. Root Lift dispatches only matching runtime evidence;
-cross-runtime evidence refuses. `eval from-sessions` and `bundle evaluate`
-retain their separate formats and behavior; native receipts are not bundle gates.
+cross-runtime evidence refuses. Old Orka/kagent/AgentSessions bundle receipts are
+unreadable. `eval from-sessions` remains private reference extraction/export only,
+with no native manifest consumer. RecordedExecution/legacy replay/judges are removed.
 
 ### Qualification boundary
 
@@ -464,7 +588,8 @@ kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
 ```
 
 Use a complete SHA256 digest, not a mutable tag. Destination runtime must already
-be installed. Orka uses `--inference provider:NAME`; packaged kagent instead uses
+be installed. `--to NAME` may supply the destination selectors from the workspace;
+without it, explicit-reference Lift does not inspect workspace configuration. Orka uses `--inference provider:NAME`; packaged kagent instead uses
 an author-owned `--bindings FILE`. The selectors are mutually exclusive and the
 verified packaged runtime must match the evidence. Kagent derives its namespace
 from the bindings; an explicit `--to-namespace` must agree. The bindings' parent,
@@ -535,7 +660,7 @@ Unsigned private receipts establish supplied observations, not signer
 authentication or authenticated deployment approval. General promotion policy/
 signing remains separate. Orka uses native `openai` Providers; kagent uses explicit
 OpenAI ModelConfig bindings. Host Foundry/Copilot execution and image lift are not
-covered. Existing bundle lift is unchanged. Hermetic tests alone do not establish
+covered. Legacy bundle lift is removed. Hermetic tests alone do not establish
 real cluster lift qualification.
 
 ### Kagent digest lift
@@ -569,7 +694,8 @@ placement, and triggers no cleanup or retry. Public result JSON is not restart
 or reuse authority. Kagent suite status/retirement and authenticated promotion
 policy remain unavailable; evidence never crosses runtimes.
 
-The existing pinned kind shard exercises create, two-case evaluation, exact local
+The existing pinned kind shard configures create, three-case evaluation (two text
+cases and an open-ended rubric case), exact local
 publication, source-free GET-only lift planning, explicit new-target promotion and
 occupied repeat refusal, with zero additional native execution traffic.
 

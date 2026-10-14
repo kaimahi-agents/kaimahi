@@ -39,12 +39,20 @@ func normalizeSuitePassingEvaluation(r *suitePassingReceipt) (normalizedEvaluati
 		for _, assertion := range row.Assertions {
 			c.Assertions[assertion.ID] = agentruntime.EvaluationAssertionResult{
 				ID: assertion.ID, Type: assertion.Type, DefinitionDigest: assertion.DefinitionDigest,
-				Verdict: agentruntime.EvaluationVerdict(assertion.Verdict),
+				Verdict: agentruntime.EvaluationVerdict(assertion.Verdict), Judge: assertion.Judge,
 			}
 		}
 		n.Cases[row.ID] = c
 		row.TaskName, row.TaskUID, row.AnswerDigest = "", "", ""
 		row.KagentExecution = nil
+		row.Assertions = append([]suitePassingAssertion(nil), row.Assertions...)
+		for i, assertion := range row.Assertions {
+			if assertion.Judge != nil {
+				identity := *assertion.Judge
+				identity.Scores = nil
+				row.Assertions[i].Judge = &identity
+			}
+		}
 		inventory = append(inventory, row)
 	}
 	n.SuiteInventory, err = suiteNativeDigest("kmx.native-suite.diff-inventory/v1", inventory)

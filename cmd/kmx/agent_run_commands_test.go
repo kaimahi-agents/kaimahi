@@ -19,7 +19,7 @@ func TestRunAndResultCommandValidation(t *testing.T) {
 		{[]string{"run", "agents/sample", "--agent", "sample", "--prompt", "hello"}, "--agent"},
 		{[]string{"run", "agents/sample", "--prompt", "hello", "--prompt-file", "-"}, "--prompt"},
 		{[]string{"run", "agents/sample"}, "--prompt"},
-		{[]string{"run", "agents/sample", "--prompt", "hello", "--context", "kind-test"}, "--to-context"},
+		{[]string{"run", "agents/sample", "--prompt", "hello", "--context", "kind-test"}, "usage"},
 		{[]string{"run", "--agent", "sample", "--prompt", "hello", "--to-context", "kind-test"}, "--to-context"},
 		{[]string{"run", "--agent", "sample", "--prompt", "hello", "--wait", "0s"}, "--wait"},
 		{[]string{"task", "result", "sample", "--wait", "0s"}, "--wait"},

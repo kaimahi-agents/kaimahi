@@ -115,14 +115,6 @@ func writePrivateAgentFile(path string, raw []byte) error {
 	return os.Rename(file.Name(), path)
 }
 
-func rememberAgentLocation(ctx context.Context, a *App, location agentLocation) (agentLocation, error) {
-	raw, err := a.orkaCapture(ctx, nil, "config", "view", "--minify", "--flatten", "--raw", "-o", "yaml")
-	if err != nil {
-		return location, fmt.Errorf("cannot persist kubeconfig for Agent %s: %w", location.Agent, err)
-	}
-	return writeAgentLocation(location, raw)
-}
-
 func appAtAgentLocation(source *App, location agentLocation) *App {
 	app := *source
 	cfg := *source.Cfg

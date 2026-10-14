@@ -47,8 +47,8 @@ func TestAgentTUINavigationAndInputModes(t *testing.T) {
 		t.Fatal("escape did not close command bar")
 	}
 	m = tuiKey(m, 'L', "L")
-	if m.input.Value() != "/lift assistant " {
-		t.Fatalf("lift shortcut=%q", m.input.Value())
+	if m.status != interactiveLiftRetirement || m.command {
+		t.Fatalf("retired lift shortcut=%q", m.status)
 	}
 	m = tuiKey(m, tea.KeyEsc, "")
 	m.columns[0].Selection = 2 // The external runtime has neither chat nor lift.
@@ -58,44 +58,23 @@ func TestAgentTUINavigationAndInputModes(t *testing.T) {
 	}
 }
 
-func TestAgentTUILiftCompletionAndDispatch(t *testing.T) {
+func TestAgentTUIRetiredLiftCompletionAndQualifiedChat(t *testing.T) {
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
-	m.opt.Demo = false // Test dispatch without executing the resulting action.
-	m = tuiKey(m, '/', "/")
-	m = tuiKey(m, 'l', "li")
-	m = tuiKey(m, tea.KeyTab, "")
-	if m.input.Value() != "/lift " {
-		t.Fatal(m.input.Value())
+	m.opt.Demo = false
+	m.input.SetValue("/li")
+	if len(m.suggestions()) != 0 {
+		t.Fatal("retired Lift is suggested")
 	}
-	choices := m.suggestions()
-	if len(choices) != 2 || choices[0].value != "assistant" {
-		t.Fatalf("agent suggestions=%+v", choices)
-	}
-	m = tuiKey(m, tea.KeyTab, "")
-	choices = m.suggestions()
-	if len(choices) != 2 || choices[0].value != "remote-demo" || choices[1].value != "new" {
-		t.Fatalf("targets=%+v", choices)
-	}
-	m = tuiKey(m, tea.KeyTab, "")
-	if m.action != nil {
-		t.Fatal("completion executed an operation")
-	}
-	m = tuiKey(m, tea.KeyEnter, "")
-	if m.action == nil || m.action.kind != "lift" || m.action.agent.Name != "assistant" || m.action.source.Name != "kind-local-demo" || m.action.target.Name != "remote-demo" {
-		t.Fatalf("action=%+v", m.action)
-	}
-	// Same-named agents in different namespaces require a qualified identity.
-	m.action = nil
 	a := m.columns[0].Agents[0]
 	a.Namespace = "other-agents"
 	m.columns[0].Agents = append(m.columns[0].Agents, a)
 	updated, _ := m.execute("/chat assistant")
 	if updated.(agentTUIModel).action != nil {
-		t.Fatal("ambiguous agent name dispatched")
+		t.Fatal("ambiguous chat name dispatched")
 	}
 	updated, _ = m.execute("/chat orka/other-agents/assistant")
 	if updated.(agentTUIModel).action.agent.Namespace != "other-agents" {
-		t.Fatal("qualified agent routed to wrong namespace")
+		t.Fatal("qualified chat routed to wrong namespace")
 	}
 }
 
@@ -109,28 +88,12 @@ func TestAgentTUICommandsValidateAndDemoDoesNotDispatch(t *testing.T) {
 		}
 	}
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
-	updated, _ := m.execute("/lift")
-	m = updated.(agentTUIModel)
-	if !m.command || m.input.Value() != "/lift " {
-		t.Fatal("bare /lift did not prompt for agent")
-	}
-	updated, _ = m.execute("/lift assistant new")
-	m = updated.(agentTUIModel)
-	if m.form == nil {
-		t.Fatal("new environment did not open form")
-	}
-	m = tuiKey(m, tea.KeyEsc, "")
-	if m.form != nil || m.action != nil {
-		t.Fatal("cancel retained pending cloud action")
-	}
-	updated, _ = m.execute("/lift assistant new")
-	m = updated.(agentTUIModel)
-	for _, field := range []string{"demo-rg", "demo-aks", "demoregistry", "westus3"} {
-		m.input.SetValue(field)
-		m = tuiKey(m, tea.KeyEnter, "")
-	}
-	if m.form != nil || m.action != nil || !strings.Contains(m.status, "nothing created") {
-		t.Fatal("demo form dispatched cloud operation")
+	for _, line := range []string{"/lift", "/lift assistant new"} {
+		updated, _ := m.execute(line)
+		m = updated.(agentTUIModel)
+		if m.command || m.action != nil || m.status != interactiveLiftRetirement {
+			t.Fatal("retired Lift opened workflow")
+		}
 	}
 }
 
@@ -158,7 +121,7 @@ func TestAgentTUIRefreshRetainsIdentityAndRejectsStaleReads(t *testing.T) {
 
 func TestAgentTUIViewFitsTerminalAndSanitizesMetadata(t *testing.T) {
 	for _, size := range [][2]int{{100, 30}, {64, 18}, {81, 24}, {40, 12}} {
-		for _, mode := range []string{"overview", "command", "details", "actions", "help", "form"} {
+		for _, mode := range []string{"overview", "command", "details", "actions", "help"} {
 			m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 			m.width, m.height = size[0], size[1]
 			m.input.SetWidth(max(1, m.width-4))
@@ -173,8 +136,6 @@ func TestAgentTUIViewFitsTerminalAndSanitizesMetadata(t *testing.T) {
 				m.actionsOpen = true
 			case "help":
 				m.help = true
-			case "form":
-				m.form = []string{"", "", "", "westus3"}
 			}
 			view := m.View()
 			if !view.AltScreen {
@@ -479,7 +440,7 @@ func TestAgentTUIActionsPopupCapabilitiesAndShortcuts(t *testing.T) {
 	if !m.actionsOpen || m.details {
 		t.Fatal("enter should open actions, not inspect")
 	}
-	for _, label := range []string{"ACTIONS · assistant", "Inspect agent", "Chat with agent", "Lift to remote environment", "LOCAL", "REMOTE"} {
+	for _, label := range []string{"ACTIONS · assistant", "Inspect agent", "Chat with agent", "LOCAL", "REMOTE"} {
 		if !strings.Contains(ansi.Strip(m.View().Content), label) {
 			t.Fatalf("missing action/background %q", label)
 		}
@@ -500,12 +461,12 @@ func TestAgentTUIActionsPopupCapabilitiesAndShortcuts(t *testing.T) {
 	m = tuiKey(m, tea.KeyEsc, "")
 	m = tuiKey(m, tea.KeyEnter, "")
 	m = tuiKey(m, 'L', "L")
-	if m.actionsOpen || !m.command || m.input.Value() != "/lift assistant " {
-		t.Fatal("lift menu dispatch failed")
+	if m.actionsOpen || m.command || m.status != interactiveLiftRetirement {
+		t.Fatal("retired lift menu key dispatched")
 	}
 	m = tuiKey(m, tea.KeyEsc, "")
 	m.focus = 1
-	if got := m.agentActions(*m.selected()); len(got) != 6 || got[5].key != "R" {
+	if got := m.agentActions(*m.selected()); len(got) != 5 || got[4].key != "R" {
 		t.Fatalf("remote actions=%v", got)
 	}
 	m.columns[1].Agents[0].External = true
@@ -681,8 +642,8 @@ func TestAgentTUIUnconfiguredRemotePanelAndLift(t *testing.T) {
 			t.Fatal("setup hint missing")
 		}
 	}
-	if !strings.Contains(m.agentHints(*m.selected()), "L lift") {
-		t.Fatal("local lift hint missing")
+	if strings.Contains(m.agentHints(*m.selected()), "L lift") {
+		t.Fatal("retired lift hint remains")
 	}
 	m.focus = 1
 	m = tuiKey(m, tea.KeyEnter, "")
@@ -691,8 +652,8 @@ func TestAgentTUIUnconfiguredRemotePanelAndLift(t *testing.T) {
 	}
 	m = tuiKey(m, tea.KeyEsc, "")
 	m = tuiKey(m, 'L', "L")
-	if m.input.Value() != "/lift " {
-		t.Fatal("setup lift shortcut missing")
+	if m.status != interactiveLiftRetirement || m.command {
+		t.Fatal("retired lift setup key dispatched")
 	}
 	m.columns[1].Env = agentTUIEnvironment{Name: "configured"}
 	if m.localColumnWidth(120) != 60 {

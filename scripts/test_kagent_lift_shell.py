@@ -142,7 +142,7 @@ class ShellTests(unittest.TestCase):
                 self.calls.unlink(missing_ok=True)
                 result, records = self.run_shell(args)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("lift/native A2A NOT qualified", result.stdout)
+                self.assertIn("runtime MCP/native A2A NOT qualified", result.stdout)
                 self.assert_owned_cleanup(records, 1)
                 modes = [r["args"][0] for r in records if r["tool"] == "driver"]
                 self.assertEqual(modes, ["cluster-absent", "node", "values", "chart", "provision", "bootstrap"])
@@ -299,14 +299,13 @@ def qualify(binary, work):
         raise RuntimeError("private-bootstrap-payload")
     if defect == "unlisted":
         raise QualificationError("private-bootstrap-payload", reason="private-bootstrap-payload")
-    raise QualificationError("private-bootstrap-payload", reason=cli_failure_reason(
-        b"private-bootstrap-payload pod does not have exactly one controller container using private-bootstrap-payload"))
+    raise QualificationError("private-bootstrap-payload")
 
 ''' % str(bootstrap_double)
         driver.write_text(actual.replace('\nif __name__ == "__main__":', '\n' + injection + 'if __name__ == "__main__":'))
-        cases = (("new-lift", "cli", "controller-pod-reference-mismatch"),
+        cases = (("runtime-fixture", "cli", "qualification-check-failed"),
                  ("native-a2a-one-shot", "tool", "unclassified-qualifier-error"),
-                 ("plan", "unlisted", "unclassified-qualifier-error"),
+                 ("setup", "unlisted", "unclassified-qualifier-error"),
                  (PAYLOAD, "cli", "unclassified-qualifier-error"))
         for phase, defect, reason in cases:
             with self.subTest(phase=phase, defect=defect):
@@ -317,7 +316,7 @@ def qualify(binary, work):
                 safe_phase = "setup" if phase == PAYLOAD else phase
                 expected = [] if phase == PAYLOAD else ["kagent qualification: phase=" + phase]
                 expected += ["kagent qualification failed: phase=" + safe_phase + " reason=" + reason,
-                             "kagent bootstrap failed: phase=qualify exitstatus=1; lift/native A2A NOT qualified"]
+                             "kagent bootstrap failed: phase=qualify exitstatus=1; runtime MCP/native A2A NOT qualified"]
                 self.assertEqual(result.stderr.splitlines(), expected)
                 self.assertEqual(result.stdout, "")
                 self.assert_owned_cleanup(records, 1)

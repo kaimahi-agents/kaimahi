@@ -76,7 +76,7 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 
 // The caller supplies a bounded per-case context and has consented to placement
 // and the full ordered inventory. Only the actual native observation is credited.
-func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePlacement, frame suitePassingInventoryCase, port string) (observation suitePassingObservation, err error) {
+func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePlacement, frame suitePassingInventoryCase, port string, judge agentruntime.EvaluationJudge) (observation suitePassingObservation, err error) {
 	observation = suitePassingObservation{CaseDigest: frame.Metadata.CaseDigest, InputDigest: frame.Metadata.InputDigest, EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: frame.Case.ID, Verdict: agentruntime.EvaluationUnknown}}
 	defer func() {
 		if err != nil {
@@ -157,7 +157,26 @@ func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePla
 		return observation, err
 	}
 	observation.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(answer)
-	observation.Assertions = agentruntime.EvaluateAssertions(frame.Case, agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true})
+	evidence := agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true}
+	if judge == nil {
+		observation.Assertions = agentruntime.EvaluateAssertions(frame.Case, evidence)
+	} else {
+		observation.Assertions = judge(caseCtx, frame.Case, evidence)
+		if err = caseCtx.Err(); err != nil {
+			return observation, err
+		}
+		if err = worker.verifySuiteNative(caseCtx, placement); err != nil {
+			return observation, err
+		}
+		var current *orkaObject
+		current, err = worker.readOrkaObject(caseCtx, ns, id)
+		if err != nil {
+			return observation, err
+		}
+		if !orkaTaskSuccessful(current) {
+			return observation, errSuiteNativeEvaluation
+		}
+	}
 	observation.Verdict = agentruntime.EvaluationPass
 	for _, row := range observation.Assertions {
 		if row.Verdict != agentruntime.EvaluationPass {

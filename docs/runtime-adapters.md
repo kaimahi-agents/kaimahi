@@ -1,19 +1,18 @@
 # Runtime support
 
-Orka is the current default for `create --live`, chat, bundle lift and quickstart.
-Default `create` authors one native-Orka workspace member offline;
-`--runtime kagent` authors exact v0.10.3 Go. Both packaged profiles support root
-evaluation, evaluated publication and root digest Lift with runtime-specific
-evidence/bindings. Kagent Lift is create-only and refuses occupied targets.
-`--live` is required for both runtimes'
-resource/bundle creation, including previews. kagent has explicit live create for
-preinstalled exact v0.10.2 and declarative bundle lift/status/evaluation for
-preinstalled exact v0.10.3. agentsessions additionally supports one-member suite
-author/prepare/load/push with a pinned chat profile and explicit development-host
-evaluation/full-pass evidence for exact-S evaluated push. Lift/chat/status and
-live create refuse that profile; registry/auth/remote lifecycle are not added.
-Its existing legacy bundle path remains eval-only until its lifecycle adapter lands; local reference-chat verification accompanies that evaluation
-path. None of these facts sets a preference in `kmx targets`.
+Orka is the default native workspace runtime, chat and quickstart runtime.
+Explicit kagent workspaces use exact v0.10.3 Go/linux-amd64. Both packaged
+profiles support root evaluation, evaluated publication and digest Lift with
+runtime-specific evidence/bindings. Kagent Lift is create-only, refusing occupied
+targets. Pinned AgentSessions chat separately supports native offline authoring,
+prepare/source-free load/ordinary push and explicit `--development-host FILE`
+evaluation/full-pass proof for exact-S evaluated push. It requires a private
+host JSON with a literal bare loopback host:port and typed matching host/model
+observations; no cluster settings or selectors, tools/judge, auth, deploy/Lift,
+chat/status or remote lifecycle. Live create and legacy bundle lifecycle/readers/
+receipts/replay are removed; suite status/retirement remain unavailable.
+Independent reference extraction/export and availability probes remain.
+These facts set no preference in `kmx targets`.
 
 The selected runtime owns execution, credentials, policy and retention. KMX owns
 authoring, revision identity, target-aware lifecycle commands and evidence.
@@ -71,9 +70,9 @@ version or optional operation. Native readiness alone is not semantic proof.
 
 | Runtime | Tier and operations | Pin and evidence | Preparation owner |
 |---|---|---|---|
-| agentsessions | Offline suite authoring, preparation, source-free loading and push for one pinned chat member; explicit literal-loopback operator-observed development eval/full-pass proof and exact-S evaluated push. No suite Lift/chat/status, registry/auth or remote lifecycle. Legacy bundle path is `eval-only`: text-only evaluation, one Session per case; local reference-chat verify with zero live model calls. No deploy/status/retire/re-lift or Orka lift gate. | Module `v0.1.3-0.20261013201528-ca85f47a2ec1`, [source](https://github.com/aramase/agentsessions/tree/ca85f47a2ec17ca6e16029cfa69419cfe29442b3), includes merged #120/#124. Suite chat uses this pin; the development daemon/config/journal path was demonstrated once with an instruction-sensitive deterministic OpenAI-compatible fixture, not real-LLM quality or authenticated host attestation. [Legacy live eval CI](../scripts/ci/live-eval-loop.sh) builds the module-pinned daemon and pins its AIKit image. Neither receipt nor replay attests the remote host/version/image. | Operator supplies host, journal and matching model; KMX runs no infrastructure. |
-| kagent | Exact v0.10.2: render/create and optional A2A turn within create. Exact v0.10.3: declarative bundle render/lift/status/evaluation plus packaged workspace evaluation/evaluated publication and create-only root digest Lift. Evaluation sends fresh blocking A2A Tasks (unsecure only; trusted-proxy refused); digest Lift sends none and refuses every occupied target. No packaged status/retirement, standalone run/chat, discovery, native resource diff or rollback. | v0.10.2 [source `68df64f671800c37c4204d81ebe0dd66ec35d223`](https://github.com/kagent-dev/kagent/tree/68df64f671800c37c4204d81ebe0dd66ec35d223), controller index `6adeef9ac70056e5871773a78233a77f12d1357f9f3484aaee59fe8abc6450b9`; v0.10.3 [source `8878c39ac64421cb665c8e62ecc6411dd12f2fc2`](https://github.com/kagent-dev/kagent/tree/8878c39ac64421cb665c8e62ecc6411dd12f2fc2), controller index `b2572a59386b6bac1f5e652e135fdad54c0ee603d3f9ee60eb7c80bbaedf9b76`. [CI](../.github/workflows/ci.yml) qualifies v0.10.2 create. Dedicated [Go lift CI](../scripts/ci/kagent-lift.sh) continuously qualifies v0.10.3 bundle lifecycle, native A2A/product evaluation, packaged two-case evaluation/evaluated push, and source-free digest Lift into a fresh target with occupied-repeat refusal. Native A2A/evaluation evidence is separate from deployment readiness; v0.10.3 Python qualification remains unsupported. | Operator supplies runtime, namespace and model Secret; CI installs externally. |
-| orka | `supported`: render, deploy/reconcile, status, evaluation, chat, one-shot run and native workload retire. Retire deletes/releases workload resources, not retained registrations or target infrastructure. | [v0.2.0 source](https://github.com/orka-agents/orka/tree/5f4eb543b2b35a3afb8e7ea01f5f53985e25d4c1); chart SHA-256 `b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79`; controller `ghcr.io/orka-agents/orka@sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370`. Required Orka CI proves a native result, not every optional capability. | Operator or an explicit KMX Orka environment command; targets does neither. |
+| agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case, no tools/judge, cluster settings, registry/auth or remote lifecycle; Lift/chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. | Module `v0.1.3-0.20261013201528-ca85f47a2ec1`, [source](https://github.com/aramase/agentsessions/tree/ca85f47a2ec17ca6e16029cfa69419cfe29442b3), includes merged #120/#124. The pinned development daemon/config/journal path was demonstrated once with an instruction-sensitive deterministic OpenAI-compatible fixture, not real-LLM quality or authenticated host/build/model attestation. Complete canonical five-record journals bind exact chat/config/input/model-request fingerprints; metadata-only receipts never include journal bodies. Receipt diff refuses AgentSessions proof. | Operator supplies pinned host, journal and matching model; KMX starts no infrastructure. |
+| kagent | Exact v0.10.3 Go/linux-amd64 native workspace create/eval/evaluated push/create-only digest Lift. Eval sends fresh blocking A2A Tasks, unsecure only; trusted-proxy refused. Lift sends no Tasks and refuses occupied targets. No Python/RemoteMCP, standalone run/chat, discovery, suite status/retirement or rollback. | [v0.10.3 source](https://github.com/kagent-dev/kagent/tree/8878c39ac64421cb665c8e62ecc6411dd12f2fc2), controller index `b2572a59386b6bac1f5e652e135fdad54c0ee603d3f9ee60eb7c80bbaedf9b76`. [Qualifier](../scripts/ci/kagent-lift.sh): raw upstream Tool smoke/direct A2A MCP proof, separately tool-free two-case packaged eval/evaluated push/source-withheld digest Lift and occupied-repeat refusal. Final retirement Go build/live run are required before claiming qualification. | Operator supplies exact runtime, namespace and model Secret; CI bootstrap is external. |
+| orka | Native workspace create/eval/evaluated push/digest Lift, runtime setup/status and independent live run/chat. Suite-owned objects refuse legacy invocation; suite status/retirement are unavailable. | [v0.2.0 source](https://github.com/orka-agents/orka/tree/5f4eb543b2b35a3afb8e7ea01f5f53985e25d4c1); chart SHA-256 `b7596c4e35d7189a3b2cf25921cd50e6c31328dbb83bdee50e20c757e0f03b79`; controller `ghcr.io/orka-agents/orka@sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370`. Required Orka CI proves a native result, not every optional capability. | Operator or an explicit KMX Orka environment command; targets does neither. |
 
 The [offline workspace path](suite-workspace.md) also authors, packages, loads
 and publishes a one-member, tool-free kagent v0.10.3 Go/linux-amd64 declaration.
@@ -90,27 +89,21 @@ only, and refuses any occupied target. Explicit same-package/model/profile promo
 retains AuthMode and the full controller/Go image digest/platform inventories;
 source evidence is not destination evaluation or authenticated authorization.
 Suite status/retirement remain unavailable and Orka evidence never authorizes kagent. The declared build-profile images are inert, not Go ADK dependencies.
-Live v0.10.2 create and v0.10.3 bundle operations above are unchanged.
+Live v0.10.2 create and all legacy bundle operations are removed outright.
+Offline `eval diff` reads only strict full-passing native suite Orka/kagent
+evidence; old Orka/kagent/AgentSessions bundle receipts are unreadable. No
+migration or on-disk/resource deletion occurs. No logs, arbitrary native-resource
+diff, rollback or replacement suite status/retirement is advertised.
 
-No standalone `logs`, arbitrary native-resource `diff` or `rollback` capability
-is advertised. Offline `kmx eval diff` reads strict exact-v0.10.3 Go kagent v2
-bundle receipts and same-runtime private packaged-suite evidence; this is receipt
-comparison, not promotion gates, replay or native resource diff.
-[Explicit Go bundle evaluation](agent-lift.md#evaluating-exact-v0103-go-kagent)
-requires the saved placement and desired bindings. Valid kagent evidence is
-excluded from Orka gate/status selection. Older strict readers may reject the
-new receipt shape.
-
-Orka `bundle status` reports drift; that is not a universal diff API. The view explains
-unsupported operations without invoking them.
-
-### agentsessions adapter prerequisite
+### agentsessions remote lifecycle prerequisite
 
 [#100](https://github.com/aramase/agentsessions/pull/100), merged at
 `8d97860b4b9c923b4140b6f5bfcadb718d689014`, adds a persisted **in-process**
 HarnessRegistry. At that pin, `agentsessionsd` does not serve the registry.
-An operator-only admin listener is required; startup `--harness` flags and
-static built-in `chat` are not deployable registrations.
+An operator-only admin listener is required for remote registration lifecycle;
+startup `--harness` flags and static built-in `chat` are not deployable
+registrations. This prerequisite does not block the implemented pinned-chat
+native development evaluation above.
 
 The adapter must bind registration to an exact source/suite member and immutable
 image. [Conformance](https://github.com/kaimahi-agents/kaimahi/issues/352) must prove
@@ -135,7 +128,7 @@ chat/logs/diff/rollback and cleanup remain unsupported for these candidates.
 | Agent Substrate — workspace/execution substrate | [v0.2.0 `10a1bfb2f58039608a0b8419379714945e4d65ac`](https://github.com/agent-substrate/substrate/tree/10a1bfb2f58039608a0b8419379714945e4d65ac) | Consume beneath a runtime. No peer adapter without an independent full lifecycle; retain required templates/snapshots. |
 | AX — image execution target | [v0.3.1 `e70162a34037c221fe6fadefd98308c05a4ad8f3`](https://github.com/google/ax/tree/e70162a34037c221fe6fadefd98308c05a4ad8f3) | Preview projector is not an adapter/image. Require immutable instructions/model/image/result, logs/cancellation and scoped cleanup. |
 | KARS — agent/security platform, BYO-image | [v0.1.26 `4288a3a00e88076a0c779c40fccb90790d4de6db`](https://github.com/Azure/kars/tree/4288a3a00e88076a0c779c40fccb90790d4de6db) | Requalify definition/image, policy and result APIs. Stop if input/result identity or workload-only cleanup cannot be proven. |
-| kagent 1.0 alpha11 — unsupported runtime candidate | [Source `30e8a2c2ceb9a1fadc16e969aa7ee0107a42d7b2`](https://github.com/kagent-dev/kagent/tree/30e8a2c2ceb9a1fadc16e969aa7ee0107a42d7b2) | Revisit at beta; require immutable installation, readiness, revision-pinned definition, documented execution and a bound result. Existing create support is unchanged. |
+| kagent 1.0 alpha11 — unsupported runtime candidate | [Source `30e8a2c2ceb9a1fadc16e969aa7ee0107a42d7b2`](https://github.com/kagent-dev/kagent/tree/30e8a2c2ceb9a1fadc16e969aa7ee0107a42d7b2) | Revisit at beta; require immutable installation, readiness, revision-pinned definition, documented execution and a bound result. Native exact-v0.10.3 Go support does not extend to this pin. |
 | Kubernetes Agent Sandbox — workspace substrate | [v1.0.4 `810726d89c71da77cdc82668bca1b00f5cd21ed8`](https://github.com/kubernetes-sigs/agent-sandbox/tree/810726d89c71da77cdc82668bca1b00f5cd21ed8) | Consume beneath a runtime. Sandbox readiness is not agent/evaluation evidence. |
 | Mecatl — agent harness/runtime | [v0.0.41 `89316cd9ed449e2577344723b6df17dec4cde034`](https://github.com/stacklok/mecatl/tree/89316cd9ed449e2577344723b6df17dec4cde034) | Require immutable installation, revision-bound terminal results and workload-only cleanup. |
 | OpenShell — sandbox/image target | [v0.1.2 `6648bd0c290efbc41ba131ee9831ee45cd431f94`](https://github.com/NVIDIA/OpenShell/tree/6648bd0c290efbc41ba131ee9831ee45cd431f94) | Sandbox access is not authored-agent evidence; require a complete image input/result contract. |
@@ -167,8 +160,8 @@ is not proof of enforcement for every runtime operation.
 lifecycle contracts, without Kubernetes, terminal or vendor SDK types. Adapters
 validate and render only behavior they consume; unsupported verbs return typed
 refusals. Discovery errors do not trigger fallback. The chat registry contains
-only Orka; kagent is composed explicitly for version-qualified create or bundle
-lift/status/evaluation, not discovery or chat. Packaged kagent evaluation and
+only Orka; packaged kagent is composed explicitly for native workspace
+preparation/evaluation/Lift, not discovery or chat. Packaged kagent evaluation and
 digest Lift use separate private App seams feeding the common release engine.
 Experimental public ports remain unwired.
 
@@ -177,28 +170,19 @@ A Session exposes its resolved agent, capabilities, commands, status, events,
 terminal checks completed. Terminal presentation stays outside the contract.
 The target catalog is diagnostic composition, not another registry or SDK.
 
-## Portable revision and target bindings
+## Native revision and target bindings
 
-`agent.yaml` is a closed, versioned definition: core fields plus zero or one
-runtime extension. Unknown fields and multiple extensions fail. Its exact
-bytes, including whitespace/comments, determine the portable digest.
-`PreparePortableRender` rejects extension or coordination behavior the adapter
-cannot honor before rendering. Orka accepts named-helper coordination; Kagent
-refuses it. Model/provider selection does not select a runtime.
+Native workspace metadata binds runtime/profile/model and cases to an exact OCI
+manifest. Orka requires a Ready openai Provider; kagent takes author-owned
+bindings with existing Secret name/key references, never values. Runtime/model
+are not overridden during Lift. Secret metadata/key-presence observations and
+current identity ResourceVersion brackets remain part of private proof.
 
-Creation `bindings.yaml` holds namespace, model endpoint and Secret name/key
-references, never credentials. Bindings do not change the portable digest;
-rendered resources have their own digest. Review-only Secret skeletons must not
-be bulk-applied. Later Orka lift uses explicit target flags and saved state;
-Explicit v0.10.3 lift/status takes KagentBindings on both commands and requires a
-named context; no Orka selection is read or changed. Saved deployment receipts
-are readiness evidence, not execution evidence. See
-[bundle format](bundle-format.md) for fields and compatibility rules.
-
-Receipts record identities and digests, not prompts or answers. agentsessions
-sends instructions as execution config and checks the host-selected model;
-Session metadata does not choose it. Config is journaled, so it must contain no
-credentials. Runtime cancellation/history and target cleanup remain separate.
+Internal PortableAgent typed scaffolding may feed native rendering; this is not
+a persistent legacy `agent.yaml` reader/writer. Public AgentSuite/ToolProvider
+implementation-bundle graphs/build/pull remain separate portable formats; see
+[format boundaries](bundle-format.md). Native receipts contain metadata and
+digests, never prompts/answers, and do not authenticate callers or runtime hosts.
 
 ## Experimental wider interface model
 

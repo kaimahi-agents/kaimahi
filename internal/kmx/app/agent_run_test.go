@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -22,10 +21,10 @@ func runFixture(t *testing.T) *evalFixture {
 }
 
 func runOption(f *evalFixture) RunAgentOptions {
-	return RunAgentOptions{BundleDir: f.bundle, ToContext: "kind-test", Prompt: "private prompt", ResultPort: f.opt.ResultPort, Wait: 30 * time.Second}
+	return RunAgentOptions{Agent: f.name, Namespace: "orka-system", Prompt: "private prompt", ResultPort: f.opt.ResultPort, Wait: 30 * time.Second}
 }
 
-func TestRunAgentBundlePrintsOnlyAnswerAndReportsIdentityBeforeCreate(t *testing.T) {
+func TestRunAgentPrintsOnlyAnswerAndReportsIdentityBeforeCreate(t *testing.T) {
 	f := runFixture(t)
 	f.answers["private prompt"] = "a private answer"
 	err := f.app.RunAgent(runOption(f))
@@ -49,40 +48,8 @@ func TestRunAgentBundlePrintsOnlyAnswerAndReportsIdentityBeforeCreate(t *testing
 		}
 	}
 	stderr := f.app.Err.(*bytes.Buffer).String()
-	if taskName == "" || !strings.Contains(stderr, taskName) || !strings.Contains(stderr, "authority") || !strings.Contains(stderr, "state") || !strings.Contains(stderr, "commit") || strings.Contains(stderr, "private prompt") || strings.Contains(stderr, "a private answer") {
+	if taskName == "" || !strings.Contains(stderr, taskName) || !strings.Contains(stderr, "authority") || !strings.Contains(stderr, "Recovery:") || strings.Contains(stderr, "private prompt") || strings.Contains(stderr, "a private answer") {
 		t.Fatalf("stderr = %q", stderr)
-	}
-}
-
-func TestRunAgentUsesRememberedTargetAndRefusesChangedCluster(t *testing.T) {
-	for _, uid := range []string{"cluster-uid", "old-cluster"} {
-		t.Run(uid, func(t *testing.T) {
-			f := runFixture(t)
-			f.answers["private prompt"] = "ok"
-			selection, err := bundleLiftSelectionPath(f.bundle)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := saveBundleLiftSelection(selection, bundleLiftSelection{Context: "kind-test", Namespace: "orka-system", ClusterUID: uid, Inference: "provider:inference"}); err != nil {
-				t.Fatal(err)
-			}
-			opt := runOption(f)
-			opt.ToContext = ""
-			err = f.app.RunAgent(opt)
-			if uid == "cluster-uid" && err != nil {
-				t.Fatal(err)
-			}
-			if uid != "cluster-uid" && (err == nil || !strings.Contains(err.Error(), "stale remembered target")) {
-				t.Fatalf("err = %v", err)
-			}
-			want := 1
-			if uid != "cluster-uid" {
-				want = 0
-			}
-			if f.taskCreates(t) != want {
-				t.Fatalf("creates = %d", f.taskCreates(t))
-			}
-		})
 	}
 }
 
@@ -95,11 +62,6 @@ func TestRunAgentRefusesUnownedOrNotReadyAgent(t *testing.T) {
 			if err := os.Remove(filepath.Join(f.dir, "agent.json")); err != nil {
 				t.Fatal(err)
 			}
-		}},
-		{"foreign", "another bundle", func(t *testing.T, f *evalFixture) {
-			f.seedAgent(t, f.digest)
-			raw, _ := os.ReadFile(filepath.Join(f.dir, "agent.json"))
-			_ = os.WriteFile(filepath.Join(f.dir, "agent.json"), bytes.Replace(raw, []byte(`"`+orkaBundleMarker+`":"`+f.name+`"`), []byte(`"`+orkaBundleMarker+`":"foreign"`), 1), 0600)
 		}},
 		{"not ready", "not Ready", func(t *testing.T, f *evalFixture) {
 			raw, _ := os.ReadFile(filepath.Join(f.dir, "agent.json"))
@@ -117,77 +79,6 @@ func TestRunAgentRefusesUnownedOrNotReadyAgent(t *testing.T) {
 				t.Fatal("created after refusal")
 			}
 		})
-	}
-}
-
-func TestRunAgentReportsBehindAndStillCreatesOneTask(t *testing.T) {
-	f := runFixture(t)
-	deployed := strings.Repeat("c", 64)
-	f.seedAgent(t, deployed)
-	provider := map[string]any{
-		"kind": "Provider", "metadata": map[string]any{"name": f.name, "namespace": "orka-system", "uid": "provider-uid", "generation": 1,
-			"annotations": map[string]any{orkaBundleMarker: f.name, orkaPortableMarker: deployed, orkaRenderedMarker: strings.Repeat("b", 64)}},
-		"status": map[string]any{"ready": true, "conditions": []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": 1}}},
-	}
-	raw, err := json.Marshal(provider)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(f.dir, "provider.json"), raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-	f.answers["private prompt"] = "answer from deployed revision"
-	if err := f.app.RunAgent(runOption(f)); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(f.app.Err.(*bytes.Buffer).String(), "Bundle state: behind; deployed commit: unknown") {
-		t.Fatalf("stderr=%s", f.app.Err)
-	}
-	if f.out.String() != "answer from deployed revision\n" || f.taskCreates(t) != 1 {
-		t.Fatalf("stdout=%q creates=%d", f.out, f.taskCreates(t))
-	}
-}
-
-func TestRunAgentReportsDriftAndStillCreatesOneTask(t *testing.T) {
-	f := runFixture(t)
-	fixtures, err := filepath.Abs("../orkaschema/fixtures")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("KMX_RECONCILE_FIXTURES", fixtures)
-	rendered, err := RenderOrkaBundleFile(f.bundle, orkaBindingsFromCreate(goldenNoTaskCreate("")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := reconcileLive(t, f.dir, "Provider", rendered)
-	agent := reconcileLive(t, f.dir, "Agent", rendered)
-	for _, doc := range []map[string]any{provider, agent} {
-		markBundleOwned(doc, f.name, rendered)
-		doc["status"] = map[string]any{"ready": true, "conditions": []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": 1}}}
-	}
-	agent["spec"].(map[string]any)["systemPrompt"] = map[string]any{"inline": "live change"}
-	for _, item := range []struct {
-		file string
-		doc  map[string]any
-	}{{"provider.json", provider}, {"agent.json", agent}} {
-		raw, err := json.Marshal(item.doc)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(f.dir, item.file), raw, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	f.answers["private prompt"] = "answer from drifted agent"
-	if err := f.app.RunAgent(runOption(f)); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(f.app.Err.(*bytes.Buffer).String(), "Bundle state: drifted;") {
-		observed := f.app.observeBundleTarget(t.Context(), f.bundle, f.name, f.digest, bundleStatusTarget{Context: "kind-test", Namespace: "orka-system"})
-		t.Fatalf("state=%s detail=%s stderr=%s", observed.State, observed.Detail, f.app.Err)
-	}
-	if f.out.String() != "answer from drifted agent\n" || f.taskCreates(t) != 1 {
-		t.Fatalf("stdout=%q creates=%d", f.out, f.taskCreates(t))
 	}
 }
 
@@ -234,7 +125,7 @@ func TestRunAgentRefusesInvalidInputsWithoutCreating(t *testing.T) {
 	}{
 		{"empty", func(o *RunAgentOptions) { o.Prompt = "   " }},
 		{"both", func(o *RunAgentOptions) { o.PromptFile = "-" }},
-		{"mode", func(o *RunAgentOptions) { o.Agent = "different" }},
+		{"mode", func(o *RunAgentOptions) { o.Agent = "" }},
 		{"wait", func(o *RunAgentOptions) { o.Wait = 10 * time.Minute }},
 		{"port", func(o *RunAgentOptions) { o.ResultPort = "invalid" }},
 	} {
@@ -262,6 +153,7 @@ func (w *failingRunWriter) Write(p []byte) (int, error) {
 	}
 	return w.content.Write(p)
 }
+
 func TestRunAgentRefusesCreateWhenTaskNameCannotBeWritten(t *testing.T) {
 	f := runFixture(t)
 	out := &failingRunWriter{}
@@ -428,7 +320,7 @@ func TestRunAgentDoesNotWriteBundleReceipt(t *testing.T) {
 	if err := f.app.RunAgent(runOption(f)); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Join(f.bundle, "receipts"))
+	entries, err := os.ReadDir(filepath.Join(f.dir, "receipts"))
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
@@ -448,33 +340,12 @@ func TestRunAgentPromptIsRedactedFromRemoteGuard(t *testing.T) {
 	if strings.Contains(err.Error()+f.app.Err.(*bytes.Buffer).String(), "private prompt") {
 		t.Fatalf("prompt leaked: %v %s", err, f.app.Err)
 	}
-	want := "kmx run " + shellArg(f.bundle) + " --to-context kind-test --wait 30s --result-port " + f.opt.ResultPort + " --prompt-file -"
-	if !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), " --agent ") || strings.Contains(err.Error(), "<redacted>") {
-		t.Fatalf("guard retry lost bundle selection or exposed prompt: %v", err)
+	want := f.app.operationCommand("run", "--agent", f.name, "--namespace", "orka-system", "--wait", "30s", "--result-port", f.opt.ResultPort, "--prompt-file", "-")
+	if !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "<redacted>") {
+		t.Fatalf("guard retry lost live Agent selection or exposed prompt: %v", err)
 	}
 	if f.taskCreates(t) != 0 {
 		t.Fatal("created")
-	}
-}
-
-func TestRunAgentRemoteGuardPreservesRememberedBundleDestination(t *testing.T) {
-	f := runFixture(t)
-	selection, err := bundleLiftSelectionPath(f.bundle)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := saveBundleLiftSelection(selection, bundleLiftSelection{Context: "kind-test", Namespace: "orka-system", ClusterUID: "cluster-uid", Inference: "provider:inference"}); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("KMX_EVAL_REMOTE", "1")
-	opt := runOption(f)
-	opt.ToContext = ""
-	err = f.app.RunAgent(opt)
-	if err == nil || !strings.Contains(err.Error(), "kmx run "+shellArg(f.bundle)+" --to-context kind-test --wait 30s --result-port "+f.opt.ResultPort+" --prompt-file -") {
-		t.Fatalf("remembered destination not restored in retry: %v", err)
-	}
-	if f.taskCreates(t) != 0 {
-		t.Fatal("created after guard refusal")
 	}
 }
 
