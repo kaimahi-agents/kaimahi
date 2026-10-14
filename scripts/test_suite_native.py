@@ -388,7 +388,14 @@ class QualificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             qualifier = Q.Qualification.__new__(Q.Qualification)
-            qualifier.work, qualifier.context = root, "kind-owned"
+            qualifier.work, qualifier.context, qualifier.repo = root, "kind-owned", ROOT
+            renderer = root / "native-reference"
+            subprocess.run(["go", "-C", str(ROOT), "build", "-o", str(renderer),
+                            str(ROOT / "scripts/ci/orka-native-reference.go")], check=True, capture_output=True, timeout=60)
+            def command(args, raw=None, **kwargs):
+                self.assertEqual(args, [ROOT / "bin/orka-native-reference"])
+                return subprocess.run([str(renderer)], input=raw, env={}, capture_output=True, timeout=60)
+            qualifier.command = command
             qualifier.secret_ref = {"name": "local-provider-key", "key": "api-key"}
             workspace = root / "workspace"
             (workspace / "eval").mkdir(parents=True)

@@ -876,13 +876,15 @@ class Qualification:
         collision, collision_member = self.work / "collision", "ci-native-collision"
         # Externally authored upstream objects deliberately have no KMX ownership.
         # They are fixtures, never a source-less product deployment or adoption.
-        metadata = {"name": collision_member, "namespace": "orka-system"}
-        provider = {"apiVersion": "core.orka.ai/v1alpha1", "kind": "Provider", "metadata": metadata,
-                    "spec": {"type": "openai", "defaultModel": "qwen-3.5-2b", "secretRef": self.secret_ref,
-                             "baseURL": "http://native-suite-aikit.orka-system.svc.cluster.local:8080/v1"}}
-        agent = {"apiVersion": "core.orka.ai/v1alpha1", "kind": "Agent", "metadata": metadata,
-                 "spec": {"model": "qwen-3.5-2b", "providerRef": {"name": collision_member},
-                          "instructions": instructions.read_text()}}
+        reference = {"Name": collision_member, "Namespace": "orka-system", "Model": "qwen-3.5-2b",
+                     "ProviderType": "openai", "BaseURL": "http://native-suite-aikit.orka-system.svc.cluster.local:8080/v1",
+                     "SecretName": self.secret_ref["name"], "SecretKey": self.secret_ref["key"],
+                     "Instructions": instructions.read_text()}
+        rendered = self.command([self.repo / "bin/orka-native-reference"], raw=canonical(reference))
+        require(rendered.returncode == 0, "collision-reference-render")
+        documents = [yaml.safe_load(base64.b64decode(raw, validate=True)) for raw in json.loads(rendered.stdout)]
+        require([doc["kind"] for doc in documents] == ["Secret", "Provider", "Agent"], "collision-reference-documents")
+        _, provider, agent = documents
         for fixture in (provider, agent):
             self.kube("create", "-f", "-", raw=canonical(fixture))
         self.author(collision_member, collision, instructions, cases)
