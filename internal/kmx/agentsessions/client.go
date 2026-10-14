@@ -292,6 +292,8 @@ func (c *Client) runCase(ctx context.Context, request CaseRequest, labels map[st
 	// a verified prefix into proof of the whole invocation's execution outcome.
 	result.ExecutionFailed = ended && !evidenceInvalid && executionFailed
 	if strict && evidenceErr == nil {
+		// Prefix checks already bind the observed config/input to the sent request;
+		// reconstruction additionally verifies the model-request fingerprint.
 		if !referenceChatInvocation(captured) {
 			fail(codes.DataLoss, "agentsessions: unsupported suite invocation shape")
 		} else {

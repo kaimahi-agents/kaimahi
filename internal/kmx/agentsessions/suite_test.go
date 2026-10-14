@@ -36,7 +36,11 @@ func suiteRequest() SuiteCaseRequest {
 // output rather than inventing a journal which could never pass reference replay.
 func suiteServer(t *testing.T) *sessionsServer {
 	t.Helper()
-	r := suiteRequest()
+	return suiteServerForRequest(t, suiteRequest())
+}
+
+func suiteServerForRequest(t *testing.T, r SuiteCaseRequest) *sessionsServer {
+	t.Helper()
 	config, err := json.Marshal(struct {
 		SystemPrompt string `json:"system_prompt"`
 	}{r.Instructions})
@@ -114,6 +118,37 @@ func TestSuiteCaseExactConfigLabelsAndProof(t *testing.T) {
 	}
 	if creates, execs := s.counts(); creates != 1 || execs != 1 {
 		t.Fatalf("calls = %d/%d", creates, execs)
+	}
+}
+
+func TestSuiteCaseRejectsSelfConsistentDifferentInvocation(t *testing.T) {
+	for _, difference := range []string{"instructions", "input", "both"} {
+		t.Run(difference, func(t *testing.T) {
+			requested := suiteRequest()
+			observed := requested
+			if difference != "input" {
+				observed.Instructions = "Different instructions."
+			}
+			if difference != "instructions" {
+				observed.Input = "Different input."
+			}
+			s := suiteServerForRequest(t, observed)
+			var records []eventlog.Record
+			for _, update := range s.updates[1:] {
+				records = append(records, eventlog.RecordFromProto(update.GetRecord()))
+			}
+			// The actual controller supplies a fully coherent alternative chain and
+			// model-request fingerprint, not merely a rehashed semantic mutation.
+			proof, err := referenceChatProof(t.Context(), records, observed.Model, verifySHA256([]byte(replayAnswer)))
+			if err != nil || proof.Status != "equivalent" {
+				t.Fatalf("alternative invocation is not self-consistent: %v, %+v", err, proof)
+			}
+			got, err := runSuite(t, s, requested)
+			assertSafeError(t, err, codes.DataLoss)
+			if got.ConfigDigest != "" || got.ExecutionID != "" || got.HarnessVersion != "" {
+				t.Fatal("different invocation received passing authority")
+			}
+		})
 	}
 }
 
