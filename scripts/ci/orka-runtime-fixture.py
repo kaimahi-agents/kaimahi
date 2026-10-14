@@ -18,7 +18,7 @@ def objects(mode):
         "orka-hello", "qwen2.5:3b", "http://ollama.ollama.svc.cluster.local:11434/v1")
     reference = {"Name": name, "Namespace": "orka-system", "Model": model,
                  "ProviderType": "openai", "BaseURL": endpoint, "SecretName": "local-provider-key", "SecretKey": "api-key",
-                 "Instructions": "Answer the user's request. Use the deployment health Tool when requested.",
+                 "Instructions": "Answer the user's request. Use the deployment health Tool when requested." if mode == "tool" else "",
                  "Tools": ["k8s-get-resources"] if mode == "tool" else []}
     # Generate and validate the complete native CRDs before any kubectl call.
     result = subprocess.run([str(RENDERER)], input=json.dumps(reference).encode(),

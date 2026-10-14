@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Validate actual scaffold-backed smoke fixtures; not live qualification."""
+import base64
 import importlib.util
 import json
 import pathlib
 import subprocess
 import tempfile
 import unittest
+
+import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PATH = ROOT / "scripts/ci/orka-runtime-fixture.py"
@@ -46,6 +49,20 @@ class FixtureTests(unittest.TestCase):
                 self.assertEqual(agent["spec"].get("tools", []), [{"name": "k8s-get-resources"}] if mode == "tool" else [])
                 self.assertNotIn("annotations", agent["metadata"])
                 self.assertNotIn("Task", json.dumps([provider, agent]))
+
+    def test_hello_preserves_green_main_scaffold_default(self):
+        # Main's create --live hello smoke supplied no instructions, tools or
+        # description. Compare against that same native scaffold input rather
+        # than inventing a stronger prompt to make an answer assertion pass.
+        module = self.load()
+        reference = {"Name": "orka-hello", "Namespace": "orka-system", "Model": "qwen2.5:3b",
+                     "ProviderType": "openai", "BaseURL": "http://ollama.ollama.svc.cluster.local:11434/v1",
+                     "SecretName": "local-provider-key", "SecretKey": "api-key"}
+        result = subprocess.run([str(self.renderer)], input=json.dumps(reference).encode(),
+                                capture_output=True, timeout=60)
+        self.assertEqual(result.returncode, 0)
+        baseline = [yaml.safe_load(base64.b64decode(raw)) for raw in json.loads(result.stdout)]
+        self.assertEqual(module.objects("hello"), tuple(baseline[1:]))
 
     def test_occupied_fixture_refuses_before_any_create(self):
         module = self.load()
