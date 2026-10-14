@@ -50,8 +50,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   fresh Session and explicit config/Exec per ordered case, bounded canonical
   chat/model-request proof, no retry or cluster configuration. Only a complete
   pass exports private runtime-specific evidence for exact-S evaluated push;
-  changed source, failed/unknown/partial/drift/canceled runs export no new pass.
-  Journal retention and the development trust warning are disclosed. Registry,
+  changed source, failed/unknown/partial/drift/canceled runs stop before exporting
+  a new pass. As with native receipts, a late post-link publication error can
+  leave a complete passing file; the CLI reports “output may exist”, without
+  automatic rollback or destination deletion. Journal retention and the
+  development trust warning are disclosed. Registry,
   auth, Lift, chat/status, tools/judge and remote lifecycle remain unsupported.
   Demonstrated once on the pinned daemon with an instruction-sensitive model
   fixture; replay leaves independent model-call counts unchanged. Not real-LLM

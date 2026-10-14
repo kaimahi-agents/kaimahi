@@ -180,6 +180,27 @@ func TestSuiteSessionsEvaluationStopsWithoutExport(t *testing.T) {
 	}
 }
 
+func TestSuiteSessionsLatePublicationFailureReportsExistingCompleteProof(t *testing.T) {
+	a, opt, calls := suiteSessionsEvaluationFixture(t)
+	p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	// Exercise the shared publisher's documented post-link directory-sync error.
+	if err := p.output.directory.Close(); err != nil {
+		t.Fatal(err)
+	}
+	err = a.EvaluateSuiteWorkspace(t.Context(), p)
+	if !errors.Is(err, errSuitePassingExport) || !strings.Contains(err.Error(), "output may exist") {
+		t.Fatalf("publication ambiguity was hidden: %v", err)
+	}
+	r, readErr := readSuitePassingReceipt(t.Context(), opt.Out)
+	if readErr != nil || r.Sessions == nil || len(r.Cases) != 2 || calls.Load() != 2 {
+		t.Fatalf("post-link failure changed complete-pass semantics: %v", readErr)
+	}
+}
+
 type suiteSessionsCauseWriter struct{ cause error }
 
 func (w suiteSessionsCauseWriter) Write([]byte) (int, error) { return 0, w.cause }

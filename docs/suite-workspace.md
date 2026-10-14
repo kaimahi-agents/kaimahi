@@ -188,8 +188,13 @@ harness/version/config/input/model-request fingerprint, attributable final text,
 terminal success and EOF. Deltas and Session metadata are not answers. Host-file
 and source snapshots are rechecked around each case and before export. Assertion
 failure, unknown/partial/invalid evidence, drift, cancellation or output failure
-stops later cases with no new pass. Every Session and execution identity must be
-unique; no retry, recovery or implicit old pass is selected.
+before publication stops later cases with no new pass. The shared publisher can
+leave a complete passing receipt after its exclusive link if a later directory
+sync, readback or cancellation fails; evaluation returns nonzero and reports
+**“output may exist”**. Inspect the file rather than assuming rollback removed it.
+No incomplete receipt is accepted, and no published destination is automatically
+deleted. Every Session and execution identity must be unique; no retry, recovery
+or implicit old pass is selected.
 
 Only a full pass exports the `kmx.agentsessions-suite.passing/v1` private proof,
 including exact S/G/member/profile/config/model/case identities, operator host

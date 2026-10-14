@@ -72,6 +72,9 @@ func (s *suiteSessionsHostSnapshot) recheck(suite *workspace.NativeSuite) error 
 type suiteSessionsEvaluationError struct{ cause error }
 
 func (e *suiteSessionsEvaluationError) Error() string {
+	if errors.Is(e.cause, errSuitePassingExport) {
+		return "agentsessions receipt publication incomplete; output may exist; Sessions may remain, no automatic retry or cleanup"
+	}
 	return "agentsessions suite evaluation did not pass; Sessions may remain, no automatic retry or cleanup"
 }
 func (e *suiteSessionsEvaluationError) Unwrap() error { return e.cause }
