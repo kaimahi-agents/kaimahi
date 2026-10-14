@@ -11,7 +11,8 @@
     "id": {"$ref": "#/$defs/id"},
     "runtimeBase": {"$ref": "#/$defs/images"},
     "harness": {"$ref": "#/$defs/images"},
-    "sourceEpoch": {"type": "integer", "minimum": 1}
+    "sourceEpoch": {"type": "integer", "minimum": 1},
+    "execution": {"$ref": "execution.schema.json"}
   },
   "$defs": {
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},

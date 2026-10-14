@@ -9,14 +9,16 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/distribution/reference"
-	"github.com/kaimahi-agents/kaimahi/agentsuite"
-	suitebuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 )
 
 const (
-	OCIArchiveMediaType = suitebuilder.OCIArchiveMediaType
+	OCIArchiveMediaType = agentsuite.OCIArchiveMediaType
 	agentKitFrontend    = "ghcr.io/orka-agents/agentkit/agentkit@sha256:8899d3ab38bdd8020b4ab21de128002bbc66ffd65111d7097daa8f8fd21805d9"
 	// TODO: Source the harness runtime from AgentSuite once its portable contract represents it.
 	agentKitRuntime = "pydantic-ai"
@@ -36,6 +38,8 @@ func ValidateModelAPIKeyEnv(value string) error {
 
 // Options bind the provider-neutral build plan to AgentKit and Docker buildx.
 type Options struct {
+	SuiteReference      string
+	SuiteDigest         string
 	ModelBaseURL        string
 	ModelAPIKeyEnv      string
 	Verbose             bool
@@ -53,7 +57,7 @@ type Builder struct {
 	options Options
 }
 
-var _ suitebuilder.SandboxBuilder = (*Builder)(nil)
+var _ agentsuite.SandboxBuilder = (*Builder)(nil)
 
 // New returns an experimental AgentKit builder.
 func New(options Options) *Builder {
@@ -71,26 +75,61 @@ func New(options Options) *Builder {
 
 func (b *Builder) Build(
 	ctx context.Context,
-	plan suitebuilder.SandboxPlan,
+	plan agentsuite.SandboxPlan,
 	dst io.Writer,
-) (suitebuilder.BuildResult, error) {
+) (agentsuite.BuildResult, error) {
 	if b == nil {
-		return suitebuilder.BuildResult{}, errors.New("AgentKit builder is required")
+		return agentsuite.BuildResult{}, errors.New("AgentKit builder is required")
 	}
 	if dst == nil {
-		return suitebuilder.BuildResult{}, errors.New("AgentKit build output is required")
+		return agentsuite.BuildResult{}, errors.New("AgentKit build output is required")
 	}
 	if err := b.validate(plan); err != nil {
-		return suitebuilder.BuildResult{}, err
+		return agentsuite.BuildResult{}, err
 	}
 
 	agentkitFile, err := b.agentkitFile(plan)
 	if err != nil {
-		return suitebuilder.BuildResult{}, fmt.Errorf("render AgentKit build input: %w", err)
+		return agentsuite.BuildResult{}, fmt.Errorf("render AgentKit build input: %w", err)
+	}
+	label := ""
+	if b.options.SuiteReference != "" {
+		if plan.BuildProfile.Execution == nil {
+			return agentsuite.BuildResult{}, errors.New("liftable image requires an execution contract")
+		}
+		label, err = agentsuite.EncodeImageDeployment(agentsuite.ImageDeployment{
+			SchemaVersion: spec.SpecVersion, MediaType: agentsuite.ImageDeploymentMediaType,
+			SuiteDigest: b.options.SuiteDigest,
+			Agent:       plan.Agent.ID, Platform: plan.Composition.Platform, CompositionDigest: plan.CompositionDigest,
+			BuildProfile: plan.BuildProfile.ID, BuildProfileDigest: plan.BuildProfileDigest, Execution: *plan.BuildProfile.Execution, Inference: plan.Agent.Model.Capabilities,
+		})
+		if err != nil {
+			return agentsuite.BuildResult{}, err
+		}
+	}
+	mounted := plan.Agent.Model.Capabilities != nil
+	if mounted {
+		// Use buildx's Dockerfile frontend for the config-mounted profile. There
+		// are no RUN steps and no generated model configuration in the build.
+		agentkitFile = []byte("FROM " + plan.Harness.ImageRef + "\n" +
+			"COPY --chown=0:0 --chmod=0444 instructions.txt /agent/instructions.txt\n" +
+			"USER 1000:1000\nWORKDIR /\n" +
+			"ENV PATH=/opt/agentkit/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin AGENTKIT_BIND=127.0.0.1 PYTHONUNBUFFERED=1\n" +
+			"ENTRYPOINT [\"/opt/agentkit/bin/agentkit-serve\"]\n" +
+			"CMD [\"--config\",\"" + agentsuite.AgentKitConfigPath + "\",\"--protocol\",\"openai\"]\n" +
+			"EXPOSE 8080\nLABEL " + agentsuite.ImageDeploymentLabel + "=" + strconv.Quote(label) + "\n")
+	} else if label != "" {
+		// The pinned AgentKit frontend accepts metadata labels and emits them in
+		// the image configuration. Labels are digest-bound publisher declarations.
+		agentkitFile, err = b.agentkitFileWithLabel(plan, label)
+		if err != nil {
+			return agentsuite.BuildResult{}, err
+		}
 	}
 	// The caller owns staging and inspection before publishing identities.
 	platform := plan.Composition.Platform
 	exported, err := b.options.exporter.ExportOCI(ctx, agentImage{
+		MountedConfig: mounted, Instructions: append([]byte(nil), plan.Instructions...),
 		AgentkitFile: agentkitFile,
 		Name:         plan.Agent.ID,
 		AdapterRef:   plan.Harness.ImageRef,
@@ -98,9 +137,9 @@ func (b *Builder) Build(
 		SourceEpoch:  plan.BuildProfile.SourceEpoch,
 	}, dst)
 	if err != nil {
-		return suitebuilder.BuildResult{}, fmt.Errorf("build experimental AgentKit image: %w", err)
+		return agentsuite.BuildResult{}, fmt.Errorf("build experimental AgentKit image: %w", err)
 	}
-	result := suitebuilder.BuildResult{
+	result := agentsuite.BuildResult{
 		MediaType:             OCIArchiveMediaType,
 		AttestationsRequested: exported.AttestationsRequested,
 		RequireAttestations:   b.options.RequireAttestations,
@@ -110,19 +149,44 @@ func (b *Builder) Build(
 	return result, nil
 }
 
-func (b *Builder) validate(plan suitebuilder.SandboxPlan) error {
+func (b *Builder) validate(plan agentsuite.SandboxPlan) error {
 	var errs []error
+	if execution := plan.BuildProfile.Execution; execution != nil {
+		errs = append(errs, spec.ValidateExecutionContract(*execution))
+		if execution.Port != 8080 || execution.HealthPath != "/healthz" {
+			errs = append(errs, errors.New("AgentKit builder supports only port 8080 and /healthz"))
+		}
+		if plan.Agent.Model.Capabilities == nil && execution.Configuration != "" {
+			errs = append(errs, errors.New("exact-model AgentKit builds do not implement mounted configuration"))
+		}
+	}
+	if b.options.SuiteReference != "" && (spec.ValidateImageReference(b.options.SuiteReference) != nil || !spec.IsValidDigest(b.options.SuiteDigest) || !strings.HasSuffix(b.options.SuiteReference, "@"+b.options.SuiteDigest)) {
+		errs = append(errs, errors.New("published source reference must pin the exact suite manifest digest"))
+	}
 	if b.options.DisableAttestations && b.options.RequireAttestations {
 		errs = append(errs, errors.New("--require-attestations cannot be used with --attestations=false"))
 	}
 	if err := ValidateModelAPIKeyEnv(b.options.ModelAPIKeyEnv); err != nil {
 		errs = append(errs, err)
 	}
-	parsedURL, err := url.Parse(b.options.ModelBaseURL)
-	if err != nil || parsedURL.Scheme != "http" && parsedURL.Scheme != "https" ||
-		parsedURL.Hostname() == "" || parsedURL.User != nil || parsedURL.RawQuery != "" ||
-		parsedURL.ForceQuery || parsedURL.Fragment != "" {
-		errs = append(errs, errors.New("experimental AgentKit builder requires an absolute http(s) --model-base-url without credentials, query, or fragment"))
+	if plan.Agent.Model.Capabilities != nil {
+		if b.options.ModelBaseURL != "" || b.options.ModelAPIKeyEnv != "" {
+			errs = append(errs, errors.New("capability-based builds take model and credentials only at deployment; omit model build flags"))
+		}
+		if b.options.SuiteReference == "" || plan.BuildProfile.Execution == nil || plan.BuildProfile.Execution.Configuration != spec.AgentKitMountedConfig {
+			errs = append(errs, errors.New("capability-based builds require --suite-ref and agentkit-v0-mounted-v1 configuration"))
+		}
+		if plan.Harness.ImageRef != "ghcr.io/orka-agents/agentkit/serve-pydantic-ai@sha256:8c4c17dc3d778c02097ad7e1ea88e9084b3f1aad6c36458829ff9cec9b4d043c" {
+			errs = append(errs, errors.New("mounted configuration requires the qualified pinned pydantic-ai harness"))
+		}
+		errs = append(errs, plan.Agent.Model.Capabilities.Validate())
+	} else {
+		parsedURL, err := url.Parse(b.options.ModelBaseURL)
+		if err != nil || parsedURL.Scheme != "http" && parsedURL.Scheme != "https" ||
+			parsedURL.Hostname() == "" || parsedURL.User != nil || parsedURL.RawQuery != "" ||
+			parsedURL.ForceQuery || parsedURL.Fragment != "" {
+			errs = append(errs, errors.New("experimental AgentKit builder requires an absolute http(s) --model-base-url without credentials, query, or fragment"))
+		}
 	}
 	if plan.Agent.Model.Protocol != "openai-compatible" {
 		errs = append(errs, fmt.Errorf("experimental AgentKit builder does not support model protocol %q", plan.Agent.Model.Protocol))
@@ -158,13 +222,17 @@ func (b *Builder) validate(plan suitebuilder.SandboxPlan) error {
 }
 
 func validateDigestReference(name, value string) error {
-	if err := agentsuite.ValidateImageReference(value); err != nil {
+	if err := spec.ValidateImageReference(value); err != nil {
 		return fmt.Errorf("%s must be a registry-qualified, digest-addressed image reference: %w", name, err)
 	}
 	return nil
 }
 
-func (b *Builder) agentkitFile(plan suitebuilder.SandboxPlan) ([]byte, error) {
+func (b *Builder) agentkitFile(plan agentsuite.SandboxPlan) ([]byte, error) {
+	return b.agentkitFileWithLabel(plan, "")
+}
+
+func (b *Builder) agentkitFileWithLabel(plan agentsuite.SandboxPlan, label string) ([]byte, error) {
 	config := agentConfig{
 		APIVersion: "v1alpha1",
 		Kind:       "Agent",
@@ -180,6 +248,9 @@ func (b *Builder) agentkitFile(plan suitebuilder.SandboxPlan) ([]byte, error) {
 		},
 		Instructions: string(plan.Instructions),
 		Expose:       agentExpose{OpenAI: true},
+	}
+	if label != "" {
+		config.Metadata.Labels = map[string]string{agentsuite.ImageDeploymentLabel: label}
 	}
 	body, err := json.Marshal(config)
 	if err != nil {
@@ -205,7 +276,8 @@ type agentConfig struct {
 }
 
 type agentMetadata struct {
-	Name string `json:"name"`
+	Name   string            `json:"name"`
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 type agentModel struct {

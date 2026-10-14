@@ -44,16 +44,18 @@ type SelectedToolProvider struct {
 // sandbox image builder. The current experimental contract does not yet expose
 // verified image blobs or ToolProvider payload content.
 type SandboxPlan struct {
-	Suite             spec.Suite
-	SuiteManifestHash string
-	Agent             spec.Agent
-	Instructions      []byte
-	Composition       spec.Composition
-	CompositionDigest string
-	BuildProfile      spec.BuildProfile
-	RuntimeBase       spec.PlatformImage
-	Harness           spec.PlatformImage
-	ToolProviders     []SelectedToolProvider
+	Suite spec.Suite
+	// SuiteRootDigest is JCS agentsuite.json identity, not the OCI manifest.
+	SuiteRootDigest    string
+	Agent              spec.Agent
+	Instructions       []byte
+	Composition        spec.Composition
+	CompositionDigest  string
+	BuildProfile       spec.BuildProfile
+	BuildProfileDigest string
+	RuntimeBase        spec.PlatformImage
+	Harness            spec.PlatformImage
+	ToolProviders      []SelectedToolProvider
 }
 
 // BuildResult describes archive emission and its inspection policy. Streaming
@@ -186,17 +188,25 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 	if err != nil {
 		return nil, err
 	}
+	profileDigest := ""
+	for _, ref := range v.suite.BuildProfiles {
+		if ref.ID == profile.ID {
+			profileDigest = ref.Digest
+			break
+		}
+	}
 	return &SandboxPlan{
-		Suite:             v.suite,
-		SuiteManifestHash: suiteHash,
-		Agent:             agent,
-		Instructions:      instructions,
-		Composition:       composition,
-		CompositionDigest: compositionDigest,
-		BuildProfile:      profile,
-		RuntimeBase:       runtimeBase,
-		Harness:           harness,
-		ToolProviders:     selected,
+		Suite:              v.suite,
+		SuiteRootDigest:    suiteHash,
+		Agent:              agent,
+		Instructions:       instructions,
+		Composition:        composition,
+		CompositionDigest:  compositionDigest,
+		BuildProfile:       profile,
+		BuildProfileDigest: profileDigest,
+		RuntimeBase:        runtimeBase,
+		Harness:            harness,
+		ToolProviders:      selected,
 	}, nil
 }
 

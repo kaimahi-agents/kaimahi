@@ -2,6 +2,8 @@ package agentsuite
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,6 +75,94 @@ func TestToolProviderSchemaDefinesBundledImplementation(t *testing.T) {
 		1,
 	)
 	validateSchemaJSON(t, schema, withoutFileDigest, false)
+}
+
+func TestExecutionSchemaKeepsServingAndMountedABIConsistent(t *testing.T) {
+	schema := compileReferenceSchema(t, "execution.schema.json")
+	valid := `{"kind":"http-v1","protocol":"openai-chat-v1","port":8080,"healthPath":"/healthz","inputs":[],"configuration":"agentkit-v0-mounted-v1"}`
+	validateSchemaJSON(t, schema, valid, true)
+	for _, invalid := range []string{
+		strings.Replace(valid, `"http-v1"`, `"kubernetes-http-v1"`, 1),
+		strings.Replace(valid, `8080`, `9090`, 1),
+		strings.Replace(valid, `"/healthz"`, `"/ready"`, 1),
+	} {
+		validateSchemaJSON(t, schema, invalid, false)
+		var contract ExecutionContract
+		if err := Unmarshal([]byte(invalid), &contract); err == nil && ValidateExecutionContract(contract) == nil {
+			t.Fatal("semantic validator accepted incompatible serving/configuration contract")
+		}
+	}
+}
+
+func TestImageContractSchemaAndDecoderRequiredFields(t *testing.T) {
+	inference := `{"api":"openai-chat-completions-v1","contextTokens":8192,"outputTokens":1024,"streaming":false,"toolCalling":false}`
+	execution := `{"kind":"http-v1","protocol":"openai-chat-v1","port":8080,"healthPath":"/healthz","inputs":[{"name":"model-key","environment":"MODEL_KEY","secret":false}]}`
+	for _, tc := range []struct {
+		name, schema, document string
+		valid                  bool
+	}{
+		{"inference", "inference", inference, true},
+		{"missing streaming", "inference", strings.Replace(inference, `,"streaming":false`, "", 1), false},
+		{"missing toolCalling", "inference", strings.Replace(inference, `,"toolCalling":false`, "", 1), false},
+		{"null streaming", "inference", strings.Replace(inference, `"streaming":false`, `"streaming":null`, 1), false},
+		{"execution", "execution", execution, true},
+		{"empty inputs", "execution", strings.Replace(execution, `[{"name":"model-key","environment":"MODEL_KEY","secret":false}]`, `[]`, 1), true},
+		{"missing inputs", "execution", `{"kind":"http-v1","protocol":"openai-chat-v1","port":8080,"healthPath":"/healthz"}`, false},
+		{"null inputs", "execution", strings.Replace(execution, `[{"name":"model-key","environment":"MODEL_KEY","secret":false}]`, `null`, 1), false},
+		{"missing secret", "execution", strings.Replace(execution, `,"secret":false`, "", 1), false},
+		{"reserved env", "execution", strings.Replace(execution, `MODEL_KEY`, `PATH`, 1), false},
+		{"injection env", "execution", strings.Replace(execution, `MODEL_KEY`, `LD_PRELOAD`, 1), false},
+		{"path traversal", "execution", strings.Replace(execution, `/healthz`, `/health/../healthz`, 1), false},
+		{"repeated separator", "execution", strings.Replace(execution, `/healthz`, `//healthz`, 1), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			validateSchemaJSON(t, compileReferenceSchema(t, tc.schema+".schema.json"), tc.document, tc.valid)
+			var err error
+			if tc.schema == "inference" {
+				var record InferenceRequirements
+				err = Unmarshal([]byte(tc.document), &record)
+				if err == nil {
+					err = record.Validate()
+				}
+			} else {
+				var record ExecutionContract
+				err = Unmarshal([]byte(tc.document), &record)
+				if err == nil {
+					err = ValidateExecutionContract(record)
+				}
+			}
+			if (err == nil) != tc.valid {
+				t.Fatalf("decoder/semantic parity: %v", err)
+			}
+		})
+	}
+}
+
+func TestImageContractCrossFieldConformanceRequiresSemantics(t *testing.T) {
+	// These structurally valid documents require rules beyond standard JSON Schema.
+	inference := `{"api":"openai-chat-completions-v1","contextTokens":1,"outputTokens":2,"streaming":false,"toolCalling":false}`
+	validateSchemaJSON(t, compileReferenceSchema(t, "inference.schema.json"), inference, true)
+	var requirements InferenceRequirements
+	if err := Unmarshal([]byte(inference), &requirements); err != nil {
+		t.Fatal(err)
+	}
+	if requirements.Validate() == nil {
+		t.Fatal("oversized output accepted")
+	}
+	for _, inputs := range []string{
+		`[{"name":"a","environment":"KEY","secret":false},{"name":"b","environment":"KEY","secret":true}]`,
+		`[{"name":"a","environment":"KEY","secret":false},{"name":"a","environment":"OTHER_KEY","secret":true}]`,
+	} {
+		execution := `{"kind":"http-v1","protocol":"openai-chat-v1","port":8080,"healthPath":"/healthz","inputs":` + inputs + `}`
+		validateSchemaJSON(t, compileReferenceSchema(t, "execution.schema.json"), execution, true)
+		var contract ExecutionContract
+		if err := Unmarshal([]byte(execution), &contract); err != nil {
+			t.Fatal(err)
+		}
+		if ValidateExecutionContract(contract) == nil {
+			t.Fatal("duplicate binding identity accepted")
+		}
+	}
 }
 
 func TestToolProviderSchemaAcceptsMultiFileCLIBundles(t *testing.T) {
@@ -298,7 +388,19 @@ func compileReferenceSchema(t *testing.T, name string) *jsonschema.Resolved {
 	if err := json.Unmarshal(data, &schema); err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := schema.Resolve(nil)
+	resolved, err := schema.Resolve(&jsonschema.ResolveOptions{Loader: func(uri *url.URL) (*jsonschema.Schema, error) {
+		name := filepath.Base(uri.Path)
+		if uri.String() != "https://kaimahi.dev/schemas/agentsuite/v1/"+name || name != "inference.schema.json" && name != "execution.schema.json" {
+			return nil, fmt.Errorf("unsupported schema reference")
+		}
+		data, err := os.ReadFile(filepath.Join("schema", name))
+		if err != nil {
+			return nil, err
+		}
+		var referenced jsonschema.Schema
+		err = json.Unmarshal(data, &referenced)
+		return &referenced, err
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}

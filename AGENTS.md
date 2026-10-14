@@ -236,6 +236,18 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 ## Verification
 
+The experimental `suite build --suite-ref` mode checks all local packaged files
+against a bounded SHA256-pinned published source, including cases and supplemental
+metadata, builds from the fetched bytes and emits image execution metadata.
+The full suite digest remains authoritative; an unchanged public graph alone is
+insufficient. Capability-based sources bind models
+at deployment, so omit model build flags. `suite push-image` publishes the full
+image index/attestation graph (flat or nested) and prints the runnable platform
+digest without requiring deployment admission metadata. Different existing tags
+require explicit --force; same-digest publication is a no-op. The AgentKit adapter
+refuses serving ports/health paths outside 8080 and /healthz. These
+image operations do not alter native workspace authoring or add lift support.
+
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
 Command changes normally require `go test ./cmd/kmx`, affected operation-package
 tests, documentation links, repository-map and legacy-runtime checks. These

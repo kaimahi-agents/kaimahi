@@ -340,6 +340,39 @@ image must therefore currently be a complete AgentKit adapter image from the
 conformant AgentKit adapter or another builder can replace it without changing
 AgentSuite resolution.
 
+#### Experimental image contracts and publication
+
+`suite build --suite-ref <registry/repository@sha256:...>` compares every local
+packaged file, entry type and mode with a bounded, digest-verified published
+snapshot, including cases and supplemental metadata, then builds from the fetched
+content. Executable permissions are preserved; group/world write bits are masked
+when materializing build sources. Capability-based agents omit model build flags:
+selected inference is supplied through the `agentkit-v0-mounted-v1` configuration
+ABI. The AgentKit adapter supports only port 8080 and `/healthz`, and refuses
+unsupported serving declarations before building.
+
+`suite push-image <archive> <reference> [--platform linux/amd64] [--force]`
+publishes the complete verified OCI image graph, including flat or nested
+attestation layouts, and prints the runnable platform digest. Ordinary build
+output needs no deployment label to be published. Deployment consumers separately
+validate declarations. A different existing tag refuses unless `--force` is
+explicit; same-digest publication is a no-op. The existing non-atomic tag preflight
+and registry authentication policy below apply. `--platform` requires nonempty
+`os/architecture` components with exactly one slash; malformed values refuse
+before archive reads.
+
+Image declarations bind the full suite OCI manifest digest (including cases and
+metadata), composition and exact build-profile digests, without embedding the
+source registry location. The public `http-v1` serving interface is target-neutral.
+`SandboxPlan.SuiteRootDigest` names the public root JSON identity; the materializing
+caller supplies the distinct full OCI source digest. The internal primitives sit
+beneath experimental `AgentSuites.Validate → Build → Push`, but do not implement
+the alpha `pkg/kmx.AgentSuites` service or a conformant sandbox binding.
+Full image inventory/base composition, image Lift, evaluation and TUI workflows
+are separate work. Portable image-set association remains under
+[#356](https://github.com/kaimahi-agents/kaimahi/issues/356), and the materialization
+handoff under [#345](https://github.com/kaimahi-agents/kaimahi/issues/345).
+
 #### Registry authentication
 
 Registry push and pull do not add a Kaimahi login contract or accept credentials

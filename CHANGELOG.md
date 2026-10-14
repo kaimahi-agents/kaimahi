@@ -41,6 +41,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Hermetic tests alone are not live semantic judge proof.
   [Suite judge configuration](docs/suite-workspace.md#evaluate-the-whole-workspace)
 
+- Experimental inference capability/execution records, source-linked image builds
+  with deployment-time model configuration, and `suite push-image` publication.
+  Source-linked builds compare all packaged bytes, types and modes against bounded,
+  digest-verified published content, preserving executable modes. Native exact-model,
+  zero-image workspaces keep their existing behavior. Target-neutral `http-v1`
+  image declarations bind full suite OCI and exact build-profile digests, without
+  source registry hints. Publication preserves attestations and does not require
+  deployment metadata; replacing a different image tag requires explicit `--force`.
+  Malformed `--platform` values refuse before archive reads.
+  The AgentKit adapter refuses serving settings it cannot implement.
+
 - Named workspace destinations in optional, credential-free `kmx.yaml` supply
   selectors to `eval/lift --to NAME`. Explicit invocation flags override saved
   fields; values resolve once and cannot be redirected by later config edits.
