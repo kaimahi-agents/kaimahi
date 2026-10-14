@@ -682,6 +682,47 @@ func TestToolProviderEffectApprovalIndependentOfCredentials(t *testing.T) {
 	}
 }
 
+func TestToolProviderRejectsPolicyFieldsThatDecodeAsOmitted(t *testing.T) {
+	content, err := loadDirectory(filepath.Join("testdata", "remote-mcp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := content.data("tool-provider.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name    string
+		field   string
+		value   any
+		wantErr string
+	}{
+		{name: "empty effect", field: "effect", value: "", wantErr: "effect must be a non-empty string"},
+		{name: "empty approval", field: "approval", value: "", wantErr: "approval must be a non-empty string"},
+		{name: "null delegated authorization", field: "delegatedAuthorization", value: nil, wantErr: "delegatedAuthorization must not be null"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var document map[string]any
+			if err := json.Unmarshal(raw, &document); err != nil {
+				t.Fatal(err)
+			}
+			tools := document["tools"].([]any)
+			tools[0].(map[string]any)[test.field] = test.value
+			tampered, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var provider ToolProvider
+			if err := decodeStrict(tampered, &provider); err != nil {
+				t.Fatalf("strict decoding should retain this semantic check: %v", err)
+			}
+			if err := validateToolProvider(provider, tampered, content); err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validateToolProvider() error = %v, want containing %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestEarlierDraftProviderMediaTypesAreRejected(t *testing.T) {
 	content, err := loadDirectory(filepath.Join("testdata", "remote-mcp"))
 	if err != nil {

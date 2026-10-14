@@ -572,6 +572,7 @@ func validateIdentifierList(name string, values []string) error {
 
 func validateToolProvider(provider ToolProvider, raw []byte, content *contentSet) error {
 	var errs []error
+	errs = append(errs, validateRawToolPolicyFields(raw))
 	if provider.SchemaVersion != SpecVersion || provider.MediaType != MediaTypeToolProvider {
 		errs = append(errs, errors.New("unsupported schemaVersion or mediaType"))
 	}
@@ -641,6 +642,34 @@ func validateToolProvider(provider ToolProvider, raw []byte, content *contentSet
 		errs = append(errs, validateRemoteToolProvider(*provider.Remote))
 	}
 	errs = append(errs, validateExtensions(provider.Extensions))
+	return errors.Join(errs...)
+}
+
+// validateRawToolPolicyFields preserves presence distinctions that disappear
+// when optional JSON fields decode to Go zero values.
+func validateRawToolPolicyFields(rawProvider []byte) error {
+	var document struct {
+		Tools []map[string]json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(rawProvider, &document); err != nil {
+		return err
+	}
+	var errs []error
+	for i, tool := range document.Tools {
+		for _, field := range []string{"effect", "approval"} {
+			raw, present := tool[field]
+			if !present {
+				continue
+			}
+			var value string
+			if err := json.Unmarshal(raw, &value); err != nil || value == "" {
+				errs = append(errs, fmt.Errorf("tool %d %s must be a non-empty string", i, field))
+			}
+		}
+		if raw, present := tool["delegatedAuthorization"]; present && strings.TrimSpace(string(raw)) == "null" {
+			errs = append(errs, fmt.Errorf("tool %d delegatedAuthorization must not be null", i))
+		}
+	}
 	return errors.Join(errs...)
 }
 
