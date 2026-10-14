@@ -183,9 +183,13 @@ func (a *App) evaluateSuiteKagentWorkspace(ctx context.Context, p *PreparedSuite
 			return observation, nil
 		}
 		ref := agentruntime.AgentRef{Runtime: agentruntime.Kagent, Context: p.options.ToContext, Namespace: p.options.ToNamespace, Name: p.suite.MemberID, UID: placement.Observation.Resources[1].UID}
-		result, _, e := worker.executeKagentEvaluationCase(caseCtx, ref, frame.Case, execution, op, observe, nil, nil)
+		result, _, e := worker.executeKagentEvaluationCase(caseCtx, ref, frame.Case, execution, op, observe, nil, p.judge)
 		if e == nil {
 			e = caseCtx.Err()
+		}
+		if e == nil && p.judge != nil {
+			// Judging is external I/O: re-observe attribution before crediting a case.
+			_, e = observe()
 		}
 		cancel()
 		if e != nil {

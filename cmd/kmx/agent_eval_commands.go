@@ -21,7 +21,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{
 		Use: "eval", Short: "Evaluate a native workspace or prepare and compare saved evidence",
 		Long: "Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
-			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override, judge, subset or content output.\n" +
+			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override, subset or content output. llmJudge requires an explicit --judge-base-url and authored judgeModel/judgeVersion; --judge-key-env names an optional HTTPS credential variable. Input, answer and rubric transfer to that provider for two independent samples per assertion; disagreement/error is unknown. No judge content is printed.\n" +
 			"Packaged AgentSessions requires --development-host FILE: an explicit private operator observation of a pinned built-in chat host on literal loopback, unauthenticated. It refuses all cluster/inference/bindings/result selectors and loads no cluster configuration.\n" +
 			"Development journals retain instructions, inputs, answers and per-exec config in cleartext under operator-managed retention. This is not authenticated remote promotion.\n" +
 			"Each case submits one fresh Task or Session, never retried. Failure, unknown, drift or cancellation stops later cases without exporting a receipt; resources may remain.\n" +
@@ -43,13 +43,13 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 				return fmt.Errorf("--context cannot be used with native eval; use --to-context")
 			}
 			if native.DevelopmentHost != "" {
-				for _, name := range []string{"to-context", "to-namespace", "inference", "bindings", "result-port", "container-engine"} {
+				for _, name := range []string{"to-context", "to-namespace", "inference", "bindings", "result-port", "container-engine", "judge-base-url", "judge-key-env"} {
 					if cmd.Flag(name).Changed {
 						return fmt.Errorf("--development-host refuses --%s", name)
 					}
 				}
 			}
-			for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "bindings", "development-host", "out", "result-port"} {
+			for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "bindings", "development-host", "out", "result-port", "judge-base-url", "judge-key-env"} {
 				if flag := cmd.Flag(name); flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 					return fmt.Errorf("native eval requires non-empty --%s", name)
 				}
@@ -86,7 +86,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			a.Cfg.ContextSource = config.SourceFlag
 			// Native retry advice must not synthesize the refused global --context.
 			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine), "kmx"}
-			for _, arg := range state.argv {
+			for _, arg := range suiteEvaluationRecoveryArgs(state.argv) {
 				parts = append(parts, quoteShell(arg))
 			}
 			a.InvocationCommand = strings.Join(parts, " ")
@@ -101,6 +101,13 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	_ = group.MarkFlagFilename("bindings")
 	group.Flags().StringVar(&native.DevelopmentHost, "development-host", "", "private JSON observation selecting a loopback unauthenticated AgentSessions development host")
 	_ = group.MarkFlagFilename("development-host", "json")
+	group.Flags().StringVar(&native.JudgeBaseURL, "judge-base-url", "", "explicit OpenAI-compatible judge endpoint; HTTPS except keyless literal loopback")
+	group.Flags().StringVar(&native.JudgeKeyEnv, "judge-key-env", "", "environment variable name containing the judge credential (HTTPS only)")
+	for _, name := range []string{"judge-base-url", "judge-key-env"} {
+		_ = group.RegisterFlagCompletionFunc(name, func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		})
+	}
 	group.Flags().StringVar(&native.Out, "out", "", "new private full-passing receipt file outside workspace/cache")
 	group.Flags().DurationVar(&native.CaseTimeout, "case-timeout", 5*time.Minute, "deadline per case, at most 9m")
 	group.Flags().StringVar(&native.ResultPort, "result-port", "19180", "local loopback result-forward port")
@@ -154,4 +161,21 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	})
 	group.AddCommand(diff, from)
 	return group
+}
+
+// Judge endpoints can be private. Recovery advice keeps access selectors but
+// requires operators to supply the endpoint again rather than echoing it.
+func suiteEvaluationRecoveryArgs(args []string) []string {
+	safe := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--judge-base-url" {
+			i++
+			continue
+		}
+		if strings.HasPrefix(args[i], "--judge-base-url=") {
+			continue
+		}
+		safe = append(safe, args[i])
+	}
+	return safe
 }

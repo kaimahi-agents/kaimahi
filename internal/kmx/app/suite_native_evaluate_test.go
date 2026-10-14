@@ -397,7 +397,7 @@ func TestSuiteNativeEvaluationAdmittedFrameAndOneShot(t *testing.T) {
 			if stage == "placement" {
 				placement.Agent.UID = "other"
 			}
-			observation, err := a.evaluateSuiteNative(ctx, placement, frame, f.opt.ResultPort)
+			observation, err := a.evaluateSuiteNative(ctx, placement, frame, f.opt.ResultPort, nil)
 			creates := 0
 			for _, call := range orkaCalls(t, f.dir) {
 				if call.Document != nil && call.Document["kind"] == "Task" && slices.Contains(call.Args, "create") && !slices.Contains(call.Args, "--dry-run=server") {

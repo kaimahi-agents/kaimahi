@@ -132,8 +132,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   flags and a nonpersistent operational hook. Unsupported/budget/output checks
   run before config; one fresh outer guard covers pair placement and all Tasks.
   Fail/unknown/drift/cancel/output errors stop later sends with no partial export.
-  No model/runtime override, judge/subset/content mode or standalone package
-  reference is accepted. Offline `eval diff` and recorded-session preparation
+  No model/runtime override, subset/content mode or standalone package
+  reference is accepted. Authored llmJudge is supported for Orka/kagent with
+  explicit --judge-base-url and optional --judge-key-env (environment name only).
+  Two independent temperature-zero scores must agree on the threshold side;
+  unavailable/malformed/split results stay unknown. Judgment shares the existing
+  case deadline and attribution is rechecked afterward. Root eval discards
+  reasoning and omits judge endpoints from recovery commands. Private passing
+  rows bind authored model/version, threshold, policy, endpoint configuration hash
+  and both scores. Text-only receipt wire shape is unchanged; older readers
+  refuse judge rows. AgentSessions still refuses judges. Offline `eval diff` and recorded-session preparation
   via `eval from-sessions` retain their cluster-independent hooks; recorded
   execution stays `bundle evaluate --from-sessions`. Root digest lift consumes
   the explicit private full-passing receipt, without sending evaluation Tasks. The checkout-only native qualifier runs in the existing exclusively owned

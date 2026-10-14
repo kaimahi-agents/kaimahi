@@ -222,7 +222,7 @@ func TestSuiteKagentEvalRefusesBeforeConfiguration(t *testing.T) {
 		{"result port", "native kagent evaluation requires --bindings and refuses --result-port"},
 		{"malformed binding", "native kagent requires bounded confined author-owned bindings"},
 		{"tool assertion", "unsupported native suite evaluator"},
-		{"judge assertion", "unsupported native suite evaluator"},
+		{"judge assertion", "llmJudge assertions require --judge-base-url"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("KMX_HOME", t.TempDir())

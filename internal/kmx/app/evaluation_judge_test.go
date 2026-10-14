@@ -39,11 +39,11 @@ func judgeDeadline(t *testing.T) context.Context {
 }
 
 func TestEvaluationJudgeConfigurationPreflight(t *testing.T) {
-	selected := []bundleEvaluationCase{{Case: judgeCase()}}
+	selected := []agentruntime.EvaluationCase{judgeCase()}
 	for _, tc := range []struct {
 		name   string
 		config evaluationJudgeConfig
-		cases  []bundleEvaluationCase
+		cases  []agentruntime.EvaluationCase
 		want   string
 	}{
 		{"ordinary default", evaluationJudgeConfig{}, nil, ""},
@@ -66,7 +66,7 @@ func TestEvaluationJudgeConfigurationPreflight(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("JUDGE_TEST_EMPTY_KEY", "")
-			port, err := newEvaluationJudge(tc.config, tc.cases, io.Discard)
+			port, err := newEvaluationCaseJudge(tc.config, tc.cases, io.Discard)
 			if tc.want != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), "private-canary") {
 					t.Fatalf("unsafe/wrong error: %v", err)
@@ -83,20 +83,20 @@ func TestEvaluationJudgeConfigurationPreflight(t *testing.T) {
 	}
 	t.Setenv("JUDGE_TEST_KEY", "private-canary")
 	for _, base := range []string{"http://127.0.0.1:9000", "http://[::1]:9000"} {
-		_, err := newEvaluationJudge(evaluationJudgeConfig{BaseURL: base, KeyEnv: "JUDGE_TEST_KEY"}, selected, io.Discard)
+		_, err := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: base, KeyEnv: "JUDGE_TEST_KEY"}, selected, io.Discard)
 		if err == nil || !strings.Contains(err.Error(), "HTTPS") || strings.Contains(err.Error(), "private-canary") {
 			t.Fatalf("key over HTTP: %v", err)
 		}
 	}
 	invalid := judgeCase()
 	invalid.Assertions[0].JudgeVersion = "private-canary\n"
-	if _, err := newEvaluationJudge(evaluationJudgeConfig{BaseURL: "https://example.invalid"}, []bundleEvaluationCase{{Case: invalid}}, io.Discard); err == nil || strings.Contains(err.Error(), "private-canary") {
+	if _, err := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: "https://example.invalid"}, []agentruntime.EvaluationCase{invalid}, io.Discard); err == nil || strings.Contains(err.Error(), "private-canary") {
 		t.Fatalf("invalid selected identity: %v", err)
 	}
 }
 
 func TestEvaluationJudgeCredentialHeaderPreflight(t *testing.T) {
-	selected := []bundleEvaluationCase{{Case: judgeCase()}}
+	selected := []agentruntime.EvaluationCase{judgeCase()}
 	for _, tc := range []struct {
 		name      string
 		key       string
@@ -114,7 +114,7 @@ func TestEvaluationJudgeCredentialHeaderPreflight(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("JUDGE_TEST_KEY", tc.key)
-			judge, err := newEvaluationJudge(evaluationJudgeConfig{BaseURL: "https://example.invalid", KeyEnv: "JUDGE_TEST_KEY"}, selected, io.Discard)
+			judge, err := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: "https://example.invalid", KeyEnv: "JUDGE_TEST_KEY"}, selected, io.Discard)
 			if tc.wantError {
 				if err == nil || judge != nil {
 					t.Fatal("invalid credential accepted by constructor")
@@ -131,7 +131,7 @@ func TestEvaluationJudgeCredentialHeaderPreflight(t *testing.T) {
 
 func TestEvaluationJudgeCredentialDecodedPathPreflight(t *testing.T) {
 	t.Setenv("JUDGE_TEST_KEY", "private-canary")
-	selected := []bundleEvaluationCase{{Case: judgeCase()}}
+	selected := []agentruntime.EvaluationCase{judgeCase()}
 	for _, path := range []string{
 		"/private-canary",
 		"/%70rivate-canary",
@@ -139,7 +139,7 @@ func TestEvaluationJudgeCredentialDecodedPathPreflight(t *testing.T) {
 		"/prefix%2f%70rivate-canary%2fsuffix/v1",
 	} {
 		t.Run(path, func(t *testing.T) {
-			judge, err := newEvaluationJudge(evaluationJudgeConfig{BaseURL: "https://example.invalid" + path, KeyEnv: "JUDGE_TEST_KEY"}, selected, io.Discard)
+			judge, err := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: "https://example.invalid" + path, KeyEnv: "JUDGE_TEST_KEY"}, selected, io.Discard)
 			if err == nil || judge != nil {
 				t.Fatal("credential-bearing URL accepted by constructor")
 			}
@@ -148,7 +148,7 @@ func TestEvaluationJudgeCredentialDecodedPathPreflight(t *testing.T) {
 			}
 		})
 	}
-	judge, err := newEvaluationJudge(evaluationJudgeConfig{BaseURL: "https://example.invalid/%50rivate-canary", KeyEnv: "JUDGE_TEST_KEY"}, selected, io.Discard)
+	judge, err := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: "https://example.invalid/%50rivate-canary", KeyEnv: "JUDGE_TEST_KEY"}, selected, io.Discard)
 	if err != nil || judge == nil {
 		t.Fatalf("case-distinct decoded path rejected: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestEvaluationJudgeProductionClientRejectsRedirects(t *testing.T) {
 		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
 	}))
 	defer server.Close()
-	port, err := newEvaluationJudge(evaluationJudgeConfig{BaseURL: server.URL}, []bundleEvaluationCase{{Case: judgeCase()}}, io.Discard)
+	port, err := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: server.URL}, []agentruntime.EvaluationCase{judgeCase()}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

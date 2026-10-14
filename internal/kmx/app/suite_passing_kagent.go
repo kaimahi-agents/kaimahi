@@ -259,7 +259,7 @@ func newSuiteKagentPassingReceipt(ctx context.Context, p *PreparedSuiteWorkspace
 		row.AnswerDigest = observed.AnswerSHA256
 		row.Assertions = make([]suitePassingAssertion, 0, len(observed.Assertions))
 		for _, a := range observed.Assertions {
-			row.Assertions = append(row.Assertions, suitePassingAssertion{a.ID, a.Type, a.DefinitionDigest, suitePassingEvaluatorVersion, string(a.Verdict)})
+			row.Assertions = append(row.Assertions, suitePassingAssertionResult(a))
 		}
 		r.Cases = append(r.Cases, row)
 	}

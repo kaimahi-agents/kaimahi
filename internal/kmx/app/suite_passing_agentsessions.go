@@ -151,7 +151,7 @@ func newSuiteSessionsPassingReceipt(ctx context.Context, p *PreparedSuiteWorkspa
 			if a.Verdict != agentruntime.EvaluationPass {
 				return nil, errSuitePassingReceipt
 			}
-			row.Assertions = append(row.Assertions, suitePassingAssertion{a.ID, a.Type, a.DefinitionDigest, suitePassingEvaluatorVersion, string(a.Verdict)})
+			row.Assertions = append(row.Assertions, suitePassingAssertionResult(a))
 		}
 		r.Cases = append(r.Cases, row)
 	}

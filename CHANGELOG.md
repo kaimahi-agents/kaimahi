@@ -22,6 +22,18 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+- Root `kmx eval` supports authored `llmJudge` assertions on packaged Orka/kagent
+  suites with explicit `--judge-base-url` and optional `--judge-key-env`.
+  Two independent temperature-zero samples must agree on the threshold side;
+  unavailable, malformed or split outcomes are unknown and export no passing
+  receipt. Judgment shares the existing case deadline, with attribution checked
+  afterward. Preflight states the two-request cost and data transfer.
+  Private receipts bind declared judge model/version, policy, threshold, endpoint
+  configuration hash and both scores; reasoning and raw judge URLs stay out of
+  receipts and terminal recovery commands. Text-only receipts are unchanged;
+  upgrade readers before exchanging judge receipts. AgentSessions judging remains
+  unsupported. [Suite judge configuration](docs/suite-workspace.md#evaluate-the-whole-workspace)
+
 - Root digest `lift` supports packaged kagent v0.10.3 Go/linux-amd64 suites through
   the existing prepare/apply/verify engine, with runtime-matching full-passing
   evidence and author-owned `--bindings FILE` (exclusive with Orka `--inference`).
