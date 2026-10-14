@@ -71,8 +71,10 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 		Short: "Author an offline workspace member, or create live Orka or kagent agents",
 		Long: `Create one native workspace member offline by default.
 Orka is the default runtime; --runtime kagent authors exact v0.10.3 Go
-private metadata. --runtime-version may explicitly select only v0.10.3.
-This does not enable suite kagent placement or evaluation.
+private metadata. --runtime-version may explicitly select v0.10.3 for kagent.
+--runtime agentsessions authors the pinned built-in chat profile offline only;
+its optional --runtime-version must equal ` + workspace.AgentSessionsVersion + `.
+AgentSessions evaluation, lift, chat and status remain unavailable.
 
 A name, exact --model and file-valued --instructions are required; --description
 is optional. Discover the nearest ancestor workspace.yaml. An existing workspace
@@ -148,10 +150,10 @@ also capture Service-proxy request and response bodies.`,
 	cmd.Flags().BoolVar(&live, "live", false, "create live Orka or kagent resources or legacy bundle/YAML previews")
 	cmd.Flags().StringVar(&workspaceRoot, "workspace", "", "select an exact workspace directory (initialize without prompting if absent)")
 	_ = cmd.MarkFlagDirname("workspace")
-	cmd.Flags().StringVar(&opt.Runtime, "runtime", "orka", "agent runtime: orka or kagent")
+	cmd.Flags().StringVar(&opt.Runtime, "runtime", "orka", "agent runtime: orka, kagent, or offline-only agentsessions")
 	cmd.Flags().StringVar(&opt.KagentRuntime, "kagent-runtime", "go", "kagent declarative runtime (workspace: Go only; live create: go or python)")
-	cmd.Flags().StringVar(&workspaceVersion, "runtime-version", "v0.10.3", "workspace-only runtime profile (kagent: v0.10.3)")
-	_ = cmd.RegisterFlagCompletionFunc("runtime-version", staticCompletion([]string{"v0.10.3"}))
+	cmd.Flags().StringVar(&workspaceVersion, "runtime-version", "v0.10.3", "workspace-only exact runtime profile (kagent: v0.10.3; agentsessions: pinned commit)")
+	_ = cmd.RegisterFlagCompletionFunc("runtime-version", staticCompletion([]string{"v0.10.3", workspace.AgentSessionsVersion}))
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "explicit target namespace; the selected runtime controller must watch it (required)")
 	cmd.Flags().StringVar(&opt.Description, "description", "", "one-line description")
 	cmd.Flags().StringVar(&opt.ProviderType, "provider-type", "", "Provider type: openai, anthropic or azure-openai (required)")
@@ -180,7 +182,7 @@ also capture Service-proxy request and response bodies.`,
 	cmd.Flags().BoolVar(&opt.NoApply, "no-apply", false, "write the manifest and stop")
 	cmd.Flags().BoolVar(&opt.DryRun, "dry-run", false, "server-side validation and local artifact; no cluster writes or execution")
 	cmd.MarkFlagsMutuallyExclusive("no-apply", "dry-run")
-	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"orka", "kagent"}))
+	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"orka", "kagent", "agentsessions"}))
 	_ = cmd.RegisterFlagCompletionFunc("kagent-runtime", staticCompletion([]string{"go", "python"}))
 	_ = cmd.RegisterFlagCompletionFunc("provider-type", staticCompletion([]string{"openai", "anthropic", "azure-openai"}))
 	_ = cmd.RegisterFlagCompletionFunc("schema-target", staticCompletion([]string{"v0.2.0", "v0.1.3", "main"}))
@@ -204,6 +206,11 @@ also capture Service-proxy request and response bodies.`,
 					return fmt.Errorf("workspace kagent supports only --runtime-version v0.10.3 and --kagent-runtime go")
 				}
 				workspaceRuntime.Version, workspaceRuntime.Engine = workspaceVersion, opt.KagentRuntime
+			} else if opt.Runtime == "agentsessions" {
+				if (cmd.Flags().Changed("runtime-version") && workspaceVersion != workspace.AgentSessionsVersion) || cmd.Flags().Changed("kagent-runtime") {
+					return fmt.Errorf("workspace agentsessions requires the pinned --runtime-version %s and refuses --kagent-runtime", workspace.AgentSessionsVersion)
+				}
+				workspaceRuntime.Version, workspaceRuntime.Engine = workspace.AgentSessionsVersion, "chat"
 			} else if opt.Runtime != "orka" || cmd.Flags().Changed("runtime-version") || cmd.Flags().Changed("kagent-runtime") {
 				return fmt.Errorf("workspace --runtime must be orka without version/engine or exact kagent v0.10.3 go")
 			}

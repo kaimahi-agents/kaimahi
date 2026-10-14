@@ -45,6 +45,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Offline `kmx create --runtime agentsessions` authors one tool-free built-in
+  chat member, pinned to upstream commit
+  `ca85f47a2ec17ca6e16029cfa69419cfe29442b3` (merged #120/#124). Preparation,
+  source-free loading and ordinary push preserve exact manifest S, empty member
+  images and complete ordered cases. Runtime/config semantics remain private
+  metadata, not public AgentSuite fields. Suite evaluation, evaluated push,
+  Lift, chat/status and live create remain unsupported; Orka/kagent execution
+  and evidence consumers refuse this profile. [Workspace guide](docs/suite-workspace.md).
+
 - Deploy-only `kmx lift <ref>@<digest>` from a registry or local `--from-layout`.
   Explicit private full-passing `--evidence` and `--to-context` are required;
   Orka uses Ready `--inference provider:NAME`, kagent uses author-owned

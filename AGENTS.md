@@ -30,6 +30,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   do not add root bundle status or a suite observer.
 - Root `create <name>` authors one tool-free native suite member offline
   by default: Orka unless `--runtime kagent` selects exact v0.10.3 Go/linux-amd64.
+  `--runtime agentsessions` separately authors an offline-only built-in chat
+  profile pinned to ca85f47a2ec17ca6e16029cfa69419cfe29442b3 (engine chat), with
+  empty required images and complete ordered cases. Prepare/load/ordinary push
+  support it; suite eval/evaluated push/lift/chat/status and live create refuse.
+  Optional --runtime-version must match that commit; --kagent-runtime refuses.
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
   Root eval supports the packaged kagent profile with author-owned --bindings;
   evaluated push consumes matching runtime-specific full-passing suite evidence.

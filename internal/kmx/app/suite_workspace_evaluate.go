@@ -77,6 +77,9 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, suiteEvaluationError(ctx, err, false)
 	}
+	if suite.Runtime.ID != "orka" && suite.Runtime.ID != "kagent" {
+		return nil, errors.New("unsupported native suite runtime for evaluation")
+	}
 	var bindings *suiteKagentBindingSnapshot
 	if suite.Runtime.ID == "kagent" {
 		if opt.Bindings == "" || opt.ResultPort != "" {
@@ -159,7 +162,7 @@ func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 			}
 		}
 	}()
-	if p == nil || p.output == nil || p.started || a.Cfg == nil || a.Run == nil || a.Cfg.KubeContext != p.options.ToContext {
+	if p == nil || p.suite == nil || (p.suite.Runtime.ID != "orka" && p.suite.Runtime.ID != "kagent") || p.output == nil || p.started || a.Cfg == nil || a.Run == nil || a.Cfg.KubeContext != p.options.ToContext {
 		return errSuiteNativeEvaluation
 	}
 	p.started = true

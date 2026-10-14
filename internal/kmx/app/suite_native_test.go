@@ -120,7 +120,7 @@ func nativeFixture(t *testing.T, profiles ...workspace.RuntimeProfile) (*App, *w
 }
 
 func TestSuiteNativeRefusesUnsupportedRuntimeBeforeOrkaEffects(t *testing.T) {
-	for _, profile := range []workspace.RuntimeProfile{{ID: "kagent", Version: "v0.10.3", Engine: "go"}, {}} {
+	for _, profile := range []workspace.RuntimeProfile{{ID: "kagent", Version: "v0.10.3", Engine: "go"}, {ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}, {}} {
 		t.Run(profile.ID, func(t *testing.T) {
 			a, suite, f := nativeFixture(t, workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"})
 			suite.Runtime = profile

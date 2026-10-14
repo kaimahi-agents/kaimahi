@@ -3,7 +3,10 @@
 A workspace is editable source. Its prepared AgentSuite is an immutable OCI
 artifact, identified by its manifest digest. Native Orka and exact-v0.10.3 Go
 kagent declarations require no member images; authoring and publication do not contact Kubernetes,
-run a model or invoke Docker/buildx.
+run a model or invoke Docker/buildx. The pinned AgentSessions chat profile also
+supports offline authoring, preparation, loading and ordinary unevaluated push
+with no member image. It does not yet support suite eval, evaluated push, Lift,
+chat or status; Orka/kagent operational consumers refuse it.
 
 **Implemented:** offline creation, preparation and publication, and full-inventory
 native Orka or exact kagent v0.10.3 Go/linux-amd64 evaluation of one tool-free
@@ -65,6 +68,26 @@ profile explicitly; Python and unsupported/contradictory declarations refuse.
 These selectors do not change the `--live --runtime kagent` v0.10.2 path.
 Missing runtime in existing source stays historical Orka only; push/load derive
 the packaged runtime, not a live target.
+
+To author the offline AgentSessions chat profile in a separate workspace:
+
+```sh
+kmx create greeter --workspace ./sessions-workspace --runtime agentsessions \
+  --model fixture-model --instructions ./instructions.md
+kmx push --workspace ./sessions-workspace --to-layout ./sessions-layout greeter:v1
+```
+
+This fixes `runtime.version` to upstream commit
+`ca85f47a2ec17ca6e16029cfa69419cfe29442b3` and `runtime.engine` to `chat`.
+Optional `--runtime-version` accepts only that full commit; `--kagent-runtime`
+and `--live --runtime agentsessions` refuse. The closed private
+`metadata/kmx/native-agentsessions.json` binds the runtime/config contract,
+member identities and complete ordered raw case inventory in manifest S.
+The public graph digest alone does not identify execution semantics. The
+build profile remains inert; `requiredImages` is explicitly empty. No host,
+journal, model endpoint, credential or passing evidence is packaged or contacted.
+The Go SDK pin includes upstream #120 and #124, but does not establish live
+host qualification. Existing Orka/kagent evidence cannot authorize this profile.
 
 `--instructions` names a file, not inline text. Its nonblank bytes are copied
 unchanged into the member. `--description` is optional and single-line.

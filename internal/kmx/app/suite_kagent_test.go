@@ -80,6 +80,9 @@ func TestSuiteKagentPrepareRefusesUnsupported(t *testing.T) {
 	}{
 		{"provider", "", func(_ *workspace.NativeSuite, b *agentruntime.KagentBindings) { b.ModelConfig.Provider = "anthropic" }},
 		{"profile", "", func(s *workspace.NativeSuite, _ *agentruntime.KagentBindings) { s.Runtime.Version = "v0.10.2" }},
+		{"agentsessions", "", func(s *workspace.NativeSuite, _ *agentruntime.KagentBindings) {
+			s.Runtime = workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}
+		}},
 		{"renderer", "", func(s *workspace.NativeSuite, _ *agentruntime.KagentBindings) { s.RendererVersion = "other" }},
 		{"images", "", func(s *workspace.NativeSuite, _ *agentruntime.KagentBindings) { s.RequiredImages = []string{"image"} }},
 		{"nil-images", "", func(s *workspace.NativeSuite, _ *agentruntime.KagentBindings) { s.RequiredImages = nil }},
