@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Native qualification in the existing exclusively owned Orka CI cluster."""
+import base64
 import contextlib
 import copy
 import hashlib
@@ -310,7 +311,8 @@ class Qualification:
         self.promotion_context = promotion_context
         self.repo = pathlib.Path(__file__).resolve().parents[2]
         self.kmx, self.kubectl = str(self.repo / "bin/kmx"), shutil.which("kubectl")
-        require(self.kubectl and pathlib.Path(self.kmx).is_file(), "tools")
+        require(self.kubectl and pathlib.Path(self.kmx).is_file() and
+                (not promotion_context or (self.repo / "bin/orka-native-reference").is_file()), "tools")
         self.env = {k: os.environ[k] for k in ("PATH", "TMPDIR", "RUNNER_TEMP") if k in os.environ}
         self.env.update(KUBECONFIG=str(kubeconfig), HOME=str(self.work / "home"), KMX_HOME=str(self.work / "kmx-home"),
                         KUBECACHEDIR=str(self.work / "kube-cache"), KMX_TOOLCHAIN="off", NO_COLOR="1", KAIMAHI_CONFIRM=context,
@@ -674,15 +676,20 @@ class Qualification:
         controller = self.get("deployment", "orka-api-controller")
         subject["Runtime"] = observed_runtime(controller, self.get("serviceaccount", "orka-api-ai-worker"))
         subject["BindingDigest"] = native_digest("kmx.native-orka.binding/v1", {k: subject[k] for k in ("Model", "RequiredImages", "Binding", "Runtime")})
-        instructions, rendered = self.work / "reference-instructions.txt", self.work / (inference + "-reference-render.yaml")
-        instructions.write_text(source_pair["Agent"]["spec"]["systemPrompt"]["inline"])
-        description = source_pair["Agent"]["metadata"].get("annotations", {}).get("kaimahi.dev/description", "")
+        # The same pure native scaffold renders the reference without a retired
+        # CLI route, cluster I/O, persistent bundle or competing placement engine.
+        reference = {"Name": subject["Member"], "Namespace": "orka-system", "Model": subject["Model"],
+                     "ProviderType": "openai", "BaseURL": bound["BaseURL"], "SecretName": bound["SecretName"],
+                     "SecretKey": bound["SecretKey"], "Instructions": source_pair["Agent"]["spec"]["systemPrompt"]["inline"],
+                     "Description": source_pair["Agent"]["metadata"].get("annotations", {}).get("kaimahi.dev/description", "")}
         start = len(self.frames())
-        self.cli("--context", self.context, "create", "--live", subject["Member"], "--namespace", "orka-system", "--model", subject["Model"],
-                 "--provider-type", "openai", "--base-url", bound["BaseURL"], "--secret", bound["SecretName"], "--secret-key", bound["SecretKey"],
-                 "--instructions", instructions, "--description", description, "--no-apply", "--out", rendered, "--bundle-path", self.work / (inference + "-reference-bundle"))
+        result = self.command([self.repo / "bin/orka-native-reference"],
+                              raw=canonical(reference), timeout=60)
+        require(result.returncode == 0, "promote-reference-render")
         require(len(self.frames()) == start, "promote-reference-cluster-io")
-        documents = re.split(b"^---\\n", rendered.read_bytes(), flags=re.MULTILINE)[1:]
+        encoded = json.loads(result.stdout)
+        require(isinstance(encoded, list) and len(encoded) == 3, "promote-reference-documents")
+        documents = [base64.b64decode(raw, validate=True) for raw in encoded]
         parsed = [yaml.safe_load(raw) for raw in documents]
         require([doc["kind"] for doc in parsed] == ["Secret", "Provider", "Agent"], "promote-reference-documents")
         specs = {doc["kind"]: doc["spec"] for doc in parsed[1:]}

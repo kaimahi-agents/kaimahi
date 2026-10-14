@@ -80,10 +80,20 @@ func compiledTargets() []TargetInfo {
 			QualifiedVersions: []TargetQualification{{Version: "v0.10.3", Scope: "exact Go-only native suite create/eval and immutable digest lift", Evidence: "compiled exact pins; fresh attributable A2A evaluation; readiness is not execution proof"}},
 			Capabilities:      nativeTargetCapabilities(agentruntime.Kagent),
 			Detection:         TargetDetection{State: "not-probed", Scope: "explicit version-qualified native suite commands only", Detail: "no Kagent discovery; native suite requires exact v0.10.3 Go"}},
-		{ID: "agentsessions", DisplayName: "agentsessions", Kind: "integration", SupportTier: "export-only",
-			QualifiedVersions: []TargetQualification{{Version: agentsessions.ReferenceRevision, Scope: "reference export only; not an execution runtime or the remote host version", Evidence: "pinned Go module; reference export tests"}},
-			Capabilities:      []TargetCapability{{Operation: "export", Supported: true, Reason: "eval --from-sessions exports reference cases only; no execution, registration or lift gate"}},
-			Detection:         TargetDetection{State: "not-probed", Scope: "Sessions API only", Detail: "use --sessions host:port; HarnessRegistry is not probed or qualified"}},
+		{ID: "agentsessions", DisplayName: "agentsessions", Kind: "integration", SupportTier: "development-only",
+			QualifiedVersions: []TargetQualification{{Version: agentsessions.ReferenceRevision, Scope: "pinned chat suite authoring and explicit development-host evaluation; not remote host attestation", Evidence: "pinned Go module; full-pass packaged chat evidence and reference export tests"}},
+			Capabilities: []TargetCapability{
+				{Operation: "create", Supported: true, Reason: "offline pinned chat suite authoring"},
+				{Operation: "eval", Supported: true, Reason: "explicit private literal-loopback development host; tool-free unauthenticated one-shot execution"},
+				{Operation: "push", Supported: true, Reason: "ordinary transfer or exact-S full-passing development evidence; no deployment"},
+				{Operation: "export", Supported: true, Reason: "eval from-sessions exports reference cases separately; no recorded-manifest execution"},
+				{Operation: "lift", Reason: "development evidence cannot authorize remote placement"},
+				{Operation: "chat", Reason: "no standalone AgentSessions chat"},
+				{Operation: "run", Reason: "no standalone AgentSessions run"},
+				{Operation: "inspect", Reason: "no AgentSessions live inspection"},
+				{Operation: "diff", Reason: "development AgentSessions receipts are refused by eval diff"},
+			},
+			Detection: TargetDetection{State: "not-probed", Scope: "Sessions API only", Detail: "use --sessions host:port; HarnessRegistry is not probed or qualified"}},
 	}
 	return rows
 }

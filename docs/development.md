@@ -75,8 +75,9 @@ a scalar qualification report are uploaded. A successful run qualifies the fixed
 two-case native workspace scenario; hermetic tests alone do not establish runtime
 execution. Root digest Lift separately consumes the private passing receipt for
 deploy-only packaged Orka/kagent placement. The fixed Orka qualifier proves exact
-registry/local-layout reuse with source withheld, but not promotion, absent CLI
-creation or partial outcomes. The kagent qualifier proves source-free Lift into a
+registry/local-layout reuse with source withheld and bounded registry promotion
+into an absent pair on a second owned cluster, followed by a fresh destination
+Task. It does not qualify every creation, promotion or partial-outcome path. The kagent qualifier proves source-free Lift into a
 fresh namespace and occupied repeat refusal without additional native execution.
 Standalone packaged evaluation is unavailable.
 
@@ -210,9 +211,12 @@ Orka runtime and stock Helm scenarios use raw upstream fixtures and independent
 `run --agent` Task/model-answer proofs. The Orka suite qualifier separately
 covers actual native create, full two-case eval, evaluated push and source-withheld
 exact-digest Lift with exact observed reuse, private captures and metadata-only
-artifacts. It reads the existing evaluation Task result, not a separate answer
-Task or raw direct invocation of the suite-owned Agent. It performs no evaluation
-retry and does not qualify every promotion, absent creation or partial path.
+artifacts. Registry/local exact-reuse and bounded absent-pair registry promotion
+include fresh answer Tasks with UID/count attribution. Promotion retains source-only
+evidence, GET-only plans, reviewed Apply/Verify, full placement readback and a
+no-effect model-mismatch refusal. Its offline reference uses the shared native
+scaffold, not removed live-create flags. Evaluation is not retried; broader
+promotion, absent creation and partial paths remain unqualified.
 Quickstart independently verifies placement before its separate fresh answer Task.
 
 The checkout-only [kagent qualification shell](../scripts/ci/kagent-lift.sh)

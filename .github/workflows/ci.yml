@@ -133,6 +133,9 @@ jobs:
         run: |
           python3 scripts/test_orka_runtime_fixture.py
           python3 scripts/test_bundle_retirement_ci.py
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: kagent bootstrap, qualification and deterministic fixture self-tests
         run: |
           python3 scripts/test_kagent_lift.py
@@ -144,6 +147,7 @@ jobs:
           python3 scripts/test_kagent_lift_ci.py
           python3 scripts/test_suite_native.py
           python3 scripts/test_suite_native_lift.py
+          python3 scripts/test_orka_native_reference.py
           python3 scripts/test_suite_kagent.py
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
@@ -1100,6 +1104,7 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
+          go build -o bin/orka-native-reference ./scripts/ci/orka-native-reference.go
       - name: Configure CI registry mirrors
         if: steps.changes.outputs.docs_only != 'true'
         run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup

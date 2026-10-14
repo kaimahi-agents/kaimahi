@@ -227,8 +227,8 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	if err := session.probe(execCtx, namespace, taskName); err != nil {
 		return err
 	}
-	// Session setup can outlive an Agent replacement or a metadata-only
-	// ownership change. Recheck the live identity immediately before mutation.
+	// Session setup can outlive an Agent replacement or revision. Recheck
+	// UID, generation and current-generation readiness before Task creation.
 	latestRaw, err := worker.orkaCapture(execCtx, nil, "-n", namespace, "get", orkaPlural("Agent"), name, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
 		return fmt.Errorf("cannot recheck Agent %s/%s: %w", namespace, name, err)

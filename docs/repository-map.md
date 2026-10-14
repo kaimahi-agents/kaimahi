@@ -52,7 +52,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `pkg/` | — | — | experimental KMX environment setup, AgentSuite and deployment contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
-| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 57 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
+| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 59 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
 | `docs/` | 35 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -60,7 +60,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (38 files) | **Installed** | Root native workspace create/eval/push/digest Lift, Orka install/status/show/list, independent live `run --agent`/chat and Task results, quickstart/native console creation, context/local and hidden AKS setup/teardown, read-only targets, public suite validation/diff/build/push/pull. Eval diff reads only strict full-passing native Orka/kagent suite receipts; pinned AgentSessions native authoring/development eval and exact-S evaluated push remain independent of deleted bundle evaluation, with no cluster settings, auth or remote lifecycle; from-sessions exports private references only. Removed bundle/live-create routes are unknown; interactive Lift only prints the move notice. |
+| `cmd/kmx` (39 files) | **Installed** | Root native workspace create/eval/push/digest Lift, Orka install/status/show/list, independent live `run --agent`/chat and Task results, quickstart/native console creation, context/local and hidden AKS setup/teardown, read-only targets, public suite validation/diff/build/push/pull. Eval diff reads only strict full-passing native Orka/kagent suite receipts; pinned AgentSessions native authoring/development eval and exact-S evaluated push remain independent of deleted bundle evaluation, with no cluster settings, auth or remote lifecycle; from-sessions exports private references only. Removed bundle/live-create routes are unknown; interactive Lift only prints the move notice. |
 
 ## `agentsuite/` — public specification package
 
@@ -185,9 +185,9 @@ Packaging tests require every retained asset to be readable and reject retired
 plane, egress and observability assets. Setup does not deploy a model plane,
 custom scrape configuration or workbook.
 
-## `scripts/` — 61 tracked files, native helpers and scaffolding
+## `scripts/` — 63 tracked files, native helpers and scaffolding
 
-**Reference coverage:** 51 of the 61 are named by something outside themselves,
+**Reference coverage:** 53 of the 63 are named by something outside themselves,
 and 10 are named by nothing. The ten mutation specifications are discovered by
 glob. Map and repository-map checker mentions are not caller evidence; textual
 references, including script cross-references and test data, are not necessarily
@@ -198,8 +198,8 @@ invocations or active CI coverage.
 | Class | Count | Files |
 |---|---|---|
 | **Embedded packaging** — native provisioning, guard and Tool helpers | 4 | `aks-up.sh`, `aks-down.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
-| **Scaffolding** — checkers, self-tests and release packaging | 32 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py`, `test_kagent_lift_qualification.py`, `test_kagent_lift_audit.py`, `test_kagent_lift_qualify.py`, `test_kagent_lift_ci.py`, `test_suite_native.py`, `test_suite_native_lift.py`, `test_suite_kagent.py`, `test_orka_runtime_fixture.py`, `test_bundle_retirement_ci.py` |
-| **Scaffolding** — native/eval CI and qualification fixtures | 14 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py`, `kagent-lift.sh`, `kagent-lift.py`, `kagent-lift-fixture.py`, `kagent-lift-audit.py`, `suite-native.py`, `suite-native-audit.py`, `native-suite-model.yaml`, `suite-kagent.py`, `orka-runtime-fixture.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 33 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py`, `test_kagent_lift_qualification.py`, `test_kagent_lift_audit.py`, `test_kagent_lift_qualify.py`, `test_kagent_lift_ci.py`, `test_suite_native.py`, `test_suite_native_lift.py`, `test_suite_kagent.py`, `test_orka_runtime_fixture.py`, `test_bundle_retirement_ci.py`, `test_orka_native_reference.py` |
+| **Scaffolding** — native/eval CI and qualification fixtures | 15 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py`, `kagent-lift.sh`, `kagent-lift.py`, `kagent-lift-fixture.py`, `kagent-lift-audit.py`, `suite-native.py`, `suite-native-audit.py`, `native-suite-model.yaml`, `suite-kagent.py`, `orka-runtime-fixture.py`, `orka-native-reference.go` |
 | **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
 | **Scaffolding** — retired-command scanner's exact inert exceptions | 1 | `legacy-runtime-allowlist.json` |
 
@@ -239,10 +239,13 @@ needed before claiming retirement qualification.
 `scripts/ci/suite-native.py` runs in the exclusively owned Orka shard after
 raw upstream Tool/Task/model-answer proof. It covers actual native create/full
 two-case eval/evaluated publication/exact-S source-withheld digest Lift reuse,
-private captures and payload-free artifacts. It reads an existing evaluation
-Task result, not a separate answer Task or raw suite-owned invocation. Evaluation
-is not retried; broader promotion/absent creation/partial outcomes stay outside
-this fixed scope. Existing cluster deletion owns cleanup.
+private captures and payload-free artifacts. Exact-reuse and bounded absent-pair
+registry promotion include fresh answer Tasks. Promotion uses source-only evidence,
+GET-only plans, reviewed Apply/Verify and independent placement readback; its
+reference rendering uses the shared native scaffold through the checkout-only
+`orka-native-reference.go` helper. Evaluation is not retried; broader promotion,
+creation and partial outcomes stay outside this fixed scope. Existing cluster
+deletion owns cleanup.
 
 `scripts/ci/suite-native.py` is called by the existing `e2e-orka-runtime`
 shard after its legacy Ollama proof. It creates the fixed `native-suite-model.yaml`
