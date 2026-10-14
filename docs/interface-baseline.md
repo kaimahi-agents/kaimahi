@@ -91,8 +91,9 @@ Live create/previews/wizard are removed; their flags are unknown before config.
 Root eval runs full native authored cases only: Orka uses `--inference`, kagent
 uses `--bindings`; pinned AgentSessions chat instead requires a private
 `--development-host FILE`, with no cluster selectors or fallback. All export only
-runtime-specific full-passing evidence. No judge, subset, recorded Sessions input
-or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
+runtime-specific full-passing evidence. Orka/kagent support authored `llmJudge`
+with explicit judge transport and identity; AgentSessions judging remains refused.
+No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
 AgentSessions evidence is explicitly refused by diff and Lift;
 `eval from-sessions` is reference extraction/export without a native consumer.
 Suite-owned live resources refuse legacy invocation. Chat `/lift` and console
