@@ -23,12 +23,13 @@ import (
 // their existing fixtures, including real private state and pinned HTTP socket.
 func nativeEvaluationFixture(t *testing.T) (*App, *suiteNativePlacement, suitePassingInventoryCase, *evalFixture) {
 	t.Helper()
-	a, _, p, _ := nativePlacementFixture(t)
+	a, reads, p, _ := nativePlacementFixture(t)
 	placement, err := a.placeSuiteNative(t.Context(), p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	f := newEvalFixture(t, nil)
+	f.nativeReads = reads
 	capture := a.captureCommand
 	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
 		args := cmd.Args

@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -46,24 +45,6 @@ type consoleInferencePane struct {
 	azureAvailable                                                   bool
 	azureChoices                                                     []consoleAzureChoice
 	azureSubscription, azureTenant, azureResourceGroup, azureAccount string
-}
-
-func (m agentTUIModel) openInference() (tea.Model, tea.Cmd) {
-	agent := m.selected()
-	if agent == nil || agent.External {
-		return m, nil
-	}
-	p := &consoleInferencePane{env: m.columns[m.focus].Env, agent: *agent, stage: "loading"}
-	_, azErr := exec.LookPath("az")
-	p.azureAvailable = azErr == nil
-	m.inference = p
-	if m.opt.Demo {
-		p.stage = "sources"
-		p.snapshot = consoleInferenceSnapshot{Server: "demo", Version: "demo", Sources: []consoleInferenceSource{{Kind: "cluster", Name: "demo-provider", Model: agent.Model, Provider: "openai"}}}
-		return m, nil
-	}
-	load := m.loadInference
-	return m, tea.Batch(quickstartTick(), func() tea.Msg { snapshot, err := load(p.env, p.agent); return consoleInferenceLoaded{p, snapshot, err} })
 }
 
 func (p *consoleInferencePane) sourceKinds() []string {

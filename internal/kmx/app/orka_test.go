@@ -71,6 +71,11 @@ case "$*" in
       absent) printf 'Error from server (NotFound): services "ollama" not found\n' >&2; exit 1 ;;
       *) printf 'service/ollama\n'; exit 0 ;;
     esac ;;
+  *"create --validate=strict -f - -o json"*)
+    cat >> "$KMX_TEST_STDIN"
+    printf '\nkind: Provider\n' >> "$KMX_TEST_STDIN"
+    printf '{"kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":1}}'
+    exit 0 ;;
   *"get providers.core.orka.ai local --ignore-not-found=true -o json"*|*"get providers.core.orka.ai local -o json"*)
     [ -f "$KMX_TEST_STDIN" ] || exit 0
     grep -q 'kind: Provider' "$KMX_TEST_STDIN" || exit 0
@@ -1363,8 +1368,7 @@ func TestEveryPathWritesTheSameResultReaderGrant(t *testing.T) {
 	}
 
 	wizard := newOrkaFixture(t, installer)
-	// The wizard installs the quickstart Tool, whose grant must target the
-	// chart controller's verified AI worker rather than an inferred name.
+	// Runtime setup supplies the same result-reader grant for suite evaluation.
 	t.Setenv("KMX_TEST_DEPLOY_JSON", `{"items":[`+workerController(orkaChartController, "orka-0.2.0", "orka-api", "Helm", `["--ai-worker-service-account-name=orka-api-ai-worker"]`)+`]}`)
 	t.Setenv("KMX_TEST_WORKER_ACCOUNTS", `{"items":[`+workerAccount("orka-api-ai-worker", OrkaNamespace, "orka-0.2.0", "orka-api", "ai")+`]}`)
 	t.Setenv("KMX_TEST_SAR_ALLOW", "1")

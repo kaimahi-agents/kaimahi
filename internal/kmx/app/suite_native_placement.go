@@ -32,6 +32,12 @@ func sameSuiteNativeDecision(before, fresh orkaReconcileCheck) bool {
 }
 
 func (a *App) placeSuiteNative(ctx context.Context, p *suiteNativePrepared) (*suiteNativePlacement, error) {
+	return a.placeSuiteNativeMode(ctx, p, false)
+}
+
+// Convenience callers may not repair operator drift while obtaining evidence.
+// General eval retains its explicitly authorized revision-update behavior.
+func (a *App) placeSuiteNativeMode(ctx context.Context, p *suiteNativePrepared, strictReuse bool) (*suiteNativePlacement, error) {
 	if p == nil {
 		return nil, fmt.Errorf("native prepared input required")
 	}
@@ -48,7 +54,12 @@ func (a *App) placeSuiteNative(ctx context.Context, p *suiteNativePrepared) (*su
 	if err != nil {
 		return nil, err
 	}
-	if err := a.guardOrkaMutation(ctx, CreateOptions{Name: p.Subject.Member, Namespace: ns}, "create or update owned native suite Provider and Agent in "+ns); err != nil {
+	for _, check := range reviewed {
+		if err := checkSuiteNativeReuse(check, strictReuse); err != nil {
+			return nil, err
+		}
+	}
+	if err := a.guardOrkaMutation(ctx, CreateOptions{Name: p.Subject.Member, Namespace: ns}, "place owned native suite Provider and Agent in "+ns); err != nil {
 		return nil, err
 	}
 	if err := a.verifySuiteNativeInputs(ctx, p.Subject); err != nil {
@@ -59,6 +70,9 @@ func (a *App) placeSuiteNative(ctx context.Context, p *suiteNativePrepared) (*su
 		return nil, err
 	}
 	for i := range reviewed {
+		if err := checkSuiteNativeReuse(current[i], strictReuse); err != nil {
+			return nil, err
+		}
 		if !sameSuiteNativeDecision(reviewed[i], current[i]) {
 			return nil, fmt.Errorf("native pair changed after review")
 		}
@@ -71,6 +85,9 @@ func (a *App) placeSuiteNative(ctx context.Context, p *suiteNativePrepared) (*su
 		}
 		fresh, err := a.inspectOrkaPlacement(ctx, ns, doc, identity)
 		if err != nil {
+			return nil, err
+		}
+		if err := checkSuiteNativeReuse(fresh, strictReuse); err != nil {
 			return nil, err
 		}
 		if !sameSuiteNativeDecision(current[i], fresh) {
@@ -105,6 +122,23 @@ func (a *App) placeSuiteNative(ctx context.Context, p *suiteNativePrepared) (*su
 		return nil, err
 	}
 	return placement, nil
+}
+
+// Only this payload-free placement refusal may cross the evaluation diagnostic
+// boundary. Subprocess errors and authored/model content remain suppressed.
+type suiteNativeReuseRefusal struct{ kind, name string }
+
+func (e *suiteNativeReuseRefusal) Error() string {
+	return fmt.Sprintf("native placement refused: %s/%s differs from the reviewed suite; edit source, then eval, push and lift explicitly instead of repairing live drift; resources may remain; no retry or cleanup", safeTerminal(e.kind), safeTerminal(e.name))
+}
+
+func (*suiteNativeReuseRefusal) Unwrap() error { return errSuiteNativeEvaluation }
+
+func checkSuiteNativeReuse(check orkaReconcileCheck, strict bool) error {
+	if strict && (check.markerRefresh || check.outcome != agentruntime.ResourceCreated && check.outcome != agentruntime.ResourceReused) {
+		return &suiteNativeReuseRefusal{check.id.Kind, check.id.Name}
+	}
+	return nil
 }
 
 func (a *App) verifySuiteNative(ctx context.Context, p *suiteNativePlacement) error {

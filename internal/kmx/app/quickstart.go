@@ -19,7 +19,7 @@ import (
 // quickstart deploys one known bundle and then asks THAT agent the question.
 // A name that could differ from the thing being deployed would let the
 // command answer about something it did not create. Authoring your own is
-// `kmx create --live`; asking any agent anything is `kmx chat`.
+// offline `kmx create`; asking any agent anything is `kmx chat`.
 const QuickstartAgent = "hello-world-agent"
 
 // QuickstartOptions configure the shortest path to a first answer.
@@ -39,13 +39,17 @@ type QuickstartTool struct {
 // QuickstartResult is what `--output json` prints: enough for an agent in a
 // harness to decide what to do next without parsing prose.
 type QuickstartResult struct {
-	OK       bool   `json:"ok"`
-	Context  string `json:"context"`
-	Cluster  string `json:"cluster"`
-	Agent    string `json:"agent"`
-	Manifest string `json:"manifest"`
-	Question string `json:"question"`
-	Answer   string `json:"answer"`
+	OK          bool   `json:"ok"`
+	Context     string `json:"context"`
+	Cluster     string `json:"cluster"`
+	Agent       string `json:"agent"`
+	Manifest    string `json:"manifest"`
+	SuiteDigest string `json:"suite_digest,omitempty"`
+	Workspace   string `json:"workspace,omitempty"`
+	Layout      string `json:"layout,omitempty"`
+	Evidence    string `json:"evidence,omitempty"`
+	Question    string `json:"question"`
+	Answer      string `json:"answer"`
 	// Governed retains the original boolean wire contract: governance enabled
 	// by this invocation, not an observation of existing cluster governance.
 	// It is always false: quickstart does not enable governance. A rerun may
@@ -81,6 +85,7 @@ type quickstartStep struct {
 // a rerun and is not assessed here.
 func (a *App) Quickstart(opt QuickstartOptions) error {
 	started := a.timeNow()
+	a.quickstartPrepared, a.quickstartPlacement = nil, nil
 	task := opt.Task
 	if task == "" {
 		task = config.DefaultTask
@@ -134,7 +139,10 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	var answer string
 	if err := a.runPhase(phase{current: total, total: total, name: "Ask " + QuickstartAgent + " a question"}, func() error {
 		var err error
-		answer, err = a.quickstartAnswer(task)
+		if a.quickstartPlacement == nil {
+			return fmt.Errorf("quickstart has no successful suite placement; no answer Task sent")
+		}
+		answer, err = a.answerSuitePlacement(a.operationContext(), *a.quickstartPlacement, task)
 		return err
 	}); err != nil {
 		return err
@@ -163,7 +171,7 @@ func (a *App) quickstartSteps() []quickstartStep {
 		{"Deploy Ollama", a.stepOllama},
 		{"Pull model " + a.Cfg.Model, a.stepModel},
 		{"Install Orka " + OrkaVersion, a.stepQuickstartOrka},
-		{"Deploy the " + QuickstartAgent + " agent", a.stepQuickstartAgent},
+		{"Deploy the " + QuickstartAgent + " agent", a.stepQuickstartSuite},
 	}
 }
 
@@ -180,6 +188,11 @@ func (a *App) quickstartResult(question, answer string, started time.Time) Quick
 		Governed:       false,
 		Next:           a.quickstartFollowups(),
 		ElapsedSeconds: a.timeNow().Sub(started).Seconds(),
+	}
+	if a.quickstartPrepared != nil && a.quickstartPlacement != nil {
+		result.SuiteDigest = a.quickstartPlacement.Summary.SuiteDigest
+		result.Workspace, result.Layout, result.Evidence = a.quickstartPrepared.Workspace, a.quickstartPrepared.Layout, a.quickstartPrepared.Evidence
+		result.Manifest = fmt.Sprintf("AgentSuite %s, member %s in %s", result.SuiteDigest, a.quickstartPlacement.Summary.Member, a.quickstartPlacement.Summary.Target.Namespace)
 	}
 	for _, t := range a.provisioned {
 		result.Tools = append(result.Tools, QuickstartTool{Name: t.Name, Version: t.Version, Source: string(t.Source)})
@@ -283,7 +296,7 @@ func (a *App) quickstartAnswer(task string) (string, error) {
 func (a *App) quickstartFollowups() []string {
 	return []string{
 		a.operationCommand("chat", QuickstartAgent, "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
-		a.operationCommand("create", "--live"),
+		a.operationCommand("create", "--help"),
 		a.operationCommand("orka", "status"),
 	}
 }
@@ -293,13 +306,13 @@ func (a *App) quickstartNext(ui cliui.Output, result QuickstartResult) {
 	if ui.Rich() {
 		a.notef("\n%s", ui.Actions("Next", []cliui.Action{
 			{Label: "Ask another question", Command: result.Next[0]},
-			{Label: "Author your own Orka Agent", Command: result.Next[1], Detail: "docs/kmx.md#kmx-create"},
+			{Label: "Author your own suite workspace", Command: result.Next[1], Detail: "docs/kmx.md#kmx-create"},
 			{Label: "Inspect the Orka runtime", Command: result.Next[2], Detail: "what is installed, and what it can resolve"},
 			{Label: "Delete this cluster", Command: down, Detail: "delete the cluster and everything in it"},
 		}))
 	} else {
 		a.notef("\nNEXT  %s  # ask it something else\n"+
-			"      %s  # author your own agent; docs/kmx.md#kmx-create\n"+
+			"      %s  # offline authoring help; docs/kmx.md#kmx-create\n"+
 			"      %s  # what is installed, and what it can resolve\n"+
 			"      %s  # delete the cluster and everything in it", result.Next[0], result.Next[1], result.Next[2], down)
 	}

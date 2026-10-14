@@ -69,7 +69,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   no-name `create --live` is the live Orka wizard. `--runtime kagent` alone authors
   the offline v0.10.3 Go member; live kagent create stays exact v0.10.2. Live-only flags without `--live` refuse before
   configuration or writes; `--workspace` conflicts with `--live`. Quickstart,
-  console and direct App.CreateAgent operations remain live. Preserve
+  and console creation compose authored native-Orka source, complete case review, full eval, exact local publication and reviewed digest lift. Quickstart verifies placement before its separate fresh answer Task; console Ready does not claim an answer. Direct App.CreateAgent remains the legacy live path. Console/chat in-place tools/inference editing refuses with a source → eval → push → lift remedy. Quickstart's automatic Kubernetes tool and host Foundry/Copilot wizard modes are retired; ordinary host-backed chat controls outside that wizard remain separate. Preserve
   PortableAgent formats and old extracted-directory suite transfer; do not treat public graph validation
   as native execution-profile validation. Private packaged-native preparation and
   ownership-safe Provider/Agent placement feed full-workspace root evaluation;
@@ -126,7 +126,14 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   execution stays `bundle evaluate --from-sessions`. Root digest lift consumes
   the explicit private full-passing receipt, without sending evaluation Tasks. The checkout-only native qualifier runs in the existing exclusively owned
   Orka shard, after legacy model proof, with private captures and metadata-only
-  artifacts. A passing run qualifies that fixed workspace scenario; hermetic
+  artifacts. Its second exclusively owned kind cluster has one pinned Orka in
+  orka-system and its own inference Provider/Secret; it shares the source AIKit
+  endpoint through a fixture-only private-network NodePort, never a host mapping
+  or another model workload. Registry --promote qualifies GET-only planning,
+  absent-pair CLI creation, independent destination readback and one fresh Task;
+  model mismatch refuses with zero admission/write/Task attempts. Source evidence
+  is not destination evaluation. Keep the shard's existing timeout budget.
+  A passing run qualifies that fixed workspace scenario; hermetic
   tests alone do not establish runtime/model execution.
   Keep reference manifests private, require named candidate/judge confirmation before recorded-content transfer,
   and suppress answer/reasoning output unless `--show-content` is explicit.

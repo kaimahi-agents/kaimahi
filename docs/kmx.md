@@ -617,7 +617,7 @@ Runtime selection is independent of `--provider-type`, which selects model
 access. Live-only flags without `--live` refuse before configuration or writes;
 `--runtime kagent` alone does not dispatch to live creation. `--live` conflicts
 with `--workspace` and bypasses discovery even below an invalid marker.
-Quickstart and console creation remain live. Help and completion never discover,
+Quickstart creation uses native suite source, full eval, exact local-layout publication and reviewed digest lift. It verifies placement before a separate fresh answer Task. Console creation selects authored source, reviews every case and a named Ready openai Provider, obtains execution consent (typed context for remote targets), then reviews and applies the retained Lift plan. Apply/Verify success means Ready placement, not an answer. Evaluation and partial failures may leave resources; there is no automatic retry or cleanup. In-place Agent tools/inference editing is retired: edit authored source, then eval, push and lift. The quickstart wizard no longer auto-attaches Kubernetes tools or offers host Foundry/Copilot inference. Help and completion never discover,
 prompt, mutate or load operational configuration.
 
 ### Default Orka contract

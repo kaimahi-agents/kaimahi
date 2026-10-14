@@ -112,7 +112,7 @@ A name is required; there is no offline authoring wizard. For the separate live
 Orka wizard use `kmx create --live`. Live creation bypasses workspace discovery,
 even below an invalid marker. `--live --no-apply` and `--live --out -` retain the
 old resource/PortableAgent bundle formats, not this workspace format. Quickstart
-and console creation remain live. See the [live contract](kmx.md#default-orka-contract).
+creation composes fixed source, full eval, exact local publication, reviewed Apply and placement Verify before a fresh requested answer. Console creation selects an already authored native-Orka workspace, reviews instructions, exact model and every case, and selects a named Ready openai Provider. It requires explicit execution consent (typed destination context for remote targets), then reviews the retained exact Lift plan before single-use Apply/Verify. The explicit source root/fingerprint and complete API URI are rechecked; Ready placement is not an answer. Evaluation/partial errors may leave resources, without automatic retry or cleanup. Scaffold arithmetic is not quality proof for arbitrary instructions; author appropriate public cases. See the [live contract](kmx.md#default-orka-contract).
 
 The source consists of `workspace.yaml`, `agents/greeter/member.yaml`, its
 member-relative instruction file, workspace-root `eval/*.yaml`, and a pinned
@@ -239,12 +239,26 @@ and Task attempts, and refuses incomplete/failed requests. Only passing receipt
 metadata and a payload-free qualification report may be uploaded. Runtime/model and
 Kubernetes audit storage can still retain inputs. A successful run qualifies this
 fixed scenario; hermetic tests alone do not establish runtime/model execution.
-This Orka scenario qualifies exact registry/local-layout Lift reuse with source
-withheld. It does not qualify Orka promotion, absent-resource CLI creation or
-partial CLI outcomes. The dedicated kagent shard separately qualifies packaged
-evaluation and source-free digest Lift into a fresh prepared namespace, including
-GET-only planning, ordered creation and occupied repeat refusal without another
-native execution. Standalone package evaluation remains unavailable.
+The same shard also prepares a second exclusively owned kind cluster with the
+same pinned Orka in `orka-system`. It shares the real AIKit model through a
+fixture-only NodePort on the private kind network, without a host port mapping;
+the destination has its own inference Provider and Secret. With source withheld,
+registry `lift --promote --plan` must be GET-only and apply must complete both
+server preflights before beginning creation of an absent Provider/Agent pair.
+Independent destination identity/spec/marker readbacks and one fresh Task with
+authored answer assertions qualify creation and execution. A separate Ready
+Provider declaring a mismatched model must refuse before admission, writes or
+Task attempts, leaving the target empty. That same Provider first passes a
+matching-model plan control; only its model declaration is then changed for the
+refusal. The genuine receipt remains source-only evidence, not destination
+evaluation or independent model-server qualification. No second model workload
+or timeout increase is required. Partial CLI outcomes are not established by
+this fixed scenario.
+
+The dedicated kagent shard separately qualifies packaged evaluation and
+source-free digest Lift into a fresh prepared namespace, including GET-only
+planning, ordered creation and occupied repeat refusal without another native
+execution. Standalone package evaluation remains unavailable.
 
 ## Publish
 

@@ -97,6 +97,9 @@ type App struct {
 	// fixed port so a test can own a listener. Empty in every real
 	// invocation, where the fixed port is the only one.
 	quickstartResultPort string
+	// Only this invocation's successful opaque placement may authorize its answer.
+	quickstartPrepared  *preparedQuickstartSuite
+	quickstartPlacement *ReleaseLiftResult
 }
 
 // New builds an App around the process's own streams.

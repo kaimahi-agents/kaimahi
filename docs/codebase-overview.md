@@ -157,9 +157,11 @@ identity and pinned runtime profile; Orka requires a Ready `openai` Provider,
 while kagent retains the packaged model declaration and exact runtime inventories.
 Evidence proves the source only.
 Created resources need fresh evaluation before later receipt-bound reuse.
-Bounded CI qualifies Orka exact registry/local-layout reuse and kagent
-fresh-target creation/occupied refusal. Orka promotion, absent creation and
-partial CLI outcomes are not established by its fixed reuse scenario.
+Bounded CI qualifies Orka exact registry/local-layout reuse, registry promotion
+into an absent pair on a second owned cluster, and kagent fresh-target
+creation/occupied refusal. The Orka promotion scenario shares a real model
+endpoint and separately checks a fresh Task; source evidence remains source-only.
+Partial CLI outcomes are not established by these fixed scenarios.
 
 ### Legacy PortableAgent path
 

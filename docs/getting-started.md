@@ -113,11 +113,7 @@ kmx quickstart --interactive
 3. After chat connects to the lifted Agent, send a **new message** and check its
    answer. Lift, readiness and connection do not prove that answer.
 
-Setup starts while the form is open. It creates the Task result-reader account
-and RBAC and installs the default read-only Kubernetes inventory tool. Its
-ClusterRole can list the documented resource kinds **across namespaces**.
-Cancelling stops active work but leaves completed resources in place. Review the
-[tool and RBAC boundary](orka-k8s-tool.md) before using a shared cluster.
+Setup waits for a supported local model selection. It creates the Task result-reader account and RBAC, but no longer installs or attaches the Kubernetes inventory tool. Explicit quickstart `--tools` requests refuse; tools return later through suite ToolProviders. Host Foundry/Copilot wizard modes are retired; use an existing Ready destination Orka `openai` Provider serving the suite's exact model for the suite workflow. Cancelling stops active work but leaves completed resources in place.
 
 See [interactive lift](interactive-lift.md) for target discovery and confirmation,
 and the [legacy bundle lifecycle](agent-lift.md) for `kmx bundle lift` and
@@ -203,7 +199,7 @@ and [create safety contract](kmx.md#kmx-create).
 `--live` is mandatory for both runtimes, even with `--no-apply`, `--dry-run` or
 `--out -`; `--runtime kagent` alone never selects live creation. No-name
 `kmx create --live` terminal invocation offers the live Orka wizard. Quickstart
-and console creation remain live, bypassing workspace discovery. `chat` and
+creation uses a fixed native suite, full eval, exact local publication and gated digest lift before a fresh answer. Console creation selects an authored native-Orka workspace for complete source/case review, execution consent, full eval/publication and a separately reviewed Lift Apply/Verify. `chat` and
 `orka list --namespace <ns>` are Orka-only; edit a live Agent with `kubectl edit agents.core.orka.ai`.
 BYO images, model-preset and MCP conversion are not provided.
 

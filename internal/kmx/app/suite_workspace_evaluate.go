@@ -151,7 +151,11 @@ func (a *App) preflightSuiteNativeResults(ctx context.Context, ns string) error 
 
 // EvaluateSuiteWorkspace executes each original ordered case once and publishes
 // only full passing metadata. Late failures leave resources, not recovery state.
-func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) (err error) {
+func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
+	return a.evaluateSuiteWorkspace(ctx, p, false)
+}
+
+func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation, strictReuse bool) (err error) {
 	mayHaveChanged, guardRefusal := false, false
 	defer func() {
 		if err != nil && !guardRefusal {
@@ -192,7 +196,11 @@ func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	if err := worker.preflightSuiteNativeResults(ctx, p.options.ToNamespace); err != nil {
 		return err
 	}
-	action := fmt.Sprintf("create/update owned native suite Provider and Agent and execute %d evaluation Tasks in %s", len(p.inventory), p.options.ToNamespace)
+	placementAction := "create/update"
+	if strictReuse {
+		placementAction = "create or exactly reuse"
+	}
+	action := fmt.Sprintf("%s owned native suite Provider and Agent and execute %d evaluation Tasks in %s", placementAction, len(p.inventory), p.options.ToNamespace)
 	if err := worker.guardOrkaMutation(ctx, CreateOptions{Name: p.suite.MemberID, Namespace: p.options.ToNamespace}, action); err != nil {
 		// This boundary already classifies subprocess/parse diagnostics and
 		// supplies the trusted guard's exact named-confirmation retry advice.
@@ -212,7 +220,7 @@ func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 		return err
 	}
 	mayHaveChanged = true
-	placement, err := worker.placeSuiteNative(ctx, native)
+	placement, err := worker.placeSuiteNativeMode(ctx, native, strictReuse)
 	if err != nil {
 		return err
 	}

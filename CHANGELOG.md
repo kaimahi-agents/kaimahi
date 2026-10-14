@@ -171,6 +171,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- Repeating `kmx local up` after quickstart leaves an already-matching inference Provider and its Secret untouched, avoiding bookkeeping-only resourceVersion changes that invalidate strict suite reuse. Native binding identity still includes resourceVersion. Strict placement refusals retain their safe resource-specific reason without exposing model or subprocess payloads.
+
 - Same-subject native release lift reuses its freshly compared input snapshot
   within each recheck instead of inspecting the same inputs twice. Every
   pre-write boundary and final placement verification still reads the API;
@@ -206,6 +208,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   management ports are removed without compatibility aliases. This does not
   change `kmx local up`, quickstart, local teardown, AgentSuite commands or any
   installed behavior.
+
+- The quickstart wizard no longer installs/auto-attaches the Kubernetes inventory tool or offers host Foundry/Copilot inference. Explicit tool/host requests refuse before setup with a supported Provider/tool-free remedy. Existing-agent selection reconnects without changing tool references. Guided `--skills`, `--out` and `--result-service-account` shortcuts are unsupported; author with `kmx create --workspace DIR` and configure native result access separately.
+- Console creation now selects an authored native-Orka workspace, reviews source/all cases and obtains explicit eval/placement consent, then applies and verifies a separately reviewed exact Lift plan. Console/chat in-place Agent tools/inference editing is retired and refuses without cluster mutation. Default quickstart and `create --live` are not removed by this change.
 
 - Orka chart installs now use `kmx.kaimahi.dev/installed`, matching the KMX
   label/API-group domain. Clusters installed by an older kmx retain
@@ -270,6 +275,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   replacement yet for its removed inspection, registration, teardown or
   recovery APIs; continue using the installed commands or implementation-owned
   operations until those contracts have production evidence.
+
+- Author with `kmx create --workspace DIR`, review/edit member instructions and appropriate public cases, then use `kmx eval` and `kmx push --evaluation FILE`. The console composes that workflow after explicit source/case and destination/Provider review, execution consent and a second retained Lift plan review. Ready means placement, not an answer; late failures may leave resources. Select an existing Ready Orka `openai` Provider serving the exact suite model for native evidence/lift; host Foundry/Copilot execution is not a substitute. Tools return later through suite ToolProviders. Existing resources are not migrated or patched.
 
 - Add `--live` to scripts that create Orka or kagent resources or PortableAgent
   bundles, including native previews. Use `kmx create --live` for the existing

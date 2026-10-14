@@ -62,8 +62,8 @@ type agentTUIModel struct {
 	loadAzureInference                           func(context.Context, string, string, string, string) ([]consoleAzureChoice, error)
 	loadInference                                func(agentTUIEnvironment, agentTUIAgent) (consoleInferenceSnapshot, error)
 	startInference                               func(agentTUIEnvironment, agentTUIAgent, consoleInferenceSnapshot, consoleInferenceSource, string) (<-chan consoleInferenceSaved, context.CancelFunc)
-	loadCreateTarget                             func(agentTUIEnvironment) (string, error)
-	startCreate                                  func(agentTUIEnvironment, string, CreateOptions) (<-chan agentTUICreateResult, context.CancelFunc)
+	startCreate                                  func(agentTUIEnvironment, string, string, *suiteWorkspaceReview) (<-chan agentTUICreateResult, context.CancelFunc)
+	startCreateLift                              func(consoleWorkspaceLiftRequest) (<-chan agentTUICreateResult, context.CancelFunc)
 	bundle                                       *consoleBundlePane
 	loadBundle                                   func(context.Context, agentTUIEnvironment, agentTUIAgent) consoleBundleSnapshot
 	runs                                         *consoleRunsPane
@@ -127,17 +127,7 @@ func (a *App) AgentTUI(opt AgentTUIOptions) error {
 			}()
 			return result, stop
 		}
-		m.loadCreateTarget = func(env agentTUIEnvironment) (string, error) { return a.consoleCreateTarget(ctx, env) }
-		m.startCreate = func(env agentTUIEnvironment, server string, options CreateOptions) (<-chan agentTUICreateResult, context.CancelFunc) {
-			workCtx, stop := context.WithCancel(ctx)
-			result := make(chan agentTUICreateResult, 1)
-			workers.Add(1)
-			go func() {
-				defer workers.Done()
-				result <- agentTUICreateResult{a.consoleCreateAgent(workCtx, env, server, options)}
-			}()
-			return result, stop
-		}
+		a.bindSuiteWorkspaceReviewWorkers(ctx, &m, &workers)
 		m.loadEnvs = func() tea.Msg {
 			envs, err := a.agentTUIEnvironments(ctx)
 			prefs, prefErr := loadLiftPreferences()
@@ -269,7 +259,7 @@ func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch event := msg.(type) {
 		case tea.WindowSizeMsg:
 			m.width, m.height = event.Width, event.Height
-		case agentTUICreateTarget:
+		case agentTUICreateResult:
 			if event.pane != m.creation {
 				return m, nil
 			}
@@ -446,23 +436,13 @@ func (m agentTUIModel) createAgent() (tea.Model, tea.Cmd) {
 		m.status = "Refresh the environment successfully before creating an agent"
 		return m, nil
 	}
-	wizard, err := newCreateWizardModel(CreateOptions{Namespace: valueOr(m.opt.Namespace, OrkaNamespace)})
-	if err != nil {
-		m.status = err.Error()
-		return m, nil
-	}
-	m.creation = &agentTUICreatePane{wizard: wizard, env: c.Env, loading: !m.opt.Demo}
-	var load tea.Cmd
-	if !m.opt.Demo {
-		pane, fetch := m.creation, m.loadCreateTarget
-		load = func() tea.Msg {
-			server, err := fetch(pane.env)
-			return agentTUICreateTarget{server: server, err: err, pane: pane}
-		}
-	} else {
-		m.creation.server = "demo"
-	}
-	return m, tea.Batch(wizard.Init(), quickstartTick(), load)
+	input := textinput.New()
+	input.Prompt = ""
+	input.CharLimit = 4096
+	input.SetWidth(max(1, min(88, m.width-8)-4))
+	input.Focus()
+	m.creation = &agentTUICreatePane{input: input, env: c.Env, namespace: valueOr(m.opt.Namespace, OrkaNamespace), server: c.Env.Server}
+	return m, textinput.Blink
 }
 
 func (m agentTUIModel) updateDetails(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -581,16 +561,9 @@ func (m agentTUIModel) updateActions(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.execute("/chat " + m.agentToken(*a, m.focus))
 	case "L":
 		return m.openCommand("/lift " + m.agentToken(*a, 0) + " ")
-	case "f":
-		return m.openInference()
-	case "t":
-		kind := "tools"
-		if m.opt.Demo {
-			m.status = "DEMO · edit " + kind + " for " + a.Name + " (no action performed)"
-			return m, nil
-		}
-		m.action = &agentTUIAction{kind: kind, agent: *a, source: m.columns[m.focus].Env}
-		return m, tea.Quit
+	case "f", "t":
+		m.status = agentMutationRetirement
+		return m, nil
 	}
 	return m, nil
 }

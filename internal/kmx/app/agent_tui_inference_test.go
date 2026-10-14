@@ -16,96 +16,35 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-func TestConsoleInferenceOverlaySourcesFormsAndDemo(t *testing.T) {
-	for _, kind := range []string{"foundry", "ollama", "copilot", "apikey"} {
+func TestConsoleInferenceMenuRefusesInDemoAndLive(t *testing.T) {
+	for _, demo := range []bool{true, false} {
 		m := newAgentTUIModel(AgentTUIOptions{Demo: true})
+		m.opt.Demo = demo
 		m = tuiKey(m, tea.KeyEnter, "")
 		m = tuiKey(m, 'f', "f")
-		if m.inference == nil || m.action != nil {
-			t.Fatal("inference left console")
-		}
-		view := ansi.Strip(m.View().Content)
-		if strings.Index(view, "Add inference source") < strings.Index(view, "demo-provider") {
-			t.Fatal("add source is not last")
-		}
-		m = tuiKey(m, tea.KeyDown, "")
-		m = tuiKey(m, tea.KeyEnter, "")
-		if m.inference.stage != "kinds" {
-			t.Fatal("add source did not open connector choices")
-		}
-		for i, k := range m.inference.sourceKinds() {
-			if k == kind {
-				m.inference.selection = i
-			}
-		}
-		m = tuiKey(m, tea.KeyEnter, "")
-		values := map[string][]string{
-			"foundry": {"https://example.openai.azure.com", "chat-model", ""},
-			"ollama":  {"http://ollama.ollama.svc.cluster.local:11434", "qwen2.5:3b"},
-			"copilot": {"gpt-4.1"},
-			"apikey":  {"openai", "https://api.example.com/v1", "test-model", "provider-key", "api-key"},
-		}[kind]
-		for _, value := range values {
-			m.inference.fields[m.inference.field].input.SetValue(value)
-			m = tuiKey(m, tea.KeyEnter, "")
-		}
-		if m.inference.stage != "name" || m.inference.fields[0].input.Value() == "" {
-			t.Fatalf("%s must ask for name last", kind)
-		}
-		m = tuiKey(m, tea.KeyEnter, "")
-		if m.inference.stage != "review" {
-			t.Fatalf("%s form: %v", kind, m.inference.err)
+		if m.inference != nil || m.action != nil || !strings.Contains(m.status, "authored member/workspace") {
+			t.Fatalf("editor not retired: %s", m.status)
 		}
 		for _, size := range [][2]int{{64, 18}, {80, 24}, {120, 40}} {
 			m.width, m.height = size[0], size[1]
 			view := m.View().Content
 			if lipgloss.Width(view) > m.width || lipgloss.Height(view) > m.height {
-				t.Fatalf("%s overlay overflow at %v", kind, size)
+				t.Fatalf("refusal overflow at %v", size)
 			}
-		}
-		m = tuiKey(m, tea.KeyDown, "")
-		m = tuiKey(m, tea.KeyEnter, "")
-		if m.inference.stage != "done" || m.action != nil {
-			t.Fatal("demo saved a source")
-		}
-		m = tuiKey(m, tea.KeyEnter, "")
-		if m.inference != nil {
-			t.Fatal("result did not close")
 		}
 	}
 }
 
-func TestConsoleInferenceOverlaySaveCancelAndStaleLoad(t *testing.T) {
+func TestConsoleInferenceLateResultsCannotReopenRetiredEditor(t *testing.T) {
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 	m = tuiKey(m, tea.KeyEnter, "")
 	m = tuiKey(m, 'f', "f")
-	p := m.inference
-	updated, _ := m.Update(consoleInferenceLoaded{pane: &consoleInferencePane{}, err: context.Canceled})
-	m = updated.(agentTUIModel)
-	if p.err != nil {
-		t.Fatal("stale lookup replaced current pane")
-	}
-	p.source = consoleInferenceSource{Kind: "cluster", Name: "selected"}
-	p.stage = "review"
-	p.selection = 1
-	m.opt.Demo = false
-	cancelled := false
-	m.startInference = func(env agentTUIEnvironment, agent agentTUIAgent, snapshot consoleInferenceSnapshot, source consoleInferenceSource, model string) (<-chan consoleInferenceSaved, context.CancelFunc) {
-		if source.Name != "selected" || env.Name != "kind-local-demo" || agent.Name != "assistant" {
-			t.Fatal("save routed incorrectly")
+	for _, msg := range []tea.Msg{consoleInferenceLoaded{pane: &consoleInferencePane{}, err: context.Canceled}, consoleInferenceSaved{err: context.Canceled}} {
+		updated, _ := m.Update(msg)
+		m = updated.(agentTUIModel)
+		if m.inference != nil || m.action != nil || !strings.Contains(m.status, "authored") {
+			t.Fatal("late response reopened a retired editor")
 		}
-		return make(chan consoleInferenceSaved, 1), func() { cancelled = true }
-	}
-	m.loadInventory = func(agentTUIEnvironment) ([]agentTUIAgent, error) { return nil, nil }
-	m = tuiKey(m, tea.KeyEnter, "")
-	m = tuiKey(m, tea.KeyEsc, "")
-	if !cancelled || p.stage != "saving" {
-		t.Fatal("cancellation closed before worker joined")
-	}
-	updated, _ = m.Update(consoleInferenceSaved{err: context.Canceled})
-	m = updated.(agentTUIModel)
-	if p.stage != "done" {
-		t.Fatal("save result lost")
 	}
 }
 
@@ -183,41 +122,22 @@ esac`)
 	}
 }
 
-func TestConsoleInferenceAzureDiscoveryAndFinalName(t *testing.T) {
+func TestConsoleInferenceRefusalDoesNotStartAzureDiscovery(t *testing.T) {
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
-	m = tuiKey(m, tea.KeyEnter, "")
-	m = tuiKey(m, 'f', "f")
-	p := m.inference
-	p.azureAvailable = false
-	if strings.Contains(strings.Join(p.sourceKinds(), ","), "azure") {
-		t.Fatal("Azure offered without CLI")
+	m.opt.Demo = false
+	m.loadAzureInference = func(context.Context, string, string, string, string) ([]consoleAzureChoice, error) {
+		t.Fatal("retired editor started Azure discovery")
+		return nil, nil
 	}
-	p.azureAvailable = true
-	p.stage = "kinds"
-	p.selection = 0
-	if p.sourceKinds()[0] != "azure" {
-		t.Fatal("Azure discovery missing")
-	}
-	for _, stage := range []string{"azure-subscriptions", "azure-accounts", "azure-deployments"} {
-		updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-		m = updated.(agentTUIModel)
-		if m.inference.stage != "azure-loading" || cmd == nil {
-			t.Fatal("Azure selection did not discover next stage")
-		}
-		updated, _ = m.Update(cmd())
-		m = updated.(agentTUIModel)
-		if m.inference.stage != stage {
-			t.Fatalf("stage=%s want=%s", m.inference.stage, stage)
-		}
+	m.loadInference = func(agentTUIEnvironment, agentTUIAgent) (consoleInferenceSnapshot, error) {
+		t.Fatal("retired editor started live reads")
+		return consoleInferenceSnapshot{}, nil
 	}
 	m = tuiKey(m, tea.KeyEnter, "")
-	if p.stage != "name" || p.fields[0].input.Value() != "foundry-chat-model" {
-		t.Fatalf("name step=%s value=%s", p.stage, p.fields[0].input.Value())
-	}
-	p.fields[0].input.SetValue("my-foundry")
-	m = tuiKey(m, tea.KeyEnter, "")
-	if p.stage != "review" || p.source.Name != "my-foundry" || p.source.Endpoint != "https://example.openai.azure.com" {
-		t.Fatalf("source=%+v", p.source)
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	m = updated.(agentTUIModel)
+	if cmd != nil || m.inference != nil || m.action != nil || !strings.Contains(m.status, "eval") {
+		t.Fatalf("retired inference action started work: %s", m.status)
 	}
 }
 
@@ -335,7 +255,7 @@ func TestConsoleRemoteInferenceNeverOffersOrLoadsHostSources(t *testing.T) {
 		t.Fatal("remote host override saved")
 	}
 	a := &App{}
-	if err := a.consoleSaveInference(t.Context(), env, agent, consoleInferenceSnapshot{}, source, ""); err == nil || !strings.Contains(err.Error(), "remote environments") {
+	if err := a.consoleSaveInference(t.Context(), env, agent, consoleInferenceSnapshot{}, source, ""); err == nil || !strings.Contains(err.Error(), "authored member/workspace") {
 		t.Fatalf("host save not rejected before auth: %v", err)
 	}
 }
