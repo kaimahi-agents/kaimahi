@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -22,6 +23,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // A real pinned Sessions service and chat harness exercise config/journal semantics;
@@ -174,6 +177,32 @@ func TestSuiteSessionsEvaluationStopsWithoutExport(t *testing.T) {
 				t.Fatal("later case ran after failure", calls.Load())
 			}
 		})
+	}
+}
+
+type suiteSessionsCauseWriter struct{ cause error }
+
+func (w suiteSessionsCauseWriter) Write([]byte) (int, error) { return 0, w.cause }
+
+func TestSuiteSessionsFailurePreservesCauseWithoutPrintingPayload(t *testing.T) {
+	a, opt, calls := suiteSessionsEvaluationFixture(t)
+	p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	sentinel := errors.New("PRIVATE_FAILURE_CANARY")
+	cause := errors.Join(sentinel, status.Error(codes.DeadlineExceeded, "PRIVATE_FAILURE_CANARY"))
+	a.Err = suiteSessionsCauseWriter{cause}
+	err = a.EvaluateSuiteWorkspace(t.Context(), p)
+	if !errors.Is(err, sentinel) || status.Code(err) != codes.DeadlineExceeded || strings.Contains(err.Error(), "PRIVATE_FAILURE_CANARY") {
+		t.Fatalf("failure lost cause/status or exposed payload: %v", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatal("warning failure reached model")
+	}
+	if _, err := os.Stat(opt.Out); !os.IsNotExist(err) {
+		t.Fatal("warning failure exported proof")
 	}
 }
 

@@ -67,12 +67,21 @@ func (s *suiteSessionsHostSnapshot) recheck(suite *workspace.NativeSuite) error 
 	return nil
 }
 
+// Retain typed causes for callers without printing untrusted source, writer or
+// remote diagnostics through the CLI's ordinary error formatting.
+type suiteSessionsEvaluationError struct{ cause error }
+
+func (e *suiteSessionsEvaluationError) Error() string {
+	return "agentsessions suite evaluation did not pass; Sessions may remain, no automatic retry or cleanup"
+}
+func (e *suiteSessionsEvaluationError) Unwrap() error { return e.cause }
+
 // Development selection is explicit consent to retained journal content and model
 // execution on an operator-owned host, not a registry placement or auth fallback.
 func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) (err error) {
 	defer func() {
 		if err != nil {
-			err = errors.Join(errors.New("agentsessions suite evaluation did not pass; Sessions may remain, no automatic retry or cleanup"), ctx.Err())
+			err = &suiteSessionsEvaluationError{cause: errors.Join(err, ctx.Err())}
 		}
 	}()
 	if p == nil || p.suite == nil || p.output == nil || p.started || p.sessions == nil || a.Out == nil || a.Err == nil {
