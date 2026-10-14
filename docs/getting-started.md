@@ -16,7 +16,7 @@ For a repeatable install, pin the release with Go or use the checksum-verified
 [release installer](releases.md#install):
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.6.0
 kmx version
 ```
 
@@ -24,10 +24,9 @@ Put Go's binary directory on PATH. Inspect the effective context with
 `kmx context show` or select one with `kmx context use <context>`.
 See [release upgrades](releases.md#upgrading-kmx) when moving from an older version,
 and [command alignment](command-semantics.md) for compatibility and retirement details.
-The root `create/chat/run/eval/push/lift` commands below require
-a current development build; tagged v0.5.1 still uses `kmx agent` and does not
-provide workspace Create/Eval/Push or packaged-digest Lift.
-See the [exact migration mapping](../CHANGELOG.md#upgrading).
+The root `create/chat/run/eval/push/lift` commands below are available in
+v0.6.0. When upgrading, see the [migration guidance](../CHANGELOG.md#upgrading)
+for removed commands and legacy bundle workflows.
 
 ## Prerequisites
 

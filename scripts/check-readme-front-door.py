@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that the README separates stable quickstart from suite-first main."""
+"""Check that the README describes the released suite-first workflow."""
 from __future__ import annotations
 
 import re
@@ -27,7 +27,7 @@ BADGE_PATTERNS = [
 INSTALL_COMMANDS = [
     ("Homebrew install", r"^brew install kaimahi-agents/tap/kmx$"),
     ("release installer", r"^curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/main/install\.sh \| sh$"),
-    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.5\.1$"),
+    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.6\.0$"),
 ]
 FIRST_ANSWER_COMMANDS = [
     ("kmx version", r"^kmx version$"),
@@ -41,7 +41,7 @@ JOURNEY_ROWS = [
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)
-JOURNEY_HEADER = "| Stage | Current development build |"
+JOURNEY_HEADER = "| Stage | v0.6.0 |"
 JOURNEY_SEPARATOR = "|---|---|"
 DEVELOPER_LINKS = [
     ("developer guide", "[developer guide](docs/development.md)"),
@@ -132,11 +132,10 @@ def check(text: str) -> str | None:
     if table_problem is not None:
         return "README front door: " + table_problem
     table_at = journey.find(JOURNEY_HEADER)
-    warning = "The table below describes the current development build, which is unreleased."
-    release = "The latest tagged release is v0.5.1 and still uses `kmx agent ...`"
-    warning_at, release_at = journey.find(warning), journey.find(release)
-    if warning_at < 0 or release_at < 0 or not (warning_at < release_at < table_at):
-        return "README front door: release/main warning must precede the suite journey table"
+    release = "The table below is available in v0.6.0."
+    release_at = journey.find(release)
+    if not 0 <= release_at < table_at:
+        return "README front door: v0.6.0 release note must precede the suite journey table"
     for index, (label, purpose_pattern) in enumerate(JOURNEY_ROWS):
         if rows[index][0] != label or re.search(purpose_pattern, rows[index][1]) is None:
             return f"README front door: {label} row is missing or out of order"

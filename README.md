@@ -29,19 +29,16 @@ and Lift.
 
 ## Create, Prove, Lift
 
-**Create → Prove → Lift** is implemented on current `main` for one-member native
-Orka and exact-v0.10.3 Go kagent suites. The commands remain unreleased. Bounded
-CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion
-and kagent fresh-target creation; it does not prove every promotion, creation or
-partial-outcome path.
+**Create → Prove → Lift** is available in v0.6.0 for one-member native Orka and
+exact-v0.10.3 Go kagent suites. Bounded CI qualifies root Lift for Orka exact
+reuse, bounded absent-pair registry promotion and kagent fresh-target creation;
+it does not prove every promotion, creation or partial-outcome path.
 
 > [!NOTE]
-> The table below describes the current development build, which is unreleased.
-> The latest tagged release is v0.5.1 and still uses `kmx agent ...` for its
-> PortableAgent lifecycle. See [command migration](CHANGELOG.md#upgrading) and
-> [releases](docs/releases.md) before scripting against `main`.
+> The table below is available in v0.6.0. See [command migration](CHANGELOG.md#upgrading)
+> and [releases](docs/releases.md) when upgrading from an older version.
 
-| Stage | Current development build |
+| Stage | v0.6.0 |
 |---|---|
 | **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
 | **Prove** | Orka uses `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, with no cluster selectors. Each runs ordered cases once, stops later cases after the first non-pass, and writes private evidence only when all cases pass. |
@@ -64,7 +61,7 @@ brew install kaimahi-agents/tap/kmx
 # or
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 # or
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.6.0
 ```
 
 Check what was installed, then run the fixed, non-interactive local proof:
