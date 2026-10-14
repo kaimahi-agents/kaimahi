@@ -18,16 +18,19 @@ import (
 
 func newAgentEvalCommand(state *commandState) *cobra.Command {
 	var native app.SuiteWorkspaceEvaluationOptions
+	var destination string
 	group := &cobra.Command{
 		Use: "eval", Short: "Evaluate a native workspace or prepare and compare saved evidence",
 		Long: "Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
+			"--to NAME resolves copied selectors from workspace-root kmx.yaml; explicit flags override. Without --to-context or --development-host, evalTarget may select a named destination. No remembered/current-context fallback.\n" +
 			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override, judge, subset or content output.\n" +
 			"Packaged AgentSessions requires --development-host FILE: an explicit private operator observation of a pinned built-in chat host on literal loopback, unauthenticated. It refuses all cluster/inference/bindings/result selectors and loads no cluster configuration.\n" +
 			"Development journals retain instructions, inputs, answers and per-exec config in cleartext under operator-managed retention. This is not authenticated remote promotion.\n" +
 			"Each case submits one fresh Task or Session, never retried. Failure, unknown, drift or cancellation stops later cases without exporting a receipt; resources may remain.\n" +
 			"--out must be a new file in an existing private directory outside workspace/cache trees. Only full passing metadata is exported, unsigned and not a policy gate.\n" +
 			"Case inputs are sent to the runtime and model; upstream storage/audit policy may retain them. Real native CLI execution qualification remains separate from hermetic checks.",
-		Example: "  kmx eval --to-context kind-demo --inference provider:inference --out ../private/passing.json\n" +
+		Example: "  kmx eval --to dev --out ../private/passing.json\n" +
+			"  kmx eval --to-context kind-demo --inference provider:inference --out ../private/passing.json\n" +
 			"  kmx eval --workspace ./workspace --to-context remote --to-namespace orka-system --inference provider:inference --out ../private/passing.json",
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) != 0 {
@@ -43,13 +46,13 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 				return fmt.Errorf("--context cannot be used with native eval; use --to-context")
 			}
 			if native.DevelopmentHost != "" {
-				for _, name := range []string{"to-context", "to-namespace", "inference", "bindings", "result-port", "container-engine"} {
+				for _, name := range []string{"to", "to-context", "to-namespace", "inference", "bindings", "result-port", "container-engine"} {
 					if cmd.Flag(name).Changed {
 						return fmt.Errorf("--development-host refuses --%s", name)
 					}
 				}
 			}
-			for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "bindings", "development-host", "out", "result-port"} {
+			for _, name := range []string{"workspace", "to", "to-context", "to-namespace", "inference", "bindings", "development-host", "out", "result-port"} {
 				if flag := cmd.Flag(name); flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 					return fmt.Errorf("native eval requires non-empty --%s", name)
 				}
@@ -69,6 +72,20 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			if !cmd.Flags().Changed("result-port") {
 				selectedNative.ResultPort = ""
 			}
+			selection := destinationSelection{Context: selectedNative.ToContext, Namespace: selectedNative.ToNamespace, Inference: selectedNative.Inference, Bindings: selectedNative.Bindings}
+			if selectedNative.DevelopmentHost == "" {
+				var root string
+				selection, root, err = resolveDestinationSelection(cmd, destination, selectedNative.Workspace, "", true, selection)
+				if err != nil {
+					return err
+				}
+				selectedNative.Workspace = root
+				selectedNative.ToContext, selectedNative.ToNamespace, selectedNative.ExpectedRuntime = selection.Context, selection.Namespace, selection.ExpectedRuntime
+				selectedNative.Inference, selectedNative.Bindings = selection.Inference, selection.Bindings
+			}
+			if err := displayDestinationSelection(cmd, selection); err != nil {
+				return err
+			}
 			prepared, err := app.PrepareSuiteWorkspaceEvaluation(ctx, selectedNative)
 			if err != nil {
 				return err
@@ -78,12 +95,15 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 				return (&app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}).EvaluateSuiteWorkspace(ctx, prepared)
 			}
 			selected := *state
-			selected.contextFlag = native.ToContext
+			selected.contextFlag = selectedNative.ToContext
 			a, err := selected.operationApplication(cmd)
 			if err != nil {
 				return err
 			}
 			a.Cfg.ContextSource = config.SourceFlag
+			if selection.Source != "" && !cmd.Flags().Changed("to-context") {
+				a.Cfg.ContextSource = selection.Source
+			}
 			// Native retry advice must not synthesize the refused global --context.
 			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine), "kmx"}
 			for _, arg := range state.argv {
@@ -93,6 +113,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			return a.EvaluateSuiteWorkspace(ctx, prepared)
 		},
 	}
+	registerDestinationFlag(group, &destination)
 	group.Flags().StringVar(&native.Workspace, "workspace", "", "select an exact workspace root instead of nearest-ancestor discovery")
 	group.Flags().StringVar(&native.ToContext, "to-context", "", "explicit native evaluation context")
 	group.Flags().StringVar(&native.ToNamespace, "to-namespace", app.OrkaNamespace, "native evaluation namespace")

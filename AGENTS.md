@@ -13,8 +13,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Proposed spellings are not implemented capabilities.
 - Canonical context commands are `kmx context show` and
   `kmx context use <context>`; canonical local setup/teardown commands are
-  `kmx local up/down`. Root `ctx`, `up`, `down`, the AKS `lift` alias and `lift down`
-  are removed outright, not compatibility routes or retirement stubs. Current
+  `kmx local up/down`. Root `up`, `down`, the AKS `lift` alias and `lift down`
+  are removed outright, not compatibility routes or retirement stubs. The old
+  context-switching `ctx` alias remains removed; new `kmx ctx [--check]` only
+  lists named workspace destinations, never selects or remembers one. Current
   bundle deployment remains `kmx bundle lift`; current cloud and runtime setup
   remain `kmx aks up/down` and `kmx orka install/status`.
   The AKS group is a hidden compatibility route, not a public root domain.
@@ -23,6 +25,18 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   longer accepts `--interactive`. `kmx targets` is the read-only capability view.
   Plane administration, model overlays, migration and their demo are removed;
   do not restore or regroup their commands.
+- Named destination selectors live in versioned workspace-root `kmx.yaml`, not
+  source `workspace.yaml` or published content. `eval/lift --to NAME` resolves
+  concrete context/namespace/runtime expectation/inference-or-bindings/registry
+  values once and passes those copies onward; never reread config during an
+  operation. Explicit flags override saved fields. `evalTarget` is evaluation-only;
+  Lift never guesses a destination. Explicit-reference Lift without `--to`
+  remains workspace-independent. Runtime stays package-owned. `ctx` is an
+  offline list; optional checks are local context-name/anonymous registry reads,
+  not runtime/inference/Secret probes. `targets` remains runtime capabilities.
+  Root Lift still requires a digest and evidence; composed eval/push/Lift is not
+  implemented. Keep kagent out of composed Lift until its own candidate-scoped
+  placement and ownership-safe cleanup are qualified.
 - Everyday operations are root `create/chat/run`; live inspection is `orka show/list`.
   Legacy lifecycle operations are `bundle evaluate/lift/retire/verify/status`.
   `kmx agent` is removed entirely, without an alias or retirement stub.
@@ -105,7 +119,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   adoption, retry, rollback or cleanup. VerifyReleaseLiftPlacement rechecks an opaque
   success before caller invocation. Created/recreated UIDs require fresh evaluation
   before later receipt-bound reuse. Root lift supports registry/local --from-layout,
-  --plan and text/JSON, with explicit --to-context/--inference/--evidence; --promote
+  --plan and text/JSON, with explicit selectors or named --to and private --evidence; --promote
   discloses source-only evidence. Runtime/model are packaged, never overridden.
   Help/completion is inert. General suite transfer is unchanged.
   Native inference is openai-type Provider only, not host Foundry/Copilot execution.
@@ -126,7 +140,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Missing development selection never falls back. Sessions proof is refused by
   lift and receipt diff; there is no registry or caller-auth integration.
 - Root `eval` evaluates the full packaged Orka/kagent workspace inventory with
-  explicit `--to-context` and new private `--out`; Orka uses --inference
+  a destination context (explicit `--to-context`, named `--to` or saved evalTarget)
+  and new private `--out`; Orka uses --inference
   provider:NAME, kagent uses author-owned --bindings FILE, never both. Namespace
   must match kagent bindings and kagent refuses --result-port. It uses local
   flags and a nonpersistent operational hook. Unsupported/budget/output checks

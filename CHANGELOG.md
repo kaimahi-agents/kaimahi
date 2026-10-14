@@ -45,6 +45,21 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Named workspace destinations in optional, credential-free `kmx.yaml` supply
+  selectors to `eval/lift --to NAME`. Explicit invocation flags override saved
+  fields; values resolve once and cannot be redirected by later config edits.
+  Runtime remains package-owned. Eval may use saved `evalTarget`; digest Lift
+  never guesses a destination, and explicit-reference Lift without `--to`
+  remains workspace-independent. Root workspace push and named Lift can use an
+  exact-host registry HTTP policy, with explicit false overriding it. Existing
+  evidence, promotion, remote guards and registry authentication remain unchanged.
+- New list-only `kmx ctx [--check] [-o table|json]` reports named destinations,
+  not a current/default selection. It does not restore the old switching alias.
+  Optional checks read local context names and anonymous registry reachability;
+  they are not runtime/inference readiness or evaluation proof. `kmx targets`
+  remains the separate runtime-capability view. Composed eval/push/Lift is not
+  implemented; kagent remains excluded until its candidate cleanup is qualified.
+
 - Packaged AgentSessions chat members support root `eval --development-host FILE`
   on explicit literal-loopback, unauthenticated operator-observed hosts. One
   fresh Session and explicit config/Exec per ordered case, bounded canonical
@@ -80,7 +95,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   and evidence consumers refuse this profile. [Workspace guide](docs/suite-workspace.md).
 
 - Deploy-only `kmx lift <ref>@<digest>` from a registry or local `--from-layout`.
-  Explicit private full-passing `--evidence` and `--to-context` are required;
+  Explicit private full-passing `--evidence` and a destination context (direct
+  `--to-context` or named `--to`) are required;
   Orka uses Ready `--inference provider:NAME`, kagent uses author-owned
   `--bindings FILE`. Default gate binds the exact evaluated target; `--promote`
   explicitly permits a same-suite/member/model/runtime destination with
@@ -282,7 +298,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Removed `kmx lift down`; use `kmx aks down` for AKS teardown.
 - Removed `kmx up`; use `kmx local up` for local runtime setup.
 - Removed `kmx down`; use `kmx local down` for local cluster deletion.
-- Removed `kmx ctx`; use `kmx context show` or `kmx context use <context>`.
+- Removed the context-selection `kmx ctx` alias; use `kmx context show` or
+  `kmx context use <context>`. New `kmx ctx` lists workspace destinations only;
+  legacy `ctx <context>` and switching syntax remain refused.
 
 - The experimental, unwired `pkg/kmx.AgentSuites` Go contract now exposes the
   cohesive `Validate`, `Build`, `RecoverBuild`, `Push` and `RecoverPush`
@@ -294,6 +312,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   modeled.
 
 ### Upgrading
+
+- Optionally add workspace-root `kmx.yaml` for named destinations and use
+  `kmx ctx` to list them, then `eval/lift --to NAME`. No default/current Lift
+  selection or context switch is introduced. Existing explicit selectors work
+  without config. Keep supplying eval `--out`, a push reference and Lift
+  digest/`--evidence`; configuration does not enable the composed workflow.
+  See [named destinations](docs/suite-workspace.md#named-destinations).
 
 - Go consumers of the experimental `AgentEnvironment` API should pass
   `EnvironmentSpec{Name: ...}` to `Up` and consume `Environment`. There is no
@@ -334,8 +359,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   | `kmx suite push REF` | `kmx push REF` |
 
   Bare `kmx agent` and `kmx agent eval` no longer exist. Workspace `kmx eval`
-  requires `--to-context`, `--out`, and exactly one runtime-derived selector:
-  Orka `--inference` or packaged kagent `--bindings`; use `kmx eval --help` for
+  requires a destination context (`--to-context`, named `--to` or saved
+  `evalTarget`), `--out`, and exactly one runtime-derived selector, supplied
+  directly or by the named destination: Orka `--inference` or packaged kagent `--bindings`; use `kmx eval --help` for
   help and evaluation helpers. The hidden editor retirement stub is also removed with its parent;
   edit live Orka resources with `kubectl --context <ctx> -n <ns> edit agents.core.orka.ai <name>`.
   Task retrieval remains `kmx task result`; no root `result` is added.

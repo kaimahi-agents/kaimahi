@@ -30,6 +30,89 @@ fresh-target creation/occupied refusal. Standalone registry-package evaluation
 remains unavailable. Existing `agent.yaml` creation, evaluation and lift remain
 separate and unchanged.
 
+## Named destinations
+
+Keep operational selectors in optional workspace-root `kmx.yaml`, separate from
+source `workspace.yaml`. Define them once rather than repeating cluster selectors:
+
+```yaml
+version: 1
+evalTarget: dev
+publishRepository: registry.example/team/agents
+targets:
+  dev:
+    context: kind-demo-dev
+    namespace: orka-system
+    runtime: orka
+    inference: provider:inference
+  prod:
+    context: production
+    namespace: orka-system
+    runtime: orka
+    inference: provider:inference
+    evaluationTarget: dev
+registries:
+  '127.0.0.1:5001':
+    plainHTTP: true
+```
+
+```sh
+kmx ctx
+kmx ctx --check -o json
+kmx eval --to dev --out ../private/passing.json
+kmx push --evaluation ../private/passing.json registry.example/team/agents:v1
+kmx lift registry.example/team/agents@sha256:<digest> --to prod \
+  --evidence ../private/passing.json --promote --plan
+```
+
+`ctx` lists names, cluster contexts, namespaces, declared runtimes,
+inference/bindings references and the saved registry/repository, alphabetically.
+It is **list-only**, with no current/default pointer or switching; `ctx prod`
+and `ctx use prod` refuse. `context show/use` still manages the separate access
+selection. `targets` still reports runtime capabilities, not named destinations.
+`ctx --workspace DIR` selects an exact workspace root for the report.
+
+Listing is offline and does not load cluster configuration or inspect bindings
+or Secrets. `--check` only checks local context-name presence using an installed
+kubectl and anonymous registry `/v2/` reachability with bounded time/output. It
+never runs an auth helper, follows a redirect, writes operational state, installs
+tools or makes a model call. Authentication-required is not repository access;
+runtime/inference/bindings are explicitly not checked. Independent rows remain
+visible if a check is unknown or fails; the command then exits nonzero.
+
+`eval --to NAME` and digest `lift --to NAME` resolve concrete selectors once,
+print them and their source, then retain those values for the entire invocation.
+Editing `kmx.yaml` during confirmation cannot change that operation. Existing
+source/binding-file/runtime/remote-state checks still apply. Explicit `--to-context`,
+`--to-namespace`, `--inference` or `--bindings` overrides the corresponding saved
+value; inference and bindings remain mutually exclusive. Saved relative bindings
+paths are config-relative; explicit flag paths remain invocation-relative.
+Runtime is an expectation checked against the package, never a runtime switch.
+
+Eval may use saved `evalTarget` when no destination is explicitly selected; it
+never guesses from a name, kubectl current-context or remembered access selection.
+Lift has no default destination. Explicit-reference Lift without `--to` remains
+source/workspace-independent. AgentSessions development evaluation ignores these
+cluster defaults and refuses named destination selection.
+
+Root workspace registry push and named Lift may use an **exact registry-host**
+`plainHTTP` policy; explicit `--plain-http=false` wins. TLS remains the default;
+there is no HTTP fallback after TLS failure, and existing credential restrictions
+remain. Local layouts and extracted-directory `suite push` are unchanged.
+The config is closed, bounded and credential-free (Secret references only);
+invalid or unreadable nearest state refuses rather than falling back. No user
+config merging. Operational config is excluded from prepared S, source fingerprint
+and published content.
+
+This is selector configuration, not environment installation or deployment
+identity. `publishRepository` and `evaluationTarget` record intent for later
+composition; this CLI still requires a push reference, eval `--out`, and Lift
+digest/private evidence. It does not automatically eval or push during Lift.
+**Kagent stays out of composed Lift until its own candidate-scoped evaluation
+and ownership-safe cleanup are qualified**; standalone explicit kagent operations
+retain their existing boundaries. Named selectors never grant promotion or bypass
+remote context confirmation; `--promote` still discloses source-only evidence.
+
 ## Create
 
 Root `kmx create <name>` authors offline by default. Create and root `push`
@@ -230,7 +313,9 @@ kmx push --evaluation ../private-evidence/passing.json ghcr.io/me/my-agents:v1
 
 Root `eval` discovers the nearest workspace, or selects an exact root without
 fallback using `--workspace DIR`. It accepts no positional package reference.
-`--to-context` and `--out` are required. Orka requires `--inference provider:NAME`;
+A destination context (explicit `--to-context`, named `--to`, or saved `evalTarget`)
+and `--out` are required. Orka requires `--inference provider:NAME`, directly or
+through the named destination;
 kagent instead requires `--bindings FILE`, never both. For Orka, namespace
 is `orka-system` by default (`--to-namespace`); `--result-port` defaults to
 `19180`, and each case has a separate `--case-timeout` (default 5m, maximum 9m).
@@ -464,7 +549,8 @@ kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
 ```
 
 Use a complete SHA256 digest, not a mutable tag. Destination runtime must already
-be installed. Orka uses `--inference provider:NAME`; packaged kagent instead uses
+be installed. `--to NAME` may supply the destination selectors from the workspace;
+without it, explicit-reference Lift does not inspect workspace configuration. Orka uses `--inference provider:NAME`; packaged kagent instead uses
 an author-owned `--bindings FILE`. The selectors are mutually exclusive and the
 verified packaged runtime must match the evidence. Kagent derives its namespace
 from the bindings; an explicit `--to-namespace` must agree. The bindings' parent,

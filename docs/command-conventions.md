@@ -80,6 +80,7 @@ Keep these distinctions:
 |---|---|
 | `--context` | Kubernetes context for this invocation. Global, accepted anywhere on the line. |
 | `--namespace` | Kubernetes namespace the command reads or writes. |
+| `--to` | Named destination from workspace `kmx.yaml` for root eval or digest Lift. Never switches a saved/current context. |
 | `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`. Machine formats print exactly one document. |
 | `-i`, `--interactive` | Switch a command that has a scripted mode to its guided terminal mode. Not used on commands that are only interactive. |
 | `--out` | Path for written artifacts. Never reuse `--output` for a path. |
@@ -173,8 +174,12 @@ same change instead of keeping it callable: remove the alias outright, leave
 an explicitly chosen hidden stub that refuses before loading configuration and
 names the replacement, or remove a flag that no longer does anything. Record
 the removal and replacements under **Breaking** and **Upgrading** in the CHANGELOG.
-Root `ctx`, `up`, `down`, the AKS `lift` alias and `lift down` are removed
-outright, without stubs; use `context show/use`, `local up/down` and `aks up/down`.
+Root `up`, `down`, the AKS `lift` alias and `lift down` are removed
+outright, without stubs; use `local up/down` and `aks up/down`. The old root `ctx`
+context-selection alias is also removed; use `context show/use` for access
+selection. New `ctx [--check]` has list-only named-destination semantics: no
+positional name, current/default marker, switching or persisted selection.
+`targets` remains the runtime-capability view, not this destination list.
 Root `lift <ref>@<digest>` now means deploy-only suite lift, not infrastructure setup.
 The entire `agent` group is also removed outright, without an alias or stub;
 see the [implemented mapping](command-semantics.md#implemented-workflow-command-mapping-unreleased).
@@ -196,6 +201,7 @@ row when its rename lands.
 
 | Current command | Rule it breaks | Proposed |
 |---|---|---|
+| `ctx [--check]` | Abbreviated root name and a list action without a verb. | Explicitly approved list-only named destinations; not the removed context-switching alias. Keep `--to` explicit and `targets` separate. |
 | `--no-apply`, `--dry-run`, `--plan` | Preview flags whose effects differ by command. | Undecided; define each flag's effect before renaming. |
 | `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain extracted-artifact transfer syntax without workspace discovery or `--workspace`; root `push [--workspace <directory>] <reference>` discovers a workspace and publishes a prepared native suite with one positional destination. `--workspace` selects an exact root without fallback. |
 | `suite build --output <file>`, `suite pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |

@@ -12,7 +12,7 @@ import (
 
 func TestRemovedRootAliasesRejectBeforeConfiguration(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
-	for _, path := range [][]string{{"up"}, {"down"}, {"ctx"}, {"ctx", "kind-demo"}} {
+	for _, path := range [][]string{{"up"}, {"down"}} {
 		for _, suffix := range [][]string{nil, {"--help"}, {"--unknown-flag"}} {
 			args := append(append([]string(nil), path...), suffix...)
 			t.Run(strings.Join(args, "_"), func(t *testing.T) {
@@ -29,7 +29,7 @@ func TestRemovedRootAliasesRejectBeforeConfiguration(t *testing.T) {
 
 func TestEntrypointHelpAndCompletionAreNonOperational(t *testing.T) {
 	for _, args := range [][]string{
-		{"context"}, {"context", "show", "--help"}, {"context", "use", "--help"},
+		{"context"}, {"context", "show", "--help"}, {"context", "use", "--help"}, {"ctx", "--help"}, {"__complete", "ctx", ""},
 		{"local"}, {"local", "up", "--help"}, {"local", "down", "--help"},
 		{"--help"}, {"aks", "up", "--help"}, {"aks", "down", "--help"},
 		{"__complete", ""}, {"__complete", "context", ""}, {"__complete", "local", ""},
@@ -46,20 +46,20 @@ func TestEntrypointHelpAndCompletionAreNonOperational(t *testing.T) {
 			if args[0] == "--help" {
 				for _, line := range strings.Split(out.String(), "\n") {
 					fields := strings.Fields(line)
-					if len(fields) > 1 && (fields[0] == "ctx" || fields[0] == "up" || fields[0] == "down") {
+					if len(fields) > 1 && (fields[0] == "up" || fields[0] == "down") {
 						t.Fatalf("removed root route advertised: %s", line)
 					}
 				}
 			}
 			if args[0] == "__complete" && len(args) == 2 {
-				for _, name := range []string{"context", "local"} {
+				for _, name := range []string{"context", "local", "ctx"} {
 					if !strings.Contains(out.String(), name+"\t") {
 						t.Fatalf("canonical command missing: %s", out.String())
 					}
 				}
 				for _, line := range strings.Split(out.String(), "\n") {
 					name, _, _ := strings.Cut(line, "\t")
-					if name == "ctx" || name == "up" || name == "down" {
+					if name == "up" || name == "down" {
 						t.Fatalf("removed root route advertised: %s", line)
 					}
 				}
@@ -73,6 +73,8 @@ func TestEntrypointsRejectInvalidArgumentsBeforeConfiguration(t *testing.T) {
 		{"context", "show", "extra"}, {"context", "use"}, {"context", "use", ""},
 		{"context", "use", " "}, {"context", "use", "one", "two"}, {"context", "unknown"},
 		{"local", "unknown"}, {"local", "up", "extra"}, {"local", "down", "extra"},
+		// ctx is deliberately list-only, not the removed switching alias.
+		{"ctx", "kind-demo"}, {"ctx", "use", "prod"},
 	} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)

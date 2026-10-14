@@ -20,6 +20,8 @@ import (
 type SuiteWorkspaceEvaluationOptions struct {
 	Workspace, ToContext, ToNamespace, Inference, Bindings, Out, ResultPort, DevelopmentHost string
 	CaseTimeout                                                                              time.Duration
+	// ExpectedRuntime is a destination declaration, never a runtime override.
+	ExpectedRuntime string
 }
 
 // PreparedSuiteWorkspaceEvaluation owns its offline source snapshot and anchored
@@ -84,6 +86,9 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	suite, err := workspace.Load(ctx, prepared)
 	if err != nil {
 		return nil, suiteEvaluationError(ctx, err, false)
+	}
+	if opt.ExpectedRuntime != "" && opt.ExpectedRuntime != suite.Runtime.ID {
+		return nil, errors.New("destination runtime declaration does not match packaged runtime")
 	}
 	var sessions *suiteSessionsHostSnapshot
 	if suite.Runtime.ID == "agentsessions" {
