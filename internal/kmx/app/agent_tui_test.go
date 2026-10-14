@@ -91,7 +91,7 @@ func TestAgentTUICommandsValidateAndDemoDoesNotDispatch(t *testing.T) {
 	for _, line := range []string{"/lift", "/lift assistant new"} {
 		updated, _ := m.execute(line)
 		m = updated.(agentTUIModel)
-		if m.command || m.action != nil || m.form != nil || m.status != interactiveLiftRetirement {
+		if m.command || m.action != nil || m.status != interactiveLiftRetirement {
 			t.Fatal("retired Lift opened workflow")
 		}
 	}
@@ -121,7 +121,7 @@ func TestAgentTUIRefreshRetainsIdentityAndRejectsStaleReads(t *testing.T) {
 
 func TestAgentTUIViewFitsTerminalAndSanitizesMetadata(t *testing.T) {
 	for _, size := range [][2]int{{100, 30}, {64, 18}, {81, 24}, {40, 12}} {
-		for _, mode := range []string{"overview", "command", "details", "actions", "help", "form"} {
+		for _, mode := range []string{"overview", "command", "details", "actions", "help"} {
 			m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 			m.width, m.height = size[0], size[1]
 			m.input.SetWidth(max(1, m.width-4))
@@ -136,8 +136,6 @@ func TestAgentTUIViewFitsTerminalAndSanitizesMetadata(t *testing.T) {
 				m.actionsOpen = true
 			case "help":
 				m.help = true
-			case "form":
-				m.form = []string{"", "", "", "westus3"}
 			}
 			view := m.View()
 			if !view.AltScreen {
@@ -468,7 +466,7 @@ func TestAgentTUIActionsPopupCapabilitiesAndShortcuts(t *testing.T) {
 	}
 	m = tuiKey(m, tea.KeyEsc, "")
 	m.focus = 1
-	if got := m.agentActions(*m.selected()); len(got) != 6 || got[5].key != "R" {
+	if got := m.agentActions(*m.selected()); len(got) != 5 || got[4].key != "R" {
 		t.Fatalf("remote actions=%v", got)
 	}
 	m.columns[1].Agents[0].External = true

@@ -179,8 +179,8 @@ def check(text: str) -> str | None:
     for label, required in {
         "Workspace": ["`kmx create`", "root `eval`", "root `push`", "does not consume workspace source", "separate private evidence"],
         "Local environment": ["`kmx local up`", "without creating an Agent", "setup-only", "not wired"],
-        "Live Agent": ["`kmx create --live`", "`kmx run --agent NAME --prompt TEXT`", "`kmx chat NAME`"],
-        "Legacy bundle": ["Hidden but callable", "PortableAgent", "They are not AgentSuite commands"],
+        "Live Agent": ["`kmx run --agent NAME --prompt TEXT`", "`kmx chat NAME`", "Suite-owned Agents refuse legacy invocation"],
+        "Legacy bundle": ["Removed outright", "`agent.yaml` readers/writers", "Old receipts are unreadable", "no conversion, migration or on-disk/resource deletion", "Public AgentSuite implementation bundles"],
     }.items():
         if any(marker not in paths[label] for marker in required):
             return f"README front door: {label} path boundary is missing"
@@ -190,16 +190,15 @@ def check(text: str) -> str | None:
     if runtime_boundary not in " ".join(runtime.split()):
         return "README front door: runtime/inference distinction is missing"
     for label, pattern in [
-        ("Orka default", r"\*\*Orka\*\* is the default runtime\..*packaged workspace path supports\s+evaluation, evaluated publication and root digest Lift with exact evaluated\s+reuse;.*live create, run, chat.*legacy bundle lifecycle"),
-        ("kagent version boundary", r"\*\*kagent\*\* support is exact-version.*v0\.10\.2 live\s+create; v0\.10\.3 Go packaged workspace authoring, `eval --bindings`, evaluated\s+publication, create-only root digest Lift, and legacy bundle\s+lift/status/evaluation\. Packaged status and retirement are unavailable\."),
-        ("agentsessions boundary", r"\*\*agentsessions\*\* is evaluation and replay integration for the legacy bundle\s+path, not a KMX deployment target\."),
+        ("Orka default", r"\*\*Orka\*\* is the default runtime\..*packaged workspace path supports\s+evaluation, evaluated publication and root digest Lift with exact evaluated\s+reuse;.*independent live Orka run and chat remain"),
+        ("kagent version boundary", r"\*\*kagent\*\* support is exact-version.*v0\.10\.3\s+Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated\s+publication and create-only root digest Lift\. Standalone run/chat, Python,\s+RemoteMCP, suite status and retirement remain unavailable\."),
+        ("agentsessions boundary", r"\*\*agentsessions\*\* retains read-only reference extraction/export and availability\s+probing, not bundle evaluation, replay or a KMX deployment target\."),
     ]:
         if re.search(pattern, runtime, re.S) is None:
             return f"README front door: {label} is missing"
 
-    legacy_links = re.findall(r"\[([^]]+)\]\(docs/agent-lift\.md(?:#[^)]+)?\)", text)
-    if not legacy_links or any("legacy" not in label.lower() or not re.search(r"bundle|portableagent", label, re.I) for label in legacy_links):
-        return "README front door: agent-lift links must be labeled as legacy bundle guidance"
+    if re.search(r"\]\(docs/agent-lift\.md(?:#[^)]+)?\)", text):
+        return "README front door: removed agent-lift guide remains linked"
 
     development = section_after(text, matches["development heading"])
     for label, link in DEVELOPER_LINKS:

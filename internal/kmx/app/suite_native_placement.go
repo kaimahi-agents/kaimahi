@@ -135,7 +135,7 @@ func (e *suiteNativeReuseRefusal) Error() string {
 func (*suiteNativeReuseRefusal) Unwrap() error { return errSuiteNativeEvaluation }
 
 func checkSuiteNativeReuse(check orkaReconcileCheck, strict bool) error {
-	if strict && (check.markerRefresh || check.outcome != agentruntime.ResourceCreated && check.outcome != agentruntime.ResourceReused) {
+	if strict && (check.outcome != agentruntime.ResourceCreated && check.outcome != agentruntime.ResourceReused) {
 		return &suiteNativeReuseRefusal{check.id.Kind, check.id.Name}
 	}
 	return nil

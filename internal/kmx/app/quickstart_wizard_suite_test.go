@@ -51,7 +51,7 @@ func TestQuickstartWizardSuiteRefusesLegacyOptionsBeforeWork(t *testing.T) {
 // The source form must not call live-create finishFields: that renders a bundle
 // and asks for credentials unrelated to an authored member.
 func TestQuickstartWizardSuiteFormOnlyCollectsSource(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{Description: "Describe incidents", Namespace: OrkaNamespace, Model: "exact-model"})
+	create, err := newQuickstartSourceForm(CreateOptions{Description: "Describe incidents", Namespace: OrkaNamespace, Model: "exact-model"})
 	if err != nil {
 		t.Fatal(err)
 	}

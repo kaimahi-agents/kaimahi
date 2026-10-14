@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -48,25 +49,23 @@ func TestOrkaGuardPromptHelper(t *testing.T) {
 	var err error
 	switch mode {
 	case "deadline":
-		bundle, buildErr := createOrkaBundle(opt)
-		if buildErr != nil {
-			t.Fatal(buildErr)
-		}
 		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 		defer cancel()
-		err = a.createOrkaOnline(ctx, opt, bundle)
+		err = a.guardOrkaMutation(ctx, opt, "execute one AI Task")
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("deadline refusal = %v", err)
 		}
 	case "confirm":
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
-		if err := a.guardOrkaCreate(ctx, opt); err != nil || !a.guarded {
+		if err := a.guardOrkaMutation(ctx, opt, "execute one AI Task"); err != nil || !a.guarded {
 			t.Fatalf("confirmation failed: %v", err)
 		}
 	default:
 		// Exercise the public entry point's actual SIGINT/SIGTERM handling.
-		err = a.CreateAgent(opt)
+		ctx, stop := signal.NotifyContext(t.Context(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		err = a.guardOrkaMutation(ctx, opt, "execute one AI Task")
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("signal refusal = %v", err)
 		}

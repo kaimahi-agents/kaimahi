@@ -138,11 +138,3 @@ func runStatusLoading(parent context.Context, in io.Reader, out io.Writer, label
 	}
 	return outcome.data, outcome.err
 }
-
-func (b *orkaChatBackend) liftLoading(ctx context.Context, label string, fetch func(context.Context) ([]byte, error)) ([]byte, error) {
-	if !isInteractiveTerminal(b.app.Stdin) || !isInteractiveTerminal(b.app.Out) {
-		return liftFetchProgress(ctx, b.app.Out, label, fetch)
-	}
-	defer b.paintLiftHeader()
-	return runLiftLoading(ctx, b.app.Stdin, b.app.Out, label, b.liftHeader, fetch)
-}

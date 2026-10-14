@@ -47,13 +47,13 @@ kmx quickstart
 |---|---|
 | Workspace | Default `kmx create`, root `eval`, and root `push` operate on editable source. Digest-based root `lift` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
 | Local environment | `kmx local up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
-| Live Agent | `kmx create --live` creates runtime resources and a PortableAgent bundle. `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. |
-| Legacy bundle | Hidden but callable `kmx bundle ...` commands retain PortableAgent operations. They are not AgentSuite commands. |
+| Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. Suite-owned Agents refuse legacy invocation. |
+| Legacy bundle | Removed outright: `agent.yaml` readers/writers, commands and receipts, `create --live`. Old receipts are unreadable; no conversion, migration or on-disk/resource deletion. Public AgentSuite implementation bundles are a different format. |
 ## Runtime Boundaries
 A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.
-- **Orka** is the default runtime. Its packaged workspace path supports evaluation, evaluated publication and root digest Lift with exact evaluated reuse; it also owns live create, run, chat and the legacy bundle lifecycle.
-- **kagent** support is exact-version: v0.10.2 live create; v0.10.3 Go packaged workspace authoring, `eval --bindings`, evaluated publication, create-only root digest Lift, and legacy bundle lift/status/evaluation. Packaged status and retirement are unavailable.
-- **agentsessions** is evaluation and replay integration for the legacy bundle path, not a KMX deployment target.
+- **Orka** is the default runtime. Its packaged workspace path supports evaluation, evaluated publication and root digest Lift with exact evaluated reuse; independent live Orka run and chat remain.
+- **kagent** support is exact-version and operation-specific: v0.10.3 Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated publication and create-only root digest Lift. Standalone run/chat, Python, RemoteMCP, suite status and retirement remain unavailable.
+- **agentsessions** retains read-only reference extraction/export and availability probing, not bundle evaluation, replay or a KMX deployment target.
 ## Safety And Status
 > [!IMPORTANT]
 > **Kaimahi is experimental and under active development.** Interfaces may change.
@@ -61,7 +61,7 @@ A **runtime** executes and governs the agent. An **inference provider** is the s
 > kmx is the Agent Builder and lifecycle layer, not a runtime or generic
 > governance control plane.
 ## Guides
-[Legacy PortableAgent bundle lifecycle](docs/agent-lift.md)
+[Workspace lifecycle](docs/suite-workspace.md)
 ## Development
 [developer guide](docs/development.md)
 [codebase overview](docs/codebase-overview.md)
@@ -117,13 +117,13 @@ CASES += [
     ("malformed table separator", GOOD.replace("|---|---|", "|---|"), "separator is missing or malformed"),
     ("extra suite row", GOOD.replace("| **Lift** |", "| **Inspect** | Future status. |\n| **Lift** |"), "exactly four rows"),
     ("extra table column", GOOD.replace("| **Create** | `kmx create NAME --workspace DIR` authors source. |", "| **Create** | `kmx create NAME --workspace DIR` authors source. | extra |"), "exactly two columns"),
-    ("generic legacy guide", GOOD.replace("Legacy PortableAgent bundle lifecycle", "Lift operation guide"), "agent-lift links must be labeled"),
+    ("removed legacy guide", GOOD.replace("docs/suite-workspace.md", "docs/agent-lift.md"), "removed agent-lift guide"),
     ("Orka suite support broadened", GOOD.replace("packaged workspace path supports evaluation, evaluated publication and root digest Lift with exact evaluated reuse", "owns every suite operation"), "Orka default is missing"),
     ("wrong kagent version", GOOD.replace("v0.10.3 Go", "v1.0 Python"), "kagent version boundary is missing"),
-    ("kagent suite evaluation removed", GOOD.replace("`eval --bindings`, evaluated publication, ", ""), "kagent version boundary is missing"),
-    ("kagent digest lift removed", GOOD.replace("create-only root digest Lift, and ", ""), "kagent version boundary is missing"),
-    ("kagent status claimed", GOOD.replace("Packaged status and retirement are unavailable.", "Packaged status is available."), "kagent version boundary is missing"),
-    ("agentsessions deployment claimed", GOOD.replace("not a KMX deployment target", "a KMX deployment target"), "agentsessions boundary is missing"),
+    ("kagent suite evaluation removed", GOOD.replace("`eval --bindings`, evaluated publication and ", ""), "kagent version boundary is missing"),
+    ("kagent digest lift removed", GOOD.replace("create-only root digest Lift.", ""), "kagent version boundary is missing"),
+    ("kagent status claimed", GOOD.replace("suite status and retirement remain unavailable.", "suite status is available."), "kagent version boundary is missing"),
+    ("agentsessions deployment claimed", GOOD.replace("not bundle evaluation, replay or a KMX deployment target", "a KMX deployment target"), "agentsessions boundary is missing"),
     ("runtime provider distinction removed", GOOD.replace("A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.\n", ""), "runtime/inference distinction is missing"),
     ("wrong tap", GOOD.replace("kaimahi-agents/tap/kmx", "other/tap/kmx"), "Homebrew install is missing"),
     ("moving Go source", GOOD.replace("cmd/kmx@v0.5.1", "cmd/kmx@main"), "pinned Go install is missing"),
@@ -135,8 +135,8 @@ CASES += [
     ("duplicate workspace path", GOOD.replace("| Local environment |", "| Workspace | Duplicate. |\n| Local environment |"), "workspace/live paths must contain the exact four rows"),
     ("workspace runs directly", GOOD.replace("does not consume workspace source", "runs workspace source directly"), "Workspace path boundary is missing"),
     ("environment interface wired", GOOD.replace("is setup-only and is not wired", "is fully wired"), "Local environment path boundary is missing"),
-    ("live create omitted", GOOD.replace("`kmx create --live`", "`kmx create`"), "Live Agent path boundary is missing"),
-    ("legacy bundle called suite", GOOD.replace("They are not AgentSuite commands", "They are AgentSuite commands"), "Legacy bundle path boundary is missing"),
+    ("suite-owned invocation broadened", GOOD.replace("Suite-owned Agents refuse legacy invocation.", "All Agents may be invoked."), "Live Agent path boundary is missing"),
+    ("legacy bundle made callable", GOOD.replace("Removed outright:", "Hidden but callable:"), "Legacy bundle path boundary is missing"),
     ("missing developer guide", GOOD.replace("[developer guide](docs/development.md)\n", ""), "developer guide link is missing"),
     ("missing codebase overview", GOOD.replace("[codebase overview](docs/codebase-overview.md)\n", ""), "codebase overview link is missing"),
     ("missing interface baseline", GOOD.replace("[interface baseline](docs/interface-baseline.md)\n", ""), "interface baseline link is missing"),

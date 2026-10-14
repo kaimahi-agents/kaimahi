@@ -40,12 +40,12 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 
 | Previous route | Current route | Contract |
 |---|---|---|
-| `agent create [name]` | `create --live [name]` | Preserve resource/bundle creation with explicit `--live` for both runtimes; exact kagent v0.10.2 stays opt-in. Default `create <name>` now authors one native-Orka workspace member offline. |
+| `agent create [name]` / `create --live` | Removed | No live resource/bundle creation, previews or wizard. Root `create NAME` authors native workspace source offline. |
 | `agent chat <name> [message...]` | `chat <name> [message...]` | Interactive Orka session, not workspace execution. |
-| `agent run [<bundle-dir>]` | `run [<bundle-dir>]` | One Task; retain `--agent` selection, answer-only stdout and pending/result contracts. |
+| `agent run [<bundle-dir>]` | `run --agent NAME` | Bundle mode removed; independent live Orka Task/answer/result contracts retained. Suite-owned Agents refuse legacy invocation. |
 | `agent show <name>` / `agent list` | `orka show <name>` / `orka list` | Live Orka detail/inventory, not workspace inspection. Show still requires namespace. |
-| `agent evaluate/lift/retire/status <bundle-dir>` | `bundle evaluate/lift/retire/status <bundle-dir>` | Existing PortableAgent lifecycle, selectors and evidence; exact kagent v0.10.3 supports explicit Go lift/status and receipt-bound evaluation with desired bindings and explicit `--to-context`. Evaluation is unsecure-only; trusted-proxy is refused. Python remains render-only; promotion gates, standalone chat/run, installation and retirement remain unsupported. |
-| `agent verify <sessions-receipt.json>` | `bundle verify <sessions-receipt.json>` | Local reference replay only, not packaged-suite verification. |
+| `agent evaluate/lift/retire/status` / `bundle ...` | Removed | Old commands/readers/writers/receipts removed outright, no stubs or migration. Suite status/retirement remain unavailable. |
+| `agent verify` / `bundle verify` | Removed | Legacy replay/judges and RecordedExecution are removed without a native replacement. |
 | `agent eval diff <before.json> <after.json>` | `eval diff <before.json> <after.json>` | Offline receipt comparison, not evaluation execution. |
 | `agent eval from-sessions <session-uid>...` | `eval from-sessions <session-uid>...` | Private reference-case preparation, not execution. |
 | `suite push --workspace DIR REF` / `suite push REF` | `push [--workspace DIR] REF` | Exact prepared workspace graph publication; discovers the nearest ancestor `workspace.yaml`, or selects an exact root without fallback with `--workspace`. |
@@ -53,8 +53,7 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 The entire `kmx agent` group is removed, including its hidden edit stub, with no
 aliases or retirement stubs. Use kubectl to edit live Orka resources. Root
 `status` and `orka status` retain the same table-only Orka runtime report;
-`bundle status <bundle-dir>` is separate. There is no root bundle status or suite
-observer. Root `eval` executes a full native workspace inventory with explicit
+There is no suite status/retirement replacement. Root `eval` executes a full native workspace inventory with explicit
 target/output selection and exactly one runtime-derived model binding: Orka
 `--inference` or packaged kagent `--bindings`. Standalone packaged-reference
 evaluation remains unimplemented. Root digest `lift` deploys a packaged native
@@ -65,52 +64,18 @@ These spellings require a current development build; tagged v0.5.1 retains the
 `agent` routes. Workspace authoring/publication are unreleased. Existing operation handlers, arguments, applicable flags,
 stdout and exit contracts are preserved; this is not a receipt or bundle migration.
 
-## Evaluation judge selectors (unreleased)
+## Independent evaluation helpers
 
-`kmx bundle evaluate` accepts `--judge-base-url <url>` and optional
-`--judge-key-env <env-name>` on both Orka and sessions paths. They select only
-judge transport and the credential's environment-variable name, never a secret
-value, judge model or version. Model/version, rubric and integer `minScore`
-belong in explicit `llmJudge` assertions; there is no default endpoint/model or
-agent-model fallback. Empty flags and unused judge configuration after `--case`
-selection are refused before Task/session execution. Completion suggests no
-endpoint/env names and suppresses file completion for both flags.
+Offline `eval diff` compares strict full-passing native Orka/kagent suite evidence
+only; old normalized Orka/kagent/AgentSessions bundle receipts are unreadable.
+Zero is comparison, not a new pass or promotion gate.
 
-Existing destination selectors stay unchanged: `--to-context` or a remembered
-Orka target, versus explicit `--sessions`; sessions still conflicts with
-`--to-context` and Orka-only `--result-port`. Judging shares the case deadline
-and never retries or reruns the agent. Safe reasoning goes to terminal stdout,
-not receipts, and may contain answer text. Offline `eval diff` and
-`bundle verify` do not select a judge endpoint or call a judge; replay explicitly
-reports judge assertions not verified. See [judge behavior and disclosure](agent-lift.md#explicit-llm-judge).
-
-## Recorded-session selectors (unreleased)
-
-`kmx eval from-sessions <session-uid>... --sessions <source>
---assertions <case.yaml> --out <manifest.json>` reads source journals without
-inference. An existing output manifest means atomic append, never overwrite;
-duplicates refuse the whole operation. Assertions are authored without `input`.
-These helpers stay cluster-independent. Recorded-session execution remains
-`bundle evaluate`; root `eval` separately executes full native workspace cases.
-Standalone packaged evaluation is not implemented.
-
-`bundle evaluate --from-sessions <manifest> --source-sessions <source>
---sessions <candidate>` requires both explicit source and candidate selection,
-bypasses Kubernetes configuration, and refuses Orka-only selectors. Source CA
-uses `--source-sessions-ca`; candidate CA retains `--sessions-ca`. `--show-content`
-and source selectors require `--from-sessions`, never silently changing ordinary
-evaluation. Existing authored-input behavior is unchanged.
-
-Recorded inputs require named destination confirmation using
-`KAIMAHI_CONFIRM=<normalized-candidate-host:port>` even on loopback. Judges require
-separate `KAIMAHI_CONFIRM_JUDGE=<canonical-judge-base-url>`. Refusals name the
-transfer destination plainly; choosing an endpoint alone is not consent.
-Reference runs suppress answers and judge reasoning unless `--show-content` is
-explicit. Help/completion performs no reads, writes or inference. See
-[reference cases and row-local unknown comparisons](agent-lift.md#recorded-sessions-as-reference-cases).
-Missing case identity produces an `unknown` diff row without hiding comparable
-cases; unknown rows remain incomplete/nonzero. Observed identity disagreement
-or no complete observed case identity in either receipt remains incompatible.
+`eval from-sessions UID... --sessions SOURCE --assertions CASE.yaml --out FILE`
+remains private read-only reference extraction/export, not execution. Existing
+output appends atomically; duplicates refuse. No recorded payloads are persisted.
+RecordedExecution, legacy bundle Sessions evaluation/replay/judges and their
+consumers are removed. There is no native reference-manifest consumer; author
+native workspace cases. See [reference extraction](kmx.md#reference-extraction).
 
 ## Offline suite workspace
 
@@ -123,13 +88,9 @@ a missing workspace without a prompt. Without a workspace, terminal create asks
 `--workspace` hint. Invalid nearest markers refuse without fallback; an existing
 one-member workspace refuses a second member without changing source.
 
-`create --live` preserves the resource/bundle path and no-name Orka wizard,
-including native `--no-apply`, `--dry-run` and `--out -` previews. Both runtimes
-require `--live`; `--runtime kagent` alone is not a compatibility route. Live-only
-flags refuse before configuration/writes, and `--workspace` conflicts with
-`--live`. Live mode bypasses discovery; quickstart and console remain live.
-Help/completion does not resolve, prompt, mutate or load operational configuration.
-Default authoring needs no Kubernetes configuration, builder or model call.
+Live create/previews/wizard and live-only flags are removed outright, unknown
+before config. No runtime/model bootstrap belongs in workspace create.
+Help/completion is inert; authoring needs no cluster, builder or model call.
 
 `push <reference>` discovers the nearest ancestor `workspace.yaml`;
 `--workspace <directory>` instead selects that exact directory, without fallback.
@@ -161,33 +122,26 @@ promotion, creation or partial-outcome path. See [suite workspace](suite-workspa
 
 ## Vocabulary
 
-**Decided: keep Create → Prove → Lift.** Lift is the chosen lifecycle verb for
-the local-to-remote journey: create an agent locally, prove it with a real
-answer, then lift it to a remote environment. Retain `kmx bundle lift` and
-interactive `/lift`; use **Lift** consistently in help, menu labels and the
-product narrative. Do not rename the agent command to `deploy`. “Deployment”
-remains useful technical language for the resulting resources and receipts.
-
-Root `lift <ref>@<digest>` is deploy-only suite lift. `kmx bundle lift` remains
-the PortableAgent operation, and `kmx aks up/down` remains the AKS route. Removal does
-not change AKS arguments, ownership records, recovery or teardown behavior.
+**Decided: keep Create → Prove → Lift.** Root digest Lift deploys an exact
+packaged native suite using private full-passing evidence, not old bundle state.
+Chat `/lift` and console Lift only print
+`Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+No release GUI or live-copy fallback remains. Standalone AKS up/down and internal
+App.Lift cloud setup remain independent. Removal does not change AKS ownership,
+recovery or teardown behavior. Ready/answered/evaluated are distinct evidence.
 
 - **Context:** a kubeconfig access selection; not a durable cluster identity.
 - **Target:** selected runtime, cluster identity, namespace and deployment
   destination, following [#238](https://github.com/kaimahi-agents/kaimahi/issues/238).
 - **Runtime adapter:** KMX's integration with an execution platform.
 - **Inference provider/backend:** an independent model-access route.
-- **Provision** infrastructure; **install** runtime software; **create** an
-  agent; **run/chat**; **evaluate** a revision; **lift** a bundle to a prepared
-  destination; **show** live details; report deployment **status**; **retire**
-  bundle-owned resources.
-- **Ready**, **answered** and **evaluated** identify different evidence.
-  **Unknown** is not **absent**. **Retry** resubmits; **result** retrieves the
-  existing execution.
-
-Bundle lift does not transfer sessions, memory or live state, delete its source,
-or perform cutover. Workload retirement is separate from infrastructure teardown.
-The guided live-copy fallback is explicitly untracked, not a bundle deployment.
+- **Provision** infrastructure; **install** runtime software; **create** source;
+  **eval** full cases; **push** exact graph; **lift** an evaluated digest.
+  Live Orka **show/list** and independent **run/chat** remain separate.
+- **Ready**, **answered** and **evaluated** are different evidence.
+  **Unknown** is not **absent**; **retry** resubmits; **result** only retrieves.
+- Suite status/retirement remain unavailable. Lift does not transfer live state,
+  sessions or memory, delete source, perform cutover or grant teardown authority.
 
 ## Audit and existing work
 
@@ -241,15 +195,14 @@ and compatibility over these operations, not parallel implementations.
 Interactive controls should share resource/action names: `/agent show`,
 `/agent chat`, `/agent use`, `/agent tools configure`,
 `/agent inference configure`, and console `/context use local|remote <context>`.
-Preserve `/lift` and Lift labels for the local-to-remote journey; any future
-grouped `/agent lift` spelling must preserve that entry point.
+Interactive `/lift` and console Lift are retired move notices, not release
+workflows. Do not add a grouped release GUI or live-copy fallback.
 Use `/inference use cluster|host-copilot|host-foundry` to distinguish execution
 routes, `/exit` with `/quit` compatibility, and `/verbose on|off` coordinated
 with #292. Retain keyboard shortcuts and advertise only supported controls.
 
 Proposed flag alignment: `--prompt`/`--prompt-file` instead of `--task`,
-`--instructions-file` instead of file-valued `--instructions`, `--bundle-dir`
-and `--bundles-dir`. Keep report `--output` separate from artifact `--out`;
+`--instructions-file` instead of file-valued `--instructions`. Keep report `--output` separate from artifact `--out`;
 preserve raw and answer-only stdout.
 
 ## Remaining decisions
@@ -262,13 +215,13 @@ preserve raw and answer-only stdout.
 3. **Capability view:** `kmx targets` is implemented for #289; retain that
    spelling and its read-only/offline-default contract rather than adding synonyms.
 4. **Authoring/execution verbs:** default `create` now authors offline;
-   `create --live` retains applying creation. Reconcile `evaluate` with `test`
+   live create is removed. Reconcile `evaluate` with `test`
    and root `run` with canvas-service `run start` through #276 and its
    authoring/execution work. Their scopes differ.
 5. **Runtime selection:** settle operator/saved configuration versus public
    selection through #224/#238; retain current capabilities in rename slices.
-6. **Target flags:** decide `--to-*` versus `--context/--namespace` with bundle
-   defaults, multi-target status, namespace ambiguity and alias conflicts.
+6. **Target flags:** decide `--to-*` versus `--context/--namespace` with runtime-specific
+   bindings, multi-target status, namespace ambiguity and alias conflicts.
 7. **Preview terms:** distinguish artifact rendering, no-write planning and
    server validation, including downloads/cache/local files and which resources
    admission actually checks. Do not mechanically alias `--no-apply` modes.

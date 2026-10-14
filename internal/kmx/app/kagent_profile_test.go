@@ -13,13 +13,11 @@ func TestKagentLiftRequiresExactVersionAndChartLabels(t *testing.T) {
 			t.Fatalf("missing exact v0103 chart/version evidence accepted: %v", labels)
 		}
 	}
-	if err := kagentCreateProfile().validateLabels(nil); err != nil {
-		t.Fatalf("changed historical v0102 optional label behavior: %v", err)
-	}
 }
 
 func TestKagentProfilesAreInvocationLocal(t *testing.T) {
-	old, newer := kagentCreateProfile(), kagentLiftProfile()
+	old, newer := kagentLiftProfile(), kagentLiftProfile()
+	old.Version, old.Commit = "v0.10.2", "68df64f671800c37c4204d81ebe0dd66ec35d223"
 	apps := []*App{{kagentProfile: &old}, {kagentProfile: &newer}, {}, {kagentProfile: &newer}, {kagentProfile: &old}}
 	var wg sync.WaitGroup
 	for _, a := range apps {

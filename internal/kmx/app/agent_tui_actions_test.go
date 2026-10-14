@@ -20,7 +20,7 @@ func TestConsoleLiftMovedWithoutDispatch(t *testing.T) {
 				next, _ := m.execute(entry)
 				m = next.(agentTUIModel)
 			}
-			if m.status != want || m.action != nil || m.form != nil || m.command {
+			if m.status != want || m.action != nil || m.command {
 				t.Fatalf("Lift still dispatches: status=%q action=%v", m.status, m.action)
 			}
 		})

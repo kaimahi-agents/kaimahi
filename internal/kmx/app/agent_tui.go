@@ -13,7 +13,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/lift"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -30,11 +29,9 @@ type agentTUIInventoryMsg struct {
 	err                error
 }
 type agentTUIAction struct {
-	kind           string
-	bundles        string
-	agent          agentTUIAgent
-	source, target agentTUIEnvironment
-	create         *lift.Options
+	kind   string
+	agent  agentTUIAgent
+	source agentTUIEnvironment
 }
 type agentTUISuggestion struct{ value, detail string }
 type agentTUIMenuAction struct{ key, label string }
@@ -48,8 +45,6 @@ type agentTUIModel struct {
 	command, details, help, discovering          bool
 	status                                       string
 	action                                       *agentTUIAction
-	form                                         []string
-	formStep                                     int
 	actionsOpen                                  bool
 	actionSelection                              int
 	detailScroll                                 int
@@ -64,8 +59,6 @@ type agentTUIModel struct {
 	startInference                               func(agentTUIEnvironment, agentTUIAgent, consoleInferenceSnapshot, consoleInferenceSource, string) (<-chan consoleInferenceSaved, context.CancelFunc)
 	startCreate                                  func(agentTUIEnvironment, string, string, *suiteWorkspaceReview) (<-chan agentTUICreateResult, context.CancelFunc)
 	startCreateLift                              func(consoleWorkspaceLiftRequest) (<-chan agentTUICreateResult, context.CancelFunc)
-	bundle                                       *consoleBundlePane
-	loadBundle                                   func(context.Context, agentTUIEnvironment, agentTUIAgent) consoleBundleSnapshot
 	runs                                         *consoleRunsPane
 	loadRuns                                     func(context.Context, agentTUIEnvironment, agentTUIAgent) (consoleRunList, error)
 	loadRun                                      func(context.Context, agentTUIEnvironment, consoleRunRef) (runview.Run, error)
@@ -140,9 +133,6 @@ func (a *App) AgentTUI(opt AgentTUIOptions) error {
 		m.loadRun = func(readCtx context.Context, env agentTUIEnvironment, ref consoleRunRef) (runview.Run, error) {
 			return env.app(a).withRunContext(readCtx).ReadOrkaRun(readCtx, ref.Namespace, ref.Name, ref.UID)
 		}
-		m.loadBundle = func(paneCtx context.Context, env agentTUIEnvironment, agent agentTUIAgent) consoleBundleSnapshot {
-			return a.consoleBundleStatus(paneCtx, env, agent, opt.Bundles)
-		}
 		filter := func(model tea.Model, msg tea.Msg) tea.Msg {
 			if _, ok := msg.(tea.InterruptMsg); ok && (model.(agentTUIModel).creation != nil || model.(agentTUIModel).inference != nil) {
 				return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
@@ -160,7 +150,6 @@ func (a *App) AgentTUI(opt AgentTUIOptions) error {
 			return nil
 		}
 		action := *m.action
-		action.bundles = opt.Bundles
 		m.action = nil
 		m.status = "Returned from " + action.kind
 		target, err := a.runAgentTUIAction(action)
@@ -229,20 +218,6 @@ func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.width, m.height = event.Width, event.Height
 			m.input.SetWidth(max(1, event.Width-4))
 			return m, nil
-		}
-	}
-	if loaded, ok := msg.(consoleBundleLoaded); ok {
-		// Every finished read releases its context, and only the pane still
-		// open is drawn: a read for a pane since closed or reopened is stale.
-		loaded.pane.stop()
-		if m.bundle != nil && loaded.pane == m.bundle {
-			m.bundle.loading, m.bundle.snapshot, m.bundle.scroll = false, loaded.snapshot, 0
-		}
-		return m, nil
-	}
-	if m.bundle != nil {
-		if key, ok := msg.(tea.KeyPressMsg); ok && key.String() != "ctrl+c" {
-			return m.updateBundle(key)
 		}
 	}
 	if m.inference != nil {
@@ -338,9 +313,6 @@ func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.action = nil
 			return m, tea.Quit
 		}
-		if m.form != nil {
-			return m.updateForm(msg)
-		}
 		if m.command {
 			return m.updateCommand(msg)
 		}
@@ -391,8 +363,6 @@ func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "i":
 			m.details = m.selected() != nil
 			m.detailScroll = 0
-		case "b":
-			return m.openBundle()
 		case "R":
 			return m.openRuns()
 		case "n":
@@ -407,7 +377,7 @@ func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.command || m.form != nil {
+	if m.command {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
@@ -492,7 +462,7 @@ func (m agentTUIModel) agentActions(a agentTUIAgent) []agentTUIMenuAction {
 	// Last, after every entry that existed before it, so no existing entry
 	// moves: an operator who reaches an action by position still reaches it.
 	if !a.External {
-		actions = append(actions, agentTUIMenuAction{"b", "Compare with local bundle"}, agentTUIMenuAction{"R", "View recent runs"})
+		actions = append(actions, agentTUIMenuAction{"R", "View recent runs"})
 	}
 	return actions
 }
@@ -548,8 +518,6 @@ func (m agentTUIModel) updateActions(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		m.details = true
 		m.detailScroll = 0
-	case "b":
-		return m.openBundle()
 	case "R":
 		return m.openRuns()
 	case "c":
@@ -805,52 +773,6 @@ func (m agentTUIModel) execute(line string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-var agentTUIFormLabels = []string{"Resource group", "AKS cluster name", "Registry name (globally unique)", "Azure region"}
-
-func (m agentTUIModel) updateForm(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if key.Code == tea.KeyEsc {
-		m.form, m.action = nil, nil
-		m.input.Blur()
-		m.status = "New environment cancelled"
-		return m, nil
-	}
-	if key.Code != tea.KeyEnter {
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(key)
-		return m, cmd
-	}
-	value := strings.TrimSpace(m.input.Value())
-	if value == "" {
-		m.status = "A value is required"
-		return m, nil
-	}
-	m.form[m.formStep] = value
-	if m.formStep < len(m.form)-1 {
-		m.formStep++
-		m.status = ""
-		m.input.SetValue(m.form[m.formStep])
-		m.input.CursorEnd()
-		return m, nil
-	}
-	opt := withLiftDefaults(lift.Options{ResourceGroup: m.form[0], Cluster: m.form[1], Registry: m.form[2], Location: m.form[3], Payload: lift.PayloadOrka, Step: "cluster", Observability: true})
-	if err := opt.Validate(); err != nil {
-		m.status = err.Error()
-		m.formStep = 0
-		m.input.SetValue(m.form[0])
-		m.input.CursorEnd()
-		return m, nil
-	}
-	m.form = nil
-	m.input.Blur()
-	if m.opt.Demo {
-		m.action = nil
-		m.status = "DEMO · environment form complete (nothing created)"
-		return m, nil
-	}
-	m.action.create = &opt
-	return m, tea.Quit
-}
-
 func tuiOneLine(s string) string { return strings.Join(strings.Fields(safeTerminal(s)), " ") }
 
 func agentTUIKeyHints(s string) string {
@@ -910,22 +832,11 @@ func (m agentTUIModel) View() tea.View {
 	bodyHeight := h - len(footer) - 2
 	var body string
 	switch {
-	case m.form != nil:
-		lines := []string{"Create remote AKS environment", "", "Uses the current Azure account; the lift review shows the subscription.", "Creates a resource group, registry and AKS cluster, then continues legacy bundle lift.", ""}
-		for i, label := range agentTUIFormLabels {
-			value := m.form[i]
-			if i == m.formStep {
-				value = m.input.View()
-			}
-			lines = append(lines, label+": "+value)
-		}
-		lines = append(lines, "", "<enter> next · <esc> cancel")
-		body = strings.Join(lines, "\n")
 	case m.help:
 		body = "KEYS & COMMANDS\n\n" +
 			"h/l or ←/→  switch columns; j/k or ↑/↓  select agent\n" +
-			"<enter> actions · i inspect · b bundle · R recent runs (Orka) · c chat · L lift local agent · r refresh\n\n" +
-			"n create live agent (--live) in the focused environment\n" +
+			"<enter> actions · i inspect · R recent runs (Orka) · c chat · r refresh\n\n" +
+			"n create, evaluate and lift authored source in the focused environment\n" +
 			"/inspect [agent]     details in the focused column\n" +
 			"/chat [agent]        open chat, /exit returns here\n" +
 			interactiveLiftRetirement + "\n" +
@@ -941,7 +852,7 @@ func (m agentTUIModel) View() tea.View {
 	// Bound every rendered line and the total footprint, including tiny/resized terminals.
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
-		if m.form == nil && !m.help {
+		if !m.help {
 			lines[i] = ansi.Truncate(line, w, "")
 		} else {
 			lines[i] = agentTUIKeyHints(ansi.Truncate(safeTerminal(line), w, "…"))
@@ -971,10 +882,6 @@ func (m agentTUIModel) View() tea.View {
 				lipgloss.NewLayer(panel).X((w-lipgloss.Width(panel))/2).Y((h-lipgloss.Height(panel))/2).Z(1),
 			).Render()
 		}
-	}
-	if m.bundle != nil {
-		panel := m.bundleView()
-		content = lipgloss.NewCompositor(lipgloss.NewLayer(content), lipgloss.NewLayer(panel).X((w-lipgloss.Width(panel))/2).Y(max(0, (h-lipgloss.Height(panel))/2)).Z(1)).Render()
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true

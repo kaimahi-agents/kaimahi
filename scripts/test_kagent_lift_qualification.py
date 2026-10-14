@@ -174,14 +174,6 @@ with socket.socket() as listener:
                         self.assertEqual(self.driver.audit_frames(audit), [])
                         self.assertFalse(audit.exists(), "read-only forwards must leave no metadata frames")
 
-    def test_cli_failure_projection_reports_closed_reason_without_raw_stderr(self):
-        self.assertTrue(hasattr(self.driver, "cli_failure_reason"), "safe CLI error reasons are missing")
-        raw = b"private prompt and credential\nError: Kagent controller workload: pod does not have exactly one controller container using ghcr.io/kagent-dev/kagent/controller:0.10.3; no Kubernetes resources were changed"
-        reason = self.driver.cli_failure_reason(raw)
-        self.assertEqual(reason, "controller-pod-reference-mismatch")
-        self.assertNotIn("private", reason)
-        self.assertEqual(self.driver.cli_failure_reason(b"unexpected raw provider response private"), "unclassified-cli-error")
-
     def test_read_only_check_distinguishes_closed_cluster_local_and_write_failures(self):
         self.assertTrue(hasattr(self.driver, "validate_read_only"), "read-only failure needs a closed boundary reason")
         before = {"RemoteMCPServer/lift-tools": {"uid": "same", "resource_version": "1", "spec_sha256": "a" * 64}}
@@ -249,52 +241,6 @@ with socket.socket() as listener:
         self.assertEqual(self.driver.project_identity([changed]), before)
         self.assertNotIn("private", json.dumps(before))
 
-    def test_receipt_matches_bare_digests_and_rejects_replacement_uid(self):
-        references = [{"Kind": kind, "Name": "lift-proof", "Namespace": "agents", "UID": kind + "-uid"}
-                      for kind in ("ModelConfig", "Agent", "Deployment", "Service", "ServiceAccount", "Secret")]
-        receipt = {"Target": {"Runtime": "kagent", "Context": "kind-kmx-kagent-lift", "Namespace": "agents"},
-                   "Bundle": "lift-proof", "RuntimeVersion": "v0.10.3", "ClusterUID": "cluster-1", "Ready": True,
-                   "ObservedAt": "2026-10-10T00:00:00Z", "PortableDigest": "a" * 64, "RenderedDigest": "b" * 64,
-                   "Resources": references[:2], "Proofs": references[:2], "Workload": references[2:], "Dependencies": []}
-        identities = {ref["Kind"] + "/lift-proof": {"uid": ref["UID"]} for ref in references}
-        objects = {kind.lower() + "s.kagent.dev": {"metadata": {"labels": {"app.kubernetes.io/managed-by": "kmx"},
-                     "annotations": {"kaimahi.dev/bundle": "lift-proof", "kaimahi.dev/runtime-version": "v0.10.3",
-                                     "kaimahi.dev/portable-digest": "a" * 64, "kaimahi.dev/rendered-digest": "b" * 64}}}
-                   for kind in ("ModelConfig", "Agent")}
-        with tempfile.TemporaryDirectory() as directory:
-            bundle = pathlib.Path(directory)
-            history = bundle / "receipts/kagent-v0.10.3"
-            history.mkdir(parents=True, mode=0o700)
-            path = history / "receipt.json"
-            path.write_text(json.dumps({"receipt": receipt}))
-            path.chmod(0o600)
-            with mock.patch.object(self.driver, "get", side_effect=lambda kind, name: objects[kind]):
-                self.assertEqual(self.driver.validate_receipt(bundle, identities, "cluster-1"), receipt)
-                path.write_text(json.dumps({"receipt": dict(receipt, AnswerText="private terminal text")}))
-                with self.assertRaisesRegex(ValueError, "payload-free"):
-                    self.driver.validate_receipt(bundle, identities, "cluster-1")
-                path.write_text(json.dumps({"receipt": receipt}))
-                identities["Agent/lift-proof"]["uid"] = "replacement"
-                with self.assertRaisesRegex(ValueError, "resource identity"):
-                    self.driver.validate_receipt(bundle, identities, "cluster-1")
-
-    def test_status_binds_both_primary_uids_workload_and_cluster(self):
-        status = {"bundle": "lift-proof", "runtime": "kagent", "runtimeVersion": "v0.10.3",
-                  "portableDigest": "sha256:" + "a" * 64, "renderedDigest": "sha256:" + "b" * 64,
-                  "targets": [{"context": "kind-kmx-kagent-lift", "namespace": "agents", "clusterUID": "cluster-1",
-                               "state": "ready", "ready": True, "agentUID": "agent-1", "modelConfigUID": "model-1",
-                               "deploymentUID": "deployment-1"}]}
-        identities = {"Agent/lift-proof": {"uid": "agent-1"}, "ModelConfig/lift-proof": {"uid": "model-1"},
-                      "Deployment/lift-proof": {"uid": "deployment-1"}}
-        self.assertTrue(self.driver.status_ready(status), "ready target report must be recognized")
-        self.driver.validate_status(status, identities, "cluster-1")
-        for field, value in (("state", "failed"), ("agentUID", "replacement"), ("modelConfigUID", "replacement"),
-                             ("clusterUID", "replacement"), ("noReceipt", True)):
-            changed = json.loads(json.dumps(status))
-            changed["targets"][0][field] = value
-            with self.subTest(field=field), self.assertRaises(ValueError):
-                self.driver.validate_status(changed, identities, "cluster-1")
-
     def test_native_send_is_not_retried_or_logged_on_rpc_error(self):
         calls = []
         evidence = self.evidence
@@ -304,7 +250,7 @@ with socket.socket() as listener:
                 pass
 
             def do_GET(self):
-                body = json.dumps(dict(evidence, model_calls=0, tool_calls=0, terminal_answers=0)).encode()
+                body = json.dumps(dict(evidence, model_calls=0, tool_calls=0, terminal_answers=0, judge_calls=0, cases=[])).encode()
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(body)

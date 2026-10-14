@@ -20,10 +20,9 @@ import (
 // QuickstartWizardOptions configures the experimental path from an empty
 // machine to a user-authored Orka agent.
 type QuickstartWizardOptions struct {
-	AzureDiscovery string
-	Create         CreateOptions
-	Verbose        bool
-	Inference      string
+	Create    CreateOptions
+	Verbose   bool
+	Inference string
 }
 
 type quickstartExistingAgent struct {
@@ -38,18 +37,12 @@ type quickstartTarget struct {
 // setup. Background setup never owns stdin or writes through the full-screen
 // wizard; its complete log is emitted after the terminal has been restored.
 func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
-	switch opt.AzureDiscovery {
-	case "", "cli", "sdk":
-	default:
-		return fmt.Errorf("unknown Azure discovery %q; use cli or sdk", opt.AzureDiscovery)
-	}
 	if opt.Inference == "foundry" || opt.Inference == "copilot" {
 		return fmt.Errorf("quickstart host Foundry/Copilot modes are retired; use an existing Ready destination Orka openai Provider with an exact model in the authored suite workspace, then eval → push → lift")
 	}
 	if err := validateQuickstartSourceOptions(opt.Create); err != nil {
 		return err
 	}
-	a.azureDiscoveryMode = opt.AzureDiscovery
 	if _, err := quickstartInference(opt.Inference, "detected-later"); err != nil {
 		return err
 	}
@@ -449,8 +442,9 @@ func (m quickstartWizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		updated, _ := m.create.Update(tea.WindowSizeMsg{Width: max(24, min(96, msg.Width-2)-10), Height: msg.Height})
-		m.create = updated.(createWizardModel)
+		// Keep the source input resize path without the retired live-create model.
+		width := max(24, min(96, msg.Width-2)-10)
+		m.create.input.SetWidth(max(20, min(60, width-4)))
 		return m, nil
 	case quickstartTickMsg:
 		m.frame++
@@ -812,22 +806,6 @@ func (m quickstartWizardModel) setupComplete() bool {
 	return true
 }
 
-func quickstartStatusStyle(status string) lipgloss.Style {
-	color := lipgloss.BrightBlack
-	if status == "done" {
-		color = lipgloss.Green
-	} else if status == "active" {
-		color = lipgloss.Cyan
-	} else if status == "failed" {
-		color = lipgloss.Red
-	}
-	return lipgloss.NewStyle().Foreground(color).Bold(status != "pending")
-}
-
-func quickstartBarStyle(status string) lipgloss.Style {
-	return quickstartStatusStyle(status)
-}
-
 func quickstartSize(size int64) string {
 	if size >= 1_000_000_000 {
 		return fmt.Sprintf("%.1f GB", float64(size)/1_000_000_000)
@@ -977,8 +955,6 @@ func cancelQuickstartWizard(model tea.Model, msg tea.Msg) tea.Msg {
 		switch m := model.(type) {
 		case quickstartWizardModel:
 			quitting = m.quitting
-		case quickstartDeployModel:
-			quitting = m.done || m.cancelled
 		case quickstartReadyModel:
 			quitting = m.accepted || m.cancelled
 		}
@@ -1000,6 +976,7 @@ type quickstartReadyModel struct {
 }
 
 func (m quickstartReadyModel) Init() tea.Cmd { return nil }
+
 func (m quickstartReadyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyPressMsg); ok && (key.String() == "ctrl+c" || key.Code == tea.KeyEsc) {
 		msg = createWizardCancelMsg{}
@@ -1024,6 +1001,7 @@ func (m quickstartReadyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
 func (m quickstartReadyModel) View() tea.View {
 	width := m.width
 	if width <= 0 {
@@ -1074,85 +1052,5 @@ func runQuickstartReadyScreen(in io.Reader, out io.Writer, name string, location
 }
 
 func (a *App) quickstartOrkaChat(agent, namespace string) error {
-	return a.ChatWithOptions(ChatOptions{Agent: agent, Namespace: namespace, Runtime: "orka", Verbose: a.chatVerbose, AzureDiscovery: a.azureDiscoveryMode})
-}
-
-type quickstartDeployDone struct{ err error }
-type quickstartDeployModel struct {
-	name      string
-	done      bool
-	err       error
-	frame     int
-	cancel    context.CancelFunc
-	cancelled bool
-}
-
-func (m quickstartDeployModel) Init() tea.Cmd { return quickstartTick() }
-func (m quickstartDeployModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyPressMsg); ok && (key.String() == "ctrl+c" || key.Code == tea.KeyEsc) {
-		msg = createWizardCancelMsg{}
-	}
-	switch msg := msg.(type) {
-	case createWizardCancelMsg:
-		m.cancelled = true
-		if m.cancel != nil {
-			m.cancel()
-		}
-		return m, tea.Quit
-	case quickstartTickMsg:
-		m.frame++
-		return m, quickstartTick()
-	case quickstartDeployDone:
-		m.done, m.err = true, msg.err
-		return m, tea.Quit
-	}
-	return m, nil
-}
-func (m quickstartDeployModel) View() tea.View {
-	status := "active"
-	if m.err != nil {
-		status = "failed"
-	}
-	if m.done && m.err == nil {
-		status = "done"
-	}
-	heading := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Cyan).Render("KMX  /  QUICKSTART WIZARD")
-	rendered := tea.NewView(heading + fmt.Sprintf("\n\nPHASE 2 OF 3 · Deploy agent\n\nDeploy Agent %q (Orka agent)\n\n  Provider → Agent %s %s\n\nEach resource must become Ready before the next is created.\n\nesc / ctrl+c cancel", m.name, quickstartBarStyle(status).Render(quickstartProgressBar(status, m.frame)), quickstartStatusStyle(status).Render(status)))
-	rendered.AltScreen = true
-	return rendered
-}
-
-func (a *App) runQuickstartDeployment(opt CreateOptions) error {
-	return a.runQuickstartDeploymentWork(opt.Name, func(worker *App) error { return worker.CreateAgent(opt) })
-}
-
-func (a *App) runQuickstartDeploymentWork(name string, work func(*App) error) error {
-	var log bytes.Buffer
-	worker := *a
-	runner := *a.Run
-	ctx, cancel := context.WithCancel(a.operationContext())
-	defer cancel()
-	runner.Context = ctx
-	runner.Stdout, runner.Stderr = &log, &log
-	worker.Run, worker.Out, worker.Err, worker.Stdin = &runner, &log, &log, nil
-	done := make(chan error, 1)
-	program := tea.NewProgram(quickstartDeployModel{name: name, cancel: cancel}, tea.WithInput(a.Stdin), tea.WithOutput(a.Err), tea.WithFilter(cancelQuickstartWizard))
-	go func() {
-		err := work(&worker)
-		done <- err
-		program.Send(quickstartDeployDone{err: err})
-	}()
-	result, runErr := program.Run()
-	cancel()
-	deployErr := <-done
-	if completed, ok := result.(quickstartDeployModel); ok && completed.cancelled {
-		return errCreateCancelled
-	}
-	if runErr != nil || deployErr != nil {
-		if log.Len() > 0 {
-			fmt.Fprintln(a.Err, "\nAgent deployment log:")
-			_, _ = log.WriteTo(a.Err)
-		}
-	}
-	return errors.Join(runErr, deployErr)
+	return a.ChatWithOptions(ChatOptions{Agent: agent, Namespace: namespace, Runtime: "orka", Verbose: a.chatVerbose})
 }

@@ -575,7 +575,7 @@ class Qualification:
         self.phase = "author"
         public = self.repo / "internal/kmx/app/testdata/live-eval-loop"
         instructions = self.work / "instructions.txt"
-        instructions.write_text(yaml.safe_load((public / "agent.yaml").read_bytes())["spec"]["instructions"])
+        instructions.write_bytes((public / "instructions.txt").read_bytes())
         cases = {p.name: p.read_bytes() for p in sorted((public / "eval").glob("*.yaml"))}
         require(len(cases) == 2, "fixture-cases")
         workspace, receipt_path = self.work / "workspace", self.work / "receipt/passing.json"
@@ -630,33 +630,18 @@ class Qualification:
         self.phase = "refusals"
         member = subject["Member"]
         case_path = workspace / "eval" / sorted(cases)[0]
-        legacy_args = ["--context", self.context, "create", "--live", member, "--namespace", "orka-system", "--provider-type", "openai",
-                       "--model", "qwen-3.5-2b", "--secret", self.secret_ref["name"], "--secret-key", self.secret_ref["key"],
-                       "--base-url", "http://native-suite-aikit.orka-system.svc.cluster.local:8080/v1", "--instructions", instructions]
-        # Use the existing offline legacy renderer/writer: a real lift bundle
-        # needs both PortableAgent and OrkaBindings, not just agent.yaml.
-        copy_bundle = self.work / "native-copy-bundle"
-        start = len(self.frames())
-        self.cli(*legacy_args, "--no-apply", "--out", self.work / "native-copy.yaml", "--bundle-path", copy_bundle)
-        require(len(self.frames()) == start, "copy-fixture-kube-call")
-        require(all((copy_bundle / name).is_file() for name in ("agent.yaml", "bindings.yaml")), "copy-fixture-incomplete")
-        rejected = self.cli("bundle", "lift", copy_bundle, "--to-context", self.context, "--to-namespace", "orka-system",
-                            "--inference", "provider:native-suite-inference", success=False)
-        verify_refusal(rejected.returncode, rejected.stderr, self.frames()[start:], "reserves native suite ownership")
-        legacy_args += ["--out", self.work / "legacy.yaml", "--bundle-path", self.work / "legacy-bundle"]
-        start = len(self.frames())
-        rejected = self.cli(*legacy_args, success=False)
-        verify_refusal(rejected.returncode, rejected.stderr, self.frames()[start:], "reserves native suite ownership")
         collision, collision_member = self.work / "collision", "ci-native-collision"
-        legacy_args[4] = collision_member
-        legacy_args[legacy_args.index("--out") + 1] = self.work / "collision-legacy.yaml"
-        legacy_args[legacy_args.index("--bundle-path") + 1] = self.work / "collision-legacy-bundle"
-        # A normal legacy create applies no Task. Remove only this deliberately
-        # created fixture's legacy markers externally to qualify unmarked refusal.
-        self.cli(*legacy_args)
-        for resource in ("providers.core.orka.ai", "agents.core.orka.ai"):
-            self.kube("-n", "orka-system", "annotate", resource, collision_member,
-                      "kaimahi.dev/bundle-", "kaimahi.dev/portable-digest-", "kaimahi.dev/rendered-digest-")
+        # Externally authored upstream objects deliberately have no KMX ownership.
+        # They are fixtures, never a source-less product deployment or adoption.
+        metadata = {"name": collision_member, "namespace": "orka-system"}
+        provider = {"apiVersion": "core.orka.ai/v1alpha1", "kind": "Provider", "metadata": metadata,
+                    "spec": {"type": "openai", "defaultModel": "qwen-3.5-2b", "secretRef": self.secret_ref,
+                             "baseURL": "http://native-suite-aikit.orka-system.svc.cluster.local:8080/v1"}}
+        agent = {"apiVersion": "core.orka.ai/v1alpha1", "kind": "Agent", "metadata": metadata,
+                 "spec": {"model": "qwen-3.5-2b", "providerRef": {"name": collision_member},
+                          "instructions": instructions.read_text()}}
+        for fixture in (provider, agent):
+            self.kube("create", "-f", "-", raw=canonical(fixture))
         self.author(collision_member, collision, instructions, cases)
         pair_before = [self.get(k + "s.core.orka.ai", collision_member) for k in ("provider", "agent")]
         start = len(self.frames())

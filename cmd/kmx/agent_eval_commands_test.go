@@ -12,7 +12,7 @@ import (
 )
 
 // Catch eval accidentally becoming an evaluate alias, or loading cluster preferences.
-func TestAgentEvalDiffOfflineCLI(t *testing.T) {
+func TestAgentEvalDiffRejectsLegacyReceiptOfflineCLI(t *testing.T) {
 	receipt := `{"schemaVersion":2,"runID":"` + strings.Repeat("1", 32) + `","bundle":"sample","portableDigest":"` + strings.Repeat("a", 64) + `","casesDigest":"` + strings.Repeat("b", 64) + `","fullCaseSet":true,"gitCommit":"uncommitted","target":{"runtime":"orka","context":"context","namespace":"agents","clusterUID":"cluster-1","agent":"sample","agentUID":"agent-1","model":"test-model"},"result":"pass","cases":[{"id":"one","verdict":"pass","caseDigest":"` + strings.Repeat("c", 64) + `","inputDigest":"` + strings.Repeat("d", 64) + `","taskName":"task-one","taskUID":"task-1","answerSHA256":"` + strings.Repeat("e", 64) + `","assertions":[{"id":"text","type":"contains","definitionDigest":"` + strings.Repeat("f", 64) + `","verdict":"pass","reason":"assertion satisfied"}]}]}`
 	before := filepath.Join(evalDiffTempDir(t), "before.json")
 	after := filepath.Join(evalDiffTempDir(t), "after.json")
@@ -23,10 +23,10 @@ func TestAgentEvalDiffOfflineCLI(t *testing.T) {
 		name, data, want string
 		failure          bool
 	}{
-		{"stable", receipt, "stable", false},
-		{"regression", strings.ReplaceAll(strings.ReplaceAll(receipt, `"pass"`, `"fail"`), "assertion satisfied", "assertion not satisfied"), "regression", true},
-		{"definition changed", strings.Replace(receipt, `"definitionDigest":"`+strings.Repeat("f", 64), `"definitionDigest":"`+strings.Repeat("0", 64), 1), "definitionChanged", true},
-		{"incompatible", strings.Replace(receipt, "test-model", "other-model", 1), "incompatible", true},
+		{"old passing receipt", receipt, "", true},
+		{"regression", strings.ReplaceAll(strings.ReplaceAll(receipt, `"pass"`, `"fail"`), "assertion satisfied", "assertion not satisfied"), "", true},
+		{"definition changed", strings.Replace(receipt, `"definitionDigest":"`+strings.Repeat("f", 64), `"definitionDigest":"`+strings.Repeat("0", 64), 1), "", true},
+		{"incompatible", strings.Replace(receipt, "test-model", "other-model", 1), "", true},
 		{"invalid", `{"answer":"PRIVATE_PAYLOAD_CANARY"}`, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -38,7 +38,7 @@ func TestAgentEvalDiffOfflineCLI(t *testing.T) {
 			calls := 0
 			deps.loadConfig = func(string, string) (*config.Config, error) { calls++; return nil, errors.New("PRIVATE_CONFIG_CANARY") }
 			err := execute([]string{"eval", "diff", before, after}, deps)
-			if calls != 0 || (err != nil) != tc.failure || !strings.Contains(out.String(), tc.want) {
+			if calls != 0 || err == nil || err.Error() != "invalid evaluation receipt" || !strings.Contains(out.String(), tc.want) {
 				t.Fatalf("calls=%d err=%v out=%s diagnostics=%s", calls, err, out.String(), diagnostics.String())
 			}
 			if strings.Contains(out.String()+diagnostics.String()+fmtError(err), "PRIVATE_") {

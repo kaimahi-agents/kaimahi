@@ -127,26 +127,6 @@ func TestInteractiveCommandsExposeVerboseFlag(t *testing.T) {
 	}
 }
 
-func TestQuickstartExposesAzureDiscoveryAlternative(t *testing.T) {
-	var out, diagnostics bytes.Buffer
-	deps, _ := testDependencies(&out, &diagnostics)
-	root := newRootCommand(&commandState{deps: deps})
-	cmd, _, err := root.Find([]string{"quickstart"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	flag := cmd.Flags().Lookup("azure-discovery")
-	if flag == nil || flag.DefValue != "cli" {
-		t.Fatal("CLI default or discovery alternative missing")
-	}
-	if err := cmd.ParseFlags([]string{"--azure-discovery", "sdk"}); err != nil {
-		t.Fatal(err)
-	}
-	if value, _ := cmd.Flags().GetString("azure-discovery"); value != "sdk" {
-		t.Fatalf("value=%q", value)
-	}
-}
-
 func TestContainerEngineFlagOverridesEnvironmentBeforeAppConstruction(t *testing.T) {
 	for _, argv := range [][]string{
 		{"--container-engine", "podman", "status"},
@@ -513,7 +493,6 @@ func TestQuickstartRoutesEachMode(t *testing.T) {
 		{[]string{"quickstart", "--interactive"}, "kmx quickstart --interactive requires an interactive terminal"},
 		{[]string{"quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "quickstart tool shortcuts are retired"},
 		{[]string{"quickstart", "-i"}, "kmx quickstart --interactive requires an interactive terminal"},
-		{[]string{"quickstart", "-i", "--azure-discovery", "sdk"}, "kmx quickstart --interactive requires an interactive terminal"},
 		{[]string{"quickstart", "-o", "yaml"}, "unknown --output"},
 		{[]string{"quickstart", "--task", "hi", "-o", "yaml"}, "unknown --output"},
 	} {

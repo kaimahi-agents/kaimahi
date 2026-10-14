@@ -207,7 +207,7 @@ func TestEvaluationResultsJSONDoesNotCarryOperands(t *testing.T) {
 	}
 	// Additive lifecycle fields preserve the old caller contract, but receipts
 	// accept only result rows, never authored definitions.
-	request := EvaluationRequest{ExpectContains: []string{"legacy"}, Assertions: c.Assertions}
+	request := EvaluationCase{ExpectContains: []string{"legacy"}, Assertions: c.Assertions}
 	receipt := EvaluationReceipt{Assertions: rows}
 	if len(request.ExpectContains) != 1 || !reflect.DeepEqual(receipt.Assertions, rows) {
 		t.Fatal("lifecycle assertion contract changed")
@@ -393,8 +393,7 @@ func TestEvaluationJudgePureUnknownAndPayloadFreePort(t *testing.T) {
 		rows[0].Verdict, rows[0].Reason = EvaluationPass, "assertion satisfied"
 		return rows
 	}
-	req := EvaluationRequest{Judge: judge}
-	rows := req.Judge(context.Background(), c, EvaluationEvidence{Answer: "answer-private-canary", AnswerAvailable: true})
+	rows := judge(context.Background(), c, EvaluationEvidence{Answer: "answer-private-canary", AnswerAvailable: true})
 	data, err := json.Marshal(rows)
 	if err != nil || strings.Contains(string(data), "private-canary") || strings.Contains(string(data), "rubric") || strings.Contains(string(data), "reasoning") {
 		t.Fatalf("judge rows leaked payload: %s (%v)", data, err)

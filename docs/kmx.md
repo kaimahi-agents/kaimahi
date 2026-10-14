@@ -1,31 +1,29 @@
 # `kmx` — agent tooling with Orka as the default
 
-[Orka](orka.md) remains the first-class platform and the default for every
-existing workflow. Kaimahi's front door is `kmx orka` for installation/status
-and root `kmx create` for offline workspace authoring. Explicit
-`kmx create --live` retains native Provider + Agent and PortableAgent bundle
-creation. The selected runtime owns execution, enforcement and model access;
-installing it alone does
-not prove an Agent can answer.
+[Orka](orka.md) remains the default runtime. Root `create` authors one tool-free
+native workspace member offline; `--runtime kagent` selects exact v0.10.3
+Go/linux-amd64. Both profiles support full-workspace evaluation, evaluated
+publication and digest Lift with runtime-specific evidence. Kagent Lift creates
+absent objects only and refuses occupied targets. Runtime/model are packaged,
+never overridden; Orka inference uses Ready `openai` Providers.
 
-The former broad kagent integration is not restored. Its installer steps,
-fixed manifests, chat, list/show, console, quickstart, `local up` and
-AKS payload remain absent or retired. Explicit create targets preinstalled
-exact v0.10.2; explicit declarative bundle lift/status and receipt-bound Go
-bundle evaluation target preinstalled exact v0.10.3. The packaged exact-v0.10.3
-Go workspace profile also supports root `eval --bindings`, evaluated push and
-same-runtime receipt comparison. Evaluation is unsecure-only; trusted-proxy is
-refused. Python execution and standalone chat/run remain unsupported. Packaged
-exact-v0.10.3 Go root digest Lift is supported separately;
-packaged status/retirement remain unavailable. [Version-qualified placement](agent-lift.md#exact-v0103-declarative-bundle-placement)
-does not adopt or update resources. Historical AKS lift records remain
-readable for teardown only.
-Plane administration, model overlays, migration, governance and preset
-switching are removed, not redirected to replacement commands. The entire
-`kmx agent` group, including its edit stub, is removed without aliases. Edit
-live Orka resources with kubectl. KMX installs Orka's chart in harness-v2
-controller mode but does not implement the upstream `orka.harness.v2` harness
-ABI.
+Legacy `bundle` commands, user `agent.yaml` readers/writers/receipts,
+`create --live` including previews/wizard, root run bundle mode and `--bundles`
+flags are removed outright, with no retirement stubs. Unknown routes/flags refuse
+before configuration. Old Orka/kagent/AgentSessions bundle receipts are unreadable;
+no migration or deletion of saved files/resources occurs. Suite status and
+retirement remain unavailable, without replacement. Public AgentSuite/ToolProvider
+implementation bundles, build/pull and extracted-directory transfer are unrelated
+formats and remain supported; so do alpha `pkg/kmx` interfaces.
+
+Chat `/lift` and console Lift only print
+`Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+No release GUI or source-less live-copy fallback remains. Host Foundry/Copilot
+chat controls remain independent; live tools/inference editing and automatic
+wizard tool attachment are retired. Independent AKS setup/teardown and internal
+App.Lift remain. Plane and `kmx agent` commands remain removed. Native
+suite-owned resources refuse legacy invocation/adoption/copying. Readiness is
+not an answer or evaluated execution.
 
 ## Install
 
@@ -97,7 +95,7 @@ grouped commands below. Historically, v0.4.1 used `ctx [context]` and root
 and `lift down` outright, without retirement stubs. Use `context show/use`,
 `local up/down` and `aks up/down` for those operations.
 Everyday operations are now root `create/chat/run`, live Orka inspection is
-`orka show/list`, and legacy lifecycle operations are under `bundle`.
+`orka show/list`. Legacy `bundle` commands are removed outright.
 These routes and root workspace `push` require a current development build;
 tagged v0.5.1 still uses the `agent` routes. Workspace authoring/publication
 are unreleased.
@@ -121,7 +119,6 @@ See [digest lift](suite-workspace.md#digest-lift) for gates and partial outcomes
 | `kmx orka install` | verify the pinned v0.2.0 release chart; apply its CRDs; install harness-v2 with fullname `orka-api` on the selected context; keep the chart-generated snapshot key private; optionally create a keyless Provider. Refuses old v0.1.3 installs rather than upgrading. [Orka](orka.md) |
 | `kmx orka status` | same table-only Orka runtime report as root `status`: running controller version, Deployments, CRDs and Providers; distinguish unreadable from absent and running version from pin. `-o table` only |
 | `kmx create <name> --model <model> --instructions <file> [--workspace <directory>]` | default offline authoring of one tool-free native suite member: Orka by default, or exact kagent v0.10.3 Go/linux-amd64 with `--runtime kagent`. Private metadata only; authoring itself does not deploy/evaluate. Discover the nearest ancestor workspace, or select/initialize an exact root with `--workspace`. Optional `--description`; live-only flags and a second member refuse. No cluster configuration or image construction. [Workspace guide](suite-workspace.md) |
-| `kmx create --live [name]` | unchanged live Orka resource/bundle creation, or its no-name terminal wizard. Explicit `--live --runtime kagent <name>` is create-only for preinstalled exact Kagent v0.10.2. `--live` is also required for `--no-apply`, `--dry-run` and `--out -` previews. Retrieve a real answer only with `--task`. [Live contract](#default-orka-contract) |
 | `kmx push [--workspace <directory>] <reference>` | discover the nearest ancestor `workspace.yaml`, or select an exact root without fallback with `--workspace`; prepare its validated one-member native suite and authored cases, then copy its exact OCI graph to a registry or `--to-layout` target. Print the absolute workspace and OCI manifest digest on stderr. Required member images are empty. Does not evaluate or deploy. Existing registry policy applies. [Workspace guide](suite-workspace.md) |
 | `kmx eval [--workspace <directory>] --to-context <ctx> (--inference provider:NAME\|--bindings FILE) --out <private.json>` | evaluate every ordered native Orka case through one fresh Task per case; packaged kagent requires `--bindings FILE`, unsecure auth and fresh blocking A2A Tasks (no `--inference` or `--result-port`), without retry or answer/operand output; defaults: namespace `orka-system`, case timeout 5m (max 9m), loopback result port `19180`. Both require a preinstalled runtime and model-binding prerequisites; Orka also requires result access. Offline unsupported/budget/output checks precede configuration; one guard covers owned pair placement and execution. Only full passing metadata is exported once, privately outside workspace/cache. Hermetic tests and pinned runtime CLI qualification cover the bounded scenarios. [Workspace evaluation](suite-workspace.md#evaluate-the-whole-workspace) |
 | `kmx push --evaluation <private.json> [--workspace <directory>] <reference>` | consume a strict private full-passing Orka/kagent suite receipt; evidence must match the packaged runtime and require exact suite manifest identity plus complete offline coherence before transfer/provenance. Ordinary push remains unevaluated; unsigned observations are not an authentication proof or policy gate. [Workspace guide](suite-workspace.md) |
@@ -132,18 +129,12 @@ See [digest lift](suite-workspace.md#digest-lift) for gates and partial outcomes
 | `kmx suite pull <repository:tag> --from-layout <layout> --output <directory>` | resolve and validate one AgentSuite reference from a local OCI image layout, then atomically extract its content into a new directory. Existing output is never replaced. |
 | `kmx suite validate <path>` | validate an extracted AgentSuite content directory or OCI image layout offline, including strict JSON, canonical identities, closed references, tool locks, build profiles and archive safety. `-o json` emits the validated summary. [AgentSuite specification](../agentsuite/spec.md) |
 | `kmx suite diff <before> <after>` | validate and semantically compare two extracted AgentSuites or local OCI image layouts, including supplemental packaged content and artifact identities. The default unified view uses `-` and `+` field lines; `--view split` renders before and after values side by side, and `-o json` emits the versioned change and affected-agent report. [Suite artifact diff](#suite-artifact-diff). |
-| `kmx bundle lift <bundle-dir>` | default Orka reconciliation; explicit `--runtime kagent --runtime-version v0.10.3` is new-object declarative placement or complete receipt-bound reuse. No adoption/update in that profile. `--plan` checks without writing. [Bundle lift](agent-lift.md) |
-| `kmx bundle retire <bundle-dir>` | delete or release bundle-owned Orka resources after UID, receipt and dependent checks; Kagent bundles are refused before target reads. `--plan` checks without writing. [Bundle retirement](agent-lift.md#retiring-a-bundle-from-a-target) |
-| `kmx bundle status <bundle-dir>` | default Orka revision/readiness/drift/evaluation report; explicit `--runtime kagent --runtime-version v0.10.3` reports absent, unreadable, failed readiness, ready or drift against desired bindings and saved identity. `--to-context` selects the target, `-o json` emits facts. [Bundle status](agent-lift.md#checking-deployed-status) |
-| `kmx bundle evaluate <bundle-dir>` | run a bundle's `eval/*.yaml` cases against the deployed revision. Orka remains default; explicit `--runtime kagent --runtime-version v0.10.3 --to-context <ctx>` evaluates a receipt-bound Go placement with desired `--bindings`, one fresh blocking A2A Task per case, no retries or promotion gates. auth: unsecure only, trusted-proxy refused; Python is refused. Print answers, evaluate legacy/typed assertions, write private v2 latest and immutable run receipts with digests (never payloads), and exit non-zero unless every case passed. `--sessions <host:port>` selects tool-disabled chat without Kubernetes; all three paths report tool assertions unknown. `llmJudge` explicitly authors rubric/threshold/model/version and uses `--judge-base-url` plus optional `--judge-key-env` (name only), with no defaults or agent-model fallback. Two temperature-zero scores must agree on the threshold side; split/malformed/unavailable is unknown. Input/answer/rubric go to the judge provider; safe terminal reasoning may contain answer text but is not stored in receipts. [Bundle evaluation](agent-lift.md#evaluating-a-deployed-revision) |
-| `kmx eval from-sessions <session-uid>... --sessions <source> --assertions <case.yaml> --out <manifest.json>` | bounded, read-only extraction of private single-turn UID/prefix references and authored assertions, without recorded inputs/answers. Existing `--out` appends atomically; duplicates refuse the whole add. [Recorded cases](agent-lift.md#recorded-sessions-as-reference-cases) |
-| `kmx bundle evaluate <bundle-dir> --from-sessions <manifest.json> --source-sessions <source> --sessions <candidate>` | resolve recorded inputs in memory, then execute fresh sessions using existing assertion receipts/diff. Requires `KAIMAHI_CONFIRM=<candidate>` even on loopback and separate `KAIMAHI_CONFIRM_JUDGE=<canonical-url>` when judging. Verdicts/IDs/digests only by default; `--show-content` opts into answers and reasoning. Missing/expired sources are unknown, never skipped; cases missing runtime identity get their own unknown diff rows while comparable cases still compare. [Recorded cases](agent-lift.md#recorded-sessions-as-reference-cases) |
-| `kmx eval diff <before.json> <after.json>` | offline comparison of explicit v2 full-run legacy receipts or strict private packaged-suite passing evidence. Native-suite comparison requires the same runtime, exact observed subject/ownership and ordered inventory; execution IDs and answer hashes are not comparison identities. Legacy comparison aligns inputs and assertion definitions under compatible runtime identities. Report changed sets, regressions/fixes and evidence gains/losses without payloads. Incompatible, changed/incomplete, regression or lost/unknown evidence exits nonzero. Zero is not an evaluation pass. [Receipt comparison](agent-lift.md#comparing-saved-evaluations-offline) |
-| `kmx bundle verify <sessions-receipt.json> --sessions <host:port>` | zero-call local reference reconstruction of agent journal/answer evidence, never judge verdict verification. Valid agent evidence may replay despite unknown judge outcomes; reports count `judgeAssertionsNotVerified` and print a notice when judges exist. No lift gate or host attestation. [Replay verification](agent-lift.md#verifying-a-sessions-receipt) |
-| `kmx run <bundle-dir> --prompt <text>` / `kmx run --agent <name> --prompt-file <path>` | execute one Task against an already-deployed Agent without changing the bundle; stdout is answer-only. Supports `--prompt-file -` for stdin and `--wait` (default 5m, maximum 9m). [Running an existing Agent](agent-lift.md#running-an-existing-agent) |
-| `kmx task result <task> [--context <ctx>] [--namespace <ns>] [--wait 5m]` | inspect an AI Task's phase once by default and open a result session only for a readable terminal answer; `--wait <duration>` waits 10s–9m and reports phase changes. Pending or not-yet-readable results exit 2; failed or cancelled Tasks exit 1. [Running an existing Agent](agent-lift.md#running-an-existing-agent) |
+| `kmx eval from-sessions UID... --sessions SOURCE --assertions CASE.yaml --out MANIFEST.json` | Independent private reference extraction/export only. [Reference extraction](#reference-extraction) |
+| `kmx eval diff BEFORE AFTER` | Offline strict full-passing native suite evidence only; old bundle receipts unreadable. [Native receipt diff](#native-receipt-diff) |
+| `kmx run --agent NAME --prompt TEXT` | One Task on an independent live Orka Agent, answer-only stdout; suite-owned Agents refuse legacy invocation. [Task execution and results](#task-execution-and-results) |
+| `kmx task result TASK [--wait 5m]` | Read existing Task phase/answer without resending; retain context/namespace. [Task execution and results](#task-execution-and-results) |
 | `kmx context show` / `kmx context use <context>` | read effective context/source/posture or remember KMX's guarded access selection; never change kubectl current-context |
-| `kmx console` | two-column local/remote workspace for native Orka Agents, with Vim/arrow navigation, agent actions, inference details and slash-command completion; Kagent inventory and bundles are unsupported. `b` compares the selected Orka agent with its local bundle using the same report as `kmx bundle status`; `--demo` uses sample data. [Console guide](interactive-agent-tui-plan.md) |
+| `kmx console` | Live Orka inventory and source-reviewed native workspace creation/eval/push/Lift. Ready is placement only. Interactive Lift and bundle comparison are retired; `--demo` uses sample data. |
 
 #### Experimental AgentSuite image build
 
@@ -493,8 +484,8 @@ requires attachment, not visibility or trust.
 
 | Command | Current behavior |
 |---|---|
-| `kmx quickstart` | kind + keyless Ollama + pinned Orka v0.2.0 Helm chart + the fixed `hello-world-agent` Orka bundle + a fresh Task with a readable answer; no Kagent installation or plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
-| `kmx quickstart --interactive` (`-i`) | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then validate, apply, and optionally run its first Task. Flags for the other quickstart mode are refused before configuration loads. The retired `kmx quickstart-wizard` spelling refuses and names this command. |
+| `kmx quickstart` | kind + keyless Ollama + pinned Orka v0.2.0 Helm chart + the fixed tool-free native `hello-world-agent` source/full eval/publication/reviewed Lift/placement Verify + a separate fresh answer Task; no Kagent installation or plane/governance enabled. [Getting started](getting-started.md#one-command-and-an-agent-that-answers) |
+| `kmx quickstart --interactive` (`-i`) | Experimental TUI: author an Orka agent while kind, Ollama/model, and Orka start in the background; then full eval, exact publication, reviewed Lift/placement Verify and a separate fresh answer Task. Flags for the other quickstart mode are refused before configuration loads. The retired `kmx quickstart-wizard` spelling refuses and names this command. |
 | `kmx local up` | the runtime and no agent: cluster, ollama, model, orka. `--step` selects exactly one of those four; the three legacy steps are removed and are refused as unknown |
 | `kmx aks up` / `kmx aks down` | Temporary compatibility route, hidden from root help and shell completion; not a first-class KMX domain. Setup provisions AKS and installs Orka only, with optional Azure monitoring add-ons; the owner configures the model Provider. It does not deploy a model plane or capture its credentials. Teardown preserves cleanup of recorded owned resources, including historical runs. `--payload` defaults to `orka` and is the only payload (no Provider is created); the legacy payload is refused as retired, and an existing legacy lift can still be inspected and torn down. The root AKS aliases are removed; use `kmx aks up` / `kmx aks down`. [AKS](aks.md) |
 | `kmx orka list` | live Orka Agent inventory in one namespace; table/JSON/YAML. [Inventory contract](#kmx-orka-list) |
@@ -590,8 +581,7 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   requires a completed task with a readable answer; stdout is one JSON document.
 - Root `status` and `orka status` refuse `-o json|yaml` by name rather than
   printing an empty document. Read the cluster directly for machine-readable
-  runtime facts; `bundle status <bundle-dir>` retains its separate bundle-aware
-  JSON report. Root status is not a bundle or suite observer.
+  runtime facts. Root status is not a suite observer; suite status is unavailable.
 
 Completion (`source <(kmx completion bash)`, similarly zsh; fish uses
 `kmx completion fish | source`) performs bounded read-only lookups for contexts
@@ -599,286 +589,61 @@ and agents, no guard/download/forward/mutation. Static completion works offline.
 
 ## `kmx create`
 
-Default `kmx create <name> --model <model> --instructions <file>` authors one
-tool-free native-Orka workspace member offline. Model and file-valued
-instructions are required; description is optional. Create and root `push`
-share nearest-ancestor `workspace.yaml` discovery. `--workspace DIR` selects an
-exact root without fallback and initializes a missing workspace there without
-prompting. Without a workspace, terminal create offers `Start one here? [Y/n]`;
-nonterminal or redirected use refuses with a `--workspace` hint. Invalid nearest
-markers and a second member fail closed without changing source. A name is
-required; no offline authoring wizard is provided. See the
-[workspace guide](suite-workspace.md) for the full source and prompt contract.
+`kmx create NAME --model MODEL --instructions FILE [--workspace DIR]`
+authors one tool-free native member offline. Orka is default; explicit
+`--runtime kagent` selects exact v0.10.3 Go/linux-amd64. Description is optional.
+Create and push share nearest-ancestor `workspace.yaml` discovery; explicit
+`--workspace DIR` selects/initializes exactly that root without fallback.
+Invalid markers and second members refuse without source changes. Missing runtime
+in older authored workspace source stays Orka, not a persistent `agent.yaml` reader.
 
-`--live` explicitly selects the separate resource/PortableAgent bundle path,
-including `--no-apply`, `--dry-run` and `--out -` previews. Orka remains its
-default runtime; kagent requires `kmx create --live --runtime kagent <name>`.
-Runtime selection is independent of `--provider-type`, which selects model
-access. Live-only flags without `--live` refuse before configuration or writes;
-`--runtime kagent` alone does not dispatch to live creation. `--live` conflicts
-with `--workspace` and bypasses discovery even below an invalid marker.
-Quickstart creation uses native suite source, full eval, exact local-layout publication and reviewed digest lift. It verifies placement before a separate fresh answer Task. Console creation selects authored source, reviews every case and a named Ready openai Provider, obtains execution consent (typed context for remote targets), then reviews and applies the retained Lift plan. Apply/Verify success means Ready placement, not an answer. Evaluation and partial failures may leave resources; there is no automatic retry or cleanup. In-place Agent tools/inference editing is retired: edit authored source, then eval, push and lift. The quickstart wizard no longer auto-attaches Kubernetes tools or offers host Foundry/Copilot inference. Help and completion never discover,
-prompt, mutate or load operational configuration.
+Model and file-valued instructions are required. Without a workspace, terminal
+use asks `Start one here? [Y/n]`; redirected/nonterminal use requires an explicit
+workspace. Help/completion are inert. Create never loads cluster settings,
+bootstraps runtime/model, builds images, deploys or evaluates. `--live` and its
+live-only/preview flags are unknown before config loads. See [workspace source
+and cases](suite-workspace.md).
 
-### Default Orka contract
+## Task execution and results
 
-With `--live`, every default Orka bundle contains a new, same-name Provider and
-referencing Agent in `core.orka.ai/v1alpha1`, a metadata-only Secret skeleton, and optionally
-a fresh Task. It does not install Orka or adopt the installer's shared Provider.
-Start with the [first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
-for a context-pinned local run, separately provisioned result account, and the
-release/main authorization and connection limits.
+`kmx run --agent NAME --prompt TEXT` or `--prompt-file PATH` (`-` for stdin)
+submits one Task to an independent live Orka Agent. `--wait` defaults to 5m,
+maximum 9m. stdout contains only the answer; stderr retains Task identity and
+retrieval instructions. Bundle-directory selection is removed. Native suite-owned
+Agents refuse legacy invocation; root run is not a suite-workspace execution path.
 
-For offline preview, without tools, kubeconfig reads or cluster calls:
+`kmx task result TASK` reads an existing Task without resending. It reads phase
+once by default and opens a result session only for a readable terminal answer.
+`--wait` waits 10s–9m and reports phase changes. Pending/unreadable results exit 2;
+failed/cancelled Tasks exit 1. Preserve the Task's context and namespace.
 
-```bash
-kmx create --live preview --namespace orka-system \
-  --provider-type openai --model qwen2.5:3b --secret local-provider-key \
-  --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --out -
-```
+## Native receipt diff
 
-Namespace, Provider type (`openai|anthropic|azure-openai`), actual model ID and existing Secret
-name are explicit inputs; `--secret-key` defaults to `api-key`. These are names,
-not credential values. For native Azure OpenAI, set `--azure-deployment` to the
-same value as `--model` and `--base-url` to the HTTPS resource root (for example,
-`https://example.openai.azure.com`, **not** `/openai/v1`). Orka v0.2.0 validates
-`Provider.spec.azure.deploymentName`, but its request client addresses the
-Azure deployment using the effective model name. kmx therefore requires them
-to match when authoring; a Task-level model override can still target another
-deployment. Use `--provider-type openai` instead for the v1-compatible
-`/openai/v1` endpoint. `--azure-api-version` is optional; if omitted, kmx leaves
-the field out, but the Orka CRD can default it on apply. We recommend setting
-`--azure-api-version` explicitly for predictable runtime behavior.
+`kmx eval diff BEFORE AFTER` compares strict full-passing native Orka/kagent
+suite receipts offline. Both require the same runtime, exact observed subject
+and ownership, and complete ordered case inventory. Execution IDs and answer
+hashes are not comparison identities. Incompatible/incomplete evidence refuses
+nonzero; zero is a comparison result, not a new evaluation pass. Old bundle
+receipts are unreadable. The wide legacy normalized receipt API is removed,
+not converted or retained as a promotion gate.
 
-The key file must contain **only the key, with no trailing newline**. Orka
-does not trim it: the Provider can be Ready while every Task fails because the
-key contains a line ending. In Bash or Zsh, this context-pinned command removes
-LF and CRLF line endings without putting the key on the command line or printing it:
+## Reference extraction
 
-```bash
-kubectl --context <ctx> -n <ns> create secret generic <name> \
-  --from-file=api-key=<(tr -d '\r\n' < <path>)
-kmx --context <ctx> create --live my-azure-agent --namespace <ns> \
-  --provider-type azure-openai --model <deployment> --azure-deployment <deployment> \
-  --azure-api-version <version> --base-url https://example.openai.azure.com \
-  --secret <name>
-```
+`kmx eval from-sessions UID... --sessions SOURCE --assertions CASE.yaml
+--out MANIFEST.json` remains a bounded read-only private extraction/export utility.
+It stores single-turn UID/prefix references and authored assertions, not recorded
+inputs/answers. Existing output appends atomically; duplicates refuse the whole
+addition. Remote hosts require verified TLS; `--sessions-ca` supplies a private CA.
+Keep manifests private. No inference or runtime/host attestation is performed.
 
-The key stays in the file and the existing namespaced Secret; kmx accepts only
-the Secret name/key reference, not key bytes or a key-file flag.
-`--instructions` reads a system-prompt file; `--tools` and `--skills` name Orka
-references on this default Orka path, not Kagent `server:tool` selections or translated
-MCP wiring. `--coordination` requires at least one repeatable `--allowed-agent
-<name>`; both go in the portable Orka extension. Edit the bundle for optional
-delegation limits ([bundle format](agent-lift.md#coordination-in-agentyaml)). Use
-`kmx create --help` for all flags and defaults.
-
-- `--out -` prints rendered YAML only and implies offline; it writes no files
-  unless `--bundle-path` explicitly names a bundle directory. `--no-apply`
-  writes an exclusive local rendered artifact. Default artifact file:
-  `agents/<name>.yaml`. An existing rendered artifact is never overwritten:
-  an applying create without `--task` keeps one matching every byte except the
-  generated schema-source comment block. The preview's original attribution
-  remains unchanged; online creation still validates against installed CRDs and
-  strict server admission, and reports that distinction on stderr. Any other
-  byte difference, including another comment or whitespace, is refused by name.
-  The comparison is repeated before deployment but does not lock out subsequent
-  concurrent edits. Offline and `--dry-run` refuse any existing file. Input and
-  final YAML reject known credential shapes.
-- When the rendered artifact is written to a file (online creation, offline
-  `--no-apply`, or online `--dry-run`), kmx also writes a Git-friendly agent
-  bundle at `agents/<name>/` by default, or at `--bundle-path <directory>`.
-  `agent.yaml` contains the portable behavior revision (name, description,
-  instructions, model, Orka tools, skills and rate limits); `bindings.yaml`
-  records **only the creation target** (namespace, Provider type and endpoint,
-  Azure deployment/optional API version when applicable, Secret name/key reference,
-  never a value). A later `kmx bundle lift` obtains other
-  targets' bindings from its flags and kmx's local state, not additional bundle
-  files. A new bundle also gets one example evaluation case,
-  `eval/example.yaml`, for [`kmx bundle evaluate`](agent-lift.md#evaluating-a-deployed-revision);
-  cases are not part of the portable digest, and a rerun accepts any `eval/`
-  directory.
-  The portable digest covers the **exact bytes** of `agent.yaml`: even changing
-  a comment or whitespace creates a new revision by design. Target bindings
-  do not change it; rendered YAML and its digest do reflect them. A rerun can
-  reuse an existing byte-identical bundle; if either file differs, creation
-  refuses and names the differing file. A failed deploy leaves the bundle and
-  the rendered artifact for retry, and **rerunning the same command is safe**:
-  bundle files must remain byte-identical; the rendered artifact may differ only
-  in its generated schema-source comment block. The cluster side reconciles as
-  below.
-  With `--task` the rendered Task name is random, so the old artifact can never
-  match: a `--task` rerun refuses it and needs a new `--out` path.
-- Offline defaults to `--schema-target v0.2.0`. Explicit
-  `--schema-target v0.1.3|main` retains [pinned CRD fixtures](../internal/kmx/orkaschema/README.md)
-  for legacy reads/authoring and the immutable old main snapshot, **not**
-  install targets or a network fetch. Unknown fields refuse; v0.2.0 and the
-  pinned old main snapshot lack Agent/Provider rate limits and refuse those
-  flags rather than dropping fields. Select `v0.1.3` explicitly to inspect
-  old manifests; that does not make a v0.1.3 runtime installable by kmx.
-  Offline schema validation is not CEL/admission, readiness or execution proof.
-- Online uses installed CRDs with **no fixture fallback**, checks Secret/key
-  presence and ownership, and strictly server-dry-runs each custom resource.
-  `--dry-run` writes the local artifact but no cluster resources, token or forward;
-  it tests neither result access nor execution and cannot be combined with offline modes.
-- **Never write the Secret skeleton or bulk-apply the bundle.** Provision the
-  referenced key separately through your secret-management path. kmx never creates,
-  replaces or merges that Secret. Online creation never uses apply:
-  Provider → current-generation Ready → Agent → current-generation Ready → optional
-  Task. Provider and Agent are reconciled as `kmx bundle lift` does
-  ([ownership](agent-lift.md)): created with the bundle's ownership markers,
-  reused or updated (under a resourceVersion precondition) when they carry them,
-  adopted when unmarked but identical, and refused otherwise — both are
-  inspected before the first write. The optional Task is always newly created,
-  never reused or resubmitted. For manual creation split out only those custom
-  resources and preserve that order and the UID/generation readiness checks,
-  using an explicit context and namespace. Failures leave partial state and
-  nothing is rolled back; the error says so, and a rerun reuses what it wrote.
-- `--task` authorizes a model call and requires an existing
-  `--result-service-account` in the selected namespace; `create` creates no
-  account or RBAC. (`kmx local up --step orka` provisions `orka-result-reader`, whose
-  grant is one verb on `tasks.core.orka.ai` in `orka-system`.) It creates the
-  Task once and waits for Succeeded plus an actual nonblank
-  answer. **Without `--task`, no model response was tested.**
-- kmx requests a ten-minute token; **the API server determines its actual TTL**.
-  It carries the account's full effective authority, not result-only scope;
-  discarding it is not revocation. The historical v0.1.3 release did not
-  enforce Task-read RBAC; the pinned old main snapshot requires namespaced
-  Task-get. Do not use that history to infer v0.2.0 enforcement; keep the
-  namespaced grant. Result bytes are not bound to a UID.
-  The context-pinned loopback HTTP forward uses one TCP connection and stops on
-  connection/forward loss, never redialing or resubmitting. This trades reconnect
-  availability for protection against later local-port reuse; initial connection
-  trust is still local. See the [full limits](orka.md#author-an-orka-agent-and-get-an-answer).
-
-No-name `kmx create --live` terminal use offers a wizard for missing required
-inputs and explicit Apply/Cancel; Escape/Ctrl-C cancel without writing. `TERM=dumb` uses linear
-prompts. Non-interactive use requires a name. No agent name is reserved: the
-embedded examples that occupied `hello-world` and `hello-tools` are gone.
-
-`--image`, `--isolation` and `--run-as-user` are removed. There is no BYO image
-scaffold, model-preset/MCP conversion, injected governance or copied legacy pod
-hardening. Keep application image/placement/identity in the owner's Deployment.
-This native implementation does not settle the open authoring-format decision or
-promote the isolated conversion spike to a supported interface.
-
-### Explicit Kagent v0.10.2 create
-
-This is a narrow lifecycle adapter for **render and create only**. It targets an
-already-installed exact Kagent v0.10.2; KMX never installs, upgrades, repairs,
-or otherwise manages kagent infrastructure. This profile does not change the
-default runtime or enable standalone chat, list, show, evaluation, console,
-interactive `/lift`, quickstart, `local up`, installer or AKS payload support.
-Bundle lift/status requires the separate explicit v0.10.3 profile; create's
-exact v0.10.2 successful artifact/receipt contract is retained. Old AKS lift
-records remain teardown-only.
-
-An offline review needs no cluster, kubeconfig read, or tool on `PATH`:
-
-```bash
-kmx create --live reviewer --runtime kagent --namespace agents \
-  --description 'Reviews changes' --provider-type openai \
-  --model gpt-4o-mini --secret reviewer-key \
-  --instructions instructions.txt --out -
-```
-
-`--out -` implies `--no-apply` and writes the review artifact to stdout. Add
-`--bundle-path agents/reviewer` to retain the portable bundle when using stdout;
-otherwise file output and `--no-apply` use `agents/<name>.yaml` and
-`agents/<name>/` by default. The artifact contains, in review order, a
-metadata-only Secret skeleton, ModelConfig, and Agent, including the Agent's
-reviewed system instructions. Never apply the Secret
-skeleton or bulk-apply the artifact. The bundle contains a strict portable
-`agent.yaml` plus creation-target-only `bindings.yaml`; it does not scaffold
-evaluation cases.
-
-Supported Kagent inputs are:
-
-- `--namespace`, required `--description`, `--provider-type openai|anthropic`,
-  `--model`, `--secret`, optional `--secret-key` (default `api-key`), optional
-  credential-free `--base-url`, and optional `--instructions` file;
-- `--tools server:tool1,tool2` for at most one same-namespace
-  `RemoteMCPServer` binding with an explicit nonempty tool allowlist;
-- `--kagent-runtime go|python` (default `go`) for the declarative Agent runtime;
-- optional applying `--task`, plus `--out`, `--bundle-path`, `--no-apply`, and
-  `--dry-run`.
-
-Kagent create refuses unsupported/Orka-only `--skills`,
-`--agent-requests-per-minute`, `--agent-tokens-per-minute`,
-`--provider-requests-per-minute`, `--provider-tokens-per-minute`,
-`--schema-target`, `--result-service-account`, `--orka-api-service`, and
-`--result-port`. `--task` is also refused with `--no-apply`, `--out -`, or
-`--dry-run`.
-
-Online create is deliberately create-only. Before the first cluster write, KMX
-requires exactly one unambiguous labeled controller Service exposing named
-`controller` TCP port 8083 and proves the
-controller's exact v0.10.2 version and a release-reported Git prefix of pinned
-commit `68df64f671800c37c4204d81ebe0dd66ec35d223`, published controller image
-tag/digest identity, current rollout, image ConfigMap, selected Go/Python runtime
-image configuration, exact Agent/ModelConfig CRD schemas, that `WATCH_NAMESPACES`
-includes the target (or is empty for all namespaces), and the controller
-ServiceAccount's required target-namespace RBAC. It also proves the separately
-provisioned Secret/key and captures any configured RemoteMCPServer identity,
-spec/Secret hash, and discovered tool set. It refuses existing same-name
-ModelConfig or Agent objects and the same-name Secret, ServiceAccount,
-Deployment, or Service children the controller would overwrite. The model
-Secret must not share the Agent name. Both strict server-dry-run responses must
-retain the exact reviewed spec and KMX markers, allowing only OpenAI's pinned
-`apiFormat: chatCompletions` default. `--dry-run` stops after those online checks
-and writes no cluster resource or message.
-
-After those preflights KMX writes the review artifact, creates ModelConfig, and
-waits for current-generation `Accepted`; then it rechecks child collisions and
-captured dependencies, creates Agent, and waits for current-generation
-`Accepted` and `Ready`. Every create response and later live read must retain
-the admitted spec and KMX markers. Success also proves the Agent-owned
-Deployment and Service, the complete current rollout, and the selected official
-v0.10.2 runtime image tag/digest identity. Pre-create cluster checks have a
-five-minute budget; each created resource then receives a fresh ten-minute
-readiness budget. Before an optional task it additionally proves
-the controller-proxied A2A card. KMX never adopts, updates, reconciles, or
-deletes an existing Kagent object.
-
-There is no transaction or rollback. A create failure stops later resources and
-messages but leaves anything already created. Rerunning after a partial failure
-will refuse the existing ModelConfig or Agent, so an operator must inspect the
-named resources and deliberately clean up only what should be recreated.
-Ambiguous creates are never retried, adopted, or deleted.
-
-`--task` sends one A2A `message/send` after all readiness, workload, image, and
-agent-card proof. Agent-card discovery and the send each receive a fresh
-five-minute budget. It never retries an ambiguous send. KMX accepts only a strict
-matching JSON-RPC response containing an `agent` text message or a completed
-task whose answer message has a nonblank ID and the task's exact context ID,
-strips unsafe terminal
-controls, and prints the sanitized answer. KMX rechecks the Agent UID/generation
-and its owned Deployment/Service before and after the send, but A2A itself does
-not cryptographically bind returned bytes to that Kubernetes UID. KMX feeds the task prompt to kubectl
-on stdin, never argv; it is not written to the artifact, bundle, or receipt.
-
-Kagent persists the full prompt, history, and answer in its database. Upstream
-default session retention is unlimited, and Kubernetes audit policy may capture
-Service-proxy request and response bodies. A controller configured with
-`AUTH_MODE=trusted-proxy` may still be used for creation without `--task`, but
-the task path is refused before writes because KMX accepts no Kagent bearer
-credential.
-
-After every successful online create, KMX writes a mode-0600
-`KagentCreateReceipt` under the bundle's `receipts/` directory. It records the
-cluster and resource identities and portable/rendered digests, never prompt or
-answer text or system instructions. This receipt does not authorize later
-lifecycle reuse. Explicit v0.10.3 bundle placement requires its own qualified
-target and UID-bound receipt; an existing v0.10.2 deployment is a conflict,
-never adopted or upgraded. This v0.10.2 create profile does not enable
-evaluation; explicit [v0.10.3 Go bundle evaluation](agent-lift.md#evaluating-exact-v0103-go-kagent)
-is separate. Console bundle operations and interactive `/lift` remain Orka-only.
+Legacy RecordedExecution, bundle replay/evaluation and judges are removed. There
+is no native manifest consumer: root eval requires authored workspace cases and
+private full-passing evidence, with no judge/subset/Sessions/model/runtime override.
 
 ### Editing an agent
 
 The hidden editor retirement stub is removed with the entire `agent` group.
-`kmx create --live` writes reviewable resource/bundle YAML you own; default
-create authors workspace source. A live Orka Agent
+`kmx create` authors workspace source; live source editing is not a KMX shortcut. A live Orka Agent
 is edited as the Kubernetes resource it is:
 
 ```bash
@@ -919,8 +684,7 @@ response text and stop uncertain animation after resize.
 
 There is no one-shot Kagent **chat** transport: the former chat invoke, its
 connection-refused/EOF/reset retries and resumable `--session` remain removed.
-The separate create-only `--live --runtime kagent --task` path sends once and never
-retries an ambiguous result. Interactive Orka `/retry` explicitly resends; that
+Interactive Orka `/retry` explicitly resends; that
 does not promise exactly-once execution.
 
 `kmx quickstart` is Orka and does not participate in that policy. It creates one

@@ -1,8 +1,7 @@
 # FAQ and troubleshooting
 
 Start with [getting started](getting-started.md) for installation and a first
-answer, [suite workspace](suite-workspace.md) for author/eval/push, and the
-[legacy bundle lifecycle](agent-lift.md) for current PortableAgent deployment.
+answer and [suite workspace](suite-workspace.md) for author/eval/push/digest Lift.
 
 ## Why is `kmx orka` missing?
 
@@ -16,8 +15,8 @@ published tag, not the tip of `main`.
 
 No. Installation creates platform resources and, by default, a local Provider.
 It does not adopt an existing application or redirect its traffic. Author an
-Agent with [`kmx create --live`](kmx.md#default-orka-contract); use a Task to prove an
-answer. Execution and enforcement belong to the selected runtime.
+native workspace member with [`kmx create`](kmx.md#kmx-create), then evaluate,
+publish and Lift with private evidence. Placement readiness is not an answer. Execution and enforcement belong to the selected runtime.
 
 ## Why does status show a version different from the pin?
 
@@ -28,60 +27,27 @@ inspection, no-write planning, dry-run and upgrade limits.
 
 ## What kagent support exists now?
 
-Orka remains the default. The exact-v0.10.2 create profile is explicit
-`kmx create --live --runtime kagent <name>` against an already-installed exact
-v0.10.2. `--live` is required even for offline previews; the runtime flag alone
-does not select live creation. Default create authors an
-[offline workspace member](suite-workspace.md). KMX never installs or upgrades
-kagent. This live path renders a review artifact
-and portable bundle; `--out -` omits the bundle unless `--bundle-path` is set.
-Offline rendering needs neither an installation nor a cluster Secret. Online
-creation requires both and can create a new ModelConfig then a new Agent; it
-does not adopt/update existing objects or roll back partial writes. An optional
-`--task` sends one A2A message as the final step of that same create invocation;
-it is not a standalone or resumable chat capability.
+Orka remains default. Explicit native kagent workspaces use exact v0.10.3
+Go/linux-amd64: create, `eval --bindings FILE`, evaluated push, native receipt
+diff and create-only digest Lift. Every occupied target refuses, even with
+matching evaluated UIDs. Eval is unsecure-only, one fresh blocking A2A Task per
+case, never retried; trusted-proxy refuses before admission/send. No Python,
+RemoteMCP, standalone run/chat, suite status/retirement, installer/discovery,
+console/quickstart or AKS kagent payload is implied. See [native workspace
+profiles](suite-workspace.md) and [runtime boundaries](runtime-adapters.md).
 
-The separate exact-v0.10.3 profile permits explicit declarative legacy bundle
-lift/status/evaluation with desired bindings and a named context. It creates new
-resources or reuses a complete matching UID-bound deployment, never adopts or
-updates. Evaluation sends one fresh blocking A2A Task per case and never retries
-ambiguity. Readiness receipts do not prove an answer. Dedicated CI continuously
-qualifies Go lift/status/evaluation and a separate one-shot native A2A tool
-answer. See [exact-version placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
-The packaged exact-v0.10.3 Go workspace profile also supports root
-`eval --bindings FILE`, runtime-specific full-passing evidence, evaluated push,
-same-runtime offline receipt comparison and create-only root digest Lift. Any
-occupied target refuses, even with matching evaluated UIDs. Standalone chat/run,
-packaged status/retirement, list/show, console,
-interactive `/lift`, quickstart, `local up`, installer and AKS payload remain unsupported. Historical AKS lift records
-remain teardown-only. See the [create contract](kmx.md#explicit-kagent-v0102-create).
-
-There is still no supported translation from Kagent YAML into an Orka Agent or
-BYO image. Native Orka resources remain the recommendation in
-[orka.md](orka.md); a general cross-runtime authoring/lifecycle surface remains
-open and unsupported.
-
-## Why did my Kagent create rerun refuse existing objects?
-
-Kagent create is intentionally create-only. A failure can leave a ModelConfig
-or Agent that was created before the later check failed, and KMX performs no
-rollback. Inspect the named resources and their ownership/readiness, then remove
-only what you deliberately want recreated. A rerun will not adopt, reconcile,
-update, or delete them for you.
-
-If `--task` was used and the result was ambiguous, assume the message may have
-executed: KMX sends once and never retries ambiguity. Kagent stores the full
-prompt/history/answer in its database with unlimited upstream default session
-retention, and cluster audit policy may also capture Service-proxy bodies.
-Trusted-proxy task submission is unsupported because KMX accepts no Kagent
-bearer credential.
+Live v0.10.2 create and bundle lift/status/evaluation/replay/readers/receipts are
+removed outright. Old receipts are unreadable; no conversion/migration or deletion
+of saved files/resources occurs. Reference extraction/export remains independent,
+without native RecordedExecution or a manifest consumer. Author native cases.
+Partial placement may leave resources; no retry/adoption/rollback is implied.
 
 ## Model and tool troubleshooting
 
 ### Empty replies and `input-required`
 
 This was the former Kagent chat path's human-in-the-loop state. The current
-create-only task path accepts only a completed answer and has no continuation
+packaged native evaluation accepts only completed answers and has no continuation
 operation for `input-required`; Orka turns likewise complete or fail.
 Historical note, for transcripts that still show it: the small-model path
 used to re-sample a question-only response up to twice, but not after a tool call or with

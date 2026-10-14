@@ -46,7 +46,7 @@ func nativeFixture(t *testing.T, profiles ...workspace.RuntimeProfile) (*App, *w
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter, _, _ := reconcileFixtureMode(t, true)
+	adapter, _ := reconcileFixtureMode(t, true)
 	a := adapter.app
 	f := &nativeReadFixture{objects: map[string]map[string]any{}}
 	for key, raw := range map[string]string{
@@ -463,14 +463,6 @@ func TestSuiteNativeLegacyClusterIdentityContractIsUnchanged(t *testing.T) {
 	nativeMetadata(f.objects["namespace/kube-system"])["deletionTimestamp"] = "now"
 	if uid, err := a.liftClusterUID(t.Context()); uid != "cluster-uid" || err != nil {
 		t.Fatal("legacy cluster identity contract tightened", err)
-	}
-}
-
-func TestSuiteNativeLegacyProviderDoesNotRequireRV(t *testing.T) {
-	a, _, f := nativeFixture(t)
-	delete(nativeMetadata(f.objects["providers.core.orka.ai/inference"]), "resourceVersion")
-	if _, err := a.liftProviderBindings(t.Context(), OrkaNamespace, "inference"); err != nil {
-		t.Fatal("legacy Provider contract tightened", err)
 	}
 }
 
