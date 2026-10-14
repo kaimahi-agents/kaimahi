@@ -40,31 +40,33 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Strict full-passing suite evidence has a separate typed kagent branch;
   evaluated push requires exact manifest S and the same packaged runtime.
   Offline suite receipt diff refuses mixed runtimes. Existing Orka receipt
-  serialization, evaluation and lift remain compatible; kagent suite lift is
-  not enabled. Unsupported judge/tool assertions still refuse offline.
+  serialization, evaluation and lift remain compatible. Root kagent digest Lift
+  is described above. Unsupported judge/tool assertions still refuse offline.
 
 ### Added
 
 - Deploy-only `kmx lift <ref>@<digest>` from a registry or local `--from-layout`.
-  Explicit private full-passing `--evidence`, `--to-context` and Ready native
-  `--inference provider:NAME` are required. Default gate binds the exact evaluated
-  target; `--promote` explicitly permits a same-suite/member/model/runtime
-  destination whose openai Provider declares that model, with source-only evidence
-  disclosure. `--plan` uses GETs only; apply guards before admission and only creates
-  absent resources or reuses exact evaluated UID/generation/spec proof. No source,
+  Explicit private full-passing `--evidence` and `--to-context` are required;
+  Orka uses Ready `--inference provider:NAME`, kagent uses author-owned
+  `--bindings FILE`. Default gate binds the exact evaluated target; `--promote`
+  explicitly permits a same-suite/member/model/runtime destination with
+  source-only evidence disclosure. `--plan` uses GETs only. Orka creates absent
+  resources or reuses exact evaluated UID/generation/spec proof; kagent creates
+  only absent resources and refuses every occupied target. No source,
   build/repack/push, runtime/model override, update, adoption or ambiguous retry.
   Text/JSON outcomes distinguish created, reused, unknown and not-attempted from
   readiness, retaining partial acknowledged identities without rollback/cleanup.
   Newly created/recreated resources need fresh evaluation before subsequent reuse.
-  Signing/authentication is not claimed; live lift qualification remains separate.
+  Signing/authentication is not claimed. Bounded CI qualifies Orka exact reuse
+  and kagent fresh-target creation, not every promotion, creation or partial path.
 
 - Private suite-owned kagent v0.10.3 Go/linux-amd64 preparation, create-only
   placement and observation helpers consume the verified packaged member and
   explicit OpenAI bindings. Suite ownership is isolated from legacy resources;
   occupied/unrecorded or changed targets refuse. Repeat placement requires a
   complete caller-retained observation and is read-only. Partial outcomes retain
-  known identities without claiming success or rollback. No persisted receipt,
-  model/Task execution, suite CLI, lift gate or runtime-dispatch seam is added.
+  known identities without claiming success or rollback. These helpers now feed
+  packaged eval and common root Lift; no model/Task execution is added by Lift.
   [Native workspace profiles](docs/suite-workspace.md).
 
 - Internal read-only digest-lift planning for one-member native suites: bounded
@@ -79,8 +81,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   metadata and the exact OCI manifest; publication copies that prepared graph
   without images or cluster effects. Invalid/unsupported runtime declarations
   refuse; Orka-only preparation/evidence consumers do not execute kagent input.
-  CLI/release-lift kagent placement, suite evaluation/gates and RemoteMCP
-  remain future slices.
+  Packaged kagent evaluation/evaluated push and root Lift are described above;
+  RemoteMCP remains a future slice.
   Existing live kagent v0.10.2 create is unchanged.
   [Offline native workspace profiles](docs/suite-workspace.md).
 
@@ -129,8 +131,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Default `kmx create <name>` authors one native-Orka AgentSuite member offline.
   `kmx push --workspace DIR REF` prepares and publishes its exact OCI graph, including
   authored cases, with no member image build or cluster access. Existing bundle
-  behavior and extracted-directory suite transfer are unchanged. Release lift
-  is not available; full workspace evaluation is described above. Registry workspace pushes share the default
+  behavior and extracted-directory suite transfer are unchanged. This author/push
+  slice performs no deployment; root exact-digest Lift is described above. Full
+  workspace evaluation is described above. Registry workspace pushes share the default
   unsigned provenance policy, opt-out/required flags and matching-HEAD source
   commit claims; prepared graph bytes stay unchanged. [Workspace guide](docs/suite-workspace.md).
 
@@ -138,6 +141,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Provenance is unsigned: anyone with push access can attach a claim. [Suite provenance](docs/kmx.md#suite-provenance).
 
 ### Changed
+
+- The repository front door now separates the stable v0.5.1 quickstart from the
+  unreleased suite-first development path, leads with a compact
+  Create/Prove/Publish/Lift table, names runtime boundaries explicitly,
+  and labels `agent.yaml` guidance as legacy. New developer-facing codebase and
+  interface guides document current package flows, command surfaces and the
+  setup-only `AgentEnvironment` boundary. README self-tests enforce the release
+  warning, table columns/order, full-pass evidence, non-deploying push, exact
+  digest-Lift command, deploy-only behavior and GET-only planning.
 
 - `kmx bundle` (legacy `agent.yaml` lift, status, evaluate, retire, verify) is hidden from
   help and completion ahead of its removal; the commands still run.
@@ -281,7 +293,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   | `kmx suite push REF` | `kmx push REF` |
 
   Bare `kmx agent` and `kmx agent eval` no longer exist. Workspace `kmx eval`
-  requires `--to-context`, `--inference` and `--out`; use `kmx eval --help` for
+  requires `--to-context`, `--out`, and exactly one runtime-derived selector:
+  Orka `--inference` or packaged kagent `--bindings`; use `kmx eval --help` for
   help and evaluation helpers. The hidden editor retirement stub is also removed with its parent;
   edit live Orka resources with `kubectl --context <ctx> -n <ns> edit agents.core.orka.ai <name>`.
   Task retrieval remains `kmx task result`; no root `result` is added.

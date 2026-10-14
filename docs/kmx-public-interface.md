@@ -256,13 +256,15 @@ The Go package is alpha design evidence rather than a ready-to-instantiate SDK:
 - Model or inference provisioning is not yet a separate public lifecycle
   contract.
 - Concrete implementations of the northbound suite and runtime services remain
-  unimplemented. The separate CLI already validates and transfers AgentSuite
-  definitions and builds one experimental image with Docker buildx. It neither
-  builds a complete suite nor implements the northbound `Push` contract, and its
-  images are not AgentSuite-conformant; see the
+  unimplemented. The separate CLI already authors native workspace source,
+  evaluates the image-free Orka and exact-v0.10.3 Go kagent profiles,
+  validates/transfers AgentSuite definitions and builds one experimental image
+  with Docker buildx. It neither builds a complete suite nor implements the
+  northbound `Push` contract, and its images are not AgentSuite-conformant; see the
   [suite build reference](kmx.md#experimental-agentsuite-image-build).
-- Native-Orka workspaces with `requiredImages: []` are valid and publishable,
-  but are outside this first image-backed northbound Build/Push contract.
+- Native Orka and exact-v0.10.3 Go kagent workspaces with `requiredImages: []`
+  are valid, evaluable and publishable, but are outside this first image-backed
+  northbound Build/Push contract.
 
 The authoritative contract details remain in:
 

@@ -12,7 +12,9 @@ upstream contribution to a parallel implementation. Success includes a
 path that no longer needs this repository.
 
 Runtimes and harnesses own execution, enforcement and model access. KMX should
-not recreate a model proxy or governance platform. `orka.harness.v2` is out.
+not recreate a model proxy or governance platform. KMX may install Orka's chart
+in harness-v2 controller mode, but it must not implement the upstream
+`orka.harness.v2` harness ABI.
 Orka already ships OTLP with GenAI conventions; do not plan an exporter as an
 unmet upstream need.
 

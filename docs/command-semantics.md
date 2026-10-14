@@ -55,7 +55,8 @@ aliases or retirement stubs. Use kubectl to edit live Orka resources. Root
 `status` and `orka status` retain the same table-only Orka runtime report;
 `bundle status <bundle-dir>` is separate. There is no root bundle status or suite
 observer. Root `eval` executes a full native workspace inventory with explicit
-inference/target/output selection and retains its helpers. Standalone packaged
+target/output selection and exactly one runtime-derived model binding: Orka
+`--inference` or packaged kagent `--bindings`. Standalone packaged-reference
 evaluation remains unimplemented. Root digest `lift` deploys a packaged native
 suite with explicit private evidence, GET-only `--plan`, strict guarded apply and
 explicit source-only `--promote`; no model/runtime override, update or adoption. `task result` and
@@ -141,16 +142,22 @@ replacement remain as documented. Old `suite push <directory> <reference>` retai
 extracted-artifact transfer behavior without workspace discovery; suite push no
 longer accepts `--workspace` or one positional reference. Root push refuses two
 positional arguments.
-Root `eval --to-context CTX --inference provider:NAME --out FILE` performs offline
-workspace/inventory/output preparation before configuration, then one guarded
-owned native placement and one fresh Task per ordered case. Only full passing
-metadata is exported once to a private file outside workspace/cache; failure,
-unknown, drift, cancellation or output error stops later sends. No package
-reference, subset, judge or content output is accepted. `push --evaluation FILE`
-checks strict private receipt coherence and exact manifest S before publication;
-ordinary push is unevaluated. Receipts are unsigned observations, not policy gates.
-Hermetic command/Task tests do not qualify real native CLI execution. Reference
-lift remains unavailable. See [suite workspace](suite-workspace.md).
+Root `eval --to-context CTX --out FILE` performs offline workspace/inventory/
+output preparation before configuration, then one guarded runtime-specific
+placement and one fresh Task per ordered case. Orka requires
+`--inference provider:NAME`; packaged exact-v0.10.3 Go kagent requires
+author-owned `--bindings FILE`, unsecure auth and no `--result-port`. Only full
+passing metadata is exported once to a private file outside workspace/cache;
+failure, unknown, drift, cancellation or output error stops later sends. No
+package reference, subset, judge or content output is accepted.
+`push --evaluation FILE` checks runtime-specific private receipt coherence and
+exact manifest S before publication; ordinary push is unevaluated. Receipts are
+unsigned observations, not policy gates. Dedicated shards qualify bounded Orka
+and kagent two-case workspace scenarios; this is not general runtime support.
+Root `lift REF@sha256:DIGEST` consumes that explicit private full-pass evidence
+for source-free, deploy-only packaged Orka or exact-kagent placement. Bounded
+qualification covers Orka exact reuse and kagent fresh-target creation, not every
+promotion, creation or partial-outcome path. See [suite workspace](suite-workspace.md).
 
 ## Vocabulary
 

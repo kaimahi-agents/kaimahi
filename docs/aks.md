@@ -30,7 +30,7 @@ it has no Azure credential and does not re-prove live cloud behavior.
   require Linux, macOS or WSL, not native Windows. `--plan` requires only the
   authenticated Azure CLI.
 - An independently provisioned model/Provider is the operator's responsibility:
-  the lift deploys no Ollama and creates no Provider.
+  AKS setup deploys no Ollama and creates no Provider.
 - No checkout, local Docker engine, plane build or Copilot login is needed for AKS setup.
 
 ## One command: `kmx aks up`
@@ -55,13 +55,16 @@ looking for a spelling instead of a replacement. An existing legacy lift can
 still be inspected and torn down with `kmx aks down`; what is refused is
 creating or resuming one.
 
-Root `lift` and `lift down` aliases are removed outright. Use `kmx aks up`
-and `kmx aks down`; existing run records and historical ownership teardown
-remain unchanged.
+The former root `lift` AKS-provisioning alias and `lift down` are removed
+outright. Use `kmx aks up` and `kmx aks down`; root
+`kmx lift REF@sha256:DIGEST` now means one-member packaged native deployment:
+Orka or exact-v0.10.3 Go kagent. Runtime-specific selectors come from the package
+contract.
+Existing run records and historical ownership teardown remain unchanged.
 
 **This is a fresh-install path, not a version upgrade.** An existing v0.1.3
 manifest installation or foreign Helm release is refused. On an existing AKS
-cluster, do not simply remove the old release and rerun lift: first back up
+cluster, do not simply remove the old release and rerun `kmx aks up`: first back up
 the existing controller PVC and other data volumes, resources and Secrets,
 including a snapshot key if this installation has one, **without printing key
 values**; verify your
@@ -73,7 +76,7 @@ The new kmx installation generates `orka-api-agent-execution-snapshot` under
 `kmx aks up` nor `kmx aks down` migrates Orka's SQLite data, Tasks or key.
 Avoid `helm upgrade --force`; Orka does not support version upgrades here.
 
-**The lift creates no Provider.** A managed cluster has no
+**`kmx aks up` creates no Provider.** A managed cluster has no
 in-cluster model server — this path deploys no Ollama — and kmx holds no
 credential for a hosted one. Orka refuses every model call until a Provider
 exists, so the phase installs the platform and names the step that is yours:
@@ -124,7 +127,8 @@ workload image pull permissions remain owner decisions.
 
 `--step <phase>` runs **one phase only**, not that phase and all following ones.
 Failures leave earlier work in place and print a target-preserving retry. Fix
-the cause, rerun that phase, then run the remaining phases or the full lift:
+the cause, rerun that phase, then run the remaining phases or the full
+`kmx aks up` command:
 
 ```bash
 kmx aks up --step orka --resource-group <your-rg> --registry <registry> --cluster <cluster>
@@ -140,7 +144,7 @@ remaining fully readable so the cluster can still be inspected and torn down.
 Completing a single phase proves nothing about phases not run by that
 invocation.
 
-`--step` is validated against the phases the lift has, so a retired phase such
+`--step` is validated against the `kmx aks up` phases, so a retired phase such
 as `--step agents` is refused and names the phases that exist.
 
 The former `boundary`, `credential` and `plane` phases are not accepted.
@@ -158,13 +162,13 @@ model proxy. See [models](models.md) for native Provider configuration.
 |---|---|
 | Region | `westus3`; `--location` |
 | Node | one `Standard_B4ms` (4 vCPU / 16 GiB); `--node-count`, `--node-size` |
-| OS disk | lift: 64 GiB; standalone `aks-up.sh`: 32 GiB, configurable with `AKS_NODE_OSDISK_SIZE` |
+| OS disk | `kmx aks up`: 64 GiB; standalone `aks-up.sh`: 32 GiB, configurable with `AKS_NODE_OSDISK_SIZE` |
 | Network | Azure CNI Overlay + Cilium (`--network-policy cilium`); `azure` or `calico` accepted but not live-verified here |
-| Control plane | Free tier, no SLA; not exposed as a lift flag |
+| Control plane | Free tier, no SLA; not exposed as an `aks up` flag |
 | Registry | private ACR Basic, admin user disabled; `--registry` |
 | Monitoring | enabled; `--observability=false` skips new Azure monitoring setup |
 
-The larger lift disk follows a recorded 32 GiB `DiskPressure`/eviction failure
+The larger `kmx aks up` disk follows a recorded 32 GiB `DiskPressure`/eviction failure
 with both monitoring add-ons. It is not a sizing guarantee for Orka, a larger
 model, more applications or a production workload. Scheduling isolation is a
 separate concern, and this repository makes no scheduling-isolation claim.
@@ -195,12 +199,12 @@ refresh. Set `KUBE_CTX=<cluster>` and confirmation explicitly where applicable;
 do not infer the target from kubectl's current-context. Plane-only probes and
 assets are removed; native provisioning and guarded teardown remain.
 
-Lift carries its provisioning scripts. It needs no plane image, manifest,
+`kmx aks up` carries its provisioning scripts. It needs no plane image, manifest,
 certificate or database to install Orka.
 
 ## Observability
 
-Lift enables Managed Prometheus into an Azure Monitor workspace and Container
+AKS setup enables Managed Prometheus into an Azure Monitor workspace and Container
 Insights logs into Log Analytics. It records workspaces and add-on resources as
 they are created. It does not create a plane scrape allowance, PodMonitor or
 workbook, and it never edits the cluster-wide scrape ConfigMap. Configure
@@ -209,7 +213,7 @@ workload-specific scrape jobs and dashboards yourself.
 **Disabling the metrics add-on can remove its CRD and every PodMonitor using it,
 including yours.** BYO teardown warns before disabling an add-on this run enabled;
 keep your manifests and reapply after re-enabling it. This consequence exists
-even though lift never edits your shared scrape ConfigMap.
+even though AKS setup never edits your shared scrape ConfigMap.
 
 `verify` checks Orka readiness, not telemetry arrival or model inference.
 Enabling an add-on does not prove that your workload's metrics or logs arrive.
@@ -217,7 +221,7 @@ Keep your own OpenTelemetry instrumentation and verify its data path separately.
 
 ## Teardown
 
-Cloud resources keep billing until cleaned up. For a lift-created cluster:
+Cloud resources keep billing until cleaned up. For a `kmx aks up`-created cluster:
 
 ```bash
 KAIMAHI_CONFIRM=<your-rg> kmx aks down --resource-group <your-rg> --cluster <cluster>
@@ -309,6 +313,6 @@ bash scripts/check-no-azure-ids.sh path/to/transcript.txt
 
 The scanner catches identifier **shapes** such as GUIDs, resource IDs, hostnames
 and public IPs, not bare resource-group, cluster, registry or workspace names.
-Lift's banner omits the subscription ID, but echoed Azure commands can contain
+The `kmx aks up` banner omits the subscription ID, but echoed Azure commands can contain
 full resource IDs. Scan **and manually redact names** before sharing transcripts,
 attachments or PR evidence. Never commit live Azure or Slack identifiers.

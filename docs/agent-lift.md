@@ -11,9 +11,12 @@ is a separate [kagent path](#exact-v0103-declarative-bundle-placement).
 kagent create receipts do not authorize reuse by that path. Explicit
 [Go evaluation](#evaluating-exact-v0103-go-kagent) uses the saved v0.10.3
 placement. Console bundle actions and interactive `/lift` remain Orka-only.
-This is the legacy PortableAgent lifecycle, not packaged-suite lift; root digest
-`lift` and packaged root evaluation are not implemented. Root `eval` currently
-holds helpers only.
+This is the legacy PortableAgent lifecycle, not packaged-suite lift. Root
+workspace `eval` is a separate packaged Orka/kagent workflow, and standalone
+packaged-reference evaluation is not implemented. Root
+`kmx lift REF@sha256:DIGEST` is implemented separately for evaluated one-member
+native Orka and exact-v0.10.3 Go kagent packages; see
+[digest Lift](suite-workspace.md#digest-lift).
 
 ```console
 kmx bundle lift <bundle-dir> --to-context <ctx> [--to-namespace <ns>] --inference provider:<name> [--require-evaluated <context>] [--override-gate "reason"] [--plan]
@@ -1011,15 +1014,22 @@ proof, replacing any prior report. Only `equivalent` for every case exits zero;
 kmx eval diff <before.json> <after.json>
 ```
 
-Pass explicit latest receipts or immutable run files from the Orka, Sessions
-or exact-v0.10.3 Go kagent receipt family. This command reads only those local files: no kubeconfig or
-runtime configuration, network request, model call or case rerun. Inputs must
-be regular, non-linked files, at most 1 MiB each. Unknown or duplicate JSON
-members (including case-folded spellings), malformed identities/digests,
-duplicate case/assertion IDs and incoherent versions/results are refused.
+Pass explicit latest receipts or immutable run files from the Orka, Sessions or
+exact-v0.10.3 Go kagent legacy receipt family, or private full-passing packaged
+suite evidence. This command reads only those local files: no kubeconfig or
+runtime configuration, network request, model call or case rerun. Inputs must be
+regular, non-linked files, at most 1 MiB each. Unknown or duplicate JSON members
+(including case-folded spellings), malformed identities/digests, duplicate
+case/assertion IDs and incoherent versions/results are refused.
 
-Both receipts must be v2 full-case runs with compatible runtime identity.
-Sessions compares syntactically normalized address, returned harness and
+Legacy receipts must be v2 full-case runs with compatible runtime identity.
+Packaged suite evidence uses strict `schemaVersion: 1` and requires the same
+runtime, exact prepared subject, observed ownership and ordered case inventory;
+Orka and kagent packaged evidence never compare across runtimes.
+For packaged evidence, target context and resource UID/generation/spec ownership
+are subject identity. Run/Task IDs, answer hashes and the source fingerprint are
+not comparison identities.
+For legacy v2 receipts, Sessions compares syntactically normalized address, returned harness and
 journal-observed model, without DNS/alias equivalence. Orka compares cluster
 UID, namespace, Agent name/UID and model. kagent compares runtime version,
 Go engine, cluster UID, namespace, Agent and ModelConfig UIDs, model route and

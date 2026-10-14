@@ -193,27 +193,39 @@ from:
 v0.5.1 uses `kmx context show/use` and `kmx local up/down` as the canonical
 commands. Historical v0.4.1 commands were `ctx` and root `up/down`; v0.5.1
 retained them as callable compatibility routes with notices on stderr. Current
-development builds remove root `ctx`, `up`, `down`, `lift` and `lift down`
-outright, without retirement stubs. Replace them with `context show/use`,
-`local up/down` and `aks up/down` respectively.
+development builds remove root `ctx`, `up`, `down`, the former AKS-provisioning
+meaning of `lift`, and `lift down` outright, without retirement stubs. Replace
+them with `context show/use`, `local up/down` and `aks up/down` respectively.
+Root `lift <ref>@<digest>` is now a separate one-member packaged native Orka or
+exact-v0.10.3 Go kagent deployment command.
 Current development builds also remove the entire `kmx agent` group, without
 aliases or stubs: use root `create/chat/run`, `orka show/list`, legacy
 `bundle evaluate/lift/retire/verify/status` and root `eval diff/from-sessions`
 helpers. Root `status` remains the table-only Orka runtime report, also available
-as `orka status`. Workspace publication moves from one-reference `suite push`
-to root `push [--workspace DIR] REF`, which discovers the nearest ancestor
-`workspace.yaml`; `--workspace` selects an exact root without fallback.
-Default `create <name>` now authors one native-Orka workspace member offline,
-requiring an exact model and an instructions file. Create and push share
-nearest-ancestor discovery; explicit `--workspace DIR` selects/initializes an
-exact root without prompting. Terminal initialization asks `Start one here? [Y/n]`;
+as `orka status`.
+
+Current main also adds the unreleased workspace path: default `create <name>`
+authors one native workspace member offline. Root `eval` derives the packaged
+runtime, using `--inference` for Orka or `--bindings` for exact-v0.10.3 Go
+kagent, and stops later cases after the first non-pass. Root `push
+[--workspace DIR] REF` publishes the exact prepared OCI graph; `push
+--evaluation FILE` requires matching runtime-specific full-passing evidence for
+that exact manifest.
+Root `lift REF@sha256:DIGEST` deploys the matching packaged runtime from a
+registry or local layout with explicit private full-passing evidence and target.
+Orka uses a Ready `openai` inference Provider; kagent uses `--bindings`, creates
+new resources only and refuses occupied targets. `--plan` is GET-only. Standalone package-reference evaluation
+remains unavailable. Create, eval and push share nearest-ancestor discovery; explicit
+`--workspace DIR` selects an exact root without fallback and create initializes
+it without prompting. Terminal initialization asks `Start one here? [Y/n]`;
 nonterminal use needs `--workspace`. Invalid markers and a second member refuse
-without modifying source. Scripts that create resources or PortableAgent bundles
-must add `--live` for both runtimes, including `--no-apply`, `--dry-run` and
-`--out -` previews. `--runtime kagent` alone is not a compatibility route.
-Use `kmx create --live` for the live Orka wizard; quickstart and console stay
-live. See [workspace authoring](suite-workspace.md). Root `eval` does not execute
-packaged cases, and root digest `lift` is not implemented.
+without modifying source.
+
+Scripts that create resources or PortableAgent bundles must add `--live` for
+both runtimes, including `--no-apply`, `--dry-run` and `--out -` previews.
+`--runtime kagent` alone is not a compatibility route. Use `kmx create --live`
+for the live Orka wizard; quickstart and console stay live. See [workspace
+authoring, evaluation, publication and digest Lift](suite-workspace.md).
 See the [exact old/new mapping](../CHANGELOG.md#upgrading) and
 [command alignment](command-semantics.md) for the removal policy.
 

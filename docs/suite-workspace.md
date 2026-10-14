@@ -10,13 +10,20 @@ native Orka or exact kagent v0.10.3 Go/linux-amd64 evaluation of one tool-free
 member with an exact OpenAI-compatible model. Orka remains the authoring default;
 `--runtime kagent` authors the private profile. Root eval derives that packaged
 runtime and uses explicit author-owned bindings; evaluated push accepts only
-matching runtime-specific passing evidence. Kagent suite status, lift and
-promotion remain unavailable. Occupied targets
-refuse without a complete caller-retained observation; qualified repeat is
-read-only, not update/adoption or restart recovery.
+matching runtime-specific passing evidence. Root digest Lift supports both
+profiles. Kagent Lift is create-only: any occupied primary or generated child
+refuses, even with matching evaluated UIDs. Suite status and retirement remain
+unavailable. Evaluation placement refuses occupied targets without a complete
+caller-retained observation; qualified repeat is read-only, not update/adoption
+or restart recovery.
 Orka evaluation has hermetic command/Task tests and a pinned two-case native
-workspace CI qualifier. Standalone registry-package evaluation and kagent
-registry-reference lift are not available; Orka digest lift is described below. Existing `agent.yaml` creation, evaluation and lift remain
+workspace CI qualifier. Packaged kagent evaluation has hermetic coverage and
+pinned exact-v0.10.3 CLI qualification. Root exact-digest Lift retrieves the
+package from a registry or local layout and separately consumes matching private
+full-passing evidence. Orka uses `--inference`; kagent uses author-owned
+`--bindings`. Bounded CI qualifies Orka exact registry/layout reuse and kagent
+fresh-target creation/occupied refusal. Standalone registry-package evaluation
+remains unavailable. Existing `agent.yaml` creation, evaluation and lift remain
 separate and unchanged.
 
 ## Create
@@ -98,12 +105,13 @@ reads are bounded, and credential-shaped content is refused.
 
 ## Evaluate the whole workspace
 
-Provision the pinned Orka v0.2.0 harness-v2 runtime, a Ready OpenAI-compatible
-inference Provider with its referenced Secret, and the existing result-access
-ServiceAccount/Task-get grant separately. Evaluation does not install or upgrade
-anything, build images or write Secrets. The packaged member model is exact;
-the selected Provider's default model does not replace it. Required member
-images remain `[]`.
+For Orka, provision the pinned v0.2.0 harness-v2 runtime, a Ready
+OpenAI-compatible inference Provider with its referenced Secret, and the existing
+result-access ServiceAccount/Task-get grant separately. For kagent, provision
+exact v0.10.3 Go, author a `KagentBindings` file, and provision its referenced
+Secret. Evaluation does not install or upgrade anything, build images or write
+Secrets. The packaged member model is exact; bindings do not replace it. Required
+member images remain `[]`.
 
 ```sh
 mkdir -m 700 ../private-evidence
@@ -124,14 +132,16 @@ substitution, judge, case subset or `--show-content` is available. Only `contain
 receipt-budget overflow and invalid output destinations refuse offline before
 loading cluster configuration.
 
-One mutation guard covers both ownership-safe Provider/Agent placement and all
-ordered evaluation Tasks. Remote targets require the existing named confirmation;
-local kind targets retain the existing banner. Only a same-owner native pair can
-be reused or updated; legacy/unowned/foreign resources are not adopted. Every
-case sends one fresh Task exactly once, using the exact authored input. Ambiguous
-writes are never recovered, retried or resent. Placement, runtime, target and
-binding observations bracket execution; source and placement are checked again
-before export. These observations do not prove drift absence or authentication.
+One mutation guard covers runtime-specific placement and all ordered evaluation
+Tasks: Orka `Provider/Agent`, or kagent `ModelConfig/Agent`. Remote targets require
+the existing named confirmation; local kind targets retain the existing banner.
+Orka can reuse/update only a same-owner pair; kagent creates new objects and
+refuses occupied targets without complete caller-retained proof. Neither adopts
+legacy/unowned/foreign resources. Every case sends one fresh Task exactly once,
+using the exact authored input. Ambiguous writes are never recovered, retried or
+resent. Placement, runtime, target and binding observations bracket execution;
+source and placement are checked again before export. These observations do not
+prove drift absence or authentication.
 
 Kagent uses a closed author-owned `KagentBindings` file (namespace, OpenAI
 provider/baseURL, separately provisioned Secret name/explicit key). The model
@@ -179,7 +189,8 @@ compares only compatible same-runtime subjects/case inventories; Orka/kagent
 comparison refuses as incompatible, never as equivalent behavior. Comparison
 also requires identical observed ownership. Separate kagent CLI runs create
 fresh resources, so their receipts are incompatible rather than a cross-run
-behavior comparison. Orka lift consumers reject kagent evidence. `eval from-sessions` and `bundle evaluate`
+behavior comparison. Root Lift dispatches only matching runtime evidence;
+cross-runtime evidence refuses. `eval from-sessions` and `bundle evaluate`
 retain their separate formats and behavior; native receipts are not bundle gates.
 
 ### Qualification boundary
@@ -212,15 +223,19 @@ the destination has its own inference Provider and Secret. With source withheld,
 registry `lift --promote --plan` must be GET-only and apply must complete both
 server preflights before beginning creation of an absent Provider/Agent pair.
 Independent destination identity/spec/marker readbacks and one fresh Task with
-authored answer assertions
-qualify creation and execution. A separate Ready Provider declaring a mismatched
-model must refuse before admission, writes or Task attempts, leaving the target
-empty. That same Provider first passes a matching-model plan control; only its
-model declaration is then changed for the refusal. The genuine receipt remains
-source-only evidence, not destination evaluation or independent model-server
-qualification. No second model workload
+authored answer assertions qualify creation and execution. A separate Ready
+Provider declaring a mismatched model must refuse before admission, writes or
+Task attempts, leaving the target empty. That same Provider first passes a
+matching-model plan control; only its model declaration is then changed for the
+refusal. The genuine receipt remains source-only evidence, not destination
+evaluation or independent model-server qualification. No second model workload
 or timeout increase is required. Partial CLI outcomes are not established by
 this fixed scenario.
+
+The dedicated kagent shard separately qualifies packaged evaluation and
+source-free digest Lift into a fresh prepared namespace, including GET-only
+planning, ordered creation and occupied repeat refusal without another native
+execution. Standalone package evaluation remains unavailable.
 
 ## Publish
 

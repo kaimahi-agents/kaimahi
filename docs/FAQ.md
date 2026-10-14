@@ -1,7 +1,8 @@
 # FAQ and troubleshooting
 
-Start with [getting started](getting-started.md) for Orka installation, native
-Agent creation, chat and bundle lifecycle.
+Start with [getting started](getting-started.md) for installation and a first
+answer, [suite workspace](suite-workspace.md) for author/eval/push, and the
+[legacy bundle lifecycle](agent-lift.md) for current PortableAgent deployment.
 
 ## Why is `kmx orka` missing?
 
@@ -40,13 +41,19 @@ does not adopt/update existing objects or roll back partial writes. An optional
 `--task` sends one A2A message as the final step of that same create invocation;
 it is not a standalone or resumable chat capability.
 
-The separate exact-v0.10.3 profile permits explicit declarative bundle
-lift/status with desired bindings and a named context. It creates new resources
-or reuses a complete matching UID-bound deployment, never adopts or updates.
-Readiness receipts do not prove an answer. Dedicated CI continuously qualifies
-Go lift/status and a separate one-shot native A2A tool answer. See [exact-version placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
-Standalone chat/run/eval, list/show, console, interactive `/lift`, quickstart,
-`local up`, installer and AKS payload remain unsupported. Historical AKS lift records
+The separate exact-v0.10.3 profile permits explicit declarative legacy bundle
+lift/status/evaluation with desired bindings and a named context. It creates new
+resources or reuses a complete matching UID-bound deployment, never adopts or
+updates. Evaluation sends one fresh blocking A2A Task per case and never retries
+ambiguity. Readiness receipts do not prove an answer. Dedicated CI continuously
+qualifies Go lift/status/evaluation and a separate one-shot native A2A tool
+answer. See [exact-version placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
+The packaged exact-v0.10.3 Go workspace profile also supports root
+`eval --bindings FILE`, runtime-specific full-passing evidence, evaluated push,
+same-runtime offline receipt comparison and create-only root digest Lift. Any
+occupied target refuses, even with matching evaluated UIDs. Standalone chat/run,
+packaged status/retirement, list/show, console,
+interactive `/lift`, quickstart, `local up`, installer and AKS payload remain unsupported. Historical AKS lift records
 remain teardown-only. See the [create contract](kmx.md#explicit-kagent-v0102-create).
 
 There is still no supported translation from Kagent YAML into an Orka Agent or
