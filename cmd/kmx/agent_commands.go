@@ -58,7 +58,7 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 	var profile workspace.RuntimeProfile
 	cmd := &cobra.Command{
 		Use: "create <name>", Short: "Author an offline workspace member",
-		Long:    "Author a tool-free Orka or exact kagent Go member in a local workspace.\n\nCreate does not evaluate, publish, deploy or load cluster configuration.\nUse eval, push and immutable digest lift with explicit evidence for deployment.",
+		Long:    "Author a tool-free Orka, exact kagent Go or pinned AgentSessions chat member in a local workspace. AgentSessions evaluation uses an explicit development host; its lift, chat and status remain unavailable.\n\nCreate does not evaluate, publish, deploy or load cluster configuration.\nUse eval, push and immutable digest lift with explicit evidence for deployment.",
 		Example: "  kmx create greeter --workspace ./greeter --model qwen-3.5-2b --instructions instructions.md",
 	}
 	cmd.Flags().StringVar(&root, "workspace", "", "select an exact workspace directory (initialize without prompting if absent)")
@@ -66,11 +66,11 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&description, "description", "", "one-line description")
 	cmd.Flags().StringVar(&model, "model", "", "authored model identifier (required)")
 	cmd.Flags().StringVar(&instructions, "instructions", "", "file containing the system message (required)")
-	cmd.Flags().StringVar(&runtimeID, "runtime", "orka", "agent runtime: orka or kagent")
-	cmd.Flags().StringVar(&version, "runtime-version", "v0.10.3", "kagent workspace profile: v0.10.3")
+	cmd.Flags().StringVar(&runtimeID, "runtime", "orka", "agent runtime: orka, kagent or agentsessions")
+	cmd.Flags().StringVar(&version, "runtime-version", "v0.10.3", "exact workspace runtime profile (kagent: v0.10.3; agentsessions: pinned commit)")
 	cmd.Flags().StringVar(&engine, "kagent-runtime", "go", "kagent declarative runtime: go")
-	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"orka", "kagent"}))
-	_ = cmd.RegisterFlagCompletionFunc("runtime-version", staticCompletion([]string{"v0.10.3"}))
+	_ = cmd.RegisterFlagCompletionFunc("runtime", staticCompletion([]string{"orka", "kagent", "agentsessions"}))
+	_ = cmd.RegisterFlagCompletionFunc("runtime-version", staticCompletion([]string{"v0.10.3", workspace.AgentSessionsVersion}))
 	_ = cmd.RegisterFlagCompletionFunc("kagent-runtime", staticCompletion([]string{"go"}))
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("workspace") && strings.TrimSpace(root) == "" {
@@ -89,6 +89,11 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 				return fmt.Errorf("workspace kagent supports only --runtime-version v0.10.3 and --kagent-runtime go")
 			}
 			profile.Version, profile.Engine = version, engine
+		} else if runtimeID == "agentsessions" {
+			if (cmd.Flags().Changed("runtime-version") && version != workspace.AgentSessionsVersion) || cmd.Flags().Changed("kagent-runtime") {
+				return fmt.Errorf("workspace agentsessions requires the pinned --runtime-version %s and refuses --kagent-runtime", workspace.AgentSessionsVersion)
+			}
+			profile.Version, profile.Engine = workspace.AgentSessionsVersion, "chat"
 		} else if runtimeID != "orka" || cmd.Flags().Changed("runtime-version") || cmd.Flags().Changed("kagent-runtime") {
 			return fmt.Errorf("workspace --runtime must be orka without version/engine or exact kagent v0.10.3 go")
 		}

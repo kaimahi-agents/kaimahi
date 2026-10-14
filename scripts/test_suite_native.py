@@ -48,6 +48,157 @@ def task():
             "status": {"phase": "Succeeded", "resultRef": {"available": True}}}
 
 
+class PromotionWorkflowTests(unittest.TestCase):
+    """Execute CI shell ownership decisions without Docker or Kubernetes."""
+
+    def setUp(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        self.job = workflow["jobs"]["e2e-orka-runtime"]
+        self.steps = self.job["steps"]
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = pathlib.Path(self.temp.name)
+        (self.root / "bin").mkdir()
+        self.env_file = self.root / "github-env"
+        self.env_file.touch()
+        self.record = self.root / "calls.jsonl"
+        # Fake only external commands. Bash, its failure propagation, redirects,
+        # GITHUB_ENV writes and cleanup guards are the real workflow operations.
+        fake = '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+name = pathlib.Path(sys.argv[0]).name
+args = sys.argv[1:]
+with open(os.environ["CALLS"], "a") as stream:
+    stream.write(json.dumps({"tool": name, "args": args,
+        "cluster": os.environ.get("KIND_CLUSTER"),
+        "context": os.environ.get("KUBE_CTX"),
+        "owned": pathlib.Path(os.environ["GITHUB_ENV"]).read_text()}) + "\\n")
+if name == "kind" and args == ["get", "clusters"]:
+    print(os.environ.get("CLUSTERS", ""))
+    sys.exit(int(os.environ.get("LIST_EXIT", "0")))
+if name == "kmx" and args == ["local", "up", "--step", "cluster"]:
+    sys.exit(int(os.environ.get("CREATE_EXIT", "0")))
+if name == "kmx" and "install" in args:
+    print("PRIVATE_INSTALL_CANARY")
+    if os.environ.get("VERIFIED", "1") == "1":
+        print("Installer verified: pinned")
+    sys.exit(int(os.environ.get("INSTALL_EXIT", "0")))
+if name == "python3" and "nodes" in args:
+    sys.exit(int(os.environ.get("MIRROR_EXIT", "0")))
+'''
+        for name in ("kind", "kmx", "python3"):
+            path = self.root / "bin" / name
+            path.write_text(fake.replace("#!/usr/bin/env python3", "#!" + sys.executable, 1))
+            path.chmod(0o700)
+        self.env = dict(os.environ, PATH=str(self.root / "bin") + os.pathsep + os.defpath,
+                        CALLS=str(self.record), GITHUB_ENV=str(self.env_file),
+                        GITHUB_WORKSPACE=str(self.root), RUNNER_TEMP=str(self.root),
+                        KIND_CLUSTER="kmx-orka", KUBE_CTX="kind-kmx-orka")
+        for key in ("KMX_ORKA_RUNTIME_CREATED", "KMX_ORKA_PROMOTION_CREATED"):
+            self.env.pop(key, None)
+
+    def step(self, name):
+        found = [step for step in self.steps if step.get("name") == name]
+        self.assertEqual(len(found), 1, "missing dedicated workflow step: " + name)
+        return found[0]
+
+    def run_step(self, name, **env):
+        return subprocess.run(["bash", "-e", "-o", "pipefail", "-c", self.step(name)["run"]],
+                              cwd=self.root, env=dict(self.env, **env), capture_output=True, timeout=10)
+
+    def calls(self):
+        return [json.loads(line) for line in self.record.read_text().splitlines()] if self.record.exists() else []
+
+    def setup_promotion(self, **env):
+        return self.run_step("Native promotion — create only the dedicated destination cluster", **env)
+
+    def cleanup(self):
+        inherited = dict(line.split("=", 1) for line in self.env_file.read_text().splitlines())
+        return self.run_step("down", **inherited)
+
+    def test_success_records_ownership_after_create_and_routes_only_destination(self):
+        result = self.setup_promotion()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        self.assertEqual([(c["tool"], c["args"]) for c in calls], [
+            ("kind", ["get", "clusters"]),
+            ("kmx", ["local", "up", "--step", "cluster"]),
+            ("python3", [str(self.root / "scripts/ci/registry-mirrors.py"), "nodes", "--cluster", "kmx-orka-promote"])])
+        self.assertEqual((calls[1]["cluster"], calls[1]["context"]), ("kmx-orka-promote", "kind-kmx-orka-promote"))
+        self.assertNotIn("KMX_ORKA_PROMOTION_CREATED=1", calls[1]["owned"])
+        self.assertIn("KMX_ORKA_PROMOTION_CREATED=1", calls[2]["owned"])
+        self.assertEqual(self.cleanup().returncode, 0)
+        self.assertEqual(self.calls()[-1]["args"], ["delete", "cluster", "--name", "kmx-orka-promote"])
+
+    def test_preexisting_or_unknown_cluster_list_refuses_without_delete(self):
+        for env in ({"CLUSTERS": "unrelated\nkmx-orka-promote"}, {"LIST_EXIT": "1"}):
+            with self.subTest(env=env):
+                self.record.unlink(missing_ok=True)
+                result = self.setup_promotion(**env)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.env_file.read_text(), "")
+                self.assertEqual(self.cleanup().returncode, 0)
+                self.assertEqual([(c["tool"], c["args"]) for c in self.calls()], [("kind", ["get", "clusters"])])
+
+    def test_failed_ambiguous_create_is_not_owned_or_deleted(self):
+        self.assertNotEqual(self.setup_promotion(CREATE_EXIT="1").returncode, 0)
+        self.assertEqual(self.env_file.read_text(), "")
+        self.assertEqual(self.cleanup().returncode, 0)
+        self.assertEqual(len(self.calls()), 2)
+
+    def test_failure_after_acknowledged_create_still_cleans_owned_destination(self):
+        self.assertNotEqual(self.setup_promotion(MIRROR_EXIT="1").returncode, 0)
+        self.assertEqual(self.env_file.read_text(), "KMX_ORKA_PROMOTION_CREATED=1\n")
+        self.assertEqual(self.cleanup().returncode, 0)
+        self.assertEqual(self.calls()[-1]["args"], ["delete", "cluster", "--name", "kmx-orka-promote"])
+
+    def test_cleanup_requires_each_exact_ownership_flag_and_preserves_source(self):
+        for source, destination in (("", ""), ("1", ""), ("", "1"), ("1", "1"), ("0", "true")):
+            with self.subTest(source=source, destination=destination):
+                self.record.unlink(missing_ok=True)
+                result = self.run_step("down", KMX_ORKA_RUNTIME_CREATED=source, KMX_ORKA_PROMOTION_CREATED=destination)
+                self.assertEqual(result.returncode, 0)
+                expected = []
+                if source == "1":
+                    expected.append(["delete", "cluster", "--name", "kmx-orka"])
+                if destination == "1":
+                    expected.append(["delete", "cluster", "--name", "kmx-orka-promote"])
+                self.assertCountEqual([c["args"] for c in self.calls()], expected)
+
+    def test_destination_install_is_private_verified_and_provider_free(self):
+        name = "Native promotion — install pinned Orka without inference"
+        for env, success in (({}, True), ({"VERIFIED": "0"}, False), ({"INSTALL_EXIT": "1"}, False)):
+            with self.subTest(env=env):
+                self.record.unlink(missing_ok=True)
+                result = self.run_step(name, **env)
+                self.assertEqual(result.returncode == 0, success)
+                self.assertNotIn(b"PRIVATE_INSTALL_CANARY", result.stdout + result.stderr)
+                self.assertEqual(self.calls()[0]["args"], ["--context", "kind-kmx-orka-promote", "orka", "install", "--provider", "-"])
+        captures = list(self.root.glob("*orka*install*"))
+        self.assertTrue(captures, "installer output must be captured privately")
+        self.assertTrue(all(path.stat().st_mode & 0o077 == 0 for path in captures))
+
+    def test_qualifier_receives_both_contexts_with_existing_ci_guards(self):
+        name = "Native suite — qualify evaluation, exact transfer and CLI lift"
+        result = self.run_step(name)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls()[0]["args"], ["scripts/ci/suite-native.py", "kind-kmx-orka", "kind-kmx-orka-promote", str(self.root / "kmx-suite-native")])
+        order = [step.get("name") for step in self.steps]
+        setup = "Native promotion — create only the dedicated destination cluster"
+        install = "Native promotion — install pinned Orka without inference"
+        self.assertLess(order.index("Orka — Agent and Task return an exact local-model answer"), order.index(setup))
+        self.assertLess(order.index(setup), order.index(install))
+        self.assertLess(order.index(install), order.index(name))
+        for guarded in (setup, install, name):
+            self.assertEqual(self.step(guarded)["if"], "steps.changes.outputs.docs_only != 'true'")
+        self.assertEqual(self.step("down")["if"], "always() && steps.changes.outputs.docs_only != 'true'")
+        self.assertEqual(self.job["timeout-minutes"], 45)
+        self.assertEqual(self.step("Upload only passing native metadata")["with"]["path"].splitlines(), [
+            "${{ runner.temp }}/kmx-suite-native/artifacts/passing.json",
+            "${{ runner.temp }}/kmx-suite-native/artifacts/qualification.json"])
+
+
 class QualificationTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(Q, "native qualification helper is not implemented")

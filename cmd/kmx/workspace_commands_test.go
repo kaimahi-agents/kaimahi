@@ -110,36 +110,40 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 	}
 }
 
-func TestCreateWithoutLiveAuthorsKagentMember(t *testing.T) {
-	root, input, layout := t.TempDir(), filepath.Join(t.TempDir(), "input.md"), filepath.Join(t.TempDir(), "layout")
-	if err := os.WriteFile(input, []byte("Exact instructions.\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("KMX_HOME", t.TempDir())
-	t.Setenv("PATH", t.TempDir())
-	var out, diagnostics bytes.Buffer
-	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"create", "greeter", "--workspace", root, "--runtime", "kagent", "--model", "fixture", "--instructions", input}, deps); err != nil {
-		t.Fatal(err)
-	}
-	prepared, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	suite, err := workspace.Load(t.Context(), prepared)
-	if err != nil || suite.Runtime != (workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) {
-		t.Fatalf("wrong authored runtime: %v, %v", suite, err)
-	}
-	if err = execute([]string{"push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
-		t.Fatal(err)
-	}
-	store, err := oci.New(layout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	descriptor, err := store.Resolve(t.Context(), "team:v1")
-	if err != nil || descriptor.Digest != prepared.Descriptor.Digest || *loads != 0 || !strings.Contains(out.String(), "native-kagent") || strings.Contains(out.String(), "native-Orka") {
-		t.Fatalf("offline profile/publication changed: %v loads=%d output=%s", err, *loads, &out)
+func TestCreateWithoutLiveAuthorsNonOrkaMember(t *testing.T) {
+	for _, profile := range []workspace.RuntimeProfile{{ID: "kagent", Version: "v0.10.3", Engine: "go"}, {ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}} {
+		t.Run(profile.ID, func(t *testing.T) {
+			root, input, layout := t.TempDir(), filepath.Join(t.TempDir(), "input.md"), filepath.Join(t.TempDir(), "layout")
+			if err := os.WriteFile(input, []byte("Exact instructions.\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("KMX_HOME", t.TempDir())
+			t.Setenv("PATH", t.TempDir())
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			if err := execute([]string{"create", "greeter", "--workspace", root, "--runtime", profile.ID, "--model", "fixture", "--instructions", input}, deps); err != nil {
+				t.Fatal(err)
+			}
+			prepared, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			suite, err := workspace.Load(t.Context(), prepared)
+			if err != nil || suite.Runtime != profile {
+				t.Fatalf("wrong authored runtime: %v, %v", suite, err)
+			}
+			if err = execute([]string{"push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
+				t.Fatal(err)
+			}
+			store, err := oci.New(layout)
+			if err != nil {
+				t.Fatal(err)
+			}
+			descriptor, err := store.Resolve(t.Context(), "team:v1")
+			if err != nil || descriptor.Digest != prepared.Descriptor.Digest || *loads != 0 || !strings.Contains(out.String(), "native-"+profile.ID) || strings.Contains(out.String(), "native-Orka") {
+				t.Fatalf("offline profile/publication changed: %v loads=%d output=%s", err, *loads, &out)
+			}
+		})
 	}
 }
 
@@ -148,6 +152,10 @@ func TestWorkspaceRuntimeSelectorsRefuseBeforeConfigOrWrites(t *testing.T) {
 		{"--runtime", "kagent", "--runtime-version", "v0.10.2"},
 		{"--runtime", "kagent", "--runtime-version", "v0.10.3", "--kagent-runtime", "python"},
 		{"--runtime", "orka", "--runtime-version", "v0.10.3"}, {"--kagent-runtime", "go"}, {"--runtime-version", ""},
+		{"--runtime", "agentsessions", "--runtime-version", "main"},
+		{"--runtime", "agentsessions", "--runtime-version", ""},
+		{"--runtime", "agentsessions", "--kagent-runtime", "go"},
+		{"--runtime", "agentsessions", "--kagent-runtime", "python"},
 	} {
 		t.Run(strings.Join(flags, " "), func(t *testing.T) {
 			root := t.TempDir()

@@ -157,9 +157,9 @@ def check(text: str) -> str | None:
     if "kagent refuses occupied targets" not in rows[3][1]:
         return "README front door: Lift row must preserve kagent create-only placement"
     normalized_preamble = " ".join(journey[:table_at].split())
-    if "qualifies root Lift for Orka exact reuse and kagent fresh-target creation" not in normalized_preamble:
+    if "qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation" not in normalized_preamble:
         return "README front door: Lift qualification scope is missing"
-    if "root Lift qualification does not prove every promotion, creation or partial-outcome path" not in normalized_preamble:
+    if "it does not prove every promotion, creation or partial-outcome path" not in normalized_preamble:
         return "README front door: Lift qualification limits are missing"
 
     answer = section_after(text, matches["first-answer heading"])
@@ -192,7 +192,7 @@ def check(text: str) -> str | None:
     for label, pattern in [
         ("Orka default", r"\*\*Orka\*\* is the default runtime\..*packaged workspace path supports\s+evaluation, evaluated publication and root digest Lift with exact evaluated\s+reuse;.*independent live Orka run and chat remain"),
         ("kagent version boundary", r"\*\*kagent\*\* support is exact-version.*v0\.10\.3\s+Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated\s+publication and create-only root digest Lift\. Standalone run/chat, Python,\s+RemoteMCP, suite status and retirement remain unavailable\."),
-        ("agentsessions boundary", r"\*\*agentsessions\*\* retains read-only reference extraction/export and availability\s+probing, not bundle evaluation, replay or a KMX deployment target\."),
+        ("agentsessions boundary", r"\*\*agentsessions\*\* supports pinned-chat offline suite create/prepare/load/ordinary\s+push and explicit private `eval --development-host FILE`: one fresh\s+Session/config/Exec per case, full-pass private proof and exact-S evaluated\s+push\..*literal-loopback development path loads no cluster\s+settings; it supports no tools/judge, Lift/chat/status or remote lifecycle\.\s+Receipt diff refuses its proof\."),
     ]:
         if re.search(pattern, runtime, re.S) is None:
             return f"README front door: {label} is missing"

@@ -184,5 +184,97 @@ class LiftProofs(unittest.TestCase):
                 Q.verify_fresh_answer(answer, case)
 
 
+class PromotionProofs(unittest.TestCase):
+    def test_private_route_binds_internal_ip_network_and_unmapped_nodeport(self):
+        def node(ip, network="private-kind"):
+            return {"NetworkSettings": {"Networks": {"kind": {"NetworkID": network, "IPAddress": ip}},
+                                        "Ports": {"6443/tcp": [{"HostIp": "127.0.0.1", "HostPort": "1234"}]}}}
+        source, target = node("172.18.0.2"), node("172.18.0.3")
+        self.assertEqual(Q.private_model_route(source, target, "172.18.0.2", 30891), "http://172.18.0.2:30891/v1")
+        for changed, ip in ((node("172.18.0.2", "foreign"), "172.18.0.2"), (source, "127.0.0.1")):
+            with self.assertRaises(ValueError):
+                Q.private_model_route(changed, target, ip, 30891)
+        mapped = copy.deepcopy(source)
+        mapped["NetworkSettings"]["Ports"]["30891/tcp"] = [{"HostPort": "30891"}]
+        with self.assertRaises(ValueError):
+            Q.private_model_route(mapped, target, "172.18.0.2", 30891)
+
+    def test_promotion_requires_ordered_preflights_then_exact_creates(self):
+        def request(kind, dry=False):
+            raw = json.dumps({"apiVersion": "core.orka.ai/v1alpha1", "kind": kind,
+                              "metadata": {"name": "member", "namespace": "orka-system"}}).encode()
+            args = ["create"] + (["--dry-run=server"] if dry else []) + ["-f", "-"]
+            return {**A.classify(args, raw), "returnCode": 0}
+        frames = [request(k, dry) for dry in (True, False) for k in ("Provider", "Agent")]
+        Q.verify_promote_effects(frames, "member")
+        for bad in (frames[1:], frames + [frames[-1]], [frames[0], frames[2], frames[1], frames[3]],
+                    frames + [request("Task")], [{**frames[0], "returnCode": 1}, *frames[1:]],
+                    [{**frames[0], "verb": "replace"}, *frames[1:]]):
+            with self.subTest(frames=bad), self.assertRaises(ValueError):
+                Q.verify_promote_effects(bad, "member")
+
+    def test_preflight_completion_precedes_first_persistent_intent(self):
+        def request(kind, dry, identity):
+            raw = json.dumps({"apiVersion": "core.orka.ai/v1alpha1", "kind": kind,
+                              "metadata": {"name": "member", "namespace": "orka-system"}}).encode()
+            args = ["create"] + (["--dry-run=server"] if dry else []) + ["-f", "-"]
+            return pair(A.classify(args, raw), identity)
+        p, a, cp, ca = [request(k, dry, str(i)) for i, (k, dry) in enumerate(
+            (("Provider", True), ("Agent", True), ("Provider", False), ("Agent", False)))]
+        raw = [*p, *a, *cp, *ca]
+        Q.verify_promote_completion_order(raw)
+        # Normalization still accepts this ordering: raw completions must catch it.
+        premature = [p[0], a[0], *cp, *ca, p[1], a[1]]
+        Q.verify_promote_effects(A.completed(premature), "member")
+        for bad in (premature, [*p, *cp, *a, *ca], raw[:-1],
+                    [{**p[0]}, {**p[1], "returnCode": 1}, *a, *cp, *ca]):
+            with self.subTest(frames=bad), self.assertRaises(ValueError):
+                Q.verify_promote_completion_order(bad)
+
+    def test_mismatch_changes_only_previously_passing_provider_model(self):
+        before = {"metadata": {"uid": "same-provider", "generation": 1},
+                  "spec": {"defaultModel": "evaluated", "baseURL": "http://private:30891/v1", "secretRef": {"name": "owned"}}}
+        after = copy.deepcopy(before)
+        after["metadata"]["generation"] = 2
+        after["spec"]["defaultModel"] = "unevaluated-model"
+        Q.verify_model_only_change(before, after, "evaluated")
+        for bad in (before, {**after, "metadata": {"uid": "recreated", "generation": 2}},
+                    {**after, "spec": {**after["spec"], "baseURL": "http://foreign"}},
+                    {**after, "spec": {**after["spec"], "defaultModel": "evaluated"}}):
+            with self.subTest(provider=bad), self.assertRaises(ValueError):
+                Q.verify_model_only_change(before, bad, "evaluated")
+
+    def test_promotion_summary_and_created_result_bind_independent_destination(self):
+        fixture = LiftProofs()
+        fixture.setUp()
+        receipt, summary = fixture.receipt, copy.deepcopy(fixture.summary)
+        destination = copy.deepcopy(receipt["subject"])
+        destination.update(BindingDigest="a" * 64, RenderedDigest="b" * 64)
+        destination["Target"].update(Context="kind-destination", ClusterUID="new-cluster", NamespaceUID="new-namespace")
+        summary.update(target={k[0].lower() + k[1:]: v for k, v in destination["Target"].items()},
+                       gate="promotion", promote=True, servingModel="model", bindingDigest="a" * 64,
+                       renderedDigest="b" * 64)
+        specs = {kind: {"model": "model"} for kind in ("Provider", "Agent")}
+        summary["resources"] = [{"kind": k, "name": "member", "action": "create",
+                                 "specDigest": Q.native_digest("kmx.native-orka.spec/v1", specs[k])} for k in specs]
+        Q.verify_promote_summary(summary, receipt, b"receipt", destination, specs)
+        result = {"summary": summary, "state": "ready", "resources": [{**r, "outcome": "created", "ready": True,
+                  "uid": "new-" + r["kind"], "generation": 1} for r in summary["resources"]]}
+        Q.verify_promote_result(result, receipt, b"receipt", destination, specs)
+        for key, value in (("sourceTarget", summary["target"]), ("gate", "same-subject"), ("servingModel", "other"),
+                           ("target", summary["sourceTarget"]), ("bindingDigest", "2" * 64), ("promote", False)):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                Q.verify_promote_summary({**summary, key: value}, receipt, b"receipt", destination, specs)
+        for key, value in (("uid", "provider-uid"), ("generation", 0), ("outcome", "reused"), ("ready", False)):
+            bad = copy.deepcopy(result)
+            bad["resources"][0][key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                Q.verify_promote_result(bad, receipt, b"receipt", destination, specs)
+        bad = copy.deepcopy(summary)
+        bad["resources"][0]["uid"] = "occupied"
+        with self.assertRaises(ValueError):
+            Q.verify_promote_summary(bad, receipt, b"receipt", destination, specs)
+
+
 if __name__ == "__main__":
     unittest.main()

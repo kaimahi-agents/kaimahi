@@ -27,6 +27,9 @@ var defaultProfile []byte
 
 const maxFile = 1 << 20
 
+// AgentSessionsVersion pins the host/chat config contract, not a floating release.
+const AgentSessionsVersion = "ca85f47a2ec17ca6e16029cfa69419cfe29442b3"
+
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
 // RuntimeProfile is KMX-private selection metadata, not a public AgentSuite SPI.
@@ -44,10 +47,10 @@ type sourceRuntime struct {
 }
 
 func (r RuntimeProfile) validate() error {
-	if r == (RuntimeProfile{ID: "orka"}) || r == (RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) {
+	if r == (RuntimeProfile{ID: "orka"}) || r == (RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) || r == (RuntimeProfile{ID: "agentsessions", Version: AgentSessionsVersion, Engine: "chat"}) {
 		return nil
 	}
-	return errors.New("runtime must be orka without version/engine or exact kagent v0.10.3 go")
+	return errors.New("runtime must be orka without version/engine, exact kagent v0.10.3 go, or pinned agentsessions chat")
 }
 
 func (r *sourceRuntime) profile() (RuntimeProfile, error) {
@@ -206,7 +209,7 @@ func createInput(opt CreateOptions) (sourceMember, []byte, error) {
 		return sourceMember{}, nil, err
 	}
 	declared := &sourceRuntime{ID: profile.ID}
-	if profile.ID == "kagent" {
+	if profile.ID != "orka" {
 		declared.Version, declared.Engine = &profile.Version, &profile.Engine
 	}
 	m := sourceMember{ID: opt.Name, Description: opt.Description, Instructions: "instructions.md", Runtime: declared}

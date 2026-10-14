@@ -1407,11 +1407,30 @@ jobs:
           phase=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | \
             python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-hello"]; assert len(matches)==1, matches; print(matches[0].get("status",{}).get("phase",""))')
           test "$phase" = Succeeded
+      - name: Native promotion — create only the dedicated destination cluster
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          clusters=$(kind get clusters)
+          if grep -qx kmx-orka-promote <<<"$clusters"; then
+            echo 'refusing to reuse or delete an existing promotion cluster'; exit 1
+          fi
+          # Failed creation is ambiguous: only acknowledged success owns cleanup.
+          KIND_CLUSTER=kmx-orka-promote KUBE_CTX=kind-kmx-orka-promote bin/kmx local up --step cluster
+          echo 'KMX_ORKA_PROMOTION_CREATED=1' >> "$GITHUB_ENV"
+          python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster kmx-orka-promote
+      - name: Native promotion — install pinned Orka without inference
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          umask 077
+          bin/kmx --context kind-kmx-orka-promote orka install --provider - >"$RUNNER_TEMP/kmx-orka-promote-install.out" 2>&1
+          grep -q 'Installer verified:' "$RUNNER_TEMP/kmx-orka-promote-install.out"
       - name: Native suite — qualify evaluation, exact transfer and CLI lift
         if: steps.changes.outputs.docs_only != 'true'
         run: |
           echo 'KMX_NATIVE_STARTED=1' >> "$GITHUB_ENV"
-          python3 scripts/ci/suite-native.py kind-kmx-orka "$RUNNER_TEMP/kmx-suite-native"
+          python3 scripts/ci/suite-native.py kind-kmx-orka kind-kmx-orka-promote "$RUNNER_TEMP/kmx-suite-native"
       - name: Upload only passing native metadata
         if: steps.changes.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v4
@@ -1450,6 +1469,7 @@ jobs:
       - name: down
         if: always() && steps.changes.outputs.docs_only != 'true'
         run: |
+          if [ "${KMX_ORKA_PROMOTION_CREATED:-}" = 1 ]; then kind delete cluster --name kmx-orka-promote || true; fi
           if [ "${KMX_ORKA_RUNTIME_CREATED:-}" = 1 ]; then kind delete cluster --name kmx-orka; fi
       - name: Docs-only short-circuit
         id: docs-only-summary

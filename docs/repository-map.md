@@ -4,7 +4,10 @@
 agents onto it.** The installed CLI creates and runs agents on Kubernetes.
 Runtimes and harnesses own execution, enforcement and model access. Native
 workspace create/eval/evaluated push/digest Lift remain: Orka by default, exact
-v0.10.3 Go/linux-amd64 kagent explicitly. Public AgentSuite/ToolProvider
+v0.10.3 Go/linux-amd64 kagent explicitly. Pinned AgentSessions chat separately
+retains offline create/prepare/load/push, explicit development-host full eval
+and exact-S evaluated push, without Lift/chat/status/auth or remote lifecycle.
+Public AgentSuite/ToolProvider
 implementation-bundle graph/build/pull/extracted-directory transfer and alpha
 Go interfaces remain. User agent.yaml readers/writers/receipts, bundle lifecycle,
 live create/previews/wizard, run bundle mode and `--bundles` flags are removed.
@@ -57,7 +60,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (36 files) | **Installed** | Root native workspace create/eval/push/digest Lift, Orka install/status/show/list, independent live `run --agent`/chat and Task results, quickstart/native console creation, context/local and hidden AKS setup/teardown, read-only targets, public suite validation/diff/build/push/pull. Eval diff reads only strict full-passing native Orka/kagent suite receipts; from-sessions exports private references only. Removed bundle/live-create routes are unknown; interactive Lift only prints the move notice. |
+| `cmd/kmx` (38 files) | **Installed** | Root native workspace create/eval/push/digest Lift, Orka install/status/show/list, independent live `run --agent`/chat and Task results, quickstart/native console creation, context/local and hidden AKS setup/teardown, read-only targets, public suite validation/diff/build/push/pull. Eval diff reads only strict full-passing native Orka/kagent suite receipts; pinned AgentSessions native authoring/development eval and exact-S evaluated push remain independent of deleted bundle evaluation, with no cluster settings, auth or remote lifecycle; from-sessions exports private references only. Removed bundle/live-create routes are unknown; interactive Lift only prints the move notice. |
 
 ## `agentsuite/` — public specification package
 
@@ -107,12 +110,12 @@ pending the Go retirement pass; historical data is not evidence of active reader
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `kmx/app` | 112 | Installed | Native source/case consent, full ordered Orka/exact-v0.10.3 Go kagent workspace eval, private passing evidence/export/push consumer and same-runtime offline diff, exact publication, digest GET-only release planning and guarded single-use Apply/Verify, Orka exact evaluated reuse and kagent absent-only placement, current identity/ResourceVersion/Secret metadata bracketing and partial outcome retention. Quickstart adds a separate fresh answer after opaque placement verification; console Ready is placement only. Independent Task/results, Orka chat/host routes, cloud setup/ownership teardown and private reference extraction remain. No user bundle persistence/normalized receipts/RecordedExecution/judges/replay/status/retirement/live create or live-copy GUI. Typed PortableAgent scaffolding feeds native preparation. |
-| `kmx/agentsessions` | 6 | Installed | Read-only bounded Sessions availability probe, Sessions gRPC evaluation and read-only replay adapters, verified remote TLS transport and syntactic destination comparison, per-case chat execution, journal evidence projection, ephemeral invocation name/count correlation (20,000 records, 64 MiB, 256 pending calls) and bounded offline reference-chat reconstruction, strict single-read reference extraction/resolution without source payload persistence. Correlation is not tool capability: production tool assertions always remain unknown. No daemon startup, tool enablement, host implementation attestation, descriptor discovery or lift-gate integration. |
+| `kmx/app` | 114 | Installed | Private AgentSessions host snapshots/full ordered packaged chat eval in `suite_agentsessions.go`, full-pass runtime proof in `suite_passing_agentsessions.go` and exact-S evaluated push, with no cluster configuration/auth/Lift/chat/status; Native source/case consent, full ordered Orka/exact-v0.10.3 Go kagent workspace eval, private passing evidence/export/push consumer and same-runtime offline diff, exact publication, digest GET-only release planning and guarded single-use Apply/Verify, Orka exact evaluated reuse and kagent absent-only placement, current identity/ResourceVersion/Secret metadata bracketing and partial outcome retention. Quickstart adds a separate fresh answer after opaque placement verification; console Ready is placement only. Independent Task/results, Orka chat/host routes, cloud setup/ownership teardown and private reference extraction remain. No user bundle persistence/normalized receipts/RecordedExecution/bundle judge wiring/replay/status/retirement/live create or live-copy GUI. Typed PortableAgent scaffolding feeds native preparation. |
+| `kmx/agentsessions` | 7 | Installed | Strict native packaged chat invocation/config domain in `suite.go`: complete canonical five-record semantic proof, 256-frame/4-MiB stream budgets, pre-Exec repeated-Session refusal and one fresh Session/config/Exec per case. Read-only availability probes, verified remote TLS for private reference extraction and bounded journal/reference-chat reconstruction remain. Diagnostic read-only replay cannot authorize native candidate proof; no legacy bundle consumer or compatibility receipt reader remains. Correlation is not tool capability; no daemon startup, tool enablement, host/build/model attestation, registration discovery or lift-gate integration. |
 | `kmx/agentsuite` | 8 | Installed | Builder-owned sandbox binding, bounded OCI image-archive metadata parsing, digest and attestation inspection, provider-neutral sandbox build planning, and provider-neutral packing, CAS, and artifact push/pull contracts; portable format validation remains in the public AgentSuite package. |
 | `kmx/agentsuite/agentkit` | 2 | Installed | Experimental AgentKit adapter for the provider-neutral sandbox builder contract; generates input for a digest-pinned AgentKit frontend, invokes the selected Docker buildx builder with the monolithic harness adapter, requests SBOM/provenance attestations where supported, and streams an OCI image-layout tar to App for inspection before publication while explicitly reporting that the runtime base is not composed. |
 | `kmx/agentsuite/oras` | 10 | Installed | Bounded exact-digest registry/read-only-layout artifact snapshots before validation, unsigned provenance referrers attached on registry push before tagging and listed on pull, cross-process local-layout writer exclusion and exact prepared-layout graph publication, ORAS-backed deterministic directory push, validated directory extraction, manifest construction, validation materialization, target-bound artifact push/pull, and remote repository binding through the Docker credential store; registry configuration, authentication, and transport policy remain outside the portable AgentSuite contracts. |
-| `kmx/agentsuite/workspace` | 6 | Installed | Read-only nearest-ancestor workspace discovery with explicit-root override, closed one-member Orka/default or exact-v0.10.3 Go kagent workspace authoring, bounded confined source/case snapshotting, existing public-format resolution and runtime-bound KMX-private native metadata, private atomic prepared OCI layouts, digest-verified reuse and internal packaged native-input loading, including source-free loading from verified artifact snapshots. Embedded real build-profile descriptors remain declared build inputs, not native member images. No builder, inference or cluster operations. |
+| `kmx/agentsuite/workspace` | 6 | Installed | Read-only nearest-ancestor workspace discovery with explicit-root override, closed one-member Orka/default, exact-v0.10.3 Go kagent or pinned AgentSessions chat workspace authoring (AgentSessions author/prepare/load/push; execution authority lives in the separate explicit development eval/proof path), bounded confined source/case snapshotting, existing public-format resolution and runtime-bound KMX-private native metadata, private atomic prepared OCI layouts, digest-verified reuse and internal packaged native-input loading, including source-free loading from verified artifact snapshots. Embedded real build-profile descriptors remain declared build inputs, not native member images. No builder, inference or cluster operations. |
 | `kmx/agentsuite/schema` | 1 | Checkout | Builder-owned Agent sandbox-binding schema; published with the source checkout, not embedded in or loaded by the binary. |
 | `kmx/agentsuite/testdata/incident-analyst` | 1 | Scaffolding | Internal builder-owned realistic, buildable incident-response example with real digest-pinned Linux amd64 image inputs; not a portable conformance fixture. |
 | `kmx/agentsuite/testdata/incident-analyst/agents` | 1 | Scaffolding | Tool-free incident analyst targeting an Azure OpenAI deployment named gpt-5-mini. |
@@ -241,6 +244,26 @@ Task result, not a separate answer Task or raw suite-owned invocation. Evaluatio
 is not retried; broader promotion/absent creation/partial outcomes stay outside
 this fixed scope. Existing cluster deletion owns cleanup.
 
+`scripts/ci/suite-native.py` is called by the existing `e2e-orka-runtime`
+shard after its legacy Ollama proof. It creates the fixed `native-suite-model.yaml`
+AIKit workload in that exclusively owned cluster and installs the
+`suite-native-audit.py` product command wrapper. Hygiene calls
+`test_suite_native.py` and `test_suite_native_lift.py` for hermetic independent
+readback, hash, intent/completion audit, refusal and privacy checks. A successful
+scenario qualifies the fixed two-case workspace path, exact registry/local root
+CLI lift reuse with source withheld, separate fresh answer Tasks and no-effect
+lift refusals against the pinned model/runtime. It also qualifies registry
+promotion into an absent pair on a second exclusively owned kind cluster, with
+GET-only planning, ordered admission/creation, independent readback, one fresh
+Task and no-effect model-mismatch refusal. Both pinned Orka installations use
+orka-system; destination inference has its own Provider/Secret and shares the
+source model through a fixture-only private-network NodePort with no host mapping.
+Source evidence remains distinct from destination evaluation. Partial outcomes
+are not qualified. Passing artifacts contain only
+private receipt metadata and payload-free qualification evidence. Existing cluster deletion
+owns runtime/model cleanup. These files are checkout-only scaffolding, not an
+installer or new CLI/API capability.
+
 ## `docs/` — 35 tracked files, native guides and design/history
 
 **Guides and index (14):** `README.md`, `getting-started.md`, `kmx.md`,
@@ -280,7 +303,7 @@ and intentionally has no hero image.
 | `embed.go` | **Packaging** | Root-module native manifest and helper embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
 | `Makefile` | **Scaffolding** | Native build/check targets, context guard and AKS-credential helper. |
-| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Native four-shard fail-closed required aggregator and unchanged 315s quickstart ceiling: kagent Lift, Orka runtime, stock Orka Helm, quickstart. Raw upstream Task/Tool/model-answer fixtures are separate from packaged native eval/push/source-withheld digest Lift. Clone-free authors/evaluates/publishes/Lifts a workspace then reads its existing evaluation Task result, without separate answer Task/raw suite run. Hermetic harness checks are separate from pinned live runtime qualification. |
+| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Native four-shard fail-closed required aggregator and unchanged 315s quickstart ceiling: kagent Lift, Orka runtime, stock Orka Helm, quickstart. Raw upstream Task/Tool/model-answer fixtures are separate from packaged native eval/push/source-withheld digest Lift and bounded Orka absent-pair registry promotion with source-only evidence. Clone-free authors/evaluates/publishes/Lifts a workspace then reads its existing evaluation Task result, without separate answer Task/raw suite run. Hermetic harness checks are separate from pinned live runtime qualification. |
 | `.goreleaser.yaml` | **Scaffolding** | GoReleaser config the release workflow builds and renders the Homebrew formula with; publishing reuses that checked artifact set and never pushes the formula to the tap (`skip_upload: true`). |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only, scripts and kagent/shared qualification paths for CI. |
 

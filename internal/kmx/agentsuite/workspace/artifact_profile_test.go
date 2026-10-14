@@ -9,7 +9,7 @@ import (
 )
 
 func TestLoadArtifactPreservesDeclaredRuntime(t *testing.T) {
-	for _, profile := range []workspace.RuntimeProfile{{ID: "orka"}, {ID: "kagent", Version: "v0.10.3", Engine: "go"}} {
+	for _, profile := range []workspace.RuntimeProfile{{ID: "orka"}, {ID: "kagent", Version: "v0.10.3", Engine: "go"}, {ID: "agentsessions", Version: sessionsVersion, Engine: "chat"}} {
 		t.Run(profile.ID, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "workspace")
 			instructions := filepath.Join(t.TempDir(), "instructions.md")

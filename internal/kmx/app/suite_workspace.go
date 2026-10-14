@@ -101,6 +101,9 @@ func nativeSuiteLabel(profile workspace.RuntimeProfile) string {
 	if profile.ID == "kagent" {
 		return "native-kagent v0.10.3 Go"
 	}
+	if profile.ID == "agentsessions" {
+		return "native-agentsessions pinned chat (offline only)"
+	}
 	return "native-Orka"
 }
 

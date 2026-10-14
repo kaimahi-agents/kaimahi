@@ -30,6 +30,18 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   do not add root bundle status or a suite observer.
 - Root `create <name>` authors one tool-free native suite member offline
   by default: Orka unless `--runtime kagent` selects exact v0.10.3 Go/linux-amd64.
+  `--runtime agentsessions` separately authors a built-in chat
+  profile pinned to ca85f47a2ec17ca6e16029cfa69419cfe29442b3 (engine chat), with
+  empty required images and complete ordered cases. Prepare/load/ordinary push
+  support it; root eval requires explicit --development-host FILE for literal
+  loopback, unauthenticated operator-observed chat. It loads no cluster settings,
+  sends exact config once per fresh Session, requires a complete five-record
+  qualified journal and full ordered pass, then exports private runtime-specific
+  proof. Exact-S --evaluation push accepts that proof offline. Cluster selectors,
+  mixed-runtime proof, tools/judge, lift/chat/status and live create refuse.
+  Operator declarations are not authenticated host/build attestation; cleartext
+  journal retention is disclosed. Session replay cannot create candidate proof.
+  Optional --runtime-version must match that commit; --kagent-runtime refuses.
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
   Root eval supports the packaged kagent profile with author-owned --bindings;
   evaluated push consumes matching runtime-specific full-passing suite evidence.
@@ -112,6 +124,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   resources against legacy adoption, copying, bundle authorization and retirement.
   Registry workspace publication shares unsigned suite provenance defaults/flags and records Git source only from
   fingerprint-bound authored inputs matching HEAD; local layouts get no referrers.
+- Root `eval --development-host FILE` separately supports the packaged
+  AgentSessions chat inventory under the development boundary above; every
+  cluster/inference/bindings/result selector (including explicit defaults) refuses.
+  Missing development selection never falls back. Sessions proof is refused by
+  lift and receipt diff; there is no registry or caller-auth integration.
 - Root `eval` evaluates the full packaged Orka/kagent workspace inventory with
   explicit `--to-context` and new private `--out`; Orka uses --inference
   provider:NAME, kagent uses author-owned --bindings FILE, never both. Namespace
@@ -123,9 +140,22 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   reference is accepted. Offline `eval diff` reads strict full-passing native Orka/kagent suite
   evidence only. Old normalized receipts are unreadable. `eval from-sessions`
   remains independent private reference extraction/export; RecordedExecution,
-  legacy replay/evaluation/judges and their consumers are removed, with no native
+  legacy bundle replay/evaluation/judge wiring and their consumers are removed, with no native
   manifest consumer. Preserve private filesystem/current identity ResourceVersion
   and Secret metadata bracketing. Hermetic tests are not live qualification.
+  Runtime-core assertions and llmJudge remain retained with their test groups;
+  native profiles do not wire a judge or enable recorded candidate execution.
+  The checkout-only native qualifier runs in the existing exclusively owned
+  Orka shard, after legacy model proof, with private captures and metadata-only
+  artifacts. Its second exclusively owned kind cluster has one pinned Orka in
+  orka-system and its own inference Provider/Secret; it shares the source AIKit
+  endpoint through a fixture-only private-network NodePort, never a host mapping
+  or another model workload. Registry --promote qualifies GET-only planning,
+  absent-pair CLI creation, independent destination readback and one fresh Task;
+  model mismatch refuses with zero admission/write/Task attempts. Source evidence
+  is not destination evaluation. Keep the shard's existing timeout budget.
+  A passing run qualifies that fixed workspace scenario; hermetic
+  tests alone do not establish runtime/model execution.
 - Keep **Create → Prove → Lift** as the local-to-remote story. **Lift** is the
   chosen agent lifecycle verb: retain digest `kmx lift`,
   and use Lift in corresponding help rather than renaming the

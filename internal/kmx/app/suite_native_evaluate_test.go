@@ -96,6 +96,42 @@ func TestSuiteWorkspaceEvaluationOfflineRefusals(t *testing.T) {
 	}
 }
 
+func TestAgentSessionsEvaluationRefusesBeforeOutputAndOrkaPreflight(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	opt := nativeEvaluationOptions(t)
+	member := filepath.Join(opt.Workspace, "agents/greeter/member.yaml")
+	data, err := os.ReadFile(member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, member, strings.Split(string(data), "\nruntime:")[0]+"\nruntime: {id: agentsessions, version: "+workspace.AgentSessionsVersion+", engine: chat}\n")
+	// Invalid output would produce a different error if export preflight ran.
+	opt.Out = filepath.Join(opt.Workspace, "forbidden.json")
+	p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+	if p != nil || err == nil || !strings.Contains(err.Error(), "unsupported native suite runtime") {
+		if p != nil {
+			p.Close()
+		}
+		t.Fatalf("runtime reached output preparation: %v", err)
+	}
+	a, _, _, _ := nativeEvaluationFixture(t)
+	good := nativeEvaluationOptions(t)
+	p, err = PrepareSuiteWorkspaceEvaluation(t.Context(), good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	p.suite.Runtime = workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}
+	a.captureCommand = func(context.Context, *exec.Cmd) error { t.Fatal("unsupported runtime reached subprocess"); return nil }
+	a.Cfg.KubeContext = p.options.ToContext
+	if err := a.EvaluateSuiteWorkspace(t.Context(), p); err == nil || p.started {
+		t.Fatalf("runtime consumed evaluation authority: %v", err)
+	}
+	if _, err := os.Stat(good.Out); !os.IsNotExist(err) {
+		t.Fatal("unsupported runtime exported evidence", err)
+	}
+}
+
 type suiteSummaryObserver func([]byte) (int, error)
 
 func (w suiteSummaryObserver) Write(p []byte) (int, error) { return w(p) }

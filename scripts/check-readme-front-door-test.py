@@ -34,7 +34,7 @@ GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 [![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)
 [![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)
 ## Create, Prove, Lift
-Bounded CI qualifies root Lift for Orka exact reuse and kagent fresh-target creation; root Lift qualification does not prove every promotion, creation or partial-outcome path.
+Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.
 """ + JOURNEY + """## Getting Starter: Get Your First Answer
 ```bash
 """ + INSTALL + """```
@@ -53,7 +53,7 @@ kmx quickstart
 A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.
 - **Orka** is the default runtime. Its packaged workspace path supports evaluation, evaluated publication and root digest Lift with exact evaluated reuse; independent live Orka run and chat remain.
 - **kagent** support is exact-version and operation-specific: v0.10.3 Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated publication and create-only root digest Lift. Standalone run/chat, Python, RemoteMCP, suite status and retirement remain unavailable.
-- **agentsessions** retains read-only reference extraction/export and availability probing, not bundle evaluation, replay or a KMX deployment target.
+- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary push and explicit private `eval --development-host FILE`: one fresh Session/config/Exec per case, full-pass private proof and exact-S evaluated push. This unauthenticated literal-loopback development path loads no cluster settings; it supports no tools/judge, Lift/chat/status or remote lifecycle. Receipt diff refuses its proof.
 ## Safety And Status
 > [!IMPORTANT]
 > **Kaimahi is experimental and under active development.** Interfaces may change.
@@ -109,9 +109,9 @@ CASES += [
     ("lift plan writes", GOOD.replace("`--plan` is GET-only", "`--plan` applies resources"), "Lift row must preserve the GET-only plan boundary"),
     ("lift runtime binding missing", GOOD.replace(" or kagent `--bindings FILE`", ""), "Lift row must preserve runtime-specific bindings"),
     ("kagent occupied reuse claimed", GOOD.replace("kagent refuses occupied targets", "kagent reuses occupied targets"), "Lift row must preserve kagent create-only placement"),
-    ("lift qualification missing", GOOD.replace("qualifies root Lift for Orka exact reuse and kagent fresh-target creation", "has tests"), "Lift qualification scope is missing"),
-    ("lift qualification broadened", GOOD.replace("root Lift qualification does not prove every promotion, creation or partial-outcome path", "root Lift proves every path"), "Lift qualification limits are missing"),
-    ("lift qualification after table", GOOD.replace("Bounded CI qualifies root Lift for Orka exact reuse and kagent fresh-target creation; root Lift qualification does not prove every promotion, creation or partial-outcome path.\n", "").replace("## Getting Starter: Get Your First Answer", "Bounded CI qualifies root Lift for Orka exact reuse and kagent fresh-target creation; root Lift qualification does not prove every promotion, creation or partial-outcome path.\n## Getting Starter: Get Your First Answer"), "Lift qualification scope is missing"),
+    ("lift qualification missing", GOOD.replace("qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation", "has tests"), "Lift qualification scope is missing"),
+    ("lift qualification broadened", GOOD.replace("it does not prove every promotion, creation or partial-outcome path", "root Lift proves every path"), "Lift qualification limits are missing"),
+    ("lift qualification after table", GOOD.replace("Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n", "").replace("## Getting Starter: Get Your First Answer", "Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n## Getting Starter: Get Your First Answer"), "Lift qualification scope is missing"),
     ("late release warning", GOOD.replace(WARNING, "").replace("| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |", "| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |\n" + WARNING.rstrip()), "release/main warning must precede"),
     ("stable table label", GOOD.replace("| Stage | Current development build |", "| Stage | Latest stable release |"), "exact two-column header"),
     ("malformed table separator", GOOD.replace("|---|---|", "|---|"), "separator is missing or malformed"),
@@ -123,7 +123,7 @@ CASES += [
     ("kagent suite evaluation removed", GOOD.replace("`eval --bindings`, evaluated publication and ", ""), "kagent version boundary is missing"),
     ("kagent digest lift removed", GOOD.replace("create-only root digest Lift.", ""), "kagent version boundary is missing"),
     ("kagent status claimed", GOOD.replace("suite status and retirement remain unavailable.", "suite status is available."), "kagent version boundary is missing"),
-    ("agentsessions deployment claimed", GOOD.replace("not bundle evaluation, replay or a KMX deployment target", "a KMX deployment target"), "agentsessions boundary is missing"),
+    ("agentsessions deployment claimed", GOOD.replace("no tools/judge, Lift/chat/status or remote lifecycle", "a KMX deployment target"), "agentsessions boundary is missing"),
     ("runtime provider distinction removed", GOOD.replace("A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.\n", ""), "runtime/inference distinction is missing"),
     ("wrong tap", GOOD.replace("kaimahi-agents/tap/kmx", "other/tap/kmx"), "Homebrew install is missing"),
     ("moving Go source", GOOD.replace("cmd/kmx@v0.5.1", "cmd/kmx@main"), "pinned Go install is missing"),

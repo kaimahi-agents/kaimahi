@@ -31,8 +31,9 @@ and Lift.
 
 **Create → Prove → Lift** is implemented on current `main` for one-member native
 Orka and exact-v0.10.3 Go kagent suites. The commands remain unreleased. Bounded
-CI qualifies root Lift for Orka exact reuse and kagent fresh-target creation; root
-Lift qualification does not prove every promotion, creation or partial-outcome path.
+CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion
+and kagent fresh-target creation; it does not prove every promotion, creation or
+partial-outcome path.
 
 > [!NOTE]
 > The table below describes the current development build, which is unreleased.
@@ -42,8 +43,8 @@ Lift qualification does not prove every promotion, creation or partial-outcome p
 
 | Stage | Current development build |
 |---|---|
-| **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline. It does not contact Kubernetes, build an image, or run a model. |
-| **Prove** | `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT` runs ordered native Orka cases once, stops later cases after the first non-pass, and writes private evidence only when all cases pass. |
+| **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
+| **Prove** | Orka uses `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, with no cluster selectors. Each runs ordered cases once, stops later cases after the first non-pass, and writes private evidence only when all cases pass. |
 | **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx push REF` remains explicitly unevaluated. Neither form deploys. |
 | **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; suite status and retirement remain unavailable. |
 
@@ -100,8 +101,13 @@ separate model-access binding; selecting one does not select the other.
   Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated
   publication and create-only root digest Lift. Standalone run/chat, Python,
   RemoteMCP, suite status and retirement remain unavailable.
-- **agentsessions** retains read-only reference extraction/export and availability
-  probing, not bundle evaluation, replay or a KMX deployment target.
+- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary
+  push and explicit private `eval --development-host FILE`: one fresh
+  Session/config/Exec per case, full-pass private proof and exact-S evaluated
+  push. This unauthenticated literal-loopback development path loads no cluster
+  settings; it supports no tools/judge, Lift/chat/status or remote lifecycle.
+  Receipt diff refuses its proof. Read-only reference extraction/export and
+  availability probing remain separate; legacy bundle evaluation/replay is removed.
 
 The [runtime support matrix](docs/runtime-adapters.md#revision-pinned-support-and-qualification-matrix)
 records exact pins and evidence rather than claiming feature parity.

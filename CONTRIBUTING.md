@@ -18,7 +18,14 @@ contribution cannot provide the requested behavior. Runtimes and harnesses own
 execution, enforcement and model access; KMX should not duplicate them.
 
 Root `kmx create NAME` authors one tool-free native workspace member offline,
-Orka by default or exact v0.10.3 Go/linux-amd64 kagent explicitly. Exact model and
+Orka by default, exact v0.10.3 Go/linux-amd64 kagent or pinned AgentSessions
+chat explicitly. AgentSessions prepare/load/ordinary push and explicit private
+literal-loopback `eval --development-host FILE` remain independent of deleted
+bundle Sessions evaluation/replay: one fresh Session/config/Exec per ordered
+case, full-pass private proof and exact-S evaluated push, no cluster settings,
+tools/judge, auth, Lift/chat/status or remote lifecycle. Receipt diff refuses
+AgentSessions proof. Runtime-core assertions/llmJudge and all their test groups
+remain retained; do not add new native judge wiring. Exact model and
 file-valued instructions are required; create/push share workspace discovery.
 No runtime/model bootstrap belongs in workspace create.
 
@@ -167,8 +174,14 @@ exact reuse, existing evaluation Task result reads and no-effect refusal audits 
 metadata artifacts. Only `artifacts/passing.json` and scalar
 `artifacts/qualification.json` are uploaded on success; raw captures are private.
 Existing cluster deletion owns all runtime/model cleanup. A successful run
-qualifies this fixed two-case native workspace and exact-reuse Lift scenario. It
-does not qualify promotion, absent-resource CLI creation or partial outcomes.
+qualifies this fixed two-case native workspace, exact-reuse Lift and bounded
+registry promotion into an absent pair on a second exclusively owned kind cluster.
+The destination has its own Provider/Secret in orka-system, sharing the same
+source AIKit workload through a fixture-only private-network NodePort, never a
+host mapping or second model workload. GET-only planning, actual guarded
+Apply/Verify, independent destination readback, a separate fresh Task and no-effect
+model-mismatch refusal are checked. Source evidence is not destination evaluation;
+partial outcomes remain unqualified.
 Harness tests alone are not evidence of real execution.
 
 ## Comments
