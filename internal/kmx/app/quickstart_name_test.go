@@ -65,7 +65,7 @@ func TestQuickstartNameEnterWaitsForCheck(t *testing.T) {
 	updated, _ = m.Update(quickstartNameResult{quickstartNameDebounce{m.nameRevision, m.nameValue, m.nameNamespace}, nil})
 	m = updated.(quickstartWizardModel)
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if updated.(quickstartWizardModel).create.step != createConfirm {
+	if updated.(quickstartWizardModel).create.step != quickstartInstructionsPurpose {
 		t.Fatal("available name did not advance")
 	}
 }

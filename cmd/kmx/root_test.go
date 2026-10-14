@@ -28,6 +28,28 @@ func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	return deps, &loads
 }
 
+func TestQuickstartHelpLabelsUnsupportedSuiteFlags(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, loads := testDependencies(&out, &errOut)
+	if err := execute([]string{"quickstart", "--help"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	if *loads != 0 {
+		t.Fatal("help loaded operational configuration")
+	}
+	for _, flag := range []string{"--skills", "--result-service-account", "--out"} {
+		found := false
+		for _, line := range strings.Split(out.String(), "\n") {
+			if strings.Contains(line, flag+" ") && strings.Contains(line, "unsupported") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("unsupported flag %s advertised as operational", flag)
+		}
+	}
+}
+
 func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {
 	for _, args := range [][]string{{}, {"--help"}, {"help"}, {"version"}, {"completion", "bash"}} {
 		var out, errOut bytes.Buffer
@@ -45,7 +67,7 @@ func TestAKSIsAbsentFromRootHelpAndCompletion(t *testing.T) {
 	for _, args := range [][]string{
 		{"--help"},
 		{"completion", "bash"}, {"completion", "zsh"}, {"completion", "fish"},
-		{"__complete", ""}, {"__complete", "a"}, {"__complete", "aks"},
+		{"__complete", ""}, {"__complete", "c"}, {"__complete", "aks"},
 	} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			var out, errOut bytes.Buffer
@@ -63,8 +85,8 @@ func TestAKSIsAbsentFromRootHelpAndCompletion(t *testing.T) {
 				t.Fatalf("%v advertised aks:\n%s", args, out.String())
 			}
 			if args[0] == "--help" || args[0] == "__complete" && args[1] != "aks" {
-				if !strings.Contains(out.String(), "agent") {
-					t.Fatalf("%v lost visible agent command:\n%s", args, out.String())
+				if !strings.Contains(out.String(), "create") {
+					t.Fatalf("%v lost visible create command:\n%s", args, out.String())
 				}
 			}
 		})
@@ -84,7 +106,7 @@ func TestSuiteValidateDoesNotLoadConfig(t *testing.T) {
 }
 
 func TestInteractiveCommandsExposeVerboseFlag(t *testing.T) {
-	for _, path := range [][]string{{"quickstart"}, {"agent", "chat"}} {
+	for _, path := range [][]string{{"quickstart"}, {"chat"}} {
 		var out, errOut bytes.Buffer
 		deps, _ := testDependencies(&out, &errOut)
 		root := newRootCommand(&commandState{deps: deps})
@@ -193,9 +215,9 @@ func TestNativeCommandRecordsResolvedEngineInInvocation(t *testing.T) {
 	deps.loadConfig = func(_, engine string) (*config.Config, error) {
 		return &config.Config{KubeContext: "kind-demo", KindCluster: "demo", ContainerEngine: engine}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"agent", "retire", "demo", "--plan", "--container-engine", "podman"}}
+	state := &commandState{deps: deps, argv: []string{"bundle", "retire", "demo", "--plan", "--container-engine", "podman"}}
 	root := newRootCommand(state)
-	issue, _, err := root.Find([]string{"agent", "retire"})
+	issue, _, err := root.Find([]string{"bundle", "retire"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +245,7 @@ func TestCobraRejectsInvalidFlagRelationshipsBeforeApplicationConstruction(t *te
 		want string
 	}{
 		{"orka execution modes", []string{"orka", "install", "--no-apply", "--dry-run"}, "none of the others can be"},
-		{"agent create execution modes", []string{"agent", "create", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
+		{"create execution modes", []string{"create", "--live", "demo", "--no-apply", "--dry-run"}, "none of the others can be"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -246,9 +268,9 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	deps.loadConfig = func(string, string) (*config.Config, error) {
 		return &config.Config{KubeContext: "kind-other", KindCluster: "other", ContainerEngine: "podman"}, nil
 	}
-	state := &commandState{deps: deps, argv: []string{"agent", "retire", "a'b; $(bad)", "--to-namespace", "team", "--plan"}}
+	state := &commandState{deps: deps, argv: []string{"bundle", "retire", "a'b; $(bad)", "--to-namespace", "team", "--plan"}}
 	root := newRootCommand(state)
-	cmd, _, err := root.Find([]string{"agent", "retire"})
+	cmd, _, err := root.Find([]string{"bundle", "retire"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,14 +283,14 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman kmx --context kind-other agent retire 'a'\"'\"'b; $(bad)' --to-namespace team --plan"
+	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman kmx --context kind-other bundle retire 'a'\"'\"'b; $(bad)' --to-namespace team --plan"
 	if invocation != want {
 		t.Fatalf("retry lost target or arguments:\n got: %s\nwant: %s", invocation, want)
 	}
 }
 
 func TestBareGroupsShowCobraHelpWithoutLoadingConfig(t *testing.T) {
-	for _, group := range []string{"agent", "orka", "suite", "task"} {
+	for _, group := range []string{"bundle", "orka", "suite", "task"} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
 		deps.loadConfig = func(string, string) (*config.Config, error) {
@@ -315,13 +337,14 @@ func commandPaths(root *cobra.Command) []string {
 // Adding or removing a subcommand fails this test until the list follows.
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
-		"agent", "agent chat", "agent create", "agent edit", "agent eval", "agent eval diff", "agent evaluate", "agent lift", "agent list", "agent retire", "agent run", "agent show", "agent status", "agent verify",
-		"aks", "aks up", "aks down", "completion", "ctx", "down",
+		"create", "chat", "run", "eval", "eval diff", "eval from-sessions", "push", "lift",
+		"bundle", "bundle evaluate", "bundle lift", "bundle retire", "bundle status", "bundle verify",
+		"aks", "aks up", "aks down", "completion",
 		"context", "context show", "context use", "local", "local up", "local down",
-		"lift", "lift down", "orka", "orka install", "orka status",
+		"orka", "orka install", "orka status", "orka show", "orka list",
 		"quickstart", "quickstart-wizard",
-		"status", "suite", "suite build", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",
-		"up", "version",
+		"status", "suite", "suite build", "suite diff", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",
+		"version",
 	}
 	sort.Strings(want)
 
@@ -364,8 +387,8 @@ func TestInterspersedFlagsAreOwnedByCobra(t *testing.T) {
 		path []string
 		want []string
 	}{
-		{[]string{"agent", "chat", "hello", "who", "--verbose"}, []string{"hello", "who"}},
-		{[]string{"agent", "retire", "demo", "--to-namespace", "team", "--plan"}, []string{"demo"}},
+		{[]string{"chat", "hello", "who", "--verbose"}, []string{"hello", "who"}},
+		{[]string{"bundle", "retire", "demo", "--to-namespace", "team", "--plan"}, []string{"demo"}},
 		{[]string{"task", "result", "demo", "--wait", "1m"}, []string{"demo"}},
 	} {
 		cmd, args, err := root.Find(tc.path)
@@ -403,7 +426,7 @@ func TestConfigLoadFailureIsReturnedOnce(t *testing.T) {
 }
 
 func TestGroupedCommandsRejectUnknownVerb(t *testing.T) {
-	for _, args := range [][]string{{"suite", "frob"}, {"orka", "frob"}, {"agent", "frob"}} {
+	for _, args := range [][]string{{"suite", "frob"}, {"orka", "frob"}, {"bundle", "frob"}, {"eval", "frob"}} {
 		var out, errOut bytes.Buffer
 		deps, _ := testDependencies(&out, &errOut)
 		if err := execute(args, deps); err == nil {
@@ -490,7 +513,7 @@ func TestQuickstartRoutesEachMode(t *testing.T) {
 		want string
 	}{
 		{[]string{"quickstart", "--interactive"}, "kmx quickstart --interactive requires an interactive terminal"},
-		{[]string{"quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "kmx quickstart --interactive requires an interactive terminal"},
+		{[]string{"quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "quickstart tool shortcuts are retired"},
 		{[]string{"quickstart", "-i"}, "kmx quickstart --interactive requires an interactive terminal"},
 		{[]string{"quickstart", "-i", "--azure-discovery", "sdk"}, "kmx quickstart --interactive requires an interactive terminal"},
 		{[]string{"quickstart", "-o", "yaml"}, "unknown --output"},
@@ -547,8 +570,8 @@ func TestAgentChatIsInteractiveWithoutAModeFlag(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("KMX_TOOLCHAIN", "off")
 	for _, args := range [][]string{
-		{"agent", "chat", "hello-world-agent"},
-		{"agent", "chat", "hello-world-agent", "what", "pods", "run?"},
+		{"chat", "hello-world-agent"},
+		{"chat", "hello-world-agent", "what", "pods", "run?"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer
@@ -561,7 +584,7 @@ func TestAgentChatIsInteractiveWithoutAModeFlag(t *testing.T) {
 	}
 	var out, errOut bytes.Buffer
 	deps, loads := testDependencies(&out, &errOut)
-	err := execute([]string{"agent", "chat", "--interactive", "hello-world-agent"}, deps)
+	err := execute([]string{"chat", "--interactive", "hello-world-agent"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "unknown flag: --interactive") {
 		t.Fatalf("removed --interactive was accepted: %v", err)
 	}
@@ -569,7 +592,7 @@ func TestAgentChatIsInteractiveWithoutAModeFlag(t *testing.T) {
 		t.Fatalf("unknown flag loaded configuration %d times", *loads)
 	}
 	root := newRootCommand(&commandState{deps: deps})
-	cmd, _, err := root.Find([]string{"agent", "chat"})
+	cmd, _, err := root.Find([]string{"chat"})
 	if err != nil {
 		t.Fatal(err)
 	}

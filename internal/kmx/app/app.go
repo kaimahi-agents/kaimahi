@@ -35,6 +35,8 @@ type App struct {
 	chatClusterName string
 	bundleRoot      string
 	liftReuse       bool
+	// kagentProfile is invocation-local; nil keeps the exact create profile.
+	kagentProfile *kagentProfile
 	// operationProgress reports real stage transitions to an owning deployment UI.
 	operationProgress func(name, status string, err error)
 	Cfg               *config.Config
@@ -53,6 +55,9 @@ type App struct {
 	Stdin              *os.File
 	// now is injectable so progress timing can be tested without sleeping.
 	now func() time.Time
+	// captureCommand replaces execution of an already-prepared kubectl capture
+	// in tests only. Nil retains the real subprocess boundary.
+	captureCommand func(context.Context, *exec.Cmd) error
 	// waitTiming overrides retry pacing and phase deadlines in tests only.
 	// Nil preserves every production interval and timeout.
 	waitTiming *waitTiming
@@ -92,6 +97,9 @@ type App struct {
 	// fixed port so a test can own a listener. Empty in every real
 	// invocation, where the fixed port is the only one.
 	quickstartResultPort string
+	// Only this invocation's successful opaque placement may authorize its answer.
+	quickstartPrepared  *preparedQuickstartSuite
+	quickstartPlacement *ReleaseLiftResult
 }
 
 // New builds an App around the process's own streams.
@@ -127,6 +135,13 @@ func (a *App) withRunContext(ctx context.Context) *App {
 	runner.Context = ctx
 	app.Run = &runner
 	return &app
+}
+
+func (a *App) executeCapture(ctx context.Context, cmd *exec.Cmd) error {
+	if a.captureCommand != nil {
+		return a.captureCommand(ctx, cmd)
+	}
+	return cmd.Run()
 }
 
 // kubectl returns a kubectl argument list carrying the explicit --context.
@@ -180,7 +195,7 @@ func (a *App) Command(args ...string) *exec.Cmd {
 // cannot is that kubectl is not installed. On a fresh machine the missing tool
 // is the whole story, and "cannot read the kubeconfig — refusing to act blind"
 // would otherwise read as something being wrong with the cluster. Every path
-// that classifies a context goes through here, `kmx ctx` included.
+// that classifies a context goes through here, `kmx context show` included.
 func (a *App) kubeconfig() (*guard.Kubeconfig, error) {
 	if err := run.MustExist("kubectl", "to read the kubeconfig and reach the cluster",
 		"https://kubernetes.io/docs/tasks/tools/"); err != nil {
@@ -217,7 +232,7 @@ func (a *App) GuardCreateIn(action, command, namespaces string) error {
 
 // GuardKnown is Guard for an action that must not take the "about to be
 // created" allowance: the kubeconfig has to actually describe the cluster,
-// or the operator confirms it by name. `kmx down` is the caller — see the
+// or the operator confirms it by name. `kmx local down` is the caller — see the
 // reasoning there and on guard.Request.MustBeKnown.
 func (a *App) GuardKnown(action, command string) error {
 	return a.guardWith(action, command, config.GuardNamespaceHint, true, false)

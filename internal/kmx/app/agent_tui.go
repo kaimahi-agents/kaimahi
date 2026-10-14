@@ -62,8 +62,8 @@ type agentTUIModel struct {
 	loadAzureInference                           func(context.Context, string, string, string, string) ([]consoleAzureChoice, error)
 	loadInference                                func(agentTUIEnvironment, agentTUIAgent) (consoleInferenceSnapshot, error)
 	startInference                               func(agentTUIEnvironment, agentTUIAgent, consoleInferenceSnapshot, consoleInferenceSource, string) (<-chan consoleInferenceSaved, context.CancelFunc)
-	loadCreateTarget                             func(agentTUIEnvironment) (string, error)
-	startCreate                                  func(agentTUIEnvironment, string, CreateOptions) (<-chan agentTUICreateResult, context.CancelFunc)
+	startCreate                                  func(agentTUIEnvironment, string, string, *suiteWorkspaceReview) (<-chan agentTUICreateResult, context.CancelFunc)
+	startCreateLift                              func(consoleWorkspaceLiftRequest) (<-chan agentTUICreateResult, context.CancelFunc)
 	bundle                                       *consoleBundlePane
 	loadBundle                                   func(context.Context, agentTUIEnvironment, agentTUIAgent) consoleBundleSnapshot
 	runs                                         *consoleRunsPane
@@ -89,7 +89,7 @@ func newAgentTUIModel(opt AgentTUIOptions) agentTUIModel {
 // then restores the dashboard and refreshes both inventories on return.
 func (a *App) AgentTUI(opt AgentTUIOptions) error {
 	if a.Stdin == nil || !isTerminalFile(a.Stdin) || !isInteractiveTerminal(a.Out) || os.Getenv("TERM") == "dumb" {
-		return fmt.Errorf("kmx console requires an interactive terminal on stdin and stdout; use kmx agent list for piped output")
+		return fmt.Errorf("kmx console requires an interactive terminal on stdin and stdout; use kmx orka list for piped output")
 	}
 	if opt.Namespace == "" {
 		opt.Namespace = OrkaNamespace
@@ -127,17 +127,7 @@ func (a *App) AgentTUI(opt AgentTUIOptions) error {
 			}()
 			return result, stop
 		}
-		m.loadCreateTarget = func(env agentTUIEnvironment) (string, error) { return a.consoleCreateTarget(ctx, env) }
-		m.startCreate = func(env agentTUIEnvironment, server string, options CreateOptions) (<-chan agentTUICreateResult, context.CancelFunc) {
-			workCtx, stop := context.WithCancel(ctx)
-			result := make(chan agentTUICreateResult, 1)
-			workers.Add(1)
-			go func() {
-				defer workers.Done()
-				result <- agentTUICreateResult{a.consoleCreateAgent(workCtx, env, server, options)}
-			}()
-			return result, stop
-		}
+		a.bindSuiteWorkspaceReviewWorkers(ctx, &m, &workers)
 		m.loadEnvs = func() tea.Msg {
 			envs, err := a.agentTUIEnvironments(ctx)
 			prefs, prefErr := loadLiftPreferences()
@@ -269,7 +259,7 @@ func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch event := msg.(type) {
 		case tea.WindowSizeMsg:
 			m.width, m.height = event.Width, event.Height
-		case agentTUICreateTarget:
+		case agentTUICreateResult:
 			if event.pane != m.creation {
 				return m, nil
 			}
@@ -446,23 +436,13 @@ func (m agentTUIModel) createAgent() (tea.Model, tea.Cmd) {
 		m.status = "Refresh the environment successfully before creating an agent"
 		return m, nil
 	}
-	wizard, err := newCreateWizardModel(CreateOptions{Namespace: valueOr(m.opt.Namespace, OrkaNamespace)})
-	if err != nil {
-		m.status = err.Error()
-		return m, nil
-	}
-	m.creation = &agentTUICreatePane{wizard: wizard, env: c.Env, loading: !m.opt.Demo}
-	var load tea.Cmd
-	if !m.opt.Demo {
-		pane, fetch := m.creation, m.loadCreateTarget
-		load = func() tea.Msg {
-			server, err := fetch(pane.env)
-			return agentTUICreateTarget{server: server, err: err, pane: pane}
-		}
-	} else {
-		m.creation.server = "demo"
-	}
-	return m, tea.Batch(wizard.Init(), quickstartTick(), load)
+	input := textinput.New()
+	input.Prompt = ""
+	input.CharLimit = 4096
+	input.SetWidth(max(1, min(88, m.width-8)-4))
+	input.Focus()
+	m.creation = &agentTUICreatePane{input: input, env: c.Env, namespace: valueOr(m.opt.Namespace, OrkaNamespace), server: c.Env.Server}
+	return m, textinput.Blink
 }
 
 func (m agentTUIModel) updateDetails(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -581,16 +561,9 @@ func (m agentTUIModel) updateActions(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.execute("/chat " + m.agentToken(*a, m.focus))
 	case "L":
 		return m.openCommand("/lift " + m.agentToken(*a, 0) + " ")
-	case "f":
-		return m.openInference()
-	case "t":
-		kind := "tools"
-		if m.opt.Demo {
-			m.status = "DEMO · edit " + kind + " for " + a.Name + " (no action performed)"
-			return m, nil
-		}
-		m.action = &agentTUIAction{kind: kind, agent: *a, source: m.columns[m.focus].Env}
-		return m, tea.Quit
+	case "f", "t":
+		m.status = agentMutationRetirement
+		return m, nil
 	}
 	return m, nil
 }
@@ -946,7 +919,7 @@ func (m agentTUIModel) View() tea.View {
 		header += " · discovering environments…"
 	}
 	header = accent.Render(header)
-	footer := []string{fit("h/l ←/→ columns · j/k ↑/↓ agents · / commands · n create · r refresh · R runs · ? help · q quit")}
+	footer := []string{fit("h/l ←/→ columns · j/k ↑/↓ agents · / commands · n create live · r refresh · R runs · ? help · q quit")}
 	if m.status != "" {
 		footer = append([]string{fit(m.status)}, footer...)
 	}
@@ -974,7 +947,7 @@ func (m agentTUIModel) View() tea.View {
 	var body string
 	switch {
 	case m.form != nil:
-		lines := []string{"Create remote AKS environment", "", "Uses the current Azure account; the lift review shows the subscription.", "Creates a resource group, registry and AKS cluster, then continues agent lift.", ""}
+		lines := []string{"Create remote AKS environment", "", "Uses the current Azure account; the lift review shows the subscription.", "Creates a resource group, registry and AKS cluster, then continues legacy bundle lift.", ""}
 		for i, label := range agentTUIFormLabels {
 			value := m.form[i]
 			if i == m.formStep {
@@ -988,7 +961,7 @@ func (m agentTUIModel) View() tea.View {
 		body = "KEYS & COMMANDS\n\n" +
 			"h/l or ←/→  switch columns; j/k or ↑/↓  select agent\n" +
 			"<enter> actions · i inspect · b bundle · R recent runs (Orka) · c chat · L lift local agent · r refresh\n\n" +
-			"n create agent in the focused environment\n" +
+			"n create live agent (--live) in the focused environment\n" +
 			"/inspect [agent]     details in the focused column\n" +
 			"/chat [agent]        open chat, /exit returns here\n" +
 			"/lift <agent> <env>  lift a local native Orka agent\n" +
@@ -1116,7 +1089,7 @@ func (m agentTUIModel) columnView(index, width, height int) string {
 		lines = append(lines, border.Render("  "+strings.Repeat("─", max(0, inner-2))))
 	}
 	if len(c.Agents) == 0 && !c.Loading && c.Error == "" && c.Env.Name != "" {
-		empty := "<no agents here, n to create a new one>"
+		empty := "<no live agents here, n to create a new one>"
 		for _, line := range strings.Split(ansi.Hardwrap(empty, inner, true), "\n") {
 			if m.focus == index {
 				line = selected.Render(line)

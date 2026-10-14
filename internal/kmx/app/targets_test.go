@@ -24,7 +24,7 @@ func TestTargetsCapabilitiesMatchLifecycleDeclarations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, adapter := range []agentruntime.LifecycleAdapter{
-		kagentRuntimeAdapter{create: &CreateOptions{}, bindings: &agentruntime.KagentBindings{}},
+		kagentRuntimeAdapter{lift: &kagentLiftOperation{}, bindings: &agentruntime.KagentBindings{}, evaluation: &kagentEvaluationOperation{}},
 		orkaRuntimeAdapter{create: &CreateOptions{}},
 	} {
 		caps := adapter.Capabilities()
@@ -33,6 +33,18 @@ func TestTargetsCapabilitiesMatchLifecycleDeclarations(t *testing.T) {
 			if supported, ok := want[got.Operation]; ok && got.Supported != supported {
 				t.Fatalf("%s %s: report=%t adapter=%t", adapter.ID(), got.Operation, got.Supported, supported)
 			}
+		}
+	}
+}
+
+func TestTargetsKagentEvaluationRemainsVersionScoped(t *testing.T) {
+	kagent := compiledTargets()[1]
+	for _, capability := range kagent.Capabilities {
+		if capability.Operation == "evaluate" && (!capability.Supported || !strings.Contains(capability.Reason, "unsecure")) {
+			t.Fatalf("missing scoped evaluation: %+v", capability)
+		}
+		if (capability.Operation == "chat" || capability.Operation == "run" || capability.Operation == "verify") && capability.Supported {
+			t.Fatalf("evaluation broadened support: %+v", capability)
 		}
 	}
 }
@@ -47,6 +59,8 @@ func TestTargetsOrkaDetectionIsScopedReadOnlyAndFailClosed(t *testing.T) {
 		exit                                 string
 	}{
 		{name: "absent", response: `{"kind":"DeploymentList","items":[]}`, state: "absent"},
+		{name: "kubectl empty List", response: `{"apiVersion":"v1","items":[],"kind":"List","metadata":{"resourceVersion":""}}`, state: "absent"},
+		{name: "kubectl populated List", response: `{"apiVersion":"v1","items":[{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"orka-api-controller","namespace":"orka-system","labels":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"}},"spec":{"template":{"spec":{"containers":[{"name":"controller","image":"ghcr.io/orka-agents/orka@` + orkaControllerDigest + `"}]}}}}],"kind":"List","metadata":{"resourceVersion":""}}`, state: "present", version: "v0.2.0"},
 		{name: "pinned with sidecar", response: `{"kind":"DeploymentList","items":[` + pinned + `]}`, state: "present", version: "v0.2.0"},
 		{name: "tag is not qualification", response: `{"kind":"DeploymentList","items":[` + controller(`[{"name":"controller","image":"ghcr.io/orka-agents/orka:v0.2.0"}]`) + `]}`, state: "present"},
 		{name: "foreign digest", response: `{"kind":"DeploymentList","items":[` + controller(`[{"name":"controller","image":"example.test/foreign@`+orkaControllerDigest+`"}]`) + `]}`, state: "present"},
@@ -54,8 +68,15 @@ func TestTargetsOrkaDetectionIsScopedReadOnlyAndFailClosed(t *testing.T) {
 		{name: "invalid JSON", response: `PRIVATE-REMOTE-PAYLOAD`, state: "unreadable", code: "malformed"},
 		{name: "missing list", response: `{}`, state: "unreadable", code: "malformed"},
 		{name: "null list", response: `{"kind":"DeploymentList","items":null}`, state: "unreadable", code: "malformed"},
+		{name: "kubectl missing items", response: `{"apiVersion":"v1","kind":"List"}`, state: "unreadable", code: "malformed"},
+		{name: "kubectl null items", response: `{"apiVersion":"v1","kind":"List","items":null}`, state: "unreadable", code: "malformed"},
+		{name: "kubectl invalid items", response: `{"apiVersion":"v1","kind":"List","items":{}}`, state: "unreadable", code: "malformed"},
+		{name: "kubectl wrong item kind", response: `{"apiVersion":"v1","kind":"List","items":[{"apiVersion":"v1","kind":"Secret","metadata":{"name":"unrelated"}}]}`, state: "unreadable", code: "malformed"},
+		{name: "kubectl missing item kind", response: `{"apiVersion":"v1","kind":"List","items":[{"metadata":{"name":"unrelated"}}]}`, state: "unreadable", code: "malformed"},
+		{name: "kubectl missing identity", response: `{"apiVersion":"v1","kind":"List","items":[{"apiVersion":"apps/v1","kind":"Deployment"}]}`, state: "unreadable", code: "malformed"},
 		{name: "wrong resource", response: `{"kind":"SecretList","items":[]}`, state: "unreadable", code: "malformed"},
 		{name: "read error", response: `{"kind":"DeploymentList","items":[]}`, state: "unreadable", code: "read_failed", exit: "1"},
+		{name: "kubectl read error", response: `{"apiVersion":"v1","kind":"List","items":[]}`, state: "unreadable", code: "read_failed", exit: "1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

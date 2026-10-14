@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,18 +23,22 @@ type EvaluationDiffOptions struct{ Before, After string }
 
 type evaluationDiffIdentity struct {
 	Runtime, Address, Harness, Model, ClusterUID, Namespace, Agent, AgentUID string
+	RuntimeVersion, Engine, ModelConfigUID, SourceCommit                     string
+	ControllerImage, ADKImage                                                kagentEvaluationImage
 }
 
 type normalizedEvaluation struct {
+	SuiteIdentity, SuiteInventory                                 string
 	Version                                                       int
 	RunID, Bundle, PortableDigest, CasesDigest, GitCommit, Result string
-	FullCaseSet, IdentityComplete                                 bool
+	FullCaseSet, IdentityComplete, IdentityConflict               bool
 	Identity                                                      evaluationDiffIdentity
 	Cases                                                         map[string]normalizedEvaluationCase
 }
 
 type normalizedEvaluationCase struct {
 	CaseDigest, InputDigest, Verdict string
+	IdentityComplete                 bool
 	Assertions                       map[string]agentruntime.EvaluationAssertionResult
 }
 
@@ -43,6 +48,7 @@ type normalizedEvaluationCase struct {
 type evaluationDiffRow struct {
 	CaseID, AssertionID, BeforeType, AfterType, BeforeDigest, AfterDigest string
 	Before, After, Status                                                 string
+	BeforeScores, AfterScores                                             []int
 }
 
 type evaluationDiffReport struct {
@@ -127,6 +133,7 @@ func readEvaluationDiffSource(path string) (normalizedEvaluation, error) {
 	// Inspect only the discriminant before choosing a typed receipt. The full
 	// decoder below rejects every field outside that runtime's schema.
 	var target struct {
+		Domain        string `json:"domain"`
 		SchemaVersion int    `json:"schemaVersion"`
 		RunID         string `json:"runID"`
 		Target        struct {
@@ -136,8 +143,19 @@ func readEvaluationDiffSource(path string) (normalizedEvaluation, error) {
 	if json.Unmarshal(raw, &target) != nil {
 		return invalid()
 	}
+	if target.Domain == "kmx.native-suite.passing/v1" {
+		r, err := readSuitePassingReceipt(context.Background(), absolute)
+		if err != nil {
+			return invalid()
+		}
+		n, ok := normalizeSuitePassingEvaluation(r)
+		if !ok {
+			return invalid()
+		}
+		return n, nil
+	}
 	legacyOrka := target.Target.Runtime == string(agentruntime.Orka) && target.SchemaVersion == 0 && target.RunID == ""
-	if !evaluationDiffNullJSON(raw, legacyOrka) {
+	if !evaluationReceiptJSONShape(raw, target.SchemaVersion, target.RunID, legacyOrka) {
 		return invalid()
 	}
 	decode := func(receipt any) bool {
@@ -150,6 +168,12 @@ func readEvaluationDiffSource(path string) (normalizedEvaluation, error) {
 		return d.Decode(&extra) == io.EOF
 	}
 	switch target.Target.Runtime {
+	case string(agentruntime.Kagent):
+		n, ok := parseKagentEvaluation(raw)
+		if !ok {
+			return invalid()
+		}
+		return n, nil
 	case "agentsessions":
 		var r sessionsEvaluationReceipt
 		if !decode(&r) {
@@ -285,8 +309,18 @@ func normalizeSessionsEvaluation(r sessionsEvaluationReceipt) (normalizedEvaluat
 	if err != nil || identity.Version != 1 || identity.Provenance != "host-reported" || !diffOptionalIdentity(identity.Harness) || !diffOptionalModel(identity.Model) {
 		return n, false
 	}
-	n.Identity = evaluationDiffIdentity{Runtime: "agentsessions", Address: address, Harness: identity.Harness, Model: identity.Model}
-	n.IdentityComplete = identity.Harness != "" && identity.Model != ""
+	n.Identity = evaluationDiffIdentity{Runtime: "agentsessions", Address: address}
+	// Target summaries omit both missing and conflicting observations. Derive
+	// compatibility from case evidence without changing the receipt format.
+	observe := func(common *string, value string) {
+		if value == "" {
+			return
+		}
+		if *common != "" && *common != value {
+			n.IdentityConflict = true
+		}
+		*common = value
+	}
 	sessions := map[string]bool{}
 	for _, c := range r.Cases {
 		if !addEvaluationDiffCase(&n, c.ID, c.CaseDigest, c.InputDigest, c.Verdict, c.Detail, c.Assertions) || !diffOptionalIdentity(c.SessionUID) || !diffOptionalIdentity(c.Harness) || !diffOptionalModel(c.Model) || !diffOptionalDigest(c.AnswerSHA256) || c.JournalHead.Seq < 0 || !diffOptionalDigest(c.JournalHead.Hash) {
@@ -308,9 +342,13 @@ func normalizeSessionsEvaluation(r sessionsEvaluationReceipt) (normalizedEvaluat
 		if c.Detail == evaluationExecutionFailed && (c.SessionUID == "" || c.JournalHead.Seq < 1) {
 			return n, false
 		}
-		if c.ModelMixed || c.Harness == "" || c.Model == "" {
-			n.IdentityComplete = false
-		}
+		observe(&n.Identity.Harness, c.Harness)
+		observe(&n.Identity.Model, c.Model)
+		n.IdentityConflict = n.IdentityConflict || c.ModelMixed
+		entry := n.Cases[c.ID]
+		entry.IdentityComplete = !c.ModelMixed && c.Harness != "" && c.Model != ""
+		n.Cases[c.ID] = entry
+		n.IdentityComplete = n.IdentityComplete || entry.IdentityComplete
 		if identity.Harness != "" && c.Harness != "" && identity.Harness != c.Harness || identity.Model != "" && c.Model != "" && identity.Model != c.Model {
 			return n, false
 		}
@@ -352,6 +390,9 @@ func normalizeOrkaEvaluation(r bundleEvaluationReceipt) (normalizedEvaluation, b
 			}
 			names[c.TaskName] = true
 		}
+		entry := n.Cases[c.ID]
+		entry.IdentityComplete = n.IdentityComplete
+		n.Cases[c.ID] = entry
 		if r.SchemaVersion == 2 {
 			if c.Detail != evaluationExecutionUnavailable && (c.TaskName == "" || c.TaskUID == "") {
 				return n, false
@@ -367,12 +408,22 @@ func normalizeOrkaEvaluation(r bundleEvaluationReceipt) (normalizedEvaluation, b
 func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport {
 	r := evaluationDiffReport{Before: before, After: after, CaseSetChanged: before.CasesDigest != after.CasesDigest}
 	switch {
+	case (before.SuiteIdentity == "") != (after.SuiteIdentity == ""):
+		r.IncompatibleReason = "different receipt family"
+	case before.SuiteIdentity != "" && before.Identity.Runtime != after.Identity.Runtime:
+		r.IncompatibleReason = "runtime identity differs"
+	case before.SuiteIdentity != "" && before.SuiteIdentity != after.SuiteIdentity:
+		r.IncompatibleReason = "prepared suite subject differs"
+	case before.SuiteIdentity != "" && (before.CasesDigest != after.CasesDigest || before.SuiteInventory != after.SuiteInventory):
+		r.IncompatibleReason = "suite case inventory differs"
 	case before.Bundle != after.Bundle:
 		r.IncompatibleReason = "different bundle"
-	case before.Version != 2 || after.Version != 2:
+	case before.SuiteIdentity == "" && (before.Version != 2 || after.Version != 2):
 		r.IncompatibleReason = "legacy receipt has no assertion evidence"
 	case !before.FullCaseSet || !after.FullCaseSet:
 		r.IncompatibleReason = "partial case set"
+	case before.IdentityConflict || after.IdentityConflict:
+		r.IncompatibleReason = "runtime identity differs"
 	case !before.IdentityComplete || !after.IdentityComplete:
 		r.IncompatibleReason = "runtime identity unavailable"
 	case before.Identity != after.Identity:
@@ -398,7 +449,11 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 		if !exists {
 			add(evaluationDiffRow{CaseID: id, Status: "caseRemoved", BeforeDigest: b.CaseDigest})
 			for aid, row := range b.Assertions {
-				add(evaluationDiffRow{CaseID: id, AssertionID: aid, BeforeType: row.Type, BeforeDigest: row.DefinitionDigest, Before: string(row.Verdict), Status: "assertionRemoved"})
+				diffRow := evaluationDiffRow{CaseID: id, AssertionID: aid, BeforeType: row.Type, BeforeDigest: row.DefinitionDigest, Before: string(row.Verdict), Status: "assertionRemoved"}
+				if row.Judge != nil {
+					diffRow.BeforeScores = row.Judge.Scores
+				}
+				add(diffRow)
 			}
 			continue
 		}
@@ -409,16 +464,37 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 		if b.CaseDigest != a.CaseDigest {
 			add(evaluationDiffRow{CaseID: id, Status: "caseSourceChanged", BeforeDigest: b.CaseDigest, AfterDigest: a.CaseDigest})
 		}
+		identityUnavailable := !b.IdentityComplete || !a.IdentityComplete
+		if identityUnavailable {
+			add(evaluationDiffRow{CaseID: id, Before: b.Verdict, After: a.Verdict, Status: "unknown", BeforeDigest: b.CaseDigest, AfterDigest: a.CaseDigest})
+		}
 		for aid, br := range b.Assertions {
 			ar, exists := a.Assertions[aid]
 			row := evaluationDiffRow{CaseID: id, AssertionID: aid, BeforeType: br.Type, BeforeDigest: br.DefinitionDigest, Before: string(br.Verdict)}
+			if br.Judge != nil {
+				row.BeforeScores = br.Judge.Scores
+			}
 			if !exists {
 				row.Status = "assertionRemoved"
 				add(row)
 				continue
 			}
 			row.AfterType, row.AfterDigest, row.After = ar.Type, ar.DefinitionDigest, string(ar.Verdict)
+			if ar.Judge != nil {
+				row.AfterScores = ar.Judge.Scores
+			}
+			// Preserve structural changes, but make no assertion-level verdict
+			// claims for a case whose runtime identity was not observed.
+			if identityUnavailable {
+				if br.Type != ar.Type || br.DefinitionDigest != ar.DefinitionDigest {
+					row.Status = "definitionChanged"
+					add(row)
+				}
+				continue
+			}
 			switch {
+			case br.Type == "llmJudge" && ar.Type == "llmJudge" && !evaluationJudgeSameIdentity(br.Judge, ar.Judge):
+				row.Status = "identityChanged"
 			case br.Type != ar.Type || br.DefinitionDigest != ar.DefinitionDigest:
 				row.Status = "definitionChanged"
 			case !sameInput:
@@ -440,7 +516,11 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 		}
 		for aid, ar := range a.Assertions {
 			if _, exists := b.Assertions[aid]; !exists {
-				add(evaluationDiffRow{CaseID: id, AssertionID: aid, AfterType: ar.Type, AfterDigest: ar.DefinitionDigest, After: string(ar.Verdict), Status: "assertionAdded"})
+				row := evaluationDiffRow{CaseID: id, AssertionID: aid, AfterType: ar.Type, AfterDigest: ar.DefinitionDigest, After: string(ar.Verdict), Status: "assertionAdded"}
+				if ar.Judge != nil {
+					row.AfterScores = ar.Judge.Scores
+				}
+				add(row)
 			}
 		}
 	}
@@ -448,7 +528,11 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 		if _, exists := before.Cases[id]; !exists {
 			add(evaluationDiffRow{CaseID: id, Status: "caseAdded", AfterDigest: a.CaseDigest})
 			for aid, row := range a.Assertions {
-				add(evaluationDiffRow{CaseID: id, AssertionID: aid, AfterType: row.Type, AfterDigest: row.DefinitionDigest, After: string(row.Verdict), Status: "assertionAdded"})
+				diffRow := evaluationDiffRow{CaseID: id, AssertionID: aid, AfterType: row.Type, AfterDigest: row.DefinitionDigest, After: string(row.Verdict), Status: "assertionAdded"}
+				if row.Judge != nil {
+					diffRow.AfterScores = row.Judge.Scores
+				}
+				add(diffRow)
 			}
 		}
 	}
@@ -465,12 +549,20 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 	return r
 }
 
+func evaluationJudgeSameIdentity(before, after *agentruntime.EvaluationJudgeEvidence) bool {
+	return before != nil && after != nil && before.Model == after.Model && before.ModelVersion == after.ModelVersion && before.Provenance == after.Provenance && before.EvaluatorDigest == after.EvaluatorDigest && before.ConfigurationDigest == after.ConfigurationDigest && before.MinScore == after.MinScore
+}
+
 func writeEvaluationDiffReport(out io.Writer, r evaluationDiffReport) error {
 	var text strings.Builder
 	for _, item := range []struct {
 		label string
 		n     normalizedEvaluation
 	}{{"before", r.Before}, {"after", r.After}} {
+		if item.n.SuiteIdentity != "" {
+			fmt.Fprintf(&text, "%s: suite %s runtime %s schema %d run %s\nsuiteDigest: %s\ncasesDigest: %s\nfullCaseSet: %t\n", item.label, item.n.Bundle, item.n.Identity.Runtime, item.n.Version, item.n.RunID, item.n.PortableDigest, item.n.CasesDigest, item.n.FullCaseSet)
+			continue
+		}
 		fmt.Fprintf(&text, "%s: bundle %s runtime %s schema %d run %s\nportableDigest: %s\nGitCommit: %s\ncasesDigest: %s\nfullCaseSet: %t\n", item.label, item.n.Bundle, item.n.Identity.Runtime, item.n.Version, orDash(item.n.RunID), item.n.PortableDigest, item.n.GitCommit, item.n.CasesDigest, item.n.FullCaseSet)
 	}
 	fmt.Fprintf(&text, "caseSetChanged: %t\n", r.CaseSetChanged)
@@ -480,6 +572,9 @@ func writeEvaluationDiffReport(out io.Writer, r evaluationDiffReport) error {
 		fmt.Fprintln(&text, "CASE\tASSERTION\tTYPE BEFORE/AFTER\tVERDICT BEFORE/AFTER\tSTATUS\tDIGEST BEFORE/AFTER")
 		for _, row := range r.Rows {
 			fmt.Fprintf(&text, "%s\t%s\t%s/%s\t%s/%s\t%s\t%s/%s\n", row.CaseID, orDash(row.AssertionID), orDash(row.BeforeType), orDash(row.AfterType), orDash(row.Before), orDash(row.After), row.Status, orDash(row.BeforeDigest), orDash(row.AfterDigest))
+			if row.BeforeType == "llmJudge" || row.AfterType == "llmJudge" {
+				fmt.Fprintf(&text, "judge scores %s/%s: %v/%v\n", row.CaseID, row.AssertionID, row.BeforeScores, row.AfterScores)
+			}
 		}
 		status := "complete"
 		if r.Regression {

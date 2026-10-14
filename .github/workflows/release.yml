@@ -259,6 +259,38 @@ jobs:
           ruby -c dist/homebrew/Formula/kmx.rb
           test -s dist/homebrew/Formula/kmx.rb
 
+      # Exercise the emitted test block, not a duplicate version assertion.
+      # This is a binary smoke test, not a replacement for tap-side brew test.
+      - name: Generated Homebrew test passes against the built binary
+        env:
+          VERSION: ${{ steps.what.outputs.version }}
+        run: |
+          set -euo pipefail
+          binaries=(dist/kmx_linux_amd64*/kmx)
+          test "${#binaries[@]}" -eq 1
+          test -x "${binaries[0]}"
+          ruby - dist/homebrew/Formula/kmx.rb "${binaries[0]}" <<'RUBY'
+          require "open3"
+          require "pathname"
+          formula, binary = ARGV
+          source = File.read(formula)
+          block = source.match(/^  test do\n(.*?)^  end\nend\s*\z/m)
+          abort "generated formula has no terminal test block" unless block
+          harness = Object.new
+          harness.define_singleton_method(:bin) { Pathname.new(File.expand_path(binary)).dirname }
+          harness.define_singleton_method(:version) { ENV.fetch("VERSION").delete_prefix("v") }
+          harness.define_singleton_method(:shell_output) do |command|
+            stdout, stderr, status = Open3.capture3(command)
+            raise "#{command} failed: #{stderr}" unless status.success?
+            stdout
+          end
+          harness.define_singleton_method(:assert_equal) do |expected, actual|
+            raise "expected #{expected.inspect}, got #{actual.inspect}" unless expected == actual
+          end
+          harness.instance_eval(block[1], formula, source[0...block.begin(1)].count("\n") + 1)
+          puts "generated Homebrew test passed"
+          RUBY
+
       # Stage one flat directory with the exact names in checksums.txt. Both
       # dry runs and real releases consume this directory, so rehearsal
       # artifacts have the same usable layout as public release assets.

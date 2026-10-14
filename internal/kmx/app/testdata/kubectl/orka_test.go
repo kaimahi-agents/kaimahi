@@ -102,8 +102,8 @@ func TestOrkaKubectlHelper(t *testing.T) {
 				fail()
 			}
 			target := "v0.1.3"
-			if scenario == "main" {
-				target = "main"
+			if scenario == "main" || scenario == "v0.2.0" {
+				target = scenario
 			}
 			plural, _, _ := strings.Cut(name, ".")
 			body, err := os.ReadFile(filepath.Join(os.Getenv("KMX_ORKA_TEST_FIXTURES"), target, plural+".yaml"))

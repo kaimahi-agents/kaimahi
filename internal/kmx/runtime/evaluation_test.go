@@ -77,7 +77,7 @@ func TestParseEvaluationCaseRejectsInvalidTypedAssertions(t *testing.T) {
 		{"non RE2 regex", "- {id: a, type: regex, pattern: '(?=hello)'}", "RE2"},
 		{"long regex", "- {id: a, type: regex, pattern: '" + strings.Repeat("a", 1025) + "'}", "1024"},
 		{"unicode byte limit", "- {id: a, type: regex, pattern: '" + strings.Repeat("é", 513) + "'}", "1024"},
-		{"judge", "- {id: a, type: llmJudge, value: a}", "unsupported assertion type"},
+		{"judge wrong operand", "- {id: a, type: llmJudge, value: a}", "field value"},
 		{"legacy judge", "- {id: a, type: llm_judge, value: a}", "unsupported assertion type"},
 		{"snake type", "- {id: a, type: not_contains, value: a}", "unsupported assertion type"},
 		{"duplicate key", "- {id: a, type: contains, value: a, value: b}", "duplicate key"},
@@ -98,6 +98,77 @@ func TestParseEvaluationCaseRejectsInvalidTypedAssertions(t *testing.T) {
 	for _, pattern := range []string{strings.Repeat("a", 1024), strings.Repeat("é", 512)} {
 		if _, err := ParseEvaluationCase([]byte("id: a\ninput: public\nassertions:\n- {id: a, type: regex, pattern: '" + pattern + "'}\n")); err != nil {
 			t.Fatalf("1024-byte pattern rejected: %v", err)
+		}
+	}
+}
+
+func TestParseEvaluationCaseJudgeAuthoredShape(t *testing.T) {
+	const base = "id: a\ninput: public\nassertions:\n- id: judge\n  type: llmJudge\n  rubric: 'Return exactly YES'\n  minScore: 50\n  judgeModel: model/pinned\n  judgeVersion: v1\n"
+	parsed, err := ParseEvaluationCase([]byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Assertions) != 1 {
+		t.Fatalf("decoded assertions = %+v", parsed.Assertions)
+	}
+	a := parsed.Assertions[0]
+	if a.Type != "llmJudge" || a.Rubric != "Return exactly YES" || a.MinScore == nil || *a.MinScore != 50 || a.JudgeModel != "model/pinned" || a.JudgeVersion != "v1" {
+		t.Fatalf("authored judge fields lost during decoding: %+v", a)
+	}
+	for _, doc := range []string{
+		base,
+		strings.Replace(base, "minScore: 50", "minScore: 0", 1),
+		strings.Replace(base, "minScore: 50", "minScore: 100", 1),
+		strings.Replace(base, "rubric: 'Return exactly YES'", "rubric: \"line one\\n\\tline two\"", 1),
+		strings.Replace(base, "rubric: 'Return exactly YES'", "rubric: '"+strings.Repeat("é", 2048)+"'", 1),
+		strings.Replace(base, "judgeModel: model/pinned", "judgeModel: '"+strings.Repeat("m", 256)+"'", 1),
+	} {
+		if _, err := ParseEvaluationCase([]byte(doc)); err != nil {
+			t.Errorf("valid judge definition rejected: %v", err)
+		}
+	}
+	for _, tc := range []struct{ name, old, replacement string }{
+		{"missing threshold", "  minScore: 50\n", ""},
+		{"null threshold", "minScore: 50", "minScore: null"},
+		{"string threshold", "minScore: 50", "minScore: '50'"},
+		{"float threshold", "minScore: 50", "minScore: 50.0"},
+		{"bool threshold", "minScore: 50", "minScore: true"},
+		{"threshold below", "minScore: 50", "minScore: -1"},
+		{"threshold above", "minScore: 50", "minScore: 101"},
+		{"blank rubric", "rubric: 'Return exactly YES'", "rubric: ' '"},
+		{"null rubric", "rubric: 'Return exactly YES'", "rubric: null"},
+		{"missing rubric", "  rubric: 'Return exactly YES'\n", ""},
+		{"long rubric", "rubric: 'Return exactly YES'", "rubric: '" + strings.Repeat("é", 2049) + "'"},
+		{"rubric control", "rubric: 'Return exactly YES'", "rubric: \"bad\\rcontrol\""},
+		{"rubric escape", "rubric: 'Return exactly YES'", "rubric: \"bad\\x1bcontrol\""},
+		{"missing model", "  judgeModel: model/pinned\n", ""},
+		{"missing version", "  judgeVersion: v1\n", ""},
+		{"blank model", "judgeModel: model/pinned", "judgeModel: ' '"},
+		{"null version", "judgeVersion: v1", "judgeVersion: null"},
+		{"numeric version", "judgeVersion: v1", "judgeVersion: 1"},
+		{"unicode model", "judgeModel: model/pinned", "judgeModel: modèle"},
+		{"control version", "judgeVersion: v1", "judgeVersion: \"v1\\tbad\""},
+		{"long version", "judgeVersion: v1", "judgeVersion: '" + strings.Repeat("v", 257) + "'"},
+		{"mixed empty value", "  minScore: 50", "  value: ''\n  minScore: 50"},
+		{"mixed null tool", "  minScore: 50", "  tool: null\n  minScore: 50"},
+		{"duplicate threshold", "  minScore: 50", "  minScore: 50\n  minScore: 50"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ParseEvaluationCase([]byte(strings.Replace(base, tc.old, tc.replacement, 1))); err == nil {
+				t.Fatal("invalid judge definition accepted")
+			}
+		})
+	}
+	for _, field := range []string{"rubric: ''", "minScore: 0", "judgeModel: ''", "judgeVersion: null"} {
+		if _, err := ParseEvaluationCase([]byte("id: a\ninput: public\nassertions:\n- {id: a, type: contains, value: yes, " + field + "}\n")); err == nil {
+			t.Errorf("ordinary assertion accepted judge field %s", field)
+		}
+	}
+	secret := "gh" + "p_" + strings.Repeat("A", 36)
+	for _, old := range []string{"Return exactly YES", "model/pinned", "v1"} {
+		_, err := ParseEvaluationCase([]byte(strings.Replace(base, old, secret, 1)))
+		if err == nil || !strings.Contains(err.Error(), "shaped like") || strings.Contains(err.Error(), secret) {
+			t.Errorf("judge credential not safely refused: %v", err)
 		}
 	}
 }

@@ -116,14 +116,14 @@ func chatScreen(text string, width int) string {
 
 func TestChatPTYRawInput(t *testing.T) {
 	for _, tc := range []struct {
-		name, prompt, keys, want string
-		width                    int
-		height                   uint16
-		cancel, eof, pause       bool
+		name, keys, want   string
+		width              int
+		height             uint16
+		cancel, eof, pause bool
 	}{
-		{name: "question", prompt: "Answer:", keys: "hello\r", want: "hello", width: 40},
-		{name: "approval", prompt: "Approve? [y/N]:", keys: "yes\r", want: "yes", width: 40},
-		{name: "reason", prompt: "Rejection reason (optional):", keys: "no thanks\r", want: "no thanks", width: 12},
+		{name: "message", keys: "hello\r", want: "hello", width: 40},
+		{name: "affirmative message", keys: "yes\r", want: "yes", width: 40},
+		{name: "message with spaces", keys: "no thanks\r", want: "no thanks", width: 12},
 		{name: "wrapped delete", keys: "abcdefghijklmnop\x7f\x7f\r", want: "abcdefghijklmn", width: 10},
 		{name: "shrink wrapped input", keys: "abcdefghijklmnop" + strings.Repeat("\x7f", 16) + "x\r", want: "x", width: 10},
 		{name: "hint submit", keys: "/li\t\r", want: "/lift", width: 10},
@@ -140,7 +140,7 @@ func TestChatPTYRawInput(t *testing.T) {
 		{name: "idle cancel", cancel: true, width: 20},
 		{name: "escape cancel", keys: "\x1b[", cancel: true, width: 20},
 		{name: "long user submission", keys: strings.Repeat("0123456789", 30) + "\r", want: strings.Repeat("0123456789", 30), width: 40, height: 5},
-		{name: "long native submission", prompt: "Answer:", keys: strings.Repeat("abcdefghij", 30) + "\r", want: strings.Repeat("abcdefghij", 30), width: 40, height: 5},
+		{name: "long alphabetic submission", keys: strings.Repeat("abcdefghij", 30) + "\r", want: strings.Repeat("abcdefghij", 30), width: 40, height: 5},
 		{name: "long cancelled input", keys: strings.Repeat("0123456789", 30) + "\x03", cancel: true, width: 40, height: 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -182,11 +182,7 @@ func TestChatPTYRawInput(t *testing.T) {
 				r.ui = cliui.WithCapabilities(cliui.Capabilities{Rich: true, Color: false, Width: tc.width})
 				r.promptHint = "/help  /retry  /exit"
 			}
-			if tc.prompt != "" {
-				r.operationPrompt("NATIVE", colorYellow, "payload", tc.prompt)
-			} else {
-				r.prompt()
-			}
+			r.prompt()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			type result struct {
@@ -194,7 +190,7 @@ func TestChatPTYRawInput(t *testing.T) {
 				err  error
 			}
 			done := make(chan result, 1)
-			go func() { line, err := readSlashLine(ctx, slave, slave, r, tc.prompt == ""); done <- result{line, err} }()
+			go func() { line, err := readSlashLine(ctx, slave, slave, r, true); done <- result{line, err} }()
 			deadline := time.Now().Add(2 * time.Second)
 			for {
 				state, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
@@ -256,11 +252,7 @@ func TestChatPTYRawInput(t *testing.T) {
 					t.Fatalf("submission retained clipped viewport: %s", screen)
 				}
 			}
-			prefix := "YOU > "
-			if tc.prompt != "" {
-				prefix = "  " + tc.prompt + " "
-			}
-			wantRows := chatInputRows(prefix, tc.want, tc.width)
+			wantRows := chatInputRows("YOU > ", tc.want, tc.width)
 			if tc.name == "transient backend hint" {
 				wantRows = r.ui.UserMessage(tc.want, tc.width-1)
 			}
@@ -275,9 +267,6 @@ func TestChatPTYRawInput(t *testing.T) {
 			}
 			if tc.name == "transient backend hint" && strings.Contains(screen, "/help  /retry  /exit") {
 				t.Fatalf("transient slash hints remained under submitted input: %s", screen)
-			}
-			if tc.prompt != "" && strings.Contains(screen, "YOU >") {
-				t.Fatalf("native prompt replaced: %s", screen)
 			}
 		})
 	}
@@ -308,12 +297,11 @@ func TestChatPTYResizeAbortsWithoutStaleRedraw(t *testing.T) {
 	for _, tc := range []struct {
 		name, input   string
 		width, height uint16
-		native        bool
 	}{
-		{"idle shrink", "", 12, 24, false},
-		{"wrapped grow", "abcdefghijklmnopqrstuv", 40, 24, false},
-		{"hint height change", "/li", 20, 8, false},
-		{"approval", "y", 12, 24, true},
+		{"idle shrink", "", 12, 24},
+		{"wrapped grow", "abcdefghijklmnopqrstuv", 40, 24},
+		{"hint height change", "/li", 20, 8},
+		{"typed shrink", "y", 12, 24},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			master, slave := chatPTY(t, 20)
@@ -323,11 +311,7 @@ func TestChatPTYResizeAbortsWithoutStaleRedraw(t *testing.T) {
 			}
 			r := &chatRenderer{out: slave, cursor: true}
 			r.block("HISTORY", colorBlue, "durable")
-			if tc.native {
-				r.operationPrompt("NATIVE APPROVAL", colorYellow, "Tool: delete", "Approve? [y/N]:")
-			} else {
-				r.prompt()
-			}
+			r.prompt()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			type result struct {
@@ -335,7 +319,7 @@ func TestChatPTYResizeAbortsWithoutStaleRedraw(t *testing.T) {
 				err  error
 			}
 			done := make(chan result, 1)
-			go func() { line, err := readSlashLine(ctx, slave, slave, r, !tc.native); done <- result{line, err} }()
+			go func() { line, err := readSlashLine(ctx, slave, slave, r, true); done <- result{line, err} }()
 			// Read until the initial raw redraw has actually reached the PTY.
 			var captured strings.Builder
 			readUntil := func(ready func(string) bool) {
@@ -513,49 +497,63 @@ func chatPTYReadUntil(t *testing.T, master *os.File, captured *strings.Builder, 
 	}
 }
 
-func TestChatPTYStaticCalloutPromptTransitions(t *testing.T) {
+func TestChatPTYOperationalDetailsSurviveMessageInput(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("NO_COLOR", "")
 	for _, width := range []int{20, 100} {
-		for _, prompt := range []string{"Approve? [y/N]:", "Answer:", "Rejection reason (optional):"} {
-			t.Run(fmt.Sprintf("%d/%s", width, prompt), func(t *testing.T) {
-				master, slave := chatPTY(t, width)
-				r := newChatRenderer(slave)
-				r.assistant("agent", "durable", true)
-				r.operationPrompt("NATIVE APPROVAL", colorYellow, "Call ID: exact\nTool: delete\nArguments:\n{\"name\":\"pod-a\"}", prompt)
-				var captured strings.Builder
-				chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "Arguments:") })
-				static := captured.String()
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				done := make(chan error, 1)
-				go func() {
-					line, err := readSlashLine(ctx, slave, slave, r, false)
-					if err == nil && line != "yes" {
-						err = fmt.Errorf("answer changed: %q", line)
-					}
-					done <- err
-				}()
-				frameTitle := "DECISION"
-				chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(ansi.Strip(s), "─ "+frameTitle+" ") })
-				io.WriteString(master, "yes\r")
-				if err := <-done; err != nil {
-					t.Fatal(err)
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			master, slave := chatPTY(t, width)
+			r := newChatRenderer(slave)
+			r.assistant("agent", "durable", true)
+			r.operation("TOOL CALL", "delete", colorYellow, "Call ID: exact\nArguments:\n{\"name\":\"pod-a\"}")
+			r.spinner("agent", "|", time.Second)
+			if !r.transient {
+				t.Fatal("spinner did not become transient before the prompt")
+			}
+			r.prompt()
+			if r.transient {
+				t.Fatal("prompt retained the transient spinner")
+			}
+			input := newChatInput(nil, slave, slave, r)
+			if !input.enhanced {
+				t.Fatal("PTY did not select enhanced chat input")
+			}
+			var captured strings.Builder
+			chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "Arguments:") })
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				line, err := input.readLine(ctx, true)
+				if err == nil && line != "yes" {
+					err = fmt.Errorf("message changed: %q", line)
 				}
-				r.working("Waiting after decision")
-				r.assistant("agent", "resumed", true)
-				r.finish()
-				io.WriteString(slave, "END\n")
-				chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.HasSuffix(s, "END\r\n") })
-				screen := chatScreen(captured.String(), width)
-				if !strings.Contains(ansi.Strip(static), "Call ID: exact") || !strings.Contains(screen, "resumed") || strings.Count(screen, "╭") != 0 {
-					t.Fatalf("native editing damaged passive details or left a focus border:\n%s", screen)
-				}
-				if strings.Contains(screen, "YOU >") || r.transient {
-					t.Fatalf("native prompt/progress state changed: %s", screen)
-				}
-			})
-		}
+				done <- err
+			}()
+			chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(ansi.Strip(s), "─ MESSAGE ") })
+			if _, err := io.WriteString(master, "yes\r"); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			r.assistant("agent", "resumed", true)
+			r.finish()
+			if _, err := io.WriteString(slave, "END\n"); err != nil {
+				t.Fatal(err)
+			}
+			chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.HasSuffix(s, "END\r\n") })
+			screen := chatScreen(captured.String(), width)
+			if !strings.Contains(screen, "Call ID: exact") || !strings.Contains(screen, "durable") || !strings.Contains(screen, "resumed") {
+				t.Fatalf("message input damaged durable transcript details:\n%s", screen)
+			}
+			if strings.Count(screen, "╭") != 1 || strings.Count(screen, "─ YOU ") != 1 || strings.Contains(screen, "─ MESSAGE ") {
+				t.Fatalf("submission did not replace the editor with one durable message:\n%s", screen)
+			}
+			if strings.Contains(screen, "RESPONDING") || r.transient {
+				t.Fatalf("transient spinner survived message input:\n%s", screen)
+			}
+		})
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -13,7 +14,10 @@ const (
 	ArtifactTypeAgentSuite    = "application/vnd.agentsuite.suite.v1"
 )
 
-var suiteIdentifierPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
+var (
+	suiteIdentifierPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
+	suiteCapabilityPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,127}$`)
+)
 
 func validateSuiteIdentifier(name, value string) error {
 	if !suiteIdentifierPattern.MatchString(value) {
@@ -217,10 +221,17 @@ func (r SuiteReport) Validate() error {
 	if err := validateSuiteIdentifier("AgentSuite name", r.Name); err != nil {
 		return err
 	}
-	if r.Agents <= 0 || r.Compositions <= 0 || len(r.CompositionSelections) != r.Compositions {
+	if r.Agents <= 0 || r.Agents > r.Compositions || r.Tools < 0 || r.ToolCompositions < 0 ||
+		r.Compositions <= 0 || len(r.CompositionSelections) != r.Compositions {
 		return fmt.Errorf("AgentSuite report requires one exact selection per composition")
 	}
+	for i, capability := range r.Capabilities {
+		if !suiteCapabilityPattern.MatchString(capability) || i > 0 && r.Capabilities[i-1] >= capability {
+			return fmt.Errorf("AgentSuite report capabilities must be valid, sorted and unique")
+		}
+	}
 	seen := make(map[string]bool, len(r.CompositionSelections))
+	agents := make(map[string]map[SandboxPlatform]bool, len(r.CompositionSelections))
 	for _, selection := range r.CompositionSelections {
 		if err := validateSuiteIdentifier("composition agent", selection.Agent); err != nil {
 			return err
@@ -239,6 +250,39 @@ func (r SuiteReport) Validate() error {
 			return fmt.Errorf("duplicate AgentSuite composition selection %q", key)
 		}
 		seen[key] = true
+		if agents[selection.Agent] == nil {
+			agents[selection.Agent] = make(map[SandboxPlatform]bool)
+		}
+		agents[selection.Agent][selection.Platform] = true
+	}
+	if len(agents) != r.Agents {
+		return fmt.Errorf("AgentSuite report agent count does not match composition selections")
+	}
+	if len(r.AgentPlatforms) != 0 {
+		if len(r.AgentPlatforms) != r.Agents {
+			return fmt.Errorf("AgentSuite report requires one platform record per agent")
+		}
+		listed := make(map[string]bool, len(r.AgentPlatforms))
+		for _, item := range r.AgentPlatforms {
+			if err := validateSuiteIdentifier("agent platform ID", item.Agent); err != nil {
+				return err
+			}
+			expected, ok := agents[item.Agent]
+			if !ok || listed[item.Agent] || len(item.Platforms) != len(expected) {
+				return fmt.Errorf("AgentSuite report agent platforms do not match composition selections")
+			}
+			listed[item.Agent] = true
+			platforms := make(map[SandboxPlatform]bool, len(item.Platforms))
+			for _, platform := range item.Platforms {
+				if err := platform.Validate(); err != nil {
+					return err
+				}
+				if platforms[platform] || !expected[platform] {
+					return fmt.Errorf("AgentSuite report agent platforms do not match composition selections")
+				}
+				platforms[platform] = true
+			}
+		}
 	}
 	return nil
 }
@@ -259,6 +303,46 @@ func (r SuiteReport) Composition(agent string, platform SandboxPlatform) (SuiteC
 // directly runnable.
 type AgentSuiteArtifact struct {
 	Manifest OCIArtifactRef `json:"manifest"`
+}
+
+// AgentSuiteArtifactRef is the location-free identity of one AgentSuite
+// artifact. Retrieval locations belong to in-process operation values and may
+// change without changing this reference.
+type AgentSuiteArtifactRef struct {
+	Manifest OCIManifestDigest `json:"manifest"`
+}
+
+func (r AgentSuiteArtifactRef) Validate() error {
+	return r.Manifest.Validate()
+}
+
+type agentSuiteArtifactRefJSON AgentSuiteArtifactRef
+
+func (r AgentSuiteArtifactRef) MarshalJSON() ([]byte, error) {
+	if err := r.Validate(); err != nil {
+		return nil, err
+	}
+	return json.Marshal(agentSuiteArtifactRefJSON(r))
+}
+
+func (r *AgentSuiteArtifactRef) UnmarshalJSON(data []byte) error {
+	if err := validateJSONInput(data); err != nil {
+		return err
+	}
+	var decoded agentSuiteArtifactRefJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	value := AgentSuiteArtifactRef(decoded)
+	if err := value.Validate(); err != nil {
+		return err
+	}
+	*r = value
+	return nil
+}
+
+func (a AgentSuiteArtifact) Ref() AgentSuiteArtifactRef {
+	return AgentSuiteArtifactRef{Manifest: a.Manifest.Digest}
 }
 
 func (a AgentSuiteArtifact) Validate() error {
@@ -296,40 +380,49 @@ func (a *AgentSuiteArtifact) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type PackageSuiteResult struct {
+// ValidatedAgentSuite is the exact immutable AgentSuite artifact materialized
+// from a validated source and the report derived from that same graph. Build
+// consumes this value rather than reopening the mutable SuiteSource path. This
+// value is operation evidence, not authentication: implementations revalidate
+// the artifact before using the report as authoritative build input.
+type ValidatedAgentSuite struct {
 	Artifact AgentSuiteArtifact `json:"artifact"`
 	Report   SuiteReport        `json:"report"`
 }
 
-func (r PackageSuiteResult) Validate() error {
-	if err := r.Artifact.Validate(); err != nil {
+func (s ValidatedAgentSuite) Ref() AgentSuiteArtifactRef {
+	return s.Artifact.Ref()
+}
+
+func (s ValidatedAgentSuite) Validate() error {
+	if err := s.Artifact.Validate(); err != nil {
 		return err
 	}
-	return r.Report.Validate()
+	return s.Report.Validate()
 }
 
-type packageSuiteResultJSON PackageSuiteResult
+type validatedAgentSuiteJSON ValidatedAgentSuite
 
-func (r PackageSuiteResult) MarshalJSON() ([]byte, error) {
-	if err := r.Validate(); err != nil {
+func (s ValidatedAgentSuite) MarshalJSON() ([]byte, error) {
+	if err := s.Validate(); err != nil {
 		return nil, err
 	}
-	return json.Marshal(packageSuiteResultJSON(r))
+	return json.Marshal(validatedAgentSuiteJSON(s))
 }
 
-func (r *PackageSuiteResult) UnmarshalJSON(data []byte) error {
+func (s *ValidatedAgentSuite) UnmarshalJSON(data []byte) error {
 	if err := validateJSONInput(data); err != nil {
 		return err
 	}
-	var decoded packageSuiteResultJSON
+	var decoded validatedAgentSuiteJSON
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
-	value := PackageSuiteResult(decoded)
+	value := ValidatedAgentSuite(decoded)
 	if err := value.Validate(); err != nil {
 		return err
 	}
-	*r = value
+	*s = value
 	return nil
 }
 
@@ -337,20 +430,25 @@ type ValidateSuiteRequest struct {
 	Source SuiteSource
 }
 
-type PackageSuiteRequest struct {
-	Operation OperationID
-	Source    SuiteSource
-	Output    string
+func (r ValidateSuiteRequest) Validate() error {
+	return r.Source.Validate()
 }
 
-func (r PackageSuiteRequest) Validate() error {
+// BuildSuiteRequest asks KMX to build every agent/platform composition in one
+// exact validated suite through the initial image-backed execution profile.
+// Builder selection, temporary output locations and member-level planning
+// remain implementation details. Image-free native profiles are valid
+// AgentSuites but are outside this first Build contract.
+type BuildSuiteRequest struct {
+	Operation OperationID
+	Suite     ValidatedAgentSuite
+}
+
+func (r BuildSuiteRequest) Validate() error {
 	if err := r.Operation.Validate(); err != nil {
 		return err
 	}
-	if err := r.Source.Validate(); err != nil {
-		return err
-	}
-	return validateIdentity("AgentSuite OCI layout output", r.Output)
+	return r.Suite.Validate()
 }
 
 // AgentSandboxImage is a runnable OCI image derived for exactly one AgentSuite,
@@ -449,62 +547,299 @@ func (i *AgentSandboxImage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type BuildSandboxRequest struct {
-	Operation    OperationID
-	Suite        AgentSuiteArtifact
-	Agent        string
-	Platform     SandboxPlatform
-	BuildProfile string
-	Composition  CompositionDigest
-	Output       string
+// BuildSuiteResult is the complete member-image set for the initial image-backed
+// execution profile. It deliberately has no independent release identity: a
+// future general build contract must derive required artifacts, including zero
+// images, from an explicit execution profile.
+type BuildSuiteResult struct {
+	Operation OperationID         `json:"operation"`
+	Suite     ValidatedAgentSuite `json:"suite"`
+	Images    []AgentSandboxImage `json:"images"`
 }
 
-func (r BuildSandboxRequest) Validate() error {
+func (r BuildSuiteResult) Validate() error {
 	if err := r.Operation.Validate(); err != nil {
 		return err
 	}
-	if err := r.Suite.Validate(); err != nil {
-		return err
-	}
-	if err := validateSuiteIdentifier("agent ID", r.Agent); err != nil {
-		return err
-	}
-	if err := r.Platform.Validate(); err != nil {
-		return err
-	}
-	if err := validateSuiteIdentifier("build profile", r.BuildProfile); err != nil {
-		return err
-	}
-	if err := r.Composition.Validate(); err != nil {
-		return err
-	}
-	return validateIdentity("sandbox OCI layout output", r.Output)
+	return validateSuiteImages(r.Suite, r.Images, true)
 }
 
-type PublishArtifactRequest struct {
-	Operation   OperationID
-	Artifact    OCIArtifactRef
-	Destination string
+func (r BuildSuiteResult) ValidateAgainst(request BuildSuiteRequest) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	if err := request.Validate(); err != nil {
+		return err
+	}
+	if r.Operation != request.Operation || r.Suite.Ref() != request.Suite.Ref() ||
+		!sameSuiteReport(r.Suite.Report, request.Suite.Report) {
+		return fmt.Errorf("AgentSuite build result does not match the request")
+	}
+	return nil
 }
 
-func (r PublishArtifactRequest) Validate() error {
+type buildSuiteResultJSON BuildSuiteResult
+
+func (r BuildSuiteResult) MarshalJSON() ([]byte, error) {
+	if err := r.Validate(); err != nil {
+		return nil, err
+	}
+	return json.Marshal(buildSuiteResultJSON(r))
+}
+
+func (r *BuildSuiteResult) UnmarshalJSON(data []byte) error {
+	if err := validateJSONInput(data); err != nil {
+		return err
+	}
+	var decoded buildSuiteResultJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	value := BuildSuiteResult(decoded)
+	if err := value.Validate(); err != nil {
+		return err
+	}
+	*r = value
+	return nil
+}
+
+// BuildSuiteProgress is durable recovery state for a suite build. Images may
+// be a verified subset while Complete is false. Complete progress must satisfy
+// the same whole-suite checks as BuildSuiteResult.
+type BuildSuiteProgress struct {
+	Operation OperationID         `json:"operation"`
+	Suite     ValidatedAgentSuite `json:"suite"`
+	Images    []AgentSandboxImage `json:"images"`
+	Complete  bool                `json:"complete"`
+}
+
+func (p BuildSuiteProgress) Validate() error {
+	if err := p.Operation.Validate(); err != nil {
+		return err
+	}
+	return validateSuiteImages(p.Suite, p.Images, p.Complete)
+}
+
+func (p BuildSuiteProgress) ValidateAgainst(request BuildSuiteRequest) error {
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	if err := request.Validate(); err != nil {
+		return err
+	}
+	if p.Operation != request.Operation || p.Suite.Ref() != request.Suite.Ref() ||
+		!sameSuiteReport(p.Suite.Report, request.Suite.Report) {
+		return fmt.Errorf("AgentSuite build progress does not match the request")
+	}
+	return nil
+}
+
+func (p BuildSuiteProgress) Result() (BuildSuiteResult, error) {
+	if err := p.Validate(); err != nil {
+		return BuildSuiteResult{}, err
+	}
+	if !p.Complete {
+		return BuildSuiteResult{}, fmt.Errorf("AgentSuite build is not complete")
+	}
+	return BuildSuiteResult{Operation: p.Operation, Suite: p.Suite, Images: append([]AgentSandboxImage(nil), p.Images...)}, nil
+}
+
+type buildSuiteProgressJSON BuildSuiteProgress
+
+func (p BuildSuiteProgress) MarshalJSON() ([]byte, error) {
+	if err := p.Validate(); err != nil {
+		return nil, err
+	}
+	return json.Marshal(buildSuiteProgressJSON(p))
+}
+
+func (p *BuildSuiteProgress) UnmarshalJSON(data []byte) error {
+	if err := validateJSONInput(data); err != nil {
+		return err
+	}
+	var decoded buildSuiteProgressJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	value := BuildSuiteProgress(decoded)
+	if err := value.Validate(); err != nil {
+		return err
+	}
+	*p = value
+	return nil
+}
+
+// PushSuiteRequest publishes one already-built suite result. Push may relocate
+// content but must not rebuild it or change any immutable identity.
+type PushSuiteRequest struct {
+	Operation   OperationID      `json:"operation"`
+	Build       BuildSuiteResult `json:"build"`
+	Destination string           `json:"destination"`
+}
+
+func (r PushSuiteRequest) Validate() error {
 	if err := r.Operation.Validate(); err != nil {
 		return err
 	}
-	if err := r.Artifact.Validate(); err != nil {
+	if err := r.Build.Validate(); err != nil {
 		return err
 	}
-	return validateIdentity("OCI registry destination", r.Destination)
+	return validateIdentity("AgentSuite push destination", r.Destination)
 }
 
-// AgentSuites owns definition validation, offline OCI construction, and
-// explicit publication. It does not deploy sandbox images to an environment.
+// PushSuiteResult contains the same complete suite and member-image identities
+// with destination retrieval locations. ValidateAgainst establishes that a
+// publisher preserved the build input rather than rebuilding or substituting it.
+type PushSuiteResult struct {
+	Operation   OperationID         `json:"operation"`
+	Destination string              `json:"destination"`
+	Suite       ValidatedAgentSuite `json:"suite"`
+	Images      []AgentSandboxImage `json:"images"`
+}
+
+func (r PushSuiteResult) Validate() error {
+	if err := r.Operation.Validate(); err != nil {
+		return err
+	}
+	if err := validateIdentity("AgentSuite push destination", r.Destination); err != nil {
+		return err
+	}
+	if r.Suite.Artifact.Manifest.Location != r.Destination {
+		return fmt.Errorf("pushed AgentSuite artifact is not located at the recorded destination")
+	}
+	for _, image := range r.Images {
+		if image.Image.Location != r.Destination {
+			return fmt.Errorf("pushed member image %s is not located at the recorded destination", image.Agent)
+		}
+	}
+	return validateSuiteImages(r.Suite, r.Images, true)
+}
+
+func (r PushSuiteResult) ValidateAgainst(request PushSuiteRequest) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	if err := request.Validate(); err != nil {
+		return err
+	}
+	if r.Operation != request.Operation || r.Destination != request.Destination {
+		return fmt.Errorf("pushed AgentSuite result does not match the requested operation and destination")
+	}
+	build := request.Build
+	if r.Suite.Ref() != build.Suite.Ref() || !sameSuiteReport(r.Suite.Report, build.Suite.Report) {
+		return fmt.Errorf("pushed AgentSuite does not match the built suite")
+	}
+	want := make(map[AgentSandboxRef]bool, len(build.Images))
+	for _, image := range build.Images {
+		want[image.Ref()] = true
+	}
+	for _, image := range r.Images {
+		if !want[image.Ref()] {
+			return fmt.Errorf("pushed AgentSuite contains a substituted member image")
+		}
+		delete(want, image.Ref())
+	}
+	if len(want) != 0 {
+		return fmt.Errorf("pushed AgentSuite omits a built member image")
+	}
+	return nil
+}
+
+type pushSuiteResultJSON PushSuiteResult
+
+func (r PushSuiteResult) MarshalJSON() ([]byte, error) {
+	if err := r.Validate(); err != nil {
+		return nil, err
+	}
+	return json.Marshal(pushSuiteResultJSON(r))
+}
+
+func (r *PushSuiteResult) UnmarshalJSON(data []byte) error {
+	if err := validateJSONInput(data); err != nil {
+		return err
+	}
+	var decoded pushSuiteResultJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	value := PushSuiteResult(decoded)
+	if err := value.Validate(); err != nil {
+		return err
+	}
+	*r = value
+	return nil
+}
+
+func validateSuiteImages(suite ValidatedAgentSuite, images []AgentSandboxImage, complete bool) error {
+	if err := suite.Validate(); err != nil {
+		return err
+	}
+	if complete && suite.Report.ToolCompositions != 0 {
+		return fmt.Errorf("complete AgentSuite builds cannot yet represent standalone ToolProvider images")
+	}
+	if complete && len(images) == 0 {
+		return fmt.Errorf("the image-backed AgentSuite workflow requires member images")
+	}
+	expected := make(map[string]SuiteCompositionSelection, len(suite.Report.CompositionSelections))
+	for _, selection := range suite.Report.CompositionSelections {
+		expected[suiteImageSelectionKey(selection.Agent, selection.Platform)] = selection
+	}
+	seen := make(map[string]bool, len(images))
+	for _, image := range images {
+		if err := image.Validate(); err != nil {
+			return err
+		}
+		if image.SuiteManifest != suite.Artifact.Manifest.Digest {
+			return fmt.Errorf("member image %s is bound to another AgentSuite artifact", image.Agent)
+		}
+		key := suiteImageSelectionKey(image.Agent, image.Platform)
+		selection, ok := expected[key]
+		if !ok {
+			return fmt.Errorf("member image %s has no matching AgentSuite composition", key)
+		}
+		if seen[key] {
+			return fmt.Errorf("duplicate member image %s", key)
+		}
+		seen[key] = true
+		if image.BuildProfile != selection.BuildProfile || image.Composition != selection.Digest {
+			return fmt.Errorf("member image %s does not match its AgentSuite composition", key)
+		}
+	}
+	if complete && len(seen) != len(expected) {
+		return fmt.Errorf("complete AgentSuite build requires one image for every composition")
+	}
+	return nil
+}
+
+func suiteImageSelectionKey(agent string, platform SandboxPlatform) string {
+	return agent + "@" + platform.OS + "/" + platform.Architecture
+}
+
+func sameSuiteReport(a, b SuiteReport) bool {
+	if a.Name != b.Name || a.Agents != b.Agents || a.Tools != b.Tools ||
+		a.ToolCompositions != b.ToolCompositions || a.Compositions != b.Compositions ||
+		!slices.Equal(a.Capabilities, b.Capabilities) ||
+		!slices.Equal(a.CompositionSelections, b.CompositionSelections) ||
+		len(a.AgentPlatforms) != len(b.AgentPlatforms) {
+		return false
+	}
+	for i := range a.AgentPlatforms {
+		if a.AgentPlatforms[i].Agent != b.AgentPlatforms[i].Agent ||
+			!slices.Equal(a.AgentPlatforms[i].Platforms, b.AgentPlatforms[i].Platforms) {
+			return false
+		}
+	}
+	return true
+}
+
+// AgentSuites owns the cohesive validate, image-backed build and push workflow.
+// It does not expose member builders, storage transports, runtime adapters or
+// deployment. Image-free execution profiles remain valid but are outside this
+// initial Build contract.
 type AgentSuites interface {
-	Validate(context.Context, ValidateSuiteRequest) (SuiteReport, error)
-	Package(context.Context, PackageSuiteRequest) (PackageSuiteResult, error)
-	RecoverPackage(context.Context, OperationID) (PackageSuiteResult, error)
-	BuildSandbox(context.Context, BuildSandboxRequest) (AgentSandboxImage, error)
-	RecoverBuildSandbox(context.Context, OperationID) (AgentSandboxImage, error)
-	Publish(context.Context, PublishArtifactRequest) (OCIArtifactRef, error)
-	RecoverPublish(context.Context, OperationID) (OCIArtifactRef, error)
+	Validate(context.Context, ValidateSuiteRequest) (ValidatedAgentSuite, error)
+	Build(context.Context, BuildSuiteRequest) (BuildSuiteResult, error)
+	RecoverBuild(context.Context, OperationID) (BuildSuiteProgress, error)
+	Push(context.Context, PushSuiteRequest) (PushSuiteResult, error)
+	RecoverPush(context.Context, OperationID) (PushSuiteResult, error)
 }

@@ -34,6 +34,9 @@ inputs:
   verify:
     description: Verify reference replay after evaluation (true or false)
     default: 'true'
+  judge-proof:
+    description: Prove the production judge against public YES/NO fixtures (true or false; AIKit only)
+    default: 'false'
   case-timeout:
     description: Per-case evaluation timeout
     default: 2m
@@ -95,6 +98,7 @@ runs:
         SESSIONS_ARCHIVE_SHA256: ${{ inputs.sessions-archive-sha256 }}
         KMX_BIN: ${{ inputs.kmx-bin }}
         VERIFY: ${{ inputs.verify }}
+        JUDGE_PROOF: ${{ inputs.judge-proof }}
         CASE_TIMEOUT: ${{ inputs.case-timeout }}
         COMMAND_TIMEOUT: ${{ inputs.command-timeout }}
       run: |

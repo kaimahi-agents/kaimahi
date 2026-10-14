@@ -55,7 +55,20 @@ import json, os, shutil, sys
 from pathlib import Path
 root = Path(os.environ['TEST_STATE'])
 with (root / 'go.jsonl').open('a') as f:
-    f.write(json.dumps({'argv': sys.argv[1:], 'cwd': os.getcwd(), 'key': os.getenv('MODEL_API_KEY'), 'selected': os.getenv('TEST_PROVIDER_KEY'), 'gowork': os.getenv('GOWORK')}) + '\\n')
+    f.write(json.dumps({'argv': sys.argv[1:], 'cwd': os.getcwd(), 'key': os.getenv('MODEL_API_KEY'), 'selected': os.getenv('TEST_PROVIDER_KEY'), 'gowork': os.getenv('GOWORK'), 'judge': {name: os.getenv('KMX_LIVE_JUDGE_' + name) for name in ('BASE_URL', 'MODEL', 'VERSION', 'EVIDENCE_DIR')}}) + '\\n')
+if sys.argv[1] == 'test':
+    assert sys.argv[2:] == ['./internal/kmx/app', '-run', '^TestLiveEvaluationJudgeAIKitProof$', '-count=1', '-v', '-timeout=5m']
+    assert not (root / 'daemon.json').exists(), 'proof must run before private sessions start'
+    assert (root / 'container').exists() and (root / 'model.warmed').exists()
+    assert not (root / 'model.stopped').exists()
+    evidence = Path(os.environ['KMX_LIVE_JUDGE_EVIDENCE_DIR'])
+    if os.getenv('TEST_JUDGE_SKIP') != '1':
+        (evidence / 'judge-proof.json').write_text(json.dumps({'model': os.environ['KMX_LIVE_JUDGE_MODEL'], 'modelVersion': os.environ['KMX_LIVE_JUDGE_VERSION'], 'good': {'verdict': 'pass'}, 'bad': {'verdict': 'fail'}}))
+    print('public judge reasoning: YES matches; NO does not match', flush=True)
+    if os.getenv('TEST_FAIL') == 'judge':
+        print('public judge proof failed: unknown is not pass', file=sys.stderr)
+        sys.exit(1)
+    sys.exit(0)
 print('RAW-PROVIDER-PAYLOAD-DO-NOT-PRINT', file=sys.stderr)
 if sys.argv[1] == 'list':
     print(os.environ['TEST_MODULE'])
@@ -101,6 +114,7 @@ if '-o' in args or '--output' in args:
     if 'chat/completions' in args[-1]:
         from pathlib import Path
         Path(output).write_text('{"model":"qwen-3.5-2b","created":1,"choices":[{"message":{"content":"warmup"}}]}')
+        (Path(os.environ['TEST_STATE']) / 'model.warmed').touch()
     else:
         shutil.copy2(os.environ['TEST_ARCHIVE'], output)
 '''
@@ -175,7 +189,7 @@ class RunnerTests(unittest.TestCase):
                         OPENAI_API_KEY=INHERITED_OPENAI, SESSIONS_PORT=str(port),
                         GITHUB_OUTPUT=str(self.output), TEST_STATE=str(self.state),
                         TEST_MODULE=str(self.module), TEST_DAEMON=str(self.daemon), TEST_KMX=str(self.kmx))
-        for name in ("SESSIONS_ARCHIVE_URL", "SESSIONS_ARCHIVE_SHA256", "AIKIT_IMAGE", "AIKIT_CONFIG", "VERIFY", "TEST_FAIL", "TEST_HANG", "TEST_DAEMON_FAIL", "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS"):
+        for name in ("SESSIONS_ARCHIVE_URL", "SESSIONS_ARCHIVE_SHA256", "AIKIT_IMAGE", "AIKIT_CONFIG", "VERIFY", "JUDGE_PROOF", "KMX_LIVE_JUDGE_BASE_URL", "KMX_LIVE_JUDGE_MODEL", "KMX_LIVE_JUDGE_VERSION", "KMX_LIVE_JUDGE_EVIDENCE_DIR", "TEST_JUDGE_SKIP", "TEST_FAIL", "TEST_HANG", "TEST_DAEMON_FAIL", "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS"):
             self.env.pop(name, None)
 
     def executable(self, name, content):
@@ -288,6 +302,66 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(daemon["key"], "")
         self.assertEqual(daemon["openai"], "")
         self.assert_cleaned()
+
+    def test_judge_proof_false_preserves_existing_run(self):
+        result = self.run_runner(JUDGE_PROOF="false")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any(c["argv"][0] == "test" for c in self.records("go")))
+        self.assertFalse((self.artifacts / "judge-proof.json").exists())
+        self.assert_cleaned()
+
+    def test_judge_proof_uses_live_pinned_aikit_and_owned_evidence_directory(self):
+        image = "ghcr.io/kaito-project/aikit/qwen3.5:2b@sha256:" + "a" * 64
+        result = self.run_runner(MODEL_MODE="aikit", MODEL_KEY_ENV="", MODEL_NAME="", JUDGE_PROOF="true", AIKIT_IMAGE=image, TEST_PROVIDER_KEY="",
+                                 KMX_LIVE_JUDGE_BASE_URL="https://untrusted.example/v1", KMX_LIVE_JUDGE_MODEL="untrusted",
+                                 KMX_LIVE_JUDGE_VERSION="untrusted", KMX_LIVE_JUDGE_EVIDENCE_DIR=str(self.bundle))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [c for c in self.records("go") if c["argv"][0] == "test"]
+        self.assertEqual(len(calls), 1, "exactly one uncached proof, no retries")
+        self.assertEqual(calls[0]["cwd"], str(self.repo))
+        self.assertEqual(calls[0]["gowork"], "off")
+        self.assertEqual(calls[0]["judge"], {"BASE_URL": "http://127.0.0.1:18089/v1", "MODEL": "qwen-3.5-2b",
+                                           "VERSION": "sha256:" + "a" * 64, "EVIDENCE_DIR": str(self.artifacts)})
+        self.assertFalse(calls[0]["key"] or calls[0]["selected"])
+        self.assertIn("public judge reasoning", result.stdout)
+        self.assertTrue((self.artifacts / "judge-proof.json").is_file())
+        self.assertEqual(self.outputs()["receipt"], str(self.artifacts / "eval-test.json"))
+        self.assertEqual(self.outputs()["verify-report"], str(self.artifacts / "verify-eval-test.json.json"))
+        self.assert_cleaned()
+
+    def test_judge_unknown_failure_stops_gate_without_retry_and_cleans_container(self):
+        result = self.run_runner(MODEL_MODE="aikit", MODEL_KEY_ENV="", MODEL_NAME="", JUDGE_PROOF="true", TEST_FAIL="judge")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failed during judge proof", result.stderr)
+        self.assertEqual(len([c for c in self.records("go") if c["argv"][0] == "test"]), 1)
+        self.assertEqual([c["mode"] for c in self.records("gate")], ["prepare"])
+        self.assertFalse((self.state / "daemon.json").exists())
+        self.assertTrue((self.state / "container.removed").exists())
+        self.assertEqual(list(self.work.iterdir()), [])
+        self.assertTrue((self.artifacts / "judge-proof.json").is_file())
+        self.assertNotIn("Live eval loop passed", result.stdout)
+
+    def test_judge_proof_skipped_test_cannot_report_success(self):
+        result = self.run_runner(MODEL_MODE="aikit", MODEL_KEY_ENV="", MODEL_NAME="", JUDGE_PROOF="true", TEST_JUDGE_SKIP="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failed during judge proof", result.stderr)
+        self.assertFalse((self.state / "daemon.json").exists())
+        self.assertTrue((self.state / "container.removed").exists())
+        self.assertEqual(list(self.work.iterdir()), [])
+
+    def test_judge_proof_rejects_endpoint_mode_before_build_or_session(self):
+        result = self.run_runner(JUDGE_PROOF="true")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.records("go"), [])
+        self.assertEqual(self.records("docker"), [])
+        self.assertFalse((self.state / "daemon.json").exists())
+        self.assertEqual(list(self.work.iterdir()), [])
+
+    def test_judge_proof_rejects_non_boolean_opt_in(self):
+        result = self.run_runner(JUDGE_PROOF="yes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.records("go"), [])
+        self.assertFalse((self.state / "daemon.json").exists())
 
     def test_builds_kmx_from_action_repository_when_not_provided(self):
         result = self.run_runner(KMX_BIN="", VERIFY="false")

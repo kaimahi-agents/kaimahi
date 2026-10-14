@@ -9,6 +9,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // LifecycleAdapter declares its supported verbs statically through
@@ -35,7 +36,10 @@ type LifecycleAdapter interface {
 // desired-state deployment; runtimes that do not support it must refuse it.
 type RenderOptions struct{}
 type DeployOptions struct{ Reconcile bool }
-type StatusOptions struct{}
+type StatusOptions struct {
+	Desired  *RenderedBundle
+	Expected *DeployReceipt
+}
 
 // DeployResult carries a ready deployment's reference and history data. A
 // failed deploy has no receipt, even if some resources were written.
@@ -68,7 +72,29 @@ type DeployReceipt struct {
 	Bundle, PortableDigest, RenderedDigest string
 	Target                                 DeployTarget
 	Resources                              []ResourceResult
+	RuntimeVersion                         string             `json:",omitempty"`
+	ClusterUID                             string             `json:",omitempty"`
+	Ready                                  bool               `json:",omitempty"`
+	ObservedAt                             time.Time          `json:",omitzero"`
+	Proofs                                 []ResourceEvidence `json:",omitempty"`
+	Dependencies                           []ResourceEvidence `json:",omitempty"`
+	Workload                               []ResourceEvidence `json:",omitempty"`
 }
+
+// ResourceEvidence carries identity and non-secret spec evidence. Key is a
+// reference name only; credentials and their hashes never belong in history.
+type ResourceEvidence struct {
+	Kind, Name, Namespace, UID string
+	ResourceVersion            string `json:",omitempty"`
+	Generation                 int64  `json:",omitempty"`
+	SpecDigest                 string `json:",omitempty"`
+	Key                        string `json:",omitempty"`
+}
+
+// EvaluationJudge evaluates an entire case while the attributed answer remains
+// ephemeral. The app-owned implementation returns ordinary and judge rows.
+// Adapters invoke it only after successful execution and revision attribution.
+type EvaluationJudge func(context.Context, EvaluationCase, EvaluationEvidence) []EvaluationAssertionResult
 
 // EvaluationRequest carries one evaluation case: identity, input, the
 // assertions the terminal answer must satisfy, and the portable digest of the
@@ -81,6 +107,11 @@ type EvaluationRequest struct {
 	ExpectContains []string
 	Assertions     []EvaluationAssertion
 	PortableDigest string
+	// Desired and Expected bind evaluation of a deployed native revision.
+	Desired  *RenderedBundle
+	Expected *DeployReceipt
+	// Judge is optional; without it, llmJudge assertions remain unknown.
+	Judge EvaluationJudge
 }
 
 // EvaluationVerdict is one case's outcome. Unknown is neither a pass nor a
@@ -108,6 +139,19 @@ type EvaluationReceipt struct {
 	TaskUID          string
 	AnswerSHA256     string
 	Detail           string
+	Execution        *EvaluationExecution
+	// Stop prevents later cases after an ambiguous send or lost attribution.
+	Stop bool
+}
+
+// EvaluationExecution records native request and Task identities, not
+// Kubernetes Task names or UIDs. Unknown sends retain only request identities.
+type EvaluationExecution struct {
+	RPCID            string `json:"rpcID"`
+	RequestMessageID string `json:"requestMessageID"`
+	TaskID           string `json:"taskID,omitempty"`
+	ContextID        string `json:"contextID,omitempty"`
+	State            string `json:"state,omitempty"`
 }
 
 // Document is one rendered document: the exact bytes plus whether Deploy may

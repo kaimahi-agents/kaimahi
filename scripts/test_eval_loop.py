@@ -182,7 +182,12 @@ class EvalLoopTests(unittest.TestCase):
         own.parent.mkdir(exist_ok=True)
         if mode == "verify":
             own.write_text(json.dumps(receipt))
-        def kmx(*args, **kwargs):
+        def kmx(command, timeout):
+            if mode == "evaluate":
+                self.assertEqual(command, ["kmx", "bundle", "evaluate", str(bundle), "--sessions", "127.0.0.1:18088", "--case-timeout", "2m"])
+            else:
+                self.assertEqual(command, ["kmx", "bundle", "verify", str(own), "--sessions", "127.0.0.1:18088", "--timeout", "5m"])
+            self.assertEqual(timeout, 600)
             if mode == "evaluate":
                 own.write_text(json.dumps(receipt))
             else:

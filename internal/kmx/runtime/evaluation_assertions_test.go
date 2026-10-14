@@ -1,6 +1,9 @@
 package runtime
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"reflect"
 	"slices"
@@ -212,6 +215,223 @@ func TestEvaluationResultsJSONDoesNotCarryOperands(t *testing.T) {
 	data, err = json.Marshal(receipt)
 	if err != nil || strings.Contains(string(data), "private-canary") {
 		t.Fatalf("receipt leaked operands: %s (%v)", data, err)
+	}
+}
+
+func judgeTestAssertion() EvaluationAssertion {
+	min := 50
+	return EvaluationAssertion{ID: "judge", Type: "llmJudge", Rubric: "rubric-private-canary", MinScore: &min, JudgeModel: "model/pinned", JudgeVersion: "v1"}
+}
+
+func TestEvaluationJudgeDigestBindsAuthoredPolicyAndKeepsOldDigests(t *testing.T) {
+	a := judgeTestAssertion()
+	base := EvaluationAssertionDigest(a)
+	for _, mutate := range []func(*EvaluationAssertion){
+		func(a *EvaluationAssertion) { a.Rubric += "changed" },
+		func(a *EvaluationAssertion) { n := 51; a.MinScore = &n },
+		func(a *EvaluationAssertion) { a.MinScore = nil },
+		func(a *EvaluationAssertion) { a.JudgeModel += "changed" },
+		func(a *EvaluationAssertion) { a.JudgeVersion += "changed" },
+	} {
+		b := a
+		mutate(&b)
+		if EvaluationAssertionDigest(b) == base {
+			t.Fatal("judge definition change did not change digest")
+		}
+	}
+	b := a
+	b.ID = "other"
+	if EvaluationAssertionDigest(b) != base {
+		t.Fatal("judge id changed authored definition digest")
+	}
+	for _, old := range []EvaluationAssertion{
+		{Type: "contains", Value: "hello"}, {Type: "notContains", Value: "hello"},
+		{Type: "regex", Pattern: "hello"}, {Type: "toolCalled", Tool: "hello"}, {Type: "toolNotCalled", Tool: "hello"},
+	} {
+		frames := frameEntry("type", []byte(old.Type))
+		frames = append(frames, frameEntry("operand", []byte("hello"))...)
+		sum := sha256.Sum256(frames)
+		if EvaluationAssertionDigest(old) != hex.EncodeToString(sum[:]) {
+			t.Fatalf("old %s digest changed", old.Type)
+		}
+	}
+	sum := sha256.Sum256([]byte(EvaluationJudgePolicy))
+	if EvaluationJudgeEvaluatorDigest() != hex.EncodeToString(sum[:]) {
+		t.Fatal("evaluator digest does not bind fixed policy")
+	}
+	policyFrames := frameEntry("type", []byte(a.Type))
+	policyFrames = append(policyFrames, frameEntry("operand", []byte(a.Rubric))...)
+	policyFrames = append(policyFrames, frameEntry("minScore", []byte("50"))...)
+	policyFrames = append(policyFrames, frameEntry("judgeModel", []byte(a.JudgeModel))...)
+	policyFrames = append(policyFrames, frameEntry("judgeVersion", []byte(a.JudgeVersion))...)
+	policyFrames = append(policyFrames, frameEntry("evaluatorDigest", []byte(EvaluationJudgeEvaluatorDigest()))...)
+	sum = sha256.Sum256(policyFrames)
+	if base != hex.EncodeToString(sum[:]) {
+		t.Fatal("judge definition digest does not bind evaluator policy")
+	}
+	config := EvaluationJudgeConfigurationDigest("https://judge.example/v1", a.JudgeModel, a.JudgeVersion)
+	configFrames := frameEntry("endpoint", []byte("https://judge.example/v1"))
+	configFrames = append(configFrames, frameEntry("model", []byte(a.JudgeModel))...)
+	configFrames = append(configFrames, frameEntry("modelVersion", []byte(a.JudgeVersion))...)
+	configFrames = append(configFrames, frameEntry("evaluatorDigest", []byte(EvaluationJudgeEvaluatorDigest()))...)
+	sum = sha256.Sum256(configFrames)
+	if config != hex.EncodeToString(sum[:]) {
+		t.Fatal("configuration digest does not bind endpoint, model, version, and policy")
+	}
+	if !regexpDigest(config) || config != EvaluationJudgeConfigurationDigest("https://judge.example/v1", a.JudgeModel, a.JudgeVersion) {
+		t.Fatal("configuration digest not deterministic SHA-256")
+	}
+	for _, args := range [][3]string{
+		{"https://other.example/v1", a.JudgeModel, a.JudgeVersion},
+		{"https://judge.example/v1", "other-model", a.JudgeVersion},
+		{"https://judge.example/v1", a.JudgeModel, "v2"},
+		{"ab", "c", "d"}, {"a", "bc", "d"},
+	} {
+		if EvaluationJudgeConfigurationDigest(args[0], args[1], args[2]) == config {
+			t.Fatal("configuration change did not change digest")
+		}
+	}
+	if EvaluationJudgeConfigurationDigest("ab", "c", "d") == EvaluationJudgeConfigurationDigest("a", "bc", "d") {
+		t.Fatal("configuration digest has ambiguous framing")
+	}
+}
+
+func TestEvaluationJudgeVerdictRequiresTwoValidThresholdSideScores(t *testing.T) {
+	for _, tc := range []struct {
+		scores []int
+		min    int
+		want   EvaluationVerdict
+	}{
+		{[]int{80, 100}, 50, EvaluationPass}, {[]int{0, 20}, 50, EvaluationFail},
+		{[]int{49, 50}, 50, EvaluationUnknown}, {[]int{50, 49}, 50, EvaluationUnknown},
+		{[]int{50, 50}, 50, EvaluationPass}, {[]int{0, 0}, 0, EvaluationPass},
+		{[]int{100, 100}, 100, EvaluationPass}, {[]int{99, 99}, 100, EvaluationFail},
+		{nil, 50, EvaluationUnknown}, {[]int{}, 50, EvaluationUnknown}, {[]int{100}, 50, EvaluationUnknown},
+		{[]int{0, 50, 100}, 50, EvaluationUnknown}, {[]int{-1, 100}, 50, EvaluationUnknown},
+		{[]int{100, 101}, 50, EvaluationUnknown}, {[]int{80, 100}, -1, EvaluationUnknown},
+		{[]int{80, 100}, 101, EvaluationUnknown},
+	} {
+		if got := EvaluationJudgeVerdict(tc.scores, tc.min); got != tc.want {
+			t.Errorf("scores %v threshold %d = %s, want %s", tc.scores, tc.min, got, tc.want)
+		}
+	}
+}
+
+func TestEvaluationJudgeEvidenceIntegrity(t *testing.T) {
+	valid := EvaluationAssertionResult{Type: "llmJudge", Verdict: EvaluationPass, Judge: &EvaluationJudgeEvidence{
+		Model: "model/pinned", ModelVersion: "v1", Provenance: "user-declared",
+		EvaluatorDigest: EvaluationJudgeEvaluatorDigest(), ConfigurationDigest: strings.Repeat("a", 64),
+		MinScore: 50, Scores: []int{80, 100},
+	}}
+	if !EvaluationJudgeEvidenceValid(valid) {
+		t.Fatal("valid evidence rejected")
+	}
+	for _, mutate := range []func(*EvaluationAssertionResult){
+		func(r *EvaluationAssertionResult) { r.Type = "contains" },
+		func(r *EvaluationAssertionResult) { r.Judge = nil },
+		func(r *EvaluationAssertionResult) { r.Judge.Model = "" },
+		func(r *EvaluationAssertionResult) { r.Judge.ModelVersion = "v1\nforged" },
+		func(r *EvaluationAssertionResult) { r.Judge.Model = "modèle" },
+		func(r *EvaluationAssertionResult) { r.Judge.ModelVersion = strings.Repeat("v", 257) },
+		func(r *EvaluationAssertionResult) { r.Judge.Model = "gh" + "p_" + strings.Repeat("A", 36) },
+		func(r *EvaluationAssertionResult) { r.Judge.Provenance = "verified" },
+		func(r *EvaluationAssertionResult) { r.Judge.EvaluatorDigest = strings.Repeat("b", 64) },
+		func(r *EvaluationAssertionResult) { r.Judge.ConfigurationDigest = strings.Repeat("G", 64) },
+		func(r *EvaluationAssertionResult) { r.Judge.MinScore = -1 },
+		func(r *EvaluationAssertionResult) { r.Judge.MinScore = 101 },
+		func(r *EvaluationAssertionResult) { r.Judge.Scores = nil },
+		func(r *EvaluationAssertionResult) { r.Judge.Scores = []int{100} },
+		func(r *EvaluationAssertionResult) { r.Judge.Scores = []int{100, 100, 100} },
+		func(r *EvaluationAssertionResult) { r.Judge.Scores = []int{100, 101} },
+		func(r *EvaluationAssertionResult) { r.Judge.Scores = []int{-1, 100} },
+		func(r *EvaluationAssertionResult) { r.Verdict = EvaluationFail },
+		func(r *EvaluationAssertionResult) { r.Verdict = EvaluationUnknown },
+	} {
+		r := valid
+		e := *valid.Judge
+		r.Judge = &e
+		mutate(&r)
+		if EvaluationJudgeEvidenceValid(r) {
+			t.Errorf("invalid evidence accepted: %+v %+v", r, r.Judge)
+		}
+	}
+	for _, tc := range []struct {
+		scores  []int
+		min     int
+		verdict EvaluationVerdict
+	}{
+		{nil, 0, EvaluationUnknown}, {[]int{}, 100, EvaluationUnknown},
+		{[]int{49, 50}, 50, EvaluationUnknown}, {[]int{0, 20}, 50, EvaluationFail},
+	} {
+		r := valid
+		e := *valid.Judge
+		e.Scores, e.MinScore = tc.scores, tc.min
+		r.Judge, r.Verdict = &e, tc.verdict
+		if !EvaluationJudgeEvidenceValid(r) {
+			t.Errorf("coherent evidence refused: %+v", r)
+		}
+	}
+	if !EvaluationJudgeEvidenceValid(EvaluationAssertionResult{Type: "contains", Verdict: EvaluationPass}) {
+		t.Fatal("old ordinary row refused")
+	}
+}
+
+func TestEvaluationJudgePureUnknownAndPayloadFreePort(t *testing.T) {
+	c := EvaluationCase{ID: "case", Input: "input-private-canary", Assertions: []EvaluationAssertion{judgeTestAssertion()}}
+	for _, available := range []bool{false, true} {
+		rows := EvaluateAssertions(c, EvaluationEvidence{Answer: "answer-private-canary", AnswerAvailable: available})
+		if len(rows) != 1 || rows[0].Verdict != EvaluationUnknown || rows[0].Reason != "judge unavailable" || rows[0].Judge != nil {
+			t.Fatalf("pure judge evaluator must not invent identity or verdict: %+v", rows)
+		}
+	}
+	// The app-owned evaluator receives ephemeral evidence, and returns the entire
+	// case's ordinary and judge rows; the port does not expose payloads in results.
+	var judge EvaluationJudge = func(ctx context.Context, c EvaluationCase, e EvaluationEvidence) []EvaluationAssertionResult {
+		rows := EvaluateAssertions(c, e)
+		rows[0].Judge = &EvaluationJudgeEvidence{Model: "model/pinned", ModelVersion: "v1", Provenance: "user-declared",
+			EvaluatorDigest: EvaluationJudgeEvaluatorDigest(), ConfigurationDigest: strings.Repeat("a", 64), MinScore: 50, Scores: []int{80, 100}}
+		rows[0].Verdict, rows[0].Reason = EvaluationPass, "assertion satisfied"
+		return rows
+	}
+	req := EvaluationRequest{Judge: judge}
+	rows := req.Judge(context.Background(), c, EvaluationEvidence{Answer: "answer-private-canary", AnswerAvailable: true})
+	data, err := json.Marshal(rows)
+	if err != nil || strings.Contains(string(data), "private-canary") || strings.Contains(string(data), "rubric") || strings.Contains(string(data), "reasoning") {
+		t.Fatalf("judge rows leaked payload: %s (%v)", data, err)
+	}
+	var decoded []EvaluationAssertionResult
+	if err := json.Unmarshal(data, &decoded); err != nil || !reflect.DeepEqual(decoded, rows) {
+		t.Fatalf("judge evidence did not round-trip: %+v (%v)", decoded, err)
+	}
+}
+
+func TestValidateEvaluationJudgeProgrammaticOperands(t *testing.T) {
+	valid := judgeTestAssertion()
+	for _, mutate := range []func(*EvaluationAssertion){
+		func(a *EvaluationAssertion) { a.Value = "mixed" },
+		func(a *EvaluationAssertion) { a.Pattern = "mixed" },
+		func(a *EvaluationAssertion) { a.Tool = "mixed" },
+		func(a *EvaluationAssertion) { a.Rubric = string([]byte{0xff}) },
+		func(a *EvaluationAssertion) { a.Rubric = "bad\x7fcontrol" },
+		func(a *EvaluationAssertion) { a.JudgeVersion = "gh" + "p_" + strings.Repeat("A", 36) },
+	} {
+		a := valid
+		mutate(&a)
+		if err := ValidateEvaluationAssertions([]EvaluationAssertion{a}); err == nil {
+			t.Fatal("invalid programmatic judge accepted")
+		}
+	}
+	for _, mutate := range []func(*EvaluationAssertion){
+		func(a *EvaluationAssertion) { a.Rubric = "mixed" },
+		func(a *EvaluationAssertion) { n := 0; a.MinScore = &n },
+		func(a *EvaluationAssertion) { a.JudgeModel = "mixed" },
+		func(a *EvaluationAssertion) { a.JudgeVersion = "mixed" },
+	} {
+		a := EvaluationAssertion{ID: "ordinary", Type: "contains", Value: "hello"}
+		mutate(&a)
+		if err := ValidateEvaluationAssertions([]EvaluationAssertion{a}); err == nil {
+			t.Fatal("ordinary programmatic assertion accepted judge metadata")
+		}
 	}
 }
 

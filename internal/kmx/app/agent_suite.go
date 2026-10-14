@@ -12,6 +12,7 @@ import (
 	agentsuitecore "github.com/kaimahi-agents/kaimahi/agentsuite"
 	suitebuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
 // SuiteBuildResult identifies one built sandbox image archive.
@@ -61,15 +62,52 @@ func (a *App) PushSuite(
 	return agentsuite.Push(ctx, source, target, reference)
 }
 
+// SuitePushProvenance requests provenance on a registry push.
+type SuitePushProvenance struct {
+	Enabled        bool
+	Require        bool
+	BuilderVersion string
+}
+
 // PushSuiteRegistry pushes one extracted AgentSuite directory to a registry.
+// If no source commit can be recorded, the reason is a warning.
 func (a *App) PushSuiteRegistry(
 	ctx context.Context,
 	source string,
 	reference string,
 	plainHTTP bool,
 	force bool,
+	provenance SuitePushProvenance,
 ) (agentsuite.PushResult, error) {
-	return agentsuite.PushRegistry(ctx, source, reference, plainHTTP, force)
+	options, sourceWarning := suitePushOptions(ctx, source, provenance, nil)
+	result, err := agentsuite.PushRegistry(ctx, source, reference, plainHTTP, force, options)
+	if err == nil && sourceWarning != "" && result.Provenance != nil {
+		result.Warnings = append(result.Warnings, sourceWarning)
+	}
+	return result, err
+}
+
+func suitePushOptions(ctx context.Context, source string, provenance SuitePushProvenance, inputs map[string]workspace.SourceFile) (agentsuite.PushOptions, string) {
+	var options agentsuite.PushOptions
+	var sourceWarning string
+	if provenance.Enabled {
+		var revision *agentsuite.ProvenanceSource
+		var reason string
+		if inputs == nil {
+			revision, reason = suiteSourceRevision(ctx, source)
+		} else {
+			revision, reason = sourceRevision(ctx, source, inputs)
+		}
+		if revision == nil {
+			sourceWarning = "AgentSuite provenance records no source commit: " + reason
+		}
+		options.Provenance = &agentsuite.ProvenanceOptions{
+			BuilderVersion: provenance.BuilderVersion,
+			Source:         revision,
+			Require:        provenance.Require,
+		}
+	}
+	return options, sourceWarning
 }
 
 // PullSuite pulls one referenced AgentSuite from an OCI image layout and

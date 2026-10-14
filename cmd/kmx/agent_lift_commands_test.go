@@ -11,7 +11,7 @@ func TestAgentLiftEmptyGateFlagsRefuse(t *testing.T) {
 	for _, name := range []string{"require-evaluated", "override-gate"} {
 		t.Run(name, func(t *testing.T) {
 			root := newRootCommand(&commandState{deps: productionDependencies()})
-			cmd, _, err := root.Find([]string{"agent", "lift"})
+			cmd, _, err := root.Find([]string{"bundle", "lift"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -28,11 +28,11 @@ func TestAgentLiftEmptyGateFlagsRefuse(t *testing.T) {
 
 func TestAgentLiftCommandSurface(t *testing.T) {
 	root := newRootCommand(&commandState{deps: productionDependencies()})
-	cmd, _, err := root.Find([]string{"agent", "lift"})
+	cmd, _, err := root.Find([]string{"bundle", "lift"})
 	if err != nil || cmd == nil || cmd.Name() != "lift" {
 		t.Fatalf("agent lift command missing: %v", err)
 	}
-	for _, name := range []string{"to-context", "to-namespace", "inference", "require-evaluated", "override-gate", "plan"} {
+	for _, name := range []string{"to-context", "to-namespace", "inference", "require-evaluated", "override-gate", "plan", "runtime", "runtime-version", "bindings"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("missing --%s", name)
 		}

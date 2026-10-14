@@ -258,14 +258,14 @@ class ClassificationTests(unittest.TestCase):
         self.change("docs/readme.md", "updated")
         self.commit()
         got = self.classify(head=self.merge_head())
-        self.assertEqual(got, {"docs_only": "true", "scripts_changed": "false"})
+        self.assertEqual(got, {"docs_only": "true", "scripts_changed": "false", "kagent_changed": "false"})
 
     def test_mixed_paths_do_not_hide_scripts_after_first_non_doc(self):
         self.change("Makefile", "all:")
         self.change("scripts/new.py", "pass")
         self.commit()
         got = self.classify(head=self.merge_head())
-        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true"})
+        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true", "kagent_changed": "false"})
 
     def test_script_deletion_and_rename_out_are_script_changes(self):
         for rename in (False, True):
@@ -278,7 +278,7 @@ class ClassificationTests(unittest.TestCase):
                     old.unlink()
                 self.commit()
                 got = self.classify(head=self.merge_head())
-                self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true"})
+                self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true", "kagent_changed": "false"})
 
     def test_git_quoted_script_paths_still_run_mutations(self):
         for name in ('scripts/check-é.py', 'scripts/check-"quote.py', 'scripts/check-\ttab.py'):
@@ -287,7 +287,7 @@ class ClassificationTests(unittest.TestCase):
                 self.change(name, "pass")
                 self.commit()
                 got = self.classify(head=self.merge_head())
-                self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true"})
+                self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true", "kagent_changed": "false"})
 
     def test_stale_event_base_does_not_include_other_peoples_scripts(self):
         self.change("scripts/old.py", "unrelated merge")
@@ -295,13 +295,88 @@ class ClassificationTests(unittest.TestCase):
         self.change("docs/readme.md", "PR docs")
         self.commit()
         got = self.classify(base=self.base, head=self.merge_head(current_base))
-        self.assertEqual(got, {"docs_only": "true", "scripts_changed": "false"})
+        self.assertEqual(got, {"docs_only": "true", "scripts_changed": "false", "kagent_changed": "false"})
 
     def test_unresolvable_diff_runs_mutations(self):
         got = self.classify(head="missing-merge")
-        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true"})
+        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true", "kagent_changed": "true"})
         got = self.classify(event="push", base="missing-base")
-        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true"})
+        self.assertEqual(got, {"docs_only": "false", "scripts_changed": "true", "kagent_changed": "true"})
+
+
+class WhitespaceGateTests(unittest.TestCase):
+    # Execute the actual hygiene shell against committed Git history: a bare
+    # working-tree diff would miss every defect these fixtures introduce.
+    git = ClassificationTests.git
+    change = ClassificationTests.change
+    commit = ClassificationTests.commit
+    merge_head = ClassificationTests.merge_head
+
+    def setUp(self):
+        ClassificationTests.setUp(self)
+        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        steps = [s for s in workflow["jobs"]["hygiene"]["steps"]
+                 if s.get("id") == "whitespace"]
+        self.assertEqual(len(steps), 1, "hygiene must check the committed diff")
+        self.body = steps[0]["run"]
+
+    def check(self, event="push", before=None):
+        return subprocess.run(
+            ["bash", "-e", "-c", self.body], cwd=self.root,
+            env=dict(os.environ, EVENT=event, BEFORE=before or self.base),
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+
+    def test_clean_committed_change_passes_all_events(self):
+        self.change("docs/readme.md", "clean change\n")
+        self.commit()
+        head = self.merge_head()
+        for event in ("push", "schedule", "workflow_dispatch", "pull_request"):
+            with self.subTest(event=event):
+                self.git("checkout", "--detach", head)
+                result = self.check(event)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_committed_markers_and_whitespace_fail(self):
+        for text in ("<<<<<<< ours\ntext\n=======\nother\n>>>>>>> theirs\n",
+                     "trailing space \n", " \tindentation\n"):
+            with self.subTest(text=text):
+                self.git("reset", "--hard", self.base)
+                self.change("docs/readme.md", text)
+                self.commit()
+                result = self.check()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("docs/readme.md", result.stdout)
+
+    def test_push_checks_earlier_commits_not_just_last_commit(self):
+        self.change("docs/readme.md", "earlier whitespace \n")
+        self.commit()
+        self.change("scripts/old.py", "clean later change\n")
+        self.commit()
+        self.assertNotEqual(self.check().returncode, 0)
+
+    def test_pr_uses_actual_merge_parent_not_stale_event_base(self):
+        self.change("docs/readme.md", "unrelated preexisting whitespace \n")
+        current_base = self.commit()
+        self.change("scripts/old.py", "clean PR\n")
+        self.commit()
+        self.git("checkout", "--detach", self.merge_head(current_base))
+        result = self.check("pull_request", before=self.base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_pr_marker_is_not_hidden_by_clean_merge_checkout(self):
+        self.change("docs/readme.md", "<<<<<<< marker\n")
+        self.commit()
+        self.git("checkout", "--detach", self.merge_head())
+        self.assertNotEqual(self.check("pull_request").returncode, 0)
+
+    def test_unknown_or_unresolvable_base_fails_closed(self):
+        self.change("docs/readme.md", "clean\n")
+        self.commit()
+        for event, before in (("push", "0" * 40), ("push", "missing"),
+                              ("pull_request_target", self.base)):
+            with self.subTest(event=event, before=before):
+                self.assertNotEqual(self.check(event, before).returncode, 0)
 
 
 class WorkflowRoutingTests(unittest.TestCase):
@@ -339,12 +414,12 @@ class WorkflowRoutingTests(unittest.TestCase):
         self.assertTrue(any(self.enabled(s.get("if", "True"), "pull_request", "false") for s in tests),
                         "workflow/action-only changes must exercise routing tests")
 
-    def test_nightly_runs_only_hygiene_and_preserves_other_events(self):
+    def test_nightly_adds_lift_proof_and_preserves_existing_jobs(self):
         for name, job in self.workflow["jobs"].items():
             with self.subTest(job=name):
                 expression = job.get("if", "True")
-                self.assertEqual(self.enabled(expression, "schedule"), name == "hygiene")
-                if name != "kmx-clone-free":
+                self.assertEqual(self.enabled(expression, "schedule"), name in {"hygiene", "classify-change", "e2e-kagent-lift", "e2e-hello-world"})
+                if name not in {"kmx-clone-free", "e2e-kagent-lift"}:
                     self.assertTrue(self.enabled(expression, "pull_request"))
         triggers = self.workflow.get("on", self.workflow.get(True))
         self.assertTrue(triggers.get("schedule"), "a nightly trigger must exist")

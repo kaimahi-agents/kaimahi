@@ -242,7 +242,7 @@ func TestQuickstartExistingAgentToolAttachmentDoesNotCreateBundle(t *testing.T) 
 	a, _, _, _, dir := orkaCreateFixture(t, "")
 	root := t.TempDir()
 	t.Chdir(root)
-	body := []byte(`{"kind":"Agent","metadata":{"name":"sample","namespace":"orka-system","resourceVersion":"1"},"spec":{"tools":[{"name":"k8s-get-resources"}]}}`)
+	body := []byte(`{"kind":"Agent","metadata":{"name":"sample","namespace":"orka-system","uid":"sample-uid","resourceVersion":"1","generation":1},"spec":{"tools":[{"name":"k8s-get-resources"}]},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}`)
 	if err := os.WriteFile(filepath.Join(dir, "sample-agents.core.orka.ai.json"), body, 0600); err != nil {
 		t.Fatal(err)
 	}

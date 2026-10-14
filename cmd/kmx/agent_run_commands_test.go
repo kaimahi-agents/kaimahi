@@ -16,12 +16,12 @@ func TestRunAndResultCommandValidation(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"agent", "run", "agents/sample", "--agent", "sample", "--prompt", "hello"}, "--agent"},
-		{[]string{"agent", "run", "agents/sample", "--prompt", "hello", "--prompt-file", "-"}, "--prompt"},
-		{[]string{"agent", "run", "agents/sample"}, "--prompt"},
-		{[]string{"agent", "run", "agents/sample", "--prompt", "hello", "--context", "kind-test"}, "--to-context"},
-		{[]string{"agent", "run", "--agent", "sample", "--prompt", "hello", "--to-context", "kind-test"}, "--to-context"},
-		{[]string{"agent", "run", "--agent", "sample", "--prompt", "hello", "--wait", "0s"}, "--wait"},
+		{[]string{"run", "agents/sample", "--agent", "sample", "--prompt", "hello"}, "--agent"},
+		{[]string{"run", "agents/sample", "--prompt", "hello", "--prompt-file", "-"}, "--prompt"},
+		{[]string{"run", "agents/sample"}, "--prompt"},
+		{[]string{"run", "agents/sample", "--prompt", "hello", "--context", "kind-test"}, "--to-context"},
+		{[]string{"run", "--agent", "sample", "--prompt", "hello", "--to-context", "kind-test"}, "--to-context"},
+		{[]string{"run", "--agent", "sample", "--prompt", "hello", "--wait", "0s"}, "--wait"},
 		{[]string{"task", "result", "sample", "--wait", "0s"}, "--wait"},
 		{[]string{"task", "result"}, "usage"},
 	} {
@@ -44,7 +44,7 @@ func TestRunAndResultHelpShowTimeoutContract(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{[]string{"agent", "run", "--help"}, []string{"--prompt-file", "--wait", "exit code 2"}},
+		{[]string{"run", "--help"}, []string{"--prompt-file", "--wait", "exit code 2"}},
 		{[]string{"task", "result", "--help"}, []string{"--wait", "exit code 2"}},
 	} {
 		var out, errOut bytes.Buffer
@@ -94,7 +94,7 @@ func TestTaskResultWaitRequiresDuration(t *testing.T) {
 func TestRunWaitDefaultIsFiveMinutes(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	cmd, _, err := newRootCommand(&commandState{deps: deps}).Find([]string{"agent", "run"})
+	cmd, _, err := newRootCommand(&commandState{deps: deps}).Find([]string{"run"})
 	if err != nil {
 		t.Fatal(err)
 	}

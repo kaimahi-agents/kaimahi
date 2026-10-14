@@ -10,19 +10,6 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
-func newCtxCommand(state *commandState) *cobra.Command {
-	cmd := &cobra.Command{Use: "ctx [context]", Short: "Show or select the Kubernetes context", Args: usageArgs(0, 1, "kmx ctx [<context>]")}
-	cmd.RunE = appRun(state, func(a *app.App) error {
-		value := ""
-		if len(cmd.Flags().Args()) == 1 {
-			value = cmd.Flags().Arg(0)
-		}
-		return a.Ctx(value)
-	})
-	cmd.ValidArgsFunction = completeContexts
-	return cmd
-}
-
 func newContextCommand(state *commandState) *cobra.Command {
 	group := &cobra.Command{Use: "context", Short: "Show or select KMX's Kubernetes access context", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
@@ -71,30 +58,49 @@ func newQuickstartCommand(state *commandState) *cobra.Command {
 	var interactive bool
 	cmd := &cobra.Command{
 		Use:   "quickstart",
-		Short: "From nothing to an agent answering a question",
-		Long: "From nothing to an agent answering a question.\n\n" +
-			"Without --interactive, deploys the fixed hello-world agent, asks it one question and prints the answer; repeatable and safe for automation.\n" +
-			"With --interactive, opens a guided terminal UI to author your own Orka agent and choose its model while the local runtime starts.",
+		Short: "Set up a local Orka environment and an agent",
+		Long: `Set up a local Orka environment and an agent.
+
+Fixed mode (without --interactive) deploys the fixed hello-world-agent,
+asks it one question and prints its answer. Use -o json for automation.
+
+Guided mode (--interactive, experimental) requires a terminal. Author a new Orka
+Agent or choose an existing one while the local runtime is prepared. Choose a
+local openai-compatible inference source and exact model. Host Foundry/Copilot
+wizard modes and automatic Kubernetes tool attachment are retired.
+You may finish at Agent readiness without a model answer, or choose to enter chat.
+The fixed-mode default question is not submitted in guided mode.
+An explicit --task requests a first Orka Task when creating a new Agent. It is
+not run for an existing Agent. The first Task uses the Agent's deployed Provider, not host-backed chat inference.`,
+		Example: `  # Fixed first-answer path
+  kmx quickstart
+  kmx quickstart -o json
+
+  # Experimental guided setup (terminal required)
+  kmx quickstart --interactive
+
+  # Request a first Orka Task when authoring a new Agent
+  kmx quickstart --interactive --task "Who are you?"`,
 	}
 	flags := cmd.Flags()
-	flags.BoolVarP(&interactive, "interactive", "i", false, "author your own Orka agent in a guided terminal UI")
+	flags.BoolVarP(&interactive, "interactive", "i", false, "choose or author an Orka agent in an experimental guided terminal UI")
 	flags.StringVarP(&opt.Output, "output", "o", "text", "output: text|json (not with --interactive)")
 	// No --agent flag: quickstart deploys the hello-world manifest kmx
 	// carries, so a flag naming a different agent would deploy one thing and
-	// question another. Your own agent is --interactive or `kmx agent create`,
-	// and asking any agent anything is `kmx agent chat`.
-	flags.StringVar(&opt.Task, "task", config.DefaultTask, "the question to ask; with --interactive, an optional first Orka Task prompt that ignores this default")
+	// question another. Your own live agent is --interactive or `kmx create --live`,
+	// and asking any agent anything is `kmx chat`.
+	flags.StringVar(&opt.Task, "task", config.DefaultTask, "fixed-mode question; with --interactive, optional first Orka Task for a new Agent only (fixed default ignored)")
 	flags.StringVar(&wizard.Create.Instructions, "instructions", "", "file containing the system message (--interactive only)")
-	flags.StringVar(&wizard.Create.Tools, "tools", "", "comma-separated Orka tool names (--interactive only; default: k8s-get-resources)")
-	flags.StringVar(&wizard.Create.Skills, "skills", "", "comma-separated explicit Orka skill names (--interactive only)")
-	flags.StringVar(&wizard.Create.ResultServiceAccount, "result-service-account", "", "existing ServiceAccount for Task result access (--interactive only)")
-	flags.StringVar(&wizard.Create.Out, "out", "", "manifest output path (--interactive only)")
+	flags.StringVar(&wizard.Create.Tools, "tools", "", "retired quickstart tool shortcut; use tool-free native chat until suite ToolProvider support")
+	flags.StringVar(&wizard.Create.Skills, "skills", "", "unsupported guided skill shortcut; use the authored suite lifecycle")
+	flags.StringVar(&wizard.Create.ResultServiceAccount, "result-service-account", "", "unsupported guided result override; configure native result access separately")
+	flags.StringVar(&wizard.Create.Out, "out", "", "unsupported guided manifest output; use kmx create --workspace DIR")
 	flags.BoolVar(&wizard.Verbose, "verbose", false, "show chat WORKING and TIMING details (--interactive only)")
 	flags.StringVar(&wizard.AzureDiscovery, "azure-discovery", "cli", "AKS cluster listing: cli or sdk (DefaultAzureCredential) (--interactive only)")
 	flags.StringVar(&wizard.Inference, "inference", "auto", "legacy discovery hint; the guided setup always requires an explicit source/model selection (--interactive only)")
 	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"text", "json"}))
 	_ = cmd.RegisterFlagCompletionFunc("azure-discovery", staticCompletion([]string{"cli", "sdk"}))
-	_ = cmd.RegisterFlagCompletionFunc("inference", staticCompletion([]string{"auto", "copilot", "local", "foundry"}))
+	_ = cmd.RegisterFlagCompletionFunc("inference", staticCompletion([]string{"auto", "local"}))
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
 		if err := cobra.NoArgs(cmd, args); err != nil {
 			return err

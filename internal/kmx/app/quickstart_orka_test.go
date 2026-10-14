@@ -50,13 +50,13 @@ func TestQuickstartReachesAnOrkaAnswerWithoutTheLegacyRuntime(t *testing.T) {
 	}
 }
 
-// `kmx up` is the RUNTIME, and the runtime is Orka. The legacy installer
+// `kmx local up` is the RUNTIME, and the runtime is Orka. The legacy installer
 // steps are gone rather than hidden behind an explicit invocation: there is
 // no --legacy-kagent, and no step name that installs one either.
 func TestUpIsOrkaOnlyWithNoLegacyStepSurviving(t *testing.T) {
 	want := []string{"cluster", "ollama", "model", "orka"}
 	if !slices.Equal(UpDefaultSteps, want) {
-		t.Fatalf("a bare `kmx up` runs %q, want %q", UpDefaultSteps, want)
+		t.Fatalf("a bare `kmx local up` runs %q, want %q", UpDefaultSteps, want)
 	}
 	if !slices.Equal(UpSteps, want) {
 		t.Fatalf("the addressable steps are %q, want %q", UpSteps, want)
@@ -93,11 +93,11 @@ func TestQuickstartFollowUpsAreOrkaActions(t *testing.T) {
 		t.Fatalf("follow-ups are %q", next)
 	}
 	for i, want := range []string{
-		"agent chat hello-world-agent --runtime orka --namespace orka-system",
-		"agent create",
-		"orka status",
+		"kmx --context kind-test chat hello-world-agent --runtime orka --namespace orka-system 'ask it something else'",
+		"kmx --context kind-test create --help",
+		"kmx --context kind-test orka status",
 	} {
-		if !strings.Contains(next[i], want) {
+		if next[i] != want {
 			t.Errorf("follow-up %d is %q, want it to offer %q", i, next[i], want)
 		}
 	}
@@ -193,7 +193,7 @@ func TestQuickstartDriftedBundleOffersRemedies(t *testing.T) {
 	if !strings.Contains(err.Error(), "different configuration") {
 		t.Fatalf("lost the underlying drift explanation: %v", err)
 	}
-	if !strings.Contains(err.Error(), "kmx agent create") {
+	if !strings.Contains(err.Error(), "kmx create --live") {
 		t.Fatalf("missing the keep-and-rename remedy: %v", err)
 	}
 	if !strings.Contains(err.Error(), "delete the fixed "+QuickstartAgent) {
@@ -213,7 +213,7 @@ func TestQuickstartReadFailureDoesNotSuggestDeletingTheAgent(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "kubectl request failed") {
 		t.Fatalf("the read failure was not reported: %v", err)
 	}
-	if strings.Contains(err.Error(), "delete") || strings.Contains(err.Error(), "kmx agent create") {
+	if strings.Contains(err.Error(), "delete") || strings.Contains(err.Error(), "kmx create") {
 		t.Fatalf("an unreadable object was presented as drift: %v", err)
 	}
 }

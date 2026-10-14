@@ -271,7 +271,7 @@ func TestInteractiveBundleLiftDeployWritesReceiptAndConnects(t *testing.T) {
 	if receipt.Receipt.Target.Context != "kind-test" || receipt.Receipt.Resources[1].Outcome != runtime.ResourceCreated {
 		t.Fatalf("shared deploy not used: %+v", receipt)
 	}
-	for _, want := range []string{"Connected to lifted Agent", "kmx agent lift", "--inference provider:inference", "send"} {
+	for _, want := range []string{"Connected to lifted Agent", "kmx bundle lift", "--inference provider:inference", "send"} {
 		if !strings.Contains(strings.ToLower(out.String()), strings.ToLower(want)) {
 			t.Errorf("missing %q in %s", want, out.String())
 		}
@@ -309,7 +309,7 @@ func TestInteractiveBundleLiftMissingBundleLabelsUntrackedLegacyRoute(t *testing
 		t.Fatal(err)
 	}
 	_ = b.liftAgentTo(t.Context(), r, chatLiftTarget{Context: "kind-test"})
-	if !strings.Contains(out.String(), "legacy live-copy") || !strings.Contains(out.String(), "untracked by kmx agent status/evaluate") {
+	if !strings.Contains(out.String(), "legacy live-copy") || !strings.Contains(out.String(), "untracked by kmx bundle status/evaluate") {
 		t.Fatalf("missing explicit fallback warning: %s", out.String())
 	}
 }
@@ -654,7 +654,7 @@ func TestBundlePreparationRefusesUnknownToolState(t *testing.T) {
 
 func TestBundleLiftCommandQuotesAllSelectedArguments(t *testing.T) {
 	got := bundleLiftCommand("agents/agent's name", "remote context", "other-space", "inference")
-	want := `kmx agent lift 'agents/agent'"'"'s name' --to-context 'remote context' --to-namespace other-space --inference provider:inference`
+	want := `kmx bundle lift 'agents/agent'"'"'s name' --to-context 'remote context' --to-namespace other-space --inference provider:inference`
 	if got != want {
 		t.Fatalf("command = %q, want %q", got, want)
 	}

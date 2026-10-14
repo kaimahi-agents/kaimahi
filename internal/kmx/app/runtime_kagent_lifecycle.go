@@ -14,9 +14,11 @@ import (
 // and deploys into a preinstalled Kagent; it does not add Kagent discovery or
 // chat behavior to the existing runtime registry.
 type kagentRuntimeAdapter struct {
-	app      *App
-	create   *CreateOptions
-	bindings *agentruntime.KagentBindings
+	app        *App
+	create     *CreateOptions
+	bindings   *agentruntime.KagentBindings
+	lift       *kagentLiftOperation
+	evaluation *kagentEvaluationOperation
 }
 
 var _ agentruntime.LifecycleAdapter = kagentRuntimeAdapter{}
@@ -24,16 +26,16 @@ var _ agentruntime.LifecycleAdapter = kagentRuntimeAdapter{}
 func (kagentRuntimeAdapter) ID() agentruntime.ID { return agentruntime.Kagent }
 
 func (kagentRuntimeAdapter) Probe(context.Context, agentruntime.Target) (agentruntime.Probe, error) {
-	return agentruntime.Probe{}, fmt.Errorf("Kagent auto-detection is not supported; select it explicitly for create")
+	return agentruntime.Probe{}, fmt.Errorf("%w: select a supported Kagent version explicitly", &agentruntime.UnsupportedVerbError{Runtime: agentruntime.Kagent, Verb: "probe"})
 }
 
 func (kagentRuntimeAdapter) Open(context.Context, agentruntime.Target) (agentruntime.Session, error) {
-	return nil, fmt.Errorf("Kagent chat is not supported by this lifecycle adapter")
+	return nil, &agentruntime.UnsupportedVerbError{Runtime: agentruntime.Kagent, Verb: "chat"}
 }
 
 func (a kagentRuntimeAdapter) Capabilities() agentruntime.Capabilities {
-	configured := a.create != nil && a.bindings != nil
-	return agentruntime.Capabilities{Render: configured, Deploy: configured}
+	configured := (a.create != nil || a.lift != nil) && a.bindings != nil
+	return agentruntime.Capabilities{Render: configured, Deploy: configured, Status: a.lift != nil && a.bindings != nil, Evaluate: a.evaluation != nil && configured}
 }
 
 func (kagentRuntimeAdapter) ConsumedExtensions() []agentruntime.ID {
@@ -57,14 +59,18 @@ func (a kagentRuntimeAdapter) Render(_ context.Context, prepared *agentruntime.P
 	if err != nil {
 		return agentruntime.RenderedBundle{}, err
 	}
-	if portable.Extensions.Kagent == nil {
-		return agentruntime.RenderedBundle{}, fmt.Errorf("portable agent %q has no extensions.kagent block", portable.Metadata.Name)
+	extension := portable.Extensions.Kagent
+	if extension == nil {
+		if a.lift == nil {
+			return agentruntime.RenderedBundle{}, fmt.Errorf("portable agent %q has no extensions.kagent block", portable.Metadata.Name)
+		}
+		extension = &agentruntime.KagentExtension{Runtime: "go"}
 	}
 	if err := agentruntime.ValidateKagentBindings(*a.bindings); err != nil {
 		return agentruntime.RenderedBundle{}, fmt.Errorf("Kagent bindings: %w", err)
 	}
-	tools := make([]scaffold.KagentMCPToolBinding, 0, len(portable.Extensions.Kagent.Tools))
-	for _, binding := range portable.Extensions.Kagent.Tools {
+	tools := make([]scaffold.KagentMCPToolBinding, 0, len(extension.Tools))
+	for _, binding := range extension.Tools {
 		tools = append(tools, scaffold.KagentMCPToolBinding{
 			ServerKind: binding.Server.Kind,
 			ServerName: binding.Server.Name,
@@ -74,7 +80,7 @@ func (a kagentRuntimeAdapter) Render(_ context.Context, prepared *agentruntime.P
 	bundle, err := scaffold.GenerateKagent(scaffold.KagentSpec{
 		Name: portable.Metadata.Name, Namespace: a.bindings.Namespace,
 		Description: portable.Spec.Description, Instructions: portable.Spec.Instructions,
-		Runtime: portable.Extensions.Kagent.Runtime, Model: portable.Spec.Model.Name,
+		Runtime: extension.Runtime, Model: portable.Spec.Model.Name,
 		ProviderType: a.bindings.ModelConfig.Provider, BaseURL: a.bindings.ModelConfig.BaseURL,
 		SecretName: a.bindings.ModelConfig.SecretRef.Name, SecretKey: a.bindings.ModelConfig.SecretRef.Key,
 		Tools: tools,
@@ -108,6 +114,9 @@ func (a kagentRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.
 	if err != nil {
 		return agentruntime.DeployResult{}, err
 	}
+	if a.lift != nil {
+		return a.app.deployKagentBundle(ctx, bundle, rendered, *a.lift)
+	}
 	opt := *a.create
 	opt.Name = kagentObjectName(bundle.Agent)
 	opt.Namespace = kagentObjectNamespace(bundle.Agent)
@@ -115,12 +124,18 @@ func (a kagentRuntimeAdapter) Deploy(ctx context.Context, rendered agentruntime.
 	return a.app.createKagentStaged(ctx, opt, bundle, rendered)
 }
 
-func (a kagentRuntimeAdapter) Status(context.Context, agentruntime.AgentRef, agentruntime.StatusOptions) (agentruntime.Status, error) {
-	return agentruntime.Status{}, &agentruntime.UnsupportedVerbError{Runtime: a.ID(), Verb: agentruntime.VerbStatus}
+func (a kagentRuntimeAdapter) Status(ctx context.Context, ref agentruntime.AgentRef, opt agentruntime.StatusOptions) (agentruntime.Status, error) {
+	if err := a.lifecycleVerbError(a.Capabilities().Status, agentruntime.VerbStatus); err != nil {
+		return agentruntime.Status{}, err
+	}
+	return a.app.kagentBundleStatus(ctx, ref, opt)
 }
 
-func (a kagentRuntimeAdapter) Evaluate(context.Context, agentruntime.AgentRef, agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
-	return agentruntime.EvaluationReceipt{}, &agentruntime.UnsupportedVerbError{Runtime: a.ID(), Verb: agentruntime.VerbEvaluate}
+func (a kagentRuntimeAdapter) Evaluate(ctx context.Context, ref agentruntime.AgentRef, request agentruntime.EvaluationRequest) (agentruntime.EvaluationReceipt, error) {
+	if err := a.lifecycleVerbError(a.Capabilities().Evaluate, agentruntime.VerbEvaluate); err != nil {
+		return agentruntime.EvaluationReceipt{}, err
+	}
+	return a.evaluateKagentCase(ctx, ref, request)
 }
 
 func kagentBundleFromRendered(rendered agentruntime.RenderedBundle) (*scaffold.KagentBundle, error) {

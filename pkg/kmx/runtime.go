@@ -4,10 +4,6 @@ import (
 	"fmt"
 )
 
-type RuntimeOptions struct {
-	Profile string `json:"profile,omitempty"`
-}
-
 // TargetBinding is versioned, opaque deployment input for one exact target.
 // Generic KMX workflows include it in identity and pass it unchanged; only the
 // selected runtime interprets its bytes.

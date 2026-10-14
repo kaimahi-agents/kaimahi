@@ -46,11 +46,10 @@ type Options struct {
 	// Payload selects WHAT lands on the cluster this command provisions.
 	//
 	// Only `orka` remains: the kagent payload is retired along with the rest
-	// of the legacy runtime. The flag stays, and stays required on the
-	// deprecated `kmx lift`, because it is still a statement about what a
-	// command that bills money will install — and because an existing script
-	// that says `--payload kagent` must be told its platform is gone rather
-	// than quietly handed a different one.
+	// of the legacy runtime. `kmx aks up` defaults to Orka, but the flag
+	// remains a statement about what a command that bills money will install.
+	// An existing script that says `--payload kagent` must be told its platform
+	// is gone rather than quietly handed a different one.
 	Payload string
 
 	// Plan prints what would happen, where, and stops. It creates nothing
@@ -118,25 +117,21 @@ func AllSteps() []string {
 // "unknown payload" would send them looking for the right spelling of
 // something that is gone.
 //
-// The empty string keeps its reasoning rather than a bare usage line: the
-// deprecated `kmx lift` still requires the flag, and an operator who typed it
-// before the flag existed needs to know the answer changed.
+// An explicitly empty payload is invalid even though `kmx aks up` defaults
+// to Orka when the flag is omitted.
 func ValidPayload(payload string) error {
 	switch payload {
 	case PayloadOrka:
 		return nil
 	case PayloadKagent:
 		return errors.New("kmx aks up: --payload kagent is retired — the legacy kagent runtime has been\n" +
-			"  removed from kmx, and this command no longer installs it or its demo agents.\n" +
+			"  retired as an AKS installer payload; this command no longer installs it or its demo agents.\n" +
 			"  Use --payload orka, which lands Orka on the same provisioned cluster.\n" +
-			"  An existing kagent lift can still be inspected and torn down (`kmx aks down`);\n" +
-			"  what is refused is creating or resuming one.")
+			"  Run kmx targets to see supported operations on separately installed runtimes.\n" +
+			"  An existing kagent AKS provisioning run can still be inspected and torn down (`kmx aks down`);\n" +
+			"  creating or resuming that retired provisioning flow is refused.")
 	case "":
-		return errors.New("kmx lift: --payload is required, and has no default.\n" +
-			"  --payload orka     Orka, the platform this project gets agents onto\n" +
-			"  This command bills money and installs a platform. A default would mean an\n" +
-			"  existing script quietly changed which one it deploys, so the choice is yours\n" +
-			"  to state rather than ours to assume.")
+		return errors.New("kmx aks up: --payload must not be empty; use --payload orka (the default).")
 	default:
 		return fmt.Errorf("kmx aks up: unknown --payload %q — one of: %s", payload, strings.Join(Payloads, ", "))
 	}

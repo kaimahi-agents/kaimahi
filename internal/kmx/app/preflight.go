@@ -92,7 +92,7 @@ func noFetch() bool { return strings.EqualFold(strings.TrimSpace(os.Getenv("KMX_
 // PATH, specifically, rather than absolute paths at every call site: every
 // command in this package is echoed to the operator's terminal so it can be
 // copied and run by hand (internal/kmx/run), and a line reading
-// `/home/you/.config/kmx/bin/kubectl-1.37.0-linux-amd64 get pods` is not a
+// `/home/user/.config/kmx/bin/kubectl-1.37.0-linux-amd64 get pods` is not a
 // line anybody copies. It also has to be the PROCESS environment rather than
 // the Runner's: exec.Command resolves the binary against the parent's PATH,
 // not against the child's Env.

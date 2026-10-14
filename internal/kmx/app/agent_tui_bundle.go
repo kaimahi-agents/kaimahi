@@ -475,7 +475,7 @@ func (p *consoleBundlePane) lines(inner int) []string {
 		text("What is running matches "+file+".", value, 0)
 		text("A matching definition is not proof the agent answers; run a Task or evaluation for that.", muted, 0)
 	case bundleStateBehind:
-		rows = append(rows, label.Render("What kmx agent lift would change"))
+		rows = append(rows, label.Render("What kmx bundle lift would change"))
 		if t.DeployedCommit != "" {
 			text(t.DeployedCommit+" → your working copy of "+file, muted, 0)
 		}

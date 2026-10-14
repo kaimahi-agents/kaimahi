@@ -24,7 +24,8 @@ resources and list Agents and Providers. Tool details additionally
 read Orka Tools; ConfigMap-backed prompts read their referenced ConfigMap key.
 The console reads `agents.core.orka.ai` in `--namespace` (default `orka-system`)
 and nothing else. It is an Orka workspace: every operation it offers — list,
-create, chat, inference, tools, lift — is an Orka operation.
+live creation, chat, inference, tools, lift — is an Orka operation. Console
+creation stays live; it does not author or execute a local suite workspace.
 
 Without context flags, each column remembers its last `/env` selection. The
 remote column next prefers the last lift destination, then the configured kmx
@@ -176,13 +177,13 @@ over the inventory for the selected agent. It answers one question: is what is
 running the definition in Git, and if not, what is different?
 
 The pane does not compare anything itself. It asks the same report
-[`kmx agent status`](agent-lift.md) prints, for exactly the selected row's
+[`kmx bundle status`](agent-lift.md#checking-deployed-status) prints, for exactly the selected row's
 context, kubeconfig and namespace, and draws that target's state:
 
 | State | The pane shows |
 |---|---|
 | `in sync` | That the running definition matches `agent.yaml`. A match is not proof the agent answers. |
-| `behind` | What `kmx agent lift` would change: a diff of `agent.yaml` from the deployed commit to the working copy, including uncommitted edits, because the working copy is what lift reads. |
+| `behind` | What `kmx bundle lift` would change: a diff of `agent.yaml` from the deployed commit to the working copy, including uncommitted edits, because the working copy is what lift reads. |
 | `drifted` | The live field paths that changed after the last lift. Values are not shown. |
 | `not deployed`, `belongs to another bundle`, `target changed`, `unknown` | What the state means and what to do. `unknown` says plainly that it is not the same as in sync. |
 
@@ -201,7 +202,7 @@ a branch, so the full id is found again with status's own search.
 
 **Finding the bundle.** A console row is a live agent and does not record where
 its files are. The pane looks for `agents/<name>/agent.yaml`, where
-`kmx agent create` writes, relative to where the console was started;
+`kmx create --live` writes, relative to where the console was started;
 `--bundles <dir>` names another directory. With no bundle there, the pane says
 where it looked instead of guessing. A bundle there that defines a different
 agent is refused rather than compared.
@@ -212,8 +213,8 @@ it has since moved the selection; closing or reloading cancels a read still
 running. `j`/`k` and PgUp/PgDn scroll, Esc or Enter
 closes. The menu entry is last, so no existing action changes position.
 The console inventories Orka only. A Kagent bundle may exist after explicit
-create, but this pane intentionally refuses it before cluster reads; it is not
-offered as a comparison or lift target. Demo mode shows `behind`, `drifted` and
+`create --live --runtime kagent`, but this pane intentionally refuses it before
+cluster reads; it is not offered as a comparison or lift target. Demo mode shows `behind`, `drifted` and
 `unknown` from sample data.
 
 ## Chat and lift
@@ -238,7 +239,7 @@ deployment review and progress panes. Both return to a refreshed overview.
 
 `/lift <agent> new` collects resource group, AKS cluster, globally unique registry
 name and Azure region. It then restores the terminal for the existing
-`kmx lift --payload orka --step cluster` provisioning flow, which reviews the
+`kmx aks up --payload orka --step cluster` provisioning flow, which reviews the
 current Azure account and confirms the named cluster. Existing AKS defaults
 apply (one `Standard_B4ms` node, Cilium, 64 GiB disk, monitoring enabled).
 After provisioning it continues the same agent lift flow on that cluster,
@@ -254,7 +255,7 @@ Cloud provisioning and live agent deployment reuse existing operations; this
 feature's tests do not create Azure resources or prove a live AKS deployment.
 
 The bundle pane is tested against the same fake kubectl and golden bundle as
-`kmx agent status`, with real Git repositories for the behind diff (rooted
+`kmx bundle status`, with real Git repositories for the behind diff (rooted
 both at the bundle and above it, as in `<repo>/agents/<name>`), including
 uncommitted edits. Tests prove it writes nothing (including `.git/index`,
 under the condition in which git would otherwise refresh it), pins every read

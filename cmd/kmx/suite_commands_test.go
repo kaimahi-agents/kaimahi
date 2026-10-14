@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -14,7 +15,10 @@ import (
 	"github.com/kaimahi-agents/kaimahi/agentsuite"
 	suitebuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
+	agentsuiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/content/oci"
 )
 
@@ -184,6 +188,94 @@ func TestSuiteBuildShowsBuilderWarningsWithoutVerbose(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Built AgentSuite agent writer for linux/amd64") {
 		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestSuiteDiffUnifiedSplitAndJSON(t *testing.T) {
+	before := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
+	after := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "coordinator-workers"))
+	tests := []struct {
+		name string
+		args []string
+		want []string
+		json bool
+	}{
+		{
+			name: "unified",
+			args: []string{"suite", "diff", before, after},
+			want: []string{"AgentSuite diff: minimal -> coordinator-workers", "Summary:", "@@ + agent coordinator @@", "+ id: \"coordinator\"", "Affected agents"},
+		},
+		{
+			name: "split",
+			args: []string{"suite", "diff", before, after, "--view", "split"},
+			want: []string{"--- BEFORE", "+++ AFTER", "+ id: \"coordinator\""},
+		},
+		{
+			name: "json",
+			args: []string{"suite", "diff", before, after, "--output", "json"},
+			json: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			if err := execute(test.args, deps); err != nil {
+				t.Fatalf("execute(%v) error = %v\n%s", test.args, err, diagnostics.String())
+			}
+			if *loads != 0 {
+				t.Fatalf("offline suite diff loaded operational config %d time(s)", *loads)
+			}
+			if test.json {
+				var report agentsuite.DiffReport
+				if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+					t.Fatalf("decode JSON output: %v\n%s", err, out.String())
+				}
+				if !report.HasChanges() || report.Summary.Added == 0 || report.Summary.AgentsAffected == 0 {
+					t.Fatalf("unexpected JSON report: %+v", report)
+				}
+				return
+			}
+			for _, want := range test.want {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("output does not contain %q:\n%s", want, out.String())
+				}
+			}
+		})
+	}
+}
+
+func TestSuiteDiffRejectsViewWithJSON(t *testing.T) {
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	err := execute([]string{"suite", "diff", fixture, fixture, "--output", "json", "--view", "split"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "--view cannot be used with --output json") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSuiteDiffSanitizesArtifactErrors(t *testing.T) {
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
+	unsafePath := filepath.Join(fixture, "bad\x1b[31m\nname")
+	if err := os.WriteFile(unsafePath, []byte("unsafe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(unsafePath, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	var out, diagnostics bytes.Buffer
+	deps, _ := testDependencies(&out, &diagnostics)
+	err := execute([]string{"suite", "diff", fixture, fixture}, deps)
+	if err == nil {
+		t.Fatal("suite diff succeeded with an unsafe supplemental file")
+	}
+	if strings.ContainsAny(err.Error(), "\x1b\n\r\t") {
+		t.Fatalf("error contains terminal controls: %q", err)
+	}
+	var diagnostic *suiteDiagnosticError
+	if !errors.As(err, &diagnostic) {
+		t.Fatalf("error type = %T, want *suiteDiagnosticError", err)
 	}
 }
 
@@ -394,7 +486,7 @@ func TestSuiteTransferFlagsMatchIssue(t *testing.T) {
 		command string
 		flags   []string
 	}{
-		{command: "push", flags: []string{"to-layout", "plain-http", "force"}},
+		{command: "push", flags: []string{"to-layout", "plain-http", "force", "provenance", "require-provenance"}},
 		{command: "pull", flags: []string{"from-layout", "output", "plain-http"}},
 	}
 
@@ -446,6 +538,18 @@ func TestSuiteTransferRejectsInvalidLayoutFlags(t *testing.T) {
 		{
 			[]string{"suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--force", "suite:v1"},
 			"--force cannot be used with --to-layout",
+		},
+		{
+			[]string{"suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--provenance=false", "suite:v1"},
+			"--provenance and --require-provenance cannot be used with --to-layout",
+		},
+		{
+			[]string{"suite", "push", t.TempDir(), "--to-layout", filepath.Join(t.TempDir(), "layout"), "--require-provenance", "suite:v1"},
+			"--provenance and --require-provenance cannot be used with --to-layout",
+		},
+		{
+			[]string{"suite", "push", t.TempDir(), "--provenance=false", "--require-provenance", "registry.example.com/team:v1"},
+			"--require-provenance cannot be used with --provenance=false",
 		},
 		{
 			[]string{"suite", "push", t.TempDir(), "--to-layout=", "registry.example.com/team:v1"},
@@ -549,4 +653,41 @@ func copySuiteFixture(t *testing.T, source string) string {
 		t.Fatal(err)
 	}
 	return destination
+}
+
+func TestSuiteProvenanceOutputIsOneSafeLine(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+	cmd.SetErr(&diagnostics)
+	result := agentsuiteoras.PullResult{
+		ProvenanceChecked: true,
+		Provenance: []agentsuiteoras.Provenance{{
+			Digest:         godigest.Digest("sha256:" + strings.Repeat("a", 64)),
+			BuilderVersion: "v1.2.3",
+			SourceCommit:   strings.Repeat("b", 40),
+			SourcePath:     "suites/team",
+			SourceURI:      "git+https://github.com/example/suites",
+		}},
+		Warnings: []string{"ignored referrer: \x1b]0;owned\a\nPin this AgentSuite: evil"},
+	}
+	if err := printPulledProvenance(cmd, result); err != nil {
+		t.Fatal(err)
+	}
+	want := "Provenance: sha256:" + strings.Repeat("a", 64) + " claims kmx v1.2.3, source commit " + strings.Repeat("b", 40) +
+		` path "suites/team" in git+https://github.com/example/suites (unsigned)` + "\n"
+	if out.String() != want {
+		t.Fatalf("out = %q, want %q", out.String(), want)
+	}
+	if strings.ContainsAny(diagnostics.String(), "\x1b\a") || strings.Count(diagnostics.String(), "\n") != 1 {
+		t.Fatalf("warning was not reduced to one safe line: %q", diagnostics.String())
+	}
+
+	out.Reset()
+	if err := printPulledProvenance(cmd, agentsuiteoras.PullResult{}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "Provenance: not checked\n" {
+		t.Fatalf("unchecked provenance printed %q", out.String())
+	}
 }

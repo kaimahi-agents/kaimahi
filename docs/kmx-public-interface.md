@@ -24,10 +24,9 @@ Another product / CLI / UI / controller / API
   +-------------------+----------------+--------------------+
   | AgentEnvironment  | AgentSuites    | AgentDeployments   |
   | Up                | Validate       | BuildRevision      |
-  | RecoverUp         | Package        | Lift / RecoverLift |
-  | Register/Inspect  | BuildSandbox   | Status             |
-  | Down/RecoverDown  | Publish        | Retire/Recover     |
-  | Forget            | Recover...     |                    |
+  |                   | Build/Recover  | Lift / RecoverLift |
+  |                   | Push/Recover   | Status             |
+  |                   |                | Retire/Recover     |
   +-------------------+----------------+--------------------+
                          |
                          v
@@ -36,10 +35,10 @@ Another product / CLI / UI / controller / API
                          |
                          v
   +-------------------+----------------+--------------------+
-  | Platform SPIs     | Suite/OCI SPIs | Runtime SPIs       |
-  | resolve/provision | validate       | install            |
-  | inspect/remove    | package/build  | build/deploy       |
-  | recover           | publish/recover| observe/retire     |
+  | Environment impl  | Suite/OCI SPIs | Runtime SPIs       |
+  | setup composition | validate/plan  | build/deploy       |
+  |                   | build/pack     | observe/retire     |
+  |                   | store/transfer | recover            |
   +-------------------+----------------+--------------------+
                          |
                          v
@@ -51,8 +50,8 @@ internal so a consumer cannot select concrete adapters directly or couple itself
 to Kubernetes, a cloud, a registry transport, or one runtime.
 
 This diagram is architectural direction rather than a claim that the complete
-stack exists. `pkg/kmx` contains the public contracts and
-`internal/kmx/lifecycle` contains the internal ports, but the application
+stack exists. `pkg/kmx` contains the public contracts; focused internal ports
+live under `internal/kmx/agentsuite` and `internal/kmx/lifecycle`. Application
 orchestration, durable stores, production adapters, and CLI wiring are not yet
 implemented end to end.
 
@@ -62,24 +61,24 @@ implemented end to end.
 
 | Interface | Responsibility | Main operations |
 |---|---|---|
-| `AgentEnvironment` | Prepare and manage destination targets and runtimes | `Up`, `RecoverUp`, `Register`, `Inspect`, `Down`, `RecoverDown`, `Forget` |
-| `AgentSuites` | Validate, package, build, and publish AgentSuite artifacts | `Validate`, `Package`, `BuildSandbox`, `Publish`, and recovery methods |
+| `AgentEnvironment` | Establish one logical environment | `Up` |
+| `AgentSuites` | Materialize a validated definition, build its initial image-backed member set, and push those immutable outputs | `Validate`, `Build`, `RecoverBuild`, `Push`, `RecoverPush` |
 | `AgentDeployments` | Build and deploy authored revisions or sandbox images | `BuildRevision`, `Lift`, `RecoverLift`, `Status`, `Retire`, `RecoverRetire` |
 
 The definitions are in:
 
-- `pkg/kmx/target.go`: `AgentEnvironment`
+- `pkg/kmx/environment.go`: `AgentEnvironment`
 - `pkg/kmx/suite.go`: `AgentSuites`
 - `pkg/kmx/agent.go`: `AgentDeployments`
 
 The package also exposes the request, result, reference, and receipt values used
-by these interfaces. Important durable identities include `TargetRef`,
-`RuntimeRef`, `DeploymentRef`, and the receipt types.
+by these interfaces. Important durable identities include `EnvironmentRef`,
+`TargetRef`, `RuntimeRef`, `DeploymentRef`, and the receipt types.
 
-## Equivalent of `kmx up`
+## Conceptual mapping for `kmx local up`
 
-The public Go equivalent of the product operation `kmx up` is
-`AgentEnvironment.Up`:
+The setup-only Go operation maps conceptually to a bare `kmx local up`; the
+installed command does not call it yet:
 
 ```go
 package example
@@ -91,27 +90,14 @@ import (
 	"github.com/kaimahi-agents/kaimahi/pkg/kmx"
 )
 
-func prepareEnvironment(ctx context.Context, environment kmx.AgentEnvironment) (kmx.UpResult, error) {
-	setup, err := environment.Up(ctx, kmx.UpRequest{
-		Operation: "local-up-001",
-		Mode:      kmx.EnvironmentResolveOrProvision,
-		Target: kmx.TargetSpec{
-			Name:     "local",
-			Platform: "local-default",
-			Profile:  "development",
-		},
-		Runtime: "default-runtime",
-		Options: kmx.RuntimeOptions{
-			Profile: "development",
-		},
-	})
+func prepareEnvironment(ctx context.Context, environments kmx.AgentEnvironment) (kmx.Environment, error) {
+	prepared, err := environments.Up(ctx, kmx.EnvironmentSpec{Name: "local"})
 	if err != nil {
-		return kmx.UpResult{}, err
+		return kmx.Environment{}, err
 	}
 
-	fmt.Printf("target:  %s/%s\n", setup.Target.Platform, setup.Target.ID)
-	fmt.Printf("runtime: %s\n", setup.Runtime.Runtime)
-	return setup, nil
+	fmt.Printf("environment: %s\n", prepared.Ref.ID)
+	return prepared, nil
 }
 ```
 
@@ -119,99 +105,29 @@ The caller receives an `AgentEnvironment` implementation through dependency
 injection. There is intentionally no package-global client, concrete adapter, or
 public constructor yet.
 
-### Environment modes
-
-The setup mode makes target ownership intent explicit:
-
-| Mode | Meaning |
-|---|---|
-| `EnvironmentResolve` | Resolve an existing target and never provision one |
-| `EnvironmentProvision` | Provision a target without first trying to resolve one |
-| `EnvironmentResolveOrProvision` | Reuse an existing target, or provision only after established absence |
-
-`EnvironmentResolveOrProvision` is the closest match for the convergent behavior
-normally expected from `kmx up`. A resolution error is not treated as absence:
-authentication, authorization, timeout, malformed-response, throttling, and
-network failures must not trigger provisioning.
-
 ### Result
 
 `Up` returns:
 
 ```go
-type UpResult struct {
-	Operation      OperationID
-	Target         TargetRef
-	Runtime        RuntimeRef
-	Infrastructure *InfrastructureReceipt
-	RuntimeReceipt RuntimeReceipt
+type Environment struct {
+	Ref  EnvironmentRef
+	Spec EnvironmentSpec
 }
 ```
 
-`Infrastructure` is present only when this setup operation provisioned the
-target. A resolved or registered target has no infrastructure receipt because
-KMX does not own that target.
+The reference identifies a logical environment, not an exact deployment target.
+`EnvironmentSpec` deliberately carries no context, runtime, inference or
+implementation selector. Inspection, target resolution, teardown, ownership
+receipts and recovery remain deferred until production implementations prove
+their semantics. `EnvironmentSpec`, `EnvironmentRef` and `Environment` have
+closed validated JSON representations; no environment store, ownership record
+or recovery protocol is implemented.
 
-## Unknown outcomes and recovery
+## Deployment remains separate
 
-Every remotely mutating request carries a caller-created `OperationID`. If an
-operation may have changed remote state but its result cannot be established,
-the implementation returns `OutcomeUnknownError`. Recover the same operation;
-do not blindly repeat it under a new ID.
-
-```go
-setup, err := environment.Up(ctx, request)
-if err != nil {
-	var unknown *kmx.OutcomeUnknownError
-	if errors.As(err, &unknown) {
-		progress, recoverErr := environment.RecoverUp(
-			ctx,
-			unknown.OperationID(),
-		)
-		if recoverErr != nil {
-			return recoverErr
-		}
-		if !progress.Complete {
-			return fmt.Errorf("environment setup recovery is incomplete")
-		}
-		return nil
-	}
-	return err
-}
-```
-
-`UpProgress` retains infrastructure evidence when target provisioning succeeded
-but runtime installation or later verification did not complete. This allows a
-caller to resume or deliberately tear down without losing ownership evidence.
-
-## Safe teardown
-
-`Down` derives its target from the infrastructure receipt returned by a
-provisioning operation:
-
-```go
-if setup.Infrastructure == nil {
-	return fmt.Errorf("target was not provisioned by this setup")
-}
-
-teardown, err := environment.Down(ctx, kmx.DownRequest{
-	Operation:      "local-down-001",
-	Infrastructure: *setup.Infrastructure,
-})
-```
-
-The request cannot supply a second target identity that might disagree with the
-receipt. Implementations must still verify the receipt against durable ownership
-state before mutating infrastructure.
-
-An existing target recorded with `Register` has no infrastructure ownership
-receipt. It can be removed from local configuration with `Forget`, but it cannot
-be deprovisioned through `Down`.
-
-## Deploying after environment setup
-
-Environment setup and agent deployment are separate ownership domains. After
-`Up`, use `AgentDeployments` to build and lift an agent:
+Environment setup and agent deployment are separate domains. `Up` does not yet
+return the exact target/runtime values required by `AgentDeployments`:
 
 ```go
 source, err := kmx.NewAgentSource(agentYAML)
@@ -232,7 +148,7 @@ if err != nil {
 }
 
 binding, err := kmx.NewTargetBinding(
-	setup.Target,
+	target,
 	"example.dev/v1alpha1",
 	"RuntimeBinding",
 	bindingYAML,
@@ -245,14 +161,15 @@ deployment, err := deployments.Lift(ctx, kmx.LiftRequest{
 	Operation: "lift-agent-001",
 	Source:    deployable,
 	Binding:   binding,
-	Runtime:   setup.Runtime.Runtime,
+	Runtime:   runtime.Runtime,
 	Options:   kmx.LiftOptions{Reconcile: true},
 })
 ```
 
-`TargetBinding` identifies exactly one target and contains opaque,
-runtime-specific binding bytes. Generic KMX workflows include those bytes in
-identity but do not interpret them.
+Here `target` and `runtime` must come from a future exact resolution capability,
+not from `Environment`. `TargetBinding` identifies exactly one target and
+contains opaque, runtime-specific binding bytes. Generic KMX workflows include
+those bytes in identity but do not interpret them.
 
 ## CLI-to-Go mapping
 
@@ -260,19 +177,20 @@ The intended conceptual mapping is:
 
 | CLI operation | Go service operation |
 |---|---|
-| `kmx up` | `AgentEnvironment.Up` |
-| `kmx down` | `AgentEnvironment.Down` |
-| `kmx suite validate` | `AgentSuites.Validate` |
-| `kmx suite build` | `AgentSuites.BuildSandbox` (conceptual responsibility; current CLI output is experimental) |
-| `kmx suite push` | `AgentSuites.Publish` |
-| Future standalone suite packaging workflow | `AgentSuites.Package` |
-| `kmx agent lift` | `AgentDeployments.Lift` |
-| `kmx agent status` | `AgentDeployments.Status` |
-| `kmx agent retire` | `AgentDeployments.Retire` |
+| bare `kmx local up` | Conceptually `AgentEnvironment.Up`; not wired today |
+| `kmx local down` | No `AgentEnvironment` method; current behavior is unchanged |
+| `kmx suite validate` | Related to `AgentSuites.Validate`, but current command does not materialize its staged result |
+| `kmx suite build` | Current one-member experimental command is not `AgentSuites.Build` |
+| `kmx suite push` / root `kmx push --workspace DIR REF` | Current extracted-definition/workspace transfer is not `AgentSuites.Push` |
+| Future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
+| `kmx bundle lift` | `AgentDeployments.Lift` |
+| `kmx bundle status` | `AgentDeployments.Status` |
+| `kmx bundle retire` | `AgentDeployments.Retire` |
 
-This is a product-level mapping, not shared implementation today. The current
+This is a product-level direction, not shared implementation today. The current
 CLI does not call these northbound interfaces. It also provides `kmx suite pull`
-for artifact retrieval; the public `AgentSuites` contract has no pull method.
+for artifact retrieval; retrieval remains an internal input/materialization
+capability rather than another northbound suite workflow method.
 
 ## Working CLI today
 
@@ -281,11 +199,11 @@ For an end-to-end local runtime, use the CLI:
 ```bash
 export KIND_CLUSTER=kmx-local
 export KUBE_CTX=kind-kmx-local
-kmx up
+kmx local up
 kmx status
 ```
 
-A bare `kmx up` runs these steps in order:
+`kmx local up` without `--step` runs these steps in order:
 
 ```text
 cluster -> ollama -> model -> orka
@@ -294,24 +212,29 @@ cluster -> ollama -> model -> orka
 One step can be selected explicitly:
 
 ```bash
-kmx up --step cluster
-kmx up --step ollama
-kmx up --step model
-kmx up --step orka
+kmx local up --step cluster
+kmx local up --step ollama
+kmx local up --step model
+kmx local up --step orka
 ```
 
-`kmx up` prepares the runtime but does not create an agent. Use one of these
+`kmx local up` prepares the runtime but does not create an agent. Use one of these
 afterward:
 
 ```bash
+# Author and prove one native AgentSuite workspace locally.
+kmx create greeter --workspace ./greeter --model qwen2.5:3b --instructions instructions.md
+kmx eval --workspace ./greeter --to-context kind-kmx-local \
+  --inference provider:local --out ../private/passing.json
+
 # Fixed demonstration that ends with an answer.
 kmx quickstart
 
 # Interactive custom authoring on current development builds.
 kmx quickstart --interactive
 
-# Author an agent against an already prepared target.
-kmx agent create
+# Create live resources and a bundle against an already prepared target.
+kmx create --live
 ```
 
 Tagged v0.4.1 and earlier use `kmx quickstart-wizard` for custom authoring;
@@ -325,14 +248,23 @@ The Go package is alpha design evidence rather than a ready-to-instantiate SDK:
 - The interfaces are not wired to the current CLI.
 - A consumer must receive or implement `AgentEnvironment`, `AgentSuites`, and
   `AgentDeployments`.
-- The Go `Up` contract represents target plus runtime setup, not the CLI's
-  individually selectable `cluster`, `ollama`, `model`, and `orka` recipe steps.
+- The Go `Up` contract establishes logical identity only. It does not expose the
+  CLI's `cluster`, `ollama`, `model`, and `orka` recipe steps, nor resolve an
+  exact target/runtime for deployment.
+- An environment persistence store, inspection, teardown, ownership and recovery
+  are not yet public contracts; the values themselves have validated JSON.
 - Model or inference provisioning is not yet a separate public lifecycle
   contract.
 - Concrete implementations of the northbound suite and runtime services remain
-  unimplemented. The separate CLI already validates, pushes and pulls AgentSuite
-  artifacts and builds experimental images with Docker buildx. Those builds are
-  not AgentSuite-conformant; see the [suite build reference](kmx.md#experimental-agentsuite-image-build).
+  unimplemented. The separate CLI already authors native workspace source,
+  evaluates the image-free Orka and exact-v0.10.3 Go kagent profiles,
+  validates/transfers AgentSuite definitions and builds one experimental image
+  with Docker buildx. It neither builds a complete suite nor implements the
+  northbound `Push` contract, and its images are not AgentSuite-conformant; see the
+  [suite build reference](kmx.md#experimental-agentsuite-image-build).
+- Native Orka and exact-v0.10.3 Go kagent workspaces with `requiredImages: []`
+  are valid, evaluable and publishable, but are outside this first image-backed
+  northbound Build/Push contract.
 
 The authoritative contract details remain in:
 

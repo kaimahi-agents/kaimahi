@@ -18,7 +18,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 			"Task name, state and recovery instructions go to stderr; stdout contains only the answer.\n" +
 			"A Task is never retried or deleted; exit code 2 means the wait expired and\n" +
 			"the answer may not yet be readable. Use kmx task result to retrieve it later.",
-		Args: usageArgs(0, 1, "kmx agent run <bundle-dir> --prompt <text> | kmx agent run --agent <name> --prompt <text>"),
+		Args: usageArgs(0, 1, "kmx run <bundle-dir> --prompt <text> | kmx run --agent <name> --prompt <text>"),
 	}
 	cmd.Flags().StringVar(&opt.Agent, "agent", "", "run this live Orka Agent instead of a bundle")
 	cmd.Flags().StringVar(&opt.ToContext, "to-context", "", "bundle destination (default: remembered lift target)")
@@ -28,7 +28,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 	cmd.Flags().DurationVar(&opt.Wait, "wait", 5*time.Minute, "time to wait for the answer (default 5m; 10s to 9m)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "19180", "free loopback port for the temporary result forward")
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
-		if err := usageArgs(0, 1, "kmx agent run <bundle-dir> --prompt <text> | kmx agent run --agent <name> --prompt <text>")(cmd, args); err != nil {
+		if err := usageArgs(0, 1, "kmx run <bundle-dir> --prompt <text> | kmx run --agent <name> --prompt <text>")(cmd, args); err != nil {
 			return err
 		}
 		if cmd.Flags().Changed("wait") && opt.Wait == 0 {

@@ -142,8 +142,8 @@ def render_formula(tag: str, checksums: dict[str, str], asset_base: str) -> str:
             "  test do",
             '    assert_equal "kmx v#{version} (release build)",',
             '                 shell_output("#{bin}/kmx version").lines.first.chomp',
-            '    assert_match "Create, inspect, and chat with Orka agents",',
-            '                 shell_output("#{bin}/kmx agent --help")',
+            '    assert_match "Usage:",',
+            '                 shell_output("#{bin}/kmx create --help")',
             "  end",
             "end",
             "",
@@ -191,6 +191,9 @@ def selftest() -> int:
         and 'license "MIT"' in formula
         and 'shell_output("#{bin}/kmx version")' in formula,
     )
+    check("formula smoke test uses the root create route",
+          'shell_output("#{bin}/kmx create --help")' in formula
+          and 'shell_output("#{bin}/kmx agent --help")' not in formula)
     check(
         "input order does not alter output",
         formula

@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestAgentRetireCommandFlags(t *testing.T) {
-	cmd, _, err := newRootCommand(&commandState{deps: productionDependencies()}).Find([]string{"agent", "retire"})
+	cmd, _, err := newRootCommand(&commandState{deps: productionDependencies()}).Find([]string{"bundle", "retire"})
 	if err != nil || cmd == nil || cmd.Name() != "retire" {
 		t.Fatalf("retire command missing: %v", err)
 	}

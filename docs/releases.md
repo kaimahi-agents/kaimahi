@@ -5,8 +5,8 @@ version is numbered, how to install one, how to check what you got, how to
 upgrade, and what happens when an upgrade goes wrong.
 
 `@latest` and the installer's default select the newest stable tagged release;
-v0.4.1 includes the Orka v0.2.0 Helm installer, Kubernetes Tool and bundle
-lifecycle commands. Pin `@v0.4.1` for a repeatable build; `@main` is the moving
+v0.5.1 includes the Orka v0.2.0 Helm installer, Kubernetes Tool and bundle
+lifecycle commands. Pin `@v0.5.1` for a repeatable build; `@main` is the moving
 development option. Orka's own installation and upgrade limits are separate:
 see [orka.md](orka.md). This release pins the **Orka v0.2.0** chart; the
 historical Kaimahi v0.2.0 release reported Orka v0.1.3.
@@ -66,7 +66,7 @@ Orka runtime pins are independent of kmx tags:
 
 | kmx build | Orka install | Offline schema target |
 |---|---|---|
-| Kaimahi v0.4.1 release | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
+| Kaimahi v0.5.1 release | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
 | Historical Kaimahi v0.2.0 release | v0.1.3 pinned manifest | historical behavior; not an upgrade path to the current chart |
 
 There is no 1.0 promise and no support window yet. What there is: CI refuses
@@ -108,7 +108,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 
 It resolves the latest tag, downloads the binary for your platform, verifies
 its published sha256 **before** installing it, and puts it in `~/.local/bin`
-without sudo. `KMX_VERSION=v0.4.1` pins this release; `KMX_BIN_DIR=DIR`
+without sudo. `KMX_VERSION=v0.5.1` pins this release; `KMX_BIN_DIR=DIR`
 installs elsewhere. `install.sh --quickstart` installs the latest release and
 then launches the non-interactive Orka quickstart. An explicit v0.1.0
 `--quickstart` is still refused because that release predates Orka.
@@ -120,7 +120,7 @@ go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest
 ```
 
 `@latest` is the newest tagged release. Pin instead when you want a build you
-can name: `@v0.4.1`. Both go through the public Go module proxy and the Go
+can name: `@v0.5.1`. Both go through the public Go module proxy and the Go
 checksum database, so the bytes you get are the bytes the sum database
 recorded — no namespace of ours is involved, and there is nothing new to
 trust.
@@ -131,7 +131,7 @@ trust.
 preference. Every release carries binaries and a `checksums.txt`:
 
 ```bash
-version=v0.4.1
+version=v0.5.1
 base=https://github.com/kaimahi-agents/kaimahi/releases/download/$version
 curl -fsSLO "$base/kmx-linux-amd64"
 curl -fsSLO "$base/checksums.txt"
@@ -171,7 +171,7 @@ it still requires the external tools described in [getting started](getting-star
 
 ```console
 $ kmx version
-kmx v0.4.1 (release build)
+kmx v0.5.1 (release build)
   kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md
   orka     v0.2.0
   model    qwen2.5:3b
@@ -183,22 +183,56 @@ from:
 
 | First line says | You have |
 |---|---|
-| `v0.4.1 (release build)` | a binary from the release for `v0.4.1` |
-| `v0.4.1 (installed with go install)` | `go install …@v0.4.1` — the same code, built on your machine |
+| `v0.5.1 (release build)` | a binary from the release for `v0.5.1` |
+| `v0.5.1 (installed with go install)` | `go install …@v0.5.1` — the same code, built on your machine |
 | `v0.0.0-2026…-fb456eb (development build from a checkout)` | a `go build` from a clone; not a release |
 | `v0.0.0-dev+fb456eb.dirty (development build from a MODIFIED checkout)` | a clone with uncommitted changes |
 
 ## Upgrading kmx
 
-Development builds introduce `kmx context show/use` and `kmx local up/down`.
-The v0.4.1 examples below retain `ctx` and root `up/down`, which remain callable
-compatibility routes in newer builds. See [command alignment](command-semantics.md)
-for the transition policy.
+v0.5.1 uses `kmx context show/use` and `kmx local up/down` as the canonical
+commands. Historical v0.4.1 commands were `ctx` and root `up/down`; v0.5.1
+retained them as callable compatibility routes with notices on stderr. Current
+development builds remove root `ctx`, `up`, `down`, the former AKS-provisioning
+meaning of `lift`, and `lift down` outright, without retirement stubs. Replace
+them with `context show/use`, `local up/down` and `aks up/down` respectively.
+Root `lift <ref>@<digest>` is now a separate one-member packaged native Orka or
+exact-v0.10.3 Go kagent deployment command.
+Current development builds also remove the entire `kmx agent` group, without
+aliases or stubs: use root `create/chat/run`, `orka show/list`, legacy
+`bundle evaluate/lift/retire/verify/status` and root `eval diff/from-sessions`
+helpers. Root `status` remains the table-only Orka runtime report, also available
+as `orka status`.
+
+Current main also adds the unreleased workspace path: default `create <name>`
+authors one native workspace member offline. Root `eval` derives the packaged
+runtime, using `--inference` for Orka or `--bindings` for exact-v0.10.3 Go
+kagent, and stops later cases after the first non-pass. Root `push
+[--workspace DIR] REF` publishes the exact prepared OCI graph; `push
+--evaluation FILE` requires matching runtime-specific full-passing evidence for
+that exact manifest.
+Root `lift REF@sha256:DIGEST` deploys the matching packaged runtime from a
+registry or local layout with explicit private full-passing evidence and target.
+Orka uses a Ready `openai` inference Provider; kagent uses `--bindings`, creates
+new resources only and refuses occupied targets. `--plan` is GET-only. Standalone package-reference evaluation
+remains unavailable. Create, eval and push share nearest-ancestor discovery; explicit
+`--workspace DIR` selects an exact root without fallback and create initializes
+it without prompting. Terminal initialization asks `Start one here? [Y/n]`;
+nonterminal use needs `--workspace`. Invalid markers and a second member refuse
+without modifying source.
+
+Scripts that create resources or PortableAgent bundles must add `--live` for
+both runtimes, including `--no-apply`, `--dry-run` and `--out -` previews.
+`--runtime kagent` alone is not a compatibility route. Use `kmx create --live`
+for the live Orka wizard; quickstart and console stay live. See [workspace
+authoring, evaluation, publication and digest Lift](suite-workspace.md).
+See the [exact old/new mapping](../CHANGELOG.md#upgrading) and
+[command alignment](command-semantics.md) for the removal policy.
 
 Use `@latest` for the latest stable release, or pin the version you want:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.1
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
 kmx version
 ```
 
@@ -209,13 +243,13 @@ the changelog for the versions you skipped — below 1.0 a minor bump may change
 behaviour.
 
 The cluster is a separate question. A newer kmx does not touch a running
-cluster until you ask it to. The v0.4.1 release installs the pinned
+cluster until you ask it to. The v0.5.1 release installs the pinned
 Orka v0.2.0 Helm chart using Helm on PATH or a pinned/checksum-verified toolchain
-binary. `kmx up` reuses a matching kmx-owned Orka release, but refuses an
+binary. `kmx local up` reuses a matching kmx-owned Orka release, but refuses an
 existing v0.1.3 manifest installation or foreign release rather than upgrading
-it. For local kind replacement, export needed data before `kmx down` (which
+it. For local kind replacement, export needed data before `kmx local down` (which
 deletes the whole cluster: Tasks, Secrets, PVC-backed data, model data and any
-historical database still present), then run `kmx up` for a fresh installation.
+historical database still present), then run `kmx local up` for a fresh installation.
 On AKS, plan a fresh installation after backing up Orka resources, volumes/PVCs and Secrets,
 including any existing agent-execution snapshot key. Back up the new chart's
 `orka-api-agent-execution-snapshot` key with its controller volume and Orka

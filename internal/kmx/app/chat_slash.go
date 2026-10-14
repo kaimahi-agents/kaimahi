@@ -270,6 +270,73 @@ func chatInputRows(prompt, line string, width int) []string {
 	return rows
 }
 
+type chatInputLayoutOptions struct {
+	ui                  cliui.Output
+	promptKind          cliui.FocusKind
+	prompt, line, hint  string
+	width, height       int
+	framed, complete    bool
+	matches             []slashCommand
+	selected, cursorRow int
+}
+
+type chatInputLayoutResult struct {
+	rows                    []string
+	hint                    string
+	cursorRow, cursorColumn int
+}
+
+func layoutChatInput(opt chatInputLayoutOptions) chatInputLayoutResult {
+	prompt, line, hint := opt.prompt, opt.line, opt.hint
+	width, height := opt.width, opt.height
+	framed, complete := opt.framed, opt.complete
+	matches, selected := opt.matches, opt.selected
+	promptKind := opt.promptKind
+	// Unframed cursor state is reset by the caller after painting, not here.
+	cursorRow := opt.cursorRow
+	rows := chatInputRows(prompt, line, width)
+	frameCursorColumn := 0
+	if framed && !complete {
+		if len(matches) > 0 {
+			hint = ""
+		}
+		frame := opt.ui.FocusInput(promptKind, prompt, line, safeTerminal(hint), width-1)
+		rows, frameCursorColumn = frame.Rows, frame.CursorColumn
+		cursorRow = frame.CursorRow
+		popup := slashPopup(matches, selected, width-1, height-1-len(rows))
+		if len(popup) > 0 {
+			rows = append(popup, rows...)
+			cursorRow += len(popup)
+		}
+	}
+	if complete {
+		// Submission is a durable transcript, not an editing viewport. Keep
+		// every sanitized grapheme, even on terminals narrower than one glyph.
+		rows = strings.Split(ansi.Hardwrap(prompt+safeTerminal(line), width, true), "\n")
+		if lipgloss.Width(rows[len(rows)-1]) == width {
+			rows = append(rows, "")
+		}
+		if framed && promptKind == cliui.FocusMessage && strings.TrimSpace(line) != "" && !strings.HasPrefix(strings.TrimSpace(line), "/") {
+			rows = opt.ui.UserMessage(safeTerminal(line), width-1)
+		}
+		hint = ""
+	}
+	// Keep editing bounded to the visible screen, even for a large paste.
+	visible := max(1, height-1)
+	if !complete && len(rows) > visible {
+		marker := ansi.Truncate("[... input omitted ...]", width, strings.Repeat(".", min(3, width)))
+		if visible > 2 {
+			rows = append([]string{rows[0], marker}, rows[len(rows)-(visible-2):]...)
+		} else if visible == 2 {
+			rows = []string{marker, rows[len(rows)-1]}
+		} else {
+			rows = []string{marker}
+		}
+		cursorRow = min(cursorRow, len(rows)-1)
+	}
+	return chatInputLayoutResult{rows: rows, hint: hint, cursorRow: cursorRow, cursorColumn: frameCursorColumn}
+}
+
 func readSlashLine(ctx context.Context, in, out *os.File, renderer *chatRenderer, hints bool) (submittedLine string, readErr error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -444,46 +511,14 @@ func readSlashLine(ctx context.Context, in, out *os.File, renderer *chatRenderer
 		if paintedRows > 1 {
 			fmt.Fprintf(out, "\033[%dA", paintedRows-1)
 		}
-		rows := chatInputRows(prompt, line, width)
-		frameCursorColumn := 0
-		if framed && !complete {
-			if len(matches) > 0 {
-				hint = ""
-			}
-			frame := renderer.ui.FocusInput(promptKind, prompt, line, safeTerminal(hint), width-1)
-			rows, frameCursorColumn = frame.Rows, frame.CursorColumn
-			cursorRow = frame.CursorRow
-			popup := slashPopup(matches, selected, width-1, height-1-len(rows))
-			if len(popup) > 0 {
-				rows = append(popup, rows...)
-				cursorRow += len(popup)
-			}
-		}
-		if complete {
-			// Submission is a durable transcript, not an editing viewport. Keep
-			// every sanitized grapheme, even on terminals narrower than one glyph.
-			rows = strings.Split(ansi.Hardwrap(prompt+safeTerminal(line), width, true), "\n")
-			if lipgloss.Width(rows[len(rows)-1]) == width {
-				rows = append(rows, "")
-			}
-			if framed && promptKind == cliui.FocusMessage && strings.TrimSpace(line) != "" && !strings.HasPrefix(strings.TrimSpace(line), "/") {
-				rows = renderer.ui.UserMessage(safeTerminal(line), width-1)
-			}
-			hint = ""
-		}
-		// Keep editing bounded to the visible screen, even for a large paste.
-		visible := max(1, height-1)
-		if !complete && len(rows) > visible {
-			marker := ansi.Truncate("[... input omitted ...]", width, strings.Repeat(".", min(3, width)))
-			if visible > 2 {
-				rows = append([]string{rows[0], marker}, rows[len(rows)-(visible-2):]...)
-			} else if visible == 2 {
-				rows = []string{marker, rows[len(rows)-1]}
-			} else {
-				rows = []string{marker}
-			}
-			cursorRow = min(cursorRow, len(rows)-1)
-		}
+		layout := layoutChatInput(chatInputLayoutOptions{
+			ui: renderer.ui, promptKind: promptKind, prompt: prompt, line: line, hint: hint,
+			width: width, height: height, framed: framed, complete: complete,
+			matches: matches, selected: selected, cursorRow: cursorRow,
+		})
+		rows := layout.rows
+		frameCursorColumn := layout.cursorColumn
+		cursorRow, hint = layout.cursorRow, layout.hint
 		fmt.Fprint(out, "\r", strings.Join(rows, "\r\n"))
 		paintedRows = len(rows)
 		if framed && !complete {

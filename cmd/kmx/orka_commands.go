@@ -14,11 +14,11 @@ import (
 // and an interface over one implementation is the most expensive kind. When
 // a second one earns the abstraction it can have it.
 //
-// It is a separate command from `kmx up` rather than the only way to get
+// It is a separate command from `kmx local up` rather than the only way to get
 // Orka. `up` installs the pinned release as its own runtime step, on the
 // cluster it just created; this group is how the same install reaches a
 // cluster kmx did not bring up, and how that install is inspected. What it
-// does NOT carry is the runtime identity: `kmx up --step orka` provisions the
+// does NOT carry is the runtime identity: `kmx local up --step orka` provisions the
 // Task result account, and a standalone install deliberately does not, so
 // installing somebody else's platform — 17 CRDs, four
 // ValidatingAdmissionPolicies and two Deployments — never mints a grant as a
@@ -30,7 +30,7 @@ func newOrkaCommand(state *commandState) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	group.AddCommand(newOrkaInstallCommand(state), newOrkaStatusCommand(state))
+	group.AddCommand(newOrkaInstallCommand(state), newOrkaStatusCommand(state), newAgentShowCommand(state), newAgentListCommand(state))
 	return group
 }
 
@@ -58,10 +58,5 @@ func newOrkaInstallCommand(state *commandState) *cobra.Command {
 }
 
 func newOrkaStatusCommand(state *commandState) *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Report what Orka has installed, and what it can resolve",
-		Args:  cobra.NoArgs,
-		RunE:  appRun(state, func(a *app.App) error { return a.OrkaStatus() }),
-	}
+	return newStatusCommand(state)
 }

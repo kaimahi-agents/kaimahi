@@ -12,6 +12,7 @@ package app
 // nothing here and owns none of it.
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,11 +20,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -42,7 +45,7 @@ const (
 	// OrkaPathNamespaces is the guard banner's namespace list for the
 	// supported Orka path: the model server and the Orka runtime, which are
 	// the only two namespaces `kmx quickstart`, the wizard and a bare
-	// `kmx up` write to. Other commands can write to caller-selected namespaces;
+	// `kmx local up` write to. Other commands can write to caller-selected namespaces;
 	// naming a namespace this path never touches would describe another command.
 	OrkaPathNamespaces = "ollama, " + OrkaNamespace
 
@@ -53,18 +56,18 @@ const (
 	// <p> is what makes a model called `<p>/<model>` resolvable.
 	orkaProviderKind = "providers.core.orka.ai"
 
-	// orkaModelNamespace is where `kmx up` puts the keyless model server
+	// orkaModelNamespace is where `kmx local up` puts the keyless model server
 	// the default Provider points at.
 	orkaModelNamespace = "ollama"
 
 	// orkaDefaultProvider and orkaDefaultModelURL are the keyless Provider
-	// `kmx up --step orka` wires and the in-cluster endpoint it resolves
+	// `kmx local up --step orka` wires and the in-cluster endpoint it resolves
 	// against. Quickstart creates its own fixed Provider for its Agent but
 	// shares this endpoint and the placeholder key with the local Provider.
 	orkaDefaultProvider = "local"
 	orkaDefaultModelURL = "http://ollama.ollama.svc.cluster.local:11434/v1"
 
-	// orkaResultAccount is the read-only Task result account `kmx up --step
+	// orkaResultAccount is the read-only Task result account `kmx local up --step
 	// orka` provisions. Task RESULTS are read over Orka's API with a
 	// short-lived token for this account, so the account has to exist before
 	// any command can retrieve one. It is provisioned by the runtime step and
@@ -226,12 +229,12 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 	return nil
 }
 
-// stepOrka is `kmx up --step orka`: the pinned runtime, its keyless Provider
+// stepOrka is `kmx local up --step orka`: the pinned runtime, its keyless Provider
 // and the account a Task result is read with.
 //
 // It is `kmx orka install`'s work without `kmx orka install`'s framing — the
 // same fetch, digest refusal, and chart-CRDs-before-Helm order
-// — because `up` supplies its own phase, guard and completion lines. Calling
+// — because `local up` supplies its own phase, guard and completion lines. Calling
 // OrkaInstall here would nest a four-phase command inside one phase of
 // another and end it with a second "COMPLETE".
 func (a *App) stepOrka() error {
@@ -274,13 +277,37 @@ func (a *App) stepOrka() error {
 	return a.orkaResultReader()
 }
 
-// Quickstart needs the pinned runtime and placeholder Provider Secret, not the local
-// Provider: its fixed agent bundle creates a separate Provider of its own.
+// Native evaluation needs a separate inference binding. Existing local routes
+// are read-only; an absent Provider is created once, never applied over a race.
 func (a *App) stepQuickstartOrka() error {
 	if err := a.prepareOrkaRuntime(); err != nil {
 		return err
 	}
 	if err := a.ensureQuickstartProviderSecret(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(a.operationContext(), 5*time.Minute)
+	defer cancel()
+	current, err := a.readStepOrkaProvider(ctx, orkaDefaultProvider)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		opt := orkaDefaults(OrkaOptions{Model: a.Cfg.Model})
+		if a.selectedLocalModel != nil {
+			opt.Model, opt.ModelURL = a.selectedLocalModel.Model, strings.TrimSuffix(a.selectedLocalModel.Endpoint, "/")+"/v1"
+		}
+		var doc map[string]any
+		if err := yaml.Unmarshal([]byte(orkaProviderManifest(opt)), &doc); err != nil {
+			return err
+		}
+		id, err := a.createOrkaObject(ctx, OrkaNamespace, doc)
+		if err != nil {
+			return err
+		}
+		current = &stepOrkaProvider{orkaIdentity: id}
+	}
+	if err := a.waitOrkaReady(ctx, OrkaNamespace, current.orkaIdentity); err != nil {
 		return err
 	}
 	return a.orkaResultReader()
@@ -455,11 +482,77 @@ func (a *App) orkaProvider(opt OrkaOptions) error {
 		}
 	}
 
+	provider := orkaProviderManifest(opt)
+	matches, err := a.orkaProviderMatches(a.operationContext(), opt, provider)
+	if err != nil {
+		return err
+	}
+	if matches {
+		a.notef("Provider %q already matches; leaving its binding resourceVersion unchanged.", opt.Provider)
+		return nil
+	}
 	if err := a.orkaKeylessProviderSecret(opt.Provider); err != nil {
 		return err
 	}
+
+	quiet := *a.Run
+	quiet.Echo = false
+	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (Provider %s -> %s)\n",
+		a.Cfg.KubeContext, opt.Provider, opt.ModelURL)
+	if err := quiet.RunStdin([]byte(provider), "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
+		return err
+	}
+	a.notef("Provider %q resolves %s/%s against %s — no API key anywhere.",
+		opt.Provider, opt.Provider, opt.Model, opt.ModelURL)
+	return nil
+}
+
+// Normalize the complete desired spec without applying it. A first client-side
+// apply after quickstart's CREATE would otherwise change binding identity merely
+// by adding bookkeeping, even when the Provider's behavior already matches.
+func (a *App) orkaProviderMatches(ctx context.Context, opt OrkaOptions, manifest string) (bool, error) {
+	raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", orkaProviderKind, opt.Provider, "--ignore-not-found=true", "-o", "json")
+	if err != nil {
+		return false, fmt.Errorf("cannot inspect Provider %s/%s for runtime reuse: %w", OrkaNamespace, opt.Provider, err)
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return false, nil
+	}
+	var live, desired map[string]any
+	if json.Unmarshal(raw, &live) != nil || yaml.Unmarshal([]byte(manifest), &desired) != nil {
+		return false, fmt.Errorf("invalid Provider %s/%s runtime reuse input", OrkaNamespace, opt.Provider)
+	}
+	meta, _ := live["metadata"].(map[string]any)
+	uid, _ := meta["uid"].(string)
+	version, _ := meta["resourceVersion"].(string)
+	_, specObject := live["spec"].(map[string]any)
+	if live["apiVersion"] != desired["apiVersion"] || live["kind"] != "Provider" || meta["name"] != opt.Provider || meta["namespace"] != OrkaNamespace || uid == "" || version == "" || meta["deletionTimestamp"] != nil || !specObject {
+		return false, fmt.Errorf("invalid Provider %s/%s identity for runtime reuse", OrkaNamespace, opt.Provider)
+	}
+	candidate := map[string]any{"apiVersion": desired["apiVersion"], "kind": "Provider", "metadata": meta, "spec": desired["spec"]}
+	body, err := json.Marshal(candidate)
+	if err != nil {
+		return false, err
+	}
+	raw, err = a.orkaCapture(ctx, body, "-n", OrkaNamespace, "replace", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
+	if err != nil {
+		return false, fmt.Errorf("cannot normalize Provider %s/%s for runtime reuse: %w", OrkaNamespace, opt.Provider, err)
+	}
+	var admitted map[string]any
+	if json.Unmarshal(raw, &admitted) != nil {
+		return false, fmt.Errorf("invalid Provider %s/%s runtime normalization", OrkaNamespace, opt.Provider)
+	}
+	observed, _ := admitted["metadata"].(map[string]any)
+	_, specObject = admitted["spec"].(map[string]any)
+	if admitted["apiVersion"] != desired["apiVersion"] || admitted["kind"] != "Provider" || observed["name"] != opt.Provider || observed["namespace"] != OrkaNamespace || observed["uid"] != uid || observed["resourceVersion"] != version || !specObject {
+		return false, fmt.Errorf("Provider %s/%s identity changed during runtime normalization", OrkaNamespace, opt.Provider)
+	}
+	return reflect.DeepEqual(live["spec"], admitted["spec"]), nil
+}
+
+func orkaProviderManifest(opt OrkaOptions) string {
 	secret := opt.Provider + "-provider-key"
-	provider := fmt.Sprintf(`apiVersion: core.orka.ai/v1alpha1
+	return fmt.Sprintf(`apiVersion: core.orka.ai/v1alpha1
 kind: Provider
 metadata:
   name: %s
@@ -474,17 +567,6 @@ spec:
     name: %s
     key: api-key
 `, opt.Provider, OrkaNamespace, opt.ModelURL, opt.Model, secret)
-
-	quiet := *a.Run
-	quiet.Echo = false
-	fmt.Fprintf(a.Err, "kubectl --context %s apply -f - # (Provider %s -> %s)\n",
-		a.Cfg.KubeContext, opt.Provider, opt.ModelURL)
-	if err := quiet.RunStdin([]byte(provider), "kubectl", a.kubectl("apply", "-f", "-")...); err != nil {
-		return err
-	}
-	a.notef("Provider %q resolves %s/%s against %s — no API key anywhere.",
-		opt.Provider, opt.Provider, opt.Model, opt.ModelURL)
-	return nil
 }
 
 // Reuse an existing Secret without replacing a host route's key. Only an
@@ -583,13 +665,13 @@ func (a *App) OrkaReady() error {
 		switch {
 		case d.Spec.Replicas <= 0:
 			return fmt.Errorf("Orka's %s is scaled to %d in namespace %s, so nothing is running to verify.\n"+
-				"  Scale it up, or reinstall with `kmx orka install`",
-				name, d.Spec.Replicas, OrkaNamespace)
+				"  Scale it up, or reinstall with `%s`",
+				name, d.Spec.Replicas, OrkaNamespace, a.operationCommand("orka", "install"))
 		case d.Status.ObservedGeneration < d.Metadata.Generation:
 			return fmt.Errorf("Orka's %s has a spec its controller has not observed yet in namespace %s "+
 				"(generation %d, observed %d), so this lift is not complete.\n"+
-				"  Watch it finish:  kubectl -n %s rollout status deploy/%s",
-				name, OrkaNamespace, d.Metadata.Generation, d.Status.ObservedGeneration, OrkaNamespace, name)
+				"  Watch it finish:  kubectl --context %s -n %s rollout status deploy/%s",
+				name, OrkaNamespace, d.Metadata.Generation, d.Status.ObservedGeneration, shellArg(a.Cfg.KubeContext), OrkaNamespace, name)
 		case d.Status.UpdatedReplicas != d.Spec.Replicas,
 			d.Status.AvailableReplicas != d.Spec.Replicas,
 			d.Status.ReadyReplicas != d.Spec.Replicas,
@@ -599,10 +681,10 @@ func (a *App) OrkaReady() error {
 			return fmt.Errorf("Orka's %s has not finished rolling out in namespace %s: "+
 				"%d/%d updated, %d ready, %d available, %d unavailable.\n"+
 				"  A ready count alone can be the OLD pod while its replacement fails to start.\n"+
-				"  Its rollout says why:  kubectl -n %s rollout status deploy/%s\n"+
-				"  And the pods:          kubectl -n %s get pods",
+				"  Its rollout says why:  kubectl --context %s -n %s rollout status deploy/%s\n"+
+				"  And the pods:          kubectl --context %s -n %s get pods",
 				name, OrkaNamespace, d.Status.UpdatedReplicas, d.Spec.Replicas, d.Status.ReadyReplicas,
-				d.Status.AvailableReplicas, d.Status.UnavailableReplicas, OrkaNamespace, name, OrkaNamespace)
+				d.Status.AvailableReplicas, d.Status.UnavailableReplicas, shellArg(a.Cfg.KubeContext), OrkaNamespace, name, shellArg(a.Cfg.KubeContext), OrkaNamespace)
 		}
 	}
 	return nil

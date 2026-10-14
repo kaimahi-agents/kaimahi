@@ -101,7 +101,7 @@ if [[ -n "$key_env" ]]; then
   # Do not allow a nominated credential to overwrite runner control variables.
   case "$key_env" in
     MODEL_API_KEY|OPENAI_API_KEY) ;;
-    PATH|HOME|IFS|ENV|BASH*|SHELL*|KMX_BIN|KMX_HOME|MODEL_MODE|MODEL_NAME|MODEL_BASE_URL|MODEL_KEY_ENV|AIKIT_*|SESSIONS_*|ARTIFACT_DIR|BUNDLE_DIR|GITHUB_*|RUNNER_*|NO_COLOR|VERIFY|*_TIMEOUT) exit 1 ;;
+    PATH|HOME|IFS|ENV|BASH*|SHELL*|KMX_BIN|KMX_HOME|MODEL_MODE|MODEL_NAME|MODEL_BASE_URL|MODEL_KEY_ENV|AIKIT_*|SESSIONS_*|ARTIFACT_DIR|BUNDLE_DIR|GITHUB_*|RUNNER_*|NO_COLOR|VERIFY|JUDGE_PROOF|KMX_LIVE_JUDGE_*|*_TIMEOUT) exit 1 ;;
   esac
   model_key="${!key_env:-}"
   [[ -n "$model_key" ]] || exit 1
@@ -111,6 +111,10 @@ export MODEL_API_KEY='' OPENAI_API_KEY=''
 export MODEL_KEY_ENV="$key_env"
 verify="${VERIFY:-true}"
 [[ "$verify" == true || "$verify" == false ]] || exit 1
+judge_proof="${JUDGE_PROOF:-false}"
+[[ "$judge_proof" == true || "$judge_proof" == false ]] || exit 1
+# This proof owns its keyless model container; never send fixtures to a caller endpoint.
+[[ "$judge_proof" == false || "$MODEL_MODE" == aikit ]] || exit 1
 sessions_port="${SESSIONS_PORT:-18088}"
 model_port="${AIKIT_HOST_PORT:-18089}"
 sessions="127.0.0.1:$sessions_port"
@@ -197,7 +201,8 @@ if [[ -z "$kmx" ]]; then
 fi
 phase='prepare'
 gate prepare
-if [[ "$build_kmx" == true || -z "$archive_url" ]]; then command -v go >/dev/null 2>&1 || exit 1; fi
+if [[ "$build_kmx" == true || -z "$archive_url" || "$judge_proof" == true ]]; then command -v go >/dev/null 2>&1 || exit 1; fi
+if [[ "$judge_proof" == true ]]; then command -v timeout >/dev/null 2>&1 || exit 1; fi
 phase='build'
 if [[ "$build_kmx" == true ]]; then
   GOWORK=off quiet go build -o "$kmx" ./cmd/kmx
@@ -288,6 +293,21 @@ assert result["model"] == os.environ["MODEL_NAME"]
 assert type(result["created"]) in (int, float)
 assert isinstance(result["choices"][0]["message"]["content"], str) and result["choices"][0]["message"]["content"]
 PY
+fi
+
+if [[ "$judge_proof" == true ]]; then
+  phase='judge proof'
+  # Only this public fixture prints reasoning. All agent/provider logs stay private.
+  # Bound compilation too; go's timeout alone only bounds the test executable.
+  KMX_LIVE_JUDGE_BASE_URL="$MODEL_BASE_URL" KMX_LIVE_JUDGE_MODEL="$MODEL_NAME" \
+    KMX_LIVE_JUDGE_VERSION="${image##*@}" KMX_LIVE_JUDGE_EVIDENCE_DIR="$artifacts" \
+    GOWORK=off setsid timeout --signal=TERM --kill-after=5s 475s \
+    go test ./internal/kmx/app -run '^TestLiveEvaluationJudgeAIKitProof$' -count=1 -v -timeout=5m &
+  child_pid=$!
+  wait "$child_pid"
+  child_pid=''
+  # A renamed or skipped go test must not silently turn this opt-in into a no-op.
+  [[ -f "$artifacts/judge-proof.json" && ! -L "$artifacts/judge-proof.json" ]] || exit 1
 fi
 
 phase='sessions startup'

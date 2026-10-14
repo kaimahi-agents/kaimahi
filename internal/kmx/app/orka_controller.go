@@ -11,25 +11,32 @@ import (
 // The v0.1.3 kustomize manifest uses control-plane=controller-manager and
 // app.kubernetes.io/name=orka; v0.2.0's chart uses component=controller.
 type orkaDeployment struct {
+	Kind     string `json:"kind"`
 	Metadata struct {
-		Name       string            `json:"name"`
-		Labels     map[string]string `json:"labels"`
-		Generation int64             `json:"generation"`
+		Name              string            `json:"name"`
+		Namespace         string            `json:"namespace"`
+		UID               string            `json:"uid"`
+		DeletionTimestamp *string           `json:"deletionTimestamp"`
+		Labels            map[string]string `json:"labels"`
+		Generation        int64             `json:"generation"`
 	} `json:"metadata"`
 	Spec struct {
 		Replicas int32 `json:"replicas"`
 		Template struct {
 			Spec struct {
-				Containers []struct {
-					Name  string   `json:"name"`
-					Image string   `json:"image"`
-					Args  []string `json:"args"`
+				ServiceAccountName string `json:"serviceAccountName"`
+				Containers         []struct {
+					Name    string   `json:"name"`
+					Image   string   `json:"image"`
+					Command []string `json:"command"`
+					Args    []string `json:"args"`
 				} `json:"containers"`
 			} `json:"spec"`
 		} `json:"template"`
 	} `json:"spec"`
 	Status struct {
 		ObservedGeneration  int64 `json:"observedGeneration"`
+		Replicas            int32 `json:"replicas"`
 		UpdatedReplicas     int32 `json:"updatedReplicas"`
 		ReadyReplicas       int32 `json:"readyReplicas"`
 		AvailableReplicas   int32 `json:"availableReplicas"`

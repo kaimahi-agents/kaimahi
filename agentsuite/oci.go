@@ -57,6 +57,14 @@ type ociManifest struct {
 // ValidatePath validates either an extracted AgentSuite content directory or
 // an OCI image-layout directory containing one AgentSuite artifact.
 func ValidatePath(value string) (*Report, error) {
+	content, err := loadPathContent(value)
+	if err != nil {
+		return nil, err
+	}
+	return validateContent(content)
+}
+
+func loadPathContent(value string) (*contentSet, error) {
 	info, err := os.Stat(value)
 	if err != nil {
 		return nil, err
@@ -65,11 +73,11 @@ func ValidatePath(value string) (*Report, error) {
 		return nil, errors.New("AgentSuite validation currently requires an extracted content directory or OCI image-layout directory")
 	}
 	if _, err := os.Stat(filepath.Join(value, "oci-layout")); err == nil {
-		return validateOCILayout(value)
+		return loadOCILayoutContent(value)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	return ValidateDirectory(value)
+	return loadDirectory(value)
 }
 
 // ValidateDirectory validates extracted AgentSuite content without OCI layout
@@ -82,7 +90,7 @@ func ValidateDirectory(root string) (*Report, error) {
 	return validateContent(content)
 }
 
-func validateOCILayout(root string) (*Report, error) {
+func loadOCILayoutContent(root string) (*contentSet, error) {
 	layoutBytes, err := readRegularFile(filepath.Join(root, "oci-layout"), maxJSONBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read oci-layout: %w", err)
@@ -182,11 +190,9 @@ func validateOCILayout(root string) (*Report, error) {
 	if closeErr != nil {
 		return nil, closeErr
 	}
-	report, err := validateContent(content)
-	if err != nil {
-		return nil, err
-	}
-	return report, nil
+	content.sourceType = "oci-layout"
+	content.artifactDigest = candidates[0].Digest
+	return content, nil
 }
 
 func readRegularFile(name string, limit int64) ([]byte, error) {

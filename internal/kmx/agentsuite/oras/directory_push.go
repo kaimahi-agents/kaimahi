@@ -28,6 +28,9 @@ type PushResult struct {
 	Updated    bool
 	Descriptor ocispec.Descriptor
 	Report     *spec.Report
+	// Provenance is set for registry pushes only; a layout holds one manifest.
+	Provenance *Provenance
+	Warnings   []string
 }
 
 // Push deterministically packages an extracted AgentSuite directory and
@@ -38,7 +41,7 @@ func Push(
 	source string,
 	destination string,
 	reference string,
-) (PushResult, error) {
+) (result PushResult, err error) {
 	if reference == "" {
 		return PushResult{}, errors.New("AgentSuite push reference is required")
 	}
@@ -77,6 +80,11 @@ func Push(
 	}
 	defer os.RemoveAll(packedRoot)
 
+	release, err := lockLayoutPublication(ctx, destinationPath)
+	if err != nil {
+		return PushResult{}, err
+	}
+	defer finishLayoutPublication(release, &err)
 	targetPath := destinationPath
 	publishTarget := false
 	updatedTarget := false

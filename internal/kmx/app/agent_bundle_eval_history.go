@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 const (
@@ -15,7 +17,8 @@ const (
 
 // preflightEvaluationReceiptSize budgets the selected suite before execution.
 // 384 bytes covers each indented assertion row (63-byte safe ID, fixed
-// type/reason, SHA-256 digest and separators). 4 KiB covers case metadata:
+// type/reason, SHA-256 digest and separators). llmJudge adds its measured
+// serialized identity and score object. 4 KiB covers case metadata:
 // sessions can retain a 256-byte UID and unexpected model escaped up to six
 // bytes per byte, but then the harness is chat. An invalid created harness
 // returns before observing a model. IDs/digests do not escape; Orka Task names
@@ -48,23 +51,49 @@ func preflightEvaluationReceiptSize(cases []bundleEvaluationCase, metadata ...st
 			modelBytes = len(raw)
 		}
 	}
-	// modelBytes cannot exceed the receipt budget, so this addition is safe.
-	maxCases = remaining / (caseBytes + assertionBytes + modelBytes)
+	// Preserve the ordinary boundary; judge suites report a safe minimum-row
+	// limit accounting for their largest configured identity.
+	maxRowBytes := assertionBytes
+	for _, c := range cases {
+		for _, assertion := range c.Case.Assertions {
+			if size := evaluationAssertionReceiptBytes(assertion); size > maxRowBytes {
+				maxRowBytes = size
+			}
+		}
+	}
+	maxCases = remaining / (caseBytes + maxRowBytes + modelBytes)
 	for _, c := range cases {
 		if remaining < caseBytes+modelBytes {
 			return tooLarge()
 		}
 		remaining -= caseBytes + modelBytes
-		// Consume each count separately: neither summed counts nor unchecked
-		// multiplication can overflow, even for a large suite.
-		for _, count := range []int{len(c.Case.ExpectContains), len(c.Case.Assertions)} {
-			if count > remaining/assertionBytes {
+		// Consume legacy counts and explicit rows separately to keep arithmetic
+		// bounded by the remaining budget.
+		if len(c.Case.ExpectContains) > remaining/assertionBytes {
+			return tooLarge()
+		}
+		remaining -= len(c.Case.ExpectContains) * assertionBytes
+		for _, assertion := range c.Case.Assertions {
+			size := evaluationAssertionReceiptBytes(assertion)
+			if size > remaining {
 				return tooLarge()
 			}
-			remaining -= count * assertionBytes
+			remaining -= size
 		}
 	}
 	return nil
+}
+
+// The row reserve covers ordinary fields; add the actual indented judge
+// object, including HTML/quote escaping and worst-case scores/threshold.
+func evaluationAssertionReceiptBytes(assertion agentruntime.EvaluationAssertion) int {
+	if assertion.Type != "llmJudge" {
+		return 384
+	}
+	evidence := agentruntime.EvaluationJudgeEvidence{Model: assertion.JudgeModel, ModelVersion: assertion.JudgeVersion, Provenance: "user-declared", EvaluatorDigest: agentruntime.EvaluationJudgeEvaluatorDigest(), ConfigurationDigest: agentruntime.EvaluationJudgeEvaluatorDigest(), MinScore: 100, Scores: []int{100, 100}}
+	raw, _ := json.MarshalIndent(evidence, "          ", "  ")
+	// judge member, comma/newline, and indentation on its opening line.
+	return 384 + len(raw) + 24
 }
 
 func evaluationRunID(id string) bool {

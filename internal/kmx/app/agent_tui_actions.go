@@ -44,12 +44,7 @@ func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, err
 		if action.agent.External {
 			return agentTUIEnvironment{}, fmt.Errorf("editor unavailable for this runtime")
 		}
-		b := &orkaChatBackend{app: source, agent: action.agent.Name, namespace: action.agent.Namespace}
-		defer b.Close()
-		r := newChatRenderer(source.Out)
-		r.enterFullScreen()
-		defer r.leaveFullScreen()
-		return agentTUIEnvironment{}, b.pickTools(source.operationContext(), r)
+		return agentTUIEnvironment{}, fmt.Errorf("%s", agentMutationRetirement)
 	}
 	if action.kind != "lift" || !action.agent.canLift() || !action.source.Local {
 		return agentTUIEnvironment{}, fmt.Errorf("unsupported agent action")

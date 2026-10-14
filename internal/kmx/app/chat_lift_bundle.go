@@ -510,7 +510,7 @@ func (b *orkaChatBackend) finishBundleLift(ctx context.Context, renderer *chatRe
 }
 
 func bundleLiftCommand(dir, contextName, namespace, provider string) string {
-	args := []string{"kmx", "agent", "lift", dir, "--to-context", contextName}
+	args := []string{"kmx", "bundle", "lift", dir, "--to-context", contextName}
 	if namespace != "" && namespace != OrkaNamespace {
 		args = append(args, "--to-namespace", namespace)
 	}

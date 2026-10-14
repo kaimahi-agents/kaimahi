@@ -3,7 +3,7 @@
 Model selection is separate from runtime selection. Native Orka Agents use
 Providers; interactive host inference can instead use detected local models,
 Copilot or Foundry without rewriting the stored Orka Provider. See
-[Orka installation](orka.md), [agent create](kmx.md#kmx-agent-create),
+[Orka installation](orka.md), [kmx create --live](kmx.md#default-orka-contract),
 [Copilot inference](copilot-inference.md) and
 [Foundry inference](local-foundry-inference.md).
 
@@ -15,7 +15,7 @@ the selected provider and runtime.
 ## Storing an API key
 
 Native Orka Providers reference an existing namespaced Kubernetes Secret.
-Provision it separately; `agent create` accepts only its name and key reference,
+Provision it separately; `create --live` accepts only its name and key reference,
 not key bytes. Never put keys in command arguments, checked-in YAML, ConfigMaps
 or logs. The metadata-only Secret skeleton in rendered output must not be applied.
 
@@ -92,7 +92,7 @@ configuration that run creates. `kmx local up --step orka` refuses to replace an
 existing `local` Provider whose endpoint differs; its error names an explicit
 `kmx orka install --model-url` command that **replaces the host route** if you
 choose to run it. Quickstart does not require that replacement. The follow-up
-commands printed after `up` carry no explicit host endpoint — the Provider
+commands printed after `kmx local up` carry no explicit host endpoint — the Provider
 holds it.
 
 `MODEL=<tag> kmx local up --step model` pulls another Ollama model into the pod; a

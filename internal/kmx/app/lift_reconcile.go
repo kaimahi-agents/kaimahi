@@ -15,6 +15,9 @@ var errOrkaConfigurationDrift = errors.New("Orka configuration drift")
 // it. Tasks never enter this path. Compare server-defaulted desired specs
 // without writing anything.
 func (a *App) matchingOrkaResource(ctx context.Context, namespace string, desired map[string]any) (*orkaIdentity, error) {
+	if err := refuseOrkaSuiteDocument(desired); err != nil {
+		return nil, err
+	}
 	kind, name := desired["kind"].(string), orkaObjectName(desired)
 	if kind != "Provider" && kind != "Agent" {
 		return nil, fmt.Errorf("reuse only supports Provider and Agent")
@@ -28,6 +31,9 @@ func (a *App) matchingOrkaResource(ctx context.Context, namespace string, desire
 	}
 	var existing map[string]any
 	if err = json.Unmarshal(raw, &existing); err != nil {
+		return nil, err
+	}
+	if err := refuseOrkaSuiteDocument(existing); err != nil {
 		return nil, err
 	}
 	meta, _ := existing["metadata"].(map[string]any)

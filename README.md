@@ -10,7 +10,7 @@
 [![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)
 [![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)
 
-[Getting started](docs/getting-started.md) · [AgentSuite specification](agentsuite/spec.md) · [Runtime contract](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Contributing](CONTRIBUTING.md)
+[Getting started](docs/getting-started.md) · [Workspace lifecycle](docs/suite-workspace.md) · [Runtime support](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Developer guide](docs/development.md) · [Contributing](CONTRIBUTING.md)
 
 <sub>[About the ketu mark](brand/README.md#ketu-mark)</sub>
 
@@ -18,187 +18,135 @@
 
 ---
 
-Kaimahi's `kmx` CLI helps developers create an agent, prove it locally, and
-move it into a real environment without learning each runtime's manifests first.
+Kaimahi's `kmx` CLI helps developers author and prove agents for Kubernetes. A
+**workspace** is editable source; its prepared **AgentSuite** is the immutable,
+content-addressed OCI artifact. The selected runtime owns execution and
+enforcement.
+
+A workspace does not rename or replace AgentSuite. It is the mutable authoring
+tree that KMX resolves into the portable AgentSuite artifact used for publication
+and Lift.
 
 ## Create, Prove, Lift
 
-Install Docker or Podman (set `CONTAINER_ENGINE=podman` for Podman), then
-choose one CLI install route (Go requires 1.26+):
+**Create → Prove → Lift** is implemented on current `main` for one-member native
+Orka and exact-v0.10.3 Go kagent suites. The commands remain unreleased. Bounded
+CI qualifies root Lift for Orka exact reuse and kagent fresh-target creation; root
+Lift qualification does not prove every promotion, creation or partial-outcome path.
+
+> [!NOTE]
+> The table below describes the current development build, which is unreleased.
+> The latest tagged release is v0.5.1 and still uses `kmx agent ...` for its
+> PortableAgent lifecycle. See [command migration](CHANGELOG.md#upgrading) and
+> [releases](docs/releases.md) before scripting against `main`.
+
+| Stage | Current development build |
+|---|---|
+| **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline. It does not contact Kubernetes, build an image, or run a model. |
+| **Prove** | `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT` runs ordered native Orka cases once, stops later cases after the first non-pass, and writes private evidence only when all cases pass. |
+| **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx push REF` remains explicitly unevaluated. Neither form deploys. |
+| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; hidden `kmx bundle lift` remains the separate legacy PortableAgent operation. |
+
+Create and push discover the nearest ancestor `workspace.yaml`; `--workspace DIR`
+selects an exact root without fallback. Read the [workspace lifecycle](docs/suite-workspace.md)
+for identities, evidence privacy, exact evaluated-subject reuse, absent-only
+source-evidence `--promote`, partial outcomes, and fresh-evaluation requirements.
+
+## Getting Starter: Get Your First Answer
+
+Install Docker or Podman (`CONTAINER_ENGINE=podman` selects Podman), then choose
+one independent install route for the latest stable release. Go installs require
+Go 1.26 or newer:
 
 ```bash
 brew install kaimahi-agents/tap/kmx
 # or
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 # or
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.4.1
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
 ```
 
-To create your own agent and hear it answer locally, follow the interactive
-journey below. For a fixed, non-interactive hello-world demonstration instead:
+Check what was installed, then run the fixed, non-interactive local proof:
 
 ```bash
+kmx version
 kmx quickstart
 ```
 
-`kmx quickstart` provisions local kind and Orka and runs a fixed Agent's fresh Task.
-`kmx local up` provisions the local runtime without creating an Agent
-(`kmx up` on tagged v0.4.1; the grouped command is unreleased).
-`kmx quickstart --interactive` is the custom interactive path
-(`kmx quickstart-wizard` on tagged v0.4.1; the flag is unreleased):
+`kmx quickstart` creates a local kind environment, starts Ollama and pinned Orka,
+and succeeds only after a fresh Task returns a readable answer. Use
+`kmx quickstart --interactive` for the experimental guided live-agent path.
+Follow [getting started](docs/getting-started.md) for prerequisites and explicit
+context selection.
 
-```bash
-kmx quickstart --interactive
-```
+## Workspace And Live Paths
 
-Create an agent, choose **Chat with agent**, get a local answer, then enter
-`/lift`. After connecting, send a new message to confirm the lifted agent
-answers; follow [getting started](docs/getting-started.md) for the steps.
-
-`kmx agent create` defaults to Orka, writes an editable bundle, and preserves
-all existing no-flag behavior. The explicit
-`kmx agent create --runtime kagent <name>` path is a narrowly scoped,
-create-only integration for an already-installed exact Kagent v0.10.2, with an
-optional single A2A message as part of that create invocation; KMX never
-installs or upgrades it.
-`kmx agent lift` and interactive `/lift` deploy Orka bundles only to a prepared
-Orka target; the console offers a separately confirmed preparation step when
-Orka or the quickstart Tool is missing.
-`kmx agent status` reads its revision, readiness, drift and evaluation result.
-`kmx agent evaluate` runs the bundle's cases against that deployed revision.
-See the [bundle lift guide](docs/agent-lift.md) for target preparation, receipts
-and evaluation. If no local bundle exists, `/lift` labels its live-copy fallback;
-that result is not tracked by status or evaluate.
-
-## Quickstart
-
-The fixed first-answer path uses local kind, Ollama, Provider and Agent.
-The wizard prepares a local Kubernetes target while you describe your own agent.
-Bundle-backed `/lift` selects an existing Ready destination Provider; create
-one first if none is available. Only the labelled bundle-less live-copy route
-can create new cloud inference, which can incur charges. Read the
-[interactive lift guide](docs/interactive-lift.md) for behavior and recovery.
-
-Both paths create local cluster resources and result-reader RBAC. They install
-the pinned v0.2.0 Orka Helm chart in harness-v2 mode, with CRDs applied from the
-verified chart and an encryption key generated by Orka (never printed by kmx).
-The wizard also installs a read-only Kubernetes inventory Tool. KMX installs
-an exact same-namespace `OutboundAccessPolicy` for Orka to reach the Tool's
-private Service and waits for both the policy and Tool to be ready. A missing
-or invalid policy fails closed rather than falling back to the Tool's logical
-public URL. The non-interactive first-answer path does not use that Tool.
-Completed setup can remain after cancellation. Read
-[getting started](docs/getting-started.md) before using it on a shared machine.
-
-Use Podman explicitly with:
-
-```bash
-kmx --container-engine podman quickstart --interactive
-```
-
-`@main` remains the moving development option; use `@v0.4.1` for this release.
-From a checkout, `make` builds `bin/kmx` without provisioning anything.
-
-## Runtime Contract
-
-[Orka](https://github.com/orka-agents/orka) remains the first-class and default
-runtime. The explicit Kagent v0.10.2 create capability does not change any
-no-flag workflow or add Kagent installation, discovery, chat, inspection, lift,
-evaluation, console, quickstart, `up`, or AKS payload support. The selected
-runtime owns execution and enforcement; runtime choice and model provider are
-separate. Read the [runtime adapter contract](docs/runtime-adapters.md) for the
-boundaries between KMX and runtimes.
-
-## Current Commands
-
-| Goal | Current interface | Boundary |
-|---|---|---|
-| Prove the fixed local first-answer path | `kmx quickstart` | Non-interactive Orka Agent and fresh Task |
-| Provision the local runtime only | `kmx local up` | Does not create an agent; v0.4.1 uses `kmx up` |
-| Create your own local agent interactively | `kmx quickstart --interactive` | Wizard with model and agent choices; v0.4.1 uses `kmx quickstart-wizard` |
-| Create on a prepared target | `kmx agent create` | Orka is the unchanged default; explicit `--runtime kagent` is create-only for exact v0.10.2. Neither path provisions credentials |
-| Prove an answer | Interactive Orka chat or `kmx agent create --task ...` | Readiness alone is not execution proof; Kagent sends one A2A message and never retries an ambiguous result |
-| Lift a bundle to a prepared target | `kmx agent lift <bundle-dir> --to-context <ctx> --inference provider:<name>` | Orka bundles only; reconciles on an existing target and `--plan` writes nothing |
-| Compare Git and deployed revisions | `kmx agent status <bundle-dir> [--to-context <ctx>] [-o table\|json]` | Orka bundles only; read-only per-target revision, readiness, drift and evaluation |
-| Check a revision before promoting it | `kmx agent evaluate <bundle-dir> [--to-context <ctx>] [--case <id>]` | Orka bundles only; runs `eval/*.yaml` cases as Tasks and exits non-zero unless all pass |
-| Lift an agent interactively | `/lift` in chat or console | Orka only; deploys the local bundle through the same lift as the CLI, with an untracked labelled live-copy fallback when no bundle exists |
-| Inspect agents | `kmx agent list`, `show`, and interactive `chat` | Orka-only; list/show/chat default to `orka-system`, while both create paths require `--namespace` |
-
-`kmx aks up` / `kmx aks down` remain temporary compatibility routes, not
-first-class KMX commands. They are hidden from root help and shell completion.
-Setup provisions AKS and installs Orka only, with optional Azure monitoring
-add-ons; the owner configures the model Provider. It does not deploy a model
-plane or capture its credentials. Safe teardown of recorded owned resources,
-including historical runs, remains available. See the
-[AKS compatibility guide](docs/aks.md).
-
-Default Orka create writes reviewable YAML, validates it against the selected
-target, creates dependencies in order, and waits for current-generation
-readiness. Its real answer requires `--task` plus pre-existing result access.
-Explicit Kagent create writes a review artifact and portable bundle; `--out -`
-omits the bundle unless `--bundle-path` is set. Offline rendering requires
-neither an installed Kagent nor a cluster Secret. Online creation requires both,
-and creates only a new ModelConfig and Agent; it never adopts, updates, or rolls
-back. Kagent bundles are intentionally refused
-by the currently Orka-only lift, status, evaluate, console, and interactive
-`/lift` paths. Credentials, namespaces, and RBAC remain separate operator
-responsibilities. Use `--out -` or `--no-apply` for offline output and
-`--dry-run` for server admission without cluster writes. Read the complete
-[`agent create` contract](docs/kmx.md#kmx-agent-create).
-
-## Lifecycle
-
-Orka bundles, lift receipts, revision-aware status and evaluation are available
-as standalone commands. Only a successful online Kagent create writes its own
-private, prompt/answer-free receipt. Lift, status, and evaluation remain Orka-only. The
-[lifecycle direction](https://github.com/kaimahi-agents/kaimahi/issues/194)
-also discusses rollback, which does not have a standalone command. Deploying
-and verifying an earlier revision cannot undo an agent's completed external
-actions. KMX uses Git and the selected runtime rather than a separate server.
-
-## Status
-
-Kaimahi is pre-1.0 and incubating. Interactive local creation, default creation
-on the first-class Orka runtime, inspection, chat, bundle lift and interactive
-lift to an existing target, and AKS platform provisioning are implemented. The
-only current Kagent capability is explicit, create-only authoring for an already-installed exact v0.10.2, optionally ending
-in one A2A message from that invocation. Its former broad
-command surface remains retired, and historical AKS records remain
-teardown-only. Rollback remains directional.
-AKS paths use billable resources and are not continuously re-proved in CI.
-
-## Documentation
-
-| Start here | Purpose |
+| Path | What it means |
 |---|---|
-| [Getting started](docs/getting-started.md) | Prerequisites and current local workflows |
-| [AgentSuite specification](agentsuite/spec.md) | Portable OCI manifests, ToolProviders exposing callable Tools, provider sandbox images, and Agent sandbox bindings |
-| [`kmx` reference](docs/kmx.md) | Commands, safety rules, and output contracts |
-| [Runtime contract](docs/runtime-adapters.md) | Runtime, context, session, inference, lifecycle, and enforcement boundaries |
-| [Runtime setup](docs/orka.md) | First-class default implementation setup, native creation, and first task |
-| [Bundle lift](docs/agent-lift.md) | Standalone bundle-to-prepared-target command and receipts |
-| [Interactive lift](docs/interactive-lift.md) | Bundle lift with guided preparation and the labelled live-copy fallback |
-| [AKS](docs/aks.md) | Billable resource ownership, provisioning, and teardown |
-| [Releases](docs/releases.md) | Versioning, install/upgrade paths, and cutting a release |
-| [Direction issue #194](https://github.com/kaimahi-agents/kaimahi/issues/194) | Proposed definitions, adapters, and lifecycle |
-| [Documentation index](docs/README.md) | All current guides and maintainer references |
+| Workspace | Default `kmx create`, root `eval`, and root `push` operate on editable source. Digest-based root `lift` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
+| Local environment | `kmx local up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
+| Live Agent | `kmx create --live` creates runtime resources and a PortableAgent bundle. `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. |
+| Legacy bundle | Hidden but callable `kmx bundle ...` commands retain PortableAgent lift, status, evaluation, verification and retirement until suite-path parity. They are not AgentSuite commands. |
+
+## Runtime Boundaries
+
+A **runtime** executes and governs the agent. An **inference provider** is the
+separate model-access binding; selecting one does not select the other.
+
+- **Orka** is the default runtime. Its packaged workspace path supports
+  evaluation, evaluated publication and root digest Lift with exact evaluated
+  reuse; it also owns live create, run, chat and the legacy bundle lifecycle.
+- **kagent** support is exact-version and operation-specific: v0.10.2 live
+  create; v0.10.3 Go packaged workspace authoring, `eval --bindings`, evaluated
+  publication, create-only root digest Lift, and legacy bundle
+  lift/status/evaluation. Packaged status and retirement are unavailable.
+- **agentsessions** is evaluation and replay integration for the legacy bundle
+  path, not a KMX deployment target.
+
+The [runtime support matrix](docs/runtime-adapters.md#revision-pinned-support-and-qualification-matrix)
+records exact pins and evidence rather than claiming feature parity.
+
+## Safety And Status
+
+> [!IMPORTANT]
+> **Kaimahi is experimental and under active development.** It is not recommended
+> for production use. Use a dedicated test environment, review every proposed
+> mutation, and remember that hosted model calls can incur charges.
+
+- Readiness, a readable answer, and passing evaluation are different evidence.
+- `kmx status` and `kmx orka status` report Orka runtime state, not AgentSuite
+  deployment status.
+- Quickstart and guided live creation add cluster resources and result-reader
+  RBAC. The wizard also adds a [read-only Kubernetes Tool with cross-namespace
+  permissions](docs/orka-k8s-tool.md).
+- Cancellation can leave completed resources in place. `kmx local down` deletes
+  the entire named local cluster and its data.
+- Unsigned evaluation receipts and provenance are observations, not
+  authentication or promotion authority.
+
+> [!NOTE]
+> kmx is the Agent Builder and lifecycle layer, not a runtime or generic
+> governance control plane. The selected runtime owns execution and enforcement.
+
+## Guides
+
+| Need | Guide |
+|---|---|
+| Install and get one answer | [Getting started](docs/getting-started.md) |
+| Author, evaluate and publish a workspace | [Workspace lifecycle](docs/suite-workspace.md) |
+| Understand exact runtime support | [Runtime support](docs/runtime-adapters.md) |
+| Find every implemented command | [`kmx` reference](docs/kmx.md) |
+| Read the portable artifact contract | [AgentSuite specification](agentsuite/spec.md) |
+| Operate the old `agent.yaml` path | [Legacy PortableAgent bundle lifecycle](docs/agent-lift.md) |
+| Select models and inference | [Models](docs/models.md), [Copilot](docs/copilot-inference.md), [Foundry](docs/local-foundry-inference.md) |
+| Install or upgrade | [Releases](docs/releases.md) |
+| Browse all guides | [Documentation index](docs/README.md) |
 
 ## Development
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
-[developer entry-point principles](docs/entry-point-principles.md). Changes land
-through pull requests to `main` with checks green and verification actually run.
-The project name's cultural and publication boundaries are documented in
-[docs/NAMING.md](docs/NAMING.md).
-
-> [!IMPORTANT]
-> **Kaimahi is experimental and under active development.** Commands, generated
-> artifacts, and behavior may change between pre-1.0 releases. It is not yet
-> recommended for production use. Use a dedicated test environment, review every
-> proposed mutation, and [open an issue](https://github.com/kaimahi-agents/kaimahi/issues)
-> with feedback, bugs, or ideas.
-
-> [!NOTE]
-> KMX is the Agent Builder and lifecycle layer, not a runtime or generic
-> governance control plane. The selected runtime owns execution and enforcement.
-> See the [runtime contract](docs/runtime-adapters.md) for the current boundary.
+From a checkout, `make` builds `bin/kmx` without provisioning. Start with the
+[developer guide](docs/development.md), [codebase overview](docs/codebase-overview.md),
+and [interface baseline](docs/interface-baseline.md). The [repository map](docs/repository-map.md)
+classifies tracked source and scaffolding; [contributing](CONTRIBUTING.md) defines
+verification and pull-request expectations. See [naming](docs/NAMING.md) for
+publication boundaries.

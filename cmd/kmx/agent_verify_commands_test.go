@@ -16,10 +16,10 @@ func TestAgentVerifyRequiresOperatorDestination(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"agent", "verify", "unused.json"}, "--sessions is required"},
-		{[]string{"agent", "verify", "unused.json", "--sessions", " "}, "--sessions is required"},
-		{[]string{"agent", "verify", "unused.json", "--sessions", "127.0.0.1:8080", "--sessions-ca", " "}, "--sessions-ca requires a non-empty"},
-		{[]string{"agent", "verify", "unused.json", "--sessions", "127.0.0.1:8080", "--timeout", "0s"}, "--timeout must be"},
+		{[]string{"bundle", "verify", "unused.json"}, "--sessions is required"},
+		{[]string{"bundle", "verify", "unused.json", "--sessions", " "}, "--sessions is required"},
+		{[]string{"bundle", "verify", "unused.json", "--sessions", "127.0.0.1:8080", "--sessions-ca", " "}, "--sessions-ca requires a non-empty"},
+		{[]string{"bundle", "verify", "unused.json", "--sessions", "127.0.0.1:8080", "--timeout", "0s"}, "--timeout must be"},
 	} {
 		var out bytes.Buffer
 		deps, loads := testDependencies(&out, &out)
@@ -42,7 +42,7 @@ func TestAgentVerifyBypassesClusterConfiguration(t *testing.T) {
 		calls++
 		return nil, errors.New("broken cluster configuration")
 	}
-	err := execute([]string{"agent", "verify", filepath.Join(t.TempDir(), "absent.json"), "--sessions", "127.0.0.1:8080"}, deps)
+	err := execute([]string{"bundle", "verify", filepath.Join(t.TempDir(), "absent.json"), "--sessions", "127.0.0.1:8080"}, deps)
 	if calls != 0 || err == nil || !strings.Contains(err.Error(), "read sessions receipt") {
 		t.Fatalf("calls=%d err=%v", calls, err)
 	}

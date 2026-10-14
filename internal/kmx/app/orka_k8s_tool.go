@@ -334,8 +334,18 @@ func (a *App) attachQuickstartK8sTool(agent, namespace string) error {
 		return err
 	}
 	patch, err := quickstartK8sToolPatch(raw)
-	if err != nil || patch == nil {
+	if err != nil {
 		return err
+	}
+	if patch == nil {
+		var object orkaObject
+		if json.Unmarshal(raw, &object) != nil || object.Kind != "Agent" || object.Metadata.Name != agent || object.Metadata.Namespace != namespace || object.Metadata.UID == "" || object.Metadata.Generation < 1 || object.Metadata.DeletionTimestamp != nil {
+			return fmt.Errorf("existing Agent identity is unavailable; refresh and select a live Agent")
+		}
+		if !orkaCurrentGenerationReady(&object, object.Metadata.Generation) {
+			return fmt.Errorf("existing Agent is not Ready at its current generation; inspect it before reconnecting")
+		}
+		return nil
 	}
 	raw, err = a.orkaCapture(ctx, nil, "-n", namespace, "patch", "agents.core.orka.ai", agent, "--type=json", "-p", string(patch), "-o", "json")
 	if err != nil {

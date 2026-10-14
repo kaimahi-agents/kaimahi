@@ -88,7 +88,7 @@ func TestAzureAPIKeyConnectorReadsDeploymentAndVersion(t *testing.T) {
 	}
 }
 
-func TestConsoleAzureClusterRefusesDifferentEffectiveModel(t *testing.T) {
+func TestConsoleAzureClusterEditingRetired(t *testing.T) {
 	a := &App{Cfg: &config.Config{}, Run: &run.Runner{}}
 	env := agentTUIEnvironment{Name: "test"}
 	agent := agentTUIAgent{Name: "sample", Namespace: "orka-system"}
@@ -101,8 +101,8 @@ func TestConsoleAzureClusterRefusesDifferentEffectiveModel(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			source := consoleInferenceSource{Kind: "cluster", Name: "azure", Provider: "azure-openai", Model: tc.providerDefault, AzureDeployment: "chat-prod", Endpoint: "https://example.openai.azure.com"}
 			err := a.consoleSaveInference(t.Context(), env, agent, consoleInferenceSnapshot{}, source, tc.override)
-			if err == nil || !strings.Contains(err.Error(), "chat-prod") || !strings.Contains(err.Error(), "other-deployment") || !strings.Contains(err.Error(), "effective model") {
-				t.Fatalf("cluster Provider model mismatch not refused before patch: %v", err)
+			if err == nil || !strings.Contains(err.Error(), "authored member/workspace") || !strings.Contains(err.Error(), "eval → push → lift") {
+				t.Fatalf("retired Provider edit not refused before patch: %v", err)
 			}
 		})
 	}

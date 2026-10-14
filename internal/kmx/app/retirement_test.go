@@ -22,16 +22,25 @@ import (
 func TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster(t *testing.T) {
 	empty := t.TempDir()
 	t.Setenv("PATH", empty)
+	t.Setenv("KMX_TOOLCHAIN", "off")
 	var out bytes.Buffer
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test"}, Run: &run.Runner{}, Out: &out, Err: &out}
 	err := a.ChatWithOptions(ChatOptions{Agent: "demo", Runtime: "kagent"})
 	if err == nil {
 		t.Fatal("the retired runtime was accepted")
 	}
-	for _, want := range []string{"kagent", "orka"} {
+	for _, want := range []string{"kagent", "unsupported for chat", "kmx targets", "orka"} {
 		if !strings.Contains(strings.ToLower(err.Error()), want) {
-			t.Fatalf("the refusal does not name %q: %v", want, err)
+			t.Errorf("the refusal does not name %q: %v", want, err)
 		}
+	}
+	for _, misleading := range []string{"removed from kmx", "drop the flag", "--runtime orka", "Kagent"} {
+		if strings.Contains(err.Error(), misleading) {
+			t.Errorf("the refusal misleadingly says %q: %v", misleading, err)
+		}
+	}
+	if out.Len() != 0 {
+		t.Fatalf("refused chat emitted output: %s", &out)
 	}
 }
 

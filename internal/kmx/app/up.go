@@ -10,15 +10,15 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
-// UpSteps are the individually addressable steps of `kmx up`, and they are
+// UpSteps are the individually addressable steps of `kmx local up`, and they are
 // exactly the supported sequence. The three legacy installer steps that once
 // sat beyond them are gone rather than hidden: naming one is an unknown step,
 // refused locally, not a runtime kmx still knows how to put on a cluster.
 var UpSteps = []string{"cluster", "ollama", "model", "orka"}
 
-// UpDefaultSteps is what a bare `kmx up` runs: a cluster, a keyless model
+// UpDefaultSteps is what a bare `kmx local up` runs: a cluster, a keyless model
 // server and the pinned Orka runtime. It deploys no agent — `kmx quickstart`
-// is the command that ends with one answering, and `kmx agent create` is the
+// is the command that ends with one answering, and `kmx create --live` is the
 // one that authors your own.
 //
 // It holds the same four names as UpSteps, and that is the point rather than
@@ -95,7 +95,7 @@ func (a *App) Up(step string) error {
 
 	if step == "" {
 		a.complete("Runtime setup finished", started)
-		a.notef("\nTRY   %s", a.operationCommand("agent", "create"))
+		a.notef("\nTRY   %s", a.operationCommand("create", "--live"))
 	}
 	return nil
 }
@@ -194,7 +194,7 @@ func (a *App) upDependencies(steps []string) []dependency {
 // only place that default survives the guard, and creating the cluster is
 // what puts a context in the kubeconfig — so without this, the NEXT bare
 // command would be refused for pointing at a name nobody picked, on a
-// machine where kmx had just picked it. An explicit `kmx ctx` choice is
+// machine where kmx had just picked it. An explicit `kmx context use` choice is
 // never overwritten, and a per-invocation KIND_CLUSTER or --context never
 // becomes sticky.
 func (a *App) rememberInventedContext() {
@@ -204,7 +204,7 @@ func (a *App) rememberInventedContext() {
 	path, err := config.WriteSelectedContext(a.Cfg.KubeContext)
 	if err != nil {
 		// Not fatal: the cluster is up, and the cost of failing here is one
-		// `kmx ctx` the operator types themselves.
+		// `kmx context use <name>` the operator types themselves.
 		a.notef("could not record %q as the context kmx acts on (%v) — set it with: kmx context use %s",
 			a.Cfg.KubeContext, err, shellArg(a.Cfg.KubeContext))
 		return
@@ -258,7 +258,7 @@ func (a *App) stepCluster() (err error) {
 			}
 			return a.waitClusterServing()
 		}
-		if err := a.Run.Run("kind", "create", "cluster", "--name", a.Cfg.KindCluster); err != nil {
+		if err := a.createKindCluster(); err != nil {
 			return err
 		}
 		return a.waitClusterServing()
@@ -285,11 +285,25 @@ func (a *App) stepCluster() (err error) {
 		if err := a.Run.Run("podman", append([]string{"start"}, names...)...); err != nil {
 			return err
 		}
-	} else if err := a.Run.Run("kind", "create", "cluster", "--name", a.Cfg.KindCluster); err != nil {
+	} else if err := a.createKindCluster(); err != nil {
 		return err
 	}
 
 	return a.waitClusterServing()
+}
+
+func (a *App) createKindCluster() error {
+	// A shorter kubelet sync is intended to limit Orka's webhook Secret
+	// projection jitter on new small local clusters; existing nodes stay untouched.
+	cfg := []byte(`apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+kubeadmConfigPatches:
+- |
+  apiVersion: kubelet.config.k8s.io/v1beta1
+  kind: KubeletConfiguration
+  syncFrequency: 5s
+`)
+	return a.Run.RunStdin(cfg, "kind", "create", "cluster", "--name", a.Cfg.KindCluster, "--config", "-")
 }
 
 func (a *App) ensureKindContext() error {

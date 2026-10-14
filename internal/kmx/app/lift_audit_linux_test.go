@@ -37,7 +37,7 @@ func TestLiftDownInteractiveConfirmationReachesCarriedScript(t *testing.T) {
 				t.Fatal(err)
 			}
 			// A record is the account of what a run landed, so seeding one
-			// states a payload. Teardown itself takes none: `lift down`
+			// states a payload. Teardown itself takes none: `aks down`
 			// removes what the record lists, not what a flag claims.
 			opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo(rg)", Cluster: "demo-cluster"}
 			liftAuditRecord(t, a, opt, lift.Pre{}, true)
