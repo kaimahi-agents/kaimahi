@@ -180,6 +180,45 @@ func TestEvaluationAssertionsMatchSchemasAndSemantics(t *testing.T) {
 	}
 }
 
+func TestEvaluationCaseRunPolicy(t *testing.T) {
+	schema := compileReferenceSchema(t, "eval-case.schema.json")
+	tests := []struct {
+		name        string
+		fields      string
+		schemaValid bool
+		valid       bool
+	}{
+		{"default single run", "", true, true},
+		{"all runs must pass", `,"runs":3`, true, true},
+		{"minimum passes", `,"runs":3,"minPasses":2`, true, true},
+		{"one run one pass", `,"runs":1,"minPasses":1`, true, true},
+		{"zero runs", `,"runs":0`, false, false},
+		{"null runs", `,"runs":null`, false, false},
+		{"min passes without runs", `,"minPasses":1`, false, false},
+		{"zero min passes", `,"runs":3,"minPasses":0`, false, false},
+		{"null min passes", `,"runs":3,"minPasses":null`, false, false},
+		{"min passes exceeds runs", `,"runs":2,"minPasses":3`, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte(`{"schemaVersion":"1.0.0-draft","mediaType":"application/vnd.agentsuite.eval.case.v1+json","id":"case","input":"Question"` + tt.fields + `,"assertions":[{"id":"answer","type":"contains","value":"yes"}]}`)
+			validateSchemaJSON(t, schema, string(data), tt.schemaValid)
+			root, _ := writeEvaluationSuite(t, func(root string, index *EvaluationIndex) {
+				index.Cases = []FileRef{{Path: "evals/writer/cases/case.json", Digest: mustWriteJSONBytes(t, root, "evals/writer/cases/case.json", data)}}
+				for _, name := range []string{"capital", "arithmetic"} {
+					if err := os.Remove(filepath.Join(root, "evals/writer/cases/"+name+".json")); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+			_, err := ValidatePath(root)
+			if (err == nil) != tt.valid {
+				t.Fatalf("ValidatePath error = %v, valid = %v", err, tt.valid)
+			}
+		})
+	}
+}
+
 func TestEvaluationCaseStrictness(t *testing.T) {
 	base := string(evaluationFixture(t, "capital"))
 	for _, tt := range []struct {

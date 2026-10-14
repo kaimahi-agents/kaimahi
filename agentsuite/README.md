@@ -41,6 +41,9 @@ an OCI image-layout directory and returns a conformance report. Consumers that
 read loose manifests should use `ValidateDirectory` to validate extracted
 content explicitly, without OCI layout auto-detection.
 
+The Go validator compiles evaluation regex assertions with `regexp`, whose
+accepted expression syntax is RE2.
+
 Builders, packers, registry transfer, sandbox-image construction, and
 builder-owned image metadata are implementation concerns and are not part of
 this package.

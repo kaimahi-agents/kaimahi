@@ -117,6 +117,8 @@ type EvaluationCase struct {
 	MediaType     string                `json:"mediaType"`
 	ID            string                `json:"id"`
 	Input         string                `json:"input"`
+	Runs          *int                  `json:"runs,omitempty"`
+	MinPasses     *int                  `json:"minPasses,omitempty"`
 	Assertions    []EvaluationAssertion `json:"assertions"`
 }
 

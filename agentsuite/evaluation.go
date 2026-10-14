@@ -123,6 +123,9 @@ func (v *validator) validateEvaluationIndex(agent string, ref FileRef, files map
 		if caseRef.Path != prefix+c.ID+".json" {
 			return errors.New("evaluation case filename must match its id")
 		}
+		if err := validateEvaluationRunPolicy(c, data); err != nil {
+			return err
+		}
 		if strings.TrimSpace(c.Input) == "" || len(c.Assertions) == 0 || len(c.Assertions) > maxEvaluationAssertions {
 			return errors.New("evaluation case requires input and 1..1000 assertions")
 		}
@@ -142,6 +145,35 @@ func (v *validator) validateEvaluationIndex(agent string, ref FileRef, files map
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+func validateEvaluationRunPolicy(c EvaluationCase, raw []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	runsRaw, hasRuns := fields["runs"]
+	minPassesRaw, hasMinPasses := fields["minPasses"]
+	if hasRuns && strings.TrimSpace(string(runsRaw)) == "null" ||
+		hasMinPasses && strings.TrimSpace(string(minPassesRaw)) == "null" {
+		return errors.New("evaluation runs and minPasses must not be null")
+	}
+	if !hasRuns {
+		if hasMinPasses {
+			return errors.New("evaluation minPasses requires runs")
+		}
+		return nil
+	}
+	if c.Runs == nil || *c.Runs < 1 {
+		return errors.New("evaluation runs must be a positive integer")
+	}
+	if !hasMinPasses {
+		return nil
+	}
+	if c.MinPasses == nil || *c.MinPasses < 1 || *c.MinPasses > *c.Runs {
+		return errors.New("evaluation minPasses must be positive and no greater than runs")
 	}
 	return nil
 }

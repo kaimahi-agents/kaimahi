@@ -510,7 +510,9 @@ A case is a closed JSON document with REQUIRED `schemaVersion: "1.0.0-draft"`,
 `mediaType: "application/vnd.agentsuite.eval.case.v1+json"`, `id`, `input`,
 and ordered `assertions`. `input` MUST be a nonblank string. Case and assertion
 ids match `^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`; assertion ids MUST be unique
-within a case.
+within a case. A case MAY contain positive integer `runs` and `minPasses`
+fields. `minPasses` requires `runs` and MUST NOT exceed it. Explicit `null` is
+invalid for either field.
 
 ```json
 {
@@ -524,6 +526,10 @@ within a case.
   ]
 }
 ```
+
+`runs` defaults to 1. Without `minPasses`, all runs MUST pass; otherwise at
+least `minPasses` MUST pass. Any unknown run makes the case unknown. These
+fields define authored policy, not execution mechanics.
 
 Each assertion has REQUIRED `id` and `type`, an OPTIONAL boolean `critical`
 (default `true`), and only the operands applicable to its type:
@@ -539,7 +545,7 @@ Each assertion has REQUIRED `id` and `type`, an OPTIONAL boolean `critical`
 
 `value` for text assertions and `tool` MUST be nonblank single-line strings
 without control characters. `pattern` MUST be nonblank, at most 1,024 UTF-8
-bytes, and valid RE2 syntax as accepted by Go's `regexp` package. `rubric` MUST
+bytes, and valid RE2 syntax. `rubric` MUST
 be nonblank, at most 4,096 UTF-8 bytes, and contain no control characters except
 newline and tab. `minScore` MUST be an integer from 0 to 100. `judgeModel` and
 `judgeVersion` MUST be nonblank printable ASCII strings of at most 256 bytes;
