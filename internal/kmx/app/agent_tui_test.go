@@ -47,8 +47,8 @@ func TestAgentTUINavigationAndInputModes(t *testing.T) {
 		t.Fatal("escape did not close command bar")
 	}
 	m = tuiKey(m, 'L', "L")
-	if m.input.Value() != "/lift assistant " {
-		t.Fatalf("lift shortcut=%q", m.input.Value())
+	if m.status != interactiveLiftRetirement || m.command {
+		t.Fatalf("retired lift shortcut=%q", m.status)
 	}
 	m = tuiKey(m, tea.KeyEsc, "")
 	m.columns[0].Selection = 2 // The external runtime has neither chat nor lift.
@@ -58,44 +58,23 @@ func TestAgentTUINavigationAndInputModes(t *testing.T) {
 	}
 }
 
-func TestAgentTUILiftCompletionAndDispatch(t *testing.T) {
+func TestAgentTUIRetiredLiftCompletionAndQualifiedChat(t *testing.T) {
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
-	m.opt.Demo = false // Test dispatch without executing the resulting action.
-	m = tuiKey(m, '/', "/")
-	m = tuiKey(m, 'l', "li")
-	m = tuiKey(m, tea.KeyTab, "")
-	if m.input.Value() != "/lift " {
-		t.Fatal(m.input.Value())
+	m.opt.Demo = false
+	m.input.SetValue("/li")
+	if len(m.suggestions()) != 0 {
+		t.Fatal("retired Lift is suggested")
 	}
-	choices := m.suggestions()
-	if len(choices) != 2 || choices[0].value != "assistant" {
-		t.Fatalf("agent suggestions=%+v", choices)
-	}
-	m = tuiKey(m, tea.KeyTab, "")
-	choices = m.suggestions()
-	if len(choices) != 2 || choices[0].value != "remote-demo" || choices[1].value != "new" {
-		t.Fatalf("targets=%+v", choices)
-	}
-	m = tuiKey(m, tea.KeyTab, "")
-	if m.action != nil {
-		t.Fatal("completion executed an operation")
-	}
-	m = tuiKey(m, tea.KeyEnter, "")
-	if m.action == nil || m.action.kind != "lift" || m.action.agent.Name != "assistant" || m.action.source.Name != "kind-local-demo" || m.action.target.Name != "remote-demo" {
-		t.Fatalf("action=%+v", m.action)
-	}
-	// Same-named agents in different namespaces require a qualified identity.
-	m.action = nil
 	a := m.columns[0].Agents[0]
 	a.Namespace = "other-agents"
 	m.columns[0].Agents = append(m.columns[0].Agents, a)
 	updated, _ := m.execute("/chat assistant")
 	if updated.(agentTUIModel).action != nil {
-		t.Fatal("ambiguous agent name dispatched")
+		t.Fatal("ambiguous chat name dispatched")
 	}
 	updated, _ = m.execute("/chat orka/other-agents/assistant")
 	if updated.(agentTUIModel).action.agent.Namespace != "other-agents" {
-		t.Fatal("qualified agent routed to wrong namespace")
+		t.Fatal("qualified chat routed to wrong namespace")
 	}
 }
 
@@ -109,28 +88,12 @@ func TestAgentTUICommandsValidateAndDemoDoesNotDispatch(t *testing.T) {
 		}
 	}
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
-	updated, _ := m.execute("/lift")
-	m = updated.(agentTUIModel)
-	if !m.command || m.input.Value() != "/lift " {
-		t.Fatal("bare /lift did not prompt for agent")
-	}
-	updated, _ = m.execute("/lift assistant new")
-	m = updated.(agentTUIModel)
-	if m.form == nil {
-		t.Fatal("new environment did not open form")
-	}
-	m = tuiKey(m, tea.KeyEsc, "")
-	if m.form != nil || m.action != nil {
-		t.Fatal("cancel retained pending cloud action")
-	}
-	updated, _ = m.execute("/lift assistant new")
-	m = updated.(agentTUIModel)
-	for _, field := range []string{"demo-rg", "demo-aks", "demoregistry", "westus3"} {
-		m.input.SetValue(field)
-		m = tuiKey(m, tea.KeyEnter, "")
-	}
-	if m.form != nil || m.action != nil || !strings.Contains(m.status, "nothing created") {
-		t.Fatal("demo form dispatched cloud operation")
+	for _, line := range []string{"/lift", "/lift assistant new"} {
+		updated, _ := m.execute(line)
+		m = updated.(agentTUIModel)
+		if m.command || m.action != nil || m.status != interactiveLiftRetirement {
+			t.Fatal("retired Lift opened workflow")
+		}
 	}
 }
 
@@ -158,7 +121,7 @@ func TestAgentTUIRefreshRetainsIdentityAndRejectsStaleReads(t *testing.T) {
 
 func TestAgentTUIViewFitsTerminalAndSanitizesMetadata(t *testing.T) {
 	for _, size := range [][2]int{{100, 30}, {64, 18}, {81, 24}, {40, 12}} {
-		for _, mode := range []string{"overview", "command", "details", "actions", "help", "form"} {
+		for _, mode := range []string{"overview", "command", "details", "actions", "help"} {
 			m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 			m.width, m.height = size[0], size[1]
 			m.input.SetWidth(max(1, m.width-4))
@@ -173,8 +136,6 @@ func TestAgentTUIViewFitsTerminalAndSanitizesMetadata(t *testing.T) {
 				m.actionsOpen = true
 			case "help":
 				m.help = true
-			case "form":
-				m.form = []string{"", "", "", "westus3"}
 			}
 			view := m.View()
 			if !view.AltScreen {
@@ -479,7 +440,7 @@ func TestAgentTUIActionsPopupCapabilitiesAndShortcuts(t *testing.T) {
 	if !m.actionsOpen || m.details {
 		t.Fatal("enter should open actions, not inspect")
 	}
-	for _, label := range []string{"ACTIONS · assistant", "Inspect agent", "Chat with agent", "Lift to remote environment", "LOCAL", "REMOTE"} {
+	for _, label := range []string{"ACTIONS · assistant", "Inspect agent", "Chat with agent", "LOCAL", "REMOTE"} {
 		if !strings.Contains(ansi.Strip(m.View().Content), label) {
 			t.Fatalf("missing action/background %q", label)
 		}
@@ -500,12 +461,12 @@ func TestAgentTUIActionsPopupCapabilitiesAndShortcuts(t *testing.T) {
 	m = tuiKey(m, tea.KeyEsc, "")
 	m = tuiKey(m, tea.KeyEnter, "")
 	m = tuiKey(m, 'L', "L")
-	if m.actionsOpen || !m.command || m.input.Value() != "/lift assistant " {
-		t.Fatal("lift menu dispatch failed")
+	if m.actionsOpen || m.command || m.status != interactiveLiftRetirement {
+		t.Fatal("retired lift menu key dispatched")
 	}
 	m = tuiKey(m, tea.KeyEsc, "")
 	m.focus = 1
-	if got := m.agentActions(*m.selected()); len(got) != 6 || got[5].key != "R" {
+	if got := m.agentActions(*m.selected()); len(got) != 5 || got[4].key != "R" {
 		t.Fatalf("remote actions=%v", got)
 	}
 	m.columns[1].Agents[0].External = true
@@ -538,14 +499,8 @@ func TestAgentTUIEditActionsAndInferencePatch(t *testing.T) {
 		if key == 't' {
 			want = "tools"
 		}
-		if key == 'f' {
-			if m.action != nil || m.inference == nil || m.inference.agent.Name != "assistant" || m.inference.env.Name != "kind-local-demo" {
-				t.Fatal("inference should open a targeted overlay")
-			}
-			continue
-		}
-		if m.action == nil || m.action.kind != want || m.action.source.Name != "kind-local-demo" || m.action.agent.Name != "assistant" {
-			t.Fatalf("action=%+v", m.action)
+		if m.action != nil || m.inference != nil || !strings.Contains(m.status, "authored member/workspace") {
+			t.Fatalf("%s must refuse without opening an editor: action=%+v status=%s", want, m.action, m.status)
 		}
 	}
 	original := map[string]any{"name": "old", "maxTokens": 100}
@@ -583,8 +538,8 @@ func TestAgentTUIToolActionAvailableWithoutConfiguredTools(t *testing.T) {
 		}
 		m.opt.Demo = false
 		m = tuiKey(m, 't', "t")
-		if m.action == nil || m.action.kind != "tools" || m.action.source != m.columns[column].Env {
-			t.Fatalf("tool-free agent failed to open targeted editor: %+v", m.action)
+		if m.action != nil || !strings.Contains(m.status, "authored member/workspace") {
+			t.Fatalf("tool-free agent did not refuse editing: action=%+v status=%s", m.action, m.status)
 		}
 	}
 }
@@ -601,7 +556,7 @@ func TestAgentTUIEmptyEnvironmentCreation(t *testing.T) {
 			t.Fatal("missing empty entry")
 		}
 		m = tuiKey(m, 'n', "n")
-		if m.action != nil || m.creation == nil || m.creation.env.Kubeconfig != "/remote/config" || m.creation.wizard.opt.Namespace != "agents" || m.creation.loading == demo {
+		if m.action != nil || m.creation == nil || m.creation.env.Kubeconfig != "/remote/config" || m.creation.namespace != "agents" || m.creation.running {
 			t.Fatalf("creation pane=%+v", m.creation)
 		}
 	}
@@ -687,8 +642,8 @@ func TestAgentTUIUnconfiguredRemotePanelAndLift(t *testing.T) {
 			t.Fatal("setup hint missing")
 		}
 	}
-	if !strings.Contains(m.agentHints(*m.selected()), "L lift") {
-		t.Fatal("local lift hint missing")
+	if strings.Contains(m.agentHints(*m.selected()), "L lift") {
+		t.Fatal("retired lift hint remains")
 	}
 	m.focus = 1
 	m = tuiKey(m, tea.KeyEnter, "")
@@ -697,8 +652,8 @@ func TestAgentTUIUnconfiguredRemotePanelAndLift(t *testing.T) {
 	}
 	m = tuiKey(m, tea.KeyEsc, "")
 	m = tuiKey(m, 'L', "L")
-	if m.input.Value() != "/lift " {
-		t.Fatal("setup lift shortcut missing")
+	if m.status != interactiveLiftRetirement || m.command {
+		t.Fatal("retired lift setup key dispatched")
 	}
 	m.columns[1].Env = agentTUIEnvironment{Name: "configured"}
 	if m.localColumnWidth(120) != 60 {
@@ -775,105 +730,14 @@ esac`)
 	}
 }
 
-func TestAgentTUICreationOverlayReusesWizardAndStaysInConsole(t *testing.T) {
-	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
-	m = tuiKey(m, 'n', "n")
-	for _, size := range [][2]int{{64, 18}, {80, 24}, {120, 40}} {
-		m.width, m.height = size[0], size[1]
-		view := m.View().Content
-		if lipgloss.Width(view) > m.width || lipgloss.Height(view) > m.height {
-			t.Fatalf("creation overflow %v: %dx%d", size, lipgloss.Width(view), lipgloss.Height(view))
-		}
-		if !strings.Contains(ansi.Strip(view), "CREATE AGENT") || !strings.Contains(ansi.Strip(view), "REMOTE") {
-			t.Fatal("creation replaced inventory rather than overlaying it")
-		}
-	}
-	for _, value := range []string{"Help me inspect workloads", "inspector", "openai", "test-model", "existing-secret"} {
-		m.creation.wizard.input.SetValue(value)
-		m = tuiKey(m, tea.KeyEnter, "")
-	}
-	if m.creation.wizard.step != createConfirm {
-		t.Fatalf("wizard did not reach review: %+v", m.creation.wizard)
-	}
-	m = tuiKey(m, tea.KeyEnter, "")
-	if !m.creation.finished || m.creation.running || m.action != nil {
-		t.Fatal("demo review dispatched or closed console")
-	}
-	m = tuiKey(m, tea.KeyEnter, "")
-	if m.creation != nil {
-		t.Fatal("completion did not close pane")
-	}
-	m = tuiKey(m, 'n', "n")
-	m = tuiKey(m, 'j', "j")
-	if m.columns[0].Selection != 0 || m.creation.wizard.input.Value() != "j" {
-		t.Fatal("form input reached inventory")
-	}
-	m = tuiKey(m, tea.KeyEsc, "")
-	if m.creation != nil {
-		t.Fatal("escape did not close form")
-	}
-}
-
-func TestAgentTUICreationSubmissionAndCancellation(t *testing.T) {
-	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
-	m.focus = 1
-	m = tuiKey(m, 'n', "n")
-	m.opt.Demo = false
-	m.creation.server = "reviewed.example.com"
-	m.creation.wizard.opt = CreateOptions{Name: "inspector", Namespace: "agents"}
-	m.creation.wizard.step = createConfirm
-	started, cancelled := false, false
-	result := make(chan agentTUICreateResult, 1)
-	m.startCreate = func(env agentTUIEnvironment, server string, opt CreateOptions) (<-chan agentTUICreateResult, context.CancelFunc) {
-		started = true
-		if env.Name != "remote-demo" || server != "reviewed.example.com" || opt.Name != "inspector" || opt.Namespace != "agents" {
-			t.Fatal("submission lost target or options")
-		}
-		return result, func() { cancelled = true }
-	}
-	m.loadInventory = func(agentTUIEnvironment) ([]agentTUIAgent, error) { return nil, nil }
-	m = tuiKey(m, tea.KeyEnter, "")
-	if !started || !m.creation.running {
-		t.Fatal("submission did not start background creation")
-	}
-	m = tuiKey(m, tea.KeyEsc, "")
-	if !cancelled || !m.creation.cancelling || !m.creation.running {
-		t.Fatal("cancellation returned before operation stopped")
-	}
-	next, _ := m.Update(agentTUICreateResult{err: context.Canceled})
-	m = next.(agentTUIModel)
-	if !m.creation.finished || m.creation.running {
-		t.Fatal("result did not finish pane")
-	}
-	m = tuiKey(m, tea.KeyEsc, "")
-	if m.creation != nil || m.action != nil {
-		t.Fatal("cancelled creation left console")
-	}
-}
-
-func TestAgentTUICreationRefusesChangedServer(t *testing.T) {
-	dir := t.TempDir()
-	fakeTool(t, dir, "kubectl", `case "$*" in
- *'config view'*) printf '%s' '{"contexts":[{"name":"remote","context":{"cluster":"r"}}],"clusters":[{"name":"r","cluster":{"server":"https://changed.example.com"}}]}' ;;
- *) exit 1 ;;
-esac`)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	a := &App{Cfg: &config.Config{}, Run: &run.Runner{}}
-	err := a.consoleCreateAgent(t.Context(), agentTUIEnvironment{Name: "remote"}, "reviewed.example.com", CreateOptions{Name: "inspector"})
-	if err == nil || !strings.Contains(err.Error(), "server changed") {
-		t.Fatalf("changed target not refused: %v", err)
-	}
-}
-
 func TestConsoleCreationTimerOnlyRunsDuringWork(t *testing.T) {
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 	m = tuiKey(m, 'n', "n")
-	for _, state := range []string{"form", "finished", "loading", "running"} {
-		m.creation.loading = state == "loading"
+	for _, state := range []string{"form", "finished", "running"} {
 		m.creation.running = state == "running"
 		m.creation.finished = state == "finished"
 		_, cmd := m.Update(quickstartTickMsg{})
-		if (cmd != nil) != (state == "loading" || state == "running") {
+		if (cmd != nil) != (state == "running") {
 			t.Fatalf("timer running in %s", state)
 		}
 	}

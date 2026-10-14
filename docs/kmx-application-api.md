@@ -146,10 +146,11 @@ verified subset while an operation is incomplete, but a complete result cannot
 omit or duplicate a composition. The result also refuses suites requiring
 standalone ToolProvider images because that output class is not yet represented.
 
-The native-Orka suite profile introduced by #437 declares `requiredImages: []`
-and can be validated and transferred without member images; packaged image-free
-evaluation is not yet implemented in the installed CLI. That profile cannot
-reach this alpha `Build`/`Push` workflow. Before this becomes the general suite workflow, completeness must be
+The native Orka and exact-v0.10.3 Go kagent suite profiles declare
+`requiredImages: []` and can be authored, evaluated by the separate installed
+workspace CLI, and transferred without member images. Those profiles cannot
+reach this alpha `Build`/`Push` workflow.
+Before this becomes the general suite workflow, completeness must be
 derived from an explicit execution profile's required artifacts, including zero
 images, rather than inferred from composition count alone.
 
@@ -376,13 +377,16 @@ runtime recipe.
 The installed local suite journey already composes independently:
 
 ```text
-kmx create -> kmx local up -> kmx eval -> kmx push
+workspace create -> local setup -> workspace eval -> package push
+                                                  -> packaged-digest lift
 ```
 
 That is evidence for keeping workspace/AgentSuite identity separate from
 environment setup, not evidence that the commands use the northbound interfaces.
 The native execution profile requires no member image and does not implement the
-first image-backed northbound Build/Push contract.
+first image-backed northbound Build/Push contract. Installed root digest Lift is
+an internal runtime-dispatched Orka/exact-kagent application path, not an implementation of the alpha
+suite-wide `AgentDeployments` model above.
 
 ## Evidence required before stability
 

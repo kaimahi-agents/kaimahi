@@ -67,6 +67,60 @@ func LoadArtifact(ctx context.Context, artifact *suiteoras.Artifact) (*NativeSui
 	return loadNativeFiles(ctx, files, artifact.Descriptor().Digest.String())
 }
 
+// HasImageProfile only selects validation; it confers no execution authority.
+func HasImageProfile(artifact *suiteoras.Artifact) bool {
+	if artifact == nil {
+		return false
+	}
+	_, exists := artifact.Files()[imagePath]
+	return exists
+}
+
+func ValidateImageArtifact(ctx context.Context, artifact *suiteoras.Artifact) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !HasImageProfile(artifact) {
+		return errors.New("image execution profile required")
+	}
+	_, err := validateNative(artifact.Files())
+	return err
+}
+
+// ImageSuite retains the closed image profile without substituting native model
+// selection. Cases and public graph identities come from the exact artifact.
+type ImageSuite struct {
+	Digest, Name, MemberID, GraphDigest string
+	Instructions                        []byte
+	Cases                               []PackagedCase
+}
+
+func LoadImageArtifact(ctx context.Context, artifact *suiteoras.Artifact) (*ImageSuite, error) {
+	if err := ValidateImageArtifact(ctx, artifact); err != nil {
+		return nil, err
+	}
+	files := artifact.Files()
+	var suite spec.Suite
+	var record nativeRecord
+	if spec.Unmarshal(files["agentsuite.json"], &suite) != nil || spec.Unmarshal(files[imagePath], &record) != nil {
+		return nil, errors.New("invalid image package")
+	}
+	g, err := spec.Digest(files["agentsuite.json"])
+	if err != nil {
+		return nil, err
+	}
+	out := &ImageSuite{Digest: artifact.Descriptor().Digest.String(), Name: suite.Name, MemberID: record.Member, GraphDigest: g}
+	var member spec.Agent
+	if spec.Unmarshal(files[suite.Agents[0].Path], &member) != nil {
+		return nil, errors.New("invalid image member")
+	}
+	out.Instructions = files[member.Instructions.Path]
+	for _, c := range record.Cases {
+		out.Cases = append(out.Cases, PackagedCase{Path: c.Path, Digest: c.Digest, Bytes: files[c.Path]})
+	}
+	return out, nil
+}
+
 func loadNativeFiles(ctx context.Context, files map[string][]byte, digest string) (*NativeSuite, error) {
 	var suite spec.Suite
 	if err := spec.Unmarshal(files["agentsuite.json"], &suite); err != nil {

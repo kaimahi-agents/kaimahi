@@ -183,9 +183,9 @@ The intended conceptual mapping is:
 | `kmx suite build` | Current one-member experimental command is not `AgentSuites.Build` |
 | `kmx suite push` / root `kmx push --workspace DIR REF` | Current extracted-definition/workspace transfer is not `AgentSuites.Push` |
 | Future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
-| `kmx bundle lift` | `AgentDeployments.Lift` |
-| `kmx bundle status` | `AgentDeployments.Status` |
-| `kmx bundle retire` | `AgentDeployments.Retire` |
+| Root digest `kmx lift` | Related lifecycle vocabulary, not `AgentDeployments.Lift` wiring |
+| Suite status (unavailable) | `AgentDeployments.Status` remains alpha design evidence |
+| Suite retirement (unavailable) | `AgentDeployments.Retire` remains alpha design evidence |
 
 This is a product-level direction, not shared implementation today. The current
 CLI does not call these northbound interfaces. It also provides `kmx suite pull`
@@ -232,9 +232,6 @@ kmx quickstart
 
 # Interactive custom authoring on current development builds.
 kmx quickstart --interactive
-
-# Create live resources and a bundle against an already prepared target.
-kmx create --live
 ```
 
 Tagged v0.4.1 and earlier use `kmx quickstart-wizard` for custom authoring;
@@ -256,13 +253,15 @@ The Go package is alpha design evidence rather than a ready-to-instantiate SDK:
 - Model or inference provisioning is not yet a separate public lifecycle
   contract.
 - Concrete implementations of the northbound suite and runtime services remain
-  unimplemented. The separate CLI already validates and transfers AgentSuite
-  definitions and builds one experimental image with Docker buildx. It neither
-  builds a complete suite nor implements the northbound `Push` contract, and its
-  images are not AgentSuite-conformant; see the
+  unimplemented. The separate CLI already authors native workspace source,
+  evaluates the image-free Orka and exact-v0.10.3 Go kagent profiles,
+  validates/transfers AgentSuite definitions and builds one experimental image
+  with Docker buildx. It neither builds a complete suite nor implements the
+  northbound `Push` contract, and its images are not AgentSuite-conformant; see the
   [suite build reference](kmx.md#experimental-agentsuite-image-build).
-- Native-Orka workspaces with `requiredImages: []` are valid and publishable,
-  but are outside this first image-backed northbound Build/Push contract.
+- Native Orka and exact-v0.10.3 Go kagent workspaces with `requiredImages: []`
+  are valid, evaluable and publishable, but are outside this first image-backed
+  northbound Build/Push contract.
 
 The authoritative contract details remain in:
 

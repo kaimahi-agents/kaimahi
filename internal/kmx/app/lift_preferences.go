@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -88,24 +87,4 @@ func recentLiftItems(items []chatPickerItem, keys []string, last string) ([]chat
 		result = append(result, item)
 	}
 	return result, order
-}
-
-func (b *orkaChatBackend) liftRecentPick(ctx context.Context, title string, items []chatPickerItem, keys []string, scope string) (int, bool, error) {
-	if len(items) != len(keys) {
-		return 0, false, fmt.Errorf("lift choice identity mismatch")
-	}
-	prefs, err := loadLiftPreferences()
-	if err != nil {
-		return 0, false, err
-	}
-	ordered, indices := recentLiftItems(items, keys, prefs[scope])
-	i, ok, err := b.liftPick(ctx, title, ordered)
-	if err != nil || !ok {
-		return 0, false, err
-	}
-	i = indices[i]
-	if err := saveLiftPreference(scope, keys[i]); err != nil {
-		return 0, false, err
-	}
-	return i, true, nil
 }

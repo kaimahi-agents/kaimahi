@@ -1,10 +1,11 @@
 package app
 
 import (
-	"github.com/charmbracelet/x/ansi"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestStickyChatHeaderSetsAndRestoresScrollRegion(t *testing.T) {

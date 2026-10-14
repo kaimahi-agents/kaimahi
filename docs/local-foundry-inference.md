@@ -1,11 +1,16 @@
 # Foundry inference for local Agent development
 
-Status: native Orka proposal plus implemented host-inference option, 2026-09-18.
+Status: historical native Orka proposal and host-inference record, 2026-09-18.
+
+Current boundary: host Foundry chat controls remain independent and use saved
+local routes. Foundry wizard modes, interactive Lift/live copying and live
+source tools/inference editing are retired. Native create/eval/push/digest Lift
+uses exact packaged models and Ready openai Providers; the historical integration
+proposal below is not a current recipe. See [native workspace](suite-workspace.md).
 
 ## Interactive host inference (implemented)
 
-On a local kind target, choose **Azure Foundry (Azure login)** in interactive
-quickstart, or use `/inference` → **Azure Foundry** in chat
+On a local kind target, use `/inference` → **Azure Foundry** in chat
 (`/inference-foundry` is the direct shortcut). Host inference is refused on remote
 targets; configure a cluster Provider there instead.
 Select a saved configuration, browse subscriptions/resources/deployments, or

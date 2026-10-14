@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
 // Losing a runtime branch, identity uniqueness or offline rendering check must
@@ -158,7 +159,7 @@ func TestSuiteKagentPushRequiresCoherence(t *testing.T) {
 		t.Fatal(err)
 	}
 	opt := suiteKagentEvaluationOptions(t)
-	for _, change := range []string{"passing", "incoherent", "other S"} {
+	for _, change := range []string{"passing", "incoherent", "other S", "agentsessions"} {
 		t.Run(change, func(t *testing.T) {
 			t.Setenv("KMX_HOME", privateSuiteDir(t))
 			source := filepath.Join(t.TempDir(), "workspace")
@@ -175,6 +176,14 @@ func TestSuiteKagentPushRequiresCoherence(t *testing.T) {
 			if change == "other S" {
 				writeFile(t, filepath.Join(source, "eval/example.yaml"), "id: first\ninput: changed\nexpectContains: [answer]\n")
 			}
+			if change == "agentsessions" {
+				member := filepath.Join(source, "agents/sample/member.yaml")
+				data, err := os.ReadFile(member)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, member, strings.Split(string(data), "\nruntime:")[0]+"\nruntime: {id: agentsessions, version: "+workspace.AgentSessionsVersion+", engine: chat}\n")
+			}
 			destination := filepath.Join(t.TempDir(), "layout")
 			result, err := (&App{Out: io.Discard}).pushSuiteWorkspaceEvaluated(t.Context(), source, "suite:v1", destination, false, false, SuitePushProvenance{}, evidence)
 			if change == "passing" {
@@ -185,7 +194,7 @@ func TestSuiteKagentPushRequiresCoherence(t *testing.T) {
 				if change == "incoherent" && !errors.Is(err, errSuitePassingReceipt) {
 					t.Fatalf("wrong coherence refusal: %v", err)
 				}
-				if change == "other S" && (err == nil || !strings.Contains(err.Error(), "expected publication identity")) {
+				if (change == "other S" || change == "agentsessions") && (err == nil || !strings.Contains(err.Error(), "expected publication identity")) {
 					t.Fatalf("wrong exact-S refusal: %v", err)
 				}
 				if _, err := os.Stat(destination); !os.IsNotExist(err) {

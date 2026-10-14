@@ -2,13 +2,20 @@ package app
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
@@ -30,9 +37,20 @@ case "$*" in
   *"apply -f -"*)
     body=$(cat)
     case "$body" in
-      *"kind: Provider"*) printf '%s' "$body" > "$KMX_TEST_ARGS.provider" ;;
+      *"kind: Provider"*) printf '%s' "$body" > "$KMX_TEST_ARGS.provider"; printf '3001' > "$KMX_TEST_ARGS.provider-rv" ;;
       *"name: local-provider-key"*) printf 'write\n' >> "$KMX_TEST_ARGS.secret" ;;
     esac
+    exit 0 ;;
+  *"replace --dry-run=server --validate=strict -f - -o json"*)
+    cat
+    exit 0 ;;
+  *"create --validate=strict -f - -o json"*)
+    body=$(cat)
+    url=$(printf '%s' "$body" | grep -o '"baseURL":"[^"]*"' | cut -d'"' -f4)
+    model=$(printf '%s' "$body" | grep -o '"defaultModel":"[^"]*"' | cut -d'"' -f4)
+    printf '  baseURL: %s\n  defaultModel: %s\n' "$url" "$model" > "$KMX_TEST_ARGS.provider"
+    printf '1066' > "$KMX_TEST_ARGS.provider-rv"
+    printf '{"kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":2}}'
     exit 0 ;;
   *"get providers.core.orka.ai local --ignore-not-found=true -o json"*|*"get providers.core.orka.ai local -o json"*)
     if [ "$KMX_TEST_PROVIDER_READ" = failed ]; then exit 1; fi
@@ -48,7 +66,11 @@ case "$*" in
           : > "$KMX_TEST_ARGS.provider-ready"
         fi ;;
     esac
-    printf '{"apiVersion":"core.orka.ai/v1alpha1","kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":2},"spec":{"baseURL":"%s"},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":%s}]}}' "$url" "$observed"
+    model=qwen2.5:3b
+    if [ -f "$KMX_TEST_ARGS.provider" ]; then model=$(grep '  defaultModel: ' "$KMX_TEST_ARGS.provider" | head -1 | cut -d' ' -f4); fi
+    rv=1066
+    if [ -f "$KMX_TEST_ARGS.provider-rv" ]; then rv=$(cat "$KMX_TEST_ARGS.provider-rv"); fi
+    printf '{"apiVersion":"core.orka.ai/v1alpha1","kind":"Provider","metadata":{"name":"local","namespace":"orka-system","uid":"provider-1","generation":2,"resourceVersion":"%s"},"spec":{"type":"openai","baseURL":"%s","defaultModel":"%s","secretRef":{"name":"local-provider-key","key":"api-key"}},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":%s}]}}' "$rv" "$url" "$model" "$observed"
     exit 0 ;;
   *"get secret local-provider-key"*)
     [ -f "$KMX_TEST_ARGS.secret" ] && printf 'secret\npresent'
@@ -114,6 +136,171 @@ func upCalls(t *testing.T, args string) string {
 // cluster about the legacy runtime. The fake answers that read the way a
 // cluster with no kagent CRD answers — the command completing at all is the
 // proof that it was not asked.
+// Unconditional apply would advance the source binding's resourceVersion even
+// when only last-applied metadata changes. Exercise the public runtime step.
+func TestStepOrkaPreservesQuickstartProviderResourceVersion(t *testing.T) {
+	a, _, args := upFixture(t)
+	if err := a.stepQuickstartOrka(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(args + ".provider")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := a.Up("orka"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after, _ := os.ReadFile(args + ".provider")
+	rv, _ := os.ReadFile(args + ".provider-rv")
+	if !bytes.Equal(before, after) || string(rv) != "1066" {
+		t.Fatalf("matching runtime setup changed source Provider: resourceVersion=%s", rv)
+	}
+	if got := strings.Count(upCalls(t, args), "replace --dry-run=server --validate=strict"); got != 3 {
+		t.Fatalf("normalizations = %d, want 3", got)
+	}
+}
+
+// A projection limited to endpoint/model would wrongly skip extended-spec
+// changes. Admission defaults, unlike foreign metadata, belong to comparison.
+func TestOrkaProviderSemanticNoop(t *testing.T) {
+	for _, mode := range []string{"get cancelled", "get deadline", "normalize cancelled", "normalize deadline", "match", "model", "url", "secret", "capability", "absent", "read failure", "invalid json", "wrong name", "wrong namespace", "wrong kind", "missing uid", "missing version", "terminating", "invalid spec", "normalize failure", "normalize invalid", "normalize identity"} {
+		t.Run(mode, func(t *testing.T) {
+			a, _, args := upFixture(t)
+			opt := orkaDefaults(OrkaOptions{Provider: "custom", Model: "qwen2.5:3b"})
+			ctx, cancel := context.WithCancel(t.Context())
+			if strings.HasSuffix(mode, "deadline") {
+				cancel()
+				ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+			}
+			defer cancel()
+			a.Run.Context = ctx
+			live := map[string]any{
+				"apiVersion": "core.orka.ai/v1alpha1", "kind": "Provider",
+				"metadata": map[string]any{"name": "custom", "namespace": "orka-system", "uid": "provider-1", "resourceVersion": "1066", "generation": 2,
+					"annotations": map[string]any{"foreign.example/owner": "retained"}},
+				"spec": map[string]any{"type": "openai", "baseURL": orkaDefaultModelURL, "defaultModel": "qwen2.5:3b",
+					"secretRef": map[string]any{"name": "custom-provider-key", "key": "api-key"}, "capabilities": map[string]any{"tools": false}},
+			}
+			spec := live["spec"].(map[string]any)
+			meta := live["metadata"].(map[string]any)
+			switch mode {
+			case "model":
+				spec["defaultModel"] = "other"
+			case "url":
+				spec["baseURL"] = "http://other/v1"
+			case "secret":
+				spec["secretRef"] = map[string]any{"name": "other", "key": "api-key"}
+			case "capability":
+				spec["capabilities"] = map[string]any{"tools": true}
+			case "wrong name":
+				meta["name"] = "other"
+			case "wrong namespace":
+				meta["namespace"] = "other"
+			case "wrong kind":
+				live["kind"] = "Agent"
+			case "missing uid":
+				delete(meta, "uid")
+			case "missing version":
+				delete(meta, "resourceVersion")
+			case "terminating":
+				meta["deletionTimestamp"] = "2026-01-01T00:00:00Z"
+			case "invalid spec":
+				live["spec"] = "invalid"
+			}
+			gets, dryruns := 0, 0
+			a.captureCommand = func(_ context.Context, cmd *exec.Cmd) error {
+				if slices.Contains(cmd.Args, "get") && slices.Contains(cmd.Args, orkaProviderKind) {
+					gets++
+					if mode == "get cancelled" {
+						cancel()
+						return ctx.Err()
+					}
+					if mode == "get deadline" {
+						<-ctx.Done()
+						return ctx.Err()
+					}
+					if mode == "read failure" {
+						return fmt.Errorf("fixture-sensitive-token")
+					}
+					if mode == "absent" {
+						return nil
+					}
+					if mode == "invalid json" {
+						_, err := fmt.Fprint(cmd.Stdout, "invalid")
+						return err
+					}
+					return json.NewEncoder(cmd.Stdout).Encode(live)
+				}
+				if slices.Contains(cmd.Args, "replace") {
+					dryruns++
+					if mode == "normalize cancelled" {
+						cancel()
+						return ctx.Err()
+					}
+					if mode == "normalize deadline" {
+						<-ctx.Done()
+						return ctx.Err()
+					}
+					if !slices.Contains(cmd.Args, "--dry-run=server") || !slices.Contains(cmd.Args, "--validate=strict") {
+						t.Fatal("unsafe normalization")
+					}
+					var candidate map[string]any
+					if err := json.NewDecoder(cmd.Stdin).Decode(&candidate); err != nil {
+						t.Fatal(err)
+					}
+					m := candidate["metadata"].(map[string]any)
+					if m["uid"] != "provider-1" || m["resourceVersion"] != "1066" || m["annotations"].(map[string]any)["foreign.example/owner"] != "retained" {
+						t.Fatal("normalization lost live metadata")
+					}
+					if mode == "normalize failure" {
+						return fmt.Errorf("fixture-sensitive-token")
+					}
+					if mode == "normalize invalid" {
+						_, err := fmt.Fprint(cmd.Stdout, "invalid")
+						return err
+					}
+					if mode == "normalize identity" {
+						m["uid"] = "other"
+					}
+					candidate["spec"].(map[string]any)["capabilities"] = map[string]any{"tools": false}
+					return json.NewEncoder(cmd.Stdout).Encode(candidate)
+				}
+				return cmd.Run()
+			}
+			err := a.orkaProvider(opt)
+			if strings.HasSuffix(mode, "cancelled") && !errors.Is(err, context.Canceled) {
+				t.Fatalf("lost cancellation: %v", err)
+			}
+			if strings.HasSuffix(mode, "deadline") && !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("lost deadline: %v", err)
+			}
+			wantWrite := slices.Contains([]string{"model", "url", "secret", "capability", "absent"}, mode)
+			wantError := mode != "match" && !wantWrite
+			if (err != nil) != wantError {
+				t.Fatalf("error = %v, wantError=%v", err, wantError)
+			}
+			if strings.Contains(fmt.Sprint(err), "fixture-sensitive-token") {
+				t.Fatal("unsafe error disclosure")
+			}
+			_, statErr := os.Stat(args + ".provider")
+			if (statErr == nil) != wantWrite {
+				t.Fatalf("Provider written=%v, want %v", statErr == nil, wantWrite)
+			}
+			if gets != 1 {
+				t.Fatalf("Provider GETs=%d, want 1", gets)
+			}
+			if mode == "match" && dryruns != 1 {
+				t.Fatalf("normalizations=%d, want 1", dryruns)
+			}
+			if mode == "absent" && dryruns != 0 {
+				t.Fatal("normalized an absent Provider")
+			}
+		})
+	}
+}
+
 func TestOrkaUpRefusesForeignReleaseBeforeModelPull(t *testing.T) {
 	a, _, args := upFixture(t)
 	t.Setenv("KMX_TEST_UP_HELM_LIST", `[{"name":"orka","chart":"foreign-0.2.0","app_version":"0.2.0","status":"deployed"}]`)
@@ -166,8 +353,8 @@ func TestBareOrkaUpCompletesWithoutQueryingTheLegacyRuntime(t *testing.T) {
 	}
 }
 
-// `local up --step orka` owns `local`; quickstart owns only its fixed bundle.
-// Neither order may silently replace an existing local host route.
+// Quickstart may create an absent inference binding, but existing routes and
+// Secrets stay read-only. Both orders retain a verified selected host route.
 func TestQuickstartAndHostOrkaUpKeepLocalEndpointInBothOrders(t *testing.T) {
 	const hostURL = "http://172.18.0.1:11434/v1"
 	for _, order := range []string{"host then quickstart", "quickstart then host"} {
@@ -186,8 +373,8 @@ func TestQuickstartAndHostOrkaUpKeepLocalEndpointInBothOrders(t *testing.T) {
 				t.Fatalf("quickstart Orka setup: %v", err)
 			}
 			quickstartCalls := strings.TrimPrefix(upCalls(t, args), before)
-			if strings.Contains(quickstartCalls, "get providers.core.orka.ai local") {
-				t.Errorf("quickstart read local Provider: %s", quickstartCalls)
+			if !strings.Contains(quickstartCalls, "get providers.core.orka.ai local") {
+				t.Errorf("quickstart did not observe its inference binding: %s", quickstartCalls)
 			}
 			if strings.Contains(quickstartCalls, "get svc ollama") {
 				t.Errorf("quickstart tried to wire local Provider: %s", quickstartCalls)
@@ -197,12 +384,15 @@ func TestQuickstartAndHostOrkaUpKeepLocalEndpointInBothOrders(t *testing.T) {
 				t.Fatalf("quickstart must create an absent Secret but leave an existing one untouched: before=%q after=%q (%v)", secretBefore, secretAfter, err)
 			}
 			if order == "quickstart then host" {
-				if _, err := os.Stat(args + ".provider"); !os.IsNotExist(err) {
-					t.Fatalf("quickstart wrote local Provider: %v", err)
+				if _, err := os.Stat(args + ".provider"); err != nil {
+					t.Fatalf("quickstart did not create the missing local Provider: %v", err)
 				}
 				if err := a.Up("orka"); err != nil {
 					t.Fatalf("host up after quickstart: %v", err)
 				}
+			}
+			if order == "host then quickstart" && strings.Contains(quickstartCalls, "create --validate=strict") {
+				t.Fatal("quickstart rewrote the existing host Provider")
 			}
 			applied, err := os.ReadFile(args + ".provider")
 			if err != nil || !strings.Contains(string(applied), "baseURL: "+hostURL) {

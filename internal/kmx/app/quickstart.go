@@ -1,9 +1,7 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -19,7 +17,7 @@ import (
 // quickstart deploys one known bundle and then asks THAT agent the question.
 // A name that could differ from the thing being deployed would let the
 // command answer about something it did not create. Authoring your own is
-// `kmx create --live`; asking any agent anything is `kmx chat`.
+// offline `kmx create`; asking any agent anything is `kmx chat`.
 const QuickstartAgent = "hello-world-agent"
 
 // QuickstartOptions configure the shortest path to a first answer.
@@ -39,13 +37,17 @@ type QuickstartTool struct {
 // QuickstartResult is what `--output json` prints: enough for an agent in a
 // harness to decide what to do next without parsing prose.
 type QuickstartResult struct {
-	OK       bool   `json:"ok"`
-	Context  string `json:"context"`
-	Cluster  string `json:"cluster"`
-	Agent    string `json:"agent"`
-	Manifest string `json:"manifest"`
-	Question string `json:"question"`
-	Answer   string `json:"answer"`
+	OK          bool   `json:"ok"`
+	Context     string `json:"context"`
+	Cluster     string `json:"cluster"`
+	Agent       string `json:"agent"`
+	Manifest    string `json:"manifest"`
+	SuiteDigest string `json:"suite_digest,omitempty"`
+	Workspace   string `json:"workspace,omitempty"`
+	Layout      string `json:"layout,omitempty"`
+	Evidence    string `json:"evidence,omitempty"`
+	Question    string `json:"question"`
+	Answer      string `json:"answer"`
 	// Governed retains the original boolean wire contract: governance enabled
 	// by this invocation, not an observation of existing cluster governance.
 	// It is always false: quickstart does not enable governance. A rerun may
@@ -81,6 +83,7 @@ type quickstartStep struct {
 // a rerun and is not assessed here.
 func (a *App) Quickstart(opt QuickstartOptions) error {
 	started := a.timeNow()
+	a.quickstartPrepared, a.quickstartPlacement = nil, nil
 	task := opt.Task
 	if task == "" {
 		task = config.DefaultTask
@@ -134,7 +137,10 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 	var answer string
 	if err := a.runPhase(phase{current: total, total: total, name: "Ask " + QuickstartAgent + " a question"}, func() error {
 		var err error
-		answer, err = a.quickstartAnswer(task)
+		if a.quickstartPlacement == nil {
+			return fmt.Errorf("quickstart has no successful suite placement; no answer Task sent")
+		}
+		answer, err = a.answerSuitePlacement(a.operationContext(), *a.quickstartPlacement, task)
 		return err
 	}); err != nil {
 		return err
@@ -163,7 +169,7 @@ func (a *App) quickstartSteps() []quickstartStep {
 		{"Deploy Ollama", a.stepOllama},
 		{"Pull model " + a.Cfg.Model, a.stepModel},
 		{"Install Orka " + OrkaVersion, a.stepQuickstartOrka},
-		{"Deploy the " + QuickstartAgent + " agent", a.stepQuickstartAgent},
+		{"Deploy the " + QuickstartAgent + " agent", a.stepQuickstartSuite},
 	}
 }
 
@@ -180,6 +186,11 @@ func (a *App) quickstartResult(question, answer string, started time.Time) Quick
 		Governed:       false,
 		Next:           a.quickstartFollowups(),
 		ElapsedSeconds: a.timeNow().Sub(started).Seconds(),
+	}
+	if a.quickstartPrepared != nil && a.quickstartPlacement != nil {
+		result.SuiteDigest = a.quickstartPlacement.Summary.SuiteDigest
+		result.Workspace, result.Layout, result.Evidence = a.quickstartPrepared.Workspace, a.quickstartPrepared.Layout, a.quickstartPrepared.Evidence
+		result.Manifest = fmt.Sprintf("AgentSuite %s, member %s in %s", result.SuiteDigest, a.quickstartPlacement.Summary.Member, a.quickstartPlacement.Summary.Target.Namespace)
 	}
 	for _, t := range a.provisioned {
 		result.Tools = append(result.Tools, QuickstartTool{Name: t.Name, Version: t.Version, Source: string(t.Source)})
@@ -213,77 +224,11 @@ func (a *App) quickstartCreateOptions() CreateOptions {
 	}
 }
 
-// stepQuickstartAgent creates the fixed Provider and Agent, or reuses them.
-//
-// Reuse is EXACT-MATCH ONLY. A live Provider or Agent whose spec differs
-// from the one quickstart would write is somebody's deliberate change — an
-// edited endpoint, a different model, a hand-applied bundle — so this stops
-// rather than overwrite it. A half-finished run resumes: whichever of
-// the two already matches is kept, and the other is created.
-func (a *App) stepQuickstartAgent() error {
-	ctx, cancel := context.WithTimeout(a.operationContext(), 10*time.Minute)
-	defer cancel()
-	opt := a.quickstartCreateOptions()
-	bundle, err := createOrkaBundle(opt)
-	if err != nil {
-		return err
-	}
-	if err := a.orkaProviderSecretPresent(ctx, opt.Namespace, opt.Secret, opt.SecretKey); err != nil {
-		return err
-	}
-	for _, doc := range []map[string]any{bundle.Provider, bundle.Agent} {
-		id, err := a.matchingOrkaResource(ctx, opt.Namespace, doc)
-		if err != nil {
-			if errors.Is(err, errOrkaConfigurationDrift) {
-				return fmt.Errorf("%w; keep the drifted resource and run `kmx create --live` under a different name, or delete the fixed %s so quickstart recreates it", err, QuickstartAgent)
-			}
-			return err
-		}
-		if id == nil {
-			created, err := a.createOrkaObject(ctx, opt.Namespace, doc)
-			if err != nil {
-				return err
-			}
-			a.notef("Created %s/%s (UID %s); waiting for current-generation Ready.", created.Kind, created.Name, created.UID)
-			id = &created
-		} else {
-			a.notef("Reusing matching %s/%s (UID %s).", id.Kind, id.Name, id.UID)
-		}
-		if err := a.waitOrkaReady(ctx, opt.Namespace, *id); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// quickstartAnswer creates a FRESH Task and returns its retrieved reply.
-//
-// Fresh every run, never reused: an existing completed Task holds an earlier
-// run's answer, and reporting it as this run's would turn "the agent
-// answered" into "the agent answered once, some time ago". The reply must be
-// non-blank after sanitisation — a Task that completed with nothing readable
-// in it is a failed run, not an answer.
-func (a *App) quickstartAnswer(task string) (string, error) {
-	// Eight minutes, not ten: the result token is minted for ten and the
-	// session refuses to start unless the grant outlasts the deadline by
-	// thirty seconds. A ten-minute deadline here would refuse every run.
-	ctx, cancel := context.WithTimeout(a.operationContext(), 8*time.Minute)
-	defer cancel()
-	opt := a.quickstartCreateOptions()
-	opt.Task = task
-	session, err := a.openOrkaResultSession(ctx, opt)
-	if err != nil {
-		return "", err
-	}
-	defer session.close()
-	return a.runQuickstartOrkaTaskProfile(ctx, QuickstartAgent, OrkaNamespace, task, nil, nil, session)
-}
-
 // quickstartFollowups are the commands this cluster can actually run next.
 func (a *App) quickstartFollowups() []string {
 	return []string{
 		a.operationCommand("chat", QuickstartAgent, "--runtime", "orka", "--namespace", OrkaNamespace, "ask it something else"),
-		a.operationCommand("create", "--live"),
+		a.operationCommand("create", "--help"),
 		a.operationCommand("orka", "status"),
 	}
 }
@@ -293,13 +238,13 @@ func (a *App) quickstartNext(ui cliui.Output, result QuickstartResult) {
 	if ui.Rich() {
 		a.notef("\n%s", ui.Actions("Next", []cliui.Action{
 			{Label: "Ask another question", Command: result.Next[0]},
-			{Label: "Author your own Orka Agent", Command: result.Next[1], Detail: "docs/kmx.md#kmx-create"},
+			{Label: "Author your own suite workspace", Command: result.Next[1], Detail: "docs/kmx.md#kmx-create"},
 			{Label: "Inspect the Orka runtime", Command: result.Next[2], Detail: "what is installed, and what it can resolve"},
 			{Label: "Delete this cluster", Command: down, Detail: "delete the cluster and everything in it"},
 		}))
 	} else {
 		a.notef("\nNEXT  %s  # ask it something else\n"+
-			"      %s  # author your own agent; docs/kmx.md#kmx-create\n"+
+			"      %s  # offline authoring help; docs/kmx.md#kmx-create\n"+
 			"      %s  # what is installed, and what it can resolve\n"+
 			"      %s  # delete the cluster and everything in it", result.Next[0], result.Next[1], result.Next[2], down)
 	}

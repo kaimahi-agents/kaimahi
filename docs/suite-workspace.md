@@ -3,20 +3,31 @@
 A workspace is editable source. Its prepared AgentSuite is an immutable OCI
 artifact, identified by its manifest digest. Native Orka and exact-v0.10.3 Go
 kagent declarations require no member images; authoring and publication do not contact Kubernetes,
-run a model or invoke Docker/buildx.
+run a model or invoke Docker/buildx. The pinned AgentSessions chat profile also
+supports offline authoring, preparation, loading and ordinary unevaluated push
+with no member image. Full packaged evaluation and exact-suite evaluated push
+require the explicit [development host](#agentsessions-development-evaluation)
+boundary. Lift, chat/status and Orka/kagent operational consumers refuse it.
 
 **Implemented:** offline creation, preparation and publication, and full-inventory
 native Orka or exact kagent v0.10.3 Go/linux-amd64 evaluation of one tool-free
 member with an exact OpenAI-compatible model. Orka remains the authoring default;
 `--runtime kagent` authors the private profile. Root eval derives that packaged
 runtime and uses explicit author-owned bindings; evaluated push accepts only
-matching runtime-specific passing evidence. Kagent suite status, lift and
-promotion remain unavailable. Occupied targets
-refuse without a complete caller-retained observation; qualified repeat is
-read-only, not update/adoption or restart recovery.
+matching runtime-specific passing evidence. Root digest Lift supports both
+profiles. Kagent Lift is create-only: any occupied primary or generated child
+refuses, even with matching evaluated UIDs. Suite status and retirement remain
+unavailable. Evaluation placement refuses occupied targets without a complete
+caller-retained observation; qualified repeat is read-only, not update/adoption
+or restart recovery.
 Orka evaluation has hermetic command/Task tests and a pinned two-case native
-workspace CI qualifier. Standalone registry-package evaluation and kagent
-registry-reference lift are not available; Orka digest lift is described below. Existing `agent.yaml` creation, evaluation and lift remain
+workspace CI qualifier. Packaged kagent evaluation has hermetic coverage and
+pinned exact-v0.10.3 CLI qualification. Root exact-digest Lift retrieves the
+package from a registry or local layout and separately consumes matching private
+full-passing evidence. Orka uses `--inference`; kagent uses author-owned
+`--bindings`. Bounded CI qualifies Orka exact registry/layout reuse and kagent
+fresh-target creation/occupied refusal. Standalone registry-package evaluation
+remains unavailable. Existing `agent.yaml` creation, evaluation and lift remain
 separate and unchanged.
 
 ## Create
@@ -55,18 +66,36 @@ Runtime is a member declaration, not a deployment-time switch. The private
 `runtime.id`, `runtime.version` and `runtime.engine` select exact `v0.10.3`/`go`.
 Optional `--runtime-version v0.10.3` and `--kagent-runtime go` may state the fixed
 profile explicitly; Python and unsupported/contradictory declarations refuse.
-These selectors do not change the `--live --runtime kagent` v0.10.2 path.
 Missing runtime in existing source stays historical Orka only; push/load derive
 the packaged runtime, not a live target.
+
+To author the offline AgentSessions chat profile in a separate workspace:
+
+```sh
+kmx create greeter --workspace ./sessions-workspace --runtime agentsessions \
+  --model fixture-model --instructions ./instructions.md
+kmx push --workspace ./sessions-workspace --to-layout ./sessions-layout greeter:v1
+```
+
+This fixes `runtime.version` to upstream commit
+`ca85f47a2ec17ca6e16029cfa69419cfe29442b3` and `runtime.engine` to `chat`.
+Optional `--runtime-version` accepts only that full commit; `--kagent-runtime`
+and `--live --runtime agentsessions` refuse. The closed private
+`metadata/kmx/native-agentsessions.json` binds the runtime/config contract,
+member identities and complete ordered raw case inventory in manifest S.
+The public graph digest alone does not identify execution semantics. The
+build profile remains inert; `requiredImages` is explicitly empty. No host,
+journal, model endpoint, credential or passing evidence is packaged or contacted.
+The Go SDK pin includes upstream #120 and #124, but does not establish live
+host qualification. Existing Orka/kagent evidence cannot authorize this profile.
 
 `--instructions` names a file, not inline text. Its nonblank bytes are copied
 unchanged into the member. `--description` is optional and single-line.
 Instructions use the native block-text policy: LF and tabs are allowed; CR and other control characters are refused,
 not normalized. `--model` is required and exact; there is no inferred default.
-This mode refuses cluster, Provider, output, tools and Task flags with a
-`--live` remedy, rather than ignoring them or inferring live mode.
-`--workspace` and `--live` conflict; an explicitly empty `--workspace` refuses.
-Required fields and mode conflicts are checked before initialization.
+Live-only flags and `--live` itself are unknown before configuration loads;
+create never bootstraps runtime/model or reads cluster settings. An explicitly
+empty `--workspace` refuses. Required fields are checked before initialization.
 
 A workspace supports only one member. Creating a second member refuses and
 suggests a new `--workspace` directory, preserving authored files, metadata and
@@ -78,11 +107,14 @@ of an exact root, omit `--workspace`:
 kmx create greeter --model qwen-3.5-2b --instructions ./instructions.md
 ```
 
-A name is required; there is no offline authoring wizard. For the separate live
-Orka wizard use `kmx create --live`. Live creation bypasses workspace discovery,
-even below an invalid marker. `--live --no-apply` and `--live --out -` retain the
-old resource/PortableAgent bundle formats, not this workspace format. Quickstart
-and console creation remain live. See the [live contract](kmx.md#default-orka-contract).
+A name is required; live create/previews/wizard are removed. Quickstart composes
+fixed source, full eval, exact publication, reviewed Apply and placement Verify
+before a separate fresh answer Task. Console selects authored native-Orka source,
+reviews instructions/model/all cases, selects a Ready openai Provider, obtains
+execution consent and reviews the exact retained Lift plan before Apply/Verify.
+Source fingerprint and complete API URI are rechecked. Console Ready means
+placement only. Partial/evaluation errors can leave resources without retry/cleanup.
+Author appropriate cases; scaffold arithmetic is not arbitrary-agent quality proof.
 
 The source consists of `workspace.yaml`, `agents/greeter/member.yaml`, its
 member-relative instruction file, workspace-root `eval/*.yaml`, and a pinned
@@ -96,14 +128,99 @@ Tools, skills, delegation, additional members and unsupported source fields are
 refused. Paths must stay within the workspace, without symlink traversal. Source
 reads are bounded, and credential-shaped content is refused.
 
+## AgentSessions development evaluation
+
+Select a pinned, operator-owned built-in `chat` host explicitly. This path uses
+one fresh, non-fork Session and one never-retried Exec per packaged case, with
+exact `system_prompt` config sent every time. It loads no Kubernetes settings.
+No registry, authentication, Lift, chat/status or remote-host support is added.
+
+```sh
+kmx eval --workspace ./sessions-workspace --development-host ./private/host.json \
+  --out ./private/passing.json --case-timeout 30s
+kmx push --workspace ./sessions-workspace --evaluation ./private/passing.json \
+  --to-layout ./sessions-layout greeter:v1
+```
+
+The host JSON is closed, at most 16 KiB, in a private directory (0700) with a
+private regular file (0600), without symlinks. Replace the digest placeholders
+below with actual operator observations; IDs name your durable host/journal and
+inference scope, not a tunnel port or DNS name. `runtimeBinaryDigest` identifies
+the inspected binary; `runtimeConfigDigest` covers its noncredential execution
+configuration; `inferenceRevision` identifies the observed model-route revision.
+Never hash or include credentials. The exact runtime commit and chat/config
+contract must match the packaged member.
+
+```json
+{
+  "schemaVersion": 1,
+  "address": "127.0.0.1:8080",
+  "observation": {
+    "mode": "operator-observed-development",
+    "hostID": "owned-host",
+    "journalID": "owned-journal",
+    "runtimeVersion": "ca85f47a2ec17ca6e16029cfa69419cfe29442b3",
+    "runtimeBinaryDigest": "sha256:<observed-binary-digest>",
+    "runtimeConfigDigest": "sha256:<observed-config-digest>",
+    "inferenceID": "owned-model-route",
+    "inferenceRevision": "sha256:<observed-route-digest>",
+    "model": "fixture-model",
+    "harness": "chat",
+    "harnessVersion": "1",
+    "retention": "operator-managed"
+  }
+}
+```
+
+The address must be literal loopback, not `localhost`. All cluster, namespace,
+inference, kagent bindings and result-port selectors refuse, including explicitly
+supplied defaults. No declaration or transport failure triggers fallback. Before
+Session creation, evaluation prints:
+**“Development: unauthenticated operator-observed host; not authenticated remote promotion.”**
+Instructions, inputs, answers and config are retained in the host journal in
+cleartext under operator-managed retention; connection cleanup does not delete
+them. Keep the pinned process/journal under operator control throughout the run.
+Sessions has no authoritative host/build/model-advertisement endpoint here:
+declarations and local inspection are not authenticated attestations, and an
+unchanged observation file cannot detect a hostile process replacement.
+
+Execution requires an intact canonical five-record chat journal, exact
+harness/version/config/input/model-request fingerprint, attributable final text,
+terminal success and EOF. Deltas and Session metadata are not answers. Host-file
+and source snapshots are rechecked around each case and before export. Assertion
+failure, unknown/partial/invalid evidence, drift, cancellation or output failure
+before publication stops later cases with no new pass. The shared publisher can
+leave a complete passing receipt after its exclusive link if a later directory
+sync, readback or cancellation fails; evaluation returns nonzero and reports
+**“output may exist”**. Inspect the file rather than assuming rollback removed it.
+No incomplete receipt is accepted, and no published destination is automatically
+deleted. Every Session and execution identity must be unique; no retry, recovery
+or implicit old pass is selected.
+
+Only a full pass exports the `kmx.agentsessions-suite.passing/v1` private proof,
+including exact S/G/member/profile/config/model/case identities, operator host
+observations, fresh Session/execution IDs and verified journal heads. Prompts,
+answers, config bytes, endpoint locators and journal bodies are excluded. Push
+consumes that explicit proof for exact S; evidence is not embedded in the suite
+or published as a referrer. Orka/kagent evidence cannot authorize this member,
+and Sessions evidence is refused by Lift and receipt diff. Read-only Replay can
+support diagnosis with zero model calls but cannot become fresh candidate proof.
+
+The pinned daemon path has been demonstrated once with an instruction-sensitive,
+keyless OpenAI-compatible fixture: two-case pass/evaluated push, instruction
+failure with no export, and Replay/reference reconstruction with unchanged model
+counter. That is runtime/config/journal qualification, not real-LLM quality or
+production/authenticated host qualification. No model or host is installed by KMX.
+
 ## Evaluate the whole workspace
 
-Provision the pinned Orka v0.2.0 harness-v2 runtime, a Ready OpenAI-compatible
-inference Provider with its referenced Secret, and the existing result-access
-ServiceAccount/Task-get grant separately. Evaluation does not install or upgrade
-anything, build images or write Secrets. The packaged member model is exact;
-the selected Provider's default model does not replace it. Required member
-images remain `[]`.
+For Orka, provision the pinned v0.2.0 harness-v2 runtime, a Ready
+OpenAI-compatible inference Provider with its referenced Secret, and the existing
+result-access ServiceAccount/Task-get grant separately. For kagent, provision
+exact v0.10.3 Go, author a `KagentBindings` file, and provision its referenced
+Secret. Evaluation does not install or upgrade anything, build images or write
+Secrets. The packaged member model is exact; bindings do not replace it. Required
+member images remain `[]`.
 
 ```sh
 mkdir -m 700 ../private-evidence
@@ -124,14 +241,16 @@ substitution, judge, case subset or `--show-content` is available. Only `contain
 receipt-budget overflow and invalid output destinations refuse offline before
 loading cluster configuration.
 
-One mutation guard covers both ownership-safe Provider/Agent placement and all
-ordered evaluation Tasks. Remote targets require the existing named confirmation;
-local kind targets retain the existing banner. Only a same-owner native pair can
-be reused or updated; legacy/unowned/foreign resources are not adopted. Every
-case sends one fresh Task exactly once, using the exact authored input. Ambiguous
-writes are never recovered, retried or resent. Placement, runtime, target and
-binding observations bracket execution; source and placement are checked again
-before export. These observations do not prove drift absence or authentication.
+One mutation guard covers runtime-specific placement and all ordered evaluation
+Tasks: Orka `Provider/Agent`, or kagent `ModelConfig/Agent`. Remote targets require
+the existing named confirmation; local kind targets retain the existing banner.
+Orka can reuse/update only a same-owner pair; kagent creates new objects and
+refuses occupied targets without complete caller-retained proof. Neither adopts
+legacy/unowned/foreign resources. Every case sends one fresh Task exactly once,
+using the exact authored input. Ambiguous writes are never recovered, retried or
+resent. Placement, runtime, target and binding observations bracket execution;
+source and placement are checked again before export. These observations do not
+prove drift absence or authentication.
 
 Kagent uses a closed author-owned `KagentBindings` file (namespace, OpenAI
 provider/baseURL, separately provisioned Secret name/explicit key). The model
@@ -179,8 +298,10 @@ compares only compatible same-runtime subjects/case inventories; Orka/kagent
 comparison refuses as incompatible, never as equivalent behavior. Comparison
 also requires identical observed ownership. Separate kagent CLI runs create
 fresh resources, so their receipts are incompatible rather than a cross-run
-behavior comparison. Orka lift consumers reject kagent evidence. `eval from-sessions` and `bundle evaluate`
-retain their separate formats and behavior; native receipts are not bundle gates.
+behavior comparison. Root Lift dispatches only matching runtime evidence;
+cross-runtime evidence refuses. Old Orka/kagent/AgentSessions bundle receipts are
+unreadable. `eval from-sessions` remains private reference extraction/export only,
+with no native manifest consumer. RecordedExecution/legacy replay/judges are removed.
 
 ### Qualification boundary
 
@@ -205,9 +326,26 @@ and Task attempts, and refuses incomplete/failed requests. Only passing receipt
 metadata and a payload-free qualification report may be uploaded. Runtime/model and
 Kubernetes audit storage can still retain inputs. A successful run qualifies this
 fixed scenario; hermetic tests alone do not establish runtime/model execution.
-Kagent release-reference lift and standalone package evaluation remain unavailable.
-Promotion, absent-resource CLI creation and partial CLI outcomes are not
-established by this fixed native reuse scenario.
+The same shard also prepares a second exclusively owned kind cluster with the
+same pinned Orka in `orka-system`. It shares the real AIKit model through a
+fixture-only NodePort on the private kind network, without a host port mapping;
+the destination has its own inference Provider and Secret. With source withheld,
+registry `lift --promote --plan` must be GET-only and apply must complete both
+server preflights before beginning creation of an absent Provider/Agent pair.
+Independent destination identity/spec/marker readbacks and one fresh Task with
+authored answer assertions qualify creation and execution. A separate Ready
+Provider declaring a mismatched model must refuse before admission, writes or
+Task attempts, leaving the target empty. That same Provider first passes a
+matching-model plan control; only its model declaration is then changed for the
+refusal. The genuine receipt remains source-only evidence, not destination
+evaluation or independent model-server qualification. No second model workload
+or timeout increase is required. Partial CLI outcomes are not established by
+this fixed scenario.
+
+The dedicated kagent shard separately qualifies packaged evaluation and
+source-free digest Lift into a fresh prepared namespace, including GET-only
+planning, ordered creation and occupied repeat refusal without another native
+execution. Standalone package evaluation remains unavailable.
 
 ## Publish
 
@@ -399,7 +537,7 @@ Unsigned private receipts establish supplied observations, not signer
 authentication or authenticated deployment approval. General promotion policy/
 signing remains separate. Orka uses native `openai` Providers; kagent uses explicit
 OpenAI ModelConfig bindings. Host Foundry/Copilot execution and image lift are not
-covered. Existing bundle lift is unchanged. Hermetic tests alone do not establish
+covered. Legacy bundle lift is removed. Hermetic tests alone do not establish
 real cluster lift qualification.
 
 ### Kagent digest lift

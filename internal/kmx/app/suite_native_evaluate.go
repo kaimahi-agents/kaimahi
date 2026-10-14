@@ -57,6 +57,10 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 			}
 		}
 	}
+	var placement *suiteNativeReuseRefusal
+	if errors.As(err, &placement) {
+		return errors.Join(placement, cause)
+	}
 	classified := errSuiteNativeRefused
 	if mayHaveChanged {
 		classified = errSuiteNativeEvaluation

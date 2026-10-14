@@ -327,10 +327,10 @@ func TestRunCaseToolEvidenceFromPinnedController(t *testing.T) {
 	model := func(context.Context, api.ModelRequest) (api.ModelResponse, error) {
 		return api.ModelResponse{Message: *api.TextMessage("assistant", "answer")}, nil
 	}
-	tool := func(context.Context, api.ToolCall) (api.ToolResult, error) {
+	tool := func(context.Context, controller.ToolCallContext, api.ToolCall) (api.ToolResult, error) {
 		return api.ToolResult{ID: "executor-wrong-id", IsError: true, Error: canary, Output: map[string]any{"private": canary}}, nil
 	}
-	c, err := controller.New(eventlog.AsStore(log), model, controller.WithToolExecutor(tool), controller.WithStart([]byte(`{"system_prompt":"  exact\n\"instructions\" \u003c\u0026\u003e 世界\n"}`), 0))
+	c, err := controller.New(eventlog.AsStore(log), model, controller.WithToolExecutor(tool), controller.WithSessionUID("session-1"), controller.WithStart([]byte(`{"system_prompt":"  exact\n\"instructions\" \u003c\u0026\u003e 世界\n"}`), 0))
 	if err != nil {
 		t.Fatal(err)
 	}

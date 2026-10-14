@@ -15,16 +15,15 @@ import (
 
 // AgentTUIOptions selects the two environments shown by kmx console.
 type AgentTUIOptions struct {
+	Workspace                              string
+	Suite                                  SuiteConsoleOptions
 	LocalContext, RemoteContext, Namespace string
-	// Bundles is the directory holding one bundle per agent, named after it.
-	// Empty means agents/, where `kmx agent create` writes them.
-	Bundles string
-	Demo    bool
+	Demo                                   bool
 }
 
 type agentTUIEnvironment struct {
-	Name, Kubeconfig string
-	Local            bool
+	Name, Kubeconfig, Server string
+	Local                    bool
 }
 
 func (e agentTUIEnvironment) app(a *App) *App {
@@ -118,7 +117,6 @@ func (a *App) agentTUIPrompt(ctx context.Context, namespace string, prompt agent
 
 func (a agentTUIAgent) key() string   { return a.Runtime + "/" + a.Namespace + "/" + a.Name }
 func (a agentTUIAgent) canChat() bool { return !a.External }
-func (a agentTUIAgent) canLift() bool { return !a.External }
 
 type agentTUIColumn struct {
 	Env       agentTUIEnvironment
@@ -176,7 +174,7 @@ func (a *App) agentTUIEnvironments(ctx context.Context) ([]agentTUIEnvironment, 
 			continue
 		}
 		seen[c.Name] = len(envs)
-		envs = append(envs, agentTUIEnvironment{Name: c.Name, Kubeconfig: defaultKubeconfig, Local: p.Local})
+		envs = append(envs, agentTUIEnvironment{Name: c.Name, Kubeconfig: defaultKubeconfig, Server: consoleContextServer(kube, c.Name), Local: p.Local})
 	}
 	locations, err := loadAgentLocations()
 	if err != nil {
@@ -199,7 +197,7 @@ func (a *App) agentTUIEnvironments(ctx context.Context) ([]agentTUIEnvironment, 
 		if err != nil || p.Host == "" {
 			continue
 		}
-		env := agentTUIEnvironment{Name: l.Context, Kubeconfig: l.Kubeconfig, Local: p.Local}
+		env := agentTUIEnvironment{Name: l.Context, Kubeconfig: l.Kubeconfig, Server: consoleContextServer(kube, l.Context), Local: p.Local}
 		if index, ok := seen[l.Context]; ok {
 			envs[index] = env
 		} else {

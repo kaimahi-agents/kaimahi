@@ -24,11 +24,13 @@ type ReleaseLiftOutcome struct {
 // ReleaseLiftResult is a placement observation, never destination evaluation.
 // A partial result preserves acknowledged identities without granting reuse.
 type ReleaseLiftResult struct {
+	Placement string               `json:"placement,omitempty"`
 	Summary   ReleaseLiftSummary   `json:"summary"`
 	State     string               `json:"state"`
 	Resources []ReleaseLiftOutcome `json:"resources"`
 	placement *suiteNativePlacement
 	kagent    *releaseLiftKagentPlacement
+	image     *releaseLiftImage
 }
 
 type releaseLiftInputs struct {
@@ -41,9 +43,16 @@ type releaseLiftInputs struct {
 func readReleaseLiftInputs(ctx context.Context, opt ReleaseLiftOptions) (releaseLiftInputs, error) {
 	var in releaseLiftInputs
 	var err error
-	in.receipt, err = readSuitePassingReceipt(ctx, opt.Evidence)
-	if err != nil {
-		return in, err
+	if opt.Environment != "" {
+		_, artifact, _, err := suiteoras.ReadImageReleaseArtifact(ctx, opt.Reference, opt.FromLayout, opt.PlainHTTP)
+		if err == nil {
+			if err := workspace.ValidateImageArtifact(ctx, artifact); err != nil {
+				return in, err
+			}
+			return in, ErrImageReleaseEvidence
+		}
+		// A raw image-profile suite can still produce the precise unsupported
+		// evidence diagnostic below; it never acquires native execution authority.
 	}
 	if opt.FromLayout != "" {
 		_, digest, _ := strings.Cut(opt.Reference, "@")
@@ -51,6 +60,19 @@ func readReleaseLiftInputs(ctx context.Context, opt ReleaseLiftOptions) (release
 	} else {
 		in.artifact, err = suiteoras.ReadArtifactRegistry(ctx, opt.Reference, opt.PlainHTTP)
 	}
+	if err != nil {
+		return in, err
+	}
+	if workspace.HasImageProfile(in.artifact) {
+		if err := workspace.ValidateImageArtifact(ctx, in.artifact); err != nil {
+			return in, err
+		}
+		return in, ErrImageReleaseEvidence
+	}
+	if opt.Environment != "" {
+		return in, ErrReleaseLift
+	}
+	in.receipt, err = readSuitePassingReceipt(ctx, opt.Evidence)
 	if err != nil {
 		return in, err
 	}
@@ -72,6 +94,9 @@ func (a *App) releaseLiftWorker(ctx context.Context, opt ReleaseLiftOptions) *Ap
 }
 
 func (a *App) recheckReleaseLiftInputs(ctx context.Context, p *PreparedReleaseLift) error {
+	if p.image != nil {
+		return a.recheckImageSubject(ctx, p.image)
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -165,7 +190,7 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			err = errors.Join(ErrReleaseLiftApply, cause)
 		}
 	}()
-	if a == nil || a.Cfg == nil || a.Run == nil || p == nil || (p.native == nil) == (p.kagent == nil) || reviewedDigest == "" || reviewedDigest != p.summary.PlanDigest {
+	if a == nil || a.Cfg == nil || a.Run == nil || p == nil || !p.oneRuntime() || reviewedDigest == "" || reviewedDigest != p.summary.PlanDigest {
 		return result, ErrReleaseLiftApply
 	}
 	result.Summary = p.Summary()
@@ -185,7 +210,7 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 		profile := p.kagent.prepared.worker.selectedKagentProfile()
 		worker.kagentProfile = &profile
 	}
-	created := make([]releaseLiftEffect, 2)
+	created := make([]releaseLiftEffect, len(p.summary.Resources))
 	recheck := func() error {
 		if err := worker.recheckReleaseLiftInputs(ctx, p); err != nil {
 			return err
@@ -269,6 +294,15 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 		result.Resources[1].Ready = true
 	}
 	result.State = "ready"
+	if result.image != nil {
+		id, err := saveImagePlacement(result.image)
+		if err != nil {
+			result.State = "partial"
+			result.image = nil
+			return result, err
+		}
+		result.Placement = id
+	}
 	return result, nil
 }
 
@@ -317,7 +351,30 @@ func (a *App) VerifyReleaseLiftPlacement(ctx context.Context, result ReleaseLift
 			err = errors.Join(ErrReleaseLiftApply, ctx.Err())
 		}
 	}()
-	if a == nil || a.Cfg == nil || a.Run == nil || result.State != "ready" || (result.placement == nil) == (result.kagent == nil) {
+	if a == nil || a.Cfg == nil || a.Run == nil || result.State != "ready" {
+		return ErrReleaseLiftApply
+	}
+	if result.image != nil {
+		if result.placement != nil || result.kagent != nil {
+			return ErrReleaseLiftApply
+		}
+		x := result.image
+		worker := a.releaseLiftWorker(ctx, x.options)
+		if err := worker.recheckImageSubject(ctx, x); err != nil {
+			return err
+		}
+		if len(x.observed) != len(x.plan.Objects) {
+			return ErrReleaseLiftApply
+		}
+		for i, doc := range x.plan.Objects {
+			row, err := worker.inspectImageReleaseResource(ctx, x, doc, &x.observed[i])
+			if err != nil || row.Action != "reuse" {
+				return ErrReleaseLiftApply
+			}
+		}
+		return nil
+	}
+	if (result.placement == nil) == (result.kagent == nil) {
 		return ErrReleaseLiftApply
 	}
 	if result.kagent != nil {

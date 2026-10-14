@@ -76,6 +76,10 @@ func (e *suitePassingExport) publish(ctx context.Context, r *suitePassingReceipt
 	if err != nil {
 		return err
 	}
+	return e.publishBytes(ctx, raw)
+}
+
+func (e *suitePassingExport) publishBytes(ctx context.Context, raw []byte) (err error) {
 	if err := e.unchanged(); err != nil {
 		return err
 	}

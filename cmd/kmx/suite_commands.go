@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -17,6 +19,7 @@ import (
 	agentsuitecore "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
@@ -265,12 +268,15 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		return nil
 	}
 	group.AddCommand(build, diff, pull, newSuitePushCommand(state, false), validate)
+	addSuiteWorkspaceCommands(group, state)
 	return group
 }
 
 // newSuitePushCommand shares publication flags and safety contracts between
 // root workspace publication and the extracted-directory suite transfer.
 func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command {
+	var imageBuild app.SuiteBuildOptions
+	var imageAttestations bool
 	var target, pushWorkspace, evaluation string
 	var pushPlainHTTP, pushForce, pushProvenance, pushRequireProvenance bool
 	push := &cobra.Command{
@@ -315,8 +321,8 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 	}
 	if workspaceMode {
 		push.Use = "push [--workspace <directory>] <reference>"
-		push.Short = "Push a native-Orka workspace to an OCI layout or registry"
-		push.Long = "Prepare one native-Orka workspace member and its authored cases, then copy that exact OCI graph.\n" +
+		push.Short = "Push a native workspace to an OCI layout or registry"
+		push.Long = "Prepare one native workspace member and its authored cases, then copy that exact OCI graph.\n" +
 			"Pass only the destination reference as a positional argument. Discover the nearest ancestor workspace.yaml from the current directory, or select an exact root without fallback with --workspace <directory>.\n" +
 			"Stderr names the absolute workspace path and prepared OCI manifest digest. No member images are required; this does not deploy or evaluate an Agent.\n" +
 			"--evaluation consumes a private full-passing native receipt file and refuses a different exact suite manifest or incoherent case inventory before transfer. Unsigned observations are not authentication or a policy gate.\n\n" + push.Long
@@ -363,6 +369,37 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 		}
 		if workspaceMode {
 			a.Err = cmd.ErrOrStderr()
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			root, err := workspace.Resolve(cwd, pushWorkspace)
+			if err != nil {
+				if errors.Is(err, workspace.ErrNotFound) {
+					return fmt.Errorf("no workspace found; use --workspace DIR: %w", err)
+				}
+				return err
+			}
+			summary, err := workspace.Describe(root)
+			if err != nil {
+				return err
+			}
+			if summary.Execution == workspace.ImageExecution {
+				if target != "" || cmd.Flags().Changed("evaluation") {
+					return fmt.Errorf("image publication requires a registry; image evaluation evidence is not yet supported")
+				}
+				imageBuild.Provenance, imageBuild.Force, imageBuild.DisableAttestations = provenance, pushForce, !imageAttestations
+				pub, err := a.PublishSuiteWorkspace(cmd.Context(), root, summary.Name, args[0], pushPlainHTTP, imageBuild)
+				if err != nil {
+					return &suiteDiagnosticError{err}
+				}
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(pub)
+			}
+			for _, flag := range []string{"builder", "attestations", "require-attestations"} {
+				if cmd.Flags().Changed(flag) {
+					return fmt.Errorf("--%s requires image-http execution", flag)
+				}
+			}
 			if cmd.Flags().Changed("evaluation") {
 				result, err = a.PushSuiteWorkspaceEvaluated(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance, evaluation)
 			} else {
@@ -420,6 +457,11 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 			return err
 		}
 		return nil
+	}
+	if workspaceMode {
+		push.Flags().StringVar(&imageBuild.Builder, "builder", "", "buildx builder for image-http members")
+		push.Flags().BoolVar(&imageAttestations, "attestations", true, "request image SBOM and provenance")
+		push.Flags().BoolVar(&imageBuild.RequireAttestations, "require-attestations", false, "require image attestations")
 	}
 	return push
 }

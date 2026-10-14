@@ -1,0 +1,183 @@
+# KMX interface baseline
+
+This document is a reviewable snapshot of the interfaces implemented on current
+`main`. It is not a proposal for future syntax. The [`kmx` reference](kmx.md)
+remains authoritative for command flags and output contracts.
+
+## Installed command tree
+
+Visible product commands:
+
+```text
+kmx
+├── create <name>
+├── eval
+│   ├── diff <before.json> <after.json>
+│   └── from-sessions <session-uid>...
+├── push <reference>
+├── lift <ref>@<digest>
+├── run --agent <name>
+├── chat <name> [message...]
+├── quickstart
+├── status
+├── console
+├── targets
+├── context
+│   ├── show
+│   └── use <context>
+├── local
+│   ├── up
+│   └── down
+├── orka
+│   ├── install
+│   ├── status
+│   ├── show <name>
+│   └── list
+├── suite
+│   ├── validate <path>
+│   ├── diff <before> <after>
+│   ├── build <directory>
+│   ├── push <directory> <reference>
+│   └── pull <reference>
+├── task
+│   └── result <task>
+├── completion bash|zsh|fish
+└── version
+```
+
+`eval` is an operational workspace command with offline diff and independent
+read-only reference extraction/export helpers. Cobra also supplies `help`.
+
+Hidden but callable:
+
+| Route | Contract |
+|---|---|
+| `kmx aks up/down` | Guarded AKS compatibility path with historical ownership records |
+| `kmx quickstart-wizard` | Retirement stub directing callers to `quickstart --interactive` |
+
+Removed outright: `kmx agent`, root `ctx`, `up`, `down`, the former
+AKS-provisioning meaning of root `lift`, and `lift down`. They are not
+compatibility aliases. Root `lift <ref>@<digest>` is now the distinct deploy-only
+one-member packaged native Orka/exact-v0.10.3 Go kagent operation.
+User `agent.yaml` readers/writers/receipts, `bundle` commands, `create --live`
+including previews/wizard, root run bundle mode and `--bundles` flags are also
+removed outright. Old bundle receipts are unreadable; no migration/resource deletion.
+
+## Everyday object flow
+
+```text
+Workspace --create/eval--> AgentSuite artifact --push--> OCI location
+                                                    |
+                                                    +-> exact-digest native lift
+```
+
+| Command | Primary object | Current effect |
+|---|---|---|
+| `create` | Workspace | Author one offline member; no cluster or model call |
+| `eval` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE`; stop later cases after the first non-pass |
+| `push` | Prepared AgentSuite | Transfer exact OCI graph; optional full-passing receipt check; no deployment |
+| `lift` | Exact supported packaged native AgentSuite | Deploy by immutable digest with explicit private evidence and target; Orka uses `--inference`, kagent uses `--bindings`; GET-only with `--plan` |
+| `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |
+| `status`, `orka status` | Orka installation | Table-only runtime report, not suite deployment status |
+
+## Workspace versus live
+
+Default `create` requires one name, exact `--model`, and file-valued
+`--instructions`. It discovers the nearest `workspace.yaml`; `--workspace DIR`
+selects or initializes one exact root. The current source profile has a
+one-member limit.
+
+Live create/previews/wizard are removed; their flags are unknown before config.
+Root eval runs full native authored cases only: Orka uses `--inference`, kagent
+uses `--bindings`; pinned AgentSessions chat instead requires a private
+`--development-host FILE`, with no cluster selectors or fallback. All export only
+runtime-specific full-passing evidence. No judge, subset, recorded Sessions input
+or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
+AgentSessions evidence is explicitly refused by diff and Lift;
+`eval from-sessions` is reference extraction/export without a native consumer.
+Suite-owned live resources refuse legacy invocation. Chat `/lift` and console
+Lift only print `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+No new GUI or source-less copying. Console Ready means placement, not an answer.
+
+## Context, environment, target and inference
+
+- A **context** is a kubeconfig access selector. KMX does not follow kubectl's
+  mutable current-context.
+- An experimental **Environment** is logical setup identity. The setup-only
+  `pkg/kmx.AgentEnvironment` is not wired to `kmx local up`.
+- A **target** is an exact runtime, physical destination and namespace.
+- **Inference** is an independent model route; choosing it does not select a
+  runtime.
+
+`kmx targets` is an offline compiled capability report by default. Explicit
+probes distinguish present, absent and unreadable; they do not select, install
+or deploy a runtime.
+
+## Runtime boundaries
+
+| Runtime/integration | Implemented KMX scope |
+|---|---|
+| Orka | Default runtime; setup, independent live run/chat, workspace evaluation/evaluated publication and exact-digest native Lift; no suite status/retirement |
+| kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Lift; no packaged status/retirement |
+| agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case, no tools/judge, cluster settings, registry/auth or remote lifecycle; Lift/chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. |
+
+Support is operation- and version-specific. See the [runtime support
+matrix](runtime-adapters.md#revision-pinned-support-and-qualification-matrix).
+
+## Public Go surfaces
+
+The repository has two distinct public Go areas:
+
+1. `agentsuite/` is the implemented portable format library: model, media types,
+   canonical JSON, schemas, offline validation and semantic diff.
+2. `pkg/kmx/` is alpha design evidence. It has exactly three exported
+   interfaces and no concrete implementation or CLI wiring.
+
+```go
+type AgentEnvironment interface {
+    Up(context.Context, EnvironmentSpec) (Environment, error)
+}
+
+type AgentSuites interface {
+    Validate(context.Context, ValidateSuiteRequest) (ValidatedAgentSuite, error)
+    Build(context.Context, BuildSuiteRequest) (BuildSuiteResult, error)
+    RecoverBuild(context.Context, OperationID) (BuildSuiteProgress, error)
+    Push(context.Context, PushSuiteRequest) (PushSuiteResult, error)
+    RecoverPush(context.Context, OperationID) (PushSuiteResult, error)
+}
+
+type AgentDeployments interface {
+    BuildRevision(context.Context, BuildRequest) (BuildResult, error)
+    Lift(context.Context, LiftRequest) (DeploymentReceipt, error)
+    RecoverLift(context.Context, OperationID) (DeploymentReceipt, error)
+    Status(context.Context, DeploymentRef) (DeploymentSnapshot, error)
+    Retire(context.Context, RetireRequest) (RetirementReceipt, error)
+    RecoverRetire(context.Context, OperationID) (RetirementReceipt, error)
+}
+```
+
+Important limits:
+
+- `AgentEnvironment` establishes logical identity only; target resolution,
+  inspection, persistence, recovery and teardown are deferred.
+- `AgentSuites.Build/Push` is an initial image-backed model. Native profiles
+  requiring zero member images do not implement that northbound workflow.
+- `AgentDeployments` still models one revision or sandbox image, not a complete
+  suite deployment.
+- The installed CLI uses `internal/kmx/runtime`, not these interfaces.
+
+## Compatibility and evidence
+
+- Latest stable v0.5.1 retains the former `kmx agent ...` routes. Root
+  create/eval/push/lift and bundle retirement are unreleased development behavior.
+- Help and completion must remain inert.
+- Unknown is not absent; readiness is not a result; a result is not evaluation.
+- Answers and report documents own stdout. Progress, warnings and notices use
+  stderr.
+- Receipts and provenance omit credentials and are not authentication.
+- Effectful sends are not retried after an ambiguous outcome.
+
+Before changing an interface, update command registration/help/completion,
+generated recovery instructions, primary docs, CHANGELOG and meaningful refusal
+tests in the same slice. Follow [command conventions](command-conventions.md),
+[command alignment](command-semantics.md), and [AGENTS.md](../AGENTS.md).

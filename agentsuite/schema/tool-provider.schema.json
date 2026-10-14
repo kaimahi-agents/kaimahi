@@ -127,6 +127,47 @@
           "type": "array",
           "uniqueItems": true,
           "items": {"type": "string", "minLength": 1}
+        },
+        "effect": {
+          "description": "Tool behavior independent of credentials. Mutating includes changing application state, sending, publishing, or initiating external work; incidental logging, caching, and accounting do not change the classification. Omission makes no read-only claim.",
+          "enum": ["read-only", "mutating"]
+        },
+        "approval": {
+          "description": "Required mandates approval before invocation; policy-controlled leaves the requirement to runtime policy. Runtime policy may impose stronger requirements for either effect class. Omission is equivalent to policy-controlled.",
+          "enum": ["required", "policy-controlled"]
+        },
+        "delegatedAuthorization": {"$ref": "#/$defs/delegatedAuthorization"}
+      },
+      "if": {"required": ["delegatedAuthorization"]},
+      "then": {"required": ["effect", "approval"]}
+    },
+    "delegatedAuthorization": {
+      "description": "Declares that this callable Tool requires delegated-user authorization before it may be called. This object never contains an OAuth client secret, authorization callback or consent state, access or refresh token, token expiry/refresh/revocation state, a person's mutable Connection/account link, or a deployment-specific Connection identifier. The deployment/runtime resolves this portable requirement to a verified requester and a live user-owned connection.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service", "scope", "credential"],
+      "properties": {
+        "service": {
+          "description": "Stable identifier of the external service or provider requirement this delegated-user authorization is scoped to (for example \"microsoft-graph\"). Not a deployment-specific Connection identifier.",
+          "$ref": "#/$defs/id"
+        },
+        "scope": {
+          "description": "Delegated-user authorization capability required to call this Tool (for example \"mail.send\"). Not a granted token, consent record, or account link.",
+          "$ref": "#/$defs/capability"
+        },
+        "credential": {"$ref": "#/$defs/brokeredCredential"}
+      }
+    },
+    "brokeredCredential": {
+      "description": "Declares that credential resolution and injection for this delegated-user authorization requirement are brokered entirely by the runtime. This object never contains a client secret, access token, refresh token, or token lifecycle state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolution", "bindingRef"],
+      "properties": {
+        "resolution": {"const": "runtime-brokered"},
+        "bindingRef": {
+          "description": "Identifier naming an unresolved runtime/deployment binding slot for this authorization requirement. It is not a connection identifier, account identifier, or credential value.",
+          "$ref": "#/$defs/id"
         }
       }
     },

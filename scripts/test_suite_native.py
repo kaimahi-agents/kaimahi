@@ -48,6 +48,157 @@ def task():
             "status": {"phase": "Succeeded", "resultRef": {"available": True}}}
 
 
+class PromotionWorkflowTests(unittest.TestCase):
+    """Execute CI shell ownership decisions without Docker or Kubernetes."""
+
+    def setUp(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        self.job = workflow["jobs"]["e2e-orka-runtime"]
+        self.steps = self.job["steps"]
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = pathlib.Path(self.temp.name)
+        (self.root / "bin").mkdir()
+        self.env_file = self.root / "github-env"
+        self.env_file.touch()
+        self.record = self.root / "calls.jsonl"
+        # Fake only external commands. Bash, its failure propagation, redirects,
+        # GITHUB_ENV writes and cleanup guards are the real workflow operations.
+        fake = '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+name = pathlib.Path(sys.argv[0]).name
+args = sys.argv[1:]
+with open(os.environ["CALLS"], "a") as stream:
+    stream.write(json.dumps({"tool": name, "args": args,
+        "cluster": os.environ.get("KIND_CLUSTER"),
+        "context": os.environ.get("KUBE_CTX"),
+        "owned": pathlib.Path(os.environ["GITHUB_ENV"]).read_text()}) + "\\n")
+if name == "kind" and args == ["get", "clusters"]:
+    print(os.environ.get("CLUSTERS", ""))
+    sys.exit(int(os.environ.get("LIST_EXIT", "0")))
+if name == "kmx" and args == ["local", "up", "--step", "cluster"]:
+    sys.exit(int(os.environ.get("CREATE_EXIT", "0")))
+if name == "kmx" and "install" in args:
+    print("PRIVATE_INSTALL_CANARY")
+    if os.environ.get("VERIFIED", "1") == "1":
+        print("Installer verified: pinned")
+    sys.exit(int(os.environ.get("INSTALL_EXIT", "0")))
+if name == "python3" and "nodes" in args:
+    sys.exit(int(os.environ.get("MIRROR_EXIT", "0")))
+'''
+        for name in ("kind", "kmx", "python3"):
+            path = self.root / "bin" / name
+            path.write_text(fake.replace("#!/usr/bin/env python3", "#!" + sys.executable, 1))
+            path.chmod(0o700)
+        self.env = dict(os.environ, PATH=str(self.root / "bin") + os.pathsep + os.defpath,
+                        CALLS=str(self.record), GITHUB_ENV=str(self.env_file),
+                        GITHUB_WORKSPACE=str(self.root), RUNNER_TEMP=str(self.root),
+                        KIND_CLUSTER="kmx-orka", KUBE_CTX="kind-kmx-orka")
+        for key in ("KMX_ORKA_RUNTIME_CREATED", "KMX_ORKA_PROMOTION_CREATED"):
+            self.env.pop(key, None)
+
+    def step(self, name):
+        found = [step for step in self.steps if step.get("name") == name]
+        self.assertEqual(len(found), 1, "missing dedicated workflow step: " + name)
+        return found[0]
+
+    def run_step(self, name, **env):
+        return subprocess.run(["bash", "-e", "-o", "pipefail", "-c", self.step(name)["run"]],
+                              cwd=self.root, env=dict(self.env, **env), capture_output=True, timeout=10)
+
+    def calls(self):
+        return [json.loads(line) for line in self.record.read_text().splitlines()] if self.record.exists() else []
+
+    def setup_promotion(self, **env):
+        return self.run_step("Native promotion — create only the dedicated destination cluster", **env)
+
+    def cleanup(self):
+        inherited = dict(line.split("=", 1) for line in self.env_file.read_text().splitlines())
+        return self.run_step("down", **inherited)
+
+    def test_success_records_ownership_after_create_and_routes_only_destination(self):
+        result = self.setup_promotion()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        self.assertEqual([(c["tool"], c["args"]) for c in calls], [
+            ("kind", ["get", "clusters"]),
+            ("kmx", ["local", "up", "--step", "cluster"]),
+            ("python3", [str(self.root / "scripts/ci/registry-mirrors.py"), "nodes", "--cluster", "kmx-orka-promote"])])
+        self.assertEqual((calls[1]["cluster"], calls[1]["context"]), ("kmx-orka-promote", "kind-kmx-orka-promote"))
+        self.assertNotIn("KMX_ORKA_PROMOTION_CREATED=1", calls[1]["owned"])
+        self.assertIn("KMX_ORKA_PROMOTION_CREATED=1", calls[2]["owned"])
+        self.assertEqual(self.cleanup().returncode, 0)
+        self.assertEqual(self.calls()[-1]["args"], ["delete", "cluster", "--name", "kmx-orka-promote"])
+
+    def test_preexisting_or_unknown_cluster_list_refuses_without_delete(self):
+        for env in ({"CLUSTERS": "unrelated\nkmx-orka-promote"}, {"LIST_EXIT": "1"}):
+            with self.subTest(env=env):
+                self.record.unlink(missing_ok=True)
+                result = self.setup_promotion(**env)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.env_file.read_text(), "")
+                self.assertEqual(self.cleanup().returncode, 0)
+                self.assertEqual([(c["tool"], c["args"]) for c in self.calls()], [("kind", ["get", "clusters"])])
+
+    def test_failed_ambiguous_create_is_not_owned_or_deleted(self):
+        self.assertNotEqual(self.setup_promotion(CREATE_EXIT="1").returncode, 0)
+        self.assertEqual(self.env_file.read_text(), "")
+        self.assertEqual(self.cleanup().returncode, 0)
+        self.assertEqual(len(self.calls()), 2)
+
+    def test_failure_after_acknowledged_create_still_cleans_owned_destination(self):
+        self.assertNotEqual(self.setup_promotion(MIRROR_EXIT="1").returncode, 0)
+        self.assertEqual(self.env_file.read_text(), "KMX_ORKA_PROMOTION_CREATED=1\n")
+        self.assertEqual(self.cleanup().returncode, 0)
+        self.assertEqual(self.calls()[-1]["args"], ["delete", "cluster", "--name", "kmx-orka-promote"])
+
+    def test_cleanup_requires_each_exact_ownership_flag_and_preserves_source(self):
+        for source, destination in (("", ""), ("1", ""), ("", "1"), ("1", "1"), ("0", "true")):
+            with self.subTest(source=source, destination=destination):
+                self.record.unlink(missing_ok=True)
+                result = self.run_step("down", KMX_ORKA_RUNTIME_CREATED=source, KMX_ORKA_PROMOTION_CREATED=destination)
+                self.assertEqual(result.returncode, 0)
+                expected = []
+                if source == "1":
+                    expected.append(["delete", "cluster", "--name", "kmx-orka"])
+                if destination == "1":
+                    expected.append(["delete", "cluster", "--name", "kmx-orka-promote"])
+                self.assertCountEqual([c["args"] for c in self.calls()], expected)
+
+    def test_destination_install_is_private_verified_and_provider_free(self):
+        name = "Native promotion — install pinned Orka without inference"
+        for env, success in (({}, True), ({"VERIFIED": "0"}, False), ({"INSTALL_EXIT": "1"}, False)):
+            with self.subTest(env=env):
+                self.record.unlink(missing_ok=True)
+                result = self.run_step(name, **env)
+                self.assertEqual(result.returncode == 0, success)
+                self.assertNotIn(b"PRIVATE_INSTALL_CANARY", result.stdout + result.stderr)
+                self.assertEqual(self.calls()[0]["args"], ["--context", "kind-kmx-orka-promote", "orka", "install", "--provider", "-"])
+        captures = list(self.root.glob("*orka*install*"))
+        self.assertTrue(captures, "installer output must be captured privately")
+        self.assertTrue(all(path.stat().st_mode & 0o077 == 0 for path in captures))
+
+    def test_qualifier_receives_both_contexts_with_existing_ci_guards(self):
+        name = "Native suite — qualify evaluation, exact transfer and CLI lift"
+        result = self.run_step(name)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls()[0]["args"], ["scripts/ci/suite-native.py", "kind-kmx-orka", "kind-kmx-orka-promote", str(self.root / "kmx-suite-native")])
+        order = [step.get("name") for step in self.steps]
+        setup = "Native promotion — create only the dedicated destination cluster"
+        install = "Native promotion — install pinned Orka without inference"
+        self.assertLess(order.index("Orka — Agent and Task return an exact local-model answer"), order.index(setup))
+        self.assertLess(order.index(setup), order.index(install))
+        self.assertLess(order.index(install), order.index(name))
+        for guarded in (setup, install, name):
+            self.assertEqual(self.step(guarded)["if"], "steps.changes.outputs.docs_only != 'true'")
+        self.assertEqual(self.step("down")["if"], "always() && steps.changes.outputs.docs_only != 'true'")
+        self.assertEqual(self.job["timeout-minutes"], 45)
+        self.assertEqual(self.step("Upload only passing native metadata")["with"]["path"].splitlines(), [
+            "${{ runner.temp }}/kmx-suite-native/artifacts/passing.json",
+            "${{ runner.temp }}/kmx-suite-native/artifacts/qualification.json"])
+
+
 class QualificationTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(Q, "native qualification helper is not implemented")
@@ -233,92 +384,44 @@ class QualificationTests(unittest.TestCase):
             with self.subTest(output=output, frames=frames), self.assertRaises(ValueError):
                 Q.verify_collision_refusal(1, output, frames, "ci-native-collision")
 
-    def test_refusal_tail_prepares_complete_bundle_and_does_not_repeat_positive_eval(self):
-        self.assertTrue(hasattr(Q.Qualification, "refusals"), "refusal tail is not independently callable")
-        import yaml
+    def test_refusal_tail_creates_raw_collision_without_legacy_cli(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             qualifier = Q.Qualification.__new__(Q.Qualification)
-            qualifier.work, qualifier.repo, qualifier.context = root, ROOT, "kind-owned"
-            qualifier.secret_ref = {"name": "local-provider-key", "key": "api-key"}
-            workspace, instructions = root / "workspace", root / "instructions.txt"
-            (workspace / "eval").mkdir(parents=True)
-            instructions.write_text("Public instructions")
-            cases = {"one.yaml": b'id: one\ninput: Public question\nexpectContains: ["answer"]\n'}
-            (workspace / "eval/one.yaml").write_bytes(cases["one.yaml"])
-            events = []
-            qualifier.frames = lambda: []
-            def boundary(*args, **kwargs):
-                events.append(tuple(str(a) for a in args))
-                if "create" in args:
-                    self.assertIn("--live", args)
-                    self.assertIn("--no-apply", args)
-                    self.assertNotIn("--task", args)
-                    bundle = pathlib.Path(args[args.index("--bundle-path") + 1])
-                    bundle.mkdir()
-                    for name in ("agent.yaml", "bindings.yaml"):
-                        document = yaml.safe_load((ROOT / "internal/kmx/app/testdata/bundle-format/main" / name).read_bytes())
-                        if name == "agent.yaml":
-                            document["metadata"]["name"] = "ci-native-suite"
-                        (bundle / name).write_text(yaml.safe_dump(document))
-                    return subprocess.CompletedProcess(args, 0, b"", b"")
-                self.assertEqual(args[:2], ("bundle", "lift"))
-                bundle = pathlib.Path(args[2])
-                self.assertEqual(yaml.safe_load((bundle / "agent.yaml").read_bytes())["kind"], "PortableAgent")
-                self.assertEqual(yaml.safe_load((bundle / "bindings.yaml").read_bytes())["kind"], "OrkaBindings")
-                raise RuntimeError("reached-complete-ownership-route")
-            qualifier.cli = boundary
-            qualifier.evaluation = lambda *a, **k: self.fail("positive evaluation must not run in refusal tail")
-            with self.assertRaisesRegex(RuntimeError, "reached-complete-ownership-route"):
-                qualifier.refusals(workspace, instructions, cases, {"Member": "ci-native-suite"})
-            self.assertEqual(len(events), 2)
-
-    def test_refusal_tail_collision_has_fresh_paths_after_legacy_refusal_stages_bundle(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            qualifier = Q.Qualification.__new__(Q.Qualification)
-            qualifier.work, qualifier.context = root, "kind-owned"
+            qualifier.work, qualifier.context, qualifier.repo = root, "kind-owned", ROOT
+            renderer = root / "native-reference"
+            subprocess.run(["go", "-C", str(ROOT), "build", "-o", str(renderer),
+                            str(ROOT / "scripts/ci/orka-native-reference.go")], check=True, capture_output=True, timeout=60)
+            def command(args, raw=None, **kwargs):
+                self.assertEqual(args, [ROOT / "bin/orka-native-reference"])
+                return subprocess.run([str(renderer)], input=raw, env={}, capture_output=True, timeout=60)
+            qualifier.command = command
             qualifier.secret_ref = {"name": "local-provider-key", "key": "api-key"}
             workspace = root / "workspace"
             (workspace / "eval").mkdir(parents=True)
-            cases = {"one.yaml": b'id: one\ninput: Public question\nexpectContains: ["answer"]\n'}
+            instructions = root / "instructions.txt"
+            instructions.write_text("Public instructions")
+            cases = {"one.yaml": b'id: one\\ninput: Public question\\nexpectContains: ["answer"]\\n'}
             (workspace / "eval/one.yaml").write_bytes(cases["one.yaml"])
             qualifier.frames = lambda: []
-            qualifier.evaluation = lambda *a, **k: self.fail("refusal setup must not resend positive Tasks")
-            qualifier.kube = lambda *a, **k: self.fail("fixture must stop before Kubernetes")
-            def boundary(*args, **kwargs):
-                if args[:2] == ("bundle", "lift"):
-                    return subprocess.CompletedProcess(args, 1, b"", b"reserves native suite ownership")
-                self.assertEqual(args[2:4], ("create", "--live"))
-                self.assertNotIn("--task", args)
-                member = args[4]
-                out = pathlib.Path(args[args.index("--out") + 1])
-                bundle = pathlib.Path(args[args.index("--bundle-path") + 1])
-                # Live create stages its bundle BEFORE ownership refusal.
-                self.assertFalse(bundle.exists(), "bundle agent.yaml differs; refusing to overwrite it")
-                bundle.mkdir()
-                (bundle / "agent.yaml").write_text(member)
-                (bundle / "bindings.yaml").write_text("OrkaBindings")
-                if "--no-apply" in args:
-                    out.write_text(member)
-                    return subprocess.CompletedProcess(args, 0, b"", b"")
-                if member == "ci-native-suite":
-                    self.assertFalse(kwargs.get("success", True))
-                    return subprocess.CompletedProcess(args, 1, b"", b"reserves native suite ownership")
-                self.assertEqual(member, "ci-native-collision")
-                self.assertNotIn("--no-apply", args)
-                self.assertEqual((out.name, bundle.name), ("collision-legacy.yaml", "collision-legacy-bundle"))
-                raise RuntimeError("collision-create-reached")
-            qualifier.cli = boundary
-            with self.assertRaisesRegex(RuntimeError, "collision-create-reached"):
-                qualifier.refusals(workspace, root / "instructions.txt", cases, {"Member": "ci-native-suite"})
-            for path, expected in (("native-copy.yaml", "ci-native-suite"),
-                                   ("native-copy-bundle/agent.yaml", "ci-native-suite"),
-                                   ("legacy-bundle/agent.yaml", "ci-native-suite"),
-                                   ("legacy-bundle/bindings.yaml", "OrkaBindings"),
-                                   ("collision-legacy-bundle/agent.yaml", "ci-native-collision")):
-                with self.subTest(path=path):
-                    self.assertEqual((root / path).read_text(), expected)
+            qualifier.cli = lambda *a, **k: self.fail("removed CLI lifecycle invoked")
+            written = []
+            def kube(*args, **kwargs):
+                self.assertEqual(args, ("create", "-f", "-"))
+                written.append(json.loads(kwargs["raw"]))
+                return b""
+            qualifier.kube = kube
+            qualifier.author = lambda *a: None
+            qualifier.get = lambda *a: {"metadata": {"uid": "fixture-" + a[0]}}
+            def evaluation(*args, **kwargs):
+                self.assertFalse(kwargs["success"])
+                raise RuntimeError("collision-evaluation-reached")
+            qualifier.evaluation = evaluation
+            with self.assertRaisesRegex(RuntimeError, "collision-evaluation-reached"):
+                qualifier.refusals(workspace, instructions, cases, {"Member": "ci-native-suite"})
+            self.assertEqual([doc["kind"] for doc in written], ["Provider", "Agent"])
+            self.assertTrue(all(doc["metadata"]["name"] == "ci-native-collision" for doc in written))
+            self.assertTrue(all("annotations" not in doc["metadata"] for doc in written))
 
     def test_private_root_refuses_adoption_and_symlink_ancestors(self):
         self.assertTrue(hasattr(Q, "private_root"), "private scenario root is missing")

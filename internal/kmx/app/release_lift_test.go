@@ -144,6 +144,40 @@ func TestReleaseLiftOrkaLegacySummaryGolden(t *testing.T) {
 	}
 }
 
+func TestImageReleaseUsesSharedGateWithoutTargetEffects(t *testing.T) {
+	a, f, opt, _ := releaseLiftFixture(t)
+	root := t.TempDir()
+	instructions := filepath.Join(t.TempDir(), "instructions.md")
+	if err := os.WriteFile(instructions, []byte("Answer briefly."), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Create(t.Context(), root, workspace.CreateOptions{Name: "image", InstructionsFile: instructions, Execution: workspace.ImageExecution, ContextTokens: 8192, OutputTokens: 1024}); err != nil {
+		t.Fatal(err)
+	}
+	cache := t.TempDir()
+	if err := os.Chmod(cache, 0700); err != nil {
+		t.Fatal(err)
+	}
+	p, err := workspace.Prepare(t.Context(), root, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt.Reference, opt.FromLayout = "suite@"+p.Descriptor.Digest.String(), p.Path
+	opt.Inference, opt.Environment = "", "not-read-environment.json"
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	before := f.calls
+	plan, err := a.PrepareReleaseLift(t.Context(), opt)
+	if plan != nil || !errors.Is(err, ErrReleaseLift) || f.calls != before {
+		t.Fatalf("image gate must refuse without target effects: plan=%v error=%v calls=%d/%d", plan, err, before, f.calls)
+	}
+	opt.Inference = "provider:inference"
+	if ValidateReleaseLiftOptions(opt) == nil {
+		t.Fatal("mixed native/image binding selectors accepted")
+	}
+}
+
 func TestPrepareReleaseLiftGetOnlyPlan(t *testing.T) {
 	for _, absent := range []string{"", "Provider", "Agent", "both"} {
 		t.Run(absent, func(t *testing.T) {

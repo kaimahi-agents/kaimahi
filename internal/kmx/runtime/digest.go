@@ -1,10 +1,3 @@
-// Identity digests. Two digests are retained and are never described as
-// equivalent: one identifies authored portable behavior, the other identifies
-// the exact bytes an adapter rendered. Both use the same catalogue framing — a
-// stable logical path, a space, the decimal byte length, a newline, the raw
-// bytes, and a trailing newline — hashed with SHA-256 into lowercase 64-hex.
-// Framing path and length, not just bytes, keeps an empty document, a renamed
-// path, and a different document split from ever hashing alike.
 package runtime
 
 import (
@@ -13,10 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 )
-
-// PortablePath is the stable logical path the portable digest frames its
-// source bytes under.
-const PortablePath = "portable-agent.yaml"
 
 // renderedPathFormat derives each rendered document's logical path from its
 // zero-based position in artifact order.
@@ -33,13 +22,6 @@ func frameEntry(path string, data []byte) []byte {
 func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
-}
-
-// PortableBundleDigest frames the exact validated portable source bytes under
-// PortablePath. Callers pass the authored bytes themselves, never a
-// reserialized approximation, because the digest identifies what was authored.
-func PortableBundleDigest(source []byte) string {
-	return sha256Hex(frameEntry(PortablePath, source))
 }
 
 // RenderedBundleDigest frames every final rendered document in artifact order

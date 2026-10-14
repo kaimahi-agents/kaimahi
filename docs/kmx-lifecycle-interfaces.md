@@ -173,9 +173,9 @@ current alpha result can represent; `Push` relocates those identities without
 rebuilding. Incomplete recovery progress may contain a verified subset, but a
 complete result cannot omit a composition.
 
-This first completeness rule is intentionally profile-specific. The native-Orka
-profile from #437 declares `requiredImages: []`, and #442 is proving image-free
-evaluation for that valid suite shape; it remains outside this image-backed
+This first completeness rule is intentionally profile-specific. The native Orka
+and exact-v0.10.3 Go kagent profiles declare `requiredImages: []`; both now have
+image-free packaged workspace evaluation and remain outside this image-backed
 Build/Push contract. A future general workflow derives its required artifact set
 from an explicit execution profile, including profiles that require zero member
 images.

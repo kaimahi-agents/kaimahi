@@ -33,47 +33,61 @@ const suiteKagentAnswerAttribution = "kmx.kagent.final-artifact-single-user-turn
 
 // This is only the wire projection of the common receipt, not another envelope.
 type suitePassingWire struct {
-	SchemaVersion     int                       `json:"schemaVersion"`
-	Domain            string                    `json:"domain"`
-	ExecutionMode     string                    `json:"executionMode"`
-	RunID             string                    `json:"runID"`
-	SourceFingerprint string                    `json:"sourceFingerprint"`
-	Subject           *suiteNativeSubject       `json:"subject,omitempty"`
-	Provider          *suiteNativeOwnedResource `json:"provider,omitempty"`
-	Agent             *suiteNativeOwnedResource `json:"agent,omitempty"`
-	Kagent            *suiteKagentPassingProof  `json:"kagent,omitempty"`
-	CasesDigest       string                    `json:"casesDigest"`
-	Result            string                    `json:"result"`
-	Cases             []suitePassingCase        `json:"cases"`
+	SchemaVersion     int                        `json:"schemaVersion"`
+	Domain            string                     `json:"domain"`
+	ExecutionMode     string                     `json:"executionMode"`
+	RunID             string                     `json:"runID"`
+	SourceFingerprint string                     `json:"sourceFingerprint"`
+	Subject           *suiteNativeSubject        `json:"subject,omitempty"`
+	Provider          *suiteNativeOwnedResource  `json:"provider,omitempty"`
+	Agent             *suiteNativeOwnedResource  `json:"agent,omitempty"`
+	Kagent            *suiteKagentPassingProof   `json:"kagent,omitempty"`
+	Sessions          *suiteSessionsPassingProof `json:"agentsessions,omitempty"`
+	CasesDigest       string                     `json:"casesDigest"`
+	Result            string                     `json:"result"`
+	Cases             []suitePassingCase         `json:"cases"`
 }
 
 func (r suitePassingReceipt) MarshalJSON() ([]byte, error) {
-	w := suitePassingWire{SchemaVersion: r.SchemaVersion, Domain: r.Domain, ExecutionMode: r.ExecutionMode, RunID: r.RunID, SourceFingerprint: r.SourceFingerprint, CasesDigest: r.CasesDigest, Result: r.Result, Cases: r.Cases, Kagent: r.Kagent}
+	w := suitePassingWire{SchemaVersion: r.SchemaVersion, Domain: r.Domain, ExecutionMode: r.ExecutionMode, RunID: r.RunID, SourceFingerprint: r.SourceFingerprint, CasesDigest: r.CasesDigest, Result: r.Result, Cases: r.Cases, Kagent: r.Kagent, Sessions: r.Sessions}
 	if r.ExecutionMode == "native-orka" {
 		w.Subject, w.Provider, w.Agent = &r.Subject, &r.Provider, &r.Agent
 	}
 	return json.Marshal(w)
 }
 func (r *suitePassingReceipt) suiteDigest() string {
-	if r.ExecutionMode == "native-kagent" && r.Kagent != nil {
-		return r.Kagent.Observation.Subject.SuiteDigest
+	switch r.ExecutionMode {
+	case "native-kagent":
+		if r.Kagent != nil {
+			return r.Kagent.Observation.Subject.SuiteDigest
+		}
+	case "native-agentsessions":
+		if r.Sessions != nil {
+			return r.Sessions.Subject.SuiteDigest
+		}
+	case "native-orka":
+		return r.Subject.SuiteDigest
 	}
-	return r.Subject.SuiteDigest
+	return ""
 }
 func parseSuitePassingWire(raw []byte) (suitePassingReceipt, error) {
 	var w suitePassingWire
 	if spec.Unmarshal(raw, &w) != nil {
 		return suitePassingReceipt{}, errSuitePassingReceipt
 	}
-	r := suitePassingReceipt{SchemaVersion: w.SchemaVersion, Domain: w.Domain, ExecutionMode: w.ExecutionMode, RunID: w.RunID, SourceFingerprint: w.SourceFingerprint, Kagent: w.Kagent, CasesDigest: w.CasesDigest, Result: w.Result, Cases: w.Cases}
+	r := suitePassingReceipt{SchemaVersion: w.SchemaVersion, Domain: w.Domain, ExecutionMode: w.ExecutionMode, RunID: w.RunID, SourceFingerprint: w.SourceFingerprint, Kagent: w.Kagent, Sessions: w.Sessions, CasesDigest: w.CasesDigest, Result: w.Result, Cases: w.Cases}
 	switch w.ExecutionMode {
 	case "native-orka":
-		if w.Subject == nil || w.Provider == nil || w.Agent == nil || w.Kagent != nil {
+		if w.Subject == nil || w.Provider == nil || w.Agent == nil || w.Kagent != nil || w.Sessions != nil {
 			return r, errSuitePassingReceipt
 		}
 		r.Subject, r.Provider, r.Agent = *w.Subject, *w.Provider, *w.Agent
 	case "native-kagent":
-		if w.Kagent == nil || w.Subject != nil || w.Provider != nil || w.Agent != nil {
+		if w.Kagent == nil || w.Subject != nil || w.Provider != nil || w.Agent != nil || w.Sessions != nil {
+			return r, errSuitePassingReceipt
+		}
+	case "native-agentsessions":
+		if w.Sessions == nil || w.Kagent != nil || w.Subject != nil || w.Provider != nil || w.Agent != nil {
 			return r, errSuitePassingReceipt
 		}
 	default:

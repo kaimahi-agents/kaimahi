@@ -1,12 +1,10 @@
 # Orka quickstart Kubernetes tool
 
-The quickstart wizard installs `k8s-get-resources`, an Orka HTTP Tool that ports
-the read-only listing capability of the older `hello-tools` example.
+`k8s-get-resources` is a retained Orka HTTP Tool and raw upstream CI fixture.
+Legacy lift preparation/repair is removed. The quickstart wizard no longer installs or auto-attaches it; explicit `--tools` shortcuts refuse. Suite ToolProviders are the future tool path.
 The name uses hyphens because it is a Kubernetes Tool resource name.
 
-New quickstart agents reference this tool by default. `--tools` replaces that
-default with an explicit list. Default system instructions direct cluster
-questions to the tool; custom instruction files remain user-owned.
+New quickstart agents are tool-free; no tool instructions are appended. Existing tool resources and custom instruction files are not deleted.
 
 The earlier Orka v0.1.3 run refused private Service IPs as direct Tool
 authorities. The current pinned installer is v0.2.0; KMX gives
@@ -27,12 +25,7 @@ authorization, then waits for the current Tool generation to be Available.
 A missing or invalid policy leaves the Tool unavailable rather than falling
 back to the public logical URL.
 
-Selecting an existing quickstart Agent adds the tool reference if absent,
-preserving other tools and its system prompt. An explicitly disabled reference
-is preserved. The update checks resourceVersion and waits for the updated Agent
-generation to become Ready. Subsequent Tasks use the new tool; active workers
-keep their startup configuration. This cluster update does not rewrite older
-local Agent YAML files.
+Selecting an existing quickstart Agent reconnects without patching its tool references or prompt.
 
 Try:
 
@@ -40,17 +33,11 @@ Try:
 List deployments in namespace orka-system using k8s-get-resources.
 ```
 
-In Orka interactive chat, `/tools` opens a searchable list of registered tools
-and existing references. The screen clears before loading. Use arrows or j/k to
-select, press `/` to search, Space to toggle,
-and Enter to save. Escape returns without changes; Ctrl-C exits chat. The four
-automatic memory tools observed on v0.1.3 were shown as locked on because that
-worker injected them independently of the Agent references; do not assume
-this historical observation describes every v0.2.0 task mode.
+In-place `/tools` editing is retired and refuses without reading or patching cluster resources. Tools remain unsupported in the current native workspace profile; they return
+through suite ToolProviders, not a live-edit shortcut. `/tools on|off` remains the separate chat display control; it does not edit Agent configuration.
 
 `/agent` opens a searchable list of AI agents in the current namespace. Enter
 connects to the selection, clears the visible conversation and resets `/retry`.
-Tool updates take effect on the next Task and preserve other Agent configuration.
 
 ## Implementation
 
@@ -62,7 +49,7 @@ Tool updates take effect on the next Task and preserve other Agent configuration
   the verified live chart AI worker access to only the referenced policy.
 - `scripts/orka-k8s-tool.py`: standard-library HTTP server, embedded into KMX and
   installed in the `kmx-k8s-tool` ConfigMap.
-- `internal/kmx/app/orka_k8s_tool.go`: installation and existing-agent attachment.
+- `internal/kmx/app/orka_k8s_tool.go`: retained legacy Tool installation, policy-reader grants and readiness checks; quickstart reconnects without attaching tools.
 
 The server permits only a fixed resource allowlist and optional namespace. It
 issues Kubernetes GET requests using its own service account, verifies the API
@@ -103,28 +90,14 @@ jobs and cronjobs. Omitting namespace lists across namespaces.
 For pods, the optional `phase` parameter filters at the Kubernetes API; use
 `Running` to omit completed worker Jobs when listing running pods.
 
-## Repair a missing policy-reader grant
+## Policy-reader boundary
 
-A Tool can remain `Available` after its policy-reader RoleBinding is removed:
-Tool admission is not an authorization check on the AI worker. Before lifting
-an Agent that references an HTTP Tool with an `outboundAccessPolicyRef`, both
-bundle `--plan` / deploy and bundle-less live-copy `/lift` check the worker's
-**effective** `get` on that specific policy in the Tool's namespace, using
-`system:serviceaccount:<Agent namespace>:<configured worker name>`. The
-release-namespace account identifies the worker name; Orka's Task-namespace
-worker account is the identity that needs permission. A refusal
-names the Tool, worker account, namespace, policy and verb. Neither denied nor
-indeterminate authorization permits broadening the Role or bypassing the check.
-For a **non-allowing review** (explicit denial or NoOpinion) on the quickstart
-Tool and its built-in policy in `orka-system`, the console offers a separately
-confirmed **Prepare target** action to reapply the Tool through kmx, rediscover
-the current chart account,
-and reconcile the single named-policy RoleBinding. API failures, indeterminate
-reviews and custom policies do not offer this repair; investigate them first.
-On an unknown/foreign Orka chart or an unreadable controller/account, verify
-the installation and chart version first;
-kmx will not infer a worker name. Then retry `kmx bundle lift --plan` before
-deploying. Do not grant general policy-list access.
+Tool availability is not authorization proof for the AI worker. The upstream
+fixture checks the verified worker's effective named-policy `get` permission;
+it never infers a worker name or grants general policy-list access. Removed
+bundle planning/live-copy Lift/console Prepare routes are not repair workflows.
+Existing custom Tool/policy/RBAC resources need operator-owned inspection and
+repair through the installed runtime, not automatic native tool attachment.
 
 ## Verification
 
@@ -134,7 +107,7 @@ go test ./internal/kmx/app -run 'TestQuickstart(K8sTool|ToolDefault)'
 ```
 
 CI checks both kmx-owned and stock Helm v0.2.0 releases. Its opt-in kind-only
-Go entrypoint invokes the same installer as console Prepare after confirming
+Go entrypoint invokes the retained Tool fixture installer after confirming
 that its context exists and points to a local loopback kind API server. CI
 asserts the exact RoleBinding subject and named-policy authorization, then runs
 a deterministic health question through the Tool. CI checks the Task phase;

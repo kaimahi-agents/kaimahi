@@ -8,25 +8,14 @@ import (
 )
 
 // Pins are carried by the invocation, never selected through environment or
-// mutable package state. The zero App keeps the historical create profile.
+// mutable package state. Only the exact native Go profile is supported.
 type kagentProfile struct {
-	Version, Commit                             string
-	ControllerImage, GoImage, PythonImage       string
-	ControllerDigests, GoDigests, PythonDigests [3]string
-	ControllerConfigDigests, GoConfigDigests    [2]string
-	AgentSchema, ModelSchema, RemoteSchema      string
-	StrictPlatform                              bool
-}
-
-func kagentCreateProfile() kagentProfile {
-	return kagentProfile{
-		Version: "v0.10.2", Commit: kagentPinnedCommit,
-		ControllerImage: kagentControllerImage, GoImage: kagentGoImage, PythonImage: kagentPythonImage,
-		ControllerDigests: [3]string{kagentControllerIndexDigest, kagentControllerAMD64Digest, kagentControllerARM64Digest},
-		GoDigests:         [3]string{kagentGoIndexDigest, kagentGoAMD64Digest, kagentGoARM64Digest},
-		PythonDigests:     [3]string{kagentPythonIndexDigest, kagentPythonAMD64Digest, kagentPythonARM64Digest},
-		AgentSchema:       kagentAgentSchemaSHA256, ModelSchema: kagentModelSchemaSHA256,
-	}
+	Version, Commit                          string
+	ControllerImage, GoImage                 string
+	ControllerDigests, GoDigests             [3]string
+	ControllerConfigDigests, GoConfigDigests [2]string
+	AgentSchema, ModelSchema, RemoteSchema   string
+	StrictPlatform                           bool
 }
 
 func kagentLiftProfile() kagentProfile {
@@ -50,7 +39,7 @@ func (a *App) selectedKagentProfile() kagentProfile {
 	if a.kagentProfile != nil {
 		return *a.kagentProfile
 	}
-	return kagentCreateProfile()
+	return kagentLiftProfile()
 }
 
 func (p kagentProfile) tag() string { return strings.TrimPrefix(p.Version, "v") }
@@ -168,11 +157,6 @@ func (p kagentProfile) runtimeImage(name string) (string, string, []string, erro
 	switch name {
 	case "go":
 		return p.GoImage, kagentGoImageRepo, p.GoDigests[:], nil
-	case "python":
-		if p.Version == "v0.10.3" {
-			return "", "", nil, fmt.Errorf("Kagent v0.10.3 deploy/status supports only the Go runtime; Python is render-only and not runtime-qualified")
-		}
-		return p.PythonImage, kagentPythonImageRepo, p.PythonDigests[:], nil
 	default:
 		return "", "", nil, fmt.Errorf("unsupported Kagent declarative runtime")
 	}

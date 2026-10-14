@@ -8,8 +8,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"os"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -183,7 +184,7 @@ func (a *App) evaluateSuiteKagentWorkspace(ctx context.Context, p *PreparedSuite
 			return observation, nil
 		}
 		ref := agentruntime.AgentRef{Runtime: agentruntime.Kagent, Context: p.options.ToContext, Namespace: p.options.ToNamespace, Name: p.suite.MemberID, UID: placement.Observation.Resources[1].UID}
-		result, _, e := worker.executeKagentEvaluationCase(caseCtx, ref, frame.Case, execution, op, observe, nil, nil)
+		result, _, e := worker.executeKagentEvaluationCase(caseCtx, ref, frame.Case, execution, op, observe, nil)
 		if e == nil {
 			e = caseCtx.Err()
 		}

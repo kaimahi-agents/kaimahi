@@ -24,8 +24,9 @@ Put Go's binary directory on PATH. Inspect the effective context with
 `kmx context show` or select one with `kmx context use <context>`.
 See [release upgrades](releases.md#upgrading-kmx) when moving from an older version,
 and [command alignment](command-semantics.md) for compatibility and retirement details.
-The root `create/chat/run` and `bundle` commands below require a current
-development build; tagged v0.5.1 still uses `kmx agent`.
+The root `create/chat/run/eval/push/lift` commands below require
+a current development build; tagged v0.5.1 still uses `kmx agent` and does not
+provide workspace Create/Eval/Push or packaged-digest Lift.
 See the [exact migration mapping](../CHANGELOG.md#upgrading).
 
 ## Prerequisites
@@ -47,9 +48,10 @@ Azure is not needed for the keyless local quickstart.
 The local quickstart below is the **supported deterministic Orka first-answer
 path**: it ends with a native Orka Agent answering a question. For guided
 custom authoring and a first answer, use the wizard described below.
-kmx does not install or upgrade kagent. Explicit exact-v0.10.2 create and
-exact-v0.10.3 declarative bundle lift/status require an operator-prepared
-installation; see [version-qualified placement](agent-lift.md#exact-v0103-declarative-bundle-placement).
+kmx does not install/upgrade kagent. Exact v0.10.3 Go/linux-amd64 packaged
+workspaces support `eval --bindings`, evaluated push and create-only digest Lift
+on operator-prepared installations; see [native profiles](suite-workspace.md).
+Live create and bundle operations are removed.
 
 Choose a local cluster name you own and pin its context:
 
@@ -61,8 +63,8 @@ kmx quickstart
 
 On a fresh cluster this creates kind, keyless Ollama, the pinned **Orka v0.2.0
 Helm chart**, a placeholder Provider Secret, the Task result-reader account and
-RBAC, and the fixed `hello-world-agent` Provider/Agent bundle. It asks a **fresh
-Task** and requires a readable answer; readiness alone is not an answer.
+RBAC, and the tool-free `hello-world-agent` native source → full eval → publication →
+reviewed Lift/placement Verify workflow. It then asks a separate **fresh Task** and requires a readable answer; readiness alone is not an answer.
 The local model defaults to `qwen2.5:3b`; `MODEL` can override it.
 
 On an uncached first run, the default model downloads roughly **1.9GB**.
@@ -90,34 +92,18 @@ kmx quickstart --output json --task 'Who are you?'
 JSON stdout is one document; subprocess/progress output goes to stderr.
 See [output contracts](kmx.md#output-contracts).
 
-## Create your own agent, then lift it from chat
+## Guided native authoring
 
-Keep the cluster/context above, then run the experimental wizard:
+`kmx quickstart --interactive` guides native source/case review, full eval,
+publication and reviewed Lift before a separate fresh answer Task. Console
+creation selects authored native source; Ready there is placement only.
 
-```bash
-kmx quickstart --interactive
-```
-
-1. Describe your agent and choose a model. The wizard shows setup progress,
-   bundled and detected host models, and can continue with an existing local
-   Orka Agent. Choose **Chat with agent**, send a message and wait for a local answer.
-2. Prepare an existing **Ready destination Provider and its Secret**, then enter
-   `/lift` and select the destination context or AKS cluster. Bundle-backed Foundry
-   inference must be provisioned separately. Review the destination and inference
-   choice before confirming. `/lift` can separately prepare missing Orka and the
-   Kubernetes tool; it creates neither a cluster nor the destination inference.
-   Source Secret values are never copied to the destination.
-3. After chat connects to the lifted Agent, send a **new message** and check its
-   answer. Lift, readiness and connection do not prove that answer.
-
-Setup starts while the form is open. It creates the Task result-reader account
-and RBAC and installs the default read-only Kubernetes inventory tool. Its
-ClusterRole can list the documented resource kinds **across namespaces**.
-Cancelling stops active work but leaves completed resources in place. Review the
-[tool and RBAC boundary](orka-k8s-tool.md) before using a shared cluster.
-
-See [interactive lift](interactive-lift.md) for target discovery and confirmation,
-and [bundle lift](agent-lift.md) for `kmx bundle lift` and `kmx bundle evaluate`.
+Automatic tools and host Foundry/Copilot wizard modes are retired; ordinary
+host-backed chat controls stay independent. Chat `/lift` and console Lift only
+print `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+Use [digest Lift](suite-workspace.md#digest-lift) with exact package/private evidence
+and explicit target/bindings, not a release GUI/live-copy fallback. Cancellation
+can leave completed resources in place.
 
 ### The whole runtime
 
@@ -126,8 +112,8 @@ To prepare the runtime without creating an Agent, use `kmx local up` instead of 
 ```bash
 kmx local up
 kmx orka status
-# After quickstart or create --live has created this Agent:
-kmx chat --namespace orka-system hello-world-agent
+# For an independent live Orka Agent, not a suite-owned member:
+kmx chat --namespace orka-system <agent-name>
 ```
 
 `kmx local up` brings up kind, keyless Ollama with the configured `MODEL`, and pinned
@@ -168,41 +154,23 @@ exists, terminal use asks `Start one here? [Y/n]`; nonterminal or redirected use
 requires `--workspace DIR`, which selects/initializes that exact root without a
 prompt. Invalid nearest markers refuse without fallback. An existing one-member
 workspace refuses a second member without changing files; select a new root.
-See [workspace authoring and publication](suite-workspace.md). Workspace
-execution and registry-reference lift are not implemented.
+See [workspace authoring, evaluation, publication and digest Lift](suite-workspace.md).
+Packaged workspace evaluation is implemented for native Orka with `--inference`
+and exact-v0.10.3 Go kagent with `--bindings`; matching full-passing evidence can
+authorize evaluated push. Standalone package evaluation remains unavailable; root
+`kmx lift REF@sha256:DIGEST` instead deploys an exact registry or local-layout
+native package using a separate matching private evidence file and explicit
+target. Orka uses a Ready `openai` inference Provider; kagent uses author-owned
+bindings and refuses any occupied target.
 
-### Live resources and bundles
+### Retired live authoring
 
-For explicit native Orka resource/bundle creation, preview a Provider + Agent
-offline with `--live --no-apply`:
-
-```bash
-kmx create --live my-agent --namespace orka-system \
-  --provider-type openai --model qwen2.5:3b --secret local-provider-key \
-  --base-url http://ollama.ollama.svc.cluster.local:11434/v1 --no-apply
-```
-
-Namespace, Provider type, actual model ID and existing Secret name are required;
-match the model to your setup. The metadata-only Secret skeleton is a reference:
-**never write it or bulk-apply the bundle**. Online creation uses installed schemas
-and ordered readiness waits. `--dry-run` checks admission, **not execution**.
-Only optional `--task` with an existing result ServiceAccount tests a real answer;
-create does not provision that account or RBAC. Follow the
-[context-pinned first-Task guide](orka.md#author-an-orka-agent-and-get-an-answer)
-and [create safety contract](kmx.md#kmx-create).
-`--live` is mandatory for both runtimes, even with `--no-apply`, `--dry-run` or
-`--out -`; `--runtime kagent` alone never selects live creation. No-name
-`kmx create --live` terminal invocation offers the live Orka wizard. Quickstart
-and console creation remain live, bypassing workspace discovery. `chat` and
-`orka list --namespace <ns>` are Orka-only; edit a live Agent with `kubectl edit agents.core.orka.ai`.
-BYO images, model-preset and MCP conversion are not provided.
-
-For the separate, advanced kagent v0.10.2 create-only path, use the complete
-[create contract](kmx.md#explicit-kagent-v0102-create). Offline rendering
-requires neither an installed kagent nor a provisioned cluster Secret. Online
-creation requires both an exact v0.10.2 installation and a separately
-provisioned Secret. Neither v0.10.2 create mode adds kagent chat, list, show, status, lift,
-evaluate, console, quickstart, `local up`, or AKS support.
+`create --live`, live-only/preview flags, its wizard and user bundle
+commands/readers/writers are removed outright. No conversion/migration or saved
+receipt/resource deletion occurs. Old bundle receipts are unreadable. Suite
+status/retirement remain unavailable. Root run requires `--agent` for independent
+live Orka Agents; suite ownership refuses legacy invocation. Task/result access
+remains independent, without resend.
 
 ## Using Podman instead of Docker
 
@@ -229,8 +197,8 @@ nodes and checks API/DNS. kmx supplies `KIND_EXPERIMENTAL_PROVIDER=podman` autom
 - `kmx local down` deletes the **whole local cluster
   and its data**, including any historical database. Export needed data first;
   see [Orka backup cautions](orka.md#preserve-the-charts-generated-snapshot-key).
-  For AKS use [lift teardown](aks.md#teardown), not kind down. Azure resources can
+  For AKS use [`kmx aks down`](aks.md#teardown), not kind down. Azure resources can
   remain billable after a failed operation; verify cleanup rather than assuming cancellation deleted them.
 
-Next: [CLI reference](kmx.md), [models and endpoints](models.md) and
-[bundle lifecycle](agent-lift.md).
+Next: [CLI reference](kmx.md), [models and endpoints](models.md),
+[workspace lifecycle](suite-workspace.md).

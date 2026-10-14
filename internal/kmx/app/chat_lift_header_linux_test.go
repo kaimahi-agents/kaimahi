@@ -1,11 +1,12 @@
 package app
 
 import (
-	"github.com/charmbracelet/x/ansi"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestLiftPickerReplacesStaticHeaderBeforeFirstFrame(t *testing.T) {

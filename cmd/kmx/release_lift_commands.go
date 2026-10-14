@@ -26,6 +26,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			"with the packaged model declaration (Orka: Ready Provider; kagent: rendered ModelConfig). Evidence proves the source only, not destination evaluation or authenticated approval.\n" +
 			"Kagent creates new ModelConfig/Agent only; occupied names always refuse. Orka may reuse exact evaluated UID/generation/spec. Never update, adopt or retry ambiguous writes.\n" +
 			"Created/recreated resources need fresh evaluation before later receipt-bound reuse. Partial resources may remain; readiness is not execution.\n" +
+			"Experimental image releases use --environment and image passing evidence for absent creation or exact evaluated reuse. Image --promote requires absent resources and identical release/image/model/endpoint/configuration; only physical target and Secret revisions may differ.\n" +
 			"--plan is GET-only: no mutation guard, admission, writes, Tasks or placement records. JSON reports contain identities, never prompts or credentials.",
 		Example: "  kmx lift registry.example/suite@sha256:<digest> --to-context prod --inference provider:inference --evidence ../private/pass.json --promote --plan\n" +
 			"  kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo --inference provider:inference --evidence ../private/pass.json -o json",
@@ -37,7 +38,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			if state.contextFlag != "" || cmd.Flags().Changed("context") {
 				return fmt.Errorf("--context cannot be used with suite lift; use --to-context")
 			}
-			for _, name := range []string{"to-context", "to-namespace", "inference", "bindings", "evidence", "from-layout", "output"} {
+			for _, name := range []string{"to-context", "to-namespace", "inference", "bindings", "environment", "evidence", "from-layout", "output"} {
 				if f := cmd.Flag(name); f.Changed && strings.TrimSpace(f.Value.String()) == "" {
 					return fmt.Errorf("lift requires non-empty --%s", name)
 				}
@@ -100,6 +101,9 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 				return errors.Join(applyErr, json.NewEncoder(cmd.OutOrStdout()).Encode(result))
 			}
 			_, writeErr := fmt.Fprintf(cmd.OutOrStdout(), "Lift: %s\nSuite: %s\nMember: %s\nTarget: %q/%q\n", result.State, summary.SuiteDigest, summary.Member, summary.Target.Context, summary.Target.Namespace)
+			if writeErr == nil && result.Placement != "" {
+				_, writeErr = fmt.Fprintf(cmd.OutOrStdout(), "Placement: %s\n", result.Placement)
+			}
 			for _, r := range result.Resources {
 				if writeErr != nil {
 					break
@@ -113,6 +117,8 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.ToNamespace, "to-namespace", app.OrkaNamespace, "destination namespace")
 	cmd.Flags().StringVar(&opt.Inference, "inference", "", "existing Ready inference Provider, as provider:NAME")
 	cmd.Flags().StringVar(&opt.Bindings, "bindings", "", "author-owned KagentBindings file for the packaged kagent runtime")
+	cmd.Flags().StringVar(&opt.Environment, "environment", "", "image bindings checked against full image evidence; mutually exclusive with native bindings")
+	_ = cmd.MarkFlagFilename("environment")
 	_ = cmd.MarkFlagFilename("bindings")
 	cmd.Flags().StringVar(&opt.Evidence, "evidence", "", "explicit private full-passing native evidence file")
 	cmd.Flags().StringVar(&opt.FromLayout, "from-layout", "", "read exact digest from a local OCI directory")
