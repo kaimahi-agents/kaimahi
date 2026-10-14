@@ -32,6 +32,7 @@ func TestSuiteJudgeSelectionBeforeConfiguration(t *testing.T) {
 	}{
 		{"missing endpoint", nil, "llmJudge assertions require --judge-base-url", 0},
 		{"valid endpoint", []string{"--judge-base-url", "https://judge.example.invalid"}, "configured boundary", 1},
+		{"named endpoint", []string{"--to", "dev", "--judge-base-url", "https://judge.example.invalid"}, "configured boundary", 1},
 		{"invalid credential selection", []string{"--judge-base-url", "https://judge.example.invalid", "--judge-key-env", "bad-name"}, "valid environment variable name", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -40,8 +41,21 @@ func TestSuiteJudgeSelectionBeforeConfiguration(t *testing.T) {
 			suiteJudgeCase(t, root)
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			deps.loadConfig = func(string, string) (*config.Config, error) { *loads++; return nil, errors.New("configured boundary") }
-			args := []string{"eval", "--workspace", root, "--to-context", "kind-target", "--inference", "provider:inference", "--out", outfile}
+			deps.loadConfig = func(ctx, _ string) (*config.Config, error) {
+				*loads++
+				if ctx != "kind-target" {
+					t.Fatalf("unresolved judge destination: %q", ctx)
+				}
+				return nil, errors.New("configured boundary")
+			}
+			args := []string{"eval", "--workspace", root, "--out", outfile}
+			if tc.name == "named endpoint" {
+				if err := os.WriteFile(filepath.Join(root, "kmx.yaml"), []byte("version: 1\ntargets: {dev: {context: kind-target, runtime: orka, inference: 'provider:inference'}}\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				args = append(args, "--to-context", "kind-target", "--inference", "provider:inference")
+			}
 			err := execute(append(args, tc.flags...), deps)
 			if err == nil || !strings.Contains(err.Error(), tc.want) || *loads != tc.loads {
 				t.Fatalf("selection: %v loads=%d", err, *loads)

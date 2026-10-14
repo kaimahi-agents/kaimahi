@@ -25,7 +25,9 @@ before a separate fresh answer Task; console Ready means placement only.
 Kagent uses exact v0.10.3 Go/linux-amd64 packaged eval/evaluated push/create-only
 Lift; no installer, discovery, standalone chat/run or suite status/retirement.
 KMX installs Orka's chart in harness-v2 controller mode, not the upstream harness
-ABI. Runtimes own execution, enforcement and model access.
+ABI. Runtimes and harnesses own execution, enforcement and model access. Orka
+already supplies OTLP telemetry using GenAI conventions; extend that upstream
+capability instead of adding a parallel KMX exporter.
 
 Plane CLI administration, model overlays, credential exchange and workload
 migration are removed, together with the nested source module, image-build
@@ -284,22 +286,42 @@ OCI pulls and do not use these mirrors.
 
 ## Invariants to preserve
 
-1. Use platform capabilities rather than rebuilding them. Legacy-shaped helpers
-   do not authorize expanding Kaimahi into another agent runtime.
+1. Use platform capabilities rather than rebuilding them. Inspect the relevant
+   upstream version first; prefer configuration, integration or an upstream
+   contribution. Legacy-shaped helpers do not authorize expanding Kaimahi into
+   another agent runtime.
 2. Fail closed on missing proof: HTML with 200 is not a valid endpoint answer,
-   unreadable is not absent, and scanner failure is not a clean scan.
-3. Keys never enter argv, logs, manifests or ConfigMaps. Native Provider Secrets
-   are provisioned separately; host Copilot credentials remain managed by its
-   installed CLI. Preserve each native input contract.
-4. Billed work must be recorded even when the surrounding operation fails.
+   unreadable or ambiguous state is not absent, and scanner failure is not a
+   clean scan. Admission and dry-run acceptance are not readiness or execution
+   evidence.
+3. Keep artifacts reviewable and user-owned. Generated resource YAML remains
+   readable, diffable and usable with the underlying tools; KMX must not hide
+   resource ownership inside an entry point.
+4. Generated files contain Secret references, never values. Keys never enter
+   argv, logs, manifests or ConfigMaps; do not add token flags or advise users to
+   commit credentials. Native Provider Secrets are provisioned separately; host
+   Copilot credentials remain managed by its installed CLI. Preserve each native
+   input contract.
+5. Billed work must be recorded even when the surrounding operation fails.
    Historical cloud ownership records remain necessary for conservative teardown.
-5. Mutations need context/cloud guards; name and loopback server are independent
-   evidence. Confirmation is scoped consent, not a general bypass.
-6. Repository cleanup does not authorize deleting databases, caches, credentials
+6. Mutations name their exact target and retain context/cloud guards; name and
+   loopback server are independent evidence. Confirmation is scoped consent, not
+   a general bypass, and a friendly context name does not prove disposability.
+7. Repository cleanup does not authorize deleting databases, caches, credentials
    or deployed resources. Historical source remains available in Git history.
-7. Metrics labels must not leak tokens or channel/user/request/delivery IDs.
-8. State evidence accurately: continuously tested, demonstrated, schema-valid,
-   proposed or unbuilt. Configuration and a fluent answer are not enforcement proof.
+8. Keep one implementation of an operation. Scripts and Make targets may
+   delegate to the native command but must not maintain a competing path or
+   preserve retired connectors as checkout-only alternatives.
+9. Metrics labels must not leak tokens or channel/user/request/delivery IDs.
+10. State evidence accurately: distinguish unit and fake-service tests,
+    continuously exercised cluster paths, one-off cloud measurements, schema
+    validation and proposals. Label evidence as continuously tested,
+    demonstrated, schema-valid, proposed or unbuilt. A one-off measurement is
+    not durable live coverage; successful admission is not downstream
+    completion, readiness is not an answer, and an old run is not a current
+    availability claim.
+11. Optimize for fewer prerequisites, a useful first result, clear recovery and
+    less code of our own, not command count or adoption of this repository.
 
 ## Troubleshooting traps
 

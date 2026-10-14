@@ -12,10 +12,27 @@ For command changes, follow [AGENTS.md](AGENTS.md), the
 completion, generated instructions and compatibility updates.
 
 Orka remains the first-class/default platform; Kaimahi is tooling to help people
-get agents onto it. Check Orka, Kubernetes and existing integrations first. In
-the pull request, explain why configuration, integration or an upstream
-contribution cannot provide the requested behavior. Runtimes and harnesses own
-execution, enforcement and model access; KMX should not duplicate them.
+get agents onto it, not a second control plane. Inspect the relevant upstream
+version and existing integrations before adding a component. In the pull request,
+explain why configuration, integration or an upstream contribution cannot provide
+the requested behavior. Prefer a path that can eventually remove KMX-specific
+code. Runtimes and harnesses own execution, enforcement and model access; KMX
+must not duplicate them as a model proxy or governance platform.
+
+Keep ownership visible to the user. Generated resource YAML must remain
+readable, diffable and usable with the underlying tools. Name the exact mutation
+target, retain useful no-write inspection and require scoped consent for
+non-local changes; a friendly context name is not proof that a cluster is
+disposable.
+The [development invariants](docs/development.md#invariants-to-preserve) define
+the corresponding fail-closed, credential and evidence rules.
+
+Implement an operation once. Checkout scripts and Make targets may delegate to
+the native command, but must not become competing implementations or preserve a
+retired component as an undocumented alternative. Distribution and naming remain
+subject to [the naming constraints](docs/NAMING.md); claiming a package-manager,
+organization or domain namespace requires maintainer approval for that exact
+artifact.
 
 Root `kmx create NAME` authors one tool-free native workspace member offline,
 Orka by default, exact v0.10.3 Go/linux-amd64 kagent or pinned AgentSessions

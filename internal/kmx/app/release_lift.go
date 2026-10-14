@@ -22,6 +22,8 @@ var ErrReleaseLift = errors.New("release lift planning refused; no native admiss
 type ReleaseLiftOptions struct {
 	Reference, FromLayout, ToContext, ToNamespace, Inference, Evidence, Bindings string
 	PlainHTTP, Promote                                                           bool
+	// ExpectedRuntime is checked offline against the loaded package before GETs.
+	ExpectedRuntime string
 }
 
 type ReleaseLiftTarget struct {
@@ -113,6 +115,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 		return nil, err
 	}
 	artifact, suite, receipt, evidence := inputs.artifact, inputs.suite, inputs.receipt, inputs.evidence
+	if opt.ExpectedRuntime != "" && opt.ExpectedRuntime != suite.Runtime.ID {
+		return nil, ErrReleaseLift
+	}
 	// Closed packaged runtime and canonical E select the only allowed selector
 	// before any cluster observation. Evidence never supplies an Orka alias.
 	worker := a.releaseLiftWorker(ctx, opt)

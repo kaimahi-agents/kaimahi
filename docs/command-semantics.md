@@ -9,6 +9,7 @@ distinguishes implemented alignment from proposed follow-ups.
 
 | Command | Contract |
 |---|---|
+| `kmx ctx [--check]` | List named workspace destinations only; optional bounded local-context/anonymous registry checks. No selection or switching. `targets` remains runtime capabilities. |
 | `kmx context show` | Read the effective context, selection source and posture. |
 | `kmx context use <context>` | Remember KMX's access selection after the existing context guard; never change kubectl current-context. |
 | `kmx local up` | Provision the local kind environment, model and Orka; no agent. The existing `--step` choices remain. |
@@ -16,9 +17,10 @@ distinguishes implemented alignment from proposed follow-ups.
 | `kmx aks up/down` | Retain the guarded AKS provisioning/teardown operations and historical ownership records; hidden from root help and completion. |
 
 Bare `context` and `local` display help. Canonical commands use the existing
-operations, settings, saved-selection file and guards. Root `ctx`, `up`, `down`,
+operations, settings, saved-selection file and guards. Root `up`, `down`,
 the AKS `lift` alias and `lift down` are removed outright, with no compatibility aliases or
-retirement stubs. Use `context show/use`, `local up/down` and `aks up/down`
+retirement stubs. The old context-selecting `ctx` alias remains removed; the new
+`ctx` is a list-only named-destination view and refuses legacy switching syntax. Use `context show/use`, `local up/down` and `aks up/down`
 respectively. Tagged v0.4.1 used the old context/local spellings; the grouped
 commands require a newer build.
 
@@ -76,6 +78,22 @@ output appends atomically; duplicates refuse. No recorded payloads are persisted
 RecordedExecution, legacy bundle Sessions evaluation/replay/judges and their
 consumers are removed. There is no native reference-manifest consumer; author
 native workspace cases. See [reference extraction](kmx.md#reference-extraction).
+
+## Named workspace destinations
+
+Optional workspace-root `kmx.yaml` supplies selectors to existing `eval/lift --to NAME`.
+Individual eval may use its explicitly saved `evalTarget`; digest Lift has no
+implicit destination. Resolve once to concrete values, print their source, then
+pass those copies through the operation. Editing config during confirmation
+cannot redirect an invocation. Source, runtime, binding-byte and remote-object
+checks remain independent. Explicit invocation flags override corresponding saved
+fields, including an explicit false transport flag. Config is not packaged or
+included in source identity. Explicit digest Lift without `--to` never discovers a
+workspace. See [configuration and checks](suite-workspace.md#named-destinations).
+
+No composed workspace Lift is enabled: a digest/private evidence, explicit push
+reference and eval output are still required. Kagent remains standalone; do not
+include it in composed Lift until candidate-scoped evaluation/cleanup is qualified.
 
 ## Offline suite workspace
 
