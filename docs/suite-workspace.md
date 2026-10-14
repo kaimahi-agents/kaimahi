@@ -27,8 +27,8 @@ package from a registry or local layout and separately consumes matching private
 full-passing evidence. Orka uses `--inference`; kagent uses author-owned
 `--bindings`. Bounded CI qualifies Orka exact registry/layout reuse and kagent
 fresh-target creation/occupied refusal. Standalone registry-package evaluation
-remains unavailable. Existing `agent.yaml` creation, evaluation and lift remain
-separate and unchanged.
+remains unavailable. Legacy user `agent.yaml` creation, evaluation, lift and
+receipts are removed; no conversion or migration is provided.
 
 ## Create
 
