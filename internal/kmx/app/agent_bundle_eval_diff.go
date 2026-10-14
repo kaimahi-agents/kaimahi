@@ -143,6 +143,9 @@ func readEvaluationDiffSource(path string) (normalizedEvaluation, error) {
 	if json.Unmarshal(raw, &target) != nil {
 		return invalid()
 	}
+	if target.Domain == suiteSessionsPassingDomain {
+		return invalid()
+	}
 	if target.Domain == "kmx.native-suite.passing/v1" {
 		r, err := readSuitePassingReceipt(context.Background(), absolute)
 		if err != nil {

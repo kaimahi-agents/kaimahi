@@ -23,30 +23,32 @@ const suitePassingEvaluatorVersion = "kmx.text-assertions/v1"
 var errSuitePassingReceipt = errors.New("invalid native passing receipt")
 
 type suitePassingReceipt struct {
-	SchemaVersion     int                      `json:"schemaVersion"`
-	Domain            string                   `json:"domain"`
-	ExecutionMode     string                   `json:"executionMode"`
-	RunID             string                   `json:"runID"`
-	SourceFingerprint string                   `json:"sourceFingerprint"`
-	Subject           suiteNativeSubject       `json:"subject"`
-	Provider          suiteNativeOwnedResource `json:"provider"`
-	Agent             suiteNativeOwnedResource `json:"agent"`
-	CasesDigest       string                   `json:"casesDigest"`
-	Result            string                   `json:"result"`
-	Cases             []suitePassingCase       `json:"cases"`
-	Kagent            *suiteKagentPassingProof `json:"kagent,omitempty"`
+	SchemaVersion     int                        `json:"schemaVersion"`
+	Domain            string                     `json:"domain"`
+	ExecutionMode     string                     `json:"executionMode"`
+	RunID             string                     `json:"runID"`
+	SourceFingerprint string                     `json:"sourceFingerprint"`
+	Subject           suiteNativeSubject         `json:"subject"`
+	Provider          suiteNativeOwnedResource   `json:"provider"`
+	Agent             suiteNativeOwnedResource   `json:"agent"`
+	CasesDigest       string                     `json:"casesDigest"`
+	Result            string                     `json:"result"`
+	Cases             []suitePassingCase         `json:"cases"`
+	Kagent            *suiteKagentPassingProof   `json:"kagent,omitempty"`
+	Sessions          *suiteSessionsPassingProof `json:"agentsessions,omitempty"`
 }
 type suitePassingCase struct {
-	ID              string                    `json:"id"`
-	Path            string                    `json:"path"`
-	CaseDigest      string                    `json:"caseDigest"`
-	InputDigest     string                    `json:"inputDigest"`
-	TaskName        string                    `json:"taskName,omitempty"`
-	TaskUID         string                    `json:"taskUID,omitempty"`
-	AnswerDigest    string                    `json:"answerDigest"`
-	Verdict         string                    `json:"verdict"`
-	Assertions      []suitePassingAssertion   `json:"assertions"`
-	KagentExecution *suiteKagentCaseExecution `json:"kagentExecution,omitempty"`
+	ID                string                      `json:"id"`
+	Path              string                      `json:"path"`
+	CaseDigest        string                      `json:"caseDigest"`
+	InputDigest       string                      `json:"inputDigest"`
+	TaskName          string                      `json:"taskName,omitempty"`
+	TaskUID           string                      `json:"taskUID,omitempty"`
+	AnswerDigest      string                      `json:"answerDigest"`
+	Verdict           string                      `json:"verdict"`
+	Assertions        []suitePassingAssertion     `json:"assertions"`
+	KagentExecution   *suiteKagentCaseExecution   `json:"kagentExecution,omitempty"`
+	SessionsExecution *suiteSessionsCaseExecution `json:"agentsessionsExecution,omitempty"`
 }
 type suitePassingAssertion struct {
 	ID               string `json:"id"`
@@ -105,6 +107,10 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 		if suite.Runtime.ID == "kagent" {
 			projected.TaskName, projected.TaskUID = "", ""
 			projected.KagentExecution = &suiteKagentCaseExecution{strings.Repeat("x", 36), strings.Repeat("x", 40), strings.Repeat("x", 256), strings.Repeat("x", 256), "completed", 1, suiteKagentAnswerAttribution}
+		}
+		if suite.Runtime.ID == "agentsessions" {
+			projected.TaskName, projected.TaskUID = "", ""
+			projected.SessionsExecution = &suiteSessionsCaseExecution{SessionUID: strings.Repeat("x", 256), ExecutionID: strings.Repeat("x", 256), Harness: "chat", HarnessVersion: "1", HeadHash: strings.Repeat("0", 64), HeadSeq: 5}
 		}
 		wire, err := spec.Marshal(projected)
 		if err != nil {
@@ -195,15 +201,39 @@ func parseSuitePassingReceipt(raw []byte) (*suitePassingReceipt, error) {
 }
 
 func basicSuitePassingReceipt(r *suitePassingReceipt) error {
-	if r == nil || r.SchemaVersion != 1 || r.Domain != "kmx.native-suite.passing/v1" || (r.ExecutionMode != "native-orka" && r.ExecutionMode != "native-kagent") || !evaluationRunID(r.RunID) || r.Result != "pass" || r.Cases == nil {
+	if r == nil || r.SchemaVersion != 1 || !evaluationRunID(r.RunID) || r.Result != "pass" || r.Cases == nil {
+		return errSuitePassingReceipt
+	}
+	switch r.ExecutionMode {
+	case "native-orka", "native-kagent":
+		if r.Domain != "kmx.native-suite.passing/v1" {
+			return errSuitePassingReceipt
+		}
+	case "native-agentsessions":
+		if r.Domain != suiteSessionsPassingDomain {
+			return errSuitePassingReceipt
+		}
+	default:
 		return errSuitePassingReceipt
 	}
 	if r.ExecutionMode == "native-orka" {
-		if r.Kagent != nil || !validSuitePassingSubject(r.Subject) || r.Provider.UID == r.Agent.UID {
+		if r.Kagent != nil || r.Sessions != nil || !validSuitePassingSubject(r.Subject) || r.Provider.UID == r.Agent.UID {
 			return errSuitePassingReceipt
 		}
-	} else if !reflect.DeepEqual(r.Subject, suiteNativeSubject{}) || r.Provider != (suiteNativeOwnedResource{}) || r.Agent != (suiteNativeOwnedResource{}) || !validSuiteKagentPassingProof(r.Kagent) {
-		return errSuitePassingReceipt
+	} else {
+		if !reflect.DeepEqual(r.Subject, suiteNativeSubject{}) || r.Provider != (suiteNativeOwnedResource{}) || r.Agent != (suiteNativeOwnedResource{}) {
+			return errSuitePassingReceipt
+		}
+		switch r.ExecutionMode {
+		case "native-kagent":
+			if r.Sessions != nil || !validSuiteKagentPassingProof(r.Kagent) {
+				return errSuitePassingReceipt
+			}
+		case "native-agentsessions":
+			if r.Kagent != nil || !validSuiteSessionsPassingProof(r.Sessions) {
+				return errSuitePassingReceipt
+			}
+		}
 	}
 	if !suitePrefixedDigest(r.SourceFingerprint) || !verificationDigest(r.CasesDigest) || len(r.Cases) == 0 {
 		return errSuitePassingReceipt
@@ -223,16 +253,22 @@ func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 			return errSuitePassingReceipt
 		}
 		if r.ExecutionMode == "native-orka" {
-			if c.KagentExecution != nil || scaffold.ValidateObjectName(c.TaskName) != nil || !verificationIdentity(c.TaskName) || !verificationIdentity(c.TaskUID) || tasks[c.TaskName] || uids[c.TaskUID] {
+			if c.KagentExecution != nil || c.SessionsExecution != nil || scaffold.ValidateObjectName(c.TaskName) != nil || !verificationIdentity(c.TaskName) || !verificationIdentity(c.TaskUID) || tasks[c.TaskName] || uids[c.TaskUID] {
 				return errSuitePassingReceipt
 			}
 			tasks[c.TaskName], uids[c.TaskUID] = true, true
-		} else {
+		} else if r.ExecutionMode == "native-kagent" {
 			e := c.KagentExecution
-			if c.TaskName != "" || c.TaskUID != "" || e == nil || !suiteKagentRequestID(e.RPCID, "rpc-") || !suiteKagentRequestID(e.RequestMessageID, "message-") || !safeKagentEvaluationID(e.TaskID) || !safeKagentEvaluationID(e.ContextID) || e.State != "completed" || e.UserTurns != 1 || e.AnswerAttribution != suiteKagentAnswerAttribution || tasks[e.TaskID] || uids[e.ContextID] || tasks[e.RPCID] || uids[e.RequestMessageID] {
+			if c.SessionsExecution != nil || c.TaskName != "" || c.TaskUID != "" || e == nil || !suiteKagentRequestID(e.RPCID, "rpc-") || !suiteKagentRequestID(e.RequestMessageID, "message-") || !safeKagentEvaluationID(e.TaskID) || !safeKagentEvaluationID(e.ContextID) || e.State != "completed" || e.UserTurns != 1 || e.AnswerAttribution != suiteKagentAnswerAttribution || tasks[e.TaskID] || uids[e.ContextID] || tasks[e.RPCID] || uids[e.RequestMessageID] {
 				return errSuitePassingReceipt
 			}
 			tasks[e.TaskID], uids[e.ContextID], tasks[e.RPCID], uids[e.RequestMessageID] = true, true, true, true
+		} else {
+			e := c.SessionsExecution
+			if c.KagentExecution != nil || c.TaskName != "" || c.TaskUID != "" || !validSuiteSessionsExecution(e) || tasks[e.ExecutionID] || uids[e.SessionUID] {
+				return errSuitePassingReceipt
+			}
+			tasks[e.ExecutionID], uids[e.SessionUID] = true, true
 		}
 		ids[c.ID], paths[c.Path] = true, true
 		assertions := map[string]bool{}
@@ -271,6 +307,10 @@ func canonicalSuitePassingInventory(ctx context.Context, r *suitePassingReceipt,
 		if err := coherentSuiteKagentPassingProof(r.Kagent, suite); err != nil {
 			return nil, err
 		}
+	} else if r.ExecutionMode == "native-agentsessions" {
+		if err := coherentSuiteSessionsPassingProof(r.Sessions, suite); err != nil {
+			return nil, err
+		}
 	} else if err := coherentSuitePassingSubject(r.Subject, suite); err != nil {
 		return nil, err
 	}
@@ -281,6 +321,7 @@ func canonicalSuitePassingInventory(ctx context.Context, r *suitePassingReceipt,
 		row := r.Cases[i]
 		row.TaskName, row.TaskUID, row.AnswerDigest = "", "", ""
 		row.KagentExecution = nil
+		row.SessionsExecution = nil
 		if !reflect.DeepEqual(row, expected.Metadata) {
 			return nil, errSuitePassingReceipt
 		}

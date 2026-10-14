@@ -45,13 +45,26 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Packaged AgentSessions chat members support root `eval --development-host FILE`
+  on explicit literal-loopback, unauthenticated operator-observed hosts. One
+  fresh Session and explicit config/Exec per ordered case, bounded canonical
+  chat/model-request proof, no retry or cluster configuration. Only a complete
+  pass exports private runtime-specific evidence for exact-S evaluated push;
+  changed source, failed/unknown/partial/drift/canceled runs export no new pass.
+  Journal retention and the development trust warning are disclosed. Registry,
+  auth, Lift, chat/status, tools/judge and remote lifecycle remain unsupported.
+  Demonstrated once on the pinned daemon with an instruction-sensitive model
+  fixture; replay leaves independent model-call counts unchanged. Not real-LLM
+  quality or authenticated attestation. [Development evaluation](docs/suite-workspace.md#agentsessions-development-evaluation).
+
 - Offline `kmx create --runtime agentsessions` authors one tool-free built-in
   chat member, pinned to upstream commit
   `ca85f47a2ec17ca6e16029cfa69419cfe29442b3` (merged #120/#124). Preparation,
   source-free loading and ordinary push preserve exact manifest S, empty member
   images and complete ordered cases. Runtime/config semantics remain private
-  metadata, not public AgentSuite fields. Suite evaluation, evaluated push,
-  Lift, chat/status and live create remain unsupported; Orka/kagent execution
+  metadata, not public AgentSuite fields. Development suite evaluation and
+  evaluated push are described above; Lift, chat/status and live create remain
+  unsupported. Orka/kagent execution
   and evidence consumers refuse this profile. [Workspace guide](docs/suite-workspace.md).
 
 - Deploy-only `kmx lift <ref>@<digest>` from a registry or local `--from-layout`.
