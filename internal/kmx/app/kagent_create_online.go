@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"sort"
@@ -18,29 +16,12 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
-	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 const (
-	kagentPinnedCommit = "68df64f671800c37c4204d81ebe0dd66ec35d223"
-
-	kagentControllerImage     = "ghcr.io/kagent-dev/kagent/controller:0.10.2"
 	kagentControllerImageRepo = "ghcr.io/kagent-dev/kagent/controller"
-	kagentGoImage             = "ghcr.io/kagent-dev/kagent/golang-adk:0.10.2"
 	kagentGoImageRepo         = "ghcr.io/kagent-dev/kagent/golang-adk"
-	kagentPythonImage         = "ghcr.io/kagent-dev/kagent/app:0.10.2"
-	kagentPythonImageRepo     = "ghcr.io/kagent-dev/kagent/app"
-
-	kagentControllerIndexDigest = "6adeef9ac70056e5871773a78233a77f12d1357f9f3484aaee59fe8abc6450b9"
-	kagentControllerAMD64Digest = "01236c6253abb2f35e25fa4af463c06780052065b7161eb29f3b162703e29075"
-	kagentControllerARM64Digest = "bf41012d08f381c37456f2f97becd9c09472a19dae7418d2a5684043533f36a1"
-	kagentGoIndexDigest         = "c1ae7865e4c4ed1d4708bbcc04ea952c54c3014a3da3178427bf31922d0956dd"
-	kagentGoAMD64Digest         = "922dd44552c55cad46c9e38c9d56b1138a682114e665e89b60caebde8f1952f6"
-	kagentGoARM64Digest         = "0b8e0c9b04304240efab0bee39d943240cd88f852760af01b8da25b23e4c6245"
-	kagentPythonIndexDigest     = "9eb019e6a0bb5fc1784d3b77025060657153b5cf9b291f63048d9c9f7451435c"
-	kagentPythonAMD64Digest     = "7dfa664fde480f5504098e5937492312c218091996857c32c5269c67e5a1048f"
-	kagentPythonARM64Digest     = "6bc282009e42cd507db291b9b8335e6662b64fa02e655d8797985b1f314b51f5"
 )
 
 const (
@@ -49,11 +30,7 @@ const (
 )
 
 var (
-	kagentPollInterval     = time.Second
-	kagentPreflightTimeout = 5 * time.Minute
 	kagentReadinessTimeout = 10 * time.Minute
-	kagentAgentCardTimeout = 5 * time.Minute
-	kagentTaskTimeout      = 5 * time.Minute
 )
 
 type kagentControllerService struct {
@@ -207,20 +184,6 @@ func (a *App) kagentCaptureWithTimeout(ctx context.Context, timeout time.Duratio
 	return append([]byte(nil), out.buffer.Bytes()...), nil
 }
 
-func (a *App) guardKagentCreate(ctx context.Context, opt CreateOptions) error {
-	// Do not reuse InvocationCommand here: it can contain the --task prompt.
-	// The mutation guard must never echo that prompt into diagnostics.
-	command := a.operationCommand("create", "--live", opt.Name, "--runtime", "kagent")
-	action := "create Kagent ModelConfig and Agent in " + opt.Namespace
-	if opt.Task != "" {
-		action += "; send one A2A message; Kagent stores the full task prompt, history, and answer in its database, default upstream session retention is unlimited, and Kubernetes audit policy may capture Service-proxy request and response bodies"
-	}
-	if opt.DryRun {
-		action = "server dry-run Kagent resources in " + opt.Namespace
-	}
-	return a.guardKagentOperation(ctx, opt.Namespace, action, command)
-}
-
 func (a *App) guardKagentOperation(ctx context.Context, namespace, action, command string) error {
 	if a.guarded {
 		return nil
@@ -241,296 +204,6 @@ func (a *App) guardKagentOperation(ctx context.Context, namespace, action, comma
 	}
 	a.guarded = true
 	return nil
-}
-
-func (a *App) createKagentStaged(ctx context.Context, opt CreateOptions, bundle *scaffold.KagentBundle, rendered agentruntime.RenderedBundle) (result agentruntime.DeployResult, err error) {
-	if err := a.guardKagentCreate(ctx, opt); err != nil {
-		return result, err
-	}
-	operationCtx := ctx
-	ctx, cancelPreflight := a.waitContext(operationCtx, "kagent-preflight", kagentPreflightTimeout)
-	defer cancelPreflight()
-	service, err := a.preflightKagentInstallation(ctx, opt.KagentRuntime, opt.Namespace)
-	if err != nil {
-		return result, err
-	}
-	if opt.Task != "" && service.AuthMode == "trusted-proxy" {
-		return result, fmt.Errorf("Kagent --task refuses controller AUTH_MODE trusted-proxy because this create path has no Kagent bearer credential; no Kubernetes resources were changed")
-	}
-	clusterUID := ""
-	if !opt.DryRun {
-		clusterUID, err = a.kagentClusterUID(ctx)
-		if err != nil {
-			return result, fmt.Errorf("%w; no Kubernetes resources were changed", err)
-		}
-	}
-	writeDocs, err := kagentWriteDocuments(bundle, rendered)
-	if err != nil {
-		return result, err
-	}
-	modelSpec := bundle.ModelConfig["spec"].(map[string]any)
-	secret, _ := modelSpec["apiKeySecret"].(string)
-	key, _ := modelSpec["apiKeySecretKey"].(string)
-	if secret == opt.Name {
-		return result, fmt.Errorf("Kagent model Secret name must differ from Agent name %s because the controller would overwrite its same-name generated Secret; no Kubernetes resources were changed", opt.Name)
-	}
-	if err := a.kagentGeneratedChildrenAbsent(ctx, opt.Namespace, opt.Name); err != nil {
-		return result, err
-	}
-	for _, doc := range []map[string]any{bundle.ModelConfig, bundle.Agent} {
-		if err := a.kagentAbsent(ctx, opt.Namespace, doc); err != nil {
-			return result, err
-		}
-	}
-	if err := a.kagentSecretPresent(ctx, opt.Namespace, secret, key); err != nil {
-		return result, err
-	}
-	toolSnapshots, err := a.snapshotKagentTools(ctx, bundle)
-	if err != nil {
-		return result, err
-	}
-	if err := a.reverifyKagentInstallation(ctx, service); err != nil {
-		return result, fmt.Errorf("cannot reverify exact Kagent v0.10.2 before ModelConfig server dry-run: %w; no Kubernetes resources were changed", err)
-	}
-	admitted := make([]kagentObjectProof, 0, len(writeDocs))
-	for _, doc := range writeDocs {
-		if doc["kind"] == "Agent" {
-			if err := a.reverifyKagentInstallation(ctx, service); err != nil {
-				return result, fmt.Errorf("cannot reverify exact Kagent v0.10.2 before Agent server dry-run: %w; no Kubernetes resources were changed", err)
-			}
-		}
-		body, err := json.Marshal(doc)
-		if err != nil {
-			return result, err
-		}
-		admissionCtx, cancelAdmission := a.waitContext(ctx, "kagent-admission", 0)
-		raw, err := a.kagentCapture(admissionCtx, body, "-n", opt.Namespace, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
-		cancelAdmission()
-		if err != nil {
-			return result, fmt.Errorf("%s strict server create preflight failed; no Kubernetes resources were changed: %w", doc["kind"], err)
-		}
-		proof, err := validateKagentAdmission(raw, doc, opt.Namespace)
-		if err != nil {
-			return result, fmt.Errorf("%s strict server create preflight mutated the reviewed object; no Kubernetes resources were changed: %w", doc["kind"], err)
-		}
-		admitted = append(admitted, proof)
-	}
-	// Close collision/dependency races after every admission read and before
-	// emitting the artifact. Create itself remains the final atomic collision
-	// check; an ambiguous create is never retried or adopted.
-	for _, doc := range []map[string]any{bundle.ModelConfig, bundle.Agent} {
-		if err := a.kagentAbsent(ctx, opt.Namespace, doc); err != nil {
-			return result, err
-		}
-	}
-	if err := a.kagentGeneratedChildrenAbsent(ctx, opt.Namespace, opt.Name); err != nil {
-		return result, err
-	}
-	if err := a.kagentSecretPresent(ctx, opt.Namespace, secret, key); err != nil {
-		return result, err
-	}
-	if err := a.verifyKagentToolSnapshots(ctx, bundle, toolSnapshots); err != nil {
-		return result, err
-	}
-	document, err := scaffold.KagentArtifact(rendered.Documents())
-	if err != nil {
-		return result, err
-	}
-	// Re-read the platform identity as the final cluster preflight. If the sole
-	// labeled Service, exact version, or CRDs changed during admission checks,
-	// no artifact or Kubernetes resource is written.
-	if err := a.reverifyKagentInstallation(ctx, service); err != nil {
-		return result, fmt.Errorf("%w; no Kubernetes resources were changed", err)
-	}
-	if opt.DryRun {
-		if err := a.emitKagentArtifact(opt, document, false); err != nil {
-			return result, err
-		}
-		a.notef("Kagent bundle passed exact-version, CRD, dependency, and strict server admission preflights; not applied and no task was sent.")
-		return result, nil
-	}
-	// Artifact emission is the last preflight and happens before the first
-	// actual create. A write failure here therefore cannot leave an unreviewed
-	// cluster object behind.
-	if err := a.emitKagentArtifact(opt, document, true); err != nil {
-		return result, err
-	}
-	if err := ctx.Err(); err != nil {
-		return result, fmt.Errorf("Kagent pre-create preflight timed out; no Kubernetes resources were changed: %w", err)
-	}
-	cancelPreflight()
-	ctx = operationCtx
-	var created []string
-	defer func() {
-		if err == nil {
-			return
-		}
-		a.notef("Stopped; no later Kagent resources or messages were attempted and nothing was rolled back. Created: %s", strings.Join(created, ", "))
-		err = fmt.Errorf("%w\nKagent create is create-only: rerunning will refuse any existing ModelConfig or Agent. Inspect the named resources and remove only what you intentionally want recreated", err)
-	}()
-	identities := make([]kagentIdentity, 0, 2)
-	var workload kagentWorkloadIdentity
-	var modelSecretHash string
-	for i, doc := range writeDocs {
-		if err := a.reverifyKagentPlatformAndCluster(ctx, service, clusterUID); err != nil {
-			return result, fmt.Errorf("cannot reverify exact Kagent v0.10.2 immediately before %s create: %w", doc["kind"], err)
-		}
-		if doc["kind"] == "Agent" {
-			if _, err := a.verifyKagentModelState(ctx, opt.Namespace, identities[0], modelSecretHash); err != nil {
-				return result, fmt.Errorf("Kagent ModelConfig changed before Agent create: %w", err)
-			}
-			if err := a.kagentSecretPresent(ctx, opt.Namespace, secret, key); err != nil {
-				return result, err
-			}
-			if err := a.verifyKagentToolSnapshots(ctx, bundle, toolSnapshots); err != nil {
-				return result, err
-			}
-		}
-		if err := a.kagentAbsent(ctx, opt.Namespace, doc); err != nil {
-			return result, err
-		}
-		if err := a.kagentGeneratedChildrenAbsent(ctx, opt.Namespace, opt.Name); err != nil {
-			return result, err
-		}
-		id, createErr := a.createKagentObject(ctx, opt.Namespace, doc, admitted[i])
-		if createErr != nil {
-			return result, createErr
-		}
-		created = append(created, id.Kind+"/"+id.Name+" UID "+id.UID)
-		identities = append(identities, id)
-		a.notef("Created %s/%s (UID %s); waiting for current-generation conditions.", id.Kind, id.Name, id.UID)
-		readyCtx, cancelReady := a.waitContext(ctx, "kagent-readiness-"+id.Kind, kagentReadinessTimeout)
-		readyErr := a.waitKagentReady(readyCtx, opt.Namespace, id)
-		cancelReady()
-		if readyErr != nil {
-			return result, readyErr
-		}
-		if id.Kind == "ModelConfig" {
-			modelSecretHash, err = a.verifyKagentModelState(ctx, opt.Namespace, id, "")
-			if err != nil {
-				return result, err
-			}
-		} else {
-			workload, err = a.verifyKagentAgentWorkload(ctx, opt.Namespace, id, opt.KagentRuntime, nil)
-			if err != nil {
-				return result, err
-			}
-			if _, err := a.verifyKagentModelState(ctx, opt.Namespace, identities[0], modelSecretHash); err != nil {
-				return result, fmt.Errorf("Kagent ModelConfig changed while Agent became Ready: %w", err)
-			}
-			if err := a.verifyKagentToolSnapshots(ctx, bundle, toolSnapshots); err != nil {
-				return result, fmt.Errorf("Kagent tool dependency changed while Agent became Ready: %w", err)
-			}
-		}
-	}
-	if opt.Task != "" {
-		agentID := identities[1]
-		if err := a.reverifyKagentPlatformAndCluster(ctx, service, clusterUID); err != nil {
-			return result, fmt.Errorf("cannot reverify exact Kagent v0.10.2 immediately before task send: %w", err)
-		}
-		cardCtx, cancelCard := a.waitContext(ctx, "kagent-agent-card", kagentAgentCardTimeout)
-		cardErr := a.waitKagentAgentCard(cardCtx, service, opt.Namespace, opt.Name)
-		cancelCard()
-		if cardErr != nil {
-			return result, cardErr
-		}
-		if err := a.reverifyKagentPlatformAndCluster(ctx, service, clusterUID); err != nil {
-			return result, fmt.Errorf("exact Kagent v0.10.2 installation changed immediately before task send: %w", err)
-		}
-		if err := a.verifyKagentAgentCard(ctx, service, opt.Namespace, opt.Name); err != nil {
-			return result, fmt.Errorf("Kagent A2A agent card changed immediately before task send: %w", err)
-		}
-		if _, err := a.verifyKagentAgentWorkload(ctx, opt.Namespace, agentID, opt.KagentRuntime, &workload); err != nil {
-			return result, fmt.Errorf("Kagent Agent identity or workload changed immediately before task send: %w", err)
-		}
-		if _, err := a.verifyKagentModelState(ctx, opt.Namespace, identities[0], modelSecretHash); err != nil {
-			return result, fmt.Errorf("Kagent ModelConfig changed immediately before task send: %w", err)
-		}
-		if err := a.verifyKagentToolSnapshots(ctx, bundle, toolSnapshots); err != nil {
-			return result, fmt.Errorf("Kagent tool dependency changed immediately before task send: %w", err)
-		}
-		taskCtx, cancelTask := a.waitContext(ctx, "kagent-task", kagentTaskTimeout)
-		answer, err := a.sendKagentTask(taskCtx, service, opt.Namespace, opt.Name, opt.Task)
-		cancelTask()
-		if err != nil {
-			return result, err
-		}
-		if _, err := a.verifyKagentAgentWorkload(ctx, opt.Namespace, agentID, opt.KagentRuntime, &workload); err != nil {
-			return result, fmt.Errorf("Kagent Agent identity or workload changed during task execution; the message was not retried: %w", err)
-		}
-		if err := a.verifyKagentAgentCard(ctx, service, opt.Namespace, opt.Name); err != nil {
-			return result, fmt.Errorf("Kagent A2A agent card changed during task execution; the message was not retried: %w", err)
-		}
-		if err := a.reverifyKagentPlatformAndCluster(ctx, service, clusterUID); err != nil {
-			return result, fmt.Errorf("exact Kagent v0.10.2 installation changed during task execution; the message was not retried: %w", err)
-		}
-		if _, err := a.verifyKagentModelState(ctx, opt.Namespace, identities[0], modelSecretHash); err != nil {
-			return result, fmt.Errorf("Kagent ModelConfig changed during task execution; the message was not retried: %w", err)
-		}
-		if err := a.verifyKagentToolSnapshots(ctx, bundle, toolSnapshots); err != nil {
-			return result, fmt.Errorf("Kagent tool dependency changed during task execution; the message was not retried: %w", err)
-		}
-		if _, err := fmt.Fprintln(a.Out, answer); err != nil {
-			return result, fmt.Errorf("Kagent A2A message completed but its answer could not be printed; the message was not resent: %w", err)
-		}
-		a.notef("Kagent Agent is Ready and one A2A message completed; the message was not retried.")
-	} else {
-		a.notef("Kagent ModelConfig is Accepted and Agent is Accepted and Ready; no model response was tested.")
-	}
-	kubeContext := ""
-	if a.Cfg != nil {
-		kubeContext = a.Cfg.KubeContext
-	}
-	agentID := identities[1]
-	result.Ref = agentruntime.AgentRef{Runtime: agentruntime.Kagent, Context: kubeContext,
-		Namespace: opt.Namespace, Kind: "agents.kagent.dev", Name: agentID.Name, UID: agentID.UID}
-	result.Receipt = agentruntime.DeployReceipt{
-		Bundle: opt.Name, PortableDigest: rendered.PortableDigest(), RenderedDigest: rendered.RenderedDigest(),
-		Target: agentruntime.DeployTarget{Runtime: agentruntime.Kagent, Context: kubeContext, Namespace: opt.Namespace},
-	}
-	for _, id := range identities {
-		result.Receipt.Resources = append(result.Receipt.Resources, agentruntime.ResourceResult{
-			Kind: id.Kind, Name: id.Name, Namespace: opt.Namespace, UID: id.UID,
-			Generation: id.Generation, Outcome: agentruntime.ResourceCreated,
-		})
-	}
-	if _, err := a.verifyKagentAgentWorkload(ctx, opt.Namespace, agentID, opt.KagentRuntime, &workload); err != nil {
-		return agentruntime.DeployResult{}, fmt.Errorf("Kagent Agent identity or workload changed before deployment receipt: %w", err)
-	}
-	if _, err := a.verifyKagentModelState(ctx, opt.Namespace, identities[0], modelSecretHash); err != nil {
-		return agentruntime.DeployResult{}, fmt.Errorf("Kagent ModelConfig changed before deployment receipt: %w", err)
-	}
-	if err := a.verifyKagentToolSnapshots(ctx, bundle, toolSnapshots); err != nil {
-		return agentruntime.DeployResult{}, fmt.Errorf("Kagent tool dependency changed before deployment receipt: %w", err)
-	}
-	if err := a.reverifyKagentPlatformAndCluster(ctx, service, clusterUID); err != nil {
-		return agentruntime.DeployResult{}, fmt.Errorf("exact Kagent v0.10.2 installation or destination cluster changed immediately before deployment receipt: %w", err)
-	}
-	if err := writeKagentCreateReceipt(kagentBundlePath(opt), clusterUID, result); err != nil {
-		return agentruntime.DeployResult{}, fmt.Errorf("persist Kagent create receipt after deployment success: %w", err)
-	}
-	return result, nil
-}
-
-func kagentWriteDocuments(bundle *scaffold.KagentBundle, rendered agentruntime.RenderedBundle) ([]map[string]any, error) {
-	marker := map[string]any{
-		"kaimahi.dev/bundle":          kagentObjectName(bundle.Agent),
-		"kaimahi.dev/portable-digest": rendered.PortableDigest(),
-		"kaimahi.dev/rendered-digest": rendered.RenderedDigest(),
-	}
-	docs := make([]map[string]any, 0, 2)
-	for _, renderedDoc := range []map[string]any{bundle.ModelConfig, bundle.Agent} {
-		if err := refuseOrkaSuiteDocument(renderedDoc); err != nil {
-			return nil, err
-		}
-		doc, err := cloneOrkaDoc(renderedDoc)
-		if err != nil {
-			return nil, fmt.Errorf("prepare Kagent %s write payload: %w", renderedDoc["kind"], err)
-		}
-		addOrkaMarker(doc, marker)
-		docs = append(docs, doc)
-	}
-	return docs, nil
 }
 
 func (a *App) preflightKagentInstallation(ctx context.Context, runtimeName, targetNamespace string) (kagentControllerService, error) {
@@ -674,30 +347,6 @@ func (a *App) inspectKagentInstallation(ctx context.Context, runtimeName, target
 	return service, nil
 }
 
-func (a *App) reverifyKagentInstallation(ctx context.Context, service kagentControllerService) error {
-	return a.observeKagentInstallationRecheck(ctx, service, nil)
-}
-
-func (a *App) observeKagentInstallationRecheck(ctx context.Context, service kagentControllerService, observed *kagentControllerService) error {
-	current, err := a.inspectKagentInstallation(ctx, service.Runtime, service.TargetNamespace)
-	if err != nil {
-		return err
-	}
-	if current.Name != service.Name || current.Namespace != service.Namespace || current.UID != service.UID ||
-		current.ResourceVersion != service.ResourceVersion || !equalKagentLabels(current.Selector, service.Selector) ||
-		current.DeploymentName != service.DeploymentName || current.DeploymentUID != service.DeploymentUID ||
-		current.DeploymentResourceVersion != service.DeploymentResourceVersion ||
-		current.ControllerServiceAccount != service.ControllerServiceAccount || current.TargetNamespace != service.TargetNamespace ||
-		current.ConfigMapName != service.ConfigMapName || current.ConfigMapUID != service.ConfigMapUID ||
-		current.ConfigMapResourceVersion != service.ConfigMapResourceVersion || current.AuthMode != service.AuthMode {
-		return fmt.Errorf("the exact Kagent controller Service, Deployment, or image ConfigMap changed during preflight")
-	}
-	if observed != nil {
-		*observed = current
-	}
-	return nil
-}
-
 func validateKagentWatchNamespaces(value, targetNamespace string) error {
 	if value == "" {
 		return nil
@@ -742,24 +391,6 @@ func (a *App) verifyKagentControllerRBAC(ctx context.Context, service kagentCont
 				return fmt.Errorf("Kagent controller ServiceAccount %s is not allowed to %s %s in target namespace %s", service.ControllerServiceAccount, verb, check.resource, targetNamespace)
 			}
 		}
-	}
-	return nil
-}
-
-func (a *App) reverifyKagentPlatformAndCluster(ctx context.Context, service kagentControllerService, clusterUID string) error {
-	return a.observeKagentPlatformAndCluster(ctx, service, clusterUID, nil)
-}
-
-func (a *App) observeKagentPlatformAndCluster(ctx context.Context, service kagentControllerService, clusterUID string, observed *kagentControllerService) error {
-	if err := a.observeKagentInstallationRecheck(ctx, service, observed); err != nil {
-		return err
-	}
-	currentUID, err := a.kagentClusterUID(ctx)
-	if err != nil {
-		return err
-	}
-	if currentUID != clusterUID {
-		return fmt.Errorf("the destination cluster identity changed during Kagent create")
 	}
 	return nil
 }
@@ -1278,128 +909,6 @@ func (a *App) kagentAbsent(ctx context.Context, namespace string, doc map[string
 	}
 }
 
-func (a *App) kagentSecretPresent(ctx context.Context, namespace, secret, key string) error {
-	if secret == "" || key == "" {
-		return fmt.Errorf("Kagent model Secret reference is incomplete; no Kubernetes resources were changed")
-	}
-	template := "go-template=secret\n{{range $key, $_ := .data}}{{if eq $key " + fmt.Sprintf("%q", key) + "}}present{{end}}{{end}}"
-	marker, err := a.kagentCapture(ctx, nil, "-n", namespace, "get", "secret", secret, "--ignore-not-found=true", "-o", template)
-	if err != nil {
-		return fmt.Errorf("cannot read Kagent model Secret key presence; no Kubernetes resources were changed: %w", err)
-	}
-	switch string(marker) {
-	case "":
-		return fmt.Errorf("Kagent model Secret %s/%s is missing; provision it separately, never create the skeleton", namespace, secret)
-	case "secret\n":
-		return fmt.Errorf("Kagent model Secret exists but its referenced key is missing; provision that key separately")
-	case "secret\npresent":
-		return nil
-	default:
-		return fmt.Errorf("Kagent model Secret key check returned an invalid presence marker")
-	}
-}
-
-type kagentToolSnapshot struct {
-	Name, Namespace, UID, SpecDigest, SecretHash string
-	Generation                                   int64
-	DiscoveredTools                              []string
-}
-
-func (a *App) snapshotKagentTools(ctx context.Context, bundle *scaffold.KagentBundle) (map[string]kagentToolSnapshot, error) {
-	snapshots := map[string]kagentToolSnapshot{}
-	declarative := bundle.Agent["spec"].(map[string]any)["declarative"].(map[string]any)
-	rawTools, ok := declarative["tools"].([]any)
-	if !ok || len(rawTools) == 0 {
-		return snapshots, nil
-	}
-	for _, rawTool := range rawTools {
-		server := rawTool.(map[string]any)["mcpServer"].(map[string]any)
-		serverName := server["name"].(string)
-		names := server["toolNames"].([]any)
-		snapshot, err := a.readKagentToolSnapshot(ctx, kagentObjectNamespace(bundle.Agent), serverName)
-		if err != nil {
-			return nil, fmt.Errorf("%w; no Kubernetes resources were changed", err)
-		}
-		var missing []string
-		for _, rawName := range names {
-			name := rawName.(string)
-			if !slices.Contains(snapshot.DiscoveredTools, name) {
-				missing = append(missing, name)
-			}
-		}
-		if len(missing) > 0 {
-			return nil, fmt.Errorf("RemoteMCPServer %s has not discovered every allowlisted tool (%s); no Kubernetes resources were changed", serverName, strings.Join(missing, ", "))
-		}
-		snapshots[serverName] = snapshot
-	}
-	return snapshots, nil
-}
-
-func (a *App) verifyKagentToolSnapshots(ctx context.Context, bundle *scaffold.KagentBundle, snapshots map[string]kagentToolSnapshot) error {
-	for name, expected := range snapshots {
-		current, err := a.readKagentToolSnapshot(ctx, kagentObjectNamespace(bundle.Agent), name)
-		if err != nil {
-			return err
-		}
-		if !reflect.DeepEqual(current, expected) {
-			return fmt.Errorf("RemoteMCPServer %s was replaced or its generation, spec, Secret hash, or discovered tool set changed", name)
-		}
-	}
-	return nil
-}
-
-func (a *App) readKagentToolSnapshot(ctx context.Context, namespace, name string) (kagentToolSnapshot, error) {
-	snapshot := kagentToolSnapshot{Name: name, Namespace: namespace}
-	raw, err := a.kagentCapture(ctx, nil, "-n", namespace, "get", "remotemcpservers.kagent.dev", name, "-o", "json")
-	if err != nil {
-		return snapshot, fmt.Errorf("cannot read Kagent RemoteMCPServer %s: %w", name, err)
-	}
-	var object struct {
-		APIVersion string          `json:"apiVersion"`
-		Kind       string          `json:"kind"`
-		Metadata   kagentMetadata  `json:"metadata"`
-		Spec       json.RawMessage `json:"spec"`
-		Status     struct {
-			ObservedGeneration int64             `json:"observedGeneration"`
-			Conditions         []serverCondition `json:"conditions"`
-			SecretHash         string            `json:"secretHash"`
-			DiscoveredTools    []struct {
-				Name string `json:"name"`
-			} `json:"discoveredTools"`
-		} `json:"status"`
-	}
-	if err := json.Unmarshal(raw, &object); err != nil || object.APIVersion != scaffold.KagentAPIVersion ||
-		object.Kind != scaffold.KagentRemoteMCPServerKind || object.Metadata.Name != name || object.Metadata.Namespace != namespace ||
-		object.Metadata.UID == "" || object.Metadata.Generation < 1 || object.Metadata.DeletionTimestamp != nil || len(object.Spec) == 0 {
-		return snapshot, fmt.Errorf("RemoteMCPServer %s returned an invalid or terminating identity", name)
-	}
-	if object.Status.ObservedGeneration != object.Metadata.Generation || !kagentConditionTrue(object.Status.Conditions, "Accepted", object.Metadata.Generation) {
-		return snapshot, fmt.Errorf("RemoteMCPServer %s is not current-generation Accepted", name)
-	}
-	snapshot.UID = object.Metadata.UID
-	snapshot.Generation = object.Metadata.Generation
-	snapshot.SecretHash = object.Status.SecretHash
-	value, err := canonicalKagentJSONValue(object.Spec)
-	if err != nil {
-		return snapshot, fmt.Errorf("RemoteMCPServer %s returned an invalid spec", name)
-	}
-	canonical, err := json.Marshal(value)
-	if err != nil {
-		return snapshot, fmt.Errorf("RemoteMCPServer %s spec cannot be canonicalized", name)
-	}
-	snapshot.SpecDigest = fmt.Sprintf("%x", sha256.Sum256(canonical))
-	seen := map[string]bool{}
-	for _, tool := range object.Status.DiscoveredTools {
-		if scaffold.ValidateKagentToolName(tool.Name) != nil || seen[tool.Name] {
-			return snapshot, fmt.Errorf("RemoteMCPServer %s returned an invalid discovered tool set", name)
-		}
-		seen[tool.Name] = true
-		snapshot.DiscoveredTools = append(snapshot.DiscoveredTools, tool.Name)
-	}
-	sort.Strings(snapshot.DiscoveredTools)
-	return snapshot, nil
-}
-
 type kagentIdentity struct {
 	Kind, Name, UID string
 	Generation      int64
@@ -1423,14 +932,6 @@ type kagentObject struct {
 		Conditions         []serverCondition `json:"conditions"`
 		SecretHash         string            `json:"secretHash"`
 	} `json:"status"`
-}
-
-func validateKagentAdmission(raw []byte, desired map[string]any, namespace string) (kagentObjectProof, error) {
-	proof, err := expectedKagentObjectProof(desired, namespace)
-	if err != nil {
-		return proof, err
-	}
-	return validateKagentAdmissionProof(raw, desired, proof)
 }
 
 func validateKagentAdmissionProof(raw []byte, desired map[string]any, proof kagentObjectProof) (kagentObjectProof, error) {
@@ -1467,36 +968,6 @@ func validateKagentAdmissionProof(raw []byte, desired map[string]any, proof kage
 	}
 	if err := validateKagentProofSpecAndMarkers(admitted.Spec, admitted.Metadata.Annotations, proof); err != nil {
 		return proof, err
-	}
-	return proof, nil
-}
-
-func expectedKagentObjectProof(desired map[string]any, namespace string) (kagentObjectProof, error) {
-	if err := refuseOrkaSuiteDocument(desired); err != nil {
-		return kagentObjectProof{}, err
-	}
-	proof, err := commonKagentObjectProof(desired, namespace)
-	if err != nil {
-		return proof, err
-	}
-	metadata := desired["metadata"].(map[string]any)
-	annotations, err := kagentStringMap(metadata["annotations"])
-	if err != nil {
-		return proof, err
-	}
-	proof.Markers = map[string]string{}
-	for _, key := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {
-		value := annotations[key]
-		if value == "" || key != orkaBundleMarker && !validOrkaMarkerDigest(value) {
-			return proof, fmt.Errorf("reviewed object lacks an exact KMX marker annotation")
-		}
-		proof.Markers[key] = value
-	}
-	if version := annotations[kagentVersionMarker]; version != "" {
-		if version != "v0.10.3" {
-			return proof, fmt.Errorf("reviewed runtime version marker is not supported")
-		}
-		proof.Markers[kagentVersionMarker] = version
 	}
 	return proof, nil
 }
@@ -1584,26 +1055,6 @@ func validateKagentProofSpecAndMarkers(rawSpec json.RawMessage, annotations map[
 		}
 	}
 	return nil
-}
-
-func (a *App) verifyKagentModelState(ctx context.Context, namespace string, id kagentIdentity, expectedSecretHash string) (string, error) {
-	if id.Kind != "ModelConfig" {
-		return "", fmt.Errorf("expected a ModelConfig identity")
-	}
-	object, err := a.readKagentObject(ctx, namespace, id)
-	if err != nil {
-		return "", err
-	}
-	if object.Status.ObservedGeneration != id.Generation || !kagentObjectConditionTrue(object.Status.Conditions, "Accepted", id) {
-		return "", fmt.Errorf("ModelConfig/%s UID %s is no longer current-generation Accepted", id.Name, id.UID)
-	}
-	if object.Status.SecretHash == "" {
-		return "", fmt.Errorf("ModelConfig/%s reports no Secret hash", id.Name)
-	}
-	if expectedSecretHash != "" && object.Status.SecretHash != expectedSecretHash {
-		return "", fmt.Errorf("ModelConfig/%s Secret hash changed", id.Name)
-	}
-	return object.Status.SecretHash, nil
 }
 
 func (a *App) createKagentObject(ctx context.Context, namespace string, doc map[string]any, proof kagentObjectProof) (kagentIdentity, error) {
@@ -1694,10 +1145,6 @@ func kagentControllerOwner(metadata kagentMetadata, id kagentIdentity) bool {
 	return controllers == 1 && matched
 }
 
-func (a *App) verifyKagentAgentWorkload(ctx context.Context, namespace string, id kagentIdentity, runtimeName string, previous *kagentWorkloadIdentity) (kagentWorkloadIdentity, error) {
-	return a.observeKagentAgentWorkload(ctx, namespace, id, runtimeName, previous, nil)
-}
-
 func (a *App) observeKagentAgentWorkload(ctx context.Context, namespace string, id kagentIdentity, runtimeName string, previous *kagentWorkloadIdentity, observed *[]kagentEvaluationImage) (kagentWorkloadIdentity, error) {
 	identity := kagentWorkloadIdentity{}
 	object, err := a.readKagentObject(ctx, namespace, id)
@@ -1782,38 +1229,6 @@ func (a *App) observeKagentAgentWorkload(ctx context.Context, namespace string, 
 	return identity, nil
 }
 
-func (a *App) waitKagentAgentCard(ctx context.Context, service kagentControllerService, namespace, agent string) error {
-	for {
-		if err := a.verifyKagentAgentCard(ctx, service, namespace, agent); err == nil {
-			return nil
-		}
-		if err := a.pause(ctx, kagentPollInterval); err != nil {
-			return fmt.Errorf("waiting for the controller-proxied A2A agent card for Agent/%s: %w", agent, err)
-		}
-	}
-}
-
-func (a *App) verifyKagentAgentCard(ctx context.Context, service kagentControllerService, namespace, agent string) error {
-	path := kagentServiceProxyPath(service, "/api/a2a/"+url.PathEscape(namespace)+"/"+url.PathEscape(agent)+"/.well-known/agent-card.json")
-	raw, err := a.kagentCapture(ctx, nil, "get", "--raw", path)
-	if err != nil {
-		return err
-	}
-	var card struct {
-		Name               string   `json:"name"`
-		DefaultInputModes  []string `json:"defaultInputModes"`
-		DefaultOutputModes []string `json:"defaultOutputModes"`
-		Capabilities       *struct {
-			Streaming bool `json:"streaming"`
-		} `json:"capabilities"`
-	}
-	if json.Unmarshal(raw, &card) != nil || card.Name != strings.ReplaceAll(agent, "-", "_") ||
-		card.Capabilities == nil || !slices.Contains(card.DefaultInputModes, "text") || !slices.Contains(card.DefaultOutputModes, "text") {
-		return fmt.Errorf("controller-proxied A2A agent card is invalid or did not name the expected Agent")
-	}
-	return nil
-}
-
 // v0.10.2 stamps Agent conditions individually. Its ModelConfig controller
 // instead stamps status.observedGeneration and writes Accepted in the same
 // status update without condition.observedGeneration, so zero is valid only
@@ -1822,15 +1237,6 @@ func kagentObjectConditionTrue(conditions []serverCondition, conditionType strin
 	for _, condition := range conditions {
 		generationMatches := condition.ObservedGeneration == id.Generation || id.Kind == "ModelConfig" && condition.ObservedGeneration == 0
 		if condition.Type == conditionType && condition.Status == "True" && generationMatches {
-			return true
-		}
-	}
-	return false
-}
-
-func kagentConditionTrue(conditions []serverCondition, conditionType string, generation int64) bool {
-	for _, condition := range conditions {
-		if condition.Type == conditionType && condition.Status == "True" && condition.ObservedGeneration == generation {
 			return true
 		}
 	}
@@ -1847,189 +1253,12 @@ func kagentReadyConditionTrue(conditions []serverCondition, generation int64) bo
 	return false
 }
 
-func (a *App) sendKagentTask(ctx context.Context, service kagentControllerService, namespace, agent, prompt string) (string, error) {
-	messageID, err := randomHex(16)
-	if err != nil {
-		return "", err
-	}
-	rpcID, err := randomHex(16)
-	if err != nil {
-		return "", err
-	}
-	body, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": rpcID, "method": "message/send",
-		"params": map[string]any{"message": map[string]any{
-			"kind": "message", "messageId": messageID, "role": "user",
-			"parts": []any{map[string]any{"kind": "text", "text": prompt}},
-		}},
-	})
-	if err != nil {
-		return "", fmt.Errorf("cannot encode the Kagent A2A request")
-	}
-	path := kagentServiceProxyPath(service, "/api/a2a/"+url.PathEscape(namespace)+"/"+url.PathEscape(agent))
-	raw, err := a.kagentCaptureWithTimeout(ctx, 5*time.Minute, "5m", body, "create", "--raw", path, "-f", "-")
-	if err != nil {
-		return "", fmt.Errorf("Kagent A2A message/send failed or was ambiguous; it may have executed and was not retried: %w", err)
-	}
-	answer, err := completedKagentAnswer(raw, rpcID)
-	if err != nil {
-		return "", fmt.Errorf("Kagent A2A message/send was accepted but no completed answer could be proven; it may have executed and was not retried: %w", err)
-	}
-	return answer, nil
-}
-
-func completedKagentAnswer(raw []byte, rpcID string) (string, error) {
-	var response struct {
-		JSONRPC string          `json:"jsonrpc"`
-		ID      json.RawMessage `json:"id"`
-		Result  json.RawMessage `json:"result"`
-		Error   json.RawMessage `json:"error"`
-	}
-	if strings.TrimSpace(rpcID) == "" {
-		return "", fmt.Errorf("expected JSON-RPC id is empty")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&response); err != nil || response.JSONRPC != "2.0" {
-		return "", fmt.Errorf("controller returned an invalid JSON-RPC response")
-	}
-	if err := requireKagentJSONEOF(decoder); err != nil {
-		return "", fmt.Errorf("controller returned an invalid JSON-RPC response")
-	}
-	var returnedID string
-	if err := json.Unmarshal(response.ID, &returnedID); err != nil || returnedID != rpcID {
-		return "", fmt.Errorf("controller returned a response for a different RPC id")
-	}
-	if len(response.Error) != 0 && string(response.Error) != "null" {
-		return "", fmt.Errorf("controller returned a JSON-RPC error")
-	}
-	if len(response.Error) != 0 && string(response.Error) == "null" {
-		response.Error = nil
-	}
-	if len(response.Result) == 0 || string(response.Result) == "null" {
-		return "", fmt.Errorf("controller returned no JSON-RPC result")
-	}
-	var result struct {
-		Kind      string `json:"kind"`
-		ID        string `json:"id"`
-		ContextID string `json:"contextId"`
-		MessageID string `json:"messageId"`
-		Role      string `json:"role"`
-		Status    struct {
-			State   string `json:"state"`
-			Message *struct {
-				Role      string          `json:"role"`
-				MessageID string          `json:"messageId"`
-				ContextID string          `json:"contextId"`
-				Parts     []kagentA2APart `json:"parts"`
-			} `json:"message"`
-		} `json:"status"`
-		Artifacts []json.RawMessage `json:"artifacts"`
-		History   []struct {
-			Role      string          `json:"role"`
-			MessageID string          `json:"messageId"`
-			ContextID string          `json:"contextId"`
-			Parts     []kagentA2APart `json:"parts"`
-		} `json:"history"`
-		Parts []kagentA2APart `json:"parts"`
-	}
-	resultDecoder := json.NewDecoder(bytes.NewReader(response.Result))
-	if err := resultDecoder.Decode(&result); err != nil || requireKagentJSONEOF(resultDecoder) != nil {
-		return "", fmt.Errorf("controller returned an invalid JSON-RPC result")
-	}
-	var answer string
-	var answerErr error
-	switch result.Kind {
-	case "message":
-		if !validKagentA2AID(result.MessageID) || result.Role != "agent" {
-			return "", fmt.Errorf("direct message result lacks an exact agent identity")
-		}
-		answer, answerErr = kagentText(result.Parts)
-	case "task":
-		if !validKagentA2AID(result.ID) || !validKagentA2AID(result.ContextID) {
-			return "", fmt.Errorf("task result lacks a task or context identity")
-		}
-		if result.Status.State != "completed" {
-			return "", fmt.Errorf("task did not reach the required completed state")
-		}
-		// v0.10.2 artifacts have no agent role/message/context identity, so
-		// only status or history messages can supply a task answer.
-		if result.Status.Message != nil {
-			statusAnswer, statusErr := kagentText(result.Status.Message.Parts)
-			if statusErr != nil {
-				return "", statusErr
-			}
-			if statusAnswer != "" && (result.Status.Message.Role != "agent" || !validKagentA2AID(result.Status.Message.MessageID) || result.Status.Message.ContextID != result.ContextID) {
-				return "", fmt.Errorf("task status answer lacks a matching agent message identity")
-			}
-			answer = statusAnswer
-		}
-		if answer == "" {
-			for i := len(result.History) - 1; i >= 0; i-- {
-				text, textErr := kagentText(result.History[i].Parts)
-				if textErr != nil {
-					return "", textErr
-				}
-				if text == "" {
-					continue
-				}
-				if result.History[i].Role != "agent" || !validKagentA2AID(result.History[i].MessageID) || result.History[i].ContextID != result.ContextID {
-					return "", fmt.Errorf("task history answer lacks a matching agent message identity")
-				}
-				answer = text
-				break
-			}
-		}
-	default:
-		return "", fmt.Errorf("controller returned neither a completed task nor a message")
-	}
-	if answerErr != nil {
-		return "", answerErr
-	}
-	answer = strings.TrimSpace(safeTerminal(answer))
-	if answer == "" {
-		return "", fmt.Errorf("completed response contained no nonblank agent text answer")
-	}
-	return answer, nil
-}
-
 func requireKagentJSONEOF(decoder *json.Decoder) error {
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return fmt.Errorf("extra JSON value")
 	}
 	return nil
-}
-
-func validKagentA2AID(value string) bool {
-	return value != "" && strings.TrimSpace(value) == value
-}
-
-func kagentText(parts []kagentA2APart) (string, error) {
-	var text []string
-	for _, part := range parts {
-		if strings.TrimSpace(part.Text) == "" {
-			continue
-		}
-		if part.Kind != "text" {
-			return "", fmt.Errorf("answer text part does not explicitly declare kind text")
-		}
-		text = append(text, part.Text)
-	}
-	return strings.TrimSpace(strings.Join(text, "\n")), nil
-}
-
-type kagentA2APart struct {
-	Kind string `json:"kind"`
-	Text string `json:"text"`
-}
-
-type kagentCreateReceipt struct {
-	APIVersion string                     `json:"apiVersion"`
-	Kind       string                     `json:"kind"`
-	ClusterUID string                     `json:"clusterUID"`
-	AgentRef   agentruntime.AgentRef      `json:"agentRef"`
-	Deploy     agentruntime.DeployReceipt `json:"deploy"`
 }
 
 func (a *App) kagentClusterUID(ctx context.Context) (string, error) {
@@ -2047,63 +1276,4 @@ func (a *App) kagentClusterUID(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("kube-system namespace returned no valid Kagent create cluster UID")
 	}
 	return namespace.Metadata.UID, nil
-}
-
-func writeKagentCreateReceipt(bundle, clusterUID string, result agentruntime.DeployResult) error {
-	if bundle == "" || clusterUID == "" || result.Ref.UID == "" || result.Receipt.PortableDigest == "" || result.Receipt.RenderedDigest == "" {
-		return fmt.Errorf("Kagent create receipt is incomplete")
-	}
-	dir := filepath.Join(bundle, "receipts")
-	if err := os.Mkdir(dir, 0o700); err != nil {
-		if !os.IsExist(err) {
-			return err
-		}
-		if err := checkLiftReceiptsDir(bundle); err != nil {
-			return err
-		}
-	}
-	if err := checkLiftReceiptsDir(bundle); err != nil {
-		return err
-	}
-	receipt := kagentCreateReceipt{
-		APIVersion: "kmx.kaimahi.dev/v1alpha1", Kind: "KagentCreateReceipt", ClusterUID: clusterUID,
-		AgentRef: result.Ref, Deploy: result.Receipt,
-	}
-	raw, err := json.MarshalIndent(receipt, "", "  ")
-	if err != nil {
-		return err
-	}
-	key := sha256.Sum256([]byte(result.Ref.Context + "\x00" + result.Ref.Namespace + "\x00" + clusterUID + "\x00" + result.Ref.UID))
-	path := filepath.Join(dir, fmt.Sprintf("create-%x.json", key))
-	if _, err := os.Lstat(path); err == nil {
-		return fmt.Errorf("Kagent create receipt already exists; refusing to overwrite it")
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	complete := false
-	closed := false
-	defer func() {
-		if !closed {
-			_ = file.Close()
-		}
-		if !complete {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(append(raw, '\n')); err != nil {
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	closed = true
-	complete = true
-	return nil
 }

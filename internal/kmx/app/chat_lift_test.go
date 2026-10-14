@@ -4,55 +4,15 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
-	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 
 	tea "charm.land/bubbletea/v2"
 )
-
-func TestChatRuntimeCarriesBundleRootToLift(t *testing.T) {
-	a := &App{bundleRoot: "/tmp/agent-bundles"}
-	session, err := (orkaRuntimeAdapter{app: a}).Open(t.Context(), agentruntime.Target{Name: "demo", Namespace: OrkaNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := session.(*orkaRuntimeSession).backend.bundleRoot; got != "/tmp/agent-bundles" {
-		t.Fatalf("lift bundle root = %q", got)
-	}
-}
-
-func TestLiftAzureCommandsPinSubscriptionAndIsolateCredentials(t *testing.T) {
-	target := chatLiftTarget{Subscription: "sub-id", ResourceGroup: "my-rg", Cluster: "aks", Context: "kmx-lift-target"}
-	want := []string{"aks", "get-credentials", "--subscription", "sub-id", "--resource-group", "my-rg", "--name", "aks", "--context", "kmx-lift-target", "--file", "/tmp/isolated", "--only-show-errors"}
-	if got := aksCredentialsArgs(target, "/tmp/isolated"); !reflect.DeepEqual(got, want) {
-		t.Fatalf("args=%v", got)
-	}
-	args := aksListArgs(target)
-	if args[2] != "--subscription" || args[3] != "sub-id" || strings.Contains(strings.Join(args, " "), "--resource-group") || !strings.Contains(strings.Join(args, " "), "resourceGroup:resourceGroup") {
-		t.Fatalf("args=%v", args)
-	}
-}
-
-func TestLiftLocationLabels(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
-	for _, tc := range []struct {
-		local                  bool
-		context, cluster, want string
-	}{
-		{true, "kind-demo", "", "(local) kind-demo"},
-		{false, "aks-sub-rg-demo", "demo", "(remote-aks) demo"},
-		{false, "production", "", "(remote-k8s) production"},
-	} {
-		if got := liftLocationLabel(tc.local, tc.context, tc.cluster); got != tc.want {
-			t.Fatalf("got=%q want=%q", got, tc.want)
-		}
-	}
-}
 
 func TestLiftPickerVimNavigationAndSearch(t *testing.T) {
 	m := chatPicker{vim: true, searchEnabled: true, items: []chatPickerItem{{name: "alpha"}, {name: "kube-prod"}, {name: "staging"}}}
@@ -100,9 +60,6 @@ func TestLiftAzureCallsCarryTheRunnerEnvironment(t *testing.T) {
 		{"discovery", func(a *App, ctx context.Context) ([]byte, error) {
 			return a.liftDiscovery(ctx, "az", "account", "list")
 		}},
-		{"write", func(a *App, ctx context.Context) ([]byte, error) {
-			return a.liftAzureWrite(ctx, "cognitiveservices", "account", "create")
-		}},
 	} {
 		dir := t.TempDir()
 		fakeTool(t, dir, "az", `printf 'kept=%s dropped=%s' "$KMX_LIFT_KEPT" "$KMX_LIFT_DROPPED"`)
@@ -132,27 +89,5 @@ func TestLiftAzureFailureDoesNotPropagateAzureDiagnostics(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "00000000") || strings.Contains(err.Error(), "denied") {
 		t.Fatalf("azure diagnostics reached the caller: %v", err)
-	}
-}
-
-func TestPortableLiftBundleDropsServerMetadataAndKeepsConfiguration(t *testing.T) {
-	agent := map[string]any{"status": map[string]any{"ready": true}, "metadata": map[string]any{"uid": "old", "labels": map[string]any{"app.kubernetes.io/version": "v2", "cluster-only": "local"}}, "spec": map[string]any{"providerRef": map[string]any{"name": "shared"}, "tools": []any{map[string]any{"name": "k8s-get-resources"}}, "systemPrompt": map[string]any{"inline": "custom"}}}
-	provider := map[string]any{"status": map[string]any{"ready": true}, "spec": map[string]any{"type": "openai", "defaultModel": "test", "secretRef": map[string]any{"name": "existing-key", "key": "api-key"}}}
-	bundle, err := portableLiftBundle(agent, provider, "demo", OrkaNamespace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bundle.Agent["status"] != nil || bundle.Agent["metadata"].(map[string]any)["uid"] != nil {
-		t.Fatal("server metadata copied")
-	}
-	labels := bundle.Agent["metadata"].(map[string]any)["labels"].(map[string]any)
-	if len(labels) != 1 || labels["app.kubernetes.io/version"] != "v2" {
-		t.Fatal("lift lost release version or copied unrelated labels")
-	}
-	if bundle.Secret["data"] != nil || bundle.Secret["metadata"].(map[string]any)["name"] != "existing-key" {
-		t.Fatal("credentials copied or reference changed")
-	}
-	if bundle.Agent["spec"].(map[string]any)["tools"] == nil {
-		t.Fatal("tools lost")
 	}
 }

@@ -31,7 +31,7 @@ var orkaSlashCommands = []slashCommand{
 	{"/inference-copilot", "/inference-copilot — choose Copilot model"},
 	{"/inference-local", "/inference-local — use Agent Provider"},
 	{"/inference-foundry", "/inference-foundry — Azure login, host inference"},
-	{"/lift", "/lift — deploy to another cluster"},
+	{"/lift", interactiveLiftRetirement},
 	{"/retry", "/retry — repeat last message"},
 	{"/tools", "/tools — enable agent tools"},
 	{"/verbose-off", "/verbose-off — hide details"},

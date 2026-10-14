@@ -15,7 +15,6 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -199,40 +198,6 @@ fi`, request, tc.grantNamespace))
 				!reflect.DeepEqual(review.Spec.Groups, []string{"system:serviceaccounts", "system:serviceaccounts:health-team", "system:authenticated"}) ||
 				review.Spec.ResourceAttributes != (struct{ Namespace, Group, Resource, Name, Verb string }{"health-team", "core.orka.ai", "outboundaccesspolicies", "health-gateway", "get"}) {
 				t.Fatal("review did not ask about the Task namespace worker's exact policy permission")
-			}
-		})
-	}
-}
-
-func TestLiftToolPolicyUsesAgentNamespace(t *testing.T) {
-	for _, tc := range []struct {
-		grantNamespace string
-		allowed        bool
-	}{
-		{"health-team", true},
-		{OrkaNamespace, false},
-	} {
-		t.Run(tc.grantNamespace, func(t *testing.T) {
-			dir := t.TempDir()
-			request := filepath.Join(dir, "review")
-			fakeTool(t, dir, "kubectl", fmt.Sprintf(`case " $* " in
-  *" get deploy -o json "*) printf '%%s' '{"items":[%s]}' ;;
-  *" get serviceaccounts -o json "*) printf '%%s' '{"items":[%s]}' ;;
-  *" get tools.core.orka.ai health --ignore-not-found=true -o json "*) printf '%%s' '{"kind":"Tool","metadata":{"name":"health","namespace":"health-team","generation":1},"spec":{"http":{"outboundAccessPolicyRef":{"name":"health-gateway"}}},"status":{"conditions":[{"type":"Available","status":"True","observedGeneration":1}]}}' ;;
-  *" create --raw "*) /bin/cat > %[3]q
-    if /bin/grep -q '"user":"system:serviceaccount:%[4]s:orka-ai-worker"' %[3]q; then printf '%%s' '{"status":{"allowed":true}}'; else printf '%%s' '{"status":{"allowed":false}}'; fi ;;
-  *) exit 1 ;;
-esac`, workerController("orka-controller", "orka-0.2.0", "orka", "Helm", `["--ai-worker-service-account-name=orka-ai-worker"]`), workerAccount("orka-ai-worker", OrkaNamespace, "orka-0.2.0", "orka", "ai"), request, tc.grantNamespace))
-			t.Setenv("PATH", dir)
-			a := &App{Cfg: &config.Config{KubeContext: "kind-demo"}, Run: &run.Runner{}}
-			bundle := &scaffold.OrkaBundle{Agent: map[string]any{"spec": map[string]any{"tools": []any{map[string]any{"name": "health"}}}}}
-			err := a.liftToolsAvailable(t.Context(), "health-team", bundle)
-			if tc.allowed && err != nil || !tc.allowed && (err == nil || !strings.Contains(err.Error(), "health-team/orka-ai-worker")) {
-				t.Fatalf("Tool in health-team, grant in %s: %v", tc.grantNamespace, err)
-			}
-			body, readErr := os.ReadFile(request)
-			if readErr != nil || !bytes.Contains(body, []byte(`"user":"system:serviceaccount:health-team:orka-ai-worker"`)) {
-				t.Fatal("Tool preflight did not review the health-team worker")
 			}
 		})
 	}
@@ -548,16 +513,8 @@ fi
 	}
 }
 
-func TestQuickstartToolDefaultAndCustomInstructions(t *testing.T) {
-	opt := CreateOptions{Name: "demo", Description: "My agent", Namespace: OrkaNamespace, ProviderType: "openai", Model: "test", Secret: "key"}
-	quickstartAgentTools(&opt)
-	if err := finishCreateWizardOptions(&opt); err != nil {
-		t.Fatal(err)
-	}
-	if opt.Tools != quickstartK8sTool || !strings.Contains(opt.InstructionText, "My agent") || !strings.Contains(opt.InstructionText, quickstartK8sInstructions) {
-		t.Fatalf("default options=%+v", opt)
-	}
-	opt.Tools, opt.InstructionText = "web_fetch", "Custom instructions"
+func TestQuickstartToolKeepsCustomInstructions(t *testing.T) {
+	opt := CreateOptions{Tools: "web_fetch", InstructionText: "Custom instructions"}
 	quickstartAgentTools(&opt)
 	if opt.Tools != "web_fetch" || opt.InstructionText != "Custom instructions" {
 		t.Fatal("custom configuration replaced")

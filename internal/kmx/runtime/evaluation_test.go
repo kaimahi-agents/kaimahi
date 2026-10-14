@@ -251,7 +251,7 @@ func TestEvaluationCasesDigestIdentifiesTheSet(t *testing.T) {
 			t.Errorf("%s case set has the same digest", name)
 		}
 	}
-	if len(base) != 64 || base == PortableBundleDigest([]byte("id: a\n")) {
+	if len(base) != 64 || base == EvaluationCaseDigest([]byte("id: a\n")) {
 		t.Fatal("digest is not a distinct lowercase SHA-256")
 	}
 }

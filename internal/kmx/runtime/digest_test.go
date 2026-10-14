@@ -7,16 +7,7 @@ import (
 	"testing"
 )
 
-// The framing is part of the contract: it is spelled out literally so a change
-// to the frame layout fails a test instead of silently changing identity.
-func TestPortableBundleDigestFramesSourceUnderFixedPath(t *testing.T) {
-	source := []byte("kind: Example\n")
-	want := hashHex(t, "portable-agent.yaml 14\nkind: Example\n\n")
-	if got := PortableBundleDigest(source); got != want {
-		t.Fatalf("PortableBundleDigest = %q, want %q", got, want)
-	}
-}
-
+// Native document framing is stable and byte exact.
 func TestRenderedBundleDigestFramesEachDocumentInOrder(t *testing.T) {
 	documents := [][]byte{[]byte("first"), []byte("second")}
 	want := hashHex(t, "rendered/000.yaml 5\nfirst\nrendered/001.yaml 6\nsecond\n")
@@ -41,19 +32,9 @@ func TestRenderedBundleDigestSeparatesDocumentBoundaries(t *testing.T) {
 	}
 }
 
-// The two digests identify different things and must never collide, even when
-// the rendered output happens to equal the portable source.
-func TestPortableAndRenderedDigestsUseSeparatePaths(t *testing.T) {
-	same := []byte("identical")
-	if PortableBundleDigest(same) == RenderedBundleDigest([][]byte{same}) {
-		t.Fatal("portable and rendered digests collided for identical bytes")
-	}
-}
-
 func TestDigestsAreLowercase64Hex(t *testing.T) {
 	format := regexp.MustCompile(`^[0-9a-f]{64}$`)
 	for name, got := range map[string]string{
-		"portable":       PortableBundleDigest([]byte("Mixed CASE 0xFF")),
 		"rendered":       RenderedBundleDigest([][]byte{[]byte("Mixed CASE 0xFF")}),
 		"rendered empty": RenderedBundleDigest(nil),
 	} {

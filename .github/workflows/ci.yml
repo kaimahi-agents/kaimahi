@@ -129,10 +129,13 @@ jobs:
       # worthless and watching its own self-test stay green.
       - name: Registry mirror helper self-tests
         run: python3 scripts/test_registry_mirrors.py
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: Live eval gate and failure diagnostics self-tests
         run: |
-          python3 scripts/test_eval_loop.py
-          python3 scripts/test_eval_runner.py
+          python3 scripts/test_orka_runtime_fixture.py
+          python3 scripts/test_bundle_retirement_ci.py
       - name: kagent bootstrap, qualification and deterministic fixture self-tests
         run: |
           python3 scripts/test_kagent_lift.py
@@ -144,6 +147,7 @@ jobs:
           python3 scripts/test_kagent_lift_ci.py
           python3 scripts/test_suite_native.py
           python3 scripts/test_suite_native_lift.py
+          python3 scripts/test_orka_native_reference.py
           python3 scripts/test_suite_kagent.py
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
@@ -331,6 +335,7 @@ jobs:
           # API-group text is not globally forbidden; these controls name
           # unsupported operations, not runtime-version qualification.
           forbidden = [
+              (re.compile(r"\b(?:bundle\s+(?:lift|status|evaluate|retire|verify)|create\s+--live)\b"), "a removed bundle or live-create operation"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+(?:local\s+)?up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)\b"),
                "an explicit legacy step installs the legacy runtime or its demo agents"),
               (re.compile(r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b"),
@@ -373,11 +378,6 @@ jobs:
               "kmx chat --namespace orka-system hello-world-agent",
               "kmx chat --runtime orka hello-world-agent",
               "kmx orka list --namespace orka-system",
-              "kmx create --live orka-hello --namespace orka-system",
-              "kmx create --live kagent-hello --runtime kagent --namespace agents",
-              "kmx bundle lift ./bundle --runtime kagent --runtime-version v0.10.3",
-              "kmx bundle status ./bundle --runtime kagent --runtime-version v0.10.3",
-              "kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3 --to-context target-context",
               "kmx local up",
               "kmx --context kind-x local up",
               "kmx run demo --namespace orka-system",
@@ -446,13 +446,14 @@ jobs:
               problems.append("a standalone `orka install`: the bare `kmx local up` already installs Orka")
           if "create serviceaccount orka-result-reader" in joined:
               problems.append("the result account is made by hand: `kmx local up --step orka` provisions it")
-          if "--result-service-account orka-result-reader" not in joined:
-              problems.append("no Orka Task proof reading its result through orka-result-reader")
+          if "kmx eval --workspace" not in joined or "kmx --context kind-kmx-clone-free task result" not in joined:
+              problems.append("no native evaluation Task and result retrieval proof")
           # Retired operations, forbidden by name. Bounded create/lift/status/evaluate
           # and API vocabulary are not globally banned; this Orka-only job
           # must not install the alternate runtime, use unsupported commands
           # or use its retired AKS payload.
           forbidden = [
+                  (r"\b(?:bundle\s+(?:lift|status|evaluate|retire|verify)|create\s+--live)\b", "a removed bundle or live-create operation"),
                   (r"kmx(?:\s+--\S+(?:=|\s+)\S+)*\s+(?:local\s+)?up\s+--step(?:=|\s+)(?:kagent|agent|tools-agent)",
                    "an explicit legacy install step"),
                   (r"\bkmx(?:\s+--(?:context|container-engine)(?:=|\s+)\S+)*\s+govern\b",
@@ -466,11 +467,6 @@ jobs:
                    (r"--payload(?:=|\s+)kagent\b", "the retired alternate-runtime AKS payload"),
                    (r"\bKAGENT_VERSION\b|kagent-(?:values|tool-server|tools|shim|cli)\b|\bkagent(?:cli|compat)\b",
                     "a retired alternate-runtime installer, CLI, shim, preset, or moving version pin")]
-          for sample in ["kmx bundle lift ./bundle --runtime kagent --runtime-version v0.10.3",
-                         "kmx bundle status ./bundle --runtime kagent --runtime-version v0.10.3",
-                         "kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3 --to-context target-context"]:
-              if any(re.search(pattern, sample) for pattern, _ in forbidden):
-                  problems.append("supported version-qualified command refused: " + sample)
           for pattern, why in forbidden:
               if re.search(pattern, joined):
                   problems.append(f"{why}: {pattern!r}")
@@ -712,15 +708,23 @@ jobs:
       - name: agent-create wizard — terminal lifecycle
         run: |
           set -euo pipefail
-          # This is not another model-only assertion: it opens a real Linux
-          # PTY, checks Ctrl-C/Escape/SIGTERM cancellation and native offline
-          # completion, and proves the terminal was restored.
+          # Retained native flows exercise PTY Ctrl-C/console Escape, workspace
+          # confirmation/completion and SIGINT/SIGTERM guard cancellation.
+          # PTY wizard, console and chat checks compare restored terminal state;
+          # signal/input ownership and model-screen cancellation stay separate.
           go test ./internal/kmx/app \
-            -run '^TestCreateWizardPTY' \
+            -run '^(TestQuickstartWizardPTYCtrlCRestoresTerminal|TestAgentTUIDemoPTYCommandsAndTerminalRestore|TestCreateSuiteMemberTerminalConfirmation|TestTimelinePTYEditsAndCancelsRunningResponse|TestOrkaGuardPromptCancellationAndInputOwnership|TestQuickstartCancellationAcrossScreens|TestQuickstartNormalCompletionIsNotCancellation)$' \
             -count=1 -v | tee wizard-pty.out
-          grep -q -- '--- PASS: TestCreateWizardPTYCancellationRestoresTerminal' wizard-pty.out
-          grep -q -- '--- PASS: TestCreateWizardPTYNativeCompletionRestoresTerminal' wizard-pty.out
-          grep -q -- '--- PASS: TestCreateWizardPTYSIGTERMRestoresTerminal' wizard-pty.out
+          for test in \
+            TestQuickstartWizardPTYCtrlCRestoresTerminal \
+            TestAgentTUIDemoPTYCommandsAndTerminalRestore \
+            TestCreateSuiteMemberTerminalConfirmation \
+            TestTimelinePTYEditsAndCancelsRunningResponse \
+            TestOrkaGuardPromptCancellationAndInputOwnership \
+            TestQuickstartCancellationAcrossScreens \
+            TestQuickstartNormalCompletionIsNotCancellation; do
+            grep -q -- "--- PASS: $test" wizard-pty.out
+          done
           ! grep -q -- '--- SKIP:' wizard-pty.out
       - name: The retired runtime is refused by name, not resolved to Orka
         run: |
@@ -755,12 +759,13 @@ jobs:
         run: |
           set -euo pipefail
           go test ./internal/kmx/config \
-            -run '^TestStateDirUsesPortableOverrideAndNativeDefault$' \
+            -run '^(TestStateDirUsesPortableOverrideAndNativeDefault|TestContextResolutionOrder)$' \
             -count=1 -v | tee state-dir.out
           grep -q -- '--- PASS: TestStateDirUsesPortableOverrideAndNativeDefault' state-dir.out
+          grep -q -- '--- PASS: TestContextResolutionOrder' state-dir.out
 
           go test ./internal/kmx/app \
-            -run '^(TestAgentLocationsPersistSeparateClustersPrivately|TestAgentTUIEnvironmentClassificationAndKubeconfigIsolation|TestAgentTUIProviderAndHostOverrideInferenceInfo|TestConsoleInferenceSourcePersistenceAndValidation|TestLiftPreferencesPersistScopedSelections|TestFoundryConfigRejectsTokenRedirectDestinations|TestBundleLiftSelectionPathUsesKMXHome|TestEvaluateUsesRememberedTarget)$' \
+            -run '^(TestAgentLocationsPersistSeparateClustersPrivately|TestAgentTUIEnvironmentClassificationAndKubeconfigIsolation|TestAgentTUIProviderAndHostOverrideInferenceInfo|TestConsoleInferenceSourcePersistenceAndValidation|TestLiftPreferencesPersistScopedSelections|TestFoundryConfigRejectsTokenRedirectDestinations|TestQuickstartWizardSuiteAuthorsOnlyPrivateSource|TestAgentTUIStartupPrefersRememberedRemoteAndHonorsFlags)$' \
             -count=1 -v | tee app-state.out
           for test in \
             TestAgentLocationsPersistSeparateClustersPrivately \
@@ -769,8 +774,8 @@ jobs:
             TestConsoleInferenceSourcePersistenceAndValidation \
             TestLiftPreferencesPersistScopedSelections \
             TestFoundryConfigRejectsTokenRedirectDestinations \
-            TestBundleLiftSelectionPathUsesKMXHome \
-            TestEvaluateUsesRememberedTarget; do
+            TestQuickstartWizardSuiteAuthorsOnlyPrivateSource \
+            TestAgentTUIStartupPrefersRememberedRemoteAndHonorsFlags; do
             grep -q -- "--- PASS: $test" app-state.out
           done
           ! grep -q -- '--- SKIP:' state-dir.out app-state.out
@@ -1074,383 +1079,6 @@ jobs:
   # Fail stubs plus KMX_TOOLCHAIN=off make any attempted Helm or kagent CLI use
   # by the command fail. No hosted credential is used: the model is a hardened,
   # deterministic in-cluster OpenAI chat-completions fixture.
-  e2e-kagent-create:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      KIND_CLUSTER: kmx-kagent-create
-      KUBE_CTX: kind-kmx-kagent-create
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-          fetch-depth: 2
-      - name: Classify the change (docs-only short-circuit, fail closed)
-        id: changes
-        uses: ./.github/actions/classify-change
-      - name: Configure CI registry mirrors
-        if: steps.changes.outputs.docs_only != 'true'
-        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
-      - name: Install kind 0.33.0
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          curl -sSfLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
-          test "$(sha256sum kind | cut -d' ' -f1)" = aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
-          chmod +x kind && sudo mv kind /usr/local/bin/kind
-          test "$(kind version -q)" = 0.33.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        if: steps.changes.outputs.docs_only != 'true'
-        with:
-          go-version-file: go.mod
-      - name: Install Helm 3.20.0
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          set -euo pipefail
-          archive="$RUNNER_TEMP/helm-v3.20.0-linux-amd64.tar.gz"
-          curl -sSfLo "$archive" https://get.helm.sh/helm-v3.20.0-linux-amd64.tar.gz
-          test "$(sha256sum "$archive" | cut -d' ' -f1)" = dbb4c8fc8e19d159d1a63dda8db655f9ffa4aac1b9a6b188b34a40957119b286
-          tar -xzf "$archive" -C "$RUNNER_TEMP"
-          sudo install -m 0755 "$RUNNER_TEMP/linux-amd64/helm" /usr/local/bin/helm
-          test "$(helm version --template '{{.Version}}')" = v3.20.0
-      - name: Build kmx
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          mkdir -p bin
-          go build -o bin/kmx ./cmd/kmx
-      - name: Create the dedicated cluster and install the external exact-version precondition
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          set -euo pipefail
-          kind create cluster --name kmx-kagent-create --wait 180s
-          python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" nodes --cluster "$KIND_CLUSTER"
-          test "$(kubectl config current-context)" = kind-kmx-kagent-create
-          charts="$RUNNER_TEMP/kagent-v0.10.2-charts"
-          mkdir -p "$charts/crds" "$charts/runtime"
-          helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds@sha256:d487e679001b1a666e0ec97a0a87aab8a10bc1f52acba92b36b70c195492c7c3 --untar --untardir "$charts/crds"
-          helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent@sha256:cd8a8fe8db81e193f8a82c4d20e9162781476d2a4c1795234d107e2743ec8366 --untar --untardir "$charts/runtime"
-          crds_chart="$charts/crds/kagent-crds"
-          runtime_chart="$charts/runtime/kagent"
-          test "$(helm show chart "$crds_chart" | awk '/^name:/ {print $2}')" = kagent-crds
-          test "$(helm show chart "$runtime_chart" | awk '/^name:/ {print $2}')" = kagent
-          test "$(helm show chart "$crds_chart" | awk '/^version:/ {print $2}')" = 0.10.2
-          test "$(helm show chart "$runtime_chart" | awk '/^version:/ {print $2}')" = 0.10.2
-          helm install kagent-crds "$crds_chart" --namespace kagent --create-namespace --kube-context kind-kmx-kagent-create --set kmcp.enabled=false --wait --timeout 5m
-          helm install kagent "$runtime_chart" --namespace kagent --kube-context kind-kmx-kagent-create --set kmcp.enabled=false --set kagent-tools.enabled=false --set k8s-agent.enabled=false --set kgateway-agent.enabled=false --set istio-agent.enabled=false --set promql-agent.enabled=false --set observability-agent.enabled=false --set argo-rollouts-agent.enabled=false --set helm-agent.enabled=false --set cilium-policy-agent.enabled=false --set cilium-manager-agent.enabled=false --set cilium-debug-agent.enabled=false --set grafana-mcp.enabled=false --set oauth2-proxy.enabled=false --set providers.default=ollama --set-string providers.ollama.config.host=http://unused.invalid:11434 --set ui.replicas=0 --wait --timeout 10m
-          kubectl --context kind-kmx-kagent-create -n kagent rollout status deployment/kagent-controller --timeout=300s
-          kubectl --context kind-kmx-kagent-create -n kagent rollout status deployment/kagent-postgresql --timeout=300s
-      - name: Provision the model prerequisite and hardened deterministic fixture
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          set -euo pipefail
-          kubectl --context kind-kmx-kagent-create create namespace agents
-          # This value has no hosted authority and is never printed or placed
-          # in argv. The temporary file is private and removed after creation.
-          dummy_file="$RUNNER_TEMP/model-key-value"
-          umask 077
-          openssl rand -hex 16 | tr -d '\n' > "$dummy_file"
-          kubectl --context kind-kmx-kagent-create -n agents create secret generic model-key \
-            --from-file=api-key="$dummy_file"
-          rm -f "$dummy_file"
-          kubectl --context kind-kmx-kagent-create -n agents apply -f - <<'YAML'
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: model
-          data:
-            server.py: |
-              import json
-              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-              class Handler(BaseHTTPRequestHandler):
-                  def do_POST(self):
-                      length = int(self.headers.get("Content-Length", "0"))
-                      try:
-                          request = json.loads(self.rfile.read(length))
-                      except (ValueError, UnicodeDecodeError):
-                          self.send_error(400)
-                          return
-                      if self.path != "/v1/chat/completions" or not isinstance(request, dict):
-                          self.send_error(404)
-                          return
-                      payload = {
-                          "id": "chatcmpl-kmx-kagent-create",
-                          "object": "chat.completion",
-                          "created": 1,
-                          "model": request.get("model", "fixture"),
-                          "choices": [{
-                              "index": 0,
-                              "message": {"role": "assistant", "content": "Kagent says hello."},
-                              "finish_reason": "stop",
-                          }],
-                          "usage": {"prompt_tokens": 4, "completion_tokens": 4, "total_tokens": 8},
-                      }
-                      body = json.dumps(payload, separators=(",", ":")).encode()
-                      self.send_response(200)
-                      self.send_header("Content-Type", "application/json")
-                      self.send_header("Content-Length", str(len(body)))
-                      self.end_headers()
-                      self.wfile.write(body)
-
-                  def log_message(self, fmt, *args):
-                      print("model: " + (fmt % args), flush=True)
-
-              ThreadingHTTPServer(("0.0.0.0", 9000), Handler).serve_forever()
-          ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: model
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: model
-            template:
-              metadata:
-                labels:
-                  app: model
-              spec:
-                automountServiceAccountToken: false
-                securityContext:
-                  runAsNonRoot: true
-                  runAsUser: 1000
-                  runAsGroup: 1000
-                  seccompProfile:
-                    type: RuntimeDefault
-                containers:
-                  - name: model
-                    image: python:3.13-alpine
-                    command: [python3, -B, /app/server.py]
-                    ports:
-                      - name: http
-                        containerPort: 9000
-                    readinessProbe:
-                      tcpSocket:
-                        port: http
-                      periodSeconds: 1
-                    resources:
-                      requests:
-                        cpu: 10m
-                        memory: 24Mi
-                      limits:
-                        cpu: 100m
-                        memory: 48Mi
-                    securityContext:
-                      allowPrivilegeEscalation: false
-                      readOnlyRootFilesystem: true
-                      capabilities:
-                        drop: [ALL]
-                    volumeMounts:
-                      - name: source
-                        mountPath: /app
-                        readOnly: true
-                      - name: tmp
-                        mountPath: /tmp
-                volumes:
-                  - name: source
-                    configMap:
-                      name: model
-                  - name: tmp
-                    emptyDir:
-                      sizeLimit: 8Mi
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: model
-          spec:
-            selector:
-              app: model
-            ports:
-              - name: http
-                port: 9000
-                targetPort: http
-          YAML
-          kubectl --context kind-kmx-kagent-create -n agents rollout status deployment/model --timeout=180s
-      - name: KMX creates the exact-version Agent and gets the exact answer without installer tools
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          set -euo pipefail
-          fixture="$RUNNER_TEMP/kagent-create"
-          mkdir -p "$fixture/fail-bin"
-          kubectl_path=$(command -v kubectl)
-          for tool in helm kagent; do
-            printf '#!/bin/sh\necho "%s must not be invoked by kmx create" >&2\nexit 97\n' "$tool" > "$fixture/fail-bin/$tool"
-            chmod +x "$fixture/fail-bin/$tool"
-          done
-          test "$(PATH="$fixture/fail-bin:$PATH" command -v helm)" = "$fixture/fail-bin/helm"
-          test "$(PATH="$fixture/fail-bin:$PATH" command -v kagent)" = "$fixture/fail-bin/kagent"
-          test -x "$kubectl_path"
-          case "$kubectl_path" in /*) ;; *) echo "kubectl path is not absolute" >&2; exit 1 ;; esac
-          ln -s "$kubectl_path" "$fixture/fail-bin/kubectl"
-          artifact="$fixture/live-kagent.yaml"
-          bundle="$fixture/bundle"
-          PATH="$fixture/fail-bin:/usr/bin:/bin" KMX_TOOLCHAIN=off \
-            "$GITHUB_WORKSPACE/bin/kmx" --context kind-kmx-kagent-create \
-            create --live live-kagent --runtime kagent --namespace agents \
-            --description 'Deterministic live Kagent create proof' \
-            --provider-type openai --model fixture --secret model-key \
-            --base-url http://model.agents.svc.cluster.local:9000/v1 \
-            --task 'Reply with exactly: Kagent says hello.' \
-            --out "$artifact" --bundle-path "$bundle" > "$fixture/answer.out"
-          test "$(cat "$fixture/answer.out")" = 'Kagent says hello.'
-          printf 'KAGENT_CREATE_ARTIFACT=%s\nKAGENT_CREATE_BUNDLE=%s\n' "$artifact" "$bundle" >> "$GITHUB_ENV"
-      - name: Assert live identities, readiness, ownership, image and private receipt
-        if: steps.changes.outputs.docs_only != 'true'
-        run: |
-          set -euo pipefail
-          kubectl --context kind-kmx-kagent-create get --raw \
-            /api/v1/namespaces/kagent/services/http:kagent-controller:8083/proxy/version \
-            > "$RUNNER_TEMP/kagent-version.json"
-          kubectl --context kind-kmx-kagent-create -n agents get modelconfigs.kagent.dev live-kagent -o json \
-            > "$RUNNER_TEMP/live-model.json"
-          kubectl --context kind-kmx-kagent-create -n agents get agents.kagent.dev live-kagent -o json \
-            > "$RUNNER_TEMP/live-agent.json"
-          kubectl --context kind-kmx-kagent-create -n agents get deployment live-kagent -o json \
-            > "$RUNNER_TEMP/live-deployment.json"
-          kubectl --context kind-kmx-kagent-create -n agents get service live-kagent -o json \
-            > "$RUNNER_TEMP/live-service.json"
-          kubectl --context kind-kmx-kagent-create -n agents get pods -l kagent=live-kagent -o json \
-            > "$RUNNER_TEMP/live-pods.json"
-          kubectl --context kind-kmx-kagent-create get namespace kube-system -o json \
-            > "$RUNNER_TEMP/kube-system.json"
-          python3 - "$KAGENT_CREATE_ARTIFACT" "$KAGENT_CREATE_BUNDLE" \
-            "$RUNNER_TEMP/kagent-version.json" "$RUNNER_TEMP/live-model.json" \
-            "$RUNNER_TEMP/live-agent.json" "$RUNNER_TEMP/live-deployment.json" \
-            "$RUNNER_TEMP/live-service.json" "$RUNNER_TEMP/live-pods.json" \
-            "$RUNNER_TEMP/kube-system.json" <<'PY'
-          import glob, json, os, pathlib, re, stat, sys
-
-          artifact, bundle, version_path, model_path, agent_path, deploy_path, service_path, pods_path, namespace_path = sys.argv[1:]
-          version = json.load(open(version_path))
-          assert version.get("kagent_version") == "0.10.2", version
-          assert version.get("git_commit") == "68df64f", version
-          assert len(version.get("git_commit", "")) == 7, version
-
-          model = json.load(open(model_path))
-          agent = json.load(open(agent_path))
-          deployment = json.load(open(deploy_path))
-          service = json.load(open(service_path))
-
-          def current(obj, required):
-              generation = obj["metadata"]["generation"]
-              assert obj.get("status", {}).get("observedGeneration") == generation, obj.get("status")
-              conditions = obj.get("status", {}).get("conditions", [])
-              for condition_type in required:
-                  matches = [c for c in conditions if c.get("type") == condition_type and c.get("status") == "True"]
-                  assert len(matches) == 1, (condition_type, conditions)
-                  observed = matches[0].get("observedGeneration", 0)
-                  assert observed == generation or obj["kind"] == "ModelConfig" and observed == 0, matches[0]
-
-          current(model, ["Accepted"])
-          current(agent, ["Accepted", "Ready"])
-          ready = [c for c in agent["status"]["conditions"] if c.get("type") == "Ready"]
-          assert ready[0].get("reason") == "DeploymentReady", ready
-          agent_uid = agent["metadata"]["uid"]
-          for child in (deployment, service):
-              owners = [o for o in child["metadata"].get("ownerReferences", []) if o.get("controller") is True]
-              assert len(owners) == 1, owners
-              assert (owners[0].get("apiVersion"), owners[0].get("kind"), owners[0].get("name"), owners[0].get("uid")) == (
-                  "kagent.dev/v1alpha2", "Agent", "live-kagent", agent_uid
-              ), owners
-          containers = deployment["spec"]["template"]["spec"]["containers"]
-          runtime = [c for c in containers if c.get("name") == "kagent"]
-          assert len(runtime) == 1 and runtime[0].get("image") == "ghcr.io/kagent-dev/kagent/golang-adk:0.10.2", runtime
-          pods = json.load(open(pods_path))["items"]
-          assert len(pods) == 1, pods
-          statuses = [s for s in pods[0]["status"]["containerStatuses"] if s.get("name") == "kagent"]
-          assert len(statuses) == 1 and statuses[0].get("ready") is True, statuses
-          accepted_go_digests = {
-              "c1ae7865e4c4ed1d4708bbcc04ea952c54c3014a3da3178427bf31922d0956dd",  # index
-              "922dd44552c55cad46c9e38c9d56b1138a682114e665e89b60caebde8f1952f6",  # amd64
-              "0b8e0c9b04304240efab0bee39d943240cd88f852760af01b8da25b23e4c6245",  # arm64
-          }
-          image_id = statuses[0].get("imageID", "")
-          if "://" in image_id:
-              image_id = image_id.split("://", 1)[1]
-          repository = "kagent-dev/kagent/golang-adk"
-          for prefix in (repository + "@", "ghcr.io/" + repository + "@"):
-              if image_id.startswith(prefix):
-                  image_id = image_id.removeprefix(prefix)
-                  break
-          else:
-              assert image_id.startswith("sha256:"), statuses
-          image_digests = image_id.split("@")
-          assert image_digests and all(re.fullmatch(r"sha256:[0-9a-f]{64}", value)
-                                       for value in image_digests), statuses
-          assert all(value.removeprefix("sha256:") in accepted_go_digests
-                     for value in image_digests), (image_digests, statuses)
-
-          marker_names = {"kaimahi.dev/bundle", "kaimahi.dev/portable-digest", "kaimahi.dev/rendered-digest"}
-          artifact_text = pathlib.Path(artifact).read_text()
-          assert not any(name in artifact_text for name in marker_names), "review artifact carries ownership markers"
-          assert "Kagent says hello." not in artifact_text, "review artifact carries the answer"
-          assert "Reply with exactly: Kagent says hello." not in artifact_text, "review artifact carries the task prompt"
-          for obj in (model, agent):
-              annotations = obj["metadata"].get("annotations", {})
-              assert all(annotations.get(name) for name in marker_names), annotations
-
-          receipts = glob.glob(os.path.join(bundle, "receipts", "create-*.json"))
-          assert len(receipts) == 1, receipts
-          receipt_path = receipts[0]
-          receipt = json.load(open(receipt_path))
-          assert receipt.get("kind") == "KagentCreateReceipt", receipt
-          cluster_uid = json.load(open(namespace_path))["metadata"]["uid"]
-          assert receipt["clusterUID"] == cluster_uid, receipt
-          assert receipt["agentRef"]["Runtime"] == "kagent" and receipt["agentRef"]["UID"] == agent_uid, receipt
-          assert receipt["deploy"]["Target"]["Runtime"] == "kagent", receipt
-          resources = receipt["deploy"]["Resources"]
-          expected = {"ModelConfig": model["metadata"]["uid"], "Agent": agent_uid}
-          assert len(resources) == 2 and {r["Kind"]: r["UID"] for r in resources} == expected, resources
-          receipt_text = pathlib.Path(receipt_path).read_text()
-          assert "Reply with exactly: Kagent says hello." not in receipt_text, receipt_text
-          assert "Kagent says hello." not in receipt_text, receipt_text
-          assert "Deterministic live Kagent create proof" not in receipt_text, receipt_text
-          assert stat.S_IMODE(os.stat(receipt_path).st_mode) == 0o600, oct(stat.S_IMODE(os.stat(receipt_path).st_mode))
-          print("exact controller, current conditions, Agent-owned workload, official Go image, marker split and private receipt proved")
-          PY
-      - name: Cluster state on failure
-        if: failure() && steps.changes.outputs.docs_only != 'true'
-        run: |
-          kubectl --context kind-kmx-kagent-create get pods -A -o wide || true
-          kubectl --context kind-kmx-kagent-create -n kagent get deploy,svc,pods,pvc -o wide || true
-          kubectl --context kind-kmx-kagent-create -n kagent logs deployment/kagent-controller --tail=120 || true
-          kubectl --context kind-kmx-kagent-create -n kagent logs deployment/kagent-postgresql --tail=80 || true
-          kubectl --context kind-kmx-kagent-create -n agents get modelconfigs.kagent.dev,agents.kagent.dev,deploy,svc,pods -o wide || true
-          kubectl --context kind-kmx-kagent-create -n agents get events --sort-by=.lastTimestamp || true
-          kubectl --context kind-kmx-kagent-create -n agents logs deployment/model --tail=80 || true
-          kubectl --context kind-kmx-kagent-create -n agents logs deployment/live-kagent --tail=120 || true
-      - name: Report registry pull endpoint evidence
-        if: always() && steps.changes.outputs.docs_only != 'true'
-        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
-      - name: Delete only the dedicated Kagent create cluster
-        if: always() && steps.changes.outputs.docs_only != 'true'
-        run: kind delete cluster --name kmx-kagent-create || true
-      - name: Docs-only short-circuit
-        id: docs-only-summary
-        if: steps.changes.outputs.docs_only == 'true'
-        run: echo "every changed file is documentation; no cluster booted"
-  # The Orka runtime, proved on every pull request and without the legacy
-  # runtime.
-  #
-  # This is a SEPARATE boundary from the shards above, and it is additive:
-  # nothing here installs, reads or asserts the legacy runtime, and nothing
-  # above changes. Two claims are made, and they are deliberately kept
-  # apart because they can fail independently:
-  #
-  #   1. Orka executes. A pinned install, a keyless Provider, an Agent and a
-  #      Task that returns an exact, non-empty answer from a local model.
-  #   2. The native Orka HTTP Tool's boundary holds. The Tool object is
-  #      admitted by Orka's own CRD, its endpoint returns a live ConfigMap
-  #      listing, and both its own validation and the cluster's RBAC refuse
-  #      Secrets and every pod mutation.
-  #
-  # This shard checks the Tool boundary directly over HTTP; it does not
-  # assert model-driven tool selection.
   e2e-orka-runtime:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -1485,6 +1113,7 @@ jobs:
         run: |
           mkdir -p bin
           go build -o bin/kmx ./cmd/kmx
+          go build -o bin/orka-native-reference ./scripts/ci/orka-native-reference.go
       - name: Configure CI registry mirrors
         if: steps.changes.outputs.docs_only != 'true'
         run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
@@ -1766,14 +1395,9 @@ jobs:
           kubectl --context kind-kmx-orka -n orka-system set env deployment/orka-tool-model \
             ORKA_HEALTH_DEPLOYMENT_MARKER="$health_marker" >/dev/null
           kubectl --context kind-kmx-orka -n orka-system rollout status deploy/orka-tool-model --timeout=180s
-          bin/kmx --context kind-kmx-orka create --live orka-tool-proof \
-            --namespace orka-system --provider-type openai --model tool-fixture \
-            --secret local-provider-key \
-            --base-url http://orka-tool-model.orka-system.svc.cluster.local:8080/v1 \
-            --tools k8s-get-resources \
-            --task 'Check deployment health in orka-system using k8s-get-resources.' \
-            --result-service-account orka-result-reader \
-            --out /tmp/orka-tool-agent.yaml --bundle-path /tmp/orka-tool-bundle \
+          python3 scripts/ci/orka-runtime-fixture.py kind-kmx-orka tool
+          bin/kmx --context kind-kmx-orka run --agent orka-tool-proof --namespace orka-system \
+            --prompt 'Check deployment health in orka-system using k8s-get-resources.' \
             >/dev/null 2>/dev/null || { echo 'health Task failed (answer and worker output suppressed)'; exit 1; }
           task=$(kubectl --context kind-kmx-orka -n orka-system get tasks.core.orka.ai -o json | \
             python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-tool-proof"]; assert len(matches)==1, "expected one Task for health proof"; print(matches[0]["metadata"]["name"])')
@@ -1788,13 +1412,9 @@ jobs:
         run: |
           set -euo pipefail
           # Reuse the installer's Secret; never invent a Provider key here.
-          bin/kmx --context kind-kmx-orka create --live orka-hello \
-            --namespace orka-system --provider-type openai --model qwen2.5:3b \
-            --secret local-provider-key \
-            --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
-            --task 'Reply with exactly this text: Orka says hello.' \
-            --result-service-account orka-result-reader > orka-answer.out
-          test -f agents/orka-hello.yaml
+          python3 scripts/ci/orka-runtime-fixture.py kind-kmx-orka hello
+          bin/kmx --context kind-kmx-orka run --agent orka-hello --namespace orka-system \
+            --prompt 'Reply with exactly this text: Orka says hello.' > orka-answer.out
           test "$(cat orka-answer.out)" = 'Orka says hello.'
           # The Task really ran and really succeeded, read from the cluster
           # rather than from the command's own stdout.
@@ -1965,14 +1585,11 @@ jobs:
             ORKA_HEALTH_DEPLOYMENT_MARKER="$health_marker" >/dev/null
           kubectl --context kind-helm-release-orka -n orka-system rollout status deploy/orka-tool-model --timeout=180s >/dev/null
           go build -o /tmp/orka-helm-kmx ./cmd/kmx
-          /tmp/orka-helm-kmx --context kind-helm-release-orka create --live orka-tool-proof \
-            --namespace orka-system --provider-type openai --model tool-fixture \
-            --secret local-provider-key \
-            --base-url http://orka-tool-model.orka-system.svc.cluster.local:8080/v1 \
-            --tools k8s-get-resources --orka-api-service orka \
-            --task 'Check deployment health in orka-system using k8s-get-resources.' \
-            --result-service-account orka-result-reader \
-            --out /tmp/orka-tool-agent.yaml --bundle-path /tmp/orka-tool-bundle \
+          mkdir -p bin
+          go build -o bin/orka-native-reference ./scripts/ci/orka-native-reference.go
+          python3 scripts/ci/orka-runtime-fixture.py kind-helm-release-orka tool
+          /tmp/orka-helm-kmx --context kind-helm-release-orka run --agent orka-tool-proof --namespace orka-system \
+            --prompt 'Check deployment health in orka-system using k8s-get-resources.' \
             >/dev/null 2>/dev/null || { echo 'stock health Task failed (answer and worker output suppressed)'; exit 1; }
           task=$(kubectl --context kind-helm-release-orka -n orka-system get tasks.core.orka.ai -o json | \
             python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; matches=[i for i in items if i.get("spec",{}).get("agentRef",{}).get("name")=="orka-tool-proof"]; assert len(matches)==1, "expected one stock health Task"; print(matches[0]["metadata"]["name"])')
@@ -1997,44 +1614,6 @@ jobs:
         id: docs-only-summary
         if: steps.changes.outputs.docs_only == 'true'
         run: echo "every changed file is documentation; no cluster booted"
-  e2e-eval-loop:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - name: Classify the change (docs-only short-circuit, fail closed)
-        id: changes
-        uses: ./.github/actions/classify-change
-      - uses: actions/setup-go@v5
-        if: steps.changes.outputs.docs_only != 'true'
-        with:
-          go-version-file: go.mod
-      - name: Build kmx
-        if: steps.changes.outputs.docs_only != 'true'
-        run: go build -o bin/kmx ./cmd/kmx
-      - name: Configure CI registry mirrors
-        if: steps.changes.outputs.docs_only != 'true'
-        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" setup
-      - name: Live AIKit judge proof, evaluation and zero-call replay
-        if: steps.changes.outputs.docs_only != 'true'
-        uses: ./.github/actions/kmx-eval
-        with:
-          bundle: internal/kmx/app/testdata/live-eval-loop
-          kmx-bin: ${{ github.workspace }}/bin/kmx
-          model-mode: aikit
-          verify: 'true'
-          judge-proof: 'true'
-          artifact-name: eval-loop-evidence
-      - name: Report registry pull endpoint evidence
-        if: always() && steps.changes.outputs.docs_only != 'true'
-        run: python3 "$GITHUB_WORKSPACE/scripts/ci/registry-mirrors.py" report
-      - name: Documentation-only summary
-        id: docs-only-summary
-        if: steps.changes.outputs.docs_only == 'true'
-        run: echo "every changed file is documentation; no live evaluation run"
   e2e-kagent-lift:
     needs: [classify-change]
     if: always() && (github.event_name != 'pull_request' || needs.classify-change.outputs.kagent_changed != 'false')
@@ -2049,7 +1628,7 @@ jobs:
           go-version-file: go.mod
       - name: Build kmx
         run: mkdir -p bin && go build -o bin/kmx ./cmd/kmx
-      - name: Externally install pinned runtime and qualify Go bundle lift plus native A2A
+      - name: Externally install pinned runtime and qualify native A2A plus suite lift
         run: bash scripts/ci/kagent-lift.sh
       - name: Payload-free qualification evidence (not a deployment receipt)
         if: always()
@@ -2061,7 +1640,7 @@ jobs:
 
   e2e-hello-world:
     runs-on: ubuntu-latest
-    needs: [classify-change, e2e-eval-loop, e2e-kagent-create, e2e-kagent-lift, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart]
+    needs: [classify-change, e2e-kagent-lift, e2e-orka-runtime, e2e-orka-helm, e2e-quickstart]
     if: always()
     steps:
       - name: Every e2e shard succeeded
@@ -2072,7 +1651,7 @@ jobs:
           python3 - <<'EOF'
           import json, os, sys
           needs = json.loads(os.environ["SHARDS"])
-          expected = {"e2e-eval-loop", "e2e-kagent-create", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}
+          expected = {"e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}
           classifier = needs.pop("classify-change", {})
           if classifier.get("result") != "success":
               print("classification did not succeed — refusing to report success"); sys.exit(1)
@@ -2213,19 +1792,19 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true'
         working-directory: /home/runner/journey
         run: |
-          # Reuse the installer's Secret, never its shared Provider/local.
-          # `--result-service-account` names the account `kmx local up --step orka`
-          # provisioned: create itself provisions no account and no RBAC, so
-          # naming one the bring-up made is the whole point of this step.
-          # This step exercises agent creation through the supported
-          # Orka path, not through retired governance commands.
-          kmx --context kind-kmx-clone-free create --live orka-hello \
-            --namespace orka-system --provider-type openai --model qwen2.5:3b \
-            --secret local-provider-key \
-            --base-url http://ollama.ollama.svc.cluster.local:11434/v1 \
-            --task 'Reply with exactly this text: Orka says hello.' \
-            --result-service-account orka-result-reader > orka-answer.out
-          test -f agents/orka-hello.yaml
+          # Checkout-independent native workspace authoring and reviewed digest lift.
+          mkdir -m 700 workspace evidence
+          printf '%s\n' 'Answer briefly.' > instructions.txt
+          kmx create orka-hello --workspace workspace --model qwen2.5:3b --instructions instructions.txt
+          printf '%s\n' 'id: example' 'input: "Reply with exactly this text: Orka says hello."' 'expectContains: [Orka says hello.]' > workspace/eval/example.yaml
+          kmx eval --workspace workspace --to-context kind-kmx-clone-free --to-namespace orka-system \
+            --inference provider:local --out evidence/passing.json
+          kmx push --workspace workspace --evaluation evidence/passing.json --to-layout layout hello:v1
+          digest=$(python3 -c 'import json; print(json.load(open("layout/index.json"))["manifests"][0]["digest"])')
+          kmx lift "hello@$digest" --from-layout layout --to-context kind-kmx-clone-free \
+            --to-namespace orka-system --inference provider:local --evidence evidence/passing.json
+          task=$(python3 -c 'import json; print(json.load(open("evidence/passing.json"))["cases"][0]["taskName"])')
+          kmx --context kind-kmx-clone-free task result "$task" --namespace orka-system > orka-answer.out
           test "$(cat orka-answer.out)" = 'Orka says hello.'
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'

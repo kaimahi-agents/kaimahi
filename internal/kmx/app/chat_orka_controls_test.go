@@ -5,6 +5,22 @@ import (
 	"testing"
 )
 
+func TestChatLiftMovedBeforeTerminalAndMutation(t *testing.T) {
+	f := newOrkaFixture(t, nil)
+	b := &orkaChatBackend{app: f.app, agent: "sample", namespace: "agents"}
+	changed, err := b.Configure(t.Context(), "/lift", newChatRenderer(f.out))
+	want := "Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …"
+	if changed || err == nil || err.Error() != want {
+		t.Fatalf("moved notice: changed=%t err=%v", changed, err)
+	}
+	if calls := f.calls(t); calls != "" {
+		t.Fatalf("retired Lift accessed cluster: %s", calls)
+	}
+	if f.out.Len() != 0 {
+		t.Fatal("retirement polluted answer stdout")
+	}
+}
+
 func TestChatToolsRefuseBeforeTerminalAndMutation(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	b := &orkaChatBackend{app: f.app, agent: "sample", namespace: "agents"}

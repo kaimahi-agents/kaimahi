@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Native qualification in the existing exclusively owned Orka CI cluster."""
+import base64
 import contextlib
 import copy
 import hashlib
@@ -310,7 +311,8 @@ class Qualification:
         self.promotion_context = promotion_context
         self.repo = pathlib.Path(__file__).resolve().parents[2]
         self.kmx, self.kubectl = str(self.repo / "bin/kmx"), shutil.which("kubectl")
-        require(self.kubectl and pathlib.Path(self.kmx).is_file(), "tools")
+        require(self.kubectl and pathlib.Path(self.kmx).is_file() and
+                (not promotion_context or (self.repo / "bin/orka-native-reference").is_file()), "tools")
         self.env = {k: os.environ[k] for k in ("PATH", "TMPDIR", "RUNNER_TEMP") if k in os.environ}
         self.env.update(KUBECONFIG=str(kubeconfig), HOME=str(self.work / "home"), KMX_HOME=str(self.work / "kmx-home"),
                         KUBECACHEDIR=str(self.work / "kube-cache"), KMX_TOOLCHAIN="off", NO_COLOR="1", KAIMAHI_CONFIRM=context,
@@ -674,15 +676,20 @@ class Qualification:
         controller = self.get("deployment", "orka-api-controller")
         subject["Runtime"] = observed_runtime(controller, self.get("serviceaccount", "orka-api-ai-worker"))
         subject["BindingDigest"] = native_digest("kmx.native-orka.binding/v1", {k: subject[k] for k in ("Model", "RequiredImages", "Binding", "Runtime")})
-        instructions, rendered = self.work / "reference-instructions.txt", self.work / (inference + "-reference-render.yaml")
-        instructions.write_text(source_pair["Agent"]["spec"]["systemPrompt"]["inline"])
-        description = source_pair["Agent"]["metadata"].get("annotations", {}).get("kaimahi.dev/description", "")
+        # The same pure native scaffold renders the reference without a retired
+        # CLI route, cluster I/O, persistent bundle or competing placement engine.
+        reference = {"Name": subject["Member"], "Namespace": "orka-system", "Model": subject["Model"],
+                     "ProviderType": "openai", "BaseURL": bound["BaseURL"], "SecretName": bound["SecretName"],
+                     "SecretKey": bound["SecretKey"], "Instructions": source_pair["Agent"]["spec"]["systemPrompt"]["inline"],
+                     "Description": source_pair["Agent"]["metadata"].get("annotations", {}).get("kaimahi.dev/description", "")}
         start = len(self.frames())
-        self.cli("--context", self.context, "create", "--live", subject["Member"], "--namespace", "orka-system", "--model", subject["Model"],
-                 "--provider-type", "openai", "--base-url", bound["BaseURL"], "--secret", bound["SecretName"], "--secret-key", bound["SecretKey"],
-                 "--instructions", instructions, "--description", description, "--no-apply", "--out", rendered, "--bundle-path", self.work / (inference + "-reference-bundle"))
+        result = self.command([self.repo / "bin/orka-native-reference"],
+                              raw=canonical(reference), timeout=60)
+        require(result.returncode == 0, "promote-reference-render")
         require(len(self.frames()) == start, "promote-reference-cluster-io")
-        documents = re.split(b"^---\\n", rendered.read_bytes(), flags=re.MULTILINE)[1:]
+        encoded = json.loads(result.stdout)
+        require(isinstance(encoded, list) and len(encoded) == 3, "promote-reference-documents")
+        documents = [base64.b64decode(raw, validate=True) for raw in encoded]
         parsed = [yaml.safe_load(raw) for raw in documents]
         require([doc["kind"] for doc in parsed] == ["Secret", "Provider", "Agent"], "promote-reference-documents")
         specs = {doc["kind"]: doc["spec"] for doc in parsed[1:]}
@@ -811,7 +818,7 @@ class Qualification:
         self.phase = "author"
         public = self.repo / "internal/kmx/app/testdata/live-eval-loop"
         instructions = self.work / "instructions.txt"
-        instructions.write_text(yaml.safe_load((public / "agent.yaml").read_bytes())["spec"]["instructions"])
+        instructions.write_bytes((public / "instructions.txt").read_bytes())
         cases = {p.name: p.read_bytes() for p in sorted((public / "eval").glob("*.yaml"))}
         require(len(cases) == 2, "fixture-cases")
         workspace, receipt_path = self.work / "workspace", self.work / "receipt/passing.json"
@@ -866,33 +873,20 @@ class Qualification:
         self.phase = "refusals"
         member = subject["Member"]
         case_path = workspace / "eval" / sorted(cases)[0]
-        legacy_args = ["--context", self.context, "create", "--live", member, "--namespace", "orka-system", "--provider-type", "openai",
-                       "--model", "qwen-3.5-2b", "--secret", self.secret_ref["name"], "--secret-key", self.secret_ref["key"],
-                       "--base-url", "http://native-suite-aikit.orka-system.svc.cluster.local:8080/v1", "--instructions", instructions]
-        # Use the existing offline legacy renderer/writer: a real lift bundle
-        # needs both PortableAgent and OrkaBindings, not just agent.yaml.
-        copy_bundle = self.work / "native-copy-bundle"
-        start = len(self.frames())
-        self.cli(*legacy_args, "--no-apply", "--out", self.work / "native-copy.yaml", "--bundle-path", copy_bundle)
-        require(len(self.frames()) == start, "copy-fixture-kube-call")
-        require(all((copy_bundle / name).is_file() for name in ("agent.yaml", "bindings.yaml")), "copy-fixture-incomplete")
-        rejected = self.cli("bundle", "lift", copy_bundle, "--to-context", self.context, "--to-namespace", "orka-system",
-                            "--inference", "provider:native-suite-inference", success=False)
-        verify_refusal(rejected.returncode, rejected.stderr, self.frames()[start:], "reserves native suite ownership")
-        legacy_args += ["--out", self.work / "legacy.yaml", "--bundle-path", self.work / "legacy-bundle"]
-        start = len(self.frames())
-        rejected = self.cli(*legacy_args, success=False)
-        verify_refusal(rejected.returncode, rejected.stderr, self.frames()[start:], "reserves native suite ownership")
         collision, collision_member = self.work / "collision", "ci-native-collision"
-        legacy_args[4] = collision_member
-        legacy_args[legacy_args.index("--out") + 1] = self.work / "collision-legacy.yaml"
-        legacy_args[legacy_args.index("--bundle-path") + 1] = self.work / "collision-legacy-bundle"
-        # A normal legacy create applies no Task. Remove only this deliberately
-        # created fixture's legacy markers externally to qualify unmarked refusal.
-        self.cli(*legacy_args)
-        for resource in ("providers.core.orka.ai", "agents.core.orka.ai"):
-            self.kube("-n", "orka-system", "annotate", resource, collision_member,
-                      "kaimahi.dev/bundle-", "kaimahi.dev/portable-digest-", "kaimahi.dev/rendered-digest-")
+        # Externally authored upstream objects deliberately have no KMX ownership.
+        # They are fixtures, never a source-less product deployment or adoption.
+        reference = {"Name": collision_member, "Namespace": "orka-system", "Model": "qwen-3.5-2b",
+                     "ProviderType": "openai", "BaseURL": "http://native-suite-aikit.orka-system.svc.cluster.local:8080/v1",
+                     "SecretName": self.secret_ref["name"], "SecretKey": self.secret_ref["key"],
+                     "Instructions": instructions.read_text()}
+        rendered = self.command([self.repo / "bin/orka-native-reference"], raw=canonical(reference))
+        require(rendered.returncode == 0, "collision-reference-render")
+        documents = [yaml.safe_load(base64.b64decode(raw, validate=True)) for raw in json.loads(rendered.stdout)]
+        require([doc["kind"] for doc in documents] == ["Secret", "Provider", "Agent"], "collision-reference-documents")
+        _, provider, agent = documents
+        for fixture in (provider, agent):
+            self.kube("create", "-f", "-", raw=canonical(fixture))
         self.author(collision_member, collision, instructions, cases)
         pair_before = [self.get(k + "s.core.orka.ai", collision_member) for k in ("provider", "agent")]
         start = len(self.frames())

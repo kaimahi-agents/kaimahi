@@ -20,8 +20,7 @@ kmx <noun> <verb> [object] [flags]
   `push` and full-workspace `eval`. Root `eval` also retains helpers (`diff`,
   `from-sessions`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
-  `suite build/diff/push/pull/validate`, `orka install/status/show/list` and legacy
-  `bundle evaluate/lift/retire/verify/status`. `kmx agent` is removed entirely,
+  `suite build/diff/push/pull/validate` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
 - **Singular nouns.** Use `orka list`, not `orkas`. A plural may exist only
   as an explicitly approved hidden alias.
@@ -42,17 +41,15 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 |---|---|---|
 | `list` | Read many resources, one summary row each. | `kmx orka list` |
 | `show` | Read one resource and what it depends on, from live state. | `kmx orka show <name>` |
-| `status` | Report readiness, health or drift. | `kmx orka status`, `kmx bundle status <bundle-dir>` |
-| `create` | Author one workspace member offline by default; `--live` explicitly creates resources and a PortableAgent bundle. | `kmx create <name> --model <model> --instructions <file>`, `kmx create --live [name]` |
+| `status` | Report readiness, health or drift. | `kmx orka status` |
+| `create` | Author one tool-free workspace member offline; no runtime/model bootstrap. | `kmx create <name> --model <model> --instructions <file>` |
 | `install` | Install runtime software onto a cluster. | `kmx orka install` |
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
-| `run` | Execute once and return the result. | `kmx run` |
+| `run` | Execute once on an independent live Orka Agent. | `kmx run --agent NAME` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
 | `eval` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
-| `evaluate` | Run legacy bundle evaluation cases against a deployed revision. | `kmx bundle evaluate <bundle-dir>` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
-| `lift` | Deploy an exact suite digest using explicit native evidence; bundle lift remains separate. | `kmx lift <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |
-| `retire` | Remove the workload resources a bundle owns. | `kmx bundle retire <bundle-dir>` |
+| `lift` | Deploy an exact suite digest using explicit native evidence. | `kmx lift <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |
 | `result` | Retrieve the outcome of an existing execution. | `kmx task result <task>` |
 
 Keep these distinctions:
@@ -60,17 +57,17 @@ Keep these distinctions:
 - **Lift, not deploy.** The local-to-remote story is Create, Prove, Lift.
   "Deployment" may describe the resources lift produces, but it is not a
   command verb.
-- **`retire` is not `down`.** Retiring a workload never tears down
-  infrastructure.
+- **Workload management is not `down`.** Suite status/retirement are unavailable;
+  environment teardown grants no workload-specific replacement contract.
 - **`result` is not retry.** Reading a result never resubmits work.
-- **`validate` is offline.** Server-side checks belong to `--dry-run`.
+- **`validate` is offline.** Root Lift `--plan` performs GET-only target checks, not admission.
 - **`show` is the only verb for detail.** Do not add `get`, `describe` or
   `info`.
 
 ## 3. Arguments and flags
 
 - **Positional arguments name the primary object only**, such as an agent name
-  or a bundle directory. Use flags for everything else.
+  or an immutable suite reference. Use flags for everything else.
 - **Long flags are kebab-case.** Short flags are reserved for `-o`
   (`--output`) and `-i` (`--interactive`). Add another only for a flag that
   is shared across commands with one meaning.
@@ -83,11 +80,10 @@ Keep these distinctions:
 | `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`. Machine formats print exactly one document. |
 | `-i`, `--interactive` | Switch a command that has a scripted mode to its guided terminal mode. Not used on commands that are only interactive. |
 | `--out` | Path for written artifacts. Never reuse `--output` for a path. |
-| `--live` | Select resource/bundle creation, including its previews and no-name Orka wizard; mandatory for both runtimes. Conflicts with `--workspace`. |
 | `--workspace` | Exact workspace root without discovery fallback; default create initializes it if absent, and push requires an existing workspace. |
 | `--plan` | Read the target and print what would change. No writes. |
-| `--no-apply` | Render artifacts locally. No cluster writes. |
-| `--dry-run` | Server-side validation. No persistent cluster writes. |
+| `--no-apply` | Where supported by runtime setup, render without cluster writes; removed from workspace create. |
+| `--dry-run` | Where supported by runtime setup, check server admission without persistent writes; removed from workspace create. |
 | `--step` | Run one named phase of a multi-phase workflow. |
 | `--wait` | How long to wait, as a duration. |
 | `--prompt`, `--prompt-file` | Input text for an agent. `--prompt-file -` reads stdin. |
@@ -145,8 +141,9 @@ Keep these distinctions:
 - **A TUI requires a terminal.** Without one, refuse and name the
   non-interactive command, or provide one.
 - **Slash commands use the CLI vocabulary.** Prefer `/<noun> <verb>` where the
-  scope matches a CLI command, and keep `/lift` as the local-to-remote entry
-  point.
+  scope matches a CLI command. Retired `/lift` and console Lift only print
+  `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`;
+  do not open a new release GUI or copy source-less live Agents.
 - **Modes are arguments, not separate commands.** On the CLI, use
   `kmx quickstart --interactive`, not a separate `quickstart-wizard`. In
   slash commands, prefer `/verbose on|off` over separate on and off commands.
@@ -176,6 +173,9 @@ the removal and replacements under **Breaking** and **Upgrading** in the CHANGEL
 Root `ctx`, `up`, `down`, the AKS `lift` alias and `lift down` are removed
 outright, without stubs; use `context show/use`, `local up/down` and `aks up/down`.
 Root `lift <ref>@<digest>` now means deploy-only suite lift, not infrastructure setup.
+User `agent.yaml` readers/writers/receipts, `bundle` commands, `create --live`
+including previews/wizard, run bundle mode and `--bundles` flags are removed
+outright. Old receipts are unreadable; no migration or file/resource deletion.
 The entire `agent` group is also removed outright, without an alias or stub;
 see the [implemented mapping](command-semantics.md#implemented-workflow-command-mapping-unreleased).
 
@@ -196,7 +196,6 @@ row when its rename lands.
 
 | Current command | Rule it breaks | Proposed |
 |---|---|---|
-| `--no-apply`, `--dry-run`, `--plan` | Preview flags whose effects differ by command. | Undecided; define each flag's effect before renaming. |
 | `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain extracted-artifact transfer syntax without workspace discovery or `--workspace`; root `push [--workspace <directory>] <reference>` discovers a workspace and publishes a prepared native suite with one positional destination. `--workspace` selects an exact root without fallback. |
 | `suite build --output <file>`, `suite pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |
 | `suite build --attestations` | Defaults to true; `--attestations=false` opts out of SBOM and provenance requests. | Keep the documented default; `--require-attestations` refuses missing or unsupported attestations. |

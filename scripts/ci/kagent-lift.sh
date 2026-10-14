@@ -11,7 +11,7 @@ cleanup() {
   result=$?
   trap - EXIT
   if [ "$result" -ne 0 ]; then
-    printf 'kagent bootstrap failed: phase=%s exitstatus=%s; lift/native A2A NOT qualified\n' "$phase" "$result" >&4
+    printf 'kagent bootstrap failed: phase=%s exitstatus=%s; runtime MCP/native A2A NOT qualified\n' "$phase" "$result" >&4
     if [ "$phase" = kind-create ]; then
       printf 'failed kind create is ambiguous; unowned cluster left for inspection\n' >&4
     fi
@@ -38,9 +38,10 @@ cleanup() {
   fi
   if [ "$result" -eq 0 ]; then
     if [ "$mode" = bootstrap ]; then
-      printf 'external bootstrap and deterministic fixture characterized; lift/native A2A NOT qualified\n' >&3
+      printf 'external bootstrap and deterministic fixture characterized; runtime MCP/native A2A NOT qualified\n' >&3
     else
-      printf 'Go lift/repeat/status/conflict and one native A2A MCP execution qualified\n' >&3
+      printf 'one independent upstream Go native A2A MCP execution qualified\n' >&3
+      printf 'tool-free native full eval/evaluated push/source-free digest Lift qualified separately; no MCP tool qualification from suite phase\n' >&3
       printf 'native_a2a_counts=tool:1 model:2 terminal:1\n' >&3
       printf 'private suite kagent prepare/place/observe qualified; no additional execution calls\n' >&3
     fi

@@ -92,8 +92,8 @@ same Orka runtime report.
 |---|---|
 | Root `create`, `eval`, `push` | Implemented suite workspace authoring, packaged Orka/kagent proof and exact ordinary or evaluated publication. |
 | Root `lift REF@sha256:DIGEST` | Implemented deploy-only packaged Orka/kagent placement with mandatory runtime-matching private evidence; Orka exact reuse and kagent fresh-target creation have bounded live qualification. |
-| Root `chat`, `run`; `create --live` | Still target live Orka resources and PortableAgent artifacts, not workspace-local execution. |
-| Hidden `bundle evaluate/lift/retire/status/verify` | Legacy lifecycle retained until suite-path parity; its receipts are not suite evidence. |
+| Root `chat`, `run --agent NAME` | Independent live Orka only, not workspace-local execution; native suite-owned objects refuse legacy invocation. |
+| Legacy user bundle lifecycle / `create --live` | Removed outright including readers/writers/receipts and previews/wizard; no migration or conversion. |
 | `suite push DIRECTORY REFERENCE` | Existing extracted-artifact transfer without workspace discovery; root `push` is the workspace-aware operation. |
 | Future image-backed path | Member authoring joins root create; publication joins root push; deployment uses root lift rather than `suite lift`. |
 
@@ -105,7 +105,7 @@ Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/
 - Lift from a registry reference is deploy-only: no builder and no registry push credentials; missing images cause refusal, not an implicit build.
 - Current Lift accepts only `REF@sha256:DIGEST`, optionally with `--from-layout DIR`; it does not discover a workspace or accept `lift .`.
 - Runtime and model come from the package. Orka Provider/Secret or kagent bindings are part of the subject; an eligible changed destination requires explicit source-evidence `--promote`, not model substitution.
-- Old bundle receipts stay readable for their original lifecycle but do not count as suite or image evidence.
+- Old Orka/kagent/AgentSessions bundle receipts are unreadable; native diff accepts only strict full-passing native suite evidence. No saved files/resources are deleted.
 - Multi-agent evaluation needs a member-selection rule: every member, exported entrypoints, or a declared invocation closure remains open.
 - AgentSuite covers local and remote runs; local commands compose suite operations rather than adding a separate lifecycle. A quick local preview may skip packaging, but only a run of the exact packaged suite counts as promotion evidence.
 - Everyday commands are root verbs (`create`, `chat`, `run`, `eval`, `push`, `lift`, `status`); `kmx agent` is removed rather than aliased.
@@ -113,9 +113,8 @@ Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/
 - Runtime comes from the member and is bound in evaluation evidence; lift resolves and prints it, and is not a way to switch runtimes.
 - For the packaged path (#430), only a complete passing run exports evidence. A failed or incomplete run exits nonzero and produces no receipt, so lift refuses a candidate for lack of matching passing evidence, not because a failure was recorded.
 - Lifting a previous digest again is a re-lift of that release, not a rollback of a deployed bad revision. Rollback needs the revision and retention records in #348/#346.
-- `agent.yaml` bundles are planned for removal rather than conversion or
-  migration. They remain callable only until the suite path reaches parity; no
-  new bundle-only features should land meanwhile.
+- User `agent.yaml` bundles are removed, not converted or migrated. This is an
+  explicit breaking retirement, not a claim of full suite-path parity.
 
 ## What evaluation evidence binds to
 
@@ -137,21 +136,19 @@ The alpha Go interfaces group these into three areas, which map onto the everyda
 
 The selected runtime (Orka, kagent, AgentSessions) executes; evaluation is separately scoped evidence. Three interfaces is the current alpha shape, not a permanent invariant. `AgentEnvironment` deliberately starts with setup only and does not turn a context into a durable target. Still open: wiring it to a second consumer, resolving an exact suite target from an established environment, and evolving `AgentDeployments` from one member image toward suite-scoped deployment.
 
-## Removing `agent.yaml` bundles
+## Removed user `agent.yaml` bundles
 
-The agreed end state removes bundles rather than reading them as one-agent
-workspaces or migrating them. That keeps one model and no converter code.
-Removal has not happened yet and waits for parity on the suite path, in order:
-
-1. Native Orka and exact-kagent create, eval, push and deploy-only lift by digest are implemented (#430); aggregate status, retirement and member execution remain open.
-2. Root Lift requires exact private suite evidence; distributable authenticated policy and broader promotion semantics remain open.
-3. Kagent packaged evaluation/evaluated publication and create-only digest Lift
-   are implemented; status, retirement and remaining legacy-bundle replacement
-   are open. Remote MCP tools
-   are not a precondition: they may be unavailable for a while and return later.
-4. Quickstart, console and interactive lift through create → lift, so `create --live` can go.
-
-Then one deliberate breaking change deletes the `bundle` commands, bundle receipts and their code. Old receipts stop being readable; no new bundle-only features land in the meantime.
+One deliberate breaking retirement removes commands/readers/writers/receipts
+and live create/previews/wizard, root run bundle mode and `--bundles` flags.
+Old receipts are unreadable. No migration, converter or saved-file/resource
+cleanup exists. Public AgentSuite/ToolProvider implementation bundles remain.
+Legacy RecordedExecution, Sessions evaluation/replay/judges are removed;
+`eval from-sessions` is independent private reference extraction/export without
+a native consumer. Native eval requires author-owned cases/full-passing evidence.
+Suite status/retirement and member execution remain unavailable, with no
+replacement/parity claim. Chat `/lift` and console Lift print only the digest-Lift
+move notice; no GUI or source-less live-copy fallback remains. Quickstart composes
+native lifecycle before a separate fresh answer; console Ready is placement only.
 
 ## Open questions
 

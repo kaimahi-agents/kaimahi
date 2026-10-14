@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
@@ -304,6 +303,8 @@ const (
 	consoleProviderKind = "providers.core.orka.ai"
 )
 
+const interactiveLiftRetirement = "Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …"
+
 const agentMutationRetirement = "In-place agent tools/inference/prompt editing is retired; edit the authored member/workspace, then eval → push → lift."
 
 func (a *App) consoleSaveInference(ctx context.Context, env agentTUIEnvironment, agent agentTUIAgent, snapshot consoleInferenceSnapshot, source consoleInferenceSource, model string) error {
@@ -329,104 +330,6 @@ func (a *App) requireLocalHostInference(ctx context.Context) error {
 		return fmt.Errorf("host Copilot/Azure CLI inference is only available for local kind; remote agents must use cluster-configured inference")
 	}
 	return nil
-}
-
-func (a *App) consolePrepareClusterFoundry(ctx context.Context, agent agentTUIAgent, s consoleInferenceSource) (consoleInferenceSource, error) {
-	if err := s.validate(); err != nil {
-		return s, err
-	}
-	if s.Account != "" {
-		target := chatLiftTarget{Subscription: s.Subscription}
-		account := foundryAccount{Name: s.Account, ResourceGroup: s.ResourceGroup}
-		args := append([]string{"cognitiveservices", "account", "show"}, foundryScope(target, account)...)
-		raw, err := a.liftDiscovery(ctx, "az", append(args, "-o", "json", "--only-show-errors")...)
-		if err != nil {
-			return s, err
-		}
-		if err = json.Unmarshal(raw, &account); err != nil {
-			return s, err
-		}
-		if account.Properties.DisableLocalAuth {
-			return s, fmt.Errorf("Foundry disables API keys; this runtime needs worker-side workload identity support before keyless remote setup is possible")
-		}
-		endpoint, err := foundryBaseURL(account)
-		if err != nil {
-			return s, err
-		}
-		if strings.TrimRight(endpoint, "/") != strings.TrimRight(s.Endpoint, "/") {
-			return s, fmt.Errorf("Foundry endpoint changed; reopen setup")
-		}
-		args = append([]string{"cognitiveservices", "account", "keys", "list"}, foundryScope(target, account)...)
-		raw, err = a.liftDiscovery(ctx, "az", append(args, "-o", "json", "--only-show-errors")...)
-		if err != nil {
-			return s, err
-		}
-		var keys struct{ Key1 string }
-		if json.Unmarshal(raw, &keys) != nil || keys.Key1 == "" {
-			return s, fmt.Errorf("Foundry returned no usable API key")
-		}
-		suffix, err := randomHex(4)
-		if err != nil {
-			return s, err
-		}
-		s.Secret, s.SecretKey = "kmx-foundry-"+suffix, "api-key"
-		body, err := json.Marshal(map[string]any{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]string{"name": s.Secret, "namespace": agent.Namespace}, "type": "Opaque", "stringData": map[string]string{"api-key": keys.Key1}})
-		if err != nil {
-			return s, err
-		}
-		if _, err = a.orkaCapture(ctx, body, "-n", agent.Namespace, "create", "-f", "-", "-o", "name"); err != nil {
-			return s, fmt.Errorf("could not create cluster Foundry credential Secret: %w", err)
-		}
-	}
-	// Test from the target cluster using the mounted Secret, not host credentials.
-	s.Endpoint = strings.TrimRight(s.Endpoint, "/")
-	if !strings.HasSuffix(s.Endpoint, "/openai/v1") {
-		s.Endpoint += "/openai/v1"
-	}
-	if err := a.verifyFoundryEndpointKey(ctx, agent.Namespace, s.Secret, s.SecretKey, s.Endpoint, s.Model); err != nil {
-		return s, fmt.Errorf("cluster Foundry verification failed; Secret %s retained: %w", s.Secret, err)
-	}
-	s.Kind, s.Provider = "apikey", "openai"
-	s.Endpoint = strings.TrimRight(s.Endpoint, "/")
-	if !strings.HasSuffix(s.Endpoint, "/openai/v1") {
-		s.Endpoint += "/openai/v1"
-	}
-	return s, nil
-}
-
-func (a *App) consoleCreateConnector(ctx context.Context, agent agentTUIAgent, s consoleInferenceSource) error {
-	if err := s.validate(); err != nil {
-		return err
-	}
-	secret, key, provider, endpoint := s.Secret, s.SecretKey, s.Provider, s.Endpoint
-	if s.Kind == "ollama" {
-		secret = s.Name + "-keyless"
-		key = "api-key"
-		provider = "openai"
-		endpoint = consoleOllamaEndpoint(endpoint, true)
-	}
-	bundle, err := createOrkaBundle(CreateOptions{Name: s.Name, Namespace: agent.Namespace, ProviderType: provider, Model: s.Model, BaseURL: endpoint, Secret: secret, SecretKey: key, AzureDeployment: s.AzureDeployment, AzureAPIVersion: s.AzureAPIVersion})
-	if err != nil {
-		return err
-	}
-	if err = a.orkaAbsent(ctx, agent.Namespace, bundle.Provider); err != nil {
-		return err
-	}
-	if s.Kind == "ollama" {
-		// A separate, create-only dummy Secret satisfies the Orka Provider schema;
-		// it contains no credential and never overwrites a user's Secret.
-		body, _ := json.Marshal(map[string]any{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]string{"name": secret, "namespace": agent.Namespace}, "stringData": map[string]string{"api-key": "not-used-by-this-endpoint"}})
-		if _, err = a.orkaCapture(ctx, body, "-n", agent.Namespace, "create", "-f", "-", "-o", "name"); err != nil {
-			return fmt.Errorf("keyless connector Secret could not be created: %w", err)
-		}
-	}
-	id, err := a.createOrkaObject(ctx, agent.Namespace, bundle.Provider)
-	if err != nil {
-		return err
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	return a.waitOrkaReady(waitCtx, agent.Namespace, id)
 }
 
 func consoleOllamaEndpoint(endpoint string, openAI bool) string {

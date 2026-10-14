@@ -22,7 +22,7 @@ import (
 )
 
 func TestQuickstartWizardViewKeepsInfrastructureAboveNumberedAgentStep(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{Model: "qwen2.5:3b"})
+	create, err := newQuickstartSourceForm(CreateOptions{Model: "qwen2.5:3b"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,9 +40,9 @@ func TestQuickstartWizardViewKeepsInfrastructureAboveNumberedAgentStep(t *testin
 }
 
 func TestQuickstartWizardWaitsForSetupAfterReview(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{
+	create, err := newQuickstartSourceForm(CreateOptions{
 		Name: "demo", Description: "Demo", Namespace: OrkaNamespace,
-		ProviderType: "openai", Model: "qwen2.5:3b", Secret: "kickstart-provider-key",
+		ProviderType: "openai", Model: "qwen2.5:3b", Secret: "kickstart-provider-key", InstructionText: "Answer briefly.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestQuickstartWizardWaitsForSetupAfterReview(t *testing.T) {
 }
 
 func TestCompletedSetupLeavesQueuedFrameWithoutWaitingForChannelClose(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{Name: "demo", Description: "Demo", Namespace: OrkaNamespace, ProviderType: "openai", Model: "qwen2.5:3b", Secret: "key"})
+	create, err := newQuickstartSourceForm(CreateOptions{Name: "demo", Description: "Demo", Namespace: OrkaNamespace, ProviderType: "openai", Model: "qwen2.5:3b", Secret: "key"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestCompletedSetupLeavesQueuedFrameWithoutWaitingForChannelClose(t *testing
 }
 
 func TestQuickstartViewReportsCompletedSetup(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{Model: "qwen2.5:3b"})
+	create, err := newQuickstartSourceForm(CreateOptions{Model: "qwen2.5:3b"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestQuickstartModelPickerShowsSelectedProviderDetails(t *testing.T) {
 }
 
 func TestModelChoiceIgnoresQueuedEnterUntilScreenIsReady(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{descriptionDefault: "Hello world agent"})
+	create, err := newQuickstartSourceForm(CreateOptions{descriptionDefault: "Hello world agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestModelChoiceIgnoresQueuedEnterUntilScreenIsReady(t *testing.T) {
 }
 
 func TestModelStepShowsNoOptionsUntilDetectionCompletes(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{descriptionDefault: "Hello world agent"})
+	create, err := newQuickstartSourceForm(CreateOptions{descriptionDefault: "Hello world agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestModelStepShowsNoOptionsUntilDetectionCompletes(t *testing.T) {
 }
 
 func TestSingleDetectedOptionStillRequiresSelection(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{descriptionDefault: "Hello world agent"})
+	create, err := newQuickstartSourceForm(CreateOptions{descriptionDefault: "Hello world agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestSingleDetectedOptionStillRequiresSelection(t *testing.T) {
 }
 
 func TestExistingAgentMustChooseNativeInferenceAfterDetection(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{})
+	create, err := newQuickstartSourceForm(CreateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestExistingAgentMustChooseNativeInferenceAfterDetection(t *testing.T) {
 }
 
 func TestDetectedAlternativesUnlockStableModelPicker(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{descriptionDefault: "Hello world agent"})
+	create, err := newQuickstartSourceForm(CreateOptions{descriptionDefault: "Hello world agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestManagedOllamaKeepsPrewarmedModelResident(t *testing.T) {
 }
 
 func TestQuickstartStartsWithExistingAgentOrNewChoice(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{descriptionDefault: "Hello world agent"})
+	create, err := newQuickstartSourceForm(CreateOptions{descriptionDefault: "Hello world agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestQuickstartStartsWithExistingAgentOrNewChoice(t *testing.T) {
 }
 
 func TestQuickstartWizardVimKeysNavigateSelections(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{descriptionDefault: "Hello world agent"})
+	create, err := newQuickstartSourceForm(CreateOptions{descriptionDefault: "Hello world agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestQuickstartWizardVimKeysNavigateSelections(t *testing.T) {
 }
 
 func TestQuickstartWizardInterruptCancelsUIAndSetup(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{descriptionDefault: "Hello world agent"})
+	create, err := newQuickstartSourceForm(CreateOptions{descriptionDefault: "Hello world agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestQuickstartWizardInterruptCancelsUIAndSetup(t *testing.T) {
 }
 
 func TestQuickstartWizardPanelsFitNarrowTerminal(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{Model: "qwen2.5:3b"})
+	create, err := newQuickstartSourceForm(CreateOptions{Model: "qwen2.5:3b"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestQuickstartWizardPanelsFitNarrowTerminal(t *testing.T) {
 }
 
 func TestQuickstartWizardOnlyFocusedQuestionHasBorder(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{Model: "qwen2.5:3b"})
+	create, err := newQuickstartSourceForm(CreateOptions{Model: "qwen2.5:3b"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestQuickstartWizardOnlyFocusedQuestionHasBorder(t *testing.T) {
 }
 
 func TestQuickstartDescriptionStartsWithHelloWorldAgent(t *testing.T) {
-	m, err := newCreateWizardModel(CreateOptions{descriptionDefault: "Hello world agent"})
+	m, err := newQuickstartSourceForm(CreateOptions{descriptionDefault: "Hello world agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,11 +474,11 @@ func TestStableTerminalSizeIsNoopForNonterminal(t *testing.T) {
 
 func TestQuickstartCancellationAcrossScreens(t *testing.T) {
 	for _, key := range []tea.KeyPressMsg{{Code: 'c', Mod: tea.ModCtrl}, {Code: tea.KeyEsc}} {
-		for _, screen := range []string{"agent", "detecting", "models", "form", "waiting", "deployment", "ready"} {
+		for _, screen := range []string{"agent", "detecting", "models", "form", "waiting", "ready"} {
 			t.Run(screen+"/"+key.String(), func(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
-				create, err := newCreateWizardModel(CreateOptions{})
+				create, err := newQuickstartSourceForm(CreateOptions{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -495,9 +495,7 @@ func TestQuickstartCancellationAcrossScreens(t *testing.T) {
 					m.formDone = true
 				}
 				var model tea.Model = m
-				if screen == "deployment" {
-					model = quickstartDeployModel{cancel: cancel}
-				} else if screen == "ready" {
+				if screen == "ready" {
 					model = quickstartReadyModel{}
 				}
 				updated, cmd := model.Update(key)
@@ -741,7 +739,7 @@ func TestQuickstartHostModelKeepsSourceFreeOfProviderBindings(t *testing.T) {
 }
 
 func TestQuickstartDuplicateNameStaysInForm(t *testing.T) {
-	create, err := newCreateWizardModel(CreateOptions{Namespace: OrkaNamespace, ProviderType: "openai", Model: "test", Secret: "key", descriptionDefault: "Hello world agent"})
+	create, err := newQuickstartSourceForm(CreateOptions{Namespace: OrkaNamespace, ProviderType: "openai", Model: "test", Secret: "key", descriptionDefault: "Hello world agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -768,7 +766,7 @@ func TestCompactQuickstartFitsSmallTerminalsAndKeepsSelection(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {60, 16}, {40, 12}, {28, 10}} {
 		for _, screen := range []string{"agents", "models", "description", "review"} {
 			t.Run(fmt.Sprintf("%dx%d/%s", size[0], size[1], screen), func(t *testing.T) {
-				create, err := newCreateWizardModel(CreateOptions{Namespace: OrkaNamespace, Model: "qwen2.5:3b"})
+				create, err := newQuickstartSourceForm(CreateOptions{Namespace: OrkaNamespace, Model: "qwen2.5:3b"})
 				if err != nil {
 					t.Fatal(err)
 				}

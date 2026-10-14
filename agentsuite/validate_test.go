@@ -465,7 +465,7 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 	}
 
 	root := writeMinimalSuite(t)
-	for _, name := range []string{"search-input.json", "search-output.json"} {
+	for _, name := range []string{"search-input.json", "search-output.json", "flag-result-input.json", "flag-result-output.json"} {
 		data, err := os.ReadFile(filepath.Join(fixture, "schemas", name))
 		if err != nil {
 			t.Fatal(err)
@@ -577,6 +577,154 @@ func TestToolProviderKeepsCallableToolsScopedToItsContract(t *testing.T) {
 	provider.Tools = nil
 	if err := validateToolProvider(provider, raw, content); err == nil || !strings.Contains(err.Error(), "at least one tool") {
 		t.Fatalf("empty callable tool contract error = %v", err)
+	}
+}
+
+func TestValidateDelegatedAuthorization(t *testing.T) {
+	valid := func() DelegatedAuthorization {
+		return DelegatedAuthorization{
+			Service: "search",
+			Scope:   "results.read",
+			Credential: BrokeredCredential{
+				Resolution: "runtime-brokered",
+				BindingRef: "search-delegated-connection",
+			},
+		}
+	}
+
+	if err := validateDelegatedAuthorization(valid()); err != nil {
+		t.Fatalf("valid delegated authorization rejected: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(DelegatedAuthorization) DelegatedAuthorization
+		wantErr string
+	}{
+		{
+			name: "invalid service identifier",
+			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
+				a.Service = "Search Provider"
+				return a
+			},
+			wantErr: "service is invalid",
+		},
+		{
+			name: "invalid scope",
+			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
+				a.Scope = ""
+				return a
+			},
+			wantErr: "scope is invalid",
+		},
+		{
+			name: "credential resolution must be brokered",
+			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
+				a.Credential.Resolution = "client-managed"
+				return a
+			},
+			wantErr: "resolution must be runtime-brokered",
+		},
+		{
+			name: "missing binding slot",
+			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
+				a.Credential.BindingRef = ""
+				return a
+			},
+			wantErr: "bindingRef is invalid",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateDelegatedAuthorization(test.mutate(valid()))
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validateDelegatedAuthorization() error = %v, want containing %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestToolProviderEffectApprovalIndependentOfCredentials(t *testing.T) {
+	content, err := loadDirectory(filepath.Join("testdata", "remote-mcp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := content.data("tool-provider.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var provider ToolProvider
+	if err := decodeStrict(raw, &provider); err != nil {
+		t.Fatal(err)
+	}
+	for _, delegated := range []bool{true, false} {
+		if !delegated {
+			provider.Tools[0].DelegatedAuthorization = nil
+		}
+		for _, effect := range []string{"read-only", "mutating"} {
+			for _, approval := range []string{"required", "policy-controlled"} {
+				provider.Tools[0].Effect, provider.Tools[0].Approval = effect, approval
+				if err := validateToolProvider(provider, raw, content); err != nil {
+					t.Fatalf("effect=%s approval=%s delegated=%t: %v", effect, approval, delegated, err)
+				}
+			}
+		}
+	}
+	for _, tool := range []Tool{
+		{Effect: "consequential"},
+		{Approval: "optional"},
+		{DelegatedAuthorization: &DelegatedAuthorization{}, Effect: "read-only"},
+		{DelegatedAuthorization: &DelegatedAuthorization{}, Approval: "required"},
+	} {
+		if err := validateToolEffectApproval(tool); err == nil {
+			t.Fatalf("invalid or missing tool classification accepted: %+v", tool)
+		}
+	}
+}
+
+func TestToolProviderRejectsPolicyFieldsThatDecodeAsOmitted(t *testing.T) {
+	content, err := loadDirectory(filepath.Join("testdata", "remote-mcp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := content.data("tool-provider.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name             string
+		field            string
+		value            any
+		withoutDelegated bool
+		wantErr          string
+	}{
+		{name: "empty effect", field: "effect", value: "", withoutDelegated: true, wantErr: "effect must be a non-empty string"},
+		{name: "empty approval", field: "approval", value: "", withoutDelegated: true, wantErr: "approval must be a non-empty string"},
+		{name: "null delegated authorization", field: "delegatedAuthorization", value: nil, wantErr: "delegatedAuthorization must not be null"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var document map[string]any
+			if err := json.Unmarshal(raw, &document); err != nil {
+				t.Fatal(err)
+			}
+			tools := document["tools"].([]any)
+			tool := tools[0].(map[string]any)
+			if test.withoutDelegated {
+				delete(tool, "delegatedAuthorization")
+			}
+			tool[test.field] = test.value
+			tampered, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var provider ToolProvider
+			if err := decodeStrict(tampered, &provider); err != nil {
+				t.Fatalf("strict decoding should retain this semantic check: %v", err)
+			}
+			if err := validateToolProvider(provider, tampered, content); err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validateToolProvider() error = %v, want containing %q", err, test.wantErr)
+			}
+		})
 	}
 }
 

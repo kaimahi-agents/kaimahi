@@ -18,8 +18,8 @@ import (
 // SuiteWorkspaceEvaluationOptions selects a full native workspace invocation.
 // No runtime, model, judge or subset can override its packaged behavior.
 type SuiteWorkspaceEvaluationOptions struct {
-	Workspace, ToContext, ToNamespace, Inference, Bindings, Out, ResultPort string
-	CaseTimeout                                                             time.Duration
+	Workspace, ToContext, ToNamespace, Inference, Bindings, Out, ResultPort, DevelopmentHost string
+	CaseTimeout                                                                              time.Duration
 }
 
 // PreparedSuiteWorkspaceEvaluation owns its offline source snapshot and anchored
@@ -33,6 +33,7 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	options   SuiteWorkspaceEvaluationOptions
 	started   bool
 	bindings  *suiteKagentBindingSnapshot
+	sessions  *suiteSessionsHostSnapshot
 }
 
 func (p *PreparedSuiteWorkspaceEvaluation) Close() error {
@@ -52,8 +53,15 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if opt.CaseTimeout == 0 {
 		opt.CaseTimeout = 5 * time.Minute
 	}
-	if !verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil || (opt.Inference == "") == (opt.Bindings == "") || opt.Out == "" || opt.CaseTimeout <= 0 || opt.CaseTimeout > 9*time.Minute {
-		return nil, errors.New("native evaluation requires explicit context, exactly one inference or bindings selector, private output and bounded case timeout")
+	if opt.Out == "" || opt.CaseTimeout <= 0 || opt.CaseTimeout > 9*time.Minute {
+		return nil, errors.New("native evaluation requires private output and bounded case timeout")
+	}
+	if opt.DevelopmentHost != "" {
+		if opt.ToContext != "" || opt.ToNamespace != "" || opt.Inference != "" || opt.Bindings != "" || opt.ResultPort != "" {
+			return nil, errors.New("development host evaluation refuses cluster, inference, bindings and result selectors")
+		}
+	} else if !verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil || (opt.Inference == "") == (opt.Bindings == "") {
+		return nil, errors.New("native evaluation requires explicit context, exactly one inference or bindings selector, or an explicit development host")
 	}
 	root, err := resolveSuiteWorkspace(opt.Workspace)
 	if err != nil {
@@ -77,11 +85,22 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, suiteEvaluationError(ctx, err, false)
 	}
-	if suite.Runtime.ID != "orka" && suite.Runtime.ID != "kagent" {
-		return nil, errors.New("unsupported native suite runtime for evaluation")
+	var sessions *suiteSessionsHostSnapshot
+	if suite.Runtime.ID == "agentsessions" {
+		if opt.DevelopmentHost == "" {
+			return nil, errors.New("unsupported native suite runtime without explicit --development-host")
+		}
+		sessions, err = snapshotSuiteSessionsHost(opt.DevelopmentHost, suite)
+		if err != nil {
+			return nil, err
+		}
+	} else if opt.DevelopmentHost != "" || (suite.Runtime.ID != "orka" && suite.Runtime.ID != "kagent") {
+		return nil, errors.New("development host requires the packaged agentsessions runtime")
 	}
 	var bindings *suiteKagentBindingSnapshot
-	if suite.Runtime.ID == "kagent" {
+	if suite.Runtime.ID == "agentsessions" {
+		// The host is already explicitly snapshotted; no Kubernetes defaults apply.
+	} else if suite.Runtime.ID == "kagent" {
 		if opt.Bindings == "" || opt.ResultPort != "" {
 			return nil, errors.New("native kagent evaluation requires --bindings and refuses --result-port")
 		}
@@ -114,7 +133,7 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, err
 	}
-	return &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, output: output, root: root, options: opt, bindings: bindings}, nil
+	return &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, output: output, root: root, options: opt, bindings: bindings, sessions: sessions}, nil
 }
 
 // Check the read-only session prerequisites before pair writes. The bearer and
@@ -152,6 +171,9 @@ func (a *App) preflightSuiteNativeResults(ctx context.Context, ns string) error 
 // EvaluateSuiteWorkspace executes each original ordered case once and publishes
 // only full passing metadata. Late failures leave resources, not recovery state.
 func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
+	if p != nil && p.suite != nil && p.suite.Runtime.ID == "agentsessions" {
+		return a.evaluateSuiteSessionsWorkspace(ctx, p)
+	}
 	return a.evaluateSuiteWorkspace(ctx, p, false)
 }
 

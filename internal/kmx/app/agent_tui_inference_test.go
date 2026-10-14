@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,40 +87,6 @@ func TestConsoleInferenceSourcePersistenceAndValidation(t *testing.T) {
 	}
 }
 
-// The keyless Ollama connector is the one create path that writes two objects:
-// a dummy Secret Orka's Provider schema requires, then the Provider itself.
-// Neither may be a legacy model preset, and the Secret must never carry a credential.
-func TestConsoleOllamaConnectorCreatesOrkaProviderWithKeylessSecret(t *testing.T) {
-	dir := t.TempDir()
-	log := filepath.Join(dir, "bodies")
-	fakeTool(t, dir, "kubectl", `case "$*" in
- *'--ignore-not-found=true -o name'*) : ;;
- *'create -f - -o name'*) cat >> "$BODY_LOG"; printf 'secret/local-model-keyless' ;;
- *'create --validate=strict -f - -o json'*) cat >> "$BODY_LOG"; printf '%s' '{"kind":"Provider","metadata":{"name":"local-model","namespace":"agents","uid":"u-1","generation":1}}' ;;
- *'get providers.core.orka.ai local-model -o json'*) printf '%s' '{"kind":"Provider","metadata":{"name":"local-model","namespace":"agents","uid":"u-1","generation":1},"status":{"ready":true,"conditions":[{"type":"Ready","status":"True","observedGeneration":1}]}}' ;;
- *) exit 1 ;;
-esac`)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	a := &App{Cfg: &config.Config{KubeContext: "remote"}, Run: &run.Runner{Env: []string{"BODY_LOG=" + log}}, Out: io.Discard, Err: io.Discard}
-	s := consoleInferenceSource{Kind: "ollama", Name: "local-model", Endpoint: "http://ollama:11434", Model: "qwen2.5:3b"}
-	if err := a.consoleCreateConnector(t.Context(), agentTUIAgent{Runtime: "orka", Namespace: "agents"}, s); err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(raw)
-	if strings.Contains(body, "ModelConfig") || strings.Contains(body, "kagent.dev") {
-		t.Fatalf("the console created a retired connector: %s", body)
-	}
-	for _, want := range []string{"Provider", "core.orka.ai", "http://ollama:11434/v1", "local-model-keyless", "not-used-by-this-endpoint"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("connector missing %q: %s", want, body)
-		}
-	}
-}
-
 func TestConsoleInferenceRefusalDoesNotStartAzureDiscovery(t *testing.T) {
 	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
 	m.opt.Demo = false
@@ -169,62 +134,6 @@ esac`)
 	}
 }
 
-// consolePrepareClusterFoundry's account/key reads must also go through the
-// Runner: the fake az here only answers once KMX_LIFT_KEPT/KMX_LIFT_DROPPED
-// are applied, and the assertions below check the returned connector and
-// Secret reference, never the key value itself.
-func TestConsolePrepareClusterFoundryReadsExistingAccountThroughTheRunner(t *testing.T) {
-	dir := t.TempDir()
-	body := filepath.Join(dir, "probe")
-	t.Setenv("PROBE_BODY", body)
-	fakeTool(t, dir, "az", `guarded() { [ "$KMX_LIFT_KEPT" = "added" ] && [ -z "$KMX_LIFT_DROPPED" ]; }
-case "$*" in
- 'cognitiveservices account show --subscription sub-test --resource-group rg-test --name demo -o json --only-show-errors')
-  guarded || exit 1
-  printf '%s' '{"name":"demo","resourceGroup":"rg-test","properties":{"endpoint":"https://example.openai.azure.com/"}}' ;;
- 'cognitiveservices account keys list --subscription sub-test --resource-group rg-test --name demo -o json --only-show-errors')
-  guarded || exit 1
-  printf '%s' '{"Key1":"unexported-test-key"}' ;;
- *) exit 1 ;;
-esac`)
-	fakeTool(t, dir, "kubectl", `case "$*" in
- *'create -f -'*) /bin/cat >> "$PROBE_BODY"; printf '\n---\n' >> "$PROBE_BODY" ;;
- *'get job'*) printf '%s' '{"status":{"succeeded":1}}' ;;
- *'delete job'*) exit 0 ;;
- *) exit 1 ;;
-esac`)
-	t.Setenv("PATH", dir)
-	t.Setenv("KMX_LIFT_DROPPED", "inherited")
-	a := &App{Cfg: &config.Config{KubeContext: "remote"}, Run: &run.Runner{Env: []string{"KMX_LIFT_KEPT=added"}, Unset: []string{"KMX_LIFT_DROPPED"}}, Err: io.Discard}
-	source := consoleInferenceSource{Kind: "foundry-cluster", Subscription: "sub-test", ResourceGroup: "rg-test", Account: "demo", Name: "remote-foundry", Endpoint: "https://example.openai.azure.com/openai/v1", Model: "deployment"}
-	configured, err := a.consolePrepareClusterFoundry(t.Context(), agentTUIAgent{Runtime: "orka", Namespace: "agents"}, source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if configured.Kind != "apikey" || configured.Provider != "openai" || configured.Endpoint != "https://example.openai.azure.com/openai/v1" {
-		t.Fatalf("connector=%+v", configured)
-	}
-	if configured.Secret == "" || configured.SecretKey != "api-key" {
-		t.Fatalf("Secret reference not returned: %+v", configured)
-	}
-	raw, err := os.ReadFile(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Assert shape only: never interpolate the expected key value (even a
-	// fake one) or the raw manifest into a failure message.
-	content := string(raw)
-	if !strings.Contains(content, `"name":"`+configured.Secret+`"`) {
-		t.Fatal("cluster Secret create did not reference the returned Secret name")
-	}
-	if !strings.Contains(content, `"namespace":"agents"`) {
-		t.Fatal("cluster Secret create did not target the agent namespace")
-	}
-	if !strings.Contains(content, `"api-key":`) {
-		t.Fatal("cluster Secret create did not carry an api-key entry")
-	}
-}
-
 func TestConsoleRemoteInferenceNeverOffersOrLoadsHostSources(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	p := consoleInferencePane{env: agentTUIEnvironment{Name: "remote"}, agent: agentTUIAgent{Runtime: "orka"}, azureAvailable: true}
@@ -257,40 +166,6 @@ func TestConsoleRemoteInferenceNeverOffersOrLoadsHostSources(t *testing.T) {
 	a := &App{}
 	if err := a.consoleSaveInference(t.Context(), env, agent, consoleInferenceSnapshot{}, source, ""); err == nil || !strings.Contains(err.Error(), "authored member/workspace") {
 		t.Fatalf("host save not rejected before auth: %v", err)
-	}
-}
-
-func TestRemoteManualFoundryProbeUsesClusterSecretWithoutAzureCLI(t *testing.T) {
-	dir := t.TempDir()
-	body := filepath.Join(dir, "probe")
-	t.Setenv("PROBE_BODY", body)
-	fakeTool(t, dir, "kubectl", `case "$*" in
- *'create -f -'*) /bin/cat > "$PROBE_BODY" ;;
- *'get job'*) printf '%s' '{"status":{"succeeded":1}}' ;;
- *'delete job'*) exit 0 ;;
- *) exit 1 ;;
-esac`)
-	t.Setenv("PATH", dir) // No az or copilot exists on this path.
-	a := &App{Cfg: &config.Config{KubeContext: "remote"}, Run: &run.Runner{}, Err: io.Discard}
-	source := consoleInferenceSource{Kind: "foundry-cluster", Name: "remote-foundry", Endpoint: "https://example.openai.azure.com", Model: "deployment", Secret: "existing-key", SecretKey: "custom-key"}
-	configured, err := a.consolePrepareClusterFoundry(t.Context(), agentTUIAgent{Runtime: "orka", Namespace: "agents"}, source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if configured.Kind != "apikey" || configured.Endpoint != "https://example.openai.azure.com/openai/v1" {
-		t.Fatalf("connector=%+v", configured)
-	}
-	raw, err := os.ReadFile(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{`"secretName":"existing-key"`, `"key":"custom-key"`, `"path":"api-key"`, `"namespace":"agents"`, `"value":"deployment"`} {
-		if !strings.Contains(string(raw), want) {
-			t.Fatalf("cluster probe missing %s", want)
-		}
-	}
-	if strings.Contains(string(raw), "stringData") {
-		t.Fatal("probe embedded credential material")
 	}
 }
 

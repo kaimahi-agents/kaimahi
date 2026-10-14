@@ -1,13 +1,9 @@
-//go:build linux
-
 package app
 
 import (
 	"context"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -64,56 +60,6 @@ func TestQuickstartWizardPTYCtrlCRestoresTerminal(t *testing.T) {
 				t.Fatalf("terminal was not restored: %v", err)
 			}
 		})
-	}
-}
-
-func TestQuickstartDeploymentPTYCtrlCStopsReadinessWait(t *testing.T) {
-	t.Setenv("TERM", "xterm-256color")
-	a, opt, _, _, dir := orkaCreateFixture(t, "stale-ready")
-	master, slave := chatPTY(t, 100)
-	a.Stdin, a.Err = slave, slave
-	before, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- a.runQuickstartDeployment(opt) }()
-	var captured strings.Builder
-	chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "Provider") })
-	// Wait until Provider creation has actually happened and readiness is pending.
-	// Schema validation and the subprocess fixture are slower under -race.
-	// This is startup allowance; Ctrl-C must still release the wait within 3s.
-	deadline := time.After(15 * time.Second)
-	for {
-		_, err := os.Stat(filepath.Join(dir, "sample-providers.core.orka.ai.json"))
-		if err == nil {
-			break
-		}
-		select {
-		case err := <-done:
-			t.Fatalf("deployment stopped before Provider wait: %v", err)
-		case <-deadline:
-			t.Fatal("Provider was never created")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-	if _, err := io.WriteString(master, "\x03"); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-done:
-		if !errors.Is(err, errCreateCancelled) {
-			t.Fatalf("err=%v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("deployment readiness wait ignored Ctrl-C")
-	}
-	after, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
-	if err != nil || *before != *after {
-		t.Fatalf("terminal was not restored: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "sample-agents.core.orka.ai.json")); !os.IsNotExist(err) {
-		t.Fatalf("Agent was created after cancellation: %v", err)
 	}
 }
 

@@ -15,7 +15,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   `kmx context use <context>`; canonical local setup/teardown commands are
   `kmx local up/down`. Root `ctx`, `up`, `down`, the AKS `lift` alias and `lift down`
   are removed outright, not compatibility routes or retirement stubs. Current
-  bundle deployment remains `kmx bundle lift`; current cloud and runtime setup
+  deployment is digest `kmx lift`; cloud and runtime setup
   remain `kmx aks up/down` and `kmx orka install/status`.
   The AKS group is a hidden compatibility route, not a public root domain.
   Guided quickstart is `kmx quickstart --interactive` (`-i`); the old wizard
@@ -24,16 +24,23 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Plane administration, model overlays, migration and their demo are removed;
   do not restore or regroup their commands.
 - Everyday operations are root `create/chat/run`; live inspection is `orka show/list`.
-  Legacy lifecycle operations are `bundle evaluate/lift/retire/verify/status`.
+  Legacy `bundle` operations are removed outright without aliases/stubs.
   `kmx agent` is removed entirely, without an alias or retirement stub.
   Root `status` and `orka status` retain the same table-only Orka runtime report;
   do not add root bundle status or a suite observer.
 - Root `create <name>` authors one tool-free native suite member offline
   by default: Orka unless `--runtime kagent` selects exact v0.10.3 Go/linux-amd64.
-  `--runtime agentsessions` separately authors an offline-only built-in chat
+  `--runtime agentsessions` separately authors a built-in chat
   profile pinned to ca85f47a2ec17ca6e16029cfa69419cfe29442b3 (engine chat), with
   empty required images and complete ordered cases. Prepare/load/ordinary push
-  support it; suite eval/evaluated push/lift/chat/status and live create refuse.
+  support it; root eval requires explicit --development-host FILE for literal
+  loopback, unauthenticated operator-observed chat. It loads no cluster settings,
+  sends exact config once per fresh Session, requires a complete five-record
+  qualified journal and full ordered pass, then exports private runtime-specific
+  proof. Exact-S --evaluation push accepts that proof offline. Cluster selectors,
+  mixed-runtime proof, tools/judge, lift/chat/status and live create refuse.
+  Operator declarations are not authenticated host/build attestation; cleartext
+  journal retention is disclosed. Session replay cannot create candidate proof.
   Optional --runtime-version must match that commit; --kagent-runtime refuses.
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
   Root eval supports the packaged kagent profile with author-owned --bindings;
@@ -64,17 +71,21 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   requirement is empty. Neither offline command evaluates, deploys, builds images
   or loads cluster settings. Workspace evaluation is root `eval`; deploy-only release lift is root
   `lift <ref>@<digest>` with explicit private `--evidence`.
-  `create --live` explicitly selects unchanged resource/bundle creation for both
-  Orka and kagent, including `--no-apply`, `--dry-run` and `--out -` previews;
-  no-name `create --live` is the live Orka wizard. `--runtime kagent` alone authors
-  the offline v0.10.3 Go member; live kagent create stays exact v0.10.2. Live-only flags without `--live` refuse before
-  configuration or writes; `--workspace` conflicts with `--live`. Quickstart,
-  and console creation compose authored native-Orka source, complete case review, full eval, exact local publication and reviewed digest lift. Quickstart verifies placement before its separate fresh answer Task; console Ready does not claim an answer. Direct App.CreateAgent remains the legacy live path. Console/chat in-place tools/inference editing refuses with a source → eval → push → lift remedy. Quickstart's automatic Kubernetes tool and host Foundry/Copilot wizard modes are retired; ordinary host-backed chat controls outside that wizard remain separate. Preserve
-  PortableAgent formats and old extracted-directory suite transfer; do not treat public graph validation
-  as native execution-profile validation. Private packaged-native preparation and
-  ownership-safe Provider/Agent placement feed full-workspace root evaluation;
-  the existing Orka CI shard runs a bounded two-case native qualifier against
-  the pinned runtime/model, distinct from hermetic command tests.
+  User `agent.yaml` readers/writers/receipts, `bundle` commands,
+  `create --live` including previews/wizard, live-only flags, root run bundle
+  mode and `--bundles` flags are removed outright. Unknown routes/flags refuse
+  before config. Old Orka/kagent/AgentSessions bundle receipts are unreadable;
+  no migration or saved-file/resource deletion. Suite status/retirement remain
+  unavailable. Quickstart uses native source → full eval → exact local publication
+  → reviewed Lift Apply/Verify, then a separate fresh answer Task. Console Ready
+  is placement only. Chat `/lift` and console Lift print only
+  `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+  No release GUI/live-copy fallback. Wizard tools/host modes and live tools/inference
+  edits are retired; host Foundry/Copilot chat controls remain independent.
+  Preserve public AgentSuite/ToolProvider implementation-bundle graph/build/pull,
+  extracted-directory transfer and alpha `pkg/kmx` interfaces. PortableAgent typed
+  scaffolding used by native preparation is not a persistent old reader.
+  Native suite-owned resources refuse legacy invocation/adoption/copying.
   Internal PrepareReleaseLift plans an exact digest from a registry or read-only
   OCI layout, with bounded ingestion before validation and no source fingerprint.
   It requires explicit private full-passing native evidence, default exact observed
@@ -113,6 +124,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   resources against legacy adoption, copying, bundle authorization and retirement.
   Registry workspace publication shares unsigned suite provenance defaults/flags and records Git source only from
   fingerprint-bound authored inputs matching HEAD; local layouts get no referrers.
+- Root `eval --development-host FILE` separately supports the packaged
+  AgentSessions chat inventory under the development boundary above; every
+  cluster/inference/bindings/result selector (including explicit defaults) refuses.
+  Missing development selection never falls back. Sessions proof is refused by
+  lift and receipt diff; there is no registry or caller-auth integration.
 - Root `eval` evaluates the full packaged Orka/kagent workspace inventory with
   explicit `--to-context` and new private `--out`; Orka uses --inference
   provider:NAME, kagent uses author-owned --bindings FILE, never both. Namespace
@@ -121,10 +137,15 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   run before config; one fresh outer guard covers pair placement and all Tasks.
   Fail/unknown/drift/cancel/output errors stop later sends with no partial export.
   No model/runtime override, judge/subset/content mode or standalone package
-  reference is accepted. Offline `eval diff` and recorded-session preparation
-  via `eval from-sessions` retain their cluster-independent hooks; recorded
-  execution stays `bundle evaluate --from-sessions`. Root digest lift consumes
-  the explicit private full-passing receipt, without sending evaluation Tasks. The checkout-only native qualifier runs in the existing exclusively owned
+  reference is accepted. Offline `eval diff` reads strict full-passing native Orka/kagent suite
+  evidence only. Old normalized receipts are unreadable. `eval from-sessions`
+  remains independent private reference extraction/export; RecordedExecution,
+  legacy bundle replay/evaluation/judge wiring and their consumers are removed, with no native
+  manifest consumer. Preserve private filesystem/current identity ResourceVersion
+  and Secret metadata bracketing. Hermetic tests are not live qualification.
+  Runtime-core assertions and llmJudge remain retained with their test groups;
+  native profiles do not wire a judge or enable recorded candidate execution.
+  The checkout-only native qualifier runs in the existing exclusively owned
   Orka shard, after legacy model proof, with private captures and metadata-only
   artifacts. Its second exclusively owned kind cluster has one pinned Orka in
   orka-system and its own inference Provider/Secret; it shares the source AIKit
@@ -135,14 +156,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   is not destination evaluation. Keep the shard's existing timeout budget.
   A passing run qualifies that fixed workspace scenario; hermetic
   tests alone do not establish runtime/model execution.
-  Keep reference manifests private, require named candidate/judge confirmation before recorded-content transfer,
-  and suppress answer/reasoning output unless `--show-content` is explicit.
-  Expired sources are unknown, never a skip or export. Offline eval diff keeps
-  missing Sessions case identity row-local unknown/nonzero; observed identity
-  conflicts or no complete observed case identity in either receipt stay incompatible.
 - Keep **Create → Prove → Lift** as the local-to-remote story. **Lift** is the
-  chosen agent lifecycle verb: retain `kmx bundle lift` and interactive `/lift`,
-  and use Lift in corresponding help and menu labels rather than renaming the
+  chosen agent lifecycle verb: retain digest `kmx lift`,
+  and use Lift in corresponding help rather than renaming the
   operation to deploy. Deployment remains a technical description of its effect.
   Root `lift` is deploy-only packaged-suite lift, not an AKS provisioning alias.
   Use `kmx aks up/down` for AKS.
@@ -176,24 +192,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 ## kagent version boundary
 
-- Preserve Orka defaults and exact-v0.10.2 kagent create. Bundle lift/status
-  requires explicit `--runtime kagent --runtime-version v0.10.3`, `--to-context`
-  and author-owned `KagentBindings`. Only Go deployment/status/evaluation is
-  qualified; Python remains render-only. Explicit `kmx bundle evaluate --runtime
-  kagent --runtime-version v0.10.3` uses the saved placement and desired bindings;
-  unsecure only, trusted-proxy refused
-  before any send. One fresh blocking native A2A Task per case, never retried,
-  with attribution rechecked before judging. Ambiguity/drift stops later sends.
-  Dedicated CI qualifies Go lift/status, native MCP and product evaluation;
-  deployment receipts still prove readiness, not execution.
-  Lift creates new objects or reuses a complete
-  matching UID-bound receipt without adoption, update or retry of ambiguous
-  writes. Readiness is not execution proof. Offline `eval diff` reads
-  strict v2 kagent Go receipts with native A2A identities; valid kagent evidence
-  is excluded from Orka gate/status selection. This does not enable promotion gates or Python. Tool assertions stay unknown;
-  structured upstream events are not qualified tool evidence. Do not infer
-  installation, discovery, standalone chat/run, retirement or console support
-  from receipt reading, evaluation or placement.
+- Exact v0.10.3 Go/linux-amd64 packaged profiles use author-owned bindings,
+  unsecure auth only, one fresh blocking A2A Task per ordered case, never retried.
+  Trusted-proxy refuses before admission/send. Digest Lift creates absent objects
+  only with runtime-matching evidence; occupied primaries/children refuse.
+  No Python/RemoteMCP, standalone chat/run, installer/discovery, suite status or
+  retirement is implied. Preserve Orka defaults and workspace missing-runtime behavior.
+- CI retains exact v0.10.3 bootstrap, raw upstream Tool smoke/direct single A2A
+  MCP proof, separately tool-free packaged two-case eval/evaluated push and
+  source-withheld digest Lift with occupied-repeat refusal. No legacy receipt,
+  status or judge claim. Final build/live execution are needed for qualification.
 
 ## Verification
 

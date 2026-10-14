@@ -163,13 +163,15 @@ creation/occupied refusal. The Orka promotion scenario shares a real model
 endpoint and separately checks a fresh Task; source evidence remains source-only.
 Partial CLI outcomes are not established by these fixed scenarios.
 
-### Legacy PortableAgent path
+### Retired PortableAgent operations
 
-`kmx create --live` and hidden `kmx bundle ...` commands operate `agent.yaml`,
-`bindings.yaml` and their legacy receipts. This path still provides deployed
-run/chat and bundle lift/status/evaluate/verify/retire while suite parity is
-completed. It is separate from workspace and AgentSuite identities; resources
-reserved by suite ownership cannot be adopted by legacy operations.
+User `agent.yaml` readers/writers/receipts, `bundle` commands, live create,
+run bundle mode and `--bundles` flags are removed. Old receipts are unreadable;
+no conversion/migration or saved-file/resource deletion occurs. Suite-owned
+objects retain legacy invocation/adoption/copy refusals. Public AgentSuite/
+ToolProvider implementation-bundle graphs/build/pull and alpha Go interfaces
+remain. Independent live Orka run/chat and Task/result reads remain, without
+claiming suite-workspace run/chat or suite status/retirement.
 
 ## Safety invariants
 
@@ -198,15 +200,15 @@ retired commands, repository-map claims and deliberate checker mutations.
 Required live shards prove bounded scenarios rather than universal support:
 
 - quickstart from installation to a real answer;
-- exact kagent v0.10.2 live create;
 - Orka runtime, Kubernetes Tool and the fixed native workspace qualifier;
 - stock Orka Helm integration;
-- clusterless agentsessions evaluation/replay and judge-client proof;
-- exact kagent v0.10.3 Go bundle lift/status/evaluation, native A2A, packaged
+- exact kagent v0.10.3 raw upstream Tool smoke/direct single A2A MCP proof, separately packaged
   two-case workspace evaluation/evaluated publication, and source-free digest
   Lift into a fresh target with occupied-repeat refusal.
 
-The `e2e-hello-world` job aggregates those shards. A green shard qualifies its
+The `e2e-hello-world` job fail-closed aggregates the four retained shards:
+kagent Lift, Orka runtime, stock Orka Helm and quickstart. Final retirement Go
+build/live checks are required before declaring new runtime qualification. A green shard qualifies its
 fixed versions and scenario; it is not a production-readiness claim.
 
 ## Where to start

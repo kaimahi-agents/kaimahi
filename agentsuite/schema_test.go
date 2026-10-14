@@ -115,6 +115,59 @@ func TestToolProviderSchemaDefinesRemoteMCPImplementation(t *testing.T) {
 	}
 }
 
+func TestToolProviderSchemaDefinesDelegatedAuthorization(t *testing.T) {
+	schema := compileReferenceSchema(t, "tool-provider.schema.json")
+	data, err := os.ReadFile(filepath.Join("testdata", "remote-mcp", "tool-provider.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := string(data)
+	validateSchemaJSON(t, schema, valid, true)
+
+	// A deployment-specific Connection identifier, consent state, or credential
+	// value MUST be rejected by the closed delegatedAuthorization schema.
+	forbidden := map[string]string{
+		"connectionId": `"connectionId": "conn-12345",`,
+		"accessToken":  `"accessToken": "eyJhbGciOi...",`,
+		"refreshToken": `"refreshToken": "rt-abcdef",`,
+		"clientSecret": `"clientSecret": "super-secret",`,
+		"consentState": `"consentState": "granted",`,
+		"tokenExpiry":  `"expiresAt": "2026-01-01T00:00:00Z",`,
+	}
+	for name, field := range forbidden {
+		t.Run(name, func(t *testing.T) {
+			tampered := strings.Replace(
+				valid,
+				`"credential": {`,
+				`"credential": {
+          `+field,
+				1,
+			)
+			validateSchemaJSON(t, schema, tampered, false)
+		})
+	}
+
+	// credential resolution must be the single brokered value.
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"resolution": "runtime-brokered"`, `"resolution": "client-managed"`, 1), false)
+	// Classification is Tool-level and explicit for delegated authorization.
+	for _, field := range []string{`"approval": "policy-controlled",`, `"effect": "read-only",`} {
+		validateSchemaJSON(t, schema, strings.Replace(valid, field, "", 1), false)
+	}
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"approval": "policy-controlled"`, `"approval": "required"`, 1), true)
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"approval": "policy-controlled"`, `"approval": false`, 1), false)
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"approval": "policy-controlled"`, `"approval": "optional"`, 1), false)
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"effect": "mutating"`, `"effect": "consequential"`, 1), false)
+	validateSchemaJSON(t, schema, strings.Replace(
+		valid,
+		`"resolution": "runtime-brokered",
+          "bindingRef": "search-delegated-connection"
+        }`,
+		`"resolution": "runtime-brokered"
+        }`,
+		1,
+	), false)
+}
+
 func TestAgentSchemaDefinesSharedSandboxMode(t *testing.T) {
 	schema := compileReferenceSchema(t, "agent.schema.json")
 	valid := `{
