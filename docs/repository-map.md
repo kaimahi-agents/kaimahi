@@ -47,7 +47,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | Area | Packaging / checkout | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
-| `agentsuite/` | public specification, Go model, schemas and conformance validator | — | conformance fixtures |
+| `agentsuite/` | public specification, Go model, schemas, policy contract and conformance validator | — | conformance fixtures |
 | `internal/` | `kmx/` (17 packages), including schema fixtures | — | experimental lifecycle contracts and tests |
 | `pkg/` | — | — | experimental KMX environment setup, AgentSuite and deployment contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
@@ -65,7 +65,9 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 ## `agentsuite/` — public specification package
 
 The portable Go model, canonical JSON serializer, OCI/content safety checks,
-and offline graph validator are importable from the root Go module.
+offline graph validator, and strict enforcement-policy contract are importable
+from the root Go module. The policy contract performs monotonic administrative
+composition and emits canonical bytes with a domain-separated digest.
 `spec.md` is the normative specification and `README.md` introduces the package.
 Builders, packing, transfer, credentials, and sandbox construction remain under
 `internal/`, including the builder-owned incident-analyst fixture. Counts are
@@ -75,6 +77,8 @@ directory has its own row.
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
 | `.` | 12 | Checkout | Portable Go model, canonical JSON, OCI image-reference/content safety, semantic record and affected-agent diffing, and offline graph validation including optional agent-bound authored evaluations (not execution/results), plus package documentation and the normative specification. |
+| `policy/` | 3 | Checkout | Strict policy validation, monotonic administrative composition, canonical effective-policy bytes and domain-separated digest generation. |
+| `policy/testdata/` | 2 | Scaffolding | Language-neutral canonical policy bytes and their expected digest. |
 | `schema/` | 8 | Checkout | Closed JSON Schema 2020-12 reference documents for suite, agent, ToolProvider and provider composition, build-profile, evaluation-index and evaluation-case records. |
 | `testdata/minimal/` | 1 | Scaffolding | Root manifest for the minimal conformant suite. |
 | `testdata/minimal/agents/` | 1 | Scaffolding | Minimal writer agent manifest. |
