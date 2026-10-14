@@ -36,7 +36,6 @@ See [format boundaries](bundle-format.md) and [current CLI contracts](kmx.md).
 - [Codebase overview](codebase-overview.md): architecture, package responsibilities, core data flows and safety invariants.
 - [Interface baseline](interface-baseline.md): exact current command tree, workspace/live split, runtime limits and alpha Go surfaces.
 - [Repository map](repository-map.md): native tooling, packaging, compatibility data and test scaffolding.
-- [Entry-point principles](entry-point-principles.md): delegation, reviewable artifacts and ownership.
 - [CLI presentation](cli-ux-plan.md): current terminal and automation contracts.
 - [Command alignment](command-semantics.md): implemented entry points, compatibility policy and remaining vocabulary decisions.
 - [Command conventions](command-conventions.md): naming, flag, output and compatibility rules for kmx commands.

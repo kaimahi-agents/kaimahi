@@ -219,6 +219,6 @@ fixed versions and scenario; it is not a production-readiness claim.
 3. Use the [repository map](repository-map.md) before changing a file found by
    search; fixtures and historical compatibility records are not current entry
    points.
-4. Follow [entry-point principles](entry-point-principles.md), [command
-   conventions](command-conventions.md), and [AGENTS.md](../AGENTS.md) for
-   vocabulary and safety.
+4. Follow the contribution rules in [CONTRIBUTING.md](../CONTRIBUTING.md),
+   [command conventions](command-conventions.md), and [AGENTS.md](../AGENTS.md)
+   for ownership, vocabulary and safety.

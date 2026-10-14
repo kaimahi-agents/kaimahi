@@ -190,74 +190,95 @@ from:
 
 ## Upgrading kmx
 
-v0.5.1 uses `kmx context show/use` and `kmx local up/down` as the canonical
-commands. Historical v0.4.1 commands were `ctx` and root `up/down`; v0.5.1
-retained them as callable compatibility routes with notices on stderr. Current
-development builds remove root `ctx`, `up`, `down`, the former AKS-provisioning
-meaning of `lift`, and `lift down` outright, without retirement stubs. Replace
-them with `context show/use`, `local up/down` and `aks up/down` respectively.
-Root `lift <ref>@<digest>` is now a separate one-member packaged native Orka or
-exact-v0.10.3 Go kagent deployment command.
-Current development builds also remove the entire `kmx agent` group, without
-aliases or stubs: use root `create/chat/run`, `orka show/list`, legacy
-`bundle evaluate/lift/retire/verify/status` and root `eval diff/from-sessions`
-helpers. Root `status` remains the table-only Orka runtime report, also available
-as `orka status`.
+v0.6.0 replaces the legacy user-bundle workflow with one-member, tool-free
+workspaces. The `kmx agent` group, `bundle` commands, user `agent.yaml`
+readers/receipts and `create --live` (including previews and the live wizard)
+are removed outright, without aliases or migration.
 
-Current main also adds the unreleased workspace path: default `create <name>`
-authors one native workspace member offline. Root `eval` derives the packaged
-runtime, using `--inference` for Orka or `--bindings` for exact-v0.10.3 Go
-kagent, and stops later cases after the first non-pass. Root `push
-[--workspace DIR] REF` publishes the exact prepared OCI graph; `push
---evaluation FILE` requires matching runtime-specific full-passing evidence for
-that exact manifest.
-Root `lift REF@sha256:DIGEST` deploys the matching packaged runtime from a
-registry or local layout with explicit private full-passing evidence and target.
-Orka uses a Ready `openai` inference Provider; kagent uses `--bindings`, creates
-new resources only and refuses occupied targets. `--plan` is GET-only. Standalone package-reference evaluation
-remains unavailable. Create, eval and push share nearest-ancestor discovery; explicit
-`--workspace DIR` selects an exact root without fallback and create initializes
-it without prompting. Terminal initialization asks `Start one here? [Y/n]`;
-nonterminal use needs `--workspace`. Invalid markers and a second member refuse
-without modifying source.
+Author source with `kmx create NAME --workspace DIR --model MODEL --instructions FILE`,
+then review the instructions and cases. Create, eval and push discover the nearest
+`workspace.yaml`; `--workspace DIR` selects an exact root. Explicit create
+initializes that root without prompting; nonterminal initialization requires it.
+Invalid nearest markers and a second member refuse without modifying source.
 
-Scripts that create resources or PortableAgent bundles must add `--live` for
-both runtimes, including `--no-apply`, `--dry-run` and `--out -` previews.
-`--runtime kagent` alone is not a compatibility route. Use `kmx create --live`
-for the live Orka wizard; quickstart and console stay live. See [workspace
-authoring, evaluation, publication and digest Lift](suite-workspace.md).
-See the [exact old/new mapping](../CHANGELOG.md#upgrading) and
+Evaluate the full workspace with `kmx eval`, explicit `--to-context` and
+a new private `--out` receipt. Orka uses a Ready `openai` Provider serving the
+exact model (`--inference provider:NAME`); exact-v0.10.3 Go/linux-amd64 kagent
+uses author-owned `--bindings FILE`. Publish with
+`kmx push --evaluation FILE REF`, which requires full-passing evidence for
+that exact packaged suite. Ordinary push remains unevaluated.
+
+Deploy with `kmx lift REF@sha256:DIGEST`, explicit `--evidence FILE`,
+`--to-context` and the matching runtime's inference/bindings selector.
+Orka can reuse exact evaluated resources; kagent creates new resources only
+and refuses occupied targets. `--plan` is GET-only; `--promote` explicitly
+permits a matching destination using source-only evidence, not destination
+evaluation. Lift does not update, adopt, run a model or roll back partial
+creation. Standalone registry-package evaluation remains unavailable.
+
+Pinned AgentSessions chat is a separate offline packaging and
+`eval --development-host FILE` route, with no cluster selectors. It requires
+an explicit literal-loopback, unauthenticated development host and discloses
+cleartext journal retention. Its full-pass evidence supports evaluated push,
+not Lift or receipt diff. See the [workspace guide](suite-workspace.md).
+
+Replace removed commands as follows:
+
+| Removed | Use instead |
+|---|---|
+| `kmx agent create` / `kmx create --live` | Offline `kmx create NAME` with exact model and instruction file, then eval/push/Lift |
+| `kmx agent chat/run` | Root `kmx chat` / `kmx run --agent NAME` for independent live Orka Agents |
+| `kmx agent show/list` | `kmx orka show/list` |
+| Workspace `kmx suite push` | `kmx push [--workspace DIR] REF`; extracted-directory transfer remains |
+| `kmx ctx`, root `up/down` | `kmx context show/use`, `kmx local up/down` |
+| Infrastructure `kmx lift/lift down` | `kmx aks up/down`; root digest Lift is deployment only |
+| Chat `/lift` / old console Lift | Root digest Lift with explicit evidence; console creation separately composes the native workflow |
+| Chat/quickstart `--azure-discovery` | Explicit destination context; provision AKS separately with `kmx aks up` |
+
+Root `status` remains the table-only Orka runtime report, also available as
+`orka status`, not a suite observer. `eval diff/from-sessions` remain root
+helpers, but diff reads only full-passing Orka/kagent suite receipts.
+Suite status and retirement have **no replacement**. No old-receipt conversion,
+automatic migration or saved-file/resource deletion occurs. Preserve old state
+only with a historical release that understands it. See the
+[v0.6.0 changes](../CHANGELOG.md#v060--2026-10-14) and
 [command alignment](command-semantics.md) for the removal policy.
 
 Use `@latest` for the latest stable release, or pin the version you want:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.6.0
 kmx version
 ```
 
-Re-installing upgrades the CLI without changing a running cluster. Bundle
-workflows also keep local target selections and deployment/evaluation receipts;
-keep those files alongside the agent YAML you own when moving machines. Read
-the changelog for the versions you skipped — below 1.0 a minor bump may change
-behaviour.
+Re-installing upgrades only the CLI; it does not change a running cluster.
+Read the changelog for versions you skipped: below 1.0 a minor bump may break
+behavior.
 
-The cluster is a separate question. A newer kmx does not touch a running
-cluster until you ask it to. The v0.5.1 release installs the pinned
-Orka v0.2.0 Helm chart using Helm on PATH or a pinned/checksum-verified toolchain
-binary. `kmx local up` reuses a matching kmx-owned Orka release, but refuses an
-existing v0.1.3 manifest installation or foreign release rather than upgrading
-it. For local kind replacement, export needed data before `kmx local down` (which
-deletes the whole cluster: Tasks, Secrets, PVC-backed data, model data and any
-historical database still present), then run `kmx local up` for a fresh installation.
-On AKS, plan a fresh installation after backing up Orka resources, volumes/PVCs and Secrets,
-including any existing agent-execution snapshot key. Back up the new chart's
+### Cluster replacement is separate
+
+v0.6.0 still pins the Orka v0.2.0 verified Helm chart. It does not upgrade
+existing v0.1.3 manifest installations or foreign releases. Orka ownership now
+uses `kmx.kaimahi.dev/installed`; installations with the old
+`kmx.kaimahi.ai/installed` in their Helm values are no longer recognized as
+kmx-owned. Relabeling live objects alone does not change those saved values.
+
+For a disposable local kind cluster you own, export needed data before
+`kmx local down`, then `kmx local up` with the same context/cluster settings.
+**Down deletes the entire cluster**, including Tasks, Secrets, PVC-backed data,
+model data and historical databases. A matching current-label kmx-owned release
+can still be reused without replacement.
+
+On persistent clusters, plan an operator-managed fresh installation after
+backing up Orka resources, volumes/PVCs and Secrets, including any existing
+agent-execution snapshot key. Back up the new chart's
 `orka-api-agent-execution-snapshot` key with its controller volume and Orka
-resources without printing its value. Do not use `helm upgrade --force`: [Orka v0.2.0 supports new installations only](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
+resources without printing its value. Do not use `helm upgrade --force`:
+[Orka v0.2.0 supports new installations only](https://github.com/orka-agents/orka/blob/v0.2.0/website/docs/operations/upgrading.md).
 See [safe kind and AKS replacement boundaries](orka.md#limits-stated).
-KMX still does not install or upgrade Kagent. Its explicit exact-v0.10.2 create
-path targets an installation the operator already owns; the old chart and broad
-runtime surface are not restored.
+
+KMX does not install or upgrade kagent. Its exact-v0.10.3 Go suite path
+requires an operator-owned runtime; v0.10.2 live create is removed.
 
 ## Cutting a release
 
