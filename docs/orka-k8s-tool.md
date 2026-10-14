@@ -36,7 +36,6 @@ In-place `/tools` editing is retired and refuses without reading or patching clu
 
 `/agent` opens a searchable list of AI agents in the current namespace. Enter
 connects to the selection, clears the visible conversation and resets `/retry`.
-Tool updates take effect on the next Task and preserve other Agent configuration.
 
 ## Implementation
 
@@ -48,7 +47,7 @@ Tool updates take effect on the next Task and preserve other Agent configuration
   the verified live chart AI worker access to only the referenced policy.
 - `scripts/orka-k8s-tool.py`: standard-library HTTP server, embedded into KMX and
   installed in the `kmx-k8s-tool` ConfigMap.
-- `internal/kmx/app/orka_k8s_tool.go`: installation and existing-agent attachment.
+- `internal/kmx/app/orka_k8s_tool.go`: retained legacy Tool installation, policy-reader grants and readiness checks; quickstart reconnects without attaching tools.
 
 The server permits only a fixed resource allowlist and optional namespace. It
 issues Kubernetes GET requests using its own service account, verifies the API

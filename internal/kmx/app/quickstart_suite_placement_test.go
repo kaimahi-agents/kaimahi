@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Removing strict mode must make quickstart repair an operator edit. General
+// Strict mode must refuse, never repair, an operator edit. General
 // evaluation retains its separate, explicitly authorized update semantics.
 func TestQuickstartSuitePlacementRefusesUpdates(t *testing.T) {
 	for _, kind := range []string{"Provider", "Agent"} {
