@@ -3,8 +3,8 @@
   "mediaType": "application/vnd.agentsuite.eval.index.v1+json",
   "agent": "writer",
   "cases": [
-    {"path": "evals/writer/cases/Capital.json", "digest": "sha256:75ef896e004afa2ad7c94538de0f47d409a44a56f2684d909289ddc2fee55ce7"},
-    {"path": "evals/writer/cases/Arithmetic.json", "digest": "sha256:3d85d1c8da482ba87524733d3e8daec5d8b57a92e31fe45667c110c71f197b56"}
+    {"path": "evals/writer/cases/capital.json", "digest": "sha256:b8dc8bb6bc77fa7c09e2f7968e1d7f08216e97d461489d201fff930c2c905f1b"},
+    {"path": "evals/writer/cases/arithmetic.json", "digest": "sha256:a37f60068526aa1a5c83674574273aefa49528c6f16afeb0f4586722cbf804af"}
   ],
   "limits": {"maxCases": 128, "maxCaseBytes": 4194304}
 }

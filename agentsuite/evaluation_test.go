@@ -67,10 +67,10 @@ func TestEmbeddedEvaluationsRejectInvalidGraph(t *testing.T) {
 			index.Cases[0].Digest = "sha256:" + strings.Repeat("0", 64)
 		}, "digest mismatch"},
 		{"cross agent path", func(_ *testing.T, _ string, index *EvaluationIndex) {
-			index.Cases[0].Path = "evals/reviewer/cases/Capital.json"
+			index.Cases[0].Path = "evals/reviewer/cases/capital.json"
 		}, "owning agent"},
 		{"duplicate ids", func(t *testing.T, root string, index *EvaluationIndex) {
-			data := evaluationFixture(t, "Capital")
+			data := evaluationFixture(t, "capital")
 			index.Cases[1].Digest = mustWriteJSONBytes(t, root, index.Cases[1].Path, data)
 		}, "id is invalid or duplicated"},
 		{"missing case", func(t *testing.T, root string, index *EvaluationIndex) {
@@ -82,7 +82,7 @@ func TestEmbeddedEvaluationsRejectInvalidGraph(t *testing.T) {
 			mustWrite(t, root, "evals/missing/index.json", []byte("{}"))
 		}, "orphaned"},
 		{"unreferenced case", func(t *testing.T, root string, _ *EvaluationIndex) {
-			mustWrite(t, root, "evals/writer/cases/extra.json", evaluationFixture(t, "Capital"))
+			mustWrite(t, root, "evals/writer/cases/extra.json", evaluationFixture(t, "capital"))
 		}, "unreferenced"},
 		{"embedded result", func(t *testing.T, root string, _ *EvaluationIndex) {
 			mustWrite(t, root, "evals/writer/results/result.json", []byte("{}"))
@@ -162,11 +162,11 @@ func TestEvaluationAssertionsMatchSchemasAndSemantics(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data := []byte(`{"schemaVersion":"1.0.0-draft","mediaType":"application/vnd.agentsuite.eval.case.v1+json","id":"Case","input":"Question","assertions":[` + tt.assertion + `]}`)
+			data := []byte(`{"schemaVersion":"1.0.0-draft","mediaType":"application/vnd.agentsuite.eval.case.v1+json","id":"case","input":"Question","assertions":[` + tt.assertion + `]}`)
 			validateSchemaJSON(t, schema, string(data), tt.valid)
 			root, _ := writeEvaluationSuite(t, func(root string, index *EvaluationIndex) {
-				index.Cases = []FileRef{{Path: "evals/writer/cases/Case.json", Digest: mustWriteJSONBytes(t, root, "evals/writer/cases/Case.json", data)}}
-				for _, name := range []string{"Capital", "Arithmetic"} {
+				index.Cases = []FileRef{{Path: "evals/writer/cases/case.json", Digest: mustWriteJSONBytes(t, root, "evals/writer/cases/case.json", data)}}
+				for _, name := range []string{"capital", "arithmetic"} {
 					if err := os.Remove(filepath.Join(root, "evals/writer/cases/"+name+".json")); err != nil {
 						t.Fatal(err)
 					}
@@ -181,7 +181,7 @@ func TestEvaluationAssertionsMatchSchemasAndSemantics(t *testing.T) {
 }
 
 func TestEvaluationCaseStrictness(t *testing.T) {
-	base := string(evaluationFixture(t, "Capital"))
+	base := string(evaluationFixture(t, "capital"))
 	for _, tt := range []struct {
 		name string
 		data string
@@ -192,7 +192,7 @@ func TestEvaluationCaseStrictness(t *testing.T) {
 		{"duplicate JSON keys", strings.Replace(base, `"input":`, `"input":"duplicate","input":`, 1), "duplicate JSON key"},
 		{"unknown field", strings.Replace(base, `"input":`, `"transcript":[],"input":`, 1), "unknown field"},
 		{"empty input", strings.Replace(base, "What is the capital of France?", " ", 1), "requires input"},
-		{"wrong case id", strings.Replace(base, `"id": "Capital"`, `"id":"Other"`, 1), "filename"},
+		{"wrong case id", strings.Replace(base, `"id": "capital"`, `"id":"other"`, 1), "filename"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root, _ := writeEvaluationSuite(t, func(root string, index *EvaluationIndex) {
@@ -215,7 +215,7 @@ func TestEvaluationCaseStrictness(t *testing.T) {
 func TestEvaluationIdentityCommitsToCasesAndOrder(t *testing.T) {
 	root, before := writeEvaluationSuite(t, nil)
 	afterRoot, after := writeEvaluationSuite(t, func(root string, index *EvaluationIndex) {
-		data := strings.Replace(string(evaluationFixture(t, "Capital")), "Paris", "PARIS", 1)
+		data := strings.Replace(string(evaluationFixture(t, "capital")), "Paris", "PARIS", 1)
 		index.Cases[0].Digest = mustWriteJSONBytes(t, root, index.Cases[0].Path, []byte(data))
 	})
 	if before.Digest == after.Digest {
@@ -251,14 +251,14 @@ func TestEvaluationIdentityCommitsToCasesAndOrder(t *testing.T) {
 func TestEvaluationJCSIdentityIgnoresJSONFormatting(t *testing.T) {
 	root, _ := writeEvaluationSuite(t, nil)
 	var c EvaluationCase
-	if err := Unmarshal(evaluationFixture(t, "Capital"), &c); err != nil {
+	if err := Unmarshal(evaluationFixture(t, "capital"), &c); err != nil {
 		t.Fatal(err)
 	}
 	data, err := Marshal(c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, root, "evals/writer/cases/Capital.json", data)
+	mustWrite(t, root, "evals/writer/cases/capital.json", data)
 	if _, err := ValidatePath(root); err != nil {
 		t.Fatalf("JCS-equivalent formatting invalidated the binding: %v", err)
 	}
@@ -271,7 +271,7 @@ func writeEvaluationSuite(t *testing.T, mutate func(string, *EvaluationIndex)) (
 		SchemaVersion: SpecVersion, MediaType: MediaTypeEvaluationIndex, Agent: "writer",
 		Limits: EvaluationLimits{MaxCases: 128, MaxCaseBytes: maxJSONBytes},
 	}
-	for _, name := range []string{"Capital", "Arithmetic"} {
+	for _, name := range []string{"capital", "arithmetic"} {
 		path := "evals/writer/cases/" + name + ".json"
 		index.Cases = append(index.Cases, FileRef{Path: path, Digest: mustWriteJSONBytes(t, root, path, evaluationFixture(t, name))})
 	}

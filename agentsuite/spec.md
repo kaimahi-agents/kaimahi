@@ -463,7 +463,7 @@ JCS `digest` objects, containing at most one reference in this draft:
   "evals": [
     {
       "path": "evals/writer/index.json",
-      "digest": "sha256:acdbe40a263bcfb51a5fa3d9bee5cf8ab1ab4383335bfdd38015a2929f0cb8c1"
+      "digest": "sha256:58cdec908ecd57c3f098d90a8b933546ee5a7ac6bd454135e28f64be8c2d996b"
     }
   ]
 }
@@ -516,7 +516,7 @@ within a case.
 {
   "schemaVersion": "1.0.0-draft",
   "mediaType": "application/vnd.agentsuite.eval.case.v1+json",
-  "id": "Capital",
+  "id": "capital",
   "input": "What is the capital of France?",
   "assertions": [
     {"id": "capital", "type": "contains", "value": "Paris"},
