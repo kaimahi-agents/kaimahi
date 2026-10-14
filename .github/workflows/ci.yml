@@ -129,13 +129,13 @@ jobs:
       # worthless and watching its own self-test stay green.
       - name: Registry mirror helper self-tests
         run: python3 scripts/test_registry_mirrors.py
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: Live eval gate and failure diagnostics self-tests
         run: |
           python3 scripts/test_orka_runtime_fixture.py
           python3 scripts/test_bundle_retirement_ci.py
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
       - name: kagent bootstrap, qualification and deterministic fixture self-tests
         run: |
           python3 scripts/test_kagent_lift.py
@@ -708,15 +708,23 @@ jobs:
       - name: agent-create wizard — terminal lifecycle
         run: |
           set -euo pipefail
-          # This is not another model-only assertion: it opens a real Linux
-          # PTY, checks Ctrl-C/Escape/SIGTERM cancellation and native offline
-          # completion, and proves the terminal was restored.
+          # Retained native flows exercise PTY Ctrl-C/console Escape, workspace
+          # confirmation/completion and SIGINT/SIGTERM guard cancellation.
+          # PTY wizard, console and chat checks compare restored terminal state;
+          # signal/input ownership and model-screen cancellation stay separate.
           go test ./internal/kmx/app \
-            -run '^TestCreateWizardPTY' \
+            -run '^(TestQuickstartWizardPTYCtrlCRestoresTerminal|TestAgentTUIDemoPTYCommandsAndTerminalRestore|TestCreateSuiteMemberTerminalConfirmation|TestTimelinePTYEditsAndCancelsRunningResponse|TestOrkaGuardPromptCancellationAndInputOwnership|TestQuickstartCancellationAcrossScreens|TestQuickstartNormalCompletionIsNotCancellation)$' \
             -count=1 -v | tee wizard-pty.out
-          grep -q -- '--- PASS: TestCreateWizardPTYCancellationRestoresTerminal' wizard-pty.out
-          grep -q -- '--- PASS: TestCreateWizardPTYNativeCompletionRestoresTerminal' wizard-pty.out
-          grep -q -- '--- PASS: TestCreateWizardPTYSIGTERMRestoresTerminal' wizard-pty.out
+          for test in \
+            TestQuickstartWizardPTYCtrlCRestoresTerminal \
+            TestAgentTUIDemoPTYCommandsAndTerminalRestore \
+            TestCreateSuiteMemberTerminalConfirmation \
+            TestTimelinePTYEditsAndCancelsRunningResponse \
+            TestOrkaGuardPromptCancellationAndInputOwnership \
+            TestQuickstartCancellationAcrossScreens \
+            TestQuickstartNormalCompletionIsNotCancellation; do
+            grep -q -- "--- PASS: $test" wizard-pty.out
+          done
           ! grep -q -- '--- SKIP:' wizard-pty.out
       - name: The retired runtime is refused by name, not resolved to Orka
         run: |
@@ -751,12 +759,13 @@ jobs:
         run: |
           set -euo pipefail
           go test ./internal/kmx/config \
-            -run '^TestStateDirUsesPortableOverrideAndNativeDefault$' \
+            -run '^(TestStateDirUsesPortableOverrideAndNativeDefault|TestContextResolutionOrder)$' \
             -count=1 -v | tee state-dir.out
           grep -q -- '--- PASS: TestStateDirUsesPortableOverrideAndNativeDefault' state-dir.out
+          grep -q -- '--- PASS: TestContextResolutionOrder' state-dir.out
 
           go test ./internal/kmx/app \
-            -run '^(TestAgentLocationsPersistSeparateClustersPrivately|TestAgentTUIEnvironmentClassificationAndKubeconfigIsolation|TestAgentTUIProviderAndHostOverrideInferenceInfo|TestConsoleInferenceSourcePersistenceAndValidation|TestLiftPreferencesPersistScopedSelections|TestFoundryConfigRejectsTokenRedirectDestinations|TestBundleLiftSelectionPathUsesKMXHome|TestEvaluateUsesRememberedTarget)$' \
+            -run '^(TestAgentLocationsPersistSeparateClustersPrivately|TestAgentTUIEnvironmentClassificationAndKubeconfigIsolation|TestAgentTUIProviderAndHostOverrideInferenceInfo|TestConsoleInferenceSourcePersistenceAndValidation|TestLiftPreferencesPersistScopedSelections|TestFoundryConfigRejectsTokenRedirectDestinations|TestQuickstartWizardSuiteAuthorsOnlyPrivateSource|TestAgentTUIStartupPrefersRememberedRemoteAndHonorsFlags)$' \
             -count=1 -v | tee app-state.out
           for test in \
             TestAgentLocationsPersistSeparateClustersPrivately \
@@ -765,8 +774,8 @@ jobs:
             TestConsoleInferenceSourcePersistenceAndValidation \
             TestLiftPreferencesPersistScopedSelections \
             TestFoundryConfigRejectsTokenRedirectDestinations \
-            TestBundleLiftSelectionPathUsesKMXHome \
-            TestEvaluateUsesRememberedTarget; do
+            TestQuickstartWizardSuiteAuthorsOnlyPrivateSource \
+            TestAgentTUIStartupPrefersRememberedRemoteAndHonorsFlags; do
             grep -q -- "--- PASS: $test" app-state.out
           done
           ! grep -q -- '--- SKIP:' state-dir.out app-state.out
@@ -1576,6 +1585,8 @@ jobs:
             ORKA_HEALTH_DEPLOYMENT_MARKER="$health_marker" >/dev/null
           kubectl --context kind-helm-release-orka -n orka-system rollout status deploy/orka-tool-model --timeout=180s >/dev/null
           go build -o /tmp/orka-helm-kmx ./cmd/kmx
+          mkdir -p bin
+          go build -o bin/orka-native-reference ./scripts/ci/orka-native-reference.go
           python3 scripts/ci/orka-runtime-fixture.py kind-helm-release-orka tool
           /tmp/orka-helm-kmx --context kind-helm-release-orka run --agent orka-tool-proof --namespace orka-system \
             --prompt 'Check deployment health in orka-system using k8s-get-resources.' \

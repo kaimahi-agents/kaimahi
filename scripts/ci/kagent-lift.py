@@ -469,7 +469,9 @@ def verify_control_endpoint():
             and service["spec"].get("selector") == selector
             and all(spec["template"]["metadata"]["labels"].get(key) == value for key, value in selector.items()),
             "control Service selector differs from pinned controller")
-    ports = [port for port in service["spec"]["ports"] if port.get("name") == "http"]
+    # The pinned chart names the Service port controller; HTTP is the proxy
+    # scheme, not this name (the Deployment container port is named http).
+    ports = [port for port in service["spec"]["ports"] if port.get("name") == "controller"]
     require(len(ports) == 1 and ports[0].get("port") == 8083 and ports[0].get("targetPort") == 8083
             and ports[0].get("protocol", "TCP") == "TCP", "control Service HTTP endpoint differs")
 

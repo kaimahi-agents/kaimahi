@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Hermetic CI fixture checks; not runtime/model qualification."""
+"""Validate actual scaffold-backed smoke fixtures; not live qualification."""
 import importlib.util
 import json
 import pathlib
+import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -10,14 +12,25 @@ PATH = ROOT / "scripts/ci/orka-runtime-fixture.py"
 
 
 class FixtureTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory()
+        cls.renderer = pathlib.Path(cls.temporary.name) / "orka-native-reference"
+        subprocess.run(["go", "-C", str(ROOT), "build", "-o", str(cls.renderer),
+                        str(ROOT / "scripts/ci/orka-native-reference.go")], check=True, capture_output=True, timeout=60)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temporary.cleanup()
+
     def load(self):
-        self.assertTrue(PATH.exists(), "upstream runtime fixture helper is missing")
         spec = importlib.util.spec_from_file_location("orka_fixture", PATH)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        module.RENDERER = self.renderer
         return module
 
-    def test_model_and_tool_fixture_are_not_bundles(self):
+    def test_model_and_tool_fixture_use_validated_native_scaffold(self):
         module = self.load()
         for mode, name, model in [("hello", "orka-hello", "qwen2.5:3b"), ("tool", "orka-tool-proof", "tool-fixture")]:
             with self.subTest(mode=mode):
@@ -25,9 +38,12 @@ class FixtureTests(unittest.TestCase):
                 self.assertEqual([provider["kind"], agent["kind"]], ["Provider", "Agent"])
                 self.assertEqual(provider["spec"]["defaultModel"], model)
                 self.assertEqual(agent["metadata"]["name"], name)
+                self.assertNotIn("model", agent["spec"])  # Native scaffold inherits the bound Provider model.
+                self.assertNotIn("instructions", agent["spec"])
+                self.assertTrue(agent["spec"]["systemPrompt"]["inline"])
                 self.assertEqual(agent["spec"]["providerRef"]["name"], name)
                 self.assertEqual(provider["spec"]["secretRef"], {"name": "local-provider-key", "key": "api-key"})
-                self.assertEqual(agent["spec"].get("tools", []), [{"name": "k8s-get-resources", "enabled": True}] if mode == "tool" else [])
+                self.assertEqual(agent["spec"].get("tools", []), [{"name": "k8s-get-resources"}] if mode == "tool" else [])
                 self.assertNotIn("annotations", agent["metadata"])
                 self.assertNotIn("Task", json.dumps([provider, agent]))
 
@@ -53,6 +69,14 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(sum("get" in args for args, _ in calls), 2)
         self.assertTrue(all(args[:3] == ("create", "-f", "-") for args, _ in writes))
         self.assertEqual([calls.index((args, raw)) for args, raw in calls if raw is not None], [2, 4])
+
+    def test_invalid_tool_refuses_before_kubernetes(self):
+        result = subprocess.run([str(self.renderer)], input=json.dumps({
+            "Name": "fixture", "Namespace": "orka-system", "Model": "fixture", "ProviderType": "openai",
+            "BaseURL": "http://fixture.example/v1", "SecretName": "local-provider-key", "Tools": ["invalid tool"]
+        }).encode(), capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"")
 
 
 if __name__ == "__main__":

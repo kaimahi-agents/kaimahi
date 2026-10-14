@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"go.yaml.in/yaml/v3"
 )
@@ -17,6 +18,7 @@ import (
 func reference(in io.Reader, out io.Writer) error {
 	var spec struct {
 		Name, Namespace, Description, ProviderType, Model, BaseURL, SecretName, SecretKey, Instructions string
+		Tools                                                                                           []string
 	}
 	raw, err := io.ReadAll(io.LimitReader(in, 1<<20+1))
 	if err != nil || len(raw) > 1<<20 {
@@ -33,13 +35,22 @@ func reference(in io.Reader, out io.Writer) error {
 	bundle, err := scaffold.GenerateOrka(scaffold.OrkaSpec{
 		Name: spec.Name, Namespace: spec.Namespace, Description: spec.Description,
 		ProviderType: spec.ProviderType, Model: spec.Model, BaseURL: spec.BaseURL,
-		SecretName: spec.SecretName, SecretKey: spec.SecretKey, Instructions: spec.Instructions,
+		SecretName: spec.SecretName, SecretKey: spec.SecretKey, Instructions: spec.Instructions, Tools: spec.Tools,
 	})
+	if err != nil {
+		return err
+	}
+	validator, err := orkaschema.Offline("v0.2.0")
 	if err != nil {
 		return err
 	}
 	var documents [][]byte
 	for _, doc := range bundle.Documents() {
+		if doc["kind"] != "Secret" {
+			if err := validator.Validate(doc); err != nil {
+				return err
+			}
+		}
 		raw, err := yaml.Marshal(doc)
 		if err != nil {
 			return err

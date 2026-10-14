@@ -16,6 +16,35 @@ import yaml
 
 SOURCE = pathlib.Path(__file__).resolve().parent / "ci/kagent-lift.py"
 
+# Unmodified controller Service from the pinned kagent 0.10.3 Helm render.
+# Only API-server identity fields are added by the hermetic replay below.
+CONTROLLER_SERVICE = """\
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagent-controller
+  namespace: kagent
+  labels:
+    helm.sh/chart: kagent-0.10.3
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/version: "0.10.3"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/component: controller
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8083
+      targetPort: 8083
+      protocol: TCP
+      name: controller
+  selector:
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/component: controller
+"""
+
 
 class QualifyTests(unittest.TestCase):
     def exercise(self, defect=None):
@@ -33,7 +62,9 @@ class QualifyTests(unittest.TestCase):
         response = {"jsonrpc": "2.0", "id": "kmx-lift-once", "result": {"kind": "task", "id": "actual-task",
                     "contextId": "actual-context", "status": {"state": "completed"},
                     "artifacts": [{"parts": [{"kind": "text", "text": answer}]}]}}
-        labels = {"app.kubernetes.io/name": "kagent", "app.kubernetes.io/component": "controller"}
+        service = yaml.safe_load(CONTROLLER_SERVICE)
+        service["metadata"].update(uid="controller-service", resourceVersion="1")
+        labels = copy.deepcopy(service["spec"]["selector"])
         container = {"name": "controller", "image": "ghcr.io/kagent-dev/kagent/controller:0.10.3@sha256:" + driver.CONTROLLER,
                      "env": [{"name": "AUTH_MODE", "value": "unsecure"}]}
         controller = {"kind": "Deployment", "metadata": {"name": "kagent-controller", "namespace": "kagent",
@@ -41,14 +72,15 @@ class QualifyTests(unittest.TestCase):
                       "selector": {"matchLabels": labels}, "template": {"metadata": {"labels": labels},
                       "spec": {"containers": [container]}}}, "status": {"observedGeneration": 1, "readyReplicas": 1,
                       "updatedReplicas": 1, "availableReplicas": 1}}
-        service = {"kind": "Service", "metadata": {"name": "kagent-controller", "namespace": "kagent",
-                   "uid": "controller-service", "resourceVersion": "1"}, "spec": {"selector": labels,
-                   "ports": [{"name": "http", "port": 8083, "targetPort": 8083, "protocol": "TCP"}]}}
         if defect == "auth": container["env"][0]["value"] = "trusted-proxy"
         if defect == "auth-from": container["env"][0]["valueFrom"] = {"secretKeyRef": {"name": "override"}}
         if defect == "auth-duplicate": container["env"].append(dict(container["env"][0]))
         if defect == "selector": service["spec"]["selector"] = {"app": "unrelated"}
         if defect == "port": service["spec"]["ports"][0]["targetPort"] = 9000
+        if defect == "port-name": service["spec"]["ports"][0]["name"] = "http"
+        if defect == "service-port": service["spec"]["ports"][0]["port"] = 9000
+        if defect == "protocol": service["spec"]["ports"][0]["protocol"] = "UDP"
+        if defect == "duplicate-port": service["spec"]["ports"].append(dict(service["spec"]["ports"][0]))
         if defect == "rollout": controller["status"]["observedGeneration"] = 0
         if defect == "controller-image": container["image"] = "unqualified/image:latest"
         if defect == "counters": evidence["tool_calls"] = 2
@@ -135,6 +167,9 @@ class QualifyTests(unittest.TestCase):
                     contextlib.redirect_stdout(io.StringIO()) as out:
                 if defect is None:
                     driver.qualify(binary, work)
+                elif defect in ("port-name", "service-port", "protocol", "duplicate-port"):
+                    with self.assertRaisesRegex(driver.QualificationError, "control Service HTTP endpoint differs"):
+                        driver.qualify(binary, work)
                 else:
                     with self.assertRaises(ValueError): driver.qualify(binary, work)
             artifact = work / "qualification.json"
@@ -142,7 +177,7 @@ class QualifyTests(unittest.TestCase):
             self.assertLessEqual(len(sends), 1, "ambiguous smoke was resent")
             self.assertFalse(any(path.name == "agent.yaml" or path.name == "receipts" for path in work.rglob("*")))
             if defect is not None:
-                if defect in ("auth", "auth-from", "auth-duplicate", "selector", "port", "rollout", "controller-image", "images", "occupied", "missing-uid", "terminating", "warm"):
+                if defect in ("auth", "auth-from", "auth-duplicate", "selector", "port", "port-name", "service-port", "protocol", "duplicate-port", "rollout", "controller-image", "images", "occupied", "missing-uid", "terminating", "warm"):
                     self.assertEqual(sends, [], "failed fence admitted a native send")
                 return
             self.assertEqual([obj["kind"] for obj in creates], ["ModelConfig", "Agent"])
@@ -165,11 +200,11 @@ class QualifyTests(unittest.TestCase):
             for private in (sentinel, "Use the allowed tool", "systemMessage", "apiKeySecret", "evaluation", "receipt", "bundle"):
                 self.assertNotIn(private, artifact.read_text() + out.getvalue())
 
-    def test_runtime_smoke_creates_only_raw_fixture_and_sends_once_with_metadata_evidence(self):
+    def test_pinned_chart_service_qualifies_raw_fixture_and_one_native_send(self):
         self.exercise()
 
     def test_runtime_fences_refuse_without_native_send_or_artifact(self):
-        for defect in ("auth", "auth-from", "auth-duplicate", "selector", "port", "rollout", "controller-image", "images", "occupied", "missing-uid", "terminating", "warm"):
+        for defect in ("auth", "auth-from", "auth-duplicate", "selector", "port", "port-name", "service-port", "protocol", "duplicate-port", "rollout", "controller-image", "images", "occupied", "missing-uid", "terminating", "warm"):
             with self.subTest(defect=defect): self.exercise(defect)
 
     def test_ambiguous_or_uncorrelated_execution_never_resends_or_exports(self):

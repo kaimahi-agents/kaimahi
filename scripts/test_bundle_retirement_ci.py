@@ -48,6 +48,34 @@ class RetirementCITests(unittest.TestCase):
         self.assertIn("orka-runtime-fixture.py", runtime)
         self.assertIn("Orka says hello.", runtime)
 
+    def test_terminal_and_state_gates_require_retained_tests_without_skips(self):
+        terminal = next(step["run"] for step in self.jobs["hygiene"]["steps"]
+                        if step.get("name") == "agent-create wizard — terminal lifecycle")
+        state = next(step["run"] for step in self.jobs["state-paths-macos"]["steps"]
+                     if step.get("name") == "Native macOS state paths honor KMX_HOME")
+        groups = [(terminal, ["TestQuickstartWizardPTYCtrlCRestoresTerminal", "TestAgentTUIDemoPTYCommandsAndTerminalRestore",
+                              "TestCreateSuiteMemberTerminalConfirmation", "TestTimelinePTYEditsAndCancelsRunningResponse",
+                              "TestOrkaGuardPromptCancellationAndInputOwnership", "TestQuickstartCancellationAcrossScreens",
+                              "TestQuickstartNormalCompletionIsNotCancellation"]),
+                  (state, ["TestQuickstartWizardSuiteAuthorsOnlyPrivateSource", "TestAgentTUIStartupPrefersRememberedRemoteAndHonorsFlags",
+                           "TestStateDirUsesPortableOverrideAndNativeDefault", "TestContextResolutionOrder"])]
+        sources = "\n".join(path.read_text() for folder in (ROOT / "internal/kmx/app", ROOT / "internal/kmx/config")
+                            for path in folder.glob("*test.go"))
+        for body, names in groups:
+            self.assertIn("--- PASS:", body)
+            self.assertIn("! grep -q -- '--- SKIP:'", body)
+            for name in names:
+                self.assertGreaterEqual(body.count(name), 2, name + " must be selected and required to pass")
+                self.assertIn("func " + name + "(", sources)
+        self.assertNotIn("TestCreateWizardPTY", terminal)
+        self.assertNotIn("TestBundleLiftSelectionPathUsesKMXHome", state)
+        self.assertNotIn("TestEvaluateUsesRememberedTarget", state)
+
+    def test_raw_fixture_shards_build_the_shared_renderer(self):
+        for job in ("e2e-orka-runtime", "e2e-orka-helm"):
+            body = "\n".join(step.get("run", "") for step in self.jobs[job]["steps"])
+            self.assertIn("go build -o bin/orka-native-reference ./scripts/ci/orka-native-reference.go", body)
+
     def test_quickstart_ceiling_stays_315(self):
         body = "\n".join(s.get("run", "") for s in self.jobs["e2e-quickstart"]["steps"])
         self.assertIn("315", body)
