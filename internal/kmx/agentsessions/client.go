@@ -4,7 +4,6 @@ package agentsessions
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -14,8 +13,10 @@ import (
 	v1 "github.com/aramase/agentsessions/api/genpb"
 	"github.com/aramase/agentsessions/canon"
 	sdk "github.com/aramase/agentsessions/client"
+	"github.com/aramase/agentsessions/eventlog"
 	"github.com/aramase/agentsessions/wire"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -31,6 +32,9 @@ type JournalHead struct {
 }
 type CaseResult struct {
 	SessionUID, Harness, Model string
+	// Suite proof metadata is populated only after complete strict verification.
+	// Legacy RunCase leaves these fields empty.
+	ExecutionID, HarnessVersion, ConfigDigest string
 	// ModelMixed is sticky and clears Model when distinct safe models are observed.
 	ModelMixed bool
 	// ExecutionFailed requires a complete, attributable journal with a recognized
@@ -49,6 +53,13 @@ func (c *Client) Close() error { return c.sdk.Close() }
 // supply a deadline and an expected model. Model is observed, never selected by metadata.
 // On failure, the result retains safe identity and the last verified journal prefix.
 func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, error) {
+	return c.runCase(ctx, request, map[string]string{
+		"kmx.portable-digest": request.PortableDigest,
+		"kmx.cases-digest":    request.CasesDigest,
+	}, false, nil)
+}
+
+func (c *Client) runCase(ctx context.Context, request CaseRequest, labels map[string]string, strict bool, usedSessionUIDs map[string]bool) (CaseResult, error) {
 	var result CaseResult
 	deadline, bounded := ctx.Deadline()
 	if !bounded || !safeIdentity(request.Model) || !utf8.ValidString(request.Instructions) || !utf8.ValidString(request.Input) {
@@ -57,18 +68,15 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 	if err := ctx.Err(); err != nil {
 		return result, safeRPCError(err, "agentsessions: case context ended")
 	}
-	config, err := json.Marshal(struct {
-		SystemPrompt string `json:"system_prompt"`
-	}{request.Instructions})
+	config, err := chatConfig(request.Instructions)
 	if err != nil {
-		return result, status.Error(codes.InvalidArgument, "agentsessions: invalid case config")
+		return result, err
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	session, err := c.sdk.CreateSession(ctx, &v1.Session{
 		Harness: "chat",
-		Labels: map[string]string{
-			"kmx.portable-digest": request.PortableDigest,
-			"kmx.cases-digest":    request.CasesDigest,
-		},
+		Labels:  labels,
 	})
 	if err != nil {
 		return result, safeRPCError(err, "agentsessions: session creation failed")
@@ -82,10 +90,19 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 	if !freshChatSession(session) {
 		return result, status.Error(codes.FailedPrecondition, "agentsessions: invalid created session identity")
 	}
+	if strict && usedSessionUIDs[result.SessionUID] {
+		return result, status.Error(codes.FailedPrecondition, "agentsessions: reused suite session identity")
+	}
 
-	// The SDK's ExecOptions does not expose config or deadline; use its official stub.
+	// SDK ExecOptions supports per-exec config, but omits deadline_unix and
+	// buffers unbounded records/output while hiding unknown frames. Its official
+	// stub preserves the bounded streaming evidence and explicit host deadline.
 	input := wire.MessageToProto(api.TextMessage("user", request.Input))
 	zero := int64(0)
+	var callOptions []grpc.CallOption
+	if strict {
+		callOptions = append(callOptions, grpc.MaxCallRecvMsgSize(maxSuiteBytes))
+	}
 	stream, err := c.sdk.Sessions().Exec(ctx, &v1.ExecRequest{
 		Session:         result.SessionUID,
 		Harness:         "chat",
@@ -93,7 +110,7 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 		Config:          config,
 		ExpectedLastSeq: &zero,
 		DeadlineUnix:    deadline.Unix(),
-	})
+	}, callOptions...)
 	if err != nil {
 		return result, safeRPCError(err, "agentsessions: execution failed")
 	}
@@ -115,6 +132,8 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 	var executionID, firstModel string
 	var output strings.Builder
 	var outputOverflow bool
+	var captured []eventlog.Record
+	var frames, totalBytes int
 	for {
 		update, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -123,6 +142,17 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 		if err != nil {
 			tools.invalidate()
 			return result, safeRPCError(err, "agentsessions: execution stream failed")
+		}
+		if strict {
+			// Count every received frame, including invalid frames and deltas.
+			// Cancel rather than drain on exhaustion: an untrusted endless stream
+			// cannot turn an earlier refusal into unbounded work.
+			size := proto.Size(update)
+			frames++
+			if frames > maxSuiteFrames || size > maxSuiteBytes-totalBytes {
+				return result, status.Error(codes.ResourceExhausted, "agentsessions: suite stream exceeds bounds")
+			}
+			totalBytes += size
 		}
 		if update == nil || len(update.ProtoReflect().GetUnknown()) != 0 {
 			chainValid = false
@@ -161,6 +191,13 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 			}
 			result.Head = JournalHead{Seq: record.Seq, Hash: hash}
 			executionID = event.ExecutionId
+			if strict {
+				if !safeIdentity(executionID) || !suiteRecordShape(record) {
+					fail(codes.DataLoss, "agentsessions: unsupported suite invocation record")
+				}
+				// The bounded copy is isolated from wire buffers before replay.
+				captured = append(captured, eventlog.RecordFromProto(proto.Clone(record).(*v1.LogRecord)))
+			}
 			if collectTools {
 				tools.observe(event)
 			}
@@ -254,6 +291,24 @@ func (c *Client) RunCase(ctx context.Context, request CaseRequest) (CaseResult, 
 	// Publish only after EOF: a later integrity or transport failure cannot turn
 	// a verified prefix into proof of the whole invocation's execution outcome.
 	result.ExecutionFailed = ended && !evidenceInvalid && executionFailed
+	if strict && evidenceErr == nil {
+		// Prefix checks already bind the observed config/input to the sent request;
+		// reconstruction additionally verifies the model-request fingerprint.
+		if !referenceChatInvocation(captured) {
+			fail(codes.DataLoss, "agentsessions: unsupported suite invocation shape")
+		} else {
+			proof, err := referenceChatProof(ctx, captured, request.Model, verifySHA256([]byte(result.Output)))
+			if err != nil {
+				evidenceErr = safeRPCError(err, "agentsessions: suite reference verification failed")
+			} else if proof.Status != "equivalent" || proof.ModelCalls != 0 {
+				fail(codes.DataLoss, "agentsessions: suite model request fingerprint mismatch")
+			} else {
+				result.ExecutionID = executionID
+				result.HarnessVersion = suiteHarnessVersion
+				result.ConfigDigest, evidenceErr = ConfigDigest(request.Instructions)
+			}
+		}
+	}
 	result.ToolCalls, result.ToolEvidenceComplete = tools.finish(evidenceErr == nil)
 	return result, evidenceErr
 }

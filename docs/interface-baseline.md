@@ -121,7 +121,7 @@ or deploy a runtime.
 | Orka | Default runtime; setup, live create, run/chat, workspace evaluation/evaluated publication, exact-digest native Lift, and legacy bundle lifecycle |
 | kagent v0.10.2 | Explicit live create and optional one-shot A2A only; KMX does not install it |
 | kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Lift; legacy bundle lift/status/evaluation; no packaged status/retirement |
-| agentsessions | Offline pinned-chat suite author/prepare/load/ordinary push; legacy bundle evaluation and zero-call reference replay. No suite eval/evaluated push or KMX deployment lifecycle |
+| agentsessions | Pinned-chat suite author/prepare/load/push; explicit loopback operator-observed development eval/full-pass evidence and exact-S evaluated push; legacy bundle evaluation and zero-call reference replay. No registry/auth, Lift/chat/status or remote lifecycle |
 
 Support is operation- and version-specific. See the [runtime support
 matrix](runtime-adapters.md#revision-pinned-support-and-qualification-matrix).

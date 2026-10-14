@@ -5,8 +5,9 @@ artifact, identified by its manifest digest. Native Orka and exact-v0.10.3 Go
 kagent declarations require no member images; authoring and publication do not contact Kubernetes,
 run a model or invoke Docker/buildx. The pinned AgentSessions chat profile also
 supports offline authoring, preparation, loading and ordinary unevaluated push
-with no member image. It does not yet support suite eval, evaluated push, Lift,
-chat or status; Orka/kagent operational consumers refuse it.
+with no member image. Full packaged evaluation and exact-suite evaluated push
+require the explicit [development host](#agentsessions-development-evaluation)
+boundary. Lift, chat/status and Orka/kagent operational consumers refuse it.
 
 **Implemented:** offline creation, preparation and publication, and full-inventory
 native Orka or exact kagent v0.10.3 Go/linux-amd64 evaluation of one tool-free
@@ -125,6 +126,90 @@ chosen agent/model answers it.
 Tools, skills, delegation, additional members and unsupported source fields are
 refused. Paths must stay within the workspace, without symlink traversal. Source
 reads are bounded, and credential-shaped content is refused.
+
+## AgentSessions development evaluation
+
+Select a pinned, operator-owned built-in `chat` host explicitly. This path uses
+one fresh, non-fork Session and one never-retried Exec per packaged case, with
+exact `system_prompt` config sent every time. It loads no Kubernetes settings.
+No registry, authentication, Lift, chat/status or remote-host support is added.
+
+```sh
+kmx eval --workspace ./sessions-workspace --development-host ./private/host.json \
+  --out ./private/passing.json --case-timeout 30s
+kmx push --workspace ./sessions-workspace --evaluation ./private/passing.json \
+  --to-layout ./sessions-layout greeter:v1
+```
+
+The host JSON is closed, at most 16 KiB, in a private directory (0700) with a
+private regular file (0600), without symlinks. Replace the digest placeholders
+below with actual operator observations; IDs name your durable host/journal and
+inference scope, not a tunnel port or DNS name. `runtimeBinaryDigest` identifies
+the inspected binary; `runtimeConfigDigest` covers its noncredential execution
+configuration; `inferenceRevision` identifies the observed model-route revision.
+Never hash or include credentials. The exact runtime commit and chat/config
+contract must match the packaged member.
+
+```json
+{
+  "schemaVersion": 1,
+  "address": "127.0.0.1:8080",
+  "observation": {
+    "mode": "operator-observed-development",
+    "hostID": "owned-host",
+    "journalID": "owned-journal",
+    "runtimeVersion": "ca85f47a2ec17ca6e16029cfa69419cfe29442b3",
+    "runtimeBinaryDigest": "sha256:<observed-binary-digest>",
+    "runtimeConfigDigest": "sha256:<observed-config-digest>",
+    "inferenceID": "owned-model-route",
+    "inferenceRevision": "sha256:<observed-route-digest>",
+    "model": "fixture-model",
+    "harness": "chat",
+    "harnessVersion": "1",
+    "retention": "operator-managed"
+  }
+}
+```
+
+The address must be literal loopback, not `localhost`. All cluster, namespace,
+inference, kagent bindings and result-port selectors refuse, including explicitly
+supplied defaults. No declaration or transport failure triggers fallback. Before
+Session creation, evaluation prints:
+**“Development: unauthenticated operator-observed host; not authenticated remote promotion.”**
+Instructions, inputs, answers and config are retained in the host journal in
+cleartext under operator-managed retention; connection cleanup does not delete
+them. Keep the pinned process/journal under operator control throughout the run.
+Sessions has no authoritative host/build/model-advertisement endpoint here:
+declarations and local inspection are not authenticated attestations, and an
+unchanged observation file cannot detect a hostile process replacement.
+
+Execution requires an intact canonical five-record chat journal, exact
+harness/version/config/input/model-request fingerprint, attributable final text,
+terminal success and EOF. Deltas and Session metadata are not answers. Host-file
+and source snapshots are rechecked around each case and before export. Assertion
+failure, unknown/partial/invalid evidence, drift, cancellation or output failure
+before publication stops later cases with no new pass. The shared publisher can
+leave a complete passing receipt after its exclusive link if a later directory
+sync, readback or cancellation fails; evaluation returns nonzero and reports
+**“output may exist”**. Inspect the file rather than assuming rollback removed it.
+No incomplete receipt is accepted, and no published destination is automatically
+deleted. Every Session and execution identity must be unique; no retry, recovery
+or implicit old pass is selected.
+
+Only a full pass exports the `kmx.agentsessions-suite.passing/v1` private proof,
+including exact S/G/member/profile/config/model/case identities, operator host
+observations, fresh Session/execution IDs and verified journal heads. Prompts,
+answers, config bytes, endpoint locators and journal bodies are excluded. Push
+consumes that explicit proof for exact S; evidence is not embedded in the suite
+or published as a referrer. Orka/kagent evidence cannot authorize this member,
+and Sessions evidence is refused by Lift and receipt diff. Read-only Replay can
+support diagnosis with zero model calls but cannot become fresh candidate proof.
+
+The pinned daemon path has been demonstrated once with an instruction-sensitive,
+keyless OpenAI-compatible fixture: two-case pass/evaluated push, instruction
+failure with no export, and Replay/reference reconstruction with unchanged model
+counter. That is runtime/config/journal qualification, not real-LLM quality or
+production/authenticated host qualification. No model or host is installed by KMX.
 
 ## Evaluate the whole workspace
 

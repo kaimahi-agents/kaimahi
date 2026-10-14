@@ -8,6 +8,9 @@ import (
 // and answer hashes are deliberately not comparison identities; the prepared
 // subject, observed ownership and ordered authored inventory must match exactly.
 func normalizeSuitePassingEvaluation(r *suitePassingReceipt) (normalizedEvaluation, bool) {
+	if r == nil || (r.ExecutionMode != "native-orka" && r.ExecutionMode != "native-kagent") {
+		return normalizedEvaluation{}, false
+	}
 	n := normalizedEvaluation{
 		Version: r.SchemaVersion, RunID: r.RunID, PortableDigest: r.suiteDigest(),
 		CasesDigest: r.CasesDigest, Result: r.Result, FullCaseSet: true, IdentityComplete: true,

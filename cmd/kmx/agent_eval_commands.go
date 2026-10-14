@@ -22,7 +22,9 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 		Use: "eval", Short: "Evaluate a native workspace or prepare and compare saved evidence",
 		Long: "Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
 			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override, judge, subset or content output.\n" +
-			"Each case submits one fresh Task, never retried. Failure, unknown, drift or cancellation stops later cases without exporting a receipt; resources may remain.\n" +
+			"Packaged AgentSessions requires --development-host FILE: an explicit private operator observation of a pinned built-in chat host on literal loopback, unauthenticated. It refuses all cluster/inference/bindings/result selectors and loads no cluster configuration.\n" +
+			"Development journals retain instructions, inputs, answers and per-exec config in cleartext under operator-managed retention. This is not authenticated remote promotion.\n" +
+			"Each case submits one fresh Task or Session, never retried. Failure, unknown, drift or cancellation stops later cases without exporting a receipt; resources may remain.\n" +
 			"--out must be a new file in an existing private directory outside workspace/cache trees. Only full passing metadata is exported, unsigned and not a policy gate.\n" +
 			"Case inputs are sent to the runtime and model; upstream storage/audit policy may retain them. Real native CLI execution qualification remains separate from hermetic checks.",
 		Example: "  kmx eval --to-context kind-demo --inference provider:inference --out ../private/passing.json\n" +
@@ -40,7 +42,14 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			if state.contextFlag != "" || cmd.Flags().Changed("context") {
 				return fmt.Errorf("--context cannot be used with native eval; use --to-context")
 			}
-			for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "bindings", "out", "result-port"} {
+			if native.DevelopmentHost != "" {
+				for _, name := range []string{"to-context", "to-namespace", "inference", "bindings", "result-port", "container-engine"} {
+					if cmd.Flag(name).Changed {
+						return fmt.Errorf("--development-host refuses --%s", name)
+					}
+				}
+			}
+			for _, name := range []string{"workspace", "to-context", "to-namespace", "inference", "bindings", "development-host", "out", "result-port"} {
 				if flag := cmd.Flag(name); flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 					return fmt.Errorf("native eval requires non-empty --%s", name)
 				}
@@ -65,6 +74,9 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 				return err
 			}
 			defer func() { err = errors.Join(err, prepared.Close()) }()
+			if selectedNative.DevelopmentHost != "" {
+				return (&app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}).EvaluateSuiteWorkspace(ctx, prepared)
+			}
 			selected := *state
 			selected.contextFlag = native.ToContext
 			a, err := selected.operationApplication(cmd)
@@ -87,11 +99,13 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	group.Flags().StringVar(&native.Inference, "inference", "", "existing inference Provider, as provider:NAME")
 	group.Flags().StringVar(&native.Bindings, "bindings", "", "author-owned KagentBindings file for the packaged kagent runtime")
 	_ = group.MarkFlagFilename("bindings")
+	group.Flags().StringVar(&native.DevelopmentHost, "development-host", "", "private JSON observation selecting a loopback unauthenticated AgentSessions development host")
+	_ = group.MarkFlagFilename("development-host", "json")
 	group.Flags().StringVar(&native.Out, "out", "", "new private full-passing receipt file outside workspace/cache")
 	group.Flags().DurationVar(&native.CaseTimeout, "case-timeout", 5*time.Minute, "deadline per case, at most 9m")
 	group.Flags().StringVar(&native.ResultPort, "result-port", "19180", "local loopback result-forward port")
 	_ = group.MarkFlagDirname("workspace")
-	for _, name := range []string{"to-context", "out"} {
+	for _, name := range []string{"out"} {
 		_ = group.MarkFlagRequired(name)
 	}
 	diff := &cobra.Command{
