@@ -85,7 +85,7 @@ func newAgentTUIModel(opt AgentTUIOptions) agentTUIModel {
 	return m
 }
 
-// AgentTUI releases terminal ownership before entering existing chat/lift UIs,
+// AgentTUI releases terminal ownership before entering chat,
 // then restores the dashboard and refreshes both inventories on return.
 func (a *App) AgentTUI(opt AgentTUIOptions) error {
 	if a.Stdin == nil || !isTerminalFile(a.Stdin) || !isInteractiveTerminal(a.Out) || os.Getenv("TERM") == "dumb" {
@@ -402,12 +402,8 @@ func (m agentTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.execute("/chat " + m.agentToken(*a, m.focus))
 			}
 		case "L":
-			if m.focus == 1 && m.columns[1].Env.Name == "" {
-				return m.openCommand("/lift ")
-			}
-			if a := m.selected(); a != nil && m.focus == 0 && a.canLift() {
-				return m.openCommand("/lift " + m.agentToken(*a, 0) + " ")
-			}
+			m.status = interactiveLiftRetirement
+			return m, nil
 		}
 		return m, nil
 	}
@@ -493,9 +489,6 @@ func (m agentTUIModel) agentActions(a agentTUIAgent) []agentTUIMenuAction {
 	if !a.External {
 		actions = append(actions, agentTUIMenuAction{"f", "Edit inference"}, agentTUIMenuAction{"t", "Add / edit tools"})
 	}
-	if m.focus == 0 && a.canLift() {
-		actions = append(actions, agentTUIMenuAction{"L", "Lift to remote environment"})
-	}
 	// Last, after every entry that existed before it, so no existing entry
 	// moves: an operator who reaches an action by position still reaches it.
 	if !a.External {
@@ -509,9 +502,6 @@ func (m agentTUIModel) agentHints(a agentTUIAgent) string {
 	if a.canChat() {
 		hints = "c chat · " + hints
 	}
-	if m.focus == 0 && a.canLift() {
-		hints += " · L lift"
-	}
 	if !a.External {
 		hints += " · R runs"
 	}
@@ -519,6 +509,11 @@ func (m agentTUIModel) agentHints(a agentTUIAgent) string {
 }
 
 func (m agentTUIModel) updateActions(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if key.String() == "L" {
+		m.actionsOpen = false
+		m.status = interactiveLiftRetirement
+		return m, nil
+	}
 	a := m.selected()
 	if a == nil {
 		m.actionsOpen = false
@@ -560,7 +555,8 @@ func (m agentTUIModel) updateActions(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		return m.execute("/chat " + m.agentToken(*a, m.focus))
 	case "L":
-		return m.openCommand("/lift " + m.agentToken(*a, 0) + " ")
+		m.status = interactiveLiftRetirement
+		return m, nil
 	case "f", "t":
 		m.status = agentMutationRetirement
 		return m, nil
@@ -613,16 +609,13 @@ func (m agentTUIModel) suggestions() []agentTUISuggestion {
 	var choices []agentTUISuggestion
 	switch len(words) {
 	case 1:
-		choices = []agentTUISuggestion{{"/inspect", "Selected agent details"}, {"/chat", "Chat with an agent in the focused column"}, {"/lift", "Lift a local Orka agent to a remote environment"}, {"/env", "Switch local or remote environment"}, {"/refresh", "Reload environments and agents"}, {"/help", "Keys and command syntax"}, {"/quit", "Close dashboard"}}
+		choices = []agentTUISuggestion{{"/inspect", "Selected agent details"}, {"/chat", "Chat with an agent in the focused column"}, {"/env", "Switch local or remote environment"}, {"/refresh", "Reload environments and agents"}, {"/help", "Keys and command syntax"}, {"/quit", "Close dashboard"}}
 	case 2:
 		switch words[0] {
-		case "/lift", "/chat", "/inspect":
+		case "/chat", "/inspect":
 			column := m.focus
-			if words[0] == "/lift" {
-				column = 0
-			}
 			for _, a := range m.columns[column].Agents {
-				if words[0] == "/lift" && !a.canLift() || words[0] == "/chat" && !a.canChat() {
+				if words[0] == "/chat" && !a.canChat() {
 					continue
 				}
 				choices = append(choices, agentTUISuggestion{m.agentToken(a, column), a.Runtime + " · " + a.Namespace + " · " + valueOr(a.Model, "model unknown")})
@@ -631,15 +624,12 @@ func (m agentTUIModel) suggestions() []agentTUISuggestion {
 			choices = []agentTUISuggestion{{"local", "Local kind environment"}, {"remote", "Remote Kubernetes environment"}}
 		}
 	case 3:
-		if words[0] == "/lift" || words[0] == "/env" && (words[1] == "local" || words[1] == "remote") {
+		if words[0] == "/env" && (words[1] == "local" || words[1] == "remote") {
 			for _, env := range m.envs {
 				local := words[0] == "/env" && words[1] == "local"
 				if env.Local == local {
 					choices = append(choices, agentTUISuggestion{env.Name, "Kubernetes environment"})
 				}
-			}
-			if words[0] == "/lift" {
-				choices = append(choices, agentTUISuggestion{"new", "Create a new remote AKS agent environment…"})
 			}
 		}
 	}
@@ -712,6 +702,10 @@ func (m agentTUIModel) execute(line string) (tea.Model, tea.Cmd) {
 	fail := func(message string) (tea.Model, tea.Cmd) { m.status = message; return m, nil }
 	closeBar := func() { m.command = false; m.input.Blur() }
 	switch words[0] {
+	case "/lift":
+		closeBar()
+		m.status = interactiveLiftRetirement
+		return m, nil
 	case "/quit", "/help", "/refresh":
 		if len(words) != 1 {
 			return fail(words[0] + " takes no arguments")
@@ -762,15 +756,9 @@ func (m agentTUIModel) execute(line string) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.refresh(), save)
 		}
 		return fail("Environment not found; /refresh to reload contexts")
-	case "/inspect", "/chat", "/lift":
-		if words[0] == "/lift" && len(words) == 1 {
-			return m.openCommand("/lift ")
-		}
+	case "/inspect", "/chat":
 		column := m.focus
-		if words[0] == "/lift" {
-			column = 0
-		}
-		if len(words) > 3 || words[0] != "/lift" && len(words) > 2 {
+		if len(words) > 2 {
 			return fail("Too many arguments")
 		}
 		var agent *agentTUIAgent
@@ -782,7 +770,7 @@ func (m agentTUIModel) execute(line string) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-		} else if words[0] != "/lift" {
+		} else {
 			agent = m.selected()
 		}
 		if agent == nil {
@@ -803,31 +791,7 @@ func (m agentTUIModel) execute(line string) (tea.Model, tea.Cmd) {
 			return fail("Chat is unavailable for this external runtime")
 		}
 		action := agentTUIAction{kind: strings.TrimPrefix(words[0], "/"), agent: *agent, source: m.columns[column].Env}
-		if words[0] == "/lift" {
-			if !agent.canLift() {
-				return fail("Lift supports native Orka agents")
-			}
-			if len(words) != 3 {
-				return m.openCommand("/lift " + words[1] + " ")
-			}
-			if words[2] == "new" {
-				closeBar()
-				m.action = &action
-				m.form = []string{"", "", "", DefaultLocation}
-				m.formStep = 0
-				m.input.SetValue("")
-				return m, m.input.Focus()
-			}
-			for _, env := range m.envs {
-				if !env.Local && env.Name == words[2] {
-					action.target = env
-					break
-				}
-			}
-			if action.target.Name == "" {
-				return fail("Choose a remote context or new")
-			}
-		}
+
 		closeBar()
 		if m.opt.Demo {
 			m.status = "DEMO · " + action.kind + " " + agent.Name + " (no action performed)"
@@ -964,8 +928,7 @@ func (m agentTUIModel) View() tea.View {
 			"n create live agent (--live) in the focused environment\n" +
 			"/inspect [agent]     details in the focused column\n" +
 			"/chat [agent]        open chat, /exit returns here\n" +
-			"/lift <agent> <env>  lift a local native Orka agent\n" +
-			"/lift <agent> new    create AKS environment, then lift\n" +
+			interactiveLiftRetirement + "\n" +
 			"/env local|remote <context>  switch an environment\n" +
 			"/refresh · /help · /quit\n\n" +
 			"<tab> completes; <enter> accepts a suggestion, then runs a complete command.\n" +
@@ -1121,7 +1084,7 @@ func (m agentTUIModel) remoteSetupView(width, height int) string {
 	}
 	muted := lipgloss.NewStyle().Foreground(lipgloss.Color("#707B86"))
 	rows := []string{muted.Bold(true).Render("REMOTE"), muted.Render("Not configured"), ""}
-	for _, text := range []string{"s / <enter>: select remote", "L: lift an agent", "Choose new in /lift to create a remote environment."} {
+	for _, text := range []string{"s / <enter>: select remote", interactiveLiftRetirement} {
 		rows = append(rows, strings.Split(ansi.Wrap(agentTUIKeyHints(text), inner, ""), "\n")...)
 		rows = append(rows, "")
 	}

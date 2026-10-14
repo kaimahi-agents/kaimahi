@@ -124,7 +124,9 @@ func TestConsoleBundleLiftRefusesKagentBeforeTargetWork(t *testing.T) {
 	}
 
 	_, err := a.runAgentTUIAction(action)
-	requireKagentOrkaOnlyError(t, err)
+	if err == nil || err.Error() != interactiveLiftRetirement {
+		t.Fatalf("retired Lift accessed bundle: %v", err)
+	}
 	requireNoNewBundleKubectlCalls(t, dir, before)
 }
 

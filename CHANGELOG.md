@@ -191,6 +191,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- Chat `/lift` and the console Lift action are retired, including their combined new-AKS-and-Lift workflow. Their old entrypoints show `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`. Use root immutable suite Lift with explicit evidence; standalone `kmx aks up/down` remains separate. No new interactive release workflow or source-less live copying is provided.
+
 - The experimental, unwired Go `AgentEnvironment` API now models one
   object-to-object setup operation: `EnvironmentSpec -> Up -> Environment`.
   Logical `EnvironmentRef` identity is separate from exact deployment

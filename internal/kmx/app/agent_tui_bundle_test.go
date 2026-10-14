@@ -69,8 +69,8 @@ func TestConsoleLiftRejectsInvalidBundleBeforeCreatingTarget(t *testing.T) {
 	action := agentTUIAction{kind: "lift", agent: consoleBundleRow(name), source: consoleBundleEnv(),
 		bundles: root, create: &lift.Options{Cluster: "not-created", ResourceGroup: "not-created"}}
 	_, err := a.runAgentTUIAction(action)
-	if err == nil || !strings.Contains(err.Error(), "bindings.yaml") {
-		t.Fatalf("invalid bundle did not stop target creation first: %v", err)
+	if err == nil || err.Error() != interactiveLiftRetirement {
+		t.Fatalf("retired Lift accessed bundle or target: %v", err)
 	}
 }
 
@@ -798,7 +798,7 @@ func TestConsoleBundleMenuEntryMovesNoExistingEntry(t *testing.T) {
 		}
 		return strings.Join(out, " ")
 	}
-	if got := keys(); got != "i c f t L b R" {
+	if got := keys(); got != "i c f t b R" {
 		t.Errorf("local actions = %q, want the previous order with b and R appended", got)
 	}
 	m.focus = 1

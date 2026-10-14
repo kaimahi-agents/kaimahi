@@ -8,6 +8,9 @@ import (
 )
 
 func (a *App) runAgentTUIAction(action agentTUIAction) (agentTUIEnvironment, error) {
+	if action.kind == "lift" {
+		return agentTUIEnvironment{}, fmt.Errorf("%s", interactiveLiftRetirement)
+	}
 	source := action.source.app(a)
 	source.InvocationCommand = ""
 	source.bundleRoot = action.bundles
