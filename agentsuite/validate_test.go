@@ -692,13 +692,14 @@ func TestToolProviderRejectsPolicyFieldsThatDecodeAsOmitted(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
-		name    string
-		field   string
-		value   any
-		wantErr string
+		name             string
+		field            string
+		value            any
+		withoutDelegated bool
+		wantErr          string
 	}{
-		{name: "empty effect", field: "effect", value: "", wantErr: "effect must be a non-empty string"},
-		{name: "empty approval", field: "approval", value: "", wantErr: "approval must be a non-empty string"},
+		{name: "empty effect", field: "effect", value: "", withoutDelegated: true, wantErr: "effect must be a non-empty string"},
+		{name: "empty approval", field: "approval", value: "", withoutDelegated: true, wantErr: "approval must be a non-empty string"},
 		{name: "null delegated authorization", field: "delegatedAuthorization", value: nil, wantErr: "delegatedAuthorization must not be null"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -707,7 +708,11 @@ func TestToolProviderRejectsPolicyFieldsThatDecodeAsOmitted(t *testing.T) {
 				t.Fatal(err)
 			}
 			tools := document["tools"].([]any)
-			tools[0].(map[string]any)[test.field] = test.value
+			tool := tools[0].(map[string]any)
+			if test.withoutDelegated {
+				delete(tool, "delegatedAuthorization")
+			}
+			tool[test.field] = test.value
 			tampered, err := json.Marshal(document)
 			if err != nil {
 				t.Fatal(err)
