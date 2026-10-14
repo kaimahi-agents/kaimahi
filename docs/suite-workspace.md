@@ -20,7 +20,7 @@ refuses, even with matching evaluated UIDs. Suite status and retirement remain
 unavailable. Evaluation placement refuses occupied targets without a complete
 caller-retained observation; qualified repeat is read-only, not update/adoption
 or restart recovery.
-Orka evaluation has hermetic command/Task tests and a pinned two-case native
+Orka evaluation has hermetic command/Task tests and a pinned three-case native
 workspace CI qualifier. Packaged kagent evaluation has hermetic coverage and
 pinned exact-v0.10.3 CLI qualification. Root exact-digest Lift retrieves the
 package from a registry or local layout and separately consumes matching private
@@ -606,7 +606,8 @@ placement, and triggers no cleanup or retry. Public result JSON is not restart
 or reuse authority. Kagent suite status/retirement and authenticated promotion
 policy remain unavailable; evidence never crosses runtimes.
 
-The existing pinned kind shard exercises create, two-case evaluation, exact local
+The existing pinned kind shard configures create, three-case evaluation (two text
+cases and an open-ended rubric case), exact local
 publication, source-free GET-only lift planning, explicit new-target promotion and
 occupied repeat refusal, with zero additional native execution traffic.
 

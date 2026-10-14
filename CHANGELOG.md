@@ -32,7 +32,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   configuration hash and both scores; reasoning and raw judge URLs stay out of
   receipts and terminal recovery commands. Text-only receipts are unchanged;
   upgrade readers before exchanging judge receipts. AgentSessions judging remains
-  unsupported. [Suite judge configuration](docs/suite-workspace.md#evaluate-the-whole-workspace)
+  unsupported. The existing native Orka CI shard includes one open-ended rubric
+  case alongside its two text cases, reusing the pinned AIKit workload and existing
+  timeout budgets. Runner tests validate owned-forward cleanup and independently
+  check the declared judge identity/configuration and both receipt scores.
+  Hermetic tests alone are not live semantic judge proof.
+  [Suite judge configuration](docs/suite-workspace.md#evaluate-the-whole-workspace)
 
 - Root digest `lift` supports packaged kagent v0.10.3 Go/linux-amd64 suites through
   the existing prepare/apply/verify engine, with runtime-matching full-passing

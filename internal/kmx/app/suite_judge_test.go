@@ -293,3 +293,16 @@ func TestSuiteJudgeReceiptCoherenceAndDiff(t *testing.T) {
 		t.Fatal("changed endpoint binding reused comparison identity")
 	}
 }
+
+// These fixed values are also exercised by the independent native CI verifier.
+func TestSuiteJudgeCIIdentityContract(t *testing.T) {
+	threshold := 70
+	version := "aikit-qwen3.5-2b@sha256:d838c5eebf533b5b73f67cc7f4984921f87d64d28e4a52d482740b667f46b8b4"
+	rubric := "Score 100 for a scientifically correct explanation that warmer air is less dense than cooler surrounding air and rises through buoyancy. Score 0 if the answer claims warmer air is denser or gravity pulls it upward. Equivalent wording is acceptable; do not require a particular sentence."
+	a := agentruntime.EvaluationAssertion{Type: "llmJudge", Rubric: rubric, MinScore: &threshold, JudgeModel: "qwen-3.5-2b", JudgeVersion: version}
+	if agentruntime.EvaluationJudgeEvaluatorDigest() != "b8f6b1439aaf41a272dff2ac24b5abe5354e9d2b9d22a61ceed124405efddc3e" ||
+		agentruntime.EvaluationAssertionDigest(a) != "acb736d678b38ce82951e38ea0b20c877006cad718cdad63680c90124a29a558" ||
+		agentruntime.EvaluationJudgeConfigurationDigest("http://127.0.0.1:18091/v1", a.JudgeModel, version) != "c5360f98aa7a1a266e153b431616968a1baef0ea74125b29a479ffdd21f5a096" {
+		t.Fatal("native CI judge identity contract changed")
+	}
+}

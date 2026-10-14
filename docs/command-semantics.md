@@ -160,7 +160,10 @@ AgentSessions continues to refuse judges.
 `push --evaluation FILE` checks runtime-specific private receipt coherence and
 exact manifest S before publication; ordinary push is unevaluated. Receipts are
 unsigned observations, not policy gates. Dedicated shards qualify bounded Orka
-and kagent two-case workspace scenarios; this is not general runtime support.
+and kagent workspace scenarios; the native Orka inventory includes two text cases
+and one open-ended rubric case sharing the pinned AIKit workload, with no timeout
+increase. Kagent retains its two text cases. Hermetic runner tests are not live
+judge proof; this is not general runtime support.
 Root `lift REF@sha256:DIGEST` consumes that explicit private full-pass evidence
 for source-free, deploy-only packaged Orka or exact-kagent placement. Bounded
 qualification covers Orka exact reuse and kagent fresh-target creation, not every

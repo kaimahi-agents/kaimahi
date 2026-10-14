@@ -171,8 +171,14 @@ result hashes, exact registry/local-layout transfer, source-withheld root CLI
 exact reuse, separate fresh answer Tasks and no-effect refusal audits gate its
 metadata artifacts. Only `artifacts/passing.json` and scalar
 `artifacts/qualification.json` are uploaded on success; raw captures are private.
-Existing cluster deletion owns all runtime/model cleanup. A successful run
-qualifies this fixed two-case native workspace and exact-reuse Lift scenario. It
+Existing cluster deletion owns all runtime/model cleanup. The native-only
+inventory has two text cases plus one open-ended rubric case, with exactly two
+judge samples from the same pinned AIKit workload over an owned keyless loopback
+forward. Independent receipt checks bind declared model/version, policy, threshold,
+endpoint configuration digest and both scores; they do not attest model identity.
+No job, case or subprocess timeout is increased. The existing 660s outer limit
+bounds three sequential cases; it does not allow three full 5m waits. A successful
+run qualifies this fixed three-case native workspace and exact-reuse Lift scenario. It
 does not qualify promotion, absent-resource CLI creation or partial outcomes.
 Harness tests alone are not evidence of real execution.
 

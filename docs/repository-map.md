@@ -273,7 +273,8 @@ AIKit workload in that exclusively owned cluster and installs the
 `suite-native-audit.py` product command wrapper. Hygiene calls
 `test_suite_native.py` and `test_suite_native_lift.py` for hermetic independent
 readback, hash, intent/completion audit, refusal and privacy checks. A successful
-scenario qualifies the fixed two-case workspace path, exact registry/local root
+scenario qualifies the fixed three-case workspace path (two text cases and one
+open-ended two-sample rubric case), exact registry/local root
 CLI lift reuse with source withheld, separate fresh answer Tasks and no-effect
 lift refusals against the pinned model/runtime. It also qualifies registry
 promotion into an absent pair on a second exclusively owned kind cluster, with
@@ -283,7 +284,10 @@ orka-system; destination inference has its own Provider/Secret and shares the
 source model through a fixture-only private-network NodePort with no host mapping.
 Source evidence remains distinct from destination evaluation. Partial outcomes
 are not qualified. Passing artifacts contain only
-private receipt metadata and payload-free qualification evidence. Existing cluster deletion
+private receipt metadata and payload-free qualification evidence, including
+independently bound declared judge identity/configuration and scalar sample counts.
+The judge reuses the pinned AIKit workload; existing timeout budgets remain fixed.
+Existing cluster deletion
 owns runtime/model cleanup. These files are checkout-only scaffolding, not an
 installer or new CLI/API capability.
 

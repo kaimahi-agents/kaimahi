@@ -80,8 +80,13 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   PortableAgent formats and old extracted-directory suite transfer; do not treat public graph validation
   as native execution-profile validation. Private packaged-native preparation and
   ownership-safe Provider/Agent placement feed full-workspace root evaluation;
-  the existing Orka CI shard runs a bounded two-case native qualifier against
-  the pinned runtime/model, distinct from hermetic command tests.
+  the existing Orka CI shard configures a bounded three-case native qualifier
+  against the pinned runtime/model: two text cases and one open-ended llmJudge
+  case using the same pinned AIKit workload through an owned keyless loopback
+  forward. Its private metadata independently checks judge identity/configuration
+  and both scores. Job/case/outer evaluation timeouts are unchanged; the 660s
+  outer budget bounds the three sequential cases, not three complete 5m waits.
+  Hermetic runner tests alone are not live judge proof.
   Internal PrepareReleaseLift plans an exact digest from a registry or read-only
   OCI layout, with bounded ingestion before validation and no source fingerprint.
   It requires explicit private full-passing native evidence, default exact observed

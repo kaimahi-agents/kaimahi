@@ -19,6 +19,11 @@ import urllib.request
 
 import yaml
 
+JUDGE_BASE_URL = "http://127.0.0.1:18091/v1"
+JUDGE_VERSION = "aikit-qwen3.5-2b@sha256:d838c5eebf533b5b73f67cc7f4984921f87d64d28e4a52d482740b667f46b8b4"
+# Pin policy v1 independently; a new evaluator requires explicit qualification.
+JUDGE_POLICY_DIGEST = "b8f6b1439aaf41a272dff2ac24b5abe5354e9d2b9d22a61ceed124405efddc3e"
+
 MARKERS = ("kaimahi.dev/suite", "kaimahi.dev/suite-digest", "kaimahi.dev/suite-member", "kaimahi.dev/suite-renderer",
            "kaimahi.dev/suite-binding-digest", "kaimahi.dev/suite-rendered-digest")
 
@@ -82,6 +87,17 @@ def inspect_pair(doc, kind, owned, subject):
             c["observedGeneration"] == meta["generation"] for c in status["conditions"]), "pair-ready")
 
 
+def native_cases(public):
+    cases = {p.name: p.read_bytes() for p in sorted((public / "eval").glob("*.yaml"))}
+    require(list(cases) == ["01-capital.yaml", "02-arithmetic.yaml"], "fixture-cases")
+    case = {"id": "explanation", "input": "Briefly explain why hot air rises.", "assertions": [
+        {"id": "science", "type": "llmJudge", "minScore": 70, "judgeModel": "qwen-3.5-2b", "judgeVersion": JUDGE_VERSION,
+         "rubric": ("Score 100 for a scientifically correct explanation that warmer air is less dense than cooler surrounding air and rises through buoyancy. "
+                    "Score 0 if the answer claims warmer air is denser or gravity pulls it upward. Equivalent wording is acceptable; do not require a particular sentence.")}]}
+    cases["03-explanation.yaml"] = yaml.safe_dump(case).encode()
+    return dict(sorted(cases.items()))
+
+
 def verify_cases(rows, files):
     require(len(rows) == len(files) and bool(rows), "case-coverage")
     for row, (name, raw) in zip(rows, sorted(files.items())):
@@ -89,13 +105,32 @@ def verify_cases(rows, files):
         definitions = [{"id": "expectContains." + str(i), "type": "contains", "value": value}
                        for i, value in enumerate(case.get("expectContains", []))] + case.get("assertions", [])
         expected = []
-        for definition in definitions:
+        require(len(row["assertions"]) == len(definitions), "case-assertions")
+        for i, definition in enumerate(definitions):
             kind = definition["type"]
-            require(kind in {"contains", "notContains", "regex"}, "case-evaluator")
-            operand = definition["pattern" if kind == "regex" else "value"]
-            expected.append({"id": definition["id"], "type": kind,
-                             "definitionDigest": sha(frame("type", kind.encode()) + frame("operand", operand.encode())),
-                             "evaluatorVersion": "kmx.text-assertions/v1", "verdict": "pass"})
+            require(kind in {"contains", "notContains", "regex", "llmJudge"}, "case-evaluator")
+            operand = definition["rubric" if kind == "llmJudge" else "pattern" if kind == "regex" else "value"]
+            digest = frame("type", kind.encode()) + frame("operand", operand.encode())
+            assertion = {"id": definition["id"], "type": kind, "evaluatorVersion": "kmx.text-assertions/v1", "verdict": "pass"}
+            if kind == "llmJudge":
+                require(definition["judgeModel"] == "qwen-3.5-2b" and definition["judgeVersion"] == JUDGE_VERSION and
+                        type(definition["minScore"]) is int and definition["minScore"] == 70, "judge-pin")
+                evidence = row["assertions"][i].get("judge")
+                require(isinstance(evidence, dict), "judge-evidence")
+                scores = evidence.get("scores")
+                require(isinstance(scores, list) and len(scores) == 2 and all(type(s) is int and 70 <= s <= 100 for s in scores), "judge-scores")
+                configuration = sha(b"".join(frame(k, v.encode()) for k, v in (
+                    ("endpoint", JUDGE_BASE_URL), ("model", definition["judgeModel"]),
+                    ("modelVersion", definition["judgeVersion"]), ("evaluatorDigest", JUDGE_POLICY_DIGEST))))
+                expected_judge = {"model": definition["judgeModel"], "modelVersion": definition["judgeVersion"], "provenance": "user-declared",
+                                  "evaluatorDigest": JUDGE_POLICY_DIGEST, "configurationDigest": configuration, "minScore": 70, "scores": scores}
+                require(evidence == expected_judge, "judge-identity")
+                digest += b"".join(frame(k, v.encode()) for k, v in (
+                    ("minScore", "70"), ("judgeModel", definition["judgeModel"]),
+                    ("judgeVersion", definition["judgeVersion"]), ("evaluatorDigest", JUDGE_POLICY_DIGEST)))
+                assertion.update(evaluatorVersion="kmx.llm-judge/v1", judge=expected_judge)
+            assertion["definitionDigest"] = sha(digest)
+            expected.append(assertion)
         require(row["id"] == case["id"] and row["path"] == "metadata/kmx/eval/" + name and row["caseDigest"] == sha(raw) and
                 row["inputDigest"] == sha(case["input"].encode()) and row["verdict"] == "pass" and row["assertions"] == expected, "case-metadata")
 
@@ -374,30 +409,11 @@ class Qualification:
                   "--from-file=config.yaml=" + str(self.repo / "scripts/ci/eval-loop-model.yaml"))
         self.kube("create", "-f", self.repo / "scripts/ci/native-suite-model.yaml")
         self.kube("-n", "orka-system", "rollout", "status", "deployment/native-suite-aikit", "--timeout=480s", timeout=480)
-        deadline = time.monotonic() + 30
-        log = self.work / "model-forward.log"
-        with log.open("wb") as stream, subprocess.Popen([self.kubectl, "--context", self.context, "-n", "orka-system", "port-forward",
-                "--address", "127.0.0.1", "svc/native-suite-aikit", "18091:8080"], env=self.env, stdout=stream, stderr=stream) as forward:
-            try:
-                ready = False
-                while time.monotonic() < deadline and forward.poll() is None:
-                    if b"Forwarding from 127.0.0.1:18091 -> 8080" in log.read_bytes():
-                        try:
-                            with urllib.request.urlopen("http://127.0.0.1:18091/readyz", timeout=2) as response:
-                                ready = response.status == 200
-                        except OSError:
-                            pass
-                    if ready:
-                        break
-                    time.sleep(1)
-                require(ready, "model-ready")
-                warmup = (self.repo / "scripts/ci/eval-loop-warmup.json").read_bytes()
-                request = urllib.request.Request("http://127.0.0.1:18091/v1/chat/completions", data=warmup, headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(request, timeout=180) as response:
-                    require(response.status == 200 and json.load(response)["choices"], "model-warmup")
-            finally:
-                forward.terminate()
-                forward.wait(timeout=10)
+        with self.model_forward():
+            warmup = (self.repo / "scripts/ci/eval-loop-warmup.json").read_bytes()
+            request = urllib.request.Request(JUDGE_BASE_URL + "/chat/completions", data=warmup, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(request, timeout=180) as response:
+                require(response.status == 200 and json.load(response)["choices"], "model-warmup")
         provider = {"apiVersion": "core.orka.ai/v1alpha1", "kind": "Provider",
                     "metadata": {"name": "native-suite-inference", "namespace": "orka-system"},
                     "spec": {"type": "openai", "defaultModel": "qwen-3.5-2b", "secretRef": self.secret_ref,
@@ -779,10 +795,34 @@ class Qualification:
         for filename, raw in cases.items():
             (directory / "eval" / filename).write_bytes(raw)
 
+    @contextlib.contextmanager
+    def model_forward(self):
+        deadline = time.monotonic() + 30
+        log = self.work / "model-forward.log"
+        with log.open("wb") as stream, subprocess.Popen([self.kubectl, "--context", self.context, "-n", "orka-system", "port-forward",
+                "--address", "127.0.0.1", "svc/native-suite-aikit", "18091:8080"], env=self.env, stdout=stream, stderr=stream) as forward:
+            try:
+                ready = False
+                while time.monotonic() < deadline and forward.poll() is None:
+                    if b"Forwarding from 127.0.0.1:18091 -> 8080" in log.read_bytes():
+                        try:
+                            with urllib.request.urlopen("http://127.0.0.1:18091/readyz", timeout=2) as response:
+                                ready = response.status == 200
+                        except OSError:
+                            pass
+                    if ready:
+                        break
+                    time.sleep(1)
+                require(ready, "model-ready")
+                yield
+            finally:
+                forward.terminate()
+                forward.wait(timeout=10)
+
     def evaluation(self, directory, output, success=True):
         return self.cli("eval", "--workspace", directory, "--to-context", self.context, "--to-namespace", "orka-system",
                         "--inference", "provider:native-suite-inference", "--case-timeout", "5m", "--out", output,
-                        timeout=660, success=success)
+                        "--judge-base-url", JUDGE_BASE_URL, timeout=660, success=success)
 
     def live_subject(self, subject, inference="native-suite-inference"):
         target = {"Context": self.context, "Namespace": "orka-system",
@@ -812,15 +852,17 @@ class Qualification:
         public = self.repo / "internal/kmx/app/testdata/live-eval-loop"
         instructions = self.work / "instructions.txt"
         instructions.write_text(yaml.safe_load((public / "agent.yaml").read_bytes())["spec"]["instructions"])
-        cases = {p.name: p.read_bytes() for p in sorted((public / "eval").glob("*.yaml"))}
-        require(len(cases) == 2, "fixture-cases")
+        cases = native_cases(public)
         workspace, receipt_path = self.work / "workspace", self.work / "receipt/passing.json"
         member = "ci-native-suite"
         self.author(member, workspace, instructions, cases)
         original = snapshot(workspace)
         require(not self.frames(), "offline-audit")
         self.phase = "evaluate"
-        self.evaluation(workspace, receipt_path)  # exactly ONE positive evaluation, never retried
+        # Exactly one positive evaluation; its two judge samples use the same
+        # pinned model through this owned forward, with no additional warmup.
+        with self.model_forward():
+            self.evaluation(workspace, receipt_path)
         receipt = json.loads(receipt_path.read_bytes())
         require(receipt_path.stat().st_mode & 0o777 == 0o600 and receipt["result"] == "pass" and
                 receipt["sourceFingerprint"] == fingerprint(original) and snapshot(workspace) == original, "receipt-source")
@@ -917,6 +959,7 @@ class Qualification:
         summary = {"schemaVersion": 1, "suiteDigest": subject["SuiteDigest"], "graphDigest": subject["GraphDigest"],
                    "sourceFingerprint": receipt["sourceFingerprint"], "receiptDigest": sha(receipt_path.read_bytes()),
                    "caseCount": len(tasks), "requiredImageCount": 0, "destinationEvaluated": False,
+                   "judgeAssertionCount": 1, "judgeSampleCount": 2, "judgeIdentityBound": True,
                    "ownershipRefusals": True, "unsupportedRefusal": True, "caseMutationRefusal": True,
                    "lift": lift_results}
         for i, task in enumerate(tasks):
