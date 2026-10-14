@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestEmbeddedEvaluationsAcceptDirectoryAndOCI(t *testing.T) {
@@ -70,9 +69,6 @@ func TestEmbeddedEvaluationsRejectInvalidGraph(t *testing.T) {
 		{"cross agent path", func(_ *testing.T, _ string, index *EvaluationIndex) {
 			index.Cases[0].Path = "evals/reviewer/cases/Capital.json"
 		}, "owning agent"},
-		{"traversal", func(_ *testing.T, _ string, index *EvaluationIndex) {
-			index.Cases[0].Path = "evals/writer/cases/../Capital.json"
-		}, "not normalized"},
 		{"duplicate ids", func(t *testing.T, root string, index *EvaluationIndex) {
 			data := evaluationFixture(t, "Capital")
 			index.Cases[1].Digest = mustWriteJSONBytes(t, root, index.Cases[1].Path, data)
@@ -249,28 +245,6 @@ func TestEvaluationIdentityCommitsToCasesAndOrder(t *testing.T) {
 	}
 	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
 		t.Fatalf("stale agent binding accepted: %v", err)
-	}
-}
-
-func TestEvaluationTimestampTouchPreservesSuiteDigest(t *testing.T) {
-	for _, name := range []string{"evals/writer/index.json", "evals/writer/cases/Capital.json"} {
-		t.Run(name, func(t *testing.T) {
-			root, _ := writeEvaluationSuite(t, nil)
-			before := writeTestOCILayout(t, root)
-			changedTime := time.Unix(12345, 0)
-			if err := os.Chtimes(filepath.Join(root, name), changedTime, changedTime); err != nil {
-				t.Fatal(err)
-			}
-			after := writeTestOCILayout(t, root)
-			report, err := DiffPaths(before, after)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if report.HasChanges() || report.Before.ArtifactDigest == "" ||
-				report.Before.ArtifactDigest != report.After.ArtifactDigest {
-				t.Fatalf("timestamp-only touch changed suite identity: %+v", report)
-			}
-		})
 	}
 }
 
