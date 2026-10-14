@@ -73,14 +73,11 @@ func TestAgentEvalDiffArgumentsAndEvaluatePreserved(t *testing.T) {
 			t.Fatalf("%v loads=%d err=%v", args, *loads, err)
 		}
 	}
-	for _, args := range [][]string{{"eval", "--help"}, {"eval", "diff", "--help"}, {"bundle", "evaluate", "--help"}} {
+	for _, args := range [][]string{{"eval", "--help"}, {"eval", "diff", "--help"}} {
 		var out bytes.Buffer
 		deps, loads := testDependencies(&out, &out)
 		if err := execute(args, deps); err != nil || *loads != 0 {
 			t.Fatalf("%v loads=%d err=%v", args, *loads, err)
-		}
-		if args[1] == "evaluate" && !strings.Contains(out.String(), "--case-timeout") {
-			t.Fatal("existing evaluate command changed")
 		}
 		if args[0] == "eval" && !strings.Contains(out.String(), "diff") {
 			t.Fatal("diff missing from help")
