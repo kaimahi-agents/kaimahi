@@ -42,13 +42,13 @@ func TestCompletionScriptsUseCobraProtocol(t *testing.T) {
 	}
 }
 
-func TestSchemaTargetCompletionIncludesPinnedDefault(t *testing.T) {
+func TestWorkspaceRuntimeCompletionIncludesPinnedDefault(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, loads := testDependencies(&out, &errOut)
-	if err := execute([]string{"__complete", "create", "--schema-target", ""}, deps); err != nil {
+	if err := execute([]string{"__complete", "create", "--runtime-version", ""}, deps); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"v0.2.0", "v0.1.3", "main", ":4"} {
+	for _, want := range []string{"v0.10.3", ":4"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("schema completion missing %q: %s", want, out.String())
 		}

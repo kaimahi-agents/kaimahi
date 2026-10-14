@@ -33,8 +33,6 @@ type progressPresenter interface {
 // writes to.
 type App struct {
 	chatClusterName string
-	bundleRoot      string
-	liftReuse       bool
 	// kagentProfile is invocation-local; nil keeps the exact create profile.
 	kagentProfile *kagentProfile
 	// operationProgress reports real stage transitions to an owning deployment UI.
@@ -44,15 +42,14 @@ type App struct {
 	Out               io.Writer
 	// InvocationCommand is the shell-quoted CLI invocation used for guard retry
 	// advice. Interactive sub-operations leave it empty and supply their own.
-	InvocationCommand  string
-	chatVerbose        bool
-	chatInference      string
-	azureDiscoveryMode string
-	copilotCLI         string
-	copilotModel       string
-	foundryClient      *foundryChatClient
-	Err                io.Writer
-	Stdin              *os.File
+	InvocationCommand string
+	chatVerbose       bool
+	chatInference     string
+	copilotCLI        string
+	copilotModel      string
+	foundryClient     *foundryChatClient
+	Err               io.Writer
+	Stdin             *os.File
 	// now is injectable so progress timing can be tested without sleeping.
 	now func() time.Time
 	// captureCommand replaces execution of an already-prepared kubectl capture

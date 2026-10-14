@@ -23,15 +23,13 @@ unmet upstream need.
 Generated YAML should remain readable, diffable and usable with the
 underlying tools. Do not conceal ownership inside an entry point.
 
-Default `kmx create` authors one native-Orka workspace member offline;
-[the workspace guide](suite-workspace.md) records discovery and explicit-root
-initialization. `kmx create --live` retains resource/bundle creation and its
-previews. [orka.md](orka.md) records the native runtime recommendation,
-while `kmx create --live --runtime kagent <name>` provides one deliberately
-narrow direct target for an already-installed exact Kagent v0.10.2. It does not
-translate existing resources to Orka or establish a general cross-runtime
-lifecycle. The isolated conversion spike that once explored translation is
-removed from the tree and never settled that wider, still unsupported question.
+Default `kmx create` authors one tool-free native-Orka workspace member offline;
+explicit kagent selects exact v0.10.3 Go/linux-amd64. [Workspace authoring](suite-workspace.md)
+records discovery, explicit roots and native cases. Live create/previews/wizard
+and user bundles/readers/receipts are removed, not converted. Public AgentSuite
+implementation bundles and alpha Go contracts remain distinct. Native eval/push/
+digest Lift is not a general cross-runtime translator. Suite status/retirement
+remain unavailable; the removed lifecycle is not claimed as parity.
 
 ## Show where an operation will act
 

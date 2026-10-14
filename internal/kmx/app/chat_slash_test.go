@@ -195,7 +195,7 @@ func TestSlashHintsStopAtArguments(t *testing.T) {
 	if got := slashMatches("/tools "); got != nil {
 		t.Fatalf("argument input produced command hints: %v", got)
 	}
-	if got := slashHint(slashMatches("/lif")); got != "/lift — deploy to another cluster" {
+	if got := slashHint(slashMatches("/lif")); got != interactiveLiftRetirement {
 		t.Fatalf("unexpected hint %q", got)
 	}
 }

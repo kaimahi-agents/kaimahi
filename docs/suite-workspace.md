@@ -27,8 +27,8 @@ package from a registry or local layout and separately consumes matching private
 full-passing evidence. Orka uses `--inference`; kagent uses author-owned
 `--bindings`. Bounded CI qualifies Orka exact registry/layout reuse and kagent
 fresh-target creation/occupied refusal. Standalone registry-package evaluation
-remains unavailable. Existing `agent.yaml` creation, evaluation and lift remain
-separate and unchanged.
+remains unavailable. Legacy user `agent.yaml` creation, evaluation and lift are
+removed; old bundle receipts are unreadable, with no migration or deletion.
 
 ## Named destinations
 
@@ -149,7 +149,6 @@ Runtime is a member declaration, not a deployment-time switch. The private
 `runtime.id`, `runtime.version` and `runtime.engine` select exact `v0.10.3`/`go`.
 Optional `--runtime-version v0.10.3` and `--kagent-runtime go` may state the fixed
 profile explicitly; Python and unsupported/contradictory declarations refuse.
-These selectors do not change the `--live --runtime kagent` v0.10.2 path.
 Missing runtime in existing source stays historical Orka only; push/load derive
 the packaged runtime, not a live target.
 
@@ -177,10 +176,9 @@ host qualification. Existing Orka/kagent evidence cannot authorize this profile.
 unchanged into the member. `--description` is optional and single-line.
 Instructions use the native block-text policy: LF and tabs are allowed; CR and other control characters are refused,
 not normalized. `--model` is required and exact; there is no inferred default.
-This mode refuses cluster, Provider, output, tools and Task flags with a
-`--live` remedy, rather than ignoring them or inferring live mode.
-`--workspace` and `--live` conflict; an explicitly empty `--workspace` refuses.
-Required fields and mode conflicts are checked before initialization.
+Live-only flags and `--live` itself are unknown before configuration loads;
+create never bootstraps runtime/model or reads cluster settings. An explicitly
+empty `--workspace` refuses. Required fields are checked before initialization.
 
 A workspace supports only one member. Creating a second member refuses and
 suggests a new `--workspace` directory, preserving authored files, metadata and
@@ -192,11 +190,14 @@ of an exact root, omit `--workspace`:
 kmx create greeter --model qwen-3.5-2b --instructions ./instructions.md
 ```
 
-A name is required; there is no offline authoring wizard. For the separate live
-Orka wizard use `kmx create --live`. Live creation bypasses workspace discovery,
-even below an invalid marker. `--live --no-apply` and `--live --out -` retain the
-old resource/PortableAgent bundle formats, not this workspace format. Quickstart
-creation composes fixed source, full eval, exact local publication, reviewed Apply and placement Verify before a fresh requested answer. Console creation selects an already authored native-Orka workspace, reviews instructions, exact model and every case, and selects a named Ready openai Provider. It requires explicit execution consent (typed destination context for remote targets), then reviews the retained exact Lift plan before single-use Apply/Verify. The explicit source root/fingerprint and complete API URI are rechecked; Ready placement is not an answer. Evaluation/partial errors may leave resources, without automatic retry or cleanup. Scaffold arithmetic is not quality proof for arbitrary instructions; author appropriate public cases. See the [live contract](kmx.md#default-orka-contract).
+A name is required; live create/previews/wizard are removed. Quickstart composes
+fixed source, full eval, exact publication, reviewed Apply and placement Verify
+before a separate fresh answer Task. Console selects authored native-Orka source,
+reviews instructions/model/all cases, selects a Ready openai Provider, obtains
+execution consent and reviews the exact retained Lift plan before Apply/Verify.
+Source fingerprint and complete API URI are rechecked. Console Ready means
+placement only. Partial/evaluation errors can leave resources without retry/cleanup.
+Author appropriate cases; scaffold arithmetic is not arbitrary-agent quality proof.
 
 The source consists of `workspace.yaml`, `agents/greeter/member.yaml`, its
 member-relative instruction file, workspace-root `eval/*.yaml`, and a pinned
@@ -383,8 +384,9 @@ comparison refuses as incompatible, never as equivalent behavior. Comparison
 also requires identical observed ownership. Separate kagent CLI runs create
 fresh resources, so their receipts are incompatible rather than a cross-run
 behavior comparison. Root Lift dispatches only matching runtime evidence;
-cross-runtime evidence refuses. `eval from-sessions` and `bundle evaluate`
-retain their separate formats and behavior; native receipts are not bundle gates.
+cross-runtime evidence refuses. Old Orka/kagent/AgentSessions bundle receipts are
+unreadable. `eval from-sessions` remains private reference extraction/export only,
+with no native manifest consumer. RecordedExecution/legacy replay/judges are removed.
 
 ### Qualification boundary
 
@@ -621,7 +623,7 @@ Unsigned private receipts establish supplied observations, not signer
 authentication or authenticated deployment approval. General promotion policy/
 signing remains separate. Orka uses native `openai` Providers; kagent uses explicit
 OpenAI ModelConfig bindings. Host Foundry/Copilot execution and image lift are not
-covered. Existing bundle lift is unchanged. Hermetic tests alone do not establish
+covered. Legacy bundle lift is removed. Hermetic tests alone do not establish
 real cluster lift qualification.
 
 ### Kagent digest lift

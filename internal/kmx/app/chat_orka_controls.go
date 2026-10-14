@@ -53,6 +53,9 @@ func orkaEnabledToolsSummary(raw []byte) (string, error) {
 
 // Configure runs only between turns, when no task or input reader owns stdin.
 func (b *orkaChatBackend) Configure(ctx context.Context, command string, renderer *chatRenderer) (bool, error) {
+	if command == "/lift" {
+		return false, fmt.Errorf("%s", interactiveLiftRetirement)
+	}
 	if command == "/tools" {
 		return false, fmt.Errorf("%s", agentMutationRetirement)
 	}
@@ -84,14 +87,6 @@ func (b *orkaChatBackend) Configure(ctx context.Context, command string, rendere
 	}
 	// Configuration/source changes invalidate reusable transport state.
 	b.Close()
-	if command == "/lift" {
-		if !isInteractiveTerminal(b.app.Stdin) || !isInteractiveTerminal(b.app.Out) {
-			return false, fmt.Errorf("/lift requires an interactive terminal")
-		}
-		before := b.app
-		err := b.liftAgent(ctx, renderer)
-		return b.app != before, err
-	}
 	if command == "/inference-copilot" || command == "/inference-local" {
 		mode := strings.TrimPrefix(command, "/inference-")
 		path := detectCopilotCLI()

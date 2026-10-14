@@ -3,7 +3,7 @@
 Model selection is separate from runtime selection. Native Orka Agents use
 Providers; interactive host inference can instead use detected local models,
 Copilot or Foundry without rewriting the stored Orka Provider. See
-[Orka installation](orka.md), [kmx create --live](kmx.md#default-orka-contract),
+[Orka installation](orka.md), [native workspace lifecycle](suite-workspace.md),
 [Copilot inference](copilot-inference.md) and
 [Foundry inference](local-foundry-inference.md).
 
@@ -15,9 +15,9 @@ the selected provider and runtime.
 ## Storing an API key
 
 Native Orka Providers reference an existing namespaced Kubernetes Secret.
-Provision it separately; `create --live` accepts only its name and key reference,
+Provision it separately; native evaluation/Lift accepts only name/key references,
 not key bytes. Never put keys in command arguments, checked-in YAML, ConfigMaps
-or logs. The metadata-only Secret skeleton in rendered output must not be applied.
+or logs. Offline workspace create neither provisions credentials nor bootstraps a model.
 
 The key must have no trailing newline: Orka can report a Provider Ready while
 every Task fails because a line ending corrupts its Authorization header. In
@@ -28,8 +28,8 @@ kubectl --context <ctx> -n <ns> create secret generic <name> \
   --from-file=api-key=<(tr -d '\r\n' < <path>)
 ```
 
-See the [create contract](kmx.md#default-orka-contract) for the ordered
-Provider → Agent → Task workflow and result-reader access.
+See the [native workspace guide](suite-workspace.md) for Provider/model
+prerequisites, full evaluation and private evidence; configure result access separately.
 
 ## Azure AI Foundry rides the v1 GA surface
 
@@ -57,7 +57,7 @@ returns HTTP 410 (`github_models_retirement_brownout`) even with a valid
 `gh` OAuth token.
 
 KMX's native Copilot path uses the installed, authenticated Copilot CLI, not a
-plane-side token exchange. The interactive quickstart offers **Copilot · auto**;
+plane-side token exchange. Host Copilot is retired from the wizard;
 `/inference-copilot` in chat discovers models and opens the model picker.
 Credentials remain managed by the installed CLI and are not copied into the
 cluster by this adapter. Read the [Copilot guide](copilot-inference.md) for
@@ -73,11 +73,11 @@ KMX's bundled model remains the default. Redirected sessions,
 `kmx quickstart` never probes or prompts at all. It is deterministic and
 non-interactive on purpose — there is no host-model picker on that path, so
 it always deploys the in-cluster Ollama and the bundled model, and the same
-command on the same machine produces the same fixed Agent bundle. It does
-not read, write or replace the `local` Provider: the bundle has its own
+command on the same machine produces the same fixed native suite source. It does
+not read, write or replace the `local` Provider: the suite has its own
 in-cluster endpoint and only shares the placeholder `local-provider-key`
-Secret. Choosing a host model while the runtime starts is
-`kmx quickstart --interactive`.
+Secret. Guided quickstart uses the native tool-free path; host Foundry/Copilot
+wizard modes are retired. Ordinary host-backed chat controls remain independent.
 
 Before reusing host Ollama, KMX verifies the selected tag through an endpoint
 reachable from the kind node, trying the engine host alias and kind bridge

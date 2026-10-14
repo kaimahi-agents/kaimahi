@@ -165,10 +165,10 @@ class WorkflowTests(unittest.TestCase):
                 with self.subTest(mutation=mutation):
                     self.assertEqual(result.returncode == 0, mutation == "none", result.stdout + result.stderr)
 
-    def test_native_tripwires_allow_only_version_qualified_bundle_evaluation(self):
+    def test_native_tripwires_refuse_removed_bundle_execution(self):
         samples = [
-            ("kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3 --to-context target-context", True),
-            ("kmx --context kind-x bundle evaluate ./bundle --runtime=kagent --runtime-version=v0.10.3 --bindings desired.yaml", True),
+            ("kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3 --to-context target-context", False),
+            ("kmx --context kind-x bundle evaluate ./bundle --runtime=kagent --runtime-version=v0.10.3 --bindings desired.yaml", False),
             ("kmx bundle evaluate ./bundle --runtime kagent", False),
             ("kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.2", False),
             ("kmx bundle evaluate ./bundle --runtime kagent --runtime-version v0.10.3-other", False),
@@ -201,7 +201,7 @@ class WorkflowTests(unittest.TestCase):
                                                 text=True, capture_output=True, timeout=10)
                         self.assertEqual(result.returncode == 0, allowed, result.stdout + result.stderr)
 
-    def test_native_tripwires_execute_with_supported_lift_status_and_refused_chat_eval(self):
+    def test_native_tripwires_execute_without_legacy_runtime_commands(self):
         for step in self.jobs["hygiene"]["steps"]:
             if step.get("name", "").startswith(("Converted shards install", "The clone-free journey sets up")):
                 result = subprocess.run(["bash", "-e", "-c", step["run"]], cwd=ROOT, text=True,

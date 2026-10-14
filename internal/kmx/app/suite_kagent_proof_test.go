@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os/exec"
 	"slices"
 	"testing"
-
-	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 func TestSuiteKagentBilateralOwnership(t *testing.T) {
@@ -17,40 +14,6 @@ func TestSuiteKagentBilateralOwnership(t *testing.T) {
 	p, err := a.prepareSuiteKagent(t.Context(), s, b)
 	if err != nil {
 		t.Fatal(err)
-	}
-	rendered, err := agentruntime.NewRenderedBundle(agentruntime.Kagent, []byte("fixture source"), []agentruntime.Document{agentruntime.ApplyDocument([]byte("{}"))})
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy, err := kagentWriteDocuments(p.bundle, rendered)
-	if err != nil {
-		t.Fatal(err)
-	}
-	proof, err := expectedKagentObjectProof(legacy[1], b.Namespace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, key := range orkaSuiteMarkers {
-		for _, value := range []any{nil, "", "foreign"} {
-			t.Run(key+fmt.Sprint(value), func(t *testing.T) {
-				doc, _ := cloneOrkaDoc(legacy[1])
-				doc["metadata"].(map[string]any)["annotations"].(map[string]any)[key] = value
-				raw, _ := json.Marshal(doc)
-				if _, err := validateKagentAdmission(raw, doc, b.Namespace); err == nil {
-					t.Fatal("reserved desired authorized legacy admission")
-				}
-				ann, _ := kagentStringMap(doc["metadata"].(map[string]any)["annotations"])
-				spec, _ := json.Marshal(proof.Spec)
-				if err := validateKagentProofSpecAndMarkers(spec, ann, proof); err == nil {
-					t.Fatal("suite reservation authorized legacy live proof")
-				}
-				bundle := *p.bundle
-				bundle.Agent = doc
-				if _, err := kagentWriteDocuments(&bundle, agentruntime.RenderedBundle{}); err == nil {
-					t.Fatal("legacy render stripped reservation")
-				}
-			})
-		}
 	}
 	for _, key := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker, kagentVersionMarker} {
 		for _, value := range []any{nil, ""} {

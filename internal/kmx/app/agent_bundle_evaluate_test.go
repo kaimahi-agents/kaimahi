@@ -18,14 +18,12 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
-	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
-	"go.yaml.in/yaml/v3"
 )
 
 type evalFixture struct {
 	app                              *App
-	opt                              EvaluateAgentBundleOptions
-	dir, bundle                      string
+	opt                              struct{ ResultPort string }
+	dir                              string
 	name, digest                     string
 	out                              *bytes.Buffer
 	nativeReads                      *nativeReadFixture
@@ -35,9 +33,7 @@ type evalFixture struct {
 	resultHeldBodies                 atomic.Int32
 }
 
-// newEvalFixture writes a created bundle (with its scaffolded example case
-// replaced by the given cases), seeds a live Agent owned by it at its current
-// digest, and serves Task results from answers keyed by prompt.
+// Seed a raw live Agent and serve attributable Task results keyed by prompt.
 func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 	t.Helper()
 	dir := t.TempDir()
@@ -46,30 +42,11 @@ func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 	t.Setenv("KMX_EVAL_DIR", dir)
 	t.Setenv("KMX_HOME", filepath.Join(dir, "user-state"))
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
-	create := goldenNoTaskCreate("")
-	source, err := portableOrkaSource(create)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundle := filepath.Join(dir, "agents", create.Name)
-	if err := writeOrkaBundle(bundle, source, mustBindingsSource(t, create)); err != nil {
-		t.Fatal(err)
-	}
-	if cases != nil {
-		if err := os.Remove(filepath.Join(bundle, "eval", "example.yaml")); err != nil {
-			t.Fatal(err)
-		}
-		for file, body := range cases {
-			if err := os.WriteFile(filepath.Join(bundle, "eval", file), []byte(body), 0600); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 	out := &bytes.Buffer{}
 	f := &evalFixture{
 		app: &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Out: out, Err: &bytes.Buffer{}, Run: &run.Runner{Stdout: out, Stderr: &bytes.Buffer{}}, waitTiming: fastWaitTiming()},
-		opt: EvaluateAgentBundleOptions{BundleDir: bundle, ToContext: "kind-test", CaseTimeout: 30 * time.Second},
-		dir: dir, bundle: bundle, name: create.Name, digest: agentruntime.PortableBundleDigest(source), out: out,
+		opt: struct{ ResultPort string }{},
+		dir: dir, name: "sample", digest: strings.Repeat("a", 64), out: out,
 		answers: map[string]string{}, resultStatus: http.StatusOK,
 	}
 	f.seedAgent(t, f.digest)
@@ -125,19 +102,6 @@ func (f *evalFixture) seedAgent(t *testing.T, digest string) {
 	}
 }
 
-func (f *evalFixture) receipt(t *testing.T) (bundleEvaluationReceipt, string) {
-	t.Helper()
-	raw, err := os.ReadFile(bundleEvaluationReceiptPath(f.bundle, "kind-test", "orka-system", "cluster-uid"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var receipt bundleEvaluationReceipt
-	if err := json.Unmarshal(raw, &receipt); err != nil {
-		t.Fatal(err)
-	}
-	return receipt, string(raw)
-}
-
 func (f *evalFixture) taskCreates(t *testing.T) int {
 	t.Helper()
 	count := 0
@@ -148,11 +112,6 @@ func (f *evalFixture) taskCreates(t *testing.T) int {
 	}
 	return count
 }
-
-const (
-	evalSignCase  = "id: sign-off\ninput: Say hello and sign off.\nexpectContains:\n  - hello\n  - Signed, Sample\n"
-	evalHelloCase = "id: greet\ninput: Say hello.\nexpectContains: [hello]\n"
-)
 
 func TestOrkaAPIServiceDiscoveryRefusesAbsentAndAmbiguousMatches(t *testing.T) {
 	const chart = `{"metadata":{"name":"orka","labels":{"app.kubernetes.io/name":"orka"}},"spec":{"selector":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"},"ports":[{"name":"api","port":8080}]}}`
@@ -176,25 +135,6 @@ func TestOrkaAPIServiceDiscoveryRefusesAbsentAndAmbiguousMatches(t *testing.T) {
 				t.Fatalf("got service=%q error=%v; want %s", got, err, tc.want)
 			}
 		})
-	}
-}
-
-func TestEvaluateFindsStockHelmReleaseAPIService(t *testing.T) {
-	f := newEvalFixture(t, map[string]string{"case.yaml": evalHelloCase})
-	f.answers["Say hello."] = "hello from Orka"
-	t.Setenv("KMX_EVAL_STOCK_RELEASE", "1")
-	if err := f.app.EvaluateAgentBundle(f.opt); err != nil {
-		t.Fatalf("evaluate stock release: %v", err)
-	}
-	var list, selected, forwarded bool
-	for _, c := range orkaCalls(t, f.dir) {
-		line := strings.Join(c.Args, " ")
-		list = list || strings.Contains(line, "get services -o json")
-		selected = selected || strings.Contains(line, "get service orka -o json")
-		forwarded = forwarded || slices.Contains(c.Args, "port-forward") && slices.Contains(c.Args, "svc/orka")
-	}
-	if !list || !selected || !forwarded {
-		t.Fatalf("stock chart Service was not selected (list=%t get=%t forward=%t)", list, selected, forwarded)
 	}
 }
 
@@ -224,448 +164,5 @@ func TestWizardTaskFindsStockHelmReleaseAPIService(t *testing.T) {
 	}
 	if !forwarded {
 		t.Fatal("wizard result did not forward through stock chart API Service")
-	}
-}
-
-func TestEvaluatePassRecordsDigestsAndNoAnswerText(t *testing.T) {
-	f := newEvalFixture(t, map[string]string{"a.yaml": evalSignCase, "b.yaml": evalHelloCase})
-	f.answers["Say hello and sign off."] = "hello there. Signed, Sample"
-	f.answers["Say hello."] = "hello from a private-answer-text"
-	if err := f.app.EvaluateAgentBundle(f.opt); err != nil {
-		t.Fatalf("passing evaluation returned %v\n%s", err, f.out)
-	}
-	for _, answer := range f.answers {
-		if !strings.Contains(f.out.String(), answer) {
-			t.Fatalf("answer %q not printed:\n%s", answer, f.out)
-		}
-	}
-	receipt, raw := f.receipt(t)
-	if receipt.Result != "pass" || len(receipt.Cases) != 2 {
-		t.Fatalf("receipt = %+v", receipt)
-	}
-	if receipt.PortableDigest != f.digest || receipt.Bundle != f.name || receipt.Target.AgentUID != "agent-uid" || receipt.Target.Context != "kind-test" || receipt.Target.Namespace != "orka-system" {
-		t.Fatalf("receipt identity = %+v", receipt)
-	}
-	_, files, err := loadBundleEvaluationCases(f.bundle)
-	if err != nil || receipt.CasesDigest != agentruntime.EvaluationCasesDigest(files) {
-		t.Fatalf("cases digest %s does not identify the case files (%v)", receipt.CasesDigest, err)
-	}
-	for _, c := range receipt.Cases {
-		if c.Verdict != "pass" || c.TaskName == "" || c.TaskUID != "task-uid-"+c.TaskName || len(c.Missing) != 0 {
-			t.Fatalf("case = %+v", c)
-		}
-	}
-	if got := receipt.Cases[0].AnswerSHA256; got != agentruntime.EvaluationAnswerDigest("hello there. Signed, Sample") {
-		t.Fatalf("answer digest = %s", got)
-	}
-	for _, answer := range f.answers {
-		if strings.Contains(raw, answer) {
-			t.Fatal("receipt contains answer text")
-		}
-	}
-	if strings.Contains(raw, "private-answer-text") || strings.Contains(raw+f.out.String(), orkaTestToken()) {
-		t.Fatal("receipt or output leaked answer text or the session token")
-	}
-	if f.taskCreates(t) != 2 {
-		t.Fatalf("Task creates = %d, want one per case", f.taskCreates(t))
-	}
-	assertOrkaForwardExited(t, f.dir)
-}
-
-func TestEvaluateMissingExpectationFailsAndExitsNonZero(t *testing.T) {
-	f := newEvalFixture(t, map[string]string{"a.yaml": evalSignCase})
-	f.answers["Say hello and sign off."] = "hello there."
-	err := f.app.EvaluateAgentBundle(f.opt)
-	if err == nil || !strings.Contains(err.Error(), "did not pass") {
-		t.Fatalf("failing evaluation returned %v", err)
-	}
-	receipt, raw := f.receipt(t)
-	c := receipt.Cases[0]
-	if receipt.Result != "fail" || c.Verdict != "fail" || len(c.Assertions) != 2 || c.Assertions[0].Verdict != agentruntime.EvaluationPass || c.Assertions[1].Verdict != agentruntime.EvaluationFail || len(c.Matched)+len(c.Missing) != 0 || strings.Contains(raw, "Signed, Sample") {
-		t.Fatalf("receipt = %+v", receipt)
-	}
-	if !strings.Contains(f.out.String(), "hello there.") || !strings.Contains(f.out.String(), `missing "Signed, Sample"`) {
-		t.Fatalf("output did not show the answer and what it lacked:\n%s", f.out)
-	}
-}
-
-func TestEvaluateFailedTaskIsFail(t *testing.T) {
-	f := newEvalFixture(t, map[string]string{"a.yaml": evalHelloCase})
-	t.Setenv("KMX_EVAL_PHASE", "Failed")
-	if err := f.app.EvaluateAgentBundle(f.opt); err == nil {
-		t.Fatal("a failed Task passed the gate")
-	}
-	receipt, _ := f.receipt(t)
-	if receipt.Result != "fail" || receipt.Cases[0].Verdict != "fail" || receipt.Cases[0].Detail != "evaluation execution failed" {
-		t.Fatalf("receipt = %+v", receipt)
-	}
-	if f.taskCreates(t) != 1 {
-		t.Fatal("a failed Task was retried")
-	}
-}
-
-// An unreadable result is neither a pass nor a failure, and the Task that
-// produced it is never resubmitted.
-func TestEvaluateUnreadableResultIsUnknownAndNotRetried(t *testing.T) {
-	f := newEvalFixture(t, map[string]string{"a.yaml": evalHelloCase})
-	f.resultStatus = http.StatusInternalServerError
-	err := f.app.EvaluateAgentBundle(f.opt)
-	if err == nil {
-		t.Fatal("an unknown case passed the gate")
-	}
-	receipt, _ := f.receipt(t)
-	c := receipt.Cases[0]
-	if receipt.Result != "unknown" || c.Verdict != "unknown" || c.TaskUID == "" || c.AnswerSHA256 != "" || len(c.Matched)+len(c.Missing) != 0 {
-		t.Fatalf("receipt = %+v", receipt)
-	}
-	if f.taskCreates(t) != 1 {
-		t.Fatalf("Task creates = %d, want exactly one", f.taskCreates(t))
-	}
-}
-
-// Any unknown case keeps the overall result unknown even when the others
-// passed, and a failing case makes it fail.
-func TestEvaluationOverallResult(t *testing.T) {
-	for _, tc := range []struct {
-		verdicts []string
-		want     string
-	}{
-		{[]string{"pass", "pass"}, "pass"},
-		{[]string{"pass", "unknown"}, "unknown"},
-		{[]string{"unknown", "fail"}, "fail"},
-	} {
-		var cases []bundleEvaluationResult
-		for _, verdict := range tc.verdicts {
-			cases = append(cases, bundleEvaluationResult{Verdict: verdict})
-		}
-		if got := bundleEvaluationOverall(cases); got != tc.want {
-			t.Errorf("%v = %s, want %s", tc.verdicts, got, tc.want)
-		}
-	}
-}
-
-func TestEvaluateRefusesBeforeRunning(t *testing.T) {
-	for _, tc := range []struct {
-		name, want string
-		setup      func(*testing.T, *evalFixture)
-	}{
-		{"revision mismatch", "deployed revision differs; lift first", func(t *testing.T, f *evalFixture) {
-			f.seedAgent(t, strings.Repeat("a", 64))
-		}},
-		{"not deployed", "lift first", func(t *testing.T, f *evalFixture) {
-			_ = os.Remove(filepath.Join(f.dir, "agent.json"))
-		}},
-		{"stale remembered target", "stale remembered target", func(t *testing.T, f *evalFixture) {
-			f.opt.ToContext = ""
-			path, err := bundleLiftSelectionPath(f.bundle)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := saveBundleLiftSelection(path, bundleLiftSelection{Context: "kind-test", ClusterUID: "replaced-cluster", Namespace: "orka-system", Inference: "provider:inference"}); err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"unconfirmed remote context", "kube-guard:", func(t *testing.T, f *evalFixture) { t.Setenv("KMX_EVAL_REMOTE", "1") }},
-		{"no target", "requires --to-context", func(t *testing.T, f *evalFixture) { f.opt.ToContext = "" }},
-		{"unknown case", `no evaluation case with id "nope"`, func(t *testing.T, f *evalFixture) { f.opt.Case = "nope" }},
-		{"invalid case", "field surprise not found", func(t *testing.T, f *evalFixture) {
-			_ = os.WriteFile(filepath.Join(f.bundle, "eval", "bad.yaml"), []byte(evalHelloCase+"surprise: true\n"), 0600)
-		}},
-		{"duplicate ids", `repeats case id "greet"`, func(t *testing.T, f *evalFixture) {
-			_ = os.WriteFile(filepath.Join(f.bundle, "eval", "c.yaml"), []byte(evalHelloCase), 0600)
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newEvalFixture(t, map[string]string{"b.yaml": evalHelloCase})
-			tc.setup(t, f)
-			err := f.app.EvaluateAgentBundle(f.opt)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("err = %v, want %q", err, tc.want)
-			}
-			if f.taskCreates(t) != 0 {
-				t.Fatal("a Task was created before the refusal")
-			}
-			if _, err := os.Stat(bundleEvaluationReceiptPath(f.bundle, "kind-test", "orka-system", "cluster-uid")); !os.IsNotExist(err) {
-				t.Fatal("a refused evaluation wrote a receipt")
-			}
-		})
-	}
-}
-
-// The remembered target is used when --to-context is omitted, provided its
-// cluster identity still matches.
-func TestEvaluateUsesRememberedTarget(t *testing.T) {
-	f := newEvalFixture(t, map[string]string{"b.yaml": evalHelloCase})
-	f.answers["Say hello."] = "hello"
-	f.opt.ToContext = ""
-	path, err := bundleLiftSelectionPath(f.bundle)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := saveBundleLiftSelection(path, bundleLiftSelection{Context: "kind-test", ClusterUID: "cluster-uid", Namespace: "orka-system", Inference: "provider:inference"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.app.EvaluateAgentBundle(f.opt); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestEvaluateReceiptSizePreflight(t *testing.T) {
-	for _, selected := range []bool{false, true} {
-		t.Run(fmt.Sprintf("selected=%t", selected), func(t *testing.T) {
-			f := newEvalFixture(t, oversizedEvaluationSuite())
-			f.answers["hello"] = "hello"
-			if selected {
-				f.opt.Case = "case-0"
-			} else {
-				// Budget refusal must precede even the remote mutation guard.
-				t.Setenv("KMX_EVAL_REMOTE", "1")
-			}
-			err := f.app.EvaluateAgentBundle(f.opt)
-			if selected {
-				if err != nil || f.taskCreates(t) != 1 {
-					t.Fatalf("single case: err=%v tasks=%d", err, f.taskCreates(t))
-				}
-				r, _ := f.receipt(t)
-				if r.FullCaseSet || len(r.Cases) != 1 || len(r.Cases[0].Assertions) != 1000 {
-					t.Fatalf("wrong selected evidence: %+v", r)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), "receipt") || !strings.Contains(err.Error(), "1 MiB") || !strings.Contains(err.Error(), "at most 231 cases with one assertion each") || !strings.Contains(err.Error(), "--case <id> to run one case") {
-				t.Errorf("want receipt-size preflight refusal with case limit and single-case guidance, got %v", err)
-			}
-			if calls := orkaCalls(t, f.dir); len(calls) != 0 || f.taskCreates(t) != 0 {
-				t.Errorf("oversized evaluation reached kubectl: %+v", calls)
-			}
-			if _, err := os.Stat(filepath.Join(f.bundle, "receipts")); !os.IsNotExist(err) {
-				t.Errorf("refused evaluation changed receipts: %v", err)
-			}
-		})
-	}
-}
-
-func TestEvaluateKnownMetadataPreflight(t *testing.T) {
-	for _, field := range []string{"model", "escaped model", "context", "remembered namespace", "cluster UID", "Agent UID"} {
-		t.Run(field, func(t *testing.T) {
-			f := newEvalFixture(t, map[string]string{"a.yaml": evalHelloCase})
-			f.answers["Say hello."] = "hello"
-			huge := strings.Repeat("x", maxSessionsReceiptBytes)
-			beforeCluster := true
-			switch field {
-			case "model", "escaped model":
-				if field == "escaped model" {
-					// Raw bytes fit comfortably; JSON HTML escaping does not.
-					huge = strings.Repeat("<", maxSessionsReceiptBytes/6)
-				}
-				setEvaluationPortableModel(t, f.bundle, huge)
-				_, _, digest, err := readBundlePortableDocument(f.bundle)
-				if err != nil {
-					t.Fatal(err)
-				}
-				f.digest = digest
-				f.seedAgent(t, f.digest)
-			case "context":
-				f.opt.ToContext = huge
-			case "remembered namespace":
-				path, err := bundleLiftSelectionPath(f.bundle)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := saveBundleLiftSelection(path, bundleLiftSelection{Context: "kind-test", ClusterUID: "cluster-uid", Namespace: huge, Inference: "provider:inference"}); err != nil {
-					t.Fatal(err)
-				}
-			case "cluster UID":
-				// Avoid oversized environment variables while retaining huge JSON.
-				t.Setenv("KMX_EVAL_CLUSTER_UID", strings.Repeat("<", 110000))
-				body := "id: greet\ninput: Say hello.\nexpectContains:\n" + strings.Repeat("- hello\n", 1000)
-				if err := os.WriteFile(filepath.Join(f.bundle, "eval", "a.yaml"), []byte(body), 0600); err != nil {
-					t.Fatal(err)
-				}
-				beforeCluster = false
-			case "Agent UID":
-				raw, err := os.ReadFile(filepath.Join(f.dir, "agent.json"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var agent map[string]any
-				if err := json.Unmarshal(raw, &agent); err != nil {
-					t.Fatal(err)
-				}
-				agent["metadata"].(map[string]any)["uid"] = huge
-				seed, err := json.Marshal(agent)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(filepath.Join(f.dir, "agent.json"), seed, 0600); err != nil {
-					t.Fatal(err)
-				}
-				beforeCluster = false
-			}
-			if !beforeCluster {
-				// Metadata refusal must precede the remote mutation guard too.
-				t.Setenv("KMX_EVAL_REMOTE", "1")
-			}
-			err := f.app.EvaluateAgentBundle(f.opt)
-			if err == nil || !strings.Contains(err.Error(), "1 MiB receipt budget") || strings.Contains(err.Error(), "finished") {
-				t.Errorf("known metadata did not fail preflight: %v", err)
-			}
-			if f.taskCreates(t) != 0 {
-				t.Error("known oversized metadata created a Task")
-			}
-			if calls := orkaCalls(t, f.dir); beforeCluster && len(calls) != 0 {
-				t.Errorf("known oversized metadata reached kubectl: %d calls", len(calls))
-			}
-			if _, err := os.Stat(filepath.Join(f.bundle, "receipts")); !os.IsNotExist(err) {
-				t.Errorf("metadata refusal changed receipts: %v", err)
-			}
-		})
-	}
-}
-
-func setEvaluationPortableModel(t *testing.T, bundle, model string) {
-	t.Helper()
-	path := filepath.Join(bundle, "agent.yaml")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	portable, err := agentruntime.ParsePortableAgent(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	portable.Spec.Model.Name = model
-	raw, err = yaml.Marshal(portable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := agentruntime.ParsePortableAgent(raw); err != nil {
-		t.Fatalf("oversized model must remain a valid portable source: %v", err)
-	}
-	if err := os.WriteFile(path, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestEvaluateSingleCase(t *testing.T) {
-	f := newEvalFixture(t, map[string]string{"a.yaml": evalSignCase, "b.yaml": evalHelloCase})
-	f.answers["Say hello."] = "hello"
-	f.opt.Case = "greet"
-	if err := f.app.EvaluateAgentBundle(f.opt); err != nil {
-		t.Fatal(err)
-	}
-	receipt, _ := f.receipt(t)
-	if receipt.FullCaseSet || len(receipt.Cases) != 1 || receipt.Cases[0].ID != "greet" || f.taskCreates(t) != 1 {
-		t.Fatalf("receipt = %+v", receipt)
-	}
-	// A subset of the cases is not the bundle's case set.
-	if receipt.CasesDigest == currentBundleCasesDigest(f.bundle) {
-		t.Fatal("a single-case receipt claims the full case set")
-	}
-}
-
-func TestEvaluateAdapterRefusesUnboundRequests(t *testing.T) {
-	adapter := orkaRuntimeAdapter{app: &App{Cfg: &config.Config{KubeContext: "kind-test"}}}
-	ref := agentruntime.AgentRef{Namespace: "orka-system", Name: "sample", UID: "agent-uid"}
-	request := agentruntime.EvaluationRequest{CaseID: "c", Input: "hi", ExpectContains: []string{"hi"}}
-	if _, err := adapter.Evaluate(t.Context(), ref, request); err == nil || !strings.Contains(err.Error(), "portable digest") {
-		t.Fatalf("an evaluation bound to no revision was attempted: %v", err)
-	}
-	request.PortableDigest = strings.Repeat("a", 64)
-	if _, err := adapter.Evaluate(t.Context(), agentruntime.AgentRef{Namespace: "orka-system", Name: "sample"}, request); err == nil {
-		t.Fatal("an evaluation of an Agent with no UID was attempted")
-	}
-	if _, err := adapter.Evaluate(t.Context(), ref, request); err == nil || !strings.Contains(err.Error(), "deadline") {
-		t.Fatalf("an unbounded evaluation was attempted: %v", err)
-	}
-}
-
-// Status reports the recorded result only for the deployed revision when it
-// is the current digest and case set, and none otherwise.
-func TestBundleStatusShowsEvaluation(t *testing.T) {
-	for _, tc := range []struct {
-		name, want string
-		edit       func(*bundleEvaluationReceipt)
-		write      bool
-	}{
-		{"pass", "pass", nil, true},
-		{"none for missing case results", "none", func(r *bundleEvaluationReceipt) { r.Cases = nil }, true},
-		{"pass from another context alias", "pass", func(r *bundleEvaluationReceipt) { r.Target.Context = "ci" }, true},
-		{"fail", "fail", func(r *bundleEvaluationReceipt) { r.Result = "fail" }, true},
-		{"none without receipt", "none", nil, false},
-		{"none for another case set", "none", func(r *bundleEvaluationReceipt) { r.CasesDigest = strings.Repeat("c", 64) }, true},
-		{"none for another revision", "none", func(r *bundleEvaluationReceipt) { r.PortableDigest = strings.Repeat("d", 64) }, true},
-		{"none for a replaced Agent", "none", func(r *bundleEvaluationReceipt) { r.Target.AgentUID = "old-agent-uid" }, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			a, opt, dir, rendered, name := bundleStatusFixture(t)
-			seedBundleLiveResources(t, dir, rendered, name, nil)
-			if tc.write {
-				receipt := bundleEvaluationReceipt{
-					Bundle: name, PortableDigest: rendered.PortableDigest(), CasesDigest: currentBundleCasesDigest(opt.BundleDir), FullCaseSet: true, Result: "pass",
-					Target: bundleEvaluationTarget{Runtime: agentruntime.Orka, Context: "kind-test", Namespace: "orka-system", ClusterUID: "cluster-uid", Agent: name, AgentUID: "agent-uid"},
-					Cases:  []bundleEvaluationResult{{ID: "example", Verdict: "pass"}},
-				}
-				if tc.edit != nil {
-					tc.edit(&receipt)
-				}
-				if err := writeBundleEvaluationReceipt(opt.BundleDir, "cluster-uid", receipt); err != nil {
-					t.Fatal(err)
-				}
-			}
-			opt.Context, opt.Namespace = "kind-test", "orka-system"
-			report, err := a.bundleStatusReport(opt)
-			if err != nil {
-				t.Fatal(err)
-			}
-			target := report.Targets[0]
-			if target.State != bundleStateInSync || target.Evaluation != tc.want {
-				t.Fatalf("state %q evaluation %q, want in sync and %q", target.State, target.Evaluation, tc.want)
-			}
-			// An evaluation receipt never counts as a deployment target.
-			targets, err := loadBundleReceiptTargets(opt.BundleDir)
-			if err != nil || len(targets) != 0 {
-				t.Fatalf("evaluation receipt read as a lift receipt: %+v %v", targets, err)
-			}
-		})
-	}
-}
-
-func TestCreateScaffoldsAValidExampleCase(t *testing.T) {
-	create := goldenNoTaskCreate("")
-	source, err := portableOrkaSource(create)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bindings := mustBindingsSource(t, create)
-	bundle := filepath.Join(t.TempDir(), "agents", "sample")
-	if err := writeOrkaBundle(bundle, source, bindings); err != nil {
-		t.Fatal(err)
-	}
-	cases, _, err := loadBundleEvaluationCases(bundle)
-	if err != nil || len(cases) != 1 || cases[0].Case.ID != "example" {
-		t.Fatalf("scaffolded cases = %+v, %v", cases, err)
-	}
-	// An identical rerun accepts the eval/ directory, whatever cases an
-	// operator has since added, and leaves them alone.
-	extra := filepath.Join(bundle, "eval", "mine.yaml")
-	if err := os.WriteFile(extra, []byte(evalHelloCase), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeOrkaBundle(bundle, source, bindings); err != nil {
-		t.Fatalf("rerun refused a bundle with eval/: %v", err)
-	}
-	if _, err := os.Stat(extra); err != nil {
-		t.Fatal("rerun removed an operator's case")
-	}
-	// eval/ must be a directory, never a link.
-	if err := os.RemoveAll(filepath.Join(bundle, "eval")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(t.TempDir(), filepath.Join(bundle, "eval")); err != nil {
-		t.Fatal(err)
-	}
-	if err := preflightOrkaBundle(bundle, source, bindings); err == nil || !strings.Contains(err.Error(), "not a link") {
-		t.Fatalf("preflight accepted a linked eval/: %v", err)
 	}
 }

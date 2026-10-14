@@ -1,9 +1,7 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -224,72 +222,6 @@ func (a *App) quickstartCreateOptions() CreateOptions {
 		OrkaAPIService:       "orka-api",
 		ResultPort:           port,
 	}
-}
-
-// stepQuickstartAgent creates the fixed Provider and Agent, or reuses them.
-//
-// Reuse is EXACT-MATCH ONLY. A live Provider or Agent whose spec differs
-// from the one quickstart would write is somebody's deliberate change — an
-// edited endpoint, a different model, a hand-applied bundle — so this stops
-// rather than overwrite it. A half-finished run resumes: whichever of
-// the two already matches is kept, and the other is created.
-func (a *App) stepQuickstartAgent() error {
-	ctx, cancel := context.WithTimeout(a.operationContext(), 10*time.Minute)
-	defer cancel()
-	opt := a.quickstartCreateOptions()
-	bundle, err := createOrkaBundle(opt)
-	if err != nil {
-		return err
-	}
-	if err := a.orkaProviderSecretPresent(ctx, opt.Namespace, opt.Secret, opt.SecretKey); err != nil {
-		return err
-	}
-	for _, doc := range []map[string]any{bundle.Provider, bundle.Agent} {
-		id, err := a.matchingOrkaResource(ctx, opt.Namespace, doc)
-		if err != nil {
-			if errors.Is(err, errOrkaConfigurationDrift) {
-				return fmt.Errorf("%w; keep the drifted resource and run `kmx create --live` under a different name, or delete the fixed %s so quickstart recreates it", err, QuickstartAgent)
-			}
-			return err
-		}
-		if id == nil {
-			created, err := a.createOrkaObject(ctx, opt.Namespace, doc)
-			if err != nil {
-				return err
-			}
-			a.notef("Created %s/%s (UID %s); waiting for current-generation Ready.", created.Kind, created.Name, created.UID)
-			id = &created
-		} else {
-			a.notef("Reusing matching %s/%s (UID %s).", id.Kind, id.Name, id.UID)
-		}
-		if err := a.waitOrkaReady(ctx, opt.Namespace, *id); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// quickstartAnswer creates a FRESH Task and returns its retrieved reply.
-//
-// Fresh every run, never reused: an existing completed Task holds an earlier
-// run's answer, and reporting it as this run's would turn "the agent
-// answered" into "the agent answered once, some time ago". The reply must be
-// non-blank after sanitisation — a Task that completed with nothing readable
-// in it is a failed run, not an answer.
-func (a *App) quickstartAnswer(task string) (string, error) {
-	// Eight minutes, not ten: the result token is minted for ten and the
-	// session refuses to start unless the grant outlasts the deadline by
-	// thirty seconds. A ten-minute deadline here would refuse every run.
-	ctx, cancel := context.WithTimeout(a.operationContext(), 8*time.Minute)
-	defer cancel()
-	opt := a.quickstartCreateOptions()
-	opt.Task = task
-	session, err := a.openOrkaResultSession(ctx, opt)
-	if err != nil {
-		return "", err
-	}
-	defer session.close()
-	return a.runQuickstartOrkaTaskProfile(ctx, QuickstartAgent, OrkaNamespace, task, nil, nil, session)
 }
 
 // quickstartFollowups are the commands this cluster can actually run next.

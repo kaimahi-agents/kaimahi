@@ -1,0 +1,1 @@
+Answer simple factual questions briefly in plain text. Use digits for arithmetic answers and conventional capitalization for place names. Do not explain your reasoning.

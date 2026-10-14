@@ -170,7 +170,7 @@ func TestWorkspaceRuntimeSelectorsRefuseBeforeConfigOrWrites(t *testing.T) {
 	}
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	if err := execute([]string{"create", "--live", "greeter", "--runtime", "kagent", "--runtime-version", "v0.10.3"}, deps); err == nil || !strings.Contains(err.Error(), "offline authoring") || *loads != 0 {
+	if err := execute([]string{"create", "--live", "greeter", "--runtime", "kagent", "--runtime-version", "v0.10.3"}, deps); err == nil || !strings.Contains(err.Error(), "unknown flag: --live") || *loads != 0 {
 		t.Fatalf("suite selector changed live create: %v", err)
 	}
 }
@@ -213,7 +213,7 @@ func TestCreateDefaultModeRefusalsBeforeConfigOrWrites(t *testing.T) {
 		{"nonterminal", []string{"member", "--model", "exact", "--instructions", "input"}, "--workspace"},
 		{"kagent requires source", []string{"member", "--runtime", "kagent"}, "--model and --instructions"},
 		{"kagent nonterminal", []string{"member", "--runtime", "kagent", "--model", "exact", "--instructions", "input"}, "--workspace"},
-		{"context", []string{"member", "--context", "unused"}, "--live"},
+		{"context", []string{"member", "--context", "unused"}, "offline workspace"},
 		{"false live is offline", []string{"member", "--live=false", "--namespace", "unused"}, "--live"},
 		{"empty workspace", []string{"member", "--workspace="}, "non-empty --workspace"},
 	} {

@@ -8,6 +8,31 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+func TestConsoleLiftMovedWithoutDispatch(t *testing.T) {
+	want := "Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …"
+	for _, entry := range []string{"key", "/lift", "/lift sample new"} {
+		t.Run(entry, func(t *testing.T) {
+			m := newAgentTUIModel(AgentTUIOptions{Demo: true})
+			m.opt.Demo = false
+			if entry == "key" {
+				m = tuiKey(m, 'L', "L")
+			} else {
+				next, _ := m.execute(entry)
+				m = next.(agentTUIModel)
+			}
+			if m.status != want || m.action != nil || m.command {
+				t.Fatalf("Lift still dispatches: status=%q action=%v", m.status, m.action)
+			}
+		})
+	}
+	m := newAgentTUIModel(AgentTUIOptions{Demo: true})
+	for _, choice := range m.agentActions(agentTUIAgent{Name: "sample", Namespace: "agents"}) {
+		if choice.key == "L" {
+			t.Fatal("retired Lift is still an action")
+		}
+	}
+}
+
 func TestConsoleMutationMenusRefuseWithoutDispatch(t *testing.T) {
 	for _, key := range []rune{'f', 't'} {
 		m := newAgentTUIModel(AgentTUIOptions{Demo: true})

@@ -11,7 +11,6 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 type TargetsOptions struct {
@@ -72,56 +71,43 @@ func (e *TargetsUnreadableError) Error() string {
 // compiledTargets is the diagnostic composition root, not another runtime
 // registry. Research candidates and unwired experimental ports do not appear here.
 func compiledTargets() []TargetInfo {
-	orka := orkaRuntimeAdapter{create: &CreateOptions{}}
-	kagent := kagentRuntimeAdapter{lift: &kagentLiftOperation{}, bindings: &agentruntime.KagentBindings{}, evaluation: &kagentEvaluationOperation{}}
 	rows := []TargetInfo{
-		{ID: string(orka.ID()), DisplayName: "Orka", Kind: "adapter", SupportTier: "supported",
-			QualifiedVersions: []TargetQualification{{Version: OrkaVersion, Scope: "native Orka commands", Evidence: "SHA-256-pinned release chart; e2e-orka-runtime"}},
-			Capabilities:      lifecycleTargetCapabilities(orka),
+		{ID: string(agentruntime.Orka), DisplayName: "Orka", Kind: "native-profile", SupportTier: "supported",
+			QualifiedVersions: []TargetQualification{{Version: OrkaVersion, Scope: "native Orka commands and immutable suite lift", Evidence: "SHA-256-pinned release chart; native suite and Orka runtime qualification"}},
+			Capabilities:      nativeTargetCapabilities(agentruntime.Orka),
 			Detection:         TargetDetection{State: "not-probed", Scope: "controller Deployments in orka-system", Detail: "use --detect with an explicit or saved Kubernetes context"}},
-		{ID: string(kagent.ID()), DisplayName: "Kagent", Kind: "adapter", SupportTier: "version-scoped",
-			QualifiedVersions: []TargetQualification{
-				{Version: scaffold.KagentVersion, Scope: "explicit create only", Evidence: "exact controller commit and OCI image checks; e2e-kagent-create"},
-				{Version: "v0.10.3", Scope: "explicit Go-only new placement, receipt-bound lift/status/evaluate; Go/Python render", Evidence: "compiled exact pins; e2e-kagent-lift qualifies Go placement/status/conflicts, native MCP and product evaluation with fresh A2A IDs, exact answer digests and repeat offline diff; deployment readiness is not execution proof"},
+		{ID: string(agentruntime.Kagent), DisplayName: "Kagent", Kind: "native-profile", SupportTier: "version-scoped",
+			QualifiedVersions: []TargetQualification{{Version: "v0.10.3", Scope: "exact Go-only native suite create/eval and immutable digest lift", Evidence: "compiled exact pins; fresh attributable A2A evaluation; readiness is not execution proof"}},
+			Capabilities:      nativeTargetCapabilities(agentruntime.Kagent),
+			Detection:         TargetDetection{State: "not-probed", Scope: "explicit version-qualified native suite commands only", Detail: "no Kagent discovery; native suite requires exact v0.10.3 Go"}},
+		{ID: "agentsessions", DisplayName: "agentsessions", Kind: "integration", SupportTier: "development-only",
+			QualifiedVersions: []TargetQualification{{Version: agentsessions.ReferenceRevision, Scope: "pinned chat suite authoring and explicit development-host evaluation; not remote host attestation", Evidence: "pinned Go module; full-pass packaged chat evidence and reference export tests"}},
+			Capabilities: []TargetCapability{
+				{Operation: "create", Supported: true, Reason: "offline pinned chat suite authoring"},
+				{Operation: "eval", Supported: true, Reason: "explicit private literal-loopback development host; tool-free unauthenticated one-shot execution"},
+				{Operation: "push", Supported: true, Reason: "ordinary transfer or exact-S full-passing development evidence; no deployment"},
+				{Operation: "export", Supported: true, Reason: "eval from-sessions exports reference cases separately; no recorded-manifest execution"},
+				{Operation: "lift", Reason: "development evidence cannot authorize remote placement"},
+				{Operation: "chat", Reason: "no standalone AgentSessions chat"},
+				{Operation: "run", Reason: "no standalone AgentSessions run"},
+				{Operation: "inspect", Reason: "no AgentSessions live inspection"},
+				{Operation: "diff", Reason: "development AgentSessions receipts are refused by eval diff"},
 			},
-			Capabilities: lifecycleTargetCapabilities(kagent),
-			Detection:    TargetDetection{State: "not-probed", Scope: "explicit version-qualified commands only", Detail: "no Kagent discovery; create validates v0.10.2, explicit Go bundle lift/status/evaluate validate v0.10.3"}},
-		{ID: "agentsessions", DisplayName: "agentsessions", Kind: "integration", SupportTier: "eval-only",
-			QualifiedVersions: []TargetQualification{{Version: agentsessions.ReferenceRevision, Scope: "reference-chat evaluation and local replay only; not the remote host version", Evidence: "pinned Go module; e2e-eval-loop"}},
-			Detection:         TargetDetection{State: "not-probed", Scope: "Sessions API only", Detail: "use --sessions host:port; HarnessRegistry is not probed or qualified"}},
-	}
-	for _, operation := range []string{"render", "deploy", "status", "evaluate", "chat", "run", "retire", "verify", "logs", "diff", "rollback"} {
-		supported := operation == "evaluate" || operation == "verify"
-		reason := "requires the qualified text-only reference chat profile; no registration or lift gate"
-		if !supported {
-			reason = (&agentruntime.UnsupportedVerbError{Runtime: "agentsessions", Verb: operation}).Error() + "; lifecycle adapter blocked on an operator-only HarnessRegistry listener and shared conformance"
-		}
-		rows[2].Capabilities = append(rows[2].Capabilities, TargetCapability{Operation: operation, Supported: supported, Reason: reason})
+			Detection: TargetDetection{State: "not-probed", Scope: "Sessions API only", Detail: "use --sessions host:port; HarnessRegistry is not probed or qualified"}},
 	}
 	return rows
 }
 
-func lifecycleTargetCapabilities(adapter agentruntime.LifecycleAdapter) []TargetCapability {
-	c := adapter.Capabilities()
-	support := map[string]bool{"render": c.Render, "deploy": c.Deploy, "status": c.Status, "evaluate": c.Evaluate}
-	if adapter.ID() == agentruntime.Orka {
-		support["chat"], support["run"], support["retire"] = true, true, true
-	}
+func nativeTargetCapabilities(id agentruntime.ID) []TargetCapability {
 	var result []TargetCapability
-	for _, operation := range []string{"render", "deploy", "status", "evaluate", "chat", "run", "retire", "verify", "logs", "diff", "rollback"} {
-		supported := support[operation]
-		reason := "requires valid command input and a prepared supported target; detection is not readiness or semantic-result proof"
+	for _, operation := range []string{"create", "eval", "push", "lift", "chat", "run", "inspect", "diff"} {
+		supported := id == agentruntime.Orka || operation != "chat" && operation != "run" && operation != "inspect"
+		reason := "native authored workspace and immutable suite workflow; lift requires explicit evidence and reviewed Apply/Verify"
+		if operation == "chat" || operation == "run" || operation == "inspect" {
+			reason = "independent live Orka Agent operation; no bundle or deployment receipt"
+		}
 		if !supported {
-			reason = (&agentruntime.UnsupportedVerbError{Runtime: adapter.ID(), Verb: operation}).Error() + "; use only the supported commands listed here"
-		} else if adapter.ID() == agentruntime.Kagent {
-			reason = "explicit exact-v0.10.2 create or exact-v0.10.3 Go-only bundle lift/status/evaluate; no installation, reconciliation, adoption, update or rollback"
-			if operation == "status" {
-				reason = "explicit exact-v0.10.3 Go-only bundle status with desired bindings; receipt-bound readiness, never execution success"
-			} else if operation == "evaluate" {
-				reason = "explicit exact-v0.10.3 Go-only receipt-bound evaluation with desired bindings; unsecure only, trusted-proxy refused; fresh A2A Tasks, no retries or promotion gates; tool assertions unknown"
-			}
-		} else if operation == "retire" {
-			reason = "native Orka workload delete/release; not retained-registration retirement; no target teardown"
+			reason = (&agentruntime.UnsupportedVerbError{Runtime: id, Verb: operation}).Error()
 		}
 		result = append(result, TargetCapability{Operation: operation, Supported: supported, Reason: reason})
 	}

@@ -183,9 +183,9 @@ The intended conceptual mapping is:
 | `kmx suite build` | Current one-member experimental command is not `AgentSuites.Build` |
 | `kmx suite push` / root `kmx push --workspace DIR REF` | Current extracted-definition/workspace transfer is not `AgentSuites.Push` |
 | Future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
-| `kmx bundle lift` | `AgentDeployments.Lift` |
-| `kmx bundle status` | `AgentDeployments.Status` |
-| `kmx bundle retire` | `AgentDeployments.Retire` |
+| Root digest `kmx lift` | Related lifecycle vocabulary, not `AgentDeployments.Lift` wiring |
+| Suite status (unavailable) | `AgentDeployments.Status` remains alpha design evidence |
+| Suite retirement (unavailable) | `AgentDeployments.Retire` remains alpha design evidence |
 
 This is a product-level direction, not shared implementation today. The current
 CLI does not call these northbound interfaces. It also provides `kmx suite pull`
@@ -232,9 +232,6 @@ kmx quickstart
 
 # Interactive custom authoring on current development builds.
 kmx quickstart --interactive
-
-# Create live resources and a bundle against an already prepared target.
-kmx create --live
 ```
 
 Tagged v0.4.1 and earlier use `kmx quickstart-wizard` for custom authoring;

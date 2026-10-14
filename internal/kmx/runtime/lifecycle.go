@@ -1,57 +1,8 @@
-// Lifecycle contracts. LifecycleAdapter is the sibling of the chat Adapter:
-// a runtime that can render, deploy, report on, or evaluate an agent embeds
-// Adapter and reuses the same ID, AgentRef and Status types rather than
-// introducing a parallel identity model. Nothing here knows about Kubernetes:
-// Render takes a target-bound portable document whose exact source was checked
-// before the adapter received it.
 package runtime
 
 import (
 	"context"
-	"fmt"
-	"time"
 )
-
-// LifecycleAdapter declares its supported verbs statically through
-// Capabilities; a verb it does not declare returns *UnsupportedVerbError
-// rather than being attempted.
-type LifecycleAdapter interface {
-	Adapter
-	Capabilities() Capabilities
-	// ConsumedExtensions declares the runtime-specific behavior Render honors.
-	ConsumedExtensions() []ID
-	// SupportsCoordination declares whether Render honors core named delegation.
-	SupportsCoordination() bool
-	// Render takes only a document prepared for this adapter. Its source bytes
-	// remain the authoritative portable-identity input.
-	Render(context.Context, *PreparedPortableRender, RenderOptions) (RenderedBundle, error)
-	// Deploy uses Render's bundle without re-rendering; a reconciler may add
-	// ownership metadata to the write payload without changing the digest.
-	Deploy(context.Context, RenderedBundle, DeployOptions) (DeployResult, error)
-	Status(context.Context, AgentRef, StatusOptions) (Status, error)
-	Evaluate(context.Context, AgentRef, EvaluationRequest) (EvaluationReceipt, error)
-}
-
-// DeployOptions keeps the create-only path as the zero value. Reconcile is
-// desired-state deployment; runtimes that do not support it must refuse it.
-type RenderOptions struct{}
-type DeployOptions struct{ Reconcile bool }
-type StatusOptions struct {
-	Desired  *RenderedBundle
-	Expected *DeployReceipt
-}
-
-// DeployResult carries a ready deployment's reference and history data. A
-// failed deploy has no receipt, even if some resources were written.
-type DeployResult struct {
-	Ref     AgentRef
-	Receipt DeployReceipt
-}
-
-type DeployTarget struct {
-	Runtime            ID
-	Context, Namespace string
-}
 
 type ResourceOutcome string
 
@@ -61,25 +12,6 @@ const (
 	ResourceUpdated ResourceOutcome = "updated"
 	ResourceAdopted ResourceOutcome = "adopted"
 )
-
-type ResourceResult struct {
-	Kind, Name, Namespace, UID string
-	Generation                 int64
-	Outcome                    ResourceOutcome
-}
-
-type DeployReceipt struct {
-	Bundle, PortableDigest, RenderedDigest string
-	Target                                 DeployTarget
-	Resources                              []ResourceResult
-	RuntimeVersion                         string             `json:",omitempty"`
-	ClusterUID                             string             `json:",omitempty"`
-	Ready                                  bool               `json:",omitempty"`
-	ObservedAt                             time.Time          `json:",omitzero"`
-	Proofs                                 []ResourceEvidence `json:",omitempty"`
-	Dependencies                           []ResourceEvidence `json:",omitempty"`
-	Workload                               []ResourceEvidence `json:",omitempty"`
-}
 
 // ResourceEvidence carries identity and non-secret spec evidence. Key is a
 // reference name only; credentials and their hashes never belong in history.
@@ -95,24 +27,6 @@ type ResourceEvidence struct {
 // ephemeral. The app-owned implementation returns ordinary and judge rows.
 // Adapters invoke it only after successful execution and revision attribution.
 type EvaluationJudge func(context.Context, EvaluationCase, EvaluationEvidence) []EvaluationAssertionResult
-
-// EvaluationRequest carries one evaluation case: identity, input, the
-// assertions the terminal answer must satisfy, and the portable digest of the
-// revision it must run against. Results are bound to that digest, so an
-// adapter refuses a request whose target is not deployed at exactly it, and
-// refuses one that names no revision at all.
-type EvaluationRequest struct {
-	CaseID         string
-	Input          string
-	ExpectContains []string
-	Assertions     []EvaluationAssertion
-	PortableDigest string
-	// Desired and Expected bind evaluation of a deployed native revision.
-	Desired  *RenderedBundle
-	Expected *DeployReceipt
-	// Judge is optional; without it, llmJudge assertions remain unknown.
-	Judge EvaluationJudge
-}
 
 // EvaluationVerdict is one case's outcome. Unknown is neither a pass nor a
 // failure: the case ran, or may have, but its outcome could not be observed.
@@ -181,82 +95,6 @@ func (d Document) Bytes() []byte { return copyBytes(d.bytes) }
 
 // Deployable reports whether Deploy may apply this document.
 func (d Document) Deployable() bool { return d.deployable }
-
-// RenderedBundle is one adapter's exact rendered output: every document
-// byte-for-byte in artifact order, which of them Deploy applies, and both
-// identity digests. It is constructed only through NewRenderedBundle and every
-// accessor returns a copy, so no caller can mutate a bundle after rendering.
-type RenderedBundle struct {
-	adapter                        ID
-	documents                      []Document
-	portableDigest, renderedDigest string
-}
-
-// NewRenderedBundle copies its inputs and computes both digests. source must
-// be the exact validated source bytes Render consumed: an empty source has no
-// identity to digest and is refused rather than hashed into a constant.
-// documents must already be in final artifact order, and at least one must be
-// deployable, because a bundle Deploy could only no-op on is never what an
-// adapter meant to render.
-func NewRenderedBundle(adapter ID, source []byte, documents []Document) (RenderedBundle, error) {
-	if adapter == "" {
-		return RenderedBundle{}, fmt.Errorf("rendered bundle: adapter ID is required")
-	}
-	if len(source) == 0 {
-		return RenderedBundle{}, fmt.Errorf("rendered bundle: the exact source bytes are required for the portable digest")
-	}
-	if len(documents) == 0 {
-		return RenderedBundle{}, fmt.Errorf("rendered bundle: at least one rendered document is required")
-	}
-	deployable := false
-	rendered := make([][]byte, len(documents))
-	for i, document := range documents {
-		if len(document.bytes) == 0 {
-			return RenderedBundle{}, fmt.Errorf("rendered bundle: document %d is empty", i)
-		}
-		rendered[i] = document.bytes
-		deployable = deployable || document.deployable
-	}
-	if !deployable {
-		return RenderedBundle{}, fmt.Errorf("rendered bundle: no document is marked for deployment")
-	}
-	return RenderedBundle{
-		adapter:        adapter,
-		documents:      append([]Document(nil), documents...),
-		portableDigest: PortableBundleDigest(source),
-		renderedDigest: RenderedBundleDigest(rendered),
-	}, nil
-}
-
-// AdapterID returns the ID of the runtime that rendered this bundle.
-func (b RenderedBundle) AdapterID() ID { return b.adapter }
-
-// Documents returns every rendered document in artifact order: exactly the
-// bytes the emitted artifact carries and the rendered digest covers,
-// review-only documents included. Deploy applies DeployDocuments, not these.
-func (b RenderedBundle) Documents() [][]byte { return b.copyDocuments(false) }
-
-// DeployDocuments returns exactly the documents Deploy applies, in deployment
-// order. It is the only list a Deploy implementation may write.
-func (b RenderedBundle) DeployDocuments() [][]byte { return b.copyDocuments(true) }
-
-func (b RenderedBundle) copyDocuments(deployableOnly bool) [][]byte {
-	out := make([][]byte, 0, len(b.documents))
-	for _, document := range b.documents {
-		if deployableOnly && !document.deployable {
-			continue
-		}
-		out = append(out, document.Bytes())
-	}
-	return out
-}
-
-// PortableDigest is the digest of the source bytes Render consumed.
-func (b RenderedBundle) PortableDigest() string { return b.portableDigest }
-
-// RenderedDigest is the digest of every rendered document in artifact order,
-// review-only documents included.
-func (b RenderedBundle) RenderedDigest() string { return b.renderedDigest }
 
 func copyBytes(data []byte) []byte {
 	if data == nil {

@@ -12,8 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+)
+
+const (
+	defaultEvaluationCaseTimeout = 5 * time.Minute
+	maxEvaluationCaseTimeout     = 9 * time.Minute
 )
 
 // ErrTaskPending identifies an execution whose Task may still produce an answer.
@@ -21,8 +25,8 @@ import (
 var ErrTaskPending = errors.New("Task result pending")
 
 type RunAgentOptions struct {
-	BundleDir, Agent, ToContext, Namespace, Prompt, PromptFile, ResultPort string
-	Wait                                                                   time.Duration
+	Agent, Namespace, Prompt, PromptFile, ResultPort string
+	Wait                                             time.Duration
 }
 
 type TaskResultOptions struct {
@@ -115,14 +119,8 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	if a.Cfg == nil || a.Run == nil || a.Out == nil || a.Err == nil {
 		return fmt.Errorf("run requires configured kubectl and streams")
 	}
-	if (opt.BundleDir == "") == (opt.Agent == "") {
-		return fmt.Errorf("select exactly one bundle directory or --agent")
-	}
-	if opt.BundleDir != "" && opt.Namespace != "" {
-		return fmt.Errorf("bundle destination namespace comes from its remembered selection; --namespace is for --agent")
-	}
-	if opt.Agent != "" && opt.ToContext != "" {
-		return fmt.Errorf("--to-context is only for a bundle")
+	if opt.Agent == "" {
+		return fmt.Errorf("--agent is required")
 	}
 	if (opt.Prompt == "") == (opt.PromptFile == "") {
 		return fmt.Errorf("supply exactly one of --prompt or --prompt-file")
@@ -151,61 +149,17 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 		namespace = OrkaNamespace
 	}
 	name := opt.Agent
-	portableDigest := ""
-	bundle := ""
-	if opt.BundleDir != "" {
-		bundle, err = resolveOrkaPath(opt.BundleDir)
-		if err != nil {
-			return fmt.Errorf("resolve bundle: %w", err)
-		}
-		name, _, portableDigest, err = readBundlePortableAgent(bundle)
-		if err != nil {
-			return err
-		}
-		path, err := bundleLiftSelectionPath(bundle)
-		if err != nil {
-			return err
-		}
-		remembered, err := loadBundleLiftSelection(path)
-		if err != nil {
-			return err
-		}
-		contextName := opt.ToContext
-		if contextName == "" {
-			contextName = remembered.Context
-		}
-		if contextName == "" {
-			return fmt.Errorf("run requires --to-context (no target remembered for this bundle)")
-		}
-		if remembered.Context == contextName && remembered.Namespace != "" {
-			namespace = remembered.Namespace
-		}
-		cfg := *a.Cfg
-		cfg.KubeContext, cfg.ContextSource = contextName, config.SourceFlag
-		worker.Cfg = &cfg
-		if err := worker.preflight(depKubectl); err != nil {
-			return err
-		}
-		uid, err := worker.liftClusterUID(ctx)
-		if err != nil {
-			return err
-		}
-		if remembered.Context == contextName && remembered.ClusterUID != uid {
-			return fmt.Errorf("stale remembered target: context %s now identifies another cluster; remove local selection %s before retrying with --to-context", contextName, path)
-		}
-	} else {
-		if err := scaffold.ValidateNamespace(namespace); err != nil {
-			return err
-		}
-		if err := worker.preflight(depKubectl); err != nil {
-			return err
-		}
+	if err := scaffold.ValidateNamespace(namespace); err != nil {
+		return err
+	}
+	if err := worker.preflight(depKubectl); err != nil {
+		return err
 	}
 	raw, err := worker.orkaCapture(ctx, nil, "-n", namespace, "get", orkaPlural("Agent"), name, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
 		return fmt.Errorf("cannot read Agent %s/%s at destination: %w", namespace, name, err)
 	}
-	live := describeOrkaResource(raw)
+	live := describeRunAgent(raw)
 	switch {
 	case !live.Found:
 		return fmt.Errorf("Agent %s/%s is not deployed at this destination", namespace, name)
@@ -214,36 +168,9 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	case !live.Ready:
 		return fmt.Errorf("Agent %s/%s is not Ready for its current generation", namespace, name)
 	}
-	if bundle != "" {
-		if !live.Marked {
-			return fmt.Errorf("Agent %s/%s has no bundle ownership marker; lift first", namespace, name)
-		}
-		if live.MarkerOwner != name {
-			return fmt.Errorf("Agent %s/%s belongs to another bundle", namespace, name)
-		}
-		// Status is an observation, never a gate: a missing Provider, drift or an
-		// unlocatable commit does not make the ready, owned Agent unauthorized.
-		target := bundleStatusTarget{Context: worker.Cfg.KubeContext, Namespace: namespace}
-		observed := worker.observeBundleTarget(ctx, bundle, name, portableDigest, target)
-		commit := observed.DeployedCommit
-		if commit == "" {
-			if sha, found := bundleFindDeployedCommit(ctx, bundle, live.PortableDigest); found {
-				commit = shortSHA(sha)
-			} else {
-				commit = "unknown"
-			}
-		}
-		worker.notef("Bundle state: %s; deployed commit: %s", observed.State, commit)
-	}
-	// The guard's retry preserves the destination and execution flags, but
-	// reads the prompt anew instead of repeating its potentially private text.
-	if bundle != "" {
-		worker.InvocationCommand = fmt.Sprintf("kmx run %s --to-context %s --wait %s --result-port %s --prompt-file -",
-			shellArg(opt.BundleDir), shellArg(worker.Cfg.KubeContext), shellArg(timeout.String()), shellArg(port))
-	} else {
-		worker.InvocationCommand = worker.operationCommand("run", "--agent", name, "--namespace", namespace,
-			"--wait", timeout.String(), "--result-port", port, "--prompt-file", "-")
-	}
+	// Preserve destination and execution flags, never private prompt text.
+	worker.InvocationCommand = worker.operationCommand("run", "--agent", name, "--namespace", namespace,
+		"--wait", timeout.String(), "--result-port", port, "--prompt-file", "-")
 	if err := worker.guardOrkaMutation(ctx, CreateOptions{Name: name, Namespace: namespace}, "execute one AI Task against Agent "+name+" in "+namespace); err != nil {
 		return err
 	}
@@ -300,21 +227,18 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	if err := session.probe(execCtx, namespace, taskName); err != nil {
 		return err
 	}
-	// Session setup can outlive an Agent replacement or a metadata-only
-	// ownership change. Recheck the live identity immediately before mutation.
+	// Session setup can outlive an Agent replacement or revision. Recheck
+	// UID, generation and current-generation readiness before Task creation.
 	latestRaw, err := worker.orkaCapture(execCtx, nil, "-n", namespace, "get", orkaPlural("Agent"), name, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
 		return fmt.Errorf("cannot recheck Agent %s/%s: %w", namespace, name, err)
 	}
-	latest := describeOrkaResource(latestRaw)
+	latest := describeRunAgent(latestRaw)
 	if !latest.Found || latest.UID != live.UID || latest.Generation != live.Generation {
 		return fmt.Errorf("Agent %s/%s was replaced or changed before Task creation", namespace, name)
 	}
 	if !latest.Ready {
 		return fmt.Errorf("Agent %s/%s is no longer Ready for its current generation", namespace, name)
-	}
-	if bundle != "" && (!latest.Marked || latest.MarkerOwner != name) {
-		return fmt.Errorf("Agent %s/%s no longer belongs to this bundle", namespace, name)
 	}
 	// A successful name write precedes the only mutation. Nothing describing
 	// this Task goes to stdout: the answer owns that stream exclusively.

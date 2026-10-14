@@ -1,8 +1,4 @@
-// Evaluation cases. A case is a small authored file that tests a revision; it
-// never defines one, so case bytes are deliberately outside the portable
-// digest. What a set of cases was is identified separately, by
-// EvaluationCasesDigest, which frames each file the same way the portable
-// digest frames agent.yaml.
+// Evaluation cases bind authored input and assertions through stable byte framing.
 package runtime
 
 import (
@@ -20,7 +16,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// EvaluationCaseDir is the bundle-relative directory cases live in, and the
+// EvaluationCaseDir is the reference-export directory cases live in, and the
 // logical path prefix each case file is framed under in the cases digest.
 const EvaluationCaseDir = "eval"
 
@@ -49,7 +45,7 @@ type EvaluationCaseFile struct {
 var evaluationCaseIDRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
 // ParseEvaluationCase strictly decodes exactly one YAML mapping into a case.
-// Like ParsePortableAgent, the raw bytes are scanned for credential shapes
+// Raw bytes are scanned for credential shapes
 // before any gate can quote them back, and aliases, merge keys and repeated
 // keys are refused rather than resolved.
 func ParseEvaluationCase(data []byte) (EvaluationCase, error) {

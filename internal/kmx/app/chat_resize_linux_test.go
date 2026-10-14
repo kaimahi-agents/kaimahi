@@ -2,11 +2,12 @@ package app
 
 import (
 	"context"
-	"github.com/charmbracelet/x/ansi"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"golang.org/x/sys/unix"
 )

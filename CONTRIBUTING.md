@@ -17,37 +17,39 @@ the pull request, explain why configuration, integration or an upstream
 contribution cannot provide the requested behavior. Runtimes and harnesses own
 execution, enforcement and model access; KMX should not duplicate them.
 
-Root `kmx create <name>` authors one native-Orka workspace member offline by
-default, requiring an exact model and an instructions file. Create and push
-share current-directory workspace discovery; scripts can initialize an exact
-root with `--workspace DIR`. Existing one-member workspaces refuse a second
-create without modifying source. Resource/bundle creation and previews require
-`--live` for both runtimes; `--runtime kagent` alone never selects live mode.
-Quickstart and console creation use native suite source → full eval → exact local publication → reviewed lift Apply/Verify. Console requires explicit source/case and execution consent; Ready placement is not an answer. Direct App.CreateAgent remains the legacy live path. Wizard auto-tools/host Foundry/Copilot modes and in-place Agent edits are retired; keep ordinary chat/run independent of mutation shortcuts. See the
-[workspace guide](docs/suite-workspace.md) for prompting and failure boundaries.
+Root `kmx create NAME` authors one tool-free native workspace member offline,
+Orka by default, exact v0.10.3 Go/linux-amd64 kagent or pinned AgentSessions
+chat explicitly. AgentSessions prepare/load/ordinary push and explicit private
+literal-loopback `eval --development-host FILE` remain independent of deleted
+bundle Sessions evaluation/replay: one fresh Session/config/Exec per ordered
+case, full-pass private proof and exact-S evaluated push, no cluster settings,
+tools/judge, auth, Lift/chat/status or remote lifecycle. Receipt diff refuses
+AgentSessions proof. Runtime-core assertions/llmJudge and all their test groups
+remain retained; do not add new native judge wiring. Exact model and
+file-valued instructions are required; create/push share workspace discovery.
+No runtime/model bootstrap belongs in workspace create.
 
-kagent support is intentionally version-bounded: explicit
-`kmx create --live --runtime kagent <name>` targets preinstalled exact v0.10.2;
-explicit Go bundle lift/status/evaluate with `--runtime kagent --runtime-version v0.10.3`
-targets preinstalled exact v0.10.3. Lift creates new Go declarative resources or
-reuses a complete matching UID-bound deployment; it does not adopt or update.
-Evaluation requires a complete matching saved placement, desired bindings and
-explicit `--to-context`; unsecure only, trusted-proxy refused before any send.
-Packaged exact-v0.10.3 Go workspaces separately use root `eval --bindings FILE`,
-export runtime-specific full-passing evidence, support evaluated push and feed
-create-only root digest Lift. Any occupied primary/generated child refuses;
-packaged status and retirement remain unavailable.
-Deployment receipts prove readiness, not execution success. Dedicated CI now
-continuously qualifies Go v0.10.3 plan/lift/repeat/status/conflicts, receipt-bound
-evaluation, packaged two-case workspace evaluation/evaluated push and a separate
-source-free digest Lift scenario, plus a one-shot native A2A answer using a
-keyless model/MCP fixture. Python remains
-render-only; promotion gates are unsupported. Do not
-infer or add an installer, upgrade path, auto-detection, standalone chat/run,
-list/show, retirement, console, quickstart, `up`, or AKS payload from those
-capabilities. Preserve Orka defaults and v0.10.2 create; runtime choice remains
-distinct from model-provider choice.
-Wider cross-runtime lifecycle remains unsupported.
+User `agent.yaml` readers/writers/receipts, `bundle` commands, `create --live`
+including previews/wizard, run bundle mode and `--bundles` flags are removed
+outright. Old Orka/kagent/AgentSessions bundle receipts are unreadable; no migration
+or on-disk/resource deletion. Suite status/retirement remain unavailable, without
+replacement. Preserve public AgentSuite/ToolProvider implementation-bundle graph,
+build/pull/extracted-directory transfer and alpha `pkg/kmx` interfaces.
+
+Quickstart/console use native source → full eval → exact publication → reviewed
+Lift Apply/Verify. Quickstart then sends a separate fresh answer Task; console
+Ready means placement only. Chat `/lift` and console Lift only print
+`Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+No release GUI/live-copy fallback. Wizard tools/host modes and live tools/inference
+editing are retired; host Foundry/Copilot chat controls remain independent.
+Standalone AKS up/down and internal App.Lift are independent operations.
+
+Kagent eval requires author-owned bindings, unsecure auth, no trusted-proxy and
+one fresh blocking A2A Task per case without retry. Evidence is full-passing and
+runtime-specific. Digest Lift refuses every occupied kagent primary/child; Orka
+permits exact evaluated reuse. No Python/RemoteMCP or kagent standalone chat/run.
+Keep privacy/current identity ResourceVersion/Secret metadata bracketing intact;
+readiness is not execution. See the [workspace guide](docs/suite-workspace.md).
 
 New to the codebase? Start with the
 [`codebase overview`](docs/codebase-overview.md) for architecture and data flows,
@@ -118,8 +120,8 @@ One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), the public
 AgentSuite format package (`agentsuite`), and the application interface
 (`pkg/kmx`). AgentSuite does not have a separate module or version pin; root
 `go test ./...` tests it alongside the CLI, including first-class Orka paths
-and bounded kagent v0.10.2 create/v0.10.3 Go bundle lift/status/evaluate plus
-packaged workspace evaluation/evaluated push and create-only digest Lift.
+and exact-v0.10.3 Go packaged workspace evaluation/evaluated push and
+create-only digest Lift.
 Plane commands, administration, the source module (including checked-in SQL),
 build helper, embedded assets and plane-only scripts/fixtures are removed.
 Historical source remains in Git history. This cleanup deletes no deployed
@@ -137,15 +139,15 @@ preexisting cluster, uses private kubeconfig/discovery cache and Helm state,
 clears inherited Helm connection/auth overrides, and pulls charts without caller
 Helm/Docker credentials or plugins. Docker daemon access is preserved. It removes
 only its owned cluster and temporary work. A failed kind create is ambiguous and
-left for inspection. Bootstrap checks readiness and MCP discovery, not bundle
-lift or native A2A execution qualification; it is not an installed CLI installer.
+left for inspection. Bootstrap checks readiness and MCP discovery, not suite
+Lift or native A2A execution qualification; it is not an installed CLI installer.
 Hygiene runs hermetic bootstrap, qualification, audit, shell, CI-routing and
 loopback fixture tests without creating a cluster.
 
 With no argument (or explicit `qualify`), the shell runs the full qualification.
 Build the final Go state first with `go build -o bin/kmx ./cmd/kmx`, then run
-`bash scripts/ci/kagent-lift.sh`. It audits complete ordered admission/create
-metadata, enforces specific exit-1 refusals and checks receipt-bound status.
+`bash scripts/ci/kagent-lift.sh`. It performs raw upstream Tool smoke/direct single A2A MCP proof,
+separately from tool-free packaged-suite qualification.
 Native A2A execution is independently verified with exactly one MCP tool call,
 two model calls and one terminal answer, with no resend. A separate packaged
 workspace phase runs two tool-free cases, self-diff and evaluated push with
@@ -162,18 +164,24 @@ intentional skipped outcomes, never failed or cancelled shards.
 
 The existing `e2e-orka-runtime` shard also runs
 `python3 scripts/ci/suite-native.py kind-kmx-orka "$RUNNER_TEMP/kmx-suite-native"`
-after its legacy Ollama answer proof. The checkout-only qualifier requires the
+after its raw upstream Orka Tool/Task and model-answer proof. The checkout-only qualifier requires the
 shard's exclusive cluster-creation flag and a matching `KIND_CLUSTER`, refuses
 existing work/model fixtures, and uses a fresh private KMX home. It adds the pinned
 CPU AIKit model inside that owned cluster, warms it, then attempts one native
 full-workspace evaluation without retry. Independent live identities/specs,
 result hashes, exact registry/local-layout transfer, source-withheld root CLI
-exact reuse, separate fresh answer Tasks and no-effect refusal audits gate its
+exact reuse, existing evaluation Task result reads and no-effect refusal audits gate its
 metadata artifacts. Only `artifacts/passing.json` and scalar
 `artifacts/qualification.json` are uploaded on success; raw captures are private.
 Existing cluster deletion owns all runtime/model cleanup. A successful run
-qualifies this fixed two-case native workspace and exact-reuse Lift scenario. It
-does not qualify promotion, absent-resource CLI creation or partial outcomes.
+qualifies this fixed two-case native workspace, exact-reuse Lift and bounded
+registry promotion into an absent pair on a second exclusively owned kind cluster.
+The destination has its own Provider/Secret in orka-system, sharing the same
+source AIKit workload through a fixture-only private-network NodePort, never a
+host mapping or second model workload. GET-only planning, actual guarded
+Apply/Verify, independent destination readback, a separate fresh Task and no-effect
+model-mismatch refusal are checked. Source evidence is not destination evaluation;
+partial outcomes remain unqualified.
 Harness tests alone are not evidence of real execution.
 
 ## Comments

@@ -45,22 +45,3 @@ func TestUnsupportedVerbErrorRecoveredThroughWrapping(t *testing.T) {
 		t.Fatalf("recovered %+v, want runtime %q verb %q", unsupported, testRuntime, VerbEvaluate)
 	}
 }
-
-// Lifecycle support is a static, keyed declaration alongside the existing chat
-// capabilities: each verb is declared separately, and the zero value none.
-func TestCapabilitiesDeclareLifecycleVerbsIndependently(t *testing.T) {
-	var none Capabilities
-	if none.Render || none.Deploy || none.Status || none.Evaluate {
-		t.Fatalf("zero Capabilities declared a lifecycle verb: %+v", none)
-	}
-	declared := Capabilities{Streaming: true, Render: true, Deploy: true, Status: true}
-	if !declared.Render || !declared.Deploy || !declared.Status {
-		t.Fatalf("declared lifecycle verbs missing: %+v", declared)
-	}
-	if declared.Evaluate {
-		t.Fatalf("Evaluate must stay undeclared unless set: %+v", declared)
-	}
-	if !declared.Streaming {
-		t.Fatalf("existing chat capabilities must be unaffected: %+v", declared)
-	}
-}

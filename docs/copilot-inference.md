@@ -1,20 +1,11 @@
 # Copilot inference and tools
 
-Interactive quickstart always waits for discovery and requires an explicit
-inference choice, including reruns and cases with only one option. No source is
-auto-selected.
-The legacy `--inference` flag does not bypass the picker.
-
-Discovery checks local runtimes, Copilot installation, CLI `auth.getStatus`, and
-login status. Step 2, **Inference Provider**, groups authenticated Copilot into one
-**Copilot · auto** entry. **KMX-Managed Ollama** is the fallback when no alternatives
-are found; the user still confirms it. Detailed model discovery remains available
-through `/inference-copilot` in chat using `models.list`.
-
-New agents can choose bundled Ollama, detected host models, or a Copilot model.
-Existing agents can choose their current Orka Provider or Copilot auto.
-Choosing Copilot does not rewrite the stored Orka Provider. Local setup remains
-available for explicit comparisons.
+Host Copilot chat inference is independent from native workspace evaluation
+and Lift. Copilot wizard authoring is retired; automatic wizard tool attachment
+and live source tools/inference edits remain retired. Outside the wizard,
+`/inference-copilot` discovers models through the authenticated installed CLI
+without rewriting the saved Orka Provider. Native eval/Lift requires its exact
+packaged model and native binding, not host Copilot execution.
 
 On a local kind target, `/inference-copilot` opens a discovered-model picker.
 Host Copilot inference is refused on remote targets; configure a cluster Provider
