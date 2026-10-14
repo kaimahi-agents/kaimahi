@@ -31,8 +31,8 @@ Implement an operation once. Checkout scripts and Make targets may delegate to
 the native command, but must not become competing implementations or preserve a
 retired component as an undocumented alternative. Distribution and naming remain
 subject to [the naming constraints](docs/NAMING.md); claiming a package-manager,
-organization or domain namespace requires the user's explicit approval for that
-exact artifact.
+organization or domain namespace requires maintainer approval for that exact
+artifact.
 
 Root `kmx create <name>` authors one native-Orka workspace member offline by
 default, requiring an exact model and an instructions file. Create and push
