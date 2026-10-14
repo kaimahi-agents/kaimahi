@@ -52,7 +52,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
 | `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 58 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
-| `docs/` | 37 tracked files; native guides, design and history | — | maintainer and process docs |
+| `docs/` | 36 tracked files; native guides, design and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
@@ -287,16 +287,15 @@ private receipt metadata and payload-free qualification evidence. Existing clust
 owns runtime/model cleanup. These files are checkout-only scaffolding, not an
 installer or new CLI/API capability.
 
-## `docs/` — 37 tracked files, native guides and design/history
+## `docs/` — 36 tracked files, native guides and design/history
 
 **Guides and index (15):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `releases.md`, `FAQ.md`, `orka.md`,
 `copilot-inference.md`, `interactive-chat.md`, `interactive-lift.md`,
 `orka-k8s-tool.md`, `bundle-format.md`, `runtime-adapters.md` and `suite-workspace.md`.
 
-**Maintainer and process (22):** `development.md`, `codebase-overview.md`,
+**Maintainer and process (21):** `development.md`, `codebase-overview.md`,
 `interface-baseline.md`, `repository-map.md`,
-`entry-point-principles.md`,
 `cli-ux-plan.md`, `command-conventions.md`, `charm-ux-followup-plan.md`,
 `interactive-agent-tui-plan.md`, `NAMING.md`, `kmx-lifecycle-interfaces.md`,
 `kmx-application-api.md`, `kmx-public-interface.md`,

@@ -1,7 +1,7 @@
 # Repository guidance
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), the
-[entry-point principles](docs/entry-point-principles.md), and the
+[development invariants](docs/development.md#invariants-to-preserve), and the
 [repository map](docs/repository-map.md) before changing command behavior.
 
 ## Command consistency
