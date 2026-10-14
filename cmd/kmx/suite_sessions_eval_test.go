@@ -85,8 +85,20 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 		t.Fatal("no complete CLI proof", err)
 	}
 	for _, flags := range [][]string{{"--to-context", "kind-other"}, {"--to-namespace", "orka-system"}, {"--inference", "provider:inference"}, {"--bindings", "missing"}, {"--result-port", "19180"}, {"--context", "kind-other"}, {"--container-engine", "docker"}, {"--development-host", ""}} {
-		if err := execute(append(append([]string{}, args...), flags...), deps); err == nil {
-			t.Fatal("contradictory development selector accepted", flags)
+		negative := append([]string{}, args...)
+		negative[len(negative)-1] = filepath.Join(dir, strings.TrimPrefix(flags[0], "--")+"-denied.json")
+		want := "--development-host refuses " + flags[0]
+		if flags[0] == "--context" {
+			want = "--context cannot"
+		}
+		if flags[0] == "--development-host" {
+			want = "non-empty --development-host"
+		}
+		if err := execute(append(negative, flags...), deps); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("wrong selector refusal %v: %v, want %q", flags, err, want)
+		}
+		if _, err := os.Stat(negative[len(negative)-1]); !os.IsNotExist(err) {
+			t.Fatal("mode refusal published evidence", flags, err)
 		}
 		if *loads != 0 || calls.Load() != 1 {
 			t.Fatal("mode refusal reached config/model", flags)
