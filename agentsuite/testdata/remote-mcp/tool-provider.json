@@ -21,11 +21,11 @@
       "effects": [
         "remote-read"
       ],
+      "effect": "read-only",
+      "approval": "policy-controlled",
       "delegatedAuthorization": {
         "service": "search",
         "scope": "results.read",
-        "effect": "read-only",
-        "approval": false,
         "credential": {
           "resolution": "runtime-brokered",
           "bindingRef": "search-delegated-connection"
@@ -46,11 +46,11 @@
       "effects": [
         "remote-write"
       ],
+      "effect": "mutating",
+      "approval": "required",
       "delegatedAuthorization": {
         "service": "search",
         "scope": "results.flag",
-        "effect": "consequential",
-        "approval": true,
         "credential": {
           "resolution": "runtime-brokered",
           "bindingRef": "search-delegated-connection"

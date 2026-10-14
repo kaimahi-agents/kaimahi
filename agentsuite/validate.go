@@ -605,6 +605,9 @@ func validateToolProvider(provider ToolProvider, raw []byte, content *contentSet
 			}
 			effects[effect] = true
 		}
+		if err := validateToolEffectApproval(tool); err != nil {
+			errs = append(errs, fmt.Errorf("tool %q: %w", tool.Name, err))
+		}
 		if tool.DelegatedAuthorization != nil {
 			if err := validateDelegatedAuthorization(*tool.DelegatedAuthorization); err != nil {
 				errs = append(errs, fmt.Errorf("tool %q delegated authorization: %w", tool.Name, err))
@@ -687,6 +690,20 @@ func validateRemoteToolProvider(remote RemoteToolProvider) error {
 	return errors.Join(errs...)
 }
 
+func validateToolEffectApproval(tool Tool) error {
+	var errs []error
+	if tool.Effect != "" && tool.Effect != "read-only" && tool.Effect != "mutating" {
+		errs = append(errs, errors.New("effect must be read-only or mutating"))
+	}
+	if tool.Approval != "" && tool.Approval != "required" && tool.Approval != "policy-controlled" {
+		errs = append(errs, errors.New("approval must be required or policy-controlled"))
+	}
+	if tool.DelegatedAuthorization != nil && (tool.Effect == "" || tool.Approval == "") {
+		errs = append(errs, errors.New("delegated authorization requires explicit tool effect and approval"))
+	}
+	return errors.Join(errs...)
+}
+
 func validateDelegatedAuthorization(auth DelegatedAuthorization) error {
 	var errs []error
 	if !identifierPattern.MatchString(auth.Service) {
@@ -694,16 +711,6 @@ func validateDelegatedAuthorization(auth DelegatedAuthorization) error {
 	}
 	if !capabilityPattern.MatchString(auth.Scope) {
 		errs = append(errs, errors.New("delegated authorization scope is invalid"))
-	}
-	switch auth.Effect {
-	case "read-only":
-		if auth.Approval {
-			errs = append(errs, errors.New("a read-only tool must not require approval"))
-		}
-	case "consequential":
-		// Approval MAY be true or false; the declaration is normative either way.
-	default:
-		errs = append(errs, errors.New("delegated authorization effect must be read-only or consequential"))
 	}
 	if auth.Credential.Resolution != "runtime-brokered" {
 		errs = append(errs, errors.New("delegated authorization credential resolution must be runtime-brokered"))

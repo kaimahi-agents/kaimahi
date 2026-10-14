@@ -89,7 +89,7 @@ directory has its own row.
 | `testdata/coordinator-workers/tool-providers/` | 1 | Scaffolding | Empty closed ToolProvider catalog. |
 | `testdata/tool-providers/` | 4 | Scaffolding | `kubectl` and Azure CLI ToolProvider manifests plus the OPA provider and provider composition examples. |
 | `testdata/remote-mcp/` | 1 | Scaffolding | Remote Streamable HTTP ToolProvider manifest. |
-| `testdata/remote-mcp/schemas/` | 4 | Scaffolding | Digest-bound input and output schemas for the remote provider's read-only and delegated-user-authorized callable Tools. |
+| `testdata/remote-mcp/schemas/` | 4 | Scaffolding | Digest-bound input and output schemas for the remote provider's classified, delegated-user-authorized callable Tools. |
 
 ## `internal/` — CLI packages and retained support
 

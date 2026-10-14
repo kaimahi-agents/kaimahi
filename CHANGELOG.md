@@ -45,6 +45,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- AgentSuite callable Tools can declare credential-independent `effect`
+  (`read-only` or `mutating`) and `approval` (`required` or
+  `policy-controlled`). Tools requiring delegated-user authorization also name
+  a service, scope, and unresolved runtime-brokered credential binding without
+  packaging a live connection, consent state, or credential. The schema and
+  reference validator require explicit effect and approval for delegated Tools;
+  this specifies portable metadata and fail-closed runtime obligations, not a
+  KMX credential broker or approval implementation.
+
 - Offline `kmx create --runtime agentsessions` authors one tool-free built-in
   chat member, pinned to upstream commit
   `ca85f47a2ec17ca6e16029cfa69419cfe29442b3` (merged #120/#124). Preparation,

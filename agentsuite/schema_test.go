@@ -147,13 +147,16 @@ func TestToolProviderSchemaDefinesDelegatedAuthorization(t *testing.T) {
 		})
 	}
 
-	// effect must be one of the normative values.
-	validateSchemaJSON(t, schema, strings.Replace(valid, `"effect": "read-only"`, `"effect": "best-effort"`, 1), false)
 	// credential resolution must be the single brokered value.
 	validateSchemaJSON(t, schema, strings.Replace(valid, `"resolution": "runtime-brokered"`, `"resolution": "client-managed"`, 1), false)
-	// approval and bindingRef are required once delegatedAuthorization is present.
-	validateSchemaJSON(t, schema, strings.Replace(valid, `"approval": false,
-        "credential"`, `"credential"`, 1), false)
+	// Classification is Tool-level and explicit for delegated authorization.
+	for _, field := range []string{`"approval": "policy-controlled",`, `"effect": "read-only",`} {
+		validateSchemaJSON(t, schema, strings.Replace(valid, field, "", 1), false)
+	}
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"approval": "policy-controlled"`, `"approval": "required"`, 1), true)
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"approval": "policy-controlled"`, `"approval": false`, 1), false)
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"approval": "policy-controlled"`, `"approval": "optional"`, 1), false)
+	validateSchemaJSON(t, schema, strings.Replace(valid, `"effect": "mutating"`, `"effect": "consequential"`, 1), false)
 	validateSchemaJSON(t, schema, strings.Replace(
 		valid,
 		`"resolution": "runtime-brokered",

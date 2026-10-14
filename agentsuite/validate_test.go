@@ -583,10 +583,8 @@ func TestToolProviderKeepsCallableToolsScopedToItsContract(t *testing.T) {
 func TestValidateDelegatedAuthorization(t *testing.T) {
 	valid := func() DelegatedAuthorization {
 		return DelegatedAuthorization{
-			Service:  "search",
-			Scope:    "results.read",
-			Effect:   "read-only",
-			Approval: false,
+			Service: "search",
+			Scope:   "results.read",
 			Credential: BrokeredCredential{
 				Resolution: "runtime-brokered",
 				BindingRef: "search-delegated-connection",
@@ -598,38 +596,11 @@ func TestValidateDelegatedAuthorization(t *testing.T) {
 		t.Fatalf("valid delegated authorization rejected: %v", err)
 	}
 
-	consequential := valid()
-	consequential.Effect = "consequential"
-	consequential.Approval = true
-	if err := validateDelegatedAuthorization(consequential); err != nil {
-		t.Fatalf("valid consequential delegated authorization rejected: %v", err)
-	}
-	consequential.Approval = false
-	if err := validateDelegatedAuthorization(consequential); err != nil {
-		t.Fatalf("valid consequential authorization without approval rejected: %v", err)
-	}
-
 	tests := []struct {
 		name    string
 		mutate  func(DelegatedAuthorization) DelegatedAuthorization
 		wantErr string
 	}{
-		{
-			name: "read-only tool requiring approval fails closed",
-			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
-				a.Approval = true
-				return a
-			},
-			wantErr: "read-only tool must not require approval",
-		},
-		{
-			name: "unknown effect",
-			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
-				a.Effect = "best-effort"
-				return a
-			},
-			wantErr: "effect must be read-only or consequential",
-		},
 		{
 			name: "invalid service identifier",
 			mutate: func(a DelegatedAuthorization) DelegatedAuthorization {
@@ -673,7 +644,7 @@ func TestValidateDelegatedAuthorization(t *testing.T) {
 	}
 }
 
-func TestToolProviderRejectsReadOnlyDelegatedApproval(t *testing.T) {
+func TestToolProviderEffectApprovalIndependentOfCredentials(t *testing.T) {
 	content, err := loadDirectory(filepath.Join("testdata", "remote-mcp"))
 	if err != nil {
 		t.Fatal(err)
@@ -686,9 +657,28 @@ func TestToolProviderRejectsReadOnlyDelegatedApproval(t *testing.T) {
 	if err := decodeStrict(raw, &provider); err != nil {
 		t.Fatal(err)
 	}
-	provider.Tools[0].DelegatedAuthorization.Approval = true
-	if err := validateToolProvider(provider, raw, content); err == nil || !strings.Contains(err.Error(), `tool "search" delegated authorization: a read-only tool must not require approval`) {
-		t.Fatalf("read-only delegated approval error = %v", err)
+	for _, delegated := range []bool{true, false} {
+		if !delegated {
+			provider.Tools[0].DelegatedAuthorization = nil
+		}
+		for _, effect := range []string{"read-only", "mutating"} {
+			for _, approval := range []string{"required", "policy-controlled"} {
+				provider.Tools[0].Effect, provider.Tools[0].Approval = effect, approval
+				if err := validateToolProvider(provider, raw, content); err != nil {
+					t.Fatalf("effect=%s approval=%s delegated=%t: %v", effect, approval, delegated, err)
+				}
+			}
+		}
+	}
+	for _, tool := range []Tool{
+		{Effect: "consequential"},
+		{Approval: "optional"},
+		{DelegatedAuthorization: &DelegatedAuthorization{}, Effect: "read-only"},
+		{DelegatedAuthorization: &DelegatedAuthorization{}, Approval: "required"},
+	} {
+		if err := validateToolEffectApproval(tool); err == nil {
+			t.Fatalf("invalid or missing tool classification accepted: %+v", tool)
+		}
 	}
 }
 

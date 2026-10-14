@@ -520,7 +520,8 @@ ordering.
 A ToolProvider manifest separates the provider process or endpoint from the
 model-callable tools it offers. Each entry in `tools` defines `name`, optional
 `description`, digest-bound `inputSchema`, optional `outputSchema`, optional
-`effects`, and optional `delegatedAuthorization`. Tool names MUST be unique within a provider; different providers MAY
+`effects`, optional `effect` and `approval`, and optional `delegatedAuthorization`.
+Tool names MUST be unique within a provider; different providers MAY
 expose the same tool name. A tool is identified in the context of its exact
 provider contract, not by a separate provider-level version or platform variant.
 
@@ -533,6 +534,24 @@ declares that requirement through `delegatedAuthorization`
 ([Section 9.9](#99-delegated-user-connector-authorization)). A connector-backed
 capability remains an ordinary callable Tool exposed by its ToolProvider; this
 draft does not define a second, connector-specific Tool hierarchy.
+
+`effect` and `approval` are Tool-level declarations independent of credential
+type. They MUST both be explicit when `delegatedAuthorization` is present;
+other Tools MAY declare them. `effect` is `read-only` or `mutating`.
+`mutating` means the operation may modify application state or trigger external
+actions, including sending, publishing, or initiating work. Incidental logging,
+caching, and usage accounting do not change this classification. An omitted
+`effect` makes no read-only guarantee. The existing `effects` list describes
+specific effects; it does not override the classification or grant permission.
+
+`approval` is `required` or `policy-controlled`. `required` mandates approval
+before dispatch of the proposed invocation. `policy-controlled` leaves the
+requirement to runtime/deployment policy; it does not mean automatically allowed.
+Omission on a Tool without delegated authorization is equivalent to
+`policy-controlled`. Runtime policy MAY impose stronger requirements, including
+approval for a read-only Tool. Approval does not replace requester verification,
+authorization, or account consent. A runtime unable to satisfy a required approval
+MUST refuse dispatch.
 
 ### 9.3 Execution modes
 
@@ -818,8 +837,6 @@ may be called declares that requirement through the Tool's optional
 |---|---|
 | `service` | Stable identifier of the external service or provider requirement (for example `microsoft-graph`), not a deployment-specific Connection. |
 | `scope` | The delegated-user authorization capability required to call this Tool (for example `mail.send`), not a granted token or consent record. |
-| `effect` | `read-only` or `consequential`. |
-| `approval` | Whether consequential execution requires approval before dispatch. MUST be `false` for a `read-only` Tool. |
 | `credential` | Declares that credential resolution and injection are brokered by the runtime; see below. |
 
 `credential` is itself closed:
@@ -853,29 +870,28 @@ when the requester cannot be verified, when no connection is bound to
 `bindingRef` for that requester, or when the bound connection has drifted
 (for example, relinked, revoked, or stale) since it was granted.
 
-`effect` and `approval` are normative for execution, not merely descriptive.
-A `read-only` Tool MUST NOT require approval. A `consequential` Tool's `approval`
-value states whether the runtime MUST obtain approval before dispatching that
-call; a runtime MUST NOT dispatch a `consequential` call declaring
-`"approval": true` without first obtaining approval.
+The Tool-level `effect` and `approval` declarations in Section 9.2 apply
+independently of these authorization requirements. A valid delegated connection
+does not satisfy a required invocation approval, and approval does not grant
+missing delegated permissions.
 
 ### 9.10 Delegated-user connector example
 
 The complete fixture is
 [`testdata/remote-mcp/`](testdata/remote-mcp/).
 Its ToolProvider manifest exposes a read-only `search` Tool and a
-consequential `flag_result` Tool against the same external `search` service and
+mutating `flag_result` Tool against the same external `search` service and
 the same unresolved binding slot:
 
 ```json
 {
   "name": "search",
   "effects": ["remote-read"],
+  "effect": "read-only",
+  "approval": "policy-controlled",
   "delegatedAuthorization": {
     "service": "search",
     "scope": "results.read",
-    "effect": "read-only",
-    "approval": false,
     "credential": {
       "resolution": "runtime-brokered",
       "bindingRef": "search-delegated-connection"
@@ -885,11 +901,11 @@ the same unresolved binding slot:
 {
   "name": "flag_result",
   "effects": ["remote-write"],
+  "effect": "mutating",
+  "approval": "required",
   "delegatedAuthorization": {
     "service": "search",
     "scope": "results.flag",
-    "effect": "consequential",
-    "approval": true,
     "credential": {
       "resolution": "runtime-brokered",
       "bindingRef": "search-delegated-connection"
@@ -1263,6 +1279,7 @@ A conforming runtime test asserts:
 | `ASR-SEC-001` | Secret values are injected only at runtime and are not persisted into image or suite content. |
 | `ASR-PROC-001` | The process executes non-root with no added capabilities and `no_new_privs`. |
 | `ASR-AUTH-001` | A Tool declaring `delegatedAuthorization` fails closed: the runtime refuses the call when the requester is unverified, no connection is bound to `bindingRef` for that requester, or the bound connection has drifted since it was granted. |
+| `ASR-APPROVAL-001` | A Tool declaring `approval: required` is not dispatched without approval; runtime policy may require approval for any Tool. |
 
 Passing suite validation does not imply sandbox-image or runtime conformance.
 

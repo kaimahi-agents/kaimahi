@@ -149,6 +149,8 @@ type Tool struct {
 	InputSchema            FileRef                 `json:"inputSchema"`
 	OutputSchema           *FileRef                `json:"outputSchema,omitempty"`
 	Effects                []string                `json:"effects,omitempty"`
+	Effect                 string                  `json:"effect,omitempty"`
+	Approval               string                  `json:"approval,omitempty"`
 	DelegatedAuthorization *DelegatedAuthorization `json:"delegatedAuthorization,omitempty"`
 }
 
@@ -160,8 +162,6 @@ type Tool struct {
 type DelegatedAuthorization struct {
 	Service    string             `json:"service"`
 	Scope      string             `json:"scope"`
-	Effect     string             `json:"effect"`
-	Approval   bool               `json:"approval"`
 	Credential BrokeredCredential `json:"credential"`
 }
 
