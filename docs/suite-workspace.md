@@ -326,6 +326,41 @@ substitution, case subset or `--show-content` is available. Orka/kagent support
 receipt-budget overflow and invalid output destinations refuse offline before
 loading cluster configuration.
 
+Orka/kagent cases optionally declare repeated execution:
+
+```yaml
+id: capital
+input: What is the capital of France?
+expectContains: [Paris]
+runs: 5
+minPasses: 4
+```
+
+`runs` defaults to 1; omitted `minPasses` requires every declared run to pass.
+Both must be integers satisfying `1 <= minPasses <= runs <= 100`. Receipt-size
+projection can impose a lower limit and refuses offline before configuration.
+Each run sends a fresh Task with the same authored input, never a retry. All
+runs share the existing logical case deadline; it is not reset per run. Every
+run must finish, even after enough passes or failures are known. Any unknown
+assertion/judge outcome makes the case unknown. Only completed, attributable
+assertion failures count as failing samples against the threshold; execution
+failure, missing answer, drift or cancellation still aborts later sends.
+Preflight discloses the total Task count and two judge requests per assertion
+per run. AgentSessions refuses repeated cases; its one-run behavior is unchanged.
+
+Passing private receipts store contiguous per-run rows, with `run` ordinals and
+the declared `runs`/`minPasses`, actual pass/fail verdicts, assertion evidence and
+unique native identities. Only complete groups meeting the threshold export.
+Default one-run receipt encoding is unchanged; older strict readers refuse
+repeat rows. Diff compares per-run outcomes without treating different Task IDs,
+answer hashes or judge scores as identity changes; the authored repeat policy
+and judge configuration remain comparison identities.
+
+These are **KMX-private YAML case fields**. The current AgentSuite suite-embedded
+evaluation draft in [#497](https://github.com/kaimahi-agents/kaimahi/pull/497)
+does not define `runs`/`minPasses`, and its closed JSON case schema rejects them.
+Do not copy these fields into draft-spec JSON cases until the spec supports them.
+
 For an open-ended answer, author a judge assertion in the ordinary case file:
 
 ```yaml
@@ -367,7 +402,7 @@ Tasks: Orka `Provider/Agent`, or kagent `ModelConfig/Agent`. Remote targets requ
 the existing named confirmation; local kind targets retain the existing banner.
 Orka can reuse/update only a same-owner pair; kagent creates new objects and
 refuses occupied targets without complete caller-retained proof. Neither adopts
-legacy/unowned/foreign resources. Every case sends one fresh Task exactly once,
+legacy/unowned/foreign resources. Every declared run sends one fresh Task exactly once,
 using the exact authored input. Ambiguous writes are never recovered, retried or
 resent. Placement, runtime, target and binding observations bracket execution;
 source and placement are checked again before export. These observations do not
@@ -386,7 +421,7 @@ kmx eval --workspace ./kagent-workspace --to-context kind-demo \
 Kagent evaluation requires **auth: unsecure only, trusted-proxy refused** before
 admission and before native sends. It creates new suite-owned ModelConfig/Agent
 objects; occupied unrecorded targets refuse, never adopt/update/delete-recreate.
-Each case sends one fresh blocking A2A Task with no prior Task/context IDs.
+Each declared run sends one fresh blocking A2A Task with no prior Task/context IDs.
 Ambiguous transport, foreign history, reused native identities or changed
 placement/runtime/binding stop later sends. Consent discloses full prompt,
 answer and history retention in kagent's database (upstream default unlimited),
@@ -394,12 +429,13 @@ Service-proxy audit bodies and model transfers. No auth settings are modified.
 
 For Orka, the temporary result session uses the selected ServiceAccount's **full effective
 authority**. Discarding its bearer is not revocation; Task-read enforcement is
-unverified for v0.2.0. One pinned loopback connection is opened per case, without
+unverified for v0.2.0. One pinned loopback connection is opened per run, without
 reconnect. Prompts, answers, assertion operands and reasoning stay out of KMX
 terminal summaries and receipts, but runtime/model storage and Kubernetes audit
 policy may retain them. Published suites themselves contain authored inputs.
 
-Failure, unknown results, drift, cancellation or output failure stops later cases
+A missed pass threshold, unknown results, execution failure, drift, cancellation
+or output failure stops later cases
 and exits nonzero. No incomplete/diagnostic receipt is exported; resources may
 remain, with no automatic retry or cleanup. Only a full ordered pass publishes one
 new private receipt file (0600) into an existing private directory (0700), outside

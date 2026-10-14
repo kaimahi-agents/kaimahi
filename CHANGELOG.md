@@ -24,6 +24,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Native Orka/kagent workspace cases accept optional KMX `runs`/`minPasses`.
+  Default one run; omitted threshold requires all declared runs. Each run uses
+  a fresh Task within the unchanged case deadline. Any unknown vetoes a pass;
+  execution errors still abort. Private evidence records complete per-run
+  verdicts and threshold, with unchanged default one-run encoding. Upgrade
+  readers before exchanging repeat receipts. AgentSessions refuses repeats;
+  the current AgentSuite draft #497 JSON schema does not accept these fields.
+
 - Root `kmx eval` supports authored `llmJudge` assertions on packaged Orka/kagent
   suites with explicit `--judge-base-url` and optional `--judge-key-env`.
   Two independent temperature-zero samples must agree on the threshold side;

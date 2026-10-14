@@ -123,7 +123,12 @@ longer accepts `--workspace` or one positional reference. Root push refuses two
 positional arguments.
 Root `eval --to-context CTX --out FILE` performs offline workspace/inventory/
 output preparation before configuration, then one guarded runtime-specific
-placement and one fresh Task per ordered case. Orka requires
+placement and one fresh Task per declared run of each ordered case (default one).
+Optional KMX YAML `runs`/`minPasses` counts completed attributable assertion
+verdicts; omitted threshold requires all runs. All runs share the case deadline,
+with no early success; any unknown or execution error aborts. AgentSessions
+refuses repeats. The draft #497 JSON schema does not yet accept these fields.
+Orka requires
 `--inference provider:NAME`; packaged exact-v0.10.3 Go kagent requires
 author-owned `--bindings FILE`, unsecure auth and no `--result-port`. Only full
 passing metadata is exported once to a private file outside workspace/cache;

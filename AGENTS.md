@@ -138,7 +138,13 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   once without replacement outside workspace/cache trees, and bind the private
   receipt-file push consumer to exact S plus offline packaged coherence. There is
   a full-workspace native evaluation CLI with one fresh never-retried Task per
-  ordered case. Root `push --evaluation FILE` uses that private file consumer;
+  declared run of each ordered case. Optional KMX YAML runs/minPasses defaults
+  to one run/all passes, bounded to 100 runs plus the offline receipt budget.
+  All runs share the case deadline; any unknown vetoes the threshold. Only
+  completed attributable assertion failures are countable; execution errors
+  still abort. AgentSessions refuses repeats both offline and in strict proof.
+  Private repeated rows retain ordinal/policy and actual outcomes; default
+  one-run encoding stays unchanged. Draft #497 JSON rejects these fields. Root `push --evaluation FILE` uses that private file consumer;
   ordinary push stays unevaluated. Unsigned receipts do not prove authentication
   or drift absence.
   Any presence of a native suite ownership annotation reserves desired/live
@@ -224,7 +230,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 ## kagent version boundary
 
 - Exact v0.10.3 Go/linux-amd64 packaged profiles use author-owned bindings,
-  unsecure auth only, one fresh blocking A2A Task per ordered case, never retried.
+  unsecure auth only, one fresh blocking A2A Task per declared case run, never retried.
   Trusted-proxy refuses before admission/send. Digest Lift creates absent objects
   only with runtime-matching evidence; occupied primaries/children refuse.
   No Python/RemoteMCP, standalone chat/run, installer/discovery, suite status or

@@ -279,21 +279,14 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	if err != nil {
 		return err
 	}
-	observations := make([]suitePassingObservation, 0, len(p.inventory))
-	for _, frame := range p.inventory {
-		if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {
-			return err
+	observations, err := evaluateSuiteRuns(ctx, p.inventory, p.options.CaseTimeout, worker.Out, func(caseCtx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
+		if err := workspace.CheckCurrent(caseCtx, p.root, p.prepared); err != nil {
+			return suitePassingObservation{}, err
 		}
-		caseCtx, cancel := context.WithTimeout(ctx, p.options.CaseTimeout)
-		observation, caseErr := worker.evaluateSuiteNative(caseCtx, placement, frame, p.options.ResultPort, p.judge)
-		cancel()
-		if _, err := fmt.Fprintf(worker.Out, "%s: %s\n", frame.Case.ID, observation.Verdict); err != nil {
-			return err
-		}
-		if caseErr != nil {
-			return caseErr
-		}
-		observations = append(observations, observation)
+		return worker.evaluateSuiteNative(caseCtx, placement, frame, p.options.ResultPort, p.judge)
+	})
+	if err != nil {
+		return err
 	}
 	if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {
 		return err
