@@ -136,7 +136,10 @@ exit 0
 const fakeOrkaHelm = `#!/bin/sh
 printf 'helm %s\n' "$*" >> "$KMX_TEST_ARGS"
 case "$*" in
-  *"list "*) printf '%s' "${KMX_TEST_HELM_LIST:-[]}"; exit 0 ;;
+  *"version "*) printf '%s' "${KMX_TEST_HELM_VERSION:-v3.14.0}"; exit 0 ;;
+  *"list "*)
+    case "$*" in *"--all"*) if [ "$KMX_TEST_HELM_VERSION" != "${KMX_TEST_HELM_VERSION#v4}" ]; then printf 'Error: unknown flag: --all\n' >&2; exit 1; fi ;; esac
+    printf '%s' "${KMX_TEST_HELM_LIST:-[]}"; exit 0 ;;
   *"get values "*)
     if [ "$KMX_TEST_HELM_VALUES_READ" = failed ]; then printf 'helm failure (fixture-sensitive-token)\n' >&2; exit 1; fi
     printf '%s' "$KMX_TEST_HELM_VALUES"; exit 0 ;;
@@ -1442,6 +1445,38 @@ func TestOrkaProviderChecksTheInClusterServiceOnlyForTheInClusterEndpoint(t *tes
 			applied := f.applied(t)
 			if !strings.Contains(applied, tc.url) || !strings.Contains(applied, "kind: Provider") {
 				t.Fatalf("the host route was not written into the Provider:\n%s", applied)
+			}
+		})
+	}
+}
+
+func TestParseHelmMajor(t *testing.T) {
+	for in, want := range map[string]int{"v3.14.0": 3, "v4.2.2": 4, " 4.0.0\n": 4, "": 0, "garbage": 0} {
+		if got := parseHelmMajor(in); got != want {
+			t.Errorf("parseHelmMajor(%q)=%d want %d", in, got, want)
+		}
+	}
+}
+
+func TestOrkaInstallStateHelmListFlagByMajor(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		all     bool
+	}{{"v3.14.0", true}, {"v4.2.2", false}} {
+		t.Run(tc.version, func(t *testing.T) {
+			f := newOrkaFixture(t, orkaChart(t))
+			t.Setenv("KMX_TEST_HELM_VERSION", tc.version)
+			if _, err := f.app.orkaInstallState(); err != nil && strings.Contains(err.Error(), "unknown flag") {
+				t.Fatalf("helm list rejected: %v", err)
+			}
+			var list string
+			for _, l := range strings.Split(f.calls(t), "\n") {
+				if strings.HasPrefix(l, "helm list ") {
+					list = l
+				}
+			}
+			if list == "" || strings.Contains(list, "--all") != tc.all {
+				t.Fatalf("want --all=%v, got %q", tc.all, list)
 			}
 		})
 	}

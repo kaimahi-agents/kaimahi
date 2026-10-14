@@ -22,6 +22,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Fixed
+
+- `kmx local up` works with Helm 4: the Orka release preflight omits the removed
+  `helm list --all` flag on Helm 4+ (which lists every status) and keeps it on
+  Helm 3 or when the version cannot be read. ([#504](https://github.com/kaimahi-agents/kaimahi/issues/504))
+
 ### Added
 
 - Root `kmx eval` supports authored `llmJudge` assertions on packaged Orka/kagent
