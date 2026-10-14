@@ -45,6 +45,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- AgentSuite draft evaluation storage: producers SHOULD embed optional
+  `evals/<agent>/index.json` and ordered JSON cases, JCS-bound through the
+  agent manifest. The public model, closed schemas and offline validator
+  support KMX-compatible authored assertion fields and explicit non-critical
+  extension types, rejecting malformed, orphaned or mismatched evaluations.
+  No-evaluation suites remain conformant. Results stay external with exact-suite
+  OCI association; validation does not execute cases. KMX private authoring,
+  receipt formats and command plumbing are unchanged.
+
 - Packaged AgentSessions chat members support root `eval --development-host FILE`
   on explicit literal-loopback, unauthenticated operator-observed hosts. One
   fresh Session and explicit config/Exec per ordered case, bounded canonical
