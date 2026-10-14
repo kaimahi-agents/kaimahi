@@ -36,12 +36,6 @@ Unless stated otherwise:
   empty segment, `.` segment, or `..` segment;
 - a consumer operates offline after all referenced OCI blobs are present.
 
-An **evaluation case** is an authored input and ordered assertions, not a
-recording of a session. An **evaluation result** is an observation of execution,
-not part of the immutable case definition. Producers SHOULD embed cases as
-specified in [§8.2](#82-agent-evaluations). Omitting evaluations does not reduce
-suite conformance; validating their presence does not prove execution.
-
 ### 1.1 Tool terminology
 
 The hierarchy is **AgentSuite → ToolProvider → Tool**:
@@ -229,7 +223,7 @@ serialization details.
 │   └── <agent>.json
 ├── instructions/
 │   └── <agent>.md
-├── evals/                            # optional; producers SHOULD include cases
+├── evals/
 │   └── <agent>/
 │       ├── index.json
 │       └── cases/
@@ -247,11 +241,6 @@ serialization details.
 │   └── <provider>-<os>-<architecture>.json
 ├── build-profiles/
 │   └── <profile>.json
-├── schemas/
-│   ├── evals/                        # optional copies of published eval schemas
-│   │   ├── index.schema.json
-│   │   └── case.schema.json
-│   └── ...
 └── metadata/
     └── ...
 ```
@@ -259,16 +248,6 @@ serialization details.
 Paths stored in manifests MUST be interpreted from the content root. Consumers
 MUST NOT resolve host paths, environment-variable substitutions, or URLs while
 validating content.
-
-`evals/` is a normative, optional tree in the same single content layer as
-the agents; it is not a second OCI layer or non-normative `metadata/` record.
-Each subtree MUST belong to an existing agent and be reachable through that
-agent's `evals` reference. `index.json` is its only entry point. Unbound agent
-subtrees, unreferenced files, links, and embedded `results/` trees MUST be
-rejected. Only the directories shown above and referenced regular files are
-permitted inside `evals/`; an empty top-level `evals/` directory MAY be omitted
-or retained. Copies of schemas under `schemas/evals/` are OPTIONAL and do not
-override the specification's published schemas.
 
 ### 5.2 Archive safety
 
@@ -285,9 +264,6 @@ A conforming validator MUST reject:
 - symlinks whose lexical target escapes the content root;
 - hardlinks to an absent, later, or non-regular entry;
 - content exceeding implementation-declared limits.
-
-Producers MUST normalize archive timestamps as specified above, preserving the
-suite digest when only source-file timestamps change.
 
 The reference validator limits JSON documents to 4 MiB, JSON nesting to 100
 levels, JSON object membership to 1,024 members per object and 100,000 per
@@ -324,9 +300,6 @@ Manifest identities use the [RFC 8785 JSON Canonicalization Scheme
 
 Whitespace and object member order therefore do not change a document's
 identity. Duplicate names are rejected before canonicalization.
-
-OCI layer and manifest digests cover the exact packaged bytes. Packaging MUST
-follow the archive rules in §5.2.
 
 ### 6.2 Files
 
@@ -475,9 +448,12 @@ The complete conformant example is checked in at
 Producers SHOULD embed authored evaluation cases for each agent. Consumers MAY
 use them for evaluation, review, or comparison. A suite with omitted or empty
 agent `evals` arrays and no evaluation subtrees MUST remain valid and conformant.
-When evaluations are present, validators MUST check them and MUST fail closed
-on malformed documents, wrong ownership, missing references, or digest mismatch.
-Validation MUST NOT invoke an agent, tool, model, or judge.
+When evaluations are present, validators MUST check the requirements below.
+
+Each `evals/<agent>/` subtree MUST be referenced by that agent's `evals` entry.
+It MUST contain only `index.json`, its referenced case files, and their parent
+directories. Index and case files MUST be regular files. The top-level `evals/`
+directory MAY be empty.
 
 The agent manifest's optional `evals` is an array of content-root `path` and
 JCS `digest` objects, containing at most one reference in this draft:
@@ -494,11 +470,9 @@ JCS `digest` objects, containing at most one reference in this draft:
 ```
 
 The path MUST be exactly `evals/<agent>/index.json`, where `<agent>` equals
-the owning manifest's `id`. Explicit `null` is invalid. The agent binding commits
-evaluations together with its instructions, model, and provider requirements.
-Each agent references its evaluation index, which references its cases in
-evaluation order. Changes to cases, their order, or index limits update the
-index, agent, and suite-root digests. Each delegated agent has its own binding.
+the owning manifest's `id`. Explicit `null` is invalid. Each agent references its
+evaluation index, which references its cases in evaluation order. Each delegated
+agent has its own binding.
 
 #### 8.2.1 Index and bounds
 
@@ -514,17 +488,15 @@ The closed index document contains:
 
 Case order in `cases` is evaluation order and contributes to identity; consumers
 MUST NOT sort it. Case paths MUST be exactly
-`evals/<agent>/cases/<case-id>.json`, with no URLs, substitutions, or host paths.
-Each case id and path MUST be unique within the agent. Directory names and file
-names are case-sensitive, subject to the collision rules in §5.2.
+`evals/<agent>/cases/<case-id>.json`.
+Each case id and path MUST be unique within the agent.
 
 `maxCases` MUST be in `1..128`; `maxCaseBytes` MUST be in `1..4194304`.
 Producers MAY declare lower limits. The actual case count and each case's
-serialized UTF-8 byte length MUST fit the declared limits. Each index remains
-subject to the 4 MiB JSON limit. Each case MUST contain `1..1000` assertions;
-all JSON depth, membership, retained-metadata, and aggregate content bounds in
-§5.2 continue to apply. Consumers MAY impose stricter resource limits but MUST
-report a limit refusal rather than silently truncating or treating it as a pass.
+serialized UTF-8 byte length MUST fit the declared limits. Each case MUST contain
+`1..1000` assertions. General resource limits are defined in §5.2.
+Consumers MAY impose stricter resource limits but MUST report a limit refusal
+rather than silently truncating or treating it as a pass.
 
 Reference schemas are
 [`eval-index.schema.json`](schema/eval-index.schema.json) and
@@ -581,7 +553,6 @@ types, including those with omitted `critical`, MUST be rejected. Consumers MAY
 retain or ignore an unsupported non-critical definition for storage and review,
 but MUST NOT count it as passing evidence or claim a full evaluation pass.
 Known assertions marked non-critical still retain their defined semantics.
-This escape hatch does not allow arbitrary fields in closed documents.
 
 Cases contain no runtime or platform selector. Assertion authoring does not
 establish runtime support. Text checks require an available answer; tool checks
@@ -594,37 +565,27 @@ configuration, and authored requirements before treating a score as evidence.
 
 #### 8.2.3 Results and OCI association
 
-Evaluation results MUST NOT be stored in `evals/` or treated as normative
-embedded evaluation documents in this draft. An embedded result changes the
-layer and suite manifest digest, so it cannot vouch for the final artifact that
-contains itself. Authored cases remain in the one content layer; results stay
-external, leaving the evaluated suite unchanged.
+Evaluation results MUST NOT be embedded in the suite content layer.
+An embedded result changes the layer and suite manifest digest, so it cannot
+vouch for the final artifact that contains itself.
 
 Producers SHOULD publish results as signed attestations or separate OCI
 referring artifacts bound to the exact evaluated suite OCI manifest digest.
 When a result is published as an OCI artifact, its manifest `subject` MUST
 describe that suite manifest using the OCI descriptor media type, digest, and
-size. The referring manifest has its own `artifactType`, config, and layers
-following the [OCI artifact guidance][oci-artifact-guidance]; it MUST NOT be
-added as a second AgentSuite content layer or as a second selected suite in
-the §4.2 layout. Discovery follows [OCI Distribution][oci-distribution-spec]
+size. The referring manifest follows the
+[OCI artifact guidance][oci-artifact-guidance].
+Discovery follows [OCI Distribution][oci-distribution-spec]
 referrers semantics, not a new registry endpoint. Private local result files
 MAY remain unpublished. Result payload schemas, signatures, trust policy, and
 local storage formats are outside this draft.
 
 Results SHOULD additionally identify the agent and its digest, index and ordered
 case digests, target composition digest (§6.4), observed runtime/model, evaluator
-policy/configuration, and ordered per-assertion verdicts. A composition digest
-alone does not bind the suite, agent definition, or cases. OCI `subject` is an
-association, not proof of authenticity, successful evaluation, authorization,
-or absence of drift. Consumers MUST verify evidence and trusted issuers
-independently before relying on any result.
+policy/configuration, and ordered per-assertion verdicts. Trust considerations
+are defined in §17.
 
-#### 8.2.4 Examples
-
-The [`minimal`](testdata/minimal/) fixture contains a conformant suite without
-evaluations. The [`coordinator-workers`](testdata/coordinator-workers/) fixture
-demonstrates writer-only embedded cases.
+See the [writer evaluation example](testdata/coordinator-workers/evals/writer/).
 
 ## 9. Tool providers and tools
 
@@ -1428,7 +1389,7 @@ A conforming suite validator asserts:
 | `AS-PATH-001` | Archive paths, links, entry types, modes, collisions, and limits are safe. |
 | `AS-ID-001` | Every content-addressed identity matches its normative algorithm. |
 | `AS-GRAPH-001` | All manifest and invocation references form a closed graph. |
-| `AS-EVAL-001` | Absent evaluations remain conformant; present evaluations have valid ownership, bounded ordered cases, unique ids, strict assertions, and matching JCS references, with no orphan eval paths. |
+| `AS-EVAL-001` | Optional evaluations conform to §8.2. |
 | `AS-COMPOSE-001` | Every agent/platform composition exactly resolves its declared tool providers and contains no ambient providers. |
 | `AS-PROVIDER-COMPOSE-001` | Every ToolProvider composition resolves one exact same-platform variant, dependency closure, and runtime base. |
 | `AS-PROVIDER-001` | Bundled variants match content inventory and exact platforms; remote ToolProviders contain only supported transports and valid references. |
@@ -1439,7 +1400,7 @@ A conforming suite validator asserts:
 A suite validator MUST accept either an extracted content directory or an OCI
 image-layout directory. Validation MUST operate offline after the referenced
 blobs are present and MUST NOT require a runtime or orchestration control
-plane.
+plane. Validation MUST NOT invoke an agent, tool, model, or judge.
 
 The CLI validation report counts `toolProviders` and
 `toolProviderCompositions`. These counts describe provider manifests and
@@ -1517,14 +1478,10 @@ Consumers choose trusted issuers and policies outside this specification.
 
 Authored evaluation inputs, expected text, tool names, patterns, and rubrics are
 published artifact content, not private evidence. Producers MUST NOT include
-credentials, resolved secrets, user session transcripts, answers, tool payloads,
-or reasoning captured from sessions in evaluation documents. Synthetic authored
-inputs are distinct from retained session content. Consumers SHOULD avoid
-echoing authored operands in diagnostics. Neither a validator nor an OCI referrer
-can determine publisher trust, evaluator honesty, or runtime drift from digests
-alone. Evaluation execution requires separate consent and deployment policy;
-including a tool or judge assertion grants no execution or delegated-user
-authorization.
+session-captured transcripts, answers, tool payloads, or reasoning in evaluation
+documents. Synthetic authored inputs are distinct from retained session content.
+Consumers SHOULD avoid echoing authored operands in diagnostics. Evaluation
+execution requires separate consent and deployment policy.
 
 A Tool's `delegatedAuthorization` names a portable authorization requirement,
 not a granted authorization. Binding that requirement to a live connection,
@@ -1541,7 +1498,7 @@ This draft does not specify:
 
 - session transcripts, checkpoints, snapshots, or mutable memory;
 - embedded evaluation results, result payload formats, evaluator execution
-  protocols, or a claim that suite validation proves evaluation success;
+  protocols;
 - plaintext credentials or resolved secret values;
 - OAuth flows, consent UX, token issuance, refresh, or revocation;
 - a deployment's Connection or account-link storage and identity verification
