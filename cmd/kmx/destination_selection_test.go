@@ -8,11 +8,12 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
@@ -175,6 +176,29 @@ func TestNamedKagentEvaluationUnionReplacementAndNoOrkaDefault(t *testing.T) {
 			}
 			if err == nil || *loads != wantLoads || wantLoads == 1 && !errors.Is(err, boundary) {
 				t.Fatalf("mode %s: err=%v loads=%d", mode, err, *loads)
+			}
+		})
+	}
+}
+
+func TestNamedLiftWorkspaceErrorsGiveSupportedRecoveryAndPreserveCause(t *testing.T) {
+	for _, invalid := range []bool{false, true} {
+		t.Run(fmt.Sprint(invalid), func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			if invalid {
+				if err := os.WriteFile(filepath.Join(root, "workspace.yaml"), []byte("malformed: [\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var out bytes.Buffer
+			deps, loads := testDependencies(&out, &out)
+			err := execute([]string{"lift", "registry.example/suite@sha256:" + strings.Repeat("a", 64), "--to", "prod", "--evidence", "private.json", "--plan"}, deps)
+			if err == nil || *loads != 0 || strings.Contains(err.Error(), "--workspace") {
+				t.Fatalf("unsupported recovery or configuration loaded: err=%v loads=%d", err, *loads)
+			}
+			if invalid && !strings.Contains(err.Error(), "workspace.yaml") {
+				t.Fatalf("lost descriptor failure: %v", err)
 			}
 		})
 	}

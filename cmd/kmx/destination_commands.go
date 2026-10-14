@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"oras.land/oras-go/v2/registry"
 	"os"
 	"os/exec"
 	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"oras.land/oras-go/v2/registry"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
@@ -30,9 +31,9 @@ func resolveDestinations(override string) (string, *config.Destinations, error) 
 	root, err := workspace.Resolve(start, override)
 	if err != nil {
 		if errors.Is(err, workspace.ErrNotFound) {
-			return "", nil, errors.Join(workspace.ErrNotFound, errors.New("no workspace found; pass --workspace <directory>"))
+			return "", nil, fmt.Errorf("no workspace found; run from a valid workspace directory: %w", err)
 		}
-		return "", nil, errors.New("invalid workspace descriptor; use --workspace with a valid exact root")
+		return "", nil, fmt.Errorf("cannot resolve workspace: %w; run from a valid workspace directory", err)
 	}
 	doc, err := config.LoadDestinations(root)
 	return root, doc, err

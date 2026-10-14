@@ -3,13 +3,14 @@ package app
 import (
 	"context"
 	"errors"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
 func TestResolvedDestinationConfigEditDuringEvaluationGuardCannotRedirect(t *testing.T) {

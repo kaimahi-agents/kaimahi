@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
 func destinationWorkspace(t *testing.T, raw string) string {
