@@ -266,8 +266,8 @@ func TestSuiteRunDriverUnknownDeadlineAndFailure(t *testing.T) {
 					t.Fatalf("known failure: %v", err)
 				}
 			case "late cancel":
-				if !errors.Is(err, context.Canceled) {
-					t.Fatalf("cancellation: %v", err)
+				if !errors.Is(err, context.Canceled) || !errors.Is(err, errSuiteNativeEvaluation) {
+					t.Fatalf("cancellation classification: %v", err)
 				}
 			default:
 				if err == nil || errors.Is(err, errSuiteNativeCaseFailed) {
@@ -315,6 +315,25 @@ func TestSuiteRepeatFailedNativeTaskStillAborts(t *testing.T) {
 	})
 	if !errors.Is(err, errSuiteNativeCaseFailed) || calls != 1 {
 		t.Fatalf("failed Task treated as tolerated assertion: %v, calls %d", err, calls)
+	}
+}
+
+func TestSuiteRunAbortKeepsDefaultCaseSummary(t *testing.T) {
+	for _, verdict := range []agentruntime.EvaluationVerdict{agentruntime.EvaluationFail, agentruntime.EvaluationUnknown} {
+		t.Run(string(verdict), func(t *testing.T) {
+			frames := repeatDriverFrames(t, "")
+			var out bytes.Buffer
+			_, err := evaluateSuiteRuns(t.Context(), frames, time.Minute, &out, func(context.Context, suitePassingInventoryCase) (suitePassingObservation, error) {
+				cause := errSuiteNativeEvaluation
+				if verdict == agentruntime.EvaluationFail {
+					cause = errSuiteNativeCaseFailed
+				}
+				return suitePassingObservation{EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: "first", Verdict: verdict}}, cause
+			})
+			if err == nil || out.String() != "first: "+string(verdict)+"\n" {
+				t.Fatalf("lost aborted case summary: %q, %v", out.String(), err)
+			}
+		})
 	}
 }
 

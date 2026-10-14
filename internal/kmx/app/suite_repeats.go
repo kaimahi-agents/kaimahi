@@ -115,12 +115,31 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 		for j := 0; j < count; j++ {
 			frame := frames[i+j]
 			observed, err := run(caseCtx, frame)
-			if caseCtx.Err() != nil {
-				err = caseCtx.Err()
+			if cause := caseCtx.Err(); cause != nil {
+				// Cancellation invalidates a countable failure, but must retain
+				// other classified errors and the ambiguous-outcome disclosure.
+				if errors.Is(err, errSuiteNativeCaseFailed) {
+					err = nil
+				}
+				err = errors.Join(err, errSuiteNativeEvaluation, cause)
 			}
 			// The Orka executor uses CaseFailed for both a failed Task and a failed
 			// assertion. Only full attributed assertion evidence permits continuing.
 			complete := observed.Detail == "" && !observed.Stop && observed.AnswerSHA256 != "" && len(observed.Assertions) == len(frame.Metadata.Assertions)
+			verdict := agentruntime.EvaluationUnknown
+			if complete && (err == nil || errors.Is(err, errSuiteNativeCaseFailed)) {
+				verdict = suiteRunVerdict(observed.Assertions)
+			} else if errors.Is(err, errSuiteNativeCaseFailed) && observed.Verdict == agentruntime.EvaluationFail {
+				verdict = agentruntime.EvaluationFail
+			}
+			label := frame.Case.ID
+			if count > 1 {
+				label = fmt.Sprintf("%s run %d/%d", label, j+1, count)
+			}
+			if _, outputErr := fmt.Fprintf(out, "%s: %s\n", label, verdict); outputErr != nil {
+				cancel()
+				return nil, outputErr
+			}
 			if err != nil && (!errors.Is(err, errSuiteNativeCaseFailed) || !complete) {
 				cancel()
 				return nil, err
@@ -129,7 +148,6 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 				cancel()
 				return nil, errSuiteNativeEvaluation
 			}
-			verdict := suiteRunVerdict(observed.Assertions)
 			if verdict == agentruntime.EvaluationUnknown {
 				cancel()
 				return nil, errSuiteNativeEvaluation
@@ -141,14 +159,6 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 			observed.Verdict = verdict
 			if verdict == agentruntime.EvaluationPass {
 				passes++
-			}
-			label := frame.Case.ID
-			if count > 1 {
-				label = fmt.Sprintf("%s run %d/%d", label, j+1, count)
-			}
-			if _, err = fmt.Fprintf(out, "%s: %s\n", label, verdict); err != nil {
-				cancel()
-				return nil, err
 			}
 			observations = append(observations, observed)
 		}
