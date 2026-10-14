@@ -415,10 +415,13 @@ OCI pulls and do not use these mirrors.
    delegate to the native command but must not maintain a competing path or
    preserve retired connectors as checkout-only alternatives.
 9. Metrics labels must not leak tokens or channel/user/request/delivery IDs.
-10. State evidence accurately: continuously tested, demonstrated, schema-valid,
-    proposed or unbuilt. Successful admission is not downstream completion,
-    readiness is not an answer, and an old run is not a current availability
-    claim.
+10. State evidence accurately: distinguish unit and fake-service tests,
+    continuously exercised cluster paths, one-off cloud measurements, schema
+    validation and proposals. Label evidence as continuously tested,
+    demonstrated, schema-valid, proposed or unbuilt. A one-off measurement is
+    not durable live coverage; successful admission is not downstream
+    completion, readiness is not an answer, and an old run is not a current
+    availability claim.
 11. Optimize for fewer prerequisites, a useful first result, clear recovery and
     less code of our own, not command count or adoption of this repository.
 
