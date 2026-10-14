@@ -201,7 +201,7 @@ func repeatDriverFrames(t *testing.T, policy string) []suitePassingInventoryCase
 }
 
 func TestSuiteRunDriverUnknownDeadlineAndFailure(t *testing.T) {
-	for _, scenario := range []string{"all runs", "late unknown", "mixed unknown", "execution failure", "missing answer", "stop", "late cancel", "threshold missed", "default all", "same deadline"} {
+	for _, scenario := range []string{"all runs", "late unknown", "mixed unknown", "execution failure", "missing answer", "stop", "late cancel", "threshold missed", "default all", "per-run deadlines"} {
 		t.Run(scenario, func(t *testing.T) {
 			policy := "runs: 3\nminPasses: 2\n"
 			if scenario == "default all" {
@@ -215,11 +215,10 @@ func TestSuiteRunDriverUnknownDeadlineAndFailure(t *testing.T) {
 			observations, err := evaluateSuiteRuns(ctx, frames, time.Minute, io.Discard, func(runCtx context.Context, f suitePassingInventoryCase) (suitePassingObservation, error) {
 				calls++
 				d, _ := runCtx.Deadline()
-				if calls == 1 {
-					deadline = d
-				} else if !d.Equal(deadline) {
-					t.Fatal("case deadline reset per run")
+				if calls > 1 && !d.After(deadline) {
+					t.Fatal("run inherited the preceding run's deadline")
 				}
+				deadline = d
 				rows := agentruntime.EvaluateAssertions(f.Case, agentruntime.EvaluationEvidence{Answer: "answer", AnswerAvailable: true})
 				o := suitePassingObservation{EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: f.Case.ID, Verdict: agentruntime.EvaluationPass, AnswerSHA256: agentruntime.EvaluationAnswerDigest("answer"), Assertions: rows}}
 				if scenario == "execution failure" {
@@ -257,7 +256,7 @@ func TestSuiteRunDriverUnknownDeadlineAndFailure(t *testing.T) {
 				return o, nil
 			})
 			switch scenario {
-			case "all runs", "same deadline":
+			case "all runs", "per-run deadlines":
 				if err != nil || len(observations) != 3 {
 					t.Fatalf("%v", err)
 				}
@@ -315,6 +314,73 @@ func TestSuiteRepeatFailedNativeTaskStillAborts(t *testing.T) {
 	})
 	if !errors.Is(err, errSuiteNativeCaseFailed) || calls != 1 {
 		t.Fatalf("failed Task treated as tolerated assertion: %v, calls %d", err, calls)
+	}
+}
+
+// Fixed candidate answers isolate the threshold from both sampling and judging.
+func TestSuiteRepeatFiveRunThresholdPatterns(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		pattern []bool
+		passing bool
+	}{
+		{"one failure", []bool{true, true, false, true, true}, true},
+		{"two failures", []bool{true, false, true, false, true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			frames := repeatDriverFrames(t, "runs: 5\nminPasses: 4\n")
+			calls := 0
+			var out bytes.Buffer
+			observations, err := evaluateSuiteRuns(t.Context(), frames, time.Minute, &out, func(_ context.Context, f suitePassingInventoryCase) (suitePassingObservation, error) {
+				answer := "answer"
+				if !tc.pattern[calls] {
+					answer = "wrong"
+				}
+				calls++
+				assertions := agentruntime.EvaluateAssertions(f.Case, agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true})
+				return suitePassingObservation{EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: f.Case.ID, AnswerSHA256: agentruntime.EvaluationAnswerDigest(answer), Assertions: assertions}}, nil
+			})
+			if calls != 5 || strings.Count(out.String(), "run ") != 5 {
+				t.Fatalf("skipped a declared run: %d %q", calls, out.String())
+			}
+			if tc.passing {
+				if err != nil || len(observations) != 5 || observations[2].Verdict != agentruntime.EvaluationFail {
+					t.Fatalf("4/5 must pass retaining failure: %v", err)
+				}
+			} else if !errors.Is(err, errSuiteNativeCaseFailed) {
+				t.Fatalf("3/5 must fail threshold: %v", err)
+			}
+		})
+	}
+}
+
+func TestSuiteRepeatTimeBudgetPreflight(t *testing.T) {
+	a, _, _, native := nativeEvaluationFixture(t)
+	opt := nativeEvaluationOptions(t)
+	opt.ResultPort = native.opt.ResultPort
+	opt.CaseTimeout = 5 * time.Minute
+	writeFile(t, filepath.Join(opt.Workspace, "eval/example.yaml"), "id: first\ninput: question\nexpectContains: [answer]\nruns: 5\nminPasses: 4\n")
+	p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	// Stop at the operational guard; the repeat time/cost notice must precede it.
+	a.Cfg.Confirm = ""
+	a.Stdin = nil
+	capture := a.captureCommand
+	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+		if slices.Contains(cmd.Args, "config") {
+			return errors.New("guard inspection boundary")
+		}
+		return capture(ctx, cmd)
+	}
+	if err := a.EvaluateSuiteWorkspace(t.Context(), p); err == nil || !strings.Contains(err.Error(), "cannot read context metadata for the mutation guard") {
+		t.Fatalf("expected guard metadata refusal: %v", err)
+	}
+	text := fmt.Sprint(a.Err)
+	if !strings.Contains(text, "6 fresh Tasks") || !strings.Contains(text, "5m0s per run") || !strings.Contains(text, "30m0s total") {
+		t.Fatalf("missing aggregate run budget: %s", text)
 	}
 }
 

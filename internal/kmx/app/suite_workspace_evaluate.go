@@ -212,6 +212,14 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 		return errSuiteNativeEvaluation
 	}
 	p.started = true
+	for _, frame := range p.inventory {
+		if frame.Metadata.Runs > 1 {
+			if _, err := fmt.Fprintf(a.Err, "Run preflight: %d fresh Tasks, %s per run, %s total execution budget (upper bound; excludes placement; cancellation can stop earlier).\n", len(p.inventory), p.options.CaseTimeout, time.Duration(len(p.inventory))*p.options.CaseTimeout); err != nil {
+				return err
+			}
+			break
+		}
+	}
 	if p.judge != nil {
 		count := 0
 		for _, frame := range p.inventory {
@@ -221,7 +229,7 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 				}
 			}
 		}
-		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each case deadline. Identity/version are user-declared, not provider attestation. Endpoint omitted from recovery advice; supply it again. Reasoning is discarded.\n", count); err != nil {
+		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run's deadline. Identity/version are user-declared, not provider attestation. Endpoint omitted from recovery advice; supply it again. Reasoning is discarded.\n", count); err != nil {
 			return err
 		}
 	}

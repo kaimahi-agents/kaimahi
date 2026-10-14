@@ -319,7 +319,7 @@ and `--out` are required. Orka requires `--inference provider:NAME`, directly or
 through the named destination;
 kagent instead requires `--bindings FILE`, never both. For Orka, namespace
 is `orka-system` by default (`--to-namespace`); `--result-port` defaults to
-`19180`, and each case has a separate `--case-timeout` (default 5m, maximum 9m).
+`19180`, and each run has a separate `--case-timeout` (default 5m, maximum 9m).
 Explicit empty selectors and global `--context` are refused. No runtime/model
 substitution, case subset or `--show-content` is available. Orka/kagent support
 `contains`, `notContains`, `regex` and explicitly configured `llmJudge` assertions. Unsupported evaluators,
@@ -339,8 +339,11 @@ minPasses: 4
 `runs` defaults to 1; omitted `minPasses` requires every declared run to pass.
 Both must be integers satisfying `1 <= minPasses <= runs <= 100`. Receipt-size
 projection can impose a lower limit and refuses offline before configuration.
-Each run sends a fresh Task with the same authored input, never a retry. All
-runs share the existing logical case deadline; it is not reset per run. Every
+Each run sends a fresh Task with the same authored input, never a retry. Each
+run gets the configured deadline, including its judge requests and attribution
+checks. When cases repeat, preflight prints the sum of all run-time budgets
+(`runs × --case-timeout`, summed across cases), excluding placement; this is an
+upper bound, not a prediction, and cancellation can stop it earlier. Every
 run must finish, even after enough passes or failures are known. Any unknown
 assertion/judge outcome makes the case unknown. Only completed, attributable
 assertion failures count as failing samples against the threshold; execution
@@ -380,11 +383,13 @@ optionally, nominate its HTTPS credential environment variable with
 `--judge-key-env`. There is no endpoint or agent-model fallback. HTTPS is required
 except keyless HTTP at literal loopback. Input, attributed answer and rubric go
 to that provider. Preflight states the cost: **two independent temperature-zero
-requests per judge assertion**, sharing the existing per-case deadline. Both
+requests per judge assertion per run**, sharing that run's deadline. Both
 scores at/above the threshold pass, both below fail, and disagreement, malformed
-or unavailable responses are unknown. There are no retries or extra candidate
-Tasks. Native attribution is checked again after judging; late drift/deadline
+or unavailable responses are unknown. There are no retries or candidate Tasks beyond the authored runs. Native
+attribution is checked again after judging; late drift/deadline
 prevents a case pass and export. Reasoning is discarded, never printed.
+Choose a judge model strong enough for the rubric: two agreeing scores do not
+make an incorrect judgment correct; validate it against known pass/fail examples.
 
 Passing receipt rows retain the authored model/version, threshold, policy digest,
 both scores and a configuration hash binding the canonical endpoint. Raw judge

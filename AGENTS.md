@@ -140,7 +140,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   a full-workspace native evaluation CLI with one fresh never-retried Task per
   declared run of each ordered case. Optional KMX YAML runs/minPasses defaults
   to one run/all passes, bounded to 100 runs plus the offline receipt budget.
-  All runs share the case deadline; any unknown vetoes the threshold. Only
+  Each run receives its own case-timeout budget, including judging/attribution;
+  repeat preflight states the summed run-time budget excluding placement.
+  Any unknown vetoes the threshold. Only
   completed attributable assertion failures are countable; execution errors
   still abort. AgentSessions refuses repeats both offline and in strict proof.
   Private repeated rows retain ordinal/policy and actual outcomes; default
@@ -169,7 +171,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   explicit --judge-base-url and optional --judge-key-env (environment name only).
   Two independent temperature-zero scores must agree on the threshold side;
   unavailable/malformed/split results stay unknown. Judgment shares the existing
-  case deadline and attribution is rechecked afterward. Root eval discards
+  per-run deadline and attribution is rechecked afterward. Root eval discards
   reasoning and omits judge endpoints from recovery commands. Private passing
   rows bind authored model/version, threshold, policy, endpoint configuration hash
   and both scores. Text-only receipt wire shape is unchanged; older readers

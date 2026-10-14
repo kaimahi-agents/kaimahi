@@ -125,8 +125,9 @@ Root `eval --to-context CTX --out FILE` performs offline workspace/inventory/
 output preparation before configuration, then one guarded runtime-specific
 placement and one fresh Task per declared run of each ordered case (default one).
 Optional KMX YAML `runs`/`minPasses` counts completed attributable assertion
-verdicts; omitted threshold requires all runs. All runs share the case deadline,
-with no early success; any unknown or execution error aborts. AgentSessions
+verdicts; omitted threshold requires all runs. Each run has its own deadline;
+repeat preflight states the total run-time budget, excluding placement. There is
+no early success; any unknown or execution error aborts. AgentSessions
 refuses repeats. The draft #497 JSON schema does not yet accept these fields.
 Orka requires
 `--inference provider:NAME`; packaged exact-v0.10.3 Go kagent requires
@@ -136,7 +137,7 @@ failure, unknown, drift, cancellation or output error stops later sends. No
 package reference, subset or content output is accepted. Authored `llmJudge`
 requires explicit `--judge-base-url`, optional `--judge-key-env` and authored
 model/version/threshold. Two independent samples must agree on the threshold
-side; errors/splits stay unknown. Judgment shares the case deadline and is
+side; errors/splits stay unknown. Judgment shares the current run's deadline and is
 followed by attribution rechecks. Passing rows bind judge identity, endpoint
 configuration hash and both scores without reasoning or raw judge URLs; recovery
 commands omit the endpoint. Text-only receipt encoding is unchanged. Development

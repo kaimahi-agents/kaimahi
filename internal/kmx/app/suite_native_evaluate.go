@@ -74,7 +74,7 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 	return errors.Join(classified, cause)
 }
 
-// The caller supplies a bounded per-case context and has consented to placement
+// The caller supplies a bounded per-run context and has consented to placement
 // and the full ordered inventory. Only the actual native observation is credited.
 func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePlacement, frame suitePassingInventoryCase, port string, judge agentruntime.EvaluationJudge) (observation suitePassingObservation, err error) {
 	observation = suitePassingObservation{CaseDigest: frame.Metadata.CaseDigest, InputDigest: frame.Metadata.InputDigest, EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: frame.Case.ID, Verdict: agentruntime.EvaluationUnknown}}

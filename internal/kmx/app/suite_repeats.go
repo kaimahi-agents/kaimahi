@@ -101,8 +101,8 @@ func validateSuiteRunGroups(rows []suitePassingCase, mode string) error {
 	return nil
 }
 
-// One deadline spans a logical case's whole authored run group. A late unknown
-// vetoes an already attainable threshold; no early pass or failure skips a run.
+// Each fresh run gets the configured deadline, including its judging and
+// attribution checks. A late unknown vetoes an already attainable threshold.
 func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, timeout time.Duration, out io.Writer, run func(context.Context, suitePassingInventoryCase) (suitePassingObservation, error)) ([]suitePassingObservation, error) {
 	observations := make([]suitePassingObservation, 0, len(frames))
 	for i := 0; i < len(frames); {
@@ -110,12 +110,12 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 		if count > len(frames)-i {
 			return nil, errSuiteNativeEvaluation
 		}
-		caseCtx, cancel := context.WithTimeout(ctx, timeout)
 		passes := 0
 		for j := 0; j < count; j++ {
 			frame := frames[i+j]
-			observed, err := run(caseCtx, frame)
-			if cause := caseCtx.Err(); cause != nil {
+			runCtx, cancel := context.WithTimeout(ctx, timeout)
+			observed, err := run(runCtx, frame)
+			if cause := runCtx.Err(); cause != nil {
 				// Cancellation invalidates a countable failure, but must retain
 				// other classified errors and the ambiguous-outcome disclosure.
 				if errors.Is(err, errSuiteNativeCaseFailed) {
@@ -161,8 +161,8 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 				passes++
 			}
 			observations = append(observations, observed)
+			cancel()
 		}
-		cancel()
 		if passes < required {
 			return nil, errSuiteNativeCaseFailed
 		}
