@@ -235,17 +235,17 @@ func TestEvaluationJudgeTwoThresholdSideSamplesAndPromptBoundary(t *testing.T) {
 					t.Error("wrong transport request")
 				}
 				var req struct {
-					Model       string                           `json:"model"`
-					Temperature *float64                         `json:"temperature"`
-					MaxTokens   int                              `json:"max_completion_tokens"`
-					Stream      *bool                            `json:"stream"`
-					Messages    []struct{ Role, Content string } `json:"messages"`
+					Model               string                           `json:"model"`
+					Temperature         *float64                         `json:"temperature"`
+					MaxCompletionTokens int                              `json:"max_completion_tokens"`
+					Stream              *bool                            `json:"stream"`
+					Messages            []struct{ Role, Content string } `json:"messages"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Error(err)
 					return
 				}
-				if req.Model != "fixture/model" || req.Temperature != nil || req.Stream == nil || *req.Stream || req.MaxTokens != 1024 || len(req.Messages) != 2 {
+				if req.Model != "fixture/model" || req.Temperature != nil || req.Stream == nil || *req.Stream || req.MaxCompletionTokens != 1024 || len(req.Messages) != 2 {
 					t.Errorf("wrong request settings: %+v", req)
 					return
 				}

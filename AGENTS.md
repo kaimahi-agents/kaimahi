@@ -170,7 +170,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   reasoning and omits judge endpoints from recovery commands. Private passing
   rows bind authored model/version, request style, threshold, policy, endpoint
   configuration hash and both scores. Old judge rows missing the style require
-  fresh evaluation; text-only receipts remain unchanged. Text-only receipt wire shape is unchanged; older readers
+  fresh evaluation. Text-only receipt wire shape is unchanged; older readers
   refuse judge rows. AgentSessions still refuses judges.
   Offline `eval diff` reads strict full-passing native Orka/kagent suite
   evidence only. Old normalized receipts are unreadable. `eval from-sessions`

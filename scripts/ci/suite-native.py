@@ -22,7 +22,7 @@ import yaml
 
 JUDGE_BASE_URL = "http://127.0.0.1:18091/v1"
 JUDGE_VERSION = "aikit-qwen3.5-2b@sha256:d838c5eebf533b5b73f67cc7f4984921f87d64d28e4a52d482740b667f46b8b4"
-# Pin policy v1 independently; a new evaluator requires explicit qualification.
+# Pin policy v2 independently; a new evaluator requires explicit qualification.
 JUDGE_POLICY_DIGEST = "ffaf6895dafe1badb6530853288e1da522aada71f25cac078c96c1831efb48b6"
 
 MARKERS = ("kaimahi.dev/suite", "kaimahi.dev/suite-digest", "kaimahi.dev/suite-member", "kaimahi.dev/suite-renderer",

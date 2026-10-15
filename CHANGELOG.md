@@ -22,12 +22,16 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
-- Use one modern judge request shape (`max_completion_tokens`, no temperature
-  override), also verified against the pinned AIKit/LocalAI image. Judge evidence
-  now binds its request style; older judge receipts require fresh evaluation.
-  No retry, provider inference or request-style flag is added.
+### Breaking
+
+- Judge evidence now binds its request style; older judge receipts without it
+  require fresh evaluation. Text-only receipts remain unchanged.
 
 ### Fixed
+
+- Use one modern judge request shape (`max_completion_tokens`, no temperature
+  override), also verified against the pinned AIKit/LocalAI image. No retry,
+  provider inference or request-style flag is added.
 
 - `kmx local up` works with Helm 4: the Orka release preflight omits the removed
   `helm list --all` flag on Helm 4+ (which lists every status) and keeps it on
@@ -88,6 +92,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   kagent remains excluded until its candidate cleanup is qualified.
 
 ### Upgrading
+
+- Re-run `kmx eval` for judge-bearing workspaces with a fresh private `--out`
+  path. Do not rewrite older judge receipts to add the new style binding.
 
 - Migrate KMX-authored `metadata/kmx/eval/<name>.yaml` cases to
   `evals/<agent>/cases/<case-id>.json` and replace the private `caseRef` list

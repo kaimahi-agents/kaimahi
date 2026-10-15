@@ -131,7 +131,8 @@ failure, unknown, drift, cancellation or output error stops later sends. No
 package reference, subset or content output is accepted. Authored `llmJudge`
 requires explicit `--judge-base-url`, optional `--judge-key-env` and authored
 model/version/threshold. Two independent samples must agree on the threshold
-side; errors/splits stay unknown. Judges use the fixed modern Chat Completions request shape: a 1024
+side; errors/splits stay unknown. Judges use the fixed modern Chat Completions
+request shape: a 1024
 `max_completion_tokens` budget, no temperature override and no error fallback.
 Evidence binds that style; old judge receipts require fresh evaluation.
 Judgment shares the case deadline and is
