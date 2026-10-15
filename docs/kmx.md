@@ -37,10 +37,10 @@ brew install kaimahi-agents/tap/kmx &&
 
 The fully qualified formula trusts only `kmx`. Homebrew installs the CLI, not
 Docker, Podman or Go; local kind still needs a container engine. To build the
-v0.5.1 release with Go 1.26+ instead:
+v0.6.0 release with Go 1.26+ instead:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.5.1
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.6.0
 kmx version
 kmx orka --help
 ```
@@ -57,7 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 ```
 
 That installer puts the selected release in `~/.local/bin`, without sudo;
-`--version=v0.5.1` pins it, `--bin-dir=DIR` changes the destination, and
+`--version=v0.6.0` pins it, `--bin-dir=DIR` changes the destination, and
 `--quickstart` continues into `kmx quickstart`. A new shell may need
 `~/.local/bin` on `PATH`, or invoke `$HOME/.local/bin/kmx` directly. It checks the binary against
 a checksum from the **same** GitHub release over TLS: corruption detection, not
@@ -89,16 +89,14 @@ Use `kmx --help` and `kmx <command> --help` for flags and defaults. The Cobra tr
 also generates completion; this guide describes contracts rather than duplicating
 every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
-**Released in v0.5.0:** `context show/use` and `local up/down` are the canonical
-grouped commands below. Historically, v0.4.1 used `ctx [context]` and root
-`up/down`. Current development builds remove root `ctx`, `up`, `down`, the AKS `lift` alias
-and `lift down` outright, without retirement stubs. Use `context show/use`,
-`local up/down` and `aks up/down` for those operations.
-Everyday operations are now root `create/chat/run`, live Orka inspection is
-`orka show/list`. Legacy `bundle` commands are removed outright.
-These routes and root workspace `push` require a current development build;
-tagged v0.5.1 still uses the `agent` routes. Workspace authoring/publication
-are unreleased.
+`context show/use` and `local up/down` are the canonical grouped commands below.
+Historically, v0.4.1 used `ctx [context]` and root `up/down`; v0.6.0 removes
+those routes, the AKS `lift` alias and `lift down` outright. Use `context show/use`,
+`local up/down` and `aks up/down` for those operations. Everyday operations are
+root `create/chat/run`, live Orka inspection is `orka show/list`, and legacy
+`bundle` commands are removed outright. The v0.6.0 release includes root
+create/eval/push/digest Lift. Named destinations, the new list-only `ctx`, and
+authored `llmJudge` support require a current development build.
 Root `eval` evaluates a full packaged native Orka/kagent workspace, or pinned
 AgentSessions chat through explicit `--development-host FILE`, and retains offline `diff` and
 `from-sessions` helpers. Standalone packaged evaluation remains unimplemented.
@@ -159,7 +157,7 @@ get the tool-free incident-analyst fixture from the released source into a new
 `kmx-examples` directory:
 
 ```sh
-git clone --depth 1 --branch v0.5.1 https://github.com/kaimahi-agents/kaimahi.git kmx-examples
+git clone --depth 1 --branch v0.6.0 https://github.com/kaimahi-agents/kaimahi.git kmx-examples
 SUITE="$PWD/kmx-examples/internal/kmx/agentsuite/testdata/incident-analyst"
 ```
 

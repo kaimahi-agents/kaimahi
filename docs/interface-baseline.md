@@ -169,8 +169,9 @@ Important limits:
 
 ## Compatibility and evidence
 
-- Latest stable v0.5.1 retains the former `kmx agent ...` routes. Root
-  create/eval/push/lift and bundle retirement are unreleased development behavior.
+- Latest stable v0.6.0 contains root create/eval/push/digest Lift and the bundle
+  retirement. Named destinations, list-only `ctx` and authored `llmJudge`
+  support are unreleased development behavior.
 - Help and completion must remain inert.
 - Unknown is not absent; readiness is not a result; a result is not evaluation.
 - Answers and report documents own stdout. Progress, warnings and notices use

@@ -11,6 +11,9 @@ brand/
 docs/
 k8s/
 .github/
+node_modules/
+package.json
+package-lock.json
 .synthetic-model/
 __pycache__/
 *.out

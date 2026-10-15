@@ -24,6 +24,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- A draft docs-as-code website renders the existing README, maintained guides,
+  and AgentSuite specification directly with responsive navigation, local search,
+  dark mode, a keyboard-accessible journey chooser and an explicit `main` versus
+  stable-release boundary. `make docs-preview` serves it locally and CI builds
+  and tests every route. Generated output stays untracked; no hosting,
+  publication credential, CLI, runtime or deployment behavior is added.
+  [Documentation site draft](docs/docs-site.md).
+
 - Root `kmx eval` supports authored `llmJudge` assertions on packaged Orka/kagent
   suites with explicit `--judge-base-url` and optional `--judge-key-env`.
   Two independent temperature-zero samples must agree on the threshold side;

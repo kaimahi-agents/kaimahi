@@ -236,6 +236,15 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 ## Verification
 
+The browser documentation preview renders the root README, `docs/*.md`, and
+`agentsuite/spec.md` directly. Keep Markdown authoritative: navigation and theme
+code may link to maintained content but must not copy it. Keep VitePress output,
+caches, and `node_modules` untracked. Documentation changes retain the existing
+link, README-front-door and repository-map checks and run `npm run docs:check`
+when they affect the rendered site. The current exact alpha framework pin is a
+draft choice, not approval to publish; hosting/versioning changes require a
+separate review.
+
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
 Command changes normally require `go test ./cmd/kmx`, affected operation-package
 tests, documentation links, repository-map and legacy-runtime checks. These

@@ -62,8 +62,8 @@ evaluation remains unimplemented. Root digest `lift` deploys a packaged native
 suite with explicit private evidence, GET-only `--plan`, strict guarded apply and
 explicit source-only `--promote`; no model/runtime override, update or adoption. `task result` and
 `suite push DIRECTORY REFERENCE`, `suite build/diff/pull/validate` are unchanged.
-These spellings require a current development build; tagged v0.5.1 retains the
-`agent` routes. Workspace authoring/publication are unreleased. Existing operation handlers, arguments, applicable flags,
+These spellings are released in v0.6.0. Named destinations, list-only `ctx` and
+authored `llmJudge` support require a current development build. Existing operation handlers, arguments, applicable flags,
 stdout and exit contracts are preserved; this is not a receipt or bundle migration.
 
 ## Independent evaluation helpers
