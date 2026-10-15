@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -139,6 +140,9 @@ func readEvaluationDiffSource(path string) (normalizedEvaluation, error) {
 	}
 	if target.Domain == "kmx.native-suite.passing/v1" {
 		r, err := readSuitePassingReceipt(context.Background(), absolute)
+		if errors.Is(err, errPreviousSuiteReceipt) {
+			return empty, err
+		}
 		if err != nil {
 			return invalid()
 		}

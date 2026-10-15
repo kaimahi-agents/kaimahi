@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -45,8 +47,13 @@ func TestPrepareExactNativeArtifactAndReuse(t *testing.T) {
 	if got := string(readFile(t, filepath.Join(out, "instructions/greeter.md"))); got != "Answer briefly.\n\nExact whitespace.\n" {
 		t.Fatalf("instruction bytes changed: %q", got)
 	}
-	if got := string(readFile(t, filepath.Join(out, "metadata/kmx/eval/example.yaml"))); got != string(readFile(t, filepath.Join(root, "eval/example.yaml"))) {
-		t.Fatal("case bytes changed")
+	authored, err := runtime.ParseEvaluationCase(readFile(t, filepath.Join(root, "eval/example.yaml")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	packaged, err := workspace.DecodePackagedCase(readFile(t, filepath.Join(out, "evals/greeter/cases/example.json")))
+	if err != nil || !reflect.DeepEqual(packaged, authored) {
+		t.Fatalf("packaged case does not round-trip the authored case: %+v %v", packaged, err)
 	}
 	var member spec.Agent
 	if err := spec.Unmarshal(readFile(t, filepath.Join(out, "agents/greeter.json")), &member); err != nil {
@@ -55,22 +62,34 @@ func TestPrepareExactNativeArtifactAndReuse(t *testing.T) {
 	if member.Model.Protocol != "openai-compatible" || member.Model.Model != "qwen-3.5-2b" {
 		t.Fatalf("member model changed: %+v", member.Model)
 	}
-	var metadata struct {
-		SchemaVersion   int                             `json:"schemaVersion"`
-		ExecutionMode   string                          `json:"executionMode"`
-		Member          string                          `json:"member"`
-		RendererVersion string                          `json:"rendererVersion"`
-		RequiredImages  []string                        `json:"requiredImages"`
-		Cases           []struct{ Path, Digest string } `json:"cases"`
+	var index spec.EvaluationIndex
+	if err := spec.Unmarshal(readFile(t, filepath.Join(out, "evals/greeter/index.json")), &index); err != nil {
+		t.Fatal(err)
 	}
+	indexBytes := readFile(t, filepath.Join(out, "evals/greeter/index.json"))
+	indexDigest, err := spec.Digest(indexBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantIndex := spec.FileRef{Path: "evals/greeter/index.json", Descriptor: spec.Descriptor{MediaType: spec.MediaTypeEvaluationIndex, Digest: indexDigest, Size: int64(len(indexBytes))}}
+	if len(member.Evals) != 1 || !reflect.DeepEqual(member.Evals[0], wantIndex) {
+		t.Fatalf("member does not bind its evaluation index: %+v", member.Evals)
+	}
+	caseBytes := readFile(t, filepath.Join(out, "evals/greeter/cases/example.json"))
+	wantCase := spec.FileRef{Path: "evals/greeter/cases/example.json", Descriptor: spec.Descriptor{MediaType: spec.MediaTypeEvaluationCase, Digest: digest.FromBytes(caseBytes).String(), Size: int64(len(caseBytes))}}
+	if index.Agent != "greeter" || len(index.Cases) != 1 || !reflect.DeepEqual(index.Cases[0], wantCase) || index.Limits != (spec.EvaluationLimits{MaxCases: 128, MaxCaseBytes: 1 << 20}) {
+		t.Fatalf("evaluation index mismatch: %+v", index)
+	}
+	if _, err := os.Lstat(filepath.Join(out, "metadata/kmx/eval")); !os.IsNotExist(err) {
+		t.Fatal("cases still packaged in the private metadata location")
+	}
+	var metadata map[string]any
 	if err := json.Unmarshal(readFile(t, filepath.Join(out, "metadata/kmx/native-orka.json")), &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.SchemaVersion != 1 || metadata.ExecutionMode != "native-orka" || metadata.Member != "greeter" || metadata.RendererVersion != "kmx.native-orka/v2" || metadata.RequiredImages == nil || len(metadata.RequiredImages) != 0 {
+	want := map[string]any{"schemaVersion": float64(2), "executionMode": "native-orka", "member": "greeter", "rendererVersion": "kmx.native-orka/v2", "requiredImages": []any{}}
+	if !reflect.DeepEqual(metadata, want) {
 		t.Fatalf("invalid native metadata: %+v", metadata)
-	}
-	if len(metadata.Cases) != 1 || metadata.Cases[0].Path != "metadata/kmx/eval/example.yaml" || metadata.Cases[0].Digest != digest.FromBytes(readFile(t, filepath.Join(root, "eval/example.yaml"))).String() {
-		t.Fatalf("case inventory mismatch: %+v", metadata.Cases)
 	}
 	again, err := workspace.Prepare(context.Background(), root, cache)
 	if err != nil {
@@ -135,11 +154,19 @@ func TestAuthoredEditsChangeDescriptorAndPublicationRefusesStale(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if before.Descriptor.Digest == after.Descriptor.Digest || before.Fingerprint == after.Fingerprint {
-				t.Fatal("edit did not change identity")
+			if before.Fingerprint == after.Fingerprint {
+				t.Fatal("edit did not change the source fingerprint")
 			}
-			if edit == "case" && !bytes.Equal(readFile(t, filepath.Join(extract(t, before), "agentsuite.json")), readFile(t, filepath.Join(extract(t, after), "agentsuite.json"))) {
-				t.Fatal("case-only edit changed G")
+			sameGraph := bytes.Equal(readFile(t, filepath.Join(extract(t, before), "agentsuite.json")), readFile(t, filepath.Join(extract(t, after), "agentsuite.json")))
+			if edit == "case-name" {
+				// Packaged cases are named by case ID, not authored file name.
+				if before.Descriptor.Digest != after.Descriptor.Digest || !sameGraph {
+					t.Fatal("renaming an authored case file changed the packaged suite")
+				}
+				return
+			}
+			if before.Descriptor.Digest == after.Descriptor.Digest || sameGraph {
+				t.Fatal("edit did not change S and G")
 			}
 		})
 	}

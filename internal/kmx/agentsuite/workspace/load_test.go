@@ -66,7 +66,7 @@ func TestKagentPackLoadAndExactLayoutTransfer(t *testing.T) {
 		t.Fatal("layout copy changed packaged input", err)
 	}
 	for _, c := range loaded.Cases {
-		if !bytes.Equal(c.Bytes, readFile(t, filepath.Join(root, "eval", filepath.Base(c.Path)))) {
+		if !bytes.Equal(c.Bytes, readFile(t, filepath.Join(out, c.Path))) {
 			t.Fatal("case bytes changed")
 		}
 	}
@@ -127,9 +127,10 @@ func TestLoadUsesVerifiedPackagedSnapshot(t *testing.T) {
 		BuildProfileDigest: digest.FromBytes(readFile(t, filepath.Join(out, "build-profiles/default.json"))).String(),
 		RendererVersion:    "kmx.native-orka/v2", Runtime: workspace.RuntimeProfile{ID: "orka"}, RequiredImages: []string{},
 	}
-	for _, name := range []string{"example.yaml", "second.yml"} {
-		b := readFile(t, filepath.Join(root, "eval", name))
-		want.Cases = append(want.Cases, workspace.PackagedCase{Path: "metadata/kmx/eval/" + name, Digest: digest.FromBytes(b).String(), Bytes: b})
+	for _, id := range []string{"example", "second"} {
+		p := "evals/greeter/cases/" + id + ".json"
+		b := readFile(t, filepath.Join(out, p))
+		want.Cases = append(want.Cases, workspace.PackagedCase{Path: p, Digest: digest.FromBytes(b).String(), Bytes: b})
 	}
 	record := filepath.Join(filepath.Dir(p.Path), "prepared.json")
 	writeFile(t, filepath.Join(root, "agents/greeter/instructions.md"), "Changed instructions\n")

@@ -192,9 +192,13 @@ from:
 
 ### Upgrading from v0.6.0
 
-Keep authored workspace source, including KMX-private YAML evaluation cases.
-Optional public AgentSuite `evals/<agent>/index.json` and JSON cases are a
-separate format capability; KMX does not migrate private cases into that tree.
+Keep authored workspace source, including `eval/*.yaml`. Native suite
+preparation now packages those authored cases as public AgentSuite evaluations
+under `evals/<member>/`: an index and one JSON file per case ID, bound through
+the member's agent manifest. Do not move packaged case files by hand.
+Case IDs within a member must differ by more than letter case; rename any
+collisions before preparing again. `contains`/`notContains` values and tool names
+must not contain Unicode line or paragraph separators.
 
 AgentSuite content references now use nested OCI-style descriptors with
 `mediaType`, `digest` and required `size`, rather than a flat digest.
@@ -207,14 +211,14 @@ recomputing affected parent descriptors before rebuilding. There is no
 compatibility reader or automated migration; see the
 [AgentSuite format](../agentsuite/spec.md).
 
-All three native renderers changed from v1 to v2, so unchanged workspace source
-prepares a new graph and suite identity. Regenerate packages and run fresh
-evaluation before publication or Lift; never edit receipts to match new
-identities. Old text-only Orka receipts may still parse and self-diff, but cannot
-authorize newly prepared suites. Old kagent and AgentSessions renderer-v1 proof
-is rejected. Older judge receipts also require fresh evaluation because they
-lack the request-style binding. Unchanged default text-only receipt encoding
-does not imply package or evidence compatibility across this upgrade.
+All three native renderers changed from v1 to v2, and public case packaging
+changes the graph and suite identities. Suites packaged by v0.6.0 are refused
+as packaged by an earlier kmx; their passing receipts are refused by push,
+Lift and receipt diff as recorded against earlier private case paths. Both
+refusals name the remedy: rerun `kmx eval` and `kmx push` with this kmx.
+There is no migration reader; never rewrite old receipts to match new identities.
+Older judge receipts also require fresh evaluation because they lack the
+request-style binding.
 
 Root push now requires matching completed evidence by default. Run eval first,
 select a standalone receipt with `--evaluation FILE`, or explicitly opt out

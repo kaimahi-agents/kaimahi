@@ -64,7 +64,7 @@ These names describe different things and should not be used interchangeably:
 |---|---|
 | Workspace | Mutable authored source rooted by `workspace.yaml`; normally Git-backed |
 | AgentSuite graph | Canonical `agentsuite.json` and its digest-bound records |
-| AgentSuite artifact | Immutable OCI manifest plus content layer; its manifest digest also binds KMX native metadata and authored cases |
+| AgentSuite artifact | Immutable OCI manifest plus content layer; its manifest digest also binds KMX native metadata. Authored cases are public evaluation cases bound through each member |
 | Environment | Logical setup identity in the experimental Go API; not an exact target, runtime or context |
 | Context | Kubeconfig access selector; never durable cluster identity |
 | Target | Exact runtime, physical destination and namespace used by an operation |
@@ -105,7 +105,7 @@ kmx create NAME
 workspace.Prepare
   -> frozen selected source
   -> public AgentSuite graph
-  -> private native profile and case inventory
+  -> public evaluation index and cases, plus private native profile
   -> validated private OCI layout in KMX state
 
 kmx eval
@@ -129,7 +129,7 @@ kmx lift REF@sha256:DIGEST --to-context CTX \
 
 The public graph digest, authored-source fingerprint and OCI manifest digest are
 different identities. Publication uses the OCI manifest digest because it also
-binds supplemental native metadata and cases. Push never deploys.
+binds supplemental native metadata; cases are bound by both. Push never deploys.
 
 Native Orka workspace evaluation continuously qualifies one fixed two-case
 scenario. Exact-v0.10.3 Go kagent workspace evaluation, runtime-specific passing

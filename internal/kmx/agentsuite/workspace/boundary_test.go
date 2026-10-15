@@ -19,7 +19,7 @@ import (
 
 // Public format acceptance alone must not certify native execution semantics.
 func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
-	for _, change := range []string{"null images", "missing images", "nonempty images", "unknown metadata", "duplicate metadata", "renderer", "case digest", "case escape", "case omission", "unlisted case", "private file", "secret model", "secret instructions", "model bindings", "kagent both profiles", "kagent missing metadata", "kagent cross runtime", "kagent wrong version", "kagent wrong engine", "kagent missing runtime", "kagent null runtime", "kagent wrong contract", "kagent wrong renderer"} {
+	for _, change := range []string{"null images", "missing images", "nonempty images", "unknown metadata", "duplicate metadata", "renderer", "case runs over limit", "case critical", "case extension assertion", "case expectContains order", "case limits", "case index without evals", "unlisted case", "private file", "secret model", "secret instructions", "model bindings", "kagent both profiles", "kagent missing metadata", "kagent cross runtime", "kagent wrong version", "kagent wrong engine", "kagent missing runtime", "kagent null runtime", "kagent wrong contract", "kagent wrong renderer"} {
 		t.Run(change, func(t *testing.T) {
 			root, cache := createWorkspace(t)
 			metadata := "native-orka.json"
@@ -47,17 +47,25 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 				b = strings.TrimSuffix(b, "}") + `,"member":"greeter"}`
 			case "renderer":
 				b = strings.ReplaceAll(b, "kmx.native-orka/v2", "kmx.native-orka/v3")
-			case "case digest":
-				var rec map[string]any
-				if err := json.Unmarshal([]byte(b), &rec); err != nil {
-					t.Fatal(err)
-				}
-				rec["cases"].([]any)[0].(map[string]any)["digest"] = "sha256:" + strings.Repeat("0", 64)
-				bb, err := json.Marshal(rec)
-				if err != nil {
-					t.Fatal(err)
-				}
-				b = string(bb)
+			case "case runs over limit":
+				rebindEvals(t, out, func(_ *spec.EvaluationIndex, c map[string]any) { c["runs"] = 101 })
+			case "case critical":
+				rebindEvals(t, out, func(_ *spec.EvaluationIndex, c map[string]any) {
+					c["assertions"].([]any)[0].(map[string]any)["critical"] = true
+				})
+			case "case extension assertion":
+				rebindEvals(t, out, func(_ *spec.EvaluationIndex, c map[string]any) {
+					c["assertions"] = append(c["assertions"].([]any), map[string]any{"id": "tone", "type": "tone-check", "value": "friendly", "critical": false})
+				})
+			case "case expectContains order":
+				rebindEvals(t, out, func(_ *spec.EvaluationIndex, c map[string]any) {
+					c["assertions"].([]any)[0].(map[string]any)["id"] = "expectContains.1"
+				})
+			case "case limits":
+				rebindEvals(t, out, func(index *spec.EvaluationIndex, _ map[string]any) { index.Limits.MaxCases = 64 })
+			case "case index without evals":
+				// A public suite may omit evaluations; native members may not.
+				removeEvals(t, out)
 			case "kagent both profiles":
 				writeFile(t, filepath.Join(out, "metadata/kmx/native-orka.json"), b)
 			case "kagent missing metadata":
@@ -89,20 +97,8 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 				b = strings.ReplaceAll(b, "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai/v1", "kmx.unknown/v1")
 			case "kagent wrong renderer":
 				b = strings.ReplaceAll(b, "kmx.native-kagent/v2", "kmx.native-orka/v2")
-			case "case escape":
-				b = strings.ReplaceAll(b, "metadata/kmx/eval/example.yaml", "../eval/example.yaml")
-			case "case omission":
-				var rec map[string]any
-				if err := json.Unmarshal([]byte(b), &rec); err != nil {
-					t.Fatal(err)
-				}
-				rec["cases"] = []any{}
-				bb, err := json.Marshal(rec)
-				if err != nil {
-					t.Fatal(err)
-				}
-				b = string(bb)
 			case "unlisted case":
+				// The old private case location is not native content.
 				writeFile(t, filepath.Join(out, "metadata/kmx/eval/unlisted.yaml"), "id: unlisted\ninput: Public question\nexpectContains: [answer]\n")
 			case "private file":
 				writeFile(t, filepath.Join(out, "receipts/private.json"), "private execution data")

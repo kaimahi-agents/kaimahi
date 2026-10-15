@@ -33,7 +33,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Root eval saves private passing evidence automatically, with optional `--out`; push picks up matching evidence.
 - Orka `kmx lift --to NAME` composes eval → push → Lift with exact-version skips, one confirmation and four default output lines.
 - AgentSessions development-host eval supports judged and repeated cases; its proof supports push, not Lift or receipt diff.
-- The AgentSuite draft supports optional embedded evaluations; this does not migrate KMX-private evaluation cases.
+- Native suites now package authored cases as public AgentSuite evaluations under `evals/<member>/`; YAML authoring stays unchanged.
 
 ### Fixed
 
@@ -44,8 +44,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - AgentSuite content references now require OCI-style descriptors; older extracted suites are not compatible.
   **Instead:** regenerate suites with current tooling or update their references as described in the [upgrade guide](docs/releases.md#upgrading-from-v060).
-- Newly prepared native suites have changed identities across all runtimes, so old evidence cannot authorize them.
-  **Instead:** keep workspace source, regenerate packages and run fresh evaluation; do not rewrite old receipts.
+- v0.6.0 suites and receipts are refused with a named reason; there is no migration reader.
+  **Instead:** rerun `kmx eval` and `kmx push`.
+- Case IDs within a member must differ by more than letter case; `contains`/`notContains` values and tool names cannot contain Unicode line/paragraph separators.
+  **Instead:** rename colliding case IDs and replace those separators in `contains`/`notContains` values or tool names.
 - Root workspace push requires matching passing evidence by default.
   **Instead:** run eval first, supply `--evaluation FILE`, or explicitly opt out with `--unevaluated`.
 - Judge receipts now bind the request style and older judge proof is refused.
