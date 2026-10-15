@@ -150,13 +150,14 @@ func (a *App) verifySuiteNative(ctx context.Context, p *suiteNativePlacement) er
 	}
 	owner := suiteNativeOwner(p.Subject)
 	ns := p.Subject.Target.Namespace
+	name := p.Subject.physicalMember()
 	for i, kind := range []string{"Provider", "Agent"} {
 		owned := []suiteNativeOwnedResource{p.Provider, p.Agent}[i]
-		raw, err := a.orkaCapture(ctx, nil, "-n", ns, "get", orkaPlural(kind), p.Subject.Member, "--ignore-not-found=true", "-o", "json")
+		raw, err := a.orkaCapture(ctx, nil, "-n", ns, "get", orkaPlural(kind), name, "--ignore-not-found=true", "-o", "json")
 		if err != nil {
 			return err
 		}
-		doc, id, err := inspectSuiteNativeLive(raw, ns, kind, p.Subject.Member, owner)
+		doc, id, err := inspectSuiteNativeLive(raw, ns, kind, name, owner)
 		if err != nil {
 			return err
 		}

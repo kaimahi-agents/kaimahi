@@ -4,6 +4,14 @@ import (
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
+// Named to permit only a validated candidate run scanner mask. The field order
+// and names retain the historical canonical identity bytes, including ownership.
+type suitePassingDiffSubject struct {
+	Subject         suiteNativeSubject
+	Provider, Agent suiteNativeOwnedResource
+	Kagent          *suiteKagentPassingProof
+}
+
 // Normalize only the private reader's complete passing metadata. Execution IDs
 // and answer hashes are deliberately not comparison identities; the prepared
 // subject, observed ownership and ordered authored inventory must match exactly.
@@ -22,11 +30,7 @@ func normalizeSuitePassingEvaluation(r *suitePassingReceipt) (normalizedEvaluati
 		n.Bundle = r.Kagent.Observation.Subject.Suite
 	}
 	var err error
-	n.SuiteIdentity, err = suiteNativeDigest("kmx.native-suite.diff-subject/v1", struct {
-		Subject         suiteNativeSubject
-		Provider, Agent suiteNativeOwnedResource
-		Kagent          *suiteKagentPassingProof
-	}{r.Subject, r.Provider, r.Agent, r.Kagent})
+	n.SuiteIdentity, err = suiteNativeDigest("kmx.native-suite.diff-subject/v1", suitePassingDiffSubject{r.Subject, r.Provider, r.Agent, r.Kagent})
 	if err != nil {
 		return n, false
 	}

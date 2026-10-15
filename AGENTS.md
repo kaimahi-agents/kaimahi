@@ -257,6 +257,12 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   source-withheld digest Lift with occupied-repeat refusal. No legacy receipt,
   status or judge claim. Final build/live execution are needed for qualification.
 
+## Internal candidate boundary
+
+The private Orka candidate orchestrator is test-only until separately activated.
+Public `EvaluateSuiteWorkspace`, quickstart/console and publication stay canonical;
+no journal, lease, startup cleanup or publication blockade is implemented.
+
 ## Verification
 
 The browser documentation preview renders the root README and `docs/*.md`

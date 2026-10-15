@@ -30,6 +30,8 @@ func sameReleasePackagedSubject(source, destination suiteNativeSubject) bool {
 	source.Target, destination.Target = suiteNativeTarget{}, suiteNativeTarget{}
 	source.Binding, destination.Binding = suiteNativeBinding{}, suiteNativeBinding{}
 	source.Runtime, destination.Runtime = suiteNativeRuntime{}, suiteNativeRuntime{}
+	source.PhysicalMember, destination.PhysicalMember = "", ""
+	source.EvaluationRun, destination.EvaluationRun = "", ""
 	source.BindingDigest, destination.BindingDigest = "", ""
 	source.PayloadDigest, destination.PayloadDigest = "", ""
 	source.RenderedDigest, destination.RenderedDigest = "", ""

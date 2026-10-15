@@ -8,20 +8,26 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
-type orkaSuiteOwnership struct{ Suite, Digest, Member, Renderer, BindingDigest, RenderedDigest string }
+const suiteCandidateRunMarker = "kaimahi.dev/suite-evaluation-run"
+
+type orkaSuiteOwnership struct{ Suite, Digest, Member, Renderer, BindingDigest, RenderedDigest, EvaluationRun string }
 type orkaPlacementIdentity struct {
 	suite *orkaSuiteOwnership
 }
 
 func suiteNativeOwner(s suiteNativeSubject) *orkaSuiteOwnership {
-	return &orkaSuiteOwnership{s.Suite, s.SuiteDigest, s.Member, s.Renderer, s.BindingDigest, s.RenderedDigest}
+	return &orkaSuiteOwnership{s.Suite, s.SuiteDigest, s.Member, s.Renderer, s.BindingDigest, s.RenderedDigest, s.EvaluationRun}
 }
 func (o *orkaSuiteOwnership) markers() map[string]any {
-	return map[string]any{orkaSuiteMarkers[0]: o.Suite, orkaSuiteMarkers[1]: o.Digest, orkaSuiteMarkers[2]: o.Member, orkaSuiteMarkers[3]: o.Renderer, orkaSuiteMarkers[4]: o.BindingDigest, orkaSuiteMarkers[5]: o.RenderedDigest}
+	markers := map[string]any{orkaSuiteMarkers[0]: o.Suite, orkaSuiteMarkers[1]: o.Digest, orkaSuiteMarkers[2]: o.Member, orkaSuiteMarkers[3]: o.Renderer, orkaSuiteMarkers[4]: o.BindingDigest, orkaSuiteMarkers[5]: o.RenderedDigest}
+	if o.EvaluationRun != "" {
+		markers[suiteCandidateRunMarker] = o.EvaluationRun
+	}
+	return markers
 }
 func suiteOnlyMarkers(ann map[string]any) map[string]any {
 	out := map[string]any{}
-	for _, k := range orkaSuiteMarkers {
+	for _, k := range orkaSuiteReservedMarkers {
 		if v, ok := ann[k]; ok {
 			out[k] = v
 		}
@@ -29,7 +35,7 @@ func suiteOnlyMarkers(ann map[string]any) map[string]any {
 	return out
 }
 func (o *orkaSuiteOwnership) valid() bool {
-	return scaffold.ValidateObjectName(o.Suite) == nil && scaffold.ValidateObjectName(o.Member) == nil && o.Renderer == "kmx.native-orka/v1" && strings.HasPrefix(o.Digest, "sha256:") && validOrkaMarkerDigest(strings.TrimPrefix(o.Digest, "sha256:")) && validOrkaMarkerDigest(o.BindingDigest) && validOrkaMarkerDigest(o.RenderedDigest)
+	return (o.EvaluationRun == "" || evaluationRunID(o.EvaluationRun)) && scaffold.ValidateObjectName(o.Suite) == nil && scaffold.ValidateObjectName(o.Member) == nil && o.Renderer == "kmx.native-orka/v1" && strings.HasPrefix(o.Digest, "sha256:") && validOrkaMarkerDigest(strings.TrimPrefix(o.Digest, "sha256:")) && validOrkaMarkerDigest(o.BindingDigest) && validOrkaMarkerDigest(o.RenderedDigest)
 }
 func (o *orkaSuiteOwnership) check(ann map[string]any) error {
 	for _, k := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {
@@ -45,7 +51,18 @@ func (o *orkaSuiteOwnership) check(ann map[string]any) error {
 		}
 		values = append(values, v)
 	}
-	old := orkaSuiteOwnership{values[0], values[1], values[2], values[3], values[4], values[5]}
+	run := ""
+	if value, present := ann[suiteCandidateRunMarker]; present {
+		var ok bool
+		run, ok = value.(string)
+		if !ok || !evaluationRunID(run) {
+			return fmt.Errorf("malformed native candidate ownership")
+		}
+	}
+	if run != o.EvaluationRun {
+		return fmt.Errorf("foreign native candidate ownership")
+	}
+	old := orkaSuiteOwnership{values[0], values[1], values[2], values[3], values[4], values[5], run}
 	if !old.valid() || old.Suite != o.Suite || old.Member != o.Member || old.Renderer != o.Renderer {
 		return fmt.Errorf("foreign or invalid native ownership")
 	}
@@ -54,10 +71,12 @@ func (o *orkaSuiteOwnership) check(ann map[string]any) error {
 
 var orkaSuiteMarkers = []string{"kaimahi.dev/suite", "kaimahi.dev/suite-digest", "kaimahi.dev/suite-member", "kaimahi.dev/suite-renderer", "kaimahi.dev/suite-binding-digest", "kaimahi.dev/suite-rendered-digest"}
 
+var orkaSuiteReservedMarkers = append(append([]string(nil), orkaSuiteMarkers...), suiteCandidateRunMarker)
+
 // Even malformed or null annotations reserve a resource. Never strip them
 // before deciding whether a legacy caller may adopt, copy or retire it.
 func hasOrkaSuiteReservation(annotations any) bool {
-	for _, key := range orkaSuiteMarkers {
+	for _, key := range orkaSuiteReservedMarkers {
 		switch ann := annotations.(type) {
 		case map[string]any:
 			if _, ok := ann[key]; ok {
