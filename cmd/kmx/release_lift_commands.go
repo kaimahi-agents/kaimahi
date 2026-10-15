@@ -197,7 +197,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "output: text|json")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show workspace stage diagnostics")
 	cmd.Flags().DurationVar(&evaluation.CaseTimeout, "case-timeout", 5*time.Minute, "workspace evaluation deadline per run, at most 9m")
-	cmd.Flags().StringVar(&evaluation.ResultPort, "result-port", "19180", "workspace evaluation loopback result-forward port")
+	cmd.Flags().StringVar(&evaluation.ResultPort, "result-port", "", "workspace evaluation loopback result-forward port (omitted: choose automatically)")
 	cmd.Flags().StringVar(&evaluation.JudgeBaseURL, "judge-base-url", "", "workspace evaluation judge endpoint; HTTPS except keyless literal loopback")
 	cmd.Flags().StringVar(&evaluation.JudgeKeyEnv, "judge-key-env", "", "workspace evaluation judge credential environment variable name")
 	cmd.Flags().BoolVar(&provenance.Enabled, "provenance", true, "attach unsigned suite provenance during workspace publication")

@@ -134,7 +134,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	}
 	group.Flags().StringVar(&native.Out, "out", "", "optional new standalone private receipt outside workspace/cache (managed proof is automatic)")
 	group.Flags().DurationVar(&native.CaseTimeout, "case-timeout", 5*time.Minute, "deadline per run, at most 9m")
-	group.Flags().StringVar(&native.ResultPort, "result-port", "19180", "local loopback result-forward port")
+	group.Flags().StringVar(&native.ResultPort, "result-port", "", "loopback result-forward port (omitted: choose automatically)")
 	_ = group.MarkFlagDirname("workspace")
 	diff := &cobra.Command{
 		Use:   "diff <before.json> <after.json>",

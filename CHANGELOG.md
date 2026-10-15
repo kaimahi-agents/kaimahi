@@ -76,6 +76,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- Orka result access (`kmx eval`, `run`, workspace `lift --to`, chat and
+  quickstart) now lets kubectl choose and retain a free IPv4 loopback port instead
+  of defaulting to 19180. Explicit `--result-port` values are honored without
+  fallback; bind/startup failures report a result-port problem rather than an
+  unknown evaluation. Evidence is independent of the temporary port number.
+  ([#527](https://github.com/kaimahi-agents/kaimahi/issues/527))
+
 - Use one modern judge request shape (`max_completion_tokens`, no temperature
   override), also verified against the pinned AIKit/LocalAI image. No retry,
   provider inference or request-style flag is added. Returned model identity

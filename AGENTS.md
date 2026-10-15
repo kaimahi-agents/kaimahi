@@ -245,6 +245,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 - A context supplies access. A target includes the selected runtime, cluster
   identity and namespace. Inference is independent. Unknown is not absent;
   ready is not answered or evaluated; retry is not result retrieval.
+- Orka result forwards default to kubectl-selected free IPv4 loopback ports,
+  retained continuously by the owned forward. Explicit `--result-port` is honored
+  without fallback. Keep port-startup errors payload-free and distinct from unknown
+  execution; port numbers are not evidence identities.
 - Experimental `pkg/kmx.AgentEnvironment` is setup-only and unwired:
   `Up(EnvironmentSpec)` establishes a logical `Environment`, not a context,
   exact target, runtime selection, inference binding or teardown authority.

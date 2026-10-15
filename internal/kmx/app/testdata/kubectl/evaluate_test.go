@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,9 +17,9 @@ import (
 
 // TestEvalKubectlHelper is the fake kubectl for evaluate. It serves the
 // destination's kube-system UID, one live Agent from agent.json, the result
-// account and Service, a token, a port-forward that only announces its bind
-// (the test's own HTTP server owns the port), and Tasks: every create is
-// logged and stored, and every read reports the phase KMX_EVAL_PHASE names.
+// account and Service, a token, and Tasks: every create is logged and stored,
+// and every read reports the phase KMX_EVAL_PHASE names. With a forwarding target,
+// the subprocess owns a real proxy; older fixtures retain their direct server.
 func TestEvalKubectlHelper(t *testing.T) {
 	dir := os.Getenv("KMX_EVAL_DIR")
 	if dir == "" {
@@ -61,6 +63,33 @@ func TestEvalKubectlHelper(t *testing.T) {
 		}
 		_ = os.WriteFile(filepath.Join(dir, "forward-pid"), []byte(fmt.Sprint(os.Getpid())), 0600)
 		port, _, _ := strings.Cut(args[len(args)-1], ":")
+		if target := os.Getenv("KMX_EVAL_FORWARD_TARGET"); target != "" {
+			if port == "" {
+				port = "0"
+			}
+			listener, err := net.Listen("tcp4", "127.0.0.1:"+port)
+			if err != nil {
+				fail()
+			}
+			_, port, _ = net.SplitHostPort(listener.Addr().String())
+			fmt.Println("Forwarding from 127.0.0.1:" + port + " -> 8080")
+			for {
+				local, err := listener.Accept()
+				if err != nil {
+					fail()
+				}
+				go func() {
+					defer local.Close()
+					remote, err := net.Dial("tcp", target)
+					if err != nil {
+						return
+					}
+					defer remote.Close()
+					go func() { _, _ = io.Copy(remote, local); _ = remote.Close() }()
+					_, _ = io.Copy(local, remote)
+				}()
+			}
+		}
 		fmt.Println("Forwarding from 127.0.0.1:" + port + " -> 8080")
 		time.Sleep(time.Hour)
 	}

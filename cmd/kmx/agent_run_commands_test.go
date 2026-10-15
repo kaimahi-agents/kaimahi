@@ -44,8 +44,10 @@ func TestRunAndResultHelpShowTimeoutContract(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{[]string{"run", "--help"}, []string{"--prompt-file", "--wait", "exit code 2"}},
-		{[]string{"task", "result", "--help"}, []string{"--wait", "exit code 2"}},
+		{[]string{"run", "--help"}, []string{"--prompt-file", "--wait", "exit code 2", "automatically"}},
+		{[]string{"task", "result", "--help"}, []string{"--wait", "exit code 2", "automatically"}},
+		{[]string{"eval", "--help"}, []string{"--result-port", "automatically"}},
+		{[]string{"lift", "--help"}, []string{"--result-port", "automatically"}},
 	} {
 		var out, errOut bytes.Buffer
 		deps, loads := testDependencies(&out, &errOut)
@@ -57,8 +59,8 @@ func TestRunAndResultHelpShowTimeoutContract(t *testing.T) {
 				t.Errorf("%v help missing %q", tc.args, want)
 			}
 		}
-		if *loads != 0 {
-			t.Errorf("%v help loaded config %d times", tc.args, *loads)
+		if *loads != 0 || strings.Contains(out.String(), "19180") {
+			t.Errorf("%v help loaded config or advertised a fixed result port: %s", tc.args, out.String())
 		}
 	}
 }

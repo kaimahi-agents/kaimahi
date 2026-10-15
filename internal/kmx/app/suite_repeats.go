@@ -140,7 +140,12 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 			if count > 1 {
 				label = fmt.Sprintf("%s run %d/%d", label, j+1, count)
 			}
-			if _, outputErr := fmt.Fprintf(out, "%s: %s\n", label, verdict); outputErr != nil {
+			result := string(verdict)
+			var port *orkaResultPortError
+			if errors.As(err, &port) {
+				result = port.Error()
+			}
+			if _, outputErr := fmt.Fprintf(out, "%s: %s\n", label, result); outputErr != nil {
 				cancel()
 				return nil, outputErr
 			}

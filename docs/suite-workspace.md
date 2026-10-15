@@ -380,8 +380,12 @@ state; `--out` optionally also writes a new standalone receipt. Orka requires
 `--inference provider:NAME`, directly or
 through the named destination;
 kagent instead requires `--bindings FILE`, never both. For Orka, namespace
-is `orka-system` by default (`--to-namespace`); `--result-port` defaults to
-`19180`, and each run has a separate `--case-timeout` (default 5m, maximum 9m).
+is `orka-system` by default (`--to-namespace`). Without `--result-port`, kubectl
+chooses and retains a free IPv4 loopback result port, with no bind-close-reuse
+window. An explicit `--result-port` is honored without fallback; an occupied
+port or unproven bind reports a result-port error, not an unknown evaluation.
+Result port numbers are transport details, not evidence identities. Each run
+has a separate `--case-timeout` (default 5m, maximum 9m).
 Explicit empty selectors and global `--context` are refused. No runtime/model
 substitution, case subset or `--show-content` is available. Orka/kagent and AgentSessions development evaluation support
 `contains`, `notContains`, `regex` and explicitly configured `llmJudge` assertions. Unsupported evaluators,

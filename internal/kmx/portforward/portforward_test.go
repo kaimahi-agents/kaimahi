@@ -49,13 +49,18 @@ func TestForwardProcess(t *testing.T) {
 	}
 	switch scenario {
 	case "owned":
-		listener, err := net.Listen("tcp4", "127.0.0.1:"+local)
+		bindPort := local
+		if bindPort == "" {
+			bindPort = "0"
+		}
+		listener, err := net.Listen("tcp4", "127.0.0.1:"+bindPort)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		fmt.Fprintln(os.Stderr, "diagnostic one\ndiagnostic two")
-		fmt.Println("Forwarding from 127.0.0.1:" + local + " -> 8080")
+		_, boundPort, _ := net.SplitHostPort(listener.Addr().String())
+		fmt.Println("Forwarding from 127.0.0.1:" + boundPort + " -> 8080")
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -68,6 +73,17 @@ func TestForwardProcess(t *testing.T) {
 		fmt.Println("Forwarding from [::1]:" + local + " -> 8080")
 	case "wrong-port":
 		fmt.Println("Forwarding from 127.0.0.1:1 -> 8080")
+	case "prefix":
+		fmt.Println("Forwarding from 127.0.0.1:" + local + "0 -> 8080")
+	case "wrong-remote":
+		fmt.Println("Forwarding from 127.0.0.1:" + local + " -> 8081")
+	case "zero", "overflow", "partial":
+		line := map[string]string{
+			"zero":     "Forwarding from 127.0.0.1:0 -> 8080\n",
+			"overflow": "Forwarding from 127.0.0.1:65536 -> 8080\n",
+			"partial":  "Forwarding from 127.0.0.1:12345",
+		}[scenario]
+		fmt.Print(line)
 	case "silent":
 	case "exit":
 		fmt.Fprintln(os.Stderr, "deployment missing\ncheck the target")
@@ -181,7 +197,7 @@ func TestStartRefusesPortOwnedByAnotherProcess(t *testing.T) {
 
 func TestStartRequiresOwnIPv4PortAnnouncement(t *testing.T) {
 	impatient(t)
-	for _, scenario := range []string{"ipv6", "wrong-port", "silent"} {
+	for _, scenario := range []string{"ipv6", "wrong-port", "silent", "prefix", "wrong-remote"} {
 		t.Run(scenario, func(t *testing.T) {
 			k := testKube(t, scenario)
 			f, err := Start(k, "agents", "svc/tool", freePort(t), "8080")
@@ -272,6 +288,45 @@ func TestStartFailurePreservesCauseAndTarget(t *testing.T) {
 	f, err := Start(missingCommand{}, "agents", "svc/tool", "18080", "8080")
 	if f != nil || !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "cannot port-forward to svc/tool in agents") {
 		t.Fatalf("command start failure lost cause/target: forward=%v error=%v", f, err)
+	}
+}
+
+func TestStartReturnsOwnedAutomaticPort(t *testing.T) {
+	f, err := Start(testKube(t, "owned"), "agents", "svc/tool", "", "8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if f.Port == "" || f.Port == "0" {
+		t.Fatalf("automatic port = %q", f.Port)
+	}
+	conn, err := net.DialTimeout("tcp4", "127.0.0.1:"+f.Port, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	body, err := io.ReadAll(conn)
+	if err != nil || string(body) != "owned" {
+		t.Fatalf("automatic socket reply = %q, %v", body, err)
+	}
+}
+
+func TestAutomaticForwardRequiresCompleteValidIPv4Announcement(t *testing.T) {
+	impatient(t)
+	for _, scenario := range []string{"ipv6", "zero", "overflow", "partial", "wrong-remote", "exit"} {
+		t.Run(scenario, func(t *testing.T) {
+			k := testKube(t, scenario)
+			f, err := Start(k, "agents", "svc/tool", "", "8080")
+			if f != nil {
+				f.Close()
+				t.Fatal("accepted an unproven automatic port")
+			}
+			if err == nil || !strings.Contains(err.Error(), "port-forward") {
+				t.Fatalf("missing port diagnostic: %v", err)
+			}
+			assertReaped(t, k)
+		})
 	}
 }
 
