@@ -23,7 +23,7 @@ RELEASE_NOTE = """> [!NOTE]
 JOURNEY = RELEASE_NOTE + """| Stage | Current checkout |
 |---|---|
 | **Create** | `kmx create NAME --workspace DIR` authors source. |
-| **Prove** | `kmx eval --workspace DIR` stops later cases after the first non-pass and writes evidence only when all cases pass. |
+| **Prove** | `kmx eval --workspace DIR` evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes evidence only when the full policy passes. |
 | **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` copies the suite. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
 | **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |
 """
@@ -52,7 +52,7 @@ kmx quickstart
 A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.
 - **Orka** is the default runtime. Its packaged workspace path supports evaluation, evaluated publication and root digest Lift with exact evaluated reuse; independent live Orka run and chat remain.
 - **kagent** support is exact-version and operation-specific: v0.10.3 Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated publication and create-only root digest Lift. Standalone run/chat, Python, RemoteMCP, suite status and retirement remain unavailable.
-- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary push and explicit private `eval --development-host FILE`: one fresh Session/config/Exec per case, full-pass private proof and exact-S evaluated push. This unauthenticated literal-loopback development path loads no cluster settings; it supports no tools/judge, Lift/chat/status or remote lifecycle. Receipt diff refuses its proof.
+- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary push and explicit private `eval --development-host FILE`: one fresh Session/config/Exec per declared run, full-pass private proof and exact-S evaluated push. This unauthenticated literal-loopback development path loads no cluster settings; explicit judging and repeated cases share Orka/kagent semantics. It supports no tools, Lift/chat/status or remote lifecycle. Receipt diff refuses its proof.
 ## Safety And Status
 > [!IMPORTANT]
 > **Kaimahi is experimental and under active development.** Interfaces may change.
@@ -100,8 +100,10 @@ CASES += [
     ("command in purpose column only", GOOD.replace("| **Create** | `kmx create", "| Author | **Create** with `kmx create"), "Create row is missing"),
     ("suite rows out of order", GOOD.replace("| **Create** |", "| **TEMP** |").replace("| **Prove** |", "| **Create** |").replace("| **TEMP** |", "| **Prove** |"), "Create row is missing"),
     ("missing eval", GOOD.replace("`kmx eval --workspace DIR`", "`kmx run`"), "Prove row is missing"),
-    ("partial evidence accepted", GOOD.replace("only when all cases pass", "after any case"), "Prove row must require a full pass"),
-    ("later cases continue after failure", GOOD.replace("stops later cases after the first non-pass", "continues through every case"), "Prove row must preserve fail-fast execution"),
+    ("partial evidence accepted", GOOD.replace("only when the full policy passes", "after any case"), "Prove row must require a full pass"),
+    ("repeat policy missing", GOOD.replace("optional `runs`/`minPasses` (default once)", "unbounded repeats"), "Prove row must describe declared repeats"),
+    ("later cases continue after failure", GOOD.replace("stops after a case misses its threshold or any unknown/error", "continues through every case"), "Prove row must preserve fail-fast execution"),
+    ("unknown ignored", GOOD.replace(" or any unknown/error", ""), "Prove row must preserve fail-fast execution"),
     ("push implies deployment", GOOD.replace("Neither form deploys", "Then it deploys"), "Publish row must say it does not deploy"),
     ("plain push bypasses evidence", GOOD.replace("Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. ", ""), "Publish row must require evidence or explicit opt-out"),
     ("lift builds", GOOD.replace("without building, repacking, or publishing", "after rebuilding and publishing"), "Lift row must stay deploy-only"),
@@ -124,7 +126,9 @@ CASES += [
     ("kagent suite evaluation removed", GOOD.replace("`eval --bindings`, evaluated publication and ", ""), "kagent version boundary is missing"),
     ("kagent digest lift removed", GOOD.replace("create-only root digest Lift.", ""), "kagent version boundary is missing"),
     ("kagent status claimed", GOOD.replace("suite status and retirement remain unavailable.", "suite status is available."), "kagent version boundary is missing"),
-    ("agentsessions deployment claimed", GOOD.replace("no tools/judge, Lift/chat/status or remote lifecycle", "a KMX deployment target"), "agentsessions boundary is missing"),
+    ("agentsessions deployment claimed", GOOD.replace("no tools, Lift/chat/status or remote lifecycle", "a KMX deployment target"), "agentsessions boundary is missing"),
+    ("agentsessions run freshness missing", GOOD.replace("Session/config/Exec per declared run", "Session/config/Exec per case"), "agentsessions boundary is missing"),
+    ("agentsessions judge policy missing", GOOD.replace("explicit judging and repeated cases share Orka/kagent semantics", "judging remains unsupported"), "agentsessions boundary is missing"),
     ("runtime provider distinction removed", GOOD.replace("A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.\n", ""), "runtime/inference distinction is missing"),
     ("wrong tap", GOOD.replace("kaimahi-agents/tap/kmx", "other/tap/kmx"), "Homebrew install is missing"),
     ("moving Go source", GOOD.replace("cmd/kmx@v0.6.0", "cmd/kmx@main"), "pinned Go install is missing"),

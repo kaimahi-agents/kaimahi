@@ -97,6 +97,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   outcomes. Requires saved publishRepository and destination evaluationTarget;
   explicit digest Lift remains independent and evidence-required.
 
+- AgentSessions development-host eval supports authored `llmJudge` and
+  `runs`/`minPasses` through the same judge/repeat policy as Orka/kagent. Each
+  run creates a fresh Session/config/Exec; judging shares its deadline, unknown
+  vetoes a threshold, and execution errors abort without retry. Full passing
+  receipts retain actual run outcomes and exact-S publication checks. Default
+  single-run text receipt bytes are unchanged; older readers refuse the newly
+  supported judged/repeated proof. Host observations remain unauthenticated;
+  tools, remote hosts, Lift and receipt diff remain unsupported for Sessions.
+
 - Root eval stores completed runtime-specific passing metadata in private KMX state;
   --out is optional and still exports a standalone receipt for Lift/diff. Immutable
   per-workspace/per-S completion records embed canonical receipts, select latest
@@ -122,8 +131,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   total run-time budget excluding placement. Any unknown vetoes a pass;
   execution errors still abort. Private evidence records complete per-run
   verdicts and threshold, with unchanged default one-run encoding. Upgrade
-  readers before exchanging repeat receipts. AgentSessions refuses repeats;
-  repeat fields follow [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions),
+  readers before exchanging repeat receipts; repeat fields follow [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions),
   including positive integers and `minPasses` requiring `runs`. KMX-private
   YAML/receipts remain separate from the spec's embedded JSON format.
 
@@ -155,8 +163,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Private receipts bind declared judge model/version, policy, threshold, endpoint
   configuration hash and both scores; reasoning and raw judge URLs stay out of
   receipts and terminal recovery commands. Text-only receipts are unchanged;
-  upgrade readers before exchanging judge receipts. AgentSessions judging remains
-  unsupported. The existing native Orka CI shard includes one open-ended rubric
+  upgrade readers before exchanging judge receipts. The existing native Orka CI
+  shard includes one open-ended rubric
   case alongside its two text cases, reusing the pinned AIKit workload and existing
   timeout budgets. Runner tests validate owned-forward cleanup and independently
   check the declared judge identity/configuration and both receipt scores.

@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +23,7 @@ import (
 	"github.com/aramase/agentsessions/session"
 	"github.com/aramase/agentsessions/sqlitelog"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
+	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -224,6 +227,166 @@ func TestSuiteSessionsFailurePreservesCauseWithoutPrintingPayload(t *testing.T) 
 	}
 	if _, err := os.Stat(opt.Out); !os.IsNotExist(err) {
 		t.Fatal("warning failure exported proof")
+	}
+}
+
+func TestSuiteSessionsJudgedRepeats(t *testing.T) {
+	for _, outcome := range []string{"pass", "threshold", "late split", "model mismatch", "unavailable", "deadline", "host drift", "source drift"} {
+		t.Run(outcome, func(t *testing.T) {
+			a, opt, executions := suiteSessionsEvaluationFixture(t)
+			caseYAML := suiteJudgeYAML + "runs: 3\nminPasses: 2\n"
+			if outcome == "model mismatch" {
+				caseYAML = strings.Replace(caseYAML, "judgeModel: judge-model", "judgeModel: other-model", 1)
+			}
+			writeFile(t, filepath.Join(opt.Workspace, "eval/example.yaml"), caseYAML)
+			endpoint, samples := suiteJudgeFixtureServer(t, func(r *http.Request, n int) int {
+				switch outcome {
+				case "threshold":
+					return 20
+				case "pass":
+					if n <= 2 {
+						return 20
+					}
+				case "late split":
+					if n == 5 {
+						return 20
+					}
+				case "unavailable":
+					return -1
+				case "deadline":
+					<-r.Context().Done()
+				case "host drift":
+					writeFile(t, opt.DevelopmentHost, "{}")
+				case "source drift":
+					writeFile(t, filepath.Join(opt.Workspace, "agents/greeter/instructions.md"), "changed")
+				}
+				return 90
+			})
+			opt.JudgeBaseURL, opt.ManagedPass = endpoint, true
+			if outcome == "deadline" {
+				opt.CaseTimeout = 2 * time.Second
+			}
+			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			err = a.EvaluateSuiteWorkspace(t.Context(), p)
+			wantExecutions, wantSamples := int64(1), int32(2)
+			if outcome == "pass" {
+				wantExecutions, wantSamples = 4, 6
+			}
+			if outcome == "threshold" || outcome == "late split" {
+				wantExecutions, wantSamples = 3, 6
+			}
+			if outcome == "deadline" {
+				wantSamples = 1
+			}
+			if executions.Load() != wantExecutions || samples.Load() != wantSamples {
+				t.Fatalf("unexpected work: executions=%d samples=%d error=%v", executions.Load(), samples.Load(), err)
+			}
+			if outcome != "pass" {
+				if err == nil || len(p.completed) != 0 || p.record != "" {
+					t.Fatal("non-pass registered evidence", err)
+				}
+				if outcome == "deadline" && !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatal("lost judge deadline", err)
+				}
+				if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
+					t.Fatal("non-pass exported evidence", e)
+				}
+				if strings.Contains(a.Out.(*bytes.Buffer).String(), "first run 1/3: pass") && strings.HasSuffix(outcome, "drift") {
+					t.Fatal("drift credited pass")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			r, err := readSuitePassingReceipt(t.Context(), opt.Out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(r.Cases) != 4 || r.Cases[0].Verdict != "fail" || r.Cases[0].Run != 1 || r.Cases[2].Run != 3 || r.Cases[3].Run != 0 {
+				t.Fatal("lost actual outcomes or ordinals")
+			}
+			seenSessions, seenExecutions := map[string]bool{}, map[string]bool{}
+			for _, row := range r.Cases {
+				e := row.SessionsExecution
+				if seenSessions[e.SessionUID] || seenExecutions[e.ExecutionID] || e.HeadSeq != 5 {
+					t.Fatal("reused identity or changed journal contract")
+				}
+				seenSessions[e.SessionUID], seenExecutions[e.ExecutionID] = true, true
+			}
+			if !strings.Contains(a.Err.(*bytes.Buffer).String(), "4 fresh Sessions") || !strings.Contains(a.Err.(*bytes.Buffer).String(), "6 independent requests") {
+				t.Fatal("missing work disclosure")
+			}
+			if strings.Contains(fmt.Sprint(a.Out, a.Err), suiteJudgeCanary) {
+				t.Fatal("judge payload leaked")
+			}
+			if err := p.Close(); err != nil {
+				t.Fatal(err)
+			}
+			layout := filepath.Join(t.TempDir(), "layout")
+			result, err := a.PushSuiteWorkspaceManaged(t.Context(), SuiteWorkspacePushOptions{Workspace: opt.Workspace, Reference: "suite:v1", Layout: layout})
+			if err != nil || result.Descriptor.Digest.String() != p.suite.Digest {
+				t.Fatal("managed exact-S push", err)
+			}
+			if _, err := a.PushSuiteWorkspaceEvaluated(t.Context(), opt.Workspace, "suite:v2", filepath.Join(t.TempDir(), "explicit"), false, false, SuitePushProvenance{}, opt.Out); err != nil {
+				t.Fatal("explicit push", err)
+			}
+			if err := os.Rename(opt.Workspace, opt.Workspace+"-withheld"); err != nil {
+				t.Fatal(err)
+			}
+			artifact, err := suiteoras.ReadArtifactLayout(t.Context(), layout, p.suite.Digest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			suite, err := workspace.LoadArtifact(t.Context(), artifact)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := canonicalSuitePassingReceipt(t.Context(), r, suite)
+			if err != nil {
+				t.Fatal("source-free coherence", err)
+			}
+			for _, mutation := range []string{"missing", "ordinal", "threshold", "unknown", "session", "execution", "style", "model", "scores"} {
+				t.Run(mutation, func(t *testing.T) {
+					bad, e := parseSuitePassingReceipt(raw)
+					if e != nil {
+						t.Fatal(e)
+					}
+					switch mutation {
+					case "missing":
+						bad.Cases = bad.Cases[1:]
+					case "ordinal":
+						bad.Cases[1].Run = 1
+					case "threshold":
+						for i := 0; i < 3; i++ {
+							bad.Cases[i].MinPasses = 3
+						}
+					case "unknown":
+						bad.Cases[2].Verdict = "unknown"
+					case "session":
+						bad.Cases[1].SessionsExecution.SessionUID = bad.Cases[0].SessionsExecution.SessionUID
+					case "execution":
+						bad.Cases[1].SessionsExecution.ExecutionID = bad.Cases[0].SessionsExecution.ExecutionID
+					case "style":
+						bad.Cases[0].Assertions[0].Judge.RequestStyle = ""
+					case "model":
+						bad.Cases[0].Assertions[0].Judge.Model = "other-model"
+					case "scores":
+						bad.Cases[0].Assertions[0].Judge.Scores = []int{90, 90}
+					}
+					if _, e := canonicalSuitePassingReceipt(t.Context(), bad, suite); !errors.Is(e, errSuitePassingReceipt) {
+						t.Fatal("tampered source-free proof accepted", e)
+					}
+				})
+			}
+			if executions.Load() != 4 || samples.Load() != 6 {
+				t.Fatal("offline consumers executed work")
+			}
+		})
 	}
 }
 

@@ -24,11 +24,11 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 		Long: "Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
 			"--to NAME resolves copied selectors from workspace-root kmx.yaml; explicit flags override. Without --to-context or --development-host, evalTarget may select a named destination. No remembered/current-context fallback.\n" +
 			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override, subset or content output. llmJudge requires an explicit --judge-base-url and authored judgeModel/judgeVersion; --judge-key-env names an optional HTTPS credential variable. Input, answer and rubric transfer to that provider for two independent samples per assertion; disagreement/error is unknown. No judge content is printed.\n" +
-			"Packaged AgentSessions requires --development-host FILE: an explicit private operator observation of a pinned built-in chat host on literal loopback, unauthenticated. It refuses all cluster/inference/bindings/result selectors and loads no cluster configuration.\n" +
+			"Packaged AgentSessions requires --development-host FILE: an explicit private operator observation of a pinned built-in chat host on literal loopback, unauthenticated. It refuses all cluster/inference/bindings/result selectors and loads no cluster configuration. Authored llmJudge uses the same explicit judge transport options and transfers case inputs, attributed answers and rubrics.\n" +
 			"Development journals retain instructions, inputs, answers and per-exec config in cleartext under operator-managed retention. This is not authenticated remote promotion.\n" +
 			"Public Orka uses fresh digest/run-scoped candidates, never adoption/update/reuse, and exports passing evidence only after verified cleanup and final source/shared-input checks. Startup reports leftovers without deleting or blocking a fresh evaluation. Use eval cleanup [full-run-id] for explicit confirmed recovery; unanchored orphans refuse. Private Quickstart/console and other runtimes are unchanged.\n" +
-			"Orka/kagent cases optionally declare runs/minPasses (default one run; omitted threshold requires all runs). Each run submits a fresh Task, never retried, within its own per-run deadline. Repeated cases disclose the total run-time budget in preflight.\n" +
-			"Any unknown run vetoes a pass. Execution failure, drift or cancellation aborts without a receipt; resources may remain. AgentSessions stays one Session/Exec per case and refuses repeats.\n" +
+			"Cases optionally declare runs/minPasses (default one run; omitted threshold requires all runs). Each run submits a fresh Task or AgentSessions Session/config/Exec, never retried, within its own per-run deadline including judging. Repeated cases disclose the total run-time budget in preflight.\n" +
+			"Any unknown run vetoes a pass. Execution failure, drift or cancellation aborts without a receipt; resources or Sessions may remain.\n" +
 			"Completed passing metadata is registered in private KMX state after successful evaluation, Orka cleanup and finalization. --out optionally also writes a new standalone receipt in an existing private directory outside workspace/cache trees. Only full passing metadata is stored, unsigned and not a policy gate.\n" +
 			"Case inputs are sent to the runtime and model; upstream storage/audit policy may retain them. Real native CLI execution qualification remains separate from hermetic checks.",
 		Example: "  kmx eval\n" +
@@ -49,7 +49,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 				return fmt.Errorf("--context cannot be used with native eval; use --to-context")
 			}
 			if native.DevelopmentHost != "" {
-				for _, name := range []string{"to", "to-context", "to-namespace", "inference", "bindings", "result-port", "container-engine", "judge-base-url", "judge-key-env"} {
+				for _, name := range []string{"to", "to-context", "to-namespace", "inference", "bindings", "result-port", "container-engine"} {
 					if cmd.Flag(name).Changed {
 						return fmt.Errorf("--development-host refuses --%s", name)
 					}

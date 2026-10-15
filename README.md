@@ -42,7 +42,7 @@ it does not prove every promotion, creation or partial-outcome path.
 | Stage | Current checkout |
 |---|---|
 | **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
-| **Prove** | Orka uses `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, with no cluster selectors. Each runs ordered cases once, stops later cases after the first non-pass, and writes private evidence only when all cases pass. |
+| **Prove** | Orka uses `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, with no cluster selectors. Each evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes private evidence only when the full policy passes. |
 | **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
 | **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; suite status and retirement remain unavailable. |
 
@@ -107,9 +107,9 @@ separate model-access binding; selecting one does not select the other.
   RemoteMCP, suite status and retirement remain unavailable.
 - **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary
   push and explicit private `eval --development-host FILE`: one fresh
-  Session/config/Exec per case, full-pass private proof and exact-S evaluated
+  Session/config/Exec per declared run, full-pass private proof and exact-S evaluated
   push. This unauthenticated literal-loopback development path loads no cluster
-  settings; it supports no tools/judge, Lift/chat/status or remote lifecycle.
+  settings; explicit judging and repeated cases share Orka/kagent semantics. It supports no tools, Lift/chat/status or remote lifecycle.
   Receipt diff refuses its proof. Read-only reference extraction/export and
   availability probing remain separate; legacy bundle evaluation/replay is removed.
 

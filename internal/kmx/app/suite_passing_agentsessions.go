@@ -146,11 +146,9 @@ func newSuiteSessionsPassingReceipt(ctx context.Context, p *PreparedSuiteWorkspa
 		row := inventory[i].Metadata
 		row.SessionsExecution = &suiteSessionsCaseExecution{SessionUID: result.SessionUID, ExecutionID: result.ExecutionID, Harness: result.Harness, HarnessVersion: result.HarnessVersion, HeadHash: result.Head.Hash, HeadSeq: result.Head.Seq}
 		row.AnswerDigest = agentruntime.EvaluationAnswerDigest(result.Output)
+		row.Verdict = string(suiteRunVerdict(o.Assertions))
 		row.Assertions = make([]suitePassingAssertion, 0, len(o.Assertions))
 		for _, a := range o.Assertions {
-			if a.Verdict != agentruntime.EvaluationPass {
-				return nil, errSuitePassingReceipt
-			}
 			row.Assertions = append(row.Assertions, suitePassingAssertionResult(a))
 		}
 		r.Cases = append(r.Cases, row)
