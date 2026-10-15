@@ -147,6 +147,7 @@ records exact pins and evidence rather than claiming feature parity.
 |---|---|
 | Install and get one answer | [Getting started](docs/getting-started.md) |
 | Author, evaluate and publish a workspace | [Workspace lifecycle](docs/suite-workspace.md) |
+| Prepare a small Azure dev cluster for AgentSuite lift | [Azure dev-cluster recipe](docs/azure-dev-cluster.md) |
 | Understand exact runtime support | [Runtime support](docs/runtime-adapters.md) |
 | Find every implemented command | [`kmx` reference](docs/kmx.md) |
 | Read the portable artifact contract | [AgentSuite specification](agentsuite/spec.md) |

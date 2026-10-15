@@ -86,6 +86,7 @@ const userGuides = [
   { text: 'Models and inference', link: '/docs/models' },
   { text: 'Interactive chat', link: '/docs/interactive-chat' },
   { text: 'AKS', link: '/docs/aks' },
+  { text: 'Azure dev cluster', link: '/docs/azure-dev-cluster' },
   { text: 'Releases and upgrades', link: '/docs/releases' },
   { text: 'FAQ', link: '/docs/FAQ' }
 ]

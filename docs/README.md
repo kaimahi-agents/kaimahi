@@ -24,6 +24,7 @@ runtime contract when extending or comparing implementations.
 | Discover models and configure native inference | [Models](models.md), [Copilot inference](copilot-inference.md), [Foundry inference](local-foundry-inference.md) |
 | Chat with an existing Orka Agent | [Interactive chat](interactive-chat.md) |
 | Use an existing AKS cluster or provision a disposable one | [AKS](aks.md) |
+| Prepare a small Azure development cluster and test native suite lift | [Guidance for Azure](azure-dev-cluster.md) |
 | Find a command, its safety contract, and supported output modes | [kmx reference](kmx.md) |
 | Install a tagged release or understand version and upgrade limits | [Releases](releases.md) |
 | Diagnose installation, inference, or runtime problems | [FAQ](FAQ.md) |

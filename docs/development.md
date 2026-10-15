@@ -1,5 +1,10 @@
 # Development
 
+For an optional remote test environment, follow [Guidance for Azure: a small
+development cluster](azure-dev-cluster.md). It separates AKS provisioning,
+runtime installation and an on-demand CPU inference/evaluation smoke; none is
+required for ordinary local code and documentation development.
+
 For work **on** Kaimahi; contribution/PR expectations are in
 [CONTRIBUTING.md](../CONTRIBUTING.md). For use, start with
 [getting started](getting-started.md) and [Orka](orka.md).
