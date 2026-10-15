@@ -504,6 +504,19 @@ not guessed from labels or partial names. Existing Task names retain only part
 of the run ID, so some post-crash orphans require independent operator inspection.
 A missing root is not itself proof of complete cleanup.
 
+Discovery is namespace-wide, not filtered by labels that descendants may lack.
+Inventories allow four pages of 128 objects per kind, at most 4 MiB per page,
+and 512 objects across a snapshot, including unrelated resources. Cleanup has
+one 90-second budget. Large namespaces, unreadable pages or stuck finalizers
+fail closed; these limits are not proof that a selected run has no leftovers.
+Prefer a dedicated evaluation namespace. If a limit prevents recovery, have the
+cluster owner inspect retained resources and reduce unrelated inventory through
+their own verified-ownership process, then rerun read-only `kmx eval cleanup`.
+Missing anchors instead require independent operator-reviewed, UID-specific
+inspection/cleanup; do not infer ownership from labels, prefixes or age, or use
+a namespace-wide delete to work around a refusal. KMX never authorizes shared
+inference, Secret or namespace deletion through this helper.
+
 `push --evaluation FILE` reads that strict private file and requires the exact
 prepared manifest digest plus full offline case/subject coherence before transfer
 or provenance. Equivalent authored spelling with the same artifact identity is
