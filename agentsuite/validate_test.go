@@ -59,6 +59,54 @@ func TestValidatePathRejectsNonCanonicalStoredJSON(t *testing.T) {
 	}
 }
 
+// TestValidatePathRejectsNonCanonicalStoredJSONEvenWhenRawDigestMatches proves
+// that the canonical-form comparison inside matchesCanonicalDescriptor is
+// itself load-bearing, not merely redundant with the cheap raw length/digest
+// pre-check added ahead of it. Re-pointing the descriptor at the indented
+// bytes' own raw digest/size lets that pre-check pass trivially, so only the
+// final canonical re-serialization comparison can still catch the mismatch.
+func TestValidatePathRejectsNonCanonicalStoredJSONEvenWhenRawDigestMatches(t *testing.T) {
+	root := writeMinimalSuite(t)
+	agentPath := filepath.Join(root, "agents", "writer.json")
+	canonicalBytes, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, canonicalBytes, "", "  "); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agentPath, indented.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	suitePath := filepath.Join(root, "agentsuite.json")
+	suiteBytes, err := os.ReadFile(suitePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var suite Suite
+	if err := Unmarshal(suiteBytes, &suite); err != nil {
+		t.Fatal(err)
+	}
+	// Point the descriptor at the indented bytes' own raw digest/size, so the
+	// cheap pre-parse check passes and cannot be the thing that rejects it.
+	suite.Agents[0].Descriptor.Digest = digestBytes(indented.Bytes())
+	suite.Agents[0].Descriptor.Size = int64(indented.Len())
+	rewritten, err := Marshal(suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(suitePath, rewritten, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("non-canonical stored agent manifest accepted despite raw-digest-matched descriptor, error = %v", err)
+	}
+}
+
 func TestValidateBuildProfileRequiresDigestMatchedImageReferences(t *testing.T) {
 	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	profile := BuildProfile{
