@@ -125,7 +125,7 @@ pending the Go retirement pass; historical data is not evidence of active reader
 | `kmx/agentsuite/testdata/incident-analyst/instructions` | 1 | Scaffolding | Evidence-bound incident triage, hypothesis, diagnostic and mitigation instructions. |
 | `kmx/agentsuite/testdata/incident-analyst/compositions` | 1 | Scaffolding | Linux amd64 composition selecting the AgentKit v0.1.0 build profile. |
 | `kmx/agentsuite/testdata/incident-analyst/tool-providers` | 1 | Scaffolding | Empty catalog reflecting the experimental backend's current no-ToolProvider boundary. |
-| `kmx/app/testdata` | 2 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0. |
+| `kmx/app/testdata` | 3 | Scaffolding | Golden bytes pin the no-Task Orka artifact for both v0.1.3 and v0.2.0; a sanitized recorded judge 400 pins request compatibility. |
 | `kmx/app/testdata/kubectl` | 0 | Scaffolding | Test-only executable-boundary kubectl handlers and thin reconcile/kagent adapters, compiled once per App test run with matching race instrumentation; no App or UI dependencies. |
 | `kmx/app/kubectlfake` | 4 | Scaffolding | Shared stateful reconcile/kagent handlers and pins for executable and explicitly selected in-process capture fixtures; request-scoped context, environment and I/O, synchronous cancellable delays and observed writer errors. App parity tests exercise both modes; unit tests run under `go test ./...` and CI. Not imported by installed code. |
 | `kmx/app/testdata/live-eval-loop` | 1 | Scaffolding | Native instruction-text fixture; old user agent.yaml fixture removed. |
