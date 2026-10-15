@@ -356,8 +356,9 @@ OCI pulls and do not use these mirrors.
 - Setup does not adopt or redirect existing applications. Owners must deliberately
   remove or replace obsolete gateway references and external subscriptions.
 - A Secret created after an optional mount may need a rollout restart.
-- A Service port-forward selects one pod, not every replica. Use distinct fixed
-  ports across concurrent checks; native chat allocates a free loopback port.
+- A Service port-forward selects one pod, not every replica. KMX result forwards
+  let kubectl choose and retain a free IPv4 loopback port. Explicit `--result-port`
+  values need distinct free ports across concurrent checks and never fall back.
 - Ambiguous-disconnect retries can repeat effects; read the
   [retry limits](kmx.md#retry-limits) before resending work.
 - A bare shell `wait` waits on long-running forwards too; collect worker PIDs.

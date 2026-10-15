@@ -26,6 +26,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Terminal `kmx create NAME` prompts for missing model and instructions-file inputs; nonterminal use still requires both flags, and blank inputs refuse.
 - Named workspace destinations support `eval/lift --to NAME`; `kmx ctx [--check]` lists them without switching context.
 - Root Orka/kagent eval supports `llmJudge` assertions with an explicit judge endpoint and two independent scores.
 - Cases support repeated runs and pass thresholds with `runs`/`minPasses`; any unknown result vetoes a pass.
@@ -37,6 +38,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- Orka result access selects a free loopback port automatically; explicit `--result-port` values are honored without fallback and startup failures name the port problem.
 - Judge requests use `max_completion_tokens`, no temperature override, and exact model/version matching.
 - `kmx local up` works with Helm 4 while retaining Helm 3 support.
 

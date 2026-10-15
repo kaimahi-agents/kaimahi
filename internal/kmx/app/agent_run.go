@@ -46,7 +46,7 @@ func orkaResultDeadline(wait time.Duration) (time.Duration, error) {
 
 func orkaResultPort(port string) (string, error) {
 	if port == "" {
-		return "19180", nil
+		return "", nil
 	}
 	parsed, err := strconv.ParseUint(port, 10, 16)
 	if err != nil || parsed == 0 {
@@ -169,8 +169,11 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 		return fmt.Errorf("Agent %s/%s is not Ready for its current generation", namespace, name)
 	}
 	// Preserve destination and execution flags, never private prompt text.
-	worker.InvocationCommand = worker.operationCommand("run", "--agent", name, "--namespace", namespace,
-		"--wait", timeout.String(), "--result-port", port, "--prompt-file", "-")
+	args := []string{"run", "--agent", name, "--namespace", namespace, "--wait", timeout.String()}
+	if port != "" {
+		args = append(args, "--result-port", port)
+	}
+	worker.InvocationCommand = worker.operationCommand(append(args, "--prompt-file", "-")...)
 	if err := worker.guardOrkaMutation(ctx, CreateOptions{Name: name, Namespace: namespace}, "execute one AI Task against Agent "+name+" in "+namespace); err != nil {
 		return err
 	}

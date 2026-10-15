@@ -82,8 +82,10 @@ Workspace --create/eval--> AgentSuite artifact --push--> OCI location
 
 ## Workspace versus live
 
-Default `create` requires one name, exact `--model`, and file-valued
-`--instructions`. It discovers the nearest `workspace.yaml`; `--workspace DIR`
+Default `create` requires one name and exact model/file-valued instructions.
+With visible stdin/stderr terminals, missing inputs prompt; nonterminal use
+requires `--model` and `--instructions`, and explicitly blank flags refuse.
+No model or instructions defaults are inferred. It discovers the nearest `workspace.yaml`; `--workspace DIR`
 selects or initializes one exact root. The current source profile has a
 one-member limit.
 

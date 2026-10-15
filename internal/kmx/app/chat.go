@@ -82,7 +82,7 @@ type orkaChatBackend struct {
 func (b *orkaChatBackend) Agent() string { return b.agent }
 
 func quickstartResultOptions(namespace, task string) CreateOptions {
-	return CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount, ResultPort: "19180", Task: task}
+	return CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount, Task: task}
 }
 
 func (b *orkaChatBackend) Connect(ctx context.Context, renderer *chatRenderer) ([]cliui.Field, error) {

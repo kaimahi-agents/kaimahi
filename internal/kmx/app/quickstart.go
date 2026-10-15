@@ -205,10 +205,6 @@ func (a *App) quickstartResult(question, answer string, started time.Time) Quick
 // in-cluster endpoint needs no credential, and Orka's Provider schema
 // requires a secretRef whether or not the endpoint reads it.
 func (a *App) quickstartCreateOptions() CreateOptions {
-	port := a.quickstartResultPort
-	if port == "" {
-		port = "19180"
-	}
 	return CreateOptions{
 		Name:                 QuickstartAgent,
 		Namespace:            OrkaNamespace,
@@ -220,7 +216,7 @@ func (a *App) quickstartCreateOptions() CreateOptions {
 		SecretKey:            "api-key",
 		ResultServiceAccount: orkaResultAccount,
 		OrkaAPIService:       "orka-api",
-		ResultPort:           port,
+		ResultPort:           a.quickstartResultPort,
 	}
 }
 

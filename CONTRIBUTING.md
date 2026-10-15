@@ -48,7 +48,9 @@ proof. The fixed modern Chat Completions wire uses max_completion_tokens
 (1024) without a temperature override; judge evidence/configuration binds the
 request style and old judge receipts require fresh evaluation.
 AgentSessions shares the same judge and repeat policy. Exact model and
-file-valued instructions are required; create/push share workspace discovery.
+file-valued instructions are required: terminal create prompts for omitted inputs,
+while nonterminal use requires both flags. Core authoring stays strict;
+create/push share workspace discovery.
 No runtime/model bootstrap belongs in workspace create. Root eval registers
 completed exact-suite passing metadata in private managed state; --out is optional.
 Root push requires that proof by default, or explicit --evaluation FILE without

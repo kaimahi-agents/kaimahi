@@ -1,13 +1,21 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 // newAgentShowCommand answers one question: will this agent work, and if
@@ -58,14 +66,14 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 	var profile workspace.RuntimeProfile
 	cmd := &cobra.Command{
 		Use: "create <name>", Short: "Author an offline workspace member",
-		Long:    "Author a tool-free Orka, exact kagent Go or pinned AgentSessions chat member in a local workspace. AgentSessions evaluation uses an explicit development host; its lift, chat and status remain unavailable.\n\nCreate does not evaluate, publish, deploy or load cluster configuration.\nUse eval, push and immutable digest lift with explicit evidence for deployment.",
-		Example: "  kmx create greeter --workspace ./greeter --model qwen-3.5-2b --instructions instructions.md",
+		Long:    "Author a tool-free Orka, exact kagent Go or pinned AgentSessions chat member in a local workspace. AgentSessions evaluation uses an explicit development host; its lift, chat and status remain unavailable.\n\nOn a visible terminal, missing model and instructions-file inputs are prompted. Scripts require both --model and --instructions.\n\nCreate does not evaluate, publish, deploy or load cluster configuration.\nReview the saved instructions and cases before eval, push or lift.",
+		Example: "  kmx create greeter\n  kmx create greeter --workspace ./greeter --model qwen-3.5-2b --instructions instructions.md",
 	}
-	cmd.Flags().StringVar(&root, "workspace", "", "select an exact workspace directory (initialize without prompting if absent)")
+	cmd.Flags().StringVar(&root, "workspace", "", "select an exact workspace directory (skip workspace-initialization confirmation)")
 	_ = cmd.MarkFlagDirname("workspace")
 	cmd.Flags().StringVar(&description, "description", "", "one-line description")
-	cmd.Flags().StringVar(&model, "model", "", "authored model identifier (required)")
-	cmd.Flags().StringVar(&instructions, "instructions", "", "file containing the system message (required)")
+	cmd.Flags().StringVar(&model, "model", "", "exact authored model identifier (prompted on a visible terminal if omitted)")
+	cmd.Flags().StringVar(&instructions, "instructions", "", "file containing the system message (prompted on a visible terminal if omitted)")
 	cmd.Flags().StringVar(&runtimeID, "runtime", "orka", "agent runtime: orka, kagent or agentsessions")
 	cmd.Flags().StringVar(&version, "runtime-version", "v0.10.3", "exact workspace runtime profile (kagent: v0.10.3; agentsessions: pinned commit)")
 	cmd.Flags().StringVar(&engine, "kagent-runtime", "go", "kagent declarative runtime: go")
@@ -97,16 +105,86 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 		} else if runtimeID != "orka" || cmd.Flags().Changed("runtime-version") || cmd.Flags().Changed("kagent-runtime") {
 			return fmt.Errorf("workspace --runtime must be orka without version/engine or exact kagent v0.10.3 go")
 		}
-		if strings.TrimSpace(model) == "" || strings.TrimSpace(instructions) == "" {
+		if cmd.Flags().Changed("model") && strings.TrimSpace(model) == "" || cmd.Flags().Changed("instructions") && strings.TrimSpace(instructions) == "" {
 			return fmt.Errorf("workspace creation requires --model and --instructions <file>")
 		}
 		return nil
 	}
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		opt := workspace.CreateOptions{Name: name, Description: description, Model: model, InstructionsFile: instructions, Runtime: profile}
+		if err := completeCreateInputs(cmd.Context(), state.deps.stdin, cmd.ErrOrStderr(), &opt); err != nil {
+			return err
+		}
 		a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr(), Stdin: state.deps.stdin}
-		return a.CreateSuiteMember(cmd.Context(), root, workspace.CreateOptions{Name: name, Description: description, Model: model, InstructionsFile: instructions, Runtime: profile})
+		return a.CreateSuiteMember(cmd.Context(), root, opt)
 	}
 	return cmd
+}
+
+func completeCreateInputs(ctx context.Context, in *os.File, out io.Writer, opt *workspace.CreateOptions) error {
+	if strings.TrimSpace(opt.Model) != "" && strings.TrimSpace(opt.InstructionsFile) != "" {
+		return nil
+	}
+	diagnostics, visible := out.(*os.File)
+	if in == nil || !visible || !term.IsTerminal(int(in.Fd())) || !term.IsTerminal(int(diagnostics.Fd())) {
+		return fmt.Errorf("workspace creation requires --model and --instructions <file> without a visible terminal")
+	}
+	// Name diagnostics can quote input; preserve the core's credential check
+	// before issuing them, even though source inputs are not yet complete.
+	if secretshapes.Match(opt.Name) != nil {
+		return fmt.Errorf("refusing credential-shaped workspace name")
+	}
+	if err := scaffold.ValidateName(opt.Name); err != nil {
+		return err
+	}
+	scanner := bufio.NewScanner(createPromptReader{in})
+	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		if atEOF && bytes.IndexByte(data, '\n') < 0 {
+			return 0, nil, io.ErrUnexpectedEOF
+		}
+		return bufio.ScanLines(data, atEOF)
+	})
+	for _, field := range []struct {
+		label string
+		value *string
+	}{{"Exact model", &opt.Model}, {"Instructions file", &opt.InstructionsFile}} {
+		if strings.TrimSpace(*field.value) != "" {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(out, "%s: ", field.label); err != nil {
+			return err
+		}
+		read := scanner.Scan()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !read {
+			err := scanner.Err()
+			if err == nil {
+				err = io.EOF
+			}
+			return fmt.Errorf("read %s: %w", field.label, err)
+		}
+		if strings.TrimSpace(scanner.Text()) == "" {
+			return fmt.Errorf("%s is required; no files created", field.label)
+		}
+		*field.value = scanner.Text()
+	}
+	return nil
+}
+
+// Read no further than the current line: the core workspace confirmation uses
+// its own scanner, so buffered answers must remain on stdin for that prompt.
+type createPromptReader struct{ io.Reader }
+
+func (r createPromptReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	return r.Reader.Read(p[:1])
 }
 
 func newAgentChatCommand(state *commandState) *cobra.Command {

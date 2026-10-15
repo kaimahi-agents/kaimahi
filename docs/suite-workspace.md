@@ -236,7 +236,12 @@ host qualification. Existing Orka/kagent evidence cannot authorize this profile.
 `--instructions` names a file, not inline text. Its nonblank bytes are copied
 unchanged into the member. `--description` is optional and single-line.
 Instructions use the native block-text policy: LF and tabs are allowed; CR and other control characters are refused,
-not normalized. `--model` is required and exact; there is no inferred default.
+not normalized. An exact model is required; there is no inferred default.
+With visible stdin and stderr terminals, create prompts for an omitted model or
+instructions file before workspace initialization. It only asks for missing inputs,
+preserving supplied flags; explicit blank flags and blank/EOF responses refuse.
+Enter literal paths (including spaces), not inline text or shell expansions.
+Nonterminal use still requires both `--model` and `--instructions`.
 Live-only flags and `--live` itself are unknown before configuration loads;
 create never bootstraps runtime/model or reads cluster settings. An explicitly
 empty `--workspace` refuses. Required fields are checked before initialization.
@@ -244,11 +249,18 @@ empty `--workspace` refuses. Required fields are checked before initialization.
 A workspace supports only one member. Creating a second member refuses and
 suggests a new `--workspace` directory, preserving authored files, metadata and
 cases. Existing member directories, including PortableAgent bundles, are never
-overwritten or migrated. For the same first creation using discovery instead
-of an exact root, omit `--workspace`:
+overwritten or migrated. For terminal creation using discovery instead of an
+exact root, omit `--workspace` and answer the model/instructions-file prompts:
 
 ```sh
-kmx create greeter --model qwen-3.5-2b --instructions ./instructions.md
+kmx create greeter
+```
+
+Alternatively, scripts provide both source inputs and select an exact root when
+initializing a workspace:
+
+```sh
+kmx create greeter --workspace ./greeter --model qwen-3.5-2b --instructions ./instructions.md
 ```
 
 A name is required; live create/previews/wizard are removed. Quickstart composes
@@ -382,8 +394,12 @@ state; `--out` optionally also writes a new standalone receipt. Orka requires
 `--inference provider:NAME`, directly or
 through the named destination;
 kagent instead requires `--bindings FILE`, never both. For Orka, namespace
-is `orka-system` by default (`--to-namespace`); `--result-port` defaults to
-`19180`, and each run has a separate `--case-timeout` (default 5m, maximum 9m).
+is `orka-system` by default (`--to-namespace`). Without `--result-port`, kubectl
+chooses and retains a free IPv4 loopback result port, with no bind-close-reuse
+window. An explicit `--result-port` is honored without fallback; an occupied
+port or unproven bind reports a result-port error, not an unknown evaluation.
+Result port numbers are transport details, not evidence identities. Each run
+has a separate `--case-timeout` (default 5m, maximum 9m).
 Explicit empty selectors and global `--context` are refused. No runtime/model
 substitution, case subset or `--show-content` is available. Orka/kagent and AgentSessions development evaluation support
 `contains`, `notContains`, `regex` and explicitly configured `llmJudge` assertions. Unsupported evaluators,
