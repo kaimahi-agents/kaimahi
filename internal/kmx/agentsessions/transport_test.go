@@ -120,10 +120,11 @@ func TestDialRejectsWrongTrustRootAndExpiredCertificate(t *testing.T) {
 	}
 }
 
-// Transport policy depends only on the address literal, so an in-memory
-// connection replaces the socket. A host interface address would make timing
-// depend on local interfaces, firewall and network extensions. TEST-NET-1
-// (RFC 5737) is not routed if the injected dialer were ever bypassed.
+// Transport credentials depend on the address literal and CAFile; a CA file
+// also forces TLS on loopback, which a non-loopback literal requires anyway.
+// The injected dialer replaces only the socket with an in-memory connection.
+// 192.0.2.10 is an RFC 5737 documentation address: the dialer rejects any
+// other target, and a zero dial count fails the test if it is bypassed.
 func TestDialNonLoopbackLiteralRequiresVerifiedTLS(t *testing.T) {
 	ip := net.ParseIP("192.0.2.10")
 	address := net.JoinHostPort(ip.String(), "443")
