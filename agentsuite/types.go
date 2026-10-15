@@ -10,6 +10,8 @@ const (
 	MediaTypeContent                 = "application/vnd.agentsuite.content.v1.tar+gzip"
 	MediaTypeSuite                   = "application/vnd.agentsuite.manifest.v1+json"
 	MediaTypeAgent                   = "application/vnd.agentsuite.agent.v1+json"
+	MediaTypeEvaluationIndex         = "application/vnd.agentsuite.eval.index.v1+json"
+	MediaTypeEvaluationCase          = "application/vnd.agentsuite.eval.case.v1+json"
 	MediaTypeToolProviderCatalog     = "application/vnd.agentsuite.tool.provider.catalog.v1+json"
 	MediaTypeToolProvider            = "application/vnd.agentsuite.tool.provider.v1+json"
 	MediaTypeToolProviderComposition = "application/vnd.agentsuite.tool.provider.composition.v1+json"
@@ -93,7 +95,44 @@ type Agent struct {
 	Model         ModelRequirement          `json:"model"`
 	ToolProviders []ToolProviderRequirement `json:"toolProviders,omitempty"`
 	Invokes       []AgentInvoke             `json:"invokes,omitempty"`
+	Evals         []FileRef                 `json:"evals,omitempty"`
 	Extensions    []Extension               `json:"extensions,omitempty"`
+}
+
+type EvaluationIndex struct {
+	SchemaVersion string           `json:"schemaVersion"`
+	MediaType     string           `json:"mediaType"`
+	Agent         string           `json:"agent"`
+	Cases         []FileRef        `json:"cases"`
+	Limits        EvaluationLimits `json:"limits"`
+}
+
+type EvaluationLimits struct {
+	MaxCases     int `json:"maxCases"`
+	MaxCaseBytes int `json:"maxCaseBytes"`
+}
+
+type EvaluationCase struct {
+	SchemaVersion string                `json:"schemaVersion"`
+	MediaType     string                `json:"mediaType"`
+	ID            string                `json:"id"`
+	Input         string                `json:"input"`
+	Runs          *int                  `json:"runs,omitempty"`
+	MinPasses     *int                  `json:"minPasses,omitempty"`
+	Assertions    []EvaluationAssertion `json:"assertions"`
+}
+
+type EvaluationAssertion struct {
+	ID           string `json:"id"`
+	Type         string `json:"type"`
+	Critical     *bool  `json:"critical,omitempty"`
+	Value        string `json:"value,omitempty"`
+	Pattern      string `json:"pattern,omitempty"`
+	Tool         string `json:"tool,omitempty"`
+	Rubric       string `json:"rubric,omitempty"`
+	MinScore     *int   `json:"minScore,omitempty"`
+	JudgeModel   string `json:"judgeModel,omitempty"`
+	JudgeVersion string `json:"judgeVersion,omitempty"`
 }
 
 type FileRef struct {

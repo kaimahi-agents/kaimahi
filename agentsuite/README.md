@@ -14,6 +14,7 @@ module; it does not have a separate module or release version:
 - strict JSON decoding with closed-field and duplicate-key enforcement;
 - JCS canonical encoding and digest calculation;
 - offline validation of extracted content and OCI image-layout directories;
+- optional [agent evaluations](spec.md#82-agent-evaluations) with ordered cases;
 - closed JSON Schema 2020-12 documents in [`schema/`](schema/).
 
 The normative format and conformance requirements are defined in
@@ -39,6 +40,9 @@ directly when strict format enforcement is required.
 an OCI image-layout directory and returns a conformance report. Consumers that
 read loose manifests should use `ValidateDirectory` to validate extracted
 content explicitly, without OCI layout auto-detection.
+
+The Go validator compiles evaluation regex assertions with `regexp`, whose
+accepted expression syntax is RE2.
 
 Builders, packers, registry transfer, sandbox-image construction, and
 builder-owned image metadata are implementation concerns and are not part of
