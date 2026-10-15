@@ -97,9 +97,15 @@ fields, including an explicit false transport flag. Config is not packaged or
 included in source identity. Explicit digest Lift without `--to` never discovers a
 workspace. See [configuration and checks](suite-workspace.md#named-destinations).
 
-No composed workspace Lift is enabled: Lift still requires a digest and private
-evidence; eval --out and the push reference are optional. Kagent remains standalone; do not
-include it in composed Lift until candidate-scoped evaluation/cleanup is qualified.
+No-reference `kmx lift --to NAME` composes missing Orka workspace eval, push and
+Lift. It requires saved publishRepository and destination evaluationTarget, freezes
+one source/selector plan, automatically discloses promotion, and confirms that plan
+once. Four default stage lines retain skips; verbose/JSON carries details. Private
+exact-version completion observations permit only verified GET-only skips, never
+Apply, adoption, replacement or repair. Explicit-reference Lift remains digest/private
+evidence based; eval --out and the push reference remain optional. Kagent stays
+standalone until candidate-scoped evaluation/cleanup is qualified. See
+[composed Lift](suite-workspace.md#composed-workspace-lift).
 
 ## Offline suite workspace
 

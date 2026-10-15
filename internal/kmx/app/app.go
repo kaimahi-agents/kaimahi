@@ -78,7 +78,8 @@ type App struct {
 	// guarded records that the context guard has already run in this
 	// process, so a multi-step command asks at most once — the same
 	// once-per-invocation behaviour make gives the `guard` prerequisite.
-	guarded bool
+	guarded     bool
+	liftConsent *workspaceLiftConsent
 
 	// orkaInstaller and orkaInstallerDigest point `kmx orka install` at a
 	// test origin serving bytes a test can pin. Both are empty in every

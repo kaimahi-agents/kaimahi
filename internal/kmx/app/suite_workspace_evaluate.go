@@ -33,19 +33,21 @@ type SuiteWorkspaceEvaluationOptions struct {
 // PreparedSuiteWorkspaceEvaluation owns its offline source snapshot and anchored
 // exclusive export destination. Its contents are not a public mutable plan.
 type PreparedSuiteWorkspaceEvaluation struct {
-	prepared  *workspace.Prepared
-	suite     *workspace.NativeSuite
-	inventory []suitePassingInventoryCase
-	output    *suitePassingExport
-	root      string
-	options   SuiteWorkspaceEvaluationOptions
-	started   bool
-	bindings  *suiteKagentBindingSnapshot
-	sessions  *suiteSessionsHostSnapshot
-	judge     agentruntime.EvaluationJudge
-	store     *suitePassStore
-	completed []byte
-	record    string
+	prepared     *workspace.Prepared
+	suite        *workspace.NativeSuite
+	inventory    []suitePassingInventoryCase
+	output       *suitePassingExport
+	root         string
+	options      SuiteWorkspaceEvaluationOptions
+	started      bool
+	bindings     *suiteKagentBindingSnapshot
+	sessions     *suiteSessionsHostSnapshot
+	judge        agentruntime.EvaluationJudge
+	store        *suitePassStore
+	completed    []byte
+	record       string
+	candidateRun string
+	liftPassed   int
 }
 
 func (p *PreparedSuiteWorkspaceEvaluation) Close() error {

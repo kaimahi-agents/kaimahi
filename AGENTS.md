@@ -34,9 +34,13 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   remains workspace-independent. Runtime stays package-owned. `ctx` is an
   offline list; optional checks are local context-name/anonymous registry reads,
   not runtime/inference/Secret probes. `targets` remains runtime capabilities.
-  Root Lift still requires a digest and evidence; composed eval/push/Lift is not
-  implemented. Keep kagent out of composed Lift until its own candidate-scoped
-  placement and ownership-safe cleanup are qualified.
+  Reference Lift still requires a digest and evidence. No-reference `lift --to NAME`
+  composes missing Orka evaluation/publication/Lift from one frozen workspace and
+  selector plan. Require saved publishRepository and destination evaluationTarget;
+  automatic disclosed promotion, one scoped confirmation, four default stage lines
+  with verbose/JSON details. Exact-version private completion observations authorize
+  GET-only skips, never Apply/reuse/adoption/repair. Keep kagent out of composed
+  Lift until its candidate-scoped placement and ownership-safe cleanup are qualified.
 - Everyday operations are root `create/chat/run`; live inspection is `orka show/list`.
   Legacy `bundle` operations are removed outright without aliases/stubs.
   `kmx agent` is removed entirely, without an alias or retirement stub.
@@ -84,7 +88,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   discovery and no longer accepts `--workspace`. The native member image
   requirement is empty. Neither offline command evaluates, deploys, builds images
   or loads cluster settings. Workspace evaluation is root `eval`; deploy-only release lift is root
-  `lift <ref>@<digest>` with explicit private `--evidence`.
+  `lift <ref>@<digest>` with explicit private `--evidence`; no-reference workspace
+  `lift --to NAME` separately composes the missing stages.
   User `agent.yaml` readers/writers/receipts, `bundle` commands,
   `create --live` including previews/wizard, live-only flags, root run bundle
   mode and `--bundles` flags are removed outright. Unknown routes/flags refuse
