@@ -25,6 +25,9 @@ type SuiteWorkspaceEvaluationOptions struct {
 	JudgeBaseURL, JudgeKeyEnv                                                                string
 	// ExpectedRuntime is a destination declaration, never a runtime override.
 	ExpectedRuntime string
+	// ManagedPass is public root eval's private completed-proof registration.
+	// Convenience evaluators keep their existing explicit output behavior.
+	ManagedPass bool
 }
 
 // PreparedSuiteWorkspaceEvaluation owns its offline source snapshot and anchored
@@ -40,10 +43,28 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	bindings  *suiteKagentBindingSnapshot
 	sessions  *suiteSessionsHostSnapshot
 	judge     agentruntime.EvaluationJudge
+	store     *suitePassStore
+	completed []byte
+	record    string
 }
 
 func (p *PreparedSuiteWorkspaceEvaluation) Close() error {
-	if p == nil || p.output == nil {
+	if p == nil {
+		return nil
+	}
+	err := p.closeOutput()
+	if p.store != nil {
+		err = errors.Join(err, p.store.Close())
+		p.store = nil
+	}
+	if err != nil && p.record != "" {
+		return fmt.Errorf("completed managed proof saved at %q; finalization failed: %w", p.record, err)
+	}
+	return err
+}
+
+func (p *PreparedSuiteWorkspaceEvaluation) closeOutput() error {
+	if p.output == nil {
 		return nil
 	}
 	output := p.output
@@ -59,7 +80,7 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if opt.CaseTimeout == 0 {
 		opt.CaseTimeout = 5 * time.Minute
 	}
-	if opt.Out == "" || opt.CaseTimeout <= 0 || opt.CaseTimeout > 9*time.Minute {
+	if (opt.Out == "" && !opt.ManagedPass) || opt.CaseTimeout <= 0 || opt.CaseTimeout > 9*time.Minute {
 		return nil, errors.New("native evaluation requires private output and bounded case timeout")
 	}
 	if opt.DevelopmentHost != "" {
@@ -83,6 +104,9 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 		return nil, suiteEvaluationError(ctx, err, false)
 	}
 	cache := filepath.Join(state, "suites")
+	if opt.ManagedPass && suiteReceiptInside(filepath.Join(state, "passing"), root) {
+		return nil, errSuitePassStore
+	}
 	prepared, err := workspace.Prepare(ctx, root, cache)
 	if err != nil {
 		return nil, suiteEvaluationError(ctx, err, false)
@@ -149,11 +173,27 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, err
 	}
-	output, err := preflightSuitePassingExport(ctx, opt.Out, root, cache)
-	if err != nil {
-		return nil, err
+	p := &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge}
+	if opt.ManagedPass {
+		p.store, err = openSuitePassStore(ctx, root, cache, suite.Digest)
+		if err == nil {
+			err = p.store.reserve(ctx)
+		}
+		if err != nil {
+			return nil, errors.Join(err, p.Close())
+		}
 	}
-	return &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, output: output, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge}, nil
+	destination := opt.Out
+	if destination == "" {
+		// Retain the same preflight/identity checks without writing an
+		// uncommitted managed receipt. Canonical bytes stay only in memory.
+		destination = filepath.Join(p.store.partition, ".pending-receipt")
+	}
+	p.output, err = preflightSuitePassingExport(ctx, destination, root, cache)
+	if err != nil {
+		return nil, errors.Join(err, p.Close())
+	}
+	return p, nil
 }
 
 // Check the read-only session prerequisites before pair writes. The bearer and
@@ -192,6 +232,16 @@ func (a *App) preflightSuiteNativeResults(ctx context.Context, ns string) error 
 // only full passing metadata. Orka uses run-scoped candidates and cleanup;
 // convenience callers separately retain the internal canonical evaluator.
 func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
+	if p != nil && p.options.ManagedPass {
+		if p.store == nil || p.store.unchanged() != nil {
+			return errSuitePassStore
+		}
+		return a.finishManagedEvaluation(ctx, p, a.evaluateSuiteWorkspaceSelected(ctx, p))
+	}
+	return a.evaluateSuiteWorkspaceSelected(ctx, p)
+}
+
+func (a *App) evaluateSuiteWorkspaceSelected(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
 	if p != nil && p.suite != nil && p.suite.Runtime.ID == "agentsessions" {
 		return a.evaluateSuiteSessionsWorkspace(ctx, p)
 	}
@@ -310,11 +360,8 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	if err != nil {
 		return err
 	}
-	if err := p.output.publish(ctx, receipt, p.suite); err != nil {
+	if err := p.publishPassingReceipt(ctx, receipt); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(worker.Out, "Passing native receipt: %q (unsigned observations, not authentication or a policy gate)\n", p.options.Out); err != nil {
-		return errSuitePassingExport
-	}
-	return nil
+	return p.reportPassingReceipt(worker.Out)
 }

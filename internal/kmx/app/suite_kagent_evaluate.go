@@ -215,11 +215,8 @@ func (a *App) evaluateSuiteKagentWorkspace(ctx context.Context, p *PreparedSuite
 	if err := recheck(ctx); err != nil {
 		return err
 	}
-	if err := p.output.publish(ctx, receipt, p.suite); err != nil {
+	if err := p.publishPassingReceipt(ctx, receipt); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(a.Out, "Passing native receipt: %q (unsigned observations, not authentication or a policy gate)\n", p.options.Out); err != nil {
-		return errSuitePassingExport
-	}
-	return nil
+	return p.reportPassingReceipt(a.Out)
 }

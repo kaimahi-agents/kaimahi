@@ -218,11 +218,8 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	if err := checkSource(ctx); err != nil {
 		return err
 	}
-	if err := p.output.publish(ctx, receipt, p.suite); err != nil {
+	if err := p.publishPassingReceipt(ctx, receipt); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(worker.Out, "Passing native receipt: %q (unsigned observations, not authentication or a policy gate)\n", p.options.Out); err != nil {
-		return errSuitePassingExport
-	}
-	return nil
+	return p.reportPassingReceipt(worker.Out)
 }

@@ -17,7 +17,7 @@ import (
 )
 
 func newAgentEvalCommand(state *commandState) *cobra.Command {
-	var native app.SuiteWorkspaceEvaluationOptions
+	native := app.SuiteWorkspaceEvaluationOptions{ManagedPass: true}
 	var destination string
 	group := &cobra.Command{
 		Use: "eval", Short: "Evaluate a native workspace or prepare and compare saved evidence",
@@ -135,9 +135,6 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	group.Flags().DurationVar(&native.CaseTimeout, "case-timeout", 5*time.Minute, "deadline per run, at most 9m")
 	group.Flags().StringVar(&native.ResultPort, "result-port", "19180", "local loopback result-forward port")
 	_ = group.MarkFlagDirname("workspace")
-	for _, name := range []string{"out"} {
-		_ = group.MarkFlagRequired(name)
-	}
 	diff := &cobra.Command{
 		Use:   "diff <before.json> <after.json>",
 		Short: "Compare assertion outcomes in two saved evaluation receipts",

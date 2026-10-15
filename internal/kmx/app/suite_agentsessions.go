@@ -170,5 +170,5 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 	if err := recheck(); err != nil {
 		return err
 	}
-	return p.output.publish(ctx, receipt, p.suite)
+	return p.publishPassingReceipt(ctx, receipt)
 }
