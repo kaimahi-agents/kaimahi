@@ -6,6 +6,7 @@ import { slug } from 'github-slugger'
 import { defineConfig } from 'vitepress'
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url))
+const docsNodeModules = path.join(repositoryRoot, 'docs', 'node_modules')
 const repositoryURL = 'https://github.com/kaimahi-agents/kaimahi'
 const sourceRef = process.env.GITHUB_SHA || 'main'
 const localAgentSuite = process.env.KMX_DOCS_WITH_AGENTSUITE !== '0' && existsSync(path.join(repositoryRoot, 'agentsuite', 'spec.md'))
@@ -161,7 +162,9 @@ export default defineConfig({
   vite: {
     resolve: {
       alias: {
-        'brand/ketu.svg': path.join(repositoryRoot, 'brand/ketu.svg')
+        'brand/ketu.svg': path.join(repositoryRoot, 'brand/ketu.svg'),
+        'vue/server-renderer': path.join(docsNodeModules, 'vue', 'server-renderer', 'index.mjs'),
+        'vue': path.join(docsNodeModules, 'vue', 'dist', 'vue.runtime.esm-bundler.js')
       }
     }
   },
