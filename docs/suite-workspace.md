@@ -623,7 +623,9 @@ select a different private `KMX_HOME` for new evaluation registrations. No autom
 evidence deletion, cleanup sweep, journal or durable cleanup blockade is added.
 
 One OS-held per-workspace lock excludes concurrent root eval/push; process exit
-releases it without deleting its stable lock file. Never delete that file to bypass
+releases it without deleting its stable lock file. All root push modes, including
+--evaluation and --unevaluated, require safe symlink-free, lockable KMX state;
+--unevaluated opts out of proof, not exclusion or private-state validation. Never delete that file to bypass
 a running operation. This does not make external registry tag races atomic.
 
 Eligibility starts when the complete completion record is exclusively published.

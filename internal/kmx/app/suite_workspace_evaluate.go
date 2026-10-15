@@ -104,6 +104,9 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 		return nil, suiteEvaluationError(ctx, err, false)
 	}
 	cache := filepath.Join(state, "suites")
+	if opt.Out != "" && suiteReceiptInside(opt.Out, filepath.Join(state, "passing")) {
+		return nil, fmt.Errorf("receipt output must stay outside managed passing state: %w", errSuitePassingFile)
+	}
 	if opt.ManagedPass && suiteReceiptInside(filepath.Join(state, "passing"), root) {
 		return nil, errSuitePassStore
 	}

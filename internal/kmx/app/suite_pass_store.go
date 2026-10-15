@@ -301,6 +301,9 @@ func (s *suitePassStore) scan(ctx context.Context, suite *workspace.NativeSuite)
 			}
 			if suite != nil {
 				if _, err := canonicalSuitePassingReceipt(ctx, receipt, suite); err != nil {
+					if err := ctx.Err(); err != nil {
+						return result, err
+					}
 					return result, errSuitePassStore
 				}
 			}
