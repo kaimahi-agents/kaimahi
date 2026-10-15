@@ -1,0 +1,95 @@
+{
+  "bindingDigest": "sha256:84ec5fa3940ad529a1f9ea05ab8e0b82eba2eff2d8c2b2829a665373e5c128bb",
+  "harnessImage": "registry.example.invalid/agentsessions/harnessnode@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+  "templateDigest": "sha256:d3d5d1a067480eb5b65cfb215c072d1d5f7bb38a31c77bf4404764b58283d2b8",
+  "actorTemplate": {
+    "metadata": {
+      "atespace": "agentsuite-demo",
+      "name": "support-desk-triage-04c4531f"
+    },
+    "worker_selector": {
+      "match_labels": {
+        "workload": "agentsuite-demo-microvm"
+      }
+    },
+    "containers": [
+      {
+        "name": "harness",
+        "image": "registry.example.invalid/agentsessions/harnessnode@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+        "env": [
+          {
+            "name": "HARNESS_ADDR",
+            "value": ":80"
+          },
+          {
+            "name": "HARNESS_READYZ",
+            "value": ":8081"
+          },
+          {
+            "name": "HARNESS_KIND",
+            "value": "chat"
+          },
+          {
+            "name": "HARNESS_MODEL",
+            "value": "fixture-model"
+          }
+        ],
+        "wakeup_probe": {
+          "http_get": {
+            "path": "/readyz",
+            "port": 8081
+          },
+          "timeout_seconds": 120
+        },
+        "security_context": {
+          "capabilities": {}
+        },
+        "resources": {
+          "limits": [
+            {
+              "name": "cpu",
+              "quantity": "1"
+            },
+            {
+              "name": "memory",
+              "quantity": "512Mi"
+            }
+          ]
+        }
+      }
+    ],
+    "snapshot_config": {
+      "storage_location": "gs://ate-snapshots/agentsuite-demo/support-desk-triage-04c4531f/",
+      "preferred_fidelity": "SNAPSHOT_FIDELITY_MEMORY"
+    },
+    "sandbox_config": {
+      "sandbox_class": "SANDBOX_CLASS_MICROVM",
+      "config_name": "microvm"
+    }
+  },
+  "harnessRegistration": {
+    "metadata": {
+      "name": "triage"
+    },
+    "spec": {
+      "capabilities": {
+        "resumability": "RESUMABILITY_STATELESS_REPLAY"
+      },
+      "descriptor_id": "chat",
+      "substrate": {
+        "atespace": "agentsuite-demo",
+        "template": "support-desk-triage-04c4531f"
+      }
+    }
+  },
+  "registrationSpecDigest": "sha256:d0da962acda7deaf0bc837cafe6845d4932c4a67f02b821cd9983113ddd0b61d",
+  "hostModel": {
+    "name": "fixture-model",
+    "provider": "openai",
+    "baseURL": "http://fakemodel.agentsuite-demo.svc:8080/v1",
+    "secretRef": {
+      "name": "model-credentials",
+      "key": "api-key"
+    }
+  }
+}
