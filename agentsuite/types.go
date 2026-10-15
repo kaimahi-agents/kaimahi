@@ -1,6 +1,7 @@
 package agentsuite
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -45,20 +46,45 @@ type Descriptor struct {
 // UnmarshalJSON.
 type descriptorAlias Descriptor
 
+// descriptorKnownFields enumerates the closed set of properties the
+// Descriptor schema fragment permits (additionalProperties: false).
+var descriptorKnownFields = map[string]bool{
+	"mediaType":   true,
+	"digest":      true,
+	"size":        true,
+	"annotations": true,
+}
+
 // UnmarshalJSON requires mediaType, digest, and size to be present in the
 // document. A present size of zero is a legitimate empty-content descriptor;
 // an omitted size is rejected. Both would otherwise decode to the same Go
 // zero value, so presence is checked explicitly against the raw fields
-// before the normal typed decode.
+// before the normal typed decode. It also rejects any object key outside
+// the closed descriptor shape, and rejects an explicit JSON null for
+// mediaType, digest, or a present annotations key, which would otherwise
+// silently decode to the same Go zero values as legitimate values.
 func (d *Descriptor) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
+	for name := range fields {
+		if !descriptorKnownFields[name] {
+			return fmt.Errorf("descriptor has unknown field %q", name)
+		}
+	}
 	for _, name := range []string{"mediaType", "digest", "size"} {
 		if _, ok := fields[name]; !ok {
 			return fmt.Errorf("descriptor is missing required field %q", name)
 		}
+	}
+	for _, name := range []string{"mediaType", "digest"} {
+		if isJSONNull(fields[name]) {
+			return fmt.Errorf("descriptor field %q must not be null", name)
+		}
+	}
+	if raw, ok := fields["annotations"]; ok && isJSONNull(raw) {
+		return fmt.Errorf("descriptor field %q must not be null", "annotations")
 	}
 	var alias descriptorAlias
 	if err := json.Unmarshal(data, &alias); err != nil {
@@ -66,6 +92,11 @@ func (d *Descriptor) UnmarshalJSON(data []byte) error {
 	}
 	*d = Descriptor(alias)
 	return nil
+}
+
+// isJSONNull reports whether raw is the literal JSON value null.
+func isJSONNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
 
 type Platform struct {
