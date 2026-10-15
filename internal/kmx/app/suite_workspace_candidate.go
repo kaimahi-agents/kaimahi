@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
@@ -65,6 +66,14 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 		return errSuiteNativeEvaluation
 	}
 	p.started = true
+	for _, frame := range p.inventory {
+		if frame.Metadata.Runs > 1 {
+			if _, err := fmt.Fprintf(a.Err, "Run preflight: %d fresh Tasks, %s per run, %s total execution budget (upper bound; excludes placement; cancellation can stop earlier).\n", len(p.inventory), p.options.CaseTimeout, time.Duration(len(p.inventory))*p.options.CaseTimeout); err != nil {
+				return err
+			}
+			break
+		}
+	}
 	cfg, runner := *a.Cfg, *a.Run
 	runner.Context = ctx
 	worker := *a
@@ -120,7 +129,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 				}
 			}
 		}
-		if _, err := fmt.Fprintf(worker.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each case deadline. Identity/version are user-declared, not provider attestation. Reasoning is discarded.\n", count); err != nil {
+		if _, err := fmt.Fprintf(worker.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run's deadline. Identity/version are user-declared, not provider attestation. Reasoning is discarded.\n", count); err != nil {
 			return err
 		}
 	}
@@ -158,21 +167,15 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 		if err != nil {
 			return err
 		}
-		for _, frame := range p.inventory {
+		observations, err = evaluateSuiteRuns(ctx, p.inventory, p.options.CaseTimeout, worker.Out, func(runCtx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
 			outcome.phase, outcome.caseID = "case execution", frame.Case.ID
-			if err := checkSource(ctx); err != nil {
-				return err
+			if err := checkSource(runCtx); err != nil {
+				return suitePassingObservation{}, err
 			}
-			caseCtx, cancel := context.WithTimeout(ctx, p.options.CaseTimeout)
-			observation, caseErr := worker.evaluateSuiteNativeCandidate(caseCtx, placement, frame, p.options.ResultPort, p.judge, run)
-			cancel() // Result session closes before cleanup begins.
-			if _, err := fmt.Fprintf(worker.Out, "%s: %s\n", frame.Case.ID, observation.Verdict); err != nil {
-				return errors.Join(caseErr, err)
-			}
-			if caseErr != nil {
-				return caseErr
-			}
-			observations = append(observations, observation)
+			return worker.evaluateSuiteNativeCandidate(runCtx, placement, frame, p.options.ResultPort, p.judge, run)
+		})
+		if err != nil {
+			return err
 		}
 		outcome.caseID = ""
 		return nil

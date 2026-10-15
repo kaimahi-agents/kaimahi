@@ -31,6 +31,24 @@ type EvaluationCase struct {
 	Input          string                `yaml:"input"`
 	ExpectContains []string              `yaml:"expectContains"`
 	Assertions     []EvaluationAssertion `yaml:"assertions"`
+	Runs           *int                  `yaml:"runs,omitempty"`
+	MinPasses      *int                  `yaml:"minPasses,omitempty"`
+}
+
+// EvaluationMaxRuns bounds authored execution cost independently of receipt size.
+const EvaluationMaxRuns = 100
+
+// RunPolicy defaults to one run, or all declared runs passing when no threshold is authored.
+func (c EvaluationCase) RunPolicy() (runs, minPasses int) {
+	runs = 1
+	if c.Runs != nil {
+		runs = *c.Runs
+	}
+	minPasses = runs
+	if c.MinPasses != nil {
+		minPasses = *c.MinPasses
+	}
+	return
 }
 
 // EvaluationCaseFile is one case file's name inside EvaluationCaseDir and its
@@ -105,6 +123,10 @@ func parseEvaluationCase(data []byte, reference bool) (EvaluationCase, error) {
 		}
 	}
 	for i := 0; i < len(mapping.Content); i += 2 {
+		key, value := mapping.Content[i].Value, mapping.Content[i+1]
+		if (key == "runs" || key == "minPasses") && (value.Kind != yaml.ScalarNode || value.Tag != "!!int") {
+			return EvaluationCase{}, fmt.Errorf("evaluation case field %s must be an integer", key)
+		}
 		if mapping.Content[i].Value != "assertions" || mapping.Content[i+1].Kind != yaml.SequenceNode {
 			continue
 		}
@@ -119,6 +141,13 @@ func parseEvaluationCase(data []byte, reference bool) (EvaluationCase, error) {
 	var c EvaluationCase
 	if err := strict.Decode(&c); err != nil {
 		return EvaluationCase{}, fmt.Errorf("evaluation case: %w", err)
+	}
+	if c.MinPasses != nil && c.Runs == nil {
+		return EvaluationCase{}, fmt.Errorf("evaluation minPasses requires runs")
+	}
+	runs, passes := c.RunPolicy()
+	if runs < 1 || runs > EvaluationMaxRuns || passes < 1 || passes > runs {
+		return EvaluationCase{}, fmt.Errorf("evaluation policy requires 1 <= minPasses <= runs <= %d", EvaluationMaxRuns)
 	}
 	if !evaluationCaseIDRE.MatchString(c.ID) {
 		return EvaluationCase{}, fmt.Errorf("evaluation case id must be 1-63 letters, digits, '.', '_' or '-', starting with a letter or digit")

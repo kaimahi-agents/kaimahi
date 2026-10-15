@@ -92,7 +92,7 @@ func (a *App) evaluateSuiteNativeCandidate(ctx context.Context, placement *suite
 	return a.evaluateSuiteNativeTracked(ctx, placement, frame, port, judge, run)
 }
 
-// The caller supplies a bounded per-case context and has consented to placement
+// The caller supplies a bounded per-run context and has consented to placement
 // and the full ordered inventory. Only the actual native observation is credited.
 func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePlacement, frame suitePassingInventoryCase, port string, judge agentruntime.EvaluationJudge) (suitePassingObservation, error) {
 	return a.evaluateSuiteNativeTracked(ctx, placement, frame, port, judge, nil)
@@ -103,7 +103,13 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 	defer func() {
 		if err != nil {
 			if run != nil {
-				run.stopped = true
+				count, _ := frame.Case.RunPolicy()
+				// Only a fully attributed assertion failure in a declared repeat
+				// group may continue. Task failures and unknowns still seal the run.
+				countable := count > 1 && ctx.Err() == nil && errors.Is(err, errSuiteNativeCaseFailed) && suiteRunComplete(observation, frame) && suiteRunVerdict(observation.Assertions) == agentruntime.EvaluationFail
+				if !countable {
+					run.stopped = true
+				}
 			}
 			err = suiteEvaluationError(ctx, err, true)
 		}

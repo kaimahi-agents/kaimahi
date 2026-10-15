@@ -216,6 +216,14 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 		return errSuiteNativeEvaluation
 	}
 	p.started = true
+	for _, frame := range p.inventory {
+		if frame.Metadata.Runs > 1 {
+			if _, err := fmt.Fprintf(a.Err, "Run preflight: %d fresh Tasks, %s per run, %s total execution budget (upper bound; excludes placement; cancellation can stop earlier).\n", len(p.inventory), p.options.CaseTimeout, time.Duration(len(p.inventory))*p.options.CaseTimeout); err != nil {
+				return err
+			}
+			break
+		}
+	}
 	if p.judge != nil {
 		count := 0
 		for _, frame := range p.inventory {
@@ -225,7 +233,7 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 				}
 			}
 		}
-		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each case deadline. Identity/version are user-declared, not provider attestation. Endpoint omitted from recovery advice; supply it again. Reasoning is discarded.\n", count); err != nil {
+		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run's deadline. Identity/version are user-declared, not provider attestation. Endpoint omitted from recovery advice; supply it again. Reasoning is discarded.\n", count); err != nil {
 			return err
 		}
 	}
@@ -283,21 +291,14 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	if err != nil {
 		return err
 	}
-	observations := make([]suitePassingObservation, 0, len(p.inventory))
-	for _, frame := range p.inventory {
-		if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {
-			return err
+	observations, err := evaluateSuiteRuns(ctx, p.inventory, p.options.CaseTimeout, worker.Out, func(caseCtx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
+		if err := workspace.CheckCurrent(caseCtx, p.root, p.prepared); err != nil {
+			return suitePassingObservation{}, err
 		}
-		caseCtx, cancel := context.WithTimeout(ctx, p.options.CaseTimeout)
-		observation, caseErr := worker.evaluateSuiteNative(caseCtx, placement, frame, p.options.ResultPort, p.judge)
-		cancel()
-		if _, err := fmt.Fprintf(worker.Out, "%s: %s\n", frame.Case.ID, observation.Verdict); err != nil {
-			return err
-		}
-		if caseErr != nil {
-			return caseErr
-		}
-		observations = append(observations, observation)
+		return worker.evaluateSuiteNative(caseCtx, placement, frame, p.options.ResultPort, p.judge)
+	})
+	if err != nil {
+		return err
 	}
 	if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {
 		return err

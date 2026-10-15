@@ -128,11 +128,19 @@ extracted-artifact transfer behavior without workspace discovery; suite push no
 longer accepts `--workspace` or one positional reference. Root push refuses two
 positional arguments.
 Root `eval --to-context CTX --out FILE` performs offline workspace/inventory/
-output preparation before configuration, then one guard covers runtime-specific
-placement and one fresh Task per ordered case. Public Orka uses fresh S/run
-candidates and exports only after verified root/child cleanup and final fences.
-Startup reports possible leftovers without deleting or blocking a fresh eval.
-Private Quickstart/console stay canonical. Orka requires
+output preparation before configuration, then one guarded runtime-specific
+placement and one fresh Task per declared run of each ordered case (default one).
+Optional KMX YAML `runs`/`minPasses` counts completed attributable assertion
+verdicts; omitted threshold requires all runs. Each run has its own deadline;
+repeat preflight states the total run-time budget, excluding placement. There is
+no early success; any unknown or execution error aborts. AgentSessions
+refuses repeats. Field names/defaults follow
+[AgentSuite §8.2.2](../agentsuite/spec.md#822-case-documents-and-assertions):
+`minPasses` requires `runs`, and both are positive integers. KMX's private YAML
+and receipts remain separate from the spec's embedded JSON format.
+Public Orka uses fresh S/run candidates and exports only after verified root/child
+cleanup and final fences. Startup reports without deleting or blocking a fresh
+eval. Private Quickstart/console stay canonical. Orka requires
 `--inference provider:NAME`; packaged exact-v0.10.3 Go kagent requires
 author-owned `--bindings FILE`, unsecure auth and no `--result-port`. Only full
 passing metadata is exported once to a private file outside workspace/cache;
@@ -144,7 +152,7 @@ side; errors/splits stay unknown. Judges use the fixed modern Chat Completions
 request shape: a 1024
 `max_completion_tokens` budget, no temperature override and no error fallback.
 Evidence binds that style; old judge receipts require fresh evaluation.
-Judgment shares the case deadline and is
+Judgment shares the current run's deadline and is
 followed by attribution rechecks. Passing rows bind judge identity, endpoint
 configuration hash and both scores without reasoning or raw judge URLs; recovery
 commands omit the endpoint. Text-only receipt encoding is unchanged. Development

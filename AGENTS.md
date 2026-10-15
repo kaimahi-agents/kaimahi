@@ -138,7 +138,19 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   once without replacement outside workspace/cache trees, and bind the private
   receipt-file push consumer to exact S plus offline packaged coherence. There is
   a full-workspace native evaluation CLI with one fresh never-retried Task per
-  ordered case. Root `push --evaluation FILE` uses that private file consumer;
+  declared run of each ordered case. Optional KMX YAML runs/minPasses defaults
+  to one run/all passes, bounded to 100 runs plus the offline receipt budget.
+  Each run receives its own case-timeout budget, including judging/attribution;
+  repeat preflight states the summed run-time budget excluding placement.
+  Any unknown vetoes the threshold. Only
+  completed attributable assertion failures are countable; execution errors
+  still abort. AgentSessions refuses repeats both offline and in strict proof.
+  Private repeated rows retain ordinal/policy and actual outcomes; default
+  one-run encoding stays unchanged. Field names/defaults/validation follow
+  [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions):
+  minPasses requires runs and both are positive integers. KMX additionally caps
+  runs at 100 under the spec's consumer resource-limit allowance.
+  Root `push --evaluation FILE` uses that private file consumer;
   ordinary push stays unevaluated. Unsigned receipts do not prove authentication
   or drift absence.
   Any presence of a native suite ownership annotation reserves desired/live
@@ -166,7 +178,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   judge. No request-style flag, model inference or error fallback. Two independent
   scores must agree on the threshold side;
   unavailable/malformed/split results stay unknown. Judgment shares the existing
-  case deadline and attribution is rechecked afterward. Root eval discards
+  per-run deadline and attribution is rechecked afterward. Root eval discards
   reasoning and omits judge endpoints from recovery commands. Private passing
   rows bind authored model/version, request style, threshold, policy, endpoint
   configuration hash, both scores and aligned modelMatches observations. Returned
@@ -247,7 +259,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 ## kagent version boundary
 
 - Exact v0.10.3 Go/linux-amd64 packaged profiles use author-owned bindings,
-  unsecure auth only, one fresh blocking A2A Task per ordered case, never retried.
+  unsecure auth only, one fresh blocking A2A Task per declared case run, never retried.
   Trusted-proxy refuses before admission/send. Digest Lift creates absent objects
   only with runtime-matching evidence; occupied primaries/children refuse.
   No Python/RemoteMCP, standalone chat/run, installer/discovery, suite status or

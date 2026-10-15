@@ -50,6 +50,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   the same environment; private Quickstart/console and other runtimes are unchanged.
   No cleanup journal, lease, automatic sweep or publication blockade.
 
+- Native Orka/kagent workspace cases accept optional KMX `runs`/`minPasses`.
+  Default one run; omitted threshold requires all declared runs. Each run uses
+  a fresh Task with its own configured deadline; repeat preflight prints the
+  total run-time budget excluding placement. Any unknown vetoes a pass;
+  execution errors still abort. Private evidence records complete per-run
+  verdicts and threshold, with unchanged default one-run encoding. Upgrade
+  readers before exchanging repeat receipts. AgentSessions refuses repeats;
+  repeat fields follow [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions),
+  including positive integers and `minPasses` requiring `runs`. KMX-private
+  YAML/receipts remain separate from the spec's embedded JSON format.
+
 - A draft docs-as-code website renders the existing README, maintained guides,
   and AgentSuite specification directly with responsive navigation, local search,
   dark mode, a keyboard-accessible journey chooser and an explicit `main` versus
@@ -73,7 +84,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   suites with explicit `--judge-base-url` and optional `--judge-key-env`.
   Two independent samples must agree on the threshold side;
   unavailable, malformed or split outcomes are unknown and export no passing
-  receipt. Judgment shares the existing case deadline, with attribution checked
+  receipt. Judgment shares each run's deadline, with attribution checked
   afterward. Preflight states the two-request cost and data transfer.
   Private receipts bind declared judge model/version, policy, threshold, endpoint
   configuration hash and both scores; reasoning and raw judge URLs stay out of

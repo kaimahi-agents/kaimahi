@@ -16,6 +16,75 @@ import (
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
+func TestCandidateCoreRepeatThreshold(t *testing.T) {
+	for _, scenario := range []string{"threshold pass", "threshold fail", "late cancellation"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			a, _, f, state := publicNativeEvaluationFixture(t)
+			opt := nativeEvaluationOptions(t)
+			opt.ResultPort = f.opt.ResultPort
+			casePath := filepath.Join(opt.Workspace, "eval/example.yaml")
+			raw, err := os.ReadFile(casePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, casePath, string(raw)+"\nruns: 3\nminPasses: 2\n")
+			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			for _, frame := range p.inventory {
+				f.answers[frame.Case.Input] = nativeCanary + " answer"
+			}
+			tasks := 0
+			state.afterCreate = func(key string) {
+				if strings.HasPrefix(key, "Task/") {
+					tasks++
+					if (tasks == 1 && scenario != "late cancellation") || scenario == "threshold fail" {
+						f.answers[p.inventory[0].Case.Input] = "wrong"
+					} else {
+						f.answers[p.inventory[0].Case.Input] = nativeCanary + " answer"
+					}
+					if scenario == "late cancellation" && tasks == 3 {
+						cancel()
+					}
+				}
+			}
+			err = a.evaluateSuiteWorkspaceCandidate(ctx, p)
+			if len(state.objects) != 0 {
+				t.Fatal("candidate resources not cleaned")
+			}
+			if scenario == "late cancellation" {
+				if !errors.Is(err, context.Canceled) || tasks != 3 {
+					t.Fatalf("late cancellation did not veto threshold: tasks=%d err=%v", tasks, err)
+				}
+				if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
+					t.Fatal("late unknown exported")
+				}
+				return
+			}
+			if scenario == "threshold fail" {
+				if !errors.Is(err, errSuiteNativeCaseFailed) || tasks != 3 {
+					t.Fatalf("known failure did not complete group: tasks=%d err=%v", tasks, err)
+				}
+				if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
+					t.Fatal("failed threshold exported")
+				}
+				return
+			}
+			r, readErr := readSuitePassingReceipt(t.Context(), opt.Out)
+			if err != nil || readErr != nil || tasks != len(p.inventory) || r == nil || len(r.Cases) != 4 || r.Cases[0].Verdict != "fail" {
+				t.Fatalf("candidate ignored threshold: tasks=%d err=%v receipt=%v", tasks, err, readErr)
+			}
+			if !strings.Contains(f.out.String(), "run 3/3") {
+				t.Fatal("missing repeated-run labels")
+			}
+		})
+	}
+}
+
 func TestCandidateCorePrivateLifecycleOrderingAndCancellation(t *testing.T) {
 	for _, stage := range []string{"pass", "case fail", "cancel Task", "cancel cleanup", "unknown Agent", "cleanup permission", "final source", "final shared", "frozen config"} {
 		t.Run(stage, func(t *testing.T) {

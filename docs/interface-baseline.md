@@ -92,7 +92,12 @@ Root eval runs full native authored cases only: Orka uses `--inference`, kagent
 uses `--bindings`; pinned AgentSessions chat instead requires a private
 `--development-host FILE`, with no cluster selectors or fallback. All export only
 runtime-specific full-passing evidence. Orka/kagent support authored `llmJudge`
-with explicit judge transport and identity; AgentSessions judging remains refused.
+with explicit judge transport and identity, plus optional KMX case `runs`/`minPasses`
+(default one run/all passes; unknown vetoes). AgentSessions judges/repeats remain
+refused. Repeat field names/defaults/validation follow
+[AgentSuite §8.2.2](../agentsuite/spec.md#822-case-documents-and-assertions):
+`minPasses` requires `runs`, and both are positive integers. KMX's execution cap
+is 100 runs, within the spec's consumer resource-limit allowance.
 No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
 AgentSessions evidence is explicitly refused by diff and Lift;
 `eval from-sessions` is reference extraction/export without a native consumer.

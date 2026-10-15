@@ -149,21 +149,20 @@ func (a *App) evaluateSuiteKagentWorkspace(ctx context.Context, p *PreparedSuite
 		return err
 	}
 	op := &kagentEvaluationOperation{Requests: map[string]kagentEvaluationExecution{}, Tasks: map[string]bool{}, Contexts: map[string]bool{}, RequireHistory: true}
-	observations := make([]suitePassingObservation, 0, len(p.inventory))
-	for _, frame := range p.inventory {
-		caseCtx, cancel := context.WithTimeout(ctx, p.options.CaseTimeout)
+	observations, err := evaluateSuiteRuns(ctx, p.inventory, p.options.CaseTimeout, a.Out, func(caseCtx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
 		rpc, e := randomHex(16)
 		if e != nil {
-			cancel()
-			return e
+			return suitePassingObservation{}, e
 		}
 		message, e := randomHex(16)
 		if e != nil {
-			cancel()
-			return e
+			return suitePassingObservation{}, e
 		}
 		execution := kagentEvaluationExecution{RPCID: "rpc-" + rpc, RequestMessageID: "message-" + message}
-		op.Requests[frame.Case.ID] = execution
+		// Request correlation is run-local; native Task/context uniqueness remains
+		// shared across the entire operation.
+		runOperation := *op
+		runOperation.Requests = map[string]kagentEvaluationExecution{frame.Case.ID: execution}
 		worker := native.worker.withRunContext(caseCtx)
 		observe := func() (kagentEvaluationObservation, error) {
 			var observation kagentEvaluationObservation
@@ -184,7 +183,7 @@ func (a *App) evaluateSuiteKagentWorkspace(ctx context.Context, p *PreparedSuite
 			return observation, nil
 		}
 		ref := agentruntime.AgentRef{Runtime: agentruntime.Kagent, Context: p.options.ToContext, Namespace: p.options.ToNamespace, Name: p.suite.MemberID, UID: placement.Observation.Resources[1].UID}
-		result, _, e := worker.executeKagentEvaluationCase(caseCtx, ref, frame.Case, execution, op, observe, p.judge)
+		result, _, e := worker.executeKagentEvaluationCase(caseCtx, ref, frame.Case, execution, &runOperation, observe, p.judge)
 		if e == nil {
 			e = caseCtx.Err()
 		}
@@ -192,20 +191,13 @@ func (a *App) evaluateSuiteKagentWorkspace(ctx context.Context, p *PreparedSuite
 			// Judging is external I/O: re-observe attribution before crediting a case.
 			_, e = observe()
 		}
-		cancel()
-		if e != nil {
-			return e
+		if e == nil && result.Detail != "" && result.Verdict == agentruntime.EvaluationFail {
+			e = errSuiteNativeCaseFailed
 		}
-		if _, err := fmt.Fprintf(a.Out, "%s: %s\n", frame.Case.ID, result.Verdict); err != nil {
-			return err
-		}
-		if result.Stop || result.Verdict != agentruntime.EvaluationPass || result.Detail != "" {
-			if result.Verdict == agentruntime.EvaluationFail {
-				return errSuiteNativeCaseFailed
-			}
-			return errSuiteNativeEvaluation
-		}
-		observations = append(observations, suitePassingObservation{frame.Metadata.CaseDigest, frame.Metadata.InputDigest, result})
+		return suitePassingObservation{frame.Metadata.CaseDigest, frame.Metadata.InputDigest, result}, e
+	})
+	if err != nil {
+		return err
 	}
 	if err := recheck(ctx); err != nil {
 		return err

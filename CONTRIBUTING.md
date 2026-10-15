@@ -67,7 +67,11 @@ editing are retired; host Foundry/Copilot chat controls remain independent.
 Standalone AKS up/down and internal App.Lift are independent operations.
 
 Kagent eval requires author-owned bindings, unsecure auth, no trusted-proxy and
-one fresh blocking A2A Task per case without retry. Evidence is full-passing and
+one fresh blocking A2A Task per declared case run without retry. Optional KMX
+`runs`/`minPasses` supports Orka/kagent with unknown-veto thresholds and the
+configured deadline independently per run, with summed budget disclosure;
+AgentSessions remains one-run only. Draft #497's JSON
+case schema does not yet accept those fields. Evidence is full-passing and
 runtime-specific. Digest Lift refuses every occupied kagent primary/child; Orka
 permits exact evaluated reuse. No Python/RemoteMCP or kagent standalone chat/run.
 Keep privacy/current identity ResourceVersion/Secret metadata bracketing intact;
