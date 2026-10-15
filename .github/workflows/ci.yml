@@ -72,6 +72,9 @@ jobs:
         run: |
           test -f LICENSE
           test -f README.md
+          test -f docs/package.json
+          test -f docs/package-lock.json
+          test -f docs/.vitepress/config.mts
       - name: Brand assets validate
         run: python3 scripts/check-brand-assets.py
       - name: All YAML parses
@@ -181,6 +184,15 @@ jobs:
         run: python3 scripts/check-readme-front-door.py
       - name: README front-door checker self-test
         run: python3 scripts/check-readme-front-door-test.py
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - name: Documentation site renders current Markdown
+        run: |
+          npm --prefix docs ci --ignore-scripts
+          npm --prefix docs run docs:check
       # The release job's notes come from CHANGELOG.md and it REFUSES
       # to publish a version with no section there. That refusal is the only
       # thing making "every release has notes" true, so the extractor is

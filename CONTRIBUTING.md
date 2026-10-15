@@ -83,6 +83,7 @@ test support. Read them before changing something found by grepping.
 Run the checks relevant to your change:
 
 ```bash
+npm --prefix docs ci --ignore-scripts && npm --prefix docs run docs:check
 python3 scripts/check-doc-links.py --selftest && python3 scripts/check-doc-links.py
 python3 scripts/check-secret-shapes.py --selftest && python3 scripts/check-secret-shapes.py
 python3 scripts/check-repository-map.py --selftest && python3 scripts/check-repository-map.py
@@ -109,6 +110,13 @@ python3 scripts/test_suite_native.py -v
 shellcheck scripts/ci/kagent-lift.sh
 actionlint .github/workflows/ci.yml
 ```
+
+For a browser preview of the maintained Markdown, run `make docs-preview` with
+Node.js 22.12 or newer. The root README and `docs/*.md`, plus
+`agentsuite/spec.md` while it remains local, are the source of truth; generated
+HTML and caches are ignored. See the
+[documentation-site draft](docs/docs-site.md) for versioning, publication and
+removal boundaries.
 
 The checkers above are the ones you can usefully run by hand. CI's hygiene
 job runs each checker, each checker's self-test, and a set of inline
