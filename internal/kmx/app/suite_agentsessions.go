@@ -32,7 +32,7 @@ type suiteSessionsHostSnapshot struct {
 	binding      *suiteSessionsBindingSnapshot
 }
 
-var errSuiteSessionsBinding = errors.New("agentsessions evaluation requires --bindings FILE: one valid AgentSessionsBinding document")
+var errSuiteSessionsBinding = errors.New("agentsessions requires --bindings FILE: one valid AgentSessionsBinding document")
 
 // suiteSessionsBindingSnapshot anchors the environment binding the evaluation
 // records. The development host's model serving is an operator declaration;

@@ -31,7 +31,8 @@ type ReleaseLiftSessionsPlan struct {
 }
 
 // releaseLiftSessionsRefusal marks a binding, model-match or render refusal
-// whose message names fields, never values, so callers may show it.
+// whose message names fields and validated identities (model, member), never
+// credential values, so callers may show it.
 type releaseLiftSessionsRefusal struct{ err error }
 
 func (e *releaseLiftSessionsRefusal) Error() string { return e.err.Error() }

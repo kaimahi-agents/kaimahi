@@ -118,7 +118,7 @@ func TestAgentSessionsReleaseLiftRefusesInvalidSelectorsAndInputs(t *testing.T) 
 		{"evidence runtime", func(o *ReleaseLiftOptions) { o.ExpectedRuntime = "orka" }, ""},
 		{"kagent bindings", func(o *ReleaseLiftOptions) {
 			o.Bindings = writeSessionsLiftBinding(t, "apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: KagentBindings\nnamespace: agents\nmodelConfig: {provider: openai, secretRef: {name: k, key: k}}\n")
-		}, "requires --bindings FILE"},
+		}, "agentsessions requires --bindings FILE: one valid AgentSessionsBinding document"},
 		{"image whitespace", func(o *ReleaseLiftOptions) { o.HarnessImage = sessionsLiftImage + " " }, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
