@@ -1,6 +1,7 @@
 package agentsessions
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"net"
@@ -22,6 +23,12 @@ import (
 // establishment is lazy; RunCase verifies TLS before sending either mutation.
 // Only literal loopback without a CA file permits plaintext.
 func Dial(options Options) (*Client, error) {
+	return dial(options, nil)
+}
+
+// dial applies Dial's address and transport policy. A non-nil dialer replaces
+// only the socket connection; credentials are still chosen from the address.
+func dial(options Options, dialer func(context.Context, string) (net.Conn, error)) (*Client, error) {
 	host, _, err := addressParts(options.Address)
 	if err != nil {
 		return nil, err
@@ -44,11 +51,15 @@ func Dial(options Options) (*Client, error) {
 		}
 		transport = credentials.NewTLS(&tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12})
 	}
-	client, err := sdk.Dial("passthrough:///"+options.Address, sdk.WithDialOptions(
+	dialOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(transport),
 		grpc.WithDisableRetry(),
 		grpc.WithDisableServiceConfig(),
-	))
+	}
+	if dialer != nil {
+		dialOptions = append(dialOptions, grpc.WithContextDialer(dialer))
+	}
+	client, err := sdk.Dial("passthrough:///"+options.Address, sdk.WithDialOptions(dialOptions...))
 	if err != nil {
 		return nil, safeRPCError(err, "agentsessions: transport initialization failed")
 	}

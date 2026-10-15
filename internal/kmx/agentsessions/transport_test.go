@@ -6,8 +6,10 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"net"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 func TestDialRejectsCredentialShapedHostnames(t *testing.T) {
@@ -117,30 +120,16 @@ func TestDialRejectsWrongTrustRootAndExpiredCertificate(t *testing.T) {
 	}
 }
 
-// A self-addressed non-loopback listener exercises literal-IP transport policy
-// without contacting an external endpoint. Loopback-only machines skip this case.
+// Transport policy depends only on the address literal, so an in-memory
+// connection replaces the socket. A host interface address would make timing
+// depend on local interfaces, firewall and network extensions. TEST-NET-1
+// (RFC 5737) is not routed if the injected dialer were ever bypassed.
 func TestDialNonLoopbackLiteralRequiresVerifiedTLS(t *testing.T) {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var ip net.IP
-	for _, address := range addrs {
-		network, ok := address.(*net.IPNet)
-		if ok && network.IP.To4() != nil && network.IP.IsGlobalUnicast() && !network.IP.IsLoopback() {
-			ip = network.IP
-			break
-		}
-	}
-	if ip == nil {
-		t.Skip("no local non-loopback IPv4 interface")
-	}
+	ip := net.ParseIP("192.0.2.10")
+	address := net.JoinHostPort(ip.String(), "443")
 	for _, secure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "plaintext refused", true: "CA verified"}[secure], func(t *testing.T) {
-			listener, err := net.Listen("tcp", net.JoinHostPort(ip.String(), "0"))
-			if err != nil {
-				t.Fatal("cannot listen on local test interface")
-			}
+			listener := bufconn.Listen(1 << 20)
 			var opts []grpc.ServerOption
 			caFile := ""
 			if secure {
@@ -154,7 +143,14 @@ func TestDialNonLoopbackLiteralRequiresVerifiedTLS(t *testing.T) {
 			done := make(chan struct{})
 			go func() { defer close(done); _ = server.Serve(listener) }()
 			t.Cleanup(func() { server.Stop(); <-done })
-			c, err := Dial(Options{Address: listener.Addr().String(), CAFile: caFile})
+			var dials atomic.Int32
+			c, err := dial(Options{Address: address, CAFile: caFile}, func(ctx context.Context, target string) (net.Conn, error) {
+				dials.Add(1)
+				if target != address {
+					return nil, fmt.Errorf("unexpected dial target %q", target)
+				}
+				return listener.DialContext(ctx)
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -162,6 +158,9 @@ func TestDialNonLoopbackLiteralRequiresVerifiedTLS(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			_, err = c.RunCase(ctx, caseRequest())
+			if dials.Load() == 0 {
+				t.Fatal("case did not dial the non-loopback literal")
+			}
 			if secure && err != nil {
 				t.Fatal(err)
 			}
