@@ -54,6 +54,18 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
    }}
   ```
 
+- A content reference whose descriptor binds JCS-canonical identity (agent,
+  tool provider, tool provider catalog, composition, tool provider
+  composition, build profile, evaluation index, and evaluation case
+  manifests) now requires the referenced file to be stored on disk as its
+  exact RFC 8785 JCS canonical bytes. Validation previously accepted any
+  on-disk formatting (for example pretty-printed JSON) as long as `digest`
+  and `size` described the canonical form; it now rejects a stored document
+  whose bytes are not already identical to that canonical re-serialization.
+  Suites with differently formatted but semantically equivalent stored JSON
+  for these references must be re-serialized to canonical bytes; there is no
+  migration path or back-compat reader. ([#496](https://github.com/kaimahi-agents/kaimahi/issues/496))
+
 - Judge evidence now binds its request style; older judge receipts without it
   require fresh evaluation. Text-only receipts remain unchanged.
 

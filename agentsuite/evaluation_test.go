@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gowebpki/jcs"
 )
 
 func TestEmbeddedEvaluationsAcceptDirectoryAndOCI(t *testing.T) {
@@ -25,8 +27,8 @@ func TestEvaluationReferenceSchemas(t *testing.T) {
 	}
 	validateSchemaJSON(t, indexSchema, string(data), true)
 	for _, invalid := range []string{
-		strings.Replace(string(data), `"maxCases": 128`, `"maxCases": 129`, 1),
-		strings.Replace(string(data), `"maxCaseBytes": 4194304`, `"maxCaseBytes": 0`, 1),
+		strings.Replace(string(data), `"maxCases":128`, `"maxCases":129`, 1),
+		strings.Replace(string(data), `"maxCaseBytes":4194304`, `"maxCaseBytes":0`, 1),
 		strings.Replace(string(data), `"limits":`, `"results":[],"limits":`, 1),
 	} {
 		validateSchemaJSON(t, indexSchema, invalid, false)
@@ -226,12 +228,12 @@ func TestEvaluationCaseStrictness(t *testing.T) {
 		data string
 		want string
 	}{
-		{"invalid regex", strings.Replace(base, `{"id": "capital", "type": "contains", "value": "Paris"}`, `{"id":"capital","type":"regex","pattern":"["}`, 1), "RE2"},
-		{"duplicate assertions", strings.Replace(base, `"id": "not-london"`, `"id": "capital"`, 1), "assertion id"},
+		{"invalid regex", strings.Replace(base, `{"id":"capital","type":"contains","value":"Paris"}`, `{"id":"capital","pattern":"[","type":"regex"}`, 1), "RE2"},
+		{"duplicate assertions", strings.Replace(base, `"id":"not-london"`, `"id":"capital"`, 1), "assertion id"},
 		{"duplicate JSON keys", strings.Replace(base, `"input":`, `"input":"duplicate","input":`, 1), "duplicate JSON key"},
 		{"unknown field", strings.Replace(base, `"input":`, `"transcript":[],"input":`, 1), "unknown field"},
 		{"empty input", strings.Replace(base, "What is the capital of France?", " ", 1), "requires input"},
-		{"wrong case id", strings.Replace(base, `"id": "capital"`, `"id":"other"`, 1), "filename"},
+		{"wrong case id", strings.Replace(base, `"id":"capital","input":`, `"id":"other","input":`, 1), "filename"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root, _ := writeEvaluationSuite(t, func(root string, index *EvaluationIndex) {
@@ -361,12 +363,19 @@ func evaluationFixture(t *testing.T, name string) []byte {
 
 func mustWriteJSONBytes(t *testing.T, root, path, mediaType string, data []byte) Descriptor {
 	t.Helper()
-	mustWrite(t, root, path, data)
-	digest, err := canonicalDigest(data)
+	// Suite content bound to canonical identity must be stored on disk as
+	// its own RFC 8785 JCS canonical bytes, independent of the caller's
+	// literal key order or whitespace.
+	canonical, err := jcs.Transform(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	size, err := canonicalSize(data)
+	mustWrite(t, root, path, canonical)
+	digest, err := canonicalDigest(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	size, err := canonicalSize(canonical)
 	if err != nil {
 		t.Fatal(err)
 	}

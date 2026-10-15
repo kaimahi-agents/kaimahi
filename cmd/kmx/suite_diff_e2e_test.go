@@ -266,15 +266,23 @@ func readJSON(t *testing.T, root, name string, value any) {
 	}
 }
 
+// writeJSON writes value to disk as its exact RFC 8785 JCS canonical bytes,
+// since suite content referenced by a nested descriptor (agent, build
+// profile, composition, tool provider, tool provider composition, tool
+// provider catalog, or suite manifest) must be stored byte-identical to its
+// own canonical representation, not merely hashed and sized as if canonical.
 func writeJSON(t *testing.T, root, name string, value any) (digest string, size int64) {
 	t.Helper()
-	data, err := json.MarshalIndent(value, "", "  ")
+	data, err := json.Marshal(value)
 	if err != nil {
 		t.Fatalf("encode %s: %v", name, err)
 	}
-	data = append(data, '\n')
-	writeFile(t, root, name, data, 0o644)
-	return canonicalDigestAndSize(t, data)
+	canonical, err := jcs.Transform(data)
+	if err != nil {
+		t.Fatalf("canonicalize %s: %v", name, err)
+	}
+	writeFile(t, root, name, canonical, 0o644)
+	return canonicalDigestAndSize(t, canonical)
 }
 
 func readFile(t *testing.T, root, name string) []byte {

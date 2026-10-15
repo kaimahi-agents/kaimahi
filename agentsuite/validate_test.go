@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gowebpki/jcs"
 )
 
 func TestValidatePathAcceptsMinimalExtractedSuite(t *testing.T) {
@@ -24,6 +26,36 @@ func TestValidatePathAcceptsMinimalExtractedSuite(t *testing.T) {
 
 	if report.Name != "example" || report.Agents != 1 || report.ToolProviders != 0 || report.Compositions != 1 {
 		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+// TestValidatePathRejectsNonCanonicalStoredJSON proves that a JSON content
+// reference bound to canonical identity (here, the agent manifest) must be
+// stored on disk as its exact RFC 8785 JCS canonical bytes. Re-indenting the
+// same JSON value without updating its descriptor's digest or size changes
+// nothing a naive digest/size check would catch, since both still describe
+// the canonical form of the new bytes; only comparing the stored bytes
+// against their own canonical re-serialization catches the mismatch.
+func TestValidatePathRejectsNonCanonicalStoredJSON(t *testing.T) {
+	root := writeMinimalSuite(t)
+	agentPath := filepath.Join(root, "agents", "writer.json")
+	canonicalBytes, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ValidatePath(root); err != nil {
+		t.Fatalf("canonical agent manifest rejected: %v", err)
+	}
+
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, canonicalBytes, "", "  "); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agentPath, indented.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("non-canonical stored agent manifest accepted, error = %v", err)
 	}
 }
 
@@ -435,7 +467,7 @@ func TestLoadToolProviderCompositionsRejectsUnresolvedBuildInputs(t *testing.T) 
 				},
 			}
 			test.mutate(v, &composition)
-			data, err := json.Marshal(composition)
+			data, err := Marshal(composition)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -488,7 +520,7 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 		mustWrite(t, root, filepath.Join("schemas", name), data)
 	}
 	providerPath := "tool-providers/search/1.0.0/tool-provider.json"
-	mustWrite(t, root, providerPath, raw)
+	mustWrite(t, root, providerPath, mustCanonicalizeJSON(t, raw))
 	providerDigest, err := canonicalDigest(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -527,7 +559,7 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 	}
 
 	unretained := []byte(strings.Replace(string(raw), "  \"retained\": true,\n", "", 1))
-	mustWrite(t, root, providerPath, unretained)
+	mustWrite(t, root, providerPath, mustCanonicalizeJSON(t, unretained))
 	unretainedDigest, err := canonicalDigest(unretained)
 	if err != nil {
 		t.Fatal(err)
@@ -1568,9 +1600,12 @@ func writeMinimalSuite(t *testing.T) string {
 	return root
 }
 
+// mustWriteJSON writes value to disk as its exact RFC 8785 JCS canonical
+// bytes, since suite content referenced by a nested descriptor must be
+// stored byte-identical to its own canonical representation.
 func mustWriteJSON(t *testing.T, root, name, mediaType string, value any) Descriptor {
 	t.Helper()
-	data, err := json.Marshal(value)
+	data, err := Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1599,6 +1634,19 @@ func mustVariantDigest(t *testing.T, variant ToolProviderVariant) string {
 		t.Fatal(err)
 	}
 	return digests[0]
+}
+
+// mustCanonicalizeJSON re-serializes data (as read from a pretty-printed
+// fixture) into its RFC 8785 JCS canonical bytes, matching what a conformant
+// producer must store on disk for a descriptor that binds canonical
+// identity.
+func mustCanonicalizeJSON(t *testing.T, data []byte) []byte {
+	t.Helper()
+	canonical, err := jcs.Transform(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return canonical
 }
 
 func mustWrite(t *testing.T, root, name string, data []byte) {

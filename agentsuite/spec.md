@@ -81,11 +81,20 @@ A **descriptor** is a closed object:
   document (agent, tool provider, tool provider catalog, composition, tool
   provider composition, build profile, evaluation index, and evaluation case
   manifests), `digest` and `size` describe the [RFC 8785 JCS canonical
-  representation](#61-canonical-json) of that document, independent of its
-  on-disk whitespace or object-member order;
+  representation](#61-canonical-json) of that document, and the referenced
+  file itself MUST be stored on disk as those exact canonical bytes: a
+  producer MUST write the canonical serialization, not merely compute
+  `digest`/`size` from it while storing a differently formatted (for example
+  pretty-printed, reordered, or otherwise re-whitespaced) but semantically
+  equivalent document. A consumer validating this reference MUST reject a
+  stored document whose bytes are not already identical to its own RFC 8785
+  JCS canonical re-serialization, even when that re-serialization would
+  produce the same `digest` and `size`;
 - for a content reference whose referenced file is not canonicalized JSON
   (agent instructions, and a Tool's `inputSchema`/`outputSchema`), `digest`
-  and `size` describe the file's exact literal bytes.
+  and `size` describe the file's exact literal bytes, and the file is stored
+  and validated against those literal bytes directly; no canonical
+  re-serialization applies.
 
 `annotations`, when present, follow OCI's annotation rules: keys and values
 are both strings, empty string values are permitted, and unknown or

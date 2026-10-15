@@ -1,11 +1,1 @@
-{
-  "schemaVersion": "1.0.0-draft",
-  "mediaType": "application/vnd.agentsuite.composition.v1+json",
-  "agent": "reviewer",
-  "platform": {
-    "os": "linux",
-    "architecture": "amd64"
-  },
-  "buildProfile": "default",
-  "toolProviders": []
-}
+{"agent":"reviewer","buildProfile":"default","mediaType":"application/vnd.agentsuite.composition.v1+json","platform":{"architecture":"amd64","os":"linux"},"schemaVersion":"1.0.0-draft","toolProviders":[]}

@@ -378,10 +378,18 @@ func canonicalSize(data []byte) (int64, error) {
 	return int64(len(canonical)), nil
 }
 
-// matchesCanonicalDescriptor reports whether descriptor's digest and size
-// both describe the JCS-canonical representation of data, so a consumer
-// cannot pair a mismatched digest/size against the same referenced content.
+// matchesCanonicalDescriptor reports whether data is itself stored as its
+// own RFC 8785 JCS canonical bytes, and whether descriptor's digest and size
+// describe that same canonical representation. A descriptor binding
+// canonical identity is satisfied only when the stored bytes are already
+// canonical: differently formatted (for example pretty-printed) but
+// semantically equivalent JSON is rejected, since a consumer must be able to
+// load the referenced bytes directly without re-canonicalizing them first.
 func matchesCanonicalDescriptor(data []byte, descriptor Descriptor) bool {
+	canonical, err := jcs.Transform(data)
+	if err != nil || !bytes.Equal(data, canonical) {
+		return false
+	}
 	digest, err := canonicalDigest(data)
 	if err != nil || digest != descriptor.Digest {
 		return false
