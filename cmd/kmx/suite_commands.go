@@ -246,7 +246,7 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 		Args: func(cmd *cobra.Command, args []string) error {
 			if workspaceMode {
 				if len(args) > 1 {
-					return fmt.Errorf("workspace push requires exactly one destination reference")
+					return fmt.Errorf("workspace push accepts at most one destination reference")
 				}
 				if cmd.Flags().Changed("workspace") && strings.TrimSpace(pushWorkspace) == "" {
 					return fmt.Errorf("workspace push requires non-empty --workspace")

@@ -50,13 +50,13 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 | `agent verify` / `bundle verify` | Removed | Legacy replay/judges and RecordedExecution are removed without a native replacement. |
 | `agent eval diff <before.json> <after.json>` | `eval diff <before.json> <after.json>` | Offline receipt comparison, not evaluation execution. |
 | `agent eval from-sessions <session-uid>...` | `eval from-sessions <session-uid>...` | Private reference-case preparation, not execution. |
-| `suite push --workspace DIR REF` / `suite push REF` | `push [--workspace DIR] REF` | Exact prepared workspace graph publication; discovers the nearest ancestor `workspace.yaml`, or selects an exact root without fallback with `--workspace`. |
+| `suite push --workspace DIR REF` / `suite push REF` | `push [--workspace DIR] [REF]` | Exact prepared workspace graph publication; discovers the nearest ancestor `workspace.yaml`, or selects an exact root without fallback with `--workspace`. |
 
 The entire `kmx agent` group is removed, including its hidden edit stub, with no
 aliases or retirement stubs. Use kubectl to edit live Orka resources. Root
 `status` and `orka status` retain the same table-only Orka runtime report;
 There is no suite status/retirement replacement. Root `eval` executes a full native workspace inventory with explicit
-target/output selection and exactly one runtime-derived model binding: Orka
+target selection, optional private output and exactly one runtime-derived model binding: Orka
 `--inference` or packaged kagent `--bindings`. Standalone packaged-reference
 evaluation remains unimplemented. Root digest `lift` deploys a packaged native
 suite with explicit private evidence, GET-only `--plan`, strict guarded apply and
@@ -97,8 +97,8 @@ fields, including an explicit false transport flag. Config is not packaged or
 included in source identity. Explicit digest Lift without `--to` never discovers a
 workspace. See [configuration and checks](suite-workspace.md#named-destinations).
 
-No composed workspace Lift is enabled: a digest/private evidence, explicit push
-reference and eval output are still required. Kagent remains standalone; do not
+No composed workspace Lift is enabled: Lift still requires a digest and private
+evidence; eval --out and the push reference are optional. Kagent remains standalone; do not
 include it in composed Lift until candidate-scoped evaluation/cleanup is qualified.
 
 ## Offline suite workspace
@@ -127,8 +127,8 @@ replacement remain as documented. Old `suite push <directory> <reference>` retai
 extracted-artifact transfer behavior without workspace discovery; suite push no
 longer accepts `--workspace` or one positional reference. Root push refuses two
 positional arguments.
-Root `eval --to-context CTX --out FILE` performs offline workspace/inventory/
-output preparation before configuration, then one guarded runtime-specific
+Root `eval --to-context CTX [--out FILE]` performs offline workspace/inventory/
+managed-proof and optional output preparation before configuration, then one guarded runtime-specific
 placement and one fresh Task per declared run of each ordered case (default one).
 Optional KMX YAML `runs`/`minPasses` counts completed attributable assertion
 verdicts; omitted threshold requires all runs. Each run has its own deadline;
@@ -143,8 +143,9 @@ cleanup and final fences. Startup reports without deleting or blocking a fresh
 eval. Private Quickstart/console stay canonical. Orka requires
 `--inference provider:NAME`; packaged exact-v0.10.3 Go kagent requires
 author-owned `--bindings FILE`, unsecure auth and no `--result-port`. Only full
-passing metadata is exported once to a private file outside workspace/cache;
-failure, unknown, drift, cancellation or output error stops later sends. No
+passing metadata is registered in private KMX state; --out optionally also exports
+a standalone private file outside workspace/cache. Failure, unknown, drift,
+cancellation or output error stops later sends. No
 package reference, subset or content output is accepted. Authored `llmJudge`
 requires explicit `--judge-base-url`, optional `--judge-key-env` and authored
 model/version/threshold. Two independent samples must agree on the threshold
