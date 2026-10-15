@@ -6,6 +6,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import unittest
 import yaml
 
@@ -75,6 +76,88 @@ class RetirementCITests(unittest.TestCase):
         for job in ("e2e-orka-runtime", "e2e-orka-helm"):
             body = "\n".join(step.get("run", "") for step in self.jobs[job]["steps"])
             self.assertIn("go build -o bin/orka-native-reference ./scripts/ci/orka-native-reference.go", body)
+
+
+    def test_real_clonefree_hygiene_requires_authored_exactness_absence_and_promotion(self):
+        program = next(step["run"] for step in self.jobs["hygiene"]["steps"]
+                       if step.get("name", "").startswith("The clone-free journey sets up"))
+        program = program.split("<<'EOF'\n", 1)[1].rsplit("\nEOF", 1)[0]
+        def check(workflow):
+            with tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                (root / ".github/workflows").mkdir(parents=True)
+                (root / ".github/workflows/ci.yml").write_text(yaml.safe_dump(workflow))
+                return subprocess.run([sys.executable, "-c", program], cwd=root, capture_output=True, timeout=10)
+        workflow = {"jobs": self.jobs}
+        self.assertEqual(check(workflow).returncode, 0)
+        clone = self.jobs["kmx-clone-free"]["steps"]
+        index = next(i for i, s in enumerate(clone) if s.get("name", "").startswith("create — native Orka"))
+        for fragment in ("(?s)^Orka says hello[.]\\n*$", 'receipt["candidateCleanup"] == "complete"',
+                         '--ignore-not-found', "--promote"):
+            changed = copy.deepcopy(workflow)
+            body = changed["jobs"]["kmx-clone-free"]["steps"][index]["run"]
+            self.assertIn(fragment, body, "journey must prove " + fragment)
+            changed["jobs"]["kmx-clone-free"]["steps"][index]["run"] = body.replace(fragment, "REMOVED_PROOF")
+            result = check(changed)
+            self.assertNotEqual(result.returncode, 0, "embedded hygiene failed to enforce " + fragment)
+        changed = copy.deepcopy(workflow)
+        changed["jobs"]["kmx-clone-free"]["steps"][index]["run"] = clone[index]["run"].replace("--promote", "") + "\nfalse --promote\n"
+        self.assertNotEqual(check(changed).returncode, 0, "promotion flag must be attached to Lift, not merely mentioned")
+
+    def test_clonefree_authored_regex_preserves_only_trailing_lf_bash_semantics(self):
+        body = next(s["run"] for s in self.jobs["kmx-clone-free"]["steps"] if s.get("name", "").startswith("create — native Orka"))
+        pattern = "(?s)^Orka says hello[.]\\n*$"
+        self.assertIn(pattern, body, "exact answer must be authored inside evaluation")
+        import re
+        for answer, passes in (("Orka says hello.", True), ("Orka says hello.\n\n", True),
+                               ("prefix Orka says hello.", False), ("Orka says hello.\r\n", False),
+                               ("Orka says hello. extra", False)):
+            self.assertEqual(re.search(pattern, answer) is not None, passes)
+
+
+    def test_actual_clonefree_shell_refuses_incomplete_cleanup_or_surviving_task_before_push(self):
+        body = next(s["run"] for s in self.jobs["kmx-clone-free"]["steps"] if s.get("name", "").startswith("create — native Orka"))
+        fake = '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+with open("calls.jsonl", "a") as stream:
+    stream.write(json.dumps([pathlib.Path(sys.argv[0]).name, *args]) + "\\n")
+if pathlib.Path(sys.argv[0]).name == "kubectl":
+    print(os.environ.get("SURVIVING", ""), end="")
+elif args[0] == "create":
+    pathlib.Path("workspace/eval").mkdir()
+elif args[0] == "eval":
+    pathlib.Path("evidence/passing.json").write_text(json.dumps({
+        "candidateCleanup": os.environ.get("CLEANUP", "complete"), "result": "pass",
+        "cases": [{"taskName": "candidate-task", "assertions": [{"verdict": "pass"}]}]}))
+elif args[0] == "push":
+    pathlib.Path("layout").mkdir()
+    pathlib.Path("layout/index.json").write_text('{"manifests":[{"digest":"sha256:fixture"}]}')
+'''
+        for cleanup, survivor, success in (("complete", "", True), ("pending", "", False), ("complete", "tasks.core.orka.ai/candidate-task", False)):
+            with self.subTest(cleanup=cleanup, survivor=survivor), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                (root / "bin").mkdir()
+                for name in ("kubectl", "kmx"):
+                    path = root / "bin" / name
+                    path.write_text(fake.replace("#!/usr/bin/env python3", "#!" + sys.executable, 1))
+                    path.chmod(0o700)
+                # Real Bash/Python/YAML, only the external product/API are fixtures.
+                result = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", body], cwd=root, capture_output=True,
+                                        env={**os.environ, "PATH": str(root / "bin") + os.pathsep + os.environ["PATH"],
+                                             "CLEANUP": cleanup, "SURVIVING": survivor}, timeout=10)
+                self.assertEqual(result.returncode == 0, success, result.stderr)
+                authored = yaml.safe_load((root / "workspace/eval/example.yaml").read_bytes())
+                self.assertEqual(authored["assertions"], [{"id": "exact-answer", "type": "regex", "pattern": "(?s)^Orka says hello[.]\\n*$"}])
+                calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
+                lifted = [c for c in calls if c[:2] == ["kmx", "lift"]]
+                pushed = [c for c in calls if c[:2] == ["kmx", "push"]]
+                self.assertEqual(bool(lifted), success)
+                self.assertEqual(bool(pushed), success)
+                if success:
+                    self.assertIn("--promote", lifted[0])
+                    self.assertEqual(calls[2], ["kubectl", "--context", "kind-kmx-clone-free", "-n", "orka-system", "get",
+                                               "tasks.core.orka.ai", "candidate-task", "--ignore-not-found", "-o", "name"])
 
     def test_quickstart_ceiling_stays_315(self):
         body = "\n".join(s.get("run", "") for s in self.jobs["e2e-quickstart"]["steps"])

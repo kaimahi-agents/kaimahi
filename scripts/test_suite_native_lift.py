@@ -131,50 +131,19 @@ class LiftProofs(unittest.TestCase):
             "resources": [{"kind": kind, "name": "member", "action": "reuse", "uid": self.receipt[kind.lower()]["UID"],
                            "generation": 1, "specDigest": self.receipt[kind.lower()]["SpecDigest"]} for kind in ("Provider", "Agent")]}
 
-    def test_summary_proof_rejects_identity_gate_or_create_changes(self):
-        Q.verify_lift_summary(self.summary, self.receipt, b"receipt")
-        for key, value in (("suiteDigest", "sha256:" + "7" * 64), ("gate", "promotion"), ("promote", True),
-                           ("runtime", "kagent"), ("evidenceRunID", "other")):
-            bad = {**self.summary, key: value}
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                Q.verify_lift_summary(bad, self.receipt, b"receipt")
-        bad = copy.deepcopy(self.summary)
-        bad["resources"][0]["action"] = "create"
-        with self.assertRaises(ValueError):
-            Q.verify_lift_summary(bad, self.receipt, b"receipt")
-
-    def test_result_needs_both_exact_reused_ready_resources(self):
-        result = {"summary": self.summary, "state": "ready", "resources": [{**r, "outcome": "reused", "ready": True} for r in self.summary["resources"]]}
-        Q.verify_lift_result(result, self.receipt, b"receipt")
-        for key, value in (("outcome", "created"), ("ready", False), ("uid", "recreated"), ("generation", 2)):
-            bad = copy.deepcopy(result)
-            bad["resources"][0][key] = value
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                Q.verify_lift_result(bad, self.receipt, b"receipt")
-
-    def test_terminal_spec_patch_preserves_object_model_and_changes_name(self):
-        for spec in ({"providerRef": {"name": "member"}}, {"model": {"name": "evaluated", "temperature": 0}}):
-            doc = {"spec": copy.deepcopy(spec)}
-            patch = Q.spec_drift_patch(doc)
-            self.assertIsInstance(patch["spec"]["model"], dict)
-            self.assertEqual(patch["spec"]["model"]["name"], "unevaluated-model")
-            if "model" in spec:
-                self.assertEqual(patch["spec"]["model"]["temperature"], 0)
-            self.assertEqual(doc["spec"], spec)
-        with self.assertRaises(ValueError):
-            Q.spec_drift_patch({"spec": {"model": "invalid-shape"}})
-
-    def test_counterfactual_control_uses_same_reconstruction_and_preserves_original(self):
-        subject = self.receipt["subject"]
-        subject["RenderedDigest"] = Q.native_digest("kmx.native-orka.revision/v1", {**subject, "RenderedDigest": ""})
-        original = copy.deepcopy(self.receipt)
-        control = Q.namespace_evidence(self.receipt, "namespace")
-        self.assertEqual(control, self.receipt)
-        negative = Q.namespace_evidence(self.receipt, "counterfactual-namespace")
-        self.assertEqual(self.receipt, original)
-        negative["subject"]["Target"]["NamespaceUID"] = "namespace"
-        negative["subject"]["RenderedDigest"] = control["subject"]["RenderedDigest"]
-        self.assertEqual(negative, control)
+    def test_same_target_requires_explicit_promotion_and_absent_canonical_creation(self):
+        destination = copy.deepcopy(self.receipt["subject"])
+        specs = {kind: {"type": "native"} for kind in ("Provider", "Agent")}
+        summary = copy.deepcopy(self.summary)
+        summary.update(promote=True, gate="promotion", servingModel="model")
+        summary["resources"] = [{"kind": kind, "name": "member", "action": "create",
+                                "specDigest": Q.native_digest("kmx.native-orka.spec/v1", specs[kind])} for kind in specs]
+        Q.verify_promote_summary(summary, self.receipt, b"receipt", destination, specs)
+        for edit in (lambda s: s.update(promote=False), lambda s: s.update(gate="same-subject"),
+                     lambda s: s["resources"][0].update(action="reuse", uid="source-uid")):
+            changed = copy.deepcopy(summary); edit(changed)
+            with self.assertRaises(ValueError):
+                Q.verify_promote_summary(changed, self.receipt, b"receipt", destination, specs)
 
     def test_fresh_answer_runs_authored_text_assertions_not_nonempty(self):
         case = {"expectContains": ["approved"], "assertions": [{"type": "notContains", "value": "denied"}, {"type": "regex", "pattern": "^approved"}]}
@@ -182,6 +151,67 @@ class LiftProofs(unittest.TestCase):
         for answer in (b"error result\n", b"approved denied\n", b"prefix approved\n", b"approved result", b"\n"):
             with self.subTest(answer=answer), self.assertRaises(ValueError):
                 Q.verify_fresh_answer(answer, case)
+
+
+
+    def test_source_withheld_journey_plans_two_transports_but_creates_once_then_refuses_occupied(self):
+        import contextlib
+        fixture = LiftProofs(); fixture.setUp()
+        receipt = fixture.receipt
+        # Candidate fields survive only in source evidence, never the canonical destination.
+        receipt["subject"].update(PhysicalMember="deleted-candidate", EvaluationRun="a" * 32)
+        destination = copy.deepcopy(receipt["subject"])
+        destination.pop("PhysicalMember"); destination.pop("EvaluationRun")
+        specs = {kind: {"type": "native"} for kind in ("Provider", "Agent")}
+        summary = copy.deepcopy(fixture.summary)
+        summary.update(promote=True, gate="promotion", servingModel="model")
+        summary["resources"] = [{"kind": kind, "name": "member", "action": "create",
+                                "specDigest": Q.native_digest("kmx.native-orka.spec/v1", specs[kind])} for kind in specs]
+        result = {"summary": summary, "state": "ready", "resources": [{**row, "outcome": "created", "ready": True,
+                   "uid": "canonical-" + row["kind"], "generation": 1} for row in summary["resources"]]}
+        def effect_frames():
+            frames = []
+            for i, (kind, dry) in enumerate((("Provider", True), ("Agent", True), ("Provider", False), ("Agent", False))):
+                doc = {"apiVersion": "core.orka.ai/v1alpha1", "kind": kind, "metadata": {"name": "member", "namespace": "orka-system"}}
+                f = A.classify(["create"] + (["--dry-run=server"] if dry else []) + ["-f", "-"], json.dumps(doc).encode())
+                frames.extend(pair(f, str(i)))
+            return frames
+        with tempfile.TemporaryDirectory() as directory:
+            q = Q.Qualification.__new__(Q.Qualification)
+            q.work = pathlib.Path(directory)
+            workspace, layout, path = q.work / "workspace", q.work / "layout", q.work / "passing.json"
+            workspace.mkdir(); layout.mkdir(); path.write_bytes(b"receipt")
+            q.context, q.promotion_context, q.audit = "kind-owned", None, A
+            q.registry = lambda: contextlib.nullcontext("fixture:v1")
+            q.cli = lambda *a, **k: None
+            q.empty_member = lambda member: None
+            q.promotion_subject = lambda r: (destination, specs)
+            q.lift_denials = lambda *a: []
+            q.pair_proof = lambda r: None
+            q.task_inventory = lambda: []
+            q.fresh_run = lambda *a: {"answerDigest": "fresh"}
+            frames, calls, effects = [], [], []
+            q.frames = lambda: A.completed(frames)
+            q.raw_frames = lambda: frames[:]
+            def lift(reference, evidence, selected_layout=None, **kwargs):
+                self.assertFalse(workspace.exists(), "Lift must run with source withheld")
+                calls.append((reference, kwargs))
+                if kwargs.get("success") is False:
+                    return subprocess.CompletedProcess([], 1, b"", b"release lift planning refused")
+                if kwargs.get("plan"):
+                    return subprocess.CompletedProcess([], 0, json.dumps(summary).encode(), b"")
+                frames.extend(effect_frames())
+                effects.append(reference)
+                return subprocess.CompletedProcess([], 0, json.dumps(result).encode(), b"")
+            q.lift = lift
+            cases = {"one.yaml": b'id: one\ninput: question\nexpectContains: ["answer"]\n'}
+            output = q.lift_qualification(workspace, layout, layout, "changed-S", path, receipt, cases)
+            self.assertEqual(effects, ["native-suite@" + receipt["subject"]["SuiteDigest"]])
+            self.assertEqual(len(calls), 7)
+            self.assertEqual([c[1].get("promote", False) for c in calls], [False, True, False, True, True, True, True])
+            self.assertEqual(output["local"]["freshAnswer"], {"answerDigest": "fresh"})
+            self.assertTrue(output["registry"]["occupiedRepeatRefused"])
+            self.assertTrue(workspace.exists())
 
 
 class PromotionProofs(unittest.TestCase):

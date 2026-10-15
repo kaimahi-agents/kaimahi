@@ -79,6 +79,12 @@ RecordedExecution, legacy bundle Sessions evaluation/replay/judges and their
 consumers are removed. There is no native reference-manifest consumer; author
 native workspace cases. See [reference extraction](kmx.md#reference-extraction).
 
+`eval cleanup --to NAME` lists candidates read-only. `eval cleanup RUN --to NAME`
+previews one full run's frozen identities, confirms even on local kind and performs
+UID/resourceVersion-safe cleanup. Explicit context/namespace needs no workspace or
+inference. Missing Task/Job anchors remain uncertain, never guessed from labels;
+there is no automatic sweep, lease, local journal or later-publication blockade.
+
 ## Named workspace destinations
 
 Optional workspace-root `kmx.yaml` supplies selectors to existing `eval/lift --to NAME`.
@@ -122,8 +128,11 @@ extracted-artifact transfer behavior without workspace discovery; suite push no
 longer accepts `--workspace` or one positional reference. Root push refuses two
 positional arguments.
 Root `eval --to-context CTX --out FILE` performs offline workspace/inventory/
-output preparation before configuration, then one guarded runtime-specific
-placement and one fresh Task per ordered case. Orka requires
+output preparation before configuration, then one guard covers runtime-specific
+placement and one fresh Task per ordered case. Public Orka uses fresh S/run
+candidates and exports only after verified root/child cleanup and final fences.
+Startup reports possible leftovers without deleting or blocking a fresh eval.
+Private Quickstart/console stay canonical. Orka requires
 `--inference provider:NAME`; packaged exact-v0.10.3 Go kagent requires
 author-owned `--bindings FILE`, unsecure auth and no `--result-port`. Only full
 passing metadata is exported once to a private file outside workspace/cache;
@@ -145,7 +154,7 @@ increase. Kagent retains its two text cases. Hermetic runner tests are not live
 judge proof; this is not general runtime support.
 Root `lift REF@sha256:DIGEST` consumes that explicit private full-pass evidence
 for source-free, deploy-only packaged Orka or exact-kagent placement. Bounded
-qualification covers Orka exact reuse and kagent fresh-target creation, not every
+qualification covers explicit Orka candidate-source promotion and kagent fresh-target creation, not every
 promotion, creation or partial-outcome path. See [suite workspace](suite-workspace.md).
 
 ## Vocabulary

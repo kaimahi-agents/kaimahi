@@ -134,8 +134,8 @@ func TestCandidateCorePrivateLifecycleOrderingAndCancellation(t *testing.T) {
 	}
 }
 
-func TestCandidateCorePublicEvaluationStaysCanonical(t *testing.T) {
-	a, _, _, f := nativeEvaluationFixture(t)
+func TestCandidateCorePublicEvaluationUsesCandidate(t *testing.T) {
+	a, _, f, state := publicNativeEvaluationFixture(t)
 	opt := nativeEvaluationOptions(t)
 	opt.ResultPort = f.opt.ResultPort
 	p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
@@ -146,20 +146,25 @@ func TestCandidateCorePublicEvaluationStaysCanonical(t *testing.T) {
 	for _, frame := range p.inventory {
 		f.answers[frame.Case.Input] = nativeCanary + " answer"
 	}
+	marked := map[string]string{}
+	state.afterCreate = func(key string) {
+		doc := state.objects[key]
+		kind := doc["kind"].(string)
+		run, _ := nativeMetadata(doc)["annotations"].(map[string]any)[suiteCandidateRunMarker].(string)
+		if !evaluationRunID(run) {
+			t.Fatal("missing full run annotation", kind)
+		}
+		marked[kind] = run
+	}
 	if err := a.EvaluateSuiteWorkspace(t.Context(), p); err != nil {
 		t.Fatal(err)
 	}
-	receipt, err := readSuitePassingReceipt(t.Context(), opt.Out)
-	if err != nil || receipt.CandidateCleanup != "" || receipt.Subject.PhysicalMember != "" || receipt.Subject.EvaluationRun != "" {
-		t.Fatal("publicly activated candidate", err)
+	if len(marked) != 3 || marked["Provider"] != marked["Agent"] || marked["Agent"] != marked["Task"] {
+		t.Fatal("full run annotation not stamped on all KMX roots", marked)
 	}
-	for _, call := range orkaCalls(t, f.dir) {
-		if slices.Contains(call.Args, "delete") {
-			t.Fatal("public evaluator cleans up")
-		}
-		if call.Document != nil && call.Document["kind"] == "Agent" && orkaObjectName(call.Document) != "greeter" {
-			t.Fatal("public physical candidate placement")
-		}
+	receipt, err := readSuitePassingReceipt(t.Context(), opt.Out)
+	if err != nil || receipt.CandidateCleanup != "complete" || !evaluationRunID(receipt.Subject.EvaluationRun) || receipt.Subject.PhysicalMember == "" || len(state.deletes) != 4 || len(state.objects) != 0 {
+		t.Fatal("public candidate lifecycle missing", err, state.deletes)
 	}
 }
 
@@ -172,6 +177,9 @@ func TestCandidateCoreCleanupParserConsumedKeysOnly(t *testing.T) {
 		{`{"apiVersion":"batch/v1","APIVersion":"batch/v1"}`, false},
 		{`{"metadata":{"resourceVersion":"1","resourceVersion":"1"}}`, false},
 		{`{"items":[{"metadata":{"uid":"a","UID":"a"}}]}`, false},
+		{`{"items":[{"spec":{},"Spec":{}}]}`, false},
+		{`{"items":[{"metadata":{"annotations":{"kaimahi.dev/suite-evaluation-run":"a","KAIMAHI.DEV/SUITE-EVALUATION-RUN":"b"}}}]}`, false},
+		{`{"items":[{"metadata":{"deletionTimestamp":"a","DeletionTimestamp":"b"}}]}`, false},
 		{`{"items":[{"metadata":{"ownerReferences":[{"uid":"a","UID":"a"}]}}]}`, false},
 		{`{"items":[{"metadata":{"labels":{"orka.ai/task":"a","ORKA.AI/TASK":"a"}}}]}`, false},
 		{`{"items":[{"metadata":{"annotations":{"HTTP_PROXY":"secret","http_proxy":"secret"}},"data":{"KEY":"a","key":"b"}}]}`, true},

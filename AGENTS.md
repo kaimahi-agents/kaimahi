@@ -251,11 +251,17 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   source-withheld digest Lift with occupied-repeat refusal. No legacy receipt,
   status or judge claim. Final build/live execution are needed for qualification.
 
-## Internal candidate boundary
+## Candidate evaluation and explicit cleanup
 
-The private Orka candidate orchestrator is test-only until separately activated.
-Public `EvaluateSuiteWorkspace`, quickstart/console and publication stay canonical;
-no journal, lease, startup cleanup or publication blockade is implemented.
+Public Orka workspace eval uses fresh S/run candidates, never adoption/update/reuse.
+Full passing evidence exports only after UID/RV-safe cleanup, exact owner-UID child
+closure and final source/shared-input checks. KMX-created Provider/Agent/Task carry
+full run annotations; Orka descendants do not inherit them. Startup reports only;
+unknown reporting never blocks a fresh eval. `eval cleanup [run-id]` lists without
+a run, otherwise previews frozen UIDs and requires confirmation even on local kind.
+Unanchored or unverifiable orphans refuse deletion/completeness claims. No journal,
+lease, automatic sweep or publication blockade. Private Quickstart/console stay
+canonical; kagent/Sessions/judge behavior and all existing timeouts are unchanged.
 
 ## Verification
 

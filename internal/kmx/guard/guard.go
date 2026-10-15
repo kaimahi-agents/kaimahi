@@ -209,6 +209,8 @@ type Request struct {
 	// caller setting this gets the truthful label and the confirmation
 	// path instead of a free pass.
 	MustBeKnown bool
+	// RequireConfirmation also names consent on known local kind contexts.
+	RequireConfirmation bool
 	// CreatesContext permits an invented, absent kind context even when the
 	// kubeconfig contains unrelated contexts. The caller must actually create
 	// or repair this exact context before doing any cluster work.
@@ -311,7 +313,10 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 			req.Context, len(cfg.Contexts), currentContextNote(cfg.CurrentContext))
 	}
 
-	if posture.Local {
+	if req.RequireConfirmation && req.MustBeKnown && posture.Host == "" {
+		return fmt.Errorf("kube-guard: selected context is not described; refusing")
+	}
+	if posture.Local && !req.RequireConfirmation {
 		return nil
 	}
 
@@ -357,6 +362,9 @@ func CheckContext(ctx context.Context, cfg *Kubeconfig, req Request, out io.Writ
 // kubeconfig has never heard of it — and the second is the case where an
 // operator most needs to be told what kmx actually knows.
 func unvouched(req Request, posture Posture) string {
+	if req.RequireConfirmation && posture.Local {
+		return fmt.Sprintf("%q requires context-naming confirmation", req.Context)
+	}
 	if req.MustBeKnown && posture.Host == "" {
 		return fmt.Sprintf("nothing in this kubeconfig describes %q, so kmx cannot tell whether it is\n"+
 			"  the local cluster you mean or another one with the same name", req.Context)

@@ -59,6 +59,7 @@ class ReferenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             q = module.Qualification.__new__(module.Qualification)
             q.repo, q.work, q.context = ROOT, pathlib.Path(directory), "kind-destination"
+            q.fixture_instructions = spec["Instructions"]
             q.audit = type("Audit", (), {"SECRET_METADATA": "metadata-only"})
             q.frames = lambda: []
             q.get_namespace_uid = lambda name: "namespace-uid"
@@ -75,39 +76,13 @@ class ReferenceTests(unittest.TestCase):
                 return self.call(raw)
             q.command = command
             with mock.patch.object(module, "observed_runtime", return_value={"profile": "fixture"}):
-                subject, specs = q.promotion_subject({"subject": {"Member": spec["Name"], "Model": spec["Model"], "RequiredImages": []}}, pair)
+                subject, specs = q.promotion_subject({"subject": {"Member": spec["Name"], "Model": spec["Model"], "RequiredImages": [],
+                                                     "PhysicalMember": "deleted-candidate", "EvaluationRun": "a" * 32}})
             self.assertEqual(specs["Agent"], pair["Agent"]["spec"])
             self.assertEqual(specs["Provider"]["baseURL"], bound["spec"]["baseURL"])
             self.assertEqual(len(subject["PayloadDigest"]), 64)
-
-    def test_collision_control_uses_validated_native_scaffold(self):
-        loader = importlib.util.spec_from_file_location("native_collision", ROOT / "scripts/ci/suite-native.py")
-        module = importlib.util.module_from_spec(loader)
-        loader.loader.exec_module(module)
-        class AuthorshipReached(Exception):
-            pass
-        with tempfile.TemporaryDirectory() as directory:
-            q = module.Qualification.__new__(module.Qualification)
-            q.repo, q.work = ROOT, pathlib.Path(directory)
-            q.secret_ref = {"name": "native-suite-key", "key": "api-key"}
-            instructions = q.work / "instructions.txt"
-            instructions.write_text("Answer briefly.")
-            writes = []
-            q.kube = lambda *args, raw=None: writes.append(json.loads(raw))
-            q.command = lambda args, raw=None, **kw: self.call(raw)
-            def author(*args):
-                raise AuthorshipReached()
-            q.author = author
-            with self.assertRaises(AuthorshipReached):
-                q.refusals(q.work / "workspace", instructions, {"one.yaml": b""}, {"Member": "source"})
-            self.assertEqual([doc["kind"] for doc in writes], ["Provider", "Agent"])
-            provider, agent = writes
-            self.assertEqual(provider["spec"]["secretRef"], q.secret_ref)
-            self.assertEqual(provider["spec"]["defaultModel"], "qwen-3.5-2b")
-            self.assertEqual(agent["spec"]["systemPrompt"]["inline"], instructions.read_text())
-            self.assertNotIn("model", agent["spec"])
-            self.assertNotIn("instructions", agent["spec"])
-            self.assertNotIn("annotations", agent["metadata"])
+            self.assertNotIn("PhysicalMember", subject)
+            self.assertNotIn("EvaluationRun", subject)
 
     def test_invalid_or_unknown_input_refuses_without_documents(self):
         for raw in (b'{"unknown":true}', b'{} {}', b'{}', b'{"TaskPrompt":"send a Task"}'):

@@ -106,7 +106,7 @@ func publicNativeEvaluationFixture(t *testing.T) (*App, *nativeReadFixture, *eva
 				state.lists++
 				path := args[i+2]
 				kind := ""
-				for plural, k := range map[string]string{"jobs": "Job", "pods": "Pod", "configmaps": "ConfigMap"} {
+				for plural, k := range map[string]string{"providers": "Provider", "agents": "Agent", "tasks": "Task", "jobs": "Job", "pods": "Pod", "configmaps": "ConfigMap"} {
 					if strings.Contains(path, "/namespaces/orka-system/"+plural+"?limit=128") {
 						kind = k
 					}
@@ -123,6 +123,9 @@ func publicNativeEvaluationFixture(t *testing.T) (*App, *nativeReadFixture, *eva
 				version := "v1"
 				if kind == "Job" {
 					version = "batch/v1"
+				}
+				if kind == "Provider" || kind == "Agent" || kind == "Task" {
+					version = "core.orka.ai/v1alpha1"
 				}
 				return json.NewEncoder(cmd.Stdout).Encode(map[string]any{"apiVersion": version, "kind": kind + "List", "metadata": map[string]any{"resourceVersion": "1"}, "items": items})
 			}

@@ -18,7 +18,7 @@ kmx <noun> <verb> [object] [flags]
 
 - **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
   `push` and full-workspace `eval`. Root `eval` also retains helpers (`diff`,
-  `from-sessions`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
+  `from-sessions`, `cleanup`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
   `suite build/diff/push/pull/validate` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
@@ -48,6 +48,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `run` | Execute once on an independent live Orka Agent. | `kmx run --agent NAME` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
 | `eval` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
+| `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx eval cleanup [run-id] --to dev` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `lift` | Deploy an exact suite digest using explicit native evidence. | `kmx lift <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |
 | `result` | Retrieve the outcome of an existing execution. | `kmx task result <task>` |
@@ -111,6 +112,8 @@ Keep these distinctions:
   refuses with a `--workspace` hint. Invalid nearest markers and second members
   refuse without changing source. Exact model and file-valued instructions are
   required; no offline wizard or implicit live dispatch is provided.
+- **Candidate cleanup always confirms**, including local kind: display the selected
+  run and frozen UID plan before context-naming consent. Without a run it only lists.
 - **Read-only commands never prompt.**
 - **Help and completion never mutate.** Completion lookups are bounded and
   read-only.

@@ -195,11 +195,12 @@ after its raw upstream Orka Tool/Task and model-answer proof. The checkout-only 
 shard's exclusive cluster-creation flag and a matching `KIND_CLUSTER`, refuses
 existing work/model fixtures, and uses a fresh private KMX home. It adds the pinned
 CPU AIKit model inside that owned cluster, warms it, then attempts one native
-full-workspace evaluation without retry. Independent live identities/specs,
-result hashes, exact registry/local-layout transfer, source-withheld root CLI
-exact reuse, existing evaluation Task result reads and no-effect refusal audits gate its
-metadata artifacts. Only `artifacts/passing.json` and scalar
-`artifacts/qualification.json` are uploaded on success; raw captures are private.
+full-workspace evaluation without retry. Historical API UID/spec/input snapshots,
+exact registry/layout transfer, verified
+candidate root/child absence, source-withheld explicit promotion and no-effect
+refusal audits gate its metadata artifacts. Source answer/verdict/judge metadata
+is product-observed after cleanup, not re-fetched from deleted Tasks. Only passing
+metadata and scalar `qualification.json` are uploaded; raw captures are private.
 Existing cluster deletion owns all runtime/model cleanup. The native-only
 inventory has two text cases plus one open-ended rubric case, with exactly two
 judge samples from the same pinned AIKit workload over an owned keyless loopback
@@ -207,8 +208,8 @@ forward. Independent receipt checks bind declared model/version, policy, thresho
 endpoint configuration digest and both scores; they do not attest model identity.
 No job, case or subprocess timeout is increased. The existing 660s outer limit
 bounds three sequential cases; it does not allow three full 5m waits. A successful
-run qualifies this fixed three-case native workspace, exact-reuse Lift and bounded
-registry promotion into an absent pair on a second exclusively owned kind cluster.
+run qualifies this fixed three-case native workspace and explicit-promoted Lift
+into absent canonical pairs, including a second exclusively owned kind cluster.
 The destination has its own Provider/Secret in orka-system, sharing the same
 source AIKit workload through a fixture-only private-network NodePort, never a
 host mapping or second model workload. GET-only planning, actual guarded

@@ -60,7 +60,9 @@ func TestSuiteJudgePipeline(t *testing.T) {
 			var native *evalFixture
 			var sendsDir string
 			if runtime == "orka" {
-				a, _, _, native = nativeEvaluationFixture(t)
+				var reads *nativeReadFixture
+				a, reads, native, _ = publicNativeEvaluationFixture(t)
+				reads.objects["providers.core.orka.ai/inference"]["spec"].(map[string]any)["defaultModel"] = "packaged-model"
 				opt = nativeEvaluationOptions(t)
 				opt.ResultPort = native.opt.ResultPort
 			} else {
@@ -161,7 +163,7 @@ func TestSuiteJudgePipeline(t *testing.T) {
 					if err := os.RemoveAll(opt.Workspace); err != nil {
 						t.Fatal(err)
 					}
-					if _, err := a.PrepareReleaseLift(t.Context(), ReleaseLiftOptions{Reference: "suite@" + p.suite.Digest, FromLayout: p.prepared.Path, ToContext: opt.ToContext, ToNamespace: opt.ToNamespace, Inference: opt.Inference, Evidence: opt.Out}); err != nil {
+					if _, err := a.PrepareReleaseLift(t.Context(), ReleaseLiftOptions{Reference: "suite@" + p.suite.Digest, FromLayout: p.prepared.Path, ToContext: opt.ToContext, ToNamespace: opt.ToNamespace, Inference: opt.Inference, Evidence: opt.Out, Promote: true}); err != nil {
 						t.Fatal("source-free judge evidence lift plan", err)
 					}
 				}

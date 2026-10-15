@@ -189,10 +189,14 @@ func (a *App) preflightSuiteNativeResults(ctx context.Context, ns string) error 
 }
 
 // EvaluateSuiteWorkspace executes each original ordered case once and publishes
-// only full passing metadata. Late failures leave resources, not recovery state.
+// only full passing metadata. Orka uses run-scoped candidates and cleanup;
+// convenience callers separately retain the internal canonical evaluator.
 func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
 	if p != nil && p.suite != nil && p.suite.Runtime.ID == "agentsessions" {
 		return a.evaluateSuiteSessionsWorkspace(ctx, p)
+	}
+	if p != nil && p.suite != nil && p.suite.Runtime.ID == "orka" {
+		return a.evaluateSuiteWorkspaceCandidate(ctx, p)
 	}
 	return a.evaluateSuiteWorkspace(ctx, p, false)
 }

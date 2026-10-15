@@ -30,6 +30,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Public Orka workspace eval uses fresh digest/run candidates, never adoption,
+  update or reuse, and exports passing evidence only after verified UID/RV-safe
+  cleanup and owner-UID child absence. Startup reports possible leftovers only.
+  `kmx eval cleanup [run-id] --to NAME` lists without a run; selecting one full
+  run previews UIDs and requires confirmation even locally. Unattributable
+  orphans refuse. Candidate evidence needs standalone Lift `--promote` even in
+  the same environment; private Quickstart/console and other runtimes are unchanged.
+  No cleanup journal, lease, automatic sweep or publication blockade.
+
 - A draft docs-as-code website renders the existing README, maintained guides,
   and AgentSuite specification directly with responsive navigation, local search,
   dark mode, a keyboard-accessible journey chooser and an explicit `main` versus

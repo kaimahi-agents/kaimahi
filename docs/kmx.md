@@ -101,14 +101,19 @@ tagged v0.5.1 still uses the `agent` routes. Workspace authoring/publication
 are unreleased.
 Root `eval` evaluates a full packaged native Orka/kagent workspace, or pinned
 AgentSessions chat through explicit `--development-host FILE`, and retains offline `diff` and
-`from-sessions` helpers. Standalone packaged evaluation remains unimplemented.
+`from-sessions` helpers. Public Orka eval uses fresh candidates and verifies cleanup
+before passing export; private Quickstart/console remain canonical. `eval cleanup`
+lists possible leftovers; a full run ID selects confirmed, identity-safe deletion.
+See [candidate cleanup](suite-workspace.md#inspect-and-clean-candidate-leftovers).
+Standalone packaged evaluation remains unimplemented.
 Root `lift <ref>@<digest>` deploys an evaluated native suite from a registry or
 `--from-layout`, with a destination context (explicit `--to-context` or named
 `--to`) and private `--evidence FILE`.
 Orka requires `--inference provider:NAME`; packaged kagent instead requires
 author-owned `--bindings FILE`. Kagent is create-only and refuses occupied targets,
 even when evaluation UIDs match; evidence never crosses runtimes. `--plan` is GET-only; `--promote` explicitly selects
-source-only evidence for an eligible different destination. No model/runtime
+source-only evidence for an eligible destination; candidate evidence requires it
+even in the same environment, with absent canonical resources. No model/runtime
 override, build, repack, publish, update or adoption. Reports support `-o json`.
 `eval/lift --to NAME` may supply selectors from workspace `kmx.yaml`; Lift has no
 default destination. Concrete values are resolved once and retained, never reread
@@ -131,6 +136,7 @@ See [digest lift](suite-workspace.md#digest-lift) for gates and partial outcomes
 | `kmx push [--workspace <directory>] <reference>` | discover the nearest ancestor `workspace.yaml`, or select an exact root without fallback with `--workspace`; prepare its validated one-member native suite and authored cases, then copy its exact OCI graph to a registry or `--to-layout` target. Print the absolute workspace and OCI manifest digest on stderr. Required member images are empty. Does not evaluate or deploy. Existing registry policy applies. [Workspace guide](suite-workspace.md) |
 | `kmx eval [--workspace <directory>] --to-context <ctx> (--inference provider:NAME\|--bindings FILE) --out <private.json>` | evaluate every ordered native Orka case through one fresh Task per case; packaged kagent requires `--bindings FILE`, unsecure auth and fresh blocking A2A Tasks (no `--inference` or `--result-port`), without retry or answer/operand output; `llmJudge` requires explicit `--judge-base-url` and optional credential-variable `--judge-key-env`, with two independent samples inside the case deadline and no printed reasoning or endpoint recovery echo; defaults: namespace `orka-system`, case timeout 5m (max 9m), loopback result port `19180`. Both require a preinstalled runtime and model-binding prerequisites; Orka also requires result access. Offline unsupported/budget/output checks precede configuration; one guard covers owned pair placement and execution. Only full passing metadata is exported once, privately outside workspace/cache. Hermetic tests and pinned runtime CLI qualification cover the bounded scenarios. [Workspace evaluation](suite-workspace.md#evaluate-the-whole-workspace) |
 | `kmx eval --to <name> --out <private.json>` / `kmx lift <ref>@<digest> --to <name> --evidence FILE [--promote] [--plan]` | resolve workspace `kmx.yaml` selectors once; invocation flags override saved fields. Runtime expectation is checked against packaged runtime. Eval may omit `--to` only when `evalTarget` is saved; Lift has no default destination. Existing evidence/gates/remote guards remain; no composed eval/push/Lift. [Named destinations](suite-workspace.md#named-destinations) |
+| `kmx eval cleanup [<run-id>] --to <name>` | without a run, read-only candidate listing; with one full run ID, preview exact UIDs, confirm even on local kind, then identity-safe cleanup. Explicit context/namespace works without source or inference. Liveness is unknown; unanchored or unverifiable orphans refuse. [Cleanup contract](suite-workspace.md#inspect-and-clean-candidate-leftovers) |
 | `kmx eval [--workspace <directory>] --development-host <host.json> --out <private.json>` | evaluate one packaged AgentSessions chat member on explicit literal-loopback, unauthenticated operator-observed development host; no cluster configuration or selectors, registry/auth/lift/chat. One fresh Session/config/Exec per case, full-pass-only private metadata. [Development host contract](suite-workspace.md#agentsessions-development-evaluation) |
 | `kmx push --evaluation <private.json> [--workspace <directory>] <reference>` | consume a strict private full-passing Orka/kagent or development AgentSessions suite receipt; evidence must match the packaged runtime and require exact suite manifest identity plus complete offline coherence before transfer/provenance. Ordinary push remains unevaluated; unsigned observations are not an authentication proof or policy gate. [Workspace guide](suite-workspace.md) |
 | `kmx suite build <directory> ...` | resolve one agent/platform composition and build an OCI image-layout tar through AgentKit using Docker buildx. The current implementation is explicitly experimental and non-conformant because it treats the selected harness image as a monolithic AgentKit adapter and does not compose the runtime-base image. |

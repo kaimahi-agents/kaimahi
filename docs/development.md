@@ -39,15 +39,16 @@ gateway, approvals/grants, workflow runner and connector fixtures remain retired
 
 Packaged native suites have runtime-specific private App preparation seams. Orka
 observes an explicit target, Ready Provider/Secret binding and pinned runtime,
-then validates one exact unmarked render from `workspace.Load`; placement can
-create or update only same-owner Provider/Agent resources. Kagent snapshots
+then validates one exact unmarked render from `workspace.Load`. Private canonical
+placement retains same-owner create/update; public Orka eval uses fresh S/run
+candidates, never adoption/update/reuse. Kagent snapshots
 author-owned `KagentBindings`, verifies the pinned runtime and creates new
 ModelConfig/Agent resources only; occupied unrecorded or changed targets refuse,
 never update or adopt. Secret reads project metadata and key presence, never
 values. Root workspace evaluation consumes the matching seam. Verification binds
 current ownership, UID, generation, spec and readiness to live snapshots. A late
 failure can leave resources for a later explicit invocation.
-All six native annotation keys reserve objects against legacy adoption, reuse,
+Native ownership annotations, including the full candidate run ID, reserve objects against legacy adoption, reuse,
 copying, bundle authorization and retirement, even with malformed values. These
 fences retain legacy invocation/adoption/copy refusals for suite-owned objects. Fake readiness is
 not model execution or cluster qualification.
@@ -63,23 +64,25 @@ subject/render/inventory coherence before provenance or transfer. Source
 fingerprint is authored spelling, not a durable publication lock. These unsigned
 observations prove neither authenticity nor cross-object atomicity. Root `eval`
 prepares workspace/inventory/export offline before configuration, then consents
-once to native pair placement and all ordered one-shot Tasks. Only a full pass
-exports privately. `push --evaluation FILE` uses the strict file consumer;
+once to native pair placement and all ordered one-shot Tasks. Public Orka eval
+also covers bounded UID/RV cleanup and verified owner-UID child closure before
+full-pass export. Startup reports never delete or block a fresh eval. Explicit
+`eval cleanup [run-id]` lists or confirms a frozen run/UID snapshot, refusing
+unattributable orphans; it creates no execution or passing-evidence authority.
+No journal, lease or later-publication blockade is implemented. `push --evaluation FILE` uses the strict file consumer;
 ordinary push remains unevaluated; bundle evaluation is removed. Hermetic tests cover
 these paths. The existing Orka runtime shard now invokes the bounded
 [suite qualifier](../scripts/ci/suite-native.py) after its raw upstream Tool/Task and model-answer proof.
 It uses the [fixed CPU AIKit workload](../scripts/ci/native-suite-model.yaml),
 existing model configuration and installer Secret reference in the same owned
-cluster. One full-workspace evaluation is followed by independent live readback,
-exact-S local-layout transfer and ownership/unsupported-evaluator refusal audits.
-Private command captures are never artifacts; only passing receipt metadata and
-a scalar qualification report are uploaded. A successful run qualifies the fixed
-two-case native workspace scenario; hermetic tests alone do not establish runtime
-execution. Root digest Lift separately consumes the private passing receipt for
-deploy-only packaged Orka/kagent placement. The fixed Orka qualifier proves exact
-registry/local-layout reuse with source withheld and bounded registry promotion
-into an absent pair on a second owned cluster, followed by a fresh destination
-Task. It does not qualify every creation, promotion or partial-outcome path. The kagent qualifier proves source-free Lift into a
+cluster. One full three-case evaluation has historical API identity/spec/input
+snapshots and independent UID/RV cleanup/child-absence checks. Source verdicts,
+answer hashes and judge scores are product-observed after cleanup, not re-fetched
+from deleted Tasks. Exact-S layout/registry transfer and source-withheld explicit
+promotion qualify absent canonical destinations and fresh destination answers.
+Private captures are not artifacts; only passing metadata and a scalar report
+are uploaded. This fixed scenario does not qualify every creation, promotion,
+orphan-recovery or partial-outcome path. Hermetic tests are not live execution. The kagent qualifier proves source-free Lift into a
 fresh namespace and occupied repeat refusal without additional native execution.
 Standalone packaged evaluation is unavailable.
 
@@ -227,10 +230,10 @@ runner. `state-paths-macos` retains its independent state routing checks.
 
 Orka runtime and stock Helm scenarios use raw upstream fixtures and independent
 `run --agent` Task/model-answer proofs. The Orka suite qualifier separately
-covers actual native create, full two-case eval, evaluated push and source-withheld
-exact-digest Lift with exact observed reuse, private captures and metadata-only
-artifacts. Registry/local exact-reuse and bounded absent-pair registry promotion
-include fresh answer Tasks with UID/count attribution. Promotion retains source-only
+covers fresh candidate placement, full three-case eval, verified root/child cleanup,
+evaluated push and source-withheld explicit promotion, with private captures and
+metadata-only artifacts. Registry/layout transfer and absent-pair promotion
+include fresh destination answers with UID/count attribution. Promotion retains source-only
 evidence, GET-only plans, reviewed Apply/Verify, full placement readback and a
 no-effect model-mismatch refusal. Its offline reference uses the shared native
 scaffold, not removed live-create flags. Evaluation is not retried; broader
@@ -257,9 +260,10 @@ Hygiene tests these boundaries without a cluster. Final retirement Go build/live
 runs are required before claiming runtime qualification; docs/hermetic tests
 alone are not execution evidence.
 
-Clone-free main/manual CI authors a workspace, performs full eval, evaluated
-layout publication and digest Lift, then reads the existing evaluation Task
-result without resend. It claims no separate answer Task or raw suite direct run.
+Clone-free main/manual CI authors an exact-answer assertion inside full eval,
+checks completed candidate cleanup and independent Task absence, then performs
+evaluated layout publication and explicit-promoted digest Lift. It neither reads
+a deleted evaluation Task nor resends it, and claims no separate answer Task.
 No Azure credentials belong in fork-exposed CI. A docs-only skip is not a live rerun.
 
 ### CI registry mirrors

@@ -180,7 +180,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	_ = from.RegisterFlagCompletionFunc("sessions", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	})
-	group.AddCommand(diff, from)
+	group.AddCommand(diff, from, newEvalCleanupCommand(state))
 	return group
 }
 

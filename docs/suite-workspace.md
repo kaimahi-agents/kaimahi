@@ -362,16 +362,21 @@ upgrade receipt readers before exchanging judge receipts. AgentSessions
 `--development-host` continues to refuse judges. The assertion fields are unchanged
 and can map directly to authored JSON cases; this does not migrate the case tree.
 
-One mutation guard covers runtime-specific placement and all ordered evaluation
-Tasks: Orka `Provider/Agent`, or kagent `ModelConfig/Agent`. Remote targets require
-the existing named confirmation; local kind targets retain the existing banner.
-Orka can reuse/update only a same-owner pair; kagent creates new objects and
-refuses occupied targets without complete caller-retained proof. Neither adopts
-legacy/unowned/foreign resources. Every case sends one fresh Task exactly once,
-using the exact authored input. Ambiguous writes are never recovered, retried or
-resent. Placement, runtime, target and binding observations bracket execution;
-source and placement are checked again before export. These observations do not
-prove drift absence or authentication.
+One mutation guard covers placement, every ordered case and Orka candidate
+cleanup. Public Orka eval creates a fresh digest/run-scoped Provider/Agent pair;
+it never adopts, updates or reuses an earlier candidate. The logical packaged
+member, model and cases stay unchanged. Every KMX-created candidate Provider,
+Agent and Task carries the full run-ID annotation; Orka-created descendants are
+tracked through exact owner-UID chains, not presumed annotation inheritance.
+Startup reports possible leftovers and unknown discovery without deleting them
+or blocking a fresh evaluation. Run liveness is unknown.
+
+Remote evaluation retains context-naming confirmation; local kind retains its
+banner. Private Quickstart strict reuse and console canonical create/update are
+unchanged. Kagent placement and all runtime-specific attribution remain unchanged.
+Each case sends one fresh Task exactly once; ambiguous writes are never recovered
+by name, retried or resent. Source, runtime, target and bindings bracket execution.
+These observations do not prove drift absence or authentication.
 
 Kagent uses a closed author-owned `KagentBindings` file (namespace, OpenAI
 provider/baseURL, separately provisioned Secret name/explicit key). The model
@@ -400,14 +405,44 @@ terminal summaries and receipts, but runtime/model storage and Kubernetes audit
 policy may retain them. Published suites themselves contain authored inputs.
 
 Failure, unknown results, drift, cancellation or output failure stops later cases
-and exits nonzero. No incomplete/diagnostic receipt is exported; resources may
-remain, with no automatic retry or cleanup. Only a full ordered pass publishes one
-new private receipt file (0600) into an existing private directory (0700), outside
-workspace and cache trees. Existing destinations are never replaced. A late
-publication or summary failure can leave a complete output file; inspect it rather
-than assuming failure removed it. Receipts contain identities, digests and
-assertion verdicts and bounded judge identity/scores only, not payloads or
-evaluation history.
+and exits nonzero. Public Orka eval attempts bounded, detached cleanup after pass,
+failure or cancellation. Only independently acknowledged roots can be deleted,
+using fresh UID/resourceVersion preconditions; Task absence alone does not prove
+Job/Pod absence. Shared inference, Secrets, namespaces and RBAC stay untouched.
+A full pass exports only after verified root/child absence and final original
+source/shared-input checks. Incomplete or uncertain cleanup fails that eval and
+exports nothing; it does not invalidate older completed evidence or block later
+publication. There is no cleanup journal, lease or automatic leftover sweep.
+
+The private passing file is 0600 in an existing 0700 directory outside workspace
+and cache trees, never replaced. A late publication or summary failure can leave
+a complete output; inspect it rather than assuming failure removed it. Receipts
+retain identities, digests, assertion verdicts and bounded judge metadata, not
+payloads or execution history. Runtime/model/audit retention may outlive cleanup.
+
+### Inspect and clean candidate leftovers
+
+```sh
+kmx eval cleanup --to dev
+kmx eval cleanup <full-run-id> --to dev
+# Explicit access also works without the original workspace or inference:
+kmx eval cleanup <full-run-id> --to-context kind-demo --to-namespace orka-system
+```
+
+Without a run ID this is read-only: no prompt, deletion or passing receipt. A full
+32-character lowercase hexadecimal run ID selects one run, never a prefix or all
+runs. Cleanup previews the frozen target and resource UIDs, then requires
+context-naming confirmation even on local kind. Noninteractive use requires
+`KAIMAHI_CONFIRM=<context>`. Named `--to` reads only copied destination selectors;
+cleanup does not evaluate source, require inference or follow saved `evalTarget`.
+
+Cleanup can interrupt a live run; no lease establishes abandonment. Identity,
+ownership and scope are rechecked before UID/resourceVersion-preconditioned
+root deletion and verified child absence. Unanchored descendants, missing
+Task/Job links or unverifiable selection are reported as uncertain and refused,
+not guessed from labels or partial names. Existing Task names retain only part
+of the run ID, so some post-crash orphans require independent operator inspection.
+A missing root is not itself proof of complete cleanup.
 
 `push --evaluation FILE` reads that strict private file and requires the exact
 prepared manifest digest plus full offline case/subject coherence before transfer
@@ -418,36 +453,31 @@ Ordinary push remains explicitly unevaluated. Extracted-directory `suite push`
 does not gain this flag. `eval diff` reads strict passing suite receipts and
 compares only compatible same-runtime subjects/case inventories; Orka/kagent
 comparison refuses as incompatible, never as equivalent behavior. Comparison
-also requires identical observed ownership. Separate kagent CLI runs create
-fresh resources, so their receipts are incompatible rather than a cross-run
-behavior comparison. Root Lift dispatches only matching runtime evidence;
+also requires identical observed ownership. Fresh Orka candidate runs and separate
+kagent CLI runs have different identities, so their receipts are incompatible
+rather than a cross-run behavior comparison. Root Lift dispatches only matching runtime evidence;
 cross-runtime evidence refuses. Old Orka/kagent/AgentSessions bundle receipts are
 unreadable. `eval from-sessions` remains private reference extraction/export only,
 with no native manifest consumer. RecordedExecution/legacy replay/judges are removed.
 
 ### Qualification boundary
 
-The existing Orka runtime CI shard now includes a checkout-only native scenario
-using the pinned CPU AIKit model, the two public capital/arithmetic cases and the
-installer's existing Secret reference in its exclusively owned kind cluster.
-It attempts one full evaluation without retry, independently reads live identity,
-spec and result evidence, and transfers exact S through a local layout and a
-pinned private Distribution registry. With authored source withheld, root CLI
-`lift --plan`, apply and repeat apply must reuse the exact evaluated pair without
-admission, writes or Tasks for both transports. A separate `run --agent` creates
-one fresh Task per transport; authored text assertions, input/result digests and
-pair identity are independently checked. This is separate execution qualification,
-not invocation authorization conferred by serialized lift output.
+The existing Orka runtime CI shard uses the pinned CPU AIKit workload, two text
+cases and one configured rubric judge in exclusively owned kind clusters. It
+checks historical API identity/spec/input/terminal metadata, actual UID/RV delete
+preconditions and independent root/child absence after candidate evaluation.
+Source answers, assertion verdicts and judge scores are product-observed after
+cleanup, not independently re-fetched from deleted Tasks. Exact S transfers through
+a local layout and pinned registry; source-withheld Lift requires explicit
+`--promote`, GET-only planning and an absent canonical destination. Fresh destination
+answers and no-effect refusal audits remain independent checks.
 
-Refusals cover missing evidence, different S with the same G, a coherent private
-namespace-UID counterfactual (not destructive namespace replacement), foreign
-ownership, a distinct Ready inference identity and terminal spec drift. Altered
-evidence has an original-identity positive control. The product audit records
-request intent before forwarding, distinguishes admission from persistent writes
-and Task attempts, and refuses incomplete/failed requests. Only passing receipt
-metadata and a payload-free qualification report may be uploaded. Runtime/model and
-Kubernetes audit storage can still retain inputs. A successful run qualifies this
-fixed scenario; hermetic tests alone do not establish runtime/model execution.
+The audit records intent before forwarding, distinguishes admission, persistent
+writes and Task attempts, and refuses incomplete requests. Only passing metadata
+and a payload-free qualification report may be uploaded. Runtime/model/audit
+storage may retain inputs. This fixed scenario does not establish general
+execution, authenticated approval or orphan recovery; hermetic tests alone are
+not live runtime/model qualification.
 The same shard also prepares a second exclusively owned kind cluster with the
 same pinned Orka in `orka-system`. It shares the real AIKit model through a
 fixture-only NodePort on the private kind network, without a host port mapping;
@@ -635,7 +665,10 @@ Owned status-only resource-version churn is tolerated; selected inference Provid
 and Secret versions remain exact. Before each write and after each Ready wait,
 the pair and prerequisites are rechecked, including before each server dry-run.
 
-`--promote` is required when target/binding differs. Packaged S/G/member/model/
+Candidate-source evidence requires `--promote` even in the same environment;
+cleaned physical candidates cannot authorize canonical destination reuse.
+Historical canonical evidence retains the exact-subject gate.
+`--promote` is also required when target/binding differs. Packaged S/G/member/model/
 renderer/profile/composition/images must match, as must the pinned runtime version,
 images and mode. The selected Ready `openai` Provider must explicitly declare
 `defaultModel` equal to the packaged model, with UID/generation/resourceVersion

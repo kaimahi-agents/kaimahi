@@ -38,24 +38,28 @@ const suiteCandidateCleanupMetadata = `{"name":{{printf "%q" .metadata.name}},"n
 type suiteCandidateCleanupMetadataRow struct {
 	Name, Namespace, UID, ResourceVersion, TaskLabel string
 	Generation                                       int64
+	DeletionTimestamp                                *string
 	Labels                                           struct {
 		Task string `json:"orka.ai/task"`
 	}
-	Owners []struct {
+	Markers                                         map[string]any `json:"-"`
+	SpecDigest, AgentName, AgentNamespace, TaskType string         `json:"-"`
+	Legacy                                          bool           `json:"-"`
+	Owners                                          []struct {
 		APIVersion, Kind, Name, UID string
 		Controller                  bool
 	} `json:"ownerReferences"`
 }
 
-func (a *App) suiteCandidateCleanupScope(ctx context.Context, s suiteNativeSubject) error {
-	if a.Cfg == nil || a.Cfg.KubeContext != s.Target.Context {
+func (a *App) suiteCandidateCleanupScopeTarget(ctx context.Context, target suiteNativeTarget) error {
+	if a.Cfg == nil || a.Cfg.KubeContext != target.Context {
 		return errSuiteCandidateCleanup
 	}
 	uid, terminating, err := a.readLiftClusterUID(ctx)
-	if err != nil || terminating || uid != s.Target.ClusterUID {
+	if err != nil || terminating || uid != target.ClusterUID {
 		return errSuiteCandidateCleanup
 	}
-	raw, err := a.orkaCapture(ctx, nil, "get", "namespace", s.Target.Namespace, "--ignore-not-found=true", "-o", "json")
+	raw, err := a.orkaCapture(ctx, nil, "get", "namespace", target.Namespace, "--ignore-not-found=true", "-o", "json")
 	var ns struct {
 		Kind     string
 		Metadata struct {
@@ -63,7 +67,7 @@ func (a *App) suiteCandidateCleanupScope(ctx context.Context, s suiteNativeSubje
 			DeletionTimestamp *string
 		}
 	}
-	if err != nil || json.Unmarshal(raw, &ns) != nil || ns.Kind != "Namespace" || ns.Metadata.Name != s.Target.Namespace || ns.Metadata.UID != s.Target.NamespaceUID || ns.Metadata.DeletionTimestamp != nil {
+	if err != nil || json.Unmarshal(raw, &ns) != nil || ns.Kind != "Namespace" || ns.Metadata.Name != target.Namespace || ns.Metadata.UID != target.NamespaceUID || ns.Metadata.DeletionTimestamp != nil {
 		return errSuiteCandidateCleanup
 	}
 	return nil
@@ -82,7 +86,10 @@ func suiteCandidateCleanupPath(kind, ns, name string) string {
 }
 
 func (a *App) suiteCandidateCleanupRoot(ctx context.Context, s suiteNativeSubject, r suiteCandidateResource) (map[string]any, bool, bool, error) {
-	raw, err := a.orkaCapture(ctx, nil, "-n", s.Target.Namespace, "get", orkaPlural(r.Kind), r.Name, "--ignore-not-found=true", "-o", "json")
+	return a.suiteCandidateCleanupRootIdentity(ctx, s.Target, suiteNativeOwner(s), s.PhysicalMember, r)
+}
+func (a *App) suiteCandidateCleanupRootIdentity(ctx context.Context, target suiteNativeTarget, owner *orkaSuiteOwnership, physical string, r suiteCandidateResource) (map[string]any, bool, bool, error) {
+	raw, err := a.orkaCapture(ctx, nil, "-n", target.Namespace, "get", orkaPlural(r.Kind), r.Name, "--ignore-not-found=true", "-o", "json")
 	if err != nil {
 		return nil, false, false, errSuiteCandidateCleanup
 	}
@@ -94,7 +101,7 @@ func (a *App) suiteCandidateCleanupRoot(ctx context.Context, s suiteNativeSubjec
 		return nil, false, false, errSuiteCandidateCleanup
 	}
 	meta, _ := doc["metadata"].(map[string]any)
-	if doc["apiVersion"] != "core.orka.ai/v1alpha1" || doc["kind"] != r.Kind || meta["name"] != r.Name || meta["namespace"] != s.Target.Namespace {
+	if doc["apiVersion"] != "core.orka.ai/v1alpha1" || doc["kind"] != r.Kind || meta["name"] != r.Name || meta["namespace"] != target.Namespace {
 		return nil, false, false, errSuiteCandidateCleanup
 	}
 	uid, _ := meta["uid"].(string)
@@ -122,21 +129,21 @@ func (a *App) suiteCandidateCleanupRoot(ctx context.Context, s suiteNativeSubjec
 		}
 	}
 	generationMatches := generation == float64(r.Generation) || terminating && generation == float64(r.Generation)+1
-	if err != nil || digest != r.SpecDigest || !generationMatches || suiteNativeOwner(s).check(ann) != nil || !reflect.DeepEqual(suiteNativeOwner(s).markers(), suiteOnlyMarkers(ann)) {
+	if err != nil || digest != r.SpecDigest || !generationMatches || owner.check(ann) != nil || !reflect.DeepEqual(owner.markers(), suiteOnlyMarkers(ann)) {
 		return nil, false, false, errSuiteCandidateCleanup
 	}
 	if r.Kind == "Task" {
 		spec, _ := doc["spec"].(map[string]any)
 		ref, _ := spec["agentRef"].(map[string]any)
-		if spec["type"] != "ai" || ref["name"] != s.PhysicalMember || ref["namespace"] != s.Target.Namespace {
+		if spec["type"] != "ai" || ref["name"] != physical || ref["namespace"] != target.Namespace {
 			return nil, false, false, errSuiteCandidateCleanup
 		}
 	}
 	return doc, false, false, nil
 }
 
-func (a *App) suiteCandidateCleanupPollRoot(ctx context.Context, s suiteNativeSubject, r suiteCandidateResource) (bool, bool, error) {
-	raw, err := a.orkaCapture(ctx, nil, "-n", s.Target.Namespace, "get", orkaPlural(r.Kind), r.Name, "--ignore-not-found=true", "-o", "go-template="+suiteCandidateCleanupMetadata)
+func (a *App) suiteCandidateCleanupPollTarget(ctx context.Context, target suiteNativeTarget, r suiteCandidateResource) (bool, bool, error) {
+	raw, err := a.orkaCapture(ctx, nil, "-n", target.Namespace, "get", orkaPlural(r.Kind), r.Name, "--ignore-not-found=true", "-o", "go-template="+suiteCandidateCleanupMetadata)
 	if err != nil {
 		return false, false, errSuiteCandidateCleanup
 	}
@@ -144,7 +151,7 @@ func (a *App) suiteCandidateCleanupPollRoot(ctx context.Context, s suiteNativeSu
 		return true, false, nil
 	}
 	var row suiteCandidateCleanupMetadataRow
-	if json.Unmarshal(raw, &row) != nil || !validSuiteCandidateCleanupRow(row, s.Target.Namespace) || row.Name != r.Name {
+	if json.Unmarshal(raw, &row) != nil || !validSuiteCandidateCleanupRow(row, target.Namespace) || row.Name != r.Name {
 		return false, false, errSuiteCandidateCleanup
 	}
 	return row.UID != r.UID, row.UID != r.UID, nil
@@ -153,17 +160,20 @@ func validSuiteCandidateCleanupRow(row suiteCandidateCleanupMetadataRow, ns stri
 	return row.Namespace == ns && scaffold.ValidateObjectName(row.Name) == nil && verificationIdentity(row.UID) && verificationIdentity(row.ResourceVersion) && row.Generation >= 0 && len(row.Owners) <= 8
 }
 
-func (a *App) suiteCandidateCleanupInventory(ctx context.Context, s suiteNativeSubject, kind string) ([]suiteCandidateCleanupMetadataRow, error) {
-	base := map[string]string{"Job": "/apis/batch/v1", "Pod": "/api/v1", "ConfigMap": "/api/v1"}[kind]
-	plural := map[string]string{"Job": "jobs", "Pod": "pods", "ConfigMap": "configmaps"}[kind]
+func (a *App) suiteCandidateCleanupInventoryTarget(ctx context.Context, target suiteNativeTarget, kind string) ([]suiteCandidateCleanupMetadataRow, error) {
+	base := map[string]string{"Provider": "/apis/core.orka.ai/v1alpha1", "Agent": "/apis/core.orka.ai/v1alpha1", "Task": "/apis/core.orka.ai/v1alpha1", "Job": "/apis/batch/v1", "Pod": "/api/v1", "ConfigMap": "/api/v1"}[kind]
+	plural := map[string]string{"Provider": "providers", "Agent": "agents", "Task": "tasks", "Job": "jobs", "Pod": "pods", "ConfigMap": "configmaps"}[kind]
 	version := "v1"
 	if kind == "Job" {
 		version = "batch/v1"
 	}
-	if base == "" || scaffold.ValidateNamespace(s.Target.Namespace) != nil {
+	if kind == "Provider" || kind == "Agent" || kind == "Task" {
+		version = "core.orka.ai/v1alpha1"
+	}
+	if base == "" || scaffold.ValidateNamespace(target.Namespace) != nil {
 		return nil, errSuiteCandidateCleanup
 	}
-	path := base + "/namespaces/" + s.Target.Namespace + "/" + plural + "?limit=128"
+	path := base + "/namespaces/" + target.Namespace + "/" + plural + "?limit=128"
 	rows := []suiteCandidateCleanupMetadataRow{}
 	seenUID, seenName, seenToken := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	continuation, snapshotRV := "", ""
@@ -176,9 +186,7 @@ func (a *App) suiteCandidateCleanupInventory(ctx context.Context, s suiteNativeS
 		var list struct {
 			APIVersion, Kind string
 			Metadata         struct{ Continue, ResourceVersion string }
-			Items            []struct {
-				Metadata suiteCandidateCleanupMetadataRow
-			}
+			Items            []json.RawMessage
 		}
 		if err != nil || len(raw) > suiteCandidateCleanupPageBytes || !suiteCandidateCleanupPageJSON(raw) || json.Unmarshal(raw, &list) != nil || list.APIVersion != version || list.Kind != kind+"List" || !verificationIdentity(list.Metadata.ResourceVersion) || list.Items == nil || len(list.Items) > suiteCandidateCleanupPageSize {
 			return nil, errSuiteCandidateCleanup
@@ -188,9 +196,41 @@ func (a *App) suiteCandidateCleanupInventory(ctx context.Context, s suiteNativeS
 		}
 		snapshotRV = list.Metadata.ResourceVersion
 		for _, item := range list.Items {
-			row := item.Metadata
+			var envelope struct {
+				Metadata suiteCandidateCleanupMetadataRow
+			}
+			if json.Unmarshal(item, &envelope) != nil {
+				return nil, errSuiteCandidateCleanup
+			}
+			row := envelope.Metadata
+			if version == "core.orka.ai/v1alpha1" {
+				var doc map[string]any
+				if json.Unmarshal(item, &doc) != nil {
+					return nil, errSuiteCandidateCleanup
+				}
+				meta, _ := doc["metadata"].(map[string]any)
+				ann, _ := meta["annotations"].(map[string]any)
+				row.Markers = suiteOnlyMarkers(ann)
+				for _, key := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {
+					if _, ok := ann[key]; ok {
+						row.Legacy = true
+					}
+				}
+				var err error
+				row.SpecDigest, err = suiteCandidateSpecDigest(item)
+				if err != nil {
+					return nil, errSuiteCandidateCleanup
+				}
+				if kind == "Task" {
+					spec, _ := doc["spec"].(map[string]any)
+					ref, _ := spec["agentRef"].(map[string]any)
+					row.AgentName, _ = ref["name"].(string)
+					row.AgentNamespace, _ = ref["namespace"].(string)
+					row.TaskType, _ = spec["type"].(string)
+				}
+			}
 			row.TaskLabel = row.Labels.Task
-			if !validSuiteCandidateCleanupRow(row, s.Target.Namespace) || seenUID[row.UID] || seenName[row.Name] {
+			if !validSuiteCandidateCleanupRow(row, target.Namespace) || seenUID[row.UID] || seenName[row.Name] {
 				return nil, errSuiteCandidateCleanup
 			}
 			seenUID[row.UID], seenName[row.Name] = true, true
@@ -254,9 +294,11 @@ func suiteCandidateCleanupPageJSON(raw []byte) bool {
 		case "listMetadata":
 			consumed = []string{"resourceVersion", "continue"}
 		case "item":
-			consumed = []string{"metadata"}
+			consumed = []string{"metadata", "spec"}
 		case "objectMetadata":
-			consumed = []string{"name", "namespace", "uid", "resourceVersion", "generation", "labels", "ownerReferences"}
+			consumed = []string{"name", "namespace", "uid", "resourceVersion", "generation", "deletionTimestamp", "labels", "ownerReferences", "annotations"}
+		case "annotations":
+			consumed = orkaSuiteReservedMarkers
 		case "labels":
 			consumed = []string{"orka.ai/task"}
 		case "owner":
@@ -285,6 +327,8 @@ func suiteCandidateCleanupPageJSON(raw []byte) bool {
 					nextScope = "objectMetadata"
 				case field == "items":
 					nextScope = "items"
+				case scope == "objectMetadata" && field == "annotations":
+					nextScope = "annotations"
 				case scope == "objectMetadata" && field == "labels":
 					nextScope = "labels"
 				case scope == "objectMetadata" && field == "ownerReferences":
@@ -309,9 +353,12 @@ func suiteCandidateCleanupPageJSON(raw []byte) bool {
 // Discover only by an exact typed UID+name controller-owner link. Labels can
 // only make an otherwise unanchored potential child uncertain, never owned.
 func (a *App) suiteCandidateCleanupChildren(ctx context.Context, r *suiteCandidateRun, known *[]suiteCandidateResource) (bool, error) {
+	return a.suiteCandidateCleanupChildrenTarget(ctx, r.subject.Target, known, func(child suiteCandidateResource) { r.acknowledged = append(r.acknowledged, child) })
+}
+func (a *App) suiteCandidateCleanupChildrenTarget(ctx context.Context, target suiteNativeTarget, known *[]suiteCandidateResource, record func(suiteCandidateResource)) (bool, error) {
 	gone := true
 	for _, kind := range []string{"Job", "ConfigMap", "Pod"} {
-		rows, err := a.suiteCandidateCleanupInventory(ctx, r.subject, kind)
+		rows, err := a.suiteCandidateCleanupInventoryTarget(ctx, target, kind)
 		if err != nil {
 			return false, err
 		}
@@ -367,7 +414,9 @@ func (a *App) suiteCandidateCleanupChildren(ctx context.Context, r *suiteCandida
 			}
 			child := suiteCandidateResource{Kind: kind, Name: row.Name, UID: row.UID, Generation: row.Generation, SpecDigest: digest, ParentKind: parent.Kind, ParentUID: parent.UID}
 			*known = append(*known, child)
-			r.acknowledged = append(r.acknowledged, child)
+			if record != nil {
+				record(child)
+			}
 		}
 		// A retained child's UID must be absent, not merely missing its parent.
 		for _, child := range *known {
@@ -450,12 +499,41 @@ func (a *App) cleanupSuiteNativeCandidate(ctx context.Context, r *suiteCandidate
 	if len(known) > suiteCandidateCleanupObjects {
 		return fail("inventory bound")
 	}
-	if worker.suiteCandidateCleanupScope(ctx, r.subject) != nil {
+	return worker.cleanupSuiteCandidateAuthority(ctx, suiteCandidateCleanupAuthority{
+		target: r.subject.Target, roots: roots, known: known, unknown: unknown,
+		readRoot: func(ctx context.Context, root suiteCandidateResource) (map[string]any, bool, bool, error) {
+			return worker.suiteCandidateCleanupRoot(ctx, r.subject, root)
+		},
+		children: func(ctx context.Context, known *[]suiteCandidateResource) (bool, error) {
+			return worker.suiteCandidateCleanupChildren(ctx, r, known)
+		},
+	})
+}
+
+type suiteCandidateCleanupAuthority struct {
+	target         suiteNativeTarget
+	roots, known   []suiteCandidateResource
+	unknown        bool
+	readRoot       func(context.Context, suiteCandidateResource) (map[string]any, bool, bool, error)
+	children       func(context.Context, *[]suiteCandidateResource) (bool, error)
+	inventoryCheck func(context.Context) error
+}
+
+func (worker *App) cleanupSuiteCandidateAuthority(ctx context.Context, authority suiteCandidateCleanupAuthority) (result suiteCandidateCleanupResult, err error) {
+	roots, known := authority.roots, append([]suiteCandidateResource{}, authority.known...)
+	fail := func(reason string) (suiteCandidateCleanupResult, error) {
+		result.Reason = reason
+		return result, errSuiteCandidateCleanup
+	}
+	if worker.suiteCandidateCleanupScopeTarget(ctx, authority.target) != nil {
 		return fail("scope changed or unknown")
+	}
+	if authority.inventoryCheck != nil && authority.inventoryCheck(ctx) != nil {
+		return fail("inventory or consent set changed")
 	}
 	// Validate every known root before the first effect; skip unknown intents.
 	for _, root := range roots {
-		_, absent, foreign, readErr := worker.suiteCandidateCleanupRoot(ctx, r.subject, root)
+		_, absent, foreign, readErr := authority.readRoot(ctx, root)
 		if readErr != nil {
 			return fail("root changed or read unknown")
 		}
@@ -473,8 +551,8 @@ func (a *App) cleanupSuiteNativeCandidate(ctx context.Context, r *suiteCandidate
 			hasTasks = true
 		}
 	}
-	if hasTasks {
-		_, inventoryErr := worker.suiteCandidateCleanupChildren(ctx, r, &known)
+	if hasTasks || authority.inventoryCheck != nil {
+		_, inventoryErr := authority.children(ctx, &known)
 		if inventoryErr != nil {
 			return fail("child closure unknown")
 		}
@@ -484,10 +562,10 @@ func (a *App) cleanupSuiteNativeCandidate(ctx context.Context, r *suiteCandidate
 			if root.Kind != kind {
 				continue
 			}
-			if worker.suiteCandidateCleanupScope(ctx, r.subject) != nil {
+			if worker.suiteCandidateCleanupScopeTarget(ctx, authority.target) != nil {
 				return fail("scope changed or unknown")
 			}
-			doc, absent, foreign, readErr := worker.suiteCandidateCleanupRoot(ctx, r.subject, root)
+			doc, absent, foreign, readErr := authority.readRoot(ctx, root)
 			if readErr != nil {
 				return fail("root changed or read unknown")
 			}
@@ -498,7 +576,7 @@ func (a *App) cleanupSuiteNativeCandidate(ctx context.Context, r *suiteCandidate
 			if !absent {
 				// Recheck scope after the fresh spec/RV read, immediately before
 				// the DELETE effect. Resource preconditions then close the RV race.
-				if worker.suiteCandidateCleanupScope(ctx, r.subject) != nil {
+				if worker.suiteCandidateCleanupScopeTarget(ctx, authority.target) != nil {
 					return fail("scope changed or unknown")
 				}
 				meta := doc["metadata"].(map[string]any)
@@ -507,23 +585,23 @@ func (a *App) cleanupSuiteNativeCandidate(ctx context.Context, r *suiteCandidate
 					if marshalErr != nil {
 						return fail("invalid delete options")
 					}
-					raw, deleteErr := worker.orkaCapture(ctx, body, "delete", "--raw", suiteCandidateCleanupPath(root.Kind, r.subject.Target.Namespace, root.Name), "-f", "-")
+					raw, deleteErr := worker.orkaCapture(ctx, body, "delete", "--raw", suiteCandidateCleanupPath(root.Kind, authority.target.Namespace, root.Name), "-f", "-")
 					var ack map[string]any
 					if deleteErr != nil || !unambiguousSessionsReceiptJSON(raw) || json.Unmarshal(raw, &ack) != nil || ack == nil {
 						return fail("delete conflict or acknowledgement unknown")
 					}
 					ackMeta, _ := ack["metadata"].(map[string]any)
 					statusAck := ack["apiVersion"] == "v1" && ack["kind"] == "Status" && ack["status"] == "Success"
-					objectAck := ack["apiVersion"] == "core.orka.ai/v1alpha1" && ack["kind"] == root.Kind && ackMeta["name"] == root.Name && ackMeta["namespace"] == r.subject.Target.Namespace && ackMeta["uid"] == root.UID
+					objectAck := ack["apiVersion"] == "core.orka.ai/v1alpha1" && ack["kind"] == root.Kind && ackMeta["name"] == root.Name && ackMeta["namespace"] == authority.target.Namespace && ackMeta["uid"] == root.UID
 					if !statusAck && !objectAck {
 						return fail("delete conflict or acknowledgement unknown")
 					}
 				}
 				for round := 0; round < suiteCandidateCleanupRounds; round++ {
-					if worker.suiteCandidateCleanupScope(ctx, r.subject) != nil {
+					if worker.suiteCandidateCleanupScopeTarget(ctx, authority.target) != nil {
 						return fail("scope changed or unknown")
 					}
-					absent, foreign, readErr = worker.suiteCandidateCleanupPollRoot(ctx, r.subject, root)
+					absent, foreign, readErr = worker.suiteCandidateCleanupPollTarget(ctx, authority.target, root)
 					if foreign {
 						result.ForeignOccupancies = append(result.ForeignOccupancies, root)
 						return fail("owned UID absent; foreign name occupied")
@@ -531,8 +609,8 @@ func (a *App) cleanupSuiteNativeCandidate(ctx context.Context, r *suiteCandidate
 					if readErr != nil {
 						return fail("disappearance read unknown")
 					}
-					if hasTasks {
-						_, inventoryErr := worker.suiteCandidateCleanupChildren(ctx, r, &known)
+					if hasTasks || authority.inventoryCheck != nil {
+						_, inventoryErr := authority.children(ctx, &known)
 						if inventoryErr != nil {
 							return fail("child closure unknown")
 						}
@@ -554,10 +632,10 @@ func (a *App) cleanupSuiteNativeCandidate(ctx context.Context, r *suiteCandidate
 		if kind == "Task" && hasTasks {
 			cleanRounds := 0
 			for round := 0; round < suiteCandidateCleanupRounds; round++ {
-				if worker.suiteCandidateCleanupScope(ctx, r.subject) != nil {
+				if worker.suiteCandidateCleanupScopeTarget(ctx, authority.target) != nil {
 					return fail("scope changed or unknown")
 				}
-				gone, inventoryErr := worker.suiteCandidateCleanupChildren(ctx, r, &known)
+				gone, inventoryErr := authority.children(ctx, &known)
 				if inventoryErr != nil {
 					return fail("child closure unknown")
 				}
@@ -580,13 +658,13 @@ func (a *App) cleanupSuiteNativeCandidate(ctx context.Context, r *suiteCandidate
 	}
 	// Reverify the final closure, not a snapshot taken before Agent/Provider
 	// deletion; controller children may have appeared during those requests.
-	if hasTasks {
+	if hasTasks || authority.inventoryCheck != nil {
 		cleanRounds := 0
 		for round := 0; round < suiteCandidateCleanupRounds; round++ {
-			if worker.suiteCandidateCleanupScope(ctx, r.subject) != nil {
+			if worker.suiteCandidateCleanupScopeTarget(ctx, authority.target) != nil {
 				return fail("scope changed or unknown")
 			}
-			gone, inventoryErr := worker.suiteCandidateCleanupChildren(ctx, r, &known)
+			gone, inventoryErr := authority.children(ctx, &known)
 			if inventoryErr != nil {
 				return fail("child closure unknown")
 			}
@@ -606,11 +684,11 @@ func (a *App) cleanupSuiteNativeCandidate(ctx context.Context, r *suiteCandidate
 			return fail("child closure poll bound exhausted")
 		}
 	}
-	if worker.suiteCandidateCleanupScope(ctx, r.subject) != nil {
+	if worker.suiteCandidateCleanupScopeTarget(ctx, authority.target) != nil {
 		return fail("scope changed or unknown")
 	}
 	for _, root := range roots {
-		gone, foreign, readErr := worker.suiteCandidateCleanupPollRoot(ctx, r.subject, root)
+		gone, foreign, readErr := worker.suiteCandidateCleanupPollTarget(ctx, authority.target, root)
 		if foreign {
 			result.ForeignOccupancies = append(result.ForeignOccupancies, root)
 			return fail("owned UID absent; foreign name occupied")
@@ -619,7 +697,10 @@ func (a *App) cleanupSuiteNativeCandidate(ctx context.Context, r *suiteCandidate
 			return fail("final root absence unknown")
 		}
 	}
-	if unknown {
+	if authority.inventoryCheck != nil && authority.inventoryCheck(ctx) != nil {
+		return fail("final inventory or consent set changed")
+	}
+	if authority.unknown {
 		return fail("unknown UID intent remains")
 	}
 	if ctx.Err() != nil {
