@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -131,7 +132,61 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 			t.Fatal("mode refusal reached config/model", flags)
 		}
 	}
-	for _, helper := range [][]string{{"eval", "--help"}, {"__complete", "eval", "--development-host", ""}} {
+	// Plan-only AgentSessions lift from the evaluated package and evidence.
+	layout := filepath.Join(t.TempDir(), "layout")
+	diagnostics.Reset()
+	if err := execute([]string{"push", "--workspace", root, "--evaluation", filepath.Join(dir, "pass.json"), "--to-layout", layout, "suite:v1"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	digest := regexp.MustCompile(`sha256:[0-9a-f]{64}`).FindString(diagnostics.String() + out.String())
+	if digest == "" {
+		t.Fatalf("push did not report its digest: %s", diagnostics.String())
+	}
+	image := "registry.example.invalid/harnessnode@sha256:" + strings.Repeat("e", 64)
+	lift := []string{"lift", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--bindings", binding, "--evidence", filepath.Join(dir, "pass.json")}
+	for _, tc := range []struct {
+		extra []string
+		want  string
+	}{
+		{nil, "plan-only; pass --plan"},
+		{[]string{"--plan", "--to-context", "kind-other"}, "--harness-image refuses --to-context"},
+		{[]string{"--plan", "--inference", "provider:inference"}, "--harness-image refuses --inference"},
+		{[]string{"--plan", "--promote"}, "--harness-image refuses --promote"},
+		{[]string{"--plan", "--bindings", mismatch}, `serves model "other-model" but the suite pins "fixture-model"`},
+	} {
+		if err := execute(append(append([]string{}, lift...), tc.extra...), deps); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("lift %v: %v, want %q", tc.extra, err, tc.want)
+		}
+	}
+	noBindings := []string{"lift", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--evidence", filepath.Join(dir, "pass.json"), "--plan"}
+	if err := execute(noBindings, deps); err == nil || !strings.Contains(err.Error(), "requires --bindings FILE") {
+		t.Fatalf("lift without bindings: %v", err)
+	}
+	out.Reset()
+	if err := execute(append(append([]string{}, lift...), "--plan", "-o", "json"), deps); err != nil {
+		t.Fatal(err)
+	}
+	var plan struct {
+		Runtime       string `json:"runtime"`
+		Gate          string `json:"gate"`
+		AgentSessions struct {
+			HarnessImage  string `json:"harnessImage"`
+			ActorTemplate struct {
+				Metadata struct{ Atespace, Name string }
+			} `json:"actorTemplate"`
+			HarnessRegistration json.RawMessage `json:"harnessRegistration"`
+		} `json:"agentsessions"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &plan); err != nil {
+		t.Fatalf("lift plan is not JSON: %v\n%s", err, out.String())
+	}
+	if plan.Runtime != "agentsessions" || plan.Gate != "plan-only" || plan.AgentSessions.HarnessImage != image || plan.AgentSessions.ActorTemplate.Metadata.Atespace != "demo" || !strings.Contains(string(plan.AgentSessions.HarnessRegistration), plan.AgentSessions.ActorTemplate.Metadata.Name) {
+		t.Fatalf("unexpected lift plan: %s", out.String())
+	}
+	if *loads != 0 || calls.Load() != 1 {
+		t.Fatal("AgentSessions lift plan loaded cluster configuration or reached the model")
+	}
+	for _, helper := range [][]string{{"eval", "--help"}, {"__complete", "eval", "--development-host", ""}, {"lift", "--help"}} {
 		if err := execute(helper, deps); err != nil {
 			t.Fatal(err)
 		}
