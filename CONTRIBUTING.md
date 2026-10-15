@@ -44,7 +44,10 @@ tools/judge, auth, Lift/chat/status or remote lifecycle. Receipt diff refuses
 AgentSessions proof. Runtime-core assertions/llmJudge and all their test groups
 remain retained; native Orka/kagent root eval supports authored llmJudge with an
 explicit endpoint, two threshold-side samples and payload-free declared identity
-proof. AgentSessions judging remains refused. Exact model and
+proof. The fixed modern Chat Completions wire uses max_completion_tokens
+(1024) without a temperature override; judge evidence/configuration binds the
+request style and old judge receipts require fresh evaluation.
+AgentSessions judging remains refused. Exact model and
 file-valued instructions are required; create/push share workspace discovery.
 No runtime/model bootstrap belongs in workspace create.
 

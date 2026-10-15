@@ -12,7 +12,7 @@ func suiteAssertionEvaluatorVersion(kind string) string {
 func suitePassingAssertionDefinition(a agentruntime.EvaluationAssertion) suitePassingAssertion {
 	row := suitePassingAssertion{ID: a.ID, Type: a.Type, DefinitionDigest: agentruntime.EvaluationAssertionDigest(a), EvaluatorVersion: suiteAssertionEvaluatorVersion(a.Type), Verdict: "pass"}
 	if a.Type == "llmJudge" {
-		row.Judge = &agentruntime.EvaluationJudgeEvidence{Model: a.JudgeModel, ModelVersion: a.JudgeVersion, Provenance: "user-declared", EvaluatorDigest: agentruntime.EvaluationJudgeEvaluatorDigest(), MinScore: *a.MinScore}
+		row.Judge = &agentruntime.EvaluationJudgeEvidence{Model: a.JudgeModel, ModelVersion: a.JudgeVersion, Provenance: "user-declared", RequestStyle: agentruntime.EvaluationJudgeRequestStyle, EvaluatorDigest: agentruntime.EvaluationJudgeEvaluatorDigest(), MinScore: *a.MinScore}
 	}
 	return row
 }

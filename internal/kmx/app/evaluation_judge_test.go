@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -36,6 +37,60 @@ func judgeDeadline(t *testing.T) context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	t.Cleanup(cancel)
 	return ctx
+}
+
+func TestEvaluationJudgeStyleIsComparisonIdentity(t *testing.T) {
+	before := &agentruntime.EvaluationJudgeEvidence{RequestStyle: agentruntime.EvaluationJudgeRequestStyle}
+	after := *before
+	after.RequestStyle = "legacy"
+	if evaluationJudgeSameIdentity(before, &after) {
+		t.Fatal("different request styles compared as one judge identity")
+	}
+}
+
+// The rejection body is a sanitized recording from an Azure reasoning deployment.
+func TestEvaluationJudgeModernWireAndRecorded400(t *testing.T) {
+	recorded, err := os.ReadFile("testdata/judge-unsupported-max-tokens.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, reject := range []bool{false, true} {
+		t.Run(fmt.Sprint("reject=", reject), func(t *testing.T) {
+			var payloads [][]byte
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				raw, _ := io.ReadAll(r.Body)
+				payloads = append(payloads, raw)
+				var p map[string]json.RawMessage
+				_ = json.Unmarshal(raw, &p)
+				_, temperature := p["temperature"]
+				_, oldTokens := p["max_tokens"]
+				if reject || temperature || oldTokens || string(p["max_completion_tokens"]) != "1024" {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write(recorded)
+					return
+				}
+				_, _ = io.WriteString(w, judgeEnvelope(`{"score":100,"reasoning":"fixture rubric satisfied"}`))
+			}))
+			defer server.Close()
+			client := &evaluationJudgeClient{baseURL: server.URL, httpClient: server.Client(), out: io.Discard}
+			rows := client.evaluate(judgeDeadline(t), judgeCase(), agentruntime.EvaluationEvidence{Answer: "answer", AnswerAvailable: true})
+			if len(payloads) != 2 || !bytes.Equal(payloads[0], payloads[1]) {
+				t.Fatal("independent requests changed shape or retried/fell back")
+			}
+			if reject {
+				if rows[0].Verdict != agentruntime.EvaluationUnknown || len(rows[0].Judge.Scores) != 0 {
+					t.Fatal("recorded 400 produced evidence")
+				}
+			} else if rows[0].Verdict != agentruntime.EvaluationPass {
+				t.Fatalf("modern request rejected: %s", rows[0].Verdict)
+			}
+			var p map[string]json.RawMessage
+			_ = json.Unmarshal(payloads[0], &p)
+			if len(p) != 4 || p["temperature"] != nil || p["max_tokens"] != nil || string(p["max_completion_tokens"]) != "1024" {
+				t.Fatal("judge request did not use the one modern shape")
+			}
+		})
+	}
 }
 
 func TestEvaluationJudgeConfigurationPreflight(t *testing.T) {
@@ -182,7 +237,7 @@ func TestEvaluationJudgeTwoThresholdSideSamplesAndPromptBoundary(t *testing.T) {
 				var req struct {
 					Model       string                           `json:"model"`
 					Temperature *float64                         `json:"temperature"`
-					MaxTokens   int                              `json:"max_tokens"`
+					MaxTokens   int                              `json:"max_completion_tokens"`
 					Stream      *bool                            `json:"stream"`
 					Messages    []struct{ Role, Content string } `json:"messages"`
 				}
@@ -190,7 +245,7 @@ func TestEvaluationJudgeTwoThresholdSideSamplesAndPromptBoundary(t *testing.T) {
 					t.Error(err)
 					return
 				}
-				if req.Model != "fixture/model" || req.Temperature == nil || *req.Temperature != 0 || req.Stream == nil || *req.Stream || req.MaxTokens != 1024 || len(req.Messages) != 2 {
+				if req.Model != "fixture/model" || req.Temperature != nil || req.Stream == nil || *req.Stream || req.MaxTokens != 1024 || len(req.Messages) != 2 {
 					t.Errorf("wrong request settings: %+v", req)
 					return
 				}

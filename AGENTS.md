@@ -161,12 +161,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   No model/runtime override, subset/content mode or standalone package
   reference is accepted. Authored llmJudge is supported for Orka/kagent with
   explicit --judge-base-url and optional --judge-key-env (environment name only).
-  Two independent temperature-zero scores must agree on the threshold side;
+  The fixed openai-chat-completions-v1 request style uses max_completion_tokens
+  (1024), stream=false and no temperature override, including the pinned AIKit
+  judge. No request-style flag, model inference or error fallback. Two independent
+  scores must agree on the threshold side;
   unavailable/malformed/split results stay unknown. Judgment shares the existing
   case deadline and attribution is rechecked afterward. Root eval discards
   reasoning and omits judge endpoints from recovery commands. Private passing
-  rows bind authored model/version, threshold, policy, endpoint configuration hash
-  and both scores. Text-only receipt wire shape is unchanged; older readers
+  rows bind authored model/version, request style, threshold, policy, endpoint
+  configuration hash and both scores. Old judge rows missing the style require
+  fresh evaluation; text-only receipts remain unchanged. Text-only receipt wire shape is unchanged; older readers
   refuse judge rows. AgentSessions still refuses judges.
   Offline `eval diff` reads strict full-passing native Orka/kagent suite
   evidence only. Old normalized receipts are unreadable. `eval from-sessions`

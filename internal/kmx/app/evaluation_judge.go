@@ -162,7 +162,7 @@ func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase age
 		}
 		row := &rows[i]
 		row.Judge = &agentruntime.EvaluationJudgeEvidence{
-			Model: a.JudgeModel, ModelVersion: a.JudgeVersion, Provenance: "user-declared",
+			Model: a.JudgeModel, ModelVersion: a.JudgeVersion, Provenance: "user-declared", RequestStyle: agentruntime.EvaluationJudgeRequestStyle,
 			EvaluatorDigest:     agentruntime.EvaluationJudgeEvaluatorDigest(),
 			ConfigurationDigest: agentruntime.EvaluationJudgeConfigurationDigest(c.baseURL, a.JudgeModel, a.JudgeVersion), MinScore: *a.MinScore,
 		}
@@ -239,12 +239,11 @@ func evaluationJudgePayload(input, answer string, a agentruntime.EvaluationAsser
 		Content string `json:"content"`
 	}
 	payload, err := json.Marshal(struct {
-		Model       string    `json:"model"`
-		Temperature int       `json:"temperature"`
-		MaxTokens   int       `json:"max_tokens"`
-		Stream      bool      `json:"stream"`
-		Messages    []message `json:"messages"`
-	}{Model: a.JudgeModel, Temperature: 0, MaxTokens: 1024, Stream: false, Messages: []message{{Role: "system", Content: agentruntime.EvaluationJudgePolicy}, {Role: "user", Content: string(data)}}})
+		Model               string    `json:"model"`
+		MaxCompletionTokens int       `json:"max_completion_tokens"`
+		Stream              bool      `json:"stream"`
+		Messages            []message `json:"messages"`
+	}{Model: a.JudgeModel, MaxCompletionTokens: 1024, Stream: false, Messages: []message{{Role: "system", Content: agentruntime.EvaluationJudgePolicy}, {Role: "user", Content: string(data)}}})
 	return payload, err == nil && len(payload) <= evaluationJudgeRequestLimit
 }
 

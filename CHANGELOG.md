@@ -22,6 +22,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+- Use one modern judge request shape (`max_completion_tokens`, no temperature
+  override), also verified against the pinned AIKit/LocalAI image. Judge evidence
+  now binds its request style; older judge receipts require fresh evaluation.
+  No retry, provider inference or request-style flag is added.
+
 ### Fixed
 
 - `kmx local up` works with Helm 4: the Orka release preflight omits the removed
@@ -42,7 +47,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Root `kmx eval` supports authored `llmJudge` assertions on packaged Orka/kagent
   suites with explicit `--judge-base-url` and optional `--judge-key-env`.
-  Two independent temperature-zero samples must agree on the threshold side;
+  Two independent samples must agree on the threshold side;
   unavailable, malformed or split outcomes are unknown and export no passing
   receipt. Judgment shares the existing case deadline, with attribution checked
   afterward. Preflight states the two-request cost and data transfer.

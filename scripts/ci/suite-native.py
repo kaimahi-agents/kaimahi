@@ -23,7 +23,7 @@ import yaml
 JUDGE_BASE_URL = "http://127.0.0.1:18091/v1"
 JUDGE_VERSION = "aikit-qwen3.5-2b@sha256:d838c5eebf533b5b73f67cc7f4984921f87d64d28e4a52d482740b667f46b8b4"
 # Pin policy v1 independently; a new evaluator requires explicit qualification.
-JUDGE_POLICY_DIGEST = "b8f6b1439aaf41a272dff2ac24b5abe5354e9d2b9d22a61ceed124405efddc3e"
+JUDGE_POLICY_DIGEST = "ffaf6895dafe1badb6530853288e1da522aada71f25cac078c96c1831efb48b6"
 
 MARKERS = ("kaimahi.dev/suite", "kaimahi.dev/suite-digest", "kaimahi.dev/suite-member", "kaimahi.dev/suite-renderer",
            "kaimahi.dev/suite-binding-digest", "kaimahi.dev/suite-rendered-digest")
@@ -122,14 +122,15 @@ def verify_cases(rows, files):
                 require(isinstance(scores, list) and len(scores) == 2 and all(type(s) is int and 70 <= s <= 100 for s in scores), "judge-scores")
                 configuration = sha(b"".join(frame(k, v.encode()) for k, v in (
                     ("endpoint", JUDGE_BASE_URL), ("model", definition["judgeModel"]),
-                    ("modelVersion", definition["judgeVersion"]), ("evaluatorDigest", JUDGE_POLICY_DIGEST))))
-                expected_judge = {"model": definition["judgeModel"], "modelVersion": definition["judgeVersion"], "provenance": "user-declared",
+                    ("modelVersion", definition["judgeVersion"]), ("requestStyle", "openai-chat-completions-v1"),
+                    ("evaluatorDigest", JUDGE_POLICY_DIGEST))))
+                expected_judge = {"requestStyle": "openai-chat-completions-v1", "model": definition["judgeModel"], "modelVersion": definition["judgeVersion"], "provenance": "user-declared",
                                   "evaluatorDigest": JUDGE_POLICY_DIGEST, "configurationDigest": configuration, "minScore": 70, "scores": scores}
                 require(evidence == expected_judge, "judge-identity")
                 digest += b"".join(frame(k, v.encode()) for k, v in (
                     ("minScore", "70"), ("judgeModel", definition["judgeModel"]),
                     ("judgeVersion", definition["judgeVersion"]), ("evaluatorDigest", JUDGE_POLICY_DIGEST)))
-                assertion.update(evaluatorVersion="kmx.llm-judge/v1", judge=expected_judge)
+                assertion.update(evaluatorVersion="kmx.llm-judge/v2", judge=expected_judge)
             assertion["definitionDigest"] = sha(digest)
             expected.append(assertion)
         require(row["id"] == case["id"] and row["path"] == "metadata/kmx/eval/" + name and row["caseDigest"] == sha(raw) and
