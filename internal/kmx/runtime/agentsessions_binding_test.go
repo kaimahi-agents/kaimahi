@@ -126,6 +126,57 @@ func TestAgentSessionsBindingDigestIsJCSOfTheDocument(t *testing.T) {
 	}
 }
 
+func TestAgentSessionsBindingStorageLocationAcceptsObjectPrefixes(t *testing.T) {
+	for _, location := range []string{"gs://bucket", "gs://bucket/", "gs://bucket/p", "gs://bucket/p/", "s3://bucket/a/b.c/..d/"} {
+		b := validAgentSessionsBinding()
+		b.APIVersion, b.Kind = AgentSessionsBindingAPIVersion, AgentSessionsBindingKind
+		b.Snapshot.StorageLocation = location
+		if err := ValidateAgentSessionsBinding(b); err != nil {
+			t.Fatalf("%q refused: %v", location, err)
+		}
+	}
+}
+
+func TestAgentSessionsBindingEmptyWorkerSelectorIsOmitted(t *testing.T) {
+	omitted := strings.Replace(validAgentSessionsBindingYAML, "workerSelector:\n    matchLabels:\n        workload: agentsuite-demo-microvm\n", "", 1)
+	if omitted == validAgentSessionsBindingYAML {
+		t.Fatal("fixture has no workerSelector to omit")
+	}
+	want, err := ParseAgentSessionsBinding([]byte(omitted))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDigest, err := AgentSessionsBindingDigest(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEncoded, err := EncodeAgentSessionsBinding(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, doc := range map[string]string{
+		"empty selector":    omitted + "workerSelector: {}\n",
+		"empty matchLabels": omitted + "workerSelector:\n    matchLabels: {}\n",
+	} {
+		b, err := ParseAgentSessionsBinding([]byte(doc))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got, err := AgentSessionsBindingDigest(b); err != nil || got != wantDigest {
+			t.Fatalf("%s: digest %q, %v; want %q", name, got, err, wantDigest)
+		}
+		if got, err := EncodeAgentSessionsBinding(b); err != nil || string(got) != string(wantEncoded) {
+			t.Fatalf("%s: encoded %v\n%s", name, err, got)
+		}
+	}
+	// In-memory callers get the same identity as parsed documents.
+	inMemory := want
+	inMemory.WorkerSelector.MatchLabels = map[string]string{}
+	if got, err := AgentSessionsBindingDigest(inMemory); err != nil || got != wantDigest {
+		t.Fatalf("in-memory empty matchLabels digest %q, %v; want %q", got, err, wantDigest)
+	}
+}
+
 func TestAgentSessionsBindingModelMustMatchSuite(t *testing.T) {
 	b := validAgentSessionsBinding()
 	if err := CheckAgentSessionsBindingModel(b, "fixture-model"); err != nil {
@@ -217,6 +268,13 @@ func TestAgentSessionsBindingValidateFields(t *testing.T) {
 		{"storage scheme", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "/var/snapshots" }, "storageLocation"},
 		{"storage credentials", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "s3://user:pw@bucket/p/" }, "storageLocation"},
 		{"storage query", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket/p/?x=1" }, "storageLocation"},
+		{"storage dot segment", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket/./p/" }, "storageLocation"},
+		{"storage dot-dot segment", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket/p/../q/" }, "storageLocation"},
+		{"storage trailing dot-dot", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket/p/.." }, "storageLocation"},
+		{"storage encoded dot-dot", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket/%2e%2E/p/" }, "storageLocation"},
+		{"storage empty segment", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket/p//q/" }, "storageLocation"},
+		{"storage empty root segment", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket//" }, "storageLocation"},
+		{"storage double trailing slash", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket/p//" }, "storageLocation"},
 		{"storage length", func(b *AgentSessionsBinding) {
 			b.Snapshot.StorageLocation = "gs://bucket/" + strings.Repeat("a", maxAgentSessionsStorageLocation)
 		}, "storageLocation"},

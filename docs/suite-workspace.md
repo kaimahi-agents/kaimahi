@@ -337,9 +337,9 @@ model:
 | `placement.backend` | `substrate` only. |
 | `atespace` | RFC 1123 label. |
 | `sandbox` | `class` `microvm` or `gvisor`; `configName` names the cluster SandboxConfig. |
-| `snapshot` | `fidelity` `MEMORY`, `ROOTFS` (micro-VM only) or `VOLUMES`; `storageLocation` is an object-storage URI without credentials, query or fragment. |
+| `snapshot` | `fidelity` `MEMORY`, `ROOTFS` (micro-VM only) or `VOLUMES`; `storageLocation` is an object-storage URI without credentials, query or fragment, and without empty, `.` or `..` path segments (one trailing `/` is allowed). |
 | `resources` | Optional positive Kubernetes quantities for `cpu` and `memory`. |
-| `workerSelector.matchLabels` | Optional Kubernetes label selector. |
+| `workerSelector.matchLabels` | Optional Kubernetes label selector; an empty `matchLabels` is the same binding (and digest) as an omitted `workerSelector`. |
 | `model` | `name` is the served model; `provider: openai` (OpenAI-compatible); optional HTTP(S) `baseURL`; `secretRef` names the credential Secret and key. |
 
 Parsing is strict: one YAML (or JSON) document, known fields only, no anchors,

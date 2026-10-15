@@ -160,7 +160,7 @@ func ParseAgentSessionsBinding(data []byte) (AgentSessionsBinding, error) {
 	if err := binding.validate(); err != nil {
 		return AgentSessionsBinding{}, fmt.Errorf("AgentSessions binding: %w", err)
 	}
-	return binding, nil
+	return binding.normalized(), nil
 }
 
 // EncodeAgentSessionsBinding deterministically writes a binding document. Only
@@ -175,7 +175,7 @@ func EncodeAgentSessionsBinding(binding AgentSessionsBinding) ([]byte, error) {
 	if err := binding.validate(); err != nil {
 		return nil, fmt.Errorf("AgentSessions binding: %w", err)
 	}
-	encoded, err := yaml.Marshal(binding)
+	encoded, err := yaml.Marshal(binding.normalized())
 	if err != nil {
 		return nil, fmt.Errorf("encode AgentSessions binding: %w", err)
 	}
@@ -189,11 +189,12 @@ func ValidateAgentSessionsBinding(binding AgentSessionsBinding) error { return b
 // AgentSessionsBindingDigest is "sha256:" plus the SHA-256 of the RFC 8785
 // (JCS) form of the binding's JSON mapping. It covers decoded content only,
 // so YAML comments, key order and the JSON or YAML spelling do not change it.
+// An empty workerSelector.matchLabels is the same binding as an omitted one.
 func AgentSessionsBindingDigest(binding AgentSessionsBinding) (string, error) {
 	if err := binding.validate(); err != nil {
 		return "", fmt.Errorf("AgentSessions binding: %w", err)
 	}
-	raw, err := json.Marshal(binding)
+	raw, err := json.Marshal(binding.normalized())
 	if err != nil {
 		return "", fmt.Errorf("encode AgentSessions binding: %w", err)
 	}
@@ -201,6 +202,15 @@ func AgentSessionsBindingDigest(binding AgentSessionsBinding) (string, error) {
 }
 
 var agentSessionsURIScheme = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
+
+// normalized gives equivalent spellings one form: an empty matchLabels selects
+// nothing, so it is the omitted selector.
+func (b AgentSessionsBinding) normalized() AgentSessionsBinding {
+	if len(b.WorkerSelector.MatchLabels) == 0 {
+		b.WorkerSelector.MatchLabels = nil
+	}
+	return b
+}
 
 func (b AgentSessionsBinding) validate() error {
 	fields := []struct{ path, value string }{
@@ -320,9 +330,11 @@ func (b AgentSessionsBinding) validate() error {
 }
 
 // validateAgentSessionsStorageLocation accepts an object-storage base URI
-// (for example gs://bucket/prefix/) and never echoes it.
+// (for example gs://bucket/prefix/) and never echoes it. Object keys are not
+// filesystem paths, so ".", ".." and empty segments are refused rather than
+// resolved; one trailing slash is allowed.
 func validateAgentSessionsStorageLocation(location string) error {
-	const msg = "snapshot.storageLocation must be an object-storage URI with a scheme and bucket, and no credentials, query or fragment"
+	const msg = "snapshot.storageLocation must be an object-storage URI with a scheme and bucket, no credentials, query or fragment, and no empty, \".\" or \"..\" path segments"
 	if location == "" {
 		return fmt.Errorf("snapshot.storageLocation is required")
 	}
@@ -332,6 +344,14 @@ func validateAgentSessionsStorageLocation(location string) error {
 	u, err := url.Parse(location)
 	if err != nil || !agentSessionsURIScheme.MatchString(u.Scheme) || u.Host == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(location, "#") {
 		return fmt.Errorf("%s", msg)
+	}
+	// u.Path is decoded, so percent-encoded dot segments are refused too.
+	if u.Path != "" && u.Path != "/" {
+		for _, segment := range strings.Split(strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), "/"), "/") {
+			if segment == "" || segment == "." || segment == ".." {
+				return fmt.Errorf("%s", msg)
+			}
+		}
 	}
 	return nil
 }

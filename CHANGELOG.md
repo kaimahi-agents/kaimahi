@@ -105,6 +105,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   binding for AgentSessions (target, substrate placement, atespace, sandbox,
   snapshot, resources, worker selector, model name/provider/baseURL/Secret ref).
   The suite pins the model; eval and Lift refuse a binding serving another one.
+  `snapshot.storageLocation` refuses empty, `.` and `..` path segments; an empty
+  `workerSelector.matchLabels` has the same digest as an omitted selector.
 - Plan-only AgentSessions Lift: `kmx lift REF@DIGEST --harness-image IMAGE@sha256:…
   --bindings FILE --evidence FILE --plan` renders a substrate ActorTemplate and
   HarnessRegistration offline from full-passing AgentSessions evidence. No
