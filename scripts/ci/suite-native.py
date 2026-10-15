@@ -49,7 +49,8 @@ def native_digest(domain, value):
 
 
 def fingerprint(files):
-    return "sha256:" + sha(canonical({"renderer": "kmx.native-orka/v2", "files": {p: "sha256:" + sha(b) for p, b in files.items()}}))
+    return "sha256:" + sha(canonical({"renderer": "kmx.native-orka/v2", "layout": "kmx.native-suite-evals/v2",
+                                      "files": {p: "sha256:" + sha(b) for p, b in files.items()}}))
 
 
 def require(condition, code):
@@ -196,12 +197,29 @@ def native_cases(public):
     return dict(sorted(cases.items()))
 
 
-def verify_cases(rows, files):
+def case_definitions(case):
+    return [{"id": "expectContains." + str(i), "type": "contains", "value": value}
+            for i, value in enumerate(case.get("expectContains", []))] + case.get("assertions", [])
+
+
+def packaged_case(raw):
+    # Mirrors KMX case packaging.
+    case = yaml.safe_load(raw)
+    doc = {"schemaVersion": "1.0.0-draft", "mediaType": "application/vnd.agentsuite.eval.case.v1+json",
+           "id": case["id"], "input": case["input"], "assertions": case_definitions(case)}
+    doc.update({k: case[k] for k in ("runs", "minPasses") if k in case})
+    return canonical(doc)
+
+
+def packaged_case_path(member, raw):
+    return "evals/" + member + "/cases/" + yaml.safe_load(raw)["id"] + ".json"
+
+
+def verify_cases(rows, files, member):
     require(len(rows) == len(files) and bool(rows), "case-coverage")
     for row, (name, raw) in zip(rows, sorted(files.items())):
         case = yaml.safe_load(raw)
-        definitions = [{"id": "expectContains." + str(i), "type": "contains", "value": value}
-                       for i, value in enumerate(case.get("expectContains", []))] + case.get("assertions", [])
+        definitions = case_definitions(case)
         expected = []
         require(len(row["assertions"]) == len(definitions), "case-assertions")
         for i, definition in enumerate(definitions):
@@ -233,7 +251,7 @@ def verify_cases(rows, files):
                 assertion.update(evaluatorVersion="kmx.llm-judge/v2", judge=expected_judge)
             assertion["definitionDigest"] = sha(digest)
             expected.append(assertion)
-        require(row["id"] == case["id"] and row["path"] == "metadata/kmx/eval/" + name and row["caseDigest"] == sha(raw) and
+        require(row["id"] == case["id"] and row["path"] == packaged_case_path(member, raw) and row["caseDigest"] == sha(packaged_case(raw)) and
                 row["inputDigest"] == sha(case["input"].encode()) and row["verdict"] == "pass" and row["assertions"] == expected, "case-metadata")
 
 
@@ -348,8 +366,12 @@ def verify_transfer(layout, extracted, subject, cases):
     require(packed == files, "transfer-content")
     graph = json.loads(files["agentsuite.json"])
     require("sha256:" + sha(canonical(graph)) == subject["GraphDigest"], "transfer-G")
-    for name, raw in cases.items():
-        require(files["metadata/kmx/eval/" + name] == raw, "transfer-cases")
+    member = subject["Member"]
+    index = json.loads(files["evals/" + member + "/index.json"])
+    require([ref["path"] for ref in index["cases"]] == [packaged_case_path(member, raw) for raw in cases.values()], "transfer-case-order")
+    for raw in cases.values():
+        require(files[packaged_case_path(member, raw)] == packaged_case(raw), "transfer-cases")
+    require(not any(name.startswith("metadata/kmx/eval/") for name in files), "transfer-private-cases")
     return graph
 
 
@@ -963,8 +985,9 @@ class Qualification:
                 receipt["sourceFingerprint"] == fingerprint(original) and snapshot(workspace) == original, "receipt-source")
         subject = receipt["subject"]
         require(subject["Member"] == member and subject["Model"] == "qwen-3.5-2b" and subject["RequiredImages"] == [], "receipt-member")
-        verify_cases(receipt["cases"], cases)
-        require(receipt["casesDigest"] == sha(b"".join(frame("eval/" + n, b) for n, b in sorted(cases.items()))), "case-set")
+        verify_cases(receipt["cases"], cases, member)
+        packaged = sorted((packaged_case_path(member, raw).removeprefix("evals/"), packaged_case(raw)) for raw in cases.values())
+        require(receipt["casesDigest"] == sha(b"".join(frame("eval/" + n, b) for n, b in packaged)), "case-set")
         self.phase = "historical-proof"
         self.audit.verify_cleanup_order(self.raw_frames())
         frames = self.frames()
@@ -979,7 +1002,9 @@ class Qualification:
         verify_transfer(layout, extracted, subject, cases)
         before = snapshot(layout)
         case_path = workspace / "eval" / sorted(cases)[0]
-        case_path.write_bytes(case_path.read_bytes() + b"\n")
+        changed_case = yaml.safe_load(cases[case_path.name])
+        changed_case["input"] += " Answer in one word."
+        case_path.write_text(yaml.safe_dump(changed_case))
         rejected = self.cli("push", "--workspace", workspace, "--evaluation", receipt_path, "--to-layout", layout, reference, success=False)
         verify_refusal(rejected.returncode, rejected.stderr, [], "expected publication identity")
         require(snapshot(layout) == before, "destination-changed")
@@ -987,7 +1012,8 @@ class Qualification:
         self.cli("push", "--unevaluated", "--workspace", workspace, "--to-layout", changed_layout, reference)
         self.cli("suite", "pull", "--from-layout", changed_layout, "--output", changed, reference)
         changed_s = json.loads((changed_layout / "index.json").read_bytes())["manifests"][0]["digest"]
-        require(changed_s != subject["SuiteDigest"] and sha(canonical(json.loads((changed / "agentsuite.json").read_bytes()))) == subject["GraphDigest"][7:], "mutation-S-not-G")
+        # Cases are in the graph, so a case edit changes S and G.
+        require(changed_s != subject["SuiteDigest"] and sha(canonical(json.loads((changed / "agentsuite.json").read_bytes()))) != subject["GraphDigest"][7:], "mutation-S-and-G")
         case_path.write_bytes(cases[case_path.name])
         lift_results = self.lift_qualification(workspace, layout, changed_layout, changed_s, receipt_path, receipt, cases)
         lift_results["candidateChildrenAbsent"] = children

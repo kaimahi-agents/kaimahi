@@ -29,9 +29,11 @@ const (
 	artifactTarBytes        = 10 << 20
 	artifactFileBytes       = 1 << 20
 	artifactContentBytes    = 8 << 20
-	artifactFilesLimit      = 135
 	artifactEntriesLimit    = 256
 )
+
+// MaxArtifactFiles fits 7 native files, 1 eval index and 128 cases.
+const MaxArtifactFiles = 136
 
 // Artifact retains verified original packaged bytes, not source or a re-archive.
 // The limits are for the initial one-member declarative execution profile.
@@ -281,7 +283,7 @@ func artifactFiles(ctx context.Context, compressed []byte) (map[string][]byte, e
 				return nil, ErrArtifact
 			}
 		case tar.TypeReg:
-			if len(files) >= artifactFilesLimit || h.Size < 0 || h.Size > artifactFileBytes || h.Size > artifactContentBytes-total {
+			if len(files) >= MaxArtifactFiles || h.Size < 0 || h.Size > artifactFileBytes || h.Size > artifactContentBytes-total {
 				return nil, ErrArtifact
 			}
 			data, err := io.ReadAll(reader)

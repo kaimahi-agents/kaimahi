@@ -1,12 +1,15 @@
 package workspace_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -62,7 +65,80 @@ func extract(t *testing.T, p *workspace.Prepared) string {
 	return out
 }
 
-// Losing exact authored bytes or seeding an invalid case breaks offline creation.
+// rebindEvals edits evals and recomputes public digests so only native checks can refuse.
+func rebindEvals(t *testing.T, out string, mutate func(index *spec.EvaluationIndex, firstCase map[string]any)) {
+	t.Helper()
+	indexName := filepath.Join(out, "evals/greeter/index.json")
+	var index spec.EvaluationIndex
+	if err := spec.Unmarshal(readFile(t, indexName), &index); err != nil {
+		t.Fatal(err)
+	}
+	caseName := filepath.Join(out, index.Cases[0].Path)
+	decoder := json.NewDecoder(bytes.NewReader(readFile(t, caseName)))
+	decoder.UseNumber()
+	var first map[string]any
+	if err := decoder.Decode(&first); err != nil {
+		t.Fatal(err)
+	}
+	mutate(&index, first)
+	cb, err := spec.Marshal(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, caseName, string(cb))
+	index.Cases[0].Descriptor.Size = int64(len(cb))
+	if index.Cases[0].Descriptor.Digest, err = spec.Digest(cb); err != nil {
+		t.Fatal(err)
+	}
+	ib, err := spec.Marshal(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, indexName, string(ib))
+	rebindAgent(t, out, func(agent *spec.Agent) {
+		agent.Evals[0].Descriptor.Size = int64(len(ib))
+		if agent.Evals[0].Descriptor.Digest, err = spec.Digest(ib); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// removeEvals leaves a public-valid suite whose member has no evaluations.
+func removeEvals(t *testing.T, out string) {
+	t.Helper()
+	if err := os.RemoveAll(filepath.Join(out, "evals")); err != nil {
+		t.Fatal(err)
+	}
+	rebindAgent(t, out, func(agent *spec.Agent) { agent.Evals = nil })
+}
+
+func rebindAgent(t *testing.T, out string, mutate func(*spec.Agent)) {
+	t.Helper()
+	agentName := filepath.Join(out, "agents/greeter.json")
+	var agent spec.Agent
+	if err := spec.Unmarshal(readFile(t, agentName), &agent); err != nil {
+		t.Fatal(err)
+	}
+	mutate(&agent)
+	mb, err := spec.Marshal(agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, agentName, string(mb))
+	var suite spec.Suite
+	if err := spec.Unmarshal(readFile(t, filepath.Join(out, "agentsuite.json")), &suite); err != nil {
+		t.Fatal(err)
+	}
+	suite.Agents[0].Descriptor.Size = int64(len(mb))
+	if suite.Agents[0].Descriptor.Digest, err = spec.Digest(mb); err != nil {
+		t.Fatal(err)
+	}
+	sb, err := spec.Marshal(suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(out, "agentsuite.json"), string(sb))
+}
 func TestCreateOfflineExactInstructionsAndValidCase(t *testing.T) {
 	root, _ := createWorkspace(t)
 	if got := string(readFile(t, filepath.Join(root, "agents/greeter/instructions.md"))); got != "Answer briefly.\n\nExact whitespace.\n" {

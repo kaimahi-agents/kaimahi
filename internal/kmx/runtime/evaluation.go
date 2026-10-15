@@ -142,34 +142,54 @@ func parseEvaluationCase(data []byte, reference bool) (EvaluationCase, error) {
 	if err := strict.Decode(&c); err != nil {
 		return EvaluationCase{}, fmt.Errorf("evaluation case: %w", err)
 	}
+	if err := validateEvaluationCase(c, reference); err != nil {
+		return EvaluationCase{}, err
+	}
+	return c, nil
+}
+
+// ValidateEvaluationCase checks a case that did not come from YAML.
+func ValidateEvaluationCase(c EvaluationCase) error {
+	for _, value := range append([]string{c.ID, c.Input}, c.ExpectContains...) {
+		if !utf8.ValidString(value) {
+			return fmt.Errorf("evaluation case must be valid UTF-8")
+		}
+		if err := refuseEvaluationSecretShape(value); err != nil {
+			return err
+		}
+	}
+	return validateEvaluationCase(c, false)
+}
+
+func validateEvaluationCase(c EvaluationCase, reference bool) error {
 	if c.MinPasses != nil && c.Runs == nil {
-		return EvaluationCase{}, fmt.Errorf("evaluation minPasses requires runs")
+		return fmt.Errorf("evaluation minPasses requires runs")
 	}
 	runs, passes := c.RunPolicy()
 	if runs < 1 || runs > EvaluationMaxRuns || passes < 1 || passes > runs {
-		return EvaluationCase{}, fmt.Errorf("evaluation policy requires 1 <= minPasses <= runs <= %d", EvaluationMaxRuns)
+		return fmt.Errorf("evaluation policy requires 1 <= minPasses <= runs <= %d", EvaluationMaxRuns)
 	}
 	if !evaluationCaseIDRE.MatchString(c.ID) {
-		return EvaluationCase{}, fmt.Errorf("evaluation case id must be 1-63 letters, digits, '.', '_' or '-', starting with a letter or digit")
+		return fmt.Errorf("evaluation case id must be 1-63 letters, digits, '.', '_' or '-', starting with a letter or digit")
 	}
 	if !reference && strings.TrimSpace(c.Input) == "" {
-		return EvaluationCase{}, fmt.Errorf("evaluation case %s: input is required", c.ID)
+		return fmt.Errorf("evaluation case %s: input is required", c.ID)
 	}
 	if len(c.ExpectContains) == 0 && len(c.Assertions) == 0 {
-		return EvaluationCase{}, fmt.Errorf("evaluation case %s: at least one expectContains string or assertion is required", c.ID)
+		return fmt.Errorf("evaluation case %s: at least one expectContains string or assertion is required", c.ID)
 	}
 	if len(c.ExpectContains)+len(c.Assertions) > EvaluationMaxAssertions {
-		return EvaluationCase{}, fmt.Errorf("evaluation case %s: at most %d assertions are allowed", c.ID, EvaluationMaxAssertions)
+		return fmt.Errorf("evaluation case %s: at most %d assertions are allowed", c.ID, EvaluationMaxAssertions)
 	}
 	for i, expected := range c.ExpectContains {
 		if strings.TrimSpace(expected) == "" || strings.IndexFunc(expected, unicode.IsControl) >= 0 {
-			return EvaluationCase{}, fmt.Errorf("evaluation case %s: expectContains[%d] must be a nonblank single-line string", c.ID, i)
+			return fmt.Errorf("evaluation case %s: expectContains[%d] must be a nonblank single-line string", c.ID, i)
 		}
 	}
 	if err := ValidateEvaluationAssertions(c.Assertions); err != nil {
-		return EvaluationCase{}, fmt.Errorf("evaluation case %s: %w", c.ID, err)
+		return fmt.Errorf("evaluation case %s: %w", c.ID, err)
 	}
-	return c, nil
+	return nil
 }
 
 // EvaluationCasesDigest identifies a set of case files: each file's exact

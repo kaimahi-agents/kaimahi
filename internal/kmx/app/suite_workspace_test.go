@@ -92,8 +92,8 @@ func TestWorkspacePushHandlerDiscoveryAndPublicationIdentity(t *testing.T) {
 		}
 		if !edit {
 			firstGraph = native.GraphDigest
-		} else if prepared.Descriptor.Digest == before.Descriptor.Digest || native.GraphDigest != firstGraph {
-			t.Fatal("case-only edit must change OCI identity while preserving the public graph")
+		} else if prepared.Descriptor.Digest == before.Descriptor.Digest || native.GraphDigest == firstGraph {
+			t.Fatal("case-only edit must change both OCI identity and the public graph that binds cases")
 		}
 		out.Reset()
 		diagnostics.Reset()

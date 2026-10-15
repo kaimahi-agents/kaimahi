@@ -294,7 +294,7 @@ func verify(ctx context.Context, p *Prepared) (map[string][]byte, error) {
 		if d.IsDir() {
 			return nil
 		}
-		if len(files) >= 135 {
+		if len(files) >= suiteoras.MaxArtifactFiles {
 			return errors.New("native artifact exceeds file count limit")
 		}
 		b, err := readBounded(extracted, name)
