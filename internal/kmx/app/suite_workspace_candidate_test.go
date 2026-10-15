@@ -113,6 +113,9 @@ func TestCandidateCorePrivateLifecycleOrderingAndCancellation(t *testing.T) {
 				if err == nil || !os.IsNotExist(statErr) || strings.Contains(err.Error(), nativeCanary) {
 					t.Fatal("unsafe failure export/diagnostic", err, statErr)
 				}
+				if stage == "cleanup permission" && (!errors.Is(err, errSuiteCandidateCleanup) || !strings.Contains(err.Error(), "delete conflict or acknowledgement unknown")) {
+					t.Fatal("safe cleanup classification lost", err)
+				}
 				if strings.HasPrefix(stage, "cancel") && (!errors.Is(err, context.Canceled) || len(state.objects) != 0) {
 					t.Fatal("caller cancellation lost cleanup", err, state.objects)
 				}

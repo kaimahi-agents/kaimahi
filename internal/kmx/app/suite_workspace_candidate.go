@@ -13,9 +13,9 @@ import (
 // Keep payload-bearing causes available to errors.Is without exposing API/model
 // responses. This run-local diagnostic is neither recovery nor cleanup authority.
 type suiteCandidateOutcome struct {
-	phase, caseID    string
-	effects, allGone bool
-	cause            error
+	phase, caseID, cleanupReason string
+	effects, allGone             bool
+	cause                        error
 }
 
 func (e *suiteCandidateOutcome) Unwrap() error { return e.cause }
@@ -34,6 +34,9 @@ func (e *suiteCandidateOutcome) Error() string {
 		cleanup = "candidate cleanup incomplete; known resources may remain"
 	}
 	message := fmt.Sprintf("%s at %s; %s", verdict, e.phase, cleanup)
+	if !e.allGone && e.cleanupReason != "" {
+		message += "; " + e.cleanupReason
+	}
 	if e.caseID != "" {
 		message += fmt.Sprintf("; case %q", e.caseID)
 	}
@@ -176,11 +179,12 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), suiteCandidateCleanupBudget)
 	cleanupWorker := worker.withRunContext(cleanupCtx)
 	result, cleanupErr := cleanupWorker.cleanupSuiteNativeCandidate(cleanupCtx, run)
+	cleanupContextErr := cleanupCtx.Err() // Preserve deadline identity before releasing the context.
 	cancel()
-	outcome.allGone = result.AllGone
+	outcome.allGone, outcome.cleanupReason = result.AllGone, result.Reason
 	if cleanupErr != nil || !result.AllGone {
 		outcome.phase = "cleanup"
-		return errors.Join(executionErr, cleanupErr, errSuiteCandidateCleanup)
+		return errors.Join(executionErr, cleanupErr, cleanupContextErr, errSuiteCandidateCleanup)
 	}
 	if executionErr != nil {
 		return executionErr
