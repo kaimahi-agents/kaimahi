@@ -217,10 +217,18 @@ evaluation. Lift does not update, adopt, run a model or roll back partial
 creation. Standalone registry-package evaluation remains unavailable.
 
 Pinned AgentSessions chat is a separate offline packaging and
-`eval --development-host FILE` route, with no cluster selectors. It requires
-an explicit literal-loopback, unauthenticated development host and discloses
-cleartext journal retention. Its full-pass evidence supports evaluated push,
-not Lift or receipt diff. See the [workspace guide](suite-workspace.md).
+`eval --development-host FILE --bindings FILE` route, with no cluster selectors.
+It requires an explicit literal-loopback, unauthenticated development host,
+discloses cleartext journal retention, and requires an
+[`AgentSessionsBinding`](suite-workspace.md#agentsessionsbinding) whose
+`model.name` equals the packaged model; evidence records the binding digest.
+Its full-pass evidence supports evaluated push and a plan-only Lift:
+`kmx lift REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST --bindings FILE --evidence FILE --plan`
+renders a substrate ActorTemplate and HarnessRegistration offline, and nothing
+applies them. Receipt diff refuses the evidence. AgentSessions receipts and
+managed proofs recorded before evaluations carried a binding digest are not
+eligible for push or Lift; evaluate again with `--bindings FILE`. See the
+[workspace guide](suite-workspace.md#agentsessions-lift-plan).
 
 Replace removed commands as follows:
 

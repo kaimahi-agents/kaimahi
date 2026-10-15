@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 	"github.com/spf13/cobra"
@@ -39,12 +41,15 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			"with the packaged model declaration (Orka: Ready Provider; kagent: rendered ModelConfig). Evidence proves the source only, not destination evaluation or authenticated approval.\n" +
 			"Kagent creates new ModelConfig/Agent only; occupied names always refuse. Orka may reuse exact evaluated UID/generation/spec. Never update, adopt or retry ambiguous writes.\n" +
 			"Created/recreated resources need fresh evaluation before later receipt-bound reuse. Partial resources may remain; readiness is not execution.\n" +
-			"--plan is GET-only: no mutation guard, admission, writes, Tasks or placement records. JSON reports contain identities, never prompts or credentials.",
+			"--plan is GET-only: no mutation guard, admission, writes, Tasks or placement records. JSON reports contain identities, never prompts or credentials.\n" +
+			"Packaged AgentSessions is plan-only: --harness-image NAME@sha256:<digest> --bindings FILE (AgentSessionsBinding) --evidence FILE --plan renders a substrate ActorTemplate and HarnessRegistration offline.\n" +
+			"The binding's model.name must equal the packaged model; the evidence's recorded binding may name another environment serving the same model. No cluster configuration, substrate or host calls, and no apply.",
 		Example: "  kmx lift --to prod\n  kmx lift --to prod --plan\n" +
 			"  kmx lift registry.example/suite@sha256:<digest> --to prod --evidence ../private/pass.json --promote --plan\n" +
 			"  kmx lift registry.example/suite@sha256:<digest> --to-context prod --inference provider:inference --evidence ../private/pass.json --promote --plan\n" +
-			"  kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo --inference provider:inference --evidence ../private/pass.json --promote -o json",
-		Args: usageArgs(0, 1, "kmx lift --to NAME | kmx lift <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--plan]"),
+			"  kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo --inference provider:inference --evidence ../private/pass.json --promote -o json\n" +
+			"  kmx lift suite@sha256:<digest> --from-layout ./oci --harness-image registry.example/harnessnode@sha256:<digest> --bindings binding.yaml --evidence ../private/pass.json --plan -o json",
+		Args: usageArgs(0, 1, "kmx lift --to NAME | kmx lift <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--plan] | kmx lift <ref>@<digest> --harness-image IMAGE --bindings FILE --evidence FILE --plan"),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateContainerEngineFlag(cmd, args); err != nil {
 				return err
@@ -61,7 +66,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 				return fmt.Errorf("lift output must be text or json")
 			}
 			if len(args) == 0 {
-				for _, name := range []string{"evidence", "from-layout", "bindings"} {
+				for _, name := range []string{"evidence", "from-layout", "bindings", "harness-image"} {
 					if cmd.Flags().Changed(name) {
 						return fmt.Errorf("workspace lift refuses --%s; use explicit digest Lift", name)
 					}
@@ -81,6 +86,27 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			}
 			if !cmd.Flags().Changed("evidence") {
 				return fmt.Errorf("%w: explicit-reference lift requires --evidence FILE", app.ErrReleaseLift)
+			}
+			if cmd.Flags().Changed("harness-image") {
+				if strings.TrimSpace(opt.HarnessImage) == "" {
+					return fmt.Errorf("lift requires non-empty --harness-image")
+				}
+				if !planOnly {
+					return fmt.Errorf("AgentSessions lift is plan-only; pass --plan (no substrate or host writes are implemented)")
+				}
+				for _, name := range []string{"to", "to-context", "to-namespace", "inference", "promote"} {
+					if cmd.Flag(name).Changed {
+						return fmt.Errorf("--harness-image refuses --%s; AgentSessions placement comes from --bindings", name)
+					}
+				}
+				if !cmd.Flags().Changed("bindings") {
+					return fmt.Errorf("--harness-image requires --bindings FILE (AgentSessionsBinding)")
+				}
+				if _, err := agentsessions.HarnessImageDigest(opt.HarnessImage); err != nil {
+					return fmt.Errorf("--harness-image: %w", err)
+				}
+				opt.Reference, opt.ToNamespace = args[0], ""
+				return app.ValidateReleaseLiftOptions(opt)
 			}
 			opt.Reference = args[0]
 			if !cmd.Flags().Changed("to-namespace") {
@@ -122,6 +148,9 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			if opt.HarnessImage != "" {
+				return runAgentSessionsLiftPlan(ctx, cmd, opt, output)
+			}
 			if err := displayDestinationSelection(cmd, selection); err != nil {
 				return err
 			}
@@ -187,7 +216,8 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.ToContext, "to-context", "", "explicit destination kubeconfig context")
 	cmd.Flags().StringVar(&opt.ToNamespace, "to-namespace", app.OrkaNamespace, "destination namespace")
 	cmd.Flags().StringVar(&opt.Inference, "inference", "", "existing Ready inference Provider, as provider:NAME")
-	cmd.Flags().StringVar(&opt.Bindings, "bindings", "", "author-owned KagentBindings file for the packaged kagent runtime")
+	cmd.Flags().StringVar(&opt.Bindings, "bindings", "", "author-owned KagentBindings (kagent) or AgentSessionsBinding (agentsessions, with --harness-image) file")
+	cmd.Flags().StringVar(&opt.HarnessImage, "harness-image", "", "digest-pinned AgentSessions harnessnode image; plan-only AgentSessions render (requires --plan and --bindings)")
 	_ = cmd.MarkFlagFilename("bindings")
 	cmd.Flags().StringVar(&opt.Evidence, "evidence", "", "explicit private full-passing native evidence file")
 	cmd.Flags().StringVar(&opt.FromLayout, "from-layout", "", "read exact digest from a local OCI directory")
@@ -205,4 +235,34 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	_ = cmd.MarkFlagDirname("from-layout")
 	_ = cmd.MarkFlagFilename("evidence")
 	return cmd
+}
+
+// runAgentSessionsLiftPlan renders the plan-only AgentSessions lift. It loads
+// no cluster configuration and makes no substrate or host calls.
+func runAgentSessionsLiftPlan(ctx context.Context, cmd *cobra.Command, opt app.ReleaseLiftOptions, output string) error {
+	prepared, err := app.PrepareAgentSessionsReleaseLift(ctx, opt)
+	if err != nil {
+		return err
+	}
+	summary := prepared.Summary()
+	if summary.AgentSessions == nil {
+		return app.ErrReleaseLift
+	}
+	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Runtime: %s (from suite %s, evaluated on an operator-observed development host)\nPlan-only: no substrate or AgentSessions host writes.\n", summary.Runtime, summary.SuiteDigest); err != nil {
+		return err
+	}
+	if output == "json" {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(summary)
+	}
+	s := summary.AgentSessions
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Plan: %s\nSuite: %s\nMember: %s\nModel: %s\nBinding: %s\nEvidence binding: %s\nAtespace: %s\nGate: %s\n", summary.PlanDigest, summary.SuiteDigest, summary.Member, summary.Model, summary.BindingDigest, s.EvidenceBindingDigest, s.ActorTemplate.Metadata.Atespace, summary.Gate); err != nil {
+		return err
+	}
+	for _, r := range summary.Resources {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s/%s: %s\n", r.Kind, r.Name, r.Action); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), "Rendered documents: -o json")
+	return err
 }
