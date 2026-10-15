@@ -13,9 +13,13 @@ func TestMarshalProducesCanonicalJSON(t *testing.T) {
 		Name:          "example",
 		Agents:        []ManifestRef{},
 		ToolProviderCatalog: ManifestRef{
-			ID:     "catalog",
-			Path:   "tool-providers/catalog.json",
-			Digest: strings.Repeat("a", 64),
+			ID:   "catalog",
+			Path: "tool-providers/catalog.json",
+			Descriptor: Descriptor{
+				MediaType: MediaTypeToolProviderCatalog,
+				Digest:    strings.Repeat("a", 64),
+				Size:      2,
+			},
 		},
 		Compositions:  []CompositionRef{},
 		BuildProfiles: []ManifestRef{},

@@ -368,6 +368,28 @@ func canonicalDigest(data []byte) (string, error) {
 	return Digest(data)
 }
 
+// canonicalSize returns the byte length of the JCS-canonical representation
+// of data, describing the same canonical bytes as canonicalDigest.
+func canonicalSize(data []byte) (int64, error) {
+	canonical, err := jcs.Transform(data)
+	if err != nil {
+		return 0, fmt.Errorf("canonicalize JSON: %w", err)
+	}
+	return int64(len(canonical)), nil
+}
+
+// matchesCanonicalDescriptor reports whether descriptor's digest and size
+// both describe the JCS-canonical representation of data, so a consumer
+// cannot pair a mismatched digest/size against the same referenced content.
+func matchesCanonicalDescriptor(data []byte, descriptor Descriptor) bool {
+	digest, err := canonicalDigest(data)
+	if err != nil || digest != descriptor.Digest {
+		return false
+	}
+	size, err := canonicalSize(data)
+	return err == nil && size == descriptor.Size
+}
+
 func digestBytes(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])

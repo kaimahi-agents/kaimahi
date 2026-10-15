@@ -10,7 +10,11 @@
       "name": "get_resources",
       "inputSchema": {
         "path": "schemas/kubernetes/get-resources-input.json",
-        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "descriptor": {
+          "mediaType": "application/schema+json",
+          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 1
+        }
       }
     }
   ],

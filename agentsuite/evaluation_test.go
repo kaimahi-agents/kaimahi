@@ -64,14 +64,14 @@ func TestEmbeddedEvaluationsRejectInvalidGraph(t *testing.T) {
 		{"case too large", func(_ *testing.T, _ string, index *EvaluationIndex) { index.Limits.MaxCaseBytes = 1 }, "maxCaseBytes"},
 		{"duplicate reference", func(_ *testing.T, _ string, index *EvaluationIndex) { index.Cases[1] = index.Cases[0] }, "duplicate evaluation case"},
 		{"case digest", func(_ *testing.T, _ string, index *EvaluationIndex) {
-			index.Cases[0].Digest = "sha256:" + strings.Repeat("0", 64)
+			index.Cases[0].Descriptor.Digest = "sha256:" + strings.Repeat("0", 64)
 		}, "digest mismatch"},
 		{"cross agent path", func(_ *testing.T, _ string, index *EvaluationIndex) {
 			index.Cases[0].Path = "evals/reviewer/cases/capital.json"
 		}, "owning agent"},
 		{"duplicate ids", func(t *testing.T, root string, index *EvaluationIndex) {
 			data := evaluationFixture(t, "capital")
-			index.Cases[1].Digest = mustWriteJSONBytes(t, root, index.Cases[1].Path, data)
+			index.Cases[1].Descriptor = mustWriteJSONBytes(t, root, index.Cases[1].Path, MediaTypeEvaluationCase, data)
 		}, "id is invalid or duplicated"},
 		{"missing case", func(t *testing.T, root string, index *EvaluationIndex) {
 			if err := os.Remove(filepath.Join(root, index.Cases[0].Path)); err != nil {
@@ -111,7 +111,7 @@ func TestEmbeddedEvaluationAgentBinding(t *testing.T) {
 			return []FileRef{ref}
 		}, "eval index must be"},
 		{"bad index digest", func(ref FileRef) any {
-			ref.Digest = "sha256:" + strings.Repeat("0", 64)
+			ref.Descriptor.Digest = "sha256:" + strings.Repeat("0", 64)
 			return []FileRef{ref}
 		}, "digest mismatch"},
 		{"multiple indexes", func(ref FileRef) any { return []FileRef{ref, ref} }, "at most one"},
@@ -165,7 +165,7 @@ func TestEvaluationAssertionsMatchSchemasAndSemantics(t *testing.T) {
 			data := []byte(`{"schemaVersion":"1.0.0-draft","mediaType":"application/vnd.agentsuite.eval.case.v1+json","id":"case","input":"Question","assertions":[` + tt.assertion + `]}`)
 			validateSchemaJSON(t, schema, string(data), tt.valid)
 			root, _ := writeEvaluationSuite(t, func(root string, index *EvaluationIndex) {
-				index.Cases = []FileRef{{Path: "evals/writer/cases/case.json", Digest: mustWriteJSONBytes(t, root, "evals/writer/cases/case.json", data)}}
+				index.Cases = []FileRef{{Path: "evals/writer/cases/case.json", Descriptor: mustWriteJSONBytes(t, root, "evals/writer/cases/case.json", MediaTypeEvaluationCase, data)}}
 				for _, name := range []string{"capital", "arithmetic"} {
 					if err := os.Remove(filepath.Join(root, "evals/writer/cases/"+name+".json")); err != nil {
 						t.Fatal(err)
@@ -204,7 +204,7 @@ func TestEvaluationCaseRunPolicy(t *testing.T) {
 			data := []byte(`{"schemaVersion":"1.0.0-draft","mediaType":"application/vnd.agentsuite.eval.case.v1+json","id":"case","input":"Question"` + tt.fields + `,"assertions":[{"id":"answer","type":"contains","value":"yes"}]}`)
 			validateSchemaJSON(t, schema, string(data), tt.schemaValid)
 			root, _ := writeEvaluationSuite(t, func(root string, index *EvaluationIndex) {
-				index.Cases = []FileRef{{Path: "evals/writer/cases/case.json", Digest: mustWriteJSONBytes(t, root, "evals/writer/cases/case.json", data)}}
+				index.Cases = []FileRef{{Path: "evals/writer/cases/case.json", Descriptor: mustWriteJSONBytes(t, root, "evals/writer/cases/case.json", MediaTypeEvaluationCase, data)}}
 				for _, name := range []string{"capital", "arithmetic"} {
 					if err := os.Remove(filepath.Join(root, "evals/writer/cases/"+name+".json")); err != nil {
 						t.Fatal(err)
@@ -238,10 +238,13 @@ func TestEvaluationCaseStrictness(t *testing.T) {
 				// Use a raw-byte digest for malformed JSON, which cannot have a JCS identity.
 				mustWrite(t, root, index.Cases[0].Path, []byte(tt.data))
 				digest, err := canonicalDigest([]byte(tt.data))
-				if err != nil {
+				size, sizeErr := canonicalSize([]byte(tt.data))
+				if err != nil || sizeErr != nil {
 					digest = digestBytes([]byte(tt.data))
+					size = int64(len(tt.data))
 				}
-				index.Cases[0].Digest = digest
+				index.Cases[0].Descriptor.Digest = digest
+				index.Cases[0].Descriptor.Size = size
 			})
 			_, err := ValidatePath(root)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -255,9 +258,9 @@ func TestEvaluationIdentityCommitsToCasesAndOrder(t *testing.T) {
 	root, before := writeEvaluationSuite(t, nil)
 	afterRoot, after := writeEvaluationSuite(t, func(root string, index *EvaluationIndex) {
 		data := strings.Replace(string(evaluationFixture(t, "capital")), "Paris", "PARIS", 1)
-		index.Cases[0].Digest = mustWriteJSONBytes(t, root, index.Cases[0].Path, []byte(data))
+		index.Cases[0].Descriptor = mustWriteJSONBytes(t, root, index.Cases[0].Path, MediaTypeEvaluationCase, []byte(data))
 	})
-	if before.Digest == after.Digest {
+	if before.Descriptor.Digest == after.Descriptor.Digest {
 		t.Fatal("case edit did not change index identity")
 	}
 	report, err := DiffPaths(root, afterRoot)
@@ -278,8 +281,8 @@ func TestEvaluationIdentityCommitsToCasesAndOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	index.Cases[0], index.Cases[1] = index.Cases[1], index.Cases[0]
-	swapped := mustWriteJSON(t, root, before.Path, index)
-	if swapped == before.Digest {
+	swapped := mustWriteJSON(t, root, before.Path, MediaTypeEvaluationIndex, index)
+	if swapped.Digest == before.Descriptor.Digest {
 		t.Fatal("case order did not change index identity")
 	}
 	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
@@ -312,13 +315,13 @@ func writeEvaluationSuite(t *testing.T, mutate func(string, *EvaluationIndex)) (
 	}
 	for _, name := range []string{"capital", "arithmetic"} {
 		path := "evals/writer/cases/" + name + ".json"
-		index.Cases = append(index.Cases, FileRef{Path: path, Digest: mustWriteJSONBytes(t, root, path, evaluationFixture(t, name))})
+		index.Cases = append(index.Cases, FileRef{Path: path, Descriptor: mustWriteJSONBytes(t, root, path, MediaTypeEvaluationCase, evaluationFixture(t, name))})
 	}
 	if mutate != nil {
 		mutate(root, &index)
 	}
 	ref := FileRef{Path: "evals/writer/index.json"}
-	ref.Digest = mustWriteJSON(t, root, ref.Path, index)
+	ref.Descriptor = mustWriteJSON(t, root, ref.Path, MediaTypeEvaluationIndex, index)
 	bindEvaluationAgent(t, root, []FileRef{ref})
 	return root, ref
 }
@@ -334,7 +337,7 @@ func bindEvaluationAgent(t *testing.T, root string, refs any) {
 		t.Fatal(err)
 	}
 	agent["evals"] = refs
-	digest := mustWriteJSON(t, root, "agents/writer.json", agent)
+	descriptor := mustWriteJSON(t, root, "agents/writer.json", MediaTypeAgent, agent)
 	data, err = os.ReadFile(filepath.Join(root, "agentsuite.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -343,8 +346,8 @@ func bindEvaluationAgent(t *testing.T, root string, refs any) {
 	if err := Unmarshal(data, &suite); err != nil {
 		t.Fatal(err)
 	}
-	suite.Agents[0].Digest = digest
-	mustWriteJSON(t, root, "agentsuite.json", suite)
+	suite.Agents[0].Descriptor = descriptor
+	mustWriteJSON(t, root, "agentsuite.json", MediaTypeSuite, suite)
 }
 
 func evaluationFixture(t *testing.T, name string) []byte {
@@ -356,12 +359,16 @@ func evaluationFixture(t *testing.T, name string) []byte {
 	return data
 }
 
-func mustWriteJSONBytes(t *testing.T, root, path string, data []byte) string {
+func mustWriteJSONBytes(t *testing.T, root, path, mediaType string, data []byte) Descriptor {
 	t.Helper()
 	mustWrite(t, root, path, data)
 	digest, err := canonicalDigest(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return digest
+	size, err := canonicalSize(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Descriptor{MediaType: mediaType, Digest: digest, Size: size}
 }

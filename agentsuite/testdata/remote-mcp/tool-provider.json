@@ -12,11 +12,19 @@
       "description": "Search the configured remote data source.",
       "inputSchema": {
         "path": "schemas/search-input.json",
-        "digest": "sha256:25f52652219a4e1e8581e76db1955df62b26a1174a2612eb12538b3efa9d8c84"
+        "descriptor": {
+          "mediaType": "application/schema+json",
+          "digest": "sha256:25f52652219a4e1e8581e76db1955df62b26a1174a2612eb12538b3efa9d8c84",
+          "size": 231
+        }
       },
       "outputSchema": {
         "path": "schemas/search-output.json",
-        "digest": "sha256:5d694e1c4645dbba200792defc1de3ee4956e519657e4e581ee770dd6f5fb203"
+        "descriptor": {
+          "mediaType": "application/schema+json",
+          "digest": "sha256:5d694e1c4645dbba200792defc1de3ee4956e519657e4e581ee770dd6f5fb203",
+          "size": 263
+        }
       },
       "effects": [
         "remote-read"
@@ -37,11 +45,19 @@
       "description": "Flag a search result for moderation review in the connected account.",
       "inputSchema": {
         "path": "schemas/flag-result-input.json",
-        "digest": "sha256:3f1da568747f47b3011a2eb49b2bde3148742b9ee44032e9194cc214fc7ba89a"
+        "descriptor": {
+          "mediaType": "application/schema+json",
+          "digest": "sha256:3f1da568747f47b3011a2eb49b2bde3148742b9ee44032e9194cc214fc7ba89a",
+          "size": 315
+        }
       },
       "outputSchema": {
         "path": "schemas/flag-result-output.json",
-        "digest": "sha256:65f08e7039785f328c92220872280718765b558cdebdbfa880e152b9896db7be"
+        "descriptor": {
+          "mediaType": "application/schema+json",
+          "digest": "sha256:65f08e7039785f328c92220872280718765b558cdebdbfa880e152b9896db7be",
+          "size": 214
+        }
       },
       "effects": [
         "remote-write"

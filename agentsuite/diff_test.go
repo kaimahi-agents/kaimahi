@@ -47,18 +47,18 @@ func TestDiffPathsReportsFieldChangesAndAffectedAgents(t *testing.T) {
 	var agent Agent
 	readStrictJSON(t, filepath.Join(after, "agents", "writer.json"), &agent)
 	agent.Description = "Writes release notes"
-	agentDigest := mustWriteJSON(t, after, "agents/writer.json", agent)
+	agentDigest := mustWriteJSON(t, after, "agents/writer.json", MediaTypeAgent, agent)
 
 	var profile BuildProfile
 	readStrictJSON(t, filepath.Join(after, "build-profiles", "default.json"), &profile)
 	profile.SourceEpoch++
-	profileDigest := mustWriteJSON(t, after, "build-profiles/default.json", profile)
+	profileDigest := mustWriteJSON(t, after, "build-profiles/default.json", MediaTypeBuildProfile, profile)
 
 	var suite Suite
 	readStrictJSON(t, filepath.Join(after, "agentsuite.json"), &suite)
-	suite.Agents[0].Digest = agentDigest
-	suite.BuildProfiles[0].Digest = profileDigest
-	mustWriteJSON(t, after, "agentsuite.json", suite)
+	suite.Agents[0].Descriptor = agentDigest
+	suite.BuildProfiles[0].Descriptor = profileDigest
+	mustWriteJSON(t, after, "agentsuite.json", MediaTypeSuite, suite)
 
 	report, err := DiffPaths(before, after)
 	if err != nil {
@@ -113,16 +113,16 @@ func TestDiffPathsPropagatesChangedWorkerToInvokingAgent(t *testing.T) {
 	var writer Agent
 	readStrictJSON(t, filepath.Join(after, "agents", "writer.json"), &writer)
 	writer.Description = "Writes revised content"
-	writerDigest := mustWriteJSON(t, after, "agents/writer.json", writer)
+	writerDigest := mustWriteJSON(t, after, "agents/writer.json", MediaTypeAgent, writer)
 
 	var suite Suite
 	readStrictJSON(t, filepath.Join(after, "agentsuite.json"), &suite)
 	for index := range suite.Agents {
 		if suite.Agents[index].ID == "writer" {
-			suite.Agents[index].Digest = writerDigest
+			suite.Agents[index].Descriptor = writerDigest
 		}
 	}
-	mustWriteJSON(t, after, "agentsuite.json", suite)
+	mustWriteJSON(t, after, "agentsuite.json", MediaTypeSuite, suite)
 
 	report, err := DiffPaths(before, after)
 	if err != nil {
@@ -341,15 +341,15 @@ func TestDiffPathsTreatsInvocationOrderAsSemanticSet(t *testing.T) {
 	var coordinator Agent
 	readStrictJSON(t, filepath.Join(after, "agents", "coordinator.json"), &coordinator)
 	slices.Reverse(coordinator.Invokes)
-	coordinatorDigest := mustWriteJSON(t, after, "agents/coordinator.json", coordinator)
+	coordinatorDigest := mustWriteJSON(t, after, "agents/coordinator.json", MediaTypeAgent, coordinator)
 	var suite Suite
 	readStrictJSON(t, filepath.Join(after, "agentsuite.json"), &suite)
 	for index := range suite.Agents {
 		if suite.Agents[index].ID == coordinator.ID {
-			suite.Agents[index].Digest = coordinatorDigest
+			suite.Agents[index].Descriptor = coordinatorDigest
 		}
 	}
-	mustWriteJSON(t, after, "agentsuite.json", suite)
+	mustWriteJSON(t, after, "agentsuite.json", MediaTypeSuite, suite)
 
 	report, err := DiffPaths(before, after)
 	if err != nil {
@@ -658,27 +658,29 @@ func addLargeDiffToolProvider(t *testing.T, root string, count int) {
 		Revision:      "2025-06-18",
 		Tools: []Tool{{
 			Name: "large", InputSchema: FileRef{
-				Path: "schemas/large.json", Digest: digestBytes(schema),
+				Path: "schemas/large.json", Descriptor: Descriptor{
+					MediaType: MediaTypeJSONSchema, Digest: digestBytes(schema), Size: int64(len(schema)),
+				},
 			},
 		}},
 		Variants:   []ToolProviderVariant{variant},
 		Extensions: []Extension{},
 	}
 	providerPath := "tool-providers/large/1.0.0/tool-provider.json"
-	providerDigest := mustWriteJSON(t, root, providerPath, provider)
+	providerDescriptor := mustWriteJSON(t, root, providerPath, MediaTypeToolProvider, provider)
 
 	var catalog ToolProviderCatalog
 	readStrictJSON(t, filepath.Join(root, "tool-providers/catalog.json"), &catalog)
 	catalog.ToolProviders = append(catalog.ToolProviders, ManifestRef{
-		ID: "large", Version: "1.0.0", Path: providerPath, Digest: providerDigest,
+		ID: "large", Version: "1.0.0", Path: providerPath, Descriptor: providerDescriptor,
 	})
-	catalogDigest := mustWriteJSON(t, root, "tool-providers/catalog.json", catalog)
+	catalogDescriptor := mustWriteJSON(t, root, "tool-providers/catalog.json", MediaTypeToolProviderCatalog, catalog)
 
 	var suite Suite
 	readStrictJSON(t, filepath.Join(root, "agentsuite.json"), &suite)
-	suite.ToolProviderCatalog.Digest = catalogDigest
+	suite.ToolProviderCatalog.Descriptor = catalogDescriptor
 	suite.Capabilities = []string{"bundled-stdio-mcp"}
-	mustWriteJSON(t, root, "agentsuite.json", suite)
+	mustWriteJSON(t, root, "agentsuite.json", MediaTypeSuite, suite)
 }
 
 func tarDirectoryWithHardlink(t *testing.T, root, hardlinkPath, targetPath string) []byte {
