@@ -29,7 +29,7 @@ func TestSuitePolicyCommandEmitsCanonicalPayloadAndDigest(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("output lines = %d, want 2: %q", len(lines), output.String())
 	}
-	wantPolicy := `{"version":"agentsuite.policy/v1","denyWritePaths":["/etc/secrets","/workspace"],"requiredCapabilities":["filesystem/deny-write/v1"]}`
+	wantPolicy := `{"denyWritePaths":["/etc/secrets","/workspace"],"requiredCapabilities":["filesystem/deny-write/v1"],"version":"agentsuite.policy/v1"}`
 	if lines[0] != wantPolicy {
 		t.Fatalf("policy = %q, want %q", lines[0], wantPolicy)
 	}
@@ -47,5 +47,15 @@ func TestSuitePolicyCommandRejectsInvalidCapabilityContract(t *testing.T) {
 	command.SetArgs([]string{path})
 	if err := command.Execute(); err == nil {
 		t.Fatal("accepted empty mandatory capability set")
+	}
+}
+
+func TestReadPolicyFileRejectsOversizedInput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oversized.json")
+	if err := os.WriteFile(path, bytes.Repeat([]byte{'x'}, maxPolicyFileBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readPolicyFile(path); err == nil {
+		t.Fatal("accepted oversized policy file")
 	}
 }
