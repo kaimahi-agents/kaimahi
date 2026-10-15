@@ -26,8 +26,13 @@ const (
 	// serves: an OpenAI-compatible endpoint configured on the host.
 	AgentSessionsModelProvider = "openai"
 	// maxAgentSessionsStorageLocation leaves room under substrate's 1024-byte
-	// storage_location limit for the "<template>/" suffix a render appends.
-	maxAgentSessionsStorageLocation = 1024 - 64
+	// storage_location limit for the "/<template>/" a render appends (a template
+	// name is at most 63 bytes) when the location has no trailing slash.
+	maxAgentSessionsStorageLocation = 1024 - 65
+	// maxAgentSessionsWorkerLabels and maxAgentSessionsQuantity are substrate's
+	// Selector.match_labels and Limits.quantity bounds.
+	maxAgentSessionsWorkerLabels = 10
+	maxAgentSessionsQuantity     = 32
 )
 
 // AgentSessionsBinding is the per-environment half of an AgentSessions
@@ -42,7 +47,7 @@ type AgentSessionsBinding struct {
 	Atespace       string                             `yaml:"atespace" json:"atespace"`
 	Sandbox        AgentSessionsSandboxBinding        `yaml:"sandbox" json:"sandbox"`
 	Snapshot       AgentSessionsSnapshotBinding       `yaml:"snapshot" json:"snapshot"`
-	Resources      AgentSessionsResourcesBinding      `yaml:"resources,omitempty" json:"resources,omitzero"`
+	Resources      AgentSessionsResourcesBinding      `yaml:"resources" json:"resources"`
 	WorkerSelector AgentSessionsWorkerSelectorBinding `yaml:"workerSelector,omitempty" json:"workerSelector,omitzero"`
 	Model          AgentSessionsModelBinding          `yaml:"model" json:"model"`
 }
@@ -66,9 +71,12 @@ type AgentSessionsSnapshotBinding struct {
 	StorageLocation string `yaml:"storageLocation" json:"storageLocation"`
 }
 
+// AgentSessionsResourcesBinding is the actor's compute size. Substrate books
+// both limits against worker capacity and boots a micro-VM at that size, so
+// both are required.
 type AgentSessionsResourcesBinding struct {
-	CPU    string `yaml:"cpu,omitempty" json:"cpu,omitempty"`
-	Memory string `yaml:"memory,omitempty" json:"memory,omitempty"`
+	CPU    string `yaml:"cpu" json:"cpu"`
+	Memory string `yaml:"memory" json:"memory"`
 }
 
 type AgentSessionsWorkerSelectorBinding struct {
@@ -287,14 +295,25 @@ func (b AgentSessionsBinding) validate() error {
 	if err := validateAgentSessionsStorageLocation(b.Snapshot.StorageLocation); err != nil {
 		return err
 	}
-	for _, r := range []struct{ path, value string }{{"resources.cpu", b.Resources.CPU}, {"resources.memory", b.Resources.Memory}} {
+	for _, r := range []struct {
+		path, value string
+		max         resource.Quantity
+		bound       string
+	}{
+		// Substrate's cpuLimitMax and memoryLimitMax.
+		{"resources.cpu", b.Resources.CPU, resource.MustParse("999.999"), "999.999 cores"},
+		{"resources.memory", b.Resources.Memory, resource.MustParse("9223372036854775807"), "9223372036854775807 bytes"},
+	} {
 		if r.value == "" {
-			continue
+			return fmt.Errorf("%s is required", r.path)
 		}
 		q, err := resource.ParseQuantity(r.value)
-		if err != nil || q.Sign() <= 0 {
-			return fmt.Errorf("%s must be a positive Kubernetes quantity", r.path)
+		if len(r.value) > maxAgentSessionsQuantity || err != nil || q.Sign() <= 0 || q.Cmp(r.max) > 0 {
+			return fmt.Errorf("%s must be a positive Kubernetes quantity of at most %s", r.path, r.bound)
 		}
+	}
+	if len(labels) > maxAgentSessionsWorkerLabels {
+		return fmt.Errorf("workerSelector.matchLabels has more than %d labels", maxAgentSessionsWorkerLabels)
 	}
 	for _, key := range labels {
 		if errs := validation.IsQualifiedName(key); len(errs) != 0 {
@@ -331,10 +350,12 @@ func (b AgentSessionsBinding) validate() error {
 
 // validateAgentSessionsStorageLocation accepts an object-storage base URI
 // (for example gs://bucket/prefix/) and never echoes it. Object keys are not
-// filesystem paths, so ".", ".." and empty segments are refused rather than
-// resolved; one trailing slash is allowed.
+// filesystem paths, and some storage backends trim dots and spaces from
+// segments or treat '\' as a separator, so empty segments, segments of only
+// '.' and ' ', and '\\' are refused rather than resolved, as substrate's
+// snapshot location validation does; one trailing slash is allowed.
 func validateAgentSessionsStorageLocation(location string) error {
-	const msg = "snapshot.storageLocation must be an object-storage URI with a scheme and bucket, no credentials, query or fragment, and no empty, \".\" or \"..\" path segments"
+	const msg = "snapshot.storageLocation must be an object-storage URI with a scheme and bucket, no credentials, query or fragment, no '\\', and no empty path segments or segments of only '.' and ' '"
 	if location == "" {
 		return fmt.Errorf("snapshot.storageLocation is required")
 	}
@@ -345,10 +366,13 @@ func validateAgentSessionsStorageLocation(location string) error {
 	if err != nil || !agentSessionsURIScheme.MatchString(u.Scheme) || u.Host == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(location, "#") {
 		return fmt.Errorf("%s", msg)
 	}
-	// u.Path is decoded, so percent-encoded dot segments are refused too.
+	// u.Path is decoded, so percent-encoded dots, spaces and '\' are refused too.
+	if strings.Contains(u.Path, `\`) {
+		return fmt.Errorf("%s", msg)
+	}
 	if u.Path != "" && u.Path != "/" {
 		for _, segment := range strings.Split(strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), "/"), "/") {
-			if segment == "" || segment == "." || segment == ".." {
+			if strings.Trim(segment, ". ") == "" {
 				return fmt.Errorf("%s", msg)
 			}
 		}

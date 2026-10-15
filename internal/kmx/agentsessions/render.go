@@ -14,6 +14,7 @@ import (
 	"github.com/aramase/agentsessions/canon"
 	"github.com/distribution/reference"
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
@@ -31,7 +32,15 @@ const (
 	// descriptor id is also "chat".
 	RenderedHarnessKind = "chat"
 	wakeupTimeoutSecond = 120
+	// maxImageReference is substrate's Container.image bound.
+	maxImageReference = 512
 )
+
+// SubstrateAPICommit is the agent-substrate/substrate main commit whose ateapi
+// ActorTemplate decoding (protojson) and CreateActorTemplate validation the
+// rendered template is checked against by
+// scripts/validate-agentsessions-render.sh.
+const SubstrateAPICommit = "f4f7b806255ffdc824391b857dbbf329a2556402"
 
 // reservedHarnesses are served by agentsessionsd itself; a registration under
 // either name would collide with the host's own harness.
@@ -73,14 +82,20 @@ type HostModel struct {
 	SecretRef runtime.AgentSessionsSecretRefBinding `json:"secretRef"`
 }
 
-// ActorTemplate mirrors the substrate ateapi ActorTemplate fields a render sets,
-// using proto field and enum names so protojson accepts it unchanged.
+// ActorTemplate mirrors the substrate ateapi ActorTemplate fields a render
+// sets at SubstrateAPICommit, using proto field and enum names. At that commit
+// protojson decodes it and CreateActorTemplate validation accepts it; other
+// substrate revisions may not (sandbox_class and template resources changed
+// shape there).
 type ActorTemplate struct {
 	Metadata       ActorMetadata       `json:"metadata"`
 	WorkerSelector *ActorSelector      `json:"worker_selector,omitempty"`
 	Containers     []ActorContainer    `json:"containers"`
 	SnapshotConfig ActorSnapshotConfig `json:"snapshot_config"`
 	SandboxConfig  ActorSandboxConfig  `json:"sandbox_config"`
+	// Resources is the actor's compute size: the sandbox is sized and
+	// scheduled by it.
+	Resources ActorResources `json:"resources"`
 }
 
 type ActorMetadata struct {
@@ -98,7 +113,6 @@ type ActorContainer struct {
 	Env             []ActorEnvVar        `json:"env"`
 	WakeupProbe     ActorWakeupProbe     `json:"wakeup_probe"`
 	SecurityContext ActorSecurityContext `json:"security_context"`
-	Resources       *ActorResources      `json:"resources,omitempty"`
 }
 
 type ActorEnvVar struct {
@@ -135,27 +149,33 @@ type ActorSnapshotConfig struct {
 	PreferredFidelity string `json:"preferred_fidelity"`
 }
 
+// ActorSandboxConfig.SandboxClass is substrate's lowercase class string,
+// "microvm" or "gvisor".
 type ActorSandboxConfig struct {
 	SandboxClass string `json:"sandbox_class"`
 	ConfigName   string `json:"config_name"`
 }
 
-// RendererVersion identifies the binding-to-ActorTemplate mapping. It is part
-// of hash8, so a mapping change names a new template instead of reusing a name
-// whose rendered spec differs.
-const RendererVersion = "kmx.agentsessions-actortemplate/v1"
+// RendererVersion identifies the binding-to-ActorTemplate mapping, including
+// the substrate API shape it targets (SubstrateAPICommit). It is part of hash8,
+// so a mapping change names a new template instead of reusing a name whose
+// rendered spec differs.
+const RendererVersion = "kmx.agentsessions-actortemplate/v2"
 
 // TemplateName is <suite>-<member>-<hash8>, where hash8 is the first 8 hex of
-// sha256(RendererVersion + "\n" + imageDigest + "\n" + bindingDigest). The
-// same image under another binding or renderer is another template. The result
+// sha256(RendererVersion + "\n" + image + "\n" + bindingDigest) and image is the
+// full digest-pinned reference the template runs. Every other rendered field
+// derives from the suite, member, binding and renderer, so templates whose specs
+// differ never share a name: the same content digest under another repository
+// or registry (a mirror), binding or renderer is another template. The result
 // is a DNS label of at most 63 characters; suite and member are lowercased,
 // sanitized and truncated to fit, never hash8.
-func TemplateName(suite, member, imageDigest, bindingDigest string) string {
-	return templateName(RendererVersion, suite, member, imageDigest, bindingDigest)
+func TemplateName(suite, member, image, bindingDigest string) string {
+	return templateName(RendererVersion, suite, member, image, bindingDigest)
 }
 
-func templateName(renderer, suite, member, imageDigest, bindingDigest string) string {
-	sum := sha256.Sum256([]byte(renderer + "\n" + imageDigest + "\n" + bindingDigest))
+func templateName(renderer, suite, member, image, bindingDigest string) string {
+	sum := sha256.Sum256([]byte(renderer + "\n" + image + "\n" + bindingDigest))
 	hash8 := hex.EncodeToString(sum[:])[:8]
 	clean := func(s string) string {
 		return strings.Trim(notLabel.ReplaceAllString(strings.ToLower(s), "-"), "-")
@@ -177,7 +197,7 @@ func templateName(renderer, suite, member, imageDigest, bindingDigest string) st
 // (name@sha256:<64 hex>, no tag).
 func HarnessImageDigest(image string) (string, error) {
 	const msg = "harness image must be a digest-pinned reference (name@sha256:<64 hex>) without a tag"
-	if image == "" || strings.TrimSpace(image) != image || secretshapes.Match(image) != nil {
+	if image == "" || len(image) > maxImageReference || strings.TrimSpace(image) != image || secretshapes.Match(image) != nil {
 		return "", errors.New(msg)
 	}
 	ref, err := reference.Parse(image)
@@ -202,14 +222,18 @@ func Render(in RenderInput) (*Rendered, error) {
 	if err := runtime.CheckAgentSessionsBindingModel(in.Binding, in.Model); err != nil {
 		return nil, err
 	}
-	if scaffold.ValidateObjectName(in.Suite) != nil || scaffold.ValidateObjectName(in.Member) != nil {
-		return nil, errors.New("suite and member must be Kubernetes object names")
+	if !workspace.ValidName(in.Suite) {
+		return nil, errors.New("suite must be a workspace suite name")
+	}
+	// The member names the AgentSessions harness, which the host requires to be
+	// a DNS label.
+	if scaffold.ValidateName(in.Member) != nil {
+		return nil, errors.New("member must be a DNS label of at most 63 characters")
 	}
 	if slices.Contains(reservedHarnesses, in.Member) {
 		return nil, fmt.Errorf("member %q is the name of a harness agentsessionsd serves itself (%s); rename the member", in.Member, strings.Join(reservedHarnesses, ", "))
 	}
-	imageDigest, err := HarnessImageDigest(in.HarnessImage)
-	if err != nil {
+	if _, err := HarnessImageDigest(in.HarnessImage); err != nil {
 		return nil, err
 	}
 	bindingDigest, err := runtime.AgentSessionsBindingDigest(in.Binding)
@@ -217,7 +241,7 @@ func Render(in RenderInput) (*Rendered, error) {
 		return nil, err
 	}
 	b := in.Binding
-	name := TemplateName(in.Suite, in.Member, imageDigest, bindingDigest)
+	name := TemplateName(in.Suite, in.Member, in.HarnessImage, bindingDigest)
 	container := ActorContainer{
 		Name:  "harness",
 		Image: in.HarnessImage,
@@ -230,16 +254,6 @@ func Render(in RenderInput) (*Rendered, error) {
 		},
 		WakeupProbe: ActorWakeupProbe{HTTPGet: ActorHTTPGet{Path: "/readyz", Port: ReadyzPort}, TimeoutSeconds: wakeupTimeoutSecond},
 	}
-	var limits []ActorLimit
-	if b.Resources.CPU != "" {
-		limits = append(limits, ActorLimit{Name: "cpu", Quantity: b.Resources.CPU})
-	}
-	if b.Resources.Memory != "" {
-		limits = append(limits, ActorLimit{Name: "memory", Quantity: b.Resources.Memory})
-	}
-	if len(limits) > 0 {
-		container.Resources = &ActorResources{Limits: limits}
-	}
 	template := ActorTemplate{
 		Metadata:   ActorMetadata{Atespace: b.Atespace, Name: name},
 		Containers: []ActorContainer{container},
@@ -247,7 +261,8 @@ func Render(in RenderInput) (*Rendered, error) {
 			StorageLocation:   strings.TrimSuffix(b.Snapshot.StorageLocation, "/") + "/" + name + "/",
 			PreferredFidelity: "SNAPSHOT_FIDELITY_" + b.Snapshot.Fidelity,
 		},
-		SandboxConfig: ActorSandboxConfig{SandboxClass: "SANDBOX_CLASS_" + strings.ToUpper(b.Sandbox.Class), ConfigName: b.Sandbox.ConfigName},
+		SandboxConfig: ActorSandboxConfig{SandboxClass: b.Sandbox.Class, ConfigName: b.Sandbox.ConfigName},
+		Resources:     ActorResources{Limits: []ActorLimit{{Name: "cpu", Quantity: b.Resources.CPU}, {Name: "memory", Quantity: b.Resources.Memory}}},
 	}
 	if len(b.WorkerSelector.MatchLabels) > 0 {
 		template.WorkerSelector = &ActorSelector{MatchLabels: b.WorkerSelector.MatchLabels}

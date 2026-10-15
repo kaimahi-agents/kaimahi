@@ -55,14 +55,18 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   mixed-runtime proof, tools/judge, chat/status and live create refuse.
   AgentSessions eval also requires --bindings FILE: a closed AgentSessionsBinding
   (runtime package; target, substrate placement, atespace, sandbox, snapshot,
-  resources, workerSelector, model name/provider/baseURL/Secret ref only). The
+  required cpu/memory resources, workerSelector, model name/provider/baseURL/
+  Secret ref only). The
   suite pins the model; the binding's model.name must equal it exactly (eval and
   lift refuse a mismatch; a new model is a new suite version and evaluation).
   Evidence records the binding's JCS digest; the host endpoint is not attested.
-  Receipts without bindingDigest are unreadable and need fresh evaluation.
+  Receipts without bindingDigest are unreadable and need fresh evaluation; a
+  managed proof stored without one is ineligible (latest refuses, no fallback).
   Root lift with --harness-image IMAGE@sha256 --bindings FILE --evidence --plan
-  renders a substrate ActorTemplate (<suite>-<member>-<hash8> over renderer version,
-  image digest and binding digest, harnessnode chat, no model credentials) and a substrate
+  renders a substrate ActorTemplate for substrate main at the commit pinned in
+  render.go (SubstrateAPICommit; check with scripts/validate-agentsessions-render.sh)
+  (<suite>-<member>-<hash8> over renderer version, full image reference and
+  binding digest, harnessnode chat, no model credentials) and a substrate
   HarnessRegistration offline. It loads no cluster settings and applies nothing;
   apply refuses. Substrate apply needs its own seam, not the kubectl release loop.
   Operator declarations are not authenticated host/build attestation; cleartext

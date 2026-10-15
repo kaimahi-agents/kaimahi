@@ -62,9 +62,9 @@ func TestAgentSessionsReleaseLiftPlanRendersFromEvidenceAndBinding(t *testing.T)
 	if plan.ConfigDigest != r.Sessions.Subject.ConfigDigest || plan.HarnessImage != sessionsLiftImage {
 		t.Fatal("plan does not bind the evaluated chat config and image")
 	}
-	name := agentsessions.TemplateName(p.suite.Name, p.suite.MemberID, "sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae", plan.BindingDigest)
+	name := agentsessions.TemplateName(p.suite.Name, p.suite.MemberID, sessionsLiftImage, plan.BindingDigest)
 	tmpl := plan.ActorTemplate
-	if tmpl.Metadata != (agentsessions.ActorMetadata{Atespace: "prod", Name: name}) || tmpl.SandboxConfig.SandboxClass != "SANDBOX_CLASS_GVISOR" {
+	if tmpl.Metadata != (agentsessions.ActorMetadata{Atespace: "prod", Name: name}) || tmpl.SandboxConfig.SandboxClass != "gvisor" {
 		t.Fatalf("template = %+v", tmpl.Metadata)
 	}
 	if len(s.Resources) != 2 || s.Resources[0] != (ReleaseLiftResource{Kind: "ActorTemplate", Name: name, Action: "render", SpecDigest: plan.TemplateDigest}) ||

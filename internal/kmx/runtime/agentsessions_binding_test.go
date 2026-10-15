@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -127,13 +128,25 @@ func TestAgentSessionsBindingDigestIsJCSOfTheDocument(t *testing.T) {
 }
 
 func TestAgentSessionsBindingStorageLocationAcceptsObjectPrefixes(t *testing.T) {
-	for _, location := range []string{"gs://bucket", "gs://bucket/", "gs://bucket/p", "gs://bucket/p/", "s3://bucket/a/b.c/..d/"} {
+	for _, location := range []string{"gs://bucket", "gs://bucket/", "gs://bucket/p", "gs://bucket/p/", "s3://bucket/a/b.c/..d/", "gs://bucket/.a/", "gs://bucket/" + strings.Repeat("a", maxAgentSessionsStorageLocation-len("gs://bucket/"))} {
 		b := validAgentSessionsBinding()
 		b.APIVersion, b.Kind = AgentSessionsBindingAPIVersion, AgentSessionsBindingKind
 		b.Snapshot.StorageLocation = location
 		if err := ValidateAgentSessionsBinding(b); err != nil {
 			t.Fatalf("%q refused: %v", location, err)
 		}
+	}
+}
+
+func TestAgentSessionsBindingAcceptsSubstrateResourceBounds(t *testing.T) {
+	b := validAgentSessionsBinding()
+	b.Resources = AgentSessionsResourcesBinding{CPU: "999999m", Memory: "9223372036854775807"}
+	b.WorkerSelector.MatchLabels = map[string]string{}
+	for i := range maxAgentSessionsWorkerLabels {
+		b.WorkerSelector.MatchLabels[fmt.Sprintf("k%d", i)] = "v"
+	}
+	if _, err := EncodeAgentSessionsBinding(b); err != nil {
+		t.Fatalf("substrate's largest limits and selector refused: %v", err)
 	}
 }
 
@@ -209,7 +222,7 @@ func TestValidateAgentSessionsBindingRequiresClosedIdentity(t *testing.T) {
 }
 
 func TestAgentSessionsBindingOptionalSectionsMayBeOmitted(t *testing.T) {
-	doc := strings.Replace(validAgentSessionsBindingYAML, "resources:\n    cpu: \"1\"\n    memory: 512Mi\nworkerSelector:\n    matchLabels:\n        workload: agentsuite-demo-microvm\n", "", 1)
+	doc := strings.Replace(validAgentSessionsBindingYAML, "workerSelector:\n    matchLabels:\n        workload: agentsuite-demo-microvm\n", "", 1)
 	doc = strings.Replace(doc, "    baseURL: http://fakemodel.agentsuite-demo.svc:8080/v1\n", "", 1)
 	b, err := ParseAgentSessionsBinding([]byte(doc))
 	if err != nil {
@@ -237,6 +250,9 @@ func TestAgentSessionsBindingRejectUnknownAmbiguousAndIncompleteDocuments(t *tes
 		{"missing atespace", strings.Replace(validAgentSessionsBindingYAML, "atespace: agentsuite-demo\n", "", 1)},
 		{"missing fidelity", strings.Replace(validAgentSessionsBindingYAML, "    fidelity: MEMORY\n", "", 1)},
 		{"missing storage", strings.Replace(validAgentSessionsBindingYAML, "    storageLocation: gs://ate-snapshots/agentsuite-demo/\n", "", 1)},
+		{"missing resources", strings.Replace(validAgentSessionsBindingYAML, "resources:\n    cpu: \"1\"\n    memory: 512Mi\n", "", 1)},
+		{"missing cpu", strings.Replace(validAgentSessionsBindingYAML, "    cpu: \"1\"\n", "", 1)},
+		{"missing memory", strings.Replace(validAgentSessionsBindingYAML, "    memory: 512Mi\n", "", 1)},
 		{"missing model", strings.Replace(validAgentSessionsBindingYAML, "    name: fixture-model\n", "", 1)},
 		{"missing secret key", strings.Replace(validAgentSessionsBindingYAML, "        key: api-key\n", "", 1)},
 		{"sequence root", "- apiVersion: kmx.kaimahi.dev/v1alpha1\n"},
@@ -278,8 +294,26 @@ func TestAgentSessionsBindingValidateFields(t *testing.T) {
 		{"storage length", func(b *AgentSessionsBinding) {
 			b.Snapshot.StorageLocation = "gs://bucket/" + strings.Repeat("a", maxAgentSessionsStorageLocation)
 		}, "storageLocation"},
+		{"storage dots-only segment", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket/.../" }, "storageLocation"},
+		{"storage encoded dots and space", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket/.%20./p/" }, "storageLocation"},
+		{"storage backslash", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = `gs://bucket/a\b/` }, "storageLocation"},
+		{"storage encoded backslash", func(b *AgentSessionsBinding) { b.Snapshot.StorageLocation = "gs://bucket/a%5Cb/" }, "storageLocation"},
+		{"storage rendered length", func(b *AgentSessionsBinding) {
+			b.Snapshot.StorageLocation = "gs://bucket/" + strings.Repeat("a", maxAgentSessionsStorageLocation-len("gs://bucket/")+1)
+		}, "storageLocation"},
 		{"cpu", func(b *AgentSessionsBinding) { b.Resources.CPU = "one" }, "resources.cpu"},
 		{"memory", func(b *AgentSessionsBinding) { b.Resources.Memory = "-1Gi" }, "resources.memory"},
+		{"cpu required", func(b *AgentSessionsBinding) { b.Resources.CPU = "" }, "resources.cpu is required"},
+		{"memory required", func(b *AgentSessionsBinding) { b.Resources.Memory = "" }, "resources.memory is required"},
+		{"cpu zero", func(b *AgentSessionsBinding) { b.Resources.CPU = "0" }, "resources.cpu"},
+		{"cpu above substrate bound", func(b *AgentSessionsBinding) { b.Resources.CPU = "1000" }, "resources.cpu"},
+		{"quantity length", func(b *AgentSessionsBinding) { b.Resources.Memory = "512" + strings.Repeat("0", 30) + "m" }, "resources.memory"},
+		{"too many worker labels", func(b *AgentSessionsBinding) {
+			b.WorkerSelector.MatchLabels = map[string]string{}
+			for i := range maxAgentSessionsWorkerLabels + 1 {
+				b.WorkerSelector.MatchLabels[fmt.Sprintf("k%d", i)] = "v"
+			}
+		}, "more than 10 labels"},
 		{"label key", func(b *AgentSessionsBinding) { b.WorkerSelector.MatchLabels = map[string]string{"bad key": "x"} }, "matchLabels key"},
 		{"label value", func(b *AgentSessionsBinding) { b.WorkerSelector.MatchLabels = map[string]string{"k": "bad value"} }, "matchLabels value"},
 		{"model name", func(b *AgentSessionsBinding) { b.Model.Name = " fixture-model" }, "model.name"},

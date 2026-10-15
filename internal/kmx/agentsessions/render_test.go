@@ -39,30 +39,48 @@ func renderTestInput(t *testing.T) RenderInput {
 	return RenderInput{Suite: "support-desk", Member: "triage", Model: "fixture-model", HarnessImage: renderTestImage, Binding: renderTestBinding(t, "../runtime/testdata/agentsessions-binding-microvm.json")}
 }
 
-// The golden file is the full plan-only render of the POC's micro-VM binding
-// (with the model section the kind adds).
-func TestRenderGoldenPOCMicroVMBinding(t *testing.T) {
-	rendered, err := Render(renderTestInput(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := json.MarshalIndent(rendered, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got = append(got, '\n')
-	const golden = "testdata/render-microvm.golden.json"
-	if *updateGolden {
-		if err := os.WriteFile(golden, got, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	want, err := os.ReadFile(golden)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Fatalf("render changed (run with -update to accept):\ngot:\n%s\nwant:\n%s", got, want)
+// The golden files are full plan-only renders: the POC's micro-VM binding (with
+// the model section the kind adds) and a gVisor variant with VOLUMES fidelity
+// and no worker selector. scripts/validate-agentsessions-render.sh feeds each
+// actorTemplate through substrate's protojson decoding and CreateActorTemplate
+// validation at SubstrateAPICommit.
+func TestRenderGolden(t *testing.T) {
+	for _, tc := range []struct {
+		golden string
+		edit   func(*RenderInput)
+	}{
+		{"testdata/render-microvm.golden.json", func(*RenderInput) {}},
+		{"testdata/render-gvisor.golden.json", func(in *RenderInput) {
+			in.Binding.Sandbox = runtime.AgentSessionsSandboxBinding{Class: "gvisor", ConfigName: "gvisor"}
+			in.Binding.Snapshot.Fidelity = "VOLUMES"
+			in.Binding.WorkerSelector = runtime.AgentSessionsWorkerSelectorBinding{}
+		}},
+	} {
+		t.Run(tc.golden, func(t *testing.T) {
+			in := renderTestInput(t)
+			tc.edit(&in)
+			rendered, err := Render(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := json.MarshalIndent(rendered, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, '\n')
+			if *updateGolden {
+				if err := os.WriteFile(tc.golden, got, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want, err := os.ReadFile(tc.golden)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatalf("render changed (run with -update to accept):\ngot:\n%s\nwant:\n%s", got, want)
+			}
+		})
 	}
 }
 
@@ -76,13 +94,13 @@ func TestRenderPortsPOCRules(t *testing.T) {
 	if err != nil || rendered.BindingDigest != bindingDigest {
 		t.Fatal("binding digest not recorded", err)
 	}
-	sum := sha256.Sum256([]byte("kmx.agentsessions-actortemplate/v1\nsha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae\n" + bindingDigest))
+	sum := sha256.Sum256([]byte("kmx.agentsessions-actortemplate/v2\n" + renderTestImage + "\n" + bindingDigest))
 	wantName := "support-desk-triage-" + hex.EncodeToString(sum[:])[:8]
 	tmpl := rendered.ActorTemplate
 	if tmpl.Metadata.Name != wantName || tmpl.Metadata.Atespace != "agentsuite-demo" {
 		t.Fatalf("template identity = %+v, want %s", tmpl.Metadata, wantName)
 	}
-	if tmpl.SandboxConfig != (ActorSandboxConfig{SandboxClass: "SANDBOX_CLASS_MICROVM", ConfigName: "microvm"}) {
+	if tmpl.SandboxConfig != (ActorSandboxConfig{SandboxClass: "microvm", ConfigName: "microvm"}) {
 		t.Fatalf("sandbox = %+v", tmpl.SandboxConfig)
 	}
 	if tmpl.SnapshotConfig != (ActorSnapshotConfig{StorageLocation: "gs://ate-snapshots/agentsuite-demo/" + wantName + "/", PreferredFidelity: "SNAPSHOT_FIDELITY_MEMORY"}) {
@@ -95,8 +113,8 @@ func TestRenderPortsPOCRules(t *testing.T) {
 	if len(tmpl.Containers) != 1 || c.Image != renderTestImage || c.WakeupProbe != (ActorWakeupProbe{HTTPGet: ActorHTTPGet{Path: "/readyz", Port: 8081}, TimeoutSeconds: 120}) {
 		t.Fatalf("container = %+v", c)
 	}
-	if c.Resources == nil || len(c.Resources.Limits) != 2 || c.Resources.Limits[0] != (ActorLimit{"cpu", "1"}) || c.Resources.Limits[1] != (ActorLimit{"memory", "512Mi"}) {
-		t.Fatalf("resources = %+v", c.Resources)
+	if len(tmpl.Resources.Limits) != 2 || tmpl.Resources.Limits[0] != (ActorLimit{"cpu", "1"}) || tmpl.Resources.Limits[1] != (ActorLimit{"memory", "512Mi"}) {
+		t.Fatalf("template resources = %+v", tmpl.Resources)
 	}
 	env := map[string]string{}
 	for _, e := range c.Env {
@@ -147,7 +165,7 @@ func TestRenderRegistrationIsStrictProtoJSONWithHostSpecDigest(t *testing.T) {
 func TestRenderGVisorBindingAndOptionalSections(t *testing.T) {
 	in := renderTestInput(t)
 	in.Binding.Sandbox.Class, in.Binding.Sandbox.ConfigName = "gvisor", "gvisor-default"
-	in.Binding.Resources = runtime.AgentSessionsResourcesBinding{}
+	in.Binding.Resources = runtime.AgentSessionsResourcesBinding{CPU: "500m", Memory: "1Gi"}
 	in.Binding.WorkerSelector = runtime.AgentSessionsWorkerSelectorBinding{}
 	rendered, err := Render(in)
 	if err != nil {
@@ -157,7 +175,7 @@ func TestRenderGVisorBindingAndOptionalSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rendered.ActorTemplate.SandboxConfig.SandboxClass != "SANDBOX_CLASS_GVISOR" || rendered.ActorTemplate.WorkerSelector != nil || rendered.ActorTemplate.Containers[0].Resources != nil {
+	if rendered.ActorTemplate.SandboxConfig.SandboxClass != "gvisor" || rendered.ActorTemplate.WorkerSelector != nil || rendered.ActorTemplate.Resources.Limits[0] != (ActorLimit{"cpu", "500m"}) {
 		t.Fatalf("gvisor render = %+v", rendered.ActorTemplate)
 	}
 	if rendered.ActorTemplate.Metadata.Name == micro.ActorTemplate.Metadata.Name {
@@ -188,7 +206,14 @@ func TestRenderRefusesInvalidInputs(t *testing.T) {
 		{"empty image", func(in *RenderInput) { in.HarnessImage = "" }, "digest-pinned"},
 		{"reserved chat", func(in *RenderInput) { in.Member = "chat" }, "serves itself"},
 		{"reserved echo", func(in *RenderInput) { in.Member = "echo" }, "serves itself"},
-		{"member name", func(in *RenderInput) { in.Member = "Triage" }, "object names"},
+		{"oversized image", func(in *RenderInput) {
+			in.HarnessImage = "registry.example.invalid/" + strings.Repeat("a", 512) + "@sha256:" + strings.Repeat("a", 64)
+		}, "digest-pinned"},
+		{"member case", func(in *RenderInput) { in.Member = "Triage" }, "DNS label"},
+		{"member dot", func(in *RenderInput) { in.Member = "triage.v2" }, "DNS label"},
+		{"member length", func(in *RenderInput) { in.Member = strings.Repeat("a", 64) }, "DNS label"},
+		{"suite name", func(in *RenderInput) { in.Suite = "Support" }, "workspace suite name"},
+		{"missing resources", func(in *RenderInput) { in.Binding.Resources.Memory = "" }, "resources.memory"},
 		{"binding identity", func(in *RenderInput) { in.Binding.Kind = "KagentBindings" }, "kind"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -198,6 +223,51 @@ func TestRenderRefusesInvalidInputs(t *testing.T) {
 				t.Fatalf("invalid input rendered: %v", err)
 			}
 		})
+	}
+}
+
+// Workspace suite names may contain '_' and '.' and end in '-'; the template
+// name sanitizes them.
+func TestRenderAcceptsWorkspaceSuiteNames(t *testing.T) {
+	label := regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+	for _, suite := range []string{"support_desk", "support-desk-", "support.desk", "s"} {
+		in := renderTestInput(t)
+		in.Suite = suite
+		rendered, err := Render(in)
+		if err != nil {
+			t.Fatalf("suite %q refused: %v", suite, err)
+		}
+		if name := rendered.ActorTemplate.Metadata.Name; !label.MatchString(name) {
+			t.Fatalf("suite %q rendered template name %q", suite, name)
+		}
+	}
+}
+
+// The same content digest from another registry or repository is a different
+// containers[0].image, so it must be a different template.
+func TestRenderMirroredImageIsAnotherTemplate(t *testing.T) {
+	digest := "@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+	seen := map[string]string{}
+	for _, image := range []string{
+		renderTestImage,
+		"mirror.example.invalid/agentsessions/harnessnode" + digest,
+		"registry.example.invalid/other/harnessnode" + digest,
+		"registry.example.invalid:5000/agentsessions/harnessnode" + digest,
+	} {
+		in := renderTestInput(t)
+		in.HarnessImage = image
+		rendered, err := Render(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := rendered.ActorTemplate.Metadata.Name
+		if prior, ok := seen[name]; ok {
+			t.Fatalf("%s and %s render different specs under one template name %s", prior, image, name)
+		}
+		seen[name] = image
+		if rendered.ActorTemplate.Containers[0].Image != image || !strings.Contains(rendered.ActorTemplate.SnapshotConfig.StorageLocation, "/"+name+"/") {
+			t.Fatalf("render of %s = %+v", image, rendered.ActorTemplate)
+		}
 	}
 }
 
@@ -218,7 +288,7 @@ func TestTemplateNameIsABoundedDNSLabel(t *testing.T) {
 		if TemplateName(tc.suite, tc.member, digest, "sha256:"+strings.Repeat("b", 64)) == name {
 			t.Fatal("binding digest did not change the name")
 		}
-		if templateName("kmx.agentsessions-actortemplate/v2", tc.suite, tc.member, digest, digest) == name {
+		if templateName("kmx.agentsessions-actortemplate/v1", tc.suite, tc.member, digest, digest) == name {
 			t.Fatal("renderer version did not change the name")
 		}
 	}

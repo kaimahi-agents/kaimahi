@@ -265,7 +265,10 @@ packaged model; a mismatch refuses before any Session. The receipt records the
 binding's digest. The host's model endpoint is an operator declaration and is not
 checked against the binding. All cluster, namespace, inference and result-port
 selectors refuse, including explicitly supplied defaults. Receipts written before
-the binding digest was recorded are unreadable; evaluate again. No declaration or transport failure triggers fallback. Before
+the binding digest was recorded are unreadable; evaluate again. A managed proof
+stored without a binding digest is never selected: when it is the latest record,
+default push refuses with an evaluate-again error rather than using an older
+record, and a new evaluation registers after it. No declaration or transport failure triggers fallback. Before
 Session creation, evaluation prints:
 **“Development: unauthenticated operator-observed host; not authenticated remote promotion.”**
 Instructions, inputs, answers and config are retained in the host journal in
@@ -337,9 +340,9 @@ model:
 | `placement.backend` | `substrate` only. |
 | `atespace` | RFC 1123 label. |
 | `sandbox` | `class` `microvm` or `gvisor`; `configName` names the cluster SandboxConfig. |
-| `snapshot` | `fidelity` `MEMORY`, `ROOTFS` (micro-VM only) or `VOLUMES`; `storageLocation` is an object-storage URI without credentials, query or fragment, and without empty, `.` or `..` path segments (one trailing `/` is allowed). |
-| `resources` | Optional positive Kubernetes quantities for `cpu` and `memory`. |
-| `workerSelector.matchLabels` | Optional Kubernetes label selector; an empty `matchLabels` is the same binding (and digest) as an omitted `workerSelector`. |
+| `snapshot` | `fidelity` `MEMORY`, `ROOTFS` (micro-VM only) or `VOLUMES`; `storageLocation` is an object-storage URI of at most 959 bytes without credentials, query, fragment or `\`, and without empty path segments or segments of only `.` and spaces (one trailing `/` is allowed). |
+| `resources` | Required `cpu` and `memory`: positive Kubernetes quantities of at most 32 characters, cpu at most 999.999 cores. Substrate sizes and schedules the actor by them. |
+| `workerSelector.matchLabels` | Optional Kubernetes label selector of at most 10 labels; an empty `matchLabels` is the same binding (and digest) as an omitted `workerSelector`. |
 | `model` | `name` is the served model; `provider: openai` (OpenAI-compatible); optional HTTP(S) `baseURL`; `secretRef` names the credential Secret and key. |
 
 Parsing is strict: one YAML (or JSON) document, known fields only, no anchors,
@@ -367,26 +370,32 @@ AgentSessions host, and applies nothing; `--plan` is required, and
 
 | Rendered field | Value |
 |---|---|
-| `ActorTemplate.metadata.name` | `<suite>-<member>-<hash8>`: the first 8 hex of `sha256(renderer version + "\n" + image digest + "\n" + binding digest)`, renderer version `kmx.agentsessions-actortemplate/v1`; at most 63 characters, only suite and member truncated. |
+| `ActorTemplate.metadata.name` | `<suite>-<member>-<hash8>`: the first 8 hex of `sha256(renderer version + "\n" + image reference + "\n" + binding digest)`, renderer version `kmx.agentsessions-actortemplate/v2`. The image reference is the full `--harness-image` value, so the same digest from a mirror or another repository is another template. At most 63 characters; suite and member are sanitized and truncated, never the hash. |
 | `metadata.atespace` | `binding.atespace` |
 | `containers[0].image` | The `--harness-image` reference. |
 | `containers[0].env` | `HARNESS_ADDR=:80`, `HARNESS_READYZ=:8081`, `HARNESS_KIND=chat`, `HARNESS_MODEL=<packaged model>`. No model credentials, endpoint or instructions. |
 | `containers[0].wakeup_probe` | `GET /readyz` on 8081, 120s. |
 | `containers[0].security_context` | `capabilities: {}`, adding none. |
-| `containers[0].resources` | `binding.resources` |
-| `sandbox_config` | `binding.sandbox` (`SANDBOX_CLASS_MICROVM` or `SANDBOX_CLASS_GVISOR`). |
+| `resources` | `limits` `cpu` and `memory` from `binding.resources`: the actor's size. |
+| `sandbox_config` | `binding.sandbox`; `sandbox_class` is `microvm` or `gvisor`. |
 | `snapshot_config` | `binding.snapshot.fidelity`; `storage_location` is `binding.snapshot.storageLocation` + `<name>/`. |
 | `worker_selector` | `binding.workerSelector` |
 | `HarnessRegistration` | `metadata.name` is the member; `spec.substrate {atespace, template}`, `RESUMABILITY_STATELESS_REPLAY`, `descriptor_id: chat`. The plan reports the host's `spec_digest`. |
 
-Both documents use proto field and enum names. The plan also reports the host
+Both documents use proto field and enum names. The `ActorTemplate` targets
+agent-substrate/substrate main at `f4f7b806255ffdc824391b857dbbf329a2556402`;
+earlier revisions (before the string `sandbox_class` and required template
+`resources`) refuse it. `scripts/validate-agentsessions-render.sh` checks out that
+commit and runs the golden renders through its protojson decoding and
+`CreateActorTemplate` validation; it needs network access and is not part of CI.
+The plan also reports the host
 model references (`binding.model`), the chat `configDigest` every Session must
 send (the packaged instructions as `system_prompt`) and both binding digests: the
 one the evaluation recorded and the one being rendered. They may differ, since
 each environment has its own binding; both serve the packaged model. Evidence
 remains development-host evidence, not evaluation on the rendered target.
-Member names `chat` and `echo` refuse because the host serves those harnesses
-itself. A host serves a substrate registration only when built with a substrate
+The member is the harness name, a DNS label of at most 63 characters; `chat`
+and `echo` refuse because the host serves those harnesses itself. A host serves a substrate registration only when built with a substrate
 placement backend.
 
 ## Evaluate the whole workspace

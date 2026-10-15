@@ -73,7 +73,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - AgentSessions `kmx eval --development-host FILE` now requires `--bindings FILE`,
   an `AgentSessionsBinding` whose `model.name` equals the packaged model, and
   records its digest in the evidence. AgentSessions receipts without a binding
-  digest are unreadable; evaluate again before evaluated push or Lift.
+  digest are unreadable; evaluate again before evaluated push or Lift. A managed
+  AgentSessions proof stored without one is ineligible: default push refuses
+  with an evaluate-again error and never falls back to an older record, and a
+  new evaluation registers after it.
 
 - Judge evidence now binds its request style; older judge receipts without it
   require fresh evaluation. Text-only receipts remain unchanged.
@@ -103,15 +106,22 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   publishRepository and derives `s-<full-S-hex>`. No composed or tag-based Lift.
 - `AgentSessionsBinding` (`kmx.kaimahi.dev/v1alpha1`): a closed per-environment
   binding for AgentSessions (target, substrate placement, atespace, sandbox,
-  snapshot, resources, worker selector, model name/provider/baseURL/Secret ref).
-  The suite pins the model; eval and Lift refuse a binding serving another one.
-  `snapshot.storageLocation` refuses empty, `.` and `..` path segments; an empty
+  snapshot, required cpu/memory resources, worker selector, model
+  name/provider/baseURL/Secret ref). The suite pins the model; eval and Lift
+  refuse a binding serving another one. `snapshot.storageLocation` refuses `\`,
+  empty path segments and segments of only `.` and spaces; an empty
   `workerSelector.matchLabels` has the same digest as an omitted selector.
 - Plan-only AgentSessions Lift: `kmx lift REF@DIGEST --harness-image IMAGE@sha256:…
   --bindings FILE --evidence FILE --plan` renders a substrate ActorTemplate and
   HarnessRegistration offline from full-passing AgentSessions evidence. No
   cluster configuration, substrate or host calls, and no apply. The template
-  name hash covers the renderer version, image digest and binding digest.
+  targets agent-substrate/substrate main at
+  `f4f7b806255ffdc824391b857dbbf329a2556402` (string `sandbox_class`, required
+  template-level cpu/memory `resources`); earlier substrate revisions refuse it.
+  `scripts/validate-agentsessions-render.sh` checks the golden renders with that
+  commit's protojson decoding and CreateActorTemplate validation. The template
+  name hash covers the renderer version, the full image reference (a mirrored
+  image is another template) and the binding digest.
 
 - Public Orka workspace eval uses fresh digest/run candidates, never adoption,
   update or reuse, and exports passing evidence only after verified UID/RV-safe

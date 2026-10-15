@@ -99,6 +99,7 @@ placement: {backend: substrate}
 atespace: agentsuite-demo
 sandbox: {class: microvm, configName: microvm}
 snapshot: {fidelity: MEMORY, storageLocation: "gs://ate-snapshots/agentsuite-demo/"}
+resources: {cpu: "1", memory: 512Mi}
 model:
   name: ` + model + `
   provider: openai

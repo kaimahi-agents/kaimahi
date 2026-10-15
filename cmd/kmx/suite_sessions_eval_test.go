@@ -74,7 +74,7 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 		t.Fatal(err)
 	}
 	binding := filepath.Join(dir, "binding.yaml")
-	bindingDoc := "apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: AgentSessionsBinding\ntarget: {platform: kubernetes, id: demo}\nplacement: {backend: substrate}\natespace: demo\nsandbox: {class: microvm, configName: microvm}\nsnapshot: {fidelity: MEMORY, storageLocation: 'gs://snapshots/demo/'}\nmodel: {name: fixture-model, provider: openai, secretRef: {name: model-credentials, key: api-key}}\n"
+	bindingDoc := "apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: AgentSessionsBinding\ntarget: {platform: kubernetes, id: demo}\nplacement: {backend: substrate}\natespace: demo\nsandbox: {class: microvm, configName: microvm}\nsnapshot: {fidelity: MEMORY, storageLocation: 'gs://snapshots/demo/'}\nresources: {cpu: '1', memory: 512Mi}\nmodel: {name: fixture-model, provider: openai, secretRef: {name: model-credentials, key: api-key}}\n"
 	if err := os.WriteFile(binding, []byte(bindingDoc), 0600); err != nil {
 		t.Fatal(err)
 	}
