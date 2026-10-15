@@ -29,7 +29,7 @@ func TestSuiteCandidateCanonicalCompatibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(raw)
-	if got := hex.EncodeToString(digest[:]); got != "afb111ffe285bf19d36624b2df7d950d717dc48caeff3af8f826032917303168" {
+	if got := hex.EncodeToString(digest[:]); got != "e2910a3aa59fcf8a8e1ee59b7a3613975acdb41f1e1f907e6739035c46279ee1" {
 		t.Fatalf("canonical receipt digest = %s; subject revision = %s", got, r.Subject.RenderedDigest)
 	}
 }

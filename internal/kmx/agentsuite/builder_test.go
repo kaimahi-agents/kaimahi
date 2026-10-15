@@ -32,7 +32,7 @@ func TestResolveSandboxPlanSelectsMinimalComposition(t *testing.T) {
 	if got := plan.CompositionDigest; got != "sha256:c19a6173a3bad6723b5f4c36f49c8ee21afbd65317d9c9c4275ebd130b2223d5" {
 		t.Fatalf("composition digest = %s", got)
 	}
-	if got := plan.SuiteManifestHash; got != "sha256:5dfa146b321f064dcb8bfdda38dee450f907b5bd52f500f7947262e6b7bcb930" {
+	if got := plan.SuiteManifestHash; got != "sha256:59b19197bc5a053ec68968dfd9f990d50c24829c5761f251559f26cff6ba0711" {
 		t.Fatalf("suite manifest hash = %s", got)
 	}
 }

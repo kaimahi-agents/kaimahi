@@ -6,13 +6,21 @@
     {
       "id": "incident-analyst",
       "path": "agents/incident-analyst.json",
-      "digest": "sha256:2ef3d01eb76a9941bddf51f9114ed6b185345b83a63dec5fcf5693f5523d64fb"
+      "descriptor": {
+        "mediaType": "application/vnd.agentsuite.agent.v1+json",
+        "digest": "sha256:c704aa3cf45a0f4316b7c3d173a9aa2948522300bfed5385e239fd822267bfd4",
+        "size": 534
+      }
     }
   ],
   "toolProviderCatalog": {
     "id": "catalog",
     "path": "tool-providers/catalog.json",
-    "digest": "sha256:933283a1fa90fd488db3f872fb89dc1572a5f638bf0a81514a542333e310ef95"
+    "descriptor": {
+      "mediaType": "application/vnd.agentsuite.tool.provider.catalog.v1+json",
+      "digest": "sha256:933283a1fa90fd488db3f872fb89dc1572a5f638bf0a81514a542333e310ef95",
+      "size": 121
+    }
   },
   "compositions": [
     {
@@ -22,14 +30,22 @@
         "architecture": "amd64"
       },
       "path": "compositions/incident-analyst-linux-amd64.json",
-      "digest": "sha256:96fab47b2d5668ded75e11ac404296a9f646e3a588fe8da75657d161dc21b4c8"
+      "descriptor": {
+        "mediaType": "application/vnd.agentsuite.composition.v1+json",
+        "digest": "sha256:96fab47b2d5668ded75e11ac404296a9f646e3a588fe8da75657d161dc21b4c8",
+        "size": 220
+      }
     }
   ],
   "buildProfiles": [
     {
       "id": "agentkit-v0.1.0",
       "path": "build-profiles/agentkit-v0.1.0.json",
-      "digest": "sha256:cd3a5fd2a53cdf83177a65537a3f21181c2f28cc62a7badfd13cc81d66df52a7"
+      "descriptor": {
+        "mediaType": "application/vnd.agentsuite.build.profile.v1+json",
+        "digest": "sha256:cd3a5fd2a53cdf83177a65537a3f21181c2f28cc62a7badfd13cc81d66df52a7",
+        "size": 838
+      }
     }
   ],
   "capabilities": [],

@@ -274,7 +274,7 @@ func writeJSON(t *testing.T, root, name string, value any) (digest string, size 
 	}
 	data = append(data, '\n')
 	writeFile(t, root, name, data, 0o644)
-	return canonicalDigest(t, data), int64(len(data))
+	return canonicalDigestAndSize(t, data)
 }
 
 func readFile(t *testing.T, root, name string) []byte {
@@ -304,6 +304,18 @@ func canonicalDigest(t *testing.T, data []byte) string {
 		t.Fatalf("canonicalize JSON: %v", err)
 	}
 	return rawDigest(canonical)
+}
+
+// canonicalDigestAndSize returns the digest and size of data's JCS-canonical
+// representation, matching the descriptor shape agentsuite validation checks
+// against (agentsuite.matchesCanonicalDescriptor), not data's own raw length.
+func canonicalDigestAndSize(t *testing.T, data []byte) (digest string, size int64) {
+	t.Helper()
+	canonical, err := jcs.Transform(data)
+	if err != nil {
+		t.Fatalf("canonicalize JSON: %v", err)
+	}
+	return rawDigest(canonical), int64(len(canonical))
 }
 
 func rawDigest(data []byte) string {
