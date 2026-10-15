@@ -15,6 +15,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 // newAgentShowCommand answers one question: will this agent work, and if
@@ -128,8 +129,11 @@ func completeCreateInputs(ctx context.Context, in *os.File, out io.Writer, opt *
 	if in == nil || !visible || !term.IsTerminal(int(in.Fd())) || !term.IsTerminal(int(diagnostics.Fd())) {
 		return fmt.Errorf("workspace creation requires --model and --instructions <file> without a visible terminal")
 	}
-	// Reject an invalid name before asking for source inputs; core validation
-	// still checks the complete authored inputs before workspace initialization.
+	// Name diagnostics can quote input; preserve the core's credential check
+	// before issuing them, even though source inputs are not yet complete.
+	if secretshapes.Match(opt.Name) != nil {
+		return fmt.Errorf("refusing credential-shaped workspace name")
+	}
 	if err := scaffold.ValidateName(opt.Name); err != nil {
 		return err
 	}

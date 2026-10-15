@@ -45,11 +45,11 @@ func createPromptPTY(t *testing.T, raw bool) (*os.File, *os.File) {
 
 func TestCreatePromptsOnlyForMissingTerminalInputs(t *testing.T) {
 	for _, tc := range []struct {
-		name                                                string
-		flags                                               []string
-		input, model, want, agent                           string
-		command                                             []string
-		modelPrompt, filePrompt, create, raw, hidden, piped bool
+		name                                                        string
+		flags                                                       []string
+		input, model, want, agent                                   string
+		command                                                     []string
+		modelPrompt, filePrompt, create, raw, hidden, piped, redact bool
 	}{
 		{name: "bare", input: "exact-model\n{file}\ny\n", model: "exact-model", modelPrompt: true, filePrompt: true, create: true},
 		{name: "noncanonical paste", input: "exact-model\n{file}\ny\n", model: "exact-model", modelPrompt: true, filePrompt: true, create: true, raw: true},
@@ -68,6 +68,7 @@ func TestCreatePromptsOnlyForMissingTerminalInputs(t *testing.T) {
 		{name: "explicit blank model", flags: []string{"--model", " "}, want: "--model and --instructions"},
 		{name: "explicit blank instructions", flags: []string{"--instructions", ""}, want: "--model and --instructions"},
 		{name: "invalid name", agent: "BadName", want: "name"},
+		{name: "credential name", agent: "ghp_" + strings.Repeat("x", 36), want: "credential-shaped", redact: true},
 		{name: "help", command: []string{"create", "--help"}},
 		{name: "completion", command: []string{"__complete", "create", ""}},
 		{name: "hidden stderr", want: "--model and --instructions", hidden: true},
@@ -122,6 +123,9 @@ func TestCreatePromptsOnlyForMissingTerminalInputs(t *testing.T) {
 			go func() { done <- execute(args, deps) }()
 			select {
 			case err := <-done:
+				if tc.redact && err != nil && strings.Contains(err.Error(), tc.agent) {
+					t.Fatal("error echoed credential-shaped name")
+				}
 				if tc.want != "" {
 					if err == nil || !strings.Contains(err.Error(), tc.want) {
 						t.Fatalf("error=%v, want %q", err, tc.want)
