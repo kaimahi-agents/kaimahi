@@ -70,6 +70,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Use --unevaluated to explicitly retain ordinary publication; explicit
   --evaluation FILE overrides managed lookup without fallback. Extracted-directory
   suite push is unchanged.
+- AgentSessions `kmx eval --development-host FILE` now requires `--bindings FILE`,
+  an `AgentSessionsBinding` whose `model.name` equals the packaged model, and
+  records its digest in the evidence, including judged and repeated proof. This
+  adds `bindingDigest` to AgentSessions receipt bytes; Orka/kagent receipts are
+  unchanged. AgentSessions receipts without a binding
+  digest are unreadable; evaluate again before evaluated push or Lift. A managed
+  AgentSessions proof stored without one is ineligible: default push refuses
+  with an evaluate-again error and never falls back to an older record, and a
+  new evaluation registers after it.
 
 - Judge evidence now binds its request style; older judge receipts without it
   require fresh evaluation. Text-only receipts remain unchanged.
@@ -102,9 +111,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   run creates a fresh Session/config/Exec; judging shares its deadline, unknown
   vetoes a threshold, and execution errors abort without retry. Full passing
   receipts retain actual run outcomes and exact-S publication checks. Default
-  single-run text receipt bytes are unchanged; older readers refuse the newly
-  supported judged/repeated proof. Host observations remain unauthenticated;
-  tools, remote hosts, Lift and receipt diff remain unsupported for Sessions.
+  single-run text receipt bytes are unchanged apart from the AgentSessions
+  `bindingDigest`; older readers refuse the newly supported judged/repeated proof.
+  Host observations remain unauthenticated; tools, remote hosts, Lift placement
+  and receipt diff remain unsupported for Sessions.
 
 - Root eval stores completed runtime-specific passing metadata in private KMX state;
   --out is optional and still exports a standalone receipt for Lift/diff. Immutable
@@ -115,6 +125,27 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   workspace exclusion releases on process exit; no stale-lock deletion or cleanup
   journal. Explicit push REPO:TAG stays unchanged; only bare push uses saved
   publishRepository and derives `s-<full-S-hex>`. Tag-based Lift remains unavailable.
+- `AgentSessionsBinding` (`kmx.kaimahi.dev/v1alpha1`): a closed per-environment
+  binding for AgentSessions (target, substrate placement, atespace, sandbox,
+  snapshot, required cpu/memory resources, worker selector, model
+  name/provider/baseURL/Secret ref). The suite pins the model; eval and Lift
+  refuse a binding serving another one. `snapshot.storageLocation` refuses `\`,
+  empty path segments and segments of only `.` and spaces; an empty
+  `workerSelector.matchLabels` has the same digest as an omitted selector.
+- Plan-only AgentSessions Lift: `kmx lift REF@DIGEST --harness-image IMAGE@sha256:…
+  --bindings FILE --evidence FILE --plan` renders a substrate ActorTemplate and
+  HarnessRegistration offline from full-passing AgentSessions evidence. No
+  cluster configuration, substrate or host calls, and no apply. The template
+  targets agent-substrate/substrate main at
+  `f4f7b806255ffdc824391b857dbbf329a2556402` (string `sandbox_class`, required
+  template-level cpu/memory `resources`); substrate revisions before the string
+  `sandbox_class` and required template `resources` refuse it.
+  `scripts/validate-agentsessions-render.sh` checks the golden renders with that
+  commit's protojson decoding and CreateActorTemplate validation. The template
+  name hash covers the renderer version, the full image reference (a mirrored
+  image is another template) and the binding digest. Composed workspace
+  `kmx lift --to NAME` refuses `--harness-image` and AgentSessions workspaces
+  before evaluation or publication.
 
 - Public Orka workspace eval uses fresh digest/run candidates, never adoption,
   update or reuse, and exports passing evidence only after verified UID/RV-safe

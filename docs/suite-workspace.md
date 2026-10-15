@@ -7,7 +7,9 @@ run a model or invoke Docker/buildx. The pinned AgentSessions chat profile also
 supports offline authoring, preparation, loading and ordinary unevaluated push
 with no member image. Full packaged evaluation and exact-suite evaluated push
 require the explicit [development host](#agentsessions-development-evaluation)
-boundary. Lift, chat/status and Orka/kagent operational consumers refuse it.
+boundary and an [`AgentSessionsBinding`](#agentsessionsbinding). Lift is a
+[plan-only render](#agentsessions-lift-plan); chat/status and Orka/kagent
+operational consumers refuse it.
 
 **Implemented:** offline creation, preparation and publication, and full-inventory
 native Orka or exact kagent v0.10.3 Go/linux-amd64 evaluation of one tool-free
@@ -112,7 +114,10 @@ references are preserved. Explicit-reference Lift remains deploy-only and requir
 a digest/private evidence and explicit `--promote` for source-only evidence.
 **Kagent stays out of composed Lift until its own candidate-scoped evaluation
 and ownership-safe cleanup are qualified**; standalone explicit kagent operations
-retain their existing boundaries. Named selectors never bypass remote confirmation.
+retain their existing boundaries. AgentSessions workspaces and `--harness-image`
+also refuse composed Lift before evaluation or publication; AgentSessions Lift is
+the explicit-reference [plan-only render](#agentsessions-lift-plan). Named selectors
+never bypass remote confirmation.
 
 ## Composed workspace Lift
 
@@ -275,11 +280,12 @@ reads are bounded, and credential-shaped content is refused.
 Select a pinned, operator-owned built-in `chat` host explicitly. This path uses
 one fresh, non-fork Session and one never-retried Exec per declared case run, with
 exact `system_prompt` config sent every time. It loads no Kubernetes settings.
-No registry, authentication, Lift, chat/status or remote-host support is added.
+No registry, authentication, chat/status or remote-host support is added; Lift
+is a [plan-only render](#agentsessions-lift-plan).
 
 ```sh
 kmx eval --workspace ./sessions-workspace --development-host ./private/host.json \
-  --out ./private/passing.json --case-timeout 30s
+  --bindings ./private/binding.yaml --out ./private/passing.json --case-timeout 30s
 kmx push --workspace ./sessions-workspace --evaluation ./private/passing.json \
   --to-layout ./sessions-layout greeter:v1
 ```
@@ -314,9 +320,17 @@ contract must match the packaged member.
 }
 ```
 
-The address must be literal loopback, not `localhost`. All cluster, namespace,
-inference, kagent bindings and result-port selectors refuse, including explicitly
-supplied defaults. No declaration or transport failure triggers fallback. Before
+The address must be literal loopback, not `localhost`. `--bindings` must name an
+[`AgentSessionsBinding`](#agentsessionsbinding) whose `model.name` is exactly the
+packaged model; a mismatch refuses before any Session. The receipt records the
+binding's digest once for the whole evaluation, including every judged or repeated
+run. The host's model endpoint is an operator declaration and is not
+checked against the binding. All cluster, namespace, inference and result-port
+selectors refuse, including explicitly supplied defaults. Receipts written before
+the binding digest was recorded are unreadable; evaluate again. A managed proof
+stored without a binding digest is never selected: when it is the latest record,
+default push refuses with an evaluate-again error rather than using an older
+record, and a new evaluation registers after it. No declaration or transport failure triggers fallback. Before
 Session creation, evaluation prints:
 **“Development: unauthenticated operator-observed host; not authenticated remote promotion.”**
 Instructions, inputs, answers and config are retained in the host journal in
@@ -328,8 +342,8 @@ unchanged observation file cannot detect a hostile process replacement.
 
 Execution requires an intact canonical five-record chat journal, exact
 harness/version/config/input/model-request fingerprint, attributable final text,
-terminal success and EOF. Deltas and Session metadata are not answers. Host-file
-and source snapshots are rechecked around each run, after judging and before export.
+terminal success and EOF. Deltas and Session metadata are not answers. Host-file,
+binding and source snapshots are rechecked around each run, after judging and before export.
 Only completed attributable assertion failures count against the authored threshold;
 unknown/partial/invalid evidence, drift, cancellation or output failure before
 publication stops later execution with no new pass. The shared publisher can
@@ -345,8 +359,9 @@ including exact S/G/member/profile/config/model/case identities, operator host
 observations, fresh Session/execution IDs and verified journal heads. Prompts,
 answers, config bytes, endpoint locators and journal bodies are excluded. Push
 consumes that explicit proof for exact S; evidence is not embedded in the suite
-or published as a referrer. Orka/kagent evidence cannot authorize this member,
-and Sessions evidence is refused by Lift and receipt diff. Read-only Replay can
+or published as a referrer. Orka/kagent evidence cannot authorize this member;
+Sessions evidence feeds only the [plan-only Lift render](#agentsessions-lift-plan)
+and is refused by receipt diff. Read-only Replay can
 support diagnosis with zero model calls but cannot become fresh candidate proof.
 
 The pinned daemon path has been demonstrated once with an instruction-sensitive,
@@ -354,6 +369,97 @@ keyless OpenAI-compatible fixture: two-case pass/evaluated push, instruction
 failure with no export, and Replay/reference reconstruction with unchanged model
 counter. That is runtime/config/journal qualification, not real-LLM quality or
 production/authenticated host qualification. No model or host is installed by KMX.
+
+### AgentSessionsBinding
+
+An `AgentSessionsBinding` is the per-environment half of an AgentSessions
+deployment. It lives outside the suite, one per environment. The suite pins the
+exact model; the binding says where that model is served and where sessions are
+placed. Eval and Lift refuse a binding whose `model.name` is not exactly the
+packaged model (no case folding, prefix or version matching). A different model
+is a new suite version and a new evaluation.
+
+```yaml
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: AgentSessionsBinding
+target: {platform: kubernetes, id: agentsuite-demo}
+placement: {backend: substrate}
+atespace: agentsuite-demo
+sandbox: {class: microvm, configName: microvm}
+snapshot: {fidelity: MEMORY, storageLocation: "gs://ate-snapshots/agentsuite-demo/"}
+resources: {cpu: "1", memory: 512Mi}
+workerSelector:
+  matchLabels: {workload: agentsuite-demo-microvm}
+model:
+  name: fixture-model
+  provider: openai
+  baseURL: http://fakemodel.agentsuite-demo.svc:8080/v1
+  secretRef: {name: model-credentials, key: api-key}
+```
+
+| Field | Rule |
+|---|---|
+| `target` | `platform: kubernetes`; `id` is a Kubernetes object name. |
+| `placement.backend` | `substrate` only. |
+| `atespace` | RFC 1123 label. |
+| `sandbox` | `class` `microvm` or `gvisor`; `configName` names the cluster SandboxConfig. |
+| `snapshot` | `fidelity` `MEMORY`, `ROOTFS` (micro-VM only) or `VOLUMES`; `storageLocation` is an object-storage URI of at most 959 bytes without credentials, query, fragment or `\`, and without empty path segments or segments of only `.` and spaces (one trailing `/` is allowed). |
+| `resources` | Required `cpu` and `memory`: positive Kubernetes quantities of at most 32 characters, cpu at most 999.999 cores. Substrate sizes and schedules the actor by them. |
+| `workerSelector.matchLabels` | Optional Kubernetes label selector of at most 10 labels; an empty `matchLabels` is the same binding (and digest) as an omitted `workerSelector`. |
+| `model` | `name` is the served model; `provider: openai` (OpenAI-compatible); optional HTTP(S) `baseURL`; `secretRef` names the credential Secret and key. |
+
+Parsing is strict: one YAML (or JSON) document, known fields only, no anchors,
+aliases or merge keys, and credential-shaped values refuse without being echoed.
+The credential is referenced, never embedded. The binding digest is the SHA-256 of
+the RFC 8785 (JCS) form of its JSON mapping, so comments, key order and
+YAML/JSON spelling do not change it. Evaluation records this digest in its
+evidence.
+
+### AgentSessions lift plan
+
+```sh
+kmx lift suite@sha256:<digest> --from-layout ./sessions-layout \
+  --harness-image registry.example/agentsessions/harnessnode@sha256:<digest> \
+  --bindings ./prod-binding.yaml --evidence ./private/passing.json --plan -o json
+```
+
+AgentSessions Lift is plan-only. From full-passing AgentSessions evidence for
+exactly this suite, the binding and a digest-pinned AgentSessions `harnessnode`
+image built from the pinned runtime commit, it renders two documents offline:
+a substrate `ActorTemplate` and an AgentSessions `HarnessRegistration` with a
+substrate placement. It loads no cluster configuration, contacts no substrate or
+AgentSessions host, and applies nothing; `--plan` is required, and
+`--to`/`--to-context`/`--to-namespace`/`--inference`/`--promote` refuse.
+
+| Rendered field | Value |
+|---|---|
+| `ActorTemplate.metadata.name` | `<suite>-<member>-<hash8>`: the first 8 hex of `sha256(renderer version + "\n" + image reference + "\n" + binding digest)`, renderer version `kmx.agentsessions-actortemplate/v2`. The image reference is the full `--harness-image` value, so the same digest from a mirror or another repository is another template. At most 63 characters; suite and member are sanitized and truncated, never the hash. |
+| `metadata.atespace` | `binding.atespace` |
+| `containers[0].image` | The `--harness-image` reference. |
+| `containers[0].env` | `HARNESS_ADDR=:80`, `HARNESS_READYZ=:8081`, `HARNESS_KIND=chat`, `HARNESS_MODEL=<packaged model>`. No model credentials, endpoint or instructions. |
+| `containers[0].wakeup_probe` | `GET /readyz` on 8081, 120s. |
+| `containers[0].security_context` | `capabilities: {}`, adding none. |
+| `resources` | `limits` `cpu` and `memory` from `binding.resources`: the actor's size. |
+| `sandbox_config` | `binding.sandbox`; `sandbox_class` is `microvm` or `gvisor`. |
+| `snapshot_config` | `binding.snapshot.fidelity`; `storage_location` is `binding.snapshot.storageLocation` + `<name>/`. |
+| `worker_selector` | `binding.workerSelector` |
+| `HarnessRegistration` | `metadata.name` is the member; `spec.substrate {atespace, template}`, `RESUMABILITY_STATELESS_REPLAY`, `descriptor_id: chat`. The plan reports the host's `spec_digest`. |
+
+Both documents use proto field and enum names. The `ActorTemplate` targets
+agent-substrate/substrate main at `f4f7b806255ffdc824391b857dbbf329a2556402`;
+earlier revisions (before the string `sandbox_class` and required template
+`resources`) refuse it. `scripts/validate-agentsessions-render.sh` checks out that
+commit and runs the golden renders through its protojson decoding and
+`CreateActorTemplate` validation; it needs network access and is not part of CI.
+The plan also reports the host
+model references (`binding.model`), the chat `configDigest` every Session must
+send (the packaged instructions as `system_prompt`) and both binding digests: the
+one the evaluation recorded and the one being rendered. They may differ, since
+each environment has its own binding; both serve the packaged model. Evidence
+remains development-host evidence, not evaluation on the rendered target.
+The member is the harness name, a DNS label of at most 63 characters; `chat`
+and `echo` refuse because the host serves those harnesses itself. A host serves a substrate registration only when built with a substrate
+placement backend.
 
 ## Evaluate the whole workspace
 
