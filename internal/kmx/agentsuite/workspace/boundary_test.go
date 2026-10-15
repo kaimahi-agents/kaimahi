@@ -123,7 +123,8 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 				if change == "secret instructions" {
 					data := "ghp_" + strings.Repeat("x", 36)
 					writeFile(t, filepath.Join(out, agent.Instructions.Path), data)
-					agent.Instructions.Digest = godigest.FromBytes([]byte(data)).String()
+					agent.Instructions.Descriptor.Digest = godigest.FromBytes([]byte(data)).String()
+					agent.Instructions.Descriptor.Size = int64(len(data))
 				}
 				mb, err := spec.Marshal(agent)
 				if err != nil {
@@ -134,10 +135,11 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 				if err := spec.Unmarshal(readFile(t, filepath.Join(out, "agentsuite.json")), &suite); err != nil {
 					t.Fatal(err)
 				}
-				suite.Agents[0].Digest, err = spec.Digest(mb)
+				suite.Agents[0].Descriptor.Digest, err = spec.Digest(mb)
 				if err != nil {
 					t.Fatal(err)
 				}
+				suite.Agents[0].Descriptor.Size = int64(len(mb))
 				sb, err := spec.Marshal(suite)
 				if err != nil {
 					t.Fatal(err)

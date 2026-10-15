@@ -229,27 +229,31 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases ma
 		return nil, errors.New("unsupported build profile; use the pinned default profile")
 	}
 	files := map[string][]byte{"instructions/" + m.ID + ".md": instructions, "build-profiles/default.json": bpBytes}
-	put := func(name string, value any) (string, error) {
+	put := func(name string, value any) (string, int64, error) {
 		b, err := spec.Marshal(value)
 		if err != nil {
-			return "", err
+			return "", 0, err
 		}
 		files[name] = b
-		return spec.Digest(b)
+		digest, err := spec.Digest(b)
+		if err != nil {
+			return "", 0, err
+		}
+		return digest, int64(len(b)), nil
 	}
 	catalogPath := "tool-providers/catalog.json"
-	catalogDigest, err := put(catalogPath, spec.ToolProviderCatalog{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeToolProviderCatalog, ToolProviders: []spec.ManifestRef{}})
+	catalogDigest, catalogSize, err := put(catalogPath, spec.ToolProviderCatalog{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeToolProviderCatalog, ToolProviders: []spec.ManifestRef{}})
 	if err != nil {
 		return nil, err
 	}
 	agentPath := "agents/" + m.ID + ".json"
-	agentDigest, err := put(agentPath, spec.Agent{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: spec.FileRef{Path: "instructions/" + m.ID + ".md", Digest: godigest.FromBytes(instructions).String()}, Model: spec.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}})
+	agentDigest, agentSize, err := put(agentPath, spec.Agent{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: spec.FileRef{Path: "instructions/" + m.ID + ".md", Descriptor: spec.Descriptor{MediaType: spec.MediaTypeInstructions, Digest: godigest.FromBytes(instructions).String(), Size: int64(len(instructions))}}, Model: spec.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}})
 	if err != nil {
 		return nil, err
 	}
 	platform := spec.Platform{OS: "linux", Architecture: "amd64"}
 	compositionPath := "compositions/" + m.ID + "-linux-amd64.json"
-	compositionDigest, err := put(compositionPath, spec.Composition{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeComposition, Agent: m.ID, Platform: platform, BuildProfile: bp.ID, ToolProviders: []spec.ResolvedToolProvider{}})
+	compositionDigest, compositionSize, err := put(compositionPath, spec.Composition{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeComposition, Agent: m.ID, Platform: platform, BuildProfile: bp.ID, ToolProviders: []spec.ResolvedToolProvider{}})
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +261,7 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases ma
 	if err != nil {
 		return nil, err
 	}
-	_, err = put("agentsuite.json", spec.Suite{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeSuite, Name: name, Agents: []spec.ManifestRef{{ID: m.ID, Path: agentPath, Digest: agentDigest}}, ToolProviderCatalog: spec.ManifestRef{Path: catalogPath, Digest: catalogDigest}, Compositions: []spec.CompositionRef{{Agent: m.ID, Platform: platform, Path: compositionPath, Digest: compositionDigest}}, BuildProfiles: []spec.ManifestRef{{ID: bp.ID, Path: "build-profiles/default.json", Digest: profileDigest}}})
+	_, _, err = put("agentsuite.json", spec.Suite{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeSuite, Name: name, Agents: []spec.ManifestRef{{ID: m.ID, Path: agentPath, Descriptor: spec.Descriptor{MediaType: spec.MediaTypeAgent, Digest: agentDigest, Size: agentSize}}}, ToolProviderCatalog: spec.ManifestRef{Path: catalogPath, Descriptor: spec.Descriptor{MediaType: spec.MediaTypeToolProviderCatalog, Digest: catalogDigest, Size: catalogSize}}, Compositions: []spec.CompositionRef{{Agent: m.ID, Platform: platform, Path: compositionPath, Descriptor: spec.Descriptor{MediaType: spec.MediaTypeComposition, Digest: compositionDigest, Size: compositionSize}}}, BuildProfiles: []spec.ManifestRef{{ID: bp.ID, Path: "build-profiles/default.json", Descriptor: spec.Descriptor{MediaType: spec.MediaTypeBuildProfile, Digest: profileDigest, Size: int64(len(bpBytes))}}}})
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +300,7 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases ma
 		files[p] = cases[name]
 		record.Cases = append(record.Cases, caseRef{p, godigest.FromBytes(cases[name]).String()})
 	}
-	_, err = put(metadataPath, record)
+	_, _, err = put(metadataPath, record)
 	return files, err
 }
 
