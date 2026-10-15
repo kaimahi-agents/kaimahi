@@ -2,16 +2,35 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/kaimahi-agents/kaimahi/agentsuite/policy"
 	"github.com/spf13/cobra"
 )
 
+const maxPolicyFileBytes = 4 << 20
+
+func readPolicyFile(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxPolicyFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxPolicyFileBytes {
+		return nil, fmt.Errorf("policy file exceeds %d bytes", maxPolicyFileBytes)
+	}
+	return data, nil
+}
+
 func newSuitePolicyCommand() *cobra.Command {
 	var adminPath string
 	cmd := &cobra.Command{Use: "policy FILE", Short: "Resolve a portable AgentSuite policy", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		raw, err := os.ReadFile(args[0])
+		raw, err := readPolicyFile(args[0])
 		if err != nil {
 			return err
 		}
@@ -21,7 +40,7 @@ func newSuitePolicyCommand() *cobra.Command {
 		}
 		admin := policy.AdministrativePolicy{}
 		if adminPath != "" {
-			b, e := os.ReadFile(adminPath)
+			b, e := readPolicyFile(adminPath)
 			if e != nil {
 				return e
 			}
