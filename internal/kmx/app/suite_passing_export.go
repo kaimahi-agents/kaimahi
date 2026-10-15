@@ -21,6 +21,7 @@ type suitePassingExport struct {
 	directory  *os.File
 	path, name string
 	parent     os.FileInfo
+	linked     bool
 }
 
 func preflightSuitePassingExport(ctx context.Context, destination, workspaceRoot, cacheRoot string) (*suitePassingExport, error) {
@@ -76,6 +77,15 @@ func (e *suitePassingExport) publish(ctx context.Context, r *suitePassingReceipt
 	if err != nil {
 		return err
 	}
+	return e.publishBytes(ctx, raw)
+}
+
+// Callers validate the complete document before using this exclusive publisher.
+// linked records the visibility boundary even when later persistence checks fail.
+func (e *suitePassingExport) publishBytes(ctx context.Context, raw []byte) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := e.unchanged(); err != nil {
 		return err
 	}
@@ -121,6 +131,7 @@ func (e *suitePassingExport) publish(ctx context.Context, r *suitePassingReceipt
 	if e.root.Link(stage, e.name) != nil {
 		return errSuitePassingExport
 	}
+	e.linked = true
 	if err := e.unchanged(); err != nil {
 		return err
 	}
