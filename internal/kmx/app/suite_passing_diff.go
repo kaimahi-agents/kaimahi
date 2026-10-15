@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -36,28 +37,25 @@ func normalizeSuitePassingEvaluation(r *suitePassingReceipt) (normalizedEvaluati
 	}
 	inventory := make([]suitePassingCase, 0, len(r.Cases))
 	for _, row := range r.Cases {
-		c := normalizedEvaluationCase{
-			CaseDigest: row.CaseDigest, InputDigest: row.InputDigest, Verdict: row.Verdict,
-			IdentityComplete: true, Assertions: map[string]agentruntime.EvaluationAssertionResult{},
+		c, exists := n.Cases[row.ID]
+		if !exists {
+			c = normalizedEvaluationCase{
+				CaseDigest: row.CaseDigest, InputDigest: row.InputDigest, Verdict: "pass",
+				IdentityComplete: true, Assertions: map[string]agentruntime.EvaluationAssertionResult{},
+			}
 		}
 		for _, assertion := range row.Assertions {
-			c.Assertions[assertion.ID] = agentruntime.EvaluationAssertionResult{
+			key := assertion.ID
+			if row.Run > 0 {
+				key = fmt.Sprintf("%s/run/%d", key, row.Run)
+			}
+			c.Assertions[key] = agentruntime.EvaluationAssertionResult{
 				ID: assertion.ID, Type: assertion.Type, DefinitionDigest: assertion.DefinitionDigest,
 				Verdict: agentruntime.EvaluationVerdict(assertion.Verdict), Judge: assertion.Judge,
 			}
 		}
 		n.Cases[row.ID] = c
-		row.TaskName, row.TaskUID, row.AnswerDigest = "", "", ""
-		row.KagentExecution = nil
-		row.Assertions = append([]suitePassingAssertion(nil), row.Assertions...)
-		for i, assertion := range row.Assertions {
-			if assertion.Judge != nil {
-				identity := *assertion.Judge
-				identity.Scores, identity.ModelMatches = nil, nil
-				row.Assertions[i].Judge = &identity
-			}
-		}
-		inventory = append(inventory, row)
+		inventory = append(inventory, suitePassingDefinition(row, false))
 	}
 	n.SuiteInventory, err = suiteNativeDigest("kmx.native-suite.diff-inventory/v1", inventory)
 	return n, err == nil

@@ -117,6 +117,44 @@ func workspacePathLabel(path string) string {
 // PushSuiteWorkspace discovers a workspace from cwd when root is empty, or
 // selects root exactly. It transfers the prepared OCI graph without re-packing
 // at publication. The native execution profile requires no member images.
+// SuiteWorkspacePushOptions is root push's resolved invocation. Repository is
+// used only when Reference is empty; explicit tags are never rewritten.
+type SuiteWorkspacePushOptions struct {
+	Workspace, Reference, Repository, Layout, Evaluation string
+	PlainHTTP, Force, Unevaluated                        bool
+	Provenance                                           SuitePushProvenance
+}
+
+func (a *App) PushSuiteWorkspaceManaged(ctx context.Context, opt SuiteWorkspacePushOptions) (oras.PushResult, error) {
+	if opt.Unevaluated && opt.Evaluation != "" {
+		return oras.PushResult{}, errors.New("--unevaluated cannot be used with --evaluation")
+	}
+	if opt.Reference == "" {
+		if opt.Layout != "" {
+			return oras.PushResult{}, errors.New("workspace push to a local layout requires an explicit reference")
+		}
+		ref, err := registry.ParseReference(opt.Repository)
+		if err != nil || ref.Reference != "" {
+			return oras.PushResult{}, errors.New("bare push requires a saved publishRepository without a tag or digest")
+		}
+	}
+	root, err := resolveSuiteWorkspace(opt.Workspace)
+	if err != nil {
+		return oras.PushResult{}, err
+	}
+	var receipt *suitePassingReceipt
+	var expected *digest.Digest
+	if opt.Evaluation != "" {
+		receipt, err = readSuitePassingReceipt(ctx, opt.Evaluation)
+		if err != nil {
+			return oras.PushResult{}, err
+		}
+		s := digest.Digest(receipt.suiteDigest())
+		expected = &s
+	}
+	return a.pushSuiteWorkspaceSelected(ctx, root, opt.Reference, opt.Layout, opt.PlainHTTP, opt.Force, opt.Provenance, expected, receipt, &opt)
+}
+
 func (a *App) PushSuiteWorkspace(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance) (oras.PushResult, error) {
 	resolved, err := resolveSuiteWorkspace(root)
 	if err != nil {
@@ -172,6 +210,10 @@ func (a *App) pushSuiteWorkspaceEvaluated(ctx context.Context, root, reference, 
 }
 
 func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance, expectedS *digest.Digest, receipt *suitePassingReceipt) (oras.PushResult, error) {
+	return a.pushSuiteWorkspaceSelected(ctx, root, reference, layout, plainHTTP, force, provenance, expectedS, receipt, nil)
+}
+
+func (a *App) pushSuiteWorkspaceSelected(ctx context.Context, root, reference, layout string, plainHTTP, force bool, provenance SuitePushProvenance, expectedS *digest.Digest, receipt *suitePassingReceipt, managed *SuiteWorkspacePushOptions) (result oras.PushResult, err error) {
 	var expected digest.Digest
 	if expectedS != nil {
 		expected = *expectedS
@@ -179,7 +221,7 @@ func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layou
 			return oras.PushResult{}, fmt.Errorf("expected suite identity must be a valid SHA256 digest")
 		}
 	}
-	if layout == "" {
+	if layout == "" && reference != "" {
 		parsed, err := registry.ParseReference(reference)
 		if err != nil {
 			return oras.PushResult{}, fmt.Errorf("parse AgentSuite registry reference: %w", err)
@@ -203,6 +245,34 @@ func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layou
 	suite, err := workspace.Load(ctx, prepared)
 	if err != nil {
 		return oras.PushResult{}, err
+	}
+	var evidencePath string
+	if managed != nil {
+		store, openErr := openSuitePassStore(ctx, root, filepath.Join(state, "suites"), suite.Digest)
+		if openErr != nil {
+			return oras.PushResult{}, openErr
+		}
+		defer func() {
+			if closeErr := store.Close(); closeErr != nil {
+				if result.Descriptor.Digest != "" {
+					closeErr = fmt.Errorf("publication completed for %s; workspace exclusion finalization failed: %w", result.Descriptor.Digest, closeErr)
+				}
+				err = errors.Join(err, closeErr)
+			}
+		}()
+		if !managed.Unevaluated && receipt == nil {
+			receipt, evidencePath, err = store.latest(ctx, suite)
+			if err != nil {
+				return oras.PushResult{}, err
+			}
+			expected = digest.Digest(receipt.suiteDigest())
+			expectedS = &expected
+		} else if receipt != nil {
+			evidencePath = managed.Evaluation
+		}
+		if reference == "" {
+			reference = managed.Repository + ":s-" + prepared.Descriptor.Digest.Encoded()
+		}
 	}
 	if expectedS != nil && prepared.Descriptor.Digest != expected {
 		return oras.PushResult{}, fmt.Errorf("prepared suite does not match the expected publication identity")
@@ -228,10 +298,14 @@ func (a *App) pushSuiteWorkspaceCore(ctx context.Context, root, reference, layou
 	if diagnostics == nil {
 		diagnostics = io.Discard
 	}
+	if evidencePath != "" {
+		if _, err := fmt.Fprintf(diagnostics, "Evaluation evidence: %q; exact AgentSuite: %s (historical pass, not current target health)\n", evidencePath, prepared.Descriptor.Digest); err != nil {
+			return oras.PushResult{}, err
+		}
+	}
 	if _, err := fmt.Fprintf(diagnostics, "Workspace: %q; AgentSuite: %s\n", root, prepared.Descriptor.Digest); err != nil {
 		return oras.PushResult{}, fmt.Errorf("write workspace publication identity: %w", err)
 	}
-	var result oras.PushResult
 	if layout != "" {
 		result, err = oras.PushLayout(ctx, prepared.Path, layout, reference, prepared.Descriptor)
 	} else {

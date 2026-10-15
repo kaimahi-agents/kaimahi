@@ -18,13 +18,13 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.6.0
 """
 RELEASE_NOTE = """> [!NOTE]
-> The table below is available in v0.6.0.
+> The table below describes unreleased main; v0.6.0 keeps its released defaults.
 """
-JOURNEY = RELEASE_NOTE + """| Stage | v0.6.0 |
+JOURNEY = RELEASE_NOTE + """| Stage | Current checkout |
 |---|---|
 | **Create** | `kmx create NAME --workspace DIR` authors source. |
 | **Prove** | `kmx eval --workspace DIR` stops later cases after the first non-pass and writes evidence only when all cases pass. |
-| **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` copies the suite. Plain `kmx push REF` remains explicitly unevaluated. Neither form deploys. |
+| **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` copies the suite. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
 | **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |
 """
 GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
@@ -103,7 +103,7 @@ CASES += [
     ("partial evidence accepted", GOOD.replace("only when all cases pass", "after any case"), "Prove row must require a full pass"),
     ("later cases continue after failure", GOOD.replace("stops later cases after the first non-pass", "continues through every case"), "Prove row must preserve fail-fast execution"),
     ("push implies deployment", GOOD.replace("Neither form deploys", "Then it deploys"), "Publish row must say it does not deploy"),
-    ("plain push treated as evaluated", GOOD.replace("Plain `kmx push REF` remains explicitly unevaluated. ", ""), "Publish row must keep plain push unevaluated"),
+    ("plain push bypasses evidence", GOOD.replace("Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. ", ""), "Publish row must require evidence or explicit opt-out"),
     ("lift builds", GOOD.replace("without building, repacking, or publishing", "after rebuilding and publishing"), "Lift row must stay deploy-only"),
     ("lift plan writes", GOOD.replace("`--plan` is GET-only", "`--plan` applies resources"), "Lift row must preserve the GET-only plan boundary"),
     ("lift runtime binding missing", GOOD.replace(" or kagent `--bindings FILE`", ""), "Lift row must preserve runtime-specific bindings"),
@@ -113,8 +113,8 @@ CASES += [
     ("lift qualification after table", GOOD.replace("Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n", "").replace("## Getting Starter: Get Your First Answer", "Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n## Getting Starter: Get Your First Answer"), "Lift qualification scope is missing"),
     ("late release note", GOOD.replace(RELEASE_NOTE, "").replace("| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |", "| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |\n" + RELEASE_NOTE.rstrip()), "v0.6.0 release note must precede"),
     ("missing release note", GOOD.replace(RELEASE_NOTE, ""), "v0.6.0 release note must precede"),
-    ("old release note", GOOD.replace("The table below is available in v0.6.0.", "The table below describes the current development build, which is unreleased."), "v0.6.0 release note must precede"),
-    ("unreleased table label", GOOD.replace("| Stage | v0.6.0 |", "| Stage | Current development build |"), "exact two-column header"),
+    ("old release note", GOOD.replace("The table below describes unreleased main; v0.6.0 keeps its released defaults.", "The table below describes the current development build, which is unreleased."), "v0.6.0 release note must precede"),
+    ("outdated table label", GOOD.replace("| Stage | Current checkout |", "| Stage | Current development build |"), "exact two-column header"),
     ("malformed table separator", GOOD.replace("|---|---|", "|---|"), "separator is missing or malformed"),
     ("extra suite row", GOOD.replace("| **Lift** |", "| **Inspect** | Future status. |\n| **Lift** |"), "exactly four rows"),
     ("extra table column", GOOD.replace("| **Create** | `kmx create NAME --workspace DIR` authors source. |", "| **Create** | `kmx create NAME --workspace DIR` authors source. | extra |"), "exactly two columns"),

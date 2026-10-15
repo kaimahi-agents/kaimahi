@@ -371,57 +371,26 @@ class QualificationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 Q.verify_refusal(code, output, frames, "native evaluation refused before native changes")
 
-    def test_collision_uses_placement_unknown_class_with_successful_inspection_and_no_writes(self):
-        self.assertTrue(hasattr(Q, "verify_collision_refusal"), "collision-stage checker is missing")
-        frame = {"verb": "get", "resource": "providers.core.orka.ai", "name": "ci-native-collision", "persistent": False,
-                 "stdinDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "stdinBytes": 0, "returnCode": 0}
-        classified = b"Error: native evaluation outcome unknown; resources may remain; no retry or cleanup\n"
-        Q.verify_collision_refusal(1, classified, [frame], "ci-native-collision")
-        for output, frames in ((b"native evaluation refused before native changes", [frame]),
-                               (classified, []), (classified, [{**frame, "name": "other"}]),
-                               (classified, [{**frame, "returnCode": 1}]),
-                               (classified, [frame, {**frame, "verb": "create", "resource": "Task", "persistent": True}])):
-            with self.subTest(output=output, frames=frames), self.assertRaises(ValueError):
-                Q.verify_collision_refusal(1, output, frames, "ci-native-collision")
-
-    def test_refusal_tail_creates_raw_collision_without_legacy_cli(self):
+    def test_refusal_tail_checks_unsupported_before_any_cluster_or_model_call(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
-            qualifier = Q.Qualification.__new__(Q.Qualification)
-            qualifier.work, qualifier.context, qualifier.repo = root, "kind-owned", ROOT
-            renderer = root / "native-reference"
-            subprocess.run(["go", "-C", str(ROOT), "build", "-o", str(renderer),
-                            str(ROOT / "scripts/ci/orka-native-reference.go")], check=True, capture_output=True, timeout=60)
-            def command(args, raw=None, **kwargs):
-                self.assertEqual(args, [ROOT / "bin/orka-native-reference"])
-                return subprocess.run([str(renderer)], input=raw, env={}, capture_output=True, timeout=60)
-            qualifier.command = command
-            qualifier.secret_ref = {"name": "local-provider-key", "key": "api-key"}
-            workspace = root / "workspace"
-            (workspace / "eval").mkdir(parents=True)
-            instructions = root / "instructions.txt"
-            instructions.write_text("Public instructions")
-            cases = {"one.yaml": b'id: one\\ninput: Public question\\nexpectContains: ["answer"]\\n'}
-            (workspace / "eval/one.yaml").write_bytes(cases["one.yaml"])
-            qualifier.frames = lambda: []
-            qualifier.cli = lambda *a, **k: self.fail("removed CLI lifecycle invoked")
-            written = []
-            def kube(*args, **kwargs):
-                self.assertEqual(args, ("create", "-f", "-"))
-                written.append(json.loads(kwargs["raw"]))
-                return b""
-            qualifier.kube = kube
-            qualifier.author = lambda *a: None
-            qualifier.get = lambda *a: {"metadata": {"uid": "fixture-" + a[0]}}
-            def evaluation(*args, **kwargs):
-                self.assertFalse(kwargs["success"])
-                raise RuntimeError("collision-evaluation-reached")
-            qualifier.evaluation = evaluation
-            with self.assertRaisesRegex(RuntimeError, "collision-evaluation-reached"):
-                qualifier.refusals(workspace, instructions, cases, {"Member": "ci-native-suite"})
-            self.assertEqual([doc["kind"] for doc in written], ["Provider", "Agent"])
-            self.assertTrue(all(doc["metadata"]["name"] == "ci-native-collision" for doc in written))
-            self.assertTrue(all("annotations" not in doc["metadata"] for doc in written))
+            q = Q.Qualification.__new__(Q.Qualification)
+            q.work, q.repo = root, ROOT
+            q.secret_ref = {"name": "fixture-key", "key": "api-key"}
+            (root / "instructions").write_text("Fixture instructions")
+            (root / "workspace/eval").mkdir(parents=True)
+            cases = {"one.yaml": b'id: one\ninput: question\nexpectContains: ["answer"]\n'}
+            case_path = root / "workspace/eval/one.yaml"
+            case_path.write_bytes(cases["one.yaml"])
+            q.frames = lambda: []
+            q.command = q.kube = q.get = lambda *a, **k: self.fail("unsupported case performed cluster/render I/O")
+            def evaluation(workspace, output, success=True):
+                self.assertFalse(success)
+                self.assertEqual(Q.yaml.safe_load(case_path.read_bytes())["assertions"][0]["type"], "toolCalled")
+                return subprocess.CompletedProcess([], 1, b"", b"unsupported native suite evaluator")
+            q.evaluation = evaluation
+            q.refusals(root / "workspace", root / "instructions", cases, {"Member": "member"})
+            self.assertFalse((root / "receipt/unsupported.json").exists())
 
     def test_private_root_refuses_adoption_and_symlink_ancestors(self):
         self.assertTrue(hasattr(Q, "private_root"), "private scenario root is missing")
@@ -479,6 +448,158 @@ class QualificationTests(unittest.TestCase):
             blob.write_bytes(b'{"schemaVersion":3}')
             with self.assertRaises(ValueError):
                 Q.read_blob(root, {"digest": digest, "size": len(raw)})
+
+
+class CandidateProofTests(unittest.TestCase):
+    def fixture(self, cases=None, subject_changes=None):
+        run = "a" * 32
+        subject = {"Suite": "suite", "SuiteDigest": "sha256:" + "1" * 64, "Member": "member", "PhysicalMember": "kmx-eval-" + "1" * 16 + "-" + run,
+                   "EvaluationRun": run, "Renderer": "kmx.native-orka/v1", "BindingDigest": "b" * 64, "RenderedDigest": "d" * 64}
+        subject.update(subject_changes or {})
+        member = subject["PhysicalMember"]
+        markers = dict(zip(Q.MARKERS, [subject[k] for k in ("Suite", "SuiteDigest", "Member", "Renderer", "BindingDigest", "RenderedDigest")]))
+        markers["kaimahi.dev/suite-evaluation-run"] = run
+        specs = {"Provider": {"type": "openai"}, "Agent": {"systemPrompt": {"inline": "PRIVATE_INSTRUCTIONS"}}}
+        cases = cases or {"one.yaml": b'id: arithmetic\ninput: What is 2 + 2?\nexpectContains: ["4"]\n'}
+        rows = [{"taskName": "member-eval-" + suffix, "taskUID": "task-uid" if i == 0 else "second-task-uid"}
+                for i, suffix in enumerate(("one", "two")[:len(cases)])]
+        receipt = {"runID": run, "candidateCleanup": "complete", "subject": subject, "cases": rows}
+        frames = []
+        for i, kind in enumerate(("Provider", "Agent") + ("Task",) * len(rows)):
+            row = rows[i - 2] if kind == "Task" else None
+            doc = task() if kind == "Task" else {"apiVersion": "core.orka.ai/v1alpha1", "kind": kind, "metadata": {"name": member}, "spec": specs[kind]}
+            meta = doc["metadata"]
+            meta.update(namespace="orka-system", uid=kind.lower() + "-uid" if kind != "Task" else row["taskUID"], generation=1,
+                        resourceVersion="19", annotations=markers)
+            if kind == "Task":
+                meta["name"] = row["taskName"]
+                doc["spec"]["agentRef"]["name"] = member
+                doc["spec"]["prompt"] = Q.yaml.safe_load(list(cases.values())[i - 2])["input"]
+            else:
+                doc["status"] = {"ready": True, "conditions": [{"type": "Ready", "status": "True", "observedGeneration": 1}]}
+                receipt[kind.lower()] = {"UID": meta["uid"], "Generation": 1, "SpecDigest": A.spec_digest(doc["spec"])}
+            request = copy.deepcopy(doc)
+            request.pop("status", None)
+            for field in ("uid", "generation", "resourceVersion"):
+                request["metadata"].pop(field)
+            create = A.classify(["create", "-f", "-", "-o", "json"], json.dumps(request).encode())
+            pending = copy.deepcopy(doc); pending["status"] = None
+            frames.append({**create, "returnCode": 0, "response": A.response_snapshot(json.dumps(pending).encode())})
+            meta["resourceVersion"] = "20"
+            frames.append({**A.classify(["get", kind.lower() + "s.core.orka.ai", meta["name"], "-o", "json"]),
+                           "returnCode": 0, "response": A.response_snapshot(json.dumps(doc).encode())})
+        frames += [{**A.classify(["create", "token", "orka-result-reader"]), "returnCode": 0}]
+        deletes = [("Task", row["taskName"], row["taskUID"]) for row in rows]
+        deletes += [(kind, member, receipt[kind.lower()]["UID"]) for kind in ("Agent", "Provider")]
+        for kind, name, uid in deletes:
+            body = {"apiVersion": "v1", "kind": "DeleteOptions", "preconditions": {"uid": uid, "resourceVersion": "20"}, "propagationPolicy": "Foreground"}
+            path = "/apis/core.orka.ai/v1alpha1/namespaces/orka-system/" + kind.lower() + "s/" + name
+            frames.append({**A.classify(["delete", "--raw", path, "-f", "-"], json.dumps(body).encode()), "returnCode": 0,
+                           "response": {"apiVersion": "v1", "kind": "Status", "status": "Success"}})
+        return receipt, frames, cases, specs
+
+
+    def test_candidate_protocol_requires_all_three_run_markers_and_historical_reads(self):
+        self.assertTrue(hasattr(Q, "verify_candidate"), "historical candidate verifier missing")
+        receipt, frames, cases, specs = self.fixture()
+        tasks = Q.verify_candidate(receipt, frames, cases, specs)
+        self.assertEqual(tasks[0]["uid"], "task-uid")
+        self.assertNotIn("PRIVATE_INSTRUCTIONS", json.dumps(tasks))
+        for kind in ("Provider", "Agent", "Task"):
+            changed = copy.deepcopy(frames)
+            for f in changed:
+                if f.get("response", {}).get("kind") == kind:
+                    f["response"]["metadata"]["annotations"].pop("kaimahi.dev/suite-evaluation-run", None)
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "candidate-.*identity"):
+                Q.verify_candidate(receipt, changed, cases, specs)
+        for edit in (lambda fs: fs[-1]["preconditions"].update(resourceVersion="stale"),
+                     lambda fs: fs[-1]["preconditions"].update(uid="foreign"),
+                     lambda fs: fs[-1]["response"].update(status="Failure"),
+                     lambda fs: fs.pop(5), lambda fs: fs[5]["response"].update(phase="Running"),
+                     lambda fs: fs[4]["response"].update(inputDigest="0" * 64),
+                     lambda fs: fs.append(dict(fs[4]))):
+            changed = copy.deepcopy(frames); edit(changed)
+            with self.subTest(edit=edit), self.assertRaises(ValueError):
+                Q.verify_candidate(receipt, changed, cases, specs)
+        receipt["candidateCleanup"] = "pending"
+        with self.assertRaisesRegex(ValueError, "candidate-cleanup"):
+            Q.verify_candidate(receipt, frames, cases, specs)
+
+    def test_independent_closure_links_task_job_pod_without_inherited_run_markers(self):
+        self.assertTrue(hasattr(Q, "verify_child_absence"), "child closure verifier missing")
+        def child(name, uid, kind, parent, parent_uid):
+            return {"name": name, "uid": uid, "namespace": "orka-system", "resourceVersion": "20",
+                    "ownerReferences": [{"apiVersion": "batch/v1" if kind == "Job" else "core.orka.ai/v1alpha1",
+                                         "kind": kind, "name": parent, "uid": parent_uid, "controller": True}]}
+        job = child("job", "job-uid", "Task", "task", "task-uid")
+        pod = child("pod", "pod-uid", "Job", "job", "job-uid")
+        cm = child("result", "cm-uid", "Task", "task", "task-uid")
+        observed = {"Job": [job], "Pod": [pod], "ConfigMap": [cm]}
+        empty = {k: [] for k in observed}
+        self.assertEqual(Q.verify_child_absence(observed, empty, {"task": "task-uid"})["Pod"], {"pod": "pod-uid"})
+        for kind in observed:
+            current = copy.deepcopy(empty); current[kind] = observed[kind]
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "retained-child"):
+                Q.verify_child_absence(observed, current, {"task": "task-uid"})
+        wrong = copy.deepcopy(observed)
+        wrong["Job"][0]["ownerReferences"][0]["uid"] = "foreign"
+        self.assertEqual(Q.owned_children(wrong, {"task": "task-uid"})["Pod"], {})
+
+
+
+    def test_cleanup_proof_independently_checks_roots_jobs_and_two_child_snapshots(self):
+        self.assertTrue(hasattr(Q.Qualification, "cleanup_proof"), "independent cleanup proof missing")
+        receipt, frames, cases, specs = self.fixture()
+        task_name = receipt["cases"][0]["taskName"]
+        job = {"name": "job", "namespace": "orka-system", "uid": "job-uid", "resourceVersion": "20",
+               "ownerReferences": [{"apiVersion": "core.orka.ai/v1alpha1", "kind": "Task", "name": task_name,
+                                    "uid": "task-uid", "controller": True}]}
+        first_delete = next(i for i, f in enumerate(frames) if f["verb"] == "delete")
+        frames.insert(first_delete, {"verb": "get", "response": {"kind": "JobList", "items": [job]}})
+        q = Q.Qualification.__new__(Q.Qualification)
+        q.audit = A
+        q.live_subject = lambda s: None
+        calls = []
+        def kube(*args):
+            calls.append(args)
+            return b""
+        q.kube = kube
+        q.child_inventory = lambda kind: []
+        counts = q.cleanup_proof(receipt["subject"], frames)
+        self.assertEqual(counts, {"Job": 1, "Pod": 0, "ConfigMap": 0})
+        self.assertEqual(len(calls), 3)
+        q.kube = lambda *a: b'{"metadata":{"uid":"replacement"}}'
+        with self.assertRaisesRegex(ValueError, "retained-candidate-root"):
+            q.cleanup_proof(receipt["subject"], frames)
+        q.kube = kube
+        q.child_inventory = lambda kind: [job] if kind == "Job" else []
+        with self.assertRaisesRegex(ValueError, "retained-child"):
+            q.cleanup_proof(receipt["subject"], frames)
+        q.child_inventory = lambda kind: []
+        with self.assertRaisesRegex(ValueError, "pre-delete-job-uid-capture"):
+            q.cleanup_proof(receipt["subject"], [f for f in frames if f.get("response", {}).get("kind") != "JobList"])
+
+    def test_child_inventory_escapes_tokens_and_refuses_unbounded_or_changed_snapshots(self):
+        self.assertTrue(hasattr(Q.Qualification, "child_inventory"), "bounded independent child inventory missing")
+        q = Q.Qualification.__new__(Q.Qualification)
+        q.audit = A
+        calls = []
+        def page(token="", rv="20"):
+            return json.dumps({"apiVersion": "batch/v1", "kind": "JobList", "metadata": {"resourceVersion": rv, "continue": token},
+                               "items": []}).encode()
+        responses = iter([page("opaque/?&=+ token"), page()])
+        def kube(*args):
+            calls.append(args)
+            return next(responses)
+        q.kube = kube
+        self.assertEqual(q.child_inventory("Job"), [])
+        self.assertEqual(calls, [("get", "--raw", "/apis/batch/v1/namespaces/orka-system/jobs?limit=128"),
+                                 ("get", "--raw", "/apis/batch/v1/namespaces/orka-system/jobs?limit=128&continue=opaque%2F%3F%26%3D%2B+token")])
+        for pages in ([page("next"), page(rv="21")], [page("repeated"), page("repeated")],
+                      [page(str(i)) for i in range(4)]):
+            responses = iter(pages)
+            with self.subTest(pages=pages), self.assertRaises(ValueError):
+                q.child_inventory("Job")
 
 
 class NativeJudgeTests(unittest.TestCase):
@@ -555,6 +676,106 @@ class AuditTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(A, "native product audit is not implemented")
 
+
+    def test_bounded_root_and_child_raw_lists_have_closed_paths(self):
+        paths = ["/apis/core.orka.ai/v1alpha1/namespaces/orka-system/" + p for p in ("providers", "agents", "tasks")]
+        paths += ["/apis/batch/v1/namespaces/orka-system/jobs", "/api/v1/namespaces/orka-system/pods",
+                  "/api/v1/namespaces/orka-system/configmaps"]
+        for path in paths:
+            for suffix in ("?limit=128", "?limit=128&continue=opaque%2F%3F%26%3D%2B+token"):
+                f = A.classify(["--context", "kind-owned", "get", "--raw", path + suffix])
+                self.assertFalse(f["persistent"])
+        for path in (paths[0] + "?limit=129", paths[0] + "?limit=128&watch=true",
+                     paths[0].replace("orka-system", "foreign") + "?limit=128",
+                     paths[0] + "?limit=128&continue=", paths[0] + "?limit=128&limit=128",
+                     "/api/v1/namespaces/orka-system/secrets?limit=128"):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                A.classify(["get", "--raw", path])
+
+    def test_actual_raw_delete_options_not_fictitious_flags(self):
+        path = "/apis/core.orka.ai/v1alpha1/namespaces/orka-system/tasks/task-one"
+        doc = {"apiVersion": "v1", "kind": "DeleteOptions", "propagationPolicy": "Foreground",
+               "preconditions": {"uid": "task-uid", "resourceVersion": "19"}}
+        f = A.classify(["delete", "--raw", path, "-f", "-"], json.dumps(doc).encode())
+        self.assertEqual(f["preconditions"], doc["preconditions"])
+        self.assertTrue(f["persistent"])
+        self.assertFalse(f["admission"] or f["taskAttempt"])
+        for edit in (lambda d: d["preconditions"].pop("resourceVersion"),
+                     lambda d: d.update(propagationPolicy="Background"), lambda d: d.update(gracePeriodSeconds=0)):
+            changed = copy.deepcopy(doc); edit(changed)
+            with self.assertRaises(ValueError):
+                A.classify(["delete", "--raw", path, "-f", "-"], json.dumps(changed).encode())
+        with self.assertRaises(ValueError):
+            A.classify(["delete", "tasks.core.orka.ai", "task-one", "--preconditions=uid=task-uid"])
+        with self.assertRaises(ValueError):
+            A.classify(["delete", "--raw", path.replace("/tasks/", "/secrets/"), "-f", "-"], json.dumps(doc).encode())
+
+    def test_real_wrapper_projects_private_responses_and_forwards_original_bytes(self):
+        doc = task()
+        doc["metadata"].update(resourceVersion="19", annotations={"kaimahi.dev/suite-evaluation-run": "a" * 32,
+                                                                "foreign/payload": "PRIVATE_MARKER"})
+        doc["status"]["answer"] = "PRIVATE_ANSWER"
+        raw = json.dumps(doc).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            wrapper, real, audit = root / "kubectl", root / "real-kubectl", root / "audit.jsonl"
+            wrapper.symlink_to(ROOT / "scripts/ci/suite-native-audit.py")
+            real.write_text("#!" + sys.executable + "\nimport sys\nsys.stdout.buffer.write(" + repr(raw) + ")\n")
+            real.chmod(0o700)
+            env = dict(os.environ, KMX_NATIVE_KUBECTL=str(real), KMX_NATIVE_CONTEXT="kind-owned", KMX_NATIVE_AUDIT=str(audit))
+            result = subprocess.run([str(wrapper), "--context", "kind-owned", "get", "tasks.core.orka.ai",
+                                     "member-eval-one", "-o", "json"], env=env, capture_output=True, timeout=10)
+            self.assertEqual((result.returncode, result.stdout), (0, raw))
+            frames = A.completed([json.loads(line) for line in audit.read_text().splitlines()])
+            self.assertIn("response", frames[0], "historical server snapshot missing")
+            self.assertEqual(frames[0]["response"]["metadata"]["annotations"], {"kaimahi.dev/suite-evaluation-run": "a" * 32})
+            self.assertNotIn("PRIVATE_", audit.read_text())
+            self.assertNotIn("What is", audit.read_text())
+            frames[0]["response"]["metadata"]["annotations"]["kaimahi.dev/suite-evaluation-run"] = "PRIVATE_PAYLOAD"
+            with self.assertRaises(ValueError):
+                A.validate_response(frames[0]["response"])
+
+
+    def test_response_projection_accepts_root_lists_and_delete_ack_without_payload(self):
+        self.assertTrue(hasattr(A, "response_snapshot"), "metadata response projection missing")
+        doc = task()
+        doc["metadata"].update(resourceVersion="19")
+        root_list = {"apiVersion": "core.orka.ai/v1alpha1", "kind": "TaskList", "metadata": {"resourceVersion": "20"},
+                     "items": [doc]}
+        observed = A.response_snapshot(json.dumps(root_list).encode())
+        A.validate_response(observed)
+        self.assertEqual(observed["items"][0]["uid"], "task-uid")
+        self.assertNotIn("What is", json.dumps(observed))
+        status = A.response_snapshot(b'{"apiVersion":"v1","kind":"Status","status":"Success","message":"PRIVATE_ERROR"}')
+        self.assertEqual(status, {"apiVersion": "v1", "kind": "Status", "status": "Success"})
+        A.validate_response(status)
+        for edit in (lambda d: d.update(apiVersion="PRIVATE_API_PAYLOAD"),
+                     lambda d: d.update(agentRef={"name": "PRIVATE PROMPT", "namespace": "orka-system"}),
+                     lambda d: d["metadata"].update(taskLabel={"data": "PRIVATE"})):
+            changed = A.response_snapshot(json.dumps(doc).encode()); edit(changed)
+            with self.assertRaises(ValueError):
+                A.validate_response(changed)
+        for key, value in (("continueBytes", 5000), ("resourceVersion", "PRIVATE PAYLOAD")):
+            bad = copy.deepcopy(observed); bad[key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                A.validate_response(bad)
+
+    def test_delete_completions_are_serial_and_retained_response_cannot_change_intent(self):
+        self.assertTrue(hasattr(A, "verify_cleanup_order"), "serial raw deletion verifier missing")
+        path = "/apis/core.orka.ai/v1alpha1/namespaces/orka-system/tasks/task-one"
+        raw = b'{"apiVersion":"v1","kind":"DeleteOptions","propagationPolicy":"Foreground","preconditions":{"uid":"uid","resourceVersion":"19"}}'
+        f = A.classify(["delete", "--raw", path, "-f", "-"], raw)
+        ack = {"apiVersion": "v1", "kind": "Status", "status": "Success"}
+        def request(identity):
+            return [{**f, "requestID": identity, "stage": "intent"},
+                    {**f, "requestID": identity, "stage": "complete", "returnCode": 0, "response": ack}]
+        one, two = request("one"), request("two")
+        A.verify_cleanup_order([*one, *two])
+        for frames in ([one[0], two[0], one[1], two[1]], one[:1],
+                       [one[0], {**one[1], "returnCode": 1}], [one[0], {**one[1], "responseError": True}]):
+            with self.subTest(frames=frames), self.assertRaises(ValueError):
+                A.verify_cleanup_order(frames)
+
     def test_persistent_create_frame_has_no_payload(self):
         document = task()
         raw = json.dumps(document).encode()
@@ -601,20 +822,6 @@ class AuditTests(unittest.TestCase):
             with self.subTest(output=output), self.assertRaises(ValueError):
                 A.classify(["get", "secret", "local-provider-key", "-o", output])
 
-    def test_empty_missing_and_repeated_task_audit_cannot_qualify(self):
-        rows = [{"taskName": "member-eval-one", "taskUID": "task-uid"}]
-        frames = [{"verb": "create", "resource": resource, "name": name, "persistent": True}
-                  for resource, name in (("Provider", "member"), ("Agent", "member"), ("Task", "member-eval-one"))]
-        frames += [{"verb": "create", "resource": "token", "name": "orka-result-reader", "persistent": False},
-                   {"verb": "get", "resource": "tasks.core.orka.ai", "name": "member-eval-one", "persistent": False}]
-        for frame in frames:
-            frame["returnCode"] = 0
-        A.verify(frames, "member", rows)
-        failed_get = copy.deepcopy(frames)
-        failed_get[-1]["returnCode"] = 1
-        for bad in ([], frames[:-1], frames + [frames[2]], frames[1:], failed_get):
-            with self.assertRaises(ValueError):
-                A.verify(bad, "member", rows)
 
 
 if __name__ == "__main__":

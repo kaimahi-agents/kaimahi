@@ -14,7 +14,7 @@ import (
 )
 
 func TestResolvedDestinationConfigEditDuringEvaluationGuardCannotRedirect(t *testing.T) {
-	a, _, _, fixture := nativeEvaluationFixture(t)
+	a, _, fixture, _ := publicNativeEvaluationFixture(t)
 	opt := nativeEvaluationOptions(t)
 	opt.ResultPort = fixture.opt.ResultPort
 	path := filepath.Join(opt.Workspace, "kmx.yaml")

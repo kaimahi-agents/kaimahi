@@ -40,6 +40,9 @@ type suitePassingReceipt struct {
 	Sessions          *suiteSessionsPassingProof `json:"agentsessions,omitempty"`
 }
 type suitePassingCase struct {
+	Runs              int                         `json:"runs,omitempty"`
+	MinPasses         int                         `json:"minPasses,omitempty"`
+	Run               int                         `json:"run,omitempty"`
 	ID                string                      `json:"id"`
 	Path              string                      `json:"path"`
 	CaseDigest        string                      `json:"caseDigest"`
@@ -98,12 +101,19 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 			return nil, "", errSuitePassingReceipt
 		}
 		seen[c.ID] = true
+		runs, minPasses := c.RunPolicy()
+		if suite.Runtime.ID == "agentsessions" && runs > 1 {
+			return nil, "", errors.New("AgentSessions evaluation refuses repeated cases")
+		}
 		metadata := suitePassingCase{ID: c.ID, Path: file.Path, CaseDigest: agentruntime.EvaluationCaseDigest(file.Bytes), InputDigest: agentruntime.EvaluationInputDigest(c.Input), Verdict: "pass", Assertions: []suitePassingAssertion{}}
 		for _, a := range agentruntime.EvaluationCaseAssertions(c) {
 			if a.Type != "contains" && a.Type != "notContains" && a.Type != "regex" && (a.Type != "llmJudge" || (suite.Runtime.ID != "orka" && suite.Runtime.ID != "kagent")) {
 				return nil, "", errors.New("unsupported native suite evaluator")
 			}
 			metadata.Assertions = append(metadata.Assertions, suitePassingAssertionDefinition(a))
+		}
+		if runs > 1 {
+			metadata.Runs, metadata.MinPasses, metadata.Run = runs, minPasses, runs
 		}
 		projected := metadata
 		projected.TaskName, projected.TaskUID, projected.AnswerDigest = strings.Repeat("x", 256), strings.Repeat("\\", 256), strings.Repeat("0", 64)
@@ -119,17 +129,23 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 		if err != nil {
 			return nil, "", errSuitePassingReceipt
 		}
-		budget += len(wire) + 1
+		perRun := len(wire) + 1
 		for _, a := range c.Assertions {
 			if a.Type == "llmJudge" {
 				// Escaped 256-byte model/version identities, fixed digests and two scores.
-				budget += 4096
+				perRun += 4096
 			}
 		}
-		if budget > maxSuitePassingReceiptBytes {
+		if perRun > (maxSuitePassingReceiptBytes-budget)/runs {
 			return nil, "", errors.New("native suite receipt exceeds projection budget")
 		}
-		inventory = append(inventory, suitePassingInventoryCase{c, metadata})
+		budget += runs * perRun
+		for run := 1; run <= runs; run++ {
+			if runs > 1 {
+				metadata.Run = run
+			}
+			inventory = append(inventory, suitePassingInventoryCase{c, metadata})
+		}
 		files = append(files, agentruntime.EvaluationCaseFile{Name: path.Base(file.Path), Bytes: file.Bytes})
 	}
 	return inventory, agentruntime.EvaluationCasesDigest(files), nil
@@ -287,9 +303,12 @@ func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 			return errSuitePassingReceipt
 		}
 	}
-	ids, paths, tasks, uids := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
+	if err := validateSuiteRunGroups(r.Cases, r.ExecutionMode); err != nil {
+		return err
+	}
+	tasks, uids := map[string]bool{}, map[string]bool{}
 	for _, c := range r.Cases {
-		if !evaluationEvidenceID.MatchString(c.ID) || !verificationIdentity(c.ID) || !suiteCasePath(c.Path) || !verificationDigest(c.CaseDigest) || !verificationDigest(c.InputDigest) || !verificationDigest(c.AnswerDigest) || c.AnswerDigest == agentruntime.EvaluationAnswerDigest("") || c.Verdict != "pass" || len(c.Assertions) == 0 || ids[c.ID] || paths[c.Path] {
+		if !evaluationEvidenceID.MatchString(c.ID) || !verificationIdentity(c.ID) || !suiteCasePath(c.Path) || !verificationDigest(c.CaseDigest) || !verificationDigest(c.InputDigest) || !verificationDigest(c.AnswerDigest) || c.AnswerDigest == agentruntime.EvaluationAnswerDigest("") || (c.Verdict != "pass" && (c.Run == 0 || c.Verdict != "fail")) || len(c.Assertions) == 0 {
 			return errSuitePassingReceipt
 		}
 		if r.ExecutionMode == "native-orka" {
@@ -310,13 +329,19 @@ func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 			}
 			tasks[e.ExecutionID], uids[e.SessionUID] = true, true
 		}
-		ids[c.ID], paths[c.Path] = true, true
 		assertions := map[string]bool{}
+		verdict := "pass"
 		for _, a := range c.Assertions {
-			if !evaluationEvidenceID.MatchString(a.ID) || !verificationIdentity(a.ID) || assertions[a.ID] || (a.Type != "contains" && a.Type != "notContains" && a.Type != "regex" && (a.Type != "llmJudge" || r.ExecutionMode == "native-agentsessions")) || !verificationDigest(a.DefinitionDigest) || a.EvaluatorVersion != suiteAssertionEvaluatorVersion(a.Type) || a.Verdict != "pass" || !agentruntime.EvaluationJudgeEvidenceValid(agentruntime.EvaluationAssertionResult{Type: a.Type, Verdict: agentruntime.EvaluationVerdict(a.Verdict), Judge: a.Judge}) {
+			if !evaluationEvidenceID.MatchString(a.ID) || !verificationIdentity(a.ID) || assertions[a.ID] || (a.Type != "contains" && a.Type != "notContains" && a.Type != "regex" && (a.Type != "llmJudge" || r.ExecutionMode == "native-agentsessions")) || !verificationDigest(a.DefinitionDigest) || a.EvaluatorVersion != suiteAssertionEvaluatorVersion(a.Type) || (a.Verdict != "pass" && (c.Run == 0 || a.Verdict != "fail")) || !agentruntime.EvaluationJudgeEvidenceValid(agentruntime.EvaluationAssertionResult{Type: a.Type, Verdict: agentruntime.EvaluationVerdict(a.Verdict), Judge: a.Judge}) {
 				return errSuitePassingReceipt
 			}
 			assertions[a.ID] = true
+			if a.Verdict == "fail" {
+				verdict = "fail"
+			}
+		}
+		if c.Verdict != verdict {
+			return errSuitePassingReceipt
 		}
 	}
 	masked := *r
@@ -362,18 +387,7 @@ func canonicalSuitePassingInventory(ctx context.Context, r *suitePassingReceipt,
 		return nil, errSuitePassingReceipt
 	}
 	for i, expected := range inventory {
-		row := r.Cases[i]
-		row.TaskName, row.TaskUID, row.AnswerDigest = "", "", ""
-		row.KagentExecution = nil
-		row.SessionsExecution = nil
-		row.Assertions = append([]suitePassingAssertion(nil), row.Assertions...)
-		for j, assertion := range row.Assertions {
-			if assertion.Judge != nil {
-				identity := *assertion.Judge
-				identity.Scores, identity.ModelMatches, identity.ConfigurationDigest = nil, nil, ""
-				row.Assertions[j].Judge = &identity
-			}
-		}
+		row := suitePassingDefinition(r.Cases[i], true)
 		if !reflect.DeepEqual(row, expected.Metadata) {
 			return nil, errSuitePassingReceipt
 		}

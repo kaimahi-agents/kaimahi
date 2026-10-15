@@ -57,7 +57,7 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 	if _, err := os.Stat(layout); !os.IsNotExist(err) || *loads != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
 		t.Fatal("missing exact override wrote destination, loaded config or emitted output")
 	}
-	if err := execute([]string{"push", "--to-layout", layout, "team:v1"}, deps); err != nil {
+	if err := execute([]string{"push", "--unevaluated", "--to-layout", layout, "team:v1"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	first := out.String()
@@ -87,7 +87,7 @@ func TestWorkspaceCreateAndPushAreOfflineAndPreserveDigest(t *testing.T) {
 	t.Chdir(unrelated)
 	diagnostics.Reset()
 	out.Reset()
-	if err := execute([]string{"push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
+	if err := execute([]string{"push", "--unevaluated", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != first || diagnostics.String() != identity {
@@ -132,7 +132,7 @@ func TestCreateWithoutLiveAuthorsNonOrkaMember(t *testing.T) {
 			if err != nil || suite.Runtime != profile {
 				t.Fatalf("wrong authored runtime: %v, %v", suite, err)
 			}
-			if err = execute([]string{"push", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
+			if err = execute([]string{"push", "--unevaluated", "--workspace", root, "--to-layout", layout, "team:v1"}, deps); err != nil {
 				t.Fatal(err)
 			}
 			store, err := oci.New(layout)
@@ -288,7 +288,7 @@ func TestWorkspaceRegistryPushProvenanceControls(t *testing.T) {
 			}
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			args := append([]string{"push", "--workspace", root, ref, "--plain-http"}, tc.flags...)
+			args := append([]string{"push", "--unevaluated", "--workspace", root, ref, "--plain-http"}, tc.flags...)
 			err := execute(args, deps)
 			if tc.required {
 				if err == nil || !strings.Contains(err.Error(), "tag was not changed") {
@@ -439,11 +439,11 @@ func TestWorkspacePushRoutingAndArity(t *testing.T) {
 		{"missing", []string{"push"}, []string{"team:v1"}, "no workspace found"},
 		{"context", []string{"push"}, []string{"team:v1", "--context", "unused"}, "--context"},
 		{"engine", []string{"push"}, []string{"team:v1", "--container-engine", "docker"}, "--container-engine"},
-		{"no destination", []string{"push"}, nil, "exactly one"},
-		{"two positional", []string{"push"}, []string{fixture, "team:v1"}, "exactly one"},
-		{"extra positional", []string{"push"}, []string{"one", "two", "three"}, "exactly one"},
+		{"bare layout", []string{"push"}, nil, "explicit reference"},
+		{"two positional", []string{"push"}, []string{fixture, "team:v1"}, "at most one"},
+		{"extra positional", []string{"push"}, []string{"one", "two", "three"}, "at most one"},
 		{"blank override", []string{"push"}, []string{"team:v1", "--workspace", " "}, "non-empty --workspace"},
-		{"ambiguous override", []string{"push"}, []string{"directory", "team:v1", "--workspace", "."}, "exactly one"},
+		{"ambiguous override", []string{"push"}, []string{"directory", "team:v1", "--workspace", "."}, "at most one"},
 		{"suite one positional", []string{"suite", "push"}, []string{"team:v1"}, "usage:"},
 		{"suite workspace removed", []string{"suite", "push"}, []string{"team:v1", "--workspace", "."}, "unknown flag: --workspace"},
 		{"extracted bypass", []string{"suite", "push"}, []string{fixture, "team:v1"}, ""},

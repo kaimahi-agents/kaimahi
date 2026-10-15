@@ -14,7 +14,7 @@ kmx
 ├── eval
 │   ├── diff <before.json> <after.json>
 │   └── from-sessions <session-uid>...
-├── push <reference>
+├── push [reference]
 ├── lift <ref>@<digest>
 ├── run --agent <name>
 ├── chat <name> [message...]
@@ -75,7 +75,7 @@ Workspace --create/eval--> AgentSuite artifact --push--> OCI location
 |---|---|---|
 | `create` | Workspace | Author one offline member; no cluster or model call |
 | `eval` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE`; stop later cases after the first non-pass |
-| `push` | Prepared AgentSuite | Transfer exact OCI graph; optional full-passing receipt check; no deployment |
+| `push` | Prepared AgentSuite | Transfer exact OCI graph with latest completed exact-S proof, explicit --evaluation override or --unevaluated opt-out; explicit tags unchanged, bare push uses saved `repository:s-<S>`; no deployment |
 | `lift` | Exact supported packaged native AgentSuite | Deploy by immutable digest with explicit private evidence and target; Orka uses `--inference`, kagent uses `--bindings`; GET-only with `--plan` |
 | `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |
 | `status`, `orka status` | Orka installation | Table-only runtime report, not suite deployment status |
@@ -92,7 +92,12 @@ Root eval runs full native authored cases only: Orka uses `--inference`, kagent
 uses `--bindings`; pinned AgentSessions chat instead requires a private
 `--development-host FILE`, with no cluster selectors or fallback. All export only
 runtime-specific full-passing evidence. Orka/kagent support authored `llmJudge`
-with explicit judge transport and identity; AgentSessions judging remains refused.
+with explicit judge transport and identity, plus optional KMX case `runs`/`minPasses`
+(default one run/all passes; unknown vetoes). AgentSessions judges/repeats remain
+refused. Repeat field names/defaults/validation follow
+[AgentSuite §8.2.2](../agentsuite/spec.md#822-case-documents-and-assertions):
+`minPasses` requires `runs`, and both are positive integers. KMX's execution cap
+is 100 runs, within the spec's consumer resource-limit allowance.
 No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
 AgentSessions evidence is explicitly refused by diff and Lift;
 `eval from-sessions` is reference extraction/export without a native consumer.

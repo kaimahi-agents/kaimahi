@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that the README describes the released suite-first workflow."""
+"""Check the current suite-first workflow and its stable-release boundary."""
 from __future__ import annotations
 
 import re
@@ -41,7 +41,7 @@ JOURNEY_ROWS = [
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)
-JOURNEY_HEADER = "| Stage | v0.6.0 |"
+JOURNEY_HEADER = "| Stage | Current checkout |"
 JOURNEY_SEPARATOR = "|---|---|"
 DEVELOPER_LINKS = [
     ("developer guide", "[developer guide](docs/development.md)"),
@@ -132,7 +132,7 @@ def check(text: str) -> str | None:
     if table_problem is not None:
         return "README front door: " + table_problem
     table_at = journey.find(JOURNEY_HEADER)
-    release = "The table below is available in v0.6.0."
+    release = "The table below describes unreleased main; v0.6.0 keeps its released defaults."
     release_at = journey.find(release)
     if not 0 <= release_at < table_at:
         return "README front door: v0.6.0 release note must precede the suite journey table"
@@ -145,8 +145,8 @@ def check(text: str) -> str | None:
         return "README front door: Prove row must preserve fail-fast execution"
     if "Neither form deploys" not in rows[2][1]:
         return "README front door: Publish row must say it does not deploy"
-    if "Plain `kmx push REF` remains explicitly unevaluated" not in rows[2][1]:
-        return "README front door: Publish row must keep plain push unevaluated"
+    if "Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out" not in rows[2][1]:
+        return "README front door: Publish row must require evidence or explicit opt-out"
     if "without building, repacking, or publishing" not in rows[3][1]:
         return "README front door: Lift row must stay deploy-only"
     if "`--plan` is GET-only" not in rows[3][1]:

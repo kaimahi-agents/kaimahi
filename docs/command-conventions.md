@@ -18,7 +18,7 @@ kmx <noun> <verb> [object] [flags]
 
 - **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
   `push` and full-workspace `eval`. Root `eval` also retains helpers (`diff`,
-  `from-sessions`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
+  `from-sessions`, `cleanup`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
   `suite build/diff/push/pull/validate` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
@@ -48,6 +48,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `run` | Execute once on an independent live Orka Agent. | `kmx run --agent NAME` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
 | `eval` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
+| `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx eval cleanup [run-id] --to dev` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `lift` | Deploy an exact suite digest using explicit native evidence. | `kmx lift <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |
 | `result` | Retrieve the outcome of an existing execution. | `kmx task result <task>` |
@@ -82,6 +83,8 @@ Keep these distinctions:
 | `-i`, `--interactive` | Switch a command that has a scripted mode to its guided terminal mode. Not used on commands that are only interactive. |
 | `--out` | Path for written artifacts. Never reuse `--output` for a path. |
 | `--workspace` | Exact workspace root without discovery fallback; default create initializes it if absent, and push requires an existing workspace. |
+| `--evaluation` | Explicit standalone passing receipt for root push; overrides managed lookup without fallback. |
+| `--unevaluated` | Explicit root push opt-out from passing evidence; never evaluates or deploys. |
 | `--plan` | Read the target and print what would change. No writes. |
 | `--no-apply` | Where supported by runtime setup, render without cluster writes; removed from workspace create. |
 | `--dry-run` | Where supported by runtime setup, check server admission without persistent writes; removed from workspace create. |
@@ -111,6 +114,8 @@ Keep these distinctions:
   refuses with a `--workspace` hint. Invalid nearest markers and second members
   refuse without changing source. Exact model and file-valued instructions are
   required; no offline wizard or implicit live dispatch is provided.
+- **Candidate cleanup always confirms**, including local kind: display the selected
+  run and frozen UID plan before context-naming consent. Without a run it only lists.
 - **Read-only commands never prompt.**
 - **Help and completion never mutate.** Completion lookups are bounded and
   read-only.
@@ -202,6 +207,6 @@ row when its rename lands.
 | Current command | Rule it breaks | Proposed |
 |---|---|---|
 | `ctx [--check]` | Abbreviated root name and a list action without a verb. | Explicitly approved list-only named destinations; not the removed context-switching alias. Keep `--to` explicit and `targets` separate. |
-| `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain extracted-artifact transfer syntax without workspace discovery or `--workspace`; root `push [--workspace <directory>] <reference>` discovers a workspace and publishes a prepared native suite with one positional destination. `--workspace` selects an exact root without fallback. |
+| `suite push <directory> <reference>` | Two positional arguments: extracted source directory and OCI destination reference. | Retain extracted-artifact transfer syntax without workspace discovery or `--workspace`; root `push [--workspace <directory>] [reference]` discovers a workspace and publishes a prepared native suite with at most one positional destination. An explicit tag is preserved; bare push derives a full-S tag from saved publishRepository. Completed private exact-S proof is required unless --unevaluated explicitly opts out. `--workspace` selects an exact root without fallback. |
 | `suite build --output <file>`, `suite pull --output <directory>` | `--output` is an artifact path, not a report format; neither command has the report-format `-o` shorthand. | Retain current syntax until a replacement is agreed. |
 | `suite build --attestations` | Defaults to true; `--attestations=false` opts out of SBOM and provenance requests. | Keep the documented default; `--require-attestations` refuses missing or unsupported attestations. |

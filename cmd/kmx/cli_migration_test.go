@@ -100,9 +100,9 @@ func TestCLIMigrationPushRefusalsPrecedeConfigurationAndPreparation(t *testing.T
 		want string
 	}{
 		{[]string{"push", "team:v1"}, "no workspace found"},
-		{[]string{"push", "directory", "team:v1"}, "exactly one"},
+		{[]string{"push", "directory", "team:v1"}, "at most one"},
 		{[]string{"push", "--workspace=", "team:v1"}, "--workspace"},
-		{[]string{"push", "--workspace", "missing", "directory", "team:v1"}, "exactly one"},
+		{[]string{"push", "--workspace", "missing", "directory", "team:v1"}, "at most one"},
 		{[]string{"push", "--workspace", "missing", "team:v1", "--context", "kind-demo"}, "--context"},
 		{[]string{"push", "--workspace", "missing", "team:v1", "--container-engine", "podman"}, "--container-engine"},
 		{[]string{"push", "--workspace", "missing", "team:v1", "--to-layout="}, "--to-layout"},

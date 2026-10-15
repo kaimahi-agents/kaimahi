@@ -105,9 +105,10 @@ config merging. Operational config is excluded from prepared S, source fingerpri
 and published content.
 
 This is selector configuration, not environment installation or deployment
-identity. `publishRepository` and `evaluationTarget` record intent for later
-composition; this CLI still requires a push reference, eval `--out`, and Lift
-digest/private evidence. It does not automatically eval or push during Lift.
+identity. `publishRepository` supplies bare push's repository; `evaluationTarget`
+records intent for later composition. Root eval keeps managed passing proof with
+optional `--out`; explicit push references are preserved. Lift still requires a
+digest/private evidence and does not automatically evaluate or push.
 **Kagent stays out of composed Lift until its own candidate-scoped evaluation
 and ownership-safe cleanup are qualified**; standalone explicit kagent operations
 retain their existing boundaries. Named selectors never grant promotion or bypass
@@ -315,16 +316,59 @@ kmx push --evaluation ../private-evidence/passing.json ghcr.io/me/my-agents:v1
 Root `eval` discovers the nearest workspace, or selects an exact root without
 fallback using `--workspace DIR`. It accepts no positional package reference.
 A destination context (explicit `--to-context`, named `--to`, or saved `evalTarget`)
-and `--out` are required. Orka requires `--inference provider:NAME`, directly or
+is required. Root eval stores completed passing metadata privately under KMX
+state; `--out` optionally also writes a new standalone receipt. Orka requires
+`--inference provider:NAME`, directly or
 through the named destination;
 kagent instead requires `--bindings FILE`, never both. For Orka, namespace
 is `orka-system` by default (`--to-namespace`); `--result-port` defaults to
-`19180`, and each case has a separate `--case-timeout` (default 5m, maximum 9m).
+`19180`, and each run has a separate `--case-timeout` (default 5m, maximum 9m).
 Explicit empty selectors and global `--context` are refused. No runtime/model
 substitution, case subset or `--show-content` is available. Orka/kagent support
 `contains`, `notContains`, `regex` and explicitly configured `llmJudge` assertions. Unsupported evaluators,
 receipt-budget overflow and invalid output destinations refuse offline before
 loading cluster configuration.
+
+Orka/kagent cases optionally declare repeated execution:
+
+```yaml
+id: capital
+input: What is the capital of France?
+expectContains: [Paris]
+runs: 5
+minPasses: 4
+```
+
+`runs` defaults to 1; omitted `minPasses` requires every declared run to pass.
+`minPasses` requires an explicit `runs`. Both must be integers satisfying
+`1 <= minPasses <= runs <= 100`. Receipt-size
+projection can impose a lower limit and refuses offline before configuration.
+Each run sends a fresh Task with the same authored input, never a retry. Each
+run gets the configured deadline, including its judge requests and attribution
+checks. When cases repeat, preflight prints the sum of all run-time budgets
+(`runs × --case-timeout`, summed across cases), excluding placement; this is an
+upper bound, not a prediction, and cancellation can stop it earlier. Every
+run must finish, even after enough passes or failures are known. Any unknown
+assertion/judge outcome makes the case unknown. Only completed, attributable
+assertion failures count as failing samples against the threshold; execution
+failure, missing answer, drift or cancellation still aborts later sends.
+Preflight discloses the total Task count and two judge requests per assertion
+per run. AgentSessions refuses repeated cases; its one-run behavior is unchanged.
+
+Passing private receipts store contiguous per-run rows, with `run` ordinals and
+the declared `runs`/`minPasses`, actual pass/fail verdicts, assertion evidence and
+unique native identities. Only complete groups meeting the threshold export.
+Default one-run receipt encoding is unchanged; older strict readers refuse
+repeat rows. Diff compares per-run outcomes without treating different Task IDs,
+answer hashes or judge scores as identity changes; the authored repeat policy
+and judge configuration remain comparison identities.
+
+The field names, defaults and validation follow
+[AgentSuite §8.2.2 — Case documents and assertions](../agentsuite/spec.md#822-case-documents-and-assertions).
+KMX uses private YAML authoring and receipts rather than the spec's embedded
+JSON format. Its 100-run cap is an additional execution resource limit, allowed
+by [§8.2.1](../agentsuite/spec.md#821-index-and-bounds); it refuses larger policies
+rather than truncating them.
 
 For an open-ended answer, author a judge assertion in the ordinary case file:
 
@@ -345,11 +389,13 @@ optionally, nominate its HTTPS credential environment variable with
 `--judge-key-env`. There is no endpoint or agent-model fallback. HTTPS is required
 except keyless HTTP at literal loopback. Input, attributed answer and rubric go
 to that provider. Preflight states the cost: **two independent requests
-per judge assertion**, sharing the existing per-case deadline. Both
+per judge assertion per run**, sharing that run's deadline. Both
 scores at/above the threshold pass, both below fail, and disagreement, malformed
-or unavailable responses are unknown. There are no retries or extra candidate
-Tasks. Native attribution is checked again after judging; late drift/deadline
+or unavailable responses are unknown. There are no retries or candidate Tasks beyond the authored runs. Native
+attribution is checked again after judging; late drift/deadline
 prevents a case pass and export. Reasoning is discarded, never printed.
+Choose a judge model strong enough for the rubric: two agreeing scores do not
+make an incorrect judgment correct; validate it against known pass/fail examples.
 
 All judges use the fixed `openai-chat-completions-v1` Chat Completions style:
 `max_completion_tokens: 1024`, `stream: false`, and no `temperature` or other
@@ -378,16 +424,21 @@ upgrade receipt readers before exchanging judge receipts. AgentSessions
 `--development-host` continues to refuse judges. The assertion fields are unchanged
 and can map directly to authored JSON cases; this does not migrate the case tree.
 
-One mutation guard covers runtime-specific placement and all ordered evaluation
-Tasks: Orka `Provider/Agent`, or kagent `ModelConfig/Agent`. Remote targets require
-the existing named confirmation; local kind targets retain the existing banner.
-Orka can reuse/update only a same-owner pair; kagent creates new objects and
-refuses occupied targets without complete caller-retained proof. Neither adopts
-legacy/unowned/foreign resources. Every case sends one fresh Task exactly once,
-using the exact authored input. Ambiguous writes are never recovered, retried or
-resent. Placement, runtime, target and binding observations bracket execution;
-source and placement are checked again before export. These observations do not
-prove drift absence or authentication.
+One mutation guard covers placement, every ordered case and Orka candidate
+cleanup. Public Orka eval creates a fresh digest/run-scoped Provider/Agent pair;
+it never adopts, updates or reuses an earlier candidate. The logical packaged
+member, model and cases stay unchanged. Every KMX-created candidate Provider,
+Agent and Task carries the full run-ID annotation; Orka-created descendants are
+tracked through exact owner-UID chains, not presumed annotation inheritance.
+Startup reports possible leftovers and unknown discovery without deleting them
+or blocking a fresh evaluation. Run liveness is unknown.
+
+Remote evaluation retains context-naming confirmation; local kind retains its
+banner. Private Quickstart strict reuse and console canonical create/update are
+unchanged. Kagent placement and all runtime-specific attribution remain unchanged.
+Each declared run sends one fresh Task exactly once; ambiguous writes are never recovered
+by name, retried or resent. Source, runtime, target and bindings bracket execution.
+These observations do not prove drift absence or authentication.
 
 Kagent uses a closed author-owned `KagentBindings` file (namespace, OpenAI
 provider/baseURL, separately provisioned Secret name/explicit key). The model
@@ -402,7 +453,7 @@ kmx eval --workspace ./kagent-workspace --to-context kind-demo \
 Kagent evaluation requires **auth: unsecure only, trusted-proxy refused** before
 admission and before native sends. It creates new suite-owned ModelConfig/Agent
 objects; occupied unrecorded targets refuse, never adopt/update/delete-recreate.
-Each case sends one fresh blocking A2A Task with no prior Task/context IDs.
+Each declared run sends one fresh blocking A2A Task with no prior Task/context IDs.
 Ambiguous transport, foreign history, reused native identities or changed
 placement/runtime/binding stop later sends. Consent discloses full prompt,
 answer and history retention in kagent's database (upstream default unlimited),
@@ -410,20 +461,64 @@ Service-proxy audit bodies and model transfers. No auth settings are modified.
 
 For Orka, the temporary result session uses the selected ServiceAccount's **full effective
 authority**. Discarding its bearer is not revocation; Task-read enforcement is
-unverified for v0.2.0. One pinned loopback connection is opened per case, without
+unverified for v0.2.0. One pinned loopback connection is opened per run, without
 reconnect. Prompts, answers, assertion operands and reasoning stay out of KMX
 terminal summaries and receipts, but runtime/model storage and Kubernetes audit
 policy may retain them. Published suites themselves contain authored inputs.
 
-Failure, unknown results, drift, cancellation or output failure stops later cases
-and exits nonzero. No incomplete/diagnostic receipt is exported; resources may
-remain, with no automatic retry or cleanup. Only a full ordered pass publishes one
-new private receipt file (0600) into an existing private directory (0700), outside
-workspace and cache trees. Existing destinations are never replaced. A late
-publication or summary failure can leave a complete output file; inspect it rather
-than assuming failure removed it. Receipts contain identities, digests and
-assertion verdicts and bounded judge identity/scores only, not payloads or
-evaluation history.
+A missed pass threshold, unknown results, execution failure, drift, cancellation
+or output failure stops later cases
+and exits nonzero. Public Orka eval attempts bounded, detached cleanup after pass,
+failure or cancellation. Only independently acknowledged roots can be deleted,
+using fresh UID/resourceVersion preconditions; Task absence alone does not prove
+Job/Pod absence. Shared inference, Secrets, namespaces and RBAC stay untouched.
+A full pass exports only after verified root/child absence and final original
+source/shared-input checks. Incomplete or uncertain cleanup fails that eval and
+exports nothing; it does not invalidate older completed evidence or block later
+publication. There is no cleanup journal, lease or automatic leftover sweep.
+
+The private passing file is 0600 in an existing 0700 directory outside workspace
+and cache trees, never replaced. A late publication or summary failure can leave
+a complete output; inspect it rather than assuming failure removed it. Receipts
+retain identities, digests, assertion verdicts and bounded judge metadata, not
+payloads or execution history. Runtime/model/audit retention may outlive cleanup.
+
+### Inspect and clean candidate leftovers
+
+```sh
+kmx eval cleanup --to dev
+kmx eval cleanup <full-run-id> --to dev
+# Explicit access also works without the original workspace or inference:
+kmx eval cleanup <full-run-id> --to-context kind-demo --to-namespace orka-system
+```
+
+Without a run ID this is read-only: no prompt, deletion or passing receipt. A full
+32-character lowercase hexadecimal run ID selects one run, never a prefix or all
+runs. Cleanup previews the frozen target and resource UIDs, then requires
+context-naming confirmation even on local kind. Noninteractive use requires
+`KAIMAHI_CONFIRM=<context>`. Named `--to` reads only copied destination selectors;
+cleanup does not evaluate source, require inference or follow saved `evalTarget`.
+
+Cleanup can interrupt a live run; no lease establishes abandonment. Identity,
+ownership and scope are rechecked before UID/resourceVersion-preconditioned
+root deletion and verified child absence. Unanchored descendants, missing
+Task/Job links or unverifiable selection are reported as uncertain and refused,
+not guessed from labels or partial names. Existing Task names retain only part
+of the run ID, so some post-crash orphans require independent operator inspection.
+A missing root is not itself proof of complete cleanup.
+
+Discovery is namespace-wide, not filtered by labels that descendants may lack.
+Inventories allow four pages of 128 objects per kind, at most 4 MiB per page,
+and 512 objects across a snapshot, including unrelated resources. Cleanup has
+one 90-second budget. Large namespaces, unreadable pages or stuck finalizers
+fail closed; these limits are not proof that a selected run has no leftovers.
+Prefer a dedicated evaluation namespace. If a limit prevents recovery, have the
+cluster owner inspect retained resources and reduce unrelated inventory through
+their own verified-ownership process, then rerun read-only `kmx eval cleanup`.
+Missing anchors instead require independent operator-reviewed, UID-specific
+inspection/cleanup; do not infer ownership from labels, prefixes or age, or use
+a namespace-wide delete to work around a refusal. KMX never authorizes shared
+inference, Secret or namespace deletion through this helper.
 
 `push --evaluation FILE` reads that strict private file and requires the exact
 prepared manifest digest plus full offline case/subject coherence before transfer
@@ -434,36 +529,31 @@ Ordinary push remains explicitly unevaluated. Extracted-directory `suite push`
 does not gain this flag. `eval diff` reads strict passing suite receipts and
 compares only compatible same-runtime subjects/case inventories; Orka/kagent
 comparison refuses as incompatible, never as equivalent behavior. Comparison
-also requires identical observed ownership. Separate kagent CLI runs create
-fresh resources, so their receipts are incompatible rather than a cross-run
-behavior comparison. Root Lift dispatches only matching runtime evidence;
+also requires identical observed ownership. Fresh Orka candidate runs and separate
+kagent CLI runs have different identities, so their receipts are incompatible
+rather than a cross-run behavior comparison. Root Lift dispatches only matching runtime evidence;
 cross-runtime evidence refuses. Old Orka/kagent/AgentSessions bundle receipts are
 unreadable. `eval from-sessions` remains private reference extraction/export only,
 with no native manifest consumer. RecordedExecution/legacy replay/judges are removed.
 
 ### Qualification boundary
 
-The existing Orka runtime CI shard now includes a checkout-only native scenario
-using the pinned CPU AIKit model, the two public capital/arithmetic cases and the
-installer's existing Secret reference in its exclusively owned kind cluster.
-It attempts one full evaluation without retry, independently reads live identity,
-spec and result evidence, and transfers exact S through a local layout and a
-pinned private Distribution registry. With authored source withheld, root CLI
-`lift --plan`, apply and repeat apply must reuse the exact evaluated pair without
-admission, writes or Tasks for both transports. A separate `run --agent` creates
-one fresh Task per transport; authored text assertions, input/result digests and
-pair identity are independently checked. This is separate execution qualification,
-not invocation authorization conferred by serialized lift output.
+The existing Orka runtime CI shard uses the pinned CPU AIKit workload, two text
+cases and one configured rubric judge in exclusively owned kind clusters. It
+checks historical API identity/spec/input/terminal metadata, actual UID/RV delete
+preconditions and independent root/child absence after candidate evaluation.
+Source answers, assertion verdicts and judge scores are product-observed after
+cleanup, not independently re-fetched from deleted Tasks. Exact S transfers through
+a local layout and pinned registry; source-withheld Lift requires explicit
+`--promote`, GET-only planning and an absent canonical destination. Fresh destination
+answers and no-effect refusal audits remain independent checks.
 
-Refusals cover missing evidence, different S with the same G, a coherent private
-namespace-UID counterfactual (not destructive namespace replacement), foreign
-ownership, a distinct Ready inference identity and terminal spec drift. Altered
-evidence has an original-identity positive control. The product audit records
-request intent before forwarding, distinguishes admission from persistent writes
-and Task attempts, and refuses incomplete/failed requests. Only passing receipt
-metadata and a payload-free qualification report may be uploaded. Runtime/model and
-Kubernetes audit storage can still retain inputs. A successful run qualifies this
-fixed scenario; hermetic tests alone do not establish runtime/model execution.
+The audit records intent before forwarding, distinguishes admission, persistent
+writes and Task attempts, and refuses incomplete requests. Only passing metadata
+and a payload-free qualification report may be uploaded. Runtime/model/audit
+storage may retain inputs. This fixed scenario does not establish general
+execution, authenticated approval or orphan recovery; hermetic tests alone are
+not live runtime/model qualification.
 The same shard also prepares a second exclusively owned kind cluster with the
 same pinned Orka in `orka-system`. It shares the real AIKit model through a
 fixture-only NodePort on the private kind network, without a host port mapping;
@@ -488,10 +578,64 @@ execution. Standalone package evaluation remains unavailable.
 ## Publish
 
 ```sh
-kmx push ghcr.io/me/my-agents:v1
+kmx eval                             # saved evalTarget, no --out needed
+kmx push ghcr.io/me/my-agents:v1       # supplied tag stays v1
+kmx push                             # saved publishRepository:s-<full-S-hex>
 ```
 
-Root `push [--workspace DIR] REF` finds the nearest `workspace.yaml` by walking
+Root push requires completed full-passing evidence for the exact prepared OCI
+manifest S by default. It selects the latest completed pass for this workspace/S,
+validates its packaged runtime/cases, and identifies the selected record on stderr
+before transfer. It does not evaluate or contact the cluster to repair missing proof.
+`--evaluation FILE` selects an explicit standalone receipt with no lookup fallback.
+`--unevaluated` explicitly publishes without evidence; it cannot be combined with
+`--evaluation`. Extracted-directory `suite push` remains ordinary artifact transfer.
+
+With an explicit `REPO:TAG`, the tag is unchanged, including force/replacement rules.
+Only bare push derives `s-<full-S-hex>` from the same frozen graph it transfers;
+it requires `publishRepository` in workspace `kmx.yaml`. A local `--to-layout`
+target still needs an explicit reference. TLS, exact-host HTTP opt-in, credential
+and provenance defaults remain unchanged.
+
+### Managed passing proof
+
+Managed state is outside workspace/preparation cache, under
+`KMX_HOME/passing/<workspace-root-hash>/<S-hex>/` (or the platform KMX state
+location without `KMX_HOME`). Directories are 0700, records immutable 0600, bounded,
+closed and symlink-refusing. Each completion record embeds the existing canonical
+private receipt; no prompts, answers, credentials or binding bytes are added.
+Existing explicit receipt formats are unchanged and are not automatically imported.
+Use `--out` when a standalone file is needed for digest Lift or offline receipt diff;
+managed completion records are not standalone `--evidence`/`--evaluation` files.
+
+A record is committed only after successful full evaluation, Orka candidate cleanup,
+final input checks and evaluator/output closes. An earlier completed pass survives a
+later failed or uncertain eval; changing packaged content changes S, so old proof
+cannot qualify the edit. Cleaned candidates remain historical execution proof, not
+current destination health, destination evaluation or authentication.
+
+Only the exact-S partition is scanned. Per-S immutable sequence names select the
+latest completed record; staging/uncommitted files are ignored and corrupt committed
+state refuses rather than silently falling back. New-registration capacity (256
+records or a 16 MiB partition budget, reserving a full receipt slot) is checked
+before eval effects. A full partition still supports push from existing proof;
+select a different private `KMX_HOME` for new evaluation registrations. No automatic
+evidence deletion, cleanup sweep, journal or durable cleanup blockade is added.
+
+One OS-held per-workspace lock excludes concurrent root eval/push; process exit
+releases it without deleting its stable lock file. All root push modes, including
+--evaluation and --unevaluated, require safe symlink-free, lockable KMX state;
+--unevaluated opts out of proof, not exclusion or private-state validation. Never delete that file to bypass
+a running operation. This does not make external registry tag races atomic.
+
+Eligibility starts when the complete completion record is exclusively published.
+If a later sync, close, cancellation or reporting operation fails, the command
+returns nonzero and names the completed record, disclosing persistence uncertainty
+where applicable. A visible valid record remains eligible. Complete explicit output
+may also survive a late error and is disclosed; precommit errors never register a
+new automatic pass.
+
+Root `push [--workspace DIR] [REF]` finds the nearest `workspace.yaml` by walking
 up from the current directory, including through Git repository boundaries.
 `--workspace <directory>` overrides discovery and selects that exact directory;
 it never falls back to the current directory or a parent workspace.
@@ -562,7 +706,7 @@ Unsigned provenance is informational, not evaluation or promotion evidence.
 For offline transfer, the local target's parent directory must exist:
 
 ```sh
-kmx push --to-layout ../suite-layout my-agents:v1
+kmx push --unevaluated --to-layout ../suite-layout my-agents:v1
 kmx suite pull my-agents:v1 --from-layout ../suite-layout --output ../extracted
 kmx suite validate ../extracted
 ```
@@ -575,8 +719,8 @@ references from successful publications remain intact. An interrupted writer can
 leave a sibling lock directory: remove it only after verifying the publisher has
 stopped. Registry tag preflight remains separately non-atomic.
 Existing extracted-directory transfer remains `suite push DIRECTORY REFERENCE`
-and does not discover a workspace. Root push takes only one positional destination
-reference; explicit selection is also available from anywhere:
+and does not discover a workspace. Root push takes at most one positional destination
+reference; explicit workspace selection is also available from anywhere:
 
 ```sh
 kmx push --workspace ./my-agents ghcr.io/me/my-agents:v1
@@ -600,7 +744,7 @@ root digest lift consumes that explicit private file before deployment.
 kmx lift registry.example/suite@sha256:<digest> --to-context prod \
   --inference provider:inference --evidence ../private/passing.json --promote --plan
 kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
-  --inference provider:inference --evidence ../private/passing.json -o json
+  --inference provider:inference --evidence ../private/passing.json --promote -o json
 ```
 
 Use a complete SHA256 digest, not a mutable tag. Destination runtime must already
@@ -651,7 +795,10 @@ Owned status-only resource-version churn is tolerated; selected inference Provid
 and Secret versions remain exact. Before each write and after each Ready wait,
 the pair and prerequisites are rechecked, including before each server dry-run.
 
-`--promote` is required when target/binding differs. Packaged S/G/member/model/
+Candidate-source evidence requires `--promote` even in the same environment;
+cleaned physical candidates cannot authorize canonical destination reuse.
+Historical canonical evidence retains the exact-subject gate.
+`--promote` is also required when target/binding differs. Packaged S/G/member/model/
 renderer/profile/composition/images must match, as must the pinned runtime version,
 images and mode. The selected Ready `openai` Provider must explicitly declare
 `defaultModel` equal to the packaged model, with UID/generation/resourceVersion

@@ -138,8 +138,31 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   once without replacement outside workspace/cache trees, and bind the private
   receipt-file push consumer to exact S plus offline packaged coherence. There is
   a full-workspace native evaluation CLI with one fresh never-retried Task per
-  ordered case. Root `push --evaluation FILE` uses that private file consumer;
-  ordinary push stays unevaluated. Unsigned receipts do not prove authentication
+  declared run of each ordered case. Optional KMX YAML runs/minPasses defaults
+  to one run/all passes, bounded to 100 runs plus the offline receipt budget.
+  Each run receives its own case-timeout budget, including judging/attribution;
+  repeat preflight states the summed run-time budget excluding placement.
+  Any unknown vetoes the threshold. Only
+  completed attributable assertion failures are countable; execution errors
+  still abort. AgentSessions refuses repeats both offline and in strict proof.
+  Private repeated rows retain ordinal/policy and actual outcomes; default
+  one-run encoding stays unchanged. Field names/defaults/validation follow
+  [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions):
+  minPasses requires runs and both are positive integers. KMX additionally caps
+  runs at 100 under the spec's consumer resource-limit allowance.
+  Root push requires latest completed private exact-S evidence by default;
+  `--evaluation FILE` explicitly overrides lookup without fallback, and
+  `--unevaluated` explicitly retains ordinary publication. Explicit REPO:TAG
+  remains unchanged; bare push requires saved publishRepository and derives only
+  its tag as `s-<full-S-hex>`. Root eval makes --out optional and registers managed
+  proof only after evaluation, Orka cleanup, final input checks and evaluator/output
+  closes. Managed 0700/0600 per-workspace/per-S immutable completion records embed
+  existing canonical receipts outside workspace/cache. Per-S sequences select latest;
+  corruption refuses. Capacity preflight blocks new eval registration, not existing
+  proof lookup; staging is ineligible. Visible complete records remain eligible after
+  post-link persistence errors with explicit uncertainty. OS-held workspace flock
+  excludes concurrent root eval/push without a stale-lock blockade. Private convenience
+  evaluators and extracted-directory suite push retain their old contracts. Unsigned receipts do not prove authentication
   or drift absence.
   Any presence of a native suite ownership annotation reserves desired/live
   resources against legacy adoption, copying, bundle authorization and retirement.
@@ -152,7 +175,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   lift and receipt diff; there is no registry or caller-auth integration.
 - Root `eval` evaluates the full packaged Orka/kagent workspace inventory with
   a destination context (explicit `--to-context`, named `--to` or saved evalTarget)
-  and new private `--out`; Orka uses --inference
+  and optional new private `--out`; Orka uses --inference
   provider:NAME, kagent uses author-owned --bindings FILE, never both. Namespace
   must match kagent bindings and kagent refuses --result-port. It uses local
   flags and a nonpersistent operational hook. Unsupported/budget/output checks
@@ -166,7 +189,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   judge. No request-style flag, model inference or error fallback. Two independent
   scores must agree on the threshold side;
   unavailable/malformed/split results stay unknown. Judgment shares the existing
-  case deadline and attribution is rechecked afterward. Root eval discards
+  per-run deadline and attribution is rechecked afterward. Root eval discards
   reasoning and omits judge endpoints from recovery commands. Private passing
   rows bind authored model/version, request style, threshold, policy, endpoint
   configuration hash, both scores and aligned modelMatches observations. Returned
@@ -247,7 +270,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 ## kagent version boundary
 
 - Exact v0.10.3 Go/linux-amd64 packaged profiles use author-owned bindings,
-  unsecure auth only, one fresh blocking A2A Task per ordered case, never retried.
+  unsecure auth only, one fresh blocking A2A Task per declared case run, never retried.
   Trusted-proxy refuses before admission/send. Digest Lift creates absent objects
   only with runtime-matching evidence; occupied primaries/children refuse.
   No Python/RemoteMCP, standalone chat/run, installer/discovery, suite status or
@@ -257,11 +280,17 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   source-withheld digest Lift with occupied-repeat refusal. No legacy receipt,
   status or judge claim. Final build/live execution are needed for qualification.
 
-## Internal candidate boundary
+## Candidate evaluation and explicit cleanup
 
-The private Orka candidate orchestrator is test-only until separately activated.
-Public `EvaluateSuiteWorkspace`, quickstart/console and publication stay canonical;
-no journal, lease, startup cleanup or publication blockade is implemented.
+Public Orka workspace eval uses fresh S/run candidates, never adoption/update/reuse.
+Full passing evidence exports only after UID/RV-safe cleanup, exact owner-UID child
+closure and final source/shared-input checks. KMX-created Provider/Agent/Task carry
+full run annotations; Orka descendants do not inherit them. Startup reports only;
+unknown reporting never blocks a fresh eval. `eval cleanup [run-id]` lists without
+a run, otherwise previews frozen UIDs and requires confirmation even on local kind.
+Unanchored or unverifiable orphans refuse deletion/completeness claims. No journal,
+lease, automatic sweep or publication blockade. Private Quickstart/console stay
+canonical; kagent/Sessions/judge behavior and all existing timeouts are unchanged.
 
 ## Verification
 

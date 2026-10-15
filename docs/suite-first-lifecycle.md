@@ -29,10 +29,11 @@ The [AgentSuite specification](../agentsuite/spec.md) distinguishes canonical gr
 This current-`main` recipe requires a prepared Orka target with a Ready Provider,
 its Secret reference and result-reader access. It authors source, evaluates the
 exact package, publishes that same identity, then reviews and applies an
-exact-digest Lift. Default reuse requires equality with the complete evaluated
-subject. Any eligible target or binding difference requires `--promote`, absent
-destination resources and the same packaged identity/runtime profile; its evidence
-still proves only the source.
+exact-digest Lift. Public Orka eval uses disposable candidates and exports only
+after verified cleanup. Its evidence requires `--promote` even in the same
+environment, absent canonical destination resources and the same packaged
+identity/runtime/model; evidence still proves only the source. Historical
+canonical evidence retains its exact-subject reuse gate.
 
 ```sh
 mkdir my-agents && cd my-agents && git init
@@ -49,9 +50,9 @@ kmx push --workspace . --evaluation ../private-evidence/passing.json \
   ghcr.io/me/my-agents:v1
 
 kmx lift ghcr.io/me/my-agents@sha256:<digest> --to-context kind-demo \
-  --inference provider:local --evidence ../private-evidence/passing.json --plan
+  --inference provider:local --evidence ../private-evidence/passing.json --promote --plan
 kmx lift ghcr.io/me/my-agents@sha256:<digest> --to-context kind-demo \
-  --inference provider:local --evidence ../private-evidence/passing.json
+  --inference provider:local --evidence ../private-evidence/passing.json --promote
 ```
 
 Push prints the prepared OCI manifest digest; use that digest rather than the
@@ -83,7 +84,7 @@ Commands find the workspace by walking up from the current directory to `workspa
 
 Everyday create/chat/run/eval/push commands now sit at the root and `kmx agent`
 is removed. Less frequent operations stay under nouns: `suite
-build|diff|pull|push|validate`, `eval diff|from-sessions`, `task`, hidden `aks`,
+build|diff|pull|push|validate`, `eval diff|from-sessions|cleanup`, `task`, hidden `aks`,
 `local`, `orka` and `targets`. Removed root AKS aliases leave `lift` reserved for
 the packaged-suite operation. Root `status` and `orka status` currently retain the
 same Orka runtime report.

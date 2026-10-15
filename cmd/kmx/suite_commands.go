@@ -224,7 +224,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 // root workspace publication and the extracted-directory suite transfer.
 func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command {
 	var target, pushWorkspace, evaluation string
-	var pushPlainHTTP, pushForce, pushProvenance, pushRequireProvenance bool
+	var pushPlainHTTP, pushForce, pushProvenance, pushRequireProvenance, unevaluated bool
 	push := &cobra.Command{
 		Use:   "push <directory> <reference>",
 		Short: "Push an extracted AgentSuite to an OCI layout or registry",
@@ -245,14 +245,17 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 			"  kmx suite push ./suite --to-layout ./layout agentsuites/team:v1",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if workspaceMode {
-				if len(args) != 1 {
-					return fmt.Errorf("workspace push requires exactly one destination reference")
+				if len(args) > 1 {
+					return fmt.Errorf("workspace push accepts at most one destination reference")
 				}
 				if cmd.Flags().Changed("workspace") && strings.TrimSpace(pushWorkspace) == "" {
 					return fmt.Errorf("workspace push requires non-empty --workspace")
 				}
 				if cmd.Flags().Changed("evaluation") && strings.TrimSpace(evaluation) == "" {
 					return fmt.Errorf("workspace push requires non-empty --evaluation")
+				}
+				if unevaluated && cmd.Flags().Changed("evaluation") {
+					return fmt.Errorf("--unevaluated cannot be used with --evaluation")
 				}
 				if state.contextFlag != "" {
 					return fmt.Errorf("--context cannot be used with workspace push")
@@ -266,17 +269,21 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 		},
 	}
 	if workspaceMode {
-		push.Use = "push [--workspace <directory>] <reference>"
-		push.Short = "Push a native-Orka workspace to an OCI layout or registry"
-		push.Long = "Prepare one native-Orka workspace member and its authored cases, then copy that exact OCI graph.\n" +
-			"Pass only the destination reference as a positional argument. Discover the nearest ancestor workspace.yaml from the current directory, or select an exact root without fallback with --workspace <directory>.\n" +
+		push.Use = "push [--workspace <directory>] [reference]"
+		push.Short = "Push an evaluated native workspace to an OCI layout or registry"
+		push.Long = "Prepare one native workspace member and its authored cases, require completed exact-suite passing evidence, then copy that exact OCI graph.\n" +
+			"Explicit REPO:TAG is preserved unchanged. Bare push requires publishRepository in workspace kmx.yaml and derives only its tag as s-<full-S-hex>; --to-layout still requires an explicit reference. Discover the nearest ancestor workspace.yaml, or select an exact root without fallback with --workspace <directory>.\n" +
+			"By default select the latest completed private pass for this workspace and exact S, naming it on stderr. Missing/corrupt proof refuses before transfer; push never runs evaluation. --unevaluated explicitly opts out. Managed evidence is historical execution proof, not current target health.\n" +
 			"Stderr names the absolute workspace path and prepared OCI manifest digest. No member images are required; this does not deploy or evaluate an Agent.\n" +
 			"--evaluation consumes a private full-passing native receipt file and refuses a different exact suite manifest or incoherent case inventory before transfer. Unsigned observations are not authentication or a policy gate.\n\n" + push.Long
 		push.Example = "  kmx push registry.example.com/team:v1\n" +
+			"  kmx push\n" +
+			"  kmx push --unevaluated registry.example.com/team:v1\n" +
 			"  kmx push --to-layout ./layout agentsuites/team:v1\n" +
 			"  kmx push --workspace ./workspace registry.example.com/team:v1"
 		push.Flags().StringVar(&pushWorkspace, "workspace", "", "select exactly this workspace instead of nearest-ancestor discovery")
-		push.Flags().StringVar(&evaluation, "evaluation", "", "private full-passing native receipt file bound to this exact suite")
+		push.Flags().StringVar(&evaluation, "evaluation", "", "explicit private full-passing receipt; overrides managed lookup without fallback")
+		push.Flags().BoolVar(&unevaluated, "unevaluated", false, "explicitly publish without passing evidence; never evaluates or deploys")
 		_ = push.MarkFlagDirname("workspace")
 	}
 	push.Flags().StringVar(&target, "to-layout", "", "local OCI image-layout target directory")
@@ -314,18 +321,23 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 			}
 		}
 		if workspaceMode {
+			var reference, repository string
+			if len(args) == 1 {
+				reference = args[0]
+			}
 			if target == "" {
-				pushWorkspace, pushPlainHTTP, err = resolveWorkspacePushTransport(cmd, pushWorkspace, args[0], pushPlainHTTP)
+				pushWorkspace, repository, pushPlainHTTP, err = resolveWorkspacePushTransport(cmd, pushWorkspace, reference, pushPlainHTTP)
 				if err != nil {
 					return err
 				}
+			} else if reference == "" {
+				return fmt.Errorf("workspace push to a local layout requires an explicit reference")
 			}
 			a.Err = cmd.ErrOrStderr()
-			if cmd.Flags().Changed("evaluation") {
-				result, err = a.PushSuiteWorkspaceEvaluated(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance, evaluation)
-			} else {
-				result, err = a.PushSuiteWorkspace(cmd.Context(), pushWorkspace, args[0], target, pushPlainHTTP, pushForce, provenance)
-			}
+			result, err = a.PushSuiteWorkspaceManaged(cmd.Context(), app.SuiteWorkspacePushOptions{
+				Workspace: pushWorkspace, Reference: reference, Repository: repository, Layout: target,
+				PlainHTTP: pushPlainHTTP, Force: pushForce, Provenance: provenance, Evaluation: evaluation, Unevaluated: unevaluated,
+			})
 			if err != nil {
 				return &suiteDiagnosticError{err}
 			}

@@ -33,6 +33,22 @@ const fixture = `{
   "current-context": "kind-real"
 }`
 
+func TestRequiredConfirmation(t *testing.T) {
+	for _, target := range []string{"kind-real", "aks-remote", "kind-not-created-yet"} {
+		for _, confirm := range []string{"", "wrong", target} {
+			var out bytes.Buffer
+			err := Check(load(t), Request{Context: target, Source: config.SourceFlag, Confirm: confirm, MustBeKnown: true, RequireConfirmation: true, Command: "kmx eval cleanup"}, &out, nil)
+			if target == "kind-real" && confirm == "" && (err == nil || !strings.Contains(err.Error(), "requires context-naming confirmation")) {
+				t.Fatalf("forced confirmation misclassified local kind: %v", err)
+			}
+			want := confirm == target && target != "kind-not-created-yet"
+			if (err == nil) != want {
+				t.Fatalf("target=%s confirm=%s: %v", target, confirm, err)
+			}
+		}
+	}
+}
+
 func load(t *testing.T) *Kubeconfig {
 	t.Helper()
 	cfg, err := ParseKubeconfig([]byte(fixture))

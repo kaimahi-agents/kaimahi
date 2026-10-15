@@ -66,6 +66,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   for these references must be re-serialized to canonical bytes; there is no
   migration path or back-compat reader. ([#496](https://github.com/kaimahi-agents/kaimahi/issues/496))
 
+- Root workspace push requires completed exact-S passing evidence by default.
+  Use --unevaluated to explicitly retain ordinary publication; explicit
+  --evaluation FILE overrides managed lookup without fallback. Extracted-directory
+  suite push is unchanged.
+
 - Judge evidence now binds its request style; older judge receipts without it
   require fresh evaluation. Text-only receipts remain unchanged.
 
@@ -82,6 +87,36 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Helm 3 or when the version cannot be read. ([#504](https://github.com/kaimahi-agents/kaimahi/issues/504))
 
 ### Added
+
+- Root eval stores completed runtime-specific passing metadata in private KMX state;
+  --out is optional and still exports a standalone receipt for Lift/diff. Immutable
+  per-workspace/per-S completion records embed canonical receipts, select latest
+  by per-S sequence and commit only after evaluation/Orka cleanup/finalization.
+  Capacity is checked before new eval effects without blocking push from existing
+  proof. Post-link errors disclose saved proof and persistence uncertainty. OS-held
+  workspace exclusion releases on process exit; no stale-lock deletion or cleanup
+  journal. Explicit push REPO:TAG stays unchanged; only bare push uses saved
+  publishRepository and derives `s-<full-S-hex>`. No composed or tag-based Lift.
+
+- Public Orka workspace eval uses fresh digest/run candidates, never adoption,
+  update or reuse, and exports passing evidence only after verified UID/RV-safe
+  cleanup and owner-UID child absence. Startup reports possible leftovers only.
+  `kmx eval cleanup [run-id] --to NAME` lists without a run; selecting one full
+  run previews UIDs and requires confirmation even locally. Unattributable
+  orphans refuse. Candidate evidence needs standalone Lift `--promote` even in
+  the same environment; private Quickstart/console and other runtimes are unchanged.
+  No cleanup journal, lease, automatic sweep or publication blockade.
+
+- Native Orka/kagent workspace cases accept optional KMX `runs`/`minPasses`.
+  Default one run; omitted threshold requires all declared runs. Each run uses
+  a fresh Task with its own configured deadline; repeat preflight prints the
+  total run-time budget excluding placement. Any unknown vetoes a pass;
+  execution errors still abort. Private evidence records complete per-run
+  verdicts and threshold, with unchanged default one-run encoding. Upgrade
+  readers before exchanging repeat receipts. AgentSessions refuses repeats;
+  repeat fields follow [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions),
+  including positive integers and `minPasses` requiring `runs`. KMX-private
+  YAML/receipts remain separate from the spec's embedded JSON format.
 
 - A draft docs-as-code website renders the existing README, maintained guides,
   and AgentSuite specification directly with responsive navigation, local search,
@@ -106,7 +141,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   suites with explicit `--judge-base-url` and optional `--judge-key-env`.
   Two independent samples must agree on the threshold side;
   unavailable, malformed or split outcomes are unknown and export no passing
-  receipt. Judgment shares the existing case deadline, with attribution checked
+  receipt. Judgment shares each run's deadline, with attribution checked
   afterward. Preflight states the two-request cost and data transfer.
   Private receipts bind declared judge model/version, policy, threshold, endpoint
   configuration hash and both scores; reasoning and raw judge URLs stay out of
@@ -138,6 +173,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Upgrading
 
+- Run root eval once to register exact-S managed proof before ordinary root push,
+  or keep selecting existing standalone receipts with --evaluation FILE. Scripts
+  intentionally publishing without proof must add --unevaluated. Old receipts are
+  not automatically imported. Bare push needs publishRepository; explicit tags
+  and standalone Lift digest/evidence requirements remain unchanged.
+
 - Re-run `kmx eval` for judge-bearing workspaces with a fresh private `--out`
   path. Do not rewrite older judge receipts to add the new style binding.
 
@@ -149,8 +190,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Optionally add workspace-root `kmx.yaml` for named destinations and use
   `kmx ctx` to list them, then `eval/lift --to NAME`. No default/current Lift
   selection or context switch is introduced. Existing explicit selectors work
-  without config. Keep supplying eval `--out`, a push reference and Lift
-  digest/`--evidence`; configuration does not enable the composed workflow.
+  without config. Eval --out and the push reference are optional; keep supplying
+  Lift digest/--evidence. Configuration does not enable the composed workflow.
   See [named destinations](docs/suite-workspace.md#named-destinations).
 
 ## v0.6.0 — 2026-10-14

@@ -32,7 +32,7 @@ func suiteEvalSource(t *testing.T) (string, string) {
 }
 
 func TestSuiteEvalOfflineBeforeConfiguration(t *testing.T) {
-	for _, stage := range []string{"valid", "unsupported", "budget", "output", "selector", "empty workspace", "global context", "positional", "no workspace", "private source", "private descriptor", "bare"} {
+	for _, stage := range []string{"valid", "managed", "unsupported", "budget", "output", "selector", "empty workspace", "global context", "positional", "no workspace", "private source", "private descriptor", "bare"} {
 		t.Run(stage, func(t *testing.T) {
 			t.Setenv("KMX_HOME", t.TempDir())
 			root, outfile := suiteEvalSource(t)
@@ -44,6 +44,8 @@ func TestSuiteEvalOfflineBeforeConfiguration(t *testing.T) {
 			args := []string{"eval", "--to-context", "kind-target", "--inference", "provider:inference", "--out", outfile}
 			want := "configured boundary"
 			switch stage {
+			case "managed":
+				args = args[:len(args)-2]
 			case "unsupported":
 				if err := os.WriteFile(filepath.Join(root, "eval/example.yaml"), []byte("id: unsupported\ninput: private\nassertions: [{id: tool, type: toolCalled, tool: private}]\n"), 0600); err != nil {
 					t.Fatal(err)
@@ -99,7 +101,7 @@ func TestSuiteEvalOfflineBeforeConfiguration(t *testing.T) {
 				want = "refused before native changes"
 			case "bare":
 				args = []string{"eval"}
-				want = "required flag(s)"
+				want = "native evaluation requires"
 			}
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
@@ -114,7 +116,7 @@ func TestSuiteEvalOfflineBeforeConfiguration(t *testing.T) {
 			deps.newApp = func(*config.Config) *app.App { created++; t.Fatal("unexpected App construction"); return nil }
 			err := execute(args, deps)
 			wantLoads := 0
-			if stage == "valid" {
+			if stage == "valid" || stage == "managed" {
 				wantLoads = 1
 			}
 			if err == nil || !strings.Contains(err.Error(), want) || *loads != wantLoads || created != 0 {

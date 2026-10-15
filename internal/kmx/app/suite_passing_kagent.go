@@ -252,12 +252,13 @@ func newSuiteKagentPassingReceipt(ctx context.Context, p *PreparedSuiteWorkspace
 	r := &suitePassingReceipt{SchemaVersion: 1, Domain: "kmx.native-suite.passing/v1", ExecutionMode: "native-kagent", RunID: id, SourceFingerprint: p.prepared.Fingerprint, Kagent: &suiteKagentPassingProof{Observation: *o, SourceCommit: kagentLiftProfile().Commit, RequiredImages: []string{}}, CasesDigest: casesDigest, Result: "pass", Cases: make([]suitePassingCase, 0, len(observations))}
 	for i, observed := range observations {
 		row := p.inventory[i].Metadata
-		if observed.CaseID != row.ID || observed.CaseDigest != row.CaseDigest || observed.InputDigest != row.InputDigest || observed.Detail != "" || observed.Execution == nil || observed.Verdict != agentruntime.EvaluationPass {
+		if observed.CaseID != row.ID || observed.CaseDigest != row.CaseDigest || observed.InputDigest != row.InputDigest || observed.Detail != "" || observed.Execution == nil || observed.Stop || (observed.Verdict != agentruntime.EvaluationPass && (row.Run == 0 || observed.Verdict != agentruntime.EvaluationFail)) {
 			return nil, errSuitePassingReceipt
 		}
 		e := observed.Execution
 		row.KagentExecution = &suiteKagentCaseExecution{e.RPCID, e.RequestMessageID, e.TaskID, e.ContextID, e.State, 1, suiteKagentAnswerAttribution}
 		row.AnswerDigest = observed.AnswerSHA256
+		row.Verdict = string(observed.Verdict)
 		row.Assertions = make([]suitePassingAssertion, 0, len(observed.Assertions))
 		for _, a := range observed.Assertions {
 			row.Assertions = append(row.Assertions, suitePassingAssertionResult(a))

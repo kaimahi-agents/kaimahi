@@ -50,13 +50,13 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 | `agent verify` / `bundle verify` | Removed | Legacy replay/judges and RecordedExecution are removed without a native replacement. |
 | `agent eval diff <before.json> <after.json>` | `eval diff <before.json> <after.json>` | Offline receipt comparison, not evaluation execution. |
 | `agent eval from-sessions <session-uid>...` | `eval from-sessions <session-uid>...` | Private reference-case preparation, not execution. |
-| `suite push --workspace DIR REF` / `suite push REF` | `push [--workspace DIR] REF` | Exact prepared workspace graph publication; discovers the nearest ancestor `workspace.yaml`, or selects an exact root without fallback with `--workspace`. |
+| `suite push --workspace DIR REF` / `suite push REF` | `push [--workspace DIR] [REF]` | Exact prepared workspace graph publication; discovers the nearest ancestor `workspace.yaml`, or selects an exact root without fallback with `--workspace`. |
 
 The entire `kmx agent` group is removed, including its hidden edit stub, with no
 aliases or retirement stubs. Use kubectl to edit live Orka resources. Root
 `status` and `orka status` retain the same table-only Orka runtime report;
 There is no suite status/retirement replacement. Root `eval` executes a full native workspace inventory with explicit
-target/output selection and exactly one runtime-derived model binding: Orka
+target selection, optional private output and exactly one runtime-derived model binding: Orka
 `--inference` or packaged kagent `--bindings`. Standalone packaged-reference
 evaluation remains unimplemented. Root digest `lift` deploys a packaged native
 suite with explicit private evidence, GET-only `--plan`, strict guarded apply and
@@ -79,6 +79,12 @@ RecordedExecution, legacy bundle Sessions evaluation/replay/judges and their
 consumers are removed. There is no native reference-manifest consumer; author
 native workspace cases. See [reference extraction](kmx.md#reference-extraction).
 
+`eval cleanup --to NAME` lists candidates read-only. `eval cleanup RUN --to NAME`
+previews one full run's frozen identities, confirms even on local kind and performs
+UID/resourceVersion-safe cleanup. Explicit context/namespace needs no workspace or
+inference. Missing Task/Job anchors remain uncertain, never guessed from labels;
+there is no automatic sweep, lease, local journal or later-publication blockade.
+
 ## Named workspace destinations
 
 Optional workspace-root `kmx.yaml` supplies selectors to existing `eval/lift --to NAME`.
@@ -91,8 +97,8 @@ fields, including an explicit false transport flag. Config is not packaged or
 included in source identity. Explicit digest Lift without `--to` never discovers a
 workspace. See [configuration and checks](suite-workspace.md#named-destinations).
 
-No composed workspace Lift is enabled: a digest/private evidence, explicit push
-reference and eval output are still required. Kagent remains standalone; do not
+No composed workspace Lift is enabled: Lift still requires a digest and private
+evidence; eval --out and the push reference are optional. Kagent remains standalone; do not
 include it in composed Lift until candidate-scoped evaluation/cleanup is qualified.
 
 ## Offline suite workspace
@@ -110,7 +116,7 @@ Live create/previews/wizard and live-only flags are removed outright, unknown
 before config. No runtime/model bootstrap belongs in workspace create.
 Help/completion is inert; authoring needs no cluster, builder or model call.
 
-`push <reference>` discovers the nearest ancestor `workspace.yaml`;
+`push [reference]` discovers the nearest ancestor `workspace.yaml`;
 `--workspace <directory>` instead selects that exact directory, without fallback.
 Missing, invalid or unreadable workspace selection refuses. The command prepares
 that member and its shareable authored cases as an ordinary AgentSuite, then
@@ -121,13 +127,25 @@ replacement remain as documented. Old `suite push <directory> <reference>` retai
 extracted-artifact transfer behavior without workspace discovery; suite push no
 longer accepts `--workspace` or one positional reference. Root push refuses two
 positional arguments.
-Root `eval --to-context CTX --out FILE` performs offline workspace/inventory/
-output preparation before configuration, then one guarded runtime-specific
-placement and one fresh Task per ordered case. Orka requires
+Root `eval --to-context CTX [--out FILE]` performs offline workspace/inventory/
+managed-proof and optional output preparation before configuration, then one guarded runtime-specific
+placement and one fresh Task per declared run of each ordered case (default one).
+Optional KMX YAML `runs`/`minPasses` counts completed attributable assertion
+verdicts; omitted threshold requires all runs. Each run has its own deadline;
+repeat preflight states the total run-time budget, excluding placement. There is
+no early success; any unknown or execution error aborts. AgentSessions
+refuses repeats. Field names/defaults follow
+[AgentSuite §8.2.2](../agentsuite/spec.md#822-case-documents-and-assertions):
+`minPasses` requires `runs`, and both are positive integers. KMX's private YAML
+and receipts remain separate from the spec's embedded JSON format.
+Public Orka uses fresh S/run candidates and exports only after verified root/child
+cleanup and final fences. Startup reports without deleting or blocking a fresh
+eval. Private Quickstart/console stay canonical. Orka requires
 `--inference provider:NAME`; packaged exact-v0.10.3 Go kagent requires
 author-owned `--bindings FILE`, unsecure auth and no `--result-port`. Only full
-passing metadata is exported once to a private file outside workspace/cache;
-failure, unknown, drift, cancellation or output error stops later sends. No
+passing metadata is registered in private KMX state; --out optionally also exports
+a standalone private file outside workspace/cache. Failure, unknown, drift,
+cancellation or output error stops later sends. No
 package reference, subset or content output is accepted. Authored `llmJudge`
 requires explicit `--judge-base-url`, optional `--judge-key-env` and authored
 model/version/threshold. Two independent samples must agree on the threshold
@@ -135,13 +153,16 @@ side; errors/splits stay unknown. Judges use the fixed modern Chat Completions
 request shape: a 1024
 `max_completion_tokens` budget, no temperature override and no error fallback.
 Evidence binds that style; old judge receipts require fresh evaluation.
-Judgment shares the case deadline and is
+Judgment shares the current run's deadline and is
 followed by attribution rechecks. Passing rows bind judge identity, endpoint
 configuration hash and both scores without reasoning or raw judge URLs; recovery
 commands omit the endpoint. Text-only receipt encoding is unchanged. Development
 AgentSessions continues to refuse judges.
 `push --evaluation FILE` checks runtime-specific private receipt coherence and
-exact manifest S before publication; ordinary push is unevaluated. Receipts are
+exact manifest S before publication, overriding managed lookup without fallback.
+Root push otherwise requires the latest completed exact-S pass from private managed
+state; --unevaluated explicitly opts out. Root eval's --out is optional. Explicit
+push tags stay unchanged; only bare push uses saved `publishRepository:s-<full-S-hex>`. Receipts are
 unsigned observations, not policy gates. Dedicated shards qualify bounded Orka
 and kagent workspace scenarios; the native Orka inventory includes two text cases
 and one open-ended rubric case sharing the pinned AIKit workload, with no timeout
@@ -149,7 +170,7 @@ increase. Kagent retains its two text cases. Hermetic runner tests are not live
 judge proof; this is not general runtime support.
 Root `lift REF@sha256:DIGEST` consumes that explicit private full-pass evidence
 for source-free, deploy-only packaged Orka or exact-kagent placement. Bounded
-qualification covers Orka exact reuse and kagent fresh-target creation, not every
+qualification covers explicit Orka candidate-source promotion and kagent fresh-target creation, not every
 promotion, creation or partial-outcome path. See [suite workspace](suite-workspace.md).
 
 ## Vocabulary

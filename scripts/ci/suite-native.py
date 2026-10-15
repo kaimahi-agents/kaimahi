@@ -17,6 +17,7 @@ import sys
 import tarfile
 import time
 import urllib.request
+import urllib.parse
 
 import yaml
 
@@ -88,6 +89,102 @@ def inspect_pair(doc, kind, owned, subject):
             c["observedGeneration"] == meta["generation"] for c in status["conditions"]), "pair-ready")
 
 
+def verify_candidate(receipt, frames, cases, specs):
+    """Historical proof backed by actual CREATE/GET hashes, never a deleted-source read."""
+    require(receipt.get("candidateCleanup") == "complete", "candidate-cleanup")
+    subject, run, rows = receipt["subject"], receipt["runID"], receipt["cases"]
+    pair = {kind: receipt[kind.lower()] for kind in ("Provider", "Agent")}
+    require(re.fullmatch(r"[0-9a-f]{32}", run) and subject.get("EvaluationRun") == run and
+            subject.get("PhysicalMember") == "kmx-eval-" + subject["SuiteDigest"][7:23] + "-" + run, "candidate-run")
+    member = subject["PhysicalMember"]
+    require(all(f["verb"] != "blocked" and f.get("returnCode") == 0 for f in frames if f["verb"] != "port-forward"), "candidate-audit")
+    creates = [f for f in frames if f["persistent"] and f["verb"] != "delete"]
+    wanted = [("Provider", member), ("Agent", member)] + [("Task", r["taskName"]) for r in rows]
+    require([(f["resource"], f["name"]) for f in creates] == wanted and all(f["verb"] == "create" for f in creates), "candidate-creates")
+    require(any(f["verb"] == "create" and f["resource"] == "token" for f in frames), "candidate-token")
+    markers = dict(zip(MARKERS, [subject[k] for k in ("Suite", "SuiteDigest", "Member", "Renderer", "BindingDigest", "RenderedDigest")]))
+    markers["kaimahi.dev/suite-evaluation-run"] = run
+    observations = {}
+    require(len(rows) == len(cases), "candidate-case-count")
+    for created, (kind, name) in zip(creates, wanted):
+        observed = created.get("response", {})
+        meta = observed.get("metadata", {})
+        owned = pair[kind] if kind != "Task" else {"UID": rows[wanted.index((kind, name)) - 2]["taskUID"], "Generation": 1}
+        require(observed.get("apiVersion") == "core.orka.ai/v1alpha1" and observed.get("kind") == kind and
+                meta.get("name") == name and meta.get("namespace") == "orka-system" and meta.get("uid") == owned["UID"] and
+                meta.get("generation") == owned["Generation"] == 1 and not meta.get("terminating") and
+                meta.get("annotations") == markers, "candidate-created-identity")
+        seen = [f["response"] for f in frames if f["verb"] == "get" and f.get("response", {}).get("kind") == kind and
+                f["response"].get("metadata", {}).get("name") == name]
+        require(bool(seen), "candidate-independent-get")
+        for current in seen:
+            cm = current["metadata"]
+            # Cleanup may observe a same-UID finalized object at generation+1;
+            # that observation is not Ready/evaluation authority.
+            require(cm["uid"] == owned["UID"] and cm["namespace"] == "orka-system" and cm["annotations"] == markers and
+                    (cm["generation"] == 1 or cm["terminating"] and cm["generation"] == 2) and
+                    current["specDigest"] == observed["specDigest"], "candidate-get-drift")
+        if kind != "Task":
+            digest = native_digest("kmx.native-orka.spec/v1", specs[kind])
+            require(observed["specDigest"] == owned["SpecDigest"] == digest and
+                    any(s.get("ready") and not s["metadata"]["terminating"] for s in seen), "candidate-pair-spec-ready")
+        else:
+            case = yaml.safe_load(list(cases.values())[wanted.index((kind, name)) - 2])
+            expected = {"type": "ai", "prompt": case["input"], "agentRef": {"name": member, "namespace": "orka-system"}, "resources": {}}
+            for current in [observed, *seen]:
+                require(current.get("taskType") == "ai" and current.get("agentRef") == expected["agentRef"] and
+                        current.get("inputDigest") == sha(case["input"].encode()) and
+                        current.get("taskSpecDigest") == native_digest("kmx.native-orka.spec/v1", expected), "candidate-task-input")
+            require(any(s.get("phase") == "Succeeded" and s.get("resultAvailable") and not s["metadata"]["terminating"] for s in seen), "candidate-task-terminal")
+        attempts = [f for f in frames if f.get("admission") and (f["resource"], f["name"]) == (kind, name)]
+        require(all(f["verb"] == "create" and f["stdinDigest"] == created["stdinDigest"] for f in attempts) and
+                len(attempts) <= (2 if kind == "Task" else 3), "candidate-no-resend")
+        observations[(kind, name)] = observed
+    require(all(not f.get("admission") or f["resource"] == "token" or (f["resource"], f["name"]) in wanted for f in frames), "candidate-admissions")
+    deletes = [(i, f) for i, f in enumerate(frames) if f["verb"] == "delete"]
+    require([(f["resource"], f["name"]) for _, f in deletes] ==
+            [("Task", r["taskName"]) for r in rows] + [("Agent", member), ("Provider", member)], "candidate-deletes")
+    for i, deletion in deletes:
+        ack = deletion.get("response", {})
+        observed = observations[(deletion["resource"], deletion["name"])]
+        require(ack == {"apiVersion": "v1", "kind": "Status", "status": "Success"} or
+                ack.get("kind") == deletion["resource"] and ack.get("apiVersion") == "core.orka.ai/v1alpha1" and
+                all(ack.get("metadata", {}).get(k) == observed["metadata"][k] for k in ("name", "namespace", "uid")), "candidate-delete-ack")
+        latest = [f["response"] for f in frames[:i] if f["verb"] == "get" and f.get("response", {}).get("kind") == deletion["resource"] and
+                  f["response"].get("metadata", {}).get("name") == deletion["name"]]
+        require(bool(latest) and deletion["preconditions"] == {"uid": observed["metadata"]["uid"],
+                "resourceVersion": latest[-1]["metadata"]["resourceVersion"]} and not deletion.get("taskAttempt") and
+                not deletion.get("admission"), "candidate-delete-preconditions")
+    return [{"uid": observations[("Task", r["taskName"])]["metadata"]["uid"], "generation": 1,
+             "specDigest": observations[("Task", r["taskName"])]["specDigest"],
+             "inputDigest": observations[("Task", r["taskName"])]["inputDigest"]} for r in rows]
+
+
+def owned_children(observed, task_ids):
+    owned = {kind: {} for kind in ("Job", "Pod", "ConfigMap")}
+    for kind in ("Job", "ConfigMap", "Pod"):
+        parents = task_ids if kind != "Pod" else owned["Job"]
+        parent_kind, version = ("Task", "core.orka.ai/v1alpha1") if kind != "Pod" else ("Job", "batch/v1")
+        for meta in observed[kind]:
+            if any(o.get("apiVersion") == version and o.get("kind") == parent_kind and o.get("controller") is True and
+                   parents.get(o.get("name")) == o.get("uid") for o in meta.get("ownerReferences", [])):
+                require(meta.get("namespace") == "orka-system", "child-namespace")
+                require(meta["name"] not in owned[kind] or owned[kind][meta["name"]] == meta["uid"], "child-cross-uid")
+                owned[kind][meta["name"]] = meta["uid"]
+    return owned
+
+
+def verify_child_absence(observed, current, task_ids):
+    owned = owned_children(observed, task_ids)
+    combined = {kind: observed[kind] + current[kind] for kind in observed}
+    closure = owned_children(combined, task_ids)
+    for kind, rows in current.items():
+        for meta in rows:
+            require(meta["uid"] not in set(closure[kind].values()) and meta.get("taskLabel") not in task_ids, "retained-child")
+    return owned
+
+
+
 def native_cases(public):
     cases = {p.name: p.read_bytes() for p in sorted((public / "eval").glob("*.yaml"))}
     require(list(cases) == ["01-capital.yaml", "02-arithmetic.yaml"], "fixture-cases")
@@ -140,33 +237,6 @@ def verify_cases(rows, files):
                 row["inputDigest"] == sha(case["input"].encode()) and row["verdict"] == "pass" and row["assertions"] == expected, "case-metadata")
 
 
-def verify_lift_summary(summary, receipt, evidence):
-    subject = receipt["subject"]
-    target = {k[0].lower() + k[1:]: v for k, v in subject["Target"].items()}
-    expected = {"suite": subject["Suite"], "suiteDigest": subject["SuiteDigest"], "member": subject["Member"],
-                "model": subject["Model"], "runtime": "orka", "target": target, "sourceTarget": target,
-                "promote": False, "gate": "same-subject", "inference": "provider:native-suite-inference",
-                "bindingDigest": subject["BindingDigest"], "renderedDigest": subject["RenderedDigest"],
-                "evidenceDigest": "sha256:" + sha(evidence), "evidenceRunID": receipt["runID"]}
-    require(all(summary.get(k) == v for k, v in expected.items()), "lift-summary")
-    require(re.fullmatch(r"sha256:[0-9a-f]{64}", summary.get("planDigest", "")), "lift-plan-digest")
-    require(len(summary["resources"]) == 2, "lift-resources")
-    for resource, kind in zip(summary["resources"], ("Provider", "Agent")):
-        owned = receipt[kind.lower()]
-        require(all(resource.get(k) == v for k, v in {"kind": kind, "name": subject["Member"], "action": "reuse",
-                "uid": owned["UID"], "generation": owned["Generation"], "specDigest": owned["SpecDigest"]}.items()), "lift-reuse")
-
-
-def verify_lift_result(result, receipt, evidence):
-    verify_lift_summary(result["summary"], receipt, evidence)
-    require(result["state"] == "ready" and len(result["resources"]) == 2, "lift-ready")
-    for resource, kind in zip(result["resources"], ("Provider", "Agent")):
-        owned = receipt[kind.lower()]
-        require(all(resource.get(k) == v for k, v in {"kind": kind, "name": receipt["subject"]["Member"],
-                "outcome": "reused", "ready": True, "uid": owned["UID"], "generation": owned["Generation"],
-                "specDigest": owned["SpecDigest"]}.items()), "lift-result")
-
-
 def private_model_route(source, destination, internal_ip, port):
     networks = [node["NetworkSettings"]["Networks"]["kind"] for node in (source, destination)]
     require(networks[0]["NetworkID"] and networks[0]["NetworkID"] == networks[1]["NetworkID"] and
@@ -211,10 +281,7 @@ def verify_promote_summary(summary, receipt, evidence, destination, specs, infer
                 "inference": "provider:" + inference, "bindingDigest": destination["BindingDigest"],
                 "renderedDigest": destination["RenderedDigest"], "evidenceDigest": "sha256:" + sha(evidence),
                 "evidenceRunID": receipt["runID"]}
-    require(all(summary.get(k) == v for k, v in expected.items()) and
-            target["clusterUID"] != source["Target"]["ClusterUID"] and
-            target["namespaceUID"] != source["Target"]["NamespaceUID"] and
-            target["context"] != source["Target"]["Context"], "promote-summary")
+    require(all(summary.get(k) == v for k, v in expected.items()), "promote-summary")
     require(re.fullmatch(r"sha256:[0-9a-f]{64}", summary.get("planDigest", "")), "promote-plan-digest")
     require(summary["resources"] == [{"kind": kind, "name": source["Member"], "action": "create",
             "specDigest": native_digest("kmx.native-orka.spec/v1", specs[kind])} for kind in ("Provider", "Agent")], "promote-create-plan")
@@ -242,33 +309,9 @@ def verify_fresh_answer(stdout, case):
         require(passed, "fresh-answer")
 
 
-def spec_drift_patch(doc):
-    model = copy.deepcopy(doc["spec"].get("model", {}))
-    require(isinstance(model, dict) and model.get("name") != "unevaluated-model", "spec-drift-shape")
-    model["name"] = "unevaluated-model"
-    return {"spec": {"model": model}}
-
-
-def namespace_evidence(receipt, namespace_uid):
-    # Counterfactual only: never replace the live runtime namespace. A positive
-    # original-UID control follows this identical reconstruction before denial.
-    out = copy.deepcopy(receipt)
-    subject = out["subject"]
-    subject["Target"]["NamespaceUID"] = namespace_uid
-    subject["RenderedDigest"] = native_digest("kmx.native-orka.revision/v1", {**subject, "RenderedDigest": ""})
-    return out
-
-
 def verify_refusal(code, stderr, frames, reason):
     require(code == 1 and reason.encode() in stderr and not any(f["persistent"] or f.get("admission") or f.get("taskAttempt") or f.get("verb") == "blocked" or
             f.get("returnCode", 0) != 0 for f in frames), "refusal-proof")
-
-
-def verify_collision_refusal(code, stderr, frames, member):
-    # Entering placement is classified ambiguous even when its ownership
-    # preflight refused. Independent audit/readback establishes no writes.
-    verify_refusal(code, stderr, frames, "native evaluation outcome unknown; resources may remain; no retry or cleanup")
-    require(any(f["verb"] == "get" and f["resource"] == "providers.core.orka.ai" and f["name"] == member for f in frames), "collision-inspection")
 
 
 def read_blob(layout, descriptor):
@@ -405,7 +448,7 @@ class Qualification:
         for resource, name in (("deployment", "native-suite-aikit"), ("service", "native-suite-aikit"),
                                ("configmap", "native-suite-aikit"), ("providers.core.orka.ai", "native-suite-inference")):
             require(not self.kube("-n", "orka-system", "get", resource, name, "--ignore-not-found", "-o", "name").strip(), "fixture-exists")
-        for name in ("ci-native-suite", "ci-native-collision"):
+        for name in ("ci-native-suite",):
             for resource in ("providers.core.orka.ai", "agents.core.orka.ai"):
                 require(not self.kube("-n", "orka-system", "get", resource, name, "--ignore-not-found", "-o", "name").strip(), "member-exists")
         local = self.get("providers.core.orka.ai", "local")["spec"]
@@ -522,49 +565,75 @@ class Qualification:
         require(inspect_task(self.get("tasks.core.orka.ai", name), row, member, case["input"]) == task, "fresh-task-drift")
         return {**task, "inputDigest": sha(case["input"].encode()), "answerDigest": result_digest(output)}
 
-    def lift_qualification(self, workspace, layout, receipt_path, receipt, cases):
+    def lift_qualification(self, workspace, layout, changed_layout, changed_s, receipt_path, receipt, cases):
         evidence, original = receipt_path.read_bytes(), snapshot(workspace)
         layout_before = snapshot(layout)
-        subject = receipt["subject"]
-        local = "native-suite@" + subject["SuiteDigest"]
+        source = receipt["subject"]
+        local = "native-suite@" + source["SuiteDigest"]
         results = {}
         with self.registry() as registry:
             self.cli("push", "--workspace", workspace, "--evaluation", receipt_path, "--plain-http", "--provenance=false", registry)
-            registry = registry.rsplit(":", 1)[0] + "@" + subject["SuiteDigest"]
+            registry = registry.rsplit(":", 1)[0] + "@" + source["SuiteDigest"]
             hidden = self.work / "source-withheld"
             workspace.rename(hidden)
             hidden.chmod(0)
             try:
+                self.empty_member(source["Member"])
+                subject, specs = self.promotion_subject(receipt)
+                results["denials"] = self.lift_denials(layout, changed_layout, changed_s, receipt_path, receipt)
                 for transport, reference, selected_layout in (("local", local, layout), ("registry", registry, None)):
-                    self.phase = "lift-" + transport
-                    self.live_subject(subject)
-                    self.pair_proof(receipt)
-                    for step, plan in enumerate((True, False, False)):
-                        self.phase = "lift-" + transport + "-" + str(step)
-                        start = len(self.frames())
-                        result = self.lift(reference, receipt_path, selected_layout, plan=plan)
-                        self.audit.verify_read_only(self.frames()[start:])
-                        parsed = json.loads(result.stdout)
-                        (verify_lift_summary if plan else verify_lift_result)(parsed, receipt, evidence)
-                        self.pair_proof(receipt)
-                    results[transport] = self.fresh_run(transport, receipt, yaml.safe_load(cases[sorted(cases)[0]]))
-                    results[transport].update({"plans": 1, "reuseApplies": 2, "admissions": 0, "nativeWrites": 0})
+                    self.phase = "lift-" + transport + "-plan"
+                    start = len(self.frames())
+                    rejected = self.lift(reference, receipt_path, selected_layout, success=False)
+                    frames = self.frames()[start:]
+                    verify_refusal(rejected.returncode, rejected.stderr, frames, "release lift planning refused")
+                    self.audit.verify_read_only(frames)
+                    self.empty_member(source["Member"])
+                    start = len(self.frames())
+                    result = self.lift(reference, receipt_path, selected_layout, plan=True, promote=True)
+                    self.audit.verify_read_only(self.frames()[start:])
+                    verify_promote_summary(json.loads(result.stdout), receipt, evidence, subject, specs)
+                    results[transport] = {"plans": 1, "planCountScope": "primary-transport-only-controls-excluded",
+                                          "defaultGateRefused": True, "reuseApplies": 0}
+                self.phase = "lift-local-create"
+                start = len(self.raw_frames())
+                result = json.loads(self.lift(local, receipt_path, layout, promote=True).stdout)
+                raw_frames = self.raw_frames()[start:]
+                verify_promote_completion_order(raw_frames)
+                verify_promote_effects(self.audit.completed(raw_frames), source["Member"])
+                verify_promote_result(result, receipt, evidence, subject, specs)
+                placement = {"subject": subject, **{row["kind"].lower(): {"UID": row["uid"], "Generation": row["generation"],
+                             "SpecDigest": row["specDigest"]} for row in result["resources"]}}
+                self.pair_proof(placement)
+                results["local"].update(gate="promotion", sourceOnlyEvidence=True, admissions=4, nativeWrites=2,
+                                        freshAnswer=self.fresh_run("local", placement, yaml.safe_load(cases[sorted(cases)[0]])))
+                for transport, reference, selected_layout in (("local", local, layout), ("registry", registry, None)):
+                    before = self.task_inventory()
+                    start = len(self.frames())
+                    rejected = self.lift(reference, receipt_path, selected_layout, promote=True, success=False)
+                    frames = self.frames()[start:]
+                    verify_refusal(rejected.returncode, rejected.stderr, frames, "release lift planning refused")
+                    self.audit.verify_read_only(frames)
+                    self.pair_proof(placement)
+                    require(self.task_inventory() == before, "occupied-repeat-effects")
+                    results[transport]["occupiedRepeatRefused"] = True
                 if self.promotion_context:
-                    results["promotion"] = self.promote_qualification(registry, receipt_path, receipt, cases)
+                    results["promotion"] = self.promote_qualification(registry, receipt_path, receipt, cases, placement)
+                self.pair_proof(placement)
             finally:
                 hidden.chmod(0o700)
                 hidden.rename(workspace)
         require(snapshot(workspace) == original and snapshot(layout) == layout_before and receipt_path.read_bytes() == evidence, "lift-input-changed")
         return results
 
-    def promote_qualification(self, reference, receipt_path, receipt, cases):
+
+    def promote_qualification(self, reference, receipt_path, receipt, cases, source_placement):
         self.phase = "promote-setup"
         destination = Qualification(self.promotion_context, self.work / "promotion")
         member, evidence = receipt["subject"]["Member"], receipt_path.read_bytes()
         self.live_subject(receipt["subject"])
-        self.pair_proof(receipt)
+        self.pair_proof(source_placement)
         source_tasks = self.member_tasks(member)
-        source_pair = {kind: self.get(kind.lower() + "s.core.orka.ai", member) for kind in ("Provider", "Agent")}
         destination.empty_member(member)
         nodes = []
         for qualifier in (self, destination):
@@ -605,7 +674,8 @@ class Qualification:
                     break
                 time.sleep(1)
             require(selected.get("status", {}).get("ready") is True and selected["spec"]["defaultModel"] == model, "promote-inference-ready")
-        subject, specs = destination.promotion_subject(receipt, source_pair)
+        destination.fixture_instructions = self.fixture_instructions
+        subject, specs = destination.promotion_subject(receipt)
         require(subject["Binding"]["Provider"]["UID"] != receipt["subject"]["Binding"]["Provider"]["UID"] and
                 subject["Binding"]["Secret"]["UID"] != receipt["subject"]["Binding"]["Secret"]["UID"], "promote-own-binding")
         def control(expected_subject=subject, expected_specs=specs, inference="native-suite-inference"):
@@ -618,7 +688,7 @@ class Qualification:
         self.phase = "promote-plan"
         control()
         alternate = "native-suite-model-mismatch"
-        alternate_subject, alternate_specs = destination.promotion_subject(receipt, source_pair, inference=alternate)
+        alternate_subject, alternate_specs = destination.promotion_subject(receipt, inference=alternate)
         control(alternate_subject, alternate_specs, alternate)
         self.phase = "promote-model-mismatch"
         before_model = destination.get("providers.core.orka.ai", alternate)
@@ -662,7 +732,7 @@ class Qualification:
         require(answer["uid"] not in {d["metadata"]["uid"] for d in source_tasks.values()}, "promote-task-source-uid")
         destination.live_subject(subject)
         self.live_subject(receipt["subject"])
-        self.pair_proof(receipt)
+        self.pair_proof(source_placement)
         require(self.member_tasks(member) == source_tasks and receipt_path.read_bytes() == evidence, "promote-source-drift")
         return {"transport": "registry", "gate": "promotion", "sourceOnlyEvidence": True, "destinationEvaluated": False,
                 "sourceTarget": result["summary"]["sourceTarget"], "target": result["summary"]["target"],
@@ -678,11 +748,13 @@ class Qualification:
     def task_inventory(self):
         return json.loads(self.kube("-n", "orka-system", "get", "tasks.core.orka.ai", "-o", "json"))["items"]
 
-    def promotion_subject(self, receipt, source_pair, inference="native-suite-inference"):
+    def promotion_subject(self, receipt, inference="native-suite-inference"):
         # Independently render the fixture's expected payload through the existing
         # offline renderer. Digest lift still runs source-free in the private cwd;
         # this reference render grants no placement/evaluation authority.
         subject = copy.deepcopy(receipt["subject"])
+        subject.pop("PhysicalMember", None)
+        subject.pop("EvaluationRun", None)
         subject["Target"] = {"Context": self.context, "Namespace": "orka-system",
                              "ClusterUID": self.get_namespace_uid("kube-system"), "NamespaceUID": self.get_namespace_uid("orka-system")}
         provider = self.get("providers.core.orka.ai", inference)
@@ -700,8 +772,7 @@ class Qualification:
         # CLI route, cluster I/O, persistent bundle or competing placement engine.
         reference = {"Name": subject["Member"], "Namespace": "orka-system", "Model": subject["Model"],
                      "ProviderType": "openai", "BaseURL": bound["BaseURL"], "SecretName": bound["SecretName"],
-                     "SecretKey": bound["SecretKey"], "Instructions": source_pair["Agent"]["spec"]["systemPrompt"]["inline"],
-                     "Description": source_pair["Agent"]["metadata"].get("annotations", {}).get("kaimahi.dev/description", "")}
+                     "SecretKey": bound["SecretKey"], "Instructions": self.fixture_instructions, "Description": ""}
         start = len(self.frames())
         result = self.command([self.repo / "bin/orka-native-reference"],
                               raw=canonical(reference), timeout=60)
@@ -713,92 +784,104 @@ class Qualification:
         parsed = [yaml.safe_load(raw) for raw in documents]
         require([doc["kind"] for doc in parsed] == ["Secret", "Provider", "Agent"], "promote-reference-documents")
         specs = {doc["kind"]: doc["spec"] for doc in parsed[1:]}
-        require(specs["Agent"] == source_pair["Agent"]["spec"] and specs["Provider"] ==
-                {**source_pair["Provider"]["spec"], "baseURL": bound["BaseURL"], "secretRef": {"name": bound["SecretName"], "key": bound["SecretKey"]}}, "promote-reference-specs")
+        require(subject["Model"] == "qwen-3.5-2b" and subject["RequiredImages"] == [], "reference-packaged-model")
         subject["PayloadDigest"] = sha(b"".join(frame("rendered/%03d.yaml" % i, raw) for i, raw in enumerate(documents)))
         subject["RenderedDigest"] = native_digest("kmx.native-orka.revision/v1", {**subject, "RenderedDigest": ""})
         self.live_subject(subject, inference=inference)
         return subject, specs
+
+    def candidate_specs(self, subject):
+        bound = subject["Binding"]["Provider"]
+        reference = {"Name": subject["PhysicalMember"], "Namespace": "orka-system", "Model": "qwen-3.5-2b",
+                     "ProviderType": "openai", "BaseURL": bound["BaseURL"], "SecretName": bound["SecretName"],
+                     "SecretKey": bound["SecretKey"], "Instructions": self.fixture_instructions, "Description": ""}
+        start = len(self.frames())
+        result = self.command([self.repo / "bin/orka-native-reference"], raw=canonical(reference))
+        require(len(self.frames()) == start, "reference-cluster-io")
+        documents = [base64.b64decode(raw, validate=True) for raw in json.loads(result.stdout)]
+        parsed = [yaml.safe_load(raw) for raw in documents]
+        require([doc["kind"] for doc in parsed] == ["Secret", "Provider", "Agent"], "candidate-reference-documents")
+        payload = sha(b"".join(frame("rendered/%03d.yaml" % i, raw) for i, raw in enumerate(documents)))
+        return {doc["kind"]: doc["spec"] for doc in parsed[1:]}, payload
+
+    def child_inventory(self, kind):
+        path = {"Job": "/apis/batch/v1/namespaces/orka-system/jobs", "Pod": "/api/v1/namespaces/orka-system/pods",
+                "ConfigMap": "/api/v1/namespaces/orka-system/configmaps"}[kind]
+        rows, token, rv, tokens = [], "", None, set()
+        for _ in range(4):
+            raw = self.kube("get", "--raw", path + "?limit=128" + ("&continue=" + urllib.parse.quote_plus(token) if token else ""))
+            require(len(raw) <= 4 << 20, "readback-page-bytes")
+            page = self.audit.response_snapshot(raw)
+            require(page["kind"] == kind + "List" and page["apiVersion"] == ("batch/v1" if kind == "Job" else "v1") and
+                    bool(page["resourceVersion"]) and (rv is None or page["resourceVersion"] == rv), "readback-page")
+            rv = page["resourceVersion"]
+            for row in page["items"]:
+                require(row.get("namespace") == "orka-system" and row.get("uid") and row.get("resourceVersion") and
+                        not any(old["name"] == row["name"] or old["uid"] == row["uid"] for old in rows), "readback-child-identity")
+                rows.append(row)
+            token = json.loads(raw)["metadata"].get("continue", "")
+            if not token:
+                return rows
+            require(len(token) <= 4096 and token not in tokens, "readback-page-token")
+            tokens.add(token)
+        raise ValueError("readback-page-bound")
+
+    def cleanup_proof(self, subject, frames):
+        member = subject["PhysicalMember"]
+        for kind in ("Provider", "Agent", "Task"):
+            names = [member] if kind != "Task" else [f["name"] for f in frames if f["verb"] == "create" and f["persistent"] and f["resource"] == "Task"]
+            for name in names:
+                require(not self.kube("-n", "orka-system", "get", kind.lower() + "s.core.orka.ai", name,
+                        "--ignore-not-found=true", "-o", "json").strip(), "retained-candidate-root")
+        observed = {kind: [meta for f in frames if f.get("response", {}).get("kind") == kind + "List"
+                          for meta in f["response"]["items"]] for kind in ("Job", "Pod", "ConfigMap")}
+        task_ids = {f["name"]: f["response"]["metadata"]["uid"] for f in frames if f["verb"] == "create" and f["persistent"] and f["resource"] == "Task"}
+        owned = owned_children(observed, task_ids)
+        first_delete = next((i for i, f in enumerate(frames) if f["verb"] == "delete"), len(frames))
+        before_delete_jobs = [meta for f in frames[:first_delete] if f.get("response", {}).get("kind") == "JobList"
+                              for meta in f["response"]["items"]]
+        anchored_tasks = {o.get("uid") for meta in before_delete_jobs for o in meta.get("ownerReferences", [])
+                          if o.get("apiVersion") == "core.orka.ai/v1alpha1" and o.get("kind") == "Task" and o.get("controller") is True and
+                          task_ids.get(o.get("name")) == o.get("uid")}
+        require(set(task_ids.values()) <= anchored_tasks, "pre-delete-job-uid-capture")
+        for _ in range(2):
+            current = {kind: self.child_inventory(kind) for kind in observed}
+            verify_child_absence(observed, current, task_ids)
+        self.live_subject(subject)  # shared namespace/inference/Secret/runtime survive unchanged
+        return {kind: len(ids) for kind, ids in owned.items()}
+
 
     def get_namespace_uid(self, name):
         return json.loads(self.kube("get", "namespace", name, "-o", "json"))["metadata"]["uid"]
 
     def lift_denials(self, layout, changed_layout, changed_s, receipt_path, receipt):
         self.phase = "lift-denials"
-        member = receipt["subject"]["Member"]
         reference = "native-suite@" + receipt["subject"]["SuiteDigest"]
+        subject, specs = self.promotion_subject(receipt)
         outcomes = []
-
-        def pair_state():
-            return [{k: doc[k] for k in ("kind", "spec")} | {"identity": {k: doc["metadata"].get(k) for k in
-                    ("name", "uid", "generation", "annotations")}} for doc in
-                    (self.get("providers.core.orka.ai", member), self.get("agents.core.orka.ai", member))]
-
-        def refusal(name, selected_reference=reference, evidence=receipt_path, selected_layout=layout, supplied=True, reason="release lift planning refused", inference="native-suite-inference"):
-            pair_before, tasks_before = pair_state(), self.member_tasks(member)
+        def control():
+            self.empty_member(subject["Member"])
             start = len(self.frames())
-            rejected = self.lift(selected_reference, evidence, selected_layout, evidence=supplied, success=False, inference=inference)
-            frames = self.frames()[start:]
-            verify_refusal(rejected.returncode, rejected.stderr, frames, reason)
-            self.audit.verify_read_only(frames)
-            require(pair_state() == pair_before and self.member_tasks(member) == tasks_before, "refusal-live-drift")
-            outcomes.append({"name": name, "admissions": 0, "nativeWrites": 0, "taskAttempts": 0})
-
-        def control(path, expected_receipt):
-            start = len(self.frames())
-            result = self.lift(reference, path, layout, plan=True)
+            result = self.lift(reference, receipt_path, layout, plan=True, promote=True)
             self.audit.verify_read_only(self.frames()[start:])
-            verify_lift_summary(json.loads(result.stdout), expected_receipt, path.read_bytes())
-            self.pair_proof(receipt)
-
-        control(receipt_path, receipt)
-        refusal("missing-evidence-flag", supplied=False)
-        refusal("missing-evidence-file", evidence=self.work / "receipt/missing.json")
-        control(receipt_path, receipt)
-        refusal("different-S-same-G", "native-suite@" + changed_s, selected_layout=changed_layout)
-        reconstructed = namespace_evidence(receipt, receipt["subject"]["Target"]["NamespaceUID"])
-        path = self.work / "receipt/namespace-control.json"
-        path.write_bytes(canonical(reconstructed))
-        control(path, reconstructed)
-        negative = namespace_evidence(receipt, "counterfactual-namespace-uid")
-        path = self.work / "receipt/namespace-negative.json"
-        path.write_bytes(canonical(negative))
-        refusal("counterfactual-namespace-UID", evidence=path)
-        resource = "providers.core.orka.ai"
-        marker = "kaimahi.dev/suite"
-        control(receipt_path, receipt)
-        self.kube("-n", "orka-system", "annotate", resource, member, marker + "=foreign-owner", "--overwrite")
-        try:
-            refusal("foreign-ownership")
-        finally:
-            self.kube("-n", "orka-system", "annotate", resource, member, marker + "=" + receipt["subject"]["Suite"], "--overwrite")
-        control(receipt_path, receipt)
-        # Select a distinct live Ready inference identity, leaving the original
-        # prerequisite coherent for the final isolated spec-drift negative.
-        drift = "native-suite-inference-drift"
-        require(not self.kube("-n", "orka-system", "get", resource, drift, "--ignore-not-found", "-o", "name").strip(), "binding-fixture-exists")
-        provider = self.get(resource, "native-suite-inference")
-        self.kube("create", "-f", "-", raw=canonical({"apiVersion": provider["apiVersion"], "kind": "Provider",
-                  "metadata": {"name": drift, "namespace": "orka-system"}, "spec": provider["spec"]}))
-        for _ in range(30):
-            observed = self.get(resource, drift)
-            if observed.get("status", {}).get("ready") is True:
-                break
-            time.sleep(1)
-        require(observed.get("status", {}).get("ready") is True and observed["metadata"]["uid"] != provider["metadata"]["uid"], "binding-fixture-ready")
-        refusal("different-live-inference-identity", inference=drift)
-        control(receipt_path, receipt)
-        # Last: spec generation cannot be restored to the evaluated identity.
-        # No later reuse/evaluation/readiness claim uses this altered pair.
-        agent = self.get("agents.core.orka.ai", member)
-        patch = spec_drift_patch(agent)
-        self.kube("-n", "orka-system", "patch", "agents.core.orka.ai", member, "--type=merge", "-p", json.dumps(patch))
-        changed = self.get("agents.core.orka.ai", member)
-        require(changed["metadata"]["uid"] == agent["metadata"]["uid"] and
-                changed["metadata"]["generation"] > agent["metadata"]["generation"] and
-                changed["spec"]["model"] == patch["spec"]["model"], "spec-drift-not-admitted")
-        refusal("terminal-spec-drift")
+            verify_promote_summary(json.loads(result.stdout), receipt, receipt_path.read_bytes(), subject, specs)
+        for name, selected_reference, selected_layout, supplied, evidence in (
+                ("missing-evidence-flag", reference, layout, False, receipt_path),
+                ("missing-evidence-file", reference, layout, True, self.work / "receipt/missing.json"),
+                ("different-S-same-G", "native-suite@" + changed_s, changed_layout, True, receipt_path)):
+            control()  # an actually valid absent-pair baseline precedes every negative
+            before = self.task_inventory()
+            start = len(self.frames())
+            rejected = self.lift(selected_reference, evidence, selected_layout, evidence=supplied, promote=True, success=False)
+            frames = self.frames()[start:]
+            verify_refusal(rejected.returncode, rejected.stderr, frames, "release lift planning refused")
+            self.audit.verify_read_only(frames)
+            self.empty_member(subject["Member"])
+            require(self.task_inventory() == before, "refusal-live-drift")
+            outcomes.append({"name": name, "admissions": 0, "nativeWrites": 0, "taskAttempts": 0})
+        control()
         return outcomes
+
 
     def author(self, name, directory, instructions, cases):
         self.cli("create", name, "--workspace", directory, "--model", "qwen-3.5-2b", "--instructions", instructions)
@@ -869,6 +952,7 @@ class Qualification:
         self.author(member, workspace, instructions, cases)
         original = snapshot(workspace)
         require(not self.frames(), "offline-audit")
+        self.fixture_instructions = instructions.read_text()
         self.phase = "evaluate"
         # Exactly one positive evaluation; its two judge samples use the same
         # pinned model through this owned forward, with no additional warmup.
@@ -881,24 +965,18 @@ class Qualification:
         require(subject["Member"] == member and subject["Model"] == "qwen-3.5-2b" and subject["RequiredImages"] == [], "receipt-member")
         verify_cases(receipt["cases"], cases)
         require(receipt["casesDigest"] == sha(b"".join(frame("eval/" + n, b) for n, b in sorted(cases.items()))), "case-set")
-        self.audit.verify(self.frames(), member, receipt["cases"])
-        self.phase = "readback"
-        self.live_subject(subject)
-        for kind in ("Provider", "Agent"):
-            inspect_pair(self.get(kind.lower() + "s.core.orka.ai", member), kind, receipt[kind.lower()], subject)
-        tasks = []
-        for row, raw in zip(receipt["cases"], cases.values()):
-            observed = inspect_task(self.get("tasks.core.orka.ai", row["taskName"]), row, member, yaml.safe_load(raw)["input"])
-            answer = self.cli("--context", self.context, "task", "result", row["taskName"], "--namespace", "orka-system").stdout
-            require(result_digest(answer) == row["answerDigest"], "answer-hash")
-            require(inspect_task(self.get("tasks.core.orka.ai", row["taskName"]), row, member, yaml.safe_load(raw)["input"]) == observed, "task-drift")
-            tasks.append(observed)
+        self.phase = "historical-proof"
+        self.audit.verify_cleanup_order(self.raw_frames())
+        frames = self.frames()
+        specs, payload = self.candidate_specs(subject)
+        require(subject["PayloadDigest"] == payload, "candidate-payload")
+        tasks = verify_candidate(receipt, frames, cases, specs)
+        children = self.cleanup_proof(subject, frames)
         self.phase = "transfer"
         layout, extracted, reference = self.work / "layout", self.work / "pulled", "native-suite:v1"
         self.cli("push", "--workspace", workspace, "--evaluation", receipt_path, "--to-layout", layout, reference)
         self.cli("suite", "pull", "--from-layout", layout, "--output", extracted, reference)
         verify_transfer(layout, extracted, subject, cases)
-        lift_results = self.lift_qualification(workspace, layout, receipt_path, receipt, cases)
         before = snapshot(layout)
         case_path = workspace / "eval" / sorted(cases)[0]
         case_path.write_bytes(case_path.read_bytes() + b"\n")
@@ -906,49 +984,31 @@ class Qualification:
         verify_refusal(rejected.returncode, rejected.stderr, [], "expected publication identity")
         require(snapshot(layout) == before, "destination-changed")
         changed_layout, changed = self.work / "changed-layout", self.work / "changed-pulled"
-        self.cli("push", "--workspace", workspace, "--to-layout", changed_layout, reference)
+        self.cli("push", "--unevaluated", "--workspace", workspace, "--to-layout", changed_layout, reference)
         self.cli("suite", "pull", "--from-layout", changed_layout, "--output", changed, reference)
         changed_s = json.loads((changed_layout / "index.json").read_bytes())["manifests"][0]["digest"]
         require(changed_s != subject["SuiteDigest"] and sha(canonical(json.loads((changed / "agentsuite.json").read_bytes()))) == subject["GraphDigest"][7:], "mutation-S-not-G")
         case_path.write_bytes(cases[case_path.name])
+        lift_results = self.lift_qualification(workspace, layout, changed_layout, changed_s, receipt_path, receipt, cases)
+        lift_results["candidateChildrenAbsent"] = children
         self.refusals(workspace, instructions, cases, subject)
-        lift_results["denials"] = self.lift_denials(layout, changed_layout, changed_s, receipt_path, receipt)
         self.artifacts(receipt_path, receipt, tasks, lift_results)
 
     def refusals(self, workspace, instructions, cases, subject):
         self.phase = "refusals"
-        member = subject["Member"]
         case_path = workspace / "eval" / sorted(cases)[0]
-        collision, collision_member = self.work / "collision", "ci-native-collision"
-        # Externally authored upstream objects deliberately have no KMX ownership.
-        # They are fixtures, never a source-less product deployment or adoption.
-        reference = {"Name": collision_member, "Namespace": "orka-system", "Model": "qwen-3.5-2b",
-                     "ProviderType": "openai", "BaseURL": "http://native-suite-aikit.orka-system.svc.cluster.local:8080/v1",
-                     "SecretName": self.secret_ref["name"], "SecretKey": self.secret_ref["key"],
-                     "Instructions": instructions.read_text()}
-        rendered = self.command([self.repo / "bin/orka-native-reference"], raw=canonical(reference))
-        require(rendered.returncode == 0, "collision-reference-render")
-        documents = [yaml.safe_load(base64.b64decode(raw, validate=True)) for raw in json.loads(rendered.stdout)]
-        require([doc["kind"] for doc in documents] == ["Secret", "Provider", "Agent"], "collision-reference-documents")
-        _, provider, agent = documents
-        for fixture in (provider, agent):
-            self.kube("create", "-f", "-", raw=canonical(fixture))
-        self.author(collision_member, collision, instructions, cases)
-        pair_before = [self.get(k + "s.core.orka.ai", collision_member) for k in ("provider", "agent")]
-        start = len(self.frames())
-        rejected = self.evaluation(collision, self.work / "receipt/collision.json", success=False)
-        refusal_frames = self.frames()[start:]
-        verify_collision_refusal(rejected.returncode, rejected.stderr, refusal_frames, collision_member)
-        require(not (self.work / "receipt/collision.json").exists(), "collision-export")
-        self.live_subject(subject)
-        require(pair_before == [self.get(k + "s.core.orka.ai", collision_member) for k in ("provider", "agent")], "collision-drift")
         unsupported = yaml.safe_load(cases[sorted(cases)[0]])
         unsupported["assertions"] = [{"id": "unsupported", "type": "toolCalled", "tool": "k8s-get-resources"}]
         case_path.write_text(yaml.safe_dump(unsupported))
         start = len(self.frames())
-        rejected = self.evaluation(workspace, self.work / "receipt/unsupported.json", success=False)
-        verify_refusal(rejected.returncode, rejected.stderr, self.frames()[start:], "unsupported native suite evaluator")
-        require(len(self.frames()) == start and not (self.work / "receipt/unsupported.json").exists(), "unsupported-kube-call")
+        try:
+            rejected = self.evaluation(workspace, self.work / "receipt/unsupported.json", success=False)
+            verify_refusal(rejected.returncode, rejected.stderr, self.frames()[start:], "unsupported native suite evaluator")
+            require(len(self.frames()) == start and not (self.work / "receipt/unsupported.json").exists(), "unsupported-kube-call")
+        finally:
+            case_path.write_bytes(cases[case_path.name])
+
+
     def artifacts(self, receipt_path, receipt, tasks, lift_results):
         self.phase = "artifacts"
         subject = receipt["subject"]
@@ -958,13 +1018,15 @@ class Qualification:
                    "sourceFingerprint": receipt["sourceFingerprint"], "receiptDigest": sha(receipt_path.read_bytes()),
                    "caseCount": len(tasks), "requiredImageCount": 0, "destinationEvaluated": False,
                    "judgeAssertionCount": 1, "judgeSampleCount": 2, "judgeIdentityBound": True,
-                   "ownershipRefusals": True, "unsupportedRefusal": True, "caseMutationRefusal": True,
-                   "lift": lift_results}
+                   "occupiedPromotionRefusal": True, "unsupportedRefusal": True, "caseMutationRefusal": True,
+                   "sourceAnswerDigestIndependent": False, "sourceAssertionsProductObserved": True,
+                   "sourceJudgeScoresProductObserved": True, "sourceTaskSpecInputIndependent": True,
+                   "candidateCleanupIndependent": True, "lift": lift_results}
         for i, task in enumerate(tasks):
             summary.update({"task" + str(i + 1) + k.capitalize(): v for k, v in task.items()})
         (artifacts / "qualification.json").write_bytes(canonical(summary))
         shutil.copyfile(receipt_path, artifacts / "passing.json")
-        print("native qualification: full pass; exact transfer; registry/local CLI lift reuse, promotion, fresh Tasks and refusals verified")
+        print("native qualification: historical candidate identity/input and cleanup; product-observed source assertions/judge; exact transfer; explicit promotion and fresh destination answers verified")
 
 
 def main():

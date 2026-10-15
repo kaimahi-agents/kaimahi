@@ -16,6 +16,75 @@ import (
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
+func TestCandidateCoreRepeatThreshold(t *testing.T) {
+	for _, scenario := range []string{"threshold pass", "threshold fail", "late cancellation"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			a, _, f, state := publicNativeEvaluationFixture(t)
+			opt := nativeEvaluationOptions(t)
+			opt.ResultPort = f.opt.ResultPort
+			casePath := filepath.Join(opt.Workspace, "eval/example.yaml")
+			raw, err := os.ReadFile(casePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, casePath, string(raw)+"\nruns: 3\nminPasses: 2\n")
+			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			for _, frame := range p.inventory {
+				f.answers[frame.Case.Input] = nativeCanary + " answer"
+			}
+			tasks := 0
+			state.afterCreate = func(key string) {
+				if strings.HasPrefix(key, "Task/") {
+					tasks++
+					if (tasks == 1 && scenario != "late cancellation") || scenario == "threshold fail" {
+						f.answers[p.inventory[0].Case.Input] = "wrong"
+					} else {
+						f.answers[p.inventory[0].Case.Input] = nativeCanary + " answer"
+					}
+					if scenario == "late cancellation" && tasks == 3 {
+						cancel()
+					}
+				}
+			}
+			err = a.evaluateSuiteWorkspaceCandidate(ctx, p)
+			if len(state.objects) != 0 {
+				t.Fatal("candidate resources not cleaned")
+			}
+			if scenario == "late cancellation" {
+				if !errors.Is(err, context.Canceled) || tasks != 3 {
+					t.Fatalf("late cancellation did not veto threshold: tasks=%d err=%v", tasks, err)
+				}
+				if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
+					t.Fatal("late unknown exported")
+				}
+				return
+			}
+			if scenario == "threshold fail" {
+				if !errors.Is(err, errSuiteNativeCaseFailed) || tasks != 3 {
+					t.Fatalf("known failure did not complete group: tasks=%d err=%v", tasks, err)
+				}
+				if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
+					t.Fatal("failed threshold exported")
+				}
+				return
+			}
+			r, readErr := readSuitePassingReceipt(t.Context(), opt.Out)
+			if err != nil || readErr != nil || tasks != len(p.inventory) || r == nil || len(r.Cases) != 4 || r.Cases[0].Verdict != "fail" {
+				t.Fatalf("candidate ignored threshold: tasks=%d err=%v receipt=%v", tasks, err, readErr)
+			}
+			if !strings.Contains(f.out.String(), "run 3/3") {
+				t.Fatal("missing repeated-run labels")
+			}
+		})
+	}
+}
+
 func TestCandidateCorePrivateLifecycleOrderingAndCancellation(t *testing.T) {
 	for _, stage := range []string{"pass", "case fail", "cancel Task", "cancel cleanup", "unknown Agent", "cleanup permission", "final source", "final shared", "frozen config"} {
 		t.Run(stage, func(t *testing.T) {
@@ -134,8 +203,8 @@ func TestCandidateCorePrivateLifecycleOrderingAndCancellation(t *testing.T) {
 	}
 }
 
-func TestCandidateCorePublicEvaluationStaysCanonical(t *testing.T) {
-	a, _, _, f := nativeEvaluationFixture(t)
+func TestCandidateCorePublicEvaluationUsesCandidate(t *testing.T) {
+	a, _, f, state := publicNativeEvaluationFixture(t)
 	opt := nativeEvaluationOptions(t)
 	opt.ResultPort = f.opt.ResultPort
 	p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
@@ -146,20 +215,25 @@ func TestCandidateCorePublicEvaluationStaysCanonical(t *testing.T) {
 	for _, frame := range p.inventory {
 		f.answers[frame.Case.Input] = nativeCanary + " answer"
 	}
+	marked := map[string]string{}
+	state.afterCreate = func(key string) {
+		doc := state.objects[key]
+		kind := doc["kind"].(string)
+		run, _ := nativeMetadata(doc)["annotations"].(map[string]any)[suiteCandidateRunMarker].(string)
+		if !evaluationRunID(run) {
+			t.Fatal("missing full run annotation", kind)
+		}
+		marked[kind] = run
+	}
 	if err := a.EvaluateSuiteWorkspace(t.Context(), p); err != nil {
 		t.Fatal(err)
 	}
-	receipt, err := readSuitePassingReceipt(t.Context(), opt.Out)
-	if err != nil || receipt.CandidateCleanup != "" || receipt.Subject.PhysicalMember != "" || receipt.Subject.EvaluationRun != "" {
-		t.Fatal("publicly activated candidate", err)
+	if len(marked) != 3 || marked["Provider"] != marked["Agent"] || marked["Agent"] != marked["Task"] {
+		t.Fatal("full run annotation not stamped on all KMX roots", marked)
 	}
-	for _, call := range orkaCalls(t, f.dir) {
-		if slices.Contains(call.Args, "delete") {
-			t.Fatal("public evaluator cleans up")
-		}
-		if call.Document != nil && call.Document["kind"] == "Agent" && orkaObjectName(call.Document) != "greeter" {
-			t.Fatal("public physical candidate placement")
-		}
+	receipt, err := readSuitePassingReceipt(t.Context(), opt.Out)
+	if err != nil || receipt.CandidateCleanup != "complete" || !evaluationRunID(receipt.Subject.EvaluationRun) || receipt.Subject.PhysicalMember == "" || len(state.deletes) != 4 || len(state.objects) != 0 {
+		t.Fatal("public candidate lifecycle missing", err, state.deletes)
 	}
 }
 
@@ -172,6 +246,9 @@ func TestCandidateCoreCleanupParserConsumedKeysOnly(t *testing.T) {
 		{`{"apiVersion":"batch/v1","APIVersion":"batch/v1"}`, false},
 		{`{"metadata":{"resourceVersion":"1","resourceVersion":"1"}}`, false},
 		{`{"items":[{"metadata":{"uid":"a","UID":"a"}}]}`, false},
+		{`{"items":[{"spec":{},"Spec":{}}]}`, false},
+		{`{"items":[{"metadata":{"annotations":{"kaimahi.dev/suite-evaluation-run":"a","KAIMAHI.DEV/SUITE-EVALUATION-RUN":"b"}}}]}`, false},
+		{`{"items":[{"metadata":{"deletionTimestamp":"a","DeletionTimestamp":"b"}}]}`, false},
 		{`{"items":[{"metadata":{"ownerReferences":[{"uid":"a","UID":"a"}]}}]}`, false},
 		{`{"items":[{"metadata":{"labels":{"orka.ai/task":"a","ORKA.AI/TASK":"a"}}}]}`, false},
 		{`{"items":[{"metadata":{"annotations":{"HTTP_PROXY":"secret","http_proxy":"secret"}},"data":{"KEY":"a","key":"b"}}]}`, true},

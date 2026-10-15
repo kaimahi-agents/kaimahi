@@ -25,6 +25,9 @@ type SuiteWorkspaceEvaluationOptions struct {
 	JudgeBaseURL, JudgeKeyEnv                                                                string
 	// ExpectedRuntime is a destination declaration, never a runtime override.
 	ExpectedRuntime string
+	// ManagedPass is public root eval's private completed-proof registration.
+	// Convenience evaluators keep their existing explicit output behavior.
+	ManagedPass bool
 }
 
 // PreparedSuiteWorkspaceEvaluation owns its offline source snapshot and anchored
@@ -40,10 +43,28 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	bindings  *suiteKagentBindingSnapshot
 	sessions  *suiteSessionsHostSnapshot
 	judge     agentruntime.EvaluationJudge
+	store     *suitePassStore
+	completed []byte
+	record    string
 }
 
 func (p *PreparedSuiteWorkspaceEvaluation) Close() error {
-	if p == nil || p.output == nil {
+	if p == nil {
+		return nil
+	}
+	err := p.closeOutput()
+	if p.store != nil {
+		err = errors.Join(err, p.store.Close())
+		p.store = nil
+	}
+	if err != nil && p.record != "" {
+		return fmt.Errorf("completed managed proof saved at %q; finalization failed: %w", p.record, err)
+	}
+	return err
+}
+
+func (p *PreparedSuiteWorkspaceEvaluation) closeOutput() error {
+	if p.output == nil {
 		return nil
 	}
 	output := p.output
@@ -59,7 +80,7 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if opt.CaseTimeout == 0 {
 		opt.CaseTimeout = 5 * time.Minute
 	}
-	if opt.Out == "" || opt.CaseTimeout <= 0 || opt.CaseTimeout > 9*time.Minute {
+	if (opt.Out == "" && !opt.ManagedPass) || opt.CaseTimeout <= 0 || opt.CaseTimeout > 9*time.Minute {
 		return nil, errors.New("native evaluation requires private output and bounded case timeout")
 	}
 	if opt.DevelopmentHost != "" {
@@ -83,6 +104,12 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 		return nil, suiteEvaluationError(ctx, err, false)
 	}
 	cache := filepath.Join(state, "suites")
+	if opt.Out != "" && suiteReceiptInside(opt.Out, filepath.Join(state, "passing")) {
+		return nil, fmt.Errorf("receipt output must stay outside managed passing state: %w", errSuitePassingFile)
+	}
+	if opt.ManagedPass && suiteReceiptInside(filepath.Join(state, "passing"), root) {
+		return nil, errSuitePassStore
+	}
 	prepared, err := workspace.Prepare(ctx, root, cache)
 	if err != nil {
 		return nil, suiteEvaluationError(ctx, err, false)
@@ -149,11 +176,27 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, err
 	}
-	output, err := preflightSuitePassingExport(ctx, opt.Out, root, cache)
-	if err != nil {
-		return nil, err
+	p := &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge}
+	if opt.ManagedPass {
+		p.store, err = openSuitePassStore(ctx, root, cache, suite.Digest)
+		if err == nil {
+			err = p.store.reserve(ctx)
+		}
+		if err != nil {
+			return nil, errors.Join(err, p.Close())
+		}
 	}
-	return &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, output: output, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge}, nil
+	destination := opt.Out
+	if destination == "" {
+		// Retain the same preflight/identity checks without writing an
+		// uncommitted managed receipt. Canonical bytes stay only in memory.
+		destination = filepath.Join(p.store.partition, ".pending-receipt")
+	}
+	p.output, err = preflightSuitePassingExport(ctx, destination, root, cache)
+	if err != nil {
+		return nil, errors.Join(err, p.Close())
+	}
+	return p, nil
 }
 
 // Check the read-only session prerequisites before pair writes. The bearer and
@@ -189,10 +232,24 @@ func (a *App) preflightSuiteNativeResults(ctx context.Context, ns string) error 
 }
 
 // EvaluateSuiteWorkspace executes each original ordered case once and publishes
-// only full passing metadata. Late failures leave resources, not recovery state.
+// only full passing metadata. Orka uses run-scoped candidates and cleanup;
+// convenience callers separately retain the internal canonical evaluator.
 func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
+	if p != nil && p.options.ManagedPass {
+		if p.store == nil || p.store.unchanged() != nil {
+			return errSuitePassStore
+		}
+		return a.finishManagedEvaluation(ctx, p, a.evaluateSuiteWorkspaceSelected(ctx, p))
+	}
+	return a.evaluateSuiteWorkspaceSelected(ctx, p)
+}
+
+func (a *App) evaluateSuiteWorkspaceSelected(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
 	if p != nil && p.suite != nil && p.suite.Runtime.ID == "agentsessions" {
 		return a.evaluateSuiteSessionsWorkspace(ctx, p)
+	}
+	if p != nil && p.suite != nil && p.suite.Runtime.ID == "orka" {
+		return a.evaluateSuiteWorkspaceCandidate(ctx, p)
 	}
 	return a.evaluateSuiteWorkspace(ctx, p, false)
 }
@@ -212,6 +269,14 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 		return errSuiteNativeEvaluation
 	}
 	p.started = true
+	for _, frame := range p.inventory {
+		if frame.Metadata.Runs > 1 {
+			if _, err := fmt.Fprintf(a.Err, "Run preflight: %d fresh Tasks, %s per run, %s total execution budget (upper bound; excludes placement; cancellation can stop earlier).\n", len(p.inventory), p.options.CaseTimeout, time.Duration(len(p.inventory))*p.options.CaseTimeout); err != nil {
+				return err
+			}
+			break
+		}
+	}
 	if p.judge != nil {
 		count := 0
 		for _, frame := range p.inventory {
@@ -221,7 +286,7 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 				}
 			}
 		}
-		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each case deadline. Identity/version are user-declared, not provider attestation. Endpoint omitted from recovery advice; supply it again. Reasoning is discarded.\n", count); err != nil {
+		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run's deadline. Identity/version are user-declared, not provider attestation. Endpoint omitted from recovery advice; supply it again. Reasoning is discarded.\n", count); err != nil {
 			return err
 		}
 	}
@@ -279,21 +344,14 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	if err != nil {
 		return err
 	}
-	observations := make([]suitePassingObservation, 0, len(p.inventory))
-	for _, frame := range p.inventory {
-		if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {
-			return err
+	observations, err := evaluateSuiteRuns(ctx, p.inventory, p.options.CaseTimeout, worker.Out, func(caseCtx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
+		if err := workspace.CheckCurrent(caseCtx, p.root, p.prepared); err != nil {
+			return suitePassingObservation{}, err
 		}
-		caseCtx, cancel := context.WithTimeout(ctx, p.options.CaseTimeout)
-		observation, caseErr := worker.evaluateSuiteNative(caseCtx, placement, frame, p.options.ResultPort, p.judge)
-		cancel()
-		if _, err := fmt.Fprintf(worker.Out, "%s: %s\n", frame.Case.ID, observation.Verdict); err != nil {
-			return err
-		}
-		if caseErr != nil {
-			return caseErr
-		}
-		observations = append(observations, observation)
+		return worker.evaluateSuiteNative(caseCtx, placement, frame, p.options.ResultPort, p.judge)
+	})
+	if err != nil {
+		return err
 	}
 	if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {
 		return err
@@ -305,11 +363,8 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	if err != nil {
 		return err
 	}
-	if err := p.output.publish(ctx, receipt, p.suite); err != nil {
+	if err := p.publishPassingReceipt(ctx, receipt); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(worker.Out, "Passing native receipt: %q (unsigned observations, not authentication or a policy gate)\n", p.options.Out); err != nil {
-		return errSuitePassingExport
-	}
-	return nil
+	return p.reportPassingReceipt(worker.Out)
 }

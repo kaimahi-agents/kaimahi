@@ -150,7 +150,7 @@ func TestSuiteWorkspaceEvaluationPipelineStopsAndExports(t *testing.T) {
 	// later cases or export a receipt that no longer attributes the original S.
 	for _, stage := range []string{"passing", "first fail", "guard source", "final source", "final native", "output", "case output", "published output", "notice", "guard refusal", "kubectl", "result prerequisite"} {
 		t.Run(stage, func(t *testing.T) {
-			a, _, _, f := nativeEvaluationFixture(t)
+			a, _, f, _ := publicNativeEvaluationFixture(t)
 			opt := nativeEvaluationOptions(t)
 			opt.ResultPort = f.opt.ResultPort
 			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
@@ -228,7 +228,7 @@ func TestSuiteWorkspaceEvaluationPipelineStopsAndExports(t *testing.T) {
 						}
 					}
 				}
-				if stage == "final native" && finalRun && slices.Contains(cmd.Args, "agents.core.orka.ai") {
+				if stage == "final native" && finalRun && slices.Contains(cmd.Args, "inference") {
 					finalChecks++
 					return errors.New(nativeCanary)
 				}
@@ -246,7 +246,7 @@ func TestSuiteWorkspaceEvaluationPipelineStopsAndExports(t *testing.T) {
 				wantCreates = 0
 			}
 			wantGuards := 1
-			if stage == "kubectl" || stage == "result prerequisite" {
+			if stage == "kubectl" || stage == "result prerequisite" || stage == "notice" {
 				wantGuards = 0
 			}
 			if guards != wantGuards || creates != wantCreates {
