@@ -6,6 +6,11 @@ kagent workspaces can be evaluated, published, then lifted by packaged digest;
 legacy user bundles/readers/receipts and live create are removed outright. Use the
 runtime contract when extending or comparing implementations.
 
+> [!NOTE]
+> The browser preview renders the checked-out `main` documentation and may
+> include unreleased behavior. Tagged Markdown is the stable historical record;
+> see the [documentation-site version boundary](docs-site.md#version-boundary).
+
 ## Current operator paths
 
 | I want to… | Read |
@@ -33,6 +38,7 @@ See [format boundaries](bundle-format.md) and [current CLI contracts](kmx.md).
 ## Maintainer references
 
 - [Development](development.md): source boundaries, verification and operational traps.
+- [Documentation site](docs-site.md): one-command local preview, source-of-truth, versioning and publication boundaries.
 - [Codebase overview](codebase-overview.md): architecture, package responsibilities, core data flows and safety invariants.
 - [Interface baseline](interface-baseline.md): exact current command tree, workspace/live split, runtime limits and alpha Go surfaces.
 - [Repository map](repository-map.md): native tooling, packaging, compatibility data and test scaffolding.

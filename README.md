@@ -154,4 +154,5 @@ From a checkout, `make` builds `bin/kmx` without provisioning. Start with the
 and [interface baseline](docs/interface-baseline.md). The [repository map](docs/repository-map.md)
 classifies tracked source and scaffolding; [contributing](CONTRIBUTING.md) defines
 verification and pull-request expectations. See [naming](docs/NAMING.md) for
-publication boundaries.
+publication boundaries. Run `make docs-preview` for the browser-style documentation
+preview generated directly from these Markdown files.

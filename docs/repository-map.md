@@ -53,7 +53,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
 | `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 59 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
-| `docs/` | 34 tracked files; native guides, design and history | — | maintainer and process docs |
+| `docs/` | 43 tracked files; native guides, design, site scaffolding and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
@@ -273,14 +273,15 @@ Existing cluster deletion
 owns runtime/model cleanup. These files are checkout-only scaffolding, not an
 installer or new CLI/API capability.
 
-## `docs/` — 34 tracked files, native guides and design/history
+## `docs/` — 43 tracked files, native guides, site scaffolding and design/history
 
 **Guides and index (14):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `releases.md`, `FAQ.md`, `orka.md`,
 `copilot-inference.md`, `interactive-chat.md`,
 `orka-k8s-tool.md`, `bundle-format.md`, `runtime-adapters.md` and `suite-workspace.md`.
 
-**Maintainer and process (20):** `development.md`, `codebase-overview.md`,
+**Maintainer and process (29):** `development.md`, `docs-site.md`, `.vitepress/`,
+`package.json`, `package-lock.json`, `codebase-overview.md`,
 `interface-baseline.md`, `repository-map.md`,
 `cli-ux-plan.md`, `command-conventions.md`, `charm-ux-followup-plan.md`,
 `interactive-agent-tui-plan.md`, `NAMING.md`, `kmx-lifecycle-interfaces.md`,
@@ -310,15 +311,15 @@ and intentionally has no hero image.
 | `AGENTS.md` | **Documentation** | Repository guidance for consistent command changes and verification. |
 | `embed.go` | **Packaging** | Root-module native manifest and helper embed declarations. |
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
-| `Makefile` | **Scaffolding** | Native build/check targets, context guard and AKS-credential helper. |
-| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Native four-shard fail-closed required aggregator and unchanged 315s quickstart ceiling: kagent Lift, Orka runtime, stock Orka Helm, quickstart. Raw upstream Task/Tool/model-answer fixtures are separate from packaged native eval/push/source-withheld digest Lift and bounded Orka absent-pair registry promotion with source-only evidence. Clone-free authors/evaluates/publishes/Lifts a workspace then reads its existing evaluation Task result, without separate answer Task/raw suite run. Hermetic harness checks are separate from pinned live runtime qualification. |
+| `Makefile` | **Scaffolding** | Native build/check targets, documentation preview/build targets, context guard and AKS-credential helper. |
+| `.github/workflows/ci.yml`, `release.yml` | **Scaffolding** | Hygiene builds the credential-free Markdown documentation preview; native four-shard fail-closed required aggregator and unchanged 315s quickstart ceiling remain kagent Lift, Orka runtime, stock Orka Helm and quickstart. Raw upstream Task/Tool/model-answer fixtures are separate from packaged native eval/push/source-withheld digest Lift and bounded Orka absent-pair registry promotion with source-only evidence. Clone-free authors/evaluates/publishes/Lifts a workspace then reads its existing evaluation Task result, without separate answer Task/raw suite run. Hermetic harness checks are separate from pinned live runtime qualification. |
 | `.goreleaser.yaml` | **Scaffolding** | GoReleaser config the release workflow builds and renders the Homebrew formula with; publishing reuses that checked artifact set and never pushes the formula to the tap (`skip_upload: true`). |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only, scripts and kagent/shared qualification paths for CI. |
 
 | `staticcheck.conf` | **Scaffolding** | Root-module lint configuration. |
 | `go.mod`, `go.sum` | **Installed tooling** | Root module dependencies. |
-| `.gitignore` | **Scaffolding** | Checkout exclusions. |
-| `.dockerignore` | **Scaffolding** | Defensive exclusions for root Docker contexts, including sensitive operator data. |
+| `.gitignore` | **Scaffolding** | Checkout exclusions, including generated documentation output and dependencies. |
+| `.dockerignore` | **Scaffolding** | Defensive exclusions for root Docker contexts, including sensitive operator data and documentation-only dependencies. |
 
 ## Open questions — one
 
