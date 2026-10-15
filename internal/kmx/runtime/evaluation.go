@@ -142,6 +142,9 @@ func parseEvaluationCase(data []byte, reference bool) (EvaluationCase, error) {
 	if err := strict.Decode(&c); err != nil {
 		return EvaluationCase{}, fmt.Errorf("evaluation case: %w", err)
 	}
+	if c.MinPasses != nil && c.Runs == nil {
+		return EvaluationCase{}, fmt.Errorf("evaluation minPasses requires runs")
+	}
 	runs, passes := c.RunPolicy()
 	if runs < 1 || runs > EvaluationMaxRuns || passes < 1 || passes > runs {
 		return EvaluationCase{}, fmt.Errorf("evaluation policy requires 1 <= minPasses <= runs <= %d", EvaluationMaxRuns)

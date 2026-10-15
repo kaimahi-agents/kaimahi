@@ -292,7 +292,7 @@ func compareEvaluations(before, after normalizedEvaluation) evaluationDiffReport
 }
 
 func evaluationJudgeSameIdentity(before, after *agentruntime.EvaluationJudgeEvidence) bool {
-	return before != nil && after != nil && before.Model == after.Model && before.ModelVersion == after.ModelVersion && before.Provenance == after.Provenance && before.EvaluatorDigest == after.EvaluatorDigest && before.ConfigurationDigest == after.ConfigurationDigest && before.MinScore == after.MinScore
+	return before != nil && after != nil && before.RequestStyle == after.RequestStyle && before.Model == after.Model && before.ModelVersion == after.ModelVersion && before.Provenance == after.Provenance && before.EvaluatorDigest == after.EvaluatorDigest && before.ConfigurationDigest == after.ConfigurationDigest && before.MinScore == after.MinScore
 }
 
 func writeEvaluationDiffReport(out io.Writer, r evaluationDiffReport) error {

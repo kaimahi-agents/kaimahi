@@ -10,7 +10,7 @@
 [![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)
 [![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)
 
-[Getting started](docs/getting-started.md) · [Workspace lifecycle](docs/suite-workspace.md) · [Runtime support](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Developer guide](docs/development.md) · [Contributing](CONTRIBUTING.md)
+[Documentation](https://kaimahi-agents.github.io/kaimahi/) · [Getting started](docs/getting-started.md) · [Workspace lifecycle](docs/suite-workspace.md) · [Runtime support](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Developer guide](docs/development.md) · [Contributing](CONTRIBUTING.md)
 
 <sub>[About the ketu mark](brand/README.md#ketu-mark)</sub>
 
@@ -154,4 +154,5 @@ From a checkout, `make` builds `bin/kmx` without provisioning. Start with the
 and [interface baseline](docs/interface-baseline.md). The [repository map](docs/repository-map.md)
 classifies tracked source and scaffolding; [contributing](CONTRIBUTING.md) defines
 verification and pull-request expectations. See [naming](docs/NAMING.md) for
-publication boundaries.
+publication boundaries. Run `make docs-preview` for the browser-style documentation
+preview generated directly from these Markdown files.

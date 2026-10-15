@@ -22,6 +22,23 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Breaking
+
+- Judge evidence now binds its request style; older judge receipts without it
+  require fresh evaluation. Text-only receipts remain unchanged.
+
+### Fixed
+
+- Use one modern judge request shape (`max_completion_tokens`, no temperature
+  override), also verified against the pinned AIKit/LocalAI image. No retry,
+  provider inference or request-style flag is added. Returned model identity
+  accepts only the exact authored model or exact model-plus-hyphen-version;
+  evidence records the matching form for each score.
+
+- `kmx local up` works with Helm 4: the Orka release preflight omits the removed
+  `helm list --all` flag on Helm 4+ (which lists every status) and keeps it on
+  Helm 3 or when the version cannot be read. ([#504](https://github.com/kaimahi-agents/kaimahi/issues/504))
+
 ### Added
 
 - Native Orka/kagent workspace cases accept optional KMX `runs`/`minPasses`.
@@ -31,11 +48,32 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   execution errors still abort. Private evidence records complete per-run
   verdicts and threshold, with unchanged default one-run encoding. Upgrade
   readers before exchanging repeat receipts. AgentSessions refuses repeats;
-  the current AgentSuite draft #497 JSON schema does not accept these fields.
+  repeat fields follow [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions),
+  including positive integers and `minPasses` requiring `runs`. KMX-private
+  YAML/receipts remain separate from the spec's embedded JSON format.
+
+- A draft docs-as-code website renders the existing README, maintained guides,
+  and AgentSuite specification directly with responsive navigation, local search,
+  dark mode, a keyboard-accessible journey chooser and an explicit `main` versus
+  stable-release boundary. `make docs-preview` serves it locally, CI builds and
+  tests every route, and a keyless main-only workflow publishes the same output
+  at `https://kaimahi-agents.github.io/kaimahi/`. Generated output stays
+  untracked; no repository secret, CLI, runtime or agent deployment behavior is
+  added. [Documentation site](docs/docs-site.md).
+
+- AgentSuite draft evaluation storage: producers SHOULD embed optional
+  `evals/<agent>/index.json` and ordered JSON cases, JCS-bound through the
+  agent manifest. The public model, closed schemas and offline validator
+  support KMX-compatible authored assertion fields and explicit non-critical
+  extension types, plus optional per-case `runs` and `minPasses` policy,
+  rejecting malformed, orphaned or mismatched evaluations.
+  No-evaluation suites remain conformant. Results stay external with exact-suite
+  OCI association; validation does not execute cases. KMX private authoring,
+  receipt formats and command plumbing are unchanged.
 
 - Root `kmx eval` supports authored `llmJudge` assertions on packaged Orka/kagent
   suites with explicit `--judge-base-url` and optional `--judge-key-env`.
-  Two independent temperature-zero samples must agree on the threshold side;
+  Two independent samples must agree on the threshold side;
   unavailable, malformed or split outcomes are unknown and export no passing
   receipt. Judgment shares each run's deadline, with attribution checked
   afterward. Preflight states the two-request cost and data transfer.
@@ -68,6 +106,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   kagent remains excluded until its candidate cleanup is qualified.
 
 ### Upgrading
+
+- Re-run `kmx eval` for judge-bearing workspaces with a fresh private `--out`
+  path. Do not rewrite older judge receipts to add the new style binding.
+
+- Migrate KMX-authored `metadata/kmx/eval/<name>.yaml` cases to
+  `evals/<agent>/cases/<case-id>.json` and replace the private `caseRef` list
+  with `evals/<agent>/index.json`. Runtime metadata remains KMX-private and
+  evaluation receipts remain external to suite content.
 
 - Optionally add workspace-root `kmx.yaml` for named destinations and use
   `kmx ctx` to list them, then `eval/lift --to NAME`. No default/current Lift

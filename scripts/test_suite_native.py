@@ -491,15 +491,15 @@ class NativeJudgeTests(unittest.TestCase):
             {"id": "science", "type": "llmJudge", "rubric": rubric, "minScore": 70,
              "judgeModel": "qwen-3.5-2b", "judgeVersion": version}]}
         raw = yaml.safe_dump(case).encode()
-        evidence = {"model": "qwen-3.5-2b", "modelVersion": version, "provenance": "user-declared", "minScore": 70,
-                    "evaluatorDigest": "b8f6b1439aaf41a272dff2ac24b5abe5354e9d2b9d22a61ceed124405efddc3e",
-                    "configurationDigest": "c5360f98aa7a1a266e153b431616968a1baef0ea74125b29a479ffdd21f5a096", "scores": [90, 80]}
+        evidence = {"requestStyle": "openai-chat-completions-v1", "model": "qwen-3.5-2b", "modelVersion": version, "provenance": "user-declared", "minScore": 70,
+                    "evaluatorDigest": "2866b5c14b0efa8dd13964a40030ffd79877bba4dc00405c1121000113adf793",
+                    "configurationDigest": "b7ce49e0b23890067e384d903c5deb6425e2909c300411898f2773fa2bd16579", "scores": [90, 80], "modelMatches": ["requested", "version-qualified"]}
         row = {"id": "explanation", "path": "metadata/kmx/eval/03-explanation.yaml", "caseDigest": hashlib.sha256(raw).hexdigest(),
                "inputDigest": hashlib.sha256(case["input"].encode()).hexdigest(), "verdict": "pass", "assertions": [
-                   {"id": "science", "type": "llmJudge", "definitionDigest": "acb736d678b38ce82951e38ea0b20c877006cad718cdad63680c90124a29a558",
-                    "evaluatorVersion": "kmx.llm-judge/v1", "verdict": "pass", "judge": evidence}]}
+                   {"id": "science", "type": "llmJudge", "definitionDigest": "d58d7753601ecd06b6ace92c80c60fc5078f5eaab749f74fbf81cbcc417c5578",
+                    "evaluatorVersion": "kmx.llm-judge/v2", "verdict": "pass", "judge": evidence}]}
         Q.verify_cases([row], {"03-explanation.yaml": raw})
-        for field, value in (("configurationDigest", "0" * 64), ("modelVersion", "changed"), ("minScore", 60),
+        for field, value in (("modelMatches", None), ("modelMatches", []), ("modelMatches", ["prefix", "requested"]), ("requestStyle", "legacy"), ("configurationDigest", "0" * 64), ("modelVersion", "changed"), ("minScore", 60),
                              ("scores", [90, 69]), ("scores", [90, True]), ("reasoning", "PRIVATE_CASE_CANARY")):
             with self.subTest(field=field, value=value):
                 changed = copy.deepcopy(row)

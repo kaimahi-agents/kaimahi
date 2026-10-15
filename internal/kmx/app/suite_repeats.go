@@ -30,7 +30,11 @@ func suiteRunVerdict(rows []agentruntime.EvaluationAssertionResult) agentruntime
 	return verdict
 }
 
-// Execution identifiers and scores are observations, not authored identity.
+func suiteRunComplete(observed suitePassingObservation, frame suitePassingInventoryCase) bool {
+	return observed.Detail == "" && !observed.Stop && observed.AnswerSHA256 != "" && len(observed.Assertions) == len(frame.Metadata.Assertions)
+}
+
+// Execution identifiers, scores and model matches are observations, not authored identity.
 // Canonical coherence also removes the transport configuration, which is bound
 // by the strict evidence validator but not selected by offline source content.
 func suitePassingDefinition(row suitePassingCase, dropConfiguration bool) suitePassingCase {
@@ -43,7 +47,7 @@ func suitePassingDefinition(row suitePassingCase, dropConfiguration bool) suiteP
 		row.Assertions[i].Verdict = "pass"
 		if a.Judge != nil {
 			identity := *a.Judge
-			identity.Scores = nil
+			identity.Scores, identity.ModelMatches = nil, nil
 			if dropConfiguration {
 				identity.ConfigurationDigest = ""
 			}
@@ -125,7 +129,7 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 			}
 			// The Orka executor uses CaseFailed for both a failed Task and a failed
 			// assertion. Only full attributed assertion evidence permits continuing.
-			complete := observed.Detail == "" && !observed.Stop && observed.AnswerSHA256 != "" && len(observed.Assertions) == len(frame.Metadata.Assertions)
+			complete := suiteRunComplete(observed, frame)
 			verdict := agentruntime.EvaluationUnknown
 			if complete && (err == nil || errors.Is(err, errSuiteNativeCaseFailed)) {
 				verdict = suiteRunVerdict(observed.Assertions)

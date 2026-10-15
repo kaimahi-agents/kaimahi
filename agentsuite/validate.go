@@ -76,6 +76,7 @@ func validateContentGraph(content *contentSet) (*validator, *Report, error) {
 	var errs []error
 	errs = append(errs, v.validateSuite())
 	errs = append(errs, v.loadAgents())
+	errs = append(errs, v.validateEvaluations())
 	errs = append(errs, v.loadToolProviders())
 	errs = append(errs, v.loadBuildProfiles())
 	errs = append(errs, v.loadToolProviderCompositions())
@@ -222,6 +223,15 @@ func (v *validator) loadAgents() error {
 		var agent Agent
 		if err := decodeStrict(data, &agent); err != nil {
 			errs = append(errs, fmt.Errorf("agent %s: %w", ref.ID, err))
+			continue
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data, &fields); err != nil {
+			errs = append(errs, fmt.Errorf("agent %s: %w", ref.ID, err))
+			continue
+		}
+		if raw, exists := fields["evals"]; exists && strings.TrimSpace(string(raw)) == "null" {
+			errs = append(errs, fmt.Errorf("agent %s evals must be an array", ref.ID))
 			continue
 		}
 		if err := validateAgent(agent); err != nil {

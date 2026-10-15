@@ -11,7 +11,7 @@
     {
       "id": "writer",
       "path": "agents/writer.json",
-      "digest": "sha256:94300f7fb6dc6fe4bdfed04d17e3e879fba72bda610fa1b6090d235766709774"
+      "digest": "sha256:9ecdc7ff976ca75b1b39736788f3c6fd0a7384673910f428f3fe10b5553d46cc"
     },
     {
       "id": "reviewer",

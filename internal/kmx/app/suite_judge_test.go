@@ -145,7 +145,7 @@ func TestSuiteJudgePipeline(t *testing.T) {
 				}
 				assertion := wire["cases"].([]any)[0].(map[string]any)["assertions"].([]any)[0].(map[string]any)
 				judge, ok := assertion["judge"].(map[string]any)
-				if !ok || judge["model"] != "judge-model" || judge["modelVersion"] != "v1" || judge["configurationDigest"] == nil || len(judge["scores"].([]any)) != 2 {
+				if !ok || judge["model"] != "judge-model" || judge["modelVersion"] != "v1" || judge["requestStyle"] != "openai-chat-completions-v1" || judge["configurationDigest"] == nil || len(judge["scores"].([]any)) != 2 {
 					t.Fatal("receipt lost judge identity/scores")
 				}
 				if bytes.Contains(raw, []byte(suiteJudgeCanary)) || bytes.Contains(raw, []byte(endpoint)) {
@@ -239,7 +239,7 @@ func TestSuiteJudgeReceiptCoherenceAndDiff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mutation := range []string{"missing judge", "null score", "extra field", "duplicate field", "wrong threshold", "wrong version"} {
+	for _, mutation := range []string{"missing judge", "null score", "extra field", "duplicate field", "wrong threshold", "wrong version", "missing style", "empty style", "wrong style", "missing matches", "null matches", "bad matches"} {
 		t.Run(mutation, func(t *testing.T) {
 			var d map[string]any
 			_ = json.Unmarshal(raw, &d)
@@ -248,6 +248,18 @@ func TestSuiteJudgeReceiptCoherenceAndDiff(t *testing.T) {
 			switch mutation {
 			case "missing judge":
 				delete(assertion, "judge")
+			case "missing matches":
+				delete(j, "modelMatches")
+			case "null matches":
+				j["modelMatches"] = nil
+			case "bad matches":
+				j["modelMatches"] = []string{"prefix", "requested"}
+			case "missing style":
+				delete(j, "requestStyle")
+			case "empty style":
+				j["requestStyle"] = ""
+			case "wrong style":
+				j["requestStyle"] = "legacy"
 			case "null score":
 				j["scores"] = []any{90, nil}
 			case "extra field":
@@ -278,6 +290,7 @@ func TestSuiteJudgeReceiptCoherenceAndDiff(t *testing.T) {
 	_ = json.Unmarshal(raw, &document)
 	evidence := document["cases"].([]any)[0].(map[string]any)["assertions"].([]any)[0].(map[string]any)["judge"].(map[string]any)
 	evidence["scores"] = []int{80, 85}
+	evidence["modelMatches"] = []string{"version-qualified", "requested"}
 	body, _ := json.Marshal(document)
 	var changed suitePassingReceipt
 	_ = json.Unmarshal(body, &changed)
@@ -300,9 +313,9 @@ func TestSuiteJudgeCIIdentityContract(t *testing.T) {
 	version := "aikit-qwen3.5-2b@sha256:d838c5eebf533b5b73f67cc7f4984921f87d64d28e4a52d482740b667f46b8b4"
 	rubric := "Score 100 for a scientifically correct explanation that warmer air is less dense than cooler surrounding air and rises through buoyancy. Score 0 if the answer claims warmer air is denser or gravity pulls it upward. Equivalent wording is acceptable; do not require a particular sentence."
 	a := agentruntime.EvaluationAssertion{Type: "llmJudge", Rubric: rubric, MinScore: &threshold, JudgeModel: "qwen-3.5-2b", JudgeVersion: version}
-	if agentruntime.EvaluationJudgeEvaluatorDigest() != "b8f6b1439aaf41a272dff2ac24b5abe5354e9d2b9d22a61ceed124405efddc3e" ||
-		agentruntime.EvaluationAssertionDigest(a) != "acb736d678b38ce82951e38ea0b20c877006cad718cdad63680c90124a29a558" ||
-		agentruntime.EvaluationJudgeConfigurationDigest("http://127.0.0.1:18091/v1", a.JudgeModel, version) != "c5360f98aa7a1a266e153b431616968a1baef0ea74125b29a479ffdd21f5a096" {
+	if agentruntime.EvaluationJudgeEvaluatorDigest() != "2866b5c14b0efa8dd13964a40030ffd79877bba4dc00405c1121000113adf793" ||
+		agentruntime.EvaluationAssertionDigest(a) != "d58d7753601ecd06b6ace92c80c60fc5078f5eaab749f74fbf81cbcc417c5578" ||
+		agentruntime.EvaluationJudgeConfigurationDigest("http://127.0.0.1:18091/v1", a.JudgeModel, version) != "b7ce49e0b23890067e384d903c5deb6425e2909c300411898f2773fa2bd16579" {
 		t.Fatal("native CI judge identity contract changed")
 	}
 }

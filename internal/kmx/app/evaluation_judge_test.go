@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -36,6 +37,118 @@ func judgeDeadline(t *testing.T) context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	t.Cleanup(cancel)
 	return ctx
+}
+
+func TestEvaluationJudgeWorstCaseEvidenceFitsProjectionReserve(t *testing.T) {
+	e := agentruntime.EvaluationJudgeEvidence{Model: strings.Repeat("<", 256), ModelVersion: strings.Repeat("&", 256), RequestStyle: agentruntime.EvaluationJudgeRequestStyle, Provenance: "user-declared", EvaluatorDigest: agentruntime.EvaluationJudgeEvaluatorDigest(), ConfigurationDigest: strings.Repeat("a", 64), MinScore: 100, Scores: []int{100, 100}, ModelMatches: []string{"version-qualified", "version-qualified"}}
+	b, err := json.Marshal(e)
+	if err != nil || len(b) > 4096 {
+		t.Fatalf("judge evidence exceeds per-assertion projection reserve: bytes=%d err=%v", len(b), err)
+	}
+}
+
+func TestEvaluationJudgeExactModelForms(t *testing.T) {
+	requested := "fixture/model"
+	qualified := requested + "-pinned-v1"
+	cases := []struct {
+		models []string
+		forms  []string
+	}{{[]string{requested, requested}, []string{"requested", "requested"}}, {[]string{qualified, qualified}, []string{"version-qualified", "version-qualified"}}, {[]string{requested, qualified}, []string{"requested", "version-qualified"}}}
+	for _, bad := range []string{requested + "-wrong", qualified + "-extra", "prefix-" + qualified, strings.ToUpper(qualified), qualified + " ", " " + qualified, "other/" + requested} {
+		cases = append(cases, struct {
+			models []string
+			forms  []string
+		}{[]string{requested, bad}, nil}, struct {
+			models []string
+			forms  []string
+		}{[]string{bad, qualified}, nil})
+	}
+	for _, tc := range cases {
+		t.Run(strings.Join(tc.models, "|"), func(t *testing.T) {
+			var calls atomic.Int32
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				i := int(calls.Add(1)) - 1
+				body := judgeEnvelope(`{"score":100,"reasoning":"fixture"}`)
+				if i >= 2 {
+					t.Error("extra judge request")
+					return
+				}
+				_, _ = io.WriteString(w, strings.Replace(body, `"model":"fixture/model"`, `"model":"`+tc.models[i]+`"`, 1))
+			}))
+			defer s.Close()
+			c := evaluationJudgeClient{baseURL: s.URL, httpClient: s.Client(), out: io.Discard}
+			row := c.evaluate(judgeDeadline(t), judgeCase(), agentruntime.EvaluationEvidence{Answer: "answer", AnswerAvailable: true})[0]
+			b, _ := json.Marshal(row.Judge)
+			var observed struct {
+				ModelMatches []string `json:"modelMatches"`
+			}
+			_ = json.Unmarshal(b, &observed)
+			if calls.Load() != 2 || !agentruntime.EvaluationJudgeEvidenceValid(row) {
+				t.Fatal("invalid judge sampling/evidence")
+			}
+			if tc.forms == nil {
+				if row.Verdict != agentruntime.EvaluationUnknown || len(row.Judge.Scores) != 0 || len(observed.ModelMatches) != 0 {
+					t.Fatal("bad model retained partial evidence")
+				}
+			} else if row.Verdict != agentruntime.EvaluationPass || !reflect.DeepEqual(observed.ModelMatches, tc.forms) {
+				t.Fatalf("exact forms not accepted/recorded: verdict=%s forms=%v", row.Verdict, observed.ModelMatches)
+			}
+		})
+	}
+}
+
+func TestEvaluationJudgeStyleIsComparisonIdentity(t *testing.T) {
+	before := &agentruntime.EvaluationJudgeEvidence{RequestStyle: agentruntime.EvaluationJudgeRequestStyle}
+	after := *before
+	after.RequestStyle = "legacy"
+	if evaluationJudgeSameIdentity(before, &after) {
+		t.Fatal("different request styles compared as one judge identity")
+	}
+}
+
+// The rejection body is a sanitized recording from an Azure reasoning deployment.
+func TestEvaluationJudgeModernWireAndRecorded400(t *testing.T) {
+	recorded, err := os.ReadFile("testdata/judge-unsupported-max-tokens.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, reject := range []bool{false, true} {
+		t.Run(fmt.Sprint("reject=", reject), func(t *testing.T) {
+			var payloads [][]byte
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				raw, _ := io.ReadAll(r.Body)
+				payloads = append(payloads, raw)
+				var p map[string]json.RawMessage
+				_ = json.Unmarshal(raw, &p)
+				_, temperature := p["temperature"]
+				_, oldTokens := p["max_tokens"]
+				if reject || temperature || oldTokens || string(p["max_completion_tokens"]) != "1024" {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write(recorded)
+					return
+				}
+				_, _ = io.WriteString(w, judgeEnvelope(`{"score":100,"reasoning":"fixture rubric satisfied"}`))
+			}))
+			defer server.Close()
+			client := &evaluationJudgeClient{baseURL: server.URL, httpClient: server.Client(), out: io.Discard}
+			rows := client.evaluate(judgeDeadline(t), judgeCase(), agentruntime.EvaluationEvidence{Answer: "answer", AnswerAvailable: true})
+			if len(payloads) != 2 || !bytes.Equal(payloads[0], payloads[1]) {
+				t.Fatal("independent requests changed shape or retried/fell back")
+			}
+			if reject {
+				if rows[0].Verdict != agentruntime.EvaluationUnknown || len(rows[0].Judge.Scores) != 0 {
+					t.Fatal("recorded 400 produced evidence")
+				}
+			} else if rows[0].Verdict != agentruntime.EvaluationPass {
+				t.Fatalf("modern request rejected: %s", rows[0].Verdict)
+			}
+			var p map[string]json.RawMessage
+			_ = json.Unmarshal(payloads[0], &p)
+			if len(p) != 4 || p["temperature"] != nil || p["max_tokens"] != nil || string(p["max_completion_tokens"]) != "1024" {
+				t.Fatal("judge request did not use the one modern shape")
+			}
+		})
+	}
 }
 
 func TestEvaluationJudgeConfigurationPreflight(t *testing.T) {
@@ -180,17 +293,17 @@ func TestEvaluationJudgeTwoThresholdSideSamplesAndPromptBoundary(t *testing.T) {
 					t.Error("wrong transport request")
 				}
 				var req struct {
-					Model       string                           `json:"model"`
-					Temperature *float64                         `json:"temperature"`
-					MaxTokens   int                              `json:"max_tokens"`
-					Stream      *bool                            `json:"stream"`
-					Messages    []struct{ Role, Content string } `json:"messages"`
+					Model               string                           `json:"model"`
+					Temperature         *float64                         `json:"temperature"`
+					MaxCompletionTokens int                              `json:"max_completion_tokens"`
+					Stream              *bool                            `json:"stream"`
+					Messages            []struct{ Role, Content string } `json:"messages"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Error(err)
 					return
 				}
-				if req.Model != "fixture/model" || req.Temperature == nil || *req.Temperature != 0 || req.Stream == nil || *req.Stream || req.MaxTokens != 1024 || len(req.Messages) != 2 {
+				if req.Model != "fixture/model" || req.Temperature != nil || req.Stream == nil || *req.Stream || req.MaxCompletionTokens != 1024 || len(req.Messages) != 2 {
 					t.Errorf("wrong request settings: %+v", req)
 					return
 				}
@@ -304,7 +417,7 @@ func TestEvaluationJudgeUnicodeCaseFoldShadowsAreMalformed(t *testing.T) {
 	}
 	for name, bad := range cases {
 		t.Run(name, func(t *testing.T) {
-			if score, reason, ok := parseEvaluationJudgeResponse([]byte(bad), "fixture/model", ""); ok || score != 0 || reason != "" {
+			if score, reason, _, ok := parseEvaluationJudgeResponse([]byte(bad), "fixture/model", "pinned-v1", ""); ok || score != 0 || reason != "" {
 				t.Errorf("Unicode case-fold shadow accepted: score=%d reason=%q ok=%v", score, reason, ok)
 			}
 			for _, badSample := range []string{"first", "second", "both"} {

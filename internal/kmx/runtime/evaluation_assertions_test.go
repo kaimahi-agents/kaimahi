@@ -273,6 +273,7 @@ func TestEvaluationJudgeDigestBindsAuthoredPolicyAndKeepsOldDigests(t *testing.T
 	configFrames := frameEntry("endpoint", []byte("https://judge.example/v1"))
 	configFrames = append(configFrames, frameEntry("model", []byte(a.JudgeModel))...)
 	configFrames = append(configFrames, frameEntry("modelVersion", []byte(a.JudgeVersion))...)
+	configFrames = append(configFrames, frameEntry("requestStyle", []byte("openai-chat-completions-v1"))...)
 	configFrames = append(configFrames, frameEntry("evaluatorDigest", []byte(EvaluationJudgeEvaluatorDigest()))...)
 	sum = sha256.Sum256(configFrames)
 	if config != hex.EncodeToString(sum[:]) {
@@ -317,11 +318,22 @@ func TestEvaluationJudgeVerdictRequiresTwoValidThresholdSideScores(t *testing.T)
 	}
 }
 
+func TestEvaluationJudgeOldEvidenceNeedsFreshEvaluation(t *testing.T) {
+	old := EvaluationAssertionResult{Type: "llmJudge", Verdict: EvaluationPass, Judge: &EvaluationJudgeEvidence{Model: "model/pinned", ModelVersion: "v1", Provenance: "user-declared", EvaluatorDigest: EvaluationJudgeEvaluatorDigest(), ConfigurationDigest: strings.Repeat("a", 64), MinScore: 50, Scores: []int{80, 100}}}
+	if EvaluationJudgeEvidenceValid(old) {
+		t.Fatal("judge evidence without request style accepted")
+	}
+	old.Verdict, old.Judge.Scores = EvaluationUnknown, nil
+	if EvaluationJudgeEvidenceValid(old) {
+		t.Fatal("unknown judge evidence without request style accepted")
+	}
+}
+
 func TestEvaluationJudgeEvidenceIntegrity(t *testing.T) {
 	valid := EvaluationAssertionResult{Type: "llmJudge", Verdict: EvaluationPass, Judge: &EvaluationJudgeEvidence{
-		Model: "model/pinned", ModelVersion: "v1", Provenance: "user-declared",
+		Model: "model/pinned", ModelVersion: "v1", Provenance: "user-declared", RequestStyle: EvaluationJudgeRequestStyle,
 		EvaluatorDigest: EvaluationJudgeEvaluatorDigest(), ConfigurationDigest: strings.Repeat("a", 64),
-		MinScore: 50, Scores: []int{80, 100},
+		MinScore: 50, Scores: []int{80, 100}, ModelMatches: []string{"requested", "version-qualified"},
 	}}
 	if !EvaluationJudgeEvidenceValid(valid) {
 		t.Fatal("valid evidence rejected")
@@ -335,6 +347,11 @@ func TestEvaluationJudgeEvidenceIntegrity(t *testing.T) {
 		func(r *EvaluationAssertionResult) { r.Judge.ModelVersion = strings.Repeat("v", 257) },
 		func(r *EvaluationAssertionResult) { r.Judge.Model = "gh" + "p_" + strings.Repeat("A", 36) },
 		func(r *EvaluationAssertionResult) { r.Judge.Provenance = "verified" },
+		func(r *EvaluationAssertionResult) { r.Judge.RequestStyle = "" },
+		func(r *EvaluationAssertionResult) { r.Judge.RequestStyle = "legacy" },
+		func(r *EvaluationAssertionResult) { r.Judge.ModelMatches = nil },
+		func(r *EvaluationAssertionResult) { r.Judge.ModelMatches = []string{"requested"} },
+		func(r *EvaluationAssertionResult) { r.Judge.ModelMatches = []string{"requested", "prefix"} },
 		func(r *EvaluationAssertionResult) { r.Judge.EvaluatorDigest = strings.Repeat("b", 64) },
 		func(r *EvaluationAssertionResult) { r.Judge.ConfigurationDigest = strings.Repeat("G", 64) },
 		func(r *EvaluationAssertionResult) { r.Judge.MinScore = -1 },
@@ -366,6 +383,9 @@ func TestEvaluationJudgeEvidenceIntegrity(t *testing.T) {
 		r := valid
 		e := *valid.Judge
 		e.Scores, e.MinScore = tc.scores, tc.min
+		if len(tc.scores) == 0 {
+			e.ModelMatches = nil
+		}
 		r.Judge, r.Verdict = &e, tc.verdict
 		if !EvaluationJudgeEvidenceValid(r) {
 			t.Errorf("coherent evidence refused: %+v", r)
@@ -388,8 +408,8 @@ func TestEvaluationJudgePureUnknownAndPayloadFreePort(t *testing.T) {
 	// case's ordinary and judge rows; the port does not expose payloads in results.
 	var judge EvaluationJudge = func(ctx context.Context, c EvaluationCase, e EvaluationEvidence) []EvaluationAssertionResult {
 		rows := EvaluateAssertions(c, e)
-		rows[0].Judge = &EvaluationJudgeEvidence{Model: "model/pinned", ModelVersion: "v1", Provenance: "user-declared",
-			EvaluatorDigest: EvaluationJudgeEvaluatorDigest(), ConfigurationDigest: strings.Repeat("a", 64), MinScore: 50, Scores: []int{80, 100}}
+		rows[0].Judge = &EvaluationJudgeEvidence{Model: "model/pinned", ModelVersion: "v1", Provenance: "user-declared", RequestStyle: EvaluationJudgeRequestStyle,
+			EvaluatorDigest: EvaluationJudgeEvaluatorDigest(), ConfigurationDigest: strings.Repeat("a", 64), MinScore: 50, Scores: []int{80, 100}, ModelMatches: []string{"requested", "requested"}}
 		rows[0].Verdict, rows[0].Reason = EvaluationPass, "assertion satisfied"
 		return rows
 	}

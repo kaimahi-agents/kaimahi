@@ -146,7 +146,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   completed attributable assertion failures are countable; execution errors
   still abort. AgentSessions refuses repeats both offline and in strict proof.
   Private repeated rows retain ordinal/policy and actual outcomes; default
-  one-run encoding stays unchanged. Draft #497 JSON rejects these fields. Root `push --evaluation FILE` uses that private file consumer;
+  one-run encoding stays unchanged. Field names/defaults/validation follow
+  [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions):
+  minPasses requires runs and both are positive integers. KMX additionally caps
+  runs at 100 under the spec's consumer resource-limit allowance.
+  Root `push --evaluation FILE` uses that private file consumer;
   ordinary push stays unevaluated. Unsigned receipts do not prove authentication
   or drift absence.
   Any presence of a native suite ownership annotation reserves desired/live
@@ -169,12 +173,18 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   No model/runtime override, subset/content mode or standalone package
   reference is accepted. Authored llmJudge is supported for Orka/kagent with
   explicit --judge-base-url and optional --judge-key-env (environment name only).
-  Two independent temperature-zero scores must agree on the threshold side;
+  The fixed openai-chat-completions-v1 request style uses max_completion_tokens
+  (1024), stream=false and no temperature override, including the pinned AIKit
+  judge. No request-style flag, model inference or error fallback. Two independent
+  scores must agree on the threshold side;
   unavailable/malformed/split results stay unknown. Judgment shares the existing
   per-run deadline and attribution is rechecked afterward. Root eval discards
   reasoning and omits judge endpoints from recovery commands. Private passing
-  rows bind authored model/version, threshold, policy, endpoint configuration hash
-  and both scores. Text-only receipt wire shape is unchanged; older readers
+  rows bind authored model/version, request style, threshold, policy, endpoint
+  configuration hash, both scores and aligned modelMatches observations. Returned
+  model identity matches only the exact authored model or model+"-"+version,
+  never prefixes/substrings/case folding/whitespace normalization. Old judge rows missing the style require
+  fresh evaluation. Text-only receipt wire shape is unchanged; older readers
   refuse judge rows. AgentSessions still refuses judges.
   Offline `eval diff` reads strict full-passing native Orka/kagent suite
   evidence only. Old normalized receipts are unreadable. `eval from-sessions`
@@ -229,6 +239,23 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   updating current examples. Do not bulk-rename historical text or serialized
   state. Generated recovery commands must preserve selectors and shell quoting.
 
+## AgentSuite evaluation storage
+
+- Keep the draft `agentsuite/spec.md` implementation-neutral and focused on the
+  current format. Put KMX details, migration notes, and design history in
+  implementation documentation, issues, or the changelog. Shared JSON and
+  identity rules belong in common sections; eval bindings belong in §8.2.
+- Public embedded evaluations are optional (`SHOULD` for producers), rooted at
+  `evals/<agent>/index.json` and bound through the agent's `evals` reference.
+  Indexes bind ordered JSON cases with JCS digests; no evals remains conformant.
+  Follow `agentsuite/spec.md` §8.2 and its closed schemas. The public validator
+  checks storage and identity only, never executes assertions or claims a pass.
+- Preserve KMX's authored assertion `id`/`type`/operand spellings when mapping
+  cases; public JSON identities are not private YAML/framed receipt identities.
+  Results remain external to the evaluation tree and bind the exact OCI suite
+  manifest. Do not infer KMX migration from this public format; its private
+  `metadata/kmx/eval/` authoring and receipt consumers remain unchanged.
+
 ## kagent version boundary
 
 - Exact v0.10.3 Go/linux-amd64 packaged profiles use author-owned bindings,
@@ -242,7 +269,23 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   source-withheld digest Lift with occupied-repeat refusal. No legacy receipt,
   status or judge claim. Final build/live execution are needed for qualification.
 
+## Internal candidate boundary
+
+The private Orka candidate orchestrator is test-only until separately activated.
+Public `EvaluateSuiteWorkspace`, quickstart/console and publication stay canonical;
+no journal, lease, startup cleanup or publication blockade is implemented.
+
 ## Verification
+
+The browser documentation preview renders the root README and `docs/*.md`
+directly, plus `agentsuite/spec.md` while it remains local. Keep Markdown
+authoritative: navigation and theme code may link to maintained content but must
+not copy it. Keep VitePress output,
+caches, and `node_modules` untracked. Documentation changes retain the existing
+link, README-front-door and repository-map checks and run
+`npm --prefix docs run docs:check` when they affect the rendered site. The
+current exact alpha framework pin is a draft choice, not approval to publish;
+custom-domain and versioned-site changes require a separate review.
 
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
 Command changes normally require `go test ./cmd/kmx`, affected operation-package

@@ -146,6 +146,63 @@ func TestSuiteRepeatThresholdPipeline(t *testing.T) {
 	}
 }
 
+func TestSuiteRepeatJudgeModelMatchesAreObservations(t *testing.T) {
+	c, err := agentruntime.ParseEvaluationCase([]byte(suiteJudgeYAML + "runs: 3\nminPasses: 2\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make([]suitePassingCase, 3)
+	for i := range rows {
+		assertion := suitePassingAssertionDefinition(c.Assertions[0])
+		evidence := *assertion.Judge
+		evidence.ConfigurationDigest = strings.Repeat("a", 64)
+		evidence.Scores = []int{90, 90}
+		evidence.ModelMatches = []string{"requested", "requested"}
+		if i == 1 {
+			evidence.ModelMatches = []string{"version-qualified", "requested"}
+		}
+		assertion.Judge = &evidence
+		if !agentruntime.EvaluationJudgeEvidenceValid(agentruntime.EvaluationAssertionResult{Type: assertion.Type, Verdict: agentruntime.EvaluationPass, Judge: assertion.Judge}) {
+			t.Fatal("invalid judge evidence fixture")
+		}
+		rows[i] = suitePassingCase{
+			ID: c.ID, Path: "metadata/kmx/eval/first.yaml",
+			CaseDigest: strings.Repeat("b", 64), InputDigest: agentruntime.EvaluationInputDigest(c.Input),
+			Runs: 3, MinPasses: 2, Run: i + 1, Verdict: "pass",
+			TaskName: fmt.Sprintf("task-%d", i), TaskUID: fmt.Sprintf("uid-%d", i),
+			AnswerDigest: agentruntime.EvaluationAnswerDigest("answer"),
+			Assertions:   []suitePassingAssertion{assertion},
+		}
+	}
+	if err := validateSuiteRunGroups(rows, "native-orka"); err != nil {
+		t.Fatalf("accepted model-match variation changed repeated authored identity: %v", err)
+	}
+	r := &suitePassingReceipt{SchemaVersion: 1, ExecutionMode: "native-orka", Cases: rows}
+	before, ok := normalizeSuitePassingEvaluation(r)
+	if !ok {
+		t.Fatal("cannot normalize repeated judge")
+	}
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := parseSuitePassingWire(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range changed.Cases {
+		changed.Cases[i].Assertions[0].Judge.ModelMatches = []string{"requested", "version-qualified"}
+		changed.Cases[i].Assertions[0].Judge.Scores = []int{80, 85}
+	}
+	after, ok := normalizeSuitePassingEvaluation(&changed)
+	if !ok || before.SuiteInventory != after.SuiteInventory {
+		t.Fatal("repeat sample variation changed comparison identity")
+	}
+	if len(before.Cases[c.ID].Assertions) != 3 || before.Cases[c.ID].Assertions["quality/run/2"].Judge.ModelMatches[0] != "version-qualified" {
+		t.Fatal("run-qualified observations lost or mutated by normalization")
+	}
+}
+
 func TestSuiteRepeatInventoryAndSessionsBoundary(t *testing.T) {
 	root, _, _, _, _ := passingFixture(t)
 	writeFile(t, filepath.Join(root, "eval/example.yaml"), "id: first\ninput: question\nexpectContains: [answer]\nruns: 100\n")

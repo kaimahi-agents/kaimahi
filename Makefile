@@ -29,7 +29,7 @@ export KMX_KUBE_CTX := $(KUBE_CTX)
 GUARD_NS ?= ollama, orka-system (common, not exhaustive; see action for other namespaces)
 
 # Let Go's cache track all source, embedded data, and build-option changes.
-.PHONY: build test lint docs-check guard aks-creds $(KMX)
+.PHONY: build test lint docs-check docs-build docs-preview guard aks-creds $(KMX)
 
 ## test, lint, docs-check: local checks matching the keyless CI gates
 test:
@@ -47,6 +47,22 @@ docs-check:
 	python3 scripts/check-readme-front-door.py
 	python3 scripts/check-legacy-runtime.py --selftest
 	python3 scripts/check-legacy-runtime.py
+	$(MAKE) docs-build
+
+## docs-preview, docs-build: render the maintained Markdown without copying it
+docs-preview:
+	@command -v npm >/dev/null 2>&1 || { \
+		echo 'documentation preview needs Node.js 22.12+ and npm (https://nodejs.org/).' >&2; \
+		exit 1; }
+	npm --prefix docs ci --ignore-scripts
+	npm --prefix docs run docs:dev
+
+docs-build:
+	@command -v npm >/dev/null 2>&1 || { \
+		echo 'documentation build needs Node.js 22.12+ and npm (https://nodejs.org/).' >&2; \
+		exit 1; }
+	npm --prefix docs ci --ignore-scripts
+	npm --prefix docs run docs:check
 
 ## build: build kmx from this checkout and print the resulting path
 build: $(KMX)

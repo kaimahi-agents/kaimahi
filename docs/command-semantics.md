@@ -128,7 +128,10 @@ Optional KMX YAML `runs`/`minPasses` counts completed attributable assertion
 verdicts; omitted threshold requires all runs. Each run has its own deadline;
 repeat preflight states the total run-time budget, excluding placement. There is
 no early success; any unknown or execution error aborts. AgentSessions
-refuses repeats. The draft #497 JSON schema does not yet accept these fields.
+refuses repeats. Field names/defaults follow
+[AgentSuite §8.2.2](../agentsuite/spec.md#822-case-documents-and-assertions):
+`minPasses` requires `runs`, and both are positive integers. KMX's private YAML
+and receipts remain separate from the spec's embedded JSON format.
 Orka requires
 `--inference provider:NAME`; packaged exact-v0.10.3 Go kagent requires
 author-owned `--bindings FILE`, unsecure auth and no `--result-port`. Only full
@@ -137,7 +140,11 @@ failure, unknown, drift, cancellation or output error stops later sends. No
 package reference, subset or content output is accepted. Authored `llmJudge`
 requires explicit `--judge-base-url`, optional `--judge-key-env` and authored
 model/version/threshold. Two independent samples must agree on the threshold
-side; errors/splits stay unknown. Judgment shares the current run's deadline and is
+side; errors/splits stay unknown. Judges use the fixed modern Chat Completions
+request shape: a 1024
+`max_completion_tokens` budget, no temperature override and no error fallback.
+Evidence binds that style; old judge receipts require fresh evaluation.
+Judgment shares the current run's deadline and is
 followed by attribution rechecks. Passing rows bind judge identity, endpoint
 configuration hash and both scores without reasoning or raw judge URLs; recovery
 commands omit the endpoint. Text-only receipt encoding is unchanged. Development

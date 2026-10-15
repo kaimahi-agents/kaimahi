@@ -162,7 +162,7 @@ func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase age
 		}
 		row := &rows[i]
 		row.Judge = &agentruntime.EvaluationJudgeEvidence{
-			Model: a.JudgeModel, ModelVersion: a.JudgeVersion, Provenance: "user-declared",
+			Model: a.JudgeModel, ModelVersion: a.JudgeVersion, Provenance: "user-declared", RequestStyle: agentruntime.EvaluationJudgeRequestStyle,
 			EvaluatorDigest:     agentruntime.EvaluationJudgeEvaluatorDigest(),
 			ConfigurationDigest: agentruntime.EvaluationJudgeConfigurationDigest(c.baseURL, a.JudgeModel, a.JudgeVersion), MinScore: *a.MinScore,
 		}
@@ -178,6 +178,7 @@ func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase age
 			continue
 		}
 		scores := make([]int, 0, 2)
+		matches := make([]string, 0, 2)
 		reasons := make([]string, 0, 2)
 		failure := ""
 		for sample := 0; sample < 2; sample++ {
@@ -185,7 +186,7 @@ func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase age
 				failure = "judge response unavailable"
 				break
 			}
-			score, reason, errReason := c.sample(ctx, payload, a.JudgeModel)
+			score, reason, match, errReason := c.sample(ctx, payload, a.JudgeModel, a.JudgeVersion)
 			if errReason != "" {
 				// Attempt the other independent sample while the deadline remains active,
 				// but never retain a partial score or turn an unavailable sample into a pass.
@@ -195,13 +196,14 @@ func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase age
 				continue
 			}
 			scores = append(scores, score)
+			matches = append(matches, match)
 			reasons = append(reasons, reason)
 		}
 		if failure != "" {
 			row.Reason = failure
 			continue
 		}
-		row.Judge.Scores = scores
+		row.Judge.Scores, row.Judge.ModelMatches = scores, matches
 		row.Verdict = agentruntime.EvaluationJudgeVerdict(scores, *a.MinScore)
 		switch row.Verdict {
 		case agentruntime.EvaluationPass:
@@ -239,19 +241,18 @@ func evaluationJudgePayload(input, answer string, a agentruntime.EvaluationAsser
 		Content string `json:"content"`
 	}
 	payload, err := json.Marshal(struct {
-		Model       string    `json:"model"`
-		Temperature int       `json:"temperature"`
-		MaxTokens   int       `json:"max_tokens"`
-		Stream      bool      `json:"stream"`
-		Messages    []message `json:"messages"`
-	}{Model: a.JudgeModel, Temperature: 0, MaxTokens: 1024, Stream: false, Messages: []message{{Role: "system", Content: agentruntime.EvaluationJudgePolicy}, {Role: "user", Content: string(data)}}})
+		Model               string    `json:"model"`
+		MaxCompletionTokens int       `json:"max_completion_tokens"`
+		Stream              bool      `json:"stream"`
+		Messages            []message `json:"messages"`
+	}{Model: a.JudgeModel, MaxCompletionTokens: 1024, Stream: false, Messages: []message{{Role: "system", Content: agentruntime.EvaluationJudgePolicy}, {Role: "user", Content: string(data)}}})
 	return payload, err == nil && len(payload) <= evaluationJudgeRequestLimit
 }
 
-func (c *evaluationJudgeClient) sample(ctx context.Context, payload []byte, model string) (int, string, string) {
+func (c *evaluationJudgeClient) sample(ctx context.Context, payload []byte, model, version string) (int, string, string, string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return 0, "", "judge response unavailable"
+		return 0, "", "", "judge response unavailable"
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.key != "" {
@@ -263,29 +264,29 @@ func (c *evaluationJudgeClient) sample(ctx context.Context, payload []byte, mode
 	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	response, err := httpClient.Do(req)
 	if err != nil {
-		return 0, "", "judge response unavailable"
+		return 0, "", "", "judge response unavailable"
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return 0, "", "judge response unavailable"
+		return 0, "", "", "judge response unavailable"
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, evaluationJudgeResponseLimit+1))
 	if err != nil {
-		return 0, "", "judge response unavailable"
+		return 0, "", "", "judge response unavailable"
 	}
 	if len(body) > evaluationJudgeResponseLimit {
-		return 0, "", "judge response malformed"
+		return 0, "", "", "judge response malformed"
 	}
-	score, reason, ok := parseEvaluationJudgeResponse(body, model, c.key)
+	score, reason, match, ok := parseEvaluationJudgeResponse(body, model, version, c.key)
 	if !ok {
-		return 0, "", "judge response malformed"
+		return 0, "", "", "judge response malformed"
 	}
-	return score, reason, ""
+	return score, reason, match, ""
 }
 
-func parseEvaluationJudgeResponse(body []byte, model, key string) (int, string, bool) {
+func parseEvaluationJudgeResponse(body []byte, model, version, key string) (int, string, string, bool) {
 	if !evaluationJudgeJSONUnique(body) {
-		return 0, "", false
+		return 0, "", "", false
 	}
 	var envelope struct {
 		Model   string `json:"model"`
@@ -300,8 +301,15 @@ func parseEvaluationJudgeResponse(body []byte, model, key string) (int, string, 
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if json.Unmarshal(body, &envelope) != nil || envelope.Model != model || len(envelope.Choices) != 1 {
-		return 0, "", false
+	if json.Unmarshal(body, &envelope) != nil || len(envelope.Choices) != 1 {
+		return 0, "", "", false
+	}
+	match := "requested"
+	if envelope.Model != model {
+		if version == "" || envelope.Model != model+"-"+version {
+			return 0, "", "", false
+		}
+		match = "version-qualified"
 	}
 	choice := envelope.Choices[0]
 	msg := choice.Message
@@ -309,20 +317,20 @@ func parseEvaluationJudgeResponse(body []byte, model, key string) (int, string, 
 		return len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 	}
 	if choice.FinishReason != "stop" || msg.Role != "assistant" || !absent(msg.ToolCalls) || !absent(msg.FunctionCall) || !absent(msg.Refusal) || absent(msg.Content) {
-		return 0, "", false
+		return 0, "", "", false
 	}
 	var content string
 	if json.Unmarshal(msg.Content, &content) != nil || !evaluationJudgeJSONUnique([]byte(content)) {
-		return 0, "", false
+		return 0, "", "", false
 	}
 	var result map[string]json.RawMessage
 	if json.Unmarshal([]byte(content), &result) != nil || len(result) != 2 || absent(result["score"]) || absent(result["reasoning"]) {
-		return 0, "", false
+		return 0, "", "", false
 	}
 	var score int
 	var reasoning string
 	if json.Unmarshal(result["score"], &score) != nil || score < 0 || score > 100 || json.Unmarshal(result["reasoning"], &reasoning) != nil || !utf8.ValidString(reasoning) || len(reasoning) > 4096 {
-		return 0, "", false
+		return 0, "", "", false
 	}
 	safe := strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
@@ -333,10 +341,10 @@ func parseEvaluationJudgeResponse(body []byte, model, key string) (int, string, 
 	// Check both representations: stripping controls can assemble a credential.
 	for _, text := range []string{reasoning, safe} {
 		if (key != "" && strings.Contains(text, key)) || secretshapes.Match(text) != nil {
-			return 0, "", false
+			return 0, "", "", false
 		}
 	}
-	return score, safe, true
+	return score, safe, match, true
 }
 
 // evaluationJudgeJSONUnique rejects duplicate keys at every object depth and

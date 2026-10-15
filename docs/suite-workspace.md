@@ -337,7 +337,8 @@ minPasses: 4
 ```
 
 `runs` defaults to 1; omitted `minPasses` requires every declared run to pass.
-Both must be integers satisfying `1 <= minPasses <= runs <= 100`. Receipt-size
+`minPasses` requires an explicit `runs`. Both must be integers satisfying
+`1 <= minPasses <= runs <= 100`. Receipt-size
 projection can impose a lower limit and refuses offline before configuration.
 Each run sends a fresh Task with the same authored input, never a retry. Each
 run gets the configured deadline, including its judge requests and attribution
@@ -359,10 +360,12 @@ repeat rows. Diff compares per-run outcomes without treating different Task IDs,
 answer hashes or judge scores as identity changes; the authored repeat policy
 and judge configuration remain comparison identities.
 
-These are **KMX-private YAML case fields**. The current AgentSuite suite-embedded
-evaluation draft in [#497](https://github.com/kaimahi-agents/kaimahi/pull/497)
-does not define `runs`/`minPasses`, and its closed JSON case schema rejects them.
-Do not copy these fields into draft-spec JSON cases until the spec supports them.
+The field names, defaults and validation follow
+[AgentSuite §8.2.2 — Case documents and assertions](../agentsuite/spec.md#822-case-documents-and-assertions).
+KMX uses private YAML authoring and receipts rather than the spec's embedded
+JSON format. Its 100-run cap is an additional execution resource limit, allowed
+by [§8.2.1](../agentsuite/spec.md#821-index-and-bounds); it refuses larger policies
+rather than truncating them.
 
 For an open-ended answer, author a judge assertion in the ordinary case file:
 
@@ -382,14 +385,30 @@ Select an explicit OpenAI-compatible endpoint with `--judge-base-url` and,
 optionally, nominate its HTTPS credential environment variable with
 `--judge-key-env`. There is no endpoint or agent-model fallback. HTTPS is required
 except keyless HTTP at literal loopback. Input, attributed answer and rubric go
-to that provider. Preflight states the cost: **two independent temperature-zero
-requests per judge assertion per run**, sharing that run's deadline. Both
+to that provider. Preflight states the cost: **two independent requests
+per judge assertion per run**, sharing that run's deadline. Both
 scores at/above the threshold pass, both below fail, and disagreement, malformed
 or unavailable responses are unknown. There are no retries or candidate Tasks beyond the authored runs. Native
 attribution is checked again after judging; late drift/deadline
 prevents a case pass and export. Reasoning is discarded, never printed.
 Choose a judge model strong enough for the rubric: two agreeing scores do not
 make an incorrect judgment correct; validate it against known pass/fail examples.
+
+All judges use the fixed `openai-chat-completions-v1` Chat Completions style:
+`max_completion_tokens: 1024`, `stream: false`, and no `temperature` or other
+sampling override. This shape is also accepted by the pinned AIKit/LocalAI CI
+judge. There is no style flag, model-name inference, retry or error fallback.
+The token budget includes reasoning and visible output; a truncated response
+remains unknown. Receipts bind `requestStyle` and include it in the configuration
+digest. Earlier judge receipts without this binding require fresh evaluation;
+text-only receipts are unchanged.
+
+The returned model must equal exactly the authored `judgeModel`, or exactly
+`judgeModel + "-" + judgeVersion`. There is no prefix, substring, case-folding or
+whitespace matching. Each score has an aligned `modelMatches` entry:
+`requested` or `version-qualified`. A missing or mismatched sample retains
+neither partial scores nor match forms. Match forms are observations, not a
+change to the authored judge identity for receipt comparison.
 
 Passing receipt rows retain the authored model/version, threshold, policy digest,
 both scores and a configuration hash binding the canonical endpoint. Raw judge
