@@ -32,6 +32,9 @@ const AgentSessionsVersion = "ca85f47a2ec17ca6e16029cfa69419cfe29442b3"
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
+// ValidName reports whether name is a valid workspace or suite name.
+func ValidName(name string) bool { return namePattern.MatchString(name) }
+
 // RuntimeProfile is KMX-private selection metadata, not a public AgentSuite SPI.
 // The zero value is accepted only as the historical Orka authoring default.
 type RuntimeProfile struct {

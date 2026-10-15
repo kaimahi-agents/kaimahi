@@ -44,6 +44,33 @@ func TestTargetsKagentEvaluationRemainsVersionScoped(t *testing.T) {
 	}
 }
 
+func TestTargetsAgentSessionsReasonsNameBindingsAndPlanOnlyLift(t *testing.T) {
+	var sessions TargetInfo
+	found := false
+	for _, target := range compiledTargets() {
+		if target.ID == "agentsessions" {
+			sessions, found = target, true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("agentsessions target missing")
+	}
+	seen := map[string]bool{}
+	for _, capability := range sessions.Capabilities {
+		switch capability.Operation {
+		case "eval":
+			seen["eval"] = capability.Supported && strings.Contains(capability.Reason, "--bindings")
+		case "lift":
+			// Plan-only render is not placement; the row stays unsupported.
+			seen["lift"] = !capability.Supported && strings.Contains(capability.Reason, "plan-only") && strings.Contains(capability.Reason, "--bindings") && strings.Contains(capability.Reason, "apply refuses")
+		}
+	}
+	if !seen["eval"] || !seen["lift"] {
+		t.Fatalf("stale AgentSessions reasons: %+v", sessions.Capabilities)
+	}
+}
+
 func TestTargetsOrkaDetectionIsScopedReadOnlyAndFailClosed(t *testing.T) {
 	controller := func(containers string) string {
 		return `{"metadata":{"name":"controller","labels":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"}},"spec":{"template":{"spec":{"containers":` + containers + `}}}}`

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	godigest "github.com/opencontainers/go-digest"
@@ -24,6 +25,10 @@ type ReleaseLiftOptions struct {
 	PlainHTTP, Promote                                                           bool
 	// ExpectedRuntime is checked offline against the loaded package before GETs.
 	ExpectedRuntime string
+	// HarnessImage selects the plan-only AgentSessions render: a digest-pinned
+	// harnessnode image. It requires an AgentSessionsBinding in Bindings and
+	// refuses cluster, inference and promotion selectors.
+	HarnessImage string
 }
 
 type ReleaseLiftTarget struct {
@@ -61,7 +66,10 @@ type ReleaseLiftSummary struct {
 	EvidenceRunID  string                `json:"evidenceRunID"`
 	Gate           string                `json:"gate"`
 	Resources      []ReleaseLiftResource `json:"resources"`
-	PlanDigest     string                `json:"planDigest"`
+	// AgentSessions carries the rendered plan for the packaged AgentSessions
+	// runtime only; Orka and kagent summaries omit it.
+	AgentSessions *ReleaseLiftSessionsPlan `json:"agentsessions,omitempty"`
+	PlanDigest    string                   `json:"planDigest"`
 }
 
 // PreparedReleaseLift retains its verified subject/evidence and GET-only review.
@@ -71,6 +79,7 @@ type PreparedReleaseLift struct {
 	artifact *suiteoras.Artifact
 	native   *suiteNativePrepared
 	kagent   *releaseLiftKagent
+	sessions *releaseLiftSessions
 	receipt  *suitePassingReceipt
 	summary  ReleaseLiftSummary
 	started  atomic.Bool
@@ -79,6 +88,7 @@ type PreparedReleaseLift struct {
 func (p *PreparedReleaseLift) Summary() ReleaseLiftSummary {
 	out := p.summary
 	out.Resources = slices.Clone(out.Resources)
+	out.AgentSessions = p.sessions.summary()
 	return out
 }
 
@@ -100,11 +110,19 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 			if errors.Is(err, errSuiteKagentOccupied) {
 				cause = errors.Join(cause, errSuiteKagentOccupied)
 			}
+			var refusal *releaseLiftSessionsRefusal
+			if errors.As(err, &refusal) {
+				cause = errors.Join(cause, refusal.err)
+			}
 			err = errors.Join(ErrReleaseLift, cause)
 		}
 	}()
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if opt.HarnessImage != "" {
+		// The AgentSessions render reads no cluster configuration.
+		return PrepareAgentSessionsReleaseLift(ctx, opt)
 	}
 	if a == nil || a.Cfg == nil || a.Run == nil || ValidateReleaseLiftOptions(opt) != nil {
 		return nil, ErrReleaseLift
@@ -117,6 +135,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 	artifact, suite, receipt, evidence := inputs.artifact, inputs.suite, inputs.receipt, inputs.evidence
 	if opt.ExpectedRuntime != "" && opt.ExpectedRuntime != suite.Runtime.ID {
 		return nil, ErrReleaseLift
+	}
+	if suite.Runtime.ID == "agentsessions" {
+		return nil, &releaseLiftSessionsRefusal{errAgentSessionsLiftSelectors}
 	}
 	// Closed packaged runtime and canonical E select the only allowed selector
 	// before any cluster observation. Evidence never supplies an Orka alias.
@@ -176,6 +197,15 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
 	ref, digest, pinned := strings.Cut(opt.Reference, "@")
 	provider := strings.TrimPrefix(opt.Inference, "provider:")
+	if opt.HarnessImage != "" {
+		// AgentSessions plan: binding and image only; no cluster, inference or promotion.
+		if _, err := agentsessions.HarnessImageDigest(opt.HarnessImage); err != nil || !pinned || !verificationIdentity(ref) || !spec.IsValidDigest(digest) ||
+			strings.TrimSpace(opt.Bindings) == "" || opt.ToContext != "" || opt.ToNamespace != "" || opt.Inference != "" || opt.Promote ||
+			strings.TrimSpace(opt.Evidence) == "" || opt.FromLayout != "" && opt.PlainHTTP {
+			return ErrReleaseLift
+		}
+		return nil
+	}
 	if !pinned || !verificationIdentity(ref) || !spec.IsValidDigest(digest) ||
 		!verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil ||
 		(opt.Inference == "") == (opt.Bindings == "") ||

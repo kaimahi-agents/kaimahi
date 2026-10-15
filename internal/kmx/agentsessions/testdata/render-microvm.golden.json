@@ -1,0 +1,95 @@
+{
+  "bindingDigest": "sha256:84ec5fa3940ad529a1f9ea05ab8e0b82eba2eff2d8c2b2829a665373e5c128bb",
+  "harnessImage": "registry.example.invalid/agentsessions/harnessnode@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+  "templateDigest": "sha256:7360888119e93d8cf63bdf624c20219555ad99464105af8fab307d70a5ab4d0b",
+  "actorTemplate": {
+    "metadata": {
+      "atespace": "agentsuite-demo",
+      "name": "support-desk-triage-7182e863"
+    },
+    "worker_selector": {
+      "match_labels": {
+        "workload": "agentsuite-demo-microvm"
+      }
+    },
+    "containers": [
+      {
+        "name": "harness",
+        "image": "registry.example.invalid/agentsessions/harnessnode@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+        "env": [
+          {
+            "name": "HARNESS_ADDR",
+            "value": ":80"
+          },
+          {
+            "name": "HARNESS_READYZ",
+            "value": ":8081"
+          },
+          {
+            "name": "HARNESS_KIND",
+            "value": "chat"
+          },
+          {
+            "name": "HARNESS_MODEL",
+            "value": "fixture-model"
+          }
+        ],
+        "wakeup_probe": {
+          "http_get": {
+            "path": "/readyz",
+            "port": 8081
+          },
+          "timeout_seconds": 120
+        },
+        "security_context": {
+          "capabilities": {}
+        }
+      }
+    ],
+    "snapshot_config": {
+      "storage_location": "gs://ate-snapshots/agentsuite-demo/support-desk-triage-7182e863/",
+      "preferred_fidelity": "SNAPSHOT_FIDELITY_MEMORY"
+    },
+    "sandbox_config": {
+      "sandbox_class": "microvm",
+      "config_name": "microvm"
+    },
+    "resources": {
+      "limits": [
+        {
+          "name": "cpu",
+          "quantity": "1"
+        },
+        {
+          "name": "memory",
+          "quantity": "512Mi"
+        }
+      ]
+    }
+  },
+  "harnessRegistration": {
+    "metadata": {
+      "name": "triage"
+    },
+    "spec": {
+      "capabilities": {
+        "resumability": "RESUMABILITY_STATELESS_REPLAY"
+      },
+      "descriptor_id": "chat",
+      "substrate": {
+        "atespace": "agentsuite-demo",
+        "template": "support-desk-triage-7182e863"
+      }
+    }
+  },
+  "registrationSpecDigest": "sha256:f800d49d7996fcbd9b6431c2f9b6c295f5d3d85c10539e914a93c415ffca5068",
+  "hostModel": {
+    "name": "fixture-model",
+    "provider": "openai",
+    "baseURL": "http://fakemodel.agentsuite-demo.svc:8080/v1",
+    "secretRef": {
+      "name": "model-credentials",
+      "key": "api-key"
+    }
+  }
+}
