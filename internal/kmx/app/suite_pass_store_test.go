@@ -395,4 +395,19 @@ func TestSuitePassStoreAgentSessionsProofPredatingBindingDigest(t *testing.T) {
 	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassPredatesBinding) {
 		t.Fatalf("newest pre-binding record fell back: %v", err)
 	}
+	// A pre-binding record whose embedded receipt names another suite is
+	// corruption, not a classified pre-binding proof.
+	document["result"] = "pass"
+	document["agentsessions"].(map[string]any)["subject"].(map[string]any)["suiteDigest"] = "sha256:" + strings.Repeat("1", 64)
+	otherSuite, err := spec.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseSuitePassingReceipt(otherSuite); !errors.Is(err, errSuiteSessionsReceiptPredatesBinding) {
+		t.Fatalf("other-suite pre-binding receipt classification: %v", err)
+	}
+	writeRecord(store, 4, otherSuite)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassStore) || errors.Is(err, errSuitePassPredatesBinding) {
+		t.Fatalf("pre-binding record for another suite: %v", err)
+	}
 }

@@ -302,9 +302,13 @@ func (s *suitePassStore) scan(ctx context.Context, suite *workspace.NativeSuite)
 			if spec.Unmarshal(raw, &record) != nil || record.SchemaVersion != 1 || record.Workspace != s.identity || record.SuiteDigest != s.suiteDigest || record.Sequence != seq {
 				return result, errSuitePassStore
 			}
-			receipt, e := parseSuitePassingReceipt(record.Receipt)
-			if errors.Is(e, errSuiteSessionsReceiptPredatesBinding) {
-				// Counted for capacity and ordering, never eligible.
+			receipt, predatesBinding, e := classifySuitePassingReceipt(record.Receipt)
+			if predatesBinding {
+				// Counted for capacity and ordering, never eligible. Its embedded
+				// suite identity must still match the record.
+				if receipt.suiteDigest() != s.suiteDigest {
+					return result, errSuitePassStore
+				}
 				if seq > result.sequence {
 					result.sequence, result.latest, result.path, result.predatesBinding = seq, nil, filepath.Join(s.partition, name), true
 				}

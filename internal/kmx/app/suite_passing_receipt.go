@@ -229,42 +229,61 @@ func newSuitePassingReceiptRun(ctx context.Context, prepared *workspace.Prepared
 }
 
 func parseSuitePassingReceipt(raw []byte) (*suitePassingReceipt, error) {
-	r, err := parseSuitePassingReceiptStrict(raw)
-	if err != nil && suiteSessionsReceiptPredatesBinding(raw) {
+	r, predates, err := classifySuitePassingReceipt(raw)
+	if predates {
 		return nil, errSuiteSessionsReceiptPredatesBinding
 	}
 	return r, err
 }
 
-// suiteSessionsReceiptPredatesBinding reports whether raw is an AgentSessions
-// receipt without agentsessions.subject.bindingDigest that would otherwise
-// parse. It accepts nothing: adding a placeholder digest only classifies the
-// refusal.
-func suiteSessionsReceiptPredatesBinding(raw []byte) bool {
+// classifySuitePassingReceipt parses raw strictly. When it fails only because
+// an AgentSessions receipt lacks agentsessions.subject.bindingDigest, it
+// reports predatesBinding with the receipt parsed under a placeholder digest,
+// so a caller can check its identity before classifying the refusal. That
+// receipt is never eligible proof.
+func classifySuitePassingReceipt(raw []byte) (r *suitePassingReceipt, predatesBinding bool, err error) {
+	r, err = parseSuitePassingReceiptStrict(raw)
+	if err == nil {
+		return r, false, nil
+	}
+	if old := suiteSessionsReceiptPredatingBinding(raw); old != nil {
+		return old, true, err
+	}
+	return nil, false, err
+}
+
+// suiteSessionsReceiptPredatingBinding returns raw parsed with a placeholder
+// agentsessions.subject.bindingDigest when raw is an AgentSessions receipt
+// without one that would otherwise parse, and nil otherwise. It accepts
+// nothing: the placeholder only classifies the refusal.
+func suiteSessionsReceiptPredatingBinding(raw []byte) *suitePassingReceipt {
 	if len(raw) > maxSuitePassingReceiptBytes {
-		return false
+		return nil
 	}
 	var document map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	if decoder.Decode(&document) != nil || document["executionMode"] != "native-agentsessions" {
-		return false
+		return nil
 	}
 	sessions, _ := document["agentsessions"].(map[string]any)
 	subject, _ := sessions["subject"].(map[string]any)
 	if subject == nil {
-		return false
+		return nil
 	}
 	if _, ok := subject["bindingDigest"]; ok {
-		return false
+		return nil
 	}
 	subject["bindingDigest"] = "sha256:" + strings.Repeat("0", 64)
 	placeholder, err := spec.Marshal(document)
 	if err != nil {
-		return false
+		return nil
 	}
-	_, err = parseSuitePassingReceiptStrict(placeholder)
-	return err == nil
+	r, err := parseSuitePassingReceiptStrict(placeholder)
+	if err != nil {
+		return nil
+	}
+	return r
 }
 
 func parseSuitePassingReceiptStrict(raw []byte) (*suitePassingReceipt, error) {
