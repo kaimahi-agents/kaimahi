@@ -31,7 +31,7 @@ test('every maintained Markdown page is rendered exactly once', async () => {
 test('the homepage renders the interactive journey and channel boundary', async () => {
   const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
   for (const marker of [
-    'Build agents. Prove behavior. Lift by digest.',
+    'Build, Prove and Lift your agents',
     'Development docs',
     'Stable v0.6.0',
     'Choose your path',

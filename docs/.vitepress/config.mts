@@ -173,7 +173,7 @@ export default defineConfig({
       pageData.frontmatter.layout = 'home'
       pageData.frontmatter.hero = {
         name: 'Kaimahi',
-        text: 'Build agents. Prove behavior. Lift by digest.',
+        text: 'Build, Prove and Lift your agents',
         tagline: 'A Kubernetes-native path from editable workspace to evidence-bound deployment.',
         actions: [
           { theme: 'brand', text: 'Get your first answer', link: '/docs/getting-started' },
