@@ -77,8 +77,15 @@ func TestGuardCreateInScopesTheBannerAndOrdinaryGuardsDoNot(t *testing.T) {
 // whose first step fails still proves what the banner said.
 func TestQuickstartGuardBannerNamesOnlyTheOrkaNamespaces(t *testing.T) {
 	a, errOut := guardFixture(t)
-	if err := a.Quickstart(QuickstartOptions{}); err == nil {
+	err := a.Quickstart(QuickstartOptions{})
+	if err == nil {
 		t.Fatalf("the fixture's first step must fail; got a complete run:\n%s", errOut)
+	}
+	// Stopping anywhere before the first step (preflight, target validation)
+	// would leave no banner to check, and that is a fixture failure, not a
+	// banner one.
+	if first := a.quickstartSteps()[0].name; !strings.Contains(errOut.String(), first) {
+		t.Fatalf("quickstart stopped before its first step, so the guard never ran: %v\n%s", err, errOut)
 	}
 	assertOrkaOnlyBanner(t, "the quickstart banner", errOut.String())
 }
@@ -157,8 +164,14 @@ exit 99
 	// Runnable enough to pass preflight, and unable to do any cluster work:
 	// a command reaches its guard and stops at its first real step.
 	fakeTool(t, dir, "kind", `case "$*" in *version*) exit 0 ;; esac; exit 99`)
+	fakeTool(t, dir, "helm", `case "$*" in *version*) exit 0 ;; esac; exit 99`)
 	fakeTool(t, dir, "docker", "exit 0")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	// PATH is the fakes and nothing else, so whether a host has (or lacks)
+	// kind, kubectl, helm or an engine cannot decide whether preflight passes
+	// and the guard runs. The fakes can therefore use only sh builtins
+	// (case, printf, exit); an external utility such as cat or grep is not
+	// found.
+	t.Setenv("PATH", dir)
 	t.Setenv("KMX_TOOLCHAIN", "off")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	a := &App{
