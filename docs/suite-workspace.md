@@ -157,7 +157,10 @@ the selected evaluation environment/runtime/inference. Evaluated root registry
 push also registers publication completion, so independently completed eval/push
 can be skipped by composed Lift. Older publications without a local completion
 record do not confer skip authority. A recorded publication is verified by
-immutable digest, not a tag. A recorded successful Lift is rechecked
+immutable digest, not a tag. With `--require-provenance`, bounded registry reads
+and temporary local extraction also verify existing provenance; missing or
+unverifiable attachments refuse without republishing or repair.
+A recorded successful Lift is rechecked
 GET-only against destination inputs, ownership markers, resource UIDs, whole specs
 and current readiness. Private completion records grant only skip authority, never
 Apply, adoption or replacement. Missing, drifted or uncertain destination completion

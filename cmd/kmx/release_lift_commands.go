@@ -80,7 +80,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 				}
 			}
 			if !cmd.Flags().Changed("evidence") {
-				return fmt.Errorf("explicit-reference lift requires --evidence FILE")
+				return fmt.Errorf("%w: explicit-reference lift requires --evidence FILE", app.ErrReleaseLift)
 			}
 			opt.Reference = args[0]
 			if !cmd.Flags().Changed("to-namespace") {

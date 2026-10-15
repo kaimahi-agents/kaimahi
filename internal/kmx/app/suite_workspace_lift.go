@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -326,6 +327,20 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 		if _, err = suiteoras.ReadArtifactRegistry(ctx, p.options.Repository+"@"+p.plan.SuiteDigest, p.options.Destination.PlainHTTP); err != nil {
 			return r, errWorkspaceLiftState
 		}
+		if p.options.Provenance.Require {
+			temporary, e := os.MkdirTemp("", "kmx-lift-provenance-*")
+			if e != nil {
+				return r, e
+			}
+			// Reuse bounded provenance validation through registry reads only;
+			// a historical publication never authorizes attaching or repairing it.
+			pulled, e := suiteoras.PullRegistry(ctx, p.options.Repository+"@"+p.plan.SuiteDigest, filepath.Join(temporary, "suite"), p.options.Destination.PlainHTTP)
+			cleanupErr := os.RemoveAll(temporary)
+			root := p.review.prepared.Descriptor
+			if e != nil || cleanupErr != nil || !pulled.ProvenanceChecked || len(pulled.Provenance) == 0 || pulled.Descriptor.Digest != root.Digest || pulled.Descriptor.Size != root.Size || pulled.Descriptor.MediaType != root.MediaType {
+				return r, errors.New("required AgentSuite provenance is missing or unverifiable; completed publication was not repaired")
+			}
+		}
 	}
 	if placement.record != nil {
 		if placement.record.Placement == nil || !reflect.DeepEqual(placement.record.Placement.Subject, observedDest.Subject) {
@@ -358,7 +373,7 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 	if publication.record == nil {
 		r.Plan.Disclosure += "; publication of source/cases"
 	}
-	if !p.options.JSON {
+	if !p.options.JSON || a.Cfg.Confirm == "" && a.Stdin != nil && term.IsTerminal(int(a.Stdin.Fd())) {
 		if err = writePlan(); err != nil {
 			return r, err
 		}
@@ -450,8 +465,6 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 		r.Push.Status = "skipped"
 		r.Push.Detail = p.options.Repository + "@" + p.plan.SuiteDigest
 	} else {
-		r.Push.Status = "unknown"
-		r.Push.Detail = "publication incomplete/unknown; copied blobs or tag may exist; destination unchanged"
 		var pushOptions suiteoras.PushOptions
 		var sourceWarning string
 		if p.options.Provenance.Enabled {
@@ -461,6 +474,11 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 			}
 			pushOptions, sourceWarning = suitePushOptions(ctx, p.review.root, p.options.Provenance, inputs)
 		}
+		if err = boundary(); err != nil {
+			return r, err
+		}
+		r.Push.Status = "unknown"
+		r.Push.Detail = "publication incomplete/unknown; copied blobs or tag may exist; destination unchanged"
 		var pushed suiteoras.PushResult
 		pushed, err = suiteoras.PushLayoutRegistry(ctx, p.review.prepared.Path, p.options.Repository+":s-"+strings.TrimPrefix(p.plan.SuiteDigest, "sha256:"), p.options.Destination.PlainHTTP, false, p.review.prepared.Descriptor, pushOptions)
 		if err != nil {
@@ -472,8 +490,8 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 		if sourceWarning != "" && pushed.Provenance != nil {
 			pushed.Warnings = append(pushed.Warnings, sourceWarning)
 		}
-		if len(pushed.Warnings) > 0 {
-			r.Push.Detail += "; " + strings.Join(pushed.Warnings, "; ")
+		for _, warning := range pushed.Warnings {
+			r.Push.Detail += "; " + tuiOneLine(warning)
 		}
 		if err = publication.commit(ctx, nil); err != nil {
 			r.Push.Detail += "; publication succeeded, completion persistence incomplete"

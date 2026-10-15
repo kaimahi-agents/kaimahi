@@ -192,7 +192,7 @@ func TestWorkspaceLiftDoesNotWeakenDigestEvidenceRequirement(t *testing.T) {
 	var out, diag bytes.Buffer
 	deps, loads := testDependencies(&out, &diag)
 	err := execute([]string{"lift", "registry.example/agents@sha256:" + strings.Repeat("a", 64), "--to-context", "aks-prod", "--inference", "provider:prod"}, deps)
-	if err == nil || !strings.Contains(err.Error(), "--evidence") || *loads != 0 {
-		t.Fatalf("digest Lift without evidence lost actionable refusal: %v loads=%d", err, *loads)
+	if !errors.Is(err, app.ErrReleaseLift) || !strings.Contains(err.Error(), "--evidence") || *loads != 0 {
+		t.Fatalf("digest Lift without evidence lost typed/actionable refusal: %v loads=%d", err, *loads)
 	}
 }

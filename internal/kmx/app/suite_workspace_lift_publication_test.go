@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -36,15 +37,21 @@ func TestWorkspaceLiftSkipPlanDisclosesOnlyMissingEffects(t *testing.T) {
 // Implement the external registry boundary, retaining actual uploaded graph and
 // provenance bytes. A tag is absent until the client successfully PUTs it.
 func TestWorkspaceLiftPublishesRealGraphWithRequiredProvenance(t *testing.T) {
-	for _, deny := range []bool{false, true} {
-		t.Run(map[bool]string{false: "success", true: "required provenance refusal"}[deny], func(t *testing.T) {
-			a, opt, _, _, _, _ := workspaceLiftFixture(t)
+	for _, mode := range []string{"success", "required provenance refusal", "optional warning", "listing failure"} {
+		t.Run(mode, func(t *testing.T) {
+			deny, required := mode == "required provenance refusal" || mode == "optional warning", mode != "optional warning"
+			a, opt, state, _, _, _ := workspaceLiftFixture(t)
 			var mu sync.Mutex
 			objects, types, refs := map[string][]byte{}, map[string]string{}, map[string]string{}
-			blobs, manifests, provenances, tags := 0, 0, 0, 0
+			var referrers []map[string]any
+			listFailure := false
+			blobs, manifests, provenances, tags, mutations := 0, 0, 0, 0, 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				mu.Lock()
 				defer mu.Unlock()
+				if r.Method != "GET" && r.Method != "HEAD" {
+					mutations++
+				}
 				path := strings.TrimPrefix(r.URL.Path, "/v2/agents/")
 				if strings.HasPrefix(path, "blobs/uploads/") {
 					switch r.Method {
@@ -76,8 +83,12 @@ func TestWorkspaceLiftPublishesRealGraphWithRequiredProvenance(t *testing.T) {
 					return
 				}
 				if strings.HasPrefix(path, "referrers/") {
+					if listFailure {
+						w.WriteHeader(403)
+						return
+					}
 					w.Header().Set("Content-Type", "application/vnd.oci.image.index.v1+json")
-					io.WriteString(w, `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}`)
+					_ = json.NewEncoder(w).Encode(map[string]any{"schemaVersion": 2, "mediaType": "application/vnd.oci.image.index.v1+json", "manifests": referrers})
 					return
 				}
 				kind, ref, ok := strings.Cut(path, "/")
@@ -93,8 +104,9 @@ func TestWorkspaceLiftPublishesRealGraphWithRequiredProvenance(t *testing.T) {
 						return
 					}
 					var doc struct {
-						MediaType string `json:"mediaType"`
-						Subject   *struct {
+						MediaType    string `json:"mediaType"`
+						ArtifactType string `json:"artifactType"`
+						Subject      *struct {
 							Digest string `json:"digest"`
 						} `json:"subject"`
 					}
@@ -105,13 +117,18 @@ func TestWorkspaceLiftPublishesRealGraphWithRequiredProvenance(t *testing.T) {
 					}
 					if doc.Subject != nil {
 						if deny {
+							w.Header().Set("Content-Type", "application/json")
 							w.WriteHeader(403)
+							_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"code": "DENIED", "message": "registry said \u001b[31mred\u001b[0m\nspoofed stage"}}})
 							return
 						}
 						provenances++
 						w.Header().Set("OCI-Subject", doc.Subject.Digest)
 					}
 					id := digest.FromBytes(raw).String()
+					if doc.Subject != nil {
+						referrers = append(referrers, map[string]any{"mediaType": doc.MediaType, "artifactType": doc.ArtifactType, "digest": id, "size": len(raw)})
+					}
 					objects[id], types[id], refs[ref] = raw, doc.MediaType, id
 					manifests++
 					if strings.HasPrefix(ref, "s-") {
@@ -146,7 +163,7 @@ func TestWorkspaceLiftPublishesRealGraphWithRequiredProvenance(t *testing.T) {
 			}))
 			defer server.Close()
 			opt.Repository = strings.TrimPrefix(server.URL, "http://") + "/agents"
-			opt.Provenance = SuitePushProvenance{Enabled: true, Require: true}
+			opt.Provenance = SuitePushProvenance{Enabled: true, Require: required}
 			a.Out, a.Err = io.Discard, io.Discard
 			p, err := PrepareWorkspaceLift(t.Context(), opt)
 			if err != nil {
@@ -163,23 +180,48 @@ func TestWorkspaceLiftPublishesRealGraphWithRequiredProvenance(t *testing.T) {
 			if copied == 0 || manifestCount == 0 {
 				t.Fatal("did not actually upload graph", copied, manifestCount)
 			}
-			if deny {
+			if deny && required {
 				if err == nil || r.Push.Status != "unknown" || tagCount != 0 || len(records) != 0 || len(persistentOrkaCalls(t, os.Getenv("KMX_RECONCILE_DIR"))) != 0 {
 					t.Fatalf("required provenance failure advanced: %+v %v", r, err)
+				}
+				return
+			}
+			if mode == "optional warning" {
+				if err != nil || r.Push.Status != "complete" || r.Lift.Status != "complete" || provenanceCount != 0 || tagCount != 1 || !strings.Contains(r.Push.Detail, "provenance was not attached") || strings.ContainsAny(r.Push.Detail, "\x1b\n\r") {
+					t.Fatalf("unsafe/missing optional registry warning: %q %v", r.Push.Detail, err)
 				}
 				return
 			}
 			if err != nil || r.Push.Status != "complete" || r.Lift.Status != "complete" || provenanceCount != 1 || tagCount != 1 || len(records) != 1 || !strings.Contains(r.Push.Detail, "no source commit") {
 				t.Fatalf("actual publication/provenance not completed: %+v err=%v provenance=%d tags=%d records=%v", r, err, provenanceCount, tagCount, records)
 			}
+			beforeRecord, e := os.ReadFile(records[0])
+			if e != nil {
+				t.Fatal(e)
+			}
+			beforeCreates := len(state.creates)
+			mu.Lock()
+			beforeMutations := mutations
+			listFailure = mode == "listing failure"
+			mu.Unlock()
 			p, err = PrepareWorkspaceLift(t.Context(), opt)
 			if err != nil {
 				t.Fatal(err)
 			}
 			r, err = a.LiftWorkspace(t.Context(), p)
 			mu.Lock()
-			same := copied == blobs && manifestCount == manifests
+			same := copied == blobs && manifestCount == manifests && beforeMutations == mutations
 			mu.Unlock()
+			afterRecord, e := os.ReadFile(records[0])
+			if e != nil || !bytes.Equal(beforeRecord, afterRecord) || len(state.creates) != beforeCreates || !same {
+				t.Fatal("repeat mutated stored/remote state", e)
+			}
+			if listFailure {
+				if err == nil || !strings.Contains(err.Error(), "provenance") || r.Push.Status != "not-attempted" || r.Lift.Status != "not-attempted" {
+					t.Fatal("unverifiable required provenance skipped", r, err)
+				}
+				return
+			}
 			if err != nil || r.Push.Status != "skipped" || r.Lift.Status != "skipped" || !same {
 				t.Fatal("verified repeat rewrote uploaded graph", r, err)
 			}

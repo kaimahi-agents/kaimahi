@@ -175,6 +175,48 @@ func TestWorkspaceLiftEditedVersionFailsEvalBeforeInspectingOccupiedDestination(
 	}
 }
 
+func TestWorkspaceLiftRequiredProvenanceCannotTrustPublicationCompletion(t *testing.T) {
+	a, opt, state, _, _, writes := workspaceLiftFixture(t)
+	a.Out, a.Err = io.Discard, io.Discard
+	runWorkspaceLift(t, a, opt)
+	before := len(state.creates)
+	opt.Provenance = SuitePushProvenance{Enabled: true, Require: true}
+	p, err := PrepareWorkspaceLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	r, err := a.LiftWorkspace(t.Context(), p)
+	if err == nil || !strings.Contains(err.Error(), "provenance") || r.Push.Status != "not-attempted" || r.Lift.Status != "not-attempted" || len(state.creates) != before || *writes != 0 || len(persistentOrkaCalls(t, os.Getenv("KMX_RECONCILE_DIR"))) != 2 {
+		t.Fatalf("required provenance trusted old publication without read-only proof: %+v %v", r, err)
+	}
+}
+
+func TestWorkspaceLiftSourceEditDuringDestinationInspectionStopsPublication(t *testing.T) {
+	a, opt, state, _, _, writes := workspaceLiftFixture(t)
+	a.Out, a.Err = io.Discard, io.Discard
+	old := a.captureCommand
+	edited := false
+	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+		err := old(ctx, cmd)
+		if !edited && len(state.creates) == 4 && slices.Contains(cmd.Args, "get") && slices.Contains(cmd.Args, "providers.core.orka.ai") && slices.Contains(cmd.Args, "greeter") {
+			writeFile(t, filepath.Join(opt.Workspace, "agents", "greeter", "instructions.md"), "Changed after eval, before publication.\n")
+			edited = true
+		}
+		return err
+	}
+	p, err := PrepareWorkspaceLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	r, err := a.LiftWorkspace(t.Context(), p)
+	records, _ := filepath.Glob(filepath.Join(p.store.partition, "lift-publication-*.json"))
+	if !edited || err == nil || r.Eval.Status != "complete" || r.Push.Status != "not-attempted" || len(records) != 0 || *writes != 0 || len(persistentOrkaCalls(t, os.Getenv("KMX_RECONCILE_DIR"))) != 0 {
+		t.Fatalf("inspection-time edit advanced publication: %+v %v records=%v", r, err, records)
+	}
+}
+
 func TestWorkspaceLiftOccupiedUnrecordedDestinationRefuses(t *testing.T) {
 	a, opt, state, _, _, writes := workspaceLiftFixture(t)
 	runWorkspaceLift(t, a, opt)

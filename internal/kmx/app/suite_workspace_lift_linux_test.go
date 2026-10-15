@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"path/filepath"
@@ -39,6 +41,41 @@ func TestWorkspaceLiftSourceEditDuringTerminalConsent(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("consent did not finish")
+	}
+}
+
+func TestWorkspaceLiftJSONConsentShowsConcretePlanBeforePrompt(t *testing.T) {
+	a, opt, state, _, _, writes := workspaceLiftFixture(t)
+	opt.JSON = true
+	p, err := PrepareWorkspaceLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	master, slave := chatPTY(t, 200)
+	var stdout bytes.Buffer
+	a.Out, a.Err, a.Stdin, a.Cfg.Confirm = &stdout, slave, slave, ""
+	done := make(chan error, 1)
+	go func() { _, err := a.LiftWorkspace(t.Context(), p); done <- err }()
+	var captured strings.Builder
+	chatPTYReadUntil(t, master, &captured, func(s string) bool { return strings.Contains(s, "type kind-test: ") })
+	_, _ = io.WriteString(master, "decline\n")
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("incorrect challenge accepted")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("JSON consent did not finish")
+	}
+	before := captured.String()
+	if !strings.HasPrefix(before, "Plan · ") || strings.Count(before, "namespace=orka-system") != 2 || strings.Count(before, "server=127.0.0.1") != 2 || strings.Index(before, "Plan · ") > strings.Index(before, "Confirm ") {
+		t.Fatalf("concrete plan missing before JSON consent: %q", before)
+	}
+	var result WorkspaceLiftResult
+	decoder := json.NewDecoder(&stdout)
+	if decoder.Decode(&result) != nil || decoder.Decode(&result) != io.EOF || len(state.creates) != 0 || *writes != 0 {
+		t.Fatal("JSON result/effect contract changed", stdout.String())
 	}
 }
 
