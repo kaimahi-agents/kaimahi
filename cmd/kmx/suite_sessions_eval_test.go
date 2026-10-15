@@ -152,6 +152,7 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 		{[]string{"--plan", "--to-context", "kind-other"}, "--harness-image refuses --to-context"},
 		{[]string{"--plan", "--inference", "provider:inference"}, "--harness-image refuses --inference"},
 		{[]string{"--plan", "--promote"}, "--harness-image refuses --promote"},
+		{[]string{"--plan", "--harness-image", "registry.example.invalid/harnessnode:v1"}, "--harness-image: harness image must be a digest-pinned reference"},
 		{[]string{"--plan", "--bindings", mismatch}, `serves model "other-model" but the suite pins "fixture-model"`},
 	} {
 		if err := execute(append(append([]string{}, lift...), tc.extra...), deps); err == nil || !strings.Contains(err.Error(), tc.want) {

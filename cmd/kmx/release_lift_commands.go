@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/spf13/cobra"
 )
@@ -68,6 +69,9 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 				}
 				if !cmd.Flags().Changed("bindings") {
 					return fmt.Errorf("--harness-image requires --bindings FILE (AgentSessionsBinding)")
+				}
+				if _, err := agentsessions.HarnessImageDigest(opt.HarnessImage); err != nil {
+					return fmt.Errorf("--harness-image: %w", err)
 				}
 				opt.Reference, opt.ToNamespace = args[0], ""
 				return app.ValidateReleaseLiftOptions(opt)
