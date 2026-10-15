@@ -105,9 +105,10 @@ config merging. Operational config is excluded from prepared S, source fingerpri
 and published content.
 
 This is selector configuration, not environment installation or deployment
-identity. `publishRepository` and `evaluationTarget` record intent for later
-composition; this CLI still requires a push reference, eval `--out`, and Lift
-digest/private evidence. It does not automatically eval or push during Lift.
+identity. `publishRepository` supplies bare push's repository; `evaluationTarget`
+records intent for later composition. Root eval keeps managed passing proof with
+optional `--out`; explicit push references are preserved. Lift still requires a
+digest/private evidence and does not automatically evaluate or push.
 **Kagent stays out of composed Lift until its own candidate-scoped evaluation
 and ownership-safe cleanup are qualified**; standalone explicit kagent operations
 retain their existing boundaries. Named selectors never grant promotion or bypass
@@ -315,7 +316,9 @@ kmx push --evaluation ../private-evidence/passing.json ghcr.io/me/my-agents:v1
 Root `eval` discovers the nearest workspace, or selects an exact root without
 fallback using `--workspace DIR`. It accepts no positional package reference.
 A destination context (explicit `--to-context`, named `--to`, or saved `evalTarget`)
-and `--out` are required. Orka requires `--inference provider:NAME`, directly or
+is required. Root eval stores completed passing metadata privately under KMX
+state; `--out` optionally also writes a new standalone receipt. Orka requires
+`--inference provider:NAME`, directly or
 through the named destination;
 kagent instead requires `--bindings FILE`, never both. For Orka, namespace
 is `orka-system` by default (`--to-namespace`); `--result-port` defaults to
@@ -575,10 +578,62 @@ execution. Standalone package evaluation remains unavailable.
 ## Publish
 
 ```sh
-kmx push ghcr.io/me/my-agents:v1
+kmx eval                             # saved evalTarget, no --out needed
+kmx push ghcr.io/me/my-agents:v1       # supplied tag stays v1
+kmx push                             # saved publishRepository:s-<full-S-hex>
 ```
 
-Root `push [--workspace DIR] REF` finds the nearest `workspace.yaml` by walking
+Root push requires completed full-passing evidence for the exact prepared OCI
+manifest S by default. It selects the latest completed pass for this workspace/S,
+validates its packaged runtime/cases, and identifies the selected record on stderr
+before transfer. It does not evaluate or contact the cluster to repair missing proof.
+`--evaluation FILE` selects an explicit standalone receipt with no lookup fallback.
+`--unevaluated` explicitly publishes without evidence; it cannot be combined with
+`--evaluation`. Extracted-directory `suite push` remains ordinary artifact transfer.
+
+With an explicit `REPO:TAG`, the tag is unchanged, including force/replacement rules.
+Only bare push derives `s-<full-S-hex>` from the same frozen graph it transfers;
+it requires `publishRepository` in workspace `kmx.yaml`. A local `--to-layout`
+target still needs an explicit reference. TLS, exact-host HTTP opt-in, credential
+and provenance defaults remain unchanged.
+
+### Managed passing proof
+
+Managed state is outside workspace/preparation cache, under
+`KMX_HOME/passing/<workspace-root-hash>/<S-hex>/` (or the platform KMX state
+location without `KMX_HOME`). Directories are 0700, records immutable 0600, bounded,
+closed and symlink-refusing. Each completion record embeds the existing canonical
+private receipt; no prompts, answers, credentials or binding bytes are added.
+Existing explicit receipt formats are unchanged and are not automatically imported.
+Use `--out` when a standalone file is needed for digest Lift or offline receipt diff;
+managed completion records are not standalone `--evidence`/`--evaluation` files.
+
+A record is committed only after successful full evaluation, Orka candidate cleanup,
+final input checks and evaluator/output closes. An earlier completed pass survives a
+later failed or uncertain eval; changing packaged content changes S, so old proof
+cannot qualify the edit. Cleaned candidates remain historical execution proof, not
+current destination health, destination evaluation or authentication.
+
+Only the exact-S partition is scanned. Per-S immutable sequence names select the
+latest completed record; staging/uncommitted files are ignored and corrupt committed
+state refuses rather than silently falling back. New-registration capacity (256
+records or a 16 MiB partition budget, reserving a full receipt slot) is checked
+before eval effects. A full partition still supports push from existing proof;
+select a different private `KMX_HOME` for new evaluation registrations. No automatic
+evidence deletion, cleanup sweep, journal or durable cleanup blockade is added.
+
+One OS-held per-workspace lock excludes concurrent root eval/push; process exit
+releases it without deleting its stable lock file. Never delete that file to bypass
+a running operation. This does not make external registry tag races atomic.
+
+Eligibility starts when the complete completion record is exclusively published.
+If a later sync, close, cancellation or reporting operation fails, the command
+returns nonzero and names the completed record, disclosing persistence uncertainty
+where applicable. A visible valid record remains eligible. Complete explicit output
+may also survive a late error and is disclosed; precommit errors never register a
+new automatic pass.
+
+Root `push [--workspace DIR] [REF]` finds the nearest `workspace.yaml` by walking
 up from the current directory, including through Git repository boundaries.
 `--workspace <directory>` overrides discovery and selects that exact directory;
 it never falls back to the current directory or a parent workspace.
@@ -649,7 +704,7 @@ Unsigned provenance is informational, not evaluation or promotion evidence.
 For offline transfer, the local target's parent directory must exist:
 
 ```sh
-kmx push --to-layout ../suite-layout my-agents:v1
+kmx push --unevaluated --to-layout ../suite-layout my-agents:v1
 kmx suite pull my-agents:v1 --from-layout ../suite-layout --output ../extracted
 kmx suite validate ../extracted
 ```
@@ -662,8 +717,8 @@ references from successful publications remain intact. An interrupted writer can
 leave a sibling lock directory: remove it only after verifying the publisher has
 stopped. Registry tag preflight remains separately non-atomic.
 Existing extracted-directory transfer remains `suite push DIRECTORY REFERENCE`
-and does not discover a workspace. Root push takes only one positional destination
-reference; explicit selection is also available from anywhere:
+and does not discover a workspace. Root push takes at most one positional destination
+reference; explicit workspace selection is also available from anywhere:
 
 ```sh
 kmx push --workspace ./my-agents ghcr.io/me/my-agents:v1

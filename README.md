@@ -35,15 +35,22 @@ reuse, bounded absent-pair registry promotion and kagent fresh-target creation;
 it does not prove every promotion, creation or partial-outcome path.
 
 > [!NOTE]
-> The table below is available in v0.6.0. See [command migration](CHANGELOG.md#upgrading)
+> The table below describes unreleased main; v0.6.0 keeps its released defaults.
+> See [command migration](CHANGELOG.md#upgrading)
 > and [releases](docs/releases.md) when upgrading from an older version.
 
-| Stage | v0.6.0 |
+| Stage | Current checkout |
 |---|---|
 | **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
 | **Prove** | Orka uses `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, with no cluster selectors. Each runs ordered cases once, stops later cases after the first non-pass, and writes private evidence only when all cases pass. |
-| **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx push REF` remains explicitly unevaluated. Neither form deploys. |
+| **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
 | **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; suite status and retirement remain unavailable. |
+
+Root eval also keeps completed passing metadata in private KMX state, so `--out`
+is optional. With named `evalTarget`, `kmx eval` needs no selectors; then
+`kmx push REPO:TAG` uses the latest completed exact-suite proof and preserves TAG.
+Bare `kmx push` requires saved `publishRepository` and derives `s-<full-S-hex>`.
+These conveniences do not compose Lift or relax its digest/evidence requirements.
 
 Create and push discover the nearest ancestor `workspace.yaml`; `--workspace DIR`
 selects an exact root without fallback. Read the [workspace lifecycle](docs/suite-workspace.md)

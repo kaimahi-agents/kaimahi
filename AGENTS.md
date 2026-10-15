@@ -150,8 +150,19 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions):
   minPasses requires runs and both are positive integers. KMX additionally caps
   runs at 100 under the spec's consumer resource-limit allowance.
-  Root `push --evaluation FILE` uses that private file consumer;
-  ordinary push stays unevaluated. Unsigned receipts do not prove authentication
+  Root push requires latest completed private exact-S evidence by default;
+  `--evaluation FILE` explicitly overrides lookup without fallback, and
+  `--unevaluated` explicitly retains ordinary publication. Explicit REPO:TAG
+  remains unchanged; bare push requires saved publishRepository and derives only
+  its tag as `s-<full-S-hex>`. Root eval makes --out optional and registers managed
+  proof only after evaluation, Orka cleanup, final input checks and evaluator/output
+  closes. Managed 0700/0600 per-workspace/per-S immutable completion records embed
+  existing canonical receipts outside workspace/cache. Per-S sequences select latest;
+  corruption refuses. Capacity preflight blocks new eval registration, not existing
+  proof lookup; staging is ineligible. Visible complete records remain eligible after
+  post-link persistence errors with explicit uncertainty. OS-held workspace flock
+  excludes concurrent root eval/push without a stale-lock blockade. Private convenience
+  evaluators and extracted-directory suite push retain their old contracts. Unsigned receipts do not prove authentication
   or drift absence.
   Any presence of a native suite ownership annotation reserves desired/live
   resources against legacy adoption, copying, bundle authorization and retirement.
@@ -164,7 +175,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   lift and receipt diff; there is no registry or caller-auth integration.
 - Root `eval` evaluates the full packaged Orka/kagent workspace inventory with
   a destination context (explicit `--to-context`, named `--to` or saved evalTarget)
-  and new private `--out`; Orka uses --inference
+  and optional new private `--out`; Orka uses --inference
   provider:NAME, kagent uses author-owned --bindings FILE, never both. Namespace
   must match kagent bindings and kagent refuses --result-port. It uses local
   flags and a nonpersistent operational hook. Unsupported/budget/output checks

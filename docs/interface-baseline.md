@@ -14,7 +14,7 @@ kmx
 ├── eval
 │   ├── diff <before.json> <after.json>
 │   └── from-sessions <session-uid>...
-├── push <reference>
+├── push [reference]
 ├── lift <ref>@<digest>
 ├── run --agent <name>
 ├── chat <name> [message...]
@@ -75,7 +75,7 @@ Workspace --create/eval--> AgentSuite artifact --push--> OCI location
 |---|---|---|
 | `create` | Workspace | Author one offline member; no cluster or model call |
 | `eval` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE`; stop later cases after the first non-pass |
-| `push` | Prepared AgentSuite | Transfer exact OCI graph; optional full-passing receipt check; no deployment |
+| `push` | Prepared AgentSuite | Transfer exact OCI graph with latest completed exact-S proof, explicit --evaluation override or --unevaluated opt-out; explicit tags unchanged, bare push uses saved `repository:s-<S>`; no deployment |
 | `lift` | Exact supported packaged native AgentSuite | Deploy by immutable digest with explicit private evidence and target; Orka uses `--inference`, kagent uses `--bindings`; GET-only with `--plan` |
 | `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |
 | `status`, `orka status` | Orka installation | Table-only runtime report, not suite deployment status |

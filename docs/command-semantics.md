@@ -116,7 +116,7 @@ Live create/previews/wizard and live-only flags are removed outright, unknown
 before config. No runtime/model bootstrap belongs in workspace create.
 Help/completion is inert; authoring needs no cluster, builder or model call.
 
-`push <reference>` discovers the nearest ancestor `workspace.yaml`;
+`push [reference]` discovers the nearest ancestor `workspace.yaml`;
 `--workspace <directory>` instead selects that exact directory, without fallback.
 Missing, invalid or unreadable workspace selection refuses. The command prepares
 that member and its shareable authored cases as an ordinary AgentSuite, then
@@ -158,7 +158,10 @@ configuration hash and both scores without reasoning or raw judge URLs; recovery
 commands omit the endpoint. Text-only receipt encoding is unchanged. Development
 AgentSessions continues to refuse judges.
 `push --evaluation FILE` checks runtime-specific private receipt coherence and
-exact manifest S before publication; ordinary push is unevaluated. Receipts are
+exact manifest S before publication, overriding managed lookup without fallback.
+Root push otherwise requires the latest completed exact-S pass from private managed
+state; --unevaluated explicitly opts out. Root eval's --out is optional. Explicit
+push tags stay unchanged; only bare push uses saved `publishRepository:s-<full-S-hex>`. Receipts are
 unsigned observations, not policy gates. Dedicated shards qualify bounded Orka
 and kagent workspace scenarios; the native Orka inventory includes two text cases
 and one open-ended rubric case sharing the pinned AIKit workload, with no timeout

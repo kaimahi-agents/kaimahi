@@ -69,8 +69,14 @@ also covers bounded UID/RV cleanup and verified owner-UID child closure before
 full-pass export. Startup reports never delete or block a fresh eval. Explicit
 `eval cleanup [run-id]` lists or confirms a frozen run/UID snapshot, refusing
 unattributable orphans; it creates no execution or passing-evidence authority.
-No journal, lease or later-publication blockade is implemented. `push --evaluation FILE` uses the strict file consumer;
-ordinary push remains unevaluated; bundle evaluation is removed. Hermetic tests cover
+No cleanup journal, lease or later-publication blockade is implemented. Root eval
+registers completed proof in private immutable per-workspace/per-S state, with optional
+standalone --out. Root push selects the latest exact-S pass; --evaluation FILE
+explicitly overrides lookup without fallback and --unevaluated explicitly retains
+ordinary publication. Per-S registration capacity is checked before effects, without
+blocking push of existing proof. OS-held workspace exclusion releases on process exit;
+visible complete records survive post-link persistence/reporting errors with disclosure.
+Bundle evaluation is removed. Hermetic tests cover
 these paths. The existing Orka runtime shard now invokes the bounded
 [suite qualifier](../scripts/ci/suite-native.py) after its raw upstream Tool/Task and model-answer proof.
 It uses the [fixed CPU AIKit workload](../scripts/ci/native-suite-model.yaml),

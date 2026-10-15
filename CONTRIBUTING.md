@@ -49,7 +49,12 @@ proof. The fixed modern Chat Completions wire uses max_completion_tokens
 request style and old judge receipts require fresh evaluation.
 AgentSessions judging remains refused. Exact model and
 file-valued instructions are required; create/push share workspace discovery.
-No runtime/model bootstrap belongs in workspace create.
+No runtime/model bootstrap belongs in workspace create. Root eval registers
+completed exact-suite passing metadata in private managed state; --out is optional.
+Root push requires that proof by default, or explicit --evaluation FILE without
+fallback; --unevaluated retains ordinary publication. Explicit REPO:TAG is preserved,
+while bare push requires saved publishRepository and derives only its tag from S.
+Private Quickstart/console and extracted-directory transfer keep their contracts.
 
 User `agent.yaml` readers/writers/receipts, `bundle` commands, `create --live`
 including previews/wizard, run bundle mode and `--bundles` flags are removed
