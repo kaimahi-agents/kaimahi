@@ -46,7 +46,7 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 			case "duplicate metadata":
 				b = strings.TrimSuffix(b, "}") + `,"member":"greeter"}`
 			case "renderer":
-				b = strings.ReplaceAll(b, "kmx.native-orka/v1", "kmx.native-orka/v2")
+				b = strings.ReplaceAll(b, "kmx.native-orka/v2", "kmx.native-orka/v3")
 			case "case digest":
 				var rec map[string]any
 				if err := json.Unmarshal([]byte(b), &rec); err != nil {
@@ -88,7 +88,7 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 			case "kagent wrong contract":
 				b = strings.ReplaceAll(b, "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai/v1", "kmx.unknown/v1")
 			case "kagent wrong renderer":
-				b = strings.ReplaceAll(b, "kmx.native-kagent/v1", "kmx.native-orka/v1")
+				b = strings.ReplaceAll(b, "kmx.native-kagent/v2", "kmx.native-orka/v2")
 			case "case escape":
 				b = strings.ReplaceAll(b, "metadata/kmx/eval/example.yaml", "../eval/example.yaml")
 			case "case omission":
@@ -123,7 +123,8 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 				if change == "secret instructions" {
 					data := "ghp_" + strings.Repeat("x", 36)
 					writeFile(t, filepath.Join(out, agent.Instructions.Path), data)
-					agent.Instructions.Digest = godigest.FromBytes([]byte(data)).String()
+					agent.Instructions.Descriptor.Digest = godigest.FromBytes([]byte(data)).String()
+					agent.Instructions.Descriptor.Size = int64(len(data))
 				}
 				mb, err := spec.Marshal(agent)
 				if err != nil {
@@ -134,10 +135,11 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 				if err := spec.Unmarshal(readFile(t, filepath.Join(out, "agentsuite.json")), &suite); err != nil {
 					t.Fatal(err)
 				}
-				suite.Agents[0].Digest, err = spec.Digest(mb)
+				suite.Agents[0].Descriptor.Digest, err = spec.Digest(mb)
 				if err != nil {
 					t.Fatal(err)
 				}
+				suite.Agents[0].Descriptor.Size = int64(len(mb))
 				sb, err := spec.Marshal(suite)
 				if err != nil {
 					t.Fatal(err)

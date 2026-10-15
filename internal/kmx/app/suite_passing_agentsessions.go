@@ -67,7 +67,7 @@ type suiteSessionsObservation struct {
 
 func newSuiteSessionsSubject(suite *workspace.NativeSuite, host suiteSessionsHostObservation) (suiteSessionsSubject, error) {
 	var s suiteSessionsSubject
-	if suite == nil || suite.Runtime != (workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}) || suite.RendererVersion != "kmx.native-agentsessions/v1" || suite.ExecutionProfile != "kmx.agentsessions-chat-system-prompt-tool-free-openai/v1" || suite.RequiredImages == nil || len(suite.RequiredImages) != 0 {
+	if suite == nil || suite.Runtime != (workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}) || suite.RendererVersion != "kmx.native-agentsessions/v2" || suite.ExecutionProfile != "kmx.agentsessions-chat-system-prompt-tool-free-openai/v1" || suite.RequiredImages == nil || len(suite.RequiredImages) != 0 {
 		return s, errSuitePassingReceipt
 	}
 	config, err := agentsessions.ConfigDigest(string(suite.Instructions))
@@ -86,7 +86,7 @@ func validSuiteSessionsPassingProof(p *suiteSessionsPassingProof) bool {
 		return false
 	}
 	s, h := p.Subject, p.Subject.Host
-	if s.Profile != (workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}) || s.Renderer != "kmx.native-agentsessions/v1" || s.ExecutionProfile != "kmx.agentsessions-chat-system-prompt-tool-free-openai/v1" || h.Mode != "operator-observed-development" || h.RuntimeVersion != workspace.AgentSessionsVersion || h.Harness != "chat" || h.HarnessVersion != "1" || h.Retention != "operator-managed" || h.Model != s.Model {
+	if s.Profile != (workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}) || s.Renderer != "kmx.native-agentsessions/v2" || s.ExecutionProfile != "kmx.agentsessions-chat-system-prompt-tool-free-openai/v1" || h.Mode != "operator-observed-development" || h.RuntimeVersion != workspace.AgentSessionsVersion || h.Harness != "chat" || h.HarnessVersion != "1" || h.Retention != "operator-managed" || h.Model != s.Model {
 		return false
 	}
 	for _, d := range []string{s.SuiteDigest, s.GraphDigest, s.MemberDigest, s.InstructionsDigest, s.CompositionDigest, s.BuildProfileDigest, s.ConfigDigest, h.RuntimeBinaryDigest, h.RuntimeConfigDigest, h.InferenceRevision} {

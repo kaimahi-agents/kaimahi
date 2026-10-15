@@ -2,6 +2,7 @@ package agentsuite
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -13,9 +14,13 @@ func TestMarshalProducesCanonicalJSON(t *testing.T) {
 		Name:          "example",
 		Agents:        []ManifestRef{},
 		ToolProviderCatalog: ManifestRef{
-			ID:     "catalog",
-			Path:   "tool-providers/catalog.json",
-			Digest: strings.Repeat("a", 64),
+			ID:   "catalog",
+			Path: "tool-providers/catalog.json",
+			Descriptor: Descriptor{
+				MediaType: MediaTypeToolProviderCatalog,
+				Digest:    strings.Repeat("a", 64),
+				Size:      2,
+			},
 		},
 		Compositions:  []CompositionRef{},
 		BuildProfiles: []ManifestRef{},
@@ -58,6 +63,46 @@ func TestDigestUsesCanonicalJSON(t *testing.T) {
 	}
 	if left != right {
 		t.Fatalf("Digest() differs for equivalent documents: %s != %s", left, right)
+	}
+}
+
+func TestDescriptorUnmarshalJSONAcceptsValidShapes(t *testing.T) {
+	cases := map[string]string{
+		"minimal":          `{"mediaType":"text/plain","digest":"sha256:` + strings.Repeat("a", 64) + `","size":2}`,
+		"zero size":        `{"mediaType":"text/plain","digest":"sha256:` + strings.Repeat("a", 64) + `","size":0}`,
+		"with annotations": `{"mediaType":"text/plain","digest":"sha256:` + strings.Repeat("a", 64) + `","size":2,"annotations":{"k":"v"}}`,
+	}
+	for name, doc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var descriptor Descriptor
+			if err := json.Unmarshal([]byte(doc), &descriptor); err != nil {
+				t.Fatalf("UnmarshalJSON() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestDescriptorUnmarshalJSONRejectsClosedShapeViolations(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	cases := map[string]string{
+		"unknown field": `{"mediaType":"text/plain","digest":"sha256:` + digest + `","size":2,"extra":true}`,
+		// OCI's inline-content "data" field is unsupported here; reject it too.
+		"data field":        `{"mediaType":"text/plain","digest":"sha256:` + digest + `","size":2,"data":"aGVsbG8="}`,
+		"null mediaType":    `{"mediaType":null,"digest":"sha256:` + digest + `","size":2}`,
+		"null digest":       `{"mediaType":"text/plain","digest":null,"size":2}`,
+		"null size":         `{"mediaType":"text/plain","digest":"sha256:` + digest + `","size":null}`,
+		"null annotations":  `{"mediaType":"text/plain","digest":"sha256:` + digest + `","size":2,"annotations":null}`,
+		"missing size":      `{"mediaType":"text/plain","digest":"sha256:` + digest + `"}`,
+		"missing mediaType": `{"digest":"sha256:` + digest + `","size":2}`,
+		"missing digest":    `{"mediaType":"text/plain","size":2}`,
+	}
+	for name, doc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var descriptor Descriptor
+			if err := json.Unmarshal([]byte(doc), &descriptor); err == nil {
+				t.Fatalf("UnmarshalJSON(%s) = nil error, want rejection", doc)
+			}
+		})
 	}
 }
 

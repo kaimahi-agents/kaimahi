@@ -32,7 +32,7 @@ func TestResolveSandboxPlanSelectsMinimalComposition(t *testing.T) {
 	if got := plan.CompositionDigest; got != "sha256:c19a6173a3bad6723b5f4c36f49c8ee21afbd65317d9c9c4275ebd130b2223d5" {
 		t.Fatalf("composition digest = %s", got)
 	}
-	if got := plan.SuiteManifestHash; got != "sha256:5dfa146b321f064dcb8bfdda38dee450f907b5bd52f500f7947262e6b7bcb930" {
+	if got := plan.SuiteManifestHash; got != "sha256:59b19197bc5a053ec68968dfd9f990d50c24829c5761f251559f26cff6ba0711" {
 		t.Fatalf("suite manifest hash = %s", got)
 	}
 }
@@ -88,7 +88,7 @@ func TestResolveSandboxPlanRequiresPlatformAndSelectsExactImages(t *testing.T) {
 	base.Platform, harness.Platform = arm64, arm64
 	profile.RuntimeBase = append(profile.RuntimeBase, base)
 	profile.Harness = append(profile.Harness, harness)
-	suite.BuildProfiles[0].Digest = writeBuilderTestJSON(t, root, suite.BuildProfiles[0].Path, profile)
+	suite.BuildProfiles[0].Descriptor = writeBuilderTestDescriptor(t, root, suite.BuildProfiles[0].Path, spec.MediaTypeBuildProfile, profile)
 	var composition spec.Composition
 	if err := spec.Unmarshal(readBuilderTestFile(t, root, suite.Compositions[0].Path), &composition); err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestResolveSandboxPlanRequiresPlatformAndSelectsExactImages(t *testing.T) {
 	compositionPath := "compositions/writer-linux-arm64.json"
 	suite.Compositions = append(suite.Compositions, spec.CompositionRef{
 		Agent: "writer", Platform: arm64, Path: compositionPath,
-		Digest: writeBuilderTestJSON(t, root, compositionPath, composition),
+		Descriptor: writeBuilderTestDescriptor(t, root, compositionPath, spec.MediaTypeComposition, composition),
 	})
 	writeBuilderTestJSON(t, root, "agentsuite.json", suite)
 	if _, err := ResolveSandboxPlan(root, BuildSelection{}); err == nil || !strings.Contains(err.Error(), "--platform is required (available: linux/amd64, linux/arm64)") {
@@ -124,7 +124,7 @@ func TestResolveSandboxPlanRejectsUnknownAgent(t *testing.T) {
 func TestResolveSandboxPlanRefusesInvalidSuiteBeforeSelection(t *testing.T) {
 	for _, test := range []struct{ name, old, replacement, want string }{
 		{"unsupported version", `"schemaVersion": "1.0.0-draft"`, `"schemaVersion": "unsupported"`, "schemaVersion"},
-		{"critical extension", `"extensions": []`, `"extensions": [{"name":"future-feature","critical":true}]`, "critical extension"},
+		{"critical extension", `"name": "minimal",`, `"name": "minimal",` + "\n  " + `"extensions": [{"name":"future-feature","critical":true}],`, "critical extension"},
 		{"missing child", `"path": "agents/writer.json"`, `"path": "agents/missing.json"`, "missing"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -290,7 +290,11 @@ func TestLoadBuildMetadataRefusesChangedPinnedChildren(t *testing.T) {
 				t.Fatal(err)
 			}
 			data := readBuilderTestFile(t, root, child)
-			writeBuilderTestFile(t, root, child, []byte(strings.Replace(string(data), `"schemaVersion": "1.0.0-draft"`, `"schemaVersion": "changed"`, 1)))
+			mutated := strings.Replace(string(data), `"schemaVersion":"1.0.0-draft"`, `"schemaVersion":"changed"`, 1)
+			if mutated == string(data) {
+				t.Fatalf("fixture %s does not contain the expected schemaVersion marker", child)
+			}
+			writeBuilderTestFile(t, root, child, []byte(mutated))
 			handle, err := os.OpenRoot(root)
 			if err != nil {
 				t.Fatal(err)
@@ -300,6 +304,33 @@ func TestLoadBuildMetadataRefusesChangedPinnedChildren(t *testing.T) {
 				t.Fatalf("changed %s error = %v", child, err)
 			}
 		})
+	}
+}
+
+// A child file that regains JSON whitespace after ValidateDirectory ran must
+// be refused even though trailing whitespace does not change its JCS digest:
+// the reread bytes are no longer the descriptor's own canonical
+// representation, so a digest-only comparison would wrongly accept them.
+func TestLoadBuildMetadataRefusesNonCanonicalPinnedChildBytes(t *testing.T) {
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(specFixture("minimal"))); err != nil {
+		t.Fatal(err)
+	}
+	suiteBytes := readBuilderTestFile(t, root, "agentsuite.json")
+	if _, err := spec.ValidatePath(root); err != nil {
+		t.Fatal(err)
+	}
+	child := "agents/writer.json"
+	data := readBuilderTestFile(t, root, child)
+	padded := append(append([]byte(nil), data...), ' ')
+	writeBuilderTestFile(t, root, child, padded)
+	handle, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	if _, err := loadBuildMetadata(handle, suiteBytes); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("non-canonical %s error = %v", child, err)
 	}
 }
 
@@ -316,13 +347,13 @@ func TestLoadBuildMetadataVerifiesProviderAndProviderCompositionPins(t *testing.
 			}
 			providerPath := "tool-providers/provider.json"
 			provider := spec.ToolProvider{ID: "provider", Version: "1.0.0"}
-			providerDigest := writeBuilderTestJSON(t, root, providerPath, provider)
-			catalog := spec.ToolProviderCatalog{ToolProviders: []spec.ManifestRef{{ID: provider.ID, Version: provider.Version, Path: providerPath, Digest: providerDigest}}}
-			suite.ToolProviderCatalog.Digest = writeBuilderTestJSON(t, root, suite.ToolProviderCatalog.Path, catalog)
+			providerDescriptor := writeBuilderTestDescriptor(t, root, providerPath, spec.MediaTypeToolProvider, provider)
+			catalog := spec.ToolProviderCatalog{ToolProviders: []spec.ManifestRef{{ID: provider.ID, Version: provider.Version, Path: providerPath, Descriptor: providerDescriptor}}}
+			suite.ToolProviderCatalog.Descriptor = writeBuilderTestDescriptor(t, root, suite.ToolProviderCatalog.Path, spec.MediaTypeToolProviderCatalog, catalog)
 			compositionPath := "tool-provider-compositions/provider.json"
 			composition := spec.ToolProviderComposition{ID: "provider", Version: "1.0.0"}
 			suite.ToolProviderCompositions = []spec.ToolProviderCompositionRef{{ID: composition.ID, Version: composition.Version, Path: compositionPath,
-				Digest: writeBuilderTestJSON(t, root, compositionPath, composition)}}
+				Descriptor: writeBuilderTestDescriptor(t, root, compositionPath, spec.MediaTypeToolProviderComposition, composition)}}
 			writeBuilderTestJSON(t, root, "agentsuite.json", suite)
 			suiteBytes := readBuilderTestFile(t, root, "agentsuite.json")
 			handle, err := os.OpenRoot(root)
@@ -359,7 +390,22 @@ func TestLoadBuildMetadataRejectsStrictJSONAndOversizedChildren(t *testing.T) {
 			if err := os.CopyFS(root, os.DirFS(specFixture("minimal"))); err != nil {
 				t.Fatal(err)
 			}
-			suiteBytes := readBuilderTestFile(t, root, "agentsuite.json")
+			var suite spec.Suite
+			if err := spec.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
+				t.Fatal(err)
+			}
+			// Pin the descriptor to these exact bytes' own raw digest, so the
+			// cheap pre-parse size/digest gate passes and spec.Unmarshal's
+			// own strict-decode diagnostics (the actual target of this test)
+			// still run and surface first. The oversized case never reaches
+			// that gate: readBuildFile's size limit rejects it first.
+			sum := sha256.Sum256(test.data)
+			suite.Agents[0].Descriptor.Digest = "sha256:" + hex.EncodeToString(sum[:])
+			suite.Agents[0].Descriptor.Size = int64(len(test.data))
+			suiteBytes, err := spec.Marshal(suite)
+			if err != nil {
+				t.Fatal(err)
+			}
 			writeBuilderTestFile(t, root, "agents/writer.json", test.data)
 			handle, err := os.OpenRoot(root)
 			if err != nil {
@@ -378,7 +424,9 @@ func TestReadBuildInstructionsRechecksRawDigestAndSize(t *testing.T) {
 	data := []byte("Write clearly.\n")
 	writeBuilderTestFile(t, root, "instructions.md", data)
 	sum := sha256.Sum256(data)
-	ref := spec.FileRef{Path: "instructions.md", Digest: "sha256:" + hex.EncodeToString(sum[:])}
+	ref := spec.FileRef{Path: "instructions.md", Descriptor: spec.Descriptor{
+		MediaType: spec.MediaTypeInstructions, Digest: "sha256:" + hex.EncodeToString(sum[:]), Size: int64(len(data)),
+	}}
 	handle, err := os.OpenRoot(root)
 	if err != nil {
 		t.Fatal(err)
@@ -442,6 +490,20 @@ func writeBuilderTestJSON(t *testing.T, root, name string, value any) string {
 		t.Fatal(err)
 	}
 	return digest
+}
+
+func writeBuilderTestDescriptor(t *testing.T, root, name, mediaType string, value any) spec.Descriptor {
+	t.Helper()
+	data, err := spec.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBuilderTestFile(t, root, name, data)
+	digest, err := spec.Digest(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return spec.Descriptor{MediaType: mediaType, Digest: digest, Size: int64(len(data))}
 }
 
 func readBuilderTestFile(t *testing.T, root, name string) []byte {

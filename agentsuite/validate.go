@@ -111,7 +111,7 @@ func validateContentGraph(content *contentSet) (*validator, *Report, error) {
 		}
 		selections = append(selections, CompositionSelection{
 			Agent: ref.Agent, Platform: ref.Platform,
-			BuildProfile: composition.BuildProfile, Digest: ref.Digest,
+			BuildProfile: composition.BuildProfile, Digest: ref.Descriptor.Digest,
 		})
 	}
 	slices.SortFunc(selections, func(a, b CompositionSelection) int {
@@ -170,8 +170,7 @@ func (v *validator) loadBuildProfiles() error {
 			errs = append(errs, fmt.Errorf("build profile %s: %w", ref.ID, err))
 			continue
 		}
-		digest, err := canonicalDigest(data)
-		if err != nil || digest != ref.Digest {
+		if ref.Descriptor.MediaType != MediaTypeBuildProfile || !matchesCanonicalDescriptor(data, ref.Descriptor) {
 			errs = append(errs, fmt.Errorf("build profile %s digest mismatch", ref.ID))
 			continue
 		}
@@ -215,8 +214,7 @@ func (v *validator) loadAgents() error {
 			errs = append(errs, fmt.Errorf("agent %s: %w", ref.ID, err))
 			continue
 		}
-		digest, err := canonicalDigest(data)
-		if err != nil || digest != ref.Digest {
+		if ref.Descriptor.MediaType != MediaTypeAgent || !matchesCanonicalDescriptor(data, ref.Descriptor) {
 			errs = append(errs, fmt.Errorf("agent %s manifest digest mismatch", ref.ID))
 			continue
 		}
@@ -243,7 +241,8 @@ func (v *validator) loadAgents() error {
 			continue
 		}
 		instructions, ok := v.content.entries[agent.Instructions.Path]
-		if !ok || instructions.Type != "file" || instructions.Digest != agent.Instructions.Digest {
+		if !ok || instructions.Type != "file" || instructions.Digest != agent.Instructions.Descriptor.Digest ||
+			instructions.Size != agent.Instructions.Descriptor.Size {
 			errs = append(errs, fmt.Errorf("agent %s instructions do not match %s", ref.ID, agent.Instructions.Path))
 			continue
 		}
@@ -257,8 +256,8 @@ func (v *validator) loadToolProviders() error {
 	if err != nil {
 		return fmt.Errorf("tool provider catalog: %w", err)
 	}
-	digest, err := canonicalDigest(data)
-	if err != nil || digest != v.suite.ToolProviderCatalog.Digest {
+	if v.suite.ToolProviderCatalog.Descriptor.MediaType != MediaTypeToolProviderCatalog ||
+		!matchesCanonicalDescriptor(data, v.suite.ToolProviderCatalog.Descriptor) {
 		return errors.New("tool provider catalog digest mismatch")
 	}
 	var catalog ToolProviderCatalog
@@ -284,11 +283,11 @@ func (v *validator) loadToolProviders() error {
 			errs = append(errs, fmt.Errorf("tool provider %s: %w", key, err))
 			continue
 		}
-		actualDigest, err := canonicalDigest(raw)
-		if err != nil || actualDigest != ref.Digest {
+		if ref.Descriptor.MediaType != MediaTypeToolProvider || !matchesCanonicalDescriptor(raw, ref.Descriptor) {
 			errs = append(errs, fmt.Errorf("tool provider %s manifest digest mismatch", key))
 			continue
 		}
+		actualDigest := ref.Descriptor.Digest
 		var provider ToolProvider
 		if err := decodeStrict(raw, &provider); err != nil {
 			errs = append(errs, fmt.Errorf("tool provider %s: %w", key, err))
@@ -321,8 +320,7 @@ func (v *validator) loadToolProviderCompositions() error {
 			errs = append(errs, fmt.Errorf("tool provider composition %s: %w", key, err))
 			continue
 		}
-		digest, err := canonicalDigest(data)
-		if err != nil || digest != ref.Digest {
+		if ref.Descriptor.MediaType != MediaTypeToolProviderComposition || !matchesCanonicalDescriptor(data, ref.Descriptor) {
 			errs = append(errs, fmt.Errorf("tool provider composition %s digest mismatch", key))
 			continue
 		}
@@ -384,8 +382,7 @@ func (v *validator) loadCompositions() error {
 			errs = append(errs, fmt.Errorf("composition %s: %w", key, err))
 			continue
 		}
-		digest, err := canonicalDigest(data)
-		if err != nil || digest != ref.Digest {
+		if ref.Descriptor.MediaType != MediaTypeComposition || !matchesCanonicalDescriptor(data, ref.Descriptor) {
 			errs = append(errs, fmt.Errorf("composition %s digest mismatch", key))
 			continue
 		}
@@ -530,7 +527,8 @@ func validateAgent(agent Agent) error {
 	if !identifierPattern.MatchString(agent.ID) {
 		errs = append(errs, errors.New("id is invalid"))
 	}
-	if _, err := validateContentPath(agent.Instructions.Path); err != nil || !IsValidDigest(agent.Instructions.Digest) {
+	if _, err := validateContentPath(agent.Instructions.Path); err != nil || !IsValidDigest(agent.Instructions.Descriptor.Digest) ||
+		agent.Instructions.Descriptor.MediaType != MediaTypeInstructions {
 		errs = append(errs, errors.New("instructions reference is invalid"))
 	}
 	if agent.Model.Protocol == "" || agent.Model.Model == "" {
@@ -601,11 +599,11 @@ func validateToolProvider(provider ToolProvider, raw []byte, content *contentSet
 			errs = append(errs, fmt.Errorf("tool %q is invalid or duplicated", tool.Name))
 		}
 		tools[tool.Name] = true
-		if err := validateFileRef(tool.InputSchema, content); err != nil {
+		if err := validateFileRef(tool.InputSchema, MediaTypeJSONSchema, content); err != nil {
 			errs = append(errs, fmt.Errorf("tool %q input schema: %w", tool.Name, err))
 		}
 		if tool.OutputSchema != nil {
-			if err := validateFileRef(*tool.OutputSchema, content); err != nil {
+			if err := validateFileRef(*tool.OutputSchema, MediaTypeJSONSchema, content); err != nil {
 				errs = append(errs, fmt.Errorf("tool %q output schema: %w", tool.Name, err))
 			}
 		}
@@ -770,12 +768,13 @@ func reservedRemoteHeader(name string) bool {
 	}
 }
 
-func validateFileRef(ref FileRef, content *contentSet) error {
-	if _, err := validateContentPath(ref.Path); err != nil || !IsValidDigest(ref.Digest) {
+func validateFileRef(ref FileRef, expectedMediaType string, content *contentSet) error {
+	if _, err := validateContentPath(ref.Path); err != nil || !IsValidDigest(ref.Descriptor.Digest) ||
+		ref.Descriptor.MediaType != expectedMediaType || ref.Descriptor.Size < 0 {
 		return errors.New("reference is invalid")
 	}
 	entry, ok := content.entries[ref.Path]
-	if !ok || entry.Type != "file" || entry.Digest != ref.Digest {
+	if !ok || entry.Type != "file" || entry.Digest != ref.Descriptor.Digest || entry.Size != ref.Descriptor.Size {
 		return errors.New("referenced file is absent or has a different digest")
 	}
 	return nil

@@ -55,6 +55,73 @@ only; CLI binaries are implementation details behind an MCP adapter. Naming a
 provider does not imply that its implementation is a network server or that it
 has already been deployed. An inference provider is a separate concept.
 
+### 1.2 Content references and descriptors
+
+A **content reference** is a suite-local pointer to another file in the same
+content layout. It pairs the enclosing object's own selector fields (for
+example `id`, `version`, `agent`, or `platform`) with two fields describing
+the pointed-to file:
+
+- `path`, the file's location relative to the content root;
+- `descriptor`, a nested, closed, OCI-compatible content descriptor
+  identifying the exact referenced bytes.
+
+A **descriptor** is a closed object:
+
+| Field | Requirement |
+|---|---|
+| `mediaType` | REQUIRED. Nonempty string identifying the referenced content's format. |
+| `digest` | REQUIRED. The digest of the referenced bytes, computed as described below. |
+| `size` | REQUIRED. The byte length of the same bytes the digest covers. A present `size: 0` is a legitimate empty-content descriptor; an omitted `size` is invalid and MUST be rejected, since it would otherwise be indistinguishable from `size: 0` under typed decoding. |
+| `annotations` | OPTIONAL. A string-to-string map of descriptive metadata about the referenced content. |
+
+`digest` and `size` always describe the exact same bytes:
+
+- for a content reference whose referenced file is a normative AgentSuite JSON
+  document (agent, tool provider, tool provider catalog, composition, tool
+  provider composition, build profile, evaluation index, and evaluation case
+  manifests), `digest` and `size` describe the [RFC 8785 JCS canonical
+  representation](#61-canonical-json) of that document, and the referenced
+  file itself MUST be stored on disk as those exact canonical bytes: a
+  producer MUST write the canonical serialization, not merely compute
+  `digest`/`size` from it while storing a differently formatted (for example
+  pretty-printed, reordered, or otherwise re-whitespaced) but semantically
+  equivalent document. A consumer validating this reference MUST reject a
+  stored document whose bytes are not already identical to its own RFC 8785
+  JCS canonical re-serialization, even when that re-serialization would
+  produce the same `digest` and `size`;
+- for a content reference whose referenced file is not canonicalized JSON
+  (agent instructions, and a Tool's `inputSchema`/`outputSchema`), `digest`
+  and `size` describe the file's exact literal bytes, and the file is stored
+  and validated against those literal bytes directly; no canonical
+  re-serialization applies.
+
+A descriptor's `mediaType` is not a free-form label: specific references
+require an exact value, and a consumer MUST reject any other value even when
+`digest` and `size` are otherwise correct:
+
+- an agent's `instructions` descriptor `mediaType` MUST be exactly
+  `text/markdown; charset=utf-8`;
+- a Tool's `inputSchema` and `outputSchema` descriptor `mediaType` MUST be
+  exactly `application/schema+json`.
+
+`annotations`, when present, follow OCI's annotation rules: keys and values
+are both strings, empty string values are permitted, and unknown or
+forward-looking keys MUST be preserved rather than silently dropped or
+rewritten. Custom keys SHOULD use reverse-domain names; implementations MUST
+NOT invent new keys under the reserved `org.opencontainers.*` namespace.
+Annotations are descriptive metadata about the referenced content, not an
+authoritative replacement for `path`, logical identity, platform selection,
+`mediaType`, or any other normative field; a title is not a locator.
+
+Only true content-addressable file references use this nested `descriptor`
+shape. Purely computed or self-describing identities, such as a
+`variantDigest`, a composition's `manifestDigest`/`variantDigest`, a
+dependency's `variantDigest`, an inventory entry's `digest`, and an
+extension's optional `digest`, remain plain scalar digest strings: they do not
+name a separate referenced file with its own media type and size, so wrapping
+them in a descriptor would not add meaning.
+
 ## 2. Scope
 
 This draft specifies:
@@ -341,16 +408,16 @@ complete ToolProvider composition manifest.
 `agentsuite.json` is the graph root. It contains:
 
 - suite name;
-- one or more digest-bound agent references;
-- one digest-bound tool provider catalog (`toolProviderCatalog`);
+- one or more descriptor-bound agent references;
+- one descriptor-bound tool provider catalog (`toolProviderCatalog`);
 - one or more per-agent, per-platform compositions;
 - zero or more per-provider, per-platform ToolProvider compositions (`toolProviderCompositions`);
-- one or more digest-bound build profiles;
+- one or more descriptor-bound build profiles;
 - capabilities derived from tool provider declarations;
 - optional non-critical extensions.
 
 Every reference MUST resolve within the same content layer and MUST match the
-referenced document's canonical digest and identity.
+referenced document's canonical digest, size, and identity.
 
 `capabilities` MUST exactly equal the sorted, duplicate-free capabilities
 derived from tool provider declarations:
@@ -365,12 +432,12 @@ retained or ignored.
 An agent manifest defines:
 
 - a stable identifier and optional description;
-- digest-bound instruction bytes;
+- a descriptor-bound instructions reference;
 - model protocol and model identifier;
 - environment names for endpoints and secret references, never values;
 - exact tool provider requirements (`toolProviders`);
 - bounded references to other suite agents;
-- optional digest-bound evaluation index (`evals`);
+- an optional descriptor-bound evaluation index reference (`evals`);
 - optional extensions.
 
 Every tool provider requirement MUST include exact `id`, semantic `version`, and
@@ -455,15 +522,20 @@ It MUST contain only `index.json`, its referenced case files, and their parent
 directories. Index and case files MUST be regular files. The top-level `evals/`
 directory MAY be empty.
 
-The agent manifest's optional `evals` is an array of content-root `path` and
-JCS `digest` objects, containing at most one reference in this draft:
+The agent manifest's optional `evals` is an array of content references, each
+pairing a content-root `path` with a [JCS-canonical descriptor](#12-content-references-and-descriptors),
+containing at most one reference in this draft:
 
 ```json
 {
   "evals": [
     {
       "path": "evals/writer/index.json",
-      "digest": "sha256:58cdec908ecd57c3f098d90a8b933546ee5a7ac6bd454135e28f64be8c2d996b"
+      "descriptor": {
+        "mediaType": "application/vnd.agentsuite.eval.index.v1+json",
+        "digest": "sha256:58cdec908ecd57c3f098d90a8b933546ee5a7ac6bd454135e28f64be8c2d996b",
+        "size": 592
+      }
     }
   ]
 }
@@ -483,7 +555,7 @@ The closed index document contains:
 | `schemaVersion` | REQUIRED. `1.0.0-draft`. |
 | `mediaType` | REQUIRED. `application/vnd.agentsuite.eval.index.v1+json`. |
 | `agent` | REQUIRED. Exact owning agent identifier, not an agent digest. |
-| `cases` | REQUIRED. Ordered, nonempty array of `path` and JCS `digest` objects. |
+| `cases` | REQUIRED. Ordered, nonempty array of content references, each pairing `path` with a JCS-canonical descriptor. |
 | `limits` | REQUIRED. Closed object containing positive integers `maxCases` and `maxCaseBytes`. |
 
 Case order in `cases` is evaluation order and contributes to identity; consumers
@@ -662,21 +734,26 @@ Example:
       "id": "datetime",
       "version": "1.0.0",
       "path": "tool-providers/datetime/1.0.0/tool-provider.json",
-      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      "descriptor": {
+        "mediaType": "application/vnd.agentsuite.tool.provider.v1+json",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 1234
+      }
     }
   ]
 }
 ```
 
-Each `digest` is the [RFC 8785][rfc8785] canonical digest of the referenced
-tool provider manifest, not the digest of its original whitespace or object-member
-ordering.
+Each entry's `descriptor.digest` is the [RFC 8785][rfc8785] canonical digest of
+the referenced tool provider manifest, and `descriptor.size` is the byte length
+of that same canonical representation, not the digest or size of its original
+whitespace or object-member ordering.
 
 ### 9.2 Callable tools
 
 A ToolProvider manifest separates the provider process or endpoint from the
 model-callable tools it offers. Each entry in `tools` defines `name`, optional
-`description`, digest-bound `inputSchema`, optional `outputSchema`, optional
+`description`, a descriptor-bound `inputSchema`, optional `outputSchema`, optional
 `effects`, optional `effect` and `approval`, and optional `delegatedAuthorization`.
 Tool names MUST be unique within a provider; different providers MAY
 expose the same tool name. A tool is identified in the context of its exact
@@ -926,11 +1003,19 @@ platform implementation:
       "description": "Return the current UTC time in RFC 3339 format.",
       "inputSchema": {
         "path": "schemas/datetime/current-time-input.json",
-        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        "descriptor": {
+          "mediaType": "application/schema+json",
+          "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "size": 128
+        }
       },
       "outputSchema": {
         "path": "schemas/datetime/current-time-output.json",
-        "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        "descriptor": {
+          "mediaType": "application/schema+json",
+          "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "size": 96
+        }
       },
       "effects": ["reads-system-clock"]
     }

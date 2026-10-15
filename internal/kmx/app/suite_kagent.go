@@ -45,7 +45,7 @@ type suiteKagentPrepared struct {
 }
 
 func (a *App) prepareSuiteKagent(ctx context.Context, s *workspace.NativeSuite, b agentruntime.KagentBindings) (*suiteKagentPrepared, error) {
-	if s == nil || s.Runtime != (workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) || s.RendererVersion != "kmx.native-kagent/v1" || s.ExecutionProfile != "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai/v1" || s.RequiredImages == nil || len(s.RequiredImages) != 0 {
+	if s == nil || s.Runtime != (workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) || s.RendererVersion != "kmx.native-kagent/v2" || s.ExecutionProfile != "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai/v1" || s.RequiredImages == nil || len(s.RequiredImages) != 0 {
 		return nil, fmt.Errorf("suite Kagent requires exact tool-free v0.10.3 Go profile and empty member images")
 	}
 	if agentruntime.ValidateKagentBindings(b) != nil || b.ModelConfig.Provider != "openai" {
@@ -217,7 +217,7 @@ func suiteKagentOwner(s suiteKagentSubject) *suiteKagentOwnership {
 	return &suiteKagentOwnership{s.Suite, s.SuiteDigest, s.Member, s.Renderer, s.BindingDigest, s.RenderedDigest, s.Profile}
 }
 func (o *suiteKagentOwnership) valid() bool {
-	return o != nil && o.Profile == (workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) && o.Renderer == "kmx.native-kagent/v1" && scaffold.ValidateObjectName(o.Suite) == nil && scaffold.ValidateObjectName(o.Member) == nil && strings.HasPrefix(o.Digest, "sha256:") && validOrkaMarkerDigest(strings.TrimPrefix(o.Digest, "sha256:")) && validOrkaMarkerDigest(o.Binding) && validOrkaMarkerDigest(o.Revision)
+	return o != nil && o.Profile == (workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) && o.Renderer == "kmx.native-kagent/v2" && scaffold.ValidateObjectName(o.Suite) == nil && scaffold.ValidateObjectName(o.Member) == nil && strings.HasPrefix(o.Digest, "sha256:") && validOrkaMarkerDigest(strings.TrimPrefix(o.Digest, "sha256:")) && validOrkaMarkerDigest(o.Binding) && validOrkaMarkerDigest(o.Revision)
 }
 func (o *suiteKagentOwnership) markers() map[string]any {
 	return map[string]any{orkaSuiteMarkers[0]: o.Suite, orkaSuiteMarkers[1]: o.Digest, orkaSuiteMarkers[2]: o.Member, orkaSuiteMarkers[3]: o.Renderer, orkaSuiteMarkers[4]: o.Binding, orkaSuiteMarkers[5]: o.Revision}

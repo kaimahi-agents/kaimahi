@@ -35,7 +35,7 @@ func suiteOnlyMarkers(ann map[string]any) map[string]any {
 	return out
 }
 func (o *orkaSuiteOwnership) valid() bool {
-	return (o.EvaluationRun == "" || evaluationRunID(o.EvaluationRun)) && scaffold.ValidateObjectName(o.Suite) == nil && scaffold.ValidateObjectName(o.Member) == nil && o.Renderer == "kmx.native-orka/v1" && strings.HasPrefix(o.Digest, "sha256:") && validOrkaMarkerDigest(strings.TrimPrefix(o.Digest, "sha256:")) && validOrkaMarkerDigest(o.BindingDigest) && validOrkaMarkerDigest(o.RenderedDigest)
+	return (o.EvaluationRun == "" || evaluationRunID(o.EvaluationRun)) && scaffold.ValidateObjectName(o.Suite) == nil && scaffold.ValidateObjectName(o.Member) == nil && o.Renderer == "kmx.native-orka/v2" && strings.HasPrefix(o.Digest, "sha256:") && validOrkaMarkerDigest(strings.TrimPrefix(o.Digest, "sha256:")) && validOrkaMarkerDigest(o.BindingDigest) && validOrkaMarkerDigest(o.RenderedDigest)
 }
 func (o *orkaSuiteOwnership) check(ann map[string]any) error {
 	for _, k := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {

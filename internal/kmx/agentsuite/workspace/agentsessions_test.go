@@ -39,7 +39,7 @@ func TestAgentSessionsProfileBindsSAndTransfersExactInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := workspace.RuntimeProfile{ID: "agentsessions", Version: sessionsVersion, Engine: "chat"}
-	if member.Runtime != want || member.RendererVersion != "kmx.native-agentsessions/v1" || member.ExecutionProfile != "kmx.agentsessions-chat-system-prompt-tool-free-openai/v1" || member.RequiredImages == nil || len(member.RequiredImages) != 0 || len(member.Cases) != 2 {
+	if member.Runtime != want || member.RendererVersion != "kmx.native-agentsessions/v2" || member.ExecutionProfile != "kmx.agentsessions-chat-system-prompt-tool-free-openai/v1" || member.RequiredImages == nil || len(member.RequiredImages) != 0 || len(member.Cases) != 2 {
 		t.Fatalf("wrong profile: %+v", member)
 	}
 	if p.Fingerprint == before.Fingerprint || p.Descriptor.Digest == before.Descriptor.Digest || member.GraphDigest != orka.GraphDigest {

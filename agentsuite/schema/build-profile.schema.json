@@ -32,7 +32,8 @@
       "properties": {
         "mediaType": {"const": "application/vnd.oci.image.manifest.v1+json"},
         "digest": {"$ref": "#/$defs/digest"},
-        "size": {"type": "integer", "minimum": 1}
+        "size": {"type": "integer", "minimum": 1},
+        "annotations": {"type": "object", "additionalProperties": {"type": "string"}}
       }
     },
     "images": {

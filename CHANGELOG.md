@@ -24,6 +24,48 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- AgentSuite draft schema: every suite-local content reference (`Suite.agents`,
+  `Suite.toolProviderCatalog`, `Suite.buildProfiles`, `ToolProviderCatalog.toolProviders`,
+  `Suite.compositions`, `Suite.toolProviderCompositions`, `Agent.instructions`,
+  `Agent.evals`, `EvaluationIndex.cases`, and `Tool.inputSchema`/`outputSchema`)
+  now carries a named, nested `descriptor` property — an OCI-compatible
+  descriptor of `{mediaType, digest, size, annotations?}` — instead of flat
+  `path`+`digest` fields. `size` is now required and distinct from an omitted
+  field (a present `size: 0` is valid; a missing `size` is rejected).
+  `manifestDigest`/`variantDigest`-style computed identities (tool provider
+  compositions, resolved tool providers, bundle dependencies) and inventory
+  entry digests are unaffected: they remain plain scalar digest strings, since
+  they do not name a separate referenced file. This is an intentional breaking
+  change to the still-draft (`1.0.0-draft`) schema; there is no migration path
+  or back-compat reader. ([#496](https://github.com/kaimahi-agents/kaimahi/issues/496))
+
+  Before:
+  ```json
+  {"id": "datetime", "path": "tool-providers/datetime/1.0.0/tool-provider.json",
+   "digest": "sha256:aaaa...aaaa"}
+  ```
+  After:
+  ```json
+  {"id": "datetime", "path": "tool-providers/datetime/1.0.0/tool-provider.json",
+   "descriptor": {
+     "mediaType": "application/vnd.agentsuite.tool.provider.v1+json",
+     "digest": "sha256:aaaa...aaaa",
+     "size": 1234
+   }}
+  ```
+
+- A content reference whose descriptor binds JCS-canonical identity (agent,
+  tool provider, tool provider catalog, composition, tool provider
+  composition, build profile, evaluation index, and evaluation case
+  manifests) now requires the referenced file to be stored on disk as its
+  exact RFC 8785 JCS canonical bytes. Validation previously accepted any
+  on-disk formatting (for example pretty-printed JSON) as long as `digest`
+  and `size` described the canonical form; it now rejects a stored document
+  whose bytes are not already identical to that canonical re-serialization.
+  Suites with differently formatted but semantically equivalent stored JSON
+  for these references must be re-serialized to canonical bytes; there is no
+  migration path or back-compat reader. ([#496](https://github.com/kaimahi-agents/kaimahi/issues/496))
+
 - Root workspace push requires completed exact-S passing evidence by default.
   Use --unevaluated to explicitly retain ordinary publication; explicit
   --evaluation FILE overrides managed lookup without fallback. Extracted-directory

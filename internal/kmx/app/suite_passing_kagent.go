@@ -108,7 +108,7 @@ func validSuiteKagentPassingProof(p *suiteKagentPassingProof) bool {
 	r := s.Runtime
 	secret := s.Secret
 	profile := kagentLiftProfile()
-	if p.SourceCommit != profile.Commit || s.Profile != (workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) || s.Renderer != "kmx.native-kagent/v1" || s.ExecutionProfile != "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai/v1" {
+	if p.SourceCommit != profile.Commit || s.Profile != (workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) || s.Renderer != "kmx.native-kagent/v2" || s.ExecutionProfile != "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai/v1" {
 		return false
 	}
 	for _, d := range []string{s.SuiteDigest, s.GraphDigest, s.MemberDigest, s.InstructionsDigest, s.CompositionDigest, s.BuildProfileDigest} {

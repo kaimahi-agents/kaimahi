@@ -283,18 +283,18 @@ func loadDiffSnapshot(value string) (diffSnapshot, error) {
 	}
 	for _, ref := range suite.Agents {
 		var agent Agent
-		if err := snapshot.addRecord(content, "agent", ref.ID, ref.Path, ref.Digest, &agent); err != nil {
+		if err := snapshot.addRecord(content, "agent", ref.ID, ref.Path, ref.Descriptor.Digest, &agent); err != nil {
 			return diffSnapshot{}, err
 		}
 		snapshot.agents[ref.ID] = agent
 	}
 	for _, ref := range suite.BuildProfiles {
-		if err := snapshot.addRecord(content, "buildProfile", ref.ID, ref.Path, ref.Digest, nil); err != nil {
+		if err := snapshot.addRecord(content, "buildProfile", ref.ID, ref.Path, ref.Descriptor.Digest, nil); err != nil {
 			return diffSnapshot{}, err
 		}
 	}
 	if err := snapshot.addRecord(content, "toolProviderCatalog", suite.ToolProviderCatalog.ID,
-		suite.ToolProviderCatalog.Path, suite.ToolProviderCatalog.Digest, nil); err != nil {
+		suite.ToolProviderCatalog.Path, suite.ToolProviderCatalog.Descriptor.Digest, nil); err != nil {
 		return diffSnapshot{}, err
 	}
 	var catalog ToolProviderCatalog
@@ -302,14 +302,14 @@ func loadDiffSnapshot(value string) (diffSnapshot, error) {
 		return diffSnapshot{}, err
 	}
 	for _, ref := range catalog.ToolProviders {
-		if err := snapshot.addRecord(content, "toolProvider", ref.ID+"@"+ref.Version, ref.Path, ref.Digest, nil); err != nil {
+		if err := snapshot.addRecord(content, "toolProvider", ref.ID+"@"+ref.Version, ref.Path, ref.Descriptor.Digest, nil); err != nil {
 			return diffSnapshot{}, err
 		}
 	}
 	for _, ref := range suite.Compositions {
 		id := ref.Agent + "@" + ref.Platform.String()
 		var composition Composition
-		if err := snapshot.addRecord(content, "composition", id, ref.Path, ref.Digest, &composition); err != nil {
+		if err := snapshot.addRecord(content, "composition", id, ref.Path, ref.Descriptor.Digest, &composition); err != nil {
 			return diffSnapshot{}, err
 		}
 		snapshot.compositions[id] = composition
@@ -317,7 +317,7 @@ func loadDiffSnapshot(value string) (diffSnapshot, error) {
 	for _, ref := range suite.ToolProviderCompositions {
 		id := ref.ID + "@" + ref.Version + "@" + ref.Platform.String()
 		var composition ToolProviderComposition
-		if err := snapshot.addRecord(content, "toolProviderComposition", id, ref.Path, ref.Digest, &composition); err != nil {
+		if err := snapshot.addRecord(content, "toolProviderComposition", id, ref.Path, ref.Descriptor.Digest, &composition); err != nil {
 			return diffSnapshot{}, err
 		}
 		snapshot.providerCompositions[id] = composition

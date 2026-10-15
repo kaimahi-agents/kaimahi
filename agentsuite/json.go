@@ -368,6 +368,74 @@ func canonicalDigest(data []byte) (string, error) {
 	return Digest(data)
 }
 
+// canonicalSize returns the byte length of the JCS-canonical representation
+// of data, describing the same canonical bytes as canonicalDigest.
+func canonicalSize(data []byte) (int64, error) {
+	canonical, err := jcs.Transform(data)
+	if err != nil {
+		return 0, fmt.Errorf("canonicalize JSON: %w", err)
+	}
+	return int64(len(canonical)), nil
+}
+
+// descriptorSizeAndDigestMatch performs the cheap length and raw-byte digest
+// comparison against descriptor, without canonicalizing data at all. It lets
+// a caller reject a size/digest-mismatched document before investing in full
+// JSON parsing (strict decoding, canonicalization, or reflection-based field
+// checks). It does not confirm that data is itself stored in canonical form;
+// callers that parse data after this check still need
+// MatchesCanonicalDescriptor to enforce that invariant.
+func descriptorSizeAndDigestMatch(data []byte, descriptor Descriptor) bool {
+	return DescriptorSizeAndDigestMatch(data, descriptor)
+}
+
+// DescriptorSizeAndDigestMatch performs the cheap length and raw-byte digest
+// comparison against descriptor, without canonicalizing data at all. It lets
+// a caller reject a size/digest-mismatched document before investing in full
+// JSON parsing (strict decoding, canonicalization, or reflection-based field
+// checks). It does not confirm that data is itself stored in canonical form;
+// callers that parse data after this check still need
+// MatchesCanonicalDescriptor to enforce that invariant.
+func DescriptorSizeAndDigestMatch(data []byte, descriptor Descriptor) bool {
+	return int64(len(data)) == descriptor.Size && digestBytes(data) == descriptor.Digest
+}
+
+// matchesCanonicalDescriptor reports whether data is itself stored as its
+// own RFC 8785 JCS canonical bytes, and whether descriptor's digest and size
+// describe that same canonical representation. A descriptor binding
+// canonical identity is satisfied only when the stored bytes are already
+// canonical: differently formatted (for example pretty-printed) but
+// semantically equivalent JSON is rejected, since a consumer must be able to
+// load the referenced bytes directly without re-canonicalizing them first.
+func matchesCanonicalDescriptor(data []byte, descriptor Descriptor) bool {
+	return MatchesCanonicalDescriptor(data, descriptor)
+}
+
+// MatchesCanonicalDescriptor reports whether data is itself stored as its
+// own RFC 8785 JCS canonical bytes, and whether descriptor's digest and size
+// describe that same canonical representation. A descriptor binding
+// canonical identity is satisfied only when the stored bytes are already
+// canonical: differently formatted (for example pretty-printed) but
+// semantically equivalent JSON is rejected, since a consumer must be able to
+// load the referenced bytes directly without re-canonicalizing them first.
+// Callers outside this package (for example builders that re-read pinned
+// child manifests) should use this instead of re-deriving digest/size checks
+// by hand, so every consumer enforces the same stored-byte identity rule.
+func MatchesCanonicalDescriptor(data []byte, descriptor Descriptor) bool {
+	// Reject on raw length and raw-byte digest first: cheap checks that avoid
+	// canonicalizing data at all when it plainly cannot match. If data is
+	// itself already canonical (the required storage form), its raw SHA-256
+	// digest equals the canonical digest, so this is not merely a shortcut
+	// for the common case, it rules out any non-canonically stored document
+	// too, since such a document's raw bytes cannot hash to the canonical
+	// digest of a differently formatted equivalent.
+	if int64(len(data)) != descriptor.Size || digestBytes(data) != descriptor.Digest {
+		return false
+	}
+	canonical, err := jcs.Transform(data)
+	return err == nil && bytes.Equal(data, canonical)
+}
+
 func digestBytes(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])

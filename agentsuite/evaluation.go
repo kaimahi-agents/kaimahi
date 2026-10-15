@@ -55,22 +55,27 @@ func (v *validator) validateEvaluations() error {
 	return errors.Join(errs...)
 }
 
-func (v *validator) evaluationDocument(ref FileRef, out any) ([]byte, error) {
-	if !IsValidDigest(ref.Digest) {
+func (v *validator) evaluationDocument(ref FileRef, expectedMediaType string, out any) ([]byte, error) {
+	if !IsValidDigest(ref.Descriptor.Digest) {
 		return nil, errors.New("evaluation reference digest is invalid")
+	}
+	if ref.Descriptor.MediaType != expectedMediaType {
+		return nil, fmt.Errorf("evaluation reference descriptor mediaType must be %s", expectedMediaType)
 	}
 	data, err := v.content.data(ref.Path)
 	if err != nil {
 		return nil, err
 	}
+	// Reject a size/digest-mismatched document before parsing it: a document
+	// that cannot possibly match its descriptor should not receive full
+	// strict-JSON decoding.
+	if !descriptorSizeAndDigestMatch(data, ref.Descriptor) {
+		return nil, errors.New("evaluation document digest mismatch")
+	}
 	if err := decodeStrict(data, out); err != nil {
 		return nil, fmt.Errorf("evaluation JSON: %w", err)
 	}
-	digest, err := canonicalDigest(data)
-	if err != nil {
-		return nil, fmt.Errorf("evaluation JSON: %w", err)
-	}
-	if digest != ref.Digest {
+	if !matchesCanonicalDescriptor(data, ref.Descriptor) {
 		return nil, errors.New("evaluation document digest mismatch")
 	}
 	return data, nil
@@ -78,7 +83,7 @@ func (v *validator) evaluationDocument(ref FileRef, out any) ([]byte, error) {
 
 func (v *validator) validateEvaluationIndex(agent string, ref FileRef, files map[string]bool) error {
 	var index EvaluationIndex
-	_, err := v.evaluationDocument(ref, &index)
+	_, err := v.evaluationDocument(ref, MediaTypeEvaluationIndex, &index)
 	if err != nil {
 		return err
 	}
@@ -106,7 +111,7 @@ func (v *validator) validateEvaluationIndex(agent string, ref FileRef, files map
 		}
 		files[caseRef.Path] = true
 		var c EvaluationCase
-		data, err := v.evaluationDocument(caseRef, &c)
+		data, err := v.evaluationDocument(caseRef, MediaTypeEvaluationCase, &c)
 		if err != nil {
 			return err
 		}

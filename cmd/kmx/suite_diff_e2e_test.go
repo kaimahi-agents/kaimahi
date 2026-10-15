@@ -158,38 +158,42 @@ func mutateIncidentAnalystSuite(t *testing.T, root string) {
 		Tools: []agentsuite.Tool{{
 			Name:        "query_incident_evidence",
 			Description: "Query evidence supplied for the current incident.",
-			InputSchema: agentsuite.FileRef{Path: schemaPath, Digest: rawDigest(schema)},
-			Effects:     []string{"incident-observation"},
+			InputSchema: agentsuite.FileRef{
+				Path:       schemaPath,
+				Descriptor: descriptorFor(agentsuite.MediaTypeJSONSchema, rawDigest(schema), int64(len(schema))),
+			},
+			Effects: []string{"incident-observation"},
 		}},
 		Variants:   []agentsuite.ToolProviderVariant{variant},
 		Extensions: []agentsuite.Extension{},
 	}
 	providerPath := "tool-providers/incident-evidence/1.0.0/tool-provider.json"
-	providerDigest := writeJSON(t, root, providerPath, provider)
+	providerDigest, providerSize := writeJSON(t, root, providerPath, provider)
 
 	catalog := agentsuite.ToolProviderCatalog{
 		SchemaVersion: agentsuite.SpecVersion,
 		MediaType:     agentsuite.MediaTypeToolProviderCatalog,
 		ToolProviders: []agentsuite.ManifestRef{{
-			ID: providerID, Version: providerVersion, Path: providerPath, Digest: providerDigest,
+			ID: providerID, Version: providerVersion, Path: providerPath,
+			Descriptor: descriptorFor(agentsuite.MediaTypeToolProvider, providerDigest, providerSize),
 		}},
 	}
-	catalogDigest := writeJSON(t, root, "tool-providers/catalog.json", catalog)
+	catalogDigest, catalogSize := writeJSON(t, root, "tool-providers/catalog.json", catalog)
 
 	var profile agentsuite.BuildProfile
 	readJSON(t, root, "build-profiles/agentkit-v0.1.0.json", &profile)
 	profile.SourceEpoch += 60
-	profileDigest := writeJSON(t, root, "build-profiles/agentkit-v0.1.0.json", profile)
+	profileDigest, profileSize := writeJSON(t, root, "build-profiles/agentkit-v0.1.0.json", profile)
 
 	var agent agentsuite.Agent
 	readJSON(t, root, "agents/incident-analyst.json", &agent)
 	agent.Description = "Turns incident evidence into an actionable triage and escalation report."
-	agent.Instructions.Digest = rawDigest(instructions)
+	agent.Instructions.Descriptor = descriptorFor(agentsuite.MediaTypeInstructions, rawDigest(instructions), int64(len(instructions)))
 	agent.Model.Model = "gpt-5"
 	agent.ToolProviders = []agentsuite.ToolProviderRequirement{{
 		ID: providerID, Version: providerVersion, ExecutionMode: agentsuite.ExecutionSharedSandbox,
 	}}
-	agentDigest := writeJSON(t, root, "agents/incident-analyst.json", agent)
+	agentDigest, agentSize := writeJSON(t, root, "agents/incident-analyst.json", agent)
 
 	var composition agentsuite.Composition
 	readJSON(t, root, "compositions/incident-analyst-linux-amd64.json", &composition)
@@ -197,7 +201,7 @@ func mutateIncidentAnalystSuite(t *testing.T, root string) {
 		ID: providerID, Version: providerVersion, ManifestDigest: providerDigest,
 		VariantDigest: variant.VariantDigest, ExecutionMode: agentsuite.ExecutionSharedSandbox,
 	}}
-	compositionDigest := writeJSON(t, root, "compositions/incident-analyst-linux-amd64.json", composition)
+	compositionDigest, compositionSize := writeJSON(t, root, "compositions/incident-analyst-linux-amd64.json", composition)
 
 	providerComposition := agentsuite.ToolProviderComposition{
 		SchemaVersion:  agentsuite.SpecVersion,
@@ -210,20 +214,28 @@ func mutateIncidentAnalystSuite(t *testing.T, root string) {
 		BuildProfile:   profile.ID,
 	}
 	providerCompositionPath := "tool-provider-compositions/incident-evidence-linux-amd64.json"
-	providerCompositionDigest := writeJSON(t, root, providerCompositionPath, providerComposition)
+	providerCompositionDigest, providerCompositionSize := writeJSON(t, root, providerCompositionPath, providerComposition)
 
 	var suite agentsuite.Suite
 	readJSON(t, root, "agentsuite.json", &suite)
-	suite.Agents[0].Digest = agentDigest
-	suite.ToolProviderCatalog.Digest = catalogDigest
-	suite.Compositions[0].Digest = compositionDigest
-	suite.BuildProfiles[0].Digest = profileDigest
+	suite.Agents[0].Descriptor = descriptorFor(agentsuite.MediaTypeAgent, agentDigest, agentSize)
+	suite.ToolProviderCatalog.Descriptor = descriptorFor(agentsuite.MediaTypeToolProviderCatalog, catalogDigest, catalogSize)
+	suite.Compositions[0].Descriptor = descriptorFor(agentsuite.MediaTypeComposition, compositionDigest, compositionSize)
+	suite.BuildProfiles[0].Descriptor = descriptorFor(agentsuite.MediaTypeBuildProfile, profileDigest, profileSize)
 	suite.ToolProviderCompositions = []agentsuite.ToolProviderCompositionRef{{
 		ID: providerID, Version: providerVersion, Platform: platform,
-		Path: providerCompositionPath, Digest: providerCompositionDigest,
+		Path:       providerCompositionPath,
+		Descriptor: descriptorFor(agentsuite.MediaTypeToolProviderComposition, providerCompositionDigest, providerCompositionSize),
 	}}
 	suite.Capabilities = []string{"bundled-stdio-mcp"}
 	writeJSON(t, root, "agentsuite.json", suite)
+}
+
+// descriptorFor builds the nested Descriptor carried by content-addressable
+// suite references (ManifestRef, CompositionRef, ToolProviderCompositionRef,
+// FileRef).
+func descriptorFor(mediaType, digest string, size int64) agentsuite.Descriptor {
+	return agentsuite.Descriptor{MediaType: mediaType, Digest: digest, Size: size}
 }
 
 func repositoryRoot(t *testing.T) string {
@@ -254,15 +266,23 @@ func readJSON(t *testing.T, root, name string, value any) {
 	}
 }
 
-func writeJSON(t *testing.T, root, name string, value any) string {
+// writeJSON writes value to disk as its exact RFC 8785 JCS canonical bytes,
+// since suite content referenced by a nested descriptor (agent, build
+// profile, composition, tool provider, tool provider composition, tool
+// provider catalog, or suite manifest) must be stored byte-identical to its
+// own canonical representation, not merely hashed and sized as if canonical.
+func writeJSON(t *testing.T, root, name string, value any) (digest string, size int64) {
 	t.Helper()
-	data, err := json.MarshalIndent(value, "", "  ")
+	data, err := json.Marshal(value)
 	if err != nil {
 		t.Fatalf("encode %s: %v", name, err)
 	}
-	data = append(data, '\n')
-	writeFile(t, root, name, data, 0o644)
-	return canonicalDigest(t, data)
+	canonical, err := jcs.Transform(data)
+	if err != nil {
+		t.Fatalf("canonicalize %s: %v", name, err)
+	}
+	writeFile(t, root, name, canonical, 0o644)
+	return canonicalDigestAndSize(t, canonical)
 }
 
 func readFile(t *testing.T, root, name string) []byte {
@@ -292,6 +312,18 @@ func canonicalDigest(t *testing.T, data []byte) string {
 		t.Fatalf("canonicalize JSON: %v", err)
 	}
 	return rawDigest(canonical)
+}
+
+// canonicalDigestAndSize returns the digest and size of data's JCS-canonical
+// representation, matching the descriptor shape agentsuite validation checks
+// against (agentsuite.matchesCanonicalDescriptor), not data's own raw length.
+func canonicalDigestAndSize(t *testing.T, data []byte) (digest string, size int64) {
+	t.Helper()
+	canonical, err := jcs.Transform(data)
+	if err != nil {
+		t.Fatalf("canonicalize JSON: %v", err)
+	}
+	return rawDigest(canonical), int64(len(canonical))
 }
 
 func rawDigest(data []byte) string {

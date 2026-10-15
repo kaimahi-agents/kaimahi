@@ -10,7 +10,11 @@
       "name": "list_resources",
       "inputSchema": {
         "path": "schemas/azure/list-resources-input.json",
-        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "descriptor": {
+          "mediaType": "application/schema+json",
+          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 1
+        }
       }
     }
   ],

@@ -297,7 +297,7 @@ class QualificationTests(unittest.TestCase):
 
     def test_fingerprint_uses_original_bytes_and_filenames(self):
         files = {"workspace.yaml": b"x\n", "eval/a.yaml": b"y\n"}
-        expected = b'{"files":{"eval/a.yaml":"sha256:3bb2abb69ebb27fbfe63c7639624c6ec5e331b841a5bc8c3ebc10b9285e90877","workspace.yaml":"sha256:73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"},"renderer":"kmx.native-orka/v1"}'
+        expected = b'{"files":{"eval/a.yaml":"sha256:3bb2abb69ebb27fbfe63c7639624c6ec5e331b841a5bc8c3ebc10b9285e90877","workspace.yaml":"sha256:73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"},"renderer":"kmx.native-orka/v2"}'
         self.assertEqual(Q.fingerprint(files), "sha256:" + hashlib.sha256(expected).hexdigest())
         self.assertNotEqual(Q.fingerprint(files), Q.fingerprint({"workspace.yaml": b"x\n", "eval/a.yaml": b"y\n\n"}))
 

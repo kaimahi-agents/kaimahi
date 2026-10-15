@@ -1,5 +1,11 @@
 package agentsuite
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
 const (
 	SpecVersion = "1.0.0-draft"
 
@@ -17,14 +23,81 @@ const (
 	MediaTypeToolProviderComposition = "application/vnd.agentsuite.tool.provider.composition.v1+json"
 	MediaTypeComposition             = "application/vnd.agentsuite.composition.v1+json"
 	MediaTypeBuildProfile            = "application/vnd.agentsuite.build.profile.v1+json"
+	MediaTypeInstructions            = "text/markdown; charset=utf-8"
+	MediaTypeJSONSchema              = "application/schema+json"
 
 	ExecutionSharedSandbox = "shared-sandbox"
 )
 
+// Descriptor is an OCI-compatible content descriptor: a named, nested
+// property on a suite-local reference that carries the referenced content's
+// media type, digest, and size, plus optional descriptive annotations.
+// Outer selector fields (such as id, version, agent, platform, and path)
+// stay on the enclosing reference; Descriptor only describes the referenced
+// bytes.
 type Descriptor struct {
-	MediaType string `json:"mediaType"`
-	Digest    string `json:"digest"`
-	Size      int64  `json:"size"`
+	MediaType   string            `json:"mediaType"`
+	Digest      string            `json:"digest"`
+	Size        int64             `json:"size"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// descriptorAlias decodes Descriptor without recursing back into
+// UnmarshalJSON.
+type descriptorAlias Descriptor
+
+// descriptorKnownFields enumerates the closed set of properties the
+// Descriptor schema fragment permits (additionalProperties: false).
+var descriptorKnownFields = map[string]bool{
+	"mediaType":   true,
+	"digest":      true,
+	"size":        true,
+	"annotations": true,
+}
+
+// UnmarshalJSON requires mediaType, digest, and size to be present in the
+// document. A present size of zero is a legitimate empty-content descriptor;
+// an omitted size is rejected. Both would otherwise decode to the same Go
+// zero value, so presence is checked explicitly against the raw fields
+// before the normal typed decode. It also rejects any object key outside
+// the closed descriptor shape, and rejects an explicit JSON null for
+// mediaType, digest, size, or a present annotations key, which would
+// otherwise silently decode to the same Go zero values as legitimate
+// values (notably null size and size: 0 both decode to 0).
+func (d *Descriptor) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for name := range fields {
+		if !descriptorKnownFields[name] {
+			return fmt.Errorf("descriptor has unknown field %q", name)
+		}
+	}
+	for _, name := range []string{"mediaType", "digest", "size"} {
+		if _, ok := fields[name]; !ok {
+			return fmt.Errorf("descriptor is missing required field %q", name)
+		}
+	}
+	for _, name := range []string{"mediaType", "digest", "size"} {
+		if isJSONNull(fields[name]) {
+			return fmt.Errorf("descriptor field %q must not be null", name)
+		}
+	}
+	if raw, ok := fields["annotations"]; ok && isJSONNull(raw) {
+		return fmt.Errorf("descriptor field %q must not be null", "annotations")
+	}
+	var alias descriptorAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*d = Descriptor(alias)
+	return nil
+}
+
+// isJSONNull reports whether raw is the literal JSON value null.
+func isJSONNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
 
 type Platform struct {
@@ -65,25 +138,25 @@ type Suite struct {
 }
 
 type ManifestRef struct {
-	ID      string `json:"id"`
-	Version string `json:"version,omitempty"`
-	Path    string `json:"path"`
-	Digest  string `json:"digest"`
+	ID         string     `json:"id"`
+	Version    string     `json:"version,omitempty"`
+	Path       string     `json:"path"`
+	Descriptor Descriptor `json:"descriptor"`
 }
 
 type CompositionRef struct {
-	Agent    string   `json:"agent"`
-	Platform Platform `json:"platform"`
-	Path     string   `json:"path"`
-	Digest   string   `json:"digest"`
+	Agent      string     `json:"agent"`
+	Platform   Platform   `json:"platform"`
+	Path       string     `json:"path"`
+	Descriptor Descriptor `json:"descriptor"`
 }
 
 type ToolProviderCompositionRef struct {
-	ID       string   `json:"id"`
-	Version  string   `json:"version"`
-	Platform Platform `json:"platform"`
-	Path     string   `json:"path"`
-	Digest   string   `json:"digest"`
+	ID         string     `json:"id"`
+	Version    string     `json:"version"`
+	Platform   Platform   `json:"platform"`
+	Path       string     `json:"path"`
+	Descriptor Descriptor `json:"descriptor"`
 }
 
 type Agent struct {
@@ -136,8 +209,8 @@ type EvaluationAssertion struct {
 }
 
 type FileRef struct {
-	Path   string `json:"path"`
-	Digest string `json:"digest"`
+	Path       string     `json:"path"`
+	Descriptor Descriptor `json:"descriptor"`
 }
 
 type ModelRequirement struct {

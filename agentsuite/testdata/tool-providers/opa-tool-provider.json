@@ -11,11 +11,19 @@
       "description": "Evaluate a structured document against a supplied Rego policy.",
       "inputSchema": {
         "path": "schemas/opa/evaluate-document-input.json",
-        "digest": "sha256:3bd7aabe68029f2f2c999b7bac0f6f0f256fd770ac891172f7fa98a843fd04fd"
+        "descriptor": {
+          "mediaType": "application/schema+json",
+          "digest": "sha256:3bd7aabe68029f2f2c999b7bac0f6f0f256fd770ac891172f7fa98a843fd04fd",
+          "size": 1
+        }
       },
       "outputSchema": {
         "path": "schemas/opa/evaluate-document-output.json",
-        "digest": "sha256:bafe8750ab384f2a5e25404322ca5703b85b7f6704d89442d3e012ff5514b226"
+        "descriptor": {
+          "mediaType": "application/schema+json",
+          "digest": "sha256:bafe8750ab384f2a5e25404322ca5703b85b7f6704d89442d3e012ff5514b226",
+          "size": 1
+        }
       },
       "effects": [
         "policy-evaluation"

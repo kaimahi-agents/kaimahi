@@ -21,8 +21,8 @@ func TestToolProviderSchemaDefinesBundledImplementation(t *testing.T) {
 	  "revision":"2025-06-18",
 	  "tools":[{
 	      "name":"current_time",
-	      "inputSchema":{"path":"schemas/input.json","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-	      "outputSchema":{"path":"schemas/output.json","digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+	      "inputSchema":{"path":"schemas/input.json","descriptor":{"mediaType":"application/schema+json","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","size":123}},
+	      "outputSchema":{"path":"schemas/output.json","descriptor":{"mediaType":"application/schema+json","digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","size":456}},
 	      "effects":["reads-system-clock"]
 	    }],
 	  "variants":[{
@@ -176,7 +176,7 @@ func TestAgentSchemaDefinesSharedSandboxMode(t *testing.T) {
 	  "id":"writer",
 	  "instructions":{
 	    "path":"instructions/writer.md",
-	    "digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	    "descriptor":{"mediaType":"text/markdown; charset=utf-8","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":15}
 	  },
 	  "model":{"protocol":"openai-compatible","model":"example"},
 	  "toolProviders":[{
@@ -232,7 +232,7 @@ func TestBuildProfileSchemaRequiresDigestAddressedImageReferences(t *testing.T) 
 			}
 			valid := string(data)
 			validateSchemaJSON(t, schema, valid, true)
-			validateSchemaJSON(t, schema, strings.Replace(valid, `"imageRef": `, `"notImageRef": `, 1), false)
+			validateSchemaJSON(t, schema, strings.Replace(valid, `"imageRef":`, `"notImageRef":`, 1), false)
 			validateSchemaJSON(t, schema, strings.Replace(valid, `@sha256:`, `:latest@sha256:`, 1), false)
 		})
 	}
@@ -243,20 +243,35 @@ func TestProviderTerminologyRejectsEarlierDraftFields(t *testing.T) {
 		name    string
 		schema  string
 		fixture string
+		raw     string
 		current string
 		legacy  string
 		target  any
 	}{
-		{"suite catalog", "suite.schema.json", "minimal/agentsuite.json", "toolProviderCatalog", "toolCatalog", &Suite{}},
-		{"agent requirements", "agent.schema.json", "minimal/agents/writer.json", "toolProviders", "tools", &Agent{}},
-		{"composition resolutions", "composition.schema.json", "minimal/compositions/writer-linux-amd64.json", "toolProviders", "tools", &Composition{}},
-		{"callable tools", "tool-provider.schema.json", "remote-mcp/tool-provider.json", "tools", "operations", &ToolProvider{}},
+		{"suite catalog", "suite.schema.json", "minimal/agentsuite.json", "", "toolProviderCatalog", "toolCatalog", &Suite{}},
+		{"agent requirements", "agent.schema.json", "", `{
+	  "schemaVersion":"1.0.0-draft",
+	  "mediaType":"application/vnd.agentsuite.agent.v1+json",
+	  "id":"writer",
+	  "instructions":{
+	    "path":"instructions/writer.md",
+	    "descriptor":{"mediaType":"text/markdown; charset=utf-8","digest":"sha256:516ff360a8ebb5e36e87f0d401a3cc7436ad2ad1059aae64670aff1078171df8","size":15}
+	  },
+	  "model":{"protocol":"openai-compatible","model":"example-model"},
+	  "toolProviders":[{"id":"datetime","version":"1.0.0","executionMode":"shared-sandbox"}]
+	}`, "toolProviders", "tools", &Agent{}},
+		{"composition resolutions", "composition.schema.json", "minimal/compositions/writer-linux-amd64.json", "", "toolProviders", "tools", &Composition{}},
+		{"callable tools", "tool-provider.schema.json", "remote-mcp/tool-provider.json", "", "tools", "operations", &ToolProvider{}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			raw, err := os.ReadFile(filepath.Join("testdata", test.fixture))
-			if err != nil {
-				t.Fatal(err)
+			raw := []byte(test.raw)
+			if test.fixture != "" {
+				var err error
+				raw, err = os.ReadFile(filepath.Join("testdata", test.fixture))
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			schema := compileReferenceSchema(t, test.schema)
 			validateSchemaJSON(t, schema, string(raw), true)

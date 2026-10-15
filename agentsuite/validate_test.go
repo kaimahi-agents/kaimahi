@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gowebpki/jcs"
 )
 
 func TestValidatePathAcceptsMinimalExtractedSuite(t *testing.T) {
@@ -24,6 +26,84 @@ func TestValidatePathAcceptsMinimalExtractedSuite(t *testing.T) {
 
 	if report.Name != "example" || report.Agents != 1 || report.ToolProviders != 0 || report.Compositions != 1 {
 		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+// TestValidatePathRejectsNonCanonicalStoredJSON proves that a JSON content
+// reference bound to canonical identity (here, the agent manifest) must be
+// stored on disk as its exact RFC 8785 JCS canonical bytes. Re-indenting the
+// same JSON value without updating its descriptor's digest or size changes
+// nothing a naive digest/size check would catch, since both still describe
+// the canonical form of the new bytes; only comparing the stored bytes
+// against their own canonical re-serialization catches the mismatch.
+func TestValidatePathRejectsNonCanonicalStoredJSON(t *testing.T) {
+	root := writeMinimalSuite(t)
+	agentPath := filepath.Join(root, "agents", "writer.json")
+	canonicalBytes, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ValidatePath(root); err != nil {
+		t.Fatalf("canonical agent manifest rejected: %v", err)
+	}
+
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, canonicalBytes, "", "  "); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agentPath, indented.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("non-canonical stored agent manifest accepted, error = %v", err)
+	}
+}
+
+// TestValidatePathRejectsNonCanonicalStoredJSONEvenWhenRawDigestMatches proves
+// that the canonical-form comparison inside matchesCanonicalDescriptor is
+// itself load-bearing, not merely redundant with the cheap raw length/digest
+// pre-check added ahead of it. Re-pointing the descriptor at the indented
+// bytes' own raw digest/size lets that pre-check pass trivially, so only the
+// final canonical re-serialization comparison can still catch the mismatch.
+func TestValidatePathRejectsNonCanonicalStoredJSONEvenWhenRawDigestMatches(t *testing.T) {
+	root := writeMinimalSuite(t)
+	agentPath := filepath.Join(root, "agents", "writer.json")
+	canonicalBytes, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, canonicalBytes, "", "  "); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agentPath, indented.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	suitePath := filepath.Join(root, "agentsuite.json")
+	suiteBytes, err := os.ReadFile(suitePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var suite Suite
+	if err := Unmarshal(suiteBytes, &suite); err != nil {
+		t.Fatal(err)
+	}
+	// Point the descriptor at the indented bytes' own raw digest/size, so the
+	// cheap pre-parse check passes and cannot be the thing that rejects it.
+	suite.Agents[0].Descriptor.Digest = digestBytes(indented.Bytes())
+	suite.Agents[0].Descriptor.Size = int64(indented.Len())
+	rewritten, err := Marshal(suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(suitePath, rewritten, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("non-canonical stored agent manifest accepted despite raw-digest-matched descriptor, error = %v", err)
 	}
 }
 
@@ -127,8 +207,12 @@ func TestValidateAgentRejectsSelfInvocation(t *testing.T) {
 		MediaType:     MediaTypeAgent,
 		ID:            "coordinator",
 		Instructions: FileRef{
-			Path:   "instructions/coordinator.md",
-			Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			Path: "instructions/coordinator.md",
+			Descriptor: Descriptor{
+				MediaType: MediaTypeInstructions,
+				Digest:    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				Size:      1,
+			},
 		},
 		Model:   ModelRequirement{Protocol: "openai-compatible", Model: "example-model"},
 		Invokes: []AgentInvoke{{Agent: "coordinator", MaxConcurrent: 1, MaxDepth: 1}},
@@ -164,7 +248,9 @@ func TestValidatePathAllowsOnePinnedToolProviderVariantToBeReusedByTwoAgents(t *
 		Version:       "1.2.3",
 		Protocol:      "mcp", Revision: "2025-06-18",
 		Tools: []Tool{{
-			Name: "read", InputSchema: FileRef{Path: "schemas/read.json", Digest: digestBytes(schemaBytes)},
+			Name: "read", InputSchema: FileRef{Path: "schemas/read.json", Descriptor: Descriptor{
+				MediaType: MediaTypeJSONSchema, Digest: digestBytes(schemaBytes), Size: int64(len(schemaBytes)),
+			}},
 		}},
 		Variants: []ToolProviderVariant{variant},
 		Remote: &RemoteToolProvider{
@@ -177,15 +263,16 @@ func TestValidatePathAllowsOnePinnedToolProviderVariantToBeReusedByTwoAgents(t *
 		},
 		Extensions: []Extension{},
 	}
-	providerDigest := mustWriteJSON(t, root, "tool-providers/reader/1.2.3/tool-provider.json", provider)
+	providerDescriptor := mustWriteJSON(t, root, "tool-providers/reader/1.2.3/tool-provider.json", MediaTypeToolProvider, provider)
+	providerDigest := providerDescriptor.Digest
 	catalog := ToolProviderCatalog{
 		SchemaVersion: SpecVersion,
 		MediaType:     MediaTypeToolProviderCatalog,
 		ToolProviders: []ManifestRef{{
-			ID: "reader", Version: "1.2.3", Path: "tool-providers/reader/1.2.3/tool-provider.json", Digest: providerDigest,
+			ID: "reader", Version: "1.2.3", Path: "tool-providers/reader/1.2.3/tool-provider.json", Descriptor: providerDescriptor,
 		}},
 	}
-	catalogDigest := mustWriteJSON(t, root, "tool-providers/catalog.json", catalog)
+	catalogDescriptor := mustWriteJSON(t, root, "tool-providers/catalog.json", MediaTypeToolProviderCatalog, catalog)
 
 	image := Descriptor{
 		MediaType: ociManifestMediaType,
@@ -198,7 +285,7 @@ func TestValidatePathAllowsOnePinnedToolProviderVariantToBeReusedByTwoAgents(t *
 		Harness:     []PlatformImage{{Platform: Platform{OS: "linux", Architecture: "amd64"}, ImageRef: "registry.example/agentsuite/harness@" + image.Digest, Image: image}},
 		SourceEpoch: 1,
 	}
-	profileDigest := mustWriteJSON(t, root, "build-profiles/default.json", profile)
+	profileDescriptor := mustWriteJSON(t, root, "build-profiles/default.json", MediaTypeBuildProfile, profile)
 	providerComposition := ToolProviderComposition{
 		SchemaVersion:  SpecVersion,
 		MediaType:      MediaTypeToolProviderComposition,
@@ -210,7 +297,7 @@ func TestValidatePathAllowsOnePinnedToolProviderVariantToBeReusedByTwoAgents(t *
 		BuildProfile:   "default",
 	}
 	providerCompositionPath := "tool-provider-compositions/reader-linux-amd64.json"
-	providerCompositionDigest := mustWriteJSON(t, root, providerCompositionPath, providerComposition)
+	providerCompositionDescriptor := mustWriteJSON(t, root, providerCompositionPath, MediaTypeToolProviderComposition, providerComposition)
 
 	var agentRefs []ManifestRef
 	var compositionRefs []CompositionRef
@@ -220,15 +307,17 @@ func TestValidatePathAllowsOnePinnedToolProviderVariantToBeReusedByTwoAgents(t *
 		mustWrite(t, root, instructionPath, instructions)
 		agent := Agent{
 			SchemaVersion: SpecVersion, MediaType: MediaTypeAgent, ID: id,
-			Instructions: FileRef{Path: instructionPath, Digest: digestBytes(instructions)},
-			Model:        ModelRequirement{Protocol: "openai-compatible", Model: "example-model"},
+			Instructions: FileRef{Path: instructionPath, Descriptor: Descriptor{
+				MediaType: MediaTypeInstructions, Digest: digestBytes(instructions), Size: int64(len(instructions)),
+			}},
+			Model: ModelRequirement{Protocol: "openai-compatible", Model: "example-model"},
 			ToolProviders: []ToolProviderRequirement{{
 				ID: "reader", Version: "1.2.3", ExecutionMode: ExecutionSharedSandbox,
 			}},
 			Invokes: []AgentInvoke{}, Extensions: []Extension{},
 		}
 		agentPath := "agents/" + id + ".json"
-		agentRefs = append(agentRefs, ManifestRef{ID: id, Path: agentPath, Digest: mustWriteJSON(t, root, agentPath, agent)})
+		agentRefs = append(agentRefs, ManifestRef{ID: id, Path: agentPath, Descriptor: mustWriteJSON(t, root, agentPath, MediaTypeAgent, agent)})
 		composition := Composition{
 			SchemaVersion: SpecVersion, MediaType: MediaTypeComposition, Agent: id,
 			Platform: Platform{OS: "linux", Architecture: "amd64"}, BuildProfile: "default",
@@ -240,23 +329,23 @@ func TestValidatePathAllowsOnePinnedToolProviderVariantToBeReusedByTwoAgents(t *
 		compositionPath := "compositions/" + id + "-linux-amd64.json"
 		compositionRefs = append(compositionRefs, CompositionRef{
 			Agent: id, Platform: composition.Platform, Path: compositionPath,
-			Digest: mustWriteJSON(t, root, compositionPath, composition),
+			Descriptor: mustWriteJSON(t, root, compositionPath, MediaTypeComposition, composition),
 		})
 	}
 	suite := Suite{
 		SchemaVersion: SpecVersion, MediaType: MediaTypeSuite, Name: "shared-tool-provider",
-		Agents: agentRefs, ToolProviderCatalog: ManifestRef{ID: "catalog", Path: "tool-providers/catalog.json", Digest: catalogDigest},
+		Agents: agentRefs, ToolProviderCatalog: ManifestRef{ID: "catalog", Path: "tool-providers/catalog.json", Descriptor: catalogDescriptor},
 		ToolProviderCompositions: []ToolProviderCompositionRef{{
 			ID: "reader", Version: "1.2.3", Platform: providerComposition.Platform,
-			Path: providerCompositionPath, Digest: providerCompositionDigest,
+			Path: providerCompositionPath, Descriptor: providerCompositionDescriptor,
 		}},
 		Compositions: compositionRefs,
 		BuildProfiles: []ManifestRef{{
-			ID: "default", Path: "build-profiles/default.json", Digest: profileDigest,
+			ID: "default", Path: "build-profiles/default.json", Descriptor: profileDescriptor,
 		}},
 		Capabilities: []string{"bundled-stdio-mcp"}, Extensions: []Extension{},
 	}
-	mustWriteJSON(t, root, "agentsuite.json", suite)
+	mustWriteJSON(t, root, "agentsuite.json", MediaTypeSuite, suite)
 
 	report, err := ValidatePath(root)
 	if err != nil {
@@ -293,7 +382,7 @@ func TestValidatePathRejectsTwoCompositionsForOneAgentPlatform(t *testing.T) {
 	}
 	mustWrite(t, root, duplicate.Path, body)
 	suite.Compositions = append(suite.Compositions, duplicate)
-	mustWriteJSON(t, root, "agentsuite.json", suite)
+	mustWriteJSON(t, root, "agentsuite.json", MediaTypeSuite, suite)
 	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "duplicate composition") {
 		t.Fatalf("duplicate composition error = %v", err)
 	}
@@ -426,7 +515,7 @@ func TestLoadToolProviderCompositionsRejectsUnresolvedBuildInputs(t *testing.T) 
 				},
 			}
 			test.mutate(v, &composition)
-			data, err := json.Marshal(composition)
+			data, err := Marshal(composition)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -434,7 +523,13 @@ func TestLoadToolProviderCompositionsRejectsUnresolvedBuildInputs(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			v.suite.ToolProviderCompositions[0].Digest = digest
+			size, err := canonicalSize(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			v.suite.ToolProviderCompositions[0].Descriptor = Descriptor{
+				MediaType: MediaTypeToolProviderComposition, Digest: digest, Size: size,
+			}
 			v.content.entries["tool-provider-compositions/reader.json"] = contentEntry{
 				Path: "tool-provider-compositions/reader.json", Type: "file",
 				Size: int64(len(data)), Digest: digestBytes(data), Data: data,
@@ -473,8 +568,12 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 		mustWrite(t, root, filepath.Join("schemas", name), data)
 	}
 	providerPath := "tool-providers/search/1.0.0/tool-provider.json"
-	mustWrite(t, root, providerPath, raw)
+	mustWrite(t, root, providerPath, mustCanonicalizeJSON(t, raw))
 	providerDigest, err := canonicalDigest(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerSize, err := canonicalSize(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,10 +581,12 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 		SchemaVersion: SpecVersion,
 		MediaType:     MediaTypeToolProviderCatalog,
 		ToolProviders: []ManifestRef{{
-			ID: "search", Version: "1.0.0", Path: providerPath, Digest: providerDigest,
+			ID: "search", Version: "1.0.0", Path: providerPath, Descriptor: Descriptor{
+				MediaType: MediaTypeToolProvider, Digest: providerDigest, Size: providerSize,
+			},
 		}},
 	}
-	catalogDigest := mustWriteJSON(t, root, "tool-providers/catalog.json", catalog)
+	catalogDescriptor := mustWriteJSON(t, root, "tool-providers/catalog.json", MediaTypeToolProviderCatalog, catalog)
 	suiteData, err := os.ReadFile(filepath.Join(root, "agentsuite.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -494,8 +595,8 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 	if err := decodeStrict(suiteData, &suite); err != nil {
 		t.Fatal(err)
 	}
-	suite.ToolProviderCatalog.Digest = catalogDigest
-	mustWriteJSON(t, root, "agentsuite.json", suite)
+	suite.ToolProviderCatalog.Descriptor = catalogDescriptor
+	mustWriteJSON(t, root, "agentsuite.json", MediaTypeSuite, suite)
 
 	report, err := ValidatePath(root)
 	if err != nil {
@@ -506,14 +607,20 @@ func TestRemoteMCPFixtureIsConformantAndCatalogable(t *testing.T) {
 	}
 
 	unretained := []byte(strings.Replace(string(raw), "  \"retained\": true,\n", "", 1))
-	mustWrite(t, root, providerPath, unretained)
+	mustWrite(t, root, providerPath, mustCanonicalizeJSON(t, unretained))
 	unretainedDigest, err := canonicalDigest(unretained)
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog.ToolProviders[0].Digest = unretainedDigest
-	suite.ToolProviderCatalog.Digest = mustWriteJSON(t, root, "tool-providers/catalog.json", catalog)
-	mustWriteJSON(t, root, "agentsuite.json", suite)
+	unretainedSize, err := canonicalSize(unretained)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog.ToolProviders[0].Descriptor = Descriptor{
+		MediaType: MediaTypeToolProvider, Digest: unretainedDigest, Size: unretainedSize,
+	}
+	suite.ToolProviderCatalog.Descriptor = mustWriteJSON(t, root, "tool-providers/catalog.json", MediaTypeToolProviderCatalog, catalog)
+	mustWriteJSON(t, root, "agentsuite.json", MediaTypeSuite, suite)
 
 	if _, err := ValidatePath(root); err == nil || !strings.Contains(err.Error(), "has no inward reference") {
 		t.Fatalf("unreferenced catalog ToolProvider error = %v", err)
@@ -831,14 +938,19 @@ func TestValidateToolProviderRequiresAnImplementation(t *testing.T) {
 		Protocol:      "mcp",
 		Revision:      "2025-06-18",
 		Tools: []Tool{{
-			Name:        "search",
-			InputSchema: FileRef{Path: "schemas/search-input.json", Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+			Name: "search",
+			InputSchema: FileRef{Path: "schemas/search-input.json", Descriptor: Descriptor{
+				MediaType: MediaTypeJSONSchema,
+				Digest:    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				Size:      0,
+			}},
 		}},
 	}
 	content := &contentSet{entries: map[string]contentEntry{
 		"schemas/search-input.json": {
 			Path: "schemas/search-input.json", Type: "file",
 			Digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			Size:   0,
 		},
 	}}
 	err := validateToolProvider(provider, []byte(`{}`), content)
@@ -1464,27 +1576,30 @@ func TestValidateContentPathRejectsTraversalAndAbsolutePaths(t *testing.T) {
 func writeMinimalSuite(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	mustWrite(t, root, "instructions/writer.md", []byte("Write clearly.\n"))
-	instructionDigest := digestBytes([]byte("Write clearly.\n"))
+	instructionBytes := []byte("Write clearly.\n")
+	mustWrite(t, root, "instructions/writer.md", instructionBytes)
+	instructionDigest := digestBytes(instructionBytes)
 
 	agent := Agent{
 		SchemaVersion: SpecVersion,
 		MediaType:     MediaTypeAgent,
 		ID:            "writer",
-		Instructions:  FileRef{Path: "instructions/writer.md", Digest: instructionDigest},
+		Instructions: FileRef{Path: "instructions/writer.md", Descriptor: Descriptor{
+			MediaType: MediaTypeInstructions, Digest: instructionDigest, Size: int64(len(instructionBytes)),
+		}},
 		Model:         ModelRequirement{Protocol: "openai-compatible", Model: "example-model"},
 		ToolProviders: []ToolProviderRequirement{},
 		Invokes:       []AgentInvoke{},
 		Extensions:    []Extension{},
 	}
-	agentDigest := mustWriteJSON(t, root, "agents/writer.json", agent)
+	agentDescriptor := mustWriteJSON(t, root, "agents/writer.json", MediaTypeAgent, agent)
 
 	catalog := ToolProviderCatalog{
 		SchemaVersion: SpecVersion,
 		MediaType:     MediaTypeToolProviderCatalog,
 		ToolProviders: []ManifestRef{},
 	}
-	catalogDigest := mustWriteJSON(t, root, "tool-providers/catalog.json", catalog)
+	catalogDescriptor := mustWriteJSON(t, root, "tool-providers/catalog.json", MediaTypeToolProviderCatalog, catalog)
 
 	image := Descriptor{
 		MediaType: ociManifestMediaType,
@@ -1499,7 +1614,7 @@ func writeMinimalSuite(t *testing.T) string {
 		Harness:       []PlatformImage{{Platform: Platform{OS: "linux", Architecture: "amd64"}, ImageRef: "registry.example/agentsuite/harness@" + image.Digest, Image: image}},
 		SourceEpoch:   1,
 	}
-	profileDigest := mustWriteJSON(t, root, "build-profiles/default.json", profile)
+	profileDescriptor := mustWriteJSON(t, root, "build-profiles/default.json", MediaTypeBuildProfile, profile)
 
 	composition := Composition{
 		SchemaVersion: SpecVersion,
@@ -1509,33 +1624,36 @@ func writeMinimalSuite(t *testing.T) string {
 		BuildProfile:  "default",
 		ToolProviders: []ResolvedToolProvider{},
 	}
-	compositionDigest := mustWriteJSON(t, root, "compositions/writer-linux-amd64.json", composition)
+	compositionDescriptor := mustWriteJSON(t, root, "compositions/writer-linux-amd64.json", MediaTypeComposition, composition)
 
 	suite := Suite{
 		SchemaVersion: SpecVersion,
 		MediaType:     MediaTypeSuite,
 		Name:          "example",
 		Agents: []ManifestRef{{
-			ID: "writer", Path: "agents/writer.json", Digest: agentDigest,
+			ID: "writer", Path: "agents/writer.json", Descriptor: agentDescriptor,
 		}},
-		ToolProviderCatalog: ManifestRef{ID: "catalog", Path: "tool-providers/catalog.json", Digest: catalogDigest},
+		ToolProviderCatalog: ManifestRef{ID: "catalog", Path: "tool-providers/catalog.json", Descriptor: catalogDescriptor},
 		Compositions: []CompositionRef{{
 			Agent: "writer", Platform: Platform{OS: "linux", Architecture: "amd64"},
-			Path: "compositions/writer-linux-amd64.json", Digest: compositionDigest,
+			Path: "compositions/writer-linux-amd64.json", Descriptor: compositionDescriptor,
 		}},
 		BuildProfiles: []ManifestRef{{
-			ID: "default", Path: "build-profiles/default.json", Digest: profileDigest,
+			ID: "default", Path: "build-profiles/default.json", Descriptor: profileDescriptor,
 		}},
 		Capabilities: []string{},
 		Extensions:   []Extension{},
 	}
-	mustWriteJSON(t, root, "agentsuite.json", suite)
+	mustWriteJSON(t, root, "agentsuite.json", MediaTypeSuite, suite)
 	return root
 }
 
-func mustWriteJSON(t *testing.T, root, name string, value any) string {
+// mustWriteJSON writes value to disk as its exact RFC 8785 JCS canonical
+// bytes, since suite content referenced by a nested descriptor must be
+// stored byte-identical to its own canonical representation.
+func mustWriteJSON(t *testing.T, root, name, mediaType string, value any) Descriptor {
 	t.Helper()
-	data, err := json.Marshal(value)
+	data, err := Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1544,7 +1662,11 @@ func mustWriteJSON(t *testing.T, root, name string, value any) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return digest
+	size, err := canonicalSize(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Descriptor{MediaType: mediaType, Digest: digest, Size: size}
 }
 
 func mustVariantDigest(t *testing.T, variant ToolProviderVariant) string {
@@ -1560,6 +1682,19 @@ func mustVariantDigest(t *testing.T, variant ToolProviderVariant) string {
 		t.Fatal(err)
 	}
 	return digests[0]
+}
+
+// mustCanonicalizeJSON re-serializes data (as read from a pretty-printed
+// fixture) into its RFC 8785 JCS canonical bytes, matching what a conformant
+// producer must store on disk for a descriptor that binds canonical
+// identity.
+func mustCanonicalizeJSON(t *testing.T, data []byte) []byte {
+	t.Helper()
+	canonical, err := jcs.Transform(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return canonical
 }
 
 func mustWrite(t *testing.T, root, name string, data []byte) {

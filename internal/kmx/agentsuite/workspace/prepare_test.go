@@ -66,7 +66,7 @@ func TestPrepareExactNativeArtifactAndReuse(t *testing.T) {
 	if err := json.Unmarshal(readFile(t, filepath.Join(out, "metadata/kmx/native-orka.json")), &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.SchemaVersion != 1 || metadata.ExecutionMode != "native-orka" || metadata.Member != "greeter" || metadata.RendererVersion != "kmx.native-orka/v1" || metadata.RequiredImages == nil || len(metadata.RequiredImages) != 0 {
+	if metadata.SchemaVersion != 1 || metadata.ExecutionMode != "native-orka" || metadata.Member != "greeter" || metadata.RendererVersion != "kmx.native-orka/v2" || metadata.RequiredImages == nil || len(metadata.RequiredImages) != 0 {
 		t.Fatalf("invalid native metadata: %+v", metadata)
 	}
 	if len(metadata.Cases) != 1 || metadata.Cases[0].Path != "metadata/kmx/eval/example.yaml" || metadata.Cases[0].Digest != digest.FromBytes(readFile(t, filepath.Join(root, "eval/example.yaml"))).String() {

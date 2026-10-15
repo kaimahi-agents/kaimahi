@@ -92,16 +92,17 @@
       "properties": {
         "mediaType": {"type": "string", "minLength": 1},
         "digest": {"$ref": "#/$defs/digest"},
-        "size": {"type": "integer", "minimum": 0}
+        "size": {"type": "integer", "minimum": 0},
+        "annotations": {"type": "object", "additionalProperties": {"type": "string"}}
       }
     },
     "fileRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "digest"],
+      "required": ["path", "descriptor"],
       "properties": {
         "path": {"$ref": "#/$defs/contentPath"},
-        "digest": {"$ref": "#/$defs/digest"}
+        "descriptor": {"$ref": "#/$defs/descriptor"}
       }
     },
     "extension": {
