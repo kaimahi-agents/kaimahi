@@ -120,7 +120,6 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   still requires both flags. No model defaults, provider discovery, runtime
   bootstrap or new config fields are added; core authoring stays strict.
 
-
 - No-reference `kmx lift --to NAME` composes missing Orka workspace evaluation,
   exact-version publication and Lift from one frozen plan, with automatic disclosed
   source-only promotion and one scoped confirmation. Private exact-version
