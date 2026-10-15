@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"maps"
 	"os"
 	"path"
@@ -78,118 +77,39 @@ func caseName(name string) bool {
 	return safeText(name) == nil && path.Base(name) == name && name != "." && name != ".." && !strings.Contains(name, "\\") && (strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml"))
 }
 func loadSource(ctx context.Context, root string) (*snapshot, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	root, err := safeAbsolute(root)
+	s, err := normalizeSource(ctx, root)
 	if err != nil {
 		return nil, err
 	}
-	r, err := os.OpenRoot(root)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-	selected := map[string]string{}
-	source := map[string]SourceFile{}
-	read := func(name string) ([]byte, error) {
-		b, err := readBounded(r, name)
-		if err != nil {
-			return nil, err
-		}
-		info, err := r.Lstat(name)
-		if err != nil {
-			return nil, err
-		}
-		selected[name] = godigest.FromBytes(b).String()
-		source[name] = SourceFile{Data: b, Mode: info.Mode()}
-		return b, nil
-	}
-	wb, err := read("workspace.yaml")
-	if err != nil {
-		return nil, err
-	}
-	w, err := parseSourceWorkspace(wb)
-	if err != nil {
-		return nil, err
-	}
-	mb, err := read(w.Member)
-	if err != nil {
-		return nil, err
-	}
-	var m sourceMember
-	if err := strictYAML(mb, &m); err != nil {
-		return nil, fmt.Errorf("member: %w", err)
-	}
-	if w.Member != "agents/"+m.ID+"/member.yaml" {
-		return nil, errors.New("workspace must select one agents/ID/member.yaml")
-	}
-	agents, err := entries(r, "agents", 1)
-	if err != nil {
-		return nil, err
-	}
-	if len(agents) != 1 || agents[0].Name() != m.ID || !agents[0].IsDir() {
-		return nil, errors.New("workspace must contain exactly one member")
-	}
-	// Check before joining: cleaning an authored '..' must not conceal an escape.
-	if !fs.ValidPath(m.Instructions) || strings.Contains(m.Instructions, "\\") {
-		return nil, errors.New("instructions path must be member-relative")
-	}
-	instructions, err := read(path.Dir(w.Member) + "/" + m.Instructions)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateMember(m, instructions); err != nil {
-		return nil, err
-	}
-	profile, err := read(w.BuildProfile)
-	if err != nil {
-		return nil, err
-	}
-	caseEntries, err := entries(r, "eval", 128)
-	if err != nil {
-		return nil, err
-	}
-	cases := map[string][]byte{}
-	total := len(wb) + len(mb) + len(instructions) + len(profile)
-	for _, entry := range caseEntries {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if !caseName(entry.Name()) || !entry.Type().IsRegular() {
-			return nil, errors.New("eval entries must be regular YAML files without subdirectories")
-		}
-		b, err := read("eval/" + entry.Name())
-		if err != nil {
-			return nil, err
-		}
-		total += len(b)
-		if total > 8<<20 {
-			return nil, errors.New("workspace source exceeds 8 MiB")
-		}
-		cases[entry.Name()] = b
-	}
-	files, err := resolve(w.Name, m, instructions, profile, cases)
-	if err != nil {
-		return nil, err
-	}
-	runtimeProfile, err := m.Runtime.profile()
-	if err != nil {
-		return nil, err
-	}
-	renderer, executionProfile := rendererVersion, ""
+	var files map[string][]byte
+	renderer, executionProfile := multiRendererVersion, ""
 	var declaredRuntime *RuntimeProfile
-	if runtimeProfile.ID == "kagent" {
-		renderer, executionProfile, declaredRuntime = kagentRendererVersion, kagentExecutionProfile, &runtimeProfile
-	} else if runtimeProfile.ID == "agentsessions" {
-		renderer, executionProfile, declaredRuntime = agentsessionsRendererVersion, agentsessionsExecutionProfile, &runtimeProfile
+	if s.workspace.SchemaVersion == 2 {
+		files, err = resolveMulti(s.workspace.Name, s.members, s.profile)
+	} else {
+		m := s.members[0]
+		files, err = resolve(s.workspace.Name, m.member, m.instructions, s.profile, m.cases)
+		profile, profileErr := m.member.Runtime.profile()
+		if profileErr != nil {
+			return nil, profileErr
+		}
+		renderer = rendererVersion
+		if profile.ID == "kagent" {
+			renderer, executionProfile, declaredRuntime = kagentRendererVersion, kagentExecutionProfile, &profile
+		} else if profile.ID == "agentsessions" {
+			renderer, executionProfile, declaredRuntime = agentsessionsRendererVersion, agentsessionsExecutionProfile, &profile
+		}
 	}
+	if err != nil {
+		return nil, err
+	}
+	// Keep the v1 framing byte-for-byte unchanged.
 	framed, err := spec.Marshal(struct {
 		Renderer         string            `json:"renderer"`
 		Files            map[string]string `json:"files"`
 		Runtime          *RuntimeProfile   `json:"runtime,omitempty"`
 		ExecutionProfile string            `json:"executionProfile,omitempty"`
-	}{renderer, selected, declaredRuntime, executionProfile})
+	}{renderer, s.selected, declaredRuntime, executionProfile})
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +117,7 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &snapshot{name: w.Name, fingerprint: fingerprint, files: files, source: source}, nil
+	return &snapshot{name: s.workspace.Name, fingerprint: fingerprint, files: files, source: s.source}, nil
 }
 
 // resolve builds the public graph bottom-up. Profile pins are declared build
@@ -352,6 +272,12 @@ func nativeProfile(files map[string][]byte) (nativeRecord, RuntimeProfile, error
 // validateNative regenerates the supported graph and requires exact, full
 // allowlist coverage, so public-format extensions cannot silently disappear.
 func validateNative(files map[string][]byte) (string, error) {
+	if err := nativeBounds(files); err != nil {
+		return "", err
+	}
+	if _, multi := files[multiNativePath]; multi {
+		return validateMulti(files)
+	}
 	var suite spec.Suite
 	if err := spec.Unmarshal(files["agentsuite.json"], &suite); err != nil {
 		return "", err

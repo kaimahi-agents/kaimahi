@@ -189,6 +189,9 @@ func resolveSuiteWorkspace(root string) (string, error) {
 		}
 		return "", err
 	}
+	if err := workspace.RequireSingleMember(resolved); err != nil {
+		return "", err
+	}
 	return resolved, nil
 }
 

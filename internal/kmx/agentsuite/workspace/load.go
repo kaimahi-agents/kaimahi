@@ -48,6 +48,9 @@ func Load(ctx context.Context, p *Prepared) (*NativeSuite, error) {
 		// Strict verifier diagnostics can quote untrusted metadata keys or values.
 		return nil, errors.New("packaged native suite verification failed")
 	}
+	if _, multi := files[multiNativePath]; multi {
+		return nil, ErrMultiMemberUnsupported
+	}
 	return loadNativeFiles(ctx, files, p.Descriptor.Digest.String())
 }
 
@@ -64,6 +67,9 @@ func LoadArtifact(ctx context.Context, artifact *suiteoras.Artifact) (*NativeSui
 	if _, err := validateNative(files); err != nil {
 		return nil, errors.New("packaged native suite verification failed")
 	}
+	if _, multi := files[multiNativePath]; multi {
+		return nil, ErrMultiMemberUnsupported
+	}
 	return loadNativeFiles(ctx, files, artifact.Descriptor().Digest.String())
 }
 
@@ -76,16 +82,18 @@ func loadNativeFiles(ctx context.Context, files map[string][]byte, digest string
 	if err != nil {
 		return nil, errors.New("invalid packaged native metadata")
 	}
-	var member spec.Agent
-	if err := spec.Unmarshal(files[suite.Agents[0].Path], &member); err != nil {
-		return nil, errors.New("invalid packaged native member")
-	}
 	graphDigest, err := spec.Digest(files["agentsuite.json"])
 	if err != nil {
 		return nil, errors.New("invalid packaged graph identity")
 	}
-	// Both entry points guarantee exactly one member, composition and profile,
-	// with complete ordered cases and a caller-owned map of verified bytes.
+	return loadNativeMember(ctx, files, suite, native, profile, digest, graphDigest, 0)
+}
+
+func loadNativeMember(ctx context.Context, files map[string][]byte, suite spec.Suite, native nativeRecord, profile RuntimeProfile, digest, graphDigest string, index int) (*NativeSuite, error) {
+	var member spec.Agent
+	if err := spec.Unmarshal(files[suite.Agents[index].Path], &member); err != nil {
+		return nil, errors.New("invalid packaged native member")
+	}
 	result := &NativeSuite{
 		Digest:             digest,
 		GraphDigest:        graphDigest,
@@ -94,9 +102,9 @@ func loadNativeFiles(ctx context.Context, files map[string][]byte, digest string
 		Description:        member.Description,
 		Model:              member.Model.Model,
 		Instructions:       files[member.Instructions.Path],
-		MemberDigest:       suite.Agents[0].Descriptor.Digest,
+		MemberDigest:       suite.Agents[index].Descriptor.Digest,
 		InstructionsDigest: member.Instructions.Descriptor.Digest,
-		CompositionDigest:  suite.Compositions[0].Descriptor.Digest,
+		CompositionDigest:  suite.Compositions[index].Descriptor.Digest,
 		BuildProfileDigest: suite.BuildProfiles[0].Descriptor.Digest,
 		RendererVersion:    native.RendererVersion,
 		Runtime:            profile,

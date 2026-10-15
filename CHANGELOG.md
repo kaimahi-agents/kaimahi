@@ -88,6 +88,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Provisional KMX-local `schemaVersion: 2` member-list source supports bounded,
+  deterministic offline multi-member preparation and inventory loading, with
+  member-scoped cases and complete graph/digest checks. Root eval, workspace push
+  (including unevaluated) and workspace Lift refuse before operational effects;
+  execution loaders refuse multi-member artifacts. One-member source/create and
+  receipts remain unchanged; no binding, approval or evaluation semantics are added.
+  Authoring remains provisional pending [#526](https://github.com/kaimahi-agents/kaimahi/issues/526).
+
 - No-reference `kmx lift --to NAME` composes missing Orka workspace evaluation,
   exact-version publication and Lift from one frozen plan, with automatic disclosed
   source-only promotion and one scoped confirmation. Private exact-version

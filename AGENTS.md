@@ -255,6 +255,21 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   updating current examples. Do not bulk-rename historical text or serialized
   state. Generated recovery commands must preserve selectors and shell quoting.
 
+## Offline multi-member workspace boundary
+
+- Provisional private `workspace.yaml` schemaVersion 2 uses `members` paths under
+  one suite root, with member-scoped `eval/ID/` cases and the shared pinned build
+  profile. Keep representation behind workspace loading pending authoring decisions
+  in [#526](https://github.com/kaimahi-agents/kaimahi/issues/526). SchemaVersion 1,
+  create prompts and one-member receipts remain unchanged; no source migration.
+- Multi-member `Prepare`/`LoadInventory` is offline only. Preserve complete closed
+  graph/case coverage, canonical member ordering and bounded confined reads. Existing
+  execution `Load`/`LoadArtifact` refuse rather than choosing a first member.
+  Root eval/workspace push (even unevaluated)/composed Lift preflight the descriptor
+  before state, output or operational selection; verified multi artifacts cannot
+  reach reference-Lift target observations. No binding, approval, invocation or
+  evaluation semantics, mixed-runtime execution or runtime qualification is implied.
+
 ## AgentSuite evaluation storage
 
 - Keep the draft `agentsuite/spec.md` implementation-neutral and focused on the

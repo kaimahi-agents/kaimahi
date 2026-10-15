@@ -321,6 +321,9 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 			}
 		}
 		if workspaceMode {
+			if err := refuseMultiMemberWorkspace(pushWorkspace); err != nil {
+				return err
+			}
 			var reference, repository string
 			if len(args) == 1 {
 				reference = args[0]

@@ -11,6 +11,7 @@ import (
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	godigest "github.com/opencontainers/go-digest"
 )
@@ -99,6 +100,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 			}
 			if errors.Is(err, errSuiteKagentOccupied) {
 				cause = errors.Join(cause, errSuiteKagentOccupied)
+			}
+			if errors.Is(err, workspace.ErrMultiMemberUnsupported) {
+				cause = errors.Join(cause, workspace.ErrMultiMemberUnsupported)
 			}
 			err = errors.Join(ErrReleaseLift, cause)
 		}

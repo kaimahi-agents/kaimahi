@@ -68,6 +68,9 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) (err error) {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			if err := refuseMultiMemberWorkspace(native.Workspace); err != nil {
+				return err
+			}
 			selectedNative := native
 			if !cmd.Flags().Changed("to-namespace") {
 				selectedNative.ToNamespace = ""

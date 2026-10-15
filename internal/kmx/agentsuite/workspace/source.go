@@ -75,10 +75,11 @@ type CreateOptions struct {
 	Runtime                                    RuntimeProfile
 }
 type sourceWorkspace struct {
-	SchemaVersion int    `yaml:"schemaVersion"`
-	Name          string `yaml:"name"`
-	Member        string `yaml:"member"`
-	BuildProfile  string `yaml:"buildProfile"`
+	SchemaVersion int      `yaml:"schemaVersion"`
+	Name          string   `yaml:"name"`
+	Member        string   `yaml:"member,omitempty"`
+	BuildProfile  string   `yaml:"buildProfile"`
+	Members       []string `yaml:"members,omitempty"`
 }
 type sourceMember struct {
 	ID           string `yaml:"id"`
@@ -171,12 +172,20 @@ func readBounded(r *os.Root, name string) ([]byte, error) {
 	if err := confined(r, name); err != nil {
 		return nil, fmt.Errorf("read %s: %w", name, err)
 	}
+	// Refuse static FIFOs/devices before opening; opening them can block.
+	info, err := r.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxFile {
+		return nil, errors.New("source must be a regular file of at most 1 MiB")
+	}
 	f, err := r.Open(name)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	info, err := f.Stat()
+	info, err = f.Stat()
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +283,7 @@ func Create(ctx context.Context, root string, opt CreateOptions) error {
 		return err
 	}
 	defer os.RemoveAll(stage)
-	w := sourceWorkspace{1, opt.Name, "agents/" + opt.Name + "/member.yaml", "build-profiles/default.json"}
+	w := sourceWorkspace{SchemaVersion: 1, Name: opt.Name, Member: "agents/" + opt.Name + "/member.yaml", BuildProfile: "build-profiles/default.json"}
 	wb, err := yaml.Marshal(w)
 	if err != nil {
 		return err
@@ -359,6 +368,13 @@ func strictYAML(b []byte, out any) error {
 		}
 		if err := safeText(n.Value); err != nil {
 			return err
+		}
+		if n.Kind == yaml.SequenceNode {
+			for _, item := range n.Content {
+				if item.Kind != yaml.ScalarNode || item.Tag != "!!str" {
+					return errors.New("source lists must contain only strings")
+				}
+			}
 		}
 		seen := map[string]bool{}
 		for i, c := range n.Content {
