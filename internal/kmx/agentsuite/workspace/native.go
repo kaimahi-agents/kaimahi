@@ -59,6 +59,13 @@ func entries(r *os.Root, name string, limit int) ([]os.DirEntry, error) {
 	if err := confined(r, name); err != nil {
 		return nil, err
 	}
+	info, err := r.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, errors.New("source entries require a directory")
+	}
 	f, err := r.Open(name)
 	if err != nil {
 		return nil, err

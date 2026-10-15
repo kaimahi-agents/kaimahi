@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -186,8 +187,8 @@ func TestArtifactArchiveBoundsAndClosedTypes(t *testing.T) {
 				}
 			case "files":
 				hs = nil
-				for i := range 136 {
-					hs = append(hs, regular(strings.Repeat("a", i+1), 1))
+				for i := range artifactFilesLimit + 1 {
+					hs = append(hs, regular(fmt.Sprintf("file-%03d", i), 1))
 				}
 			case "directories":
 				hs = nil

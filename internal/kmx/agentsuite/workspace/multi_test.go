@@ -95,6 +95,44 @@ func TestWorkspaceRefusesNonregularDescriptor(t *testing.T) {
 	}
 }
 
+func TestMultiSourceRefusesNonDirectoryFIFO(t *testing.T) {
+	if root := os.Getenv("KMX_TEST_DIRECTORY_FIFO_ROOT"); root != "" {
+		if _, err := workspace.Prepare(t.Context(), root, root+"-cache"); err == nil || !strings.Contains(err.Error(), "directory") {
+			t.Fatalf("expected directory refusal, got %v", err)
+		}
+		return
+	}
+	tool, err := exec.LookPath("mkfifo")
+	if err != nil {
+		t.Skip("mkfifo unavailable")
+	}
+	for _, dir := range []string{"agents", "eval"} {
+		t.Run(dir, func(t *testing.T) {
+			root, _ := multiWorkspace(t, 2, 1)
+			if err := os.RemoveAll(filepath.Join(root, dir)); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := exec.Command(tool, filepath.Join(root, dir)).CombinedOutput(); err != nil {
+				t.Fatal(err, string(out))
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestMultiSourceRefusesNonDirectoryFIFO$")
+			cmd.Env = append(os.Environ(), "KMX_TEST_DIRECTORY_FIFO_ROOT="+root)
+			out, err := cmd.CombinedOutput()
+			if ctx.Err() != nil {
+				t.Fatal("offline prepare blocked on a directory FIFO")
+			}
+			if err != nil {
+				t.Fatal(err, string(out))
+			}
+			if _, err := os.Stat(root + "-cache"); !os.IsNotExist(err) {
+				t.Fatal("non-directory source created cache")
+			}
+		})
+	}
+}
+
 func TestSingleCompatibilityGolden(t *testing.T) {
 	root, cache := createWorkspace(t)
 	p, err := workspace.Prepare(t.Context(), root, cache)
@@ -196,6 +234,17 @@ func TestMultiPrepareUpperCaseAndMemberBudgets(t *testing.T) {
 			}
 			if got := len(authoredTree(t, extract(t, p))); got != wantFiles {
 				t.Fatalf("upper-bound artifact files = %d, want %d", got, wantFiles)
+			}
+			artifact, err := suiteoras.ReadArtifactLayout(t.Context(), p.Path, p.Descriptor.Digest.String())
+			if err != nil {
+				t.Fatalf("source-free upper-bound retrieval refused: %v", err)
+			}
+			loaded, err := workspace.LoadArtifactInventory(t.Context(), artifact)
+			if err != nil || !reflect.DeepEqual(loaded, inventory) {
+				t.Fatalf("source-free upper-bound inventory differs: %v", err)
+			}
+			if _, err := workspace.LoadArtifact(t.Context(), artifact); !errors.Is(err, workspace.ErrMultiMemberUnsupported) {
+				t.Fatalf("upper-bound artifact reached execution loader: %v", err)
 			}
 		})
 	}

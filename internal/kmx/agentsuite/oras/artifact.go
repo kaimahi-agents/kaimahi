@@ -29,12 +29,13 @@ const (
 	artifactTarBytes        = 10 << 20
 	artifactFileBytes       = 1 << 20
 	artifactContentBytes    = 8 << 20
-	artifactFilesLimit      = 135
-	artifactEntriesLimit    = 256
+	// Shared profile/catalog/root/metadata, 16 members and 128 total cases.
+	artifactFilesLimit   = 4 + 3*16 + 128
+	artifactEntriesLimit = 256
 )
 
 // Artifact retains verified original packaged bytes, not source or a re-archive.
-// The limits are for the initial one-member declarative execution profile.
+// The bounds cover native inventories; execution support is consumer-owned.
 type Artifact struct {
 	descriptor ocispec.Descriptor
 	files      map[string][]byte
