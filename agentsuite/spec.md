@@ -96,6 +96,12 @@ A **descriptor** is a closed object:
   and validated against those literal bytes directly; no canonical
   re-serialization applies.
 
+A hand-edited canonicalized JSON file is not stored in its canonical form by
+construction: authoring tooling MUST re-serialize such a file to its RFC 8785
+JCS canonical bytes, and recompute `digest`/`size` from that re-serialization,
+before it is committed as content. A consumer never re-canonicalizes a stored
+file on a producer's behalf.
+
 A descriptor's `mediaType` is not a free-form label: specific references
 require an exact value, and a consumer MUST reject any other value even when
 `digest` and `size` are otherwise correct:
