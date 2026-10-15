@@ -107,7 +107,7 @@ separate model-access binding; selecting one does not select the other.
   RemoteMCP, suite status and retirement remain unavailable.
 - **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary
   push and explicit private `eval --development-host FILE`: one fresh
-  Session/config/Exec per case, full-pass private proof and exact-S evaluated
+  Session/config/Exec per declared run, full-pass private proof and exact-S evaluated
   push. This unauthenticated literal-loopback development path loads no cluster
   settings; explicit judging and repeated cases share Orka/kagent semantics. It supports no tools, Lift/chat/status or remote lifecycle.
   Receipt diff refuses its proof. Read-only reference extraction/export and

@@ -139,9 +139,11 @@ def check(text: str) -> str | None:
     for index, (label, purpose_pattern) in enumerate(JOURNEY_ROWS):
         if rows[index][0] != label or re.search(purpose_pattern, rows[index][1]) is None:
             return f"README front door: {label} row is missing or out of order"
-    if "only when all cases pass" not in rows[1][1]:
+    if "only when the full policy passes" not in rows[1][1]:
         return "README front door: Prove row must require a full pass"
-    if "stops later cases after the first non-pass" not in rows[1][1]:
+    if "optional `runs`/`minPasses` (default once)" not in rows[1][1]:
+        return "README front door: Prove row must describe declared repeats"
+    if "stops after a case misses its threshold or any unknown/error" not in rows[1][1]:
         return "README front door: Prove row must preserve fail-fast execution"
     if "Neither form deploys" not in rows[2][1]:
         return "README front door: Publish row must say it does not deploy"
@@ -191,7 +193,7 @@ def check(text: str) -> str | None:
     for label, pattern in [
         ("Orka default", r"\*\*Orka\*\* is the default runtime\..*packaged workspace path supports\s+evaluation, evaluated publication and root digest Lift with exact evaluated\s+reuse;.*independent live Orka run and chat remain"),
         ("kagent version boundary", r"\*\*kagent\*\* support is exact-version.*v0\.10\.3\s+Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated\s+publication and create-only root digest Lift\. Standalone run/chat, Python,\s+RemoteMCP, suite status and retirement remain unavailable\."),
-        ("agentsessions boundary", r"\*\*agentsessions\*\* supports pinned-chat offline suite create/prepare/load/ordinary\s+push and explicit private `eval --development-host FILE`: one fresh\s+Session/config/Exec per case, full-pass private proof and exact-S evaluated\s+push\..*literal-loopback development path loads no cluster\s+settings; it supports no tools/judge, Lift/chat/status or remote lifecycle\.\s+Receipt diff refuses its proof\."),
+        ("agentsessions boundary", r"\*\*agentsessions\*\* supports pinned-chat offline suite create/prepare/load/ordinary\s+push and explicit private `eval --development-host FILE`: one fresh\s+Session/config/Exec per declared run, full-pass private proof and exact-S evaluated\s+push\..*literal-loopback development path loads no cluster\s+settings; explicit judging and repeated cases share Orka/kagent semantics\. It supports no tools, Lift/chat/status or remote lifecycle\.\s+Receipt diff refuses its proof\."),
     ]:
         if re.search(pattern, runtime, re.S) is None:
             return f"README front door: {label} is missing"

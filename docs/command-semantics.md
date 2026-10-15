@@ -157,7 +157,7 @@ Judgment shares the current run's deadline and is
 followed by attribution rechecks. Passing rows bind judge identity, endpoint
 configuration hash and both scores without reasoning or raw judge URLs; recovery
 commands omit the endpoint. Text-only receipt encoding is unchanged. Development
-AgentSessions development evaluation shares this judge transport, evidence and per-run deadline.
+AgentSessions evaluation shares this judge transport, evidence and per-run deadline.
 `push --evaluation FILE` checks runtime-specific private receipt coherence and
 exact manifest S before publication, overriding managed lookup without fallback.
 Root push otherwise requires the latest completed exact-S pass from private managed

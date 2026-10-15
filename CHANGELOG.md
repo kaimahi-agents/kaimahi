@@ -122,8 +122,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   total run-time budget excluding placement. Any unknown vetoes a pass;
   execution errors still abort. Private evidence records complete per-run
   verdicts and threshold, with unchanged default one-run encoding. Upgrade
-  readers before exchanging repeat receipts. AgentSessions refuses repeats;
-  repeat fields follow [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions),
+  readers before exchanging repeat receipts; repeat fields follow [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions),
   including positive integers and `minPasses` requiring `runs`. KMX-private
   YAML/receipts remain separate from the spec's embedded JSON format.
 
@@ -155,8 +154,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Private receipts bind declared judge model/version, policy, threshold, endpoint
   configuration hash and both scores; reasoning and raw judge URLs stay out of
   receipts and terminal recovery commands. Text-only receipts are unchanged;
-  upgrade readers before exchanging judge receipts. AgentSessions judging remains
-  unsupported. The existing native Orka CI shard includes one open-ended rubric
+  upgrade readers before exchanging judge receipts. The existing native Orka CI
+  shard includes one open-ended rubric
   case alongside its two text cases, reusing the pinned AIKit workload and existing
   timeout budgets. Runner tests validate owned-forward cleanup and independently
   check the declared judge identity/configuration and both receipt scores.
