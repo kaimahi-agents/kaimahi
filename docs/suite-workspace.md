@@ -215,7 +215,7 @@ reads are bounded, and credential-shaped content is refused.
 ## AgentSessions development evaluation
 
 Select a pinned, operator-owned built-in `chat` host explicitly. This path uses
-one fresh, non-fork Session and one never-retried Exec per packaged case, with
+one fresh, non-fork Session and one never-retried Exec per declared case run, with
 exact `system_prompt` config sent every time. It loads no Kubernetes settings.
 No registry, authentication, Lift, chat/status or remote-host support is added.
 
@@ -271,9 +271,10 @@ unchanged observation file cannot detect a hostile process replacement.
 Execution requires an intact canonical five-record chat journal, exact
 harness/version/config/input/model-request fingerprint, attributable final text,
 terminal success and EOF. Deltas and Session metadata are not answers. Host-file
-and source snapshots are rechecked around each case and before export. Assertion
-failure, unknown/partial/invalid evidence, drift, cancellation or output failure
-before publication stops later cases with no new pass. The shared publisher can
+and source snapshots are rechecked around each run, after judging and before export.
+Only completed attributable assertion failures count against the authored threshold;
+unknown/partial/invalid evidence, drift, cancellation or output failure before
+publication stops later execution with no new pass. The shared publisher can
 leave a complete passing receipt after its exclusive link if a later directory
 sync, readback or cancellation fails; evaluation returns nonzero and reports
 **“output may exist”**. Inspect the file rather than assuming rollback removed it.
@@ -281,7 +282,7 @@ No incomplete receipt is accepted, and no published destination is automatically
 deleted. Every Session and execution identity must be unique; no retry, recovery
 or implicit old pass is selected.
 
-Only a full pass exports the `kmx.agentsessions-suite.passing/v1` private proof,
+Only a full policy pass exports the `kmx.agentsessions-suite.passing/v1` private proof,
 including exact S/G/member/profile/config/model/case identities, operator host
 observations, fresh Session/execution IDs and verified journal heads. Prompts,
 answers, config bytes, endpoint locators and journal bodies are excluded. Push
@@ -324,12 +325,12 @@ kagent instead requires `--bindings FILE`, never both. For Orka, namespace
 is `orka-system` by default (`--to-namespace`); `--result-port` defaults to
 `19180`, and each run has a separate `--case-timeout` (default 5m, maximum 9m).
 Explicit empty selectors and global `--context` are refused. No runtime/model
-substitution, case subset or `--show-content` is available. Orka/kagent support
+substitution, case subset or `--show-content` is available. Orka/kagent and AgentSessions development evaluation support
 `contains`, `notContains`, `regex` and explicitly configured `llmJudge` assertions. Unsupported evaluators,
 receipt-budget overflow and invalid output destinations refuse offline before
 loading cluster configuration.
 
-Orka/kagent cases optionally declare repeated execution:
+Orka/kagent and AgentSessions development cases optionally declare repeated execution:
 
 ```yaml
 id: capital
@@ -353,7 +354,8 @@ assertion/judge outcome makes the case unknown. Only completed, attributable
 assertion failures count as failing samples against the threshold; execution
 failure, missing answer, drift or cancellation still aborts later sends.
 Preflight discloses the total Task count and two judge requests per assertion
-per run. AgentSessions refuses repeated cases; its one-run behavior is unchanged.
+per run. AgentSessions uses fresh Session/config/Exec rather than Tasks; its default
+one-run text receipt encoding is unchanged.
 
 Passing private receipts store contiguous per-run rows, with `run` ordinals and
 the declared `runs`/`minPasses`, actual pass/fail verdicts, assertion evidence and
@@ -421,7 +423,7 @@ Changed authored identity invalidates exact-suite evidence; changed endpoint-bou
 identity makes receipt comparisons incompatible. Offline push/lift do not select
 or contact a current judge endpoint. Text-only receipt encoding stays unchanged;
 upgrade receipt readers before exchanging judge receipts. AgentSessions
-`--development-host` continues to refuse judges. The assertion fields are unchanged
+`--development-host` uses this same explicit judge transport and per-run deadline. The assertion fields are unchanged
 and can map directly to authored JSON cases; this does not migrate the case tree.
 
 One mutation guard covers placement, every ordered case and Orka candidate

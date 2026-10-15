@@ -133,8 +133,8 @@ placement and one fresh Task per declared run of each ordered case (default one)
 Optional KMX YAML `runs`/`minPasses` counts completed attributable assertion
 verdicts; omitted threshold requires all runs. Each run has its own deadline;
 repeat preflight states the total run-time budget, excluding placement. There is
-no early success; any unknown or execution error aborts. AgentSessions
-refuses repeats. Field names/defaults follow
+no early success; any unknown or execution error aborts. AgentSessions development
+evaluation uses fresh Session/config/Exec per run under the same policy. Field names/defaults follow
 [AgentSuite §8.2.2](../agentsuite/spec.md#822-case-documents-and-assertions):
 `minPasses` requires `runs`, and both are positive integers. KMX's private YAML
 and receipts remain separate from the spec's embedded JSON format.
@@ -157,7 +157,7 @@ Judgment shares the current run's deadline and is
 followed by attribution rechecks. Passing rows bind judge identity, endpoint
 configuration hash and both scores without reasoning or raw judge URLs; recovery
 commands omit the endpoint. Text-only receipt encoding is unchanged. Development
-AgentSessions continues to refuse judges.
+AgentSessions development evaluation shares this judge transport, evidence and per-run deadline.
 `push --evaluation FILE` checks runtime-specific private receipt coherence and
 exact manifest S before publication, overriding managed lookup without fallback.
 Root push otherwise requires the latest completed exact-S pass from private managed

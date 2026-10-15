@@ -59,7 +59,7 @@ func suitePassingDefinition(row suitePassingCase, dropConfiguration bool) suiteP
 
 // Rows remain ordered by logical case, then run ordinal. Only declared complete
 // repeated groups may reuse a case ID/path; native execution IDs never repeat.
-func validateSuiteRunGroups(rows []suitePassingCase, mode string) error {
+func validateSuiteRunGroups(rows []suitePassingCase) error {
 	ids, paths := map[string]bool{}, map[string]bool{}
 	for i := 0; i < len(rows); {
 		first := rows[i]
@@ -74,7 +74,7 @@ func validateSuiteRunGroups(rows []suitePassingCase, mode string) error {
 			i++
 			continue
 		}
-		if mode == "native-agentsessions" || first.Run != 1 || first.Runs < 2 || first.Runs > agentruntime.EvaluationMaxRuns || first.MinPasses < 1 || first.MinPasses > first.Runs || first.Runs > len(rows)-i {
+		if first.Run != 1 || first.Runs < 2 || first.Runs > agentruntime.EvaluationMaxRuns || first.MinPasses < 1 || first.MinPasses > first.Runs || first.Runs > len(rows)-i {
 			return errSuitePassingReceipt
 		}
 		passes := 0

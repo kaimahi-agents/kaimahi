@@ -165,9 +165,6 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, err
 	}
-	if suite.Runtime.ID == "agentsessions" && (opt.JudgeBaseURL != "" || opt.JudgeKeyEnv != "") {
-		return nil, errors.New("development host evaluation refuses judge configuration")
-	}
 	cases := make([]agentruntime.EvaluationCase, len(inventory))
 	for i, frame := range inventory {
 		cases[i] = frame.Case

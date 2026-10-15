@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"time"
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
@@ -90,11 +91,11 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 	if p == nil || p.suite == nil || p.output == nil || p.started || p.sessions == nil || a.Out == nil || a.Err == nil {
 		return errSuiteSessionsHost
 	}
-	recheck := func() error {
-		if err := ctx.Err(); err != nil {
+	recheck := func(checkCtx context.Context) error {
+		if err := checkCtx.Err(); err != nil {
 			return err
 		}
-		if err := workspace.CheckCurrent(ctx, p.root, p.prepared); err != nil {
+		if err := workspace.CheckCurrent(checkCtx, p.root, p.prepared); err != nil {
 			return err
 		}
 		if err := p.sessions.recheck(p.suite); err != nil {
@@ -102,7 +103,7 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 		}
 		return p.output.unchanged()
 	}
-	if err := recheck(); err != nil {
+	if err := recheck(ctx); err != nil {
 		return err
 	}
 	subject, err := newSuiteSessionsSubject(p.suite, p.sessions.host.Observation)
@@ -116,6 +117,27 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 	if _, err := fmt.Fprintln(a.Err, "Journal: instructions, inputs, answers and per-exec config are retained in cleartext; retention is operator-managed. Closing the connection does not delete Sessions or journal content."); err != nil {
 		return err
 	}
+	for _, frame := range p.inventory {
+		if frame.Metadata.Runs > 1 {
+			if _, err := fmt.Fprintf(a.Err, "Run preflight: %d fresh Sessions and Execs, %s per run, %s total execution budget (upper bound; cancellation can stop earlier).\n", len(p.inventory), p.options.CaseTimeout, time.Duration(len(p.inventory))*p.options.CaseTimeout); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	if p.judge != nil {
+		count := 0
+		for _, frame := range p.inventory {
+			for _, assertion := range frame.Case.Assertions {
+				if assertion.Type == "llmJudge" {
+					count += 2
+				}
+			}
+		}
+		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run\x27s deadline. Identity/version are user-declared, not provider attestation. Reasoning is discarded.\n", count); err != nil {
+			return err
+		}
+	}
 	client, err := agentsessions.Dial(agentsessions.Options{Address: p.sessions.host.Address})
 	if err != nil {
 		return err
@@ -126,37 +148,38 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 	}
 	observations := make([]suiteSessionsObservation, 0, len(p.inventory))
 	sessions, executions := map[string]bool{}, map[string]bool{}
-	for _, frame := range p.inventory {
-		if err := recheck(); err != nil {
-			return err
+	_, err = evaluateSuiteRuns(ctx, p.inventory, p.options.CaseTimeout, a.Out, func(runCtx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
+		var observed suitePassingObservation
+		if err := recheck(runCtx); err != nil {
+			return observed, err
 		}
-		caseCtx, cancel := context.WithTimeout(ctx, p.options.CaseTimeout)
-		result, caseErr := client.RunSuiteCase(caseCtx, agentsessions.SuiteCaseRequest{SuiteDigest: p.suite.Digest, Member: p.suite.MemberID, CaseDigest: frame.Metadata.CaseDigest, Instructions: string(p.suite.Instructions), Model: p.suite.Model, Input: frame.Case.Input, UsedSessionUIDs: sessions})
-		cancel()
-		if caseErr != nil {
-			if _, err := fmt.Fprintf(a.Out, "%s: unknown\n", frame.Case.ID); err != nil {
-				return err
-			}
-			return caseErr
+		result, err := client.RunSuiteCase(runCtx, agentsessions.SuiteCaseRequest{SuiteDigest: p.suite.Digest, Member: p.suite.MemberID, CaseDigest: frame.Metadata.CaseDigest, Instructions: string(p.suite.Instructions), Model: p.suite.Model, Input: frame.Case.Input, UsedSessionUIDs: sessions})
+		if err != nil {
+			return observed, err
 		}
-		if err := recheck(); err != nil {
-			return err
+		if err := recheck(runCtx); err != nil {
+			return observed, err
 		}
 		if sessions[result.SessionUID] || executions[result.ExecutionID] {
-			return errSuitePassingReceipt
+			return observed, errSuitePassingReceipt
 		}
 		sessions[result.SessionUID], executions[result.ExecutionID] = true, true
-		rows := agentruntime.EvaluateAssertions(frame.Case, agentruntime.EvaluationEvidence{AnswerAvailable: true, Answer: result.Output})
-		verdict := agentruntime.EvaluationAssertionsVerdict(rows)
-		if _, err := fmt.Fprintf(a.Out, "%s: %s\n", frame.Case.ID, verdict); err != nil {
-			return err
+		evidence := agentruntime.EvaluationEvidence{AnswerAvailable: true, Answer: result.Output}
+		rows := agentruntime.EvaluateAssertions(frame.Case, evidence)
+		if p.judge != nil {
+			rows = p.judge(runCtx, frame.Case, evidence)
 		}
-		if verdict != agentruntime.EvaluationPass {
-			return errSuitePassingReceipt
+		if err := recheck(runCtx); err != nil {
+			return observed, err
 		}
+		observed.AnswerSHA256, observed.Assertions = agentruntime.EvaluationAnswerDigest(result.Output), rows
 		observations = append(observations, suiteSessionsObservation{Result: result, Assertions: rows})
+		return observed, nil
+	})
+	if err != nil {
+		return err
 	}
-	if err := recheck(); err != nil {
+	if err := recheck(ctx); err != nil {
 		return err
 	}
 	receipt, err := newSuiteSessionsPassingReceipt(ctx, p, subject, observations)
@@ -167,7 +190,7 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 	if _, err := fmt.Fprintln(a.Out, "Full passing AgentSessions evidence; unsigned operator-observed development proof."); err != nil {
 		return err
 	}
-	if err := recheck(); err != nil {
+	if err := recheck(ctx); err != nil {
 		return err
 	}
 	return p.publishPassingReceipt(ctx, receipt)

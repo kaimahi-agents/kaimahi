@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -174,7 +173,7 @@ func TestSuiteRepeatJudgeModelMatchesAreObservations(t *testing.T) {
 			Assertions:   []suitePassingAssertion{assertion},
 		}
 	}
-	if err := validateSuiteRunGroups(rows, "native-orka"); err != nil {
+	if err := validateSuiteRunGroups(rows); err != nil {
 		t.Fatalf("accepted model-match variation changed repeated authored identity: %v", err)
 	}
 	r := &suitePassingReceipt{SchemaVersion: 1, ExecutionMode: "native-orka", Cases: rows}
@@ -203,7 +202,7 @@ func TestSuiteRepeatJudgeModelMatchesAreObservations(t *testing.T) {
 	}
 }
 
-func TestSuiteRepeatInventoryAndSessionsBoundary(t *testing.T) {
+func TestSuiteRepeatInventoryBudget(t *testing.T) {
 	root, _, _, _, _ := passingFixture(t)
 	writeFile(t, filepath.Join(root, "eval/example.yaml"), "id: first\ninput: question\nexpectContains: [answer]\nruns: 100\n")
 	p, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
@@ -222,17 +221,9 @@ func TestSuiteRepeatInventoryAndSessionsBoundary(t *testing.T) {
 	if _, _, err = suitePassingInventory(s); err == nil {
 		t.Fatal("unbounded repeat receipt admitted")
 	}
-	_, opt, sends := suiteSessionsEvaluationFixture(t)
-	writeFile(t, filepath.Join(opt.Workspace, "eval/example.yaml"), "id: first\ninput: question\nexpectContains: [answer]\nruns: 2\n")
-	if prepared, e := PrepareSuiteWorkspaceEvaluation(t.Context(), opt); e == nil {
-		prepared.Close()
-		t.Fatal("AgentSessions repeats admitted")
-	}
-	if sends.Load() != 0 {
-		t.Fatal("host executed")
-	}
-	if _, err = os.Stat(opt.Out); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("refusal exported receipt")
+	s.Runtime = workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}
+	if _, _, err = suitePassingInventory(s); err == nil {
+		t.Fatal("unbounded Sessions repeat receipt admitted")
 	}
 }
 
@@ -479,7 +470,11 @@ func TestSuiteSessionsForgedRepeatReceiptRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = parseSuitePassingReceipt(raw); err == nil {
-		t.Fatal("source-free reader accepted forged AgentSessions repeats")
+	parsed, err := parseSuitePassingReceipt(raw)
+	if err != nil {
+		t.Fatal("structurally valid repeated proof refused", err)
+	}
+	if _, err = canonicalSuitePassingReceipt(t.Context(), parsed, p.suite); !errors.Is(err, errSuitePassingReceipt) {
+		t.Fatal("reader accepted unauthored AgentSessions repeats", err)
 	}
 }

@@ -38,16 +38,16 @@ Root `kmx create NAME` authors one tool-free native workspace member offline,
 Orka by default, exact v0.10.3 Go/linux-amd64 kagent or pinned AgentSessions
 chat explicitly. AgentSessions prepare/load/ordinary push and explicit private
 literal-loopback `eval --development-host FILE` remain independent of deleted
-bundle Sessions evaluation/replay: one fresh Session/config/Exec per ordered
+bundle Sessions evaluation/replay: one fresh Session/config/Exec per declared run of each ordered
 case, full-pass private proof and exact-S evaluated push, no cluster settings,
-tools/judge, auth, Lift/chat/status or remote lifecycle. Receipt diff refuses
+tools, auth, Lift/chat/status or remote lifecycle. Receipt diff refuses
 AgentSessions proof. Runtime-core assertions/llmJudge and all their test groups
-remain retained; native Orka/kagent root eval supports authored llmJudge with an
+remain retained; native Orka/kagent and development AgentSessions eval supports authored llmJudge with an
 explicit endpoint, two threshold-side samples and payload-free declared identity
 proof. The fixed modern Chat Completions wire uses max_completion_tokens
 (1024) without a temperature override; judge evidence/configuration binds the
 request style and old judge receipts require fresh evaluation.
-AgentSessions judging remains refused. Exact model and
+AgentSessions shares the same judge and repeat policy. Exact model and
 file-valued instructions are required; create/push share workspace discovery.
 No runtime/model bootstrap belongs in workspace create. Root eval registers
 completed exact-suite passing metadata in private managed state; --out is optional.
@@ -73,9 +73,9 @@ Standalone AKS up/down and internal App.Lift are independent operations.
 
 Kagent eval requires author-owned bindings, unsecure auth, no trusted-proxy and
 one fresh blocking A2A Task per declared case run without retry. Optional KMX
-`runs`/`minPasses` supports Orka/kagent with unknown-veto thresholds and the
+`runs`/`minPasses` supports Orka/kagent and development AgentSessions with unknown-veto thresholds and the
 configured deadline independently per run, with summed budget disclosure;
-AgentSessions remains one-run only. Draft #497's JSON
+AgentSessions uses fresh Session/config/Exec per run. Draft #497's JSON
 case schema does not yet accept those fields. Evidence is full-passing and
 runtime-specific. Digest Lift refuses every occupied kagent primary/child; Orka
 permits exact evaluated reuse. No Python/RemoteMCP or kagent standalone chat/run.

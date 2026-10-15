@@ -91,10 +91,9 @@ Live create/previews/wizard are removed; their flags are unknown before config.
 Root eval runs full native authored cases only: Orka uses `--inference`, kagent
 uses `--bindings`; pinned AgentSessions chat instead requires a private
 `--development-host FILE`, with no cluster selectors or fallback. All export only
-runtime-specific full-passing evidence. Orka/kagent support authored `llmJudge`
+runtime-specific full-passing evidence. Orka/kagent and development AgentSessions support authored `llmJudge`
 with explicit judge transport and identity, plus optional KMX case `runs`/`minPasses`
-(default one run/all passes; unknown vetoes). AgentSessions judges/repeats remain
-refused. Repeat field names/defaults/validation follow
+(default one run/all passes; unknown vetoes). AgentSessions uses fresh Session/config/Exec per run. Repeat field names/defaults/validation follow
 [AgentSuite §8.2.2](../agentsuite/spec.md#822-case-documents-and-assertions):
 `minPasses` requires `runs`, and both are positive integers. KMX's execution cap
 is 100 runs, within the spec's consumer resource-limit allowance.
@@ -125,7 +124,7 @@ or deploy a runtime.
 |---|---|
 | Orka | Default runtime; setup, independent live run/chat, workspace evaluation/evaluated publication and exact-digest native Lift; no suite status/retirement |
 | kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Lift; no packaged status/retirement |
-| agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case, no tools/judge, cluster settings, registry/auth or remote lifecycle; Lift/chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. |
+| agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case run, shared explicit judging and repeat policy, no tools, cluster settings, registry/auth or remote lifecycle; Lift/chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. |
 
 Support is operation- and version-specific. See the [runtime support
 matrix](runtime-adapters.md#revision-pinned-support-and-qualification-matrix).

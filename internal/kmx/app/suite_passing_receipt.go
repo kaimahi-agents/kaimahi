@@ -102,12 +102,9 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 		}
 		seen[c.ID] = true
 		runs, minPasses := c.RunPolicy()
-		if suite.Runtime.ID == "agentsessions" && runs > 1 {
-			return nil, "", errors.New("AgentSessions evaluation refuses repeated cases")
-		}
 		metadata := suitePassingCase{ID: c.ID, Path: file.Path, CaseDigest: agentruntime.EvaluationCaseDigest(file.Bytes), InputDigest: agentruntime.EvaluationInputDigest(c.Input), Verdict: "pass", Assertions: []suitePassingAssertion{}}
 		for _, a := range agentruntime.EvaluationCaseAssertions(c) {
-			if a.Type != "contains" && a.Type != "notContains" && a.Type != "regex" && (a.Type != "llmJudge" || (suite.Runtime.ID != "orka" && suite.Runtime.ID != "kagent")) {
+			if a.Type != "contains" && a.Type != "notContains" && a.Type != "regex" && (a.Type != "llmJudge" || (suite.Runtime.ID != "orka" && suite.Runtime.ID != "kagent" && suite.Runtime.ID != "agentsessions")) {
 				return nil, "", errors.New("unsupported native suite evaluator")
 			}
 			metadata.Assertions = append(metadata.Assertions, suitePassingAssertionDefinition(a))
@@ -303,7 +300,7 @@ func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 			return errSuitePassingReceipt
 		}
 	}
-	if err := validateSuiteRunGroups(r.Cases, r.ExecutionMode); err != nil {
+	if err := validateSuiteRunGroups(r.Cases); err != nil {
 		return err
 	}
 	tasks, uids := map[string]bool{}, map[string]bool{}
@@ -332,7 +329,7 @@ func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 		assertions := map[string]bool{}
 		verdict := "pass"
 		for _, a := range c.Assertions {
-			if !evaluationEvidenceID.MatchString(a.ID) || !verificationIdentity(a.ID) || assertions[a.ID] || (a.Type != "contains" && a.Type != "notContains" && a.Type != "regex" && (a.Type != "llmJudge" || r.ExecutionMode == "native-agentsessions")) || !verificationDigest(a.DefinitionDigest) || a.EvaluatorVersion != suiteAssertionEvaluatorVersion(a.Type) || (a.Verdict != "pass" && (c.Run == 0 || a.Verdict != "fail")) || !agentruntime.EvaluationJudgeEvidenceValid(agentruntime.EvaluationAssertionResult{Type: a.Type, Verdict: agentruntime.EvaluationVerdict(a.Verdict), Judge: a.Judge}) {
+			if !evaluationEvidenceID.MatchString(a.ID) || !verificationIdentity(a.ID) || assertions[a.ID] || (a.Type != "contains" && a.Type != "notContains" && a.Type != "regex" && a.Type != "llmJudge") || !verificationDigest(a.DefinitionDigest) || a.EvaluatorVersion != suiteAssertionEvaluatorVersion(a.Type) || (a.Verdict != "pass" && (c.Run == 0 || a.Verdict != "fail")) || !agentruntime.EvaluationJudgeEvidenceValid(agentruntime.EvaluationAssertionResult{Type: a.Type, Verdict: agentruntime.EvaluationVerdict(a.Verdict), Judge: a.Judge}) {
 				return errSuitePassingReceipt
 			}
 			assertions[a.ID] = true

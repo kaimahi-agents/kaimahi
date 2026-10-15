@@ -52,7 +52,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   sends exact config once per fresh Session, requires a complete five-record
   qualified journal and full ordered pass, then exports private runtime-specific
   proof. Exact-S --evaluation push accepts that proof offline. Cluster selectors,
-  mixed-runtime proof, tools/judge, lift/chat/status and live create refuse.
+  mixed-runtime proof, tools, lift/chat/status and live create refuse.
   Operator declarations are not authenticated host/build attestation; cleartext
   journal retention is disclosed. Session replay cannot create candidate proof.
   Optional --runtime-version must match that commit; --kagent-runtime refuses.
@@ -144,7 +144,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   repeat preflight states the summed run-time budget excluding placement.
   Any unknown vetoes the threshold. Only
   completed attributable assertion failures are countable; execution errors
-  still abort. AgentSessions refuses repeats both offline and in strict proof.
+  still abort. AgentSessions development evaluation shares this repeat policy.
   Private repeated rows retain ordinal/policy and actual outcomes; default
   one-run encoding stays unchanged. Field names/defaults/validation follow
   [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions):
@@ -182,7 +182,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   run before config; one fresh outer guard covers pair placement and all Tasks.
   Fail/unknown/drift/cancel/output errors stop later sends with no partial export.
   No model/runtime override, subset/content mode or standalone package
-  reference is accepted. Authored llmJudge is supported for Orka/kagent with
+  reference is accepted. Authored llmJudge is supported for Orka/kagent and explicit AgentSessions development hosts with
   explicit --judge-base-url and optional --judge-key-env (environment name only).
   The fixed openai-chat-completions-v1 request style uses max_completion_tokens
   (1024), stream=false and no temperature override, including the pinned AIKit
@@ -196,7 +196,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   model identity matches only the exact authored model or model+"-"+version,
   never prefixes/substrings/case folding/whitespace normalization. Old judge rows missing the style require
   fresh evaluation. Text-only receipt wire shape is unchanged; older readers
-  refuse judge rows. AgentSessions still refuses judges.
+  refuse judge rows. AgentSessions uses the same judge transport and evidence validation.
   Offline `eval diff` reads strict full-passing native Orka/kagent suite
   evidence only. Old normalized receipts are unreadable. `eval from-sessions`
   remains independent private reference extraction/export; RecordedExecution,

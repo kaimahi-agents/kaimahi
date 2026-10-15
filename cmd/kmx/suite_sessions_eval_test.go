@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,13 +74,25 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	if err := os.WriteFile(file, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
+	suiteJudgeCase(t, root)
+	judgeCalls := new(atomic.Int64)
+	judge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		judgeCalls.Add(1)
+		_, _ = w.Write([]byte(`{"model":"judge-model","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"{\"score\":90,\"reasoning\":\"private\"}"}}]}`))
+	}))
+	defer judge.Close()
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	args := []string{"eval", "--workspace", root, "--development-host", file, "--out", filepath.Join(dir, "pass.json")}
+	args := []string{"eval", "--workspace", root, "--development-host", file, "--judge-base-url", judge.URL, "--out", filepath.Join(dir, "pass.json")}
+	missingJudge := append([]string{}, args[:len(args)-4]...)
+	missingJudge = append(missingJudge, "--out", filepath.Join(dir, "missing-judge.json"))
+	if err := execute(missingJudge, deps); err == nil || !strings.Contains(err.Error(), "llmJudge assertions require --judge-base-url") || calls.Load() != 0 || judgeCalls.Load() != 0 {
+		t.Fatal("judge preflight reached execution or wrong refusal", err)
+	}
 	if err := execute(args, deps); err != nil {
 		t.Fatal(err)
 	}
-	if *loads != 0 || calls.Load() != 1 || !strings.Contains(diagnostics.String(), "Development: unauthenticated operator-observed host") {
+	if *loads != 0 || calls.Load() != 1 || judgeCalls.Load() != 2 || !strings.Contains(diagnostics.String(), "Development: unauthenticated operator-observed host") {
 		t.Fatal("development used cluster configuration or wrong execution", *loads, calls.Load(), diagnostics.String())
 	}
 	if _, err := os.Stat(filepath.Join(dir, "pass.json")); err != nil {

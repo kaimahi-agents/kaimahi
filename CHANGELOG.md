@@ -88,6 +88,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- AgentSessions development-host eval supports authored `llmJudge` and
+  `runs`/`minPasses` through the same judge/repeat policy as Orka/kagent. Each
+  run creates a fresh Session/config/Exec; judging shares its deadline, unknown
+  vetoes a threshold, and execution errors abort without retry. Full passing
+  receipts retain actual run outcomes and exact-S publication checks. Default
+  single-run text receipt bytes are unchanged; older readers refuse the newly
+  supported judged/repeated proof. Host observations remain unauthenticated;
+  tools, remote hosts, Lift and receipt diff remain unsupported for Sessions.
+
 - Root eval stores completed runtime-specific passing metadata in private KMX state;
   --out is optional and still exports a standalone receipt for Lift/diff. Immutable
   per-workspace/per-S completion records embed canonical receipts, select latest
