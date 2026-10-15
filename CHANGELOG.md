@@ -117,7 +117,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   cluster configuration, substrate or host calls, and no apply. The template
   targets agent-substrate/substrate main at
   `f4f7b806255ffdc824391b857dbbf329a2556402` (string `sandbox_class`, required
-  template-level cpu/memory `resources`); earlier substrate revisions refuse it.
+  template-level cpu/memory `resources`); substrate revisions before the string
+  `sandbox_class` and required template `resources` refuse it.
   `scripts/validate-agentsessions-render.sh` checks the golden renders with that
   commit's protojson decoding and CreateActorTemplate validation. The template
   name hash covers the renderer version, the full image reference (a mirrored
