@@ -4,8 +4,8 @@ A workspace is editable source. Its prepared AgentSuite is an immutable OCI
 artifact, identified by its manifest digest. Native Orka and exact-v0.10.3 Go
 kagent declarations require no member images; authoring and publication do not contact Kubernetes,
 run a model or invoke Docker/buildx. The pinned AgentSessions chat profile also
-supports offline authoring, preparation, loading and ordinary unevaluated push
-with no member image. Full packaged evaluation and exact-suite evaluated push
+supports offline authoring, preparation, loading and explicitly unevaluated push
+(`--unevaluated`) with no member image. Full packaged evaluation and exact-suite evaluated push
 require the explicit [development host](#agentsessions-development-evaluation)
 boundary. Lift, chat/status and Orka/kagent operational consumers refuse it.
 
@@ -17,9 +17,10 @@ runtime and uses explicit author-owned bindings; evaluated push accepts only
 matching runtime-specific passing evidence. Root digest Lift supports both
 profiles. Kagent Lift is create-only: any occupied primary or generated child
 refuses, even with matching evaluated UIDs. Suite status and retirement remain
-unavailable. Evaluation placement refuses occupied targets without a complete
-caller-retained observation; qualified repeat is read-only, not update/adoption
-or restart recovery.
+unavailable. Public Orka eval creates fresh disposable candidates and cleans them
+up before exporting proof. Kagent evaluation refuses occupied targets without a
+complete caller-retained observation; qualified reuse is read-only, not
+update/adoption or restart recovery.
 Orka evaluation has hermetic command/Task tests and a pinned three-case native
 workspace CI qualifier. Packaged kagent evaluation has hermetic coverage and
 pinned exact-v0.10.3 CLI qualification. Root exact-digest Lift retrieves the
@@ -585,8 +586,9 @@ prepared manifest digest plus full offline case/subject coherence before transfe
 or provenance. Equivalent authored spelling with the same artifact identity is
 allowed; a changed case/model/instruction artifact is refused. Unsigned receipts
 are observations, not authentication, policy gates or release authorization.
-Ordinary push remains explicitly unevaluated. Extracted-directory `suite push`
-does not gain this flag. `eval diff` reads strict passing suite receipts and
+Root push requires matching completed evidence by default; `--unevaluated`
+explicitly opts out. Extracted-directory `suite push` does not gain the
+`--evaluation` flag. `eval diff` reads strict passing suite receipts and
 compares only compatible same-runtime subjects/case inventories; Orka/kagent
 comparison refuses as incompatible, never as equivalent behavior. Comparison
 also requires identical observed ownership. Fresh Orka candidate runs and separate
