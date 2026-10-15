@@ -29,9 +29,10 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			"Public Orka uses fresh digest/run-scoped candidates, never adoption/update/reuse, and exports passing evidence only after verified cleanup and final source/shared-input checks. Startup reports leftovers without deleting or blocking a fresh evaluation. Use eval cleanup [full-run-id] for explicit confirmed recovery; unanchored orphans refuse. Private Quickstart/console and other runtimes are unchanged.\n" +
 			"Orka/kagent cases optionally declare runs/minPasses (default one run; omitted threshold requires all runs). Each run submits a fresh Task, never retried, within its own per-run deadline. Repeated cases disclose the total run-time budget in preflight.\n" +
 			"Any unknown run vetoes a pass. Execution failure, drift or cancellation aborts without a receipt; resources may remain. AgentSessions stays one Session/Exec per case and refuses repeats.\n" +
-			"--out must be a new file in an existing private directory outside workspace/cache trees. Only full passing metadata is exported, unsigned and not a policy gate.\n" +
+			"Completed passing metadata is registered in private KMX state after successful evaluation, Orka cleanup and finalization. --out optionally also writes a new standalone receipt in an existing private directory outside workspace/cache trees. Only full passing metadata is stored, unsigned and not a policy gate.\n" +
 			"Case inputs are sent to the runtime and model; upstream storage/audit policy may retain them. Real native CLI execution qualification remains separate from hermetic checks.",
-		Example: "  kmx eval --to dev --out ../private/passing.json\n" +
+		Example: "  kmx eval\n" +
+			"  kmx eval --to dev --out ../private/passing.json\n" +
 			"  kmx eval --to-context kind-demo --inference provider:inference --out ../private/passing.json\n" +
 			"  kmx eval --workspace ./workspace --to-context remote --to-namespace orka-system --inference provider:inference --out ../private/passing.json",
 		Args: func(_ *cobra.Command, args []string) error {
@@ -131,7 +132,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		})
 	}
-	group.Flags().StringVar(&native.Out, "out", "", "new private full-passing receipt file outside workspace/cache")
+	group.Flags().StringVar(&native.Out, "out", "", "optional new standalone private receipt outside workspace/cache (managed proof is automatic)")
 	group.Flags().DurationVar(&native.CaseTimeout, "case-timeout", 5*time.Minute, "deadline per run, at most 9m")
 	group.Flags().StringVar(&native.ResultPort, "result-port", "19180", "local loopback result-forward port")
 	_ = group.MarkFlagDirname("workspace")

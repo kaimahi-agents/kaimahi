@@ -984,7 +984,7 @@ class Qualification:
         verify_refusal(rejected.returncode, rejected.stderr, [], "expected publication identity")
         require(snapshot(layout) == before, "destination-changed")
         changed_layout, changed = self.work / "changed-layout", self.work / "changed-pulled"
-        self.cli("push", "--workspace", workspace, "--to-layout", changed_layout, reference)
+        self.cli("push", "--unevaluated", "--workspace", workspace, "--to-layout", changed_layout, reference)
         self.cli("suite", "pull", "--from-layout", changed_layout, "--output", changed, reference)
         changed_s = json.loads((changed_layout / "index.json").read_bytes())["manifests"][0]["digest"]
         require(changed_s != subject["SuiteDigest"] and sha(canonical(json.loads((changed / "agentsuite.json").read_bytes()))) == subject["GraphDigest"][7:], "mutation-S-not-G")

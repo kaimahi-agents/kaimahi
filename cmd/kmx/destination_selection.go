@@ -74,13 +74,23 @@ func registerDestinationFlag(cmd *cobra.Command, name *string) {
 
 // Registry policy applies only to root workspace registry publication. Layout
 // and extracted-directory transfer never inspect this operational document.
-func resolveWorkspacePushTransport(cmd *cobra.Command, root, reference string, plainHTTP bool) (string, bool, error) {
+func resolveWorkspacePushTransport(cmd *cobra.Command, root, reference string, plainHTTP bool) (string, string, bool, error) {
 	selected, doc, err := resolveDestinations(root)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
+	}
+	var repository string
+	if doc != nil {
+		repository = doc.PublishRepository
+	}
+	if reference == "" {
+		if repository == "" {
+			return "", "", false, fmt.Errorf("bare push requires saved publishRepository in workspace kmx.yaml")
+		}
+		reference = repository
 	}
 	if !cmd.Flags().Changed("plain-http") {
 		plainHTTP = doc.RegistryHTTP(reference)
 	}
-	return selected, plainHTTP, nil
+	return selected, repository, plainHTTP, nil
 }
