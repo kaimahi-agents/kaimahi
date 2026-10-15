@@ -72,9 +72,36 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	if err := os.WriteFile(file, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
+	binding := filepath.Join(dir, "binding.yaml")
+	bindingDoc := "apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: AgentSessionsBinding\ntarget: {platform: kubernetes, id: demo}\nplacement: {backend: substrate}\natespace: demo\nsandbox: {class: microvm, configName: microvm}\nsnapshot: {fidelity: MEMORY, storageLocation: 'gs://snapshots/demo/'}\nmodel: {name: fixture-model, provider: openai, secretRef: {name: model-credentials, key: api-key}}\n"
+	if err := os.WriteFile(binding, []byte(bindingDoc), 0600); err != nil {
+		t.Fatal(err)
+	}
+	mismatch := filepath.Join(dir, "mismatch.yaml")
+	if err := os.WriteFile(mismatch, []byte(strings.Replace(bindingDoc, "name: fixture-model", "name: other-model", 1)), 0600); err != nil {
+		t.Fatal(err)
+	}
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
-	args := []string{"eval", "--workspace", root, "--development-host", file, "--out", filepath.Join(dir, "pass.json")}
+	base := []string{"eval", "--workspace", root, "--development-host", file}
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"missing bindings", []string{}, "requires --bindings FILE"},
+		{"model mismatch", []string{"--bindings", mismatch}, `serves model "other-model" but the suite pins "fixture-model"`},
+	} {
+		denied := filepath.Join(dir, strings.ReplaceAll(tc.name, " ", "-")+".json")
+		err := execute(append(append(append([]string{}, base...), tc.args...), "--out", denied), deps)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: %v, want %q", tc.name, err, tc.want)
+		}
+		if _, err := os.Stat(denied); !os.IsNotExist(err) || calls.Load() != 0 || *loads != 0 {
+			t.Fatal("binding refusal reached the host or wrote evidence", tc.name)
+		}
+	}
+	args := append(append([]string{}, base...), "--bindings", binding, "--out", filepath.Join(dir, "pass.json"))
 	if err := execute(args, deps); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +111,7 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	if _, err := os.Stat(filepath.Join(dir, "pass.json")); err != nil {
 		t.Fatal("no complete CLI proof", err)
 	}
-	for _, flags := range [][]string{{"--to-context", "kind-other"}, {"--to-namespace", "orka-system"}, {"--inference", "provider:inference"}, {"--bindings", "missing"}, {"--result-port", "19180"}, {"--context", "kind-other"}, {"--container-engine", "docker"}, {"--development-host", ""}} {
+	for _, flags := range [][]string{{"--to-context", "kind-other"}, {"--to-namespace", "orka-system"}, {"--inference", "provider:inference"}, {"--result-port", "19180"}, {"--context", "kind-other"}, {"--container-engine", "docker"}, {"--development-host", ""}} {
 		negative := append([]string{}, args...)
 		negative[len(negative)-1] = filepath.Join(dir, strings.TrimPrefix(flags[0], "--")+"-denied.json")
 		want := "--development-host refuses " + flags[0]

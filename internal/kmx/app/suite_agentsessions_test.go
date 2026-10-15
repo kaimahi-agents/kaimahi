@@ -22,6 +22,7 @@ import (
 	"github.com/aramase/agentsessions/sqlitelog"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -82,8 +83,27 @@ func suiteSessionsEvaluationFixture(t *testing.T) (*App, SuiteWorkspaceEvaluatio
 	if err := os.WriteFile(hostPath, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	opt := SuiteWorkspaceEvaluationOptions{Workspace: root, DevelopmentHost: hostPath, Out: filepath.Join(privateSuiteDir(t), "pass.json"), CaseTimeout: 30 * time.Second}
+	bindingPath := filepath.Join(dir, "binding.yaml")
+	if err := os.WriteFile(bindingPath, []byte(suiteSessionsBindingYAML("fixture-model")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	opt := SuiteWorkspaceEvaluationOptions{Workspace: root, DevelopmentHost: hostPath, Bindings: bindingPath, Out: filepath.Join(privateSuiteDir(t), "pass.json"), CaseTimeout: 30 * time.Second}
 	return &App{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}, opt, calls
+}
+
+func suiteSessionsBindingYAML(model string) string {
+	return `apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: AgentSessionsBinding
+target: {platform: kubernetes, id: agentsuite-demo}
+placement: {backend: substrate}
+atespace: agentsuite-demo
+sandbox: {class: microvm, configName: microvm}
+snapshot: {fidelity: MEMORY, storageLocation: "gs://ate-snapshots/agentsuite-demo/"}
+model:
+  name: ` + model + `
+  provider: openai
+  secretRef: {name: model-credentials, key: api-key}
+`
 }
 
 func TestSuiteSessionsEvaluationFullPassAndExactPush(t *testing.T) {
@@ -107,6 +127,14 @@ func TestSuiteSessionsEvaluationFullPassAndExactPush(t *testing.T) {
 	if r.Cases[0].SessionsExecution.SessionUID == r.Cases[1].SessionsExecution.SessionUID {
 		t.Fatal("reused Session")
 	}
+	binding, err := agentruntime.ParseAgentSessionsBinding([]byte(suiteSessionsBindingYAML("fixture-model")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindingDigest, err := agentruntime.AgentSessionsBindingDigest(binding)
+	if err != nil || r.Sessions.Subject.BindingDigest != bindingDigest {
+		t.Fatalf("evidence did not record the evaluation binding: %q", r.Sessions.Subject.BindingDigest)
+	}
 	if !strings.Contains(a.Err.(*bytes.Buffer).String(), "Development: unauthenticated operator-observed host; not authenticated remote promotion.") {
 		t.Fatal("missing trust warning")
 	}
@@ -129,7 +157,7 @@ func TestSuiteSessionsEvaluationFullPassAndExactPush(t *testing.T) {
 }
 
 func TestSuiteSessionsEvaluationStopsWithoutExport(t *testing.T) {
-	for _, failure := range []string{"instruction", "host drift", "source drift", "warning", "case output", "cancel"} {
+	for _, failure := range []string{"instruction", "host drift", "binding drift", "source drift", "warning", "case output", "cancel"} {
 		t.Run(failure, func(t *testing.T) {
 			a, opt, calls := suiteSessionsEvaluationFixture(t)
 			if failure == "instruction" {
@@ -146,11 +174,13 @@ func TestSuiteSessionsEvaluationStopsWithoutExport(t *testing.T) {
 			if failure == "case output" {
 				a.Out = suiteCaseSummaryFailWriter{needle: "first: pass"}
 			}
-			if failure == "host drift" || failure == "source drift" {
+			if failure == "host drift" || failure == "binding drift" || failure == "source drift" {
 				a.Out = suiteSummaryObserver(func(raw []byte) (int, error) {
 					if bytes.Contains(raw, []byte("first: pass")) {
 						if failure == "host drift" {
 							writeFile(t, opt.DevelopmentHost, "{}")
+						} else if failure == "binding drift" {
+							writeFile(t, opt.Bindings, strings.Replace(suiteSessionsBindingYAML("fixture-model"), "class: microvm, configName: microvm", "class: gvisor, configName: gvisor-default", 1))
 						} else {
 							writeFile(t, filepath.Join(opt.Workspace, "agents/greeter/instructions.md"), "changed")
 						}
@@ -228,7 +258,7 @@ func TestSuiteSessionsFailurePreservesCauseWithoutPrintingPayload(t *testing.T) 
 }
 
 func TestSuiteSessionsDevelopmentSelectionRefusesBeforeEffects(t *testing.T) {
-	for _, failure := range []string{"missing selection", "cluster", "inference", "bindings", "port", "namespace", "remote", "hostname", "model", "pin", "unknown", "symlink"} {
+	for _, failure := range []string{"missing selection", "cluster", "inference", "missing bindings", "unreadable bindings", "kagent bindings", "binding model", "port", "namespace", "remote", "hostname", "model", "pin", "unknown", "symlink"} {
 		t.Run(failure, func(t *testing.T) {
 			_, opt, calls := suiteSessionsEvaluationFixture(t)
 			raw, err := os.ReadFile(opt.DevelopmentHost)
@@ -247,8 +277,14 @@ func TestSuiteSessionsDevelopmentSelectionRefusesBeforeEffects(t *testing.T) {
 				opt.ToContext = "kind-other"
 			case "inference":
 				opt.Inference = "provider:other"
-			case "bindings":
+			case "missing bindings":
+				opt.Bindings = ""
+			case "unreadable bindings":
 				opt.Bindings = "missing"
+			case "kagent bindings":
+				writeFile(t, opt.Bindings, "apiVersion: kmx.kaimahi.dev/v1alpha1\nkind: KagentBindings\nnamespace: agents\nmodelConfig: {provider: openai, secretRef: {name: k, key: k}}\n")
+			case "binding model":
+				writeFile(t, opt.Bindings, suiteSessionsBindingYAML("other-model"))
 			case "port":
 				opt.ResultPort = "19180"
 			case "namespace":
@@ -286,6 +322,9 @@ func TestSuiteSessionsDevelopmentSelectionRefusesBeforeEffects(t *testing.T) {
 			}
 			if err == nil || calls.Load() != 0 {
 				t.Fatal("unsupported mode reached host", err)
+			}
+			if failure == "binding model" && (!errors.Is(err, agentruntime.ErrAgentSessionsModelMismatch) || !strings.Contains(err.Error(), "new suite version")) {
+				t.Fatalf("model mismatch was not reported clearly: %v", err)
 			}
 			if _, err := os.Stat(opt.Out); !os.IsNotExist(err) {
 				t.Fatal("unsupported mode wrote evidence")

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aramase/agentsessions/canon"
 	v1 "github.com/aramase/agentsessions/api/genpb"
+	"github.com/aramase/agentsessions/canon"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"google.golang.org/protobuf/encoding/protojson"
 )
