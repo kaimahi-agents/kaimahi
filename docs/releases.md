@@ -5,9 +5,9 @@ version is numbered, how to install one, how to check what you got, how to
 upgrade, and what happens when an upgrade goes wrong.
 
 `@latest` and the installer's default select the newest stable tagged release;
-v0.6.0 includes the native Create → Prove → Publish → Lift workspace lifecycle
-and the Orka v0.2.0 Helm installer. Pin `@v0.6.0` for a repeatable build;
-`@main` is the moving development option. Orka's own installation and upgrade limits are separate:
+v0.5.1 includes the Orka v0.2.0 Helm installer, Kubernetes Tool and bundle
+lifecycle commands. Pin `@v0.5.1` for a repeatable build; `@main` is the moving
+development option. Orka's own installation and upgrade limits are separate:
 see [orka.md](orka.md). This release pins the **Orka v0.2.0** chart; the
 historical Kaimahi v0.2.0 release reported Orka v0.1.3.
 
@@ -66,8 +66,7 @@ Orka runtime pins are independent of kmx tags:
 
 | kmx build | Orka install | Offline schema target |
 |---|---|---|
-| Kaimahi v0.6.0 release | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
-| Historical Kaimahi v0.5.1 release | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
+| Kaimahi v0.5.1 release | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
 | Historical Kaimahi v0.2.0 release | v0.1.3 pinned manifest | historical behavior; not an upgrade path to the current chart |
 
 There is no 1.0 promise and no support window yet. What there is: CI refuses
@@ -76,19 +75,6 @@ to publish a binary that does not report its own tag.
 
 Releases use the root `vX.Y.Z` tag for the repository and CLI. The root is the
 only Go module; no paired module release tag is needed.
-
-## Documentation versions
-
-The browser documentation preview renders Markdown from the checked-out `main`
-branch and can therefore describe unreleased changes. A persistent channel notice
-links to the stable v0.6.0 source. Tagged Markdown and release notes remain the
-historical record for an exact release.
-
-The first draft does not copy versioned guides or publish a production site. A
-future version selector should build the same Markdown from tags into separate
-URL prefixes rather than creating another maintained content tree. See the
-[documentation-site boundary](docs-site.md) for local preview, framework and
-hosting decisions.
 
 ## Install
 
@@ -122,7 +108,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 
 It resolves the latest tag, downloads the binary for your platform, verifies
 its published sha256 **before** installing it, and puts it in `~/.local/bin`
-without sudo. `KMX_VERSION=v0.6.0` pins this release; `KMX_BIN_DIR=DIR`
+without sudo. `KMX_VERSION=v0.5.1` pins this release; `KMX_BIN_DIR=DIR`
 installs elsewhere. `install.sh --quickstart` installs the latest release and
 then launches the non-interactive Orka quickstart. An explicit v0.1.0
 `--quickstart` is still refused because that release predates Orka.
@@ -134,7 +120,7 @@ go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest
 ```
 
 `@latest` is the newest tagged release. Pin instead when you want a build you
-can name: `@v0.6.0`. Both go through the public Go module proxy and the Go
+can name: `@v0.5.1`. Both go through the public Go module proxy and the Go
 checksum database, so the bytes you get are the bytes the sum database
 recorded — no namespace of ours is involved, and there is nothing new to
 trust.
@@ -145,7 +131,7 @@ trust.
 preference. Every release carries binaries and a `checksums.txt`:
 
 ```bash
-version=v0.6.0
+version=v0.5.1
 base=https://github.com/kaimahi-agents/kaimahi/releases/download/$version
 curl -fsSLO "$base/kmx-linux-amd64"
 curl -fsSLO "$base/checksums.txt"
@@ -185,7 +171,7 @@ it still requires the external tools described in [getting started](getting-star
 
 ```console
 $ kmx version
-kmx v0.6.0 (release build)
+kmx v0.5.1 (release build)
   kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md
   orka     v0.2.0
   model    qwen2.5:3b
@@ -197,8 +183,8 @@ from:
 
 | First line says | You have |
 |---|---|
-| `v0.6.0 (release build)` | a binary from the release for `v0.6.0` |
-| `v0.6.0 (installed with go install)` | `go install …@v0.6.0` — the same code, built on your machine |
+| `v0.5.1 (release build)` | a binary from the release for `v0.5.1` |
+| `v0.5.1 (installed with go install)` | `go install …@v0.5.1` — the same code, built on your machine |
 | `v0.0.0-2026…-fb456eb (development build from a checkout)` | a `go build` from a clone; not a release |
 | `v0.0.0-dev+fb456eb.dirty (development build from a MODIFIED checkout)` | a clone with uncommitted changes |
 

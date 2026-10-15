@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const dist = path.join(root, 'docs', '.vitepress', 'dist')
 const sourceRef = process.env.GITHUB_SHA || 'main'
+const withAgentSuite = process.env.KMX_DOCS_WITH_AGENTSUITE !== '0'
 
 async function htmlFiles(directory, prefix = '') {
   const entries = await readdir(directory, { withFileTypes: true })
@@ -23,7 +24,7 @@ test('every maintained Markdown page is rendered exactly once', async () => {
   const docs = (await readdir(path.join(root, 'docs'), { withFileTypes: true }))
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
     .map((entry) => entry.name === 'README.md' ? 'docs/index.html' : `docs/${entry.name.replace(/\.md$/, '.html')}`)
-  const expected = ['404.html', 'agentsuite/spec.html', 'index.html', ...docs].sort()
+  const expected = ['404.html', 'index.html', ...(withAgentSuite ? ['agentsuite/spec.html'] : []), ...docs].sort()
   assert.deepEqual(await htmlFiles(dist), expected)
 })
 
@@ -49,4 +50,9 @@ test('checkout-only references point to source while guide links stay local', as
 
   const releases = await readFile(path.join(dist, 'docs', 'releases.html'), 'utf8')
   assert.ok(releases.includes(`https://github.com/kaimahi-agents/kaimahi/tree/${sourceRef}/internal/kmx/toolchain`))
+
+  if (!withAgentSuite) {
+    const index = await readFile(path.join(dist, 'docs', 'index.html'), 'utf8')
+    assert.match(index, /https:\/\/github\.com\/kaimahi-agents\/kaimahi\/issues\/491/)
+  }
 })

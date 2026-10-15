@@ -9,7 +9,7 @@ runtime contract when extending or comparing implementations.
 > [!NOTE]
 > The browser preview renders the checked-out `main` documentation and may
 > include unreleased behavior. Tagged Markdown is the stable historical record;
-> see [releases and documentation versions](releases.md#documentation-versions).
+> see the [documentation-site version boundary](docs-site.md#version-boundary).
 
 ## Current operator paths
 

@@ -94,7 +94,7 @@ classification.
 | `pkg/kmx/` | experimental public setup-only environment plus suite/deployment contracts, not wired into the installed CLI |
 | `k8s/ollama.yaml`, `k8s/orka-k8s-tool.yaml` | native local model and read-only Kubernetes Tool |
 | `scripts/`, `Makefile` | checks, packaging and repository helpers |
-| `package.json`, `package-lock.json`, `docs/.vitepress/` | private documentation preview toolchain, navigation/theme and generated-site tests; no published site |
+| `docs/package.json`, `docs/package-lock.json`, `docs/.vitepress/` | private documentation preview toolchain, navigation/theme and generated-site tests; no published site |
 | `.github/workflows/` | verification jobs and docs-only routing |
 
 The root CLI is the only Go module. Plain `make` builds `bin/kmx` only. The
@@ -124,7 +124,7 @@ is the repository's explicit cross-platform isolation contract.
 
 ```bash
 formatted=$(gofmt -l agentsuite cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go build ./... && go test ./...
-npm ci --ignore-scripts && npm run docs:check
+npm --prefix docs ci --ignore-scripts && npm --prefix docs run docs:check
 python3 scripts/check-doc-links.py --selftest
 python3 scripts/check-doc-links.py
 python3 scripts/check-secret-shapes.py --selftest
@@ -140,9 +140,10 @@ python3 scripts/test_model_fixtures.py -v
 Node.js 22.12 or newer is required only for the browser documentation tooling.
 `make docs-preview` installs the exact lockfile and serves on `127.0.0.1`;
 `make docs-build` performs the same build and generated-site assertions as CI.
-The preview renders the root README, `docs/*.md`, and `agentsuite/spec.md`
-directly. Do not copy guide content into VitePress configuration or commit
-`docs/.vitepress/dist`, caches, or `node_modules`.
+The preview renders the root README and `docs/*.md` directly, plus
+`agentsuite/spec.md` while it remains local. Do not copy guide content into
+VitePress configuration or commit `docs/.vitepress/dist`, caches, or
+`node_modules`.
 
 The current framework pin is an explicitly reviewable draft dependency and must
 be reassessed before publication. No Pages workflow or publication credential is

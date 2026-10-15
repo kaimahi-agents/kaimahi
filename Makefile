@@ -54,15 +54,15 @@ docs-preview:
 	@command -v npm >/dev/null 2>&1 || { \
 		echo 'documentation preview needs Node.js 22.12+ and npm (https://nodejs.org/).' >&2; \
 		exit 1; }
-	npm ci --ignore-scripts
-	npm run docs:dev
+	npm --prefix docs ci --ignore-scripts
+	npm --prefix docs run docs:dev
 
 docs-build:
 	@command -v npm >/dev/null 2>&1 || { \
 		echo 'documentation build needs Node.js 22.12+ and npm (https://nodejs.org/).' >&2; \
 		exit 1; }
-	npm ci --ignore-scripts
-	npm run docs:check
+	npm --prefix docs ci --ignore-scripts
+	npm --prefix docs run docs:check
 
 ## build: build kmx from this checkout and print the resulting path
 build: $(KMX)

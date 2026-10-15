@@ -8,10 +8,12 @@ import { defineConfig } from 'vitepress'
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url))
 const repositoryURL = 'https://github.com/kaimahi-agents/kaimahi'
 const sourceRef = process.env.GITHUB_SHA || 'main'
+const localAgentSuite = process.env.KMX_DOCS_WITH_AGENTSUITE !== '0' && existsSync(path.join(repositoryRoot, 'agentsuite', 'spec.md'))
+const agentSuiteDocsURL = process.env.KMX_AGENTSUITE_DOCS_URL || `${repositoryURL}/issues/491`
 
 const sitePages = new Set([
   'README.md',
-  'agentsuite/spec.md',
+  ...(localAgentSuite ? ['agentsuite/spec.md'] : []),
   ...readdirSync(path.join(repositoryRoot, 'docs'), { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
     .map((entry) => `docs/${entry.name}`)
@@ -58,6 +60,10 @@ function rewriteRepositoryLinks(md: any): void {
       token.attrSet('href', `/docs/${matched?.[2] ?? ''}`)
       return render(tokens, index, options, env, self)
     }
+    if (resolved === 'agentsuite/spec.md' && !localAgentSuite) {
+      token.attrSet('href', agentSuiteDocsURL)
+      return render(tokens, index, options, env, self)
+    }
     if (sitePages.has(resolved)) return render(tokens, index, options, env, self)
 
     const absolute = path.join(repositoryRoot, ...resolved.split('/'))
@@ -83,7 +89,7 @@ const userGuides = [
 
 const reference = [
   { text: 'kmx command reference', link: '/docs/kmx' },
-  { text: 'AgentSuite specification', link: '/agentsuite/spec' },
+  { text: 'AgentSuite specification', link: localAgentSuite ? '/agentsuite/spec' : agentSuiteDocsURL },
   { text: 'Format boundaries', link: '/docs/bundle-format' },
   { text: 'Kubernetes Tool', link: '/docs/orka-k8s-tool' }
 ]
@@ -137,8 +143,7 @@ export default defineConfig({
     'LOCAL-TEST-PLAN.md',
     'PITCH-*.md',
     'SECURITY.md',
-    'agentsuite/README.md',
-    'agentsuite/testdata/**',
+    ...(localAgentSuite ? ['agentsuite/README.md', 'agentsuite/testdata/**'] : ['agentsuite/**']),
     'ax-harness/**',
     'brand/**',
     'internal/**',
@@ -183,7 +188,7 @@ export default defineConfig({
       {
         text: 'main · development',
         items: [
-          { text: 'These docs follow main', link: '/docs/releases#documentation-versions' },
+          { text: 'These docs follow main', link: '/docs/docs-site#version-boundary' },
           { text: 'Stable release v0.6.0', link: `${repositoryURL}/tree/v0.6.0` }
         ]
       }
@@ -195,9 +200,11 @@ export default defineConfig({
         { text: 'Maintainers', collapsed: true, items: maintainers },
         { text: 'Design and assessments', collapsed: true, items: designNotes }
       ],
-      '/agentsuite/': [
-        { text: 'AgentSuite', items: reference }
-      ]
+      ...(localAgentSuite ? {
+        '/agentsuite/': [
+          { text: 'AgentSuite', items: reference }
+        ]
+      } : {})
     },
     search: {
       provider: 'local',

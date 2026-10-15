@@ -42,6 +42,13 @@ task, but does not copy their instructions. The homepage path chooser links into
 those same guides. Local search indexes the rendered Markdown and uses no hosted
 search service or credentials.
 
+The AgentSuite specification is expected to move to a standalone repository in
+[#491](https://github.com/kaimahi-agents/kaimahi/issues/491). The site therefore
+builds in CI both with and without the local `agentsuite/` page. Once the new
+documentation URL exists, set `KMX_AGENTSUITE_DOCS_URL` for the no-local build;
+existing specification links and navigation then point there without requiring a
+second local copy.
+
 ## Version boundary
 
 The preview renders the checked-out `main` documentation, which can describe
@@ -51,16 +58,19 @@ generated copies of older guides are deliberately not implemented in this draft.
 
 ## Framework and publication boundary
 
-The draft pins VitePress `2.0.0-alpha.20` exactly. It provides responsive
-navigation, accessible local search, syntax highlighting, dark mode, and a small
-Vue enhancement while leaving Markdown authoritative. The alpha pin and its
-transitive lockfile must be reassessed before production publication; CI builds
-and tests it but publishes nothing.
+The private npm package and lockfile live under `docs/`, keeping the Go module
+root free of Node package metadata and scoping dependency automation to the
+preview tooling. The draft pins VitePress `2.0.0-alpha.20` exactly. It provides
+responsive navigation, accessible local search, syntax highlighting, dark mode,
+and a small Vue enhancement while leaving Markdown authoritative. The alpha pin
+and its transitive lockfile must be reassessed before production publication; CI
+builds and tests it but publishes nothing.
 
 No GitHub Pages workflow, domain, analytics, remote search, publication token, or
 repository secret is introduced. A later hosting decision should be reviewed
 separately, with pull requests remaining build-only and deployment restricted to
-an approved branch or tag.
+an approved branch or tag. The available `kaimahi.dev` domain is a candidate for
+that separate hosting decision, not a destination selected by this draft.
 
 ## Review and removal
 
@@ -69,7 +79,8 @@ dark and light appearance, and reduced motion. The path chooser uses native link
 and an ARIA tablist; the site retains VitePress's skip link and search controls.
 This is useful accessibility behavior, not a claim of full WCAG conformance.
 
-The draft is intentionally removable. Delete `package.json`, `package-lock.json`,
-and `docs/.vitepress/`, then remove the two Make targets and the CI build step.
+The draft is intentionally removable. Delete `docs/package.json`,
+`docs/package-lock.json`, and `docs/.vitepress/`, then remove the two Make targets
+and the CI build step.
 Every maintained Markdown document remains in its original location and requires
 no migration.
