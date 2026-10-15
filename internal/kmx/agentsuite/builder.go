@@ -231,6 +231,12 @@ func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error)
 			return fmt.Errorf("build metadata exceeds %d bytes", maxBuildMetadataBytes)
 		}
 		retained += int64(len(data))
+		// Reject a size/digest-mismatched child before parsing it: a file
+		// replaced after ValidateDirectory ran should not receive full
+		// strict-JSON decoding merely to discover the mismatch afterward.
+		if !spec.DescriptorSizeAndDigestMatch(data, descriptor) {
+			return fmt.Errorf("%s manifest digest mismatch after validation", name)
+		}
 		if err := spec.Unmarshal(data, out); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}

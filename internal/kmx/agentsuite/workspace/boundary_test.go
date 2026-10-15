@@ -46,7 +46,7 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 			case "duplicate metadata":
 				b = strings.TrimSuffix(b, "}") + `,"member":"greeter"}`
 			case "renderer":
-				b = strings.ReplaceAll(b, "kmx.native-orka/v1", "kmx.native-orka/v2")
+				b = strings.ReplaceAll(b, "kmx.native-orka/v2", "kmx.native-orka/v3")
 			case "case digest":
 				var rec map[string]any
 				if err := json.Unmarshal([]byte(b), &rec); err != nil {
@@ -88,7 +88,7 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 			case "kagent wrong contract":
 				b = strings.ReplaceAll(b, "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai/v1", "kmx.unknown/v1")
 			case "kagent wrong renderer":
-				b = strings.ReplaceAll(b, "kmx.native-kagent/v1", "kmx.native-orka/v1")
+				b = strings.ReplaceAll(b, "kmx.native-kagent/v2", "kmx.native-orka/v2")
 			case "case escape":
 				b = strings.ReplaceAll(b, "metadata/kmx/eval/example.yaml", "../eval/example.yaml")
 			case "case omission":

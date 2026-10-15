@@ -66,6 +66,12 @@ func (v *validator) evaluationDocument(ref FileRef, expectedMediaType string, ou
 	if err != nil {
 		return nil, err
 	}
+	// Reject a size/digest-mismatched document before parsing it: a document
+	// that cannot possibly match its descriptor should not receive full
+	// strict-JSON decoding.
+	if !descriptorSizeAndDigestMatch(data, ref.Descriptor) {
+		return nil, errors.New("evaluation document digest mismatch")
+	}
 	if err := decodeStrict(data, out); err != nil {
 		return nil, fmt.Errorf("evaluation JSON: %w", err)
 	}

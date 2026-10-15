@@ -390,7 +390,22 @@ func TestLoadBuildMetadataRejectsStrictJSONAndOversizedChildren(t *testing.T) {
 			if err := os.CopyFS(root, os.DirFS(specFixture("minimal"))); err != nil {
 				t.Fatal(err)
 			}
-			suiteBytes := readBuilderTestFile(t, root, "agentsuite.json")
+			var suite spec.Suite
+			if err := spec.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
+				t.Fatal(err)
+			}
+			// Pin the descriptor to these exact bytes' own raw digest, so the
+			// cheap pre-parse size/digest gate passes and spec.Unmarshal's
+			// own strict-decode diagnostics (the actual target of this test)
+			// still run and surface first. The oversized case never reaches
+			// that gate: readBuildFile's size limit rejects it first.
+			sum := sha256.Sum256(test.data)
+			suite.Agents[0].Descriptor.Digest = "sha256:" + hex.EncodeToString(sum[:])
+			suite.Agents[0].Descriptor.Size = int64(len(test.data))
+			suiteBytes, err := spec.Marshal(suite)
+			if err != nil {
+				t.Fatal(err)
+			}
 			writeBuilderTestFile(t, root, "agents/writer.json", test.data)
 			handle, err := os.OpenRoot(root)
 			if err != nil {

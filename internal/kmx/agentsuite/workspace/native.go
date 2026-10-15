@@ -18,12 +18,12 @@ import (
 	godigest "github.com/opencontainers/go-digest"
 )
 
-const rendererVersion = "kmx.native-orka/v1"
+const rendererVersion = "kmx.native-orka/v2"
 const nativePath = "metadata/kmx/native-orka.json"
 const kagentNativePath = "metadata/kmx/native-kagent.json"
-const kagentRendererVersion = "kmx.native-kagent/v1"
+const kagentRendererVersion = "kmx.native-kagent/v2"
 const agentsessionsNativePath = "metadata/kmx/native-agentsessions.json"
-const agentsessionsRendererVersion = "kmx.native-agentsessions/v1"
+const agentsessionsRendererVersion = "kmx.native-agentsessions/v2"
 
 // This contract binds deterministic system_prompt config and exact separately
 // observed model identity. The public build profile is inert for plain chat.

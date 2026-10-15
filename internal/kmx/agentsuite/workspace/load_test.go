@@ -29,7 +29,7 @@ func TestKagentPackLoadAndExactLayoutTransfer(t *testing.T) {
 	if suite.Runtime != (workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) {
 		t.Fatal("ambiguous loaded runtime", suite.Runtime)
 	}
-	if suite.RendererVersion != "kmx.native-kagent/v1" || suite.RequiredImages == nil || len(suite.RequiredImages) != 0 {
+	if suite.RendererVersion != "kmx.native-kagent/v2" || suite.RequiredImages == nil || len(suite.RequiredImages) != 0 {
 		t.Fatal("wrong native profile", suite)
 	}
 	out := extract(t, p)
@@ -125,7 +125,7 @@ func TestLoadUsesVerifiedPackagedSnapshot(t *testing.T) {
 		MemberDigest:       digest.FromBytes(readFile(t, filepath.Join(out, "agents/greeter.json"))).String(),
 		CompositionDigest:  digest.FromBytes(readFile(t, filepath.Join(out, "compositions/greeter-linux-amd64.json"))).String(),
 		BuildProfileDigest: digest.FromBytes(readFile(t, filepath.Join(out, "build-profiles/default.json"))).String(),
-		RendererVersion:    "kmx.native-orka/v1", Runtime: workspace.RuntimeProfile{ID: "orka"}, RequiredImages: []string{},
+		RendererVersion:    "kmx.native-orka/v2", Runtime: workspace.RuntimeProfile{ID: "orka"}, RequiredImages: []string{},
 	}
 	for _, name := range []string{"example.yaml", "second.yml"} {
 		b := readFile(t, filepath.Join(root, "eval", name))

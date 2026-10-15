@@ -237,16 +237,13 @@ func TestEvaluationCaseStrictness(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root, _ := writeEvaluationSuite(t, func(root string, index *EvaluationIndex) {
-				// Use a raw-byte digest for malformed JSON, which cannot have a JCS identity.
+				// Pin the descriptor to these exact mutated bytes' own raw
+				// digest, so the cheap pre-parse size/digest gate passes and
+				// decodeStrict's own strict-decode diagnostics (the actual
+				// target of this test) still run and surface first.
 				mustWrite(t, root, index.Cases[0].Path, []byte(tt.data))
-				digest, err := canonicalDigest([]byte(tt.data))
-				size, sizeErr := canonicalSize([]byte(tt.data))
-				if err != nil || sizeErr != nil {
-					digest = digestBytes([]byte(tt.data))
-					size = int64(len(tt.data))
-				}
-				index.Cases[0].Descriptor.Digest = digest
-				index.Cases[0].Descriptor.Size = size
+				index.Cases[0].Descriptor.Digest = digestBytes([]byte(tt.data))
+				index.Cases[0].Descriptor.Size = int64(len(tt.data))
 			})
 			_, err := ValidatePath(root)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {

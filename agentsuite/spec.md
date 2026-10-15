@@ -96,6 +96,15 @@ A **descriptor** is a closed object:
   and validated against those literal bytes directly; no canonical
   re-serialization applies.
 
+A descriptor's `mediaType` is not a free-form label: specific references
+require an exact value, and a consumer MUST reject any other value even when
+`digest` and `size` are otherwise correct:
+
+- an agent's `instructions` descriptor `mediaType` MUST be exactly
+  `text/markdown; charset=utf-8`;
+- a Tool's `inputSchema` and `outputSchema` descriptor `mediaType` MUST be
+  exactly `application/schema+json`.
+
 `annotations`, when present, follow OCI's annotation rules: keys and values
 are both strings, empty string values are permitted, and unknown or
 forward-looking keys MUST be preserved rather than silently dropped or
