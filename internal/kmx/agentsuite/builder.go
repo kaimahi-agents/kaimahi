@@ -178,7 +178,7 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 	compositionDigest := ""
 	for _, ref := range v.suite.Compositions {
 		if ref.Agent == composition.Agent && ref.Platform == composition.Platform {
-			compositionDigest = ref.Digest
+			compositionDigest = ref.Descriptor.Digest
 			break
 		}
 	}
@@ -245,41 +245,41 @@ func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error)
 	}
 	for _, ref := range v.suite.Agents {
 		var agent spec.Agent
-		if err := readJSON(ref.Path, ref.Digest, &agent); err != nil {
+		if err := readJSON(ref.Path, ref.Descriptor.Digest, &agent); err != nil {
 			return nil, err
 		}
 		v.agents[ref.ID] = agent
 	}
 	for _, ref := range v.suite.BuildProfiles {
 		var profile spec.BuildProfile
-		if err := readJSON(ref.Path, ref.Digest, &profile); err != nil {
+		if err := readJSON(ref.Path, ref.Descriptor.Digest, &profile); err != nil {
 			return nil, err
 		}
 		v.builds[ref.ID] = profile
 	}
 	for _, ref := range v.suite.Compositions {
 		var composition spec.Composition
-		if err := readJSON(ref.Path, ref.Digest, &composition); err != nil {
+		if err := readJSON(ref.Path, ref.Descriptor.Digest, &composition); err != nil {
 			return nil, err
 		}
 		v.compositions = append(v.compositions, composition)
 	}
 	var catalog spec.ToolProviderCatalog
-	if err := readJSON(v.suite.ToolProviderCatalog.Path, v.suite.ToolProviderCatalog.Digest, &catalog); err != nil {
+	if err := readJSON(v.suite.ToolProviderCatalog.Path, v.suite.ToolProviderCatalog.Descriptor.Digest, &catalog); err != nil {
 		return nil, err
 	}
 	for _, ref := range catalog.ToolProviders {
 		var provider spec.ToolProvider
-		if err := readJSON(ref.Path, ref.Digest, &provider); err != nil {
+		if err := readJSON(ref.Path, ref.Descriptor.Digest, &provider); err != nil {
 			return nil, err
 		}
 		key := ref.ID + "@" + ref.Version
 		v.toolProviders[key] = provider
-		v.toolProviderDigests[key] = ref.Digest
+		v.toolProviderDigests[key] = ref.Descriptor.Digest
 	}
 	for _, ref := range v.suite.ToolProviderCompositions {
 		var composition spec.ToolProviderComposition
-		if err := readJSON(ref.Path, ref.Digest, &composition); err != nil {
+		if err := readJSON(ref.Path, ref.Descriptor.Digest, &composition); err != nil {
 			return nil, err
 		}
 	}
@@ -385,7 +385,7 @@ func readBuildInstructions(root *os.Root, ref spec.FileRef) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if digestBytes(data) != ref.Digest {
+	if digestBytes(data) != ref.Descriptor.Digest {
 		return nil, errors.New("instruction content changed after validation")
 	}
 	return data, nil

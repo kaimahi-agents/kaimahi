@@ -88,7 +88,7 @@ func TestResolveSandboxPlanRequiresPlatformAndSelectsExactImages(t *testing.T) {
 	base.Platform, harness.Platform = arm64, arm64
 	profile.RuntimeBase = append(profile.RuntimeBase, base)
 	profile.Harness = append(profile.Harness, harness)
-	suite.BuildProfiles[0].Digest = writeBuilderTestJSON(t, root, suite.BuildProfiles[0].Path, profile)
+	suite.BuildProfiles[0].Descriptor = writeBuilderTestDescriptor(t, root, suite.BuildProfiles[0].Path, spec.MediaTypeBuildProfile, profile)
 	var composition spec.Composition
 	if err := spec.Unmarshal(readBuilderTestFile(t, root, suite.Compositions[0].Path), &composition); err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestResolveSandboxPlanRequiresPlatformAndSelectsExactImages(t *testing.T) {
 	compositionPath := "compositions/writer-linux-arm64.json"
 	suite.Compositions = append(suite.Compositions, spec.CompositionRef{
 		Agent: "writer", Platform: arm64, Path: compositionPath,
-		Digest: writeBuilderTestJSON(t, root, compositionPath, composition),
+		Descriptor: writeBuilderTestDescriptor(t, root, compositionPath, spec.MediaTypeComposition, composition),
 	})
 	writeBuilderTestJSON(t, root, "agentsuite.json", suite)
 	if _, err := ResolveSandboxPlan(root, BuildSelection{}); err == nil || !strings.Contains(err.Error(), "--platform is required (available: linux/amd64, linux/arm64)") {
@@ -124,7 +124,7 @@ func TestResolveSandboxPlanRejectsUnknownAgent(t *testing.T) {
 func TestResolveSandboxPlanRefusesInvalidSuiteBeforeSelection(t *testing.T) {
 	for _, test := range []struct{ name, old, replacement, want string }{
 		{"unsupported version", `"schemaVersion": "1.0.0-draft"`, `"schemaVersion": "unsupported"`, "schemaVersion"},
-		{"critical extension", `"extensions": []`, `"extensions": [{"name":"future-feature","critical":true}]`, "critical extension"},
+		{"critical extension", `"name": "minimal",`, `"name": "minimal",` + "\n  " + `"extensions": [{"name":"future-feature","critical":true}],`, "critical extension"},
 		{"missing child", `"path": "agents/writer.json"`, `"path": "agents/missing.json"`, "missing"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -316,13 +316,13 @@ func TestLoadBuildMetadataVerifiesProviderAndProviderCompositionPins(t *testing.
 			}
 			providerPath := "tool-providers/provider.json"
 			provider := spec.ToolProvider{ID: "provider", Version: "1.0.0"}
-			providerDigest := writeBuilderTestJSON(t, root, providerPath, provider)
-			catalog := spec.ToolProviderCatalog{ToolProviders: []spec.ManifestRef{{ID: provider.ID, Version: provider.Version, Path: providerPath, Digest: providerDigest}}}
-			suite.ToolProviderCatalog.Digest = writeBuilderTestJSON(t, root, suite.ToolProviderCatalog.Path, catalog)
+			providerDescriptor := writeBuilderTestDescriptor(t, root, providerPath, spec.MediaTypeToolProvider, provider)
+			catalog := spec.ToolProviderCatalog{ToolProviders: []spec.ManifestRef{{ID: provider.ID, Version: provider.Version, Path: providerPath, Descriptor: providerDescriptor}}}
+			suite.ToolProviderCatalog.Descriptor = writeBuilderTestDescriptor(t, root, suite.ToolProviderCatalog.Path, spec.MediaTypeToolProviderCatalog, catalog)
 			compositionPath := "tool-provider-compositions/provider.json"
 			composition := spec.ToolProviderComposition{ID: "provider", Version: "1.0.0"}
 			suite.ToolProviderCompositions = []spec.ToolProviderCompositionRef{{ID: composition.ID, Version: composition.Version, Path: compositionPath,
-				Digest: writeBuilderTestJSON(t, root, compositionPath, composition)}}
+				Descriptor: writeBuilderTestDescriptor(t, root, compositionPath, spec.MediaTypeToolProviderComposition, composition)}}
 			writeBuilderTestJSON(t, root, "agentsuite.json", suite)
 			suiteBytes := readBuilderTestFile(t, root, "agentsuite.json")
 			handle, err := os.OpenRoot(root)
@@ -378,7 +378,9 @@ func TestReadBuildInstructionsRechecksRawDigestAndSize(t *testing.T) {
 	data := []byte("Write clearly.\n")
 	writeBuilderTestFile(t, root, "instructions.md", data)
 	sum := sha256.Sum256(data)
-	ref := spec.FileRef{Path: "instructions.md", Digest: "sha256:" + hex.EncodeToString(sum[:])}
+	ref := spec.FileRef{Path: "instructions.md", Descriptor: spec.Descriptor{
+		MediaType: spec.MediaTypeInstructions, Digest: "sha256:" + hex.EncodeToString(sum[:]), Size: int64(len(data)),
+	}}
 	handle, err := os.OpenRoot(root)
 	if err != nil {
 		t.Fatal(err)
@@ -442,6 +444,20 @@ func writeBuilderTestJSON(t *testing.T, root, name string, value any) string {
 		t.Fatal(err)
 	}
 	return digest
+}
+
+func writeBuilderTestDescriptor(t *testing.T, root, name, mediaType string, value any) spec.Descriptor {
+	t.Helper()
+	data, err := spec.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBuilderTestFile(t, root, name, data)
+	digest, err := spec.Digest(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return spec.Descriptor{MediaType: mediaType, Digest: digest, Size: int64(len(data))}
 }
 
 func readBuilderTestFile(t *testing.T, root, name string) []byte {
