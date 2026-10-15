@@ -22,7 +22,23 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Fixed
+
+- `kmx local up` works with Helm 4: the Orka release preflight omits the removed
+  `helm list --all` flag on Helm 4+ (which lists every status) and keeps it on
+  Helm 3 or when the version cannot be read. ([#504](https://github.com/kaimahi-agents/kaimahi/issues/504))
+
 ### Added
+
+- AgentSuite draft evaluation storage: producers SHOULD embed optional
+  `evals/<agent>/index.json` and ordered JSON cases, JCS-bound through the
+  agent manifest. The public model, closed schemas and offline validator
+  support KMX-compatible authored assertion fields and explicit non-critical
+  extension types, plus optional per-case `runs` and `minPasses` policy,
+  rejecting malformed, orphaned or mismatched evaluations.
+  No-evaluation suites remain conformant. Results stay external with exact-suite
+  OCI association; validation does not execute cases. KMX private authoring,
+  receipt formats and command plumbing are unchanged.
 
 - Root `kmx eval` supports authored `llmJudge` assertions on packaged Orka/kagent
   suites with explicit `--judge-base-url` and optional `--judge-key-env`.
@@ -59,6 +75,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   kagent remains excluded until its candidate cleanup is qualified.
 
 ### Upgrading
+
+- Migrate KMX-authored `metadata/kmx/eval/<name>.yaml` cases to
+  `evals/<agent>/cases/<case-id>.json` and replace the private `caseRef` list
+  with `evals/<agent>/index.json`. Runtime metadata remains KMX-private and
+  evaluation receipts remain external to suite content.
 
 - Optionally add workspace-root `kmx.yaml` for named destinations and use
   `kmx ctx` to list them, then `eval/lift --to NAME`. No default/current Lift

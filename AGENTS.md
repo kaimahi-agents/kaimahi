@@ -221,6 +221,23 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   updating current examples. Do not bulk-rename historical text or serialized
   state. Generated recovery commands must preserve selectors and shell quoting.
 
+## AgentSuite evaluation storage
+
+- Keep the draft `agentsuite/spec.md` implementation-neutral and focused on the
+  current format. Put KMX details, migration notes, and design history in
+  implementation documentation, issues, or the changelog. Shared JSON and
+  identity rules belong in common sections; eval bindings belong in §8.2.
+- Public embedded evaluations are optional (`SHOULD` for producers), rooted at
+  `evals/<agent>/index.json` and bound through the agent's `evals` reference.
+  Indexes bind ordered JSON cases with JCS digests; no evals remains conformant.
+  Follow `agentsuite/spec.md` §8.2 and its closed schemas. The public validator
+  checks storage and identity only, never executes assertions or claims a pass.
+- Preserve KMX's authored assertion `id`/`type`/operand spellings when mapping
+  cases; public JSON identities are not private YAML/framed receipt identities.
+  Results remain external to the evaluation tree and bind the exact OCI suite
+  manifest. Do not infer KMX migration from this public format; its private
+  `metadata/kmx/eval/` authoring and receipt consumers remain unchanged.
+
 ## kagent version boundary
 
 - Exact v0.10.3 Go/linux-amd64 packaged profiles use author-owned bindings,

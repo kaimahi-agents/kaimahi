@@ -74,8 +74,8 @@ directory has its own row.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `.` | 11 | Checkout | Portable Go model, canonical JSON, OCI image-reference/content safety, semantic record and affected-agent diffing, and offline graph validation, plus package documentation and the normative specification. |
-| `schema/` | 6 | Checkout | Closed JSON Schema 2020-12 reference documents for suite, agent, ToolProvider and provider composition, and build-profile records. |
+| `.` | 12 | Checkout | Portable Go model, canonical JSON, OCI image-reference/content safety, semantic record and affected-agent diffing, and offline graph validation including optional agent-bound authored evaluations (not execution/results), plus package documentation and the normative specification. |
+| `schema/` | 8 | Checkout | Closed JSON Schema 2020-12 reference documents for suite, agent, ToolProvider and provider composition, build-profile, evaluation-index and evaluation-case records. |
 | `testdata/minimal/` | 1 | Scaffolding | Root manifest for the minimal conformant suite. |
 | `testdata/minimal/agents/` | 1 | Scaffolding | Minimal writer agent manifest. |
 | `testdata/minimal/build-profiles/` | 1 | Scaffolding | Exact Linux build profile with pinned example descriptors. |
@@ -86,6 +86,8 @@ directory has its own row.
 | `testdata/coordinator-workers/agents/` | 3 | Scaffolding | Coordinator, writer and reviewer manifests with directional invocation edges. |
 | `testdata/coordinator-workers/build-profiles/` | 1 | Scaffolding | Shared exact Linux build profile. |
 | `testdata/coordinator-workers/instructions/` | 3 | Scaffolding | Digest-bound coordinator, writer and reviewer instructions. |
+| `testdata/coordinator-workers/evals/writer/` | 1 | Scaffolding | Agent-bound evaluation index with ordered JCS case references and limits. |
+| `testdata/coordinator-workers/evals/writer/cases/` | 2 | Scaffolding | Authored runtime-neutral capital and arithmetic cases; no embedded results. |
 | `testdata/coordinator-workers/compositions/` | 3 | Scaffolding | Empty per-agent Linux amd64 compositions. |
 | `testdata/coordinator-workers/tool-providers/` | 1 | Scaffolding | Empty closed ToolProvider catalog. |
 | `testdata/tool-providers/` | 4 | Scaffolding | `kubectl` and Azure CLI ToolProvider manifests plus the OPA provider and provider composition examples. |

@@ -13,5 +13,8 @@
   },
   "toolProviders": [],
   "invokes": [],
+  "evals": [
+    {"path": "evals/writer/index.json", "digest": "sha256:58cdec908ecd57c3f098d90a8b933546ee5a7ac6bd454135e28f64be8c2d996b"}
+  ],
   "extensions": []
 }

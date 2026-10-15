@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -97,11 +98,36 @@ func orkaChartCRDs(chart []byte) ([]byte, int, error) {
 	return bytes.Join(crds, []byte("\n---\n")), len(crds), nil
 }
 
+// helmMajor returns the Helm client major version, or 0 when it cannot be read.
+func (a *App) helmMajor() int {
+	out, err := a.Run.Capture("helm", "version", "--template", "{{.Version}}")
+	if err != nil {
+		return 0
+	}
+	return parseHelmMajor(out)
+}
+
+func parseHelmMajor(v string) int {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	major, _, _ := strings.Cut(v, ".")
+	n, err := strconv.Atoi(major)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
 // A tag alone does not prove kmx owns a release. Only its chart version,
 // release status, explicit harness mode and marker together allow a repeat.
 func (a *App) orkaInstallState() (bool, error) {
-	raw, err := a.Run.Capture("helm", "list", "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext,
-		"-o", "json", "-f", "^"+orkaRelease+"$", "--all")
+	listArgs := []string{"list", "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext,
+		"-o", "json", "-f", "^" + orkaRelease + "$"}
+	// Helm 3 hides non-deployed releases unless asked; Helm 4 removed --all
+	// and lists every status by default. Unknown versions keep Helm 3 behavior.
+	if a.helmMajor() < 4 {
+		listArgs = append(listArgs, "--all")
+	}
+	raw, err := a.Run.Capture("helm", listArgs...)
 	if err != nil {
 		return false, fmt.Errorf("cannot inspect Orka Helm releases: %w", err)
 	}
