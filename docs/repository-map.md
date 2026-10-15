@@ -320,6 +320,7 @@ and intentionally has no hero image.
 | `.github/workflows/ci.yml`, `release.yml`, `docs-pages.yml` | **Scaffolding** | Hygiene builds the credential-free Markdown documentation site; the main-only Pages workflow publishes it with job-scoped GitHub OIDC and no repository secret. The native four-shard fail-closed required aggregator and unchanged 315s quickstart ceiling remain kagent Lift, Orka runtime, stock Orka Helm and quickstart. Raw upstream Task/Tool/model-answer fixtures are separate from packaged native eval/push/source-withheld digest Lift and bounded Orka absent-pair registry promotion with source-only evidence. Clone-free authors an exact-answer assertion, evaluates, checks cleanup/Task absence, publishes and explicitly promotes; no deleted-Task retrieval, resend or separate answer Task. Hermetic harness checks are separate from pinned live runtime qualification. |
 | `.goreleaser.yaml` | **Scaffolding** | GoReleaser config the release workflow builds and renders the Homebrew formula with; publishing reuses that checked artifact set and never pushes the formula to the tap (`skip_upload: true`). |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only, scripts and kagent/shared qualification paths for CI. |
+| `.github/copilot-instructions.md` | **Documentation** | Review priorities for Copilot code review, pointing at the repository rules. |
 
 | `staticcheck.conf` | **Scaffolding** | Root-module lint configuration. |
 | `go.mod`, `go.sum` | **Installed tooling** | Root module dependencies. |
