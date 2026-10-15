@@ -86,9 +86,7 @@ func TestDescriptorUnmarshalJSONRejectsClosedShapeViolations(t *testing.T) {
 	digest := strings.Repeat("a", 64)
 	cases := map[string]string{
 		"unknown field": `{"mediaType":"text/plain","digest":"sha256:` + digest + `","size":2,"extra":true}`,
-		// "data" is a standard OCI descriptor field (inline base64 content)
-		// that this closed, AgentSuite-specific Descriptor deliberately does
-		// not support; it must be rejected like any other unknown field.
+		// OCI's inline-content "data" field is unsupported here; reject it too.
 		"data field":        `{"mediaType":"text/plain","digest":"sha256:` + digest + `","size":2,"data":"aGVsbG8="}`,
 		"null mediaType":    `{"mediaType":null,"digest":"sha256:` + digest + `","size":2}`,
 		"null digest":       `{"mediaType":"text/plain","digest":null,"size":2}`,
