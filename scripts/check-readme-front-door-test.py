@@ -52,7 +52,7 @@ kmx quickstart
 A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.
 - **Orka** is the default runtime. Its packaged workspace path supports evaluation, evaluated publication and root digest Lift with exact evaluated reuse; independent live Orka run and chat remain.
 - **kagent** support is exact-version and operation-specific: v0.10.3 Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated publication and create-only root digest Lift. Standalone run/chat, Python, RemoteMCP, suite status and retirement remain unavailable.
-- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary push and explicit private `eval --development-host FILE`: one fresh Session/config/Exec per case, full-pass private proof and exact-S evaluated push. This unauthenticated literal-loopback development path loads no cluster settings; it supports no tools/judge, Lift/chat/status or remote lifecycle. Receipt diff refuses its proof.
+- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary push and explicit private `eval --development-host FILE`: one fresh Session/config/Exec per case, full-pass private proof and exact-S evaluated push. This unauthenticated literal-loopback development path loads no cluster settings; it supports no tools/judge, chat/status or remote lifecycle. Eval requires an `AgentSessionsBinding` (`--bindings FILE`) serving the packaged model and records its digest; Lift is a plan-only offline render. Receipt diff refuses its proof.
 ## Safety And Status
 > [!IMPORTANT]
 > **Kaimahi is experimental and under active development.** Interfaces may change.
@@ -124,7 +124,9 @@ CASES += [
     ("kagent suite evaluation removed", GOOD.replace("`eval --bindings`, evaluated publication and ", ""), "kagent version boundary is missing"),
     ("kagent digest lift removed", GOOD.replace("create-only root digest Lift.", ""), "kagent version boundary is missing"),
     ("kagent status claimed", GOOD.replace("suite status and retirement remain unavailable.", "suite status is available."), "kagent version boundary is missing"),
-    ("agentsessions deployment claimed", GOOD.replace("no tools/judge, Lift/chat/status or remote lifecycle", "a KMX deployment target"), "agentsessions boundary is missing"),
+    ("agentsessions deployment claimed", GOOD.replace("no tools/judge, chat/status or remote lifecycle", "a KMX deployment target"), "agentsessions boundary is missing"),
+    ("agentsessions lift apply claimed", GOOD.replace("Lift is a plan-only offline render", "Lift deploys to substrate"), "agentsessions boundary is missing"),
+    ("agentsessions binding dropped", GOOD.replace("Eval requires an `AgentSessionsBinding` (`--bindings FILE`) serving the packaged model and records its digest; ", ""), "agentsessions boundary is missing"),
     ("runtime provider distinction removed", GOOD.replace("A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.\n", ""), "runtime/inference distinction is missing"),
     ("wrong tap", GOOD.replace("kaimahi-agents/tap/kmx", "other/tap/kmx"), "Homebrew install is missing"),
     ("moving Go source", GOOD.replace("cmd/kmx@v0.6.0", "cmd/kmx@main"), "pinned Go install is missing"),

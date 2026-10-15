@@ -52,7 +52,19 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   sends exact config once per fresh Session, requires a complete five-record
   qualified journal and full ordered pass, then exports private runtime-specific
   proof. Exact-S --evaluation push accepts that proof offline. Cluster selectors,
-  mixed-runtime proof, tools/judge, lift/chat/status and live create refuse.
+  mixed-runtime proof, tools/judge, chat/status and live create refuse.
+  AgentSessions eval also requires --bindings FILE: a closed AgentSessionsBinding
+  (runtime package; target, substrate placement, atespace, sandbox, snapshot,
+  resources, workerSelector, model name/provider/baseURL/Secret ref only). The
+  suite pins the model; the binding's model.name must equal it exactly (eval and
+  lift refuse a mismatch; a new model is a new suite version and evaluation).
+  Evidence records the binding's JCS digest; the host endpoint is not attested.
+  Receipts without bindingDigest are unreadable and need fresh evaluation.
+  Root lift with --harness-image IMAGE@sha256 --bindings FILE --evidence --plan
+  renders a substrate ActorTemplate (<suite>-<member>-<hash8> over image digest
+  and binding digest, harnessnode chat, no model credentials) and a substrate
+  HarnessRegistration offline. It loads no cluster settings and applies nothing;
+  apply refuses. Substrate apply needs its own seam, not the kubectl release loop.
   Operator declarations are not authenticated host/build attestation; cleartext
   journal retention is disclosed. Session replay cannot create candidate proof.
   Optional --runtime-version must match that commit; --kagent-runtime refuses.
@@ -169,10 +181,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Registry workspace publication shares unsigned suite provenance defaults/flags and records Git source only from
   fingerprint-bound authored inputs matching HEAD; local layouts get no referrers.
 - Root `eval --development-host FILE` separately supports the packaged
-  AgentSessions chat inventory under the development boundary above; every
-  cluster/inference/bindings/result selector (including explicit defaults) refuses.
-  Missing development selection never falls back. Sessions proof is refused by
-  lift and receipt diff; there is no registry or caller-auth integration.
+  AgentSessions chat inventory under the development boundary above with a
+  required AgentSessionsBinding (--bindings); every cluster/inference/result
+  selector (including explicit defaults) refuses. Missing development selection
+  never falls back. Sessions proof feeds only the plan-only lift render and is
+  refused by receipt diff; there is no registry or caller-auth integration.
 - Root `eval` evaluates the full packaged Orka/kagent workspace inventory with
   a destination context (explicit `--to-context`, named `--to` or saved evalTarget)
   and optional new private `--out`; Orka uses --inference
