@@ -662,8 +662,10 @@ Native Orka/kagent root eval wires authored llmJudge with an explicit endpoint;
 reference manifests still have no native consumer. Root eval requires authored
 workspace cases and private full-passing evidence, with no subset/recorded-input/
 model/runtime override. Native AgentSessions
-`--development-host FILE` evaluation is separate and remains supported; its
-passing proof supports evaluated push, not receipt diff or Lift.
+`--development-host FILE` evaluation is separate, requires `--bindings FILE` and
+records the binding digest; its passing proof supports evaluated push and the
+plan-only Lift render (`kmx lift ... --bindings FILE --evidence FILE --plan`;
+apply refuses), not receipt diff.
 
 ### Editing an agent
 

@@ -6,10 +6,14 @@ profiles support root evaluation, evaluated publication and digest Lift with
 runtime-specific evidence/bindings. Kagent Lift is create-only, refusing occupied
 targets. Pinned AgentSessions chat separately supports native offline authoring,
 prepare/source-free load/ordinary push and explicit `--development-host FILE`
-evaluation/full-pass proof for exact-S evaluated push. It requires a private
-host JSON with a literal bare loopback host:port and typed matching host/model
-observations; no cluster settings or selectors, tools/judge, auth, deploy/Lift,
-chat/status or remote lifecycle. Live create and legacy bundle lifecycle/readers/
+evaluation, which requires `--bindings FILE` (one AgentSessionsBinding) and
+records its digest in the full-pass proof for exact-S evaluated push. It requires
+a private host JSON with a literal bare loopback host:port and typed matching
+host/model observations; no cluster settings or selectors, tools/judge, auth,
+chat/status or remote lifecycle. AgentSessions Lift is a plan-only render:
+`kmx lift REF@DIGEST --harness-image IMAGE@sha256:... --bindings FILE --evidence
+FILE --plan` renders a substrate ActorTemplate and HarnessRegistration offline;
+apply refuses. Live create and legacy bundle lifecycle/readers/
 receipts/replay are removed; suite status/retirement remain unavailable.
 Independent reference extraction/export and availability probes remain.
 These facts set no preference in `kmx targets`.
