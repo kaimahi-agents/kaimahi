@@ -16,6 +16,8 @@ import (
 // Private observation inputs, not a receipt: retain identities and consumed
 // references, never instructions, cases, credential values or arbitrary metadata.
 type suiteNativeSubject struct {
+	PhysicalMember                                            string `json:"PhysicalMember,omitempty"`
+	EvaluationRun                                             string `json:"EvaluationRun,omitempty"`
 	Suite, SuiteDigest, GraphDigest, Member, MemberDigest     string
 	InstructionsDigest, CompositionDigest, BuildProfileDigest string
 	Model, Renderer                                           string
@@ -55,13 +57,55 @@ type suiteNativePrepared struct {
 // Load owns packaged-input validation; preparation takes only the render frame
 // it needs. Installed-schema support and readiness do not prove admission or auth.
 func (a *App) prepareSuiteNative(ctx context.Context, suite *workspace.NativeSuite, namespace, selectedProvider string) (*suiteNativePrepared, error) {
+	return a.prepareSuiteNativeProjection(ctx, suite, namespace, selectedProvider, "", "")
+}
+
+func suiteCandidatePhysicalName(suiteDigest, runID string) (string, error) {
+	if !suitePrefixedDigest(suiteDigest) || !evaluationRunID(runID) {
+		return "", fmt.Errorf("invalid native candidate suite digest or run identity")
+	}
+	return "kmx-eval-" + strings.TrimPrefix(suiteDigest, "sha256:")[:16] + "-" + runID, nil
+}
+
+// physicalMember is used only after validating the subject's projection.
+func (s suiteNativeSubject) physicalMember() string {
+	if s.PhysicalMember != "" {
+		return s.PhysicalMember
+	}
+	return s.Member
+}
+
+func (s suiteNativeSubject) validPhysicalMember() bool {
+	if s.PhysicalMember == "" && s.EvaluationRun == "" {
+		return true
+	}
+	name, err := suiteCandidatePhysicalName(s.SuiteDigest, s.EvaluationRun)
+	return err == nil && s.PhysicalMember == name
+}
+
+func (a *App) prepareSuiteNativeCandidate(ctx context.Context, suite *workspace.NativeSuite, namespace, selectedProvider, runID string) (*suiteNativePrepared, error) {
+	if !suiteNativeOrkaInput(suite) {
+		return nil, fmt.Errorf("native suite preparation supports only the Orka profile")
+	}
+	physical, err := suiteCandidatePhysicalName(suite.Digest, runID)
+	if err != nil {
+		return nil, err
+	}
+	return a.prepareSuiteNativeProjection(ctx, suite, namespace, selectedProvider, physical, runID)
+}
+
+func (a *App) prepareSuiteNativeProjection(ctx context.Context, suite *workspace.NativeSuite, namespace, selectedProvider, physical, runID string) (*suiteNativePrepared, error) {
 	if !suiteNativeOrkaInput(suite) {
 		return nil, fmt.Errorf("native suite preparation supports only the Orka profile")
 	}
 	if err := a.validateSuiteNativeSelectors(namespace, selectedProvider); err != nil {
 		return nil, err
 	}
-	if selectedProvider == suite.MemberID {
+	name := suite.MemberID
+	if physical != "" {
+		name = physical
+	}
+	if selectedProvider == name {
 		return nil, fmt.Errorf("selected Provider collides with the native member Provider")
 	}
 	if suite.RequiredImages == nil || len(suite.RequiredImages) != 0 {
@@ -89,7 +133,7 @@ func (a *App) prepareSuiteNative(ctx context.Context, suite *workspace.NativeSui
 	if err != nil {
 		return nil, err
 	}
-	bundle, err := scaffold.GenerateOrka(scaffold.OrkaSpec{Name: suite.MemberID, Namespace: namespace, Description: suite.Description, Model: suite.Model, Instructions: string(suite.Instructions), ProviderType: binding.Provider.Type, BaseURL: binding.Provider.BaseURL, SecretName: binding.Provider.SecretName, SecretKey: binding.Provider.SecretKey})
+	bundle, err := scaffold.GenerateOrka(scaffold.OrkaSpec{Name: name, Namespace: namespace, Description: suite.Description, Model: suite.Model, Instructions: string(suite.Instructions), ProviderType: binding.Provider.Type, BaseURL: binding.Provider.BaseURL, SecretName: binding.Provider.SecretName, SecretKey: binding.Provider.SecretKey})
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +148,7 @@ func (a *App) prepareSuiteNative(ctx context.Context, suite *workspace.NativeSui
 	for _, doc := range rendered {
 		documents = append(documents, doc.Bytes())
 	}
-	subject := suiteNativeSubject{Suite: suite.Name, SuiteDigest: suite.Digest, GraphDigest: suite.GraphDigest, Member: suite.MemberID, MemberDigest: suite.MemberDigest, InstructionsDigest: suite.InstructionsDigest, CompositionDigest: suite.CompositionDigest, BuildProfileDigest: suite.BuildProfileDigest, Model: suite.Model, Renderer: suite.RendererVersion, RequiredImages: []string{}, Target: target, Binding: binding, Runtime: runtime}
+	subject := suiteNativeSubject{PhysicalMember: physical, EvaluationRun: runID, Suite: suite.Name, SuiteDigest: suite.Digest, GraphDigest: suite.GraphDigest, Member: suite.MemberID, MemberDigest: suite.MemberDigest, InstructionsDigest: suite.InstructionsDigest, CompositionDigest: suite.CompositionDigest, BuildProfileDigest: suite.BuildProfileDigest, Model: suite.Model, Renderer: suite.RendererVersion, RequiredImages: []string{}, Target: target, Binding: binding, Runtime: runtime}
 	subject.BindingDigest, err = suiteNativeDigest("kmx.native-orka.binding/v1", struct {
 		Model          string
 		RequiredImages []string
@@ -132,7 +176,30 @@ func suiteNativeDigest(domain string, value any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot canonicalize native suite identity")
 	}
-	if scaffold.RefuseKeyShapes(string(raw)) != nil {
+	scanned := raw
+	if frame, ok := value.(suitePassingDiffSubject); ok && frame.Subject.EvaluationRun != "" {
+		if !frame.Subject.validPhysicalMember() {
+			return "", fmt.Errorf("invalid native candidate projection")
+		}
+		frame.Subject.EvaluationRun = "run"
+		scanned, err = spec.Marshal(frame)
+		if err != nil {
+			return "", fmt.Errorf("cannot canonicalize native suite identity")
+		}
+	}
+	if s, ok := value.(suiteNativeSubject); ok && s.EvaluationRun != "" {
+		if !s.validPhysicalMember() {
+			return "", fmt.Errorf("invalid native candidate projection")
+		}
+		// Only the validated typed run field is exempt from credential-shape
+		// scanning. Hash the original bytes, including the full run identity.
+		s.EvaluationRun = "run"
+		scanned, err = spec.Marshal(s)
+		if err != nil {
+			return "", fmt.Errorf("cannot canonicalize native suite identity")
+		}
+	}
+	if scaffold.RefuseKeyShapes(string(scanned)) != nil {
 		return "", fmt.Errorf("refusing credential-shaped native suite identity")
 	}
 	return agentruntime.RenderedBundleDigest([][]byte{[]byte(domain), raw}), nil

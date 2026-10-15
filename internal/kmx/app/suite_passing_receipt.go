@@ -28,6 +28,7 @@ type suitePassingReceipt struct {
 	Domain            string                     `json:"domain"`
 	ExecutionMode     string                     `json:"executionMode"`
 	RunID             string                     `json:"runID"`
+	CandidateCleanup  string                     `json:"candidateCleanup,omitempty"`
 	SourceFingerprint string                     `json:"sourceFingerprint"`
 	Subject           suiteNativeSubject         `json:"subject"`
 	Provider          suiteNativeOwnedResource   `json:"provider"`
@@ -137,6 +138,25 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 // The caller must bracket actual execution with verifySuiteNative. Unsigned
 // observations cannot prove drift absence, admission, or authentication.
 func newSuitePassingReceipt(ctx context.Context, prepared *workspace.Prepared, placement *suiteNativePlacement, observations []suitePassingObservation) (*suitePassingReceipt, error) {
+	if placement != nil && (placement.Subject.PhysicalMember != "" || placement.Subject.EvaluationRun != "") {
+		return nil, errSuitePassingReceipt
+	}
+	return newSuitePassingReceiptRun(ctx, prepared, placement, observations, "")
+}
+
+// The caller invokes this only after proving candidate cleanup complete. This
+// constructor binds that declaration to the run allocated before native effects.
+func newSuitePassingCandidateReceipt(ctx context.Context, prepared *workspace.Prepared, placement *suiteNativePlacement, observations []suitePassingObservation, runID string) (*suitePassingReceipt, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if placement == nil || !evaluationRunID(runID) || placement.Subject.EvaluationRun != runID || !placement.Subject.validPhysicalMember() {
+		return nil, errSuitePassingReceipt
+	}
+	return newSuitePassingReceiptRun(ctx, prepared, placement, observations, runID)
+}
+
+func newSuitePassingReceiptRun(ctx context.Context, prepared *workspace.Prepared, placement *suiteNativePlacement, observations []suitePassingObservation, runID string) (*suitePassingReceipt, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -157,11 +177,16 @@ func newSuitePassingReceipt(ctx context.Context, prepared *workspace.Prepared, p
 	if len(observations) != len(inventory) {
 		return nil, errSuitePassingReceipt
 	}
-	runID, err := randomHex(16)
-	if err != nil {
-		return nil, err
+	if runID == "" {
+		runID, err = randomHex(16)
+		if err != nil {
+			return nil, err
+		}
 	}
 	r := &suitePassingReceipt{SchemaVersion: 1, Domain: "kmx.native-suite.passing/v1", ExecutionMode: "native-orka", RunID: runID, SourceFingerprint: prepared.Fingerprint, Subject: placement.Subject, Provider: placement.Provider, Agent: placement.Agent, CasesDigest: casesDigest, Result: "pass", Cases: make([]suitePassingCase, 0, len(inventory))}
+	if placement.Subject.EvaluationRun != "" {
+		r.CandidateCleanup = "complete"
+	}
 	for i, observed := range observations {
 		row := inventory[i].Metadata
 		row.TaskName, row.TaskUID, row.AnswerDigest = observed.TaskName, observed.TaskUID, observed.AnswerSHA256
@@ -225,11 +250,18 @@ func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 		return errSuitePassingReceipt
 	}
 	if r.ExecutionMode == "native-orka" {
+		if r.Subject.EvaluationRun != "" {
+			if r.Subject.EvaluationRun != r.RunID || r.CandidateCleanup != "complete" {
+				return errSuitePassingReceipt
+			}
+		} else if r.CandidateCleanup != "" {
+			return errSuitePassingReceipt
+		}
 		if r.Kagent != nil || r.Sessions != nil || !validSuitePassingSubject(r.Subject) || r.Provider.UID == r.Agent.UID {
 			return errSuitePassingReceipt
 		}
 	} else {
-		if !reflect.DeepEqual(r.Subject, suiteNativeSubject{}) || r.Provider != (suiteNativeOwnedResource{}) || r.Agent != (suiteNativeOwnedResource{}) {
+		if r.CandidateCleanup != "" || !reflect.DeepEqual(r.Subject, suiteNativeSubject{}) || r.Provider != (suiteNativeOwnedResource{}) || r.Agent != (suiteNativeOwnedResource{}) {
 			return errSuitePassingReceipt
 		}
 		switch r.ExecutionMode {
@@ -289,6 +321,10 @@ func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 	}
 	masked := *r
 	masked.RunID = "run"
+	if masked.Subject.EvaluationRun != "" {
+		// basic validation above proved the exact projection and receipt run.
+		masked.Subject.EvaluationRun = "run"
+	}
 	raw, err := spec.Marshal(masked)
 	if err != nil || scaffold.RefuseKeyShapes(string(raw)) != nil {
 		return errors.New("refusing credential-shaped native receipt metadata")
@@ -353,6 +389,9 @@ func canonicalSuitePassingInventory(ctx context.Context, r *suitePassingReceipt,
 }
 
 func validSuitePassingSubject(s suiteNativeSubject) bool {
+	if !s.validPhysicalMember() {
+		return false
+	}
 	for _, d := range []string{s.SuiteDigest, s.GraphDigest, s.MemberDigest, s.InstructionsDigest, s.CompositionDigest, s.BuildProfileDigest} {
 		if !suitePrefixedDigest(d) {
 			return false
@@ -372,14 +411,14 @@ func validSuitePassingSubject(s suiteNativeSubject) bool {
 	if !utf8.ValidString(s.Model) || !utf8.ValidString(p.BaseURL) || len(s.Model) > maxSuitePassingReceiptBytes || strings.TrimSpace(s.Model) != s.Model || s.Model == "" || scaffold.ValidateSingleLineText(s.Model) != nil || len(p.BaseURL) > maxSuitePassingEndpointBytes || scaffold.ValidateSingleLineText(p.BaseURL) != nil {
 		return false
 	}
-	if s.RequiredImages == nil || len(s.RequiredImages) != 0 || scaffold.ValidateObjectName(s.Member) != nil || scaffold.ValidateNamespace(t.Namespace) != nil || p.Namespace != t.Namespace || p.Name == s.Member || scaffold.ValidateObjectName(p.Name) != nil || p.Generation < 1 || p.Type != "openai" || secret.Namespace != t.Namespace || secret.Name != p.SecretName || secret.Key != p.SecretKey || !secret.KeyPresent || scaffold.ValidateObjectName(secret.Name) != nil || scaffold.ValidateOrkaSecretKey(secret.Key) != nil || scaffold.ValidateOrkaProvider(p.Type, s.Model, p.BaseURL, "", "") != nil || r.ControllerGeneration < 1 || r.ControllerReplicas < 1 || scaffold.ValidateObjectName(r.ControllerName) != nil || !suiteNativePinnedRuntime(r, t.Namespace) {
+	if s.RequiredImages == nil || len(s.RequiredImages) != 0 || scaffold.ValidateObjectName(s.Member) != nil || scaffold.ValidateNamespace(t.Namespace) != nil || p.Namespace != t.Namespace || p.Name == s.physicalMember() || scaffold.ValidateObjectName(p.Name) != nil || p.Generation < 1 || p.Type != "openai" || secret.Namespace != t.Namespace || secret.Name != p.SecretName || secret.Key != p.SecretKey || !secret.KeyPresent || scaffold.ValidateObjectName(secret.Name) != nil || scaffold.ValidateOrkaSecretKey(secret.Key) != nil || scaffold.ValidateOrkaProvider(p.Type, s.Model, p.BaseURL, "", "") != nil || r.ControllerGeneration < 1 || r.ControllerReplicas < 1 || scaffold.ValidateObjectName(r.ControllerName) != nil || !suiteNativePinnedRuntime(r, t.Namespace) {
 		return false
 	}
 	return true
 }
 
 func coherentSuitePassingSubject(s suiteNativeSubject, suite *workspace.NativeSuite) error {
-	if !suiteNativeOrkaInput(suite) || s.Suite != suite.Name || s.SuiteDigest != suite.Digest || s.GraphDigest != suite.GraphDigest || s.Member != suite.MemberID || s.MemberDigest != suite.MemberDigest || s.InstructionsDigest != suite.InstructionsDigest || s.CompositionDigest != suite.CompositionDigest || s.BuildProfileDigest != suite.BuildProfileDigest || s.Model != suite.Model || s.Renderer != suite.RendererVersion || !reflect.DeepEqual(s.RequiredImages, suite.RequiredImages) {
+	if !s.validPhysicalMember() || !suiteNativeOrkaInput(suite) || s.Suite != suite.Name || s.SuiteDigest != suite.Digest || s.GraphDigest != suite.GraphDigest || s.Member != suite.MemberID || s.MemberDigest != suite.MemberDigest || s.InstructionsDigest != suite.InstructionsDigest || s.CompositionDigest != suite.CompositionDigest || s.BuildProfileDigest != suite.BuildProfileDigest || s.Model != suite.Model || s.Renderer != suite.RendererVersion || !reflect.DeepEqual(s.RequiredImages, suite.RequiredImages) {
 		return errSuitePassingReceipt
 	}
 	binding, err := suiteNativeDigest("kmx.native-orka.binding/v1", struct {
@@ -392,7 +431,7 @@ func coherentSuitePassingSubject(s suiteNativeSubject, suite *workspace.NativeSu
 		return errSuitePassingReceipt
 	}
 	p := s.Binding.Provider
-	bundle, err := scaffold.GenerateOrka(scaffold.OrkaSpec{Name: s.Member, Namespace: s.Target.Namespace, Description: suite.Description, Model: suite.Model, Instructions: string(suite.Instructions), ProviderType: p.Type, BaseURL: p.BaseURL, SecretName: p.SecretName, SecretKey: p.SecretKey})
+	bundle, err := scaffold.GenerateOrka(scaffold.OrkaSpec{Name: s.physicalMember(), Namespace: s.Target.Namespace, Description: suite.Description, Model: suite.Model, Instructions: string(suite.Instructions), ProviderType: p.Type, BaseURL: p.BaseURL, SecretName: p.SecretName, SecretKey: p.SecretKey})
 	if err != nil {
 		return errSuitePassingReceipt
 	}

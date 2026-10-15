@@ -25,6 +25,17 @@ func validateSuiteNativeTask(raw []byte, desired map[string]any) error {
 	if meta["name"] != wanted["name"] || meta["namespace"] != wanted["namespace"] || meta["deletionTimestamp"] != nil {
 		return errSuiteNativeEvaluation
 	}
+	if ann, ok := wanted["annotations"].(map[string]any); ok && ann[suiteCandidateRunMarker] != nil {
+		actual, _ := meta["annotations"].(map[string]any)
+		for _, key := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {
+			if _, present := actual[key]; present {
+				return errSuiteNativeEvaluation
+			}
+		}
+		if !reflect.DeepEqual(suiteOnlyMarkers(actual), suiteOnlyMarkers(ann)) {
+			return errSuiteNativeEvaluation
+		}
+	}
 	frame, ok := observed["spec"].(map[string]any)
 	if !ok {
 		return errSuiteNativeEvaluation
@@ -74,12 +85,26 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 	return errors.Join(classified, cause)
 }
 
+func (a *App) evaluateSuiteNativeCandidate(ctx context.Context, placement *suiteNativePlacement, frame suitePassingInventoryCase, port string, judge agentruntime.EvaluationJudge, run *suiteCandidateRun) (suitePassingObservation, error) {
+	if run == nil {
+		return suitePassingObservation{}, errSuiteNativeEvaluation
+	}
+	return a.evaluateSuiteNativeTracked(ctx, placement, frame, port, judge, run)
+}
+
 // The caller supplies a bounded per-case context and has consented to placement
 // and the full ordered inventory. Only the actual native observation is credited.
-func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePlacement, frame suitePassingInventoryCase, port string, judge agentruntime.EvaluationJudge) (observation suitePassingObservation, err error) {
+func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePlacement, frame suitePassingInventoryCase, port string, judge agentruntime.EvaluationJudge) (suitePassingObservation, error) {
+	return a.evaluateSuiteNativeTracked(ctx, placement, frame, port, judge, nil)
+}
+
+func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNativePlacement, frame suitePassingInventoryCase, port string, judge agentruntime.EvaluationJudge, run *suiteCandidateRun) (observation suitePassingObservation, err error) {
 	observation = suitePassingObservation{CaseDigest: frame.Metadata.CaseDigest, InputDigest: frame.Metadata.InputDigest, EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: frame.Case.ID, Verdict: agentruntime.EvaluationUnknown}}
 	defer func() {
 		if err != nil {
+			if run != nil {
+				run.stopped = true
+			}
 			err = suiteEvaluationError(ctx, err, true)
 		}
 	}()
@@ -90,7 +115,27 @@ func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePla
 		return observation, errSuiteNativeEvaluation
 	}
 	worker := a.withRunContext(ctx)
-	if err = worker.verifySuiteNative(ctx, placement); err != nil {
+	verify := func(checkCtx context.Context) error {
+		if run != nil {
+			if !run.ownsPlacement(placement) {
+				return errSuiteCandidateRun
+			}
+			if err := run.check(checkCtx, worker); err != nil {
+				return err
+			}
+		}
+		if err := worker.verifySuiteNative(checkCtx, placement); err != nil {
+			return err
+		}
+		if run != nil {
+			if err := run.checkSource(checkCtx); err != nil {
+				return err
+			}
+			return checkCtx.Err()
+		}
+		return nil
+	}
+	if err = verify(ctx); err != nil {
 		return observation, err
 	}
 	suffix, err := randomHex(8)
@@ -99,12 +144,19 @@ func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePla
 	}
 	subject := placement.Subject
 	ns := subject.Target.Namespace
-	name := strings.TrimRight(subject.Member[:min(len(subject.Member), 40)], "-.") + "-eval-" + suffix
+	prefix := subject.Member
+	if run != nil {
+		prefix = subject.PhysicalMember
+	}
+	name := strings.TrimRight(prefix[:min(len(prefix), 40)], "-.") + "-eval-" + suffix
 	observation.TaskName = name
 	task := map[string]any{
 		"apiVersion": "core.orka.ai/v1alpha1", "kind": "Task",
 		"metadata": map[string]any{"name": name, "namespace": ns},
-		"spec":     map[string]any{"type": "ai", "prompt": frame.Case.Input, "agentRef": map[string]any{"name": subject.Member, "namespace": ns}, "resources": map[string]any{}},
+		"spec":     map[string]any{"type": "ai", "prompt": frame.Case.Input, "agentRef": map[string]any{"name": subject.physicalMember(), "namespace": ns}, "resources": map[string]any{}},
+	}
+	if run != nil {
+		addOrkaMarker(task, suiteNativeOwner(subject).markers())
 	}
 	quiet := *worker
 	quiet.Err = io.Discard
@@ -124,6 +176,11 @@ func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePla
 	if err != nil {
 		return observation, err
 	}
+	if run != nil {
+		if err = verify(caseCtx); err != nil {
+			return observation, err
+		}
+	}
 	admitted, err := worker.orkaCapture(caseCtx, body, "-n", ns, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")
 	if err != nil {
 		return observation, err
@@ -131,12 +188,23 @@ func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePla
 	if err = validateSuiteNativeTask(admitted, task); err != nil {
 		return observation, err
 	}
-	if err = worker.verifySuiteNative(caseCtx, placement); err != nil {
+	if err = verify(caseCtx); err != nil {
 		return observation, err
+	}
+	if run != nil {
+		if err = run.intent(caseCtx, task); err != nil {
+			return observation, err
+		}
 	}
 	id, created, err := worker.createOrkaObjectObserved(caseCtx, ns, task)
 	if err != nil {
 		return observation, err
+	}
+	if run != nil {
+		observation.TaskUID = id.UID
+		if err = run.acknowledge(caseCtx, id, created); err != nil {
+			return observation, err
+		}
 	}
 	if err = validateSuiteNativeTask(created, task); err != nil {
 		return observation, err
@@ -153,8 +221,13 @@ func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePla
 		}
 		return observation, err
 	}
-	if err = worker.verifySuiteNative(caseCtx, placement); err != nil {
+	if err = verify(caseCtx); err != nil {
 		return observation, err
+	}
+	if run != nil {
+		if err = worker.verifySuiteCandidateTask(caseCtx, ns, id, task); err != nil {
+			return observation, err
+		}
 	}
 	observation.AnswerSHA256 = agentruntime.EvaluationAnswerDigest(answer)
 	evidence := agentruntime.EvaluationEvidence{Answer: answer, AnswerAvailable: true}
@@ -165,8 +238,13 @@ func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePla
 		if err = caseCtx.Err(); err != nil {
 			return observation, err
 		}
-		if err = worker.verifySuiteNative(caseCtx, placement); err != nil {
+		if err = verify(caseCtx); err != nil {
 			return observation, err
+		}
+		if run != nil {
+			if err = worker.verifySuiteCandidateTask(caseCtx, ns, id, task); err != nil {
+				return observation, err
+			}
 		}
 		var current *orkaObject
 		current, err = worker.readOrkaObject(caseCtx, ns, id)
