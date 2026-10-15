@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path"
 	"reflect"
 	"strings"
@@ -22,6 +23,11 @@ const suitePassingEvaluatorVersion = "kmx.text-assertions/v1"
 const suitePassingJudgeVersion = "kmx.llm-judge/v2"
 
 var errSuitePassingReceipt = errors.New("invalid native passing receipt")
+
+// errSuiteSessionsReceiptPredatesBinding classifies an AgentSessions passing
+// receipt that is complete except for the AgentSessionsBinding digest later
+// evaluations record. It is never eligible proof; it only gets a clearer error.
+var errSuiteSessionsReceiptPredatesBinding = fmt.Errorf("%w: AgentSessions evidence predates recorded binding digests; evaluate again with --development-host FILE --bindings FILE", errSuitePassingReceipt)
 
 type suitePassingReceipt struct {
 	SchemaVersion     int                        `json:"schemaVersion"`
@@ -223,6 +229,45 @@ func newSuitePassingReceiptRun(ctx context.Context, prepared *workspace.Prepared
 }
 
 func parseSuitePassingReceipt(raw []byte) (*suitePassingReceipt, error) {
+	r, err := parseSuitePassingReceiptStrict(raw)
+	if err != nil && suiteSessionsReceiptPredatesBinding(raw) {
+		return nil, errSuiteSessionsReceiptPredatesBinding
+	}
+	return r, err
+}
+
+// suiteSessionsReceiptPredatesBinding reports whether raw is an AgentSessions
+// receipt without agentsessions.subject.bindingDigest that would otherwise
+// parse. It accepts nothing: adding a placeholder digest only classifies the
+// refusal.
+func suiteSessionsReceiptPredatesBinding(raw []byte) bool {
+	if len(raw) > maxSuitePassingReceiptBytes {
+		return false
+	}
+	var document map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&document) != nil || document["executionMode"] != "native-agentsessions" {
+		return false
+	}
+	sessions, _ := document["agentsessions"].(map[string]any)
+	subject, _ := sessions["subject"].(map[string]any)
+	if subject == nil {
+		return false
+	}
+	if _, ok := subject["bindingDigest"]; ok {
+		return false
+	}
+	subject["bindingDigest"] = "sha256:" + strings.Repeat("0", 64)
+	placeholder, err := spec.Marshal(document)
+	if err != nil {
+		return false
+	}
+	_, err = parseSuitePassingReceiptStrict(placeholder)
+	return err == nil
+}
+
+func parseSuitePassingReceiptStrict(raw []byte) (*suitePassingReceipt, error) {
 	r, parseErr := parseSuitePassingWire(raw)
 	if len(raw) > maxSuitePassingReceiptBytes || parseErr != nil {
 		return nil, errSuitePassingReceipt

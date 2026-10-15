@@ -43,7 +43,7 @@ func sessionsPassingFixture(t *testing.T) (*PreparedSuiteWorkspaceEvaluation, su
 	for i, frame := range inventory {
 		observations[i] = suiteSessionsObservation{Result: agentsessions.CaseResult{SessionUID: "session-" + frame.Case.ID, ExecutionID: "execution-" + frame.Case.ID, Harness: "chat", HarnessVersion: "1", Model: suite.Model, ConfigDigest: subject.ConfigDigest, Head: agentsessions.JournalHead{Seq: 5, Hash: strings.Repeat("d", 64)}, Output: "4"}, Assertions: agentruntime.EvaluateAssertions(frame.Case, agentruntime.EvaluationEvidence{Answer: "4", AnswerAvailable: true})}
 	}
-	return &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory}, subject, observations
+	return &PreparedSuiteWorkspaceEvaluation{root: root, prepared: prepared, suite: suite, inventory: inventory}, subject, observations
 }
 
 func TestSuiteSessionsPassingRoundTripAndCoherence(t *testing.T) {

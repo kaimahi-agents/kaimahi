@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -301,5 +303,96 @@ func TestSuiteWorkspaceExclusionProcessExitAndStableInode(t *testing.T) {
 	after, err := os.Stat(lock)
 	if err != nil || !os.SameFile(before, after) {
 		t.Fatalf("lock inode replaced: %v", err)
+	}
+}
+
+// A managed AgentSessions proof stored before evaluations recorded the binding
+// digest is never eligible. Default push refuses it with an evaluate-again
+// error instead of the opaque store error, a new evaluation can still register
+// after it, and a newer record is selected over it but never the reverse.
+func TestSuitePassStoreAgentSessionsProofPredatingBindingDigest(t *testing.T) {
+	p, subject, observations := sessionsPassingFixture(t)
+	receipt, err := newSuiteSessionsPassingReceipt(t.Context(), p, subject, observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := canonicalSuitePassingReceipt(t.Context(), receipt, p.suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(current, &document); err != nil {
+		t.Fatal(err)
+	}
+	delete(document["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
+	old, err := spec.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseSuitePassingReceipt(old); !errors.Is(err, errSuiteSessionsReceiptPredatesBinding) || !errors.Is(err, errSuitePassingReceipt) {
+		t.Fatalf("pre-binding receipt classification: %v", err)
+	}
+	// Only a receipt that is otherwise complete gets the classified error.
+	document["result"] = "fail"
+	broken, err := spec.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseSuitePassingReceipt(broken); !errors.Is(err, errSuitePassingReceipt) || errors.Is(err, errSuiteSessionsReceiptPredatesBinding) {
+		t.Fatalf("incomplete receipt classified as pre-binding: %v", err)
+	}
+
+	t.Setenv("KMX_HOME", privateSuiteDir(t))
+	cache := filepath.Join(os.Getenv("KMX_HOME"), "suites")
+	open := func() *suitePassStore {
+		t.Helper()
+		store, err := openSuitePassStore(t.Context(), p.root, cache, p.suite.Digest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return store
+	}
+	writeRecord := func(store *suitePassStore, seq uint64, receipt []byte) {
+		t.Helper()
+		b, err := spec.Marshal(suitePassRecord{1, store.identity, p.suite.Digest, seq, receipt})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(store.partition, fmt.Sprintf("%020d.json", seq)), b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := open()
+	writeRecord(store, 1, old)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassPredatesBinding) {
+		t.Fatalf("pre-binding stored proof: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	layout := filepath.Join(t.TempDir(), "layout")
+	_, err = (&App{Out: io.Discard, Err: io.Discard}).PushSuiteWorkspaceManaged(t.Context(), SuiteWorkspacePushOptions{Workspace: p.root, Reference: "suite:tag", Layout: layout})
+	if !errors.Is(err, errSuitePassPredatesBinding) || !strings.Contains(err.Error(), "--bindings FILE") {
+		t.Fatalf("default push with only pre-binding proof: %v", err)
+	}
+	if _, err := os.Stat(layout); !os.IsNotExist(err) {
+		t.Fatal("refused push transferred")
+	}
+
+	store = open()
+	defer store.Close()
+	// Evaluation registration reserves and commits past the old record.
+	record := commitStoreReceipt(t, store, p.suite, current)
+	if !strings.HasSuffix(record, "00000000000000000002.json") {
+		t.Fatalf("new record %s", record)
+	}
+	if got, file, err := store.latest(t.Context(), p.suite); err != nil || file != record || got.Sessions.Subject.BindingDigest != subject.BindingDigest {
+		t.Fatalf("new proof after pre-binding record: %q %v", file, err)
+	}
+	// A newer pre-binding record never falls back to the older eligible one.
+	writeRecord(store, 3, old)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassPredatesBinding) {
+		t.Fatalf("newest pre-binding record fell back: %v", err)
 	}
 }
