@@ -185,7 +185,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `ctx <context>` and `ctx use <name>` are still refused. Optional checks read
   local context names and anonymous registry reachability; they are not
   runtime/inference readiness or evaluation proof. `kmx targets` remains the
-  separate runtime-capability view. Composed eval/push/Lift is not implemented;
+  separate runtime-capability view. Composed Lift is Orka-only;
   kagent remains excluded until its candidate cleanup is qualified.
 
 ### Upgrading
