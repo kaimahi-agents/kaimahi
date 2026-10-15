@@ -85,8 +85,7 @@ type HostModel struct {
 // ActorTemplate mirrors the substrate ateapi ActorTemplate fields a render
 // sets at SubstrateAPICommit, using proto field and enum names. At that commit
 // protojson decodes it and CreateActorTemplate validation accepts it; other
-// substrate revisions may not (sandbox_class and template resources changed
-// shape there).
+// substrate revisions may refuse it.
 type ActorTemplate struct {
 	Metadata       ActorMetadata       `json:"metadata"`
 	WorkerSelector *ActorSelector      `json:"worker_selector,omitempty"`
