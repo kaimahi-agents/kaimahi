@@ -61,8 +61,9 @@ var descriptorKnownFields = map[string]bool{
 // zero value, so presence is checked explicitly against the raw fields
 // before the normal typed decode. It also rejects any object key outside
 // the closed descriptor shape, and rejects an explicit JSON null for
-// mediaType, digest, or a present annotations key, which would otherwise
-// silently decode to the same Go zero values as legitimate values.
+// mediaType, digest, size, or a present annotations key, which would
+// otherwise silently decode to the same Go zero values as legitimate
+// values (notably null size and size: 0 both decode to 0).
 func (d *Descriptor) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
@@ -78,7 +79,7 @@ func (d *Descriptor) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("descriptor is missing required field %q", name)
 		}
 	}
-	for _, name := range []string{"mediaType", "digest"} {
+	for _, name := range []string{"mediaType", "digest", "size"} {
 		if isJSONNull(fields[name]) {
 			return fmt.Errorf("descriptor field %q must not be null", name)
 		}

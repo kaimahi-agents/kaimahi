@@ -88,6 +88,7 @@ func TestDescriptorUnmarshalJSONRejectsClosedShapeViolations(t *testing.T) {
 		"unknown field":      `{"mediaType":"text/plain","digest":"sha256:` + digest + `","size":2,"extra":true}`,
 		"null mediaType":     `{"mediaType":null,"digest":"sha256:` + digest + `","size":2}`,
 		"null digest":        `{"mediaType":"text/plain","digest":null,"size":2}`,
+		"null size":          `{"mediaType":"text/plain","digest":"sha256:` + digest + `","size":null}`,
 		"null annotations":   `{"mediaType":"text/plain","digest":"sha256:` + digest + `","size":2,"annotations":null}`,
 		"missing size":       `{"mediaType":"text/plain","digest":"sha256:` + digest + `"}`,
 		"missing mediaType":  `{"digest":"sha256:` + digest + `","size":2}`,
