@@ -80,7 +80,10 @@ and an ARIA tablist; the site retains VitePress's skip link and search controls.
 This is useful accessibility behavior, not a claim of full WCAG conformance.
 
 The draft is intentionally removable. Delete `docs/package.json`,
-`docs/package-lock.json`, and `docs/.vitepress/`, then remove the two Make targets
-and the CI build step.
-Every maintained Markdown document remains in its original location and requires
-no migration.
+`docs/package-lock.json`, `docs/.vitepress/`, and this guide. Remove the two Make
+targets, CI setup/build steps, and generated-output ignore rules. Remove preview
+instructions or links from the root README, `docs/README.md`, `docs/development.md`,
+`CONTRIBUTING.md`, `AGENTS.md`, `CHANGELOG.md`, and `docs/repository-map.md`, then
+rerun the link, README-front-door, and repository-map checks. Every other
+maintained Markdown document remains in its original location and requires no
+migration.

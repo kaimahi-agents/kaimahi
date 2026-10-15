@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import test from 'node:test'
@@ -7,8 +8,10 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const dist = path.join(root, 'docs', '.vitepress', 'dist')
 const sourceRef = process.env.GITHUB_SHA || 'main'
-const withAgentSuite = process.env.KMX_DOCS_WITH_AGENTSUITE !== '0'
+const withAgentSuite = process.env.KMX_DOCS_WITH_AGENTSUITE !== '0' && existsSync(path.join(root, 'agentsuite', 'spec.md'))
+const agentSuiteDocsURL = process.env.KMX_AGENTSUITE_DOCS_URL || 'https://github.com/kaimahi-agents/kaimahi/issues/491'
 
+/** Recursively list generated HTML paths relative to the output directory. */
 async function htmlFiles(directory, prefix = '') {
   const entries = await readdir(directory, { withFileTypes: true })
   const files = []
@@ -53,6 +56,6 @@ test('checkout-only references point to source while guide links stay local', as
 
   if (!withAgentSuite) {
     const index = await readFile(path.join(dist, 'docs', 'index.html'), 'utf8')
-    assert.match(index, /https:\/\/github\.com\/kaimahi-agents\/kaimahi\/issues\/491/)
+    assert.ok(index.includes(`href="${agentSuiteDocsURL}"`))
   }
 })

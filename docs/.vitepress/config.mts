@@ -20,6 +20,7 @@ const sitePages = new Set([
     .map((entry) => `docs/${entry.name}`)
 ])
 
+/** Return the repository-relative Markdown path used to resolve a page's links. */
 function sourcePath(env: Record<string, unknown>): string {
   for (const key of ['relativePath', 'path', 'filePath']) {
     const value = env[key]
@@ -36,6 +37,7 @@ function sourcePath(env: Record<string, unknown>): string {
   return 'README.md'
 }
 
+/** Keep site pages local and send checkout-only references to immutable source. */
 function rewriteRepositoryLinks(md: any): void {
   const render = md.renderer.rules.link_open ?? ((tokens: any[], index: number, options: unknown, _env: unknown, self: any) => self.renderToken(tokens, index, options))
   md.renderer.rules.link_open = (tokens: any[], index: number, options: unknown, env: Record<string, unknown>, self: any) => {

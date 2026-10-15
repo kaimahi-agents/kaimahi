@@ -44,11 +44,13 @@ const paths = [
 const active = ref(0)
 const tabs = ref<HTMLButtonElement[]>([])
 
+/** Select a journey and optionally move keyboard focus to its tab. */
 function activate(index: number, focus = false) {
   active.value = index
   if (focus) nextTick(() => tabs.value[index]?.focus())
 }
 
+/** Apply the standard arrow, Home, and End behavior for an ARIA tablist. */
 function move(event: KeyboardEvent, index: number) {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
   event.preventDefault()
