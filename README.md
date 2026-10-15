@@ -10,7 +10,7 @@
 [![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)
 [![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)
 
-[Getting started](docs/getting-started.md) · [Workspace lifecycle](docs/suite-workspace.md) · [Runtime support](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Developer guide](docs/development.md) · [Contributing](CONTRIBUTING.md)
+[Documentation](https://kaimahi-agents.github.io/kaimahi/) · [Getting started](docs/getting-started.md) · [Workspace lifecycle](docs/suite-workspace.md) · [Runtime support](docs/runtime-adapters.md) · [`kmx` reference](docs/kmx.md) · [Developer guide](docs/development.md) · [Contributing](CONTRIBUTING.md)
 
 <sub>[About the ketu mark](brand/README.md#ketu-mark)</sub>
 

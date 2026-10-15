@@ -1,8 +1,8 @@
-# Documentation site draft
+# Documentation site
 
-The documentation website is a reviewable preview layer over this repository's
-maintained Markdown. It does not introduce a second content tree, change product
-behavior, or publish a production site.
+The [documentation website](https://kaimahi-agents.github.io/kaimahi/) renders
+this repository's maintained Markdown. It does not introduce a second content
+tree or change product behavior.
 
 ## Preview locally
 
@@ -51,7 +51,7 @@ second local copy.
 
 ## Version boundary
 
-The preview renders the checked-out `main` documentation, which can describe
+The published site and local preview render `main`, which can describe
 unreleased behavior. The global channel notice links to the stable v0.6.0 source.
 Tagged Markdown remains the historical release record. A version selector and
 generated copies of older guides are deliberately not implemented in this draft.
@@ -63,14 +63,15 @@ root free of Node package metadata and scoping dependency automation to the
 preview tooling. The draft pins VitePress `2.0.0-alpha.20` exactly. It provides
 responsive navigation, accessible local search, syntax highlighting, dark mode,
 and a small Vue enhancement while leaving Markdown authoritative. The alpha pin
-and its transitive lockfile must be reassessed before production publication; CI
-builds and tests it but publishes nothing.
+and its transitive lockfile must be reassessed before a stable framework claim.
 
-No GitHub Pages workflow, domain, analytics, remote search, publication token, or
-repository secret is introduced. A later hosting decision should be reviewed
-separately, with pull requests remaining build-only and deployment restricted to
-an approved branch or tag. The available `kaimahi.dev` domain is a candidate for
-that separate hosting decision, not a destination selected by this draft.
+`.github/workflows/docs-pages.yml` publishes from `main` to organization GitHub
+Pages after relevant documentation changes, and supports an explicit manual run.
+Pull requests remain build-only under the ordinary CI workflow. The deployment
+uses GitHub's run token and OIDC with `pages: write` and `id-token: write` scoped
+only to its deployment job; it adds no repository secret, analytics, or remote
+search. The available `kaimahi.dev` domain is a candidate for a separate custom-
+domain decision, not part of this first hosting step.
 
 ## Review and removal
 
@@ -79,7 +80,8 @@ dark and light appearance, and reduced motion. The path chooser uses native link
 and an ARIA tablist; the site retains VitePress's skip link and search controls.
 This is useful accessibility behavior, not a claim of full WCAG conformance.
 
-The draft is intentionally removable. Delete `docs/package.json`,
+The site remains removable. Disable GitHub Pages, delete
+`.github/workflows/docs-pages.yml`, `docs/package.json`,
 `docs/package-lock.json`, `docs/.vitepress/`, and this guide. Remove the two Make
 targets, CI setup/build steps, and generated-output ignore rules. Remove preview
 instructions or links from the root README, `docs/README.md`, `docs/development.md`,

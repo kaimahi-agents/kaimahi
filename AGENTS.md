@@ -161,12 +161,18 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   No model/runtime override, subset/content mode or standalone package
   reference is accepted. Authored llmJudge is supported for Orka/kagent with
   explicit --judge-base-url and optional --judge-key-env (environment name only).
-  Two independent temperature-zero scores must agree on the threshold side;
+  The fixed openai-chat-completions-v1 request style uses max_completion_tokens
+  (1024), stream=false and no temperature override, including the pinned AIKit
+  judge. No request-style flag, model inference or error fallback. Two independent
+  scores must agree on the threshold side;
   unavailable/malformed/split results stay unknown. Judgment shares the existing
   case deadline and attribution is rechecked afterward. Root eval discards
   reasoning and omits judge endpoints from recovery commands. Private passing
-  rows bind authored model/version, threshold, policy, endpoint configuration hash
-  and both scores. Text-only receipt wire shape is unchanged; older readers
+  rows bind authored model/version, request style, threshold, policy, endpoint
+  configuration hash, both scores and aligned modelMatches observations. Returned
+  model identity matches only the exact authored model or model+"-"+version,
+  never prefixes/substrings/case folding/whitespace normalization. Old judge rows missing the style require
+  fresh evaluation. Text-only receipt wire shape is unchanged; older readers
   refuse judge rows. AgentSessions still refuses judges.
   Offline `eval diff` reads strict full-passing native Orka/kagent suite
   evidence only. Old normalized receipts are unreadable. `eval from-sessions`
@@ -273,7 +279,7 @@ caches, and `node_modules` untracked. Documentation changes retain the existing
 link, README-front-door and repository-map checks and run
 `npm --prefix docs run docs:check` when they affect the rendered site. The
 current exact alpha framework pin is a draft choice, not approval to publish;
-hosting/versioning changes require a separate review.
+custom-domain and versioned-site changes require a separate review.
 
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
 Command changes normally require `go test ./cmd/kmx`, affected operation-package

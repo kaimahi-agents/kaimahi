@@ -53,7 +53,7 @@ func normalizeSuitePassingEvaluation(r *suitePassingReceipt) (normalizedEvaluati
 		for i, assertion := range row.Assertions {
 			if assertion.Judge != nil {
 				identity := *assertion.Judge
-				identity.Scores = nil
+				identity.Scores, identity.ModelMatches = nil, nil
 				row.Assertions[i].Judge = &identity
 			}
 		}

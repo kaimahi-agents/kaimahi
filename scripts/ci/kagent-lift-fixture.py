@@ -116,8 +116,9 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(messages, list) or not messages or not all(isinstance(message, dict) for message in messages):
             raise ValueError("messages required")
         if request.get("model") == "fixture-judge":
-            if request.get("temperature") != 0 or request.get("stream", False) is not False or request.get("tools"):
-                raise ValueError("independent deterministic judge required")
+            if ("temperature" in request or "max_tokens" in request or request.get("max_completion_tokens") != 1024 or
+                    request.get("stream", False) is not False or request.get("tools")):
+                raise ValueError("modern independent judge request required")
             if [message.get("role") for message in messages] != ["system", "user"]:
                 raise ValueError("judge messages required")
             payload = json.loads(messages[1]["content"])

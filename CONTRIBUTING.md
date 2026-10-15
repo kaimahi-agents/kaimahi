@@ -44,7 +44,10 @@ tools/judge, auth, Lift/chat/status or remote lifecycle. Receipt diff refuses
 AgentSessions proof. Runtime-core assertions/llmJudge and all their test groups
 remain retained; native Orka/kagent root eval supports authored llmJudge with an
 explicit endpoint, two threshold-side samples and payload-free declared identity
-proof. AgentSessions judging remains refused. Exact model and
+proof. The fixed modern Chat Completions wire uses max_completion_tokens
+(1024) without a temperature override; judge evidence/configuration binds the
+request style and old judge receipts require fresh evaluation.
+AgentSessions judging remains refused. Exact model and
 file-valued instructions are required; create/push share workspace discovery.
 No runtime/model bootstrap belongs in workspace create.
 
@@ -115,7 +118,7 @@ For a browser preview of the maintained Markdown, run `make docs-preview` with
 Node.js 22.12 or newer. The root README and `docs/*.md`, plus
 `agentsuite/spec.md` while it remains local, are the source of truth; generated
 HTML and caches are ignored. See the
-[documentation-site draft](docs/docs-site.md) for versioning, publication and
+[documentation site](docs/docs-site.md) for versioning, publication and
 removal boundaries.
 
 The checkers above are the ones you can usefully run by hand. CI's hygiene

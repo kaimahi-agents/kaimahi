@@ -7,7 +7,8 @@ legacy user bundles/readers/receipts and live create are removed outright. Use t
 runtime contract when extending or comparing implementations.
 
 > [!NOTE]
-> The browser preview renders the checked-out `main` documentation and may
+> The [browser documentation](https://kaimahi-agents.github.io/kaimahi/)
+> renders `main` and may
 > include unreleased behavior. Tagged Markdown is the stable historical record;
 > see the [documentation-site version boundary](docs-site.md#version-boundary).
 

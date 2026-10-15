@@ -135,7 +135,7 @@ class FixtureTests(unittest.TestCase):
     def test_fixture_judge_is_separate_two_sample_transport_without_payload_evidence(self):
         for _ in range(2):
             try:
-                reply = self.request("/v1/chat/completions", {"model": "fixture-judge", "temperature": 0,
+                reply = self.request("/v1/chat/completions", {"model": "fixture-judge", "max_completion_tokens": 1024,
                     "stream": False, "messages": [{"role": "system", "content": "public policy"},
                     {"role": "user", "content": json.dumps({"input": "private input", "answer": "private answer", "rubric": "public rubric"})}]})
             except urllib.error.HTTPError as error:
@@ -148,6 +148,13 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(evidence["judge_calls"], 2)
         self.assertEqual((evidence["model_calls"], evidence["tool_calls"], evidence["terminal_answers"]), (0, 0, 0))
         self.assertNotIn("private", json.dumps(evidence))
+
+    def test_fixture_judge_refuses_legacy_wire(self):
+        legacy = {"model": "fixture-judge", "temperature": 0, "max_tokens": 1024,
+                  "stream": False, "messages": [{"role": "system", "content": "public policy"},
+                  {"role": "user", "content": json.dumps({"input": "input", "answer": "answer", "rubric": "rubric"})}]}
+        self.assert_invalid_requests("/v1/chat/completions", [legacy])
+        self.assertEqual(self.request("/evidence")["judge_calls"], 0)
 
     def assert_invalid_requests(self, path, requests):
         with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:

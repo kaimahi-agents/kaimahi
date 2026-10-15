@@ -97,7 +97,7 @@ classification.
 | `pkg/kmx/` | experimental public setup-only environment plus suite/deployment contracts, not wired into the installed CLI |
 | `k8s/ollama.yaml`, `k8s/orka-k8s-tool.yaml` | native local model and read-only Kubernetes Tool |
 | `scripts/`, `Makefile` | checks, packaging and repository helpers |
-| `docs/package.json`, `docs/package-lock.json`, `docs/.vitepress/` | private documentation preview toolchain, navigation/theme and generated-site tests; no published site |
+| `docs/package.json`, `docs/package-lock.json`, `docs/.vitepress/` | private documentation toolchain, navigation/theme and generated-site tests; published from `main` by the Pages workflow |
 | `.github/workflows/` | verification jobs and docs-only routing |
 
 The root CLI is the only Go module. Plain `make` builds `bin/kmx` only. The
@@ -148,9 +148,9 @@ The preview renders the root README and `docs/*.md` directly, plus
 VitePress configuration or commit `docs/.vitepress/dist`, caches, or
 `node_modules`.
 
-The current framework pin is an explicitly reviewable draft dependency and must
-be reassessed before publication. No Pages workflow or publication credential is
-configured. See [documentation site draft](docs-site.md).
+The current framework pin remains explicitly reviewable. Organization GitHub
+Pages publishes the same build from `main`; pull requests only build and test it.
+No repository publication secret is configured. See [documentation site](docs-site.md).
 
 ### App test timing
 

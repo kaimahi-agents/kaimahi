@@ -19,7 +19,7 @@ import (
 const maxSuitePassingReceiptBytes = 1 << 20
 const maxSuitePassingEndpointBytes = 16 << 10
 const suitePassingEvaluatorVersion = "kmx.text-assertions/v1"
-const suitePassingJudgeVersion = "kmx.llm-judge/v1"
+const suitePassingJudgeVersion = "kmx.llm-judge/v2"
 
 var errSuitePassingReceipt = errors.New("invalid native passing receipt")
 
@@ -370,7 +370,7 @@ func canonicalSuitePassingInventory(ctx context.Context, r *suitePassingReceipt,
 		for j, assertion := range row.Assertions {
 			if assertion.Judge != nil {
 				identity := *assertion.Judge
-				identity.Scores, identity.ConfigurationDigest = nil, ""
+				identity.Scores, identity.ModelMatches, identity.ConfigurationDigest = nil, nil, ""
 				row.Assertions[j].Judge = &identity
 			}
 		}
