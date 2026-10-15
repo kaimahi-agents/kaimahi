@@ -22,6 +22,7 @@ func suitePassingAssertionResult(a agentruntime.EvaluationAssertionResult) suite
 	if a.Judge != nil {
 		evidence := *a.Judge
 		evidence.Scores = append([]int(nil), a.Judge.Scores...)
+		evidence.ModelMatches = append([]string(nil), a.Judge.ModelMatches...)
 		row.Judge = &evidence
 	}
 	return row

@@ -492,14 +492,14 @@ class NativeJudgeTests(unittest.TestCase):
              "judgeModel": "qwen-3.5-2b", "judgeVersion": version}]}
         raw = yaml.safe_dump(case).encode()
         evidence = {"requestStyle": "openai-chat-completions-v1", "model": "qwen-3.5-2b", "modelVersion": version, "provenance": "user-declared", "minScore": 70,
-                    "evaluatorDigest": "ffaf6895dafe1badb6530853288e1da522aada71f25cac078c96c1831efb48b6",
-                    "configurationDigest": "dd40024aed8fd5f99de2cf1ad63773dcee1e65f19363e8259cf7eb27383cb2a4", "scores": [90, 80]}
+                    "evaluatorDigest": "2866b5c14b0efa8dd13964a40030ffd79877bba4dc00405c1121000113adf793",
+                    "configurationDigest": "b7ce49e0b23890067e384d903c5deb6425e2909c300411898f2773fa2bd16579", "scores": [90, 80], "modelMatches": ["requested", "version-qualified"]}
         row = {"id": "explanation", "path": "metadata/kmx/eval/03-explanation.yaml", "caseDigest": hashlib.sha256(raw).hexdigest(),
                "inputDigest": hashlib.sha256(case["input"].encode()).hexdigest(), "verdict": "pass", "assertions": [
-                   {"id": "science", "type": "llmJudge", "definitionDigest": "afe0ef7291e09232850cff85473fad963e3442725b690079c3f47829fbcae346",
+                   {"id": "science", "type": "llmJudge", "definitionDigest": "d58d7753601ecd06b6ace92c80c60fc5078f5eaab749f74fbf81cbcc417c5578",
                     "evaluatorVersion": "kmx.llm-judge/v2", "verdict": "pass", "judge": evidence}]}
         Q.verify_cases([row], {"03-explanation.yaml": raw})
-        for field, value in (("requestStyle", "legacy"), ("configurationDigest", "0" * 64), ("modelVersion", "changed"), ("minScore", 60),
+        for field, value in (("modelMatches", None), ("modelMatches", []), ("modelMatches", ["prefix", "requested"]), ("requestStyle", "legacy"), ("configurationDigest", "0" * 64), ("modelVersion", "changed"), ("minScore", 60),
                              ("scores", [90, 69]), ("scores", [90, True]), ("reasoning", "PRIVATE_CASE_CANARY")):
             with self.subTest(field=field, value=value):
                 changed = copy.deepcopy(row)

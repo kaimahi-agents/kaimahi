@@ -39,6 +39,64 @@ func judgeDeadline(t *testing.T) context.Context {
 	return ctx
 }
 
+func TestEvaluationJudgeWorstCaseEvidenceFitsProjectionReserve(t *testing.T) {
+	e := agentruntime.EvaluationJudgeEvidence{Model: strings.Repeat("<", 256), ModelVersion: strings.Repeat("&", 256), RequestStyle: agentruntime.EvaluationJudgeRequestStyle, Provenance: "user-declared", EvaluatorDigest: agentruntime.EvaluationJudgeEvaluatorDigest(), ConfigurationDigest: strings.Repeat("a", 64), MinScore: 100, Scores: []int{100, 100}, ModelMatches: []string{"version-qualified", "version-qualified"}}
+	b, err := json.Marshal(e)
+	if err != nil || len(b) > 4096 {
+		t.Fatalf("judge evidence exceeds per-assertion projection reserve: bytes=%d err=%v", len(b), err)
+	}
+}
+
+func TestEvaluationJudgeExactModelForms(t *testing.T) {
+	requested := "fixture/model"
+	qualified := requested + "-pinned-v1"
+	cases := []struct {
+		models []string
+		forms  []string
+	}{{[]string{requested, requested}, []string{"requested", "requested"}}, {[]string{qualified, qualified}, []string{"version-qualified", "version-qualified"}}, {[]string{requested, qualified}, []string{"requested", "version-qualified"}}}
+	for _, bad := range []string{requested + "-wrong", qualified + "-extra", "prefix-" + qualified, strings.ToUpper(qualified), qualified + " ", " " + qualified, "other/" + requested} {
+		cases = append(cases, struct {
+			models []string
+			forms  []string
+		}{[]string{requested, bad}, nil}, struct {
+			models []string
+			forms  []string
+		}{[]string{bad, qualified}, nil})
+	}
+	for _, tc := range cases {
+		t.Run(strings.Join(tc.models, "|"), func(t *testing.T) {
+			var calls atomic.Int32
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				i := int(calls.Add(1)) - 1
+				body := judgeEnvelope(`{"score":100,"reasoning":"fixture"}`)
+				if i >= 2 {
+					t.Error("extra judge request")
+					return
+				}
+				_, _ = io.WriteString(w, strings.Replace(body, `"model":"fixture/model"`, `"model":"`+tc.models[i]+`"`, 1))
+			}))
+			defer s.Close()
+			c := evaluationJudgeClient{baseURL: s.URL, httpClient: s.Client(), out: io.Discard}
+			row := c.evaluate(judgeDeadline(t), judgeCase(), agentruntime.EvaluationEvidence{Answer: "answer", AnswerAvailable: true})[0]
+			b, _ := json.Marshal(row.Judge)
+			var observed struct {
+				ModelMatches []string `json:"modelMatches"`
+			}
+			_ = json.Unmarshal(b, &observed)
+			if calls.Load() != 2 || !agentruntime.EvaluationJudgeEvidenceValid(row) {
+				t.Fatal("invalid judge sampling/evidence")
+			}
+			if tc.forms == nil {
+				if row.Verdict != agentruntime.EvaluationUnknown || len(row.Judge.Scores) != 0 || len(observed.ModelMatches) != 0 {
+					t.Fatal("bad model retained partial evidence")
+				}
+			} else if row.Verdict != agentruntime.EvaluationPass || !reflect.DeepEqual(observed.ModelMatches, tc.forms) {
+				t.Fatalf("exact forms not accepted/recorded: verdict=%s forms=%v", row.Verdict, observed.ModelMatches)
+			}
+		})
+	}
+}
+
 func TestEvaluationJudgeStyleIsComparisonIdentity(t *testing.T) {
 	before := &agentruntime.EvaluationJudgeEvidence{RequestStyle: agentruntime.EvaluationJudgeRequestStyle}
 	after := *before
@@ -359,7 +417,7 @@ func TestEvaluationJudgeUnicodeCaseFoldShadowsAreMalformed(t *testing.T) {
 	}
 	for name, bad := range cases {
 		t.Run(name, func(t *testing.T) {
-			if score, reason, ok := parseEvaluationJudgeResponse([]byte(bad), "fixture/model", ""); ok || score != 0 || reason != "" {
+			if score, reason, _, ok := parseEvaluationJudgeResponse([]byte(bad), "fixture/model", "pinned-v1", ""); ok || score != 0 || reason != "" {
 				t.Errorf("Unicode case-fold shadow accepted: score=%d reason=%q ok=%v", score, reason, ok)
 			}
 			for _, badSample := range []string{"first", "second", "both"} {

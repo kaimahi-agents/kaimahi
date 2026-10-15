@@ -31,7 +31,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Use one modern judge request shape (`max_completion_tokens`, no temperature
   override), also verified against the pinned AIKit/LocalAI image. No retry,
-  provider inference or request-style flag is added.
+  provider inference or request-style flag is added. Returned model identity
+  accepts only the exact authored model or exact model-plus-hyphen-version;
+  evidence records the matching form for each score.
 
 - `kmx local up` works with Helm 4: the Orka release preflight omits the removed
   `helm list --all` flag on Helm 4+ (which lists every status) and keeps it on

@@ -169,7 +169,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   case deadline and attribution is rechecked afterward. Root eval discards
   reasoning and omits judge endpoints from recovery commands. Private passing
   rows bind authored model/version, request style, threshold, policy, endpoint
-  configuration hash and both scores. Old judge rows missing the style require
+  configuration hash, both scores and aligned modelMatches observations. Returned
+  model identity matches only the exact authored model or model+"-"+version,
+  never prefixes/substrings/case folding/whitespace normalization. Old judge rows missing the style require
   fresh evaluation. Text-only receipt wire shape is unchanged; older readers
   refuse judge rows. AgentSessions still refuses judges.
   Offline `eval diff` reads strict full-passing native Orka/kagent suite

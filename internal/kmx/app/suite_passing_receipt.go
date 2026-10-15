@@ -334,7 +334,7 @@ func canonicalSuitePassingInventory(ctx context.Context, r *suitePassingReceipt,
 		for j, assertion := range row.Assertions {
 			if assertion.Judge != nil {
 				identity := *assertion.Judge
-				identity.Scores, identity.ConfigurationDigest = nil, ""
+				identity.Scores, identity.ModelMatches, identity.ConfigurationDigest = nil, nil, ""
 				row.Assertions[j].Judge = &identity
 			}
 		}

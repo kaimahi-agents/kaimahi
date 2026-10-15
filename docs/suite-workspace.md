@@ -360,6 +360,13 @@ remains unknown. Receipts bind `requestStyle` and include it in the configuratio
 digest. Earlier judge receipts without this binding require fresh evaluation;
 text-only receipts are unchanged.
 
+The returned model must equal exactly the authored `judgeModel`, or exactly
+`judgeModel + "-" + judgeVersion`. There is no prefix, substring, case-folding or
+whitespace matching. Each score has an aligned `modelMatches` entry:
+`requested` or `version-qualified`. A missing or mismatched sample retains
+neither partial scores nor match forms. Match forms are observations, not a
+change to the authored judge identity for receipt comparison.
+
 Passing receipt rows retain the authored model/version, threshold, policy digest,
 both scores and a configuration hash binding the canonical endpoint. Raw judge
 URLs are omitted from receipts and refusal recovery commands; supply the endpoint
