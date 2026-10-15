@@ -87,6 +87,11 @@ func TestSuiteManagedEvaluationFailurePreservesOlderPass(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() {
+			if err := p.Close(); err != nil {
+				t.Error(err)
+			}
+		})
 		for _, frame := range p.inventory {
 			f.answers[frame.Case.Input] = nativeCanary + " answer"
 		}
@@ -108,7 +113,6 @@ func TestSuiteManagedEvaluationFailurePreservesOlderPass(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, err := run(false)
-	defer second.Close()
 	if err == nil {
 		t.Fatal("failed case passed")
 	}
