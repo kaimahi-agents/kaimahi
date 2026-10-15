@@ -367,7 +367,7 @@ AgentSessions host, and applies nothing; `--plan` is required, and
 
 | Rendered field | Value |
 |---|---|
-| `ActorTemplate.metadata.name` | `<suite>-<member>-<hash8>`: the first 8 hex of `sha256(image digest + "\n" + binding digest)`; at most 63 characters, only suite and member truncated. |
+| `ActorTemplate.metadata.name` | `<suite>-<member>-<hash8>`: the first 8 hex of `sha256(renderer version + "\n" + image digest + "\n" + binding digest)`, renderer version `kmx.agentsessions-actortemplate/v1`; at most 63 characters, only suite and member truncated. |
 | `metadata.atespace` | `binding.atespace` |
 | `containers[0].image` | The `--harness-image` reference. |
 | `containers[0].env` | `HARNESS_ADDR=:80`, `HARNESS_READYZ=:8081`, `HARNESS_KIND=chat`, `HARNESS_MODEL=<packaged model>`. No model credentials, endpoint or instructions. |

@@ -110,7 +110,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Plan-only AgentSessions Lift: `kmx lift REF@DIGEST --harness-image IMAGE@sha256:…
   --bindings FILE --evidence FILE --plan` renders a substrate ActorTemplate and
   HarnessRegistration offline from full-passing AgentSessions evidence. No
-  cluster configuration, substrate or host calls, and no apply.
+  cluster configuration, substrate or host calls, and no apply. The template
+  name hash covers the renderer version, image digest and binding digest.
 
 - Public Orka workspace eval uses fresh digest/run candidates, never adoption,
   update or reuse, and exports passing evidence only after verified UID/RV-safe

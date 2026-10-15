@@ -76,7 +76,7 @@ func TestRenderPortsPOCRules(t *testing.T) {
 	if err != nil || rendered.BindingDigest != bindingDigest {
 		t.Fatal("binding digest not recorded", err)
 	}
-	sum := sha256.Sum256([]byte("sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae\n" + bindingDigest))
+	sum := sha256.Sum256([]byte("kmx.agentsessions-actortemplate/v1\nsha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae\n" + bindingDigest))
 	wantName := "support-desk-triage-" + hex.EncodeToString(sum[:])[:8]
 	tmpl := rendered.ActorTemplate
 	if tmpl.Metadata.Name != wantName || tmpl.Metadata.Atespace != "agentsuite-demo" {
@@ -217,6 +217,9 @@ func TestTemplateNameIsABoundedDNSLabel(t *testing.T) {
 		}
 		if TemplateName(tc.suite, tc.member, digest, "sha256:"+strings.Repeat("b", 64)) == name {
 			t.Fatal("binding digest did not change the name")
+		}
+		if templateName("kmx.agentsessions-actortemplate/v2", tc.suite, tc.member, digest, digest) == name {
+			t.Fatal("renderer version did not change the name")
 		}
 	}
 }

@@ -61,8 +61,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Evidence records the binding's JCS digest; the host endpoint is not attested.
   Receipts without bindingDigest are unreadable and need fresh evaluation.
   Root lift with --harness-image IMAGE@sha256 --bindings FILE --evidence --plan
-  renders a substrate ActorTemplate (<suite>-<member>-<hash8> over image digest
-  and binding digest, harnessnode chat, no model credentials) and a substrate
+  renders a substrate ActorTemplate (<suite>-<member>-<hash8> over renderer version,
+  image digest and binding digest, harnessnode chat, no model credentials) and a substrate
   HarnessRegistration offline. It loads no cluster settings and applies nothing;
   apply refuses. Substrate apply needs its own seam, not the kubectl release loop.
   Operator declarations are not authenticated host/build attestation; cleartext

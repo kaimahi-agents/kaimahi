@@ -1,11 +1,11 @@
 {
   "bindingDigest": "sha256:84ec5fa3940ad529a1f9ea05ab8e0b82eba2eff2d8c2b2829a665373e5c128bb",
   "harnessImage": "registry.example.invalid/agentsessions/harnessnode@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
-  "templateDigest": "sha256:d3d5d1a067480eb5b65cfb215c072d1d5f7bb38a31c77bf4404764b58283d2b8",
+  "templateDigest": "sha256:0e5f90af0866539b6ff23f2f2f24e4290fb163381a3023cccab3d88478454d93",
   "actorTemplate": {
     "metadata": {
       "atespace": "agentsuite-demo",
-      "name": "support-desk-triage-04c4531f"
+      "name": "support-desk-triage-d0578cc9"
     },
     "worker_selector": {
       "match_labels": {
@@ -59,7 +59,7 @@
       }
     ],
     "snapshot_config": {
-      "storage_location": "gs://ate-snapshots/agentsuite-demo/support-desk-triage-04c4531f/",
+      "storage_location": "gs://ate-snapshots/agentsuite-demo/support-desk-triage-d0578cc9/",
       "preferred_fidelity": "SNAPSHOT_FIDELITY_MEMORY"
     },
     "sandbox_config": {
@@ -78,11 +78,11 @@
       "descriptor_id": "chat",
       "substrate": {
         "atespace": "agentsuite-demo",
-        "template": "support-desk-triage-04c4531f"
+        "template": "support-desk-triage-d0578cc9"
       }
     }
   },
-  "registrationSpecDigest": "sha256:d0da962acda7deaf0bc837cafe6845d4932c4a67f02b821cd9983113ddd0b61d",
+  "registrationSpecDigest": "sha256:0c9540b701836abfad128db29301a2ac88bd08fd4ad8cc5818404382c3bee3b5",
   "hostModel": {
     "name": "fixture-model",
     "provider": "openai",

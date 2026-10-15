@@ -140,13 +140,22 @@ type ActorSandboxConfig struct {
 	ConfigName   string `json:"config_name"`
 }
 
+// RendererVersion identifies the binding-to-ActorTemplate mapping. It is part
+// of hash8, so a mapping change names a new template instead of reusing a name
+// whose rendered spec differs.
+const RendererVersion = "kmx.agentsessions-actortemplate/v1"
+
 // TemplateName is <suite>-<member>-<hash8>, where hash8 is the first 8 hex of
-// sha256(imageDigest + "\n" + bindingDigest). The same image under another
-// binding is another template. The result is a DNS label of at most 63
-// characters; suite and member are lowercased, sanitized and truncated to fit,
-// never hash8.
+// sha256(RendererVersion + "\n" + imageDigest + "\n" + bindingDigest). The
+// same image under another binding or renderer is another template. The result
+// is a DNS label of at most 63 characters; suite and member are lowercased,
+// sanitized and truncated to fit, never hash8.
 func TemplateName(suite, member, imageDigest, bindingDigest string) string {
-	sum := sha256.Sum256([]byte(imageDigest + "\n" + bindingDigest))
+	return templateName(RendererVersion, suite, member, imageDigest, bindingDigest)
+}
+
+func templateName(renderer, suite, member, imageDigest, bindingDigest string) string {
+	sum := sha256.Sum256([]byte(renderer + "\n" + imageDigest + "\n" + bindingDigest))
 	hash8 := hex.EncodeToString(sum[:])[:8]
 	clean := func(s string) string {
 		return strings.Trim(notLabel.ReplaceAllString(strings.ToLower(s), "-"), "-")
