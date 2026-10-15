@@ -45,7 +45,17 @@ func TestTargetsKagentEvaluationRemainsVersionScoped(t *testing.T) {
 }
 
 func TestTargetsAgentSessionsReasonsNameBindingsAndPlanOnlyLift(t *testing.T) {
-	sessions := compiledTargets()[2]
+	var sessions TargetInfo
+	found := false
+	for _, target := range compiledTargets() {
+		if target.ID == "agentsessions" {
+			sessions, found = target, true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("agentsessions target missing")
+	}
 	seen := map[string]bool{}
 	for _, capability := range sessions.Capabilities {
 		switch capability.Operation {

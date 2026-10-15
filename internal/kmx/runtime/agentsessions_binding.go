@@ -203,8 +203,8 @@ func AgentSessionsBindingDigest(binding AgentSessionsBinding) (string, error) {
 
 var agentSessionsURIScheme = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
 
-// normalized gives equivalent spellings one form: an empty matchLabels selects
-// nothing, so it is the omitted selector.
+// normalized gives equivalent spellings one form: an empty matchLabels adds no
+// label constraint, so it is the omitted selector.
 func (b AgentSessionsBinding) normalized() AgentSessionsBinding {
 	if len(b.WorkerSelector.MatchLabels) == 0 {
 		b.WorkerSelector.MatchLabels = nil
