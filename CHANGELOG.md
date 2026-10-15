@@ -88,6 +88,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Terminal `kmx create NAME` prompts for omitted exact model and instructions-file
+  inputs before offline authoring. Partial flags are preserved; explicitly blank
+  flags and incomplete responses refuse without creating source. Nonterminal use
+  still requires both flags. No model defaults, provider discovery, runtime
+  bootstrap or new config fields are added; core authoring stays strict.
+
 - No-reference `kmx lift --to NAME` composes missing Orka workspace evaluation,
   exact-version publication and Lift from one frozen plan, with automatic disclosed
   source-only promotion and one scoped confirmation. Private exact-version

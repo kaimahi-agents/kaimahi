@@ -77,11 +77,14 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Orka-only consumers refuse that profile. RemoteMCP/Python remain unsupported.
   Missing runtime in old source stays Orka only. Create and `push [--workspace DIR] REF` share nearest-ancestor
   `workspace.yaml` discovery; `--workspace DIR` selects an exact root without
-  fallback and create initializes a missing marker there without prompting.
+  fallback and create initializes a missing marker there without workspace confirmation.
   Without a workspace, terminal create asks `Start one here? [Y/n]`; nonterminal
-  or redirected use refuses with a `--workspace` hint. Invalid nearest markers
-  fail closed. Authoring requires exact `--model` and file-valued `--instructions`;
-  a second member refuses without changing authored files. Help/completion is inert.
+  or hidden-diagnostics use refuses with a `--workspace` hint. Invalid nearest markers
+  fail closed. CLI create prompts for missing exact model and instructions-file inputs
+  only with visible stdin/stderr terminals; nonterminal use requires both flags.
+  Explicit blank flags refuse, paths are literal, and no model is inferred.
+  Core authoring still requires complete validated inputs; a second member refuses
+  without changing authored files. Help/completion is inert.
   Workspace push names its absolute root and prepared OCI manifest digest on
   stderr, then copies that exact graph and authored cases.
   `suite push DIRECTORY REFERENCE` remains extracted-directory transfer without
