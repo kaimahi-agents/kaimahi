@@ -222,7 +222,7 @@ func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error)
 		return nil, fmt.Errorf("agentsuite.json: %w", err)
 	}
 	retained := int64(len(suiteBytes))
-	readJSON := func(name, digest string, out any) error {
+	readJSON := func(name string, descriptor spec.Descriptor, out any) error {
 		data, err := readBuildFile(root, name, maxBuildJSONBytes)
 		if err != nil {
 			return err
@@ -234,43 +234,43 @@ func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error)
 		if err := spec.Unmarshal(data, out); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
-		actual, err := spec.Digest(data)
-		if err != nil {
-			return fmt.Errorf("%s: %w", name, err)
-		}
-		if actual != digest {
+		// Recheck the full descriptor (digest, size, and stored-canonical-byte
+		// identity) against the freshly reread bytes, not merely the digest:
+		// a file could otherwise gain or lose whitespace after
+		// ValidateDirectory ran and still satisfy a digest-only comparison.
+		if !spec.MatchesCanonicalDescriptor(data, descriptor) {
 			return fmt.Errorf("%s manifest digest mismatch after validation", name)
 		}
 		return nil
 	}
 	for _, ref := range v.suite.Agents {
 		var agent spec.Agent
-		if err := readJSON(ref.Path, ref.Descriptor.Digest, &agent); err != nil {
+		if err := readJSON(ref.Path, ref.Descriptor, &agent); err != nil {
 			return nil, err
 		}
 		v.agents[ref.ID] = agent
 	}
 	for _, ref := range v.suite.BuildProfiles {
 		var profile spec.BuildProfile
-		if err := readJSON(ref.Path, ref.Descriptor.Digest, &profile); err != nil {
+		if err := readJSON(ref.Path, ref.Descriptor, &profile); err != nil {
 			return nil, err
 		}
 		v.builds[ref.ID] = profile
 	}
 	for _, ref := range v.suite.Compositions {
 		var composition spec.Composition
-		if err := readJSON(ref.Path, ref.Descriptor.Digest, &composition); err != nil {
+		if err := readJSON(ref.Path, ref.Descriptor, &composition); err != nil {
 			return nil, err
 		}
 		v.compositions = append(v.compositions, composition)
 	}
 	var catalog spec.ToolProviderCatalog
-	if err := readJSON(v.suite.ToolProviderCatalog.Path, v.suite.ToolProviderCatalog.Descriptor.Digest, &catalog); err != nil {
+	if err := readJSON(v.suite.ToolProviderCatalog.Path, v.suite.ToolProviderCatalog.Descriptor, &catalog); err != nil {
 		return nil, err
 	}
 	for _, ref := range catalog.ToolProviders {
 		var provider spec.ToolProvider
-		if err := readJSON(ref.Path, ref.Descriptor.Digest, &provider); err != nil {
+		if err := readJSON(ref.Path, ref.Descriptor, &provider); err != nil {
 			return nil, err
 		}
 		key := ref.ID + "@" + ref.Version
@@ -279,7 +279,7 @@ func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error)
 	}
 	for _, ref := range v.suite.ToolProviderCompositions {
 		var composition spec.ToolProviderComposition
-		if err := readJSON(ref.Path, ref.Descriptor.Digest, &composition); err != nil {
+		if err := readJSON(ref.Path, ref.Descriptor, &composition); err != nil {
 			return nil, err
 		}
 	}

@@ -386,6 +386,20 @@ func canonicalSize(data []byte) (int64, error) {
 // semantically equivalent JSON is rejected, since a consumer must be able to
 // load the referenced bytes directly without re-canonicalizing them first.
 func matchesCanonicalDescriptor(data []byte, descriptor Descriptor) bool {
+	return MatchesCanonicalDescriptor(data, descriptor)
+}
+
+// MatchesCanonicalDescriptor reports whether data is itself stored as its
+// own RFC 8785 JCS canonical bytes, and whether descriptor's digest and size
+// describe that same canonical representation. A descriptor binding
+// canonical identity is satisfied only when the stored bytes are already
+// canonical: differently formatted (for example pretty-printed) but
+// semantically equivalent JSON is rejected, since a consumer must be able to
+// load the referenced bytes directly without re-canonicalizing them first.
+// Callers outside this package (for example builders that re-read pinned
+// child manifests) should use this instead of re-deriving digest/size checks
+// by hand, so every consumer enforces the same stored-byte identity rule.
+func MatchesCanonicalDescriptor(data []byte, descriptor Descriptor) bool {
 	canonical, err := jcs.Transform(data)
 	if err != nil || !bytes.Equal(data, canonical) {
 		return false

@@ -307,6 +307,33 @@ func TestLoadBuildMetadataRefusesChangedPinnedChildren(t *testing.T) {
 	}
 }
 
+// A child file that regains JSON whitespace after ValidateDirectory ran must
+// be refused even though trailing whitespace does not change its JCS digest:
+// the reread bytes are no longer the descriptor's own canonical
+// representation, so a digest-only comparison would wrongly accept them.
+func TestLoadBuildMetadataRefusesNonCanonicalPinnedChildBytes(t *testing.T) {
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(specFixture("minimal"))); err != nil {
+		t.Fatal(err)
+	}
+	suiteBytes := readBuilderTestFile(t, root, "agentsuite.json")
+	if _, err := spec.ValidatePath(root); err != nil {
+		t.Fatal(err)
+	}
+	child := "agents/writer.json"
+	data := readBuilderTestFile(t, root, child)
+	padded := append(append([]byte(nil), data...), ' ')
+	writeBuilderTestFile(t, root, child, padded)
+	handle, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	if _, err := loadBuildMetadata(handle, suiteBytes); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("non-canonical %s error = %v", child, err)
+	}
+}
+
 func TestLoadBuildMetadataVerifiesProviderAndProviderCompositionPins(t *testing.T) {
 	for _, child := range []string{"tool-providers/provider.json", "tool-provider-compositions/provider.json"} {
 		t.Run(child, func(t *testing.T) {
