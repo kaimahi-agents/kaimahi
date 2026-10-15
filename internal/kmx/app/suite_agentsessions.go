@@ -55,7 +55,8 @@ func snapshotSuiteSessionsBinding(path string, suite *workspace.NativeSuite) (*s
 	}
 	binding, err := agentruntime.ParseAgentSessionsBinding(raw)
 	if err != nil {
-		// Binding parse errors name fields and never echo values.
+		// Credential-shaped values are refused before field validation and are
+		// never echoed; an invalid identifier (a name or label) may be quoted.
 		return nil, errors.Join(errSuiteSessionsBinding, err)
 	}
 	if err := agentruntime.CheckAgentSessionsBindingModel(binding, suite.Model); err != nil {
