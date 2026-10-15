@@ -48,7 +48,7 @@ func TestForwardProcess(t *testing.T) {
 		os.Exit(2)
 	}
 	switch scenario {
-	case "owned":
+	case "owned", "translated":
 		bindPort := local
 		if bindPort == "" {
 			bindPort = "0"
@@ -60,7 +60,11 @@ func TestForwardProcess(t *testing.T) {
 		}
 		fmt.Fprintln(os.Stderr, "diagnostic one\ndiagnostic two")
 		_, boundPort, _ := net.SplitHostPort(listener.Addr().String())
-		fmt.Println("Forwarding from 127.0.0.1:" + boundPort + " -> 8080")
+		targetPort := "8080"
+		if scenario == "translated" {
+			targetPort = "8181"
+		}
+		fmt.Println("Forwarding from 127.0.0.1:" + boundPort + " -> " + targetPort)
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -75,8 +79,8 @@ func TestForwardProcess(t *testing.T) {
 		fmt.Println("Forwarding from 127.0.0.1:1 -> 8080")
 	case "prefix":
 		fmt.Println("Forwarding from 127.0.0.1:" + local + "0 -> 8080")
-	case "wrong-remote":
-		fmt.Println("Forwarding from 127.0.0.1:" + local + " -> 8081")
+	case "bad-remote":
+		fmt.Println("Forwarding from 127.0.0.1:" + local + " -> invalid")
 	case "zero", "overflow", "partial":
 		line := map[string]string{
 			"zero":     "Forwarding from 127.0.0.1:0 -> 8080\n",
@@ -197,7 +201,7 @@ func TestStartRefusesPortOwnedByAnotherProcess(t *testing.T) {
 
 func TestStartRequiresOwnIPv4PortAnnouncement(t *testing.T) {
 	impatient(t)
-	for _, scenario := range []string{"ipv6", "wrong-port", "silent", "prefix", "wrong-remote"} {
+	for _, scenario := range []string{"ipv6", "wrong-port", "silent", "prefix", "bad-remote"} {
 		t.Run(scenario, func(t *testing.T) {
 			k := testKube(t, scenario)
 			f, err := Start(k, "agents", "svc/tool", freePort(t), "8080")
@@ -291,6 +295,15 @@ func TestStartFailurePreservesCauseAndTarget(t *testing.T) {
 	}
 }
 
+func TestStartAcceptsServiceTargetPortTranslation(t *testing.T) {
+	impatient(t)
+	f, err := Start(testKube(t, "translated"), "agents", "svc/tool", "", "8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+}
+
 func TestStartReturnsOwnedAutomaticPort(t *testing.T) {
 	f, err := Start(testKube(t, "owned"), "agents", "svc/tool", "", "8080")
 	if err != nil {
@@ -314,7 +327,7 @@ func TestStartReturnsOwnedAutomaticPort(t *testing.T) {
 
 func TestAutomaticForwardRequiresCompleteValidIPv4Announcement(t *testing.T) {
 	impatient(t)
-	for _, scenario := range []string{"ipv6", "zero", "overflow", "partial", "wrong-remote", "exit"} {
+	for _, scenario := range []string{"ipv6", "zero", "overflow", "partial", "bad-remote", "exit"} {
 		t.Run(scenario, func(t *testing.T) {
 			k := testKube(t, scenario)
 			f, err := Start(k, "agents", "svc/tool", "", "8080")

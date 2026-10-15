@@ -65,7 +65,7 @@ func Start(k Kube, namespace, target, localPort, remotePort string) (*Forward, e
 	}()
 
 	bound := run.Poll(pollAttempts, pollInterval, func() bool {
-		if port := announcedPort(f.log.String(), localPort, remotePort); port != "" {
+		if port := announcedPort(f.log.String(), localPort); port != "" {
 			f.Port = port
 			return true
 		}
@@ -91,17 +91,21 @@ func Start(k Kube, namespace, target, localPort, remotePort string) (*Forward, e
 }
 
 // announcedPort accepts only a complete IPv4 bind announcement for this forward.
-// In particular, a partial write or numeric prefix is not bind proof.
-func announcedPort(output, requested, remote string) string {
+// kubectl resolves Service ports to Pod target ports, so the announced remote
+// number can differ from the request. A partial write or prefix is not bind proof.
+func announcedPort(output, requested string) string {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines[:len(lines)-1] {
 		address, ok := strings.CutPrefix(line, "Forwarding from 127.0.0.1:")
 		if !ok {
 			continue
 		}
-		port, ok := strings.CutSuffix(address, " -> "+remote)
+		port, remote, ok := strings.Cut(address, " -> ")
 		n, err := strconv.Atoi(port)
-		if ok && err == nil && n > 0 && n <= 65535 && strconv.Itoa(n) == port && (requested == "" || port == requested) {
+		target, targetErr := strconv.Atoi(remote)
+		if ok && err == nil && n > 0 && n <= 65535 && strconv.Itoa(n) == port &&
+			targetErr == nil && target > 0 && target <= 65535 && strconv.Itoa(target) == remote &&
+			(requested == "" || port == requested) {
 			return port
 		}
 	}
