@@ -25,14 +25,15 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			"Requires explicit private full-passing --evidence for exactly this suite and either --to NAME from workspace-root kmx.yaml or explicit --to-context; Orka uses Ready --inference provider:NAME, kagent uses author-owned --bindings FILE.\n" +
 			"Named selectors resolve once; explicit flags override. No evalTarget or remembered/current-context fallback for Lift. Without --to, reference Lift never discovers a workspace or kmx.yaml.\n" +
 			"Runtime/model come from the packaged member: native Orka or exact v0.10.3 Go kagent with openai-type inference. No runtime/model override.\n" +
-			"Default evidence must match the exact destination. --promote explicitly allows another target/binding only for the same suite, member, model and runtime,\n" +
+			"Default evidence must match the exact destination. Candidate evidence requires --promote even in the same environment, with absent canonical resources and a Ready Provider defaultModel matching the packaged model.\n" +
+			"--promote explicitly allows source-only evidence for the same suite, member, model and runtime,\n" +
 			"with the packaged model declaration (Orka: Ready Provider; kagent: rendered ModelConfig). Evidence proves the source only, not destination evaluation or authenticated approval.\n" +
 			"Kagent creates new ModelConfig/Agent only; occupied names always refuse. Orka may reuse exact evaluated UID/generation/spec. Never update, adopt or retry ambiguous writes.\n" +
 			"Created/recreated resources need fresh evaluation before later receipt-bound reuse. Partial resources may remain; readiness is not execution.\n" +
 			"--plan is GET-only: no mutation guard, admission, writes, Tasks or placement records. JSON reports contain identities, never prompts or credentials.",
 		Example: "  kmx lift registry.example/suite@sha256:<digest> --to prod --evidence ../private/pass.json --promote --plan\n" +
 			"  kmx lift registry.example/suite@sha256:<digest> --to-context prod --inference provider:inference --evidence ../private/pass.json --promote --plan\n" +
-			"  kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo --inference provider:inference --evidence ../private/pass.json -o json",
+			"  kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo --inference provider:inference --evidence ../private/pass.json --promote -o json",
 		Args: usageArgs(1, 1, "kmx lift <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--plan]"),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateContainerEngineFlag(cmd, args); err != nil {

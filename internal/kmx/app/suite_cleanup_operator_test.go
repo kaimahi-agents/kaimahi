@@ -270,6 +270,13 @@ func TestOperatorCleanupRefusesDriftAndLostAnchors(t *testing.T) {
 				return capture(ctx, cmd)
 			}
 			err := a.CleanupSuiteCandidates(t.Context(), SuiteCandidateCleanupOptions{Namespace: OrkaNamespace, RunID: candidateRun})
+			reasons := map[string]string{"no roots": "no roots for selected run", "no Task": "uncertain candidate inventory at Job/worker-job", "missing Job": "uncertain candidate inventory at Pod/worker-pod", "child replacement": "child closure unknown"}
+			if reason := reasons[tc]; reason != "" && (err == nil || !strings.Contains(err.Error(), reason)) {
+				t.Fatalf("cleanup lost safe refusal reason %q: %v", reason, err)
+			}
+			if err != nil && strings.Contains(err.Error(), nativeCanary) {
+				t.Fatal("cleanup leaked API payload", err)
+			}
 			if tc == "resource version" || tc == "frozen config" {
 				if err != nil || len(f.deletes) != 3 {
 					t.Fatal("fresh RV must be used", err, f.deletes)

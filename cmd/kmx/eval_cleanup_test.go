@@ -3,14 +3,38 @@ package main
 import (
 	"bytes"
 	"errors"
-	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
+
+func TestCandidateEvaluationAndLiftHelp(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		terms   []string
+	}{
+		{"eval", []string{"fresh digest/run-scoped candidates", "verified cleanup", "eval cleanup"}},
+		{"lift", []string{"requires --promote even in the same environment", "absent canonical resources"}},
+	} {
+		var out bytes.Buffer
+		deps, loads := testDependencies(&out, &out)
+		root := newRootCommand(&commandState{deps: deps})
+		root.SetArgs([]string{tc.command, "--help"})
+		if err := root.Execute(); err != nil || *loads != 0 {
+			t.Fatal(err, *loads)
+		}
+		for _, term := range tc.terms {
+			if !strings.Contains(out.String(), term) {
+				t.Errorf("%s help lacks %q", tc.command, term)
+			}
+		}
+	}
+}
 
 func TestEvalCleanupDoesNotInheritEvaluationPreparation(t *testing.T) {
 	var out bytes.Buffer

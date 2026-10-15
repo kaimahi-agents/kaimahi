@@ -7,9 +7,10 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/spf13/cobra"
+
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
-	"github.com/spf13/cobra"
 )
 
 func newEvalCleanupCommand(state *commandState) *cobra.Command {

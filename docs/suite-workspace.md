@@ -630,7 +630,7 @@ root digest lift consumes that explicit private file before deployment.
 kmx lift registry.example/suite@sha256:<digest> --to-context prod \
   --inference provider:inference --evidence ../private/passing.json --promote --plan
 kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
-  --inference provider:inference --evidence ../private/passing.json -o json
+  --inference provider:inference --evidence ../private/passing.json --promote -o json
 ```
 
 Use a complete SHA256 digest, not a mutable tag. Destination runtime must already

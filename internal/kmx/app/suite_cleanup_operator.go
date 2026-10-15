@@ -27,7 +27,7 @@ type suiteCleanupRoot struct {
 type suiteCleanupInventory struct {
 	roots     []suiteCleanupRoot
 	rows      map[string][]suiteCandidateCleanupMetadataRow
-	uncertain bool
+	uncertain string // One bounded validated Kind/name locator; never API payload.
 }
 
 func suiteCleanupOwner(markers map[string]any) *orkaSuiteOwnership {
@@ -66,7 +66,7 @@ func (a *App) discoverSuiteCandidates(ctx context.Context, target suiteNativeTar
 		}
 		for _, row := range rows {
 			if _, ok := row.Markers[suiteCandidateRunMarker]; !ok && strings.HasPrefix(row.Name, "kmx-eval-") {
-				inventory.uncertain = true
+				inventory.uncertain = kind + "/" + row.Name
 			}
 			if len(row.Markers) == 0 {
 				continue
@@ -77,22 +77,22 @@ func (a *App) discoverSuiteCandidates(ctx context.Context, target suiteNativeTar
 			}
 			owner := suiteCleanupOwner(row.Markers)
 			if owner == nil || row.Legacy || row.Generation < 1 {
-				inventory.uncertain = true
+				inventory.uncertain = kind + "/" + row.Name
 				continue
 			}
 			physical, err := suiteCandidatePhysicalName(owner.Digest, owner.EvaluationRun)
 			if err != nil || kind != "Task" && row.Name != physical || kind == "Task" && (row.AgentName != physical || row.AgentNamespace != target.Namespace || row.TaskType != "ai") {
-				inventory.uncertain = true
+				inventory.uncertain = kind + "/" + row.Name
 				continue
 			}
 			if old := owners[owner.EvaluationRun]; old != nil && !reflect.DeepEqual(old, owner) {
-				inventory.uncertain = true
+				inventory.uncertain = kind + "/" + row.Name
 			}
 			owners[owner.EvaluationRun] = owner
 			terminating := row.DeletionTimestamp != nil
 			if terminating {
 				if _, err := time.Parse(time.RFC3339Nano, *row.DeletionTimestamp); err != nil {
-					inventory.uncertain = true
+					inventory.uncertain = kind + "/" + row.Name
 					continue
 				}
 			}
@@ -127,7 +127,7 @@ func (a *App) discoverSuiteCandidates(ctx context.Context, target suiteNativeTar
 				}
 			}
 			if potential && !anchored {
-				inventory.uncertain = true
+				inventory.uncertain = kind + "/" + row.Name
 			}
 		}
 	}
@@ -147,8 +147,8 @@ func reportSuiteCandidates(out io.Writer, target suiteNativeTarget, inventory su
 			return err
 		}
 	}
-	if inventory.uncertain {
-		_, err := fmt.Fprintln(out, "WARNING: candidate inventory includes uncertain ownership or unanchored descendants; closure cannot be verified.")
+	if inventory.uncertain != "" {
+		_, err := fmt.Fprintf(out, "WARNING: uncertain candidate inventory at %s; ownership or descendant closure cannot be verified.\n", inventory.uncertain)
 		return err
 	}
 	return nil
@@ -202,7 +202,7 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	}
 	inventory, err := worker.discoverSuiteCandidates(ctx, target)
 	if err != nil {
-		return errSuiteCandidateCleanup
+		return fmt.Errorf("%w: candidate inventory incomplete or unreadable", errSuiteCandidateCleanup)
 	}
 	reportOut := worker.Err
 	if opt.RunID == "" {
@@ -214,8 +214,8 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	if opt.RunID == "" {
 		return nil
 	}
-	if inventory.uncertain {
-		return errSuiteCandidateCleanup
+	if inventory.uncertain != "" {
+		return fmt.Errorf("%w: uncertain candidate inventory at %s; inspect with eval cleanup before selecting a run", errSuiteCandidateCleanup, inventory.uncertain)
 	}
 	selected := map[string]suiteCleanupRoot{}
 	roots := []suiteCandidateResource{}
@@ -227,13 +227,13 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	}
 	// No selected roots is not a proof that a crashed run's descendants are gone.
 	if len(roots) == 0 {
-		return errSuiteCandidateCleanup
+		return fmt.Errorf("%w: no roots for selected run; use eval cleanup to list observable runs, not proof of orphan absence", errSuiteCandidateCleanup)
 	}
 	// Freeze child UID chains before consent; replacements during confirmation
 	// must fail the engine's pre-effect closure check, not become initial proof.
 	known := append([]suiteCandidateResource{}, roots...)
 	if _, err := worker.suiteCandidateCleanupChildrenTarget(ctx, target, &known, nil); err != nil {
-		return errSuiteCandidateCleanup
+		return fmt.Errorf("%w: pre-confirmation child closure unreadable or changed", errSuiteCandidateCleanup)
 	}
 	if _, err := fmt.Fprintf(worker.Err, "Cleanup preview: run=%s context=%q clusterUID=%s namespace=%q namespaceUID=%s roots=%d\nWARNING: this may interrupt an active run; liveness is unknown. Only these root UIDs are authorized; descendants are GC-only.\n", opt.RunID, target.Context, target.ClusterUID, target.Namespace, target.NamespaceUID, len(roots)); err != nil {
 		return err
@@ -257,7 +257,7 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	retained := known
 	checkInventory := func(ctx context.Context) error {
 		fresh, err := worker.discoverSuiteCandidates(ctx, target, retained)
-		if err != nil || fresh.uncertain {
+		if err != nil || fresh.uncertain != "" {
 			return errSuiteCandidateCleanup
 		}
 		for _, root := range fresh.roots {
@@ -293,7 +293,7 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	}
 	result, err := worker.cleanupSuiteCandidateAuthority(ctx, authority)
 	if err != nil || !result.AllGone {
-		return errSuiteCandidateCleanup
+		return fmt.Errorf("%w: %s; inspect the selected run before another cleanup", errSuiteCandidateCleanup, result.Reason)
 	}
 	_, err = fmt.Fprintln(worker.Err, "Candidate cleanup: verified selected roots and attributable children absent; runtime/model logs are not erased.")
 	return err
