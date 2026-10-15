@@ -198,11 +198,14 @@ separate format capability; KMX does not migrate private cases into that tree.
 
 AgentSuite content references now use nested OCI-style descriptors with
 `mediaType`, `digest` and required `size`, rather than a flat digest.
-Descriptor-bound JSON files must be stored as their exact RFC 8785 JCS
-canonical bytes. For existing extracted suites, regenerate them with current
-tooling or update descriptors and canonicalize referenced JSON, recomputing
-affected parent descriptors before rebuilding. There is no compatibility reader
-or automated migration; see the [AgentSuite format](../agentsuite/spec.md).
+Referenced normative AgentSuite JSON manifests must be stored as their exact
+RFC 8785 JCS canonical bytes. Instructions and Tool `inputSchema`/`outputSchema`
+files instead bind their literal bytes; preserve those bytes when updating
+their descriptors. For existing extracted suites, regenerate them with current
+tooling or update descriptors and canonicalize only the normative manifests,
+recomputing affected parent descriptors before rebuilding. There is no
+compatibility reader or automated migration; see the
+[AgentSuite format](../agentsuite/spec.md).
 
 All three native renderers changed from v1 to v2, so unchanged workspace source
 prepares a new graph and suite identity. Regenerate packages and run fresh
