@@ -54,7 +54,7 @@ func (a *App) ReadOrkaRun(ctx context.Context, namespace, rootName, rootUID stri
 	}
 	bounded, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	session, sessionErr := a.openOrkaResultSession(bounded, CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount, ResultPort: "19180"})
+	session, sessionErr := a.openOrkaResultSession(bounded, CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount})
 	if session != nil {
 		defer session.close()
 	}

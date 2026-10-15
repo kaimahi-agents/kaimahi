@@ -29,6 +29,10 @@ func (e *suiteCandidateOutcome) Error() string {
 	if errors.Is(e.cause, errSuiteNativeCaseFailed) {
 		verdict = "native candidate evaluation case failed"
 	}
+	var port *orkaResultPortError
+	if errors.As(e.cause, &port) {
+		verdict = port.Error()
+	}
 	cleanup := "candidate cleanup not required"
 	if e.allGone {
 		cleanup = "candidate cleanup completed"

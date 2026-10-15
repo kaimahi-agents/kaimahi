@@ -72,6 +72,10 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 	if errors.Is(err, workspace.ErrMultiMemberUnsupported) {
 		return errors.Join(workspace.ErrMultiMemberUnsupported, cause)
 	}
+	var port *orkaResultPortError
+	if errors.As(err, &port) {
+		return errors.Join(port, cause)
+	}
 	var placement *suiteNativeReuseRefusal
 	if errors.As(err, &placement) {
 		return errors.Join(placement, cause)

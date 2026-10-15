@@ -42,7 +42,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `list` | Read many resources, one summary row each. | `kmx orka list` |
 | `show` | Read one resource and what it depends on, from live state. | `kmx orka show <name>` |
 | `status` | Report readiness, health or drift. | `kmx orka status` |
-| `create` | Author one tool-free workspace member offline; no runtime/model bootstrap. | `kmx create <name> --model <model> --instructions <file>` |
+| `create` | Author one tool-free workspace member offline; terminal prompts complete missing model/file inputs, scripts require both flags. No runtime/model bootstrap. | `kmx create <name>` |
 | `install` | Install runtime software onto a cluster. | `kmx orka install` |
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
 | `run` | Execute once on an independent live Orka Agent. | `kmx run --agent NAME` |

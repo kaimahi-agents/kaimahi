@@ -31,6 +31,8 @@ type evalFixture struct {
 	resultStatus                     int
 	resultDisconnect, resultHoldBody bool
 	resultHeldBodies                 atomic.Int32
+	resultAddress                    string
+	resultRequest                    func(*http.Request)
 }
 
 // Seed a raw live Agent and serve attributable Task results keyed by prompt.
@@ -59,6 +61,9 @@ func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 			fmt.Fprint(w, `{"error":{"code":404,"message":"task not found"}}`)
 			return
 		}
+		if f.resultRequest != nil {
+			f.resultRequest(r)
+		}
 		if f.resultDisconnect {
 			connection, _, err := w.(http.Hijacker).Hijack()
 			if err == nil {
@@ -84,6 +89,7 @@ func newEvalFixture(t *testing.T, cases map[string]string) *evalFixture {
 		_ = json.NewEncoder(w).Encode(map[string]string{"result": f.answers[prompt]})
 	}))
 	t.Cleanup(server.Close)
+	f.resultAddress = server.Listener.Addr().String()
 	_, f.opt.ResultPort, _ = net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
 	return f
 }

@@ -330,22 +330,33 @@ func TestRunAgentDoesNotWriteBundleReceipt(t *testing.T) {
 }
 
 func TestRunAgentPromptIsRedactedFromRemoteGuard(t *testing.T) {
-	f := runFixture(t)
-	t.Setenv("KMX_EVAL_REMOTE", "1")
-	f.app.InvocationCommand = "kmx run --prompt private prompt --context kind-test"
-	err := f.app.RunAgent(runOption(f))
-	if err == nil {
-		t.Fatal("remote guard accepted")
-	}
-	if strings.Contains(err.Error()+f.app.Err.(*bytes.Buffer).String(), "private prompt") {
-		t.Fatalf("prompt leaked: %v %s", err, f.app.Err)
-	}
-	want := f.app.operationCommand("run", "--agent", f.name, "--namespace", "orka-system", "--wait", "30s", "--result-port", f.opt.ResultPort, "--prompt-file", "-")
-	if !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "<redacted>") {
-		t.Fatalf("guard retry lost live Agent selection or exposed prompt: %v", err)
-	}
-	if f.taskCreates(t) != 0 {
-		t.Fatal("created")
+	for _, automatic := range []bool{false, true} {
+		t.Run(fmt.Sprint(automatic), func(t *testing.T) {
+			f := runFixture(t)
+			t.Setenv("KMX_EVAL_REMOTE", "1")
+			f.app.InvocationCommand = "kmx run --prompt private prompt --context kind-test"
+			opt := runOption(f)
+			args := []string{"run", "--agent", f.name, "--namespace", "orka-system", "--wait", "30s"}
+			if automatic {
+				opt.ResultPort = ""
+			} else {
+				args = append(args, "--result-port", f.opt.ResultPort)
+			}
+			err := f.app.RunAgent(opt)
+			if err == nil {
+				t.Fatal("remote guard accepted")
+			}
+			if strings.Contains(err.Error()+f.app.Err.(*bytes.Buffer).String(), "private prompt") {
+				t.Fatalf("prompt leaked: %v %s", err, f.app.Err)
+			}
+			want := f.app.operationCommand(append(args, "--prompt-file", "-")...)
+			if !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "<redacted>") || automatic && strings.Contains(err.Error(), "--result-port") {
+				t.Fatalf("guard retry lost live Agent selection, automatic port or prompt privacy: %v", err)
+			}
+			if f.taskCreates(t) != 0 {
+				t.Fatal("created")
+			}
+		})
 	}
 }
 

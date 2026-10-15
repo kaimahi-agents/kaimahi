@@ -104,11 +104,8 @@ func PrepareWorkspaceLift(ctx context.Context, opt WorkspaceLiftOptions) (*Prepa
 	if opt.Destination.ToNamespace == "" {
 		opt.Destination.ToNamespace = OrkaNamespace
 	}
-	if opt.Evaluation.ResultPort == "" {
-		opt.Evaluation.ResultPort = "19180"
-	}
 	port, portErr := strconv.Atoi(opt.Evaluation.ResultPort)
-	if portErr != nil || port < 1 || port > 65535 || strconv.Itoa(port) != opt.Evaluation.ResultPort {
+	if opt.Evaluation.ResultPort != "" && (portErr != nil || port < 1 || port > 65535 || strconv.Itoa(port) != opt.Evaluation.ResultPort) {
 		return nil, errors.New("workspace Lift requires a valid result port")
 	}
 	if opt.Evaluation.CaseTimeout == 0 {

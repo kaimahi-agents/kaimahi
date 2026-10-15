@@ -278,9 +278,10 @@ An older approval-capable process can still use stored grants; source removal is
 revocation or proof that every old replica has stopped. Keep independently
 verified backups and the ownership records needed for teardown.
 
-Task-backed Orka chat and quickstart use loopback port `19180`; `CHAT_PORT`
-and `KMX_CHAT_PORT` are unsupported. An occupied port causes failure rather
-than attaching to another cluster's forward; there is no automatic free-port fallback.
+Task-backed Orka chat and quickstart let kubectl choose and retain a free
+IPv4 loopback result port; `CHAT_PORT` and `KMX_CHAT_PORT` are unsupported.
+For commands accepting `--result-port`, an explicit port is honored without
+fallback: an occupied port fails rather than attaching to another cluster's forward.
 
 ## What was verified, and what was not
 

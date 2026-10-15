@@ -154,12 +154,9 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 		if opt.ToNamespace == "" {
 			opt.ToNamespace = OrkaNamespace
 		}
-		if opt.ResultPort == "" {
-			opt.ResultPort = "19180"
-		}
 		provider := strings.TrimPrefix(opt.Inference, "provider:")
 		port, portErr := strconv.Atoi(opt.ResultPort)
-		if opt.Bindings != "" || !strings.HasPrefix(opt.Inference, "provider:") || scaffold.ValidateObjectName(provider) != nil || scaffold.ValidateNamespace(opt.ToNamespace) != nil || portErr != nil || port < 1 || port > 65535 || strconv.Itoa(port) != opt.ResultPort {
+		if opt.Bindings != "" || !strings.HasPrefix(opt.Inference, "provider:") || scaffold.ValidateObjectName(provider) != nil || scaffold.ValidateNamespace(opt.ToNamespace) != nil || (opt.ResultPort != "" && (portErr != nil || port < 1 || port > 65535 || strconv.Itoa(port) != opt.ResultPort)) {
 			return nil, errors.New("native evaluation requires Orka provider:NAME, valid namespace and port")
 		}
 	}

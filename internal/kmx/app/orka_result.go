@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -16,6 +17,14 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/portforward"
 )
+
+// Only this payload-free startup failure may cross suite diagnostic boundaries.
+// Never retain arbitrary port-forward subprocess output in an application error.
+type orkaResultPortError struct{}
+
+func (*orkaResultPortError) Error() string {
+	return "result port-forward could not bind or confirm a loopback port; check port availability and Service access"
+}
 
 // orkaResultSession owns one short-lived, in-memory bearer and proven loopback
 // forward. There are no credential flags, persistent files, redirects or proxy
@@ -186,12 +195,13 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	a.orkaForwardContext = forwardCtx
 	fwd, err := portforward.Start(a, opt.Namespace, "svc/"+opt.OrkaAPIService, opt.ResultPort, "8080")
 	a.orkaForwardContext = nil
+	portFailure := func() error {
+		return errors.Join(&orkaResultPortError{}, orkaPhaseError(ctx, forwardParent, forwardParent.Err()))
+	}
 	if err != nil {
+		failure := portFailure() // Capture cancellation before releasing phase contexts.
 		cancel()
-		if forwardParent.Err() == context.DeadlineExceeded {
-			return nil, orkaPhaseError(ctx, forwardParent, fmt.Errorf("Orka result port-forward timed out: %w", forwardParent.Err()))
-		}
-		return nil, fmt.Errorf("Orka result port-forward did not prove a 127.0.0.1 bind; use a free result port and check Service access")
+		return nil, failure
 	}
 	go func() {
 		select {
@@ -204,14 +214,12 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	// trusts kubectl's bind announcement and the initial local connection; this
 	// is not TLS or cryptographic process identity. After this point a reused
 	// port cannot receive the bearer: no transport dial opens another socket.
-	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(forwardCtx, "tcp", "127.0.0.1:"+opt.ResultPort)
+	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(forwardCtx, "tcp", "127.0.0.1:"+fwd.Port)
 	if err != nil {
+		failure := portFailure()
 		cancel()
 		fwd.Close()
-		if forwardParent.Err() == context.DeadlineExceeded {
-			return nil, orkaPhaseError(ctx, forwardParent, fmt.Errorf("Orka result connection timed out: %w", forwardParent.Err()))
-		}
-		return nil, fmt.Errorf("cannot establish the Orka result connection; no resources created")
+		return nil, failure
 	}
 	bound := &orkaResultConn{Conn: conn, cancel: cancel}
 	context.AfterFunc(forwardCtx, func() { _ = bound.Close() })
@@ -221,12 +229,10 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	default:
 	}
 	if forwardCtx.Err() != nil {
+		failure := portFailure()
 		_ = bound.Close()
 		fwd.Close()
-		if forwardParent.Err() == context.DeadlineExceeded {
-			return nil, orkaPhaseError(ctx, forwardParent, fmt.Errorf("Orka result forward timed out before the session opened: %w", forwardParent.Err()))
-		}
-		return nil, fmt.Errorf("Orka result forward ended before the session opened")
+		return nil, failure
 	}
 	var take sync.Once
 	transport := &http.Transport{
@@ -243,7 +249,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
 	return &orkaResultSession{
-		token: request.Status.Token, base: "http://127.0.0.1:" + opt.ResultPort, forward: fwd, conn: bound, ctx: forwardCtx, cancel: cancel,
+		token: request.Status.Token, base: "http://127.0.0.1:" + fwd.Port, forward: fwd, conn: bound, ctx: forwardCtx, cancel: cancel,
 		client: &http.Client{Transport: transport, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 	}, nil
 }
