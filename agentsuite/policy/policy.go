@@ -5,14 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"path"
 	"sort"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/kaimahi-agents/kaimahi/agentsuite"
 )
 
 var digestDomain = []byte("agentsuite-effective-policy\x00v1\x00")
@@ -35,6 +34,9 @@ func DecodeAdministrativePolicy(data []byte) (AdministrativePolicy, error) {
 	if err := decodeStrict(data, &p); err != nil {
 		return p, fmt.Errorf("decode administrative policy: %w", err)
 	}
+	if len(p.DenyWritePaths) > 4096 {
+		return p, errors.New("too many administrative denyWritePaths")
+	}
 	for _, item := range p.DenyWritePaths {
 		if err := validatePath(item); err != nil {
 			return p, fmt.Errorf("administrative: %w", err)
@@ -43,105 +45,12 @@ func DecodeAdministrativePolicy(data []byte) (AdministrativePolicy, error) {
 	return p, nil
 }
 
-// decodeStrict rejects invalid UTF-8, duplicate keys at any nesting depth,
-// unknown fields, trailing bytes, and secondary top-level values.
 func decodeStrict(data []byte, dst any) error {
-	if !utf8.Valid(data) {
-		return errors.New("JSON is not UTF-8")
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return errors.New("policy JSON must be an object")
 	}
-	if err := rejectDuplicateKeys(data); err != nil {
-		return err
-	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
-		return err
-	}
-	var extra any
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return errors.New("secondary top-level JSON value")
-		}
-		return fmt.Errorf("trailing data: %w", err)
-	}
-	return nil
-}
-
-func rejectDuplicateKeys(data []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	first, err := dec.Token()
-	if err != nil {
-		return err
-	}
-	if err := consumeJSONValue(dec, first); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return errors.New("secondary top-level JSON value")
-		}
-		return fmt.Errorf("trailing data: %w", err)
-	}
-	return nil
-}
-
-func consumeJSONValue(dec *json.Decoder, first json.Token) error {
-	delim, composite := first.(json.Delim)
-	if !composite {
-		return nil
-	}
-	switch delim {
-	case '{':
-		seen := make(map[string]struct{})
-		for dec.More() {
-			keyToken, err := dec.Token()
-			if err != nil {
-				return err
-			}
-			key, ok := keyToken.(string)
-			if !ok {
-				return errors.New("object key is not a string")
-			}
-			if _, duplicate := seen[key]; duplicate {
-				return fmt.Errorf("duplicate key %q", key)
-			}
-			seen[key] = struct{}{}
-			value, err := dec.Token()
-			if err != nil {
-				return err
-			}
-			if err := consumeJSONValue(dec, value); err != nil {
-				return err
-			}
-		}
-		end, err := dec.Token()
-		if err != nil {
-			return err
-		}
-		if end != json.Delim('}') {
-			return errors.New("unterminated object")
-		}
-	case '[':
-		for dec.More() {
-			value, err := dec.Token()
-			if err != nil {
-				return err
-			}
-			if err := consumeJSONValue(dec, value); err != nil {
-				return err
-			}
-		}
-		end, err := dec.Token()
-		if err != nil {
-			return err
-		}
-		if end != json.Delim(']') {
-			return errors.New("unterminated array")
-		}
-	default:
-		return fmt.Errorf("unexpected delimiter %q", delim)
-	}
-	return nil
+	return agentsuite.Unmarshal(data, dst)
 }
 
 func Validate(p SuitePolicy) error {
@@ -207,9 +116,16 @@ func Resolve(s SuitePolicy, a AdministrativePolicy) (EffectivePolicy, error) {
 			return EffectivePolicy{}, fmt.Errorf("administrative: %w", err)
 		}
 	}
+	if len(a.DenyWritePaths) > 4096 {
+		return EffectivePolicy{}, errors.New("too many administrative denyWritePaths")
+	}
+	paths := uniqueSorted(s.DenyWritePaths, a.DenyWritePaths)
+	if len(paths) > 4096 {
+		return EffectivePolicy{}, errors.New("too many effective denyWritePaths")
+	}
 	return EffectivePolicy{
 		Version:              SchemaVersion,
-		DenyWritePaths:       uniqueSorted(s.DenyWritePaths, a.DenyWritePaths),
+		DenyWritePaths:       paths,
 		RequiredCapabilities: []string{FilesystemDenyWrite},
 	}, nil
 }
@@ -222,6 +138,9 @@ func CanonicalBytes(p EffectivePolicy) ([]byte, error) {
 	if len(p.DenyWritePaths) == 0 {
 		return nil, errors.New("denyWritePaths must not be empty")
 	}
+	if len(p.DenyWritePaths) > 4096 {
+		return nil, errors.New("too many denyWritePaths")
+	}
 	for _, item := range p.DenyWritePaths {
 		if err := validatePath(item); err != nil {
 			return nil, err
@@ -231,7 +150,7 @@ func CanonicalBytes(p EffectivePolicy) ([]byte, error) {
 		return nil, err
 	}
 	p.DenyWritePaths = uniqueSorted(p.DenyWritePaths)
-	return json.Marshal(p)
+	return agentsuite.Marshal(p)
 }
 
 // Digest returns a domain-separated, length-framed SHA-256 digest.

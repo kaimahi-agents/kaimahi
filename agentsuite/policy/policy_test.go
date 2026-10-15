@@ -2,6 +2,8 @@ package policy
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,6 +83,7 @@ func TestSuitePolicyDecodeIsClosed(t *testing.T) {
 func TestAdministrativePolicyDecodeIsClosed(t *testing.T) {
 	valid := `{"denyWritePaths":["/admin"]}`
 	bad := []string{
+		`null`,
 		`{"denyWritePaths":["/admin"],"denyWritePaths":["/other"]}`,
 		`{"denyWritePaths":["/admin"],"extra":true}`,
 		valid + ` {}`,
@@ -90,6 +93,55 @@ func TestAdministrativePolicyDecodeIsClosed(t *testing.T) {
 		if _, err := DecodeAdministrativePolicy([]byte(input)); err == nil {
 			t.Errorf("accepted %q", input)
 		}
+	}
+}
+
+func TestPolicyDecodeRejectsUnpairedSurrogate(t *testing.T) {
+	input := `{"version":"agentsuite.policy/v1","denyWritePaths":["/safe/\udcff"],"requiredCapabilities":["filesystem/deny-write/v1"]}`
+	if _, err := DecodeSuitePolicy([]byte(input)); err == nil {
+		t.Fatal("accepted unpaired surrogate escape")
+	}
+}
+
+func TestPolicyPathLimitsApplyAtEveryBoundary(t *testing.T) {
+	paths := make([]string, 4097)
+	for i := range paths {
+		paths[i] = fmt.Sprintf("/path/%04d", i)
+	}
+	admin := AdministrativePolicy{DenyWritePaths: paths}
+	data, err := json.Marshal(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = DecodeAdministrativePolicy(data); err == nil {
+		t.Fatal("decoded oversized administrative policy")
+	}
+	if _, err = Resolve(sample(), admin); err == nil {
+		t.Fatal("resolved oversized administrative policy")
+	}
+	effective := EffectivePolicy{
+		Version:              SchemaVersion,
+		DenyWritePaths:       paths,
+		RequiredCapabilities: []string{FilesystemDenyWrite},
+	}
+	if _, err = CanonicalBytes(effective); err == nil {
+		t.Fatal("canonicalized oversized effective policy")
+	}
+}
+
+func TestCanonicalBytesUseJCSStringEncoding(t *testing.T) {
+	policy := EffectivePolicy{
+		Version:              SchemaVersion,
+		DenyWritePaths:       []string{"/a&<>é"},
+		RequiredCapabilities: []string{FilesystemDenyWrite},
+	}
+	got, err := CanonicalBytes(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"denyWritePaths":["/a&<>é"],"requiredCapabilities":["filesystem/deny-write/v1"],"version":"agentsuite.policy/v1"}`
+	if string(got) != want {
+		t.Fatalf("CanonicalBytes() = %s, want %s", got, want)
 	}
 }
 

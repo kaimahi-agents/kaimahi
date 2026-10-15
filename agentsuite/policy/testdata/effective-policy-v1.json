@@ -1,1 +1,1 @@
-{"version":"agentsuite.policy/v1","denyWritePaths":["/etc/secrets","/workspace/cache","/workspace/source"],"requiredCapabilities":["filesystem/deny-write/v1"]}
+{"denyWritePaths":["/etc/secrets","/workspace/cache","/workspace/source"],"requiredCapabilities":["filesystem/deny-write/v1"],"version":"agentsuite.policy/v1"}

@@ -47,6 +47,27 @@ func TestUnmarshalRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestUnmarshalRejectsUnpairedSurrogateEscapes(t *testing.T) {
+	var document struct {
+		Value string `json:"value"`
+	}
+	for _, input := range []string{
+		`{"value":"\udcff"}`,
+		`{"value":"\ud83d"}`,
+		`{"value":"\ud83d\u0041"}`,
+	} {
+		if err := Unmarshal([]byte(input), &document); err == nil {
+			t.Errorf("Unmarshal() accepted %s", input)
+		}
+	}
+	if err := Unmarshal([]byte(`{"value":"\ud83d\ude00"}`), &document); err != nil {
+		t.Fatalf("Unmarshal() rejected valid surrogate pair: %v", err)
+	}
+	if document.Value != "😀" {
+		t.Fatalf("Unmarshal() value = %q, want grinning face", document.Value)
+	}
+}
+
 func TestDigestUsesCanonicalJSON(t *testing.T) {
 	left, err := Digest([]byte("{\n  \"b\": 2,\n  \"a\": 1\n}"))
 	if err != nil {

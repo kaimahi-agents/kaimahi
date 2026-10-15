@@ -54,6 +54,9 @@ func Unmarshal(data []byte, out any) error {
 	if !utf8.Valid(data) {
 		return errors.New("document is not valid UTF-8")
 	}
+	if err := validateUnicodeEscapes(data); err != nil {
+		return err
+	}
 	if err := validateJSONTokens(data); err != nil {
 		return err
 	}
@@ -81,6 +84,65 @@ func Unmarshal(data []byte, out any) error {
 		return fmt.Errorf("document has invalid trailing data: %w", err)
 	}
 	return nil
+}
+
+func validateUnicodeEscapes(data []byte) error {
+	inString := false
+	for i := 0; i < len(data); i++ {
+		switch data[i] {
+		case '"':
+			inString = !inString
+		case '\\':
+			if !inString || i+1 >= len(data) {
+				continue
+			}
+			if data[i+1] != 'u' {
+				i++
+				continue
+			}
+			value, ok := decodeHexEscape(data, i+2)
+			if !ok {
+				continue
+			}
+			switch {
+			case value >= 0xd800 && value <= 0xdbff:
+				if i+11 >= len(data) || data[i+6] != '\\' || data[i+7] != 'u' {
+					return errors.New("JSON string contains an unpaired high surrogate")
+				}
+				low, ok := decodeHexEscape(data, i+8)
+				if !ok || low < 0xdc00 || low > 0xdfff {
+					return errors.New("JSON string contains an unpaired high surrogate")
+				}
+				i += 11
+			case value >= 0xdc00 && value <= 0xdfff:
+				return errors.New("JSON string contains an unpaired low surrogate")
+			default:
+				i += 5
+			}
+		}
+	}
+	return nil
+}
+
+func decodeHexEscape(data []byte, start int) (uint16, bool) {
+	if start+4 > len(data) {
+		return 0, false
+	}
+	var value uint16
+	for _, char := range data[start : start+4] {
+		value <<= 4
+		switch {
+		case char >= '0' && char <= '9':
+			value += uint16(char - '0')
+		case char >= 'a' && char <= 'f':
+			value += uint16(char-'a') + 10
+		case char >= 'A' && char <= 'F':
+			value += uint16(char-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return value, true
 }
 
 func decodeStrict(data []byte, out any) error {
