@@ -76,7 +76,7 @@ Workspace --create/eval--> AgentSuite artifact --push--> OCI location
 | `create` | Workspace | Author one offline member; no cluster or model call |
 | `eval` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE` and `--bindings FILE` (`AgentSessionsBinding`); stop later cases after the first non-pass |
 | `push` | Prepared AgentSuite | Transfer exact OCI graph with latest completed exact-S proof, explicit --evaluation override or --unevaluated opt-out; explicit tags unchanged, bare push uses saved `repository:s-<S>`; no deployment |
-| `lift` | Exact supported packaged native AgentSuite | Deploy by immutable digest with explicit private evidence and target; Orka uses `--inference`, kagent uses `--bindings`; GET-only with `--plan` |
+| `lift` | Exact supported packaged native AgentSuite | Deploy by immutable digest with explicit private evidence and target; Orka uses `--inference`, kagent uses `--bindings`; GET-only with `--plan`; AgentSessions is a plan-only offline render with `--harness-image` and `--bindings` (apply refuses) |
 | `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |
 | `status`, `orka status` | Orka installation | Table-only runtime report, not suite deployment status |
 
@@ -100,7 +100,7 @@ refused. Repeat field names/defaults/validation follow
 `minPasses` requires `runs`, and both are positive integers. KMX's execution cap
 is 100 runs, within the spec's consumer resource-limit allowance.
 No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
-AgentSessions evidence is explicitly refused by diff and Lift;
+AgentSessions evidence is refused by diff and feeds only the plan-only AgentSessions Lift render (`--plan`; apply refuses);
 `eval from-sessions` is reference extraction/export without a native consumer.
 Suite-owned live resources refuse legacy invocation. Chat `/lift` and console
 Lift only print `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
