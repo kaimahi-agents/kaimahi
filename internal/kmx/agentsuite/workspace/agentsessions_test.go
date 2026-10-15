@@ -17,6 +17,7 @@ const sessionsDeclaration = "runtime: {id: agentsessions, version: " + sessionsV
 
 func TestAgentSessionsProfileBindsSAndTransfersExactInventory(t *testing.T) {
 	root, cache := createWorkspace(t)
+	writeFile(t, filepath.Join(root, "eval/second.yml"), "id: second\ninput: Question\nexpectContains: [answer]\n")
 	before, err := workspace.Prepare(t.Context(), root, cache)
 	if err != nil {
 		t.Fatal(err)
@@ -26,7 +27,6 @@ func TestAgentSessionsProfileBindsSAndTransfersExactInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	setMemberRuntime(t, root, sessionsDeclaration)
-	writeFile(t, filepath.Join(root, "eval/second.yml"), "id: second\ninput: Question\nexpectContains: [answer]\n")
 	if workspace.CheckCurrent(t.Context(), root, before) == nil {
 		t.Fatal("runtime edit retained old fingerprint")
 	}
@@ -98,13 +98,26 @@ func TestAgentSessionsProfileRefusesCorruption(t *testing.T) {
 				delete(record, "requiredImages")
 			case "nonempty images":
 				record["requiredImages"] = []string{"image"}
-			case "case omission":
-				record["cases"] = []any{}
-			case "case reorder":
-				c := record["cases"].([]any)
-				c[0], c[1] = c[1], c[0]
-			case "case digest":
-				record["cases"].([]any)[0].(map[string]any)["digest"] = "sha256:" + strings.Repeat("0", 64)
+			case "case omission", "case reorder", "case digest":
+				indexName := filepath.Join(out, "evals/greeter/index.json")
+				var index map[string]any
+				if err := json.Unmarshal(readFile(t, indexName), &index); err != nil {
+					t.Fatal(err)
+				}
+				c := index["cases"].([]any)
+				switch change {
+				case "case omission":
+					index["cases"] = c[:1]
+				case "case reorder":
+					c[0], c[1] = c[1], c[0]
+				default:
+					c[0].(map[string]any)["digest"] = "sha256:" + strings.Repeat("0", 64)
+				}
+				raw, err := json.Marshal(index)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, indexName, string(raw))
 			case "unknown field":
 				record["unknown"] = true
 			}
@@ -115,6 +128,10 @@ func TestAgentSessionsProfileRefusesCorruption(t *testing.T) {
 			writeFile(t, name, string(b))
 			layout := filepath.Join(t.TempDir(), "layout")
 			pushed, err := suiteoras.Push(t.Context(), out, layout, "changed")
+			if err != nil && strings.HasPrefix(change, "case ") {
+				// The public validator refuses a stale index first.
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}

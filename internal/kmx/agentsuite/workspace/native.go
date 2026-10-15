@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -36,17 +37,26 @@ const agentsessionsExecutionProfile = "kmx.agentsessions-chat-system-prompt-tool
 // a claim that suite execution is implemented. Contract changes require a new ID.
 const kagentExecutionProfile = "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai/v1"
 
-type caseRef struct {
-	Path   string `json:"path"`
-	Digest string `json:"digest"`
-}
+// nativeLayoutVersion is in the source fingerprint so old caches are not reused.
+const nativeLayoutVersion = "kmx.native-suite-evals/v2"
+
+const nativeRecordVersion = 2
+
+var errPreviousNativeSuite = errors.New("packaged by an earlier kmx; rerun kmx eval and kmx push with this kmx")
+
+// refusal is safe to show for untrusted suites.
+type refusal struct{ err error }
+
+func (r refusal) Error() string { return r.err.Error() }
+func (r refusal) Unwrap() error { return r.err }
+
+// nativeRecord holds private execution metadata; cases live under evals/<member>/.
 type nativeRecord struct {
 	SchemaVersion    int             `json:"schemaVersion"`
 	ExecutionMode    string          `json:"executionMode"`
 	Member           string          `json:"member"`
 	RendererVersion  string          `json:"rendererVersion"`
 	RequiredImages   []string        `json:"requiredImages"`
-	Cases            []caseRef       `json:"cases"`
 	Runtime          *RuntimeProfile `json:"runtime,omitempty"`
 	ExecutionProfile string          `json:"executionProfile,omitempty"`
 }
@@ -169,7 +179,11 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 		}
 		cases[entry.Name()] = b
 	}
-	files, err := resolve(w.Name, m, instructions, profile, cases)
+	parsed, err := authoredCases(cases)
+	if err != nil {
+		return nil, err
+	}
+	files, err := resolve(w.Name, m, instructions, profile, parsed)
 	if err != nil {
 		return nil, err
 	}
@@ -186,10 +200,11 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 	}
 	framed, err := spec.Marshal(struct {
 		Renderer         string            `json:"renderer"`
+		Layout           string            `json:"layout"`
 		Files            map[string]string `json:"files"`
 		Runtime          *RuntimeProfile   `json:"runtime,omitempty"`
 		ExecutionProfile string            `json:"executionProfile,omitempty"`
-	}{renderer, selected, declaredRuntime, executionProfile})
+	}{renderer, nativeLayoutVersion, selected, declaredRuntime, executionProfile})
 	if err != nil {
 		return nil, err
 	}
@@ -200,9 +215,25 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 	return &snapshot{name: w.Name, fingerprint: fingerprint, files: files, source: source}, nil
 }
 
+// authoredCases parses eval/*.yaml in file-name order (the evaluation order).
+func authoredCases(cases map[string][]byte) ([]runtime.EvaluationCase, error) {
+	parsed := make([]runtime.EvaluationCase, 0, len(cases))
+	for _, name := range slices.Sorted(maps.Keys(cases)) {
+		if !caseName(name) {
+			return nil, errors.New("unsupported case filename")
+		}
+		c, err := runtime.ParseEvaluationCase(cases[name])
+		if err != nil {
+			return nil, fmt.Errorf("case %s: %w", name, err)
+		}
+		parsed = append(parsed, c)
+	}
+	return parsed, nil
+}
+
 // resolve builds the public graph bottom-up. Profile pins are declared build
 // inputs required by that format, not images required by native execution.
-func resolve(name string, m sourceMember, instructions, profile []byte, cases map[string][]byte) (map[string][]byte, error) {
+func resolve(name string, m sourceMember, instructions, profile []byte, cases []runtime.EvaluationCase) (map[string][]byte, error) {
 	if !namePattern.MatchString(name) || name == "." || name == ".." {
 		return nil, errors.New("invalid workspace name")
 	}
@@ -246,8 +277,35 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases ma
 	if err != nil {
 		return nil, err
 	}
+	if len(cases) == 0 || len(cases) > maxPackagedCases {
+		return nil, errors.New("one to 128 authored cases are required")
+	}
+	index := spec.EvaluationIndex{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeEvaluationIndex, Agent: m.ID, Cases: make([]spec.FileRef, 0, len(cases)), Limits: spec.EvaluationLimits{MaxCases: maxPackagedCases, MaxCaseBytes: maxPackagedCaseBytes}}
+	ids := map[string]bool{}
+	for _, c := range cases {
+		// Case files are named by ID; avoid case-insensitive collisions.
+		if ids[strings.ToLower(c.ID)] {
+			return nil, errors.New("duplicate evaluation case ID (IDs must differ by more than letter case)")
+		}
+		ids[strings.ToLower(c.ID)] = true
+		b, err := publicCase(c)
+		if err != nil {
+			return nil, err
+		}
+		p := evalCasePath(m.ID, c.ID)
+		files[p] = b
+		digest, err := spec.Digest(b)
+		if err != nil {
+			return nil, err
+		}
+		index.Cases = append(index.Cases, spec.FileRef{Path: p, Descriptor: spec.Descriptor{MediaType: spec.MediaTypeEvaluationCase, Digest: digest, Size: int64(len(b))}})
+	}
+	indexDigest, indexSize, err := put(evalIndexPath(m.ID), index)
+	if err != nil {
+		return nil, err
+	}
 	agentPath := "agents/" + m.ID + ".json"
-	agentDigest, agentSize, err := put(agentPath, spec.Agent{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: spec.FileRef{Path: "instructions/" + m.ID + ".md", Descriptor: spec.Descriptor{MediaType: spec.MediaTypeInstructions, Digest: godigest.FromBytes(instructions).String(), Size: int64(len(instructions))}}, Model: spec.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}})
+	agentDigest, agentSize, err := put(agentPath, spec.Agent{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: spec.FileRef{Path: "instructions/" + m.ID + ".md", Descriptor: spec.Descriptor{MediaType: spec.MediaTypeInstructions, Digest: godigest.FromBytes(instructions).String(), Size: int64(len(instructions))}}, Model: spec.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}, Evals: []spec.FileRef{{Path: evalIndexPath(m.ID), Descriptor: spec.Descriptor{MediaType: spec.MediaTypeEvaluationIndex, Digest: indexDigest, Size: indexSize}}}})
 	if err != nil {
 		return nil, err
 	}
@@ -265,14 +323,11 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases ma
 	if err != nil {
 		return nil, err
 	}
-	if len(cases) == 0 || len(cases) > 128 {
-		return nil, errors.New("one to 128 authored cases are required")
-	}
 	runtimeProfile, err := m.Runtime.profile()
 	if err != nil {
 		return nil, err
 	}
-	record := nativeRecord{SchemaVersion: 1, ExecutionMode: "native-orka", Member: m.ID, RendererVersion: rendererVersion, RequiredImages: []string{}, Cases: []caseRef{}}
+	record := nativeRecord{SchemaVersion: nativeRecordVersion, ExecutionMode: "native-orka", Member: m.ID, RendererVersion: rendererVersion, RequiredImages: []string{}}
 	metadataPath := nativePath
 	if runtimeProfile.ID == "kagent" {
 		metadataPath = kagentNativePath
@@ -282,23 +337,6 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases ma
 		metadataPath = agentsessionsNativePath
 		record.ExecutionMode, record.RendererVersion = "native-agentsessions", agentsessionsRendererVersion
 		record.Runtime, record.ExecutionProfile = &runtimeProfile, agentsessionsExecutionProfile
-	}
-	ids := map[string]bool{}
-	for _, name := range slices.Sorted(maps.Keys(cases)) {
-		if !caseName(name) {
-			return nil, errors.New("unsupported case filename")
-		}
-		c, err := runtime.ParseEvaluationCase(cases[name])
-		if err != nil {
-			return nil, fmt.Errorf("case %s: %w", name, err)
-		}
-		if ids[c.ID] {
-			return nil, errors.New("duplicate evaluation case ID")
-		}
-		ids[c.ID] = true
-		p := "metadata/kmx/eval/" + name
-		files[p] = cases[name]
-		record.Cases = append(record.Cases, caseRef{p, godigest.FromBytes(cases[name]).String()})
 	}
 	_, _, err = put(metadataPath, record)
 	return files, err
@@ -327,10 +365,17 @@ func nativeProfile(files map[string][]byte) (nativeRecord, RuntimeProfile, error
 	} else if sessions {
 		metadataPath, mode, renderer = agentsessionsNativePath, "native-agentsessions", agentsessionsRendererVersion
 	}
+	// Strict decoding would reject the v0.6.0 cases field first.
+	var previous struct {
+		SchemaVersion int `json:"schemaVersion"`
+	}
+	if json.Unmarshal(files[metadataPath], &previous) == nil && previous.SchemaVersion == 1 {
+		return record, RuntimeProfile{}, refusal{errPreviousNativeSuite}
+	}
 	if err := spec.Unmarshal(files[metadataPath], &record); err != nil {
 		return record, RuntimeProfile{}, err
 	}
-	if record.SchemaVersion != 1 || record.ExecutionMode != mode || record.RendererVersion != renderer || record.RequiredImages == nil || len(record.RequiredImages) != 0 {
+	if record.SchemaVersion != nativeRecordVersion || record.ExecutionMode != mode || record.RendererVersion != renderer || record.RequiredImages == nil || len(record.RequiredImages) != 0 {
 		return record, RuntimeProfile{}, errors.New("unsupported native metadata or required images")
 	}
 	if kagent {
@@ -369,14 +414,9 @@ func validateNative(files map[string][]byte) (string, error) {
 		m.Runtime.Version, m.Runtime.Engine = &profile.Version, &profile.Engine
 	}
 	m.Model.Protocol, m.Model.Model = agent.Model.Protocol, agent.Model.Model
-	cases := map[string][]byte{}
-	for _, c := range record.Cases {
-		name := strings.TrimPrefix(c.Path, "metadata/kmx/eval/")
-		b, ok := files[c.Path]
-		if !ok || !caseName(name) || cases[name] != nil || godigest.FromBytes(b).String() != c.Digest {
-			return "", errors.New("native case path/digest/coverage mismatch")
-		}
-		cases[name] = b
+	_, cases, err := packagedCases(files, agent)
+	if err != nil {
+		return "", refusal{err}
 	}
 	expected, err := resolve(suite.Name, m, files["instructions/"+m.ID+".md"], files["build-profiles/default.json"], cases)
 	if err != nil {
@@ -386,4 +426,99 @@ func validateNative(files map[string][]byte) (string, error) {
 		return "", errors.New("unsupported native graph or incomplete case coverage")
 	}
 	return suite.Name, nil
+}
+
+const (
+	maxPackagedCases = 128
+	// Matches the 1 MiB per-file artifact read limit.
+	maxPackagedCaseBytes = 1 << 20
+)
+
+func evalIndexPath(member string) string { return "evals/" + member + "/index.json" }
+func evalCasePath(member, id string) string {
+	return "evals/" + member + "/cases/" + id + ".json"
+}
+
+// publicCase converts an authored case; expectContains keeps its expectContains.N IDs.
+func publicCase(c runtime.EvaluationCase) ([]byte, error) {
+	out := spec.EvaluationCase{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeEvaluationCase, ID: c.ID, Input: c.Input, Runs: c.Runs, MinPasses: c.MinPasses, Assertions: []spec.EvaluationAssertion{}}
+	for _, a := range runtime.EvaluationCaseAssertions(c) {
+		if strings.ContainsAny(a.Value+a.Tool, "\u2028\u2029") {
+			return nil, fmt.Errorf("case %s: assertion %s must not contain Unicode line or paragraph separators", c.ID, a.ID)
+		}
+		out.Assertions = append(out.Assertions, spec.EvaluationAssertion{ID: a.ID, Type: a.Type, Value: a.Value, Pattern: a.Pattern, Tool: a.Tool, Rubric: a.Rubric, MinScore: a.MinScore, JudgeModel: a.JudgeModel, JudgeVersion: a.JudgeVersion})
+	}
+	b, err := spec.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("case %s: %w", c.ID, err)
+	}
+	if len(b) > maxPackagedCaseBytes {
+		return nil, fmt.Errorf("case %s exceeds 1 MiB when packaged", c.ID)
+	}
+	return b, nil
+}
+
+// DecodePackagedCase converts a packaged case back; unsupported features are refused, not ignored.
+func DecodePackagedCase(b []byte) (runtime.EvaluationCase, error) {
+	var pc spec.EvaluationCase
+	if err := spec.Unmarshal(b, &pc); err != nil {
+		return runtime.EvaluationCase{}, errors.New("invalid packaged evaluation case JSON")
+	}
+	if pc.SchemaVersion != spec.SpecVersion || pc.MediaType != spec.MediaTypeEvaluationCase {
+		return runtime.EvaluationCase{}, errors.New("unsupported packaged evaluation case schemaVersion or mediaType")
+	}
+	c := runtime.EvaluationCase{ID: pc.ID, Input: pc.Input, Runs: pc.Runs, MinPasses: pc.MinPasses}
+	for _, a := range pc.Assertions {
+		// critical defaults to true, which is how KMX evaluates every assertion.
+		if a.Critical != nil && !*a.Critical {
+			return runtime.EvaluationCase{}, errors.New("packaged evaluation assertion is non-critical; KMX evaluates every assertion as critical")
+		}
+		if strings.HasPrefix(a.ID, "expectContains.") {
+			if len(c.Assertions) != 0 || a.ID != fmt.Sprintf("expectContains.%d", len(c.ExpectContains)) || a.Type != "contains" {
+				return runtime.EvaluationCase{}, errors.New("packaged expectContains assertions must be leading, ordered contains assertions")
+			}
+			c.ExpectContains = append(c.ExpectContains, a.Value)
+			continue
+		}
+		c.Assertions = append(c.Assertions, runtime.EvaluationAssertion{ID: a.ID, Type: a.Type, Value: a.Value, Pattern: a.Pattern, Tool: a.Tool, Rubric: a.Rubric, MinScore: a.MinScore, JudgeModel: a.JudgeModel, JudgeVersion: a.JudgeVersion})
+	}
+	if err := runtime.ValidateEvaluationCase(c); err != nil {
+		return runtime.EvaluationCase{}, err
+	}
+	return c, nil
+}
+
+// packagedCases reads an agent's evaluation index in order.
+func packagedCases(files map[string][]byte, agent spec.Agent) ([]PackagedCase, []runtime.EvaluationCase, error) {
+	if len(agent.Evals) != 1 || agent.Evals[0].Path != evalIndexPath(agent.ID) {
+		return nil, nil, errors.New("native member requires exactly one evaluation index")
+	}
+	var index spec.EvaluationIndex
+	if err := spec.Unmarshal(files[agent.Evals[0].Path], &index); err != nil {
+		return nil, nil, errors.New("invalid packaged evaluation index")
+	}
+	if index.Agent != agent.ID {
+		return nil, nil, errors.New("packaged evaluation index does not match its member")
+	}
+	if len(index.Cases) == 0 || len(index.Cases) > maxPackagedCases {
+		return nil, nil, errors.New("packaged evaluation index must list 1 to 128 cases")
+	}
+	packaged := make([]PackagedCase, 0, len(index.Cases))
+	cases := make([]runtime.EvaluationCase, 0, len(index.Cases))
+	for _, ref := range index.Cases {
+		b, ok := files[ref.Path]
+		if !ok {
+			return nil, nil, errors.New("packaged evaluation case is missing")
+		}
+		c, err := DecodePackagedCase(b)
+		if err != nil {
+			return nil, nil, err
+		}
+		if ref.Path != evalCasePath(agent.ID, c.ID) {
+			return nil, nil, errors.New("packaged evaluation case path does not match its id")
+		}
+		packaged = append(packaged, PackagedCase{Path: ref.Path, Digest: godigest.FromBytes(b).String(), Bytes: b})
+		cases = append(cases, c)
+	}
+	return packaged, cases, nil
 }

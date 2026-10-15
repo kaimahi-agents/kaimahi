@@ -21,7 +21,7 @@ func TestSuiteEvaluatedFilePushContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &App{Out: io.Discard}
-	for _, change := range []string{"malformed before prepare", "incoherent before transfer", "other S", "raw case changed", "equivalent source spelling", "passing"} {
+	for _, change := range []string{"malformed before prepare", "incoherent before transfer", "other S", "case changed", "equivalent source spelling", "equivalent case spelling", "passing"} {
 		t.Run(change, func(t *testing.T) {
 			state := t.TempDir()
 			t.Setenv("KMX_HOME", state)
@@ -36,12 +36,16 @@ func TestSuiteEvaluatedFilePushContract(t *testing.T) {
 				raw = []byte(strings.Replace(string(raw), receipt.Subject.PayloadDigest, strings.Repeat("0", 64), 1))
 			case "other S":
 				raw = []byte(strings.Replace(string(raw), receipt.Subject.SuiteDigest, "sha256:"+strings.Repeat("0", 64), 1))
-			case "raw case changed":
+			case "case changed", "equivalent case spelling":
 				original, err := os.ReadFile(filepath.Join(source, "eval/example.yaml"))
 				if err != nil {
 					t.Fatal(err)
 				}
-				writeFile(t, filepath.Join(source, "eval/example.yaml"), string(original)+"# different raw bytes\n")
+				changed := string(original) + "# packaged cases do not retain authored comments\n"
+				if change == "case changed" {
+					changed = strings.Replace(string(original), "input:", "input: Changed", 1)
+				}
+				writeFile(t, filepath.Join(source, "eval/example.yaml"), changed)
 			case "equivalent source spelling":
 				member := filepath.Join(source, "agents/greeter/member.yaml")
 				original, err := os.ReadFile(member)
@@ -55,7 +59,7 @@ func TestSuiteEvaluatedFilePushContract(t *testing.T) {
 			}
 			destination := filepath.Join(t.TempDir(), "layout")
 			result, err := a.pushSuiteWorkspaceEvaluated(t.Context(), source, "suite:v1", destination, false, false, SuitePushProvenance{}, file)
-			passing := change == "passing" || change == "equivalent source spelling"
+			passing := change == "passing" || change == "equivalent source spelling" || change == "equivalent case spelling"
 			if passing {
 				if err != nil || result.Descriptor.Digest != prepared.Descriptor.Digest {
 					t.Fatal("valid receipt did not transfer", err)
@@ -65,7 +69,7 @@ func TestSuiteEvaluatedFilePushContract(t *testing.T) {
 				}
 			} else {
 				want := "invalid native passing receipt"
-				if change == "other S" || change == "raw case changed" {
+				if change == "other S" || change == "case changed" {
 					want = "expected publication identity"
 				}
 				if err == nil || !strings.Contains(err.Error(), want) {
