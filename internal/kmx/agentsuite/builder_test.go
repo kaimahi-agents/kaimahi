@@ -290,7 +290,11 @@ func TestLoadBuildMetadataRefusesChangedPinnedChildren(t *testing.T) {
 				t.Fatal(err)
 			}
 			data := readBuilderTestFile(t, root, child)
-			writeBuilderTestFile(t, root, child, []byte(strings.Replace(string(data), `"schemaVersion": "1.0.0-draft"`, `"schemaVersion": "changed"`, 1)))
+			mutated := strings.Replace(string(data), `"schemaVersion":"1.0.0-draft"`, `"schemaVersion":"changed"`, 1)
+			if mutated == string(data) {
+				t.Fatalf("fixture %s does not contain the expected schemaVersion marker", child)
+			}
+			writeBuilderTestFile(t, root, child, []byte(mutated))
 			handle, err := os.OpenRoot(root)
 			if err != nil {
 				t.Fatal(err)
