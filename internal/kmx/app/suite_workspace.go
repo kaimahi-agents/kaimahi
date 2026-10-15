@@ -273,6 +273,28 @@ func (a *App) pushSuiteWorkspaceSelected(ctx context.Context, root, reference, l
 		if reference == "" {
 			reference = managed.Repository + ":s-" + prepared.Descriptor.Digest.Encoded()
 		}
+		if layout == "" && receipt != nil {
+			parsed, e := registry.ParseReference(reference)
+			if e != nil {
+				return result, e
+			}
+			repository := parsed.Registry + "/" + parsed.Repository
+			// Share publication observations with composed Lift, not its Apply
+			// authority. Keep the existing workspace exclusion through finalization.
+			p := &PreparedWorkspaceLift{store: store, options: WorkspaceLiftOptions{Repository: repository}}
+			completion, e := p.liftRecord(ctx, "publication", repository)
+			if e != nil {
+				return result, fmt.Errorf("publication completion preflight refused; inspect private KMX state before pushing: %w", e)
+			}
+			defer func() {
+				if err == nil && completion.record == nil {
+					if e := completion.commit(ctx, nil); e != nil {
+						err = fmt.Errorf("publication completed for %s; private completion registration failed: %w", result.Descriptor.Digest, e)
+					}
+				}
+				err = errors.Join(err, completion.Close())
+			}()
+		}
 	}
 	if expectedS != nil && prepared.Descriptor.Digest != expected {
 		return oras.PushResult{}, fmt.Errorf("prepared suite does not match the expected publication identity")

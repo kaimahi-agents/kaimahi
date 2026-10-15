@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 // Keep payload-bearing causes available to errors.Is without exposing API/model
@@ -87,7 +88,10 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 	if err := checkSource(ctx); err != nil {
 		return err
 	}
-	runID, err := randomHex(16)
+	runID := p.candidateRun
+	if runID == "" {
+		runID, err = randomHex(16)
+	}
 	if err != nil {
 		return err
 	}
@@ -172,7 +176,11 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 			if err := checkSource(runCtx); err != nil {
 				return suitePassingObservation{}, err
 			}
-			return worker.evaluateSuiteNativeCandidate(runCtx, placement, frame, p.options.ResultPort, p.judge, run)
+			observed, err := worker.evaluateSuiteNativeCandidate(runCtx, placement, frame, p.options.ResultPort, p.judge, run)
+			if err == nil && suiteRunComplete(observed, frame) && suiteRunVerdict(observed.Assertions) == agentruntime.EvaluationPass {
+				p.liftPassed++
+			}
+			return observed, err
 		})
 		if err != nil {
 			return err

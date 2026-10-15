@@ -88,6 +88,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- No-reference `kmx lift --to NAME` composes missing Orka workspace evaluation,
+  exact-version publication and Lift from one frozen plan, with automatic disclosed
+  source-only promotion and one scoped confirmation. Private exact-version
+  completion observations support GET-only skips, never adoption/update/repair;
+  evaluated root registry push also registers publication for later composition.
+  Default output is four stage lines; verbose/JSON retains details and partial
+  outcomes. Requires saved publishRepository and destination evaluationTarget;
+  explicit digest Lift remains independent and evidence-required.
+
 - AgentSessions development-host eval supports authored `llmJudge` and
   `runs`/`minPasses` through the same judge/repeat policy as Orka/kagent. Each
   run creates a fresh Session/config/Exec; judging shares its deadline, unknown
@@ -105,7 +114,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   proof. Post-link errors disclose saved proof and persistence uncertainty. OS-held
   workspace exclusion releases on process exit; no stale-lock deletion or cleanup
   journal. Explicit push REPO:TAG stays unchanged; only bare push uses saved
-  publishRepository and derives `s-<full-S-hex>`. No composed or tag-based Lift.
+  publishRepository and derives `s-<full-S-hex>`. Tag-based Lift remains unavailable.
 
 - Public Orka workspace eval uses fresh digest/run candidates, never adoption,
   update or reuse, and exports passing evidence only after verified UID/RV-safe
@@ -176,7 +185,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `ctx <context>` and `ctx use <name>` are still refused. Optional checks read
   local context names and anonymous registry reachability; they are not
   runtime/inference readiness or evaluation proof. `kmx targets` remains the
-  separate runtime-capability view. Composed eval/push/Lift is not implemented;
+  separate runtime-capability view. Composed Lift is Orka-only;
   kagent remains excluded until its candidate cleanup is qualified.
 
 ### Upgrading
@@ -199,7 +208,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `kmx ctx` to list them, then `eval/lift --to NAME`. No default/current Lift
   selection or context switch is introduced. Existing explicit selectors work
   without config. Eval --out and the push reference are optional; keep supplying
-  Lift digest/--evidence. Configuration does not enable the composed workflow.
+  explicit-reference Lift digest/--evidence. No-reference Orka workspace Lift
+  additionally requires destination evaluationTarget and saved publishRepository.
   See [named destinations](docs/suite-workspace.md#named-destinations).
 
 ## v0.6.0 — 2026-10-14

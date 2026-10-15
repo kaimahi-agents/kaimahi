@@ -71,6 +71,13 @@ func (b *orkaBoundedBuffer) Write(p []byte) (int, error) {
 }
 
 func (a *App) guardOrkaMutation(ctx context.Context, opt CreateOptions, reconcileAction string) error {
+	if a.liftConsent != nil {
+		if err := a.liftConsent.check(ctx, a, opt); err != nil {
+			return err
+		}
+		a.guarded = true
+		return nil
+	}
 	if a.guarded {
 		return nil
 	}

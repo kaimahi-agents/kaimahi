@@ -8,8 +8,10 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 	"github.com/spf13/cobra"
 )
 
@@ -19,9 +21,16 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	var output string
 	var destination string
 	var selection destinationSelection
+	var evaluation app.SuiteWorkspaceEvaluationOptions
+	var verbose bool
+	var provenance = app.SuitePushProvenance{Enabled: true}
 	cmd := &cobra.Command{
-		Use: "lift <ref>@<digest>", Short: "Lift an evaluated packaged suite by immutable digest",
-		Long: "Deploy the original suite from a registry or --from-layout OCI directory without source, builds, repacking or publishing.\n" +
+		Use: "lift [<ref>@<digest>]", Short: "Lift a workspace or an evaluated packaged suite",
+		Long: "Without a reference, --to NAME composes missing native Orka workspace eval, push and Lift. Requires saved publishRepository and destination evaluationTarget.\n" +
+			"Freezes the source and selectors, automatically discloses source-only promotion, confirms one plan, and verifies exact-version skips read-only. No updates/adoption/repair.\n" +
+			"Default workspace output is four stderr lines (Plan/Eval/Push/Lift); -v shows details, -o json emits one result. Nonterminal confirmation must name the concrete contexts disclosed in Plan.\n" +
+			"Evaluation sends case inputs to the runtime/model; llmJudge additionally transfers inputs, answers and rubrics. Cleanup does not erase retained upstream data.\n" +
+			"With an explicit digest, deploy the original suite from a registry or --from-layout OCI directory without source, builds, repacking or publishing.\n" +
 			"Requires explicit private full-passing --evidence for exactly this suite and either --to NAME from workspace-root kmx.yaml or explicit --to-context; Orka uses Ready --inference provider:NAME, kagent uses author-owned --bindings FILE.\n" +
 			"Named selectors resolve once; explicit flags override. No evalTarget or remembered/current-context fallback for Lift. Without --to, reference Lift never discovers a workspace or kmx.yaml.\n" +
 			"Runtime/model come from the packaged member: native Orka or exact v0.10.3 Go kagent with openai-type inference. No runtime/model override.\n" +
@@ -31,10 +40,11 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			"Kagent creates new ModelConfig/Agent only; occupied names always refuse. Orka may reuse exact evaluated UID/generation/spec. Never update, adopt or retry ambiguous writes.\n" +
 			"Created/recreated resources need fresh evaluation before later receipt-bound reuse. Partial resources may remain; readiness is not execution.\n" +
 			"--plan is GET-only: no mutation guard, admission, writes, Tasks or placement records. JSON reports contain identities, never prompts or credentials.",
-		Example: "  kmx lift registry.example/suite@sha256:<digest> --to prod --evidence ../private/pass.json --promote --plan\n" +
+		Example: "  kmx lift --to prod\n  kmx lift --to prod --plan\n" +
+			"  kmx lift registry.example/suite@sha256:<digest> --to prod --evidence ../private/pass.json --promote --plan\n" +
 			"  kmx lift registry.example/suite@sha256:<digest> --to-context prod --inference provider:inference --evidence ../private/pass.json --promote --plan\n" +
 			"  kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo --inference provider:inference --evidence ../private/pass.json --promote -o json",
-		Args: usageArgs(1, 1, "kmx lift <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--plan]"),
+		Args: usageArgs(0, 1, "kmx lift --to NAME | kmx lift <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--plan]"),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateContainerEngineFlag(cmd, args); err != nil {
 				return err
@@ -42,13 +52,35 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			if state.contextFlag != "" || cmd.Flags().Changed("context") {
 				return fmt.Errorf("--context cannot be used with suite lift; use --to-context")
 			}
-			for _, name := range []string{"to", "to-context", "to-namespace", "inference", "bindings", "evidence", "from-layout", "output"} {
+			for _, name := range []string{"to", "to-context", "to-namespace", "inference", "bindings", "evidence", "from-layout", "output", "result-port", "judge-base-url", "judge-key-env"} {
 				if f := cmd.Flag(name); f.Changed && strings.TrimSpace(f.Value.String()) == "" {
 					return fmt.Errorf("lift requires non-empty --%s", name)
 				}
 			}
 			if output != "text" && output != "json" {
 				return fmt.Errorf("lift output must be text or json")
+			}
+			if len(args) == 0 {
+				for _, name := range []string{"evidence", "from-layout", "bindings"} {
+					if cmd.Flags().Changed(name) {
+						return fmt.Errorf("workspace lift refuses --%s; use explicit digest Lift", name)
+					}
+				}
+				if destination == "" {
+					return fmt.Errorf("workspace lift requires explicit --to NAME")
+				}
+				if provenance.Require && !provenance.Enabled {
+					return fmt.Errorf("--require-provenance cannot be used with --provenance=false")
+				}
+				return nil
+			}
+			for _, name := range []string{"case-timeout", "result-port", "judge-base-url", "judge-key-env", "provenance", "require-provenance"} {
+				if cmd.Flags().Changed(name) {
+					return fmt.Errorf("explicit-reference lift refuses --%s", name)
+				}
+			}
+			if !cmd.Flags().Changed("evidence") {
+				return fmt.Errorf("%w: explicit-reference lift requires --evidence FILE", app.ErrReleaseLift)
 			}
 			opt.Reference = args[0]
 			if !cmd.Flags().Changed("to-namespace") {
@@ -68,7 +100,26 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			opt.Inference, opt.Bindings, opt.PlainHTTP = selection.Inference, selection.Bindings, selection.PlainHTTP
 			return app.ValidateReleaseLiftOptions(opt)
 		},
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				composed, err := resolveWorkspaceLiftOptions(cmd, destination, opt, evaluation)
+				if err != nil {
+					return err
+				}
+				composed.PlanOnly, composed.Verbose, composed.JSON = planOnly, verbose, output == "json"
+				composed.Provenance = provenance
+				if provenance.Enabled {
+					info, ok := state.deps.buildInfo()
+					if v := version.Resolve(info, ok).Version; v != version.Unknown {
+						composed.Provenance.BuilderVersion = v
+					}
+				}
+				if cmd.Flags().Changed("promote") {
+					promote := opt.Promote
+					composed.Promote = &promote
+				}
+				return runWorkspaceLiftCommand(cmd, state, composed)
+			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			if err := displayDestinationSelection(cmd, selection); err != nil {
@@ -144,9 +195,13 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	cmd.Flags().BoolVar(&opt.Promote, "promote", false, "explicit same-suite/model/runtime promotion; source-only evidence")
 	cmd.Flags().BoolVar(&planOnly, "plan", false, "GET-only review; no admission or placement")
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "output: text|json")
-	for _, name := range []string{"evidence"} {
-		_ = cmd.MarkFlagRequired(name)
-	}
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show workspace stage diagnostics")
+	cmd.Flags().DurationVar(&evaluation.CaseTimeout, "case-timeout", 5*time.Minute, "workspace evaluation deadline per run, at most 9m")
+	cmd.Flags().StringVar(&evaluation.ResultPort, "result-port", "19180", "workspace evaluation loopback result-forward port")
+	cmd.Flags().StringVar(&evaluation.JudgeBaseURL, "judge-base-url", "", "workspace evaluation judge endpoint; HTTPS except keyless literal loopback")
+	cmd.Flags().StringVar(&evaluation.JudgeKeyEnv, "judge-key-env", "", "workspace evaluation judge credential environment variable name")
+	cmd.Flags().BoolVar(&provenance.Enabled, "provenance", true, "attach unsigned suite provenance during workspace publication")
+	cmd.Flags().BoolVar(&provenance.Require, "require-provenance", false, "refuse workspace publication if provenance cannot be attached")
 	_ = cmd.MarkFlagDirname("from-layout")
 	_ = cmd.MarkFlagFilename("evidence")
 	return cmd

@@ -105,14 +105,72 @@ config merging. Operational config is excluded from prepared S, source fingerpri
 and published content.
 
 This is selector configuration, not environment installation or deployment
-identity. `publishRepository` supplies bare push's repository; `evaluationTarget`
-records intent for later composition. Root eval keeps managed passing proof with
-optional `--out`; explicit push references are preserved. Lift still requires a
-digest/private evidence and does not automatically evaluate or push.
+identity. `publishRepository` supplies bare push and composed Lift's repository;
+`evaluationTarget` explicitly selects where a destination's missing proof runs.
+Root eval keeps managed passing proof with optional `--out`; explicit push
+references are preserved. Explicit-reference Lift remains deploy-only and requires
+a digest/private evidence and explicit `--promote` for source-only evidence.
 **Kagent stays out of composed Lift until its own candidate-scoped evaluation
 and ownership-safe cleanup are qualified**; standalone explicit kagent operations
-retain their existing boundaries. Named selectors never grant promotion or bypass
-remote context confirmation; `--promote` still discloses source-only evidence.
+retain their existing boundaries. Named selectors never bypass remote confirmation.
+
+## Composed workspace Lift
+
+With the Orka prerequisites and named configuration above already prepared:
+
+```sh
+kmx lift --to prod --plan
+kmx lift --to prod
+```
+
+Without a positional reference, Lift discovers the nearest workspace and freezes
+its exact packaged version and source fingerprint. It requires `publishRepository`
+and the destination's explicit `evaluationTarget`; it never substitutes `evalTarget`
+or a current/remembered context. It runs missing evaluation, publication and
+placement in that order, using the existing disposable candidate and release gates.
+Promotion is selected automatically and disclosed as **passed on the evaluation
+target, not evaluated on the destination**; explicit `--promote=false` stays strict.
+No annotations, guided authoring, tag-based Lift, destination update or rollback
+are included.
+
+The default stage transcript has four stderr lines: Plan, Eval, Push and Lift;
+failures may add a safe refusal or critical cleanup warning. Skipped stages keep
+their line. Counts are case runs (Tasks), also named `caseRuns` in JSON; a completed
+evaluation means each case's threshold was met, not that every run passed.
+`-v` shows diagnostic detail; `-o json` writes one
+structured result to stdout, including stage and partial outcomes. Plan names the
+concrete targets and repository before one confirmation covering evaluation Tasks,
+candidate cleanup, publication and source-only promotion. Inputs may remain in
+runtime/model storage after cleanup; authored cases are published content.
+Scripts must supply the context-bound `KAIMAHI_CONFIRM` named by the plan:
+remote context names, comma-separated in evaluation/destination order with duplicates
+removed. Local evaluation plus remote production asks only for the remote context;
+two remote targets share one challenge. An all-local pipeline uses its concrete
+local context name(s) to confirm publication.
+`--plan` does not prompt, evaluate, publish, admit resources or write completion
+records, and works before a passing receipt or published artifact exists. This
+no-reference plan is offline stage intent, not a destination eligibility/readiness
+claim; explicit digest `--plan` retains its GET-only eligibility review.
+
+Skips are exact-version checks, not optimistic retries. Cached proof must match
+the selected evaluation environment/runtime/inference. Evaluated root registry
+push also registers publication completion, so independently completed eval/push
+can be skipped by composed Lift. Older publications without a local completion
+record do not confer skip authority. A recorded publication is verified by
+immutable digest, not a tag. With `--require-provenance`, bounded registry reads
+and temporary local extraction also verify existing provenance; missing or
+unverifiable attachments refuse without republishing or repair.
+A recorded successful Lift is rechecked
+GET-only against destination inputs, ownership markers, resource UIDs, whole specs
+and current readiness. Private completion records grant only skip authority, never
+Apply, adoption or replacement. Missing, drifted or uncertain destination completion
+refuses rather than repairing an occupied or partially changed target. Full receipts
+and completion observations stay in private KMX state, outside authored source.
+
+A failed or uncertain evaluation/cleanup stops publication and placement. A failed
+publication can already have transferred content; inspect its incomplete/unknown
+outcome rather than assuming nothing reached the registry. Partial Lift resources
+may remain. No later stage runs as an automatic repair, retry or rollback.
 
 ## Create
 
