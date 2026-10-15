@@ -1,7 +1,6 @@
 package workspace_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +16,7 @@ import (
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 func multiWorkspace(t *testing.T, members, cases int) (string, string) {
@@ -133,14 +133,17 @@ func TestMultiSourceRefusesNonDirectoryFIFO(t *testing.T) {
 	}
 }
 
-func TestSingleCompatibilityGolden(t *testing.T) {
+func TestSingleSourceDescriptorCompatibility(t *testing.T) {
 	root, cache := createWorkspace(t)
 	p, err := workspace.Prepare(t.Context(), root, cache)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Fingerprint != "sha256:d6c790566124e34dce38c6c7988592fef54ea39a90d03f696471ff21d7f0385c" || p.Descriptor.Digest.String() != "sha256:d521ba049e1122432f8dd70073650bce0ca94c3bd836314b458885c88d8ad9f3" {
-		t.Fatal("v1 bytes or fingerprint changed", p)
+	// Source v1 stays unchanged; packaged identity follows current public evals,
+	// not the pre-#515 private YAML artifact/fingerprint golden.
+	member, err := workspace.Load(t.Context(), p)
+	if err != nil || len(member.Cases) != 1 || member.Cases[0].Path != "evals/greeter/cases/example.json" {
+		t.Fatal("v1 source did not use current public case packaging", err)
 	}
 	if string(readFile(t, filepath.Join(root, "workspace.yaml"))) != "schemaVersion: 1\nname: greeter\nmember: agents/greeter/member.yaml\nbuildProfile: build-profiles/default.json\n" {
 		t.Fatal("Create descriptor output changed")
@@ -167,11 +170,34 @@ func TestMultiPrepareDeterministicScopedGraphAndSources(t *testing.T) {
 		t.Fatalf("incomplete or unordered graph: %+v", suite)
 	}
 	for _, id := range []string{"member-00", "member-01"} {
-		for _, name := range []string{"case-000.yaml", "case-001.yaml"} {
-			if !bytes.Equal(readFile(t, filepath.Join(out, "metadata/kmx/eval", id, name)), readFile(t, filepath.Join(root, "eval", id, name))) {
-				t.Fatal("scoped case bytes changed")
+		var agent spec.Agent
+		if err := spec.Unmarshal(readFile(t, filepath.Join(out, "agents", id+".json")), &agent); err != nil {
+			t.Fatal(err)
+		}
+		indexPath := "evals/" + id + "/index.json"
+		if len(agent.Evals) != 1 || agent.Evals[0].Path != indexPath {
+			t.Fatalf("member %s did not bind its public evaluation index: %+v", id, agent.Evals)
+		}
+		var index spec.EvaluationIndex
+		if err := spec.Unmarshal(readFile(t, filepath.Join(out, indexPath)), &index); err != nil {
+			t.Fatal(err)
+		}
+		if index.Agent != id || len(index.Cases) != 2 {
+			t.Fatalf("incomplete member index: %+v", index)
+		}
+		for i, c := range index.Cases {
+			if c.Path != fmt.Sprintf("evals/%s/cases/case-%03d.json", id, i) {
+				t.Fatal("case IDs were not scoped to their member", c.Path)
+			}
+			got, err := workspace.DecodePackagedCase(readFile(t, filepath.Join(out, c.Path)))
+			want, parseErr := runtime.ParseEvaluationCase(readFile(t, filepath.Join(root, "eval", id, fmt.Sprintf("case-%03d.yaml", i))))
+			if err != nil || parseErr != nil || !reflect.DeepEqual(got, want) {
+				t.Fatal("scoped case did not round-trip", err, parseErr)
 			}
 		}
+	}
+	if _, err := os.Stat(filepath.Join(out, "metadata/kmx/eval")); !os.IsNotExist(err) {
+		t.Fatal("private case inventory retained", err)
 	}
 	readFile(t, filepath.Join(out, "metadata/kmx/native-multi.json"))
 	for _, name := range []string{"native-orka.json", "native-kagent.json", "native-agentsessions.json"} {
@@ -228,12 +254,19 @@ func TestMultiPrepareUpperCaseAndMemberBudgets(t *testing.T) {
 			if len(inventory.Members) != tc.members || total != 128 {
 				t.Fatal("upper-bound inventory lost members or cases")
 			}
-			wantFiles := 138
+			wantFiles := 140
 			if tc.members == 16 {
-				wantFiles = 180
+				wantFiles = 196
 			}
 			if got := len(authoredTree(t, extract(t, p))); got != wantFiles {
 				t.Fatalf("upper-bound artifact files = %d, want %d", got, wantFiles)
+			}
+			if tc.members == 16 {
+				entries := packagedTarEntries(t, p)
+				t.Logf("16-member upper bound: %d files, %d tar entries, %d entries headroom", wantFiles, entries, 256-entries)
+				if entries > 256 {
+					t.Fatalf("upper-bound tar exceeds 256 entries: %d", entries)
+				}
 			}
 			artifact, err := suiteoras.ReadArtifactLayout(t.Context(), p.Path, p.Descriptor.Digest.String())
 			if err != nil {
@@ -342,7 +375,7 @@ func TestMultiClosedArtifactRegeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, change := range []string{"case-digest", "case-missing", "case-extra", "case-unscoped", "case-cross-member", "graph-member-omitted", "graph-extra-file", "singleton-metadata", "metadata-field", "metadata-member-omitted", "metadata-order", "metadata-profile"} {
+	for _, change := range []string{"private-case-extra", "index-limits", "agent-evals-missing", "graph-member-omitted", "graph-extra-file", "singleton-metadata", "metadata-v1", "metadata-field", "metadata-member-omitted", "metadata-order", "metadata-profile"} {
 		t.Run(change, func(t *testing.T) {
 			out := extract(t, p)
 			metadataPath := filepath.Join(out, "metadata/kmx/native-multi.json")
@@ -352,19 +385,20 @@ func TestMultiClosedArtifactRegeneration(t *testing.T) {
 			}
 			members := rec["members"].([]any)
 			second := members[1].(map[string]any)
+			want := "packaged native suite verification failed"
 			switch change {
-			case "case-digest":
-				second["cases"].([]any)[0].(map[string]any)["digest"] = "sha256:" + strings.Repeat("0", 64)
-			case "case-missing":
-				if err := os.Remove(filepath.Join(out, "metadata/kmx/eval/member-01/case-000.yaml")); err != nil {
+			case "private-case-extra":
+				writeFile(t, filepath.Join(out, "metadata/kmx/eval/member-01/extra.yaml"), "id: extra\ninput: question\nexpectContains: [answer]\n")
+			case "index-limits":
+				rebindMemberEvals(t, out, "member-01", func(index *spec.EvaluationIndex, _ map[string]any) {
+					index.Limits.MaxCases = 127
+				})
+			case "agent-evals-missing":
+				if err := os.RemoveAll(filepath.Join(out, "evals/member-01")); err != nil {
 					t.Fatal(err)
 				}
-			case "case-extra":
-				writeFile(t, filepath.Join(out, "metadata/kmx/eval/member-01/extra.yaml"), "id: extra\ninput: question\nexpectContains: [answer]\n")
-			case "case-unscoped":
-				second["cases"].([]any)[0].(map[string]any)["path"] = "metadata/kmx/eval/case-000.yaml"
-			case "case-cross-member":
-				second["cases"].([]any)[0].(map[string]any)["path"] = "metadata/kmx/eval/member-00/case-000.yaml"
+				rebindMemberAgent(t, out, "member-01", func(agent *spec.Agent) { agent.Evals = nil })
+				want += ": native member requires exactly one evaluation index"
 			case "graph-member-omitted":
 				var suite spec.Suite
 				path := filepath.Join(out, "agentsuite.json")
@@ -378,6 +412,13 @@ func TestMultiClosedArtifactRegeneration(t *testing.T) {
 					t.Fatal(err)
 				}
 				writeFile(t, path, string(b))
+				// Keep the public graph valid while retaining complete private metadata.
+				if err := os.RemoveAll(filepath.Join(out, "evals/member-01")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(filepath.Join(out, "agents/member-01.json")); err != nil {
+					t.Fatal(err)
+				}
 			case "graph-extra-file":
 				writeFile(t, filepath.Join(out, "instructions/extra.md"), "unlisted instructions\n")
 			case "singleton-metadata":
@@ -386,6 +427,8 @@ func TestMultiClosedArtifactRegeneration(t *testing.T) {
 					t.Fatal(err)
 				}
 				writeFile(t, filepath.Join(out, "metadata/kmx/native-orka.json"), string(b))
+			case "metadata-v1":
+				rec["schemaVersion"], rec["rendererVersion"] = 1, "kmx.native-multi/v1"
 			case "metadata-field":
 				rec["private-metadata-canary"] = "private-content"
 			case "metadata-member-omitted":
@@ -400,44 +443,7 @@ func TestMultiClosedArtifactRegeneration(t *testing.T) {
 				t.Fatal(err)
 			}
 			writeFile(t, metadataPath, string(b))
-			layout := filepath.Join(t.TempDir(), "layout")
-			result, err := suiteoras.Push(t.Context(), out, layout, "mutated")
-			if err != nil {
-				t.Fatal("negative fixture is not public-valid", err)
-			}
-			if err := filepath.WalkDir(layout, func(path string, d os.DirEntry, err error) error {
-				if err != nil {
-					return err
-				}
-				if d.IsDir() {
-					return os.Chmod(path, 0700)
-				}
-				return nil
-			}); err != nil {
-				t.Fatal(err)
-			}
-			candidate := *p
-			candidate.Path = layout
-			candidate.Descriptor = result.Descriptor
-			if err := workspace.Verify(t.Context(), &candidate); err == nil {
-				t.Fatal("invalid multi graph verified")
-			}
-			if got, err := workspace.LoadInventory(t.Context(), &candidate); got != nil || err == nil || err.Error() != "packaged native suite verification failed" {
-				t.Fatal("invalid inventory or unsafe error returned", err)
-			}
-			if _, err := workspace.Load(t.Context(), &candidate); err == nil || errors.Is(err, workspace.ErrMultiMemberUnsupported) {
-				t.Fatal("invalid snapshot incorrectly received valid-multi sentinel", err)
-			}
-			a, err := suiteoras.ReadArtifactLayout(t.Context(), layout, result.Descriptor.Digest.String())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := workspace.LoadArtifactInventory(t.Context(), a); err == nil {
-				t.Fatal("invalid artifact inventory accepted")
-			}
-			if _, err := workspace.LoadArtifact(t.Context(), a); err == nil || errors.Is(err, workspace.ErrMultiMemberUnsupported) {
-				t.Fatal("invalid artifact received valid-multi sentinel", err)
-			}
+			assertMultiInventoryRefused(t, p, out, want)
 		})
 	}
 	manifest := filepath.Join(p.Path, "blobs/sha256", p.Descriptor.Digest.Encoded())
@@ -478,7 +484,7 @@ func TestMultiInventoryAndSingleOnlyLoaders(t *testing.T) {
 	}
 	for i, m := range inventory.Members {
 		id := fmt.Sprintf("member-%02d", i)
-		if m.MemberID != id || m.Digest != inventory.Digest || m.GraphDigest != inventory.GraphDigest || m.Name != "team" || m.Model != "test-model" || m.Runtime.ID != "orka" || string(m.Instructions) != "Answer for "+id+".\n" || len(m.Cases) != 1 || m.Cases[0].Path != "metadata/kmx/eval/"+id+"/case-000.yaml" {
+		if m.MemberID != id || m.Digest != inventory.Digest || m.GraphDigest != inventory.GraphDigest || m.Name != "team" || m.Model != "test-model" || m.Runtime.ID != "orka" || string(m.Instructions) != "Answer for "+id+".\n" || len(m.Cases) != 1 || m.Cases[0].Path != "evals/"+id+"/cases/case-000.json" {
 			t.Fatalf("invalid member snapshot: %+v", m)
 		}
 	}

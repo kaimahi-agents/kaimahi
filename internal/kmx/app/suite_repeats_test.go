@@ -165,7 +165,7 @@ func TestSuiteRepeatJudgeModelMatchesAreObservations(t *testing.T) {
 			t.Fatal("invalid judge evidence fixture")
 		}
 		rows[i] = suitePassingCase{
-			ID: c.ID, Path: "metadata/kmx/eval/first.yaml",
+			ID: c.ID, Path: "evals/greeter/cases/first.json",
 			CaseDigest: strings.Repeat("b", 64), InputDigest: agentruntime.EvaluationInputDigest(c.Input),
 			Runs: 3, MinPasses: 2, Run: i + 1, Verdict: "pass",
 			TaskName: fmt.Sprintf("task-%d", i), TaskUID: fmt.Sprintf("uid-%d", i),
@@ -236,7 +236,7 @@ func repeatDriverFrames(t *testing.T, policy string) []suitePassingInventoryCase
 	n, min := c.RunPolicy()
 	frames := make([]suitePassingInventoryCase, n)
 	for i := range frames {
-		metadata := suitePassingCase{ID: c.ID, Path: "metadata/kmx/eval/first.yaml", Verdict: "pass"}
+		metadata := suitePassingCase{ID: c.ID, Path: "evals/greeter/cases/first.json", Verdict: "pass"}
 		for _, a := range c.Assertions {
 			metadata.Assertions = append(metadata.Assertions, suitePassingAssertionDefinition(a))
 		}

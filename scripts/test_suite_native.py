@@ -297,7 +297,7 @@ class QualificationTests(unittest.TestCase):
 
     def test_fingerprint_uses_original_bytes_and_filenames(self):
         files = {"workspace.yaml": b"x\n", "eval/a.yaml": b"y\n"}
-        expected = b'{"files":{"eval/a.yaml":"sha256:3bb2abb69ebb27fbfe63c7639624c6ec5e331b841a5bc8c3ebc10b9285e90877","workspace.yaml":"sha256:73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"},"renderer":"kmx.native-orka/v2"}'
+        expected = b'{"files":{"eval/a.yaml":"sha256:3bb2abb69ebb27fbfe63c7639624c6ec5e331b841a5bc8c3ebc10b9285e90877","workspace.yaml":"sha256:73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"},"layout":"kmx.native-suite-evals/v2","renderer":"kmx.native-orka/v2"}'
         self.assertEqual(Q.fingerprint(files), "sha256:" + hashlib.sha256(expected).hexdigest())
         self.assertNotEqual(Q.fingerprint(files), Q.fingerprint({"workspace.yaml": b"x\n", "eval/a.yaml": b"y\n\n"}))
 
@@ -344,23 +344,35 @@ class QualificationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             Q.inspect_pair(changed, "Provider", owned, subject)
 
+    def test_packaged_case_matches_go_packaging(self):
+        # Go pins the same digest.
+        raw = b'id: arithmetic\ninput: What is 2 + 2?\nexpectContains:\n  - "4"\n'
+        self.assertEqual(hashlib.sha256(Q.packaged_case(raw)).hexdigest(), "ff20948597abcfbda7dfbf295cc4af52635ab2e639bf7e899fe0eb6fe8e5b33f")
+        self.assertEqual(Q.packaged_case_path("greeter", raw), "evals/greeter/cases/arithmetic.json")
+        self.assertEqual(Q.packaged_case(raw + b"# comment\n"), Q.packaged_case(raw))
+        repeated = json.loads(Q.packaged_case(raw + b"runs: 3\nminPasses: 2\n"))
+        self.assertEqual((repeated["runs"], repeated["minPasses"]), (3, 2))
+
     def test_case_metadata_comes_from_authored_bytes_not_receipt_claims(self):
         raw = b'id: arithmetic\ninput: What is 2 + 2?\nexpectContains:\n  - "4"\n'
-        row = {"id": "arithmetic", "path": "metadata/kmx/eval/one.yaml", "caseDigest": hashlib.sha256(raw).hexdigest(),
+        row = {"id": "arithmetic", "path": "evals/greeter/cases/arithmetic.json", "caseDigest": hashlib.sha256(Q.packaged_case(raw)).hexdigest(),
                "inputDigest": hashlib.sha256(b"What is 2 + 2?").hexdigest(), "verdict": "pass",
                "assertions": [{"ID": "unused"}]}
         definition = hashlib.sha256(b"type 8\ncontains\noperand 1\n4\n").hexdigest()
         row["assertions"] = [{"id": "expectContains.0", "type": "contains", "definitionDigest": definition,
                               "evaluatorVersion": "kmx.text-assertions/v1", "verdict": "pass"}]
         self.assertTrue(hasattr(Q, "verify_cases"), "authored-case cross-check is not implemented")
-        Q.verify_cases([row], {"one.yaml": raw})
-        for key in ("caseDigest", "inputDigest"):
+        Q.verify_cases([row], {"one.yaml": raw}, "greeter")
+        for key, value in (("caseDigest", "0" * 64), ("inputDigest", "0" * 64), ("path", "metadata/kmx/eval/one.yaml"),
+                           ("caseDigest", hashlib.sha256(raw).hexdigest())):
             changed = copy.deepcopy(row)
-            changed[key] = "0" * 64
+            changed[key] = value
             with self.assertRaises(ValueError):
-                Q.verify_cases([changed], {"one.yaml": raw})
+                Q.verify_cases([changed], {"one.yaml": raw}, "greeter")
         with self.assertRaises(ValueError):
-            Q.verify_cases([], {"one.yaml": raw})
+            Q.verify_cases([row], {"one.yaml": raw}, "other")
+        with self.assertRaises(ValueError):
+            Q.verify_cases([], {"one.yaml": raw}, "greeter")
 
     def test_safe_refusal_requires_specific_reason_and_no_persistent_writes(self):
         self.assertTrue(hasattr(Q, "verify_refusal"), "specific no-write refusal check is not implemented")
@@ -615,18 +627,18 @@ class NativeJudgeTests(unittest.TestCase):
         evidence = {"requestStyle": "openai-chat-completions-v1", "model": "qwen-3.5-2b", "modelVersion": version, "provenance": "user-declared", "minScore": 70,
                     "evaluatorDigest": "2866b5c14b0efa8dd13964a40030ffd79877bba4dc00405c1121000113adf793",
                     "configurationDigest": "b7ce49e0b23890067e384d903c5deb6425e2909c300411898f2773fa2bd16579", "scores": [90, 80], "modelMatches": ["requested", "version-qualified"]}
-        row = {"id": "explanation", "path": "metadata/kmx/eval/03-explanation.yaml", "caseDigest": hashlib.sha256(raw).hexdigest(),
+        row = {"id": "explanation", "path": "evals/greeter/cases/explanation.json", "caseDigest": hashlib.sha256(Q.packaged_case(raw)).hexdigest(),
                "inputDigest": hashlib.sha256(case["input"].encode()).hexdigest(), "verdict": "pass", "assertions": [
                    {"id": "science", "type": "llmJudge", "definitionDigest": "d58d7753601ecd06b6ace92c80c60fc5078f5eaab749f74fbf81cbcc417c5578",
                     "evaluatorVersion": "kmx.llm-judge/v2", "verdict": "pass", "judge": evidence}]}
-        Q.verify_cases([row], {"03-explanation.yaml": raw})
+        Q.verify_cases([row], {"03-explanation.yaml": raw}, "greeter")
         for field, value in (("modelMatches", None), ("modelMatches", []), ("modelMatches", ["prefix", "requested"]), ("requestStyle", "legacy"), ("configurationDigest", "0" * 64), ("modelVersion", "changed"), ("minScore", 60),
                              ("scores", [90, 69]), ("scores", [90, True]), ("reasoning", "PRIVATE_CASE_CANARY")):
             with self.subTest(field=field, value=value):
                 changed = copy.deepcopy(row)
                 changed["assertions"][0]["judge"][field] = value
                 with self.assertRaises(ValueError):
-                    Q.verify_cases([changed], {"03-explanation.yaml": raw})
+                    Q.verify_cases([changed], {"03-explanation.yaml": raw}, "greeter")
 
     def test_native_inventory_keeps_text_probe_first_and_declares_pinned_judge(self):
         import yaml

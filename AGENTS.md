@@ -260,8 +260,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 - Provisional private `workspace.yaml` schemaVersion 2 uses `members` paths under
   one suite root, with member-scoped `eval/ID/` cases and the shared pinned build
   profile. Keep representation behind workspace loading pending authoring decisions
-  in [#526](https://github.com/kaimahi-agents/kaimahi/issues/526). SchemaVersion 1,
-  create prompts and one-member receipts remain unchanged; no source migration.
+  in [#526](https://github.com/kaimahi-agents/kaimahi/issues/526). SchemaVersion 1
+  source/create prompts are unchanged. Both formats use public `evals/ID/` indexes
+  and cases through `DecodePackagedCase`; no private case list or migration reader.
+  Preserve merged one-member packaging/receipt rules. File budgets are 4 shared +
+  4 per member + 128 total cases (136 at one member, 196 at sixteen).
 - Multi-member `Prepare`/`LoadInventory` is offline only. Preserve complete closed
   graph/case coverage, canonical member ordering and bounded confined reads. Existing
   execution `Load`/`LoadArtifact` refuse rather than choosing a first member.
@@ -284,8 +287,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 - Preserve KMX's authored assertion `id`/`type`/operand spellings when mapping
   cases; public JSON identities are not private YAML/framed receipt identities.
   Results remain external to the evaluation tree and bind the exact OCI suite
-  manifest. Do not infer KMX migration from this public format; its private
-  `metadata/kmx/eval/` authoring and receipt consumers remain unchanged.
+  manifest.
 
 ## kagent version boundary
 
@@ -311,6 +313,19 @@ a run, otherwise previews frozen UIDs and requires confirmation even on local ki
 Unanchored or unverifiable orphans refuse deletion/completeness claims. No journal,
 lease, automatic sweep or publication blockade. Private Quickstart/console stay
 canonical; kagent/Sessions/judge behavior and all existing timeouts are unchanged.
+
+## Native suite case packaging
+
+- Native workspaces author `eval/*.yaml`; preparation converts each case to a
+  public evaluation case at `evals/<member>/cases/<id>.json`, listed in file-name
+  order by `evals/<member>/index.json` and bound through the member's `evals`
+  reference. Legacy `expectContains` entries keep `expectContains.N` IDs so
+  assertion definition digests are unchanged. Private native metadata carries no
+  case inventory. Packaged readers convert cases back through one decoder,
+  carry `runs`/`minPasses`, and refuse `critical: false` and extension assertion
+  types rather than ignoring them. Receipts record packaged case paths and digests of the
+  packaged JSON bytes. Receipts with `metadata/kmx/eval/` case paths refuse with
+  a fixed rerun remedy; do not add a migration reader.
 
 ## Verification
 

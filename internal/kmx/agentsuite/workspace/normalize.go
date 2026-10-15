@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	godigest "github.com/opencontainers/go-digest"
 )
 
@@ -17,7 +18,7 @@ import (
 type normalizedMember struct {
 	member       sourceMember
 	instructions []byte
-	cases        map[string][]byte
+	cases        []runtime.EvaluationCase
 }
 type normalizedSource struct {
 	workspace sourceWorkspace
@@ -139,7 +140,11 @@ func normalizeSource(ctx context.Context, root string) (*normalizedSource, error
 			}
 			cases[entry.Name()] = b
 		}
-		s.members = append(s.members, normalizedMember{member: m, instructions: instructions, cases: cases})
+		parsed, err := authoredCases(cases)
+		if err != nil {
+			return nil, err
+		}
+		s.members = append(s.members, normalizedMember{member: m, instructions: instructions, cases: parsed})
 	}
 	return s, nil
 }

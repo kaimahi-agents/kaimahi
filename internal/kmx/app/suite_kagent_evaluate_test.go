@@ -284,7 +284,7 @@ func TestSuiteKagentEvaluationOfflineBindingSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	if p.options.ToNamespace != "agents" || p.suite.Runtime.ID != "kagent" || len(p.inventory) != 2 || filepath.Ext(p.inventory[1].Metadata.Path) != ".yml" {
+	if p.options.ToNamespace != "agents" || p.suite.Runtime.ID != "kagent" || len(p.inventory) != 2 || p.inventory[1].Metadata.Path != "evals/"+p.suite.MemberID+"/cases/second.json" {
 		t.Fatal("packaged runtime, binding namespace or complete inventory lost")
 	}
 	for _, change := range []string{"missing", "both", "namespace", "port", "link", "malformed"} {

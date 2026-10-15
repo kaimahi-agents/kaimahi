@@ -3,12 +3,13 @@ package workspace
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
 
-// PackagedCase holds the full authored bytes bound by native case metadata.
+// PackagedCase holds public JSON bytes bound by the member's evaluation index.
 type PackagedCase struct {
 	Path   string
 	Digest string
@@ -16,7 +17,7 @@ type PackagedCase struct {
 }
 
 // NativeSuite is one verified native member. Digest identifies the OCI manifest
-// (including raw cases); GraphDigest identifies only the canonical public graph.
+// (including public cases); GraphDigest identifies the canonical public graph.
 // Build-profile images are declared build inputs, not native execution images.
 type NativeSuite struct {
 	Digest             string
@@ -46,7 +47,7 @@ func Load(ctx context.Context, p *Prepared) (*NativeSuite, error) {
 			return nil, err
 		}
 		// Strict verifier diagnostics can quote untrusted metadata keys or values.
-		return nil, errors.New("packaged native suite verification failed")
+		return nil, verificationFailed(err)
 	}
 	if _, multi := files[multiNativePath]; multi {
 		return nil, ErrMultiMemberUnsupported
@@ -65,12 +66,21 @@ func LoadArtifact(ctx context.Context, artifact *suiteoras.Artifact) (*NativeSui
 	}
 	files := artifact.Files()
 	if _, err := validateNative(files); err != nil {
-		return nil, errors.New("packaged native suite verification failed")
+		return nil, verificationFailed(err)
 	}
 	if _, multi := files[multiNativePath]; multi {
 		return nil, ErrMultiMemberUnsupported
 	}
 	return loadNativeFiles(ctx, files, artifact.Descriptor().Digest.String())
+}
+
+// verificationFailed exposes only refusal reasons.
+func verificationFailed(err error) error {
+	var r refusal
+	if errors.As(err, &r) {
+		return fmt.Errorf("packaged native suite verification failed: %w", r)
+	}
+	return errors.New("packaged native suite verification failed")
 }
 
 func loadNativeFiles(ctx context.Context, files map[string][]byte, digest string) (*NativeSuite, error) {
@@ -94,6 +104,12 @@ func loadNativeMember(ctx context.Context, files map[string][]byte, suite spec.S
 	if err := spec.Unmarshal(files[suite.Agents[index].Path], &member); err != nil {
 		return nil, errors.New("invalid packaged native member")
 	}
+	cases, _, err := packagedCases(files, member)
+	if err != nil {
+		return nil, errors.New("invalid packaged native evaluation cases")
+	}
+	// All entry points guarantee complete ordered cases and a caller-owned map
+	// of verified bytes; inventory loaders pass the selected member's index.
 	result := &NativeSuite{
 		Digest:             digest,
 		GraphDigest:        graphDigest,
@@ -109,11 +125,8 @@ func loadNativeMember(ctx context.Context, files map[string][]byte, suite spec.S
 		RendererVersion:    native.RendererVersion,
 		Runtime:            profile,
 		ExecutionProfile:   native.ExecutionProfile,
-		Cases:              make([]PackagedCase, 0, len(native.Cases)),
+		Cases:              cases,
 		RequiredImages:     []string{},
-	}
-	for _, c := range native.Cases {
-		result.Cases = append(result.Cases, PackagedCase{Path: c.Path, Digest: c.Digest, Bytes: files[c.Path]})
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

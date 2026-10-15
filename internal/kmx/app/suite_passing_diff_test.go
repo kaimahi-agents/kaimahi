@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -184,6 +185,26 @@ func TestNativeSuiteEvaluationDiffUsesStrictPrivateReader(t *testing.T) {
 						t.Fatalf("strict private refusal: %v %s", err, &out)
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestNativeSuiteEvaluationDiffNamesPreviousLayoutRemedy(t *testing.T) {
+	for mode, receipt := range suiteDiffFixtures(t) {
+		t.Run(mode, func(t *testing.T) {
+			valid := diffWrite(t, receipt)
+			old := *receipt
+			old.Cases = append([]suitePassingCase(nil), receipt.Cases...)
+			old.Cases[0].Path = "metadata/kmx/eval/example.yaml"
+			raw, err := json.Marshal(&old)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			err = (&App{Out: &out}).DiffAgentEvaluations(EvaluationDiffOptions{Before: valid, After: diffWriteRaw(t, raw)})
+			if !errors.Is(err, errPreviousSuiteReceipt) || out.Len() != 0 {
+				t.Fatalf("previous layout diff error = %v", err)
 			}
 		})
 	}

@@ -25,7 +25,7 @@ func LoadInventory(ctx context.Context, p *Prepared) (*NativeInventory, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		return nil, errors.New("packaged native suite verification failed")
+		return nil, verificationFailed(err)
 	}
 	return loadInventoryFiles(ctx, files, p.Descriptor.Digest.String())
 }
@@ -41,7 +41,7 @@ func LoadArtifactInventory(ctx context.Context, artifact *suiteoras.Artifact) (*
 	}
 	files := artifact.Files()
 	if _, err := validateNative(files); err != nil {
-		return nil, errors.New("packaged native suite verification failed")
+		return nil, verificationFailed(err)
 	}
 	return loadInventoryFiles(ctx, files, artifact.Descriptor().Digest.String())
 }

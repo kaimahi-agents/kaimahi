@@ -187,7 +187,7 @@ func TestArtifactArchiveBoundsAndClosedTypes(t *testing.T) {
 				}
 			case "files":
 				hs = nil
-				for i := range artifactFilesLimit + 1 {
+				for i := range MaxArtifactFiles + 1 {
 					hs = append(hs, regular(fmt.Sprintf("file-%03d", i), 1))
 				}
 			case "directories":
@@ -234,6 +234,25 @@ func TestArtifactArchiveBoundsAndClosedTypes(t *testing.T) {
 			}
 			if _, err := artifactFiles(t.Context(), raw); !errors.Is(err, ErrArtifact) {
 				t.Fatalf("unsafe archive accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestArtifactNativeInventoryFileBudgets(t *testing.T) {
+	for _, count := range []int{136, 140, 196, 197} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			headers := make([]*tar.Header, 0, count)
+			for i := range count {
+				headers = append(headers, &tar.Header{Name: fmt.Sprintf("file-%03d", i), Mode: 0644, Typeflag: tar.TypeReg, Size: 1})
+			}
+			files, err := artifactFiles(t.Context(), artifactArchive(t, headers))
+			if count == 197 {
+				if !errors.Is(err, ErrArtifact) {
+					t.Fatalf("excess inventory accepted: %v", err)
+				}
+			} else if err != nil || len(files) != count {
+				t.Fatalf("bounded %d-file inventory refused or truncated: %d, %v", count, len(files), err)
 			}
 		})
 	}

@@ -35,8 +35,9 @@ receipts are removed; no conversion or migration is provided.
 A separate KMX-local source format supports deterministic offline preparation and
 inventory loading of tool-free members. Its authoring shape is **provisional**
 pending [#526](https://github.com/kaimahi-agents/kaimahi/issues/526); it is not a
-new public AgentSuite schema. Existing `schemaVersion: 1` workspaces, create
-prompts and one-member receipts are unchanged. No automatic conversion is done.
+new public AgentSuite schema. Existing `schemaVersion: 1` authoring and create
+prompts are unchanged; both source formats use the public evaluation packaging
+and receipt rules below. Earlier private-case packages/receipts are not migrated.
 
 Author the list manually in `workspace.yaml`:
 
@@ -59,12 +60,21 @@ The existing pinned build profile is shared. No tools or `invokes` authoring,
 binding, approval, coordination or evaluation semantics are enabled here.
 
 The bounded format accepts 2–16 members, at least one case per member and at most
-128 cases in total, with independent 8 MiB source/artifact limits. Member order
-in the prepared inventory is canonical by ID; case order stays filename order
-within each member. The complete graph, all selected instructions/runtime/model
-metadata and raw cases contribute to the prepared artifact. Duplicate/unresolved
-members, mixed `member`/`members` forms, undeclared member/case directories,
-symlinks, unsafe paths and graph/case digest drift refuse without rewriting source.
+128 cases in total, with independent 8 MiB source/artifact limits and 1 MiB per
+file. The file budget is `4 shared + 4 per member + 128 cases`: 136 for one member,
+140 for two and 196 for sixteen. Shared source-free readers admit at most 196 files;
+complete native graph validation enforces membership and case coverage.
+
+Member order is canonical by ID; each member's case index preserves authored
+filename order. Cases are packaged under `evals/<member>/index.json` and
+`evals/<member>/cases/<case-id>.json`, bound through that member's agent manifest.
+Every inventory uses the same packaged-case decoder as one-member evaluation.
+Case edits change both the public graph digest and the suite OCI digest; comments
+or formatting in authored YAML change only the source fingerprint when parsed
+content/order stays the same. There is no private case list or dual-write.
+Duplicate/unresolved members, mixed `member`/`members` forms, undeclared member/case
+directories, symlinks, unsafe paths and graph/case digest drift refuse without
+rewriting source.
 
 Preparation uses the internal workspace API (`Prepare` then `LoadInventory`);
 there is no new CLI prepare command. The execution loaders remain single-member
@@ -269,9 +279,10 @@ This fixes `runtime.version` to upstream commit
 `ca85f47a2ec17ca6e16029cfa69419cfe29442b3` and `runtime.engine` to `chat`.
 Optional `--runtime-version` accepts only that full commit; `--kagent-runtime`
 and `--live --runtime agentsessions` refuse. The closed private
-`metadata/kmx/native-agentsessions.json` binds the runtime/config contract,
-member identities and complete ordered raw case inventory in manifest S.
-The public graph digest alone does not identify execution semantics. The
+`metadata/kmx/native-agentsessions.json` binds the runtime/config contract and
+member identities in manifest S; the complete ordered case inventory is the
+member's public evaluation index. The public graph digest alone does not
+identify execution semantics. The
 build profile remains inert; `requiredImages` is explicitly empty. No host,
 journal, model endpoint, credential or passing evidence is packaged or contacted.
 The Go SDK pin includes upstream #120 and #124, but does not establish live
@@ -757,36 +768,58 @@ that exact descriptor graph to the registry. It does not re-archive the prepared
 artifact during publication. A single stderr line names the absolute workspace
 path and prepared OCI manifest digest. Result stdout still includes the suite
 digest, a digest-pinned registry reference and `Required member images: []`.
-The manifest digest, not the canonical graph digest, binds authored cases as well
-as member content.
+The manifest digest binds member content, cases and private native metadata.
 
-The content includes exact member instructions and authored case files under
-`metadata/kmx/`, plus a versioned native execution declaration. Cases are published
+The content includes exact member instructions, the member's authored cases as
+public AgentSuite evaluation cases under `evals/<member>/`, and a versioned
+native execution declaration under `metadata/kmx/`. Cases are published
 content: use deliberately shareable inputs. Git internals, local receipts,
 Provider bindings, promotion policies and unrelated workspace files are not
 packaged. Changes to model, instructions or cases produce a different suite
 identity; old evidence cannot qualify the changed content.
 
-For example, the authored `eval/example.yaml` becomes:
+For example, the authored `eval/example.yaml` (case ID `example`) becomes:
 
 ```text
+evals/greeter/index.json
+evals/greeter/cases/example.json
 metadata/kmx/native-orka.json
-metadata/kmx/eval/example.yaml
 ```
 
-`native-orka.json` inventories the member, renderer version, required images,
-and every packaged case path and digest. The alternative kagent declaration is
+Each authored YAML case is converted to one canonical JSON case named by its
+case ID; legacy `expectContains` entries keep their KMX assertion IDs
+(`expectContains.0`, ...), so assertion identities and definition digests are
+unchanged. The index lists cases in authored file-name order, which is the
+evaluation order, and the member's agent manifest binds the index by digest.
+Authored comments, formatting and file names are not packaged. Renaming a case
+file changes the source fingerprint, and changes the suite only if it changes
+file-name order. Case IDs must differ by more than letter case. A case that the
+public format cannot represent, such as a `contains`/`notContains` value or tool
+name containing a Unicode line or paragraph separator, refuses before
+preparation. JSON escaping
+can make a packaged case larger than its YAML, so a case near the 1 MiB per-file
+or 8 MiB total limit can refuse.
+
+Loading a packaged suite converts each case back, keeps `runs`/`minPasses`,
+and refuses public features KMX cannot execute (`critical: false`, extension
+assertion types, more than 100 runs) instead of ignoring them, and names that
+reason in its error. Suites packaged
+by v0.6.0 no longer validate; receipts recorded against them refuse with a
+remedy to rerun `kmx eval` and `kmx push`. There is no migration reader.
+
+`native-orka.json` records the member, renderer version and required images.
+The alternative kagent declaration is
 `metadata/kmx/native-kagent.json`, binding runtime/version/engine and an immutable
-execution-profile identity to the same complete inventory. Exactly one supported
+execution-profile identity. Exactly one supported
 native profile is required. Explicit Orka and omitted historical Orka retain the
 same prepared content/manifest identity. These are KMX native-profile supplemental
 files in the OCI content layer, not public AgentSuite record types. Runtime
 selection changes the OCI manifest identity even when the public graph digest
 is unchanged; no public runtime field or critical extension is introduced.
 
-The OCI manifest digest binds all the content-layer bytes, including cases.
-The canonical `agentsuite.json` graph digest alone does not bind supplemental
-metadata. No outer package envelope is used. The public format still
+The OCI manifest digest binds all the content-layer bytes. The canonical
+`agentsuite.json` graph digest binds the members and their cases, but not
+supplemental metadata. No outer package envelope is used. The public format still
 requires a composition and pinned build-profile records; this tool-free native
 profile emits a composition with no ToolProviders. Those profile records
 are declared image-build inputs, not dependencies fetched or executed by native
@@ -874,8 +907,10 @@ or local OCI layout without authored source, a preparation fingerprint or a buil
 It retains original packaged bytes; it never re-archives or publishes them.
 Only the selected layout graph is read, not unrelated references. The reader
 bounds the manifest to 1 MiB, the exact empty config to two bytes, compressed
-content to 9 MiB, raw decompressed tar to 10 MiB, 256 entries, 135 regular files,
+content to 9 MiB, raw decompressed tar to 10 MiB, 256 entries, 196 regular files,
 1 MiB per file and 8 MiB total file content before public/native validation.
+A one-member native graph remains limited to 136 files (including its index and
+128 cases); offline multi-member inventories use the derived budget above.
 Links, special files, PAX records, unsafe/duplicate paths and trailing or multiple
 gzip streams refuse. Existing general suite push/pull limits are unchanged.
 

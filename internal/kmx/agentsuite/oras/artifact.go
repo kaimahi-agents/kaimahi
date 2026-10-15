@@ -29,10 +29,13 @@ const (
 	artifactTarBytes        = 10 << 20
 	artifactFileBytes       = 1 << 20
 	artifactContentBytes    = 8 << 20
-	// Shared profile/catalog/root/metadata, 16 members and 128 total cases.
-	artifactFilesLimit   = 4 + 3*16 + 128
-	artifactEntriesLimit = 256
+	artifactEntriesLimit    = 256
 )
+
+// MaxArtifactFiles fits 4 shared files, 4 files per member (including its eval
+// index), and 128 total cases. One member needs 136 files; 16 need at most 196.
+// Consumers still validate complete membership and per-suite case limits.
+const MaxArtifactFiles = 4 + 4*16 + 128
 
 // Artifact retains verified original packaged bytes, not source or a re-archive.
 // The bounds cover native inventories; execution support is consumer-owned.
@@ -282,7 +285,7 @@ func artifactFiles(ctx context.Context, compressed []byte) (map[string][]byte, e
 				return nil, ErrArtifact
 			}
 		case tar.TypeReg:
-			if len(files) >= artifactFilesLimit || h.Size < 0 || h.Size > artifactFileBytes || h.Size > artifactContentBytes-total {
+			if len(files) >= MaxArtifactFiles || h.Size < 0 || h.Size > artifactFileBytes || h.Size > artifactContentBytes-total {
 				return nil, ErrArtifact
 			}
 			data, err := io.ReadAll(reader)

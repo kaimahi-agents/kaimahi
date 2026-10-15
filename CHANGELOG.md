@@ -74,6 +74,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Judge evidence now binds its request style; older judge receipts without it
   require fresh evaluation. Text-only receipts remain unchanged.
 
+- Suites packaged by v0.6.0 no longer validate as packaged suites, and their
+  passing receipts are refused by `push`, `lift` and `eval diff` with
+  `rerun kmx eval and kmx push`. There is no migration reader.
+
+- Case IDs within a member must differ by more than letter case, and
+  `contains`/`notContains` values and tool names must not contain Unicode line
+  or paragraph separators.
+
 ### Fixed
 
 - Use one modern judge request shape (`max_completion_tokens`, no temperature
@@ -90,10 +98,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Provisional KMX-local `schemaVersion: 2` member-list source supports bounded,
   deterministic offline multi-member preparation and inventory loading, with
-  member-scoped cases and complete graph/digest checks. Root eval, workspace push
+  each member's public `evals/<member>/` index/cases and complete graph/digest
+  checks. The derived file budget is 4 shared + 4 per member + 128 total cases:
+  136 for one member, 140 for two and 196 for sixteen. Root eval, workspace push
   (including unevaluated) and workspace Lift refuse before operational effects;
   execution loaders refuse multi-member artifacts. One-member source/create and
-  receipts remain unchanged; no binding, approval or evaluation semantics are added.
+  public-case receipt rules are unchanged; no binding, approval or evaluation
+  semantics are added.
   Authoring remains provisional pending [#526](https://github.com/kaimahi-agents/kaimahi/issues/526).
 
 - No-reference `kmx lift --to NAME` composes missing Orka workspace evaluation,
@@ -159,8 +170,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   extension types, plus optional per-case `runs` and `minPasses` policy,
   rejecting malformed, orphaned or mismatched evaluations.
   No-evaluation suites remain conformant. Results stay external with exact-suite
-  OCI association; validation does not execute cases. KMX private authoring,
-  receipt formats and command plumbing are unchanged.
+  OCI association; validation does not execute cases.
 
 - Root `kmx eval` supports authored `llmJudge` assertions on packaged Orka/kagent
   suites with explicit `--judge-base-url` and optional `--judge-key-env`.
@@ -196,6 +206,18 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   separate runtime-capability view. Composed Lift is Orka-only;
   kagent remains excluded until its candidate cleanup is qualified.
 
+### Changed
+
+- Native suites package authored cases as public AgentSuite evaluations:
+  `evals/<member>/index.json` plus one canonical JSON case per case ID, bound
+  through the member's agent manifest. Authoring (`eval/*.yaml`), evaluation
+  order and assertion identities are unchanged. Cases now change the public
+  graph digest as well as the suite digest. Renaming an authored case file
+  changes the packaged suite only if it changes file-name order. Private native metadata no longer lists
+  cases. One-member native artifacts accept up to 136 files (one index plus
+  128 cases); the shared reader also admits bounded offline multi-member inventories
+  up to 196 files. Earlier private-case packages and receipts are not dual-read.
+
 ### Upgrading
 
 - Run root eval once to register exact-S managed proof before ordinary root push,
@@ -207,10 +229,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Re-run `kmx eval` for judge-bearing workspaces with a fresh private `--out`
   path. Do not rewrite older judge receipts to add the new style binding.
 
-- Migrate KMX-authored `metadata/kmx/eval/<name>.yaml` cases to
-  `evals/<agent>/cases/<case-id>.json` and replace the private `caseRef` list
-  with `evals/<agent>/index.json`. Runtime metadata remains KMX-private and
-  evaluation receipts remain external to suite content.
+- Rerun `kmx eval` and `kmx push` for native workspaces; do not move packaged
+  case files by hand. Authored `eval/*.yaml` stays where it is.
 
 - Optionally add workspace-root `kmx.yaml` for named destinations and use
   `kmx ctx` to list them, then `eval/lift --to NAME`. No default/current Lift

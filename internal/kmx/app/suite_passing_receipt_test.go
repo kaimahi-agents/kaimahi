@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -36,7 +37,7 @@ func passingFixture(t *testing.T) (string, *workspace.Prepared, *workspace.Nativ
 	placement := &suiteNativePlacement{Subject: native.Subject, Provider: suiteNativeOwnedResource{"owned-provider", 1, agentruntime.EvaluationAnswerDigest("admitted provider spec")}, Agent: suiteNativeOwnedResource{"owned-agent", 1, agentruntime.EvaluationAnswerDigest("admitted agent spec")}}
 	observations := make([]suitePassingObservation, 0, len(suite.Cases))
 	for _, file := range suite.Cases {
-		c, err := agentruntime.ParseEvaluationCase(file.Bytes)
+		c, err := workspace.DecodePackagedCase(file.Bytes)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -330,21 +331,24 @@ func TestSuitePassingInventoryPreflight(t *testing.T) {
 	for _, kind := range []string{"toolCalled", "budget"} {
 		t.Run(kind, func(t *testing.T) {
 			modified := *suite
+			packaged := func(id string, assertions []spec.EvaluationAssertion) workspace.PackagedCase {
+				data, err := spec.Marshal(spec.EvaluationCase{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeEvaluationCase, ID: id, Input: "public", Assertions: assertions})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return workspace.PackagedCase{Path: "evals/" + suite.MemberID + "/cases/" + id + ".json", Digest: "sha256:" + agentruntime.EvaluationCaseDigest(data), Bytes: data}
+			}
 			if kind == "budget" {
-				var text strings.Builder
-				text.WriteString("id: huge\ninput: public\nassertions:\n")
+				assertions := make([]spec.EvaluationAssertion, 0, 1000)
 				for i := 0; i < 1000; i++ {
-					fmt.Fprintf(&text, "- {id: a%d, type: contains, value: public}\n", i)
+					assertions = append(assertions, spec.EvaluationAssertion{ID: fmt.Sprintf("a%d", i), Type: "contains", Value: "public"})
 				}
 				modified.Cases = nil
 				for i := 0; i < 6; i++ {
-					data := []byte(strings.Replace(text.String(), "id: huge", fmt.Sprintf("id: huge%d", i), 1))
-					modified.Cases = append(modified.Cases, workspace.PackagedCase{Path: fmt.Sprintf("metadata/kmx/eval/c%d.yaml", i), Digest: "sha256:" + agentruntime.EvaluationCaseDigest(data), Bytes: data})
+					modified.Cases = append(modified.Cases, packaged(fmt.Sprintf("huge%d", i), assertions))
 				}
 			} else {
-				definition := "- {id: a, type: toolCalled, tool: public}"
-				data := []byte("id: unsupported\ninput: public\nassertions:\n" + definition + "\n")
-				modified.Cases = []workspace.PackagedCase{{Path: "metadata/kmx/eval/unsupported.yaml", Digest: "sha256:" + agentruntime.EvaluationCaseDigest(data), Bytes: data}}
+				modified.Cases = []workspace.PackagedCase{packaged("unsupported", []spec.EvaluationAssertion{{ID: "a", Type: "toolCalled", Tool: "public"}})}
 			}
 			if _, _, err := suitePassingInventory(&modified); err == nil || !strings.Contains(err.Error(), map[bool]string{true: "budget", false: "unsupported"}[kind == "budget"]) {
 				t.Fatalf("missing targeted preflight refusal: %v", err)
@@ -411,5 +415,48 @@ func TestSuitePassingReceiptProjectsOnlyPassingMetadata(t *testing.T) {
 	}
 	if _, exists := doc["subject"].(map[string]any)["SourceFingerprint"]; exists {
 		t.Fatal("frozen subject changed")
+	}
+}
+
+func TestSuitePassingReceiptRefusesPreviousCaseLayoutWithRemedy(t *testing.T) {
+	_, prepared, _, placement, observations := passingFixture(t)
+	receipt, err := newSuitePassingReceipt(t.Context(), prepared, placement, observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt.Cases[0].Path = "metadata/kmx/eval/example.yaml"
+	raw, err := spec.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = parseSuitePassingReceipt(raw)
+	if !errors.Is(err, errPreviousSuiteReceipt) || !errors.Is(err, errSuitePassingReceipt) || !strings.Contains(err.Error(), "rerun kmx eval and kmx push") {
+		t.Fatalf("previous layout receipt error = %v", err)
+	}
+}
+
+func TestSuitePassingReceiptRefusesPreviousRuntimeReceiptWithRemedy(t *testing.T) {
+	p, subject, observations := sessionsPassingFixture(t)
+	sessions, err := newSuiteSessionsPassingReceipt(t.Context(), p, subject, observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions.RunID = strings.Repeat("a", 32)
+	sessions.Sessions.Subject.Renderer = "kmx.native-agentsessions/v1"
+	// Replaces PATH, so it runs after the git fixture.
+	kagent := suiteDiffFixtures(t)["native-kagent"]
+	kagent.Kagent.Observation.Subject.Renderer = "kmx.native-kagent/v1"
+	for mode, receipt := range map[string]*suitePassingReceipt{"native-kagent": kagent, "native-agentsessions": sessions} {
+		t.Run(mode, func(t *testing.T) {
+			receipt.Cases[0].Path = "metadata/kmx/eval/example.yaml"
+			raw, err := spec.Marshal(receipt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = parseSuitePassingReceipt(raw)
+			if !errors.Is(err, errPreviousSuiteReceipt) || !strings.Contains(err.Error(), "rerun kmx eval and kmx push") {
+				t.Fatalf("previous %s receipt error = %v", mode, err)
+			}
+		})
 	}
 }

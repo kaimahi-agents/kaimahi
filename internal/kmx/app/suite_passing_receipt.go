@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path"
 	"reflect"
 	"strings"
@@ -22,6 +23,9 @@ const suitePassingEvaluatorVersion = "kmx.text-assertions/v1"
 const suitePassingJudgeVersion = "kmx.llm-judge/v2"
 
 var errSuitePassingReceipt = errors.New("invalid native passing receipt")
+
+// errPreviousSuiteReceipt marks receipts for the old case layout.
+var errPreviousSuiteReceipt = fmt.Errorf("%w: recorded against cases under metadata/kmx/eval by an earlier kmx; rerun kmx eval and kmx push with this kmx", errSuitePassingReceipt)
 
 type suitePassingReceipt struct {
 	SchemaVersion     int                        `json:"schemaVersion"`
@@ -93,11 +97,11 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 	}
 	seen := map[string]bool{}
 	for _, file := range suite.Cases {
-		c, err := agentruntime.ParseEvaluationCase(file.Bytes)
+		c, err := workspace.DecodePackagedCase(file.Bytes)
 		if err != nil {
 			return nil, "", errors.New("invalid native evaluation case")
 		}
-		if seen[c.ID] || !suiteCasePath(file.Path) || file.Digest != "sha256:"+agentruntime.EvaluationCaseDigest(file.Bytes) {
+		if seen[c.ID] || !suiteCasePath(file.Path) || file.Path != "evals/"+suite.MemberID+"/cases/"+c.ID+".json" || file.Digest != "sha256:"+agentruntime.EvaluationCaseDigest(file.Bytes) {
 			return nil, "", errSuitePassingReceipt
 		}
 		seen[c.ID] = true
@@ -143,7 +147,8 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 			}
 			inventory = append(inventory, suitePassingInventoryCase{c, metadata})
 		}
-		files = append(files, agentruntime.EvaluationCaseFile{Name: path.Base(file.Path), Bytes: file.Bytes})
+		// Member-relative names keep cases distinct across members.
+		files = append(files, agentruntime.EvaluationCaseFile{Name: strings.TrimPrefix(file.Path, "evals/"), Bytes: file.Bytes})
 	}
 	return inventory, agentruntime.EvaluationCasesDigest(files), nil
 }
@@ -249,6 +254,11 @@ func parseSuitePassingReceipt(raw []byte) (*suitePassingReceipt, error) {
 func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 	if r == nil || r.SchemaVersion != 1 || !evaluationRunID(r.RunID) || r.Result != "pass" || r.Cases == nil {
 		return errSuitePassingReceipt
+	}
+	for _, c := range r.Cases {
+		if strings.HasPrefix(c.Path, "metadata/kmx/eval/") {
+			return errPreviousSuiteReceipt
+		}
 	}
 	switch r.ExecutionMode {
 	case "native-orka", "native-kagent":
@@ -469,6 +479,9 @@ func coherentSuitePassingSubject(s suiteNativeSubject, suite *workspace.NativeSu
 func suitePrefixedDigest(value string) bool {
 	return strings.HasPrefix(value, "sha256:") && verificationDigest(strings.TrimPrefix(value, "sha256:"))
 }
+
+// suiteCasePath accepts evals/<member>/cases/<id>.json.
 func suiteCasePath(value string) bool {
-	return strings.HasPrefix(value, "metadata/kmx/eval/") && path.Clean(value) == value && verificationIdentity(value)
+	parts := strings.Split(value, "/")
+	return len(parts) == 4 && parts[0] == "evals" && parts[1] != "" && parts[2] == "cases" && len(parts[3]) > len(".json") && strings.HasSuffix(parts[3], ".json") && path.Clean(value) == value && verificationIdentity(value)
 }
