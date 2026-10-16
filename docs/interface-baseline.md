@@ -175,8 +175,8 @@ Important limits:
 
 ## Compatibility and evidence
 
-- Latest stable v0.5.1 retains the former `kmx agent ...` routes. Root
-  create/eval/push/lift and bundle retirement are unreleased development behavior.
+- Stable v0.7.0 includes root create/eval/push/lift and legacy bundle removal.
+  Historical v0.5.1 retains the former `kmx agent ...` routes.
 - Help and completion must remain inert.
 - Unknown is not absent; readiness is not a result; a result is not evaluation.
 - Answers and report documents own stdout. Progress, warnings and notices use

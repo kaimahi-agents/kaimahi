@@ -91,14 +91,13 @@ every flag. Command definitions are in [`cmd/kmx`](../cmd/kmx).
 
 **Released in v0.5.0:** `context show/use` and `local up/down` are the canonical
 grouped commands below. Historically, v0.4.1 used `ctx [context]` and root
-`up/down`. Current development builds remove root `ctx`, `up`, `down`, the AKS `lift` alias
-and `lift down` outright, without retirement stubs. Use `context show/use`,
+`up/down`. The old context-switching `ctx` alias, root `up/down`, the AKS `lift`
+alias and `lift down` are removed outright, without retirement stubs. Use `context show/use`,
 `local up/down` and `aks up/down` for those operations.
 Everyday operations are now root `create/chat/run`, live Orka inspection is
 `orka show/list`. Legacy `bundle` commands are removed outright.
-These routes and root workspace `push` require a current development build;
-tagged v0.5.1 still uses the `agent` routes. Workspace authoring/publication
-are unreleased.
+These routes and root workspace `push` are available in v0.7.0;
+historical v0.5.1 uses the `agent` routes.
 The provisional [multi-member source](suite-workspace.md#provisional-multi-member-source-offline-only)
 format supports internal offline preparation/inventory loading only. Root workspace
 push (including `--unevaluated`), eval and workspace Lift refuse it; existing

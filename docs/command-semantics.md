@@ -3,7 +3,8 @@
 Tracking issue: [#301](https://github.com/kaimahi-agents/kaimahi/issues/301).
 The [CLI reference](kmx.md) documents the implemented interface and the
 [command conventions](command-conventions.md) govern future changes. This page
-distinguishes implemented alignment from proposed follow-ups.
+distinguishes implemented alignment from proposed follow-ups. The implemented
+alignment is available in v0.7.0; historical section names remain for stable links.
 
 ## Implemented entry-point alignment (unreleased)
 
@@ -62,8 +63,8 @@ evaluation remains unimplemented. Root digest `lift` deploys a packaged native
 suite with explicit private evidence, GET-only `--plan`, strict guarded apply and
 explicit source-only `--promote`; no model/runtime override, update or adoption. `task result` and
 `suite push DIRECTORY REFERENCE`, `suite build/diff/pull/validate` are unchanged.
-These spellings require a current development build; tagged v0.5.1 retains the
-`agent` routes. Workspace authoring/publication are unreleased. Existing operation handlers, arguments, applicable flags,
+These routes and workspace authoring/publication are available in v0.7.0;
+historical v0.5.1 retains the `agent` routes. Existing operation handlers, arguments, applicable flags,
 stdout and exit contracts are preserved; this is not a receipt or bundle migration.
 
 ## Independent evaluation helpers
