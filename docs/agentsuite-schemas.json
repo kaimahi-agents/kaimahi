@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/agent-primitives/suite",
+  "tag": "v0.1.0",
+  "commit": "6281ce09a3d7f4f2fc4b3a556d602b07eeab7ffa",
+  "sourceDirectory": "schema",
+  "files": {
+    "agent.schema.json": "ef2ce8d60d9a7f93c3c47271ca88efa2938e43ea5b47aae0817125e28d87472e",
+    "build-profile.schema.json": "9418af819b8323cab5208c30dd8e61b34532b8b91450980b09c2b61721df88df",
+    "composition.schema.json": "450a74e77b9c789b8a4314a4a49dd5720c20380b05508ede913504bcc2f391b3",
+    "eval-case.schema.json": "13cf44d9bab57ece814e1326c9bfb9e739bc07bf736aa5675757c520983130a0",
+    "eval-index.schema.json": "5731619b4eaa35db09996c2a9b0d047b72c3f8383339dbc78b9d011377cec457",
+    "suite.schema.json": "df879a7bf1836b919fe837cd84e1f195247a56d5be1f97a234c5be31c2187e4e",
+    "tool-provider-composition.schema.json": "0a66fee78089e55c604dc094ddf49caf2b4ced78b40d4ab83c9a058b2be39d75",
+    "tool-provider.schema.json": "bb5f96642b130e3288fae8c22516ee1a971699949065702e16e4f951f1de7063"
+  }
+}
