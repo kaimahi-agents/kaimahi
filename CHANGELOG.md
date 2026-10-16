@@ -22,85 +22,6 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
-### Breaking
-
-- AgentSuite draft schema: every suite-local content reference (`Suite.agents`,
-  `Suite.toolProviderCatalog`, `Suite.buildProfiles`, `ToolProviderCatalog.toolProviders`,
-  `Suite.compositions`, `Suite.toolProviderCompositions`, `Agent.instructions`,
-  `Agent.evals`, `EvaluationIndex.cases`, and `Tool.inputSchema`/`outputSchema`)
-  now carries a named, nested `descriptor` property — an OCI-compatible
-  descriptor of `{mediaType, digest, size, annotations?}` — instead of flat
-  `path`+`digest` fields. `size` is now required and distinct from an omitted
-  field (a present `size: 0` is valid; a missing `size` is rejected).
-  `manifestDigest`/`variantDigest`-style computed identities (tool provider
-  compositions, resolved tool providers, bundle dependencies) and inventory
-  entry digests are unaffected: they remain plain scalar digest strings, since
-  they do not name a separate referenced file. This is an intentional breaking
-  change to the still-draft (`1.0.0-draft`) schema; there is no migration path
-  or back-compat reader. ([#496](https://github.com/kaimahi-agents/kaimahi/issues/496))
-
-  Before:
-  ```json
-  {"id": "datetime", "path": "tool-providers/datetime/1.0.0/tool-provider.json",
-   "digest": "sha256:aaaa...aaaa"}
-  ```
-  After:
-  ```json
-  {"id": "datetime", "path": "tool-providers/datetime/1.0.0/tool-provider.json",
-   "descriptor": {
-     "mediaType": "application/vnd.agentsuite.tool.provider.v1+json",
-     "digest": "sha256:aaaa...aaaa",
-     "size": 1234
-   }}
-  ```
-
-- A content reference whose descriptor binds JCS-canonical identity (agent,
-  tool provider, tool provider catalog, composition, tool provider
-  composition, build profile, evaluation index, and evaluation case
-  manifests) now requires the referenced file to be stored on disk as its
-  exact RFC 8785 JCS canonical bytes. Validation previously accepted any
-  on-disk formatting (for example pretty-printed JSON) as long as `digest`
-  and `size` described the canonical form; it now rejects a stored document
-  whose bytes are not already identical to that canonical re-serialization.
-  Suites with differently formatted but semantically equivalent stored JSON
-  for these references must be re-serialized to canonical bytes; there is no
-  migration path or back-compat reader. ([#496](https://github.com/kaimahi-agents/kaimahi/issues/496))
-
-- Root workspace push requires completed exact-S passing evidence by default.
-  Use --unevaluated to explicitly retain ordinary publication; explicit
-  --evaluation FILE overrides managed lookup without fallback. Extracted-directory
-  suite push is unchanged.
-
-- Judge evidence now binds its request style; older judge receipts without it
-  require fresh evaluation. Text-only receipts remain unchanged.
-
-- Suites packaged by v0.6.0 no longer validate as packaged suites, and their
-  passing receipts are refused by `push`, `lift` and `eval diff` with
-  `rerun kmx eval and kmx push`. There is no migration reader.
-
-- Case IDs within a member must differ by more than letter case, and
-  `contains`/`notContains` values and tool names must not contain Unicode line
-  or paragraph separators.
-
-### Fixed
-
-- Orka result access (`kmx eval`, `run`, workspace `lift --to`, chat and
-  quickstart) now lets kubectl choose and retain a free IPv4 loopback port instead
-  of defaulting to 19180. Explicit `--result-port` values are honored without
-  fallback; bind/startup failures report a result-port problem rather than an
-  unknown evaluation. Evidence is independent of the temporary port number.
-  ([#527](https://github.com/kaimahi-agents/kaimahi/issues/527))
-
-- Use one modern judge request shape (`max_completion_tokens`, no temperature
-  override), also verified against the pinned AIKit/LocalAI image. No retry,
-  provider inference or request-style flag is added. Returned model identity
-  accepts only the exact authored model or exact model-plus-hyphen-version;
-  evidence records the matching form for each score.
-
-- `kmx local up` works with Helm 4: the Orka release preflight omits the removed
-  `helm list --all` flag on Helm 4+ (which lists every status) and keeps it on
-  Helm 3 or when the version cannot be read. ([#504](https://github.com/kaimahi-agents/kaimahi/issues/504))
-
 ### Added
 
 - Provisional KMX-local `schemaVersion: 2` member-list source supports bounded,
@@ -114,144 +35,44 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   semantics are added.
   Authoring remains provisional pending [#526](https://github.com/kaimahi-agents/kaimahi/issues/526).
 
-- Terminal `kmx create NAME` prompts for omitted exact model and instructions-file
-  inputs before offline authoring. Partial flags are preserved; explicitly blank
-  flags and incomplete responses refuse without creating source. Nonterminal use
-  still requires both flags. No model defaults, provider discovery, runtime
-  bootstrap or new config fields are added; core authoring stays strict.
+## v0.7.0 — 2026-10-15
 
-- No-reference `kmx lift --to NAME` composes missing Orka workspace evaluation,
-  exact-version publication and Lift from one frozen plan, with automatic disclosed
-  source-only promotion and one scoped confirmation. Private exact-version
-  completion observations support GET-only skips, never adoption/update/repair;
-  evaluated root registry push also registers publication for later composition.
-  Default output is four stage lines; verbose/JSON retains details and partial
-  outcomes. Requires saved publishRepository and destination evaluationTarget;
-  explicit digest Lift remains independent and evidence-required.
+### Added
 
-- AgentSessions development-host eval supports authored `llmJudge` and
-  `runs`/`minPasses` through the same judge/repeat policy as Orka/kagent. Each
-  run creates a fresh Session/config/Exec; judging shares its deadline, unknown
-  vetoes a threshold, and execution errors abort without retry. Full passing
-  receipts retain actual run outcomes and exact-S publication checks. Default
-  single-run text receipt bytes are unchanged; older readers refuse the newly
-  supported judged/repeated proof. Host observations remain unauthenticated;
-  tools, remote hosts, Lift and receipt diff remain unsupported for Sessions.
+- Terminal `kmx create NAME` prompts for missing model and instructions-file inputs; nonterminal use still requires both flags, and blank inputs refuse.
+- Named workspace destinations support `eval/lift --to NAME`; `kmx ctx [--check]` lists them without switching context.
+- Root Orka/kagent eval supports `llmJudge` assertions with an explicit judge endpoint and two independent scores.
+- Cases support repeated runs and pass thresholds with `runs`/`minPasses`; any unknown result vetoes a pass.
+- Orka eval uses disposable candidates; leftovers are reported, never auto-deleted, and `kmx eval cleanup` requires confirmation to delete a selected run.
+- Root eval saves private passing evidence automatically, with optional `--out`; push picks up matching evidence.
+- Orka `kmx lift --to NAME` composes eval → push → Lift with exact-version skips, one confirmation and four default output lines.
+- AgentSessions development-host eval supports judged and repeated cases; its proof supports push, not Lift or receipt diff.
+- Native suites now package authored cases as public AgentSuite evaluations under `evals/<member>/`; YAML authoring stays unchanged.
 
-- Root eval stores completed runtime-specific passing metadata in private KMX state;
-  --out is optional and still exports a standalone receipt for Lift/diff. Immutable
-  per-workspace/per-S completion records embed canonical receipts, select latest
-  by per-S sequence and commit only after evaluation/Orka cleanup/finalization.
-  Capacity is checked before new eval effects without blocking push from existing
-  proof. Post-link errors disclose saved proof and persistence uncertainty. OS-held
-  workspace exclusion releases on process exit; no stale-lock deletion or cleanup
-  journal. Explicit push REPO:TAG stays unchanged; only bare push uses saved
-  publishRepository and derives `s-<full-S-hex>`. Tag-based Lift remains unavailable.
+### Fixed
 
-- Public Orka workspace eval uses fresh digest/run candidates, never adoption,
-  update or reuse, and exports passing evidence only after verified UID/RV-safe
-  cleanup and owner-UID child absence. Startup reports possible leftovers only.
-  `kmx eval cleanup [run-id] --to NAME` lists without a run; selecting one full
-  run previews UIDs and requires confirmation even locally. Unattributable
-  orphans refuse. Candidate evidence needs standalone Lift `--promote` even in
-  the same environment; private Quickstart/console and other runtimes are unchanged.
-  No cleanup journal, lease, automatic sweep or publication blockade.
+- Orka result access selects a free loopback port automatically; explicit `--result-port` values are honored without fallback and startup failures name the port problem.
+- Judge requests use `max_completion_tokens`, no temperature override, and exact model/version matching.
+- `kmx local up` works with Helm 4 while retaining Helm 3 support.
 
-- Native Orka/kagent workspace cases accept optional KMX `runs`/`minPasses`.
-  Default one run; omitted threshold requires all declared runs. Each run uses
-  a fresh Task with its own configured deadline; repeat preflight prints the
-  total run-time budget excluding placement. Any unknown vetoes a pass;
-  execution errors still abort. Private evidence records complete per-run
-  verdicts and threshold, with unchanged default one-run encoding. Upgrade
-  readers before exchanging repeat receipts; repeat fields follow [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions),
-  including positive integers and `minPasses` requiring `runs`. KMX-private
-  YAML/receipts remain separate from the spec's embedded JSON format.
+### Breaking
 
-- A draft docs-as-code website renders the existing README, maintained guides,
-  and AgentSuite specification directly with responsive navigation, local search,
-  dark mode, a keyboard-accessible journey chooser and an explicit `main` versus
-  stable-release boundary. `make docs-preview` serves it locally, CI builds and
-  tests every route, and a keyless main-only workflow publishes the same output
-  at `https://kaimahi-agents.github.io/kaimahi/`. Generated output stays
-  untracked; no repository secret, CLI, runtime or agent deployment behavior is
-  added. [Documentation site](docs/docs-site.md).
-
-- AgentSuite draft evaluation storage: producers SHOULD embed optional
-  `evals/<agent>/index.json` and ordered JSON cases, JCS-bound through the
-  agent manifest. The public model, closed schemas and offline validator
-  support KMX-compatible authored assertion fields and explicit non-critical
-  extension types, plus optional per-case `runs` and `minPasses` policy,
-  rejecting malformed, orphaned or mismatched evaluations.
-  No-evaluation suites remain conformant. Results stay external with exact-suite
-  OCI association; validation does not execute cases.
-
-- Root `kmx eval` supports authored `llmJudge` assertions on packaged Orka/kagent
-  suites with explicit `--judge-base-url` and optional `--judge-key-env`.
-  Two independent samples must agree on the threshold side;
-  unavailable, malformed or split outcomes are unknown and export no passing
-  receipt. Judgment shares each run's deadline, with attribution checked
-  afterward. Preflight states the two-request cost and data transfer.
-  Private receipts bind declared judge model/version, policy, threshold, endpoint
-  configuration hash and both scores; reasoning and raw judge URLs stay out of
-  receipts and terminal recovery commands. Text-only receipts are unchanged;
-  upgrade readers before exchanging judge receipts. The existing native Orka CI
-  shard includes one open-ended rubric
-  case alongside its two text cases, reusing the pinned AIKit workload and existing
-  timeout budgets. Runner tests validate owned-forward cleanup and independently
-  check the declared judge identity/configuration and both receipt scores.
-  Hermetic tests alone are not live semantic judge proof.
-  [Suite judge configuration](docs/suite-workspace.md#evaluate-the-whole-workspace)
-
-- Named workspace destinations in optional, credential-free `kmx.yaml` supply
-  selectors to `eval/lift --to NAME`. Explicit invocation flags override saved
-  fields; values resolve once and cannot be redirected by later config edits.
-  Runtime remains package-owned. Eval may use saved `evalTarget`; digest Lift
-  never guesses a destination, and explicit-reference Lift without `--to`
-  remains workspace-independent. Root workspace push and named Lift can use an
-  exact-host registry HTTP policy, with explicit false overriding it. Existing
-  evidence, promotion, remote guards and registry authentication remain unchanged.
-- Root `kmx ctx` returns after its removal in v0.6.0, with new list-only
-  `ctx [--check] [-o table|json]` semantics for named destinations, not a
-  current/default selection. The old context-switching alias remains removed:
-  `ctx <context>` and `ctx use <name>` are still refused. Optional checks read
-  local context names and anonymous registry reachability; they are not
-  runtime/inference readiness or evaluation proof. `kmx targets` remains the
-  separate runtime-capability view. Composed Lift is Orka-only;
-  kagent remains excluded until its candidate cleanup is qualified.
-
-### Changed
-
-- Native suites package authored cases as public AgentSuite evaluations:
-  `evals/<member>/index.json` plus one canonical JSON case per case ID, bound
-  through the member's agent manifest. Authoring (`eval/*.yaml`), evaluation
-  order and assertion identities are unchanged. Cases now change the public
-  graph digest as well as the suite digest. Renaming an authored case file
-  changes the packaged suite only if it changes file-name order. Private native metadata no longer lists
-  cases. One-member native artifacts accept up to 136 files (one index plus
-  128 cases); the shared reader also admits bounded offline multi-member inventories
-  up to 196 files. Earlier private-case packages and receipts are not dual-read.
+- AgentSuite content references now require OCI-style descriptors; older extracted suites are not compatible.
+  **Instead:** regenerate suites with current tooling or update their references as described in the [upgrade guide](docs/releases.md#upgrading-from-v060).
+- v0.6.0 suites and receipts are refused with a named reason; there is no migration reader.
+  **Instead:** rerun `kmx eval` and `kmx push`.
+- Case IDs within a member must differ by more than letter case; `contains`/`notContains` values and tool names cannot contain Unicode line/paragraph separators.
+  **Instead:** rename colliding case IDs and replace those separators in `contains`/`notContains` values or tool names.
+- Root workspace push requires matching passing evidence by default.
+  **Instead:** run eval first, supply `--evaluation FILE`, or explicitly opt out with `--unevaluated`.
+- Judge receipts now bind the request style and older judge proof is refused.
+  **Instead:** evaluate again to generate fresh evidence.
 
 ### Upgrading
 
-- Run root eval once to register exact-S managed proof before ordinary root push,
-  or keep selecting existing standalone receipts with --evaluation FILE. Scripts
-  intentionally publishing without proof must add --unevaluated. Old receipts are
-  not automatically imported. Bare push needs publishRepository; explicit tags
-  and standalone Lift digest/evidence requirements remain unchanged.
-
-- Re-run `kmx eval` for judge-bearing workspaces with a fresh private `--out`
-  path. Do not rewrite older judge receipts to add the new style binding.
-
-- Rerun `kmx eval` and `kmx push` for native workspaces; do not move packaged
-  case files by hand. Authored `eval/*.yaml` stays where it is.
-
-- Optionally add workspace-root `kmx.yaml` for named destinations and use
-  `kmx ctx` to list them, then `eval/lift --to NAME`. No default/current Lift
-  selection or context switch is introduced. Existing explicit selectors work
-  without config. Eval --out and the push reference are optional; keep supplying
-  explicit-reference Lift digest/--evidence. No-reference Orka workspace Lift
-  additionally requires destination evaluationTarget and saved publishRepository.
-  See [named destinations](docs/suite-workspace.md#named-destinations).
+- Bare push needs saved `publishRepository`; composed Orka Lift also needs the destination's `evaluationTarget`.
+- Standalone digest Lift needs `--promote` for disposable candidate evidence, even in the same environment; composed Lift discloses that promotion.
+- Upgrade readers before exchanging judged/repeated evidence; existing files and deployed resources are not automatically migrated or deleted.
 
 ## v0.6.0 — 2026-10-14
 

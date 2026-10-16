@@ -5,8 +5,8 @@ version is numbered, how to install one, how to check what you got, how to
 upgrade, and what happens when an upgrade goes wrong.
 
 `@latest` and the installer's default select the newest stable tagged release;
-v0.5.1 includes the Orka v0.2.0 Helm installer, Kubernetes Tool and bundle
-lifecycle commands. Pin `@v0.5.1` for a repeatable build; `@main` is the moving
+v0.7.0 includes native suite evaluation, publication and Lift, with the
+Orka v0.2.0 Helm installer. Pin `@v0.7.0` for a repeatable build; `@main` is the moving
 development option. Orka's own installation and upgrade limits are separate:
 see [orka.md](orka.md). This release pins the **Orka v0.2.0** chart; the
 historical Kaimahi v0.2.0 release reported Orka v0.1.3.
@@ -66,7 +66,7 @@ Orka runtime pins are independent of kmx tags:
 
 | kmx build | Orka install | Offline schema target |
 |---|---|---|
-| Kaimahi v0.5.1 release | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
+| Kaimahi v0.7.0 release | v0.2.0 verified Helm chart, harness-v2 (`fullnameOverride=orka-api`) | v0.2.0 by default; explicit v0.1.3 or old `main` snapshot still readable |
 | Historical Kaimahi v0.2.0 release | v0.1.3 pinned manifest | historical behavior; not an upgrade path to the current chart |
 
 There is no 1.0 promise and no support window yet. What there is: CI refuses
@@ -108,7 +108,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 
 It resolves the latest tag, downloads the binary for your platform, verifies
 its published sha256 **before** installing it, and puts it in `~/.local/bin`
-without sudo. `KMX_VERSION=v0.5.1` pins this release; `KMX_BIN_DIR=DIR`
+without sudo. `KMX_VERSION=v0.7.0` pins this release; `KMX_BIN_DIR=DIR`
 installs elsewhere. `install.sh --quickstart` installs the latest release and
 then launches the non-interactive Orka quickstart. An explicit v0.1.0
 `--quickstart` is still refused because that release predates Orka.
@@ -120,7 +120,7 @@ go install github.com/kaimahi-agents/kaimahi/cmd/kmx@latest
 ```
 
 `@latest` is the newest tagged release. Pin instead when you want a build you
-can name: `@v0.5.1`. Both go through the public Go module proxy and the Go
+can name: `@v0.7.0`. Both go through the public Go module proxy and the Go
 checksum database, so the bytes you get are the bytes the sum database
 recorded — no namespace of ours is involved, and there is nothing new to
 trust.
@@ -131,7 +131,7 @@ trust.
 preference. Every release carries binaries and a `checksums.txt`:
 
 ```bash
-version=v0.5.1
+version=v0.7.0
 base=https://github.com/kaimahi-agents/kaimahi/releases/download/$version
 curl -fsSLO "$base/kmx-linux-amd64"
 curl -fsSLO "$base/checksums.txt"
@@ -171,7 +171,7 @@ it still requires the external tools described in [getting started](getting-star
 
 ```console
 $ kmx version
-kmx v0.5.1 (release build)
+kmx v0.7.0 (release build)
   kaimahi is pre-1.0 and incubating: minor versions may break behaviour, and say so in CHANGELOG.md
   orka     v0.2.0
   model    qwen2.5:3b
@@ -183,12 +183,51 @@ from:
 
 | First line says | You have |
 |---|---|
-| `v0.5.1 (release build)` | a binary from the release for `v0.5.1` |
-| `v0.5.1 (installed with go install)` | `go install …@v0.5.1` — the same code, built on your machine |
+| `v0.7.0 (release build)` | a binary from the release for `v0.7.0` |
+| `v0.7.0 (installed with go install)` | `go install …@v0.7.0` — the same code, built on your machine |
 | `v0.0.0-2026…-fb456eb (development build from a checkout)` | a `go build` from a clone; not a release |
 | `v0.0.0-dev+fb456eb.dirty (development build from a MODIFIED checkout)` | a clone with uncommitted changes |
 
 ## Upgrading kmx
+
+### Upgrading from v0.6.0
+
+Keep authored workspace source, including `eval/*.yaml`. Native suite
+preparation now packages those authored cases as public AgentSuite evaluations
+under `evals/<member>/`: an index and one JSON file per case ID, bound through
+the member's agent manifest. Do not move packaged case files by hand.
+Case IDs within a member must differ by more than letter case; rename any
+collisions before preparing again. `contains`/`notContains` values and tool names
+must not contain Unicode line or paragraph separators.
+
+AgentSuite content references now use nested OCI-style descriptors with
+`mediaType`, `digest` and required `size`, rather than a flat digest.
+Referenced normative AgentSuite JSON manifests must be stored as their exact
+RFC 8785 JCS canonical bytes. Instructions and Tool `inputSchema`/`outputSchema`
+files instead bind their literal bytes; preserve those bytes when updating
+their descriptors. For existing extracted suites, regenerate them with current
+tooling or update descriptors and canonicalize only the normative manifests,
+recomputing affected parent descriptors before rebuilding. There is no
+compatibility reader or automated migration; see the
+[AgentSuite format](../agentsuite/spec.md).
+
+All three native renderers changed from v1 to v2, and public case packaging
+changes the graph and suite identities. Suites packaged by v0.6.0 are refused
+as packaged by an earlier kmx; their passing receipts are refused by push,
+Lift and receipt diff as recorded against earlier private case paths. Both
+refusals name the remedy: rerun `kmx eval` and `kmx push` with this kmx.
+There is no migration reader; never rewrite old receipts to match new identities.
+Older judge receipts also require fresh evaluation because they lack the
+request-style binding.
+
+Root push now requires matching completed evidence by default. Run eval first,
+select a standalone receipt with `--evaluation FILE`, or explicitly opt out
+with `--unevaluated`. Existing receipts are not automatically imported.
+Bare push needs saved `publishRepository`; explicit repository tags remain
+supported. Neither upgrading nor regenerating proof deletes saved files or
+deployed resources.
+
+### Earlier workflow changes
 
 v0.6.0 replaces the legacy user-bundle workflow with one-member, tool-free
 workspaces. The `kmx agent` group, `bundle` commands, user `agent.yaml`
@@ -201,20 +240,35 @@ then review the instructions and cases. Create, eval and push discover the neare
 initializes that root without prompting; nonterminal initialization requires it.
 Invalid nearest markers and a second member refuse without modifying source.
 
-Evaluate the full workspace with `kmx eval`, explicit `--to-context` and
-a new private `--out` receipt. Orka uses a Ready `openai` Provider serving the
-exact model (`--inference provider:NAME`); exact-v0.10.3 Go/linux-amd64 kagent
-uses author-owned `--bindings FILE`. Publish with
-`kmx push --evaluation FILE REF`, which requires full-passing evidence for
-that exact packaged suite. Ordinary push remains unevaluated.
+Evaluate the full workspace with `kmx eval` and explicit `--to-context`
+or a named `--to` destination. Orka uses a Ready `openai` Provider serving
+the exact model (`--inference provider:NAME`); exact-v0.10.3 Go/linux-amd64
+kagent uses author-owned `--bindings FILE`. Eval registers private passing
+evidence; optional `--out FILE` exports a standalone receipt. Root push
+consumes matching completed evidence, or an explicit `--evaluation FILE`.
+
+Public Orka eval creates disposable candidates and exports evidence only after
+verified cleanup. Possible leftovers are reported, never automatically swept;
+`kmx eval cleanup` lists them and selecting a full run requires confirmation
+before deletion. Private Quickstart/console placement remains separate.
 
 Deploy with `kmx lift REF@sha256:DIGEST`, explicit `--evidence FILE`,
 `--to-context` and the matching runtime's inference/bindings selector.
-Orka can reuse exact evaluated resources; kagent creates new resources only
-and refuses occupied targets. `--plan` is GET-only; `--promote` explicitly
-permits a matching destination using source-only evidence, not destination
-evaluation. Lift does not update, adopt, run a model or roll back partial
-creation. Standalone registry-package evaluation remains unavailable.
+`--plan` is GET-only. Candidate-derived Orka evidence requires explicit
+`--promote` even in the same environment: it is source-only evidence, not
+destination evaluation. The destination must be absent; this is not reuse of
+deleted candidates. Other receipt-bound Orka placement can reuse exact evaluated
+resources; kagent creates new resources only and refuses occupied targets.
+Lift does not update, adopt, run a model or roll back partial creation.
+Standalone registry-package evaluation remains unavailable.
+
+Alternatively, no-reference Orka `kmx lift --to NAME` composes missing
+evaluation, publication and Lift from one frozen workspace plan. It requires
+saved `publishRepository` and the destination's `evaluationTarget`, discloses
+source-only promotion, uses one scoped confirmation and emits four default
+stage lines. Exact-version observations allow read-only skips, not repair or
+adoption. Composed kagent Lift remains unsupported. Explicit-reference Lift
+still requires a digest, never a tag.
 
 Pinned AgentSessions chat is a separate offline packaging and
 `eval --development-host FILE` route, with no cluster selectors. It requires
@@ -230,7 +284,7 @@ Replace removed commands as follows:
 | `kmx agent chat/run` | Root `kmx chat` / `kmx run --agent NAME` for independent live Orka Agents |
 | `kmx agent show/list` | `kmx orka show/list` |
 | Workspace `kmx suite push` | `kmx push [--workspace DIR] REF`; extracted-directory transfer remains |
-| `kmx ctx`, root `up/down` | `kmx context show/use`, `kmx local up/down` |
+| Context-switching `kmx ctx`, root `up/down` | `kmx context show/use`, `kmx local up/down`; new `kmx ctx [--check]` only lists named destinations |
 | Infrastructure `kmx lift/lift down` | `kmx aks up/down`; root digest Lift is deployment only |
 | Chat `/lift` / old console Lift | Root digest Lift with explicit evidence; console creation separately composes the native workflow |
 | Chat/quickstart `--azure-discovery` | Explicit destination context; provision AKS separately with `kmx aks up` |
@@ -247,7 +301,7 @@ only with a historical release that understands it. See the
 Use `@latest` for the latest stable release, or pin the version you want:
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.6.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.7.0
 kmx version
 ```
 
