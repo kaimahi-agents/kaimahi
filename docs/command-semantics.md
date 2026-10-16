@@ -63,6 +63,10 @@ evaluation remains unimplemented. Root digest `lift` deploys a packaged native
 suite with explicit private evidence, GET-only `--plan`, strict guarded apply and
 explicit source-only `--promote`; no model/runtime override, update or adoption. `task result` and
 `suite push DIRECTORY REFERENCE`, `suite build/diff/pull/validate` are unchanged.
+`suite policy FILE [--administrative-policy FILE]` resolves portable policy
+offline and prints canonical effective-policy bytes plus their digest; it does
+not authenticate, authorize, select or invoke an enforcement provider. See the
+[portable policy contract](portable-policy.md).
 These routes and workspace authoring/publication are available in v0.7.0;
 historical v0.5.1 retains the `agent` routes. Existing operation handlers, arguments, applicable flags,
 stdout and exit contracts are preserved; this is not a receipt or bundle migration.
