@@ -13,6 +13,7 @@ import (
 
 func releaseApplyFixture(t *testing.T, absent string) (*App, *nativeReadFixture, ReleaseLiftOptions, string) {
 	t.Helper()
+	t.Setenv("KMX_HOME", t.TempDir())
 	a, f, opt, native := releaseLiftFixture(t)
 	dir := os.Getenv("KMX_RECONCILE_DIR")
 	t.Setenv("KMX_RECONCILE_UID_SUFFIX", "-new")

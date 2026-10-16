@@ -49,7 +49,80 @@ func preflightReleaseLiftStorage(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return w.Close()
+	return errors.Join(w.probePersistence(ctx), w.Close())
+}
+
+// An existing writable lock does not prove the directory permits new records.
+// Probe the actual mkdir/write/sync boundary before composed evaluation spend.
+func (w *releaseLiftRecordWriter) probePersistence(ctx context.Context) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	name, err := randomHex(16)
+	if err != nil || w.root.Mkdir(name, 0700) != nil {
+		return releaseLiftRecordError("storage creation probe failed")
+	}
+	owned, err := w.root.Lstat(name)
+	if err != nil {
+		return releaseLiftRecordError("storage probe identity uncertain")
+	}
+	var child *os.Root
+	var fileInfo os.FileInfo
+	defer func() {
+		cleanupFailed := false
+		if child != nil {
+			if fileInfo != nil {
+				current, e := child.Lstat("probe")
+				if e != nil || !os.SameFile(current, fileInfo) || child.Remove("probe") != nil {
+					cleanupFailed = true
+				}
+			}
+			if child.Close() != nil {
+				cleanupFailed = true
+			}
+		}
+		current, e := w.root.Lstat(name)
+		if e != nil || !os.SameFile(current, owned) || w.root.Remove(name) != nil {
+			cleanupFailed = true
+		}
+		dir, e := w.root.Open(".")
+		if e != nil {
+			cleanupFailed = true
+		} else if errors.Join(dir.Sync(), dir.Close()) != nil {
+			cleanupFailed = true
+		}
+		if cleanupFailed {
+			err = errors.Join(err, releaseLiftRecordError("storage probe cleanup uncertain"))
+		}
+	}()
+	child, err = w.root.OpenRoot(name)
+	if err != nil {
+		return releaseLiftRecordError("storage probe open failed")
+	}
+	opened, openErr := child.Stat(".")
+	current, currentErr := w.root.Lstat(name)
+	if openErr != nil || currentErr != nil || !os.SameFile(owned, opened) || !os.SameFile(owned, current) {
+		return releaseLiftRecordError("storage probe directory changed")
+	}
+	file, err := child.OpenFile("probe", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return releaseLiftRecordError("storage write probe failed")
+	}
+	fileInfo, err = file.Stat()
+	_, writeErr := file.Write([]byte("{}"))
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	if errors.Join(err, writeErr, syncErr, closeErr) != nil {
+		return releaseLiftRecordError("storage persistence probe failed")
+	}
+	dir, err := child.Open(".")
+	if err != nil {
+		return releaseLiftRecordError("storage directory probe failed")
+	}
+	if errors.Join(dir.Sync(), dir.Close()) != nil {
+		return releaseLiftRecordError("storage directory sync probe failed")
+	}
+	return ctx.Err()
 }
 
 func openReleaseLiftStorage(ctx context.Context) (_ *releaseLiftRecordWriter, err error) {

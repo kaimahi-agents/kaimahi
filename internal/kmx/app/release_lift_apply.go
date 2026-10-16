@@ -211,11 +211,17 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 		worker.kagentProfile = &profile
 	}
 	created := make([]releaseLiftEffect, 2)
+	var docs []map[string]any
 	recheck := func() error {
 		if err := worker.recheckReleaseLiftInputs(ctx, p); err != nil {
 			return err
 		}
-		return worker.checkReleaseLiftRuntimeLeaves(ctx, p, created)
+		if err := worker.checkReleaseLiftRuntimeLeaves(ctx, p, created); err != nil {
+			return err
+		}
+		// Acknowledged creates retain provenance through readiness and every
+		// later effect boundary, not only the final pair readback.
+		return worker.verifyReleaseLiftProvenance(ctx, p, docs, result)
 	}
 	if err := recheck(); err != nil {
 		return result, err
@@ -227,7 +233,7 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 	if err := recheck(); err != nil {
 		return result, err
 	}
-	docs, err := p.releaseDocuments()
+	docs, err = p.releaseDocuments()
 	if err != nil {
 		return result, err
 	}

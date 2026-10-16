@@ -146,7 +146,7 @@ func TestReleaseLiftProvenanceReadbackTampering(t *testing.T) {
 	if err == nil || result.State == "ready" {
 		t.Fatalf("missing readback provenance granted success: %+v %v", result, err)
 	}
-	if len(persistentOrkaCalls(t, dir)) != 2 {
-		t.Fatal("tampering retried creates")
+	if len(persistentOrkaCalls(t, dir)) != 1 || result.Resources[1].Outcome != "not-attempted" {
+		t.Fatal("Provider provenance drift allowed Agent creation")
 	}
 }
