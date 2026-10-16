@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
@@ -106,7 +106,7 @@ func cached(ctx context.Context, key string, s *snapshot) (*Prepared, error) {
 		return nil, fmt.Errorf("incomplete/corrupt prepared cache: %w", err)
 	}
 	var rec cacheRecord
-	if err := spec.Unmarshal(b, &rec); err != nil {
+	if err := agentsuite.Unmarshal(b, &rec); err != nil {
 		return nil, err
 	}
 	if rec.Fingerprint != s.fingerprint || rec.Name != s.name {
@@ -190,7 +190,7 @@ func Prepare(ctx context.Context, root, cacheDir string) (*Prepared, error) {
 	if err := Verify(ctx, p); err != nil {
 		return nil, err
 	}
-	record, err := spec.Marshal(cacheRecord{p.Fingerprint, p.Descriptor, p.Name})
+	record, err := agentsuite.Marshal(cacheRecord{p.Fingerprint, p.Descriptor, p.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +239,7 @@ func verify(ctx context.Context, p *Prepared) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if p == nil || !spec.IsValidDigest(p.Fingerprint) {
+	if p == nil || !agentsuite.IsValidDigest(p.Fingerprint) {
 		return nil, errors.New("valid prepared artifact identity is required")
 	}
 	root, err := safeAbsolute(p.Path)
@@ -249,7 +249,7 @@ func verify(ctx context.Context, p *Prepared) (map[string][]byte, error) {
 	if err := privateTree(root, false); err != nil {
 		return nil, err
 	}
-	if _, err := spec.ValidatePath(root); err != nil {
+	if _, err := agentsuite.ValidatePath(root); err != nil {
 		return nil, err
 	}
 	r, err := os.OpenRoot(root)
@@ -262,7 +262,7 @@ func verify(ctx context.Context, p *Prepared) (map[string][]byte, error) {
 		return nil, err
 	}
 	var index ocispec.Index
-	if err := spec.Unmarshal(b, &index); err != nil {
+	if err := agentsuite.Unmarshal(b, &index); err != nil {
 		return nil, err
 	}
 	if len(index.Manifests) != 1 || !content.Equal(index.Manifests[0], p.Descriptor) || index.Manifests[0].ArtifactType != p.Descriptor.ArtifactType {

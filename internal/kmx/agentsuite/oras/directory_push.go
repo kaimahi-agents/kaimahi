@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content/oci"
@@ -27,7 +27,7 @@ type PushResult struct {
 	Reference  string
 	Updated    bool
 	Descriptor ocispec.Descriptor
-	Report     *spec.Report
+	Report     *agentsuite.Report
 	// Provenance is set for registry pushes only; a layout holds one manifest.
 	Provenance *Provenance
 	Warnings   []string
@@ -134,34 +134,34 @@ func Push(
 func packDirectory(
 	ctx context.Context,
 	source string,
-) (string, *oci.Store, agentsuite.PackResult, error) {
+) (string, *oci.Store, kmxsuite.PackResult, error) {
 	sourceRoot, err := os.MkdirTemp("", "agentsuite-source-cas-*")
 	if err != nil {
-		return "", nil, agentsuite.PackResult{}, err
+		return "", nil, kmxsuite.PackResult{}, err
 	}
 	defer os.RemoveAll(sourceRoot)
 	sourceStore, err := oci.New(sourceRoot)
 	if err != nil {
-		return "", nil, agentsuite.PackResult{}, fmt.Errorf("create AgentSuite source CAS: %w", err)
+		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("create AgentSuite source CAS: %w", err)
 	}
 	contentDescriptor, err := pushDirectory(ctx, source, sourceStore)
 	if err != nil {
-		return "", nil, agentsuite.PackResult{}, fmt.Errorf("archive AgentSuite directory: %w", err)
+		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("archive AgentSuite directory: %w", err)
 	}
 
 	packedRoot, err := os.MkdirTemp("", "agentsuite-packed-*")
 	if err != nil {
-		return "", nil, agentsuite.PackResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)
+		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)
 	}
 	packedStore, err := oci.New(packedRoot)
 	if err != nil {
 		_ = os.RemoveAll(packedRoot)
-		return "", nil, agentsuite.PackResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)
+		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)
 	}
 	packed, err := New(nil).Pack(ctx, sourceStore, packedStore, contentDescriptor)
 	if err != nil {
 		_ = os.RemoveAll(packedRoot)
-		return "", nil, agentsuite.PackResult{}, err
+		return "", nil, kmxsuite.PackResult{}, err
 	}
 	return packedRoot, packedStore, packed, nil
 }
@@ -191,7 +191,7 @@ func pathWithin(parent, candidate string) bool {
 func pushDirectory(
 	ctx context.Context,
 	root string,
-	dst agentsuite.Pusher,
+	dst kmxsuite.Pusher,
 ) (ocispec.Descriptor, error) {
 	if dst == nil {
 		return ocispec.Descriptor{}, errors.New("AgentSuite directory destination is required")
@@ -266,7 +266,7 @@ func pushDirectory(
 		return ocispec.Descriptor{}, err
 	}
 	descriptor := ocispec.Descriptor{
-		MediaType: spec.MediaTypeContent,
+		MediaType: agentsuite.MediaTypeContent,
 		Digest:    digest,
 		Size:      size,
 	}

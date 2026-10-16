@@ -16,7 +16,7 @@ import (
 func TestPreparedPushPreservesEvaluatedDescriptorAfterSourceEdits(t *testing.T) {
 	ctx := context.Background()
 	source := filepath.Join(t.TempDir(), "suite")
-	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), source)
 	prepared := filepath.Join(t.TempDir(), "prepared")
 	original, err := Push(ctx, source, prepared, "prepared")
 	if err != nil {
@@ -52,7 +52,7 @@ func TestPreparedRegistryPushPreservesDescriptorAndTagPolicy(t *testing.T) {
 	defer server.Close()
 	t.Setenv("DOCKER_CONFIG", t.TempDir())
 	source := filepath.Join(t.TempDir(), "suite")
-	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), source)
 	prepared := filepath.Join(t.TempDir(), "prepared")
 	original, err := Push(ctx, source, prepared, "prepared")
 	if err != nil {
@@ -142,7 +142,7 @@ func TestPreparedRegistryPushSharesProvenancePolicy(t *testing.T) {
 func TestPreparedPushRefusesUnexpectedDescriptorBeforeDestinationWrites(t *testing.T) {
 	ctx := context.Background()
 	source := filepath.Join(t.TempDir(), "suite")
-	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), source)
 	prepared := filepath.Join(t.TempDir(), "prepared")
 	original, err := Push(ctx, source, prepared, "prepared")
 	if err != nil {

@@ -3,7 +3,7 @@ package agentsuite
 import (
 	"context"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -13,13 +13,13 @@ type Validator interface {
 		context.Context,
 		ReadOnlyStorage,
 		ocispec.Descriptor,
-	) (*spec.Report, error)
+	) (*agentsuite.Report, error)
 }
 
 // PackResult identifies a packed AgentSuite and reports its validated contents.
 type PackResult struct {
 	Descriptor ocispec.Descriptor
-	Report     *spec.Report
+	Report     *agentsuite.Report
 }
 
 // Packer packages AgentSuite content from one CAS into another.

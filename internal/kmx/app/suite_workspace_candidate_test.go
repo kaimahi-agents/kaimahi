@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -171,7 +171,7 @@ func TestCandidateCorePrivateLifecycleOrderingAndCancellation(t *testing.T) {
 					t.Fatal("candidate selfdiff", diffErr, out)
 				}
 				normalized, ok := normalizeSuitePassingEvaluation(receipt)
-				raw, _ := spec.Marshal(suitePassingDiffSubject{receipt.Subject, receipt.Provider, receipt.Agent, receipt.Kagent})
+				raw, _ := agentsuite.Marshal(suitePassingDiffSubject{receipt.Subject, receipt.Provider, receipt.Agent, receipt.Kagent})
 				if !ok || normalized.SuiteIdentity != agentruntime.RenderedBundleDigest([][]byte{[]byte("kmx.native-suite.diff-subject/v1"), raw}) {
 					t.Fatal("selfdiff hashed scanner mask")
 				}

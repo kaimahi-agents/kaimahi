@@ -19,20 +19,20 @@ import (
 	"strings"
 	"time"
 
-	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
 // suiteSourceRevision returns the HEAD commit if it holds exactly the files
 // push packs from dir, or why not. Like lift, it compares bytes with HEAD:
 // git status can hide edits and ignores untracked files, which are packed.
-func suiteSourceRevision(ctx context.Context, dir string) (*agentsuite.ProvenanceSource, string) {
+func suiteSourceRevision(ctx context.Context, dir string) (*suiteoras.ProvenanceSource, string) {
 	return sourceRevision(ctx, dir, nil)
 }
 
 // sourceRevision shares Git discovery and reproducibility checks. A workspace
 // supplies fingerprint-bound raw inputs; extracted suites match the whole tree.
-func sourceRevision(ctx context.Context, dir string, inputs map[string]workspace.SourceFile) (*agentsuite.ProvenanceSource, string) {
+func sourceRevision(ctx context.Context, dir string, inputs map[string]workspace.SourceFile) (*suiteoras.ProvenanceSource, string) {
 	gitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	absolute, err := filepath.Abs(dir)
@@ -75,7 +75,7 @@ func sourceRevision(ctx context.Context, dir string, inputs map[string]workspace
 		return nil, "suite directory is outside the Git repository"
 	}
 	rel = filepath.ToSlash(rel)
-	if !agentsuite.SafeProvenanceText(rel) {
+	if !suiteoras.SafeProvenanceText(rel) {
 		return nil, "suite path is not printable text"
 	}
 	commitRaw, err := git(nil, "rev-parse", "--verify", "HEAD^{commit}")
@@ -142,9 +142,9 @@ func sourceRevision(ctx context.Context, dir string, inputs map[string]workspace
 			return nil, reason
 		}
 	}
-	source := &agentsuite.ProvenanceSource{Commit: commit, Path: rel}
+	source := &suiteoras.ProvenanceSource{Commit: commit, Path: rel}
 	if remote, err := git(nil, "remote", "get-url", "origin"); err == nil {
-		if uri := publicRepositoryURI(strings.TrimSpace(string(remote))); agentsuite.SafeProvenanceText(uri) {
+		if uri := publicRepositoryURI(strings.TrimSpace(string(remote))); suiteoras.SafeProvenanceText(uri) {
 			source.URI = uri
 		}
 	}

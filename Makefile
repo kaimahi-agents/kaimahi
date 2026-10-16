@@ -33,6 +33,8 @@ GUARD_NS ?= ollama, orka-system (common, not exhaustive; see action for other na
 
 ## test, lint, docs-check: local checks matching the keyless CI gates
 test:
+	python3 scripts/check-agentsuite-fixtures.py --selftest
+	python3 scripts/check-agentsuite-fixtures.py
 	go test ./...
 
 lint:

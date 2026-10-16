@@ -63,7 +63,7 @@ func oversizedRegistryIndexFixture(t *testing.T, api bool) (string, string, *tes
 	}))
 	t.Cleanup(server.Close)
 	source := filepath.Join(t.TempDir(), "source")
-	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), source)
 	return source, strings.TrimPrefix(server.URL, "http://") + "/team/suite:v1", registry, &oversized, &indexReads
 }
 
@@ -196,7 +196,7 @@ func TestRegistryPushReferrerIndexGrowthPreservesExistingIndex(t *testing.T) {
 			}))
 			defer server.Close()
 			source := filepath.Join(t.TempDir(), "source")
-			copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
+			copyDirectory(t, filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), source)
 			reference := strings.TrimPrefix(server.URL, "http://") + "/team/suite:v1"
 			previous, err := PushRegistry(context.Background(), source, reference, true, false, PushOptions{})
 			if err != nil {

@@ -15,7 +15,7 @@ import (
 
 func TestReadArtifactSelectsOnlyRequestedLayoutGraph(t *testing.T) {
 	layout := filepath.Join(t.TempDir(), "layout")
-	p, err := Push(t.Context(), filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), layout, "suite:v1")
+	p, err := Push(t.Context(), filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), layout, "suite:v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestReadArtifactRefusesLayoutSymlinkAndOversizedIndex(t *testing.T) {
 	for _, tc := range []string{"index budget", "index symlink", "blob symlink"} {
 		t.Run(tc, func(t *testing.T) {
 			layout := filepath.Join(t.TempDir(), "layout")
-			p, err := Push(t.Context(), filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), layout, "suite:v1")
+			p, err := Push(t.Context(), filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), layout, "suite:v1")
 			if err != nil {
 				t.Fatal(err)
 			}

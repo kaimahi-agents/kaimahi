@@ -209,7 +209,7 @@ their descriptors. For existing extracted suites, regenerate them with current
 tooling or update descriptors and canonicalize only the normative manifests,
 recomputing affected parent descriptors before rebuilding. There is no
 compatibility reader or automated migration; see the
-[AgentSuite format](../agentsuite/spec.md).
+[AgentSuite format](https://github.com/agent-primitives/suite/blob/main/spec.md).
 
 All three native renderers changed from v1 to v2, and public case packaging
 changes the graph and suite identities. Suites packaged by v0.6.0 are refused

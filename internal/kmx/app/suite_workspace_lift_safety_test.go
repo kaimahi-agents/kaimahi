@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 )
 
 func runWorkspaceLift(t *testing.T, a *App, opt WorkspaceLiftOptions) WorkspaceLiftResult {
@@ -70,7 +70,7 @@ func TestWorkspaceLiftCachedPassAtCapacityWithoutJudge(t *testing.T) {
 	}
 	for i := 2; i <= maxSuitePassRecords; i++ {
 		record := suitePassRecord{1, store.identity, store.suiteDigest, uint64(i), raw}
-		encoded, err := spec.Marshal(record)
+		encoded, err := agentsuite.Marshal(record)
 		if err != nil {
 			t.Fatal(err)
 		}

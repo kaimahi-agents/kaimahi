@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	agentsuitecore "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
@@ -24,14 +24,14 @@ type dependencies struct {
 	loadConfig         func(string, string) (*config.Config, error)
 	newApp             func(*config.Config) *app.App
 	buildInfo          func() (*debug.BuildInfo, bool)
-	newAgentKitBuilder func(agentkitbuilder.Options) agentsuitecore.SandboxBuilder
+	newAgentKitBuilder func(agentkitbuilder.Options) kmxsuite.SandboxBuilder
 }
 
 func productionDependencies() dependencies {
 	return dependencies{
 		stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
 		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
-		newAgentKitBuilder: func(options agentkitbuilder.Options) agentsuitecore.SandboxBuilder {
+		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {
 			return agentkitbuilder.New(options)
 		},
 	}

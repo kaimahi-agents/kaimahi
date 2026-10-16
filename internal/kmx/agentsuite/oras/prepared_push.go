@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/oci"
@@ -105,8 +105,8 @@ func PushLayoutRegistry(ctx context.Context, source, reference string, plainHTTP
 	return pushRegistryGraph(ctx, store, repository, tag, force, options, result)
 }
 
-func preparedLayout(source string, expected ocispec.Descriptor) (*oci.Store, ocispec.Descriptor, *spec.Report, error) {
-	report, err := spec.ValidatePath(source)
+func preparedLayout(source string, expected ocispec.Descriptor) (*oci.Store, ocispec.Descriptor, *agentsuite.Report, error) {
+	report, err := agentsuite.ValidatePath(source)
 	if err != nil {
 		return nil, ocispec.Descriptor{}, nil, fmt.Errorf("validate prepared AgentSuite: %w", err)
 	}

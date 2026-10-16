@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -154,7 +154,7 @@ func TestLoadNamesContentFreeRefusalReasons(t *testing.T) {
 			writeFile(t, name, old)
 		}, "rerun kmx eval and kmx push"},
 		"runs over limit": {func(t *testing.T, out string) {
-			rebindEvals(t, out, func(_ *spec.EvaluationIndex, c map[string]any) { c["runs"] = 101 })
+			rebindEvals(t, out, func(_ *agentsuite.EvaluationIndex, c map[string]any) { c["runs"] = 101 })
 		}, "runs <= 100"},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -20,7 +20,7 @@ func gitSuiteRepository(t *testing.T) (string, string) {
 	}
 	root := t.TempDir()
 	suite := filepath.Join(root, "suites", "minimal")
-	copyTree(t, filepath.Join("..", "..", "..", "agentsuite", "testdata", "minimal"), suite)
+	copyTree(t, filepath.Join("..", "..", "..", "testdata", "agentsuite", "minimal"), suite)
 	runGit(t, root, "init", "-q")
 	runGit(t, root, "add", ".")
 	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "suite")

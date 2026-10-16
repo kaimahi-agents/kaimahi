@@ -26,7 +26,7 @@ internal/kmx/app ----------------------------+
    +-> agentsessions + runview                |   Kubernetes and Azure
    +-> lift, portforward, toolchain            |
                                              |
-agentsuite/         public portable format   |
+external suite     public portable format   |
 pkg/kmx/            alpha Go contracts       |
 internal/kmx/lifecycle experimental SPI -----+
 ```
@@ -42,7 +42,7 @@ can still be torn down conservatively.
 |---|---|
 | `cmd/kmx/` | Cobra command tree, argument and flag validation, help/completion, stream contracts and lazy dependency construction |
 | `internal/kmx/app/` | Production orchestration and composition root: setup, runtime operations, AgentSuite workflows, receipts, terminal UI and external tools |
-| `agentsuite/` | Public AgentSuite object model, canonical JSON, schemas, OCI/content safety, validation and semantic diff |
+| `github.com/agent-primitives/suite` (external) | Public AgentSuite object model, canonical JSON, schemas, OCI/content safety, validation and semantic diff; imported as `agentsuite` |
 | `internal/kmx/agentsuite/workspace/` | Closed one-member native workspace authoring, discovery, source snapshotting, preparation and packaged loading |
 | `internal/kmx/agentsuite/oras/` | Deterministic OCI packing, layouts, registry transfer, provenance and bounded exact-digest artifact reads |
 | `internal/kmx/agentsuite/agentkit/` | Experimental AgentKit/buildx adapter; not yet a conformant full-suite builder |

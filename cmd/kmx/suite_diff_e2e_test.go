@@ -15,7 +15,7 @@ import (
 
 	"github.com/gowebpki/jcs"
 
-	"github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 )
 
 func TestSuiteDiffArtifactsEndToEnd(t *testing.T) {

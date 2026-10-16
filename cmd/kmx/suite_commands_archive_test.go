@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -90,16 +90,16 @@ func TestSuiteBuildAttestationFlagsAndOutput(t *testing.T) {
 			output := filepath.Join(t.TempDir(), "writer's image.oci.tar")
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)
-			deps.newAgentKitBuilder = func(options agentkitbuilder.Options) agentsuite.SandboxBuilder {
+			deps.newAgentKitBuilder = func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {
 				if options.Builder != tc.builder || options.DisableAttestations != tc.disabled || options.RequireAttestations != tc.required {
 					t.Fatalf("options=%+v", options)
 				}
-				return sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
+				return sandboxBuilderFunc(func(_ context.Context, _ kmxsuite.SandboxPlan, dst io.Writer) (kmxsuite.BuildResult, error) {
 					_, err := dst.Write(archive)
-					return agentsuite.BuildResult{MediaType: agentsuite.OCIArchiveMediaType, AttestationsRequested: !tc.disabled, RequireAttestations: tc.required}, err
+					return kmxsuite.BuildResult{MediaType: kmxsuite.OCIArchiveMediaType, AttestationsRequested: !tc.disabled, RequireAttestations: tc.required}, err
 				})
 			}
-			args := append([]string{"suite", "build", filepath.Join("..", "..", "agentsuite", "testdata", "minimal"), "--model-base-url", "https://models.example/v1", "--output", output}, tc.args...)
+			args := append([]string{"suite", "build", filepath.Join("..", "..", "testdata", "agentsuite", "minimal"), "--model-base-url", "https://models.example/v1", "--output", output}, tc.args...)
 			if err := execute(args, deps); err != nil {
 				t.Fatal(err)
 			}
@@ -138,7 +138,7 @@ func TestSuiteBuildRejectsAttestationFlagConflicts(t *testing.T) {
 		var out, diagnostics bytes.Buffer
 		deps, _ := testDependencies(&out, &diagnostics)
 		created := false
-		deps.newAgentKitBuilder = func(agentkitbuilder.Options) agentsuite.SandboxBuilder { created = true; return nil }
+		deps.newAgentKitBuilder = func(agentkitbuilder.Options) kmxsuite.SandboxBuilder { created = true; return nil }
 		args := append([]string{"suite", "build", "missing-suite", "--model-base-url", "https://models.example/v1", "--output", filepath.Join(t.TempDir(), "missing", "image.tar")}, tc.args...)
 		err := execute(args, deps)
 		if err == nil || !strings.Contains(err.Error(), tc.want) || created {

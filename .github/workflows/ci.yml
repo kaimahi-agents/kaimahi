@@ -176,6 +176,10 @@ jobs:
       # reference links through their definitions. Each must resolve to a
       # file in the tree, and each #anchor on a Markdown target must match
       # a heading there. Fenced blocks and code spans are not links.
+      - name: AgentSuite consumer fixture parity
+        run: |
+          python3 scripts/check-agentsuite-fixtures.py --selftest
+          python3 scripts/check-agentsuite-fixtures.py
       - name: Doc-link checker self-test
         run: python3 scripts/check-doc-links.py --selftest
       - name: Doc links resolve
@@ -595,7 +599,7 @@ jobs:
         run: python3 scripts/check-comment-history.py
       - name: kmx — gofmt clean
         run: |
-          formatted=$(gofmt -l agentsuite cmd internal pkg/kmx embed.go embed_test.go)
+          formatted=$(gofmt -l cmd internal pkg/kmx embed.go embed_test.go)
           test -z "$formatted"
       - name: kmx — vet
         run: go vet ./...
@@ -642,7 +646,6 @@ jobs:
           # Why each of these is required, rather than just being a package
           # that happens to exist:
           REQUIRED = {
-              "agentsuite": "portable AgentSuite conformance",
               "internal/kmx/agentsuite": "internal sandbox construction contracts",
               "internal/kmx/agentsuite/agentkit": "AgentKit build and archive policy",
               "internal/kmx/agentsuite/oras": "AgentSuite packing and registry transfer",

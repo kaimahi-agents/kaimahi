@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -98,14 +98,14 @@ func TestBuildSuiteInspectsArchiveBeforePublish(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			builder := sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
+			builder := sandboxBuilderFunc(func(_ context.Context, _ kmxsuite.SandboxPlan, dst io.Writer) (kmxsuite.BuildResult, error) {
 				_, err := dst.Write(archive)
 				if tc.cancel {
 					cancel()
 				}
-				return agentsuite.BuildResult{MediaType: agentsuite.OCIArchiveMediaType, Digest: "untrusted", IndexDigest: "untrusted", SBOMDigest: "untrusted", AttestationsRequested: tc.requested, RequireAttestations: tc.required}, err
+				return kmxsuite.BuildResult{MediaType: kmxsuite.OCIArchiveMediaType, Digest: "untrusted", IndexDigest: "untrusted", SBOMDigest: "untrusted", AttestationsRequested: tc.requested, RequireAttestations: tc.required}, err
 			})
-			result, err := (&App{}).BuildSuite(ctx, minimalSuitePath(), output, agentsuite.BuildSelection{}, builder)
+			result, err := (&App{}).BuildSuite(ctx, minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("error=%v, want %q", err, tc.wantErr)
@@ -136,17 +136,17 @@ func TestBuildSuiteAtomicRenameFailureCleansStage(t *testing.T) {
 	archive, _, _, _ := buildSuiteArchive(t, false)
 	parent := t.TempDir()
 	output := filepath.Join(parent, "image.oci.tar")
-	builder := sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
+	builder := sandboxBuilderFunc(func(_ context.Context, _ kmxsuite.SandboxPlan, dst io.Writer) (kmxsuite.BuildResult, error) {
 		_, err := dst.Write(archive)
 		if err != nil {
-			return agentsuite.BuildResult{}, err
+			return kmxsuite.BuildResult{}, err
 		}
 		if err := os.Mkdir(output, 0700); err != nil {
-			return agentsuite.BuildResult{}, err
+			return kmxsuite.BuildResult{}, err
 		}
-		return agentsuite.BuildResult{MediaType: agentsuite.OCIArchiveMediaType}, nil
+		return kmxsuite.BuildResult{MediaType: kmxsuite.OCIArchiveMediaType}, nil
 	})
-	_, err := (&App{}).BuildSuite(t.Context(), minimalSuitePath(), output, agentsuite.BuildSelection{}, builder)
+	_, err := (&App{}).BuildSuite(t.Context(), minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder)
 	if err == nil || !strings.Contains(err.Error(), "publish AgentSuite build output") {
 		t.Fatalf("error=%v", err)
 	}
@@ -158,10 +158,10 @@ func TestBuildSuiteAtomicRenameFailureCleansStage(t *testing.T) {
 func TestBuildSuiteCancellationIdentity(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	builder := sandboxBuilderFunc(func(context.Context, agentsuite.SandboxPlan, io.Writer) (agentsuite.BuildResult, error) {
-		return agentsuite.BuildResult{}, context.Canceled
+	builder := sandboxBuilderFunc(func(context.Context, kmxsuite.SandboxPlan, io.Writer) (kmxsuite.BuildResult, error) {
+		return kmxsuite.BuildResult{}, context.Canceled
 	})
-	_, err := (&App{}).BuildSuite(ctx, minimalSuitePath(), filepath.Join(t.TempDir(), "image.tar"), agentsuite.BuildSelection{}, builder)
+	_, err := (&App{}).BuildSuite(ctx, minimalSuitePath(), filepath.Join(t.TempDir(), "image.tar"), kmxsuite.BuildSelection{}, builder)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error=%v", err)
 	}

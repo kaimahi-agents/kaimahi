@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
@@ -108,12 +108,12 @@ func TestSuitePassStoreCapacityPreservesExistingProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	var record suitePassRecord
-	if err := spec.Unmarshal(data, &record); err != nil {
+	if err := agentsuite.Unmarshal(data, &record); err != nil {
 		t.Fatal(err)
 	}
 	for i := 2; i <= maxSuitePassRecords; i++ {
 		record.Sequence = uint64(i)
-		b, err := spec.Marshal(record)
+		b, err := agentsuite.Marshal(record)
 		if err != nil {
 			t.Fatal(err)
 		}

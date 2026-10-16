@@ -15,7 +15,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 )
 
 const (
@@ -36,7 +36,7 @@ type SelectedToolProvider struct {
 	ID             string
 	Version        string
 	ManifestDigest string
-	Variant        spec.ToolProviderVariant
+	Variant        agentsuite.ToolProviderVariant
 	Root           bool
 }
 
@@ -44,15 +44,15 @@ type SelectedToolProvider struct {
 // sandbox image builder. The current experimental contract does not yet expose
 // verified image blobs or ToolProvider payload content.
 type SandboxPlan struct {
-	Suite             spec.Suite
+	Suite             agentsuite.Suite
 	SuiteManifestHash string
-	Agent             spec.Agent
+	Agent             agentsuite.Agent
 	Instructions      []byte
-	Composition       spec.Composition
+	Composition       agentsuite.Composition
 	CompositionDigest string
-	BuildProfile      spec.BuildProfile
-	RuntimeBase       spec.PlatformImage
-	Harness           spec.PlatformImage
+	BuildProfile      agentsuite.BuildProfile
+	RuntimeBase       agentsuite.PlatformImage
+	Harness           agentsuite.PlatformImage
 	ToolProviders     []SelectedToolProvider
 }
 
@@ -95,7 +95,7 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 	}
 	// Public suite validation is the conformance authority. The byte comparison
 	// detects ordinary root-manifest mutation, not a transactional snapshot.
-	if _, err := spec.ValidateDirectory(canonicalRoot); err != nil {
+	if _, err := agentsuite.ValidateDirectory(canonicalRoot); err != nil {
 		return nil, err
 	}
 	after, err := readBuildFile(rootHandle, "agentsuite.json", maxBuildJSONBytes)
@@ -124,7 +124,7 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 		return nil, fmt.Errorf("AgentSuite has no agent %q", agentID)
 	}
 
-	var candidates []spec.Composition
+	var candidates []agentsuite.Composition
 	for _, composition := range v.compositions {
 		if composition.Agent == agentID {
 			candidates = append(candidates, composition)
@@ -171,7 +171,7 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 	if err != nil {
 		return nil, fmt.Errorf("agent %s instructions: %w", agentID, err)
 	}
-	suiteHash, err := spec.Digest(suiteBytes)
+	suiteHash, err := agentsuite.Digest(suiteBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -203,26 +203,26 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 // buildMetadata retains only the documents needed by the builder after public
 // validation, without exposing or replicating the spec validator's graph.
 type buildMetadata struct {
-	suite               spec.Suite
-	agents              map[string]spec.Agent
-	builds              map[string]spec.BuildProfile
-	compositions        []spec.Composition
-	toolProviders       map[string]spec.ToolProvider
+	suite               agentsuite.Suite
+	agents              map[string]agentsuite.Agent
+	builds              map[string]agentsuite.BuildProfile
+	compositions        []agentsuite.Composition
+	toolProviders       map[string]agentsuite.ToolProvider
 	toolProviderDigests map[string]string
 }
 
 func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error) {
 	v := &buildMetadata{
-		agents:              map[string]spec.Agent{},
-		builds:              map[string]spec.BuildProfile{},
-		toolProviders:       map[string]spec.ToolProvider{},
+		agents:              map[string]agentsuite.Agent{},
+		builds:              map[string]agentsuite.BuildProfile{},
+		toolProviders:       map[string]agentsuite.ToolProvider{},
 		toolProviderDigests: map[string]string{},
 	}
-	if err := spec.Unmarshal(suiteBytes, &v.suite); err != nil {
+	if err := agentsuite.Unmarshal(suiteBytes, &v.suite); err != nil {
 		return nil, fmt.Errorf("agentsuite.json: %w", err)
 	}
 	retained := int64(len(suiteBytes))
-	readJSON := func(name string, descriptor spec.Descriptor, out any) error {
+	readJSON := func(name string, descriptor agentsuite.Descriptor, out any) error {
 		data, err := readBuildFile(root, name, maxBuildJSONBytes)
 		if err != nil {
 			return err
@@ -234,48 +234,48 @@ func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error)
 		// Reject a size/digest-mismatched child before parsing it: a file
 		// replaced after ValidateDirectory ran should not receive full
 		// strict-JSON decoding merely to discover the mismatch afterward.
-		if !spec.DescriptorSizeAndDigestMatch(data, descriptor) {
+		if !agentsuite.DescriptorSizeAndDigestMatch(data, descriptor) {
 			return fmt.Errorf("%s manifest digest mismatch after validation", name)
 		}
-		if err := spec.Unmarshal(data, out); err != nil {
+		if err := agentsuite.Unmarshal(data, out); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 		// Recheck the full descriptor (digest, size, and stored-canonical-byte
 		// identity) against the freshly reread bytes, not merely the digest:
 		// a file could otherwise gain or lose whitespace after
 		// ValidateDirectory ran and still satisfy a digest-only comparison.
-		if !spec.MatchesCanonicalDescriptor(data, descriptor) {
+		if !agentsuite.MatchesCanonicalDescriptor(data, descriptor) {
 			return fmt.Errorf("%s manifest digest mismatch after validation", name)
 		}
 		return nil
 	}
 	for _, ref := range v.suite.Agents {
-		var agent spec.Agent
+		var agent agentsuite.Agent
 		if err := readJSON(ref.Path, ref.Descriptor, &agent); err != nil {
 			return nil, err
 		}
 		v.agents[ref.ID] = agent
 	}
 	for _, ref := range v.suite.BuildProfiles {
-		var profile spec.BuildProfile
+		var profile agentsuite.BuildProfile
 		if err := readJSON(ref.Path, ref.Descriptor, &profile); err != nil {
 			return nil, err
 		}
 		v.builds[ref.ID] = profile
 	}
 	for _, ref := range v.suite.Compositions {
-		var composition spec.Composition
+		var composition agentsuite.Composition
 		if err := readJSON(ref.Path, ref.Descriptor, &composition); err != nil {
 			return nil, err
 		}
 		v.compositions = append(v.compositions, composition)
 	}
-	var catalog spec.ToolProviderCatalog
+	var catalog agentsuite.ToolProviderCatalog
 	if err := readJSON(v.suite.ToolProviderCatalog.Path, v.suite.ToolProviderCatalog.Descriptor, &catalog); err != nil {
 		return nil, err
 	}
 	for _, ref := range catalog.ToolProviders {
-		var provider spec.ToolProvider
+		var provider agentsuite.ToolProvider
 		if err := readJSON(ref.Path, ref.Descriptor, &provider); err != nil {
 			return nil, err
 		}
@@ -284,7 +284,7 @@ func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error)
 		v.toolProviderDigests[key] = ref.Descriptor.Digest
 	}
 	for _, ref := range v.suite.ToolProviderCompositions {
-		var composition spec.ToolProviderComposition
+		var composition agentsuite.ToolProviderComposition
 		if err := readJSON(ref.Path, ref.Descriptor, &composition); err != nil {
 			return nil, err
 		}
@@ -292,7 +292,7 @@ func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error)
 	return v, nil
 }
 
-func resolveSelectedToolProviders(v *buildMetadata, composition spec.Composition) ([]SelectedToolProvider, error) {
+func resolveSelectedToolProviders(v *buildMetadata, composition agentsuite.Composition) ([]SelectedToolProvider, error) {
 	roots := map[string]bool{}
 	for _, resolved := range composition.ToolProviders {
 		roots[resolved.ID+"@"+resolved.Version] = true
@@ -300,8 +300,8 @@ func resolveSelectedToolProviders(v *buildMetadata, composition spec.Composition
 	var selected []SelectedToolProvider
 	seen := map[string]bool{}
 	active := map[string]bool{}
-	var visit func(string, spec.ToolProviderVariant) error
-	visit = func(key string, variant spec.ToolProviderVariant) error {
+	var visit func(string, agentsuite.ToolProviderVariant) error
+	visit = func(key string, variant agentsuite.ToolProviderVariant) error {
 		identity := key + "#" + variant.VariantDigest
 		if active[identity] {
 			return fmt.Errorf("tool provider %s has a dependency cycle", key)
@@ -324,11 +324,11 @@ func resolveSelectedToolProviders(v *buildMetadata, composition spec.Composition
 			if !ok {
 				return fmt.Errorf("missing tool provider %s", depKey)
 			}
-			if !spec.IsValidDigest(v.toolProviderDigests[depKey]) {
+			if !agentsuite.IsValidDigest(v.toolProviderDigests[depKey]) {
 				return fmt.Errorf("dependency %s has no pinned manifest digest", depKey)
 			}
 			dependency, matches := exactBuildVariant(provider.Variants, variant.Platform)
-			if matches != 1 || !spec.IsValidDigest(dep.VariantDigest) || dependency.VariantDigest != dep.VariantDigest {
+			if matches != 1 || !agentsuite.IsValidDigest(dep.VariantDigest) || dependency.VariantDigest != dep.VariantDigest {
 				return fmt.Errorf("dependency %s must select exactly one matching variant", depKey)
 			}
 			if err := visit(depKey, dependency); err != nil {
@@ -345,11 +345,11 @@ func resolveSelectedToolProviders(v *buildMetadata, composition spec.Composition
 		if !ok {
 			return nil, fmt.Errorf("composition contains missing tool provider %s", key)
 		}
-		if !spec.IsValidDigest(resolved.ManifestDigest) || resolved.ManifestDigest != v.toolProviderDigests[key] {
+		if !agentsuite.IsValidDigest(resolved.ManifestDigest) || resolved.ManifestDigest != v.toolProviderDigests[key] {
 			return nil, fmt.Errorf("tool provider %s manifest digest mismatch", key)
 		}
 		variant, matches := exactBuildVariant(provider.Variants, composition.Platform)
-		if matches != 1 || !spec.IsValidDigest(resolved.VariantDigest) || variant.VariantDigest != resolved.VariantDigest {
+		if matches != 1 || !agentsuite.IsValidDigest(resolved.VariantDigest) || variant.VariantDigest != resolved.VariantDigest {
 			return nil, fmt.Errorf("tool provider %s must select exactly one matching variant for %s", key, composition.Platform)
 		}
 		if err := visit(key, variant); err != nil {
@@ -359,8 +359,8 @@ func resolveSelectedToolProviders(v *buildMetadata, composition spec.Composition
 	return selected, nil
 }
 
-func exactBuildVariant(variants []spec.ToolProviderVariant, platform spec.Platform) (spec.ToolProviderVariant, int) {
-	var selected spec.ToolProviderVariant
+func exactBuildVariant(variants []agentsuite.ToolProviderVariant, platform agentsuite.Platform) (agentsuite.ToolProviderVariant, int) {
+	var selected agentsuite.ToolProviderVariant
 	count := 0
 	for _, variant := range variants {
 		if variant.Platform == platform {
@@ -371,8 +371,8 @@ func exactBuildVariant(variants []spec.ToolProviderVariant, platform spec.Platfo
 	return selected, count
 }
 
-func exactPlatformImage(name string, images []spec.PlatformImage, platform spec.Platform) (spec.PlatformImage, error) {
-	var selected spec.PlatformImage
+func exactPlatformImage(name string, images []agentsuite.PlatformImage, platform agentsuite.Platform) (agentsuite.PlatformImage, error) {
+	var selected agentsuite.PlatformImage
 	count := 0
 	for _, image := range images {
 		if image.Platform == platform {
@@ -381,12 +381,12 @@ func exactPlatformImage(name string, images []spec.PlatformImage, platform spec.
 		}
 	}
 	if count != 1 {
-		return spec.PlatformImage{}, fmt.Errorf("build profile must contain exactly one %s image for %s", name, platform)
+		return agentsuite.PlatformImage{}, fmt.Errorf("build profile must contain exactly one %s image for %s", name, platform)
 	}
 	return selected, nil
 }
 
-func readBuildInstructions(root *os.Root, ref spec.FileRef) ([]byte, error) {
+func readBuildInstructions(root *os.Root, ref agentsuite.FileRef) ([]byte, error) {
 	data, err := readBuildFile(root, ref.Path, maxBuildMetadataBytes)
 	if err != nil {
 		return nil, err

@@ -32,8 +32,8 @@ The sources remain where contributors already review them:
 
 - the root [README](../README.md) remains the repository and site front door;
 - the maintained guides remain under `docs/`;
-- the normative [AgentSuite specification](../agentsuite/spec.md) remains under
-  `agentsuite/`;
+- the normative [AgentSuite specification](https://github.com/agent-primitives/suite/blob/main/spec.md)
+  is maintained in its standalone repository;
 - source-code, fixture, and checkout-script links lead to the matching GitHub
   source rather than pretending those files are website pages.
 
@@ -42,12 +42,11 @@ task, but does not copy their instructions. The homepage path chooser links into
 those same guides. Local search indexes the rendered Markdown and uses no hosted
 search service or credentials.
 
-The AgentSuite specification is expected to move to a standalone repository in
-[#491](https://github.com/kaimahi-agents/kaimahi/issues/491). The site therefore
-builds in CI both with and without the local `agentsuite/` page. Once the new
-documentation URL exists, set `KMX_AGENTSUITE_DOCS_URL` for the no-local build;
-existing specification links and navigation then point there without requiring a
-second local copy.
+AgentSuite links and navigation use the standalone specification on `main`,
+including section fragments. There is no local specification page or issue-link
+fallback. The generated-site checks assert the external destination and a case-
+document fragment. Tag links are reserved for releases that have actually been
+published; Phase 1 only anticipates `v0.1.0`.
 
 ## Version boundary
 

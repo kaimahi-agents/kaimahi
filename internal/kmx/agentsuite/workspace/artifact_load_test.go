@@ -50,7 +50,7 @@ func TestLoadArtifactWithoutSourceFingerprint(t *testing.T) {
 
 func TestLoadArtifactRefusesPublicOnlyProfile(t *testing.T) {
 	layout := filepath.Join(t.TempDir(), "layout")
-	p, err := suiteoras.Push(t.Context(), filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), layout, "minimal:v1")
+	p, err := suiteoras.Push(t.Context(), filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), layout, "minimal:v1")
 	if err != nil {
 		t.Fatal(err)
 	}

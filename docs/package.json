@@ -7,7 +7,7 @@
   },
   "scripts": {
     "docs:build": "vitepress build .",
-    "docs:check": "KMX_DOCS_WITH_AGENTSUITE=0 vitepress build . && KMX_DOCS_WITH_AGENTSUITE=0 node --test .vitepress/site.test.mjs && vitepress build . && node --test .vitepress/site.test.mjs",
+    "docs:check": "vitepress build . && node --test .vitepress/site.test.mjs",
     "docs:dev": "vitepress dev . --host 127.0.0.1",
     "docs:preview": "vitepress preview . --host 127.0.0.1"
   },

@@ -9,12 +9,10 @@ const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url))
 const docsNodeModules = path.join(repositoryRoot, 'docs', 'node_modules')
 const repositoryURL = 'https://github.com/kaimahi-agents/kaimahi'
 const sourceRef = process.env.GITHUB_SHA || 'main'
-const localAgentSuite = process.env.KMX_DOCS_WITH_AGENTSUITE !== '0' && existsSync(path.join(repositoryRoot, 'agentsuite', 'spec.md'))
-const agentSuiteDocsURL = process.env.KMX_AGENTSUITE_DOCS_URL || `${repositoryURL}/issues/491`
+const agentSuiteDocsURL = 'https://github.com/agent-primitives/suite/blob/main/spec.md'
 
 const sitePages = new Set([
   'README.md',
-  ...(localAgentSuite ? ['agentsuite/spec.md'] : []),
   ...readdirSync(path.join(repositoryRoot, 'docs'), { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
     .map((entry) => `docs/${entry.name}`)
@@ -29,8 +27,6 @@ function sourcePath(env: Record<string, unknown>): string {
       const relative = path.posix.normalize(normalized.replace(/^\/+/, ''))
       const docsAt = relative.lastIndexOf('/docs/')
       if (docsAt >= 0) return relative.slice(docsAt + 1)
-      const suiteAt = relative.lastIndexOf('/agentsuite/')
-      if (suiteAt >= 0) return relative.slice(suiteAt + 1)
       return relative
     }
   }
@@ -63,10 +59,6 @@ function rewriteRepositoryLinks(md: any): void {
       token.attrSet('href', `/docs/${matched?.[2] ?? ''}`)
       return render(tokens, index, options, env, self)
     }
-    if (resolved === 'agentsuite/spec.md' && !localAgentSuite) {
-      token.attrSet('href', agentSuiteDocsURL)
-      return render(tokens, index, options, env, self)
-    }
     if (sitePages.has(resolved)) return render(tokens, index, options, env, self)
 
     const absolute = path.join(repositoryRoot, ...resolved.split('/'))
@@ -92,7 +84,7 @@ const userGuides = [
 
 const reference = [
   { text: 'kmx command reference', link: '/docs/kmx' },
-  { text: 'AgentSuite specification', link: localAgentSuite ? '/agentsuite/spec' : agentSuiteDocsURL },
+  { text: 'AgentSuite specification', link: agentSuiteDocsURL },
   { text: 'Format boundaries', link: '/docs/bundle-format' },
   { text: 'Kubernetes Tool', link: '/docs/orka-k8s-tool' }
 ]
@@ -146,7 +138,7 @@ export default defineConfig({
     'LOCAL-TEST-PLAN.md',
     'PITCH-*.md',
     'SECURITY.md',
-    ...(localAgentSuite ? ['agentsuite/README.md', 'agentsuite/testdata/**'] : ['agentsuite/**']),
+    'testdata/**',
     'ax-harness/**',
     'brand/**',
     'internal/**',
@@ -204,12 +196,7 @@ export default defineConfig({
         { text: 'Reference', items: reference },
         { text: 'Maintainers', collapsed: true, items: maintainers },
         { text: 'Design and assessments', collapsed: true, items: designNotes }
-      ],
-      ...(localAgentSuite ? {
-        '/agentsuite/': [
-          { text: 'AgentSuite', items: reference }
-        ]
-      } : {})
+      ]
     },
     search: {
       provider: 'local',

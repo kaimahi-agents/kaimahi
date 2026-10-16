@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"slices"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	godigest "github.com/opencontainers/go-digest"
 )
@@ -100,7 +100,7 @@ func (a *App) prepareReleaseLiftKagent(ctx context.Context, opt ReleaseLiftOptio
 	if err := native.worker.verifySuiteKagentInputs(ctx, native); err != nil {
 		return nil, err
 	}
-	review, err := spec.Marshal(struct {
+	review, err := agentsuite.Marshal(struct {
 		Domain string
 		Plan   ReleaseLiftSummary
 	}{"kmx.release-lift.plan/v1", p.summary})

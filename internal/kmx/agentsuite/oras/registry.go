@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	oraslib "oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/errdef"
@@ -57,7 +57,7 @@ func PushRegistry(
 
 // pushRegistryGraph publishes either a packed directory or a prepared graph.
 // Provenance must attach before tagging, independent of how the graph was made.
-func pushRegistryGraph(ctx context.Context, source agentsuite.ReadOnlyStorage, repository *remote.Repository, targetReference string, force bool, options PushOptions, result PushResult) (PushResult, error) {
+func pushRegistryGraph(ctx context.Context, source kmxsuite.ReadOnlyStorage, repository *remote.Repository, targetReference string, force bool, options PushOptions, result PushResult) (PushResult, error) {
 	// This preflight is not atomic with the subsequent tag update.
 	existing, err := repository.Resolve(ctx, targetReference)
 	alreadyTagged := false
@@ -107,7 +107,7 @@ func pushRegistryGraph(ctx context.Context, source agentsuite.ReadOnlyStorage, r
 
 func attachOrWarn(
 	ctx context.Context,
-	dst agentsuite.Storage,
+	dst kmxsuite.Storage,
 	artifact provenanceArtifact,
 	require bool,
 	result *PushResult,
@@ -255,4 +255,4 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-var _ agentsuite.Target = (*remote.Repository)(nil)
+var _ kmxsuite.Target = (*remote.Repository)(nil)

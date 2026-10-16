@@ -4,7 +4,7 @@ import (
 	"context"
 	"reflect"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 )
 
 // releaseLiftGate consumes already-coherent packaged evidence and a freshly
@@ -69,7 +69,7 @@ func (a *App) verifyReleaseServingModel(ctx context.Context, subject suiteNative
 		Name, Namespace, UID, ResourceVersion, Type, DefaultModel string
 		Generation                                                int64
 	}
-	if spec.Unmarshal(raw, &observed) != nil || observed.Name != provider.Name || observed.Namespace != provider.Namespace || observed.UID != provider.UID || observed.Generation != provider.Generation || observed.ResourceVersion != provider.ResourceVersion || observed.Type != provider.Type || observed.DefaultModel == "" || observed.DefaultModel != subject.Model {
+	if agentsuite.Unmarshal(raw, &observed) != nil || observed.Name != provider.Name || observed.Namespace != provider.Namespace || observed.UID != provider.UID || observed.Generation != provider.Generation || observed.ResourceVersion != provider.ResourceVersion || observed.Type != provider.Type || observed.DefaultModel == "" || observed.DefaultModel != subject.Model {
 		return ErrReleaseLift
 	}
 	return nil

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	orasbinding "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	oraslib "oras.land/oras-go/v2"
@@ -20,8 +20,8 @@ import (
 const testReference = "v1"
 
 func TestORASStoresSatisfyAgentSuiteContracts(t *testing.T) {
-	var _ agentsuite.Storage = memory.New()
-	var _ agentsuite.Target = memory.New()
+	var _ kmxsuite.Storage = memory.New()
+	var _ kmxsuite.Target = memory.New()
 	var _ oraslib.Target = memory.New()
 }
 
@@ -119,12 +119,12 @@ func newArtifact(t *testing.T) (*memory.Store, ocispec.Descriptor) {
 	ctx := context.Background()
 	store := memory.New()
 	config := []byte("{}")
-	configDescriptor := content.NewDescriptorFromBytes(spec.MediaTypeEmptyConfig, config)
+	configDescriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeEmptyConfig, config)
 	if err := store.Push(ctx, configDescriptor, bytes.NewReader(config)); err != nil {
 		t.Fatal(err)
 	}
 	layer := []byte("AgentSuite content")
-	layerDescriptor := content.NewDescriptorFromBytes(spec.MediaTypeContent, layer)
+	layerDescriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, layer)
 	if err := store.Push(ctx, layerDescriptor, bytes.NewReader(layer)); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func newArtifact(t *testing.T) (*memory.Store, ocispec.Descriptor) {
 		ctx,
 		store,
 		oraslib.PackManifestVersion1_1,
-		spec.MediaTypeArtifact,
+		agentsuite.MediaTypeArtifact,
 		oraslib.PackManifestOptions{
 			Layers:           []ocispec.Descriptor{layerDescriptor},
 			ConfigDescriptor: &configDescriptor,
@@ -144,7 +144,7 @@ func newArtifact(t *testing.T) (*memory.Store, ocispec.Descriptor) {
 	return store, root
 }
 
-func assertGraphExists(t *testing.T, store agentsuite.ReadOnlyStorage, root ocispec.Descriptor) {
+func assertGraphExists(t *testing.T, store kmxsuite.ReadOnlyStorage, root ocispec.Descriptor) {
 	t.Helper()
 	exists, err := store.Exists(context.Background(), root)
 	if err != nil {
@@ -169,7 +169,7 @@ type fakeStorage struct {
 	content map[string][]byte
 }
 
-var _ agentsuite.Storage = (*fakeStorage)(nil)
+var _ kmxsuite.Storage = (*fakeStorage)(nil)
 
 func newFakeStorage() *fakeStorage {
 	return &fakeStorage{content: map[string][]byte{}}
@@ -208,8 +208,8 @@ func (s *fakeStorage) Exists(_ context.Context, descriptor ocispec.Descriptor) (
 
 func copyIntoFake(
 	ctx context.Context,
-	src agentsuite.ReadOnlyStorage,
-	dst agentsuite.Storage,
+	src kmxsuite.ReadOnlyStorage,
+	dst kmxsuite.Storage,
 	root ocispec.Descriptor,
 ) error {
 	return oraslib.CopyGraph(ctx, src, dst, root, oraslib.DefaultCopyGraphOptions)

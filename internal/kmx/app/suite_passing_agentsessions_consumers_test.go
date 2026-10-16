@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 )
 
 func TestLegacySuitePassingReceiptByteGoldens(t *testing.T) {
@@ -27,7 +27,7 @@ func TestLegacySuitePassingReceiptByteGoldens(t *testing.T) {
 				e.TaskID, e.ContextID = fmt.Sprintf("task-%d", i), fmt.Sprintf("context-%d", i)
 			}
 		}
-		raw, err := spec.Marshal(r)
+		raw, err := agentsuite.Marshal(r)
 		if err != nil {
 			t.Fatal(err)
 		}

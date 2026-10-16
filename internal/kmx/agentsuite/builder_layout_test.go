@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
-	builder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
 
 func TestResolveSandboxPlanValidatesLooseContentEvenWithOCILayout(t *testing.T) {
-	fixture := filepath.Join("..", "..", "..", "agentsuite", "testdata", "minimal")
+	fixture := filepath.Join("..", "..", "..", "testdata", "agentsuite", "minimal")
 	root := filepath.Join(t.TempDir(), "hybrid")
 	if _, err := oras.Push(context.Background(), fixture, root, "v1"); err != nil {
 		t.Fatal(err)
@@ -31,10 +31,10 @@ func TestResolveSandboxPlanValidatesLooseContentEvenWithOCILayout(t *testing.T) 
 		t.Fatal(err)
 	}
 	// Auto-detection validates the embedded artifact, not the loose manifests.
-	if _, err := spec.ValidatePath(root); err != nil {
+	if _, err := agentsuite.ValidatePath(root); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := builder.ResolveSandboxPlan(root, builder.BuildSelection{Agent: "not-declared"})
+	plan, err := kmxsuite.ResolveSandboxPlan(root, kmxsuite.BuildSelection{Agent: "not-declared"})
 	if plan != nil || err == nil || !strings.Contains(err.Error(), "schemaVersion") {
 		t.Fatalf("plan = %+v, error = %v; want loose-content conformance refusal", plan, err)
 	}

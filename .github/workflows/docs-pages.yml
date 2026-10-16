@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - README.md
-      - agentsuite/spec.md
       - brand/ketu.svg
       - docs/**
       - .github/workflows/docs-pages.yml

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	godigest "github.com/opencontainers/go-digest"
@@ -48,21 +48,21 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 			case "renderer":
 				b = strings.ReplaceAll(b, "kmx.native-orka/v2", "kmx.native-orka/v3")
 			case "case runs over limit":
-				rebindEvals(t, out, func(_ *spec.EvaluationIndex, c map[string]any) { c["runs"] = 101 })
+				rebindEvals(t, out, func(_ *agentsuite.EvaluationIndex, c map[string]any) { c["runs"] = 101 })
 			case "case critical":
-				rebindEvals(t, out, func(_ *spec.EvaluationIndex, c map[string]any) {
+				rebindEvals(t, out, func(_ *agentsuite.EvaluationIndex, c map[string]any) {
 					c["assertions"].([]any)[0].(map[string]any)["critical"] = true
 				})
 			case "case extension assertion":
-				rebindEvals(t, out, func(_ *spec.EvaluationIndex, c map[string]any) {
+				rebindEvals(t, out, func(_ *agentsuite.EvaluationIndex, c map[string]any) {
 					c["assertions"] = append(c["assertions"].([]any), map[string]any{"id": "tone", "type": "tone-check", "value": "friendly", "critical": false})
 				})
 			case "case expectContains order":
-				rebindEvals(t, out, func(_ *spec.EvaluationIndex, c map[string]any) {
+				rebindEvals(t, out, func(_ *agentsuite.EvaluationIndex, c map[string]any) {
 					c["assertions"].([]any)[0].(map[string]any)["id"] = "expectContains.1"
 				})
 			case "case limits":
-				rebindEvals(t, out, func(index *spec.EvaluationIndex, _ map[string]any) { index.Limits.MaxCases = 64 })
+				rebindEvals(t, out, func(index *agentsuite.EvaluationIndex, _ map[string]any) { index.Limits.MaxCases = 64 })
 			case "case index without evals":
 				// A public suite may omit evaluations; native members may not.
 				removeEvals(t, out)
@@ -106,8 +106,8 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 				// These graph edits must remain valid under the public schema. Recompute
 				// its member/instruction graph digests independently of the workspace resolver.
 				memberPath := filepath.Join(out, "agents/greeter.json")
-				var agent spec.Agent
-				if err := spec.Unmarshal(readFile(t, memberPath), &agent); err != nil {
+				var agent agentsuite.Agent
+				if err := agentsuite.Unmarshal(readFile(t, memberPath), &agent); err != nil {
 					t.Fatal(err)
 				}
 				if change == "secret model" {
@@ -122,21 +122,21 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 					agent.Instructions.Descriptor.Digest = godigest.FromBytes([]byte(data)).String()
 					agent.Instructions.Descriptor.Size = int64(len(data))
 				}
-				mb, err := spec.Marshal(agent)
+				mb, err := agentsuite.Marshal(agent)
 				if err != nil {
 					t.Fatal(err)
 				}
 				writeFile(t, memberPath, string(mb))
-				var suite spec.Suite
-				if err := spec.Unmarshal(readFile(t, filepath.Join(out, "agentsuite.json")), &suite); err != nil {
+				var suite agentsuite.Suite
+				if err := agentsuite.Unmarshal(readFile(t, filepath.Join(out, "agentsuite.json")), &suite); err != nil {
 					t.Fatal(err)
 				}
-				suite.Agents[0].Descriptor.Digest, err = spec.Digest(mb)
+				suite.Agents[0].Descriptor.Digest, err = agentsuite.Digest(mb)
 				if err != nil {
 					t.Fatal(err)
 				}
 				suite.Agents[0].Descriptor.Size = int64(len(mb))
-				sb, err := spec.Marshal(suite)
+				sb, err := agentsuite.Marshal(suite)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -163,7 +163,7 @@ func TestVerifyRefusesInvalidNativeMetadataAndUnlistedContent(t *testing.T) {
 			}
 			candidate := *p
 			candidate.Path, candidate.Descriptor = layout, result.Descriptor
-			if _, err := spec.ValidatePath(layout); err != nil {
+			if _, err := agentsuite.ValidatePath(layout); err != nil {
 				t.Fatalf("not a public-valid negative fixture: %v", err)
 			}
 			if err := workspace.Verify(context.Background(), &candidate); err == nil {
