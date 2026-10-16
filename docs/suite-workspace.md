@@ -754,8 +754,9 @@ KMX-owned renderer/profile digests identify the canonical build-source projectio
 not executable bytes or authenticated provenance. An optional binary digest may
 be captured from reliable Linux `/proc/self/exe`; its absence is allowed on every
 platform and it remains private companion metadata, not a v0.2.0 public-schema
-extension or a substitute for the required module/VCS provenance. Runtime/harness image or declared
-binary identities remain distinct from the producer source identity.
+extension or a substitute for the required module/VCS provenance. Runtime/harness
+image or declared binary identities remain distinct from the producer source
+identity.
 
 Public configuration hashes are documented allowlisted projections of exact model
 protocol/identifier, supported native request contract, public suite/profile

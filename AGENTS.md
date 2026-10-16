@@ -289,7 +289,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Fresh managed evaluations capture Go build info on every platform: tagged
   module version plus module checksum, OR full VCS revision plus explicit
   unmodified status. Modified producers always refuse; unstamped development
-  builds and pseudo-versions without a clean revision also refuse. Optional reliable Linux binary hashes are private extras, never
+  builds and pseudo-versions without a clean revision also refuse. Optional
+  reliable Linux binary hashes are private extras, never
   eligibility or source-identity substitutes. Bound separate companions to the
   committed sequence/workspace/S/canonical receipt digest; leave private receipt
   and envelope formats unchanged, no older fallback or orphan authority.

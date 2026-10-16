@@ -75,7 +75,8 @@ It runs offline with explicit member matching, strict public-library verificatio
 new-file publication and no cluster/model/registry calls. Fresh captured Go build
 provenance requires a tagged module version plus module checksum, or full VCS
 revision plus explicit unmodified state. Modified producers, unstamped development
-builds, pseudo-versions without a clean revision and legacy metadata refuse. Private receipts and push/Lift authority remain unchanged.
+builds, pseudo-versions without a clean revision and legacy metadata refuse.
+Private receipts and push/Lift authority remain unchanged.
 See [public evidence](suite-workspace.md#export-portable-evaluation-evidence).
 
 Offline `eval diff` compares strict full-passing native Orka/kagent suite evidence
