@@ -44,7 +44,7 @@ it does not prove every promotion, creation or partial-outcome path.
 | **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
 | **Prove** | Orka uses `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, with no cluster selectors. Each evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes private evidence only when the full policy passes. |
 | **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
-| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; suite status and retirement remain unavailable. |
+| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets. Inspect placement with `kmx status --to NAME`; retirement remains unavailable. |
 
 Root eval also keeps completed passing metadata in private KMX state, so `--out`
 is optional. With named `evalTarget`, `kmx eval` needs no selectors; then
@@ -104,7 +104,8 @@ separate model-access binding; selecting one does not select the other.
 - **kagent** support is exact-version and operation-specific: v0.10.3
   Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated
   publication and create-only root digest Lift. Standalone run/chat, Python,
-  RemoteMCP, suite status and retirement remain unavailable.
+  RemoteMCP and retirement remain unavailable. Read-only destination status
+  observes placement without enabling those execution/lifecycle capabilities.
 - **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary
   push and explicit private `eval --development-host FILE`: one fresh
   Session/config/Exec per declared run, full-pass private proof and exact-S evaluated
@@ -124,8 +125,10 @@ records exact pins and evidence rather than claiming feature parity.
 > mutation, and remember that hosted model calls can incur charges.
 
 - Readiness, a readable answer, and passing evaluation are different evidence.
-- `kmx status` and `kmx orka status` report Orka runtime state, not AgentSuite
-  deployment status.
+- [`kmx status --to NAME`](docs/destination-status.md) inventories deployed
+  Orka/kagent Agents and per-object Lift provenance without writes. Unknown is not
+  absent, and recorded observations are unsigned. `kmx orka status` retains the
+  table-only Orka runtime report.
 - Quickstart adds cluster resources and result-reader RBAC, then authors, fully
   evaluates, publishes and Lifts a tool-free native suite. Placement verification
   precedes its separate fresh answer Task. Console Ready means placement only.

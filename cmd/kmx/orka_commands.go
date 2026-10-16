@@ -57,6 +57,12 @@ func newOrkaInstallCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
+// The runtime report remains table-only, separate from destination inventory.
 func newOrkaStatusCommand(state *commandState) *cobra.Command {
-	return newStatusCommand(state)
+	var output string
+	cmd := &cobra.Command{Use: "status", Short: "Show the runtime Orka has installed, and what it can resolve", Args: cobra.NoArgs}
+	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table")
+	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table"}))
+	cmd.RunE = appRun(state, func(a *app.App) error { return a.StatusWithOptions(app.StatusOptions{Output: output}) })
+	return cmd
 }

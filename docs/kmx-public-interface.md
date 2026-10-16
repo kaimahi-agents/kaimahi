@@ -184,7 +184,7 @@ The intended conceptual mapping is:
 | `kmx suite push` / root `kmx push --workspace DIR REF` | Current extracted-definition/workspace transfer is not `AgentSuites.Push` |
 | Future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
 | Root digest `kmx lift` | Related lifecycle vocabulary, not `AgentDeployments.Lift` wiring |
-| Suite status (unavailable) | `AgentDeployments.Status` remains alpha design evidence |
+| Root `status --to NAME` destination inventory | GET-only internal observer, not `AgentDeployments.Status` wiring; that interface remains alpha design evidence |
 | Suite retirement (unavailable) | `AgentDeployments.Retire` remains alpha design evidence |
 
 This is a product-level direction, not shared implementation today. The current
@@ -200,7 +200,7 @@ For an end-to-end local runtime, use the CLI:
 export KIND_CLUSTER=kmx-local
 export KUBE_CTX=kind-kmx-local
 kmx local up
-kmx status
+kmx orka status
 ```
 
 `kmx local up` without `--step` runs these steps in order:

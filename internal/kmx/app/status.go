@@ -8,7 +8,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
-// `kmx status` delegates Orka's native report, including toolchain preflight
+// `kmx orka status` delegates Orka's native report, including toolchain preflight
 // and context checks, rather than implementing a second reading that could
 // disagree about the cluster. Only format validation runs before delegation;
 // it needs no cluster.

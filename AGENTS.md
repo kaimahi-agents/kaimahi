@@ -49,13 +49,21 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   intent/outcome records retain canonical receipts and acknowledged partial effects;
   they grant no evaluation, ownership, skip or replay authority. Keep provenance out
   of plan digests, suite ownership markers, portable schemas and candidate eval.
-  Root destination status remains a separate change. See
+  Root destination status reads these annotations without private-state enrichment;
+  it never infers missing fields from companions or local history. See
   [cluster-visible Lift provenance](docs/suite-workspace.md#cluster-visible-lift-provenance).
 - Everyday operations are root `create/chat/run`; live inspection is `orka show/list`.
   Legacy `bundle` operations are removed outright without aliases/stubs.
   `kmx agent` is removed entirely, without an alias or retirement stub.
-  Root `status` and `orka status` retain the same table-only Orka runtime report;
-  do not add root bundle status or a suite observer.
+  Root `status --to NAME [--workspace DIR] [-o table|json]` is a separate GET-only
+  destination inventory, not runtime setup or a suite-source observer. Require a
+  saved namespace and freeze concrete selectors once; explicit global context wins.
+  Preserve readable partial rows, candidate-root segregation and the distinct
+  `provenance not recorded`, `unknown`, `not kmx-owned` states. No local history,
+  Secrets, admission, repair, Tasks or tool provisioning. Exit1 unknown/unhealthy/
+  drift overrides2 pending;0 means complete ready/empty. Original UID continuity
+  remains unverified. `orka status` retains the table-only runtime report; bare
+  root status refuses with both usage hints. See [destination status](docs/destination-status.md).
 - Root `create <name>` authors one tool-free native suite member offline
   by default: Orka unless `--runtime kagent` selects exact v0.10.3 Go/linux-amd64.
   `--runtime agentsessions` separately authors a built-in chat
@@ -73,7 +81,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
   Root eval supports the packaged kagent profile with author-owned --bindings;
   evaluated push consumes matching runtime-specific full-passing suite evidence.
-  Suite status/retirement remain unavailable; digest lift uses the common release
+  Legacy status readers and retirement remain unavailable; digest lift uses the common release
   seam with runtime-matching evidence and author-owned kagent bindings. Kagent
   lift is create-only, refusing occupied primaries/children even with matching
   evaluated UIDs; evidence never crosses runtimes.
@@ -107,7 +115,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   `create --live` including previews/wizard, live-only flags, root run bundle
   mode and `--bundles` flags are removed outright. Unknown routes/flags refuse
   before config. Old Orka/kagent/AgentSessions bundle receipts are unreadable;
-  no migration or saved-file/resource deletion. Suite status/retirement remain
+  no migration or saved-file/resource deletion. Legacy status readers and retirement remain
   unavailable. Quickstart uses native source → full eval → exact local publication
   → reviewed Lift Apply/Verify, then a separate fresh answer Task. Console Ready
   is placement only. Chat `/lift` and console Lift print only
@@ -335,8 +343,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   unsecure auth only, one fresh blocking A2A Task per declared case run, never retried.
   Trusted-proxy refuses before admission/send. Digest Lift creates absent objects
   only with runtime-matching evidence; occupied primaries/children refuse.
-  No Python/RemoteMCP, standalone chat/run, installer/discovery, suite status or
-  retirement is implied. Preserve Orka defaults and workspace missing-runtime behavior.
+  No Python/RemoteMCP execution, standalone chat/run, installer/discovery or
+  retirement is implied. Root destination status is GET-only placement inspection. Preserve Orka defaults and workspace missing-runtime behavior.
 - CI retains exact v0.10.3 bootstrap, raw upstream Tool smoke/direct single A2A
   MCP proof, separately tool-free packaged two-case eval/evaluated push and
   source-withheld digest Lift with occupied-repeat refusal. No legacy receipt,

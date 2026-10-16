@@ -80,7 +80,8 @@ Workspace --create/eval--> AgentSuite artifact --push--> OCI location
 | `push` | Prepared AgentSuite | Transfer exact OCI graph with latest completed exact-S proof, explicit --evaluation override or --unevaluated opt-out; explicit tags unchanged, bare push uses saved `repository:s-<S>`; no deployment |
 | `lift` | Workspace or exact supported packaged native AgentSuite | No-reference `--to NAME` composes missing Orka eval/push/Lift with one frozen-plan confirmation and verified exact-version skips. Explicit reference stays deploy-only by digest with private evidence; Orka uses `--inference`, kagent uses `--bindings`; `--plan` has no execution/publication/admission |
 | `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |
-| `status`, `orka status` | Orka installation | Table-only runtime report, not suite deployment status |
+| `status --to NAME` | Named destination namespace | GET-only table/JSON deployed-Agent provenance/readiness inventory; separate candidates, unknown is not absent |
+| `orka status` | Orka installation | Table-only runtime report, not destination placement inspection |
 
 ## Workspace versus live
 
@@ -126,7 +127,7 @@ or deploy a runtime.
 
 | Runtime/integration | Implemented KMX scope |
 |---|---|
-| Orka | Default runtime; setup, independent live run/chat, workspace evaluation/evaluated publication and exact-digest native Lift; no suite status/retirement |
+| Orka | Default runtime; setup, independent live run/chat, workspace evaluation/evaluated publication and exact-digest native Lift; GET-only destination status, no retirement |
 | kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Lift; no packaged status/retirement |
 | agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case run, shared explicit judging and repeat policy, no tools, cluster settings, registry/auth or remote lifecycle; Lift/chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. |
 

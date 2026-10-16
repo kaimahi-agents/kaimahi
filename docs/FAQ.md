@@ -32,9 +32,10 @@ Go/linux-amd64: create, `eval --bindings FILE`, evaluated push, native receipt
 diff and create-only digest Lift. Every occupied target refuses, even with
 matching evaluated UIDs. Eval is unsecure-only, one fresh blocking A2A Task per
 case, never retried; trusted-proxy refuses before admission/send. No Python,
-RemoteMCP, standalone run/chat, suite status/retirement, installer/discovery,
+RemoteMCP, standalone run/chat, retirement, installer/discovery,
 console/quickstart or AKS kagent payload is implied. See [native workspace
-profiles](suite-workspace.md) and [runtime boundaries](runtime-adapters.md).
+profiles](suite-workspace.md), GET-only [destination status](destination-status.md)
+and [runtime boundaries](runtime-adapters.md).
 
 Live v0.10.2 create and bundle lift/status/evaluation/replay/readers/receipts are
 removed outright. Old receipts are unreadable; no conversion/migration or deletion

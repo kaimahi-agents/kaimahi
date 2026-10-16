@@ -11,6 +11,9 @@ import sys
 spec = importlib.util.spec_from_file_location("kagent_lift_driver", pathlib.Path(__file__).with_name("kagent-lift.py"))
 driver = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(driver)
+status_spec = importlib.util.spec_from_file_location("suite_native_status", pathlib.Path(__file__).with_name("suite-native.py"))
+status = importlib.util.module_from_spec(status_spec)
+status_spec.loader.exec_module(status)
 
 
 def require(condition, reason):
@@ -18,9 +21,9 @@ def require(condition, reason):
         raise driver.QualificationError(reason)
 
 
-def cli(binary, args, refusal=None):
+def cli(binary, args, refusal=None, env=None):
     # Two separately bounded cases plus create-only placement and proof reads.
-    result = subprocess.run([str(binary), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1440)
+    result = subprocess.run([str(binary), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1440, env=env)
     expected = 0 if refusal is None else 1
     if result.returncode != expected or refusal is not None and refusal not in result.stderr:
         # The enclosing shard redirects all subprocess diagnostics privately.
@@ -65,6 +68,8 @@ def qualify_lift(binary, work, layout, receipt, bindings, evidence, fixture, exp
     require(len(after) == len(before) + 4 and all(frame == {"verb": "create", "dry_run": strategy,
             "resources": [{"apiVersion": "kagent.dev/v1alpha2", "kind": kind, "namespace": "suite-destination", "name": subject["Member"]}]}
             for frame, (strategy, kind) in zip(after[len(before):], expected)), "lift admission/create order or ownership differs")
+    status.qualify_status(work, result, receipt.read_bytes(), evidence["runID"],
+                          lambda args, env: cli(binary, args, env=env), dict(status.os.environ), work / "bin/kubectl")
     cli(binary, args, refusal=occupied)
     require(driver.audit_frames(audit) == after and driver.http_json(fixture + "/evidence") == expected_counts,
             "lift repeat mutated or lift invoked native model/tools/Tasks")

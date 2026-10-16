@@ -27,10 +27,11 @@ class SuiteLiftTests(unittest.TestCase):
 
     def test_source_free_lift_checks_exact_package_placement_and_zero_native_traffic(self):
         digest = "sha256:" + "a" * 64
-        evidence = {"kagent": {"observation": {"Subject": {"SuiteDigest": digest, "Member": "proof", "Model": "fixture-suite"}}}}
+        evidence = {"runID": "d" * 32, "kagent": {"observation": {"Subject": {"SuiteDigest": digest, "Member": "proof", "Model": "fixture-suite"}}}}
         for defect in (None, "model", "suite", "ready", "counts"):
             with self.subTest(defect=defect), tempfile.TemporaryDirectory() as temp:
                 work = pathlib.Path(temp)
+                (work / "receipt.json").write_bytes(b"receipt")
                 bindings = work / "bindings.yaml"
                 bindings.write_text("namespace: agents\n")
                 target = {"namespace": "suite-destination", "namespaceUID": "destination-ns"}
@@ -54,13 +55,16 @@ class SuiteLiftTests(unittest.TestCase):
                 def get(kind, name, namespace):
                     row = result["resources"][0 if kind.startswith("modelconfig") else 1]
                     return {"metadata": {"name": "proof", "namespace": namespace, "uid": row["uid"], "generation": 1}}
-                with mock.patch.object(suite, "cli", side_effect=cli), mock.patch.object(suite.driver, "get", side_effect=get), \
+                with mock.patch.object(suite.status, "qualify_status") as observe, mock.patch.object(suite, "cli", side_effect=cli), mock.patch.object(suite.driver, "get", side_effect=get), \
                      mock.patch.object(suite.driver, "audit_frames", side_effect=lambda _: list(frames)), mock.patch.object(suite.driver, "http_json", return_value={"model_calls": 1 if defect == "counts" else 0}):
                     if defect:
                         with self.assertRaises(suite.driver.QualificationError):
                             suite.qualify_lift("kmx", work, work / "layout", work / "receipt.json", bindings, evidence, "http://fixture", {"model_calls": 0})
                     else:
                         suite.qualify_lift("kmx", work, work / "layout", work / "receipt.json", bindings, evidence, "http://fixture", {"model_calls": 0})
+                        observe.assert_called_once()
+                        self.assertEqual(observe.call_args.args[1], result)
+                        self.assertEqual(observe.call_args.args[2:4], (b"receipt", "d" * 32))
                         self.assertEqual(len(calls), 4)
                         self.assertTrue(all("suite:v1@" + digest in args and "--from-layout" in args for args, _ in calls))
                         self.assertIn("--plan", calls[1][0])

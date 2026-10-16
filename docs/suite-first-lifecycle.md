@@ -61,7 +61,7 @@ published suite includes authored case inputs. Lift never builds, repacks or
 publishes. `--plan` is GET-only; apply creates absent resources or reuses exact
 receipt-bound resources, without update, adoption, ambiguous retry or rollback.
 
-## Lift now, status and execution later
+## Lift and read-only status; execution remains separate
 
 The command split is:
 
@@ -69,11 +69,14 @@ The command split is:
 kmx lift REF@sha256:DIGEST --to-context CTX --evidence FILE \
   (--inference provider:NAME | --bindings FILE)
                          # current: retrieve, verify, gate and place; never build
-kmx status               # current: Orka runtime status, not suite deployment status
+kmx status --to NAME     # GET-only destination Agent inventory and Lift provenance
+kmx orka status          # table-only Orka runtime report
 kmx run / kmx chat       # current: select an existing live Orka Agent
 ```
 
-Suite-aware status and member selection for run/chat are not current commands.
+Destination status observes the whole namespace, not this workspace's suite.
+It reads unsigned per-object Lift metadata, never infers missing provenance and
+keeps candidates separate. Member selection for run/chat remains unavailable.
 Root Lift's `--plan` performs GETs only; apply uses a guarded, single-use plan.
 Runtime and model come from the package; Lift is not a runtime or model switch.
 Evidence must agree with them but does not select them.
@@ -86,8 +89,8 @@ Everyday create/chat/run/eval/push commands now sit at the root and `kmx agent`
 is removed. Less frequent operations stay under nouns: `suite
 build|diff|pull|push|validate`, `eval diff|from-sessions|cleanup`, `task`, hidden `aks`,
 `local`, `orka` and `targets`. Removed root AKS aliases leave `lift` reserved for
-the packaged-suite operation. Root `status` and `orka status` currently retain the
-same Orka runtime report.
+the packaged-suite operation. Root `status --to NAME` is destination inventory;
+`orka status` retains the runtime report. See [destination status](destination-status.md).
 
 | Current path | Relationship to the direction |
 |---|---|

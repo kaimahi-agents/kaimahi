@@ -16,7 +16,7 @@ member with an exact OpenAI-compatible model. Orka remains the authoring default
 runtime and uses explicit author-owned bindings; evaluated push accepts only
 matching runtime-specific passing evidence. Root digest Lift supports both
 profiles. Kagent Lift is create-only: any occupied primary or generated child
-refuses, even with matching evaluated UIDs. Suite status and retirement remain
+refuses, even with matching evaluated UIDs. Legacy status and retirement remain
 unavailable. Public Orka eval creates fresh disposable candidates and cleans them
 up before exporting proof. Kagent evaluation refuses occupied targets without a
 complete caller-retained observation; qualified reuse is read-only, not
@@ -276,8 +276,9 @@ means private observations were persisted, not that placement or evaluation pass
 A cold composed Lift checks known storage constraints before evaluation/publication;
 late failures can still leave published content or acknowledged resources.
 `--plan`, all-reuse and already-lifted paths do not open this provenance store.
-Root `status` is still the existing runtime report; destination inventory is not
-part of this change.
+[Root `status --to NAME`](destination-status.md) reads the destination namespace
+and these per-object annotations without private history, writes or repair. It
+preserves missing/unknown/foreign distinctions; `orka status` remains runtime-only.
 
 ## Create
 
@@ -1151,7 +1152,7 @@ Before creation it can qualify configured pins, not observe a nonexistent Agent.
 Final placement and opaque Verify require the actual generated workload inventory
 to match exactly. A mismatch leaves a partial result/resources, never a successful
 placement, and triggers no cleanup or retry. Public result JSON is not restart
-or reuse authority. Kagent suite status/retirement and authenticated promotion
+or reuse authority. Kagent retirement and authenticated promotion
 policy remain unavailable; evidence never crosses runtimes.
 
 The existing pinned kind shard configures create, three-case evaluation (two text

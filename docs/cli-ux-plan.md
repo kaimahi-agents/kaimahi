@@ -38,7 +38,8 @@ frozen by this rule: the audit exceptions below apply in plain and rich modes.
 | Surface | Default human format | Machine/raw format | Compatibility rule |
 |---|---|---|---|
 | `quickstart` | phases, answer, governance warning, action tree | `-o json` | JSON stdout is one document; rich output is text mode only. |
-| root `status` / `orka status` | Orka runtime fields and tables | table only | Running controller identity, Deployments, CRDs and Providers; no plane suffix or legacy object counts. Bundle status is removed; root status is not a suite observer. |
+| root `status --to NAME` | Destination Agent inventory, per-object provenance and readiness; separate candidate roots | table, JSON | GET-only; incomplete rows remain visible; unknown is not absent. No local-history fallback or legacy bundle reader. |
+| `orka status` | Orka runtime fields and tables | table only | Running controller identity, Deployments, CRDs and Providers; no plane suffix or legacy object counts. |
 | `orka list` | heading and table | `-o json\|yaml` | Structured modes remain kubectl-native and are never decoded or restyled. |
 | `completion` | none | shell source / Cobra protocol | Permanently raw and executable. |
 | `chat` | interactive Orka session | none | One-shot chat and raw A2A `--json` output are retired. Enhanced input requires capable input/output terminals; scanner fallback is supported. |

@@ -61,8 +61,9 @@ Private Quickstart/console and extracted-directory transfer keep their contracts
 User `agent.yaml` readers/writers/receipts, `bundle` commands, `create --live`
 including previews/wizard, run bundle mode and `--bundles` flags are removed
 outright. Old Orka/kagent/AgentSessions bundle receipts are unreadable; no migration
-or on-disk/resource deletion. Suite status/retirement remain unavailable, without
-replacement. Preserve public AgentSuite/ToolProvider implementation-bundle graph,
+or on-disk/resource deletion. Legacy bundle status and retirement have no
+replacement. Root `status --to NAME` is separate GET-only destination inspection,
+not suite-source evaluation or a retired-state reader. Preserve public AgentSuite/ToolProvider implementation-bundle graph,
 build/pull/extracted-directory transfer and alpha `pkg/kmx` interfaces.
 
 Quickstart/console use native source → full eval → exact publication → reviewed

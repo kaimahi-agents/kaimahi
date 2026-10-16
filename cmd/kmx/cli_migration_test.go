@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -178,25 +177,28 @@ func TestCLIMigrationEvalHelpersPreserveGlobalFlagValidation(t *testing.T) {
 	}
 }
 
-func TestCLIMigrationStatusFormatParity(t *testing.T) {
+func TestCLIMigrationOrkaStatusFormats(t *testing.T) {
 	t.Setenv("KMX_TOOLCHAIN", "off")
 	t.Setenv("PATH", t.TempDir())
-	for _, flags := range [][]string{nil, {"-o", "table"}, {"--output", " TABLE "}, {"-o", "json"}, {"-o", "yaml"}, {"-o", "invalid"}} {
-		var got []string
-		for _, path := range [][]string{{"status"}, {"orka", "status"}} {
-			var out, diagnostics bytes.Buffer
-			deps, loads := testDependencies(&out, &diagnostics)
-			err := execute(append(append([]string(nil), path...), flags...), deps)
-			if err == nil || *loads != 1 {
-				t.Fatalf("%v %v: err=%v loads=%d", path, flags, err, *loads)
-			}
-			got = append(got, err.Error(), out.String(), diagnostics.String())
-		}
-		if !reflect.DeepEqual(got[:3], got[3:]) {
-			t.Fatalf("status %v contracts differ: root=%q orka=%q", flags, got[:3], got[3:])
+	for _, tc := range []struct {
+		flags []string
+		want  string
+	}{
+		{nil, "kubectl"},
+		{[]string{"-o", "table"}, "kubectl"},
+		{[]string{"--output", " TABLE "}, "kubectl"},
+		{[]string{"-o", "json"}, "status has no json output"},
+		{[]string{"-o", "yaml"}, "status has no yaml output"},
+		{[]string{"-o", "invalid"}, `status output "invalid" is not supported`},
+	} {
+		var out, diagnostics bytes.Buffer
+		deps, loads := testDependencies(&out, &diagnostics)
+		err := execute(append([]string{"orka", "status"}, tc.flags...), deps)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || *loads != 1 || out.Len() != 0 {
+			t.Fatalf("orka status %v: err=%v loads=%d stdout=%q", tc.flags, err, *loads, &out)
 		}
 	}
-	for _, path := range [][]string{{"status"}, {"orka", "status"}} {
+	for _, path := range [][]string{{"orka", "status"}} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
 		args := append([]string{"__complete"}, path...)
@@ -218,7 +220,7 @@ func TestCLIMigrationStatusFormatParity(t *testing.T) {
 	}
 }
 
-func TestCLIMigrationStatusReportsAndReadsAreIdentical(t *testing.T) {
+func TestCLIMigrationOrkaStatusDefaultAndTableReportsAndReadsAreIdentical(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls")
 	t.Setenv("KMX_STATUS_LOG", log)
@@ -238,13 +240,13 @@ esac
 		t.Fatal(err)
 	}
 	var reports, reads []string
-	for _, path := range [][]string{{"status"}, {"orka", "status"}} {
+	for _, path := range [][]string{{"orka", "status"}, {"orka", "status", "-o", "table"}} {
 		if err := os.WriteFile(log, nil, 0600); err != nil {
 			t.Fatal(err)
 		}
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
-		if err := execute(append(append([]string(nil), path...), "--context", "kind-test", "-o", "table"), deps); err != nil || *loads != 1 {
+		if err := execute(append(append([]string(nil), path...), "--context", "kind-test"), deps); err != nil || *loads != 1 {
 			t.Fatalf("%v: err=%v loads=%d diagnostics=%s", path, err, *loads, &diagnostics)
 		}
 		for _, want := range []string{"version running", "0.2.0", "deployments", "orka-controller=1/1", "providers", "local=true"} {

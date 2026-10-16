@@ -51,7 +51,7 @@ kmx quickstart
 ## Runtime Boundaries
 A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.
 - **Orka** is the default runtime. Its packaged workspace path supports evaluation, evaluated publication and root digest Lift with exact evaluated reuse; independent live Orka run and chat remain.
-- **kagent** support is exact-version and operation-specific: v0.10.3 Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated publication and create-only root digest Lift. Standalone run/chat, Python, RemoteMCP, suite status and retirement remain unavailable.
+- **kagent** support is exact-version and operation-specific: v0.10.3 Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated publication and create-only root digest Lift. Standalone run/chat, Python, RemoteMCP and retirement remain unavailable. Read-only destination status observes placement without enabling those execution/lifecycle capabilities.
 - **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary push and explicit private `eval --development-host FILE`: one fresh Session/config/Exec per declared run, full-pass private proof and exact-S evaluated push. This unauthenticated literal-loopback development path loads no cluster settings; explicit judging and repeated cases share Orka/kagent semantics. It supports no tools, Lift/chat/status or remote lifecycle. Receipt diff refuses its proof.
 ## Safety And Status
 > [!IMPORTANT]
@@ -125,7 +125,8 @@ CASES += [
     ("wrong kagent version", GOOD.replace("v0.10.3 Go", "v1.0 Python"), "kagent version boundary is missing"),
     ("kagent suite evaluation removed", GOOD.replace("`eval --bindings`, evaluated publication and ", ""), "kagent version boundary is missing"),
     ("kagent digest lift removed", GOOD.replace("create-only root digest Lift.", ""), "kagent version boundary is missing"),
-    ("kagent status claimed", GOOD.replace("suite status and retirement remain unavailable.", "suite status is available."), "kagent version boundary is missing"),
+    ("kagent status grants execution", GOOD.replace("Read-only destination status observes placement without enabling those execution/lifecycle capabilities.", "Destination status evaluates and repairs agents."), "kagent version boundary is missing"),
+    ("kagent retirement claimed", GOOD.replace("RemoteMCP and retirement remain unavailable.", "RemoteMCP and retirement are supported."), "kagent version boundary is missing"),
     ("agentsessions deployment claimed", GOOD.replace("no tools, Lift/chat/status or remote lifecycle", "a KMX deployment target"), "agentsessions boundary is missing"),
     ("agentsessions run freshness missing", GOOD.replace("Session/config/Exec per declared run", "Session/config/Exec per case"), "agentsessions boundary is missing"),
     ("agentsessions judge policy missing", GOOD.replace("explicit judging and repeated cases share Orka/kagent semantics", "judging remains unsupported"), "agentsessions boundary is missing"),

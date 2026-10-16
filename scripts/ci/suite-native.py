@@ -264,6 +264,136 @@ def private_model_route(source, destination, internal_ip, port):
     return "http://" + internal_ip + ":" + str(port) + "/v1"
 
 
+
+def status_get_args(args, context, namespace):
+    # Finite status-only boundary: no API proxy, Secret, POST, admission or setup.
+    require(args[:5] == ["--context", context, "--request-timeout=10s", "get", "--raw"] and len(args) == 6, "status-command")
+    path = urllib.parse.urlsplit(args[5])
+    require(not path.scheme and not path.netloc and not path.fragment, "status-path")
+    discovery = {"/apis", "/apis/core.orka.ai/v1alpha1", "/apis/kagent.dev/v1alpha2",
+                 "/api/v1/namespaces/kube-system", "/api/v1/namespaces/" + namespace}
+    if path.path in discovery:
+        require(not path.query, "status-discovery-query")
+        return
+    prefixes = {"/apis/core.orka.ai/v1alpha1": {"agents", "providers", "tasks"},
+                "/apis/kagent.dev/v1alpha2": {"agents", "modelconfigs"},
+                "/apis/apps/v1": {"deployments", "replicasets"}, "/api/v1": {"services", "pods"}}
+    for prefix, kinds in prefixes.items():
+        start = prefix + "/namespaces/" + namespace + "/"
+        if not path.path.startswith(start):
+            continue
+        parts = path.path[len(start):].split("/")
+        require(parts[0] in kinds and len(parts) in (1, 2), "status-resource")
+        query = urllib.parse.parse_qs(path.query, keep_blank_values=True)
+        if len(parts) == 2:
+            require(parts[0] != "tasks" and re.fullmatch(r"[a-z0-9][-a-z0-9.]{0,252}", parts[1]) and not path.query, "status-item")
+        else:
+            require(query.get("limit") == ["128"] and set(query) <= {"limit", "continue", "labelSelector"} and
+                    all(len(v) == 1 and 0 < len(v[0]) <= 4096 for v in query.values()), "status-list")
+        return
+    raise ValueError("status-path")
+
+
+def status_kubectl(args):
+    audit = pathlib.Path(os.environ["KMX_STATUS_AUDIT"])
+    def record(frame):
+        with audit.open("a") as stream:
+            stream.write(json.dumps(frame, sort_keys=True) + "\n")
+    try:
+        status_get_args(args, os.environ["KMX_STATUS_CONTEXT"], os.environ["KMX_STATUS_NAMESPACE"])
+    except Exception:
+        record({"stage": "blocked"})
+        return 1
+    record({"stage": "intent", "args": args})
+    result = subprocess.run([os.environ["KMX_STATUS_KUBECTL"], *args], stdin=subprocess.DEVNULL)
+    record({"stage": "complete", "args": args, "returnCode": result.returncode})
+    return result.returncode
+
+
+def verify_status(report, table, placement, evidence, run_id):
+    summary = placement["summary"]
+    require(report.get("version") == 1 and report.get("destination") == "qualified" and
+            report.get("complete") is True and report.get("errors") == [] and
+            report.get("target") == summary["target"] and isinstance(report.get("candidates"), list), "status-report")
+    rows = [r for r in report["agents"] if r.get("runtime") == summary["runtime"] and r.get("name") == summary["member"]]
+    require(len(rows) == 1, "status-agent")
+    row = rows[0]
+    require(row["kind"] == "Agent" and all(row.get(k) == summary[k] for k in ("runtime", "suite", "member", "suiteDigest")) and
+            row["readiness"]["state"] == "ready", "status-agent-identity-ready")
+    expected_specs = {r["kind"]: r["specDigest"] for r in summary["resources"]}
+    def provenance(value):
+        require(value.get("state") == "recorded" and isinstance(value.get("record"), dict), "status-recorded")
+        record = value["record"]
+        expected = {"version": 1, "suiteDigest": summary["suiteDigest"], "receiptDigest": "sha256:" + sha(evidence),
+                    "receiptRunID": run_id, "evaluation": summary["sourceTarget"], "target": summary["target"],
+                    "gate": "promotion", "evaluatedOnTarget": False, "resourceSpecs": expected_specs}
+        require(all(record.get(k) == v for k, v in expected.items()) and re.fullmatch(r"[0-9a-f]{32}", record.get("liftID", "")),
+                "status-evidence")
+        require(re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z", record.get("attemptedAt", "")), "status-attempt")
+        time.strptime(record["attemptedAt"].split(".")[0].removesuffix("Z"), "%Y-%m-%dT%H:%M:%S")
+        require("actor" in record and (record["actor"] is None or isinstance(record["actor"], str)), "status-actor")
+        return record
+    record = provenance(row["provenance"])
+    require(len(row["resources"]) == len(placement["resources"]), "status-pair")
+    for expected in placement["resources"]:
+        resources = [r for r in row["resources"] if r["kind"] == expected["kind"] and r["name"] == expected["name"]]
+        require(len(resources) == 1, "status-resource")
+        resource = resources[0]
+        require(resource["uid"] == expected["uid"] and resource["generation"] == expected["generation"] and
+                resource["readiness"]["state"] == "ready" and resource["specDrift"] == "matched", "status-resource-ready")
+        require(provenance(resource["provenance"]) == record, "status-per-object-record")
+        require(expected["kind"] + "/" + expected["name"] + ": provenance=recorded" in table, "status-table-resource")
+    for text in ("Destination: qualified", "AGENT/MEMBER", "complete: true", "not evaluated on this target",
+                 summary["member"] + "/" + summary["member"], summary["runtime"], summary["suiteDigest"][:19],
+                 record["receiptDigest"][:19], record["attemptedAt"]):
+        require(text in table, "status-table")
+    for text in ("unsigned", "uid continuity", "not answered or evaluated"):
+        require(text in table.lower() and text in report.get("observation", "").lower(), "status-observation-caveat")
+
+
+def qualify_status(work, placement, evidence, run_id, run, env, kubectl):
+    root = private_root(work / "destination-status")
+    workspace, wrappers, home = root / "workspace", root / "bin", root / "kmx-home"
+    workspace.mkdir(mode=0o700)
+    wrappers.mkdir(mode=0o700)
+    # Descriptor-only resolution must not load member source or build profiles.
+    descriptor = workspace / "workspace.yaml"
+    descriptor.write_text("schemaVersion: 1\nname: status-proof\nmember: agents/status-proof/member.yaml\nbuildProfile: build-profiles/default.json\n")
+    descriptor.chmod(0o600)
+    summary = placement["summary"]
+    target = {k: summary["target"][k] for k in ("context", "namespace")}
+    target["runtime"] = summary["runtime"]
+    config = workspace / "kmx.yaml"
+    config.write_text(json.dumps({"version": 1, "targets": {"qualified": target}}) + "\n")
+    config.chmod(0o600)
+    original = snapshot(workspace)
+    wrapper = wrappers / "kubectl"
+    wrapper.write_text("#!/usr/bin/env python3\nimport os,sys\nos.execv(sys.executable, [sys.executable, " +
+                       repr(str(pathlib.Path(__file__).resolve())) + ", '--status-kubectl', *sys.argv[1:]])\n")
+    wrapper.chmod(0o700)
+    audit = root / "kubectl.jsonl"
+    env = dict(env, PATH=str(wrappers) + ":" + env["PATH"], KMX_HOME=str(home),
+               KMX_STATUS_CONTEXT=target["context"], KMX_STATUS_NAMESPACE=target["namespace"],
+               KMX_STATUS_KUBECTL=str(kubectl), KMX_STATUS_AUDIT=str(audit), PYTHONDONTWRITEBYTECODE="1")
+    outputs = []
+    for format in ("json", "table"):
+        require(not home.exists(), "status-created-home")
+        start = len(audit.read_text().splitlines()) if audit.exists() else 0
+        result = run(["status", "--to", "qualified", "--workspace", str(workspace), "-o", format], env)
+        require(result.returncode == 0 and not result.stderr and not home.exists() and snapshot(workspace) == original, "status-command-or-state")
+        frames = [json.loads(line) for line in audit.read_text().splitlines()][start:] if audit.exists() else []
+        require(len(frames) >= 2 and len(frames) % 2 == 0, "status-missing-trace")
+        for intent, complete in zip(frames[::2], frames[1::2]):
+            require(intent.get("stage") == "intent" and complete.get("stage") == "complete" and
+                    complete.get("returnCode") == 0 and intent.get("args") == complete.get("args"), "status-audit")
+            status_get_args(intent["args"], target["context"], target["namespace"])
+        outputs.append(result.stdout)
+    verify_status(json.loads(outputs[0]), outputs[1].decode(), placement, evidence, run_id)
+    for format, output in zip(("json", "table"), outputs):
+        (root / ("status." + format)).write_bytes(output)
+    return {"formats": ["json", "table"], "readOnly": True, "freshHomeAbsent": True, "recordedPair": True}
+
+
 def verify_promote_effects(frames, member):
     require(all(f["verb"] != "blocked" and f.get("returnCode", 0) == 0 and not f.get("taskAttempt") for f in frames), "promote-audit")
     effects = [f for f in frames if f.get("admission") or f["persistent"]]
@@ -434,8 +564,8 @@ class Qualification:
                                 KMX_NATIVE_AUDIT=str(self.work / "audit.jsonl"))
         self.phase = "preflight"
 
-    def command(self, args, raw=None, timeout=60, product=False, success=True):
-        with subprocess.Popen([str(a) for a in args], cwd=self.work, env=self.product_env if product else self.env,
+    def command(self, args, raw=None, timeout=60, product=False, success=True, env=None):
+        with subprocess.Popen([str(a) for a in args], cwd=self.work, env=env if env is not None else self.product_env if product else self.env,
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True) as process:
             try:
                 stdout, stderr = process.communicate(raw, timeout=timeout)
@@ -587,6 +717,11 @@ class Qualification:
         require(inspect_task(self.get("tasks.core.orka.ai", name), row, member, case["input"]) == task, "fresh-task-drift")
         return {**task, "inputDigest": sha(case["input"].encode()), "answerDigest": result_digest(output)}
 
+    def status(self, placement, receipt, evidence):
+        self.phase = "destination-status"
+        return qualify_status(self.work, placement, evidence, receipt["runID"],
+                              lambda args, env: self.cli(*args, env=env), self.product_env, self.kubectl)
+
     def lift_qualification(self, workspace, layout, changed_layout, changed_s, receipt_path, receipt, cases):
         evidence, original = receipt_path.read_bytes(), snapshot(workspace)
         layout_before = snapshot(layout)
@@ -624,6 +759,7 @@ class Qualification:
                 verify_promote_completion_order(raw_frames)
                 verify_promote_effects(self.audit.completed(raw_frames), source["Member"])
                 verify_promote_result(result, receipt, evidence, subject, specs)
+                results["status"] = self.status(result, receipt, evidence)
                 placement = {"subject": subject, **{row["kind"].lower(): {"UID": row["uid"], "Generation": row["generation"],
                              "SpecDigest": row["specDigest"]} for row in result["resources"]}}
                 self.pair_proof(placement)
@@ -743,6 +879,7 @@ class Qualification:
         verify_promote_completion_order(raw_frames)
         verify_promote_effects(destination.audit.completed(raw_frames), member)
         verify_promote_result(result, receipt, evidence, subject, specs)
+        status = destination.status(result, receipt, evidence)
         require(destination.task_inventory() == tasks_before, "promote-create-task")
         placement = {"subject": subject}
         for row in result["resources"]:
@@ -760,7 +897,7 @@ class Qualification:
                 "sourceTarget": result["summary"]["sourceTarget"], "target": result["summary"]["target"],
                 "bindingDigest": subject["BindingDigest"], "renderedDigest": subject["RenderedDigest"],
                 "resources": [{k: row[k] for k in ("kind", "uid", "generation", "specDigest")} for row in result["resources"]],
-                "plans": 3, "admissions": 4, "nativeWrites": 2, "taskAttempts": 0, "freshAnswer": answer,
+                "plans": 3, "admissions": 4, "nativeWrites": 2, "taskAttempts": 0, "freshAnswer": answer, "status": status,
                 "refusal": {"name": "model-mismatch", "admissions": 0, "nativeWrites": 0, "taskAttempts": 0}}
 
     def empty_member(self, member):
@@ -1073,4 +1210,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(status_kubectl(sys.argv[2:]) if sys.argv[1:2] == ["--status-kubectl"] else main())

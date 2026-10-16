@@ -18,7 +18,7 @@ func main() {
 }
 
 func exitCode(err error) int {
-	if errors.Is(err, app.ErrTaskPending) {
+	if errors.Is(err, app.ErrTaskPending) || errors.Is(err, app.ErrDestinationStatusPending) {
 		return 2
 	}
 	return 1

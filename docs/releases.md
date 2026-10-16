@@ -227,6 +227,11 @@ Bare push needs saved `publishRepository`; explicit repository tags remain
 supported. Neither upgrading nor regenerating proof deletes saved files or
 deployed resources.
 
+Root `kmx status` now requires a named destination: use `kmx status --to NAME`
+for GET-only Agent placement/provenance inventory, or `kmx orka status` for the
+existing table-only runtime report. Status JSON is a new versioned observation,
+not a restored legacy document. See [destination status](destination-status.md).
+
 ### Earlier workflow changes
 
 v0.6.0 replaces the legacy user-bundle workflow with one-member, tool-free

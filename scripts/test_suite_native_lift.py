@@ -7,6 +7,7 @@ import os
 import pathlib
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -190,6 +191,7 @@ class LiftProofs(unittest.TestCase):
             q.pair_proof = lambda r: None
             q.task_inventory = lambda: []
             q.fresh_run = lambda *a: {"answerDigest": "fresh"}
+            q.status = lambda *a: {"recordedPair": True}
             frames, calls, effects = [], [], []
             q.frames = lambda: A.completed(frames)
             q.raw_frames = lambda: frames[:]
@@ -211,6 +213,7 @@ class LiftProofs(unittest.TestCase):
             self.assertEqual([c[1].get("promote", False) for c in calls], [False, True, False, True, True, True, True])
             self.assertEqual(output["local"]["freshAnswer"], {"answerDigest": "fresh"})
             self.assertTrue(output["registry"]["occupiedRepeatRefused"])
+            self.assertTrue(output["status"]["recordedPair"])
             self.assertTrue(workspace.exists())
 
 
@@ -304,6 +307,117 @@ class PromotionProofs(unittest.TestCase):
         bad["resources"][0]["uid"] = "occupied"
         with self.assertRaises(ValueError):
             Q.verify_promote_summary(bad, receipt, b"receipt", destination, specs)
+
+
+
+def status_fixture(runtime="orka"):
+    target = {"context": "kind-owned", "namespace": "orka-system", "clusterUID": "cluster", "namespaceUID": "namespace"}
+    source = dict(target, namespace="source", namespaceUID="source-namespace")
+    kinds = ("Provider", "Agent") if runtime == "orka" else ("ModelConfig", "Agent")
+    summary = {"runtime": runtime, "suite": "proof-suite", "member": "proof", "suiteDigest": "sha256:" + "a" * 64,
+               "target": target, "sourceTarget": source, "gate": "promotion",
+               "resources": [{"kind": k, "name": "proof", "specDigest": "sha256:" + str(i + 1) * 64} for i, k in enumerate(kinds)]}
+    placement = {"summary": summary, "resources": [dict(r, uid=r["kind"] + "-uid", generation=1) for r in summary["resources"]]}
+    record = {"version": 1, "liftID": "c" * 32, "suiteDigest": summary["suiteDigest"],
+              "receiptDigest": "sha256:" + Q.sha(b"receipt"), "receiptRunID": "d" * 32, "evaluation": source,
+              "target": target, "gate": "promotion", "evaluatedOnTarget": False, "attemptedAt": "2026-10-16T12:00:00Z",
+              "actor": None, "resourceSpecs": {r["kind"]: r["specDigest"] for r in summary["resources"]}}
+    provenance = {"state": "recorded", "reason": "unsigned create-time observation; no UID continuity proof", "record": record}
+    ready = {"state": "ready", "reason": "current-generation Ready placement"}
+    resources = [dict(r, readiness=dict(ready), provenance=copy.deepcopy(provenance), specDrift="matched")
+                 for r in placement["resources"]]
+    row = {"kind": "Agent", "name": "proof", "runtime": runtime, "suite": "proof-suite", "member": "proof",
+           "suiteDigest": summary["suiteDigest"], "provenance": copy.deepcopy(provenance), "readiness": ready,
+           "resources": resources, "workloads": []}
+    report = {"version": 1, "destination": "qualified", "target": target, "complete": True, "agents": [row],
+              "candidates": [], "errors": [], "observation": "Unsigned cluster observations; original resource UID continuity is unverified. Ready is placement, not answered or evaluated."}
+    table = ("Destination: qualified\n" + report["observation"] + "\nAGENT/MEMBER RUNTIME SUITE DIGEST RECEIPT EVIDENCE ATTEMPT/ACTOR AGENT PROVENANCE READY\n"
+             + "proof/proof " + runtime + " " + summary["suiteDigest"][:19] + " " + record["receiptDigest"][:19]
+             + " passed on source; promoted; not evaluated on this target 2026-10-16T12:00:00Z/not recorded recorded ready\n"
+             + "".join(r["kind"] + "/proof: provenance=recorded; spec=matched; ready: current-generation\n" for r in resources)
+             + "Agents: 1; evaluation candidate roots (separate): 0; complete: true\n")
+    return placement, report, table
+
+
+class StatusProofs(unittest.TestCase):
+    def test_status_requires_recorded_pair_receipt_target_and_current_readiness(self):
+        self.assertTrue(callable(getattr(Q, "verify_status", None)), "missing status qualification validator")
+        placement, report, table = status_fixture()
+        # Shared namespaces may contain unrelated, readable foreign rows.
+        report["agents"].append({"kind": "Agent", "name": "foreign", "runtime": "orka"})
+        Q.verify_status(report, table, placement, b"receipt", "d" * 32)
+        mutations = [
+            lambda r: r.update(complete=False), lambda r: r.update(errors=["partial"]),
+            lambda r: r["target"].update(namespaceUID="wrong"),
+            lambda r: r["agents"][0].update(runtime="kagent"),
+            lambda r: r["agents"][0].update(suiteDigest="sha256:" + "f" * 64),
+            lambda r: r["agents"][0]["readiness"].update(state="pending"),
+            lambda r: r["agents"][0]["provenance"].update(state="not recorded", record=None),
+            lambda r: r["agents"][0]["provenance"]["record"].update(receiptDigest="sha256:" + "f" * 64),
+            lambda r: r["agents"][0]["provenance"]["record"].update(gate="same-subject", evaluatedOnTarget=True),
+            lambda r: r["agents"][0]["provenance"]["record"].update(receiptRunID="e" * 32),
+            lambda r: r["agents"][0]["provenance"]["record"].update(attemptedAt="not-time"),
+            lambda r: r["agents"][0]["resources"][0]["provenance"].update(state="not recorded", record=None),
+            lambda r: r["agents"][0]["resources"][0].update(uid="replacement"),
+            lambda r: r["agents"][0]["resources"][0].update(specDrift="drifted"),
+        ]
+        for i, mutate in enumerate(mutations):
+            changed = copy.deepcopy(report); mutate(changed)
+            with self.subTest(defect=i), self.assertRaises(ValueError):
+                Q.verify_status(changed, table, placement, b"receipt", "d" * 32)
+        for bad in ("", table.replace("not evaluated on this target", "evaluated on target"),
+                    table.replace("Unsigned", "Trusted"), table.replace("Provider/proof: provenance=recorded", "Provider/proof: provenance=unknown")):
+            with self.subTest(table=bad[:20]), self.assertRaises(ValueError):
+                Q.verify_status(report, bad, placement, b"receipt", "d" * 32)
+
+    def test_status_driver_executes_json_and_table_get_only_without_creating_home(self):
+        self.assertTrue(callable(getattr(Q, "qualify_status", None)), "missing status qualification driver")
+        placement, report, table = status_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            work = pathlib.Path(directory)
+            real = work / "real-kubectl"
+            real.write_text("#!/usr/bin/env python3\nprint('{}')\n"); real.chmod(0o700)
+            calls = []
+            def run(args, env):
+                calls.append(args)
+                root = pathlib.Path(args[args.index("--workspace") + 1])
+                self.assertEqual(sorted(p.name for p in root.iterdir()), ["kmx.yaml", "workspace.yaml"])
+                self.assertEqual(Q.yaml.safe_load((root / "workspace.yaml").read_text()), {"schemaVersion": 1, "name": "status-proof", "member": "agents/status-proof/member.yaml", "buildProfile": "build-profiles/default.json"})
+                config = Q.yaml.safe_load((root / "kmx.yaml").read_text())
+                self.assertEqual(config, {"version": 1, "targets": {"qualified": {"context": "kind-owned", "namespace": "orka-system", "runtime": "orka"}}})
+                self.assertFalse(pathlib.Path(env["KMX_HOME"]).exists())
+                result = subprocess.run(["kubectl", "--context", "kind-owned", "--request-timeout=10s", "get", "--raw", "/apis"],
+                                        env=env, capture_output=True, check=True)
+                self.assertEqual(result.stdout, b"{}\n")
+                return subprocess.CompletedProcess([], 0, json.dumps(report).encode() if args[-1] == "json" else table.encode(), b"")
+            Q.qualify_status(work, placement, b"receipt", "d" * 32, run, dict(os.environ), str(real))
+            self.assertEqual([a[-1] for a in calls], ["json", "table"])
+            self.assertFalse((work / "destination-status/kmx-home").exists())
+
+    def test_status_wrapper_rejects_posts_tasks_admission_and_scope_escape_before_forwarding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = pathlib.Path(directory)
+            marker = work / "called"
+            real = work / "real-kubectl"
+            real.write_text("#!/usr/bin/env python3\nimport pathlib\npathlib.Path(" + repr(str(marker)) + ").touch()\nprint('{}')\n")
+            real.chmod(0o700)
+            wrapper = ROOT / "scripts/ci/suite-native.py"
+            env = dict(os.environ, KMX_STATUS_CONTEXT="kind-owned", KMX_STATUS_NAMESPACE="orka-system",
+                       KMX_STATUS_KUBECTL=str(real), KMX_STATUS_AUDIT=str(work / "audit.jsonl"))
+            prefix = ["--context", "kind-owned", "--request-timeout=10s"]
+            for tail in (["create", "--raw", "/api/v1/namespaces/orka-system/services/fixture/proxy", "-f", "-"],
+                         ["create", "--dry-run=server", "-f", "-"], ["get", "secret", "key", "-o", "json"],
+                         ["get", "--raw", "/api/v1/namespaces/other/pods?limit=128"],
+                         ["get", "--raw", "/api/v1/namespaces/orka-system/secrets"],
+                         ["get", "--raw", "/api/v1/namespaces/orka-system/services/fixture/proxy"],
+                         ["get", "--raw", "/apis/core.orka.ai/v1alpha1/namespaces/orka-system/tasks/task"],
+                         ["get", "--raw", "https://foreign/api"]):
+                with self.subTest(tail=tail):
+                    result = subprocess.run([sys.executable, str(wrapper), "--status-kubectl", *prefix, *tail], env=env, input=b"PRIVATE_CANARY", capture_output=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(marker.exists())
+            self.assertTrue((work / "audit.jsonl").exists(), "every rejected attempt needs a trace")
+            self.assertNotIn("PRIVATE_CANARY", (work / "audit.jsonl").read_text())
 
 
 if __name__ == "__main__":

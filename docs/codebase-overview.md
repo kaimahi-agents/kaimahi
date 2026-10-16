@@ -135,7 +135,8 @@ Native Orka workspace evaluation continuously qualifies one fixed two-case
 scenario. Exact-v0.10.3 Go kagent workspace evaluation, runtime-specific passing
 evidence, evaluated publication and same-runtime receipt comparison are also
 implemented and qualified. Root digest Lift supports both packaged profiles;
-kagent packaged status and retirement are not implemented.
+GET-only `status --to NAME` inventories deployed Orka/kagent Agents and unsigned
+Lift observations independently of private state. Retirement is not implemented.
 
 ### Native digest Lift
 
@@ -171,7 +172,7 @@ no conversion/migration or saved-file/resource deletion occurs. Suite-owned
 objects retain legacy invocation/adoption/copy refusals. Public AgentSuite/
 ToolProvider implementation-bundle graphs/build/pull and alpha Go interfaces
 remain. Independent live Orka run/chat and Task/result reads remain, without
-claiming suite-workspace run/chat or suite status/retirement.
+claiming suite-workspace run/chat, legacy status compatibility or retirement.
 
 ## Safety invariants
 

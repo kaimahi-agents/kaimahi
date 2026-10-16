@@ -25,8 +25,9 @@ kmx <noun> <verb> [object] [flags]
 - **Singular nouns.** Use `orka list`, not `orkas`. A plural may exist only
   as an explicitly approved hidden alias.
 - **Whole-tool entry points** include `quickstart`, `status`, `console`, `version`
-  and `completion`. Root `status` currently retains the same table-only Orka
-  runtime report as `orka status`; it is not bundle status or a suite observer.
+  and `completion`. Root `status --to NAME` is GET-only destination inventory with
+  table/JSON output; `orka status` retains the table-only runtime report. Neither
+  restores legacy bundle status or implies evaluation.
   New root verbs need an explicit workflow decision, not a synonym.
 - **At most two nouns deep.** `kmx <noun> <noun> <verb>` is the limit.
 - **A group without a verb prints help.** A noun on its own never acts.
@@ -60,8 +61,8 @@ Keep these distinctions:
 - **Lift, not deploy.** The local-to-remote story is Create, Prove, Lift.
   "Deployment" may describe the resources lift produces, but it is not a
   command verb.
-- **Workload management is not `down`.** Suite status/retirement are unavailable;
-  environment teardown grants no workload-specific replacement contract.
+- **Workload management is not `down`.** Destination status is read-only inspection;
+  retirement remains unavailable. Environment teardown grants no workload-specific replacement contract.
 - **`result` is not retry.** Reading a result never resubmits work.
 - **`validate` is offline.** Root Lift `--plan` performs GET-only target checks, not admission.
 - **`show` is the only verb for detail.** Do not add `get`, `describe` or
@@ -80,7 +81,7 @@ Keep these distinctions:
 |---|---|
 | `--context` | Kubernetes context for this invocation. Global, accepted anywhere on the line. |
 | `--namespace` | Kubernetes namespace the command reads or writes. |
-| `--to` | Named destination from workspace `kmx.yaml` for root eval or digest Lift. Never switches a saved/current context. |
+| `--to` | Named destination from workspace `kmx.yaml` for eval, Lift or destination status. Never switches a saved/current context. |
 | `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`. Machine formats print exactly one document. |
 | `-i`, `--interactive` | Switch a command that has a scripted mode to its guided terminal mode. Not used on commands that are only interactive. |
 | `--out` | Path for written artifacts. Never reuse `--output` for a path. |
@@ -138,7 +139,7 @@ Keep these distinctions:
 |---|---|
 | `0` | Success. |
 | `1` | Failure. |
-| `2` | Not finished yet: a pending Task, or a wait that ran out. |
+| `2` | Not finished yet: a pending Task/wait, or known pending deployed placement in a complete destination-status observation. Unknown/unhealthy/drift takes precedence with1. |
 
   A new exit code needs its own documentation in [kmx.md](kmx.md).
 - **Errors say what failed and what to run next.** Generated commands keep

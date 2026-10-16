@@ -129,8 +129,8 @@ func TestInteractiveCommandsExposeVerboseFlag(t *testing.T) {
 
 func TestContainerEngineFlagOverridesEnvironmentBeforeAppConstruction(t *testing.T) {
 	for _, argv := range [][]string{
-		{"--container-engine", "podman", "status"},
-		{"status", "--container-engine", "podman"},
+		{"--container-engine", "podman", "orka", "status"},
+		{"orka", "status", "--container-engine", "podman"},
 	} {
 		t.Run(strings.Join(argv, "_"), func(t *testing.T) {
 			var out, errOut bytes.Buffer
@@ -153,7 +153,7 @@ func TestContainerEngineFlagOverridesEnvironmentBeforeAppConstruction(t *testing
 			}
 			state := &commandState{deps: deps}
 			root := newRootCommand(state)
-			cmd, _, err := root.Find([]string{"status"})
+			cmd, _, err := root.Find([]string{"orka", "status"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -174,7 +174,7 @@ func TestContainerEngineFlagRejectsUnknownEngine(t *testing.T) {
 	deps := productionDependencies()
 	deps.stdout, deps.stderr = &out, &errOut
 	deps.newApp = func(cfg *config.Config) *app.App { return app.New(cfg) }
-	err := execute([]string{"status", "--container-engine", "containerd"}, deps)
+	err := execute([]string{"orka", "status", "--container-engine", "containerd"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "expected docker or podman") {
 		t.Fatalf("error = %v", err)
 	}
@@ -183,7 +183,7 @@ func TestContainerEngineFlagRejectsUnknownEngine(t *testing.T) {
 func TestExplicitEmptyContainerEngineIsRefused(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
-	err := execute([]string{"status", "--container-engine="}, deps)
+	err := execute([]string{"orka", "status", "--container-engine="}, deps)
 	if err == nil || !strings.Contains(err.Error(), "requires docker or podman") {
 		t.Fatalf("error = %v", err)
 	}
@@ -398,7 +398,7 @@ func TestConfigLoadFailureIsReturnedOnce(t *testing.T) {
 	var out, errOut bytes.Buffer
 	deps, _ := testDependencies(&out, &errOut)
 	deps.loadConfig = func(string, string) (*config.Config, error) { return nil, errors.New("bad config") }
-	if err := execute([]string{"status"}, deps); err == nil || err.Error() != "bad config" {
+	if err := execute([]string{"orka", "status"}, deps); err == nil || err.Error() != "bad config" {
 		t.Fatalf("config error=%v", err)
 	}
 }

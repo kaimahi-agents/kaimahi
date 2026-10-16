@@ -22,6 +22,7 @@ runtime contract when extending or comparing implementations.
 | Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](https://github.com/agent-primitives/suite/blob/main/spec.md) |
 | Resolve canonical deny-write policy bytes and a digest offline, without enforcement | [Portable policy](portable-policy.md) |
 | Author one native suite member offline, evaluate the Orka or exact kagent profile, publish the exact OCI graph, and lift that packaged digest | [Suite workspace](suite-workspace.md) |
+| Inspect deployed agents, per-object Lift provenance and readiness without writes | [Destination status](destination-status.md) |
 | Discover models and configure native inference | [Models](models.md), [Copilot inference](copilot-inference.md), [Foundry inference](local-foundry-inference.md) |
 | Chat with an existing Orka Agent | [Interactive chat](interactive-chat.md) |
 | Use an existing AKS cluster or provision a disposable one | [AKS](aks.md) |
@@ -32,8 +33,9 @@ runtime contract when extending or comparing implementations.
 Default create authors offline source. Exact-v0.10.3 Go/linux-amd64 kagent
 supports packaged eval/evaluated publication/create-only digest Lift; Orka remains
 default. No user bundle conversion/migration or saved-file/resource deletion
-occurs. Old receipts are unreadable. Suite status/retirement, kagent standalone
-run/chat, Python and RemoteMCP remain unavailable. Public AgentSuite/ToolProvider
+occurs. Old receipts are unreadable. Destination status is read-only placement
+inspection, not legacy bundle status. Retirement, kagent standalone run/chat,
+Python and RemoteMCP execution remain unavailable. Public AgentSuite/ToolProvider
 implementation-bundle formats, build/pull and extracted-directory transfer remain.
 See [format boundaries](bundle-format.md) and [current CLI contracts](kmx.md).
 

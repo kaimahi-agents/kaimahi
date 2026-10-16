@@ -150,19 +150,6 @@ func newUpCommand(state *commandState) *cobra.Command {
 	return cmd
 }
 
-// `kmx status` is the runtime report. Its -o flag survives with one value,
-// and json/yaml are refused BY NAME rather than dropped: a script pinned to
-// `-o json` has to be told the document is gone, and a flag that silently
-// ignores what it was given is worse than one that says no.
-func newStatusCommand(state *commandState) *cobra.Command {
-	var output string
-	cmd := &cobra.Command{Use: "status", Short: "Show the runtime Orka has installed, and what it can resolve", Args: cobra.NoArgs}
-	cmd.Flags().StringVarP(&output, "output", "o", "table", "output: table")
-	_ = cmd.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table"}))
-	cmd.RunE = appRun(state, func(a *app.App) error { return a.StatusWithOptions(app.StatusOptions{Output: output}) })
-	return cmd
-}
-
 func newDownCommand(state *commandState) *cobra.Command {
 	return &cobra.Command{Use: "down", Short: "Delete the local kind cluster", Args: cobra.NoArgs, RunE: appRun(state, func(a *app.App) error { return a.Down() })}
 }

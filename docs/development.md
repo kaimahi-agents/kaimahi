@@ -215,7 +215,7 @@ make
 export KIND_CLUSTER=dev-local
 export KUBE_CTX=kind-dev-local
 bin/kmx quickstart
-bin/kmx status
+bin/kmx orka status
 # Quickstart verifies placement before its separate fresh answer Task.
 bin/kmx local down
 ```
@@ -224,8 +224,10 @@ A bare `bin/kmx local up` installs the runtime without an Agent: kind, Ollama, t
 model and pinned Orka with its keyless `local` Provider. Author source with
 `bin/kmx create NAME --workspace DIR --model MODEL --instructions FILE`, then
 full eval, evaluated push and digest Lift with private evidence; or use guided
-`bin/kmx quickstart --interactive`. Root/Orka status is table-only runtime state,
-not a suite observer. Suite status/retirement remain unavailable.
+`bin/kmx quickstart --interactive`. `orka status` is table-only runtime state;
+root `status --to NAME` independently observes destination Agent placement and
+unsigned Lift provenance with GETs only. It does not read suite member content,
+private history or Secrets, and does not imply retirement.
 
 KMX never installs/upgrades kagent. Its exact-v0.10.3 Go/linux-amd64 packaged
 profile uses author-owned `--bindings` for root eval/Lift, without runtime/model
