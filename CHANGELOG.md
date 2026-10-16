@@ -31,6 +31,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   retain canonical evidence and acknowledged outcomes, including partial failures.
   Exact reuse and verified skips stay no-write; no provenance backfill, replay
   authority or destination-status command is added.
+- `kmx eval export --member ID --out FILE` writes detached portable evaluation
+  evidence with suite v0.2.0's shared schema/types/offline verifier. It selects
+  the latest completed exact-suite/member record without model/cluster/registry
+  calls, preserves every case/run/assertion outcome and refuses incomplete proof.
+  Fresh evaluation must capture a tagged Go module version plus module checksum,
+  or a full VCS revision with explicit unmodified status. Tagged `go install
+  module@version` builds qualify without VCS settings. Modified builds, unstamped
+  development/pseudo-version builds and older records without capture metadata
+  refuse; use an identified build and re-evaluate.
+  Public evidence is unsigned consistency, not authenticity or a private
+  push/Lift gate. Existing private receipt/envelope formats remain unchanged.
 
 - `kmx suite policy FILE [--administrative-policy FILE]` resolves a portable
   deny-write policy offline and prints canonical effective-policy JSON followed

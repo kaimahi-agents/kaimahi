@@ -17,14 +17,25 @@ var errSuitePassingFile = errors.New("native receipt requires a bounded private 
 // Preflight retains just one anchored destination; no locks or durable state.
 // PR5 must call it before runtime selection or native mutation.
 type suitePassingExport struct {
-	root       *os.Root
-	directory  *os.File
-	path, name string
-	parent     os.FileInfo
-	linked     bool
+	root         *os.Root
+	directory    *os.File
+	path, name   string
+	parent       os.FileInfo
+	linked       bool
+	publicParent bool
+	beforeLink   func() error
 }
 
 func preflightSuitePassingExport(ctx context.Context, destination, workspaceRoot, cacheRoot string) (*suitePassingExport, error) {
+	return preflightSuitePassingExportMode(ctx, destination, workspaceRoot, cacheRoot, false)
+}
+
+// Public exports permit safe 0755 parents; private defaults remain unchanged.
+func preflightSuitePublicExport(ctx context.Context, destination, workspaceRoot, cacheRoot string) (*suitePassingExport, error) {
+	return preflightSuitePassingExportMode(ctx, destination, workspaceRoot, cacheRoot, true)
+}
+
+func preflightSuitePassingExportMode(ctx context.Context, destination, workspaceRoot, cacheRoot string, publicParent bool) (*suitePassingExport, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -35,7 +46,7 @@ func preflightSuitePassingExport(ctx context.Context, destination, workspaceRoot
 	if err != nil {
 		return nil, errSuitePassingFile
 	}
-	if parent.Mode().Perm()&0077 != 0 {
+	if !publicParent && parent.Mode().Perm()&0077 != 0 {
 		root.Close()
 		return nil, errSuitePassingFile
 	}
@@ -48,7 +59,7 @@ func preflightSuitePassingExport(ctx context.Context, destination, workspaceRoot
 		root.Close()
 		return nil, errSuitePassingFile
 	}
-	return &suitePassingExport{root: root, directory: directory, path: destination, name: name, parent: parent}, nil
+	return &suitePassingExport{root: root, directory: directory, path: destination, name: name, parent: parent, publicParent: publicParent}, nil
 }
 
 func (e *suitePassingExport) Close() error {
@@ -64,7 +75,7 @@ func (e *suitePassingExport) unchanged() error {
 		return errSuitePassingExport
 	}
 	closeErr := root.Close()
-	if closeErr != nil || parent.Mode().Perm()&0077 != 0 || !os.SameFile(e.parent, parent) {
+	if closeErr != nil || !e.publicParent && parent.Mode().Perm()&0077 != 0 || !os.SameFile(e.parent, parent) {
 		return errSuitePassingExport
 	}
 	return nil
@@ -127,6 +138,14 @@ func (e *suitePassingExport) publishBytes(ctx context.Context, raw []byte) (err 
 	current, currentErr := e.root.Lstat(stage)
 	if statErr != nil || currentErr != nil || !os.SameFile(stageInfo, current) {
 		return errSuitePassingExport
+	}
+	if e.beforeLink != nil {
+		if err := e.beforeLink(); err != nil {
+			return err
+		}
+		if err := e.unchanged(); err != nil {
+			return err
+		}
 	}
 	if e.root.Link(stage, e.name) != nil {
 		return errSuitePassingExport

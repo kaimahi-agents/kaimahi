@@ -292,6 +292,23 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 ## AgentSuite evaluation storage
 
+- `eval export --member ID --out FILE` is offline portable-evidence publication,
+  not evaluation or a private push/Lift gate. Use shared suite v0.2.0 evidence
+  types/VerifyEvaluation against the exact prepared OCI layout and full ordered
+  case/run/assertion inventory. Never serialize or redact private receipts.
+  Fresh managed evaluations capture Go build info on every platform: tagged
+  module version plus module checksum, OR full VCS revision plus explicit
+  unmodified status. Modified producers always refuse; unstamped development
+  builds and pseudo-versions without a clean revision also refuse. Optional
+  reliable Linux binary hashes are private extras, never
+  eligibility or source-identity substitutes. Bound separate companions to the
+  committed sequence/workspace/S/canonical receipt digest; leave private receipt
+  and envelope formats unchanged, no older fallback or orphan authority.
+  Public config hashes use documented non-secret projections, never existing
+  private endpoint/Secret/binding/config hashes. Public output uses --out, stays
+  outside workspace/cache/managed state, and never replaces a file. Help and
+  completion are inert; no operational configuration, runtime or registry calls.
+
 - The portable format, validator and schemas are owned by
   [AgentSuite](https://github.com/agent-primitives/suite/blob/main/spec.md).
   Keep KMX details, migration notes, and design history in this repository's

@@ -760,6 +760,94 @@ source-free digest Lift into a fresh prepared namespace, including GET-only
 planning, ordered creation and occupied repeat refusal without another native
 execution. Standalone package evaluation remains unavailable.
 
+## Export portable evaluation evidence
+
+```sh
+kmx eval --to dev
+kmx eval export --workspace ./workspace --member greeter --out ../evidence.json
+```
+
+`eval export` is offline. It prepares the exact selected workspace snapshot,
+requires its sole member to match `--member`, selects the latest completed
+managed record for that workspace and OCI manifest digest, and verifies the
+public projection with [suite v0.2.0's verifier](https://github.com/agent-primitives/suite/blob/v0.2.0/spec.md#824-portable-evaluation-evidence)
+before writing. There are no model, cluster, registry or operational configuration
+calls. Multi-member workspaces, subsets and runtime/model overrides refuse.
+
+The detached document binds the full raw-byte OCI manifest descriptor, selected
+member/composition/platform, runtime/model/harness/renderer/profile, public index
+and ordered case digests, authored repeat policy, every run/assertion outcome,
+judge scores/configuration, evaluator identity and evaluation times. Failed runs
+absorbed by a passing `minPasses` policy remain visible. Unknown, missing, split
+judging, cancellation and execution errors never become passing evidence.
+
+**Fresh identified build provenance is required.** Managed evaluations capture
+the producer's Go build info on every platform and accept either:
+
+- A tagged module `Main.Version` plus its `Main.Sum` content checksum. Tagged
+  `go install module@vX.Y.Z` builds qualify without VCS settings.
+- A full `vcs.revision` plus explicit `vcs.modified: false`, as captured by release
+  binaries and clean checkout builds. This also permits development or
+  pseudo-version builds when the complete clean revision is recorded.
+
+An explicitly modified producer always refuses, even with a tag/checksum.
+Unstamped `(devel)` builds, missing/invalid identity and pseudo-versions without a
+clean full revision refuse. Module version alone is insufficient. The captured
+identity is never replaced by the exporting binary's identity. Inspect
+`go version -m <binary>` rather than inferring provenance from a clean folder:
+some toolchains omit VCS settings in linked worktrees. Use a tagged module build
+with its checksum or a normal clean checkout in that case, then evaluate again.
+The checksum identifies module content addressable through Go's checksum database;
+offline export does not query that database or attest the compiled executable.
+
+KMX-owned renderer/profile digests identify the canonical build-source projection,
+not executable bytes or authenticated provenance. An optional binary digest may
+be captured from reliable Linux `/proc/self/exe`; its absence is allowed on every
+platform and it remains private companion metadata, not a v0.2.0 public-schema
+extension or a substitute for the required module/VCS provenance. Runtime/harness
+image or declared binary identities remain distinct from the producer source
+identity.
+
+Public configuration hashes are documented allowlisted projections of exact model
+protocol/identifier, supported native request contract, public suite/profile
+identities, producer source provenance and evaluator/judge policy controls. They
+are not existing private binding/render/judge configuration hashes: those can
+contain endpoint, Secret, physical-object or prompt-derived inputs. No prompts,
+answers, rubrics, reasoning, endpoints, credentials, Secret references or private
+host/session/object IDs are copied into the public document. Judge response model
+forms are reconstructed only from already verified exact/version-qualified matches.
+Producer/model labels outside the public evidence token grammar refuse; they are
+not renamed to create a match. Identifier shape checks are not secret detection.
+
+Times are captured during evaluation, after runtime cleanup, deferred client/output
+closes and final input checks for completion. Export time and file modification
+time are never substituted. Older records without the companion metadata require
+a fresh evaluation; export does not scan backward for an older exportable record.
+The private receipt and managed completion envelope stay unchanged. Companion
+records are bound to workspace, suite digest, sequence and canonical receipt hash;
+only a matching committed pair is exportable. Orphans cannot authorize anything.
+Companions are limited to 4 KiB each and 256 per partition (1 MiB), with no automatic
+deletion. Failed capture or companion capacity/publication leaves ordinary private
+passing proof usable but public export unavailable. At capacity, deliberately
+select a different private `KMX_HOME` and evaluate again; do not delete a lock or
+record to bypass a running operation.
+
+`--out` names a new file in an existing safe directory outside workspace, suite
+cache and managed passing state. Existing files and unsafe/symlinked destinations
+refuse. Public-output parents may be readable (0755) but not group/world-writable;
+files use exclusive staged publication and mode 0600. Private receipt/companion
+parents remain private (0700). Results belong beside the suite, never inside its
+content layer: embedding them would change the suite digest they claim to cover.
+
+Consumers supply an independently resolved expected subject/policy to
+`agentsuite.VerifyEvaluation(layoutPath, expected, reader)`. A UI should show
+`evaluation: not verified` on refusal; a CI consumer should fail closed. This
+checks unsigned consistency, not who ran the evaluation, whether observations
+are true, model attestation, trusted time or deployment readiness. It does not
+replace private `--evaluation`/`--evidence` push/Lift gates. There is no KMX
+`eval verify` command, signature policy or registry-referrer transport in this
+export slice. Offline fixture tests are not live execution qualification.
+
 ## Publish
 
 ```sh
