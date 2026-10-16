@@ -161,8 +161,8 @@ hygiene checks run regardless of that mutation gate.
 
 One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`) and application
 interface (`pkg/kmx`). Portable AgentSuite validation is a separate dependency:
-`agentsuite "github.com/agent-primitives/suite"`, pinned to the genuine public pseudo-version
-`v0.3.2-0.20261016151746-76e3988b7f1d` in `go.mod` with real module sums.
+`agentsuite "github.com/agent-primitives/suite"`, pinned to the published minor release
+`v0.4.0` in `go.mod` with verified module sums.
 Public runtime-profile format acceptance enables offline packaging/selection, not
 qualified image execution; see [runtime profiles](docs/suite-workspace.md#explicit-runtime-profiles-offline-only).
 Root `go test ./...` covers kmx consumers, including first-class Orka paths and

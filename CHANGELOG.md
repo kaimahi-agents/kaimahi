@@ -45,8 +45,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   evaluated publication, native public evidence export and Lift remain unavailable;
   no Sessions image adapter/association or upstream ABI support is claimed.
   Legacy v1/v2 bytes/digests and policy enforcement refusals are unchanged.
-  Portable suite dependency pins genuine public
-  `v0.3.2-0.20261016151746-76e3988b7f1d` with module sums; no replace/workspace file.
+  Portable suite dependency pins published minor release
+  `v0.4.0` with verified module sums; no replace/workspace file.
   See [offline runtime profiles](docs/suite-workspace.md#explicit-runtime-profiles-offline-only).
 
 - `kmx eval verify --suite LAYOUT --evidence FILE --expect FILE` checks detached
