@@ -738,8 +738,11 @@ modified state or modified producer; it never replaces those with the exporting
 binary's identity. Module version alone is insufficient. `go install
 module@version` builds generally omit VCS settings and cannot produce exportable
 capture. Use a release binary with recorded clean VCS provenance, or build from
-a clean Git checkout with VCS stamping enabled, then evaluate again. A dirty
-working tree or `-buildvcs=false` cannot supply that provenance.
+a clean Git checkout with VCS stamping enabled, then evaluate again. A binary
+built from a dirty checkout or with `-buildvcs=false` cannot qualify. Inspect
+`go version -m <binary>` for the actual revision and unmodified settings: some
+toolchains omit them for linked Git worktrees even when the tree is clean.
+Use a normal clean checkout in that case; never infer provenance from the folder.
 
 KMX-owned renderer/profile digests identify the canonical build-source projection,
 not executable bytes or authenticated provenance. An optional binary digest may
