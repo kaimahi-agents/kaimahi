@@ -809,17 +809,13 @@ jobs:
             TestAgentTUIStartupPrefersRememberedRemoteAndHonorsFlags; do
             grep -q -- "--- PASS: $test" app-state.out
           done
-          if grep -q -- '--- SKIP:' state-dir.out app-state.out; then
-            exit 1
-          fi
+          ! grep -q -- '--- SKIP:' state-dir.out app-state.out
 
           go test ./cmd/kmx \
             -run '^TestPrivateTempDirReturnsCanonicalPrivatePath$' \
             -count=1 -v | tee private-temp-dir.out
           grep -q -- '--- PASS: TestPrivateTempDirReturnsCanonicalPrivatePath' private-temp-dir.out
-          if grep -q -- '--- SKIP:' private-temp-dir.out; then
-            exit 1
-          fi
+          ! grep -q -- '--- SKIP:' private-temp-dir.out
 
   # Existing native shards prove quickstart, exact-version kagent create,
   # Orka runtime and Helm integration, and clusterless live evaluation.
