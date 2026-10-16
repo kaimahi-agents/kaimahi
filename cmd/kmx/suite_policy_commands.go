@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +36,9 @@ func newSuitePolicyCommand() *cobra.Command {
 				err = &suiteDiagnosticError{err}
 			}
 		}()
+		if cmd.Flags().Changed("administrative-policy") && adminPath == "" {
+			return errors.New("--administrative-policy cannot be empty")
+		}
 		raw, err := readPolicyFile(args[0])
 		if err != nil {
 			return err

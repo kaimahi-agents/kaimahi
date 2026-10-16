@@ -99,6 +99,42 @@ func TestSuitePolicyCommandSanitizesMalformedInputDiagnostics(t *testing.T) {
 	}
 }
 
+func TestSuitePolicyCommandRefusesExplicitEmptyAdministrativePolicy(t *testing.T) {
+	policyPath := filepath.Join(t.TempDir(), "policy.json")
+	if err := os.WriteFile(policyPath, []byte(`{"version":"agentsuite.policy/v1","denyWritePaths":["/workspace"],"requiredCapabilities":["filesystem/deny-write/v1"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		flags   []string
+		wantErr bool
+	}{
+		{name: "omitted remains optional"},
+		{name: "empty equals", flags: []string{"--administrative-policy="}, wantErr: true},
+		{name: "empty argument", flags: []string{"--administrative-policy", ""}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&output, &diagnostics)
+			args := append([]string{"suite", "policy", policyPath}, tc.flags...)
+			err := execute(args, deps)
+			if *loads != 0 {
+				t.Fatalf("offline policy command loaded operational configuration %d times", *loads)
+			}
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "--administrative-policy cannot be empty") {
+					t.Fatalf("error = %v, want explicit empty administrative-policy refusal", err)
+				}
+				if output.Len() != 0 {
+					t.Fatalf("refusal emitted stdout: %q", output.String())
+				}
+			} else if err != nil || !strings.Contains(output.String(), "sha256:") {
+				t.Fatalf("omitted administrative policy: error = %v, output = %q", err, output.String())
+			}
+		})
+	}
+}
+
 func TestReadPolicyFileRejectsOversizedInput(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "oversized.json")
 	if err := os.WriteFile(path, bytes.Repeat([]byte{'x'}, maxPolicyFileBytes+1), 0o600); err != nil {
