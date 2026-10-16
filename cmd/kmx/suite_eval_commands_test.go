@@ -24,11 +24,17 @@ func suiteEvalSource(t *testing.T) (string, string) {
 	if err := workspace.Create(t.Context(), root, workspace.CreateOptions{Name: "greeter", Model: "authored-model", InstructionsFile: input}); err != nil {
 		t.Fatal(err)
 	}
-	parent := t.TempDir()
-	if err := os.Chmod(parent, 0700); err != nil {
+	parent := privateTempDir(t)
+	return root, filepath.Join(parent, "passing.json")
+}
+
+func privateTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	return root, filepath.Join(parent, "passing.json")
+	return dir
 }
 
 func TestSuiteEvalOfflineBeforeConfiguration(t *testing.T) {
@@ -268,6 +274,7 @@ func TestSuiteKagentEvalRefusesBeforeConfiguration(t *testing.T) {
 }
 
 func TestSuiteEvalHelpersHelpAndCompletionRemainOffline(t *testing.T) {
+	t.Chdir(privateTempDir(t))
 	for _, args := range [][]string{{"eval", "--help"}, {"eval", "diff", "--help"}, {"eval", "from-sessions", "--help"}, {"__complete", "eval", "--"}, {"__complete", "eval", "diff", ""}, {"eval", "from-sessions", "uid", "--sessions", "127.0.0.1:8080", "--assertions", "missing.yaml", "--out", "private.json"}} {
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)

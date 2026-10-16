@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,6 +19,27 @@ import (
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+func safeSuiteFixture(t *testing.T, source string) string {
+	t.Helper()
+	destination := t.TempDir()
+	if err := os.CopyFS(destination, os.DirFS(source)); err != nil {
+		t.Fatal(err)
+	}
+	if err := filepath.WalkDir(destination, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		mode := os.FileMode(0644)
+		if entry.IsDir() {
+			mode = 0755
+		}
+		return os.Chmod(path, mode)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return destination
+}
 
 func suiteCommandArchive(t *testing.T, attested bool) ([]byte, string, string, string) {
 	t.Helper()
@@ -99,7 +122,8 @@ func TestSuiteBuildAttestationFlagsAndOutput(t *testing.T) {
 					return kmxsuite.BuildResult{MediaType: kmxsuite.OCIArchiveMediaType, AttestationsRequested: !tc.disabled, RequireAttestations: tc.required}, err
 				})
 			}
-			args := append([]string{"suite", "build", filepath.Join("..", "..", "testdata", "agentsuite", "minimal"), "--model-base-url", "https://models.example/v1", "--output", output}, tc.args...)
+			fixture := safeSuiteFixture(t, filepath.Join("..", "..", "testdata", "agentsuite", "minimal"))
+			args := append([]string{"suite", "build", fixture, "--model-base-url", "https://models.example/v1", "--output", output}, tc.args...)
 			if err := execute(args, deps); err != nil {
 				t.Fatal(err)
 			}

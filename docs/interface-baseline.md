@@ -37,6 +37,7 @@ kmx
 │   ├── validate <path>
 │   ├── diff <before> <after>
 │   ├── build <directory>
+│   ├── policy <file>
 │   ├── push <directory> <reference>
 │   └── pull <reference>
 ├── task
