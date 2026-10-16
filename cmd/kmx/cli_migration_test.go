@@ -139,6 +139,7 @@ func TestCLIMigrationEvalHelpersSkipParentOperationalHooks(t *testing.T) {
 		{[]string{"eval", "from-sessions", "source-1", "--sessions", "127.0.0.1:8080", "--assertions", "missing.yaml", "--out", "private.json"}, "assertion"},
 	} {
 		t.Run(tc.args[1], func(t *testing.T) {
+			t.Chdir(privateTempDir(t))
 			t.Setenv("PATH", t.TempDir())
 			var out, diagnostics bytes.Buffer
 			deps, loads := testDependencies(&out, &diagnostics)

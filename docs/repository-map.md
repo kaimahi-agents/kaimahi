@@ -53,14 +53,14 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
 | `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 61 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
-| `docs/` | 54 tracked files; native guides, design, site scaffolding and history | — | maintainer and process docs |
+| `docs/` | 55 tracked files; native guides, design, site scaffolding and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (53 files) | **Installed** | Terminal create prompts for missing exact model/file inputs; scripts require both flags. Composed Orka workspace Lift with four-stage/verbose/JSON presentation alongside explicit digest Lift. Named workspace destinations with resolve-once eval/Lift selectors, offline list-only `ctx` and optional bounded local-context/anonymous registry checks (not capability or execution proof). Root native workspace create/eval/push/digest Lift, Orka install/status/show/list, independent live `run --agent`/chat and Task results, quickstart/native console creation, context/local and hidden AKS setup/teardown, read-only targets, public suite validation/diff/build/push/pull. Eval diff reads only strict full-passing native Orka/kagent suite receipts; pinned AgentSessions native authoring/development eval and exact-S evaluated push remain independent of deleted bundle evaluation, with no cluster settings, auth or remote lifecycle; from-sessions exports private references only. Removed bundle/live-create routes are unknown; interactive Lift only prints the move notice. |
+| `cmd/kmx` (55 files) | **Installed** | Terminal create prompts for missing exact model/file inputs; scripts require both flags. Composed Orka workspace Lift with four-stage/verbose/JSON presentation alongside explicit digest Lift. Named workspace destinations with resolve-once eval/Lift selectors, offline list-only `ctx` and optional bounded local-context/anonymous registry checks (not capability or execution proof). Root native workspace create/eval/push/digest Lift, Orka install/status/show/list, independent live `run --agent`/chat and Task results, quickstart/native console creation, context/local and hidden AKS setup/teardown, read-only targets, public suite validation/diff/build/push/pull, and offline policy resolution with optional administrative-policy composition. Eval diff reads only strict full-passing native Orka/kagent suite receipts; pinned AgentSessions native authoring/development eval and exact-S evaluated push remain independent of deleted bundle evaluation, with no cluster settings, auth or remote lifecycle; from-sessions exports private references only. Removed bundle/live-create routes are unknown; interactive Lift only prints the move notice. |
 
 ## `testdata/agentsuite/` — owned consumer fixtures (`testdata/`)
 
@@ -282,12 +282,13 @@ Existing cluster deletion
 owns runtime/model cleanup. These files are checkout-only scaffolding, not an
 installer or new CLI/API capability.
 
-## `docs/` — 54 tracked files, native guides, site scaffolding and design/history
+## `docs/` — 55 tracked files, native guides, site scaffolding and design/history
 
-**Guides and index (14):** `README.md`, `getting-started.md`, `kmx.md`,
+**Guides and index (15):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `models.md`, `releases.md`, `FAQ.md`, `orka.md`,
 `copilot-inference.md`, `interactive-chat.md`,
-`orka-k8s-tool.md`, `bundle-format.md`, `runtime-adapters.md` and `suite-workspace.md`.
+`orka-k8s-tool.md`, `bundle-format.md`, `runtime-adapters.md`,
+`suite-workspace.md` and `portable-policy.md`.
 
 **Maintainer and process (31):** `development.md`, `docs-site.md`, `.vitepress/`,
 `package.json`, `package-lock.json`, `codebase-overview.md`,
