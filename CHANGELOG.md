@@ -24,6 +24,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- `kmx suite policy FILE [--administrative-policy FILE]` resolves a portable
+  deny-write policy offline and prints canonical effective-policy JSON followed
+  by its domain-separated digest. Administrative paths can only add restrictions.
+  Inputs are bounded to 4 MiB; explicitly empty administrative-policy flags refuse
+  and malformed-input diagnostics are terminal-safe. No enforcement or provider
+  selection is performed. [Policy contract](docs/portable-policy.md).
+
 - Provisional KMX-local `schemaVersion: 2` member-list source supports bounded,
   deterministic offline multi-member preparation and inventory loading, with
   each member's public `evals/<member>/` index/cases and complete graph/digest
