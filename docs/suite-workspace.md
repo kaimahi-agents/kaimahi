@@ -833,7 +833,9 @@ kmx eval verify --suite sha256:<reviewed-manifest-digest> \
 The explicit digest must match `expected.subject.manifest.digest`, and shared
 verification binds that descriptor to the actual raw manifest bytes and complete
 content graph. Only a single-manifest OCI layout is accepted; an extracted suite
-directory or multi-reference layout refuses. Verification does not prepare a
+directory or multi-reference layout refuses. Path-form `--suite` selectors cannot
+contain `:` or `@`, or begin with `//`: these reference-shaped inputs refuse even
+if a similarly named local directory exists. Verification does not prepare a
 workspace, read a managed receipt, load operational configuration, create KMX
 state, or call a runtime, model, cluster, registry or checksum database.
 
