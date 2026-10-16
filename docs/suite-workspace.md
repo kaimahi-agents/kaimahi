@@ -770,7 +770,7 @@ kmx eval export --workspace ./workspace --member greeter --out ../evidence.json
 `eval export` is offline. It prepares the exact selected workspace snapshot,
 requires its sole member to match `--member`, selects the latest completed
 managed record for that workspace and OCI manifest digest, and verifies the
-public projection with [suite v0.2.0's verifier](https://github.com/agent-primitives/suite/blob/v0.2.0/spec.md#824-portable-evaluation-evidence)
+public projection with [suite v0.3.1's verifier](https://github.com/agent-primitives/suite/blob/v0.3.1/spec.md#824-portable-evaluation-evidence)
 before writing. There are no model, cluster, registry or operational configuration
 calls. Multi-member workspaces, subsets and runtime/model overrides refuse.
 
@@ -883,7 +883,10 @@ kmx eval verify --suite sha256:<reviewed-manifest-digest> \
 The explicit digest must match `expected.subject.manifest.digest`, and shared
 verification binds that descriptor to the actual raw manifest bytes and complete
 content graph. Only a single-manifest OCI layout is accepted; an extracted suite
-directory or multi-reference layout refuses. Path-form `--suite` selectors cannot
+directory or multi-reference layout refuses. The pinned suite v0.3.1 loader
+refuses FIFOs, devices, sockets and symlinks in OCI metadata/referenced blobs,
+and symlinked blob directories; these are `artifact` refusals, not blocking reads.
+Path-form `--suite` selectors cannot
 contain `:` or `@`, or begin with `//`: these reference-shaped inputs refuse even
 if a similarly named local directory exists. Verification does not prepare a
 workspace, read a managed receipt, load operational configuration, create KMX
@@ -892,7 +895,7 @@ state, or call a runtime, model, cluster, registry or checksum database.
 ### The reviewed expectation file
 
 `--expect` requires the complete shared
-[`agentsuite.ExpectedEvaluation`](https://github.com/agent-primitives/suite/blob/v0.2.0/evidence_types.go),
+[`agentsuite.ExpectedEvaluation`](https://github.com/agent-primitives/suite/blob/v0.3.1/evidence_types.go),
 not a subject-only JSON object and not an evidence document:
 
 | Required section | What reviewers pin independently |

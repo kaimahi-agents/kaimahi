@@ -25,13 +25,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Added
 
 - `kmx eval verify --suite LAYOUT --evidence FILE --expect FILE` checks detached
-  public evidence offline using shared suite v0.2.0 VerifyEvaluation. Digest input
+  public evidence offline using shared suite v0.3.1 VerifyEvaluation. Digest input
   requires explicit `--from-layout DIR`, without registry/cache/state lookup.
   Commit a complete reviewed ExpectedEvaluation JSON beside the suite for CI;
   never derive accepted identities/policy from evidence being checked. Success
   exits0 with text or `-o json` summary; typed safe refusals exit1. No model,
   cluster, configuration or private push/Lift gate changes. Unsigned consistency
-  does not authenticate an evaluator or attest execution truth/readiness.
+  does not authenticate an evaluator or attest execution truth/readiness. The
+  published v0.3.1 loader refuses special files/symlinks in OCI metadata and
+  referenced blobs instead of blocking on FIFO inputs; module sums are pinned.
 
 - Release Lift stamps newly created Orka/kagent primary objects with non-secret
   `kaimahi.dev/lift-record` metadata: suite and consumed receipt identity,
