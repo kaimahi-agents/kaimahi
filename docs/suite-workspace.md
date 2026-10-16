@@ -731,24 +731,30 @@ judge scores/configuration, evaluator identity and evaluation times. Failed runs
 absorbed by a passing `minPasses` policy remain visible. Unknown, missing, split
 judging, cancellation and execution errors never become passing evidence.
 
-**Fresh clean build provenance is required.** Managed evaluations capture the
-producer's Go build info on all platforms: module version, full `vcs.revision`
-and explicit `vcs.modified: false`. Export refuses a missing revision, unknown
-modified state or modified producer; it never replaces those with the exporting
-binary's identity. Module version alone is insufficient. `go install
-module@version` builds generally omit VCS settings and cannot produce exportable
-capture. Use a release binary with recorded clean VCS provenance, or build from
-a clean Git checkout with VCS stamping enabled, then evaluate again. A binary
-built from a dirty checkout or with `-buildvcs=false` cannot qualify. Inspect
-`go version -m <binary>` for the actual revision and unmodified settings: some
-toolchains omit them for linked Git worktrees even when the tree is clean.
-Use a normal clean checkout in that case; never infer provenance from the folder.
+**Fresh identified build provenance is required.** Managed evaluations capture
+the producer's Go build info on every platform and accept either:
+
+- A tagged module `Main.Version` plus its `Main.Sum` content checksum. Tagged
+  `go install module@vX.Y.Z` builds qualify without VCS settings.
+- A full `vcs.revision` plus explicit `vcs.modified: false`, as captured by release
+  binaries and clean checkout builds. This also permits development or
+  pseudo-version builds when the complete clean revision is recorded.
+
+An explicitly modified producer always refuses, even with a tag/checksum.
+Unstamped `(devel)` builds, missing/invalid identity and pseudo-versions without a
+clean full revision refuse. Module version alone is insufficient. The captured
+identity is never replaced by the exporting binary's identity. Inspect
+`go version -m <binary>` rather than inferring provenance from a clean folder:
+some toolchains omit VCS settings in linked worktrees. Use a tagged module build
+with its checksum or a normal clean checkout in that case, then evaluate again.
+The checksum identifies module content addressable through Go's checksum database;
+offline export does not query that database or attest the compiled executable.
 
 KMX-owned renderer/profile digests identify the canonical build-source projection,
 not executable bytes or authenticated provenance. An optional binary digest may
 be captured from reliable Linux `/proc/self/exe`; its absence is allowed on every
 platform and it remains private companion metadata, not a v0.2.0 public-schema
-extension or a substitute for VCS provenance. Runtime/harness image or declared
+extension or a substitute for the required module/VCS provenance. Runtime/harness image or declared
 binary identities remain distinct from the producer source identity.
 
 Public configuration hashes are documented allowlisted projections of exact model

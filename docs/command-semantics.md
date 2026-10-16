@@ -72,9 +72,10 @@ stdout and exit contracts are preserved; this is not a receipt or bundle migrati
 `eval export [--workspace DIR] --member ID --out FILE` writes detached public
 AgentSuite evidence from the latest completed exact-suite managed evaluation.
 It runs offline with explicit member matching, strict public-library verification,
-new-file publication and no cluster/model/registry calls. Fresh captured clean
-Go build provenance is required; missing revision, modified producer or legacy
-metadata refuses. Private receipts and push/Lift authority remain unchanged.
+new-file publication and no cluster/model/registry calls. Fresh captured Go build
+provenance requires a tagged module version plus module checksum, or full VCS
+revision plus explicit unmodified state. Modified producers, unstamped development
+builds, pseudo-versions without a clean revision and legacy metadata refuse. Private receipts and push/Lift authority remain unchanged.
 See [public evidence](suite-workspace.md#export-portable-evaluation-evidence).
 
 Offline `eval diff` compares strict full-passing native Orka/kagent suite evidence

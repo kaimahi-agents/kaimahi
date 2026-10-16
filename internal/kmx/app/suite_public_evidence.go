@@ -21,7 +21,7 @@ type SuiteEvaluationExportOptions struct{ Workspace, Member, Out string }
 
 var (
 	errSuitePublicSubject     = errors.New("public evaluation export refused: artifact or member mismatch; select the sole packaged member and re-evaluate unchanged source")
-	errSuitePublicProof       = errors.New("public evaluation export refused: latest exact-suite proof incomplete; use a clean VCS-recorded kmx build and re-evaluate")
+	errSuitePublicProof       = errors.New("public evaluation export refused: latest exact-suite proof incomplete; use a tagged module/checksum or clean VCS-recorded kmx build and re-evaluate")
 	errSuitePublicProjection  = errors.New("public evaluation export refused: unsupported public identity or policy; use supported token identities and re-evaluate")
 	errSuitePublicOutput      = errors.New("public evaluation export refused: unsafe or occupied output; choose a new file outside workspace, cache and managed state in a non-writable-to-others directory")
 	errSuitePublicPersistence = errors.New("public evaluation export incomplete: output may exist; inspect the chosen file before selecting a new output")

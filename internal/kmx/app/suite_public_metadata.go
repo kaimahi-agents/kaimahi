@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,16 +24,19 @@ import (
 
 const maxSuitePublicMetadataBytes = 4096
 
-var errSuitePublicMetadata = errors.New("public evaluation export unavailable: provenance missing or invalid; use a clean VCS-recorded kmx build and re-evaluate")
+var errSuitePublicMetadata = errors.New("public evaluation export unavailable: provenance missing or invalid; use a tagged module with a checksum or a clean VCS-recorded kmx build and re-evaluate")
 var errSuitePublicCapacity = errors.New("public evaluation export unavailable: private metadata storage unsafe or full; select another private KMX_HOME and re-evaluate (no automatic cleanup)")
 var suitePublicRevision = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 var suitePublicToken = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+var suitePublicRelease = regexp.MustCompile(`^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
+var suitePublicPseudo = regexp.MustCompile(`^v[0-9]+\.(?:0\.0-|[0-9]+\.[0-9]+-(?:[^+]*\.)?0\.)[0-9]{14}-[A-Za-z0-9]+$`)
 
 type suitePublicProducer struct {
 	Module   string `json:"module"`
 	Version  string `json:"version"`
-	Revision string `json:"revision"`
-	Modified bool   `json:"modified"`
+	Sum      string `json:"sum,omitempty"`
+	Revision string `json:"revision,omitempty"`
+	Modified *bool  `json:"modified,omitempty"`
 }
 
 // The optional executable digest is private and has no role in public identity.
@@ -58,38 +62,88 @@ func suitePublicDigest(v any) (string, error) {
 	return suitePublicHash(raw), nil
 }
 func (p suitePublicProducer) publicVersion() (string, error) {
-	version := p.Version
-	if version == "(devel)" {
-		version = "devel"
+	if p.Module != "github.com/kaimahi-agents/kaimahi" || len(p.Version) > 128 {
+		return "", errSuitePublicMetadata
 	}
-	version += "-git-" + p.Revision
-	if p.Module != "github.com/kaimahi-agents/kaimahi" || !suitePublicRevision.MatchString(p.Revision) || p.Modified || !suitePublicID(version) {
+	if (p.Revision != "" && !suitePublicRevision.MatchString(p.Revision)) || (p.Modified != nil && *p.Modified) {
+		return "", errSuitePublicMetadata
+	}
+	var sum []byte
+	if p.Sum != "" {
+		var err error
+		if !strings.HasPrefix(p.Sum, "h1:") || len(p.Sum) != 47 {
+			return "", errSuitePublicMetadata
+		}
+		sum, err = base64.StdEncoding.Strict().DecodeString(p.Sum[3:])
+		if err != nil || len(sum) != sha256.Size || base64.StdEncoding.EncodeToString(sum) != p.Sum[3:] {
+			return "", errSuitePublicMetadata
+		}
+	}
+	version := p.Version
+	if sum != nil && suitePublicTaggedVersion(version) {
+		// Lossless checksum encoding fits the public token alphabet. Main.Sum is
+		// a recorded build claim, not an independently verified checksumDB proof.
+		version += fmt.Sprintf("-mod-%x", sum)
+	} else {
+		if p.Revision == "" || p.Modified == nil {
+			return "", errSuitePublicMetadata
+		}
+		if version == "(devel)" {
+			version = "devel"
+		}
+		if version != "" {
+			version += "-"
+		}
+		version += "git-" + p.Revision
+	}
+	if !suitePublicID(version) {
 		return "", errSuitePublicMetadata
 	}
 	return version, nil
 }
+
+func suitePublicTaggedVersion(version string) bool {
+	if !suitePublicRelease.MatchString(version) || suitePublicPseudo.MatchString(version) {
+		return false
+	}
+	_, prerelease, _ := strings.Cut(version, "-")
+	for _, part := range strings.Split(prerelease, ".") {
+		if len(part) < 2 || part[0] != '0' {
+			continue
+		}
+		if strings.Trim(part, "0123456789") == "" {
+			return false
+		}
+	}
+	return true
+}
 func suitePublicBuildInfo(b *debug.BuildInfo) (suitePublicProducer, error) {
-	if b == nil {
+	if b == nil || b.Main.Replace != nil {
 		return suitePublicProducer{}, errSuitePublicMetadata
 	}
-	p := suitePublicProducer{Module: b.Main.Path, Version: b.Main.Version}
+	p := suitePublicProducer{Module: b.Main.Path, Version: b.Main.Version, Sum: b.Main.Sum}
 	seen := map[string]bool{}
 	for _, s := range b.Settings {
-		if s.Key != "vcs.revision" && s.Key != "vcs.modified" {
+		if s.Key != "vcs" && !strings.HasPrefix(s.Key, "vcs.") {
 			continue
 		}
 		if seen[s.Key] {
 			return p, errSuitePublicMetadata
 		}
 		seen[s.Key] = true
-		if s.Key == "vcs.revision" {
+		switch s.Key {
+		case "vcs.revision":
+			if !suitePublicRevision.MatchString(s.Value) {
+				return p, errSuitePublicMetadata
+			}
 			p.Revision = s.Value
-		} else if s.Value != "false" {
-			return p, errSuitePublicMetadata
+		case "vcs.modified":
+			if s.Value != "false" {
+				return p, errSuitePublicMetadata
+			}
+			modified := false
+			p.Modified = &modified
 		}
-	}
-	if !seen["vcs.modified"] || p.Version == "" {
-		return p, errSuitePublicMetadata
 	}
 	_, err := p.publicVersion()
 	return p, err

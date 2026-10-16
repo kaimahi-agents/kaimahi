@@ -286,9 +286,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   not evaluation or a private push/Lift gate. Use shared suite v0.2.0 evidence
   types/VerifyEvaluation against the exact prepared OCI layout and full ordered
   case/run/assertion inventory. Never serialize or redact private receipts.
-  Fresh managed evaluations capture Go module version, full VCS revision and
-  explicit unmodified status on every platform; missing/modified provenance
-  refuses export. Optional reliable Linux binary hashes are private extras, never
+  Fresh managed evaluations capture Go build info on every platform: tagged
+  module version plus module checksum, OR full VCS revision plus explicit
+  unmodified status. Modified producers always refuse; unstamped development
+  builds and pseudo-versions without a clean revision also refuse. Optional reliable Linux binary hashes are private extras, never
   eligibility or source-identity substitutes. Bound separate companions to the
   committed sequence/workspace/S/canonical receipt digest; leave private receipt
   and envelope formats unchanged, no older fallback or orphan authority.

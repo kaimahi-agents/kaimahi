@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -10,7 +11,8 @@ import (
 )
 
 func publicProducerFixture() suitePublicProducer {
-	return suitePublicProducer{Module: "github.com/kaimahi-agents/kaimahi", Version: "(devel)", Revision: strings.Repeat("a", 40), Modified: false}
+	modified := false
+	return suitePublicProducer{Module: "github.com/kaimahi-agents/kaimahi", Version: "(devel)", Revision: strings.Repeat("a", 40), Modified: &modified}
 }
 func publicMetadataFixture() *suitePublicMetadata {
 	return &suitePublicMetadata{SchemaVersion: 1, StartedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), CompletedAt: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC).Format(time.RFC3339Nano), Producer: publicProducerFixture()}
@@ -40,7 +42,7 @@ func TestSuitePublicBuildInfo(t *testing.T) {
 			}
 			p, err := suitePublicBuildInfo(&b)
 			if variant == "good" {
-				if err != nil || p != publicProducerFixture() {
+				if err != nil || !reflect.DeepEqual(p, publicProducerFixture()) {
 					t.Fatalf("producer: %#v %v", p, err)
 				}
 				if v, err := p.publicVersion(); err != nil || v != "devel-git-"+strings.Repeat("a", 40) {
@@ -69,7 +71,7 @@ func TestSuitePublicCompanionBindingAndLegacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := store.readPublicMetadata(t.Context(), suite)
-	if err != nil || got.Producer != m.Producer {
+	if err != nil || !reflect.DeepEqual(got.Producer, m.Producer) {
 		t.Fatal(got, err)
 	}
 	// A legacy latest completion must not fall back to the older companion.

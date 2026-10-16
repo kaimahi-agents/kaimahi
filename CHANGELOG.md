@@ -28,10 +28,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   evidence with suite v0.2.0's shared schema/types/offline verifier. It selects
   the latest completed exact-suite/member record without model/cluster/registry
   calls, preserves every case/run/assertion outcome and refuses incomplete proof.
-  Fresh evaluation from a clean VCS-stamped build is required: missing revision,
-  modified builds and older records without capture metadata cannot export.
-  `go install module@version` builds generally lack VCS settings; use a release
-  binary with recorded provenance or build from a clean checkout and re-evaluate.
+  Fresh evaluation must capture a tagged Go module version plus module checksum,
+  or a full VCS revision with explicit unmodified status. Tagged `go install
+  module@version` builds qualify without VCS settings. Modified builds, unstamped
+  development/pseudo-version builds and older records without capture metadata
+  refuse; use an identified build and re-evaluate.
   Public evidence is unsigned consistency, not authenticity or a private
   push/Lift gate. Existing private receipt/envelope formats remain unchanged.
 
