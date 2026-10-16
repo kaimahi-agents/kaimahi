@@ -803,7 +803,7 @@ offline export does not query that database or attest the compiled executable.
 KMX-owned renderer/profile digests identify the canonical build-source projection,
 not executable bytes or authenticated provenance. An optional binary digest may
 be captured from reliable Linux `/proc/self/exe`; its absence is allowed on every
-platform and it remains private companion metadata, not a v0.2.0 public-schema
+platform and it remains private companion metadata, not a public-schema
 extension or a substitute for the required module/VCS provenance. Runtime/harness
 image or declared binary identities remain distinct from the producer source
 identity.

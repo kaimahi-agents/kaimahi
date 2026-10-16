@@ -44,7 +44,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   authority or destination-status command is added.
 
 - `kmx eval export --member ID --out FILE` writes detached portable evaluation
-  evidence with suite v0.2.0's shared schema/types/offline verifier. It selects
+  evidence with suite v0.3.1's shared schema/types/offline verifier. It selects
   the latest completed exact-suite/member record without model/cluster/registry
   calls, preserves every case/run/assertion outcome and refuses incomplete proof.
   Fresh evaluation must capture a tagged Go module version plus module checksum,
