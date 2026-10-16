@@ -271,6 +271,97 @@ func TestProfiledRuntimeIDCannotEscapePreparationStage(t *testing.T) {
 	}
 }
 
+func TestProfiledEscapedCredentialsRefusedBeforeCache(t *testing.T) {
+	// Generated fake shape only; never put a complete credential shape in source.
+	canary := "gh" + "p_" + strings.Repeat("privacycanary", 3)
+	for _, name := range []string{"build ID", "build image reference", "runtime configuration ABI", "runtime ID"} {
+		t.Run(name, func(t *testing.T) {
+			root, cache := profiledWorkspace(t)
+			file := filepath.Join(root, "build-profiles/default.json")
+			var raw []byte
+			var err error
+			want := "invalid build profile JSON"
+			if strings.HasPrefix(name, "runtime") {
+				file = filepath.Join(root, "runtime-profiles/orka.json")
+				var rp agentsuite.RuntimeProfile
+				if err := agentsuite.Unmarshal(readFile(t, file), &rp); err != nil {
+					t.Fatal(err)
+				}
+				if name == "runtime ID" {
+					rp.ID = canary
+				} else {
+					rp.ConfigurationABI = canary
+				}
+				raw, err = agentsuite.Marshal(rp)
+				want = "invalid runtime profile JSON"
+			} else {
+				var bp agentsuite.BuildProfile
+				if err := agentsuite.Unmarshal(readFile(t, file), &bp); err != nil {
+					t.Fatal(err)
+				}
+				if name == "build ID" {
+					bp.ID = canary
+					// Public validation previously echoed the decoded ID on this error.
+					bp.Harness = []agentsuite.PlatformImage{}
+				} else {
+					bp.RuntimeBase[0].ImageRef = canary
+				}
+				raw, err = agentsuite.Marshal(bp)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			escaped := strings.ReplaceAll(string(raw), canary, `\u0067`+canary[1:])
+			writeFile(t, file, escaped)
+			_, err = workspace.Prepare(t.Context(), root, cache)
+			if err == nil {
+				t.Error("credential-shaped decoded profile accepted")
+			} else {
+				if strings.Contains(err.Error(), canary) {
+					t.Error("preparation error disclosed decoded credential canary")
+				}
+				if err.Error() != want {
+					t.Error("preparation did not return a generic profile refusal")
+				}
+			}
+			if _, err := os.Lstat(cache); !os.IsNotExist(err) {
+				t.Error("credential-shaped profile reached cache creation")
+			}
+		})
+	}
+}
+
+func TestProfiledValidEscapesPreserveRawSourceFingerprint(t *testing.T) {
+	for _, name := range []string{"runtime-profiles/orka.json", "build-profiles/default.json"} {
+		t.Run(name, func(t *testing.T) {
+			root, cache := profiledWorkspace(t)
+			before, err := workspace.Prepare(t.Context(), root, cache)
+			if err != nil {
+				t.Fatal(err)
+			}
+			file := filepath.Join(root, name)
+			original := string(readFile(t, file))
+			idStart := strings.Index(original, `"id":"`) + len(`"id":"`)
+			raw := original[:idStart] + fmt.Sprintf(`\u%04x`, original[idStart]) + original[idStart+1:]
+			writeFile(t, file, raw)
+			after, err := workspace.Prepare(t.Context(), root, cache)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after.Fingerprint == before.Fingerprint || after.Path == before.Path {
+				t.Error("raw escape spelling did not change source identity")
+			}
+			if after.Descriptor.Digest != before.Descriptor.Digest {
+				t.Error("equivalent decoded profile changed packaged content")
+			}
+			files, err := workspace.SourceFiles(t.Context(), root, after)
+			if err != nil || string(files[name].Data) != raw || string(readFile(t, file)) != raw {
+				t.Error("preparation did not preserve raw source spelling", err)
+			}
+		})
+	}
+}
+
 func TestProfiledAggregateSourceLimit(t *testing.T) {
 	root, cache := profiledWorkspace(t)
 	raw := string(readFile(t, filepath.Join(root, "runtime-profiles/orka.json"))) + strings.Repeat(" ", 950000)

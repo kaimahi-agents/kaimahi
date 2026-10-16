@@ -50,12 +50,21 @@ func readSourceProfiles(rows []sourceProfile, read func(string) ([]byte, error))
 		if agentsuite.Unmarshal(raw, &rp) != nil || !profileID.MatchString(rp.ID) || safeText(string(raw)) != nil {
 			return nil, errors.New("invalid runtime profile JSON")
 		}
+		// Scan decoded values too: JSON escapes can conceal credential shapes.
+		semantic, err := agentsuite.Marshal(rp)
+		if err != nil || safeText(string(semantic)) != nil {
+			return nil, errors.New("invalid runtime profile JSON")
+		}
 		raw, err = read(row.BuildProfile)
 		if err != nil {
 			return nil, fmt.Errorf("build profile source: %w", err)
 		}
 		var bp agentsuite.BuildProfile
 		if agentsuite.Unmarshal(raw, &bp) != nil || !profileID.MatchString(bp.ID) || safeText(string(raw)) != nil {
+			return nil, errors.New("invalid build profile JSON")
+		}
+		semantic, err = agentsuite.Marshal(bp)
+		if err != nil || safeText(string(semantic)) != nil {
 			return nil, errors.New("invalid build profile JSON")
 		}
 		platform, err := parseProfilePlatform(row.Platform)
