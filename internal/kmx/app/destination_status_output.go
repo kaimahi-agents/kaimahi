@@ -50,7 +50,10 @@ func (o *destinationStatusObserver) render(format string) error {
 	}
 	for _, r := range o.report.Agents {
 		for _, resource := range r.Resources {
-			fmt.Fprintf(&buf, "  %s/%s: provenance=%s; spec=%s; %s: %s\n", resource.Kind, resource.Name, resource.Provenance.State, resource.SpecDrift, resource.Readiness.State, resource.Readiness.Reason)
+			fmt.Fprintf(&buf, "  %s/%s: provenance=%s (%s); spec=%s; %s: %s\n", resource.Kind, resource.Name, resource.Provenance.State, resource.Provenance.Reason, resource.SpecDrift, resource.Readiness.State, resource.Readiness.Reason)
+		}
+		for _, workload := range r.Workloads {
+			fmt.Fprintf(&buf, "  %s/%s: %s: %s\n", workload.Kind, workload.Name, workload.Readiness.State, workload.Readiness.Reason)
 		}
 	}
 	fmt.Fprintf(&buf, "Agents: %d; evaluation candidate roots (separate): %d; complete: %t\n", len(o.report.Agents), len(o.report.Candidates), o.report.Complete)

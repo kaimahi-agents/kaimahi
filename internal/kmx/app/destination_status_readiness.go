@@ -7,7 +7,23 @@ import (
 
 func statusInteger(value any) (int64, bool) {
 	n, ok := value.(float64)
-	return int64(n), ok && n >= 0 && n <= 1<<53-1 && math.Trunc(n) == n
+	if !ok || n < 0 || n > 1<<53-1 || math.Trunc(n) != n {
+		return 0, false
+	}
+	return int64(n), true
+}
+
+func statusTerminating(meta map[string]any) (bool, bool) {
+	value := meta["deletionTimestamp"]
+	if value == nil {
+		return false, true
+	}
+	text, ok := value.(string)
+	if !ok {
+		return false, false
+	}
+	_, err := time.Parse(time.RFC3339Nano, text)
+	return true, err == nil
 }
 
 // Consume exact Kubernetes keys rather than encoding/json's case-folded field
@@ -20,14 +36,11 @@ func statusPrimaryReadiness(runtime string, doc map[string]any) destinationStatu
 	if !ok || generation < 1 {
 		return unknown
 	}
-	if value, present := meta["deletionTimestamp"]; present && value != nil {
-		text, ok := value.(string)
-		if !ok {
-			return unknown
-		}
-		if _, err := time.Parse(time.RFC3339Nano, text); err != nil {
-			return unknown
-		}
+	terminating, valid := statusTerminating(meta)
+	if !valid {
+		return unknown
+	}
+	if terminating {
 		return destinationStatusReadiness{"unhealthy", "primary is terminating"}
 	}
 	status, ok := doc["status"].(map[string]any)

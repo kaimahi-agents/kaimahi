@@ -47,7 +47,11 @@ func statusLabels(value map[string]any) map[string]string {
 }
 func statusWorkloadRow(doc map[string]any, ready destinationStatusReadiness) destinationStatusWorkload {
 	meta := statusMap(doc, "metadata")
-	return destinationStatusWorkload{Kind: statusString(doc, "kind"), Name: statusString(meta, "name"), UID: statusString(meta, "uid"), Readiness: ready}
+	uid := statusString(meta, "uid")
+	if !statusOpaque(uid) {
+		uid = ""
+	}
+	return destinationStatusWorkload{Kind: statusString(doc, "kind"), Name: statusString(meta, "name"), UID: uid, Readiness: ready}
 }
 func (o *destinationStatusObserver) workloadObject(prefix, plural, kind, version, name string) (map[string]any, bool) {
 	var doc map[string]any
@@ -65,7 +69,11 @@ func statusRollout(doc map[string]any, desired int64) destinationStatusReadiness
 	if !ok || generation < 1 {
 		return unknown
 	}
-	if meta["deletionTimestamp"] != nil {
+	terminating, valid := statusTerminating(meta)
+	if !valid {
+		return unknown
+	}
+	if terminating {
 		return pending
 	}
 	replicas, ok := statusInteger(spec["replicas"])
@@ -171,7 +179,10 @@ func (o *destinationStatusObserver) kagentWorkloads(agent map[string]any) ([]des
 			}
 		}
 	}
-	if !statusControllerOwner(statusMap(service, "metadata"), "kagent.dev/v1alpha2", "Agent", name, uid) || !reflect.DeepEqual(selector, statusLabels(statusMap(ss, "selector"))) || !port || statusMap(service, "metadata")["deletionTimestamp"] != nil {
+	terminating, valid := statusTerminating(statusMap(service, "metadata"))
+	if !valid {
+		serviceReady = unknown
+	} else if !statusControllerOwner(statusMap(service, "metadata"), "kagent.dev/v1alpha2", "Agent", name, uid) || !reflect.DeepEqual(selector, statusLabels(statusMap(ss, "selector"))) || !port || terminating {
 		serviceReady = drift
 	}
 	rows = append(rows, statusWorkloadRow(service, serviceReady))
@@ -181,6 +192,9 @@ func (o *destinationStatusObserver) kagentWorkloads(agent map[string]any) ([]des
 	}
 	rsRows, complete := o.list("/apis/apps/v1", "replicasets", "ReplicaSet", "apps/v1", kagentSelectorArgument(selector))
 	if !complete {
+		for _, rs := range rsRows {
+			rows = append(rows, statusWorkloadRow(rs, destinationStatusReadiness{"unknown", "partial ReplicaSet inventory; current owner-chain completeness is unknown"}))
+		}
 		return rows, unknown
 	}
 	revision := statusString(statusMap(dm, "annotations"), "deployment.kubernetes.io/revision")
@@ -219,6 +233,9 @@ func (o *destinationStatusObserver) kagentWorkloads(agent map[string]any) ([]des
 	ready = statusWorseReadiness(ready, rsReady)
 	pods, complete := o.list("/api/v1", "pods", "Pod", "v1", kagentSelectorArgument(selector))
 	if !complete {
+		for _, pod := range pods {
+			rows = append(rows, statusWorkloadRow(pod, destinationStatusReadiness{"unknown", "partial Pod inventory; current owner-chain completeness is unknown"}))
+		}
 		return rows, unknown
 	}
 	rm := statusMap(current, "metadata")
@@ -276,16 +293,36 @@ func statusPodReadiness(pod, desired map[string]any) destinationStatusReadiness 
 	pending := destinationStatusReadiness{"pending", "owned Pod is not Running and Ready"}
 	unknown := destinationStatusReadiness{"unknown", "owned Pod readiness is malformed or indeterminate"}
 	meta, spec, status := statusMap(pod, "metadata"), statusMap(pod, "spec"), statusMap(pod, "status")
-	if meta["deletionTimestamp"] != nil || statusString(spec, "nodeName") == "" {
-		return pending
-	}
-	if status["phase"] == "Failed" || status["phase"] == "Succeeded" {
-		return destinationStatusReadiness{"unhealthy", "owned serving Pod has terminated"}
-	}
-	if status["phase"] == "Unknown" {
+	terminating, valid := statusTerminating(meta)
+	if !valid || spec == nil || pod["status"] != nil && status == nil {
 		return unknown
 	}
-	if status["phase"] != "Running" {
+	if raw, present := spec["nodeName"]; present {
+		if _, ok := raw.(string); !ok {
+			return unknown
+		}
+	}
+	if raw, present := status["phase"]; present {
+		if _, ok := raw.(string); !ok {
+			return unknown
+		}
+	}
+	phase := statusString(status, "phase")
+	switch phase {
+	case "", "Pending", "Running", "Succeeded", "Failed", "Unknown":
+	default:
+		return unknown
+	}
+	if terminating || statusString(spec, "nodeName") == "" {
+		return pending
+	}
+	if phase == "Failed" || phase == "Succeeded" {
+		return destinationStatusReadiness{"unhealthy", "owned serving Pod has terminated"}
+	}
+	if phase == "Unknown" {
+		return unknown
+	}
+	if phase != "Running" {
 		return pending
 	}
 	conditions, ok := status["conditions"].([]any)
@@ -298,12 +335,17 @@ func statusPodReadiness(pod, desired map[string]any) destinationStatusReadiness 
 		if !ok {
 			return unknown
 		}
-		if c["type"] == "Ready" {
-			if seen || c["status"] == "Unknown" {
+		typ, typeOK := c["type"].(string)
+		state, stateOK := c["status"].(string)
+		if !typeOK || typ == "" || !stateOK || state != "True" && state != "False" && state != "Unknown" {
+			return unknown
+		}
+		if typ == "Ready" {
+			if seen || state == "Unknown" {
 				return unknown
 			}
 			seen = true
-			ready = c["status"] == "True"
+			ready = state == "True"
 		}
 	}
 	if !seen || !ready {
@@ -325,7 +367,11 @@ func statusPodReadiness(pod, desired map[string]any) destinationStatusReadiness 
 		}
 		if c["name"] == "kagent" {
 			found++
-			if c["ready"] != true {
+			containerReady, valid := c["ready"].(bool)
+			if !valid {
+				return unknown
+			}
+			if !containerReady {
 				return pending
 			}
 		}

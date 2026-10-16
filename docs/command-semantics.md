@@ -215,7 +215,8 @@ recovery or teardown behavior. Ready/answered/evaluated are distinct evidence.
   Live Orka **show/list** and independent **run/chat** remain separate.
 - **Ready**, **answered** and **evaluated** are different evidence.
   **Unknown** is not **absent**; **retry** resubmits; **result** only retrieves.
-- Suite status/retirement remain unavailable. Lift does not transfer live state,
+- Destination status is GET-only inspection; retirement remains unavailable.
+  Lift does not transfer live state,
   sessions or memory, delete source, perform cutover or grant teardown authority.
 
 ## Audit and existing work

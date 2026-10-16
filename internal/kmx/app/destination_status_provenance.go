@@ -193,24 +193,15 @@ func (o *destinationStatusObserver) resource(api destinationStatusAPI, doc map[s
 	return resource
 }
 
-func (o *destinationStatusObserver) agent(api destinationStatusAPI, doc map[string]any) (destinationStatusAgent, bool) {
+func (o *destinationStatusObserver) agent(api destinationStatusAPI, doc map[string]any) destinationStatusAgent {
 	meta := doc["metadata"].(map[string]any)
-	ann, _ := meta["annotations"].(map[string]any)
-	_, candidate := ann[suiteCandidateRunMarker]
 	primary := o.resource(api, doc)
 	row := destinationStatusAgent{Kind: "Agent", Name: primary.Name, Runtime: api.runtime, Provenance: primary.Provenance, Readiness: primary.Readiness, Resources: []destinationStatusResource{primary}, Workloads: []destinationStatusWorkload{}}
 	if owner, _ := statusOwnership(api.runtime, meta); owner != nil {
 		row.Suite, row.Member, row.SuiteDigest = owner.Suite, owner.Member, owner.Digest
 	}
 	if !o.validObject(doc, "Agent", api.version) {
-		return row, candidate
-	}
-	if candidate {
-		if run, ok := ann[suiteCandidateRunMarker].(string); ok && evaluationRunID(run) {
-			row.CandidateRun = &run
-		} else {
-			row.Provenance = destinationStatusProvenance{State: "unknown", Reason: "candidate run is malformed"}
-		}
+		return row
 	}
 	kind, plural, name := "Provider", "providers", ""
 	spec, _ := doc["spec"].(map[string]any)
@@ -272,7 +263,7 @@ func (o *destinationStatusObserver) agent(api destinationStatusAPI, doc map[stri
 		row.Readiness = statusWorseReadiness(row.Readiness, latest)
 	}
 	row.Provenance = row.Resources[0].Provenance
-	return row, candidate
+	return row
 }
 func statusWorseReadiness(a, b destinationStatusReadiness) destinationStatusReadiness {
 	rank := map[string]int{"ready": 0, "pending": 1, "unhealthy": 2, "drifted": 3, "unknown": 4}

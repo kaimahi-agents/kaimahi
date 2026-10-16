@@ -59,7 +59,7 @@ It reads no Secret contents or metadata, Nodes, controller proxies or auth probe
 | `recorded` | A valid, applicable unsigned create-time Lift observation is present. |
 | `provenance not recorded` | Native suite ownership is valid, but this object has no Lift annotation. This is normal for older objects or no-write reuse; it does not prove the object's age. |
 | `unknown` | Ownership or provenance is incomplete, malformed, conflicting, unsupported, changed during inspection, or cannot be observed safely. |
-| `not kmx-owned` | No native suite ownership markers establish KMX suite ownership. A copied Lift annotation alone cannot change this classification. |
+| `not kmx-owned` | No native suite or legacy reservation markers are present. A copied Lift annotation alone cannot change this classification. |
 
 The table shows agent/member, runtime, shortened OCI suite and consumed-receipt
 digests, evaluation environment and actual gate, UTC **attempt** time, optional

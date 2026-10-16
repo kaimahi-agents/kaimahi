@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -118,7 +119,7 @@ func (a *App) DestinationStatus(opt DestinationStatusOptions) error {
 			if statusIsCandidate(doc) {
 				o.report.Candidates = append(o.report.Candidates, o.candidate(api, doc))
 			} else {
-				row, _ := o.agent(api, doc)
+				row := o.agent(api, doc)
 				o.report.Agents = append(o.report.Agents, row)
 			}
 		}
@@ -126,8 +127,10 @@ func (a *App) DestinationStatus(opt DestinationStatusOptions) error {
 	}
 	// Bracket successful identity reads; an unavailable initial read is never retried.
 	for _, identity := range []struct{ namespace, uid string }{{"kube-system", o.report.Target.ClusterUID}, {opt.Namespace, o.report.Target.NamespaceUID}} {
-		if identity.uid != "" && o.namespaceUID(identity.namespace) != identity.uid {
-			o.problem("cluster or namespace identity changed during observation")
+		if identity.uid != "" {
+			if observed := o.namespaceUID(identity.namespace); observed != "" && observed != identity.uid {
+				o.problem("cluster or namespace identity changed during observation")
+			}
 		}
 	}
 	less := func(rows []destinationStatusAgent) {
@@ -169,15 +172,7 @@ func (a *App) DestinationStatus(opt DestinationStatusOptions) error {
 
 func (o *destinationStatusObserver) problem(reason string) {
 	o.report.Complete = false
-	if !containsString(o.report.Errors, reason) {
+	if !slices.Contains(o.report.Errors, reason) {
 		o.report.Errors = append(o.report.Errors, reason)
 	}
-}
-func containsString(values []string, s string) bool {
-	for _, v := range values {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }

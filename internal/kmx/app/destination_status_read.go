@@ -115,7 +115,7 @@ func (o *destinationStatusObserver) discover() map[string]string {
 		seenAux := map[string]bool{}
 		for _, value := range resources {
 			r, ok := value.(map[string]any)
-			if !ok {
+			if !ok || !statusDiscoveryResource(r) {
 				states[api.runtime] = "unknown"
 				o.problem(api.runtime + " Agent API discovery is malformed")
 				break
@@ -234,6 +234,38 @@ func (o *destinationStatusObserver) validObjectName(doc map[string]any, kind, ve
 	meta := statusMap(doc, "metadata")
 	name := statusString(meta, "name")
 	return doc["kind"] == kind && doc["apiVersion"] == version && scaffold.ValidateObjectName(name) == nil && statusSafeText(name) && meta["namespace"] == o.report.Target.Namespace
+}
+
+// A missing supported resource proves absence only inside well-formed discovery.
+// Validate even entries we do not consume, rather than silently skipping damage.
+func statusDiscoveryResource(resource map[string]any) bool {
+	name, kind := statusString(resource, "name"), statusString(resource, "kind")
+	if !statusOpaque(kind) {
+		return false
+	}
+	parts := strings.Split(name, "/")
+	if len(parts) > 2 {
+		return false
+	}
+	for _, part := range parts {
+		if scaffold.ValidateObjectName(part) != nil {
+			return false
+		}
+	}
+	if _, ok := resource["namespaced"].(bool); !ok {
+		return false
+	}
+	verbs, ok := resource["verbs"].([]any)
+	if !ok {
+		return false
+	}
+	for _, value := range verbs {
+		verb, ok := value.(string)
+		if !ok || !statusOpaque(verb) {
+			return false
+		}
+	}
+	return true
 }
 
 func (o *destinationStatusObserver) recheck(api destinationStatusAPI, plural string, before map[string]any) (destinationStatusReadiness, bool) {

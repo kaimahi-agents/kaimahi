@@ -128,7 +128,7 @@ or deploy a runtime.
 | Runtime/integration | Implemented KMX scope |
 |---|---|
 | Orka | Default runtime; setup, independent live run/chat, workspace evaluation/evaluated publication and exact-digest native Lift; GET-only destination status, no retirement |
-| kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Lift; no packaged status/retirement |
+| kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Lift; GET-only destination status, no retirement |
 | agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case run, shared explicit judging and repeat policy, no tools, cluster settings, registry/auth or remote lifecycle; Lift/chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. |
 
 Support is operation- and version-specific. See the [runtime support
