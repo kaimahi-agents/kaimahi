@@ -282,6 +282,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 ## AgentSuite evaluation storage
 
+- `eval verify --suite LAYOUT --evidence FILE --expect FILE` is the state-free
+  offline CI consumer of shared VerifyEvaluation. Digest form requires explicit
+  `--from-layout DIR`; never resolve a registry, prepare a workspace or search
+  caches/private proof. ExpectedEvaluation is a complete independently reviewed
+  policy file committed beside the suite, never copied from evidence claims.
+  Inputs are bounded public regular JSON files; strict required presence includes
+  `judges: []` and empty platform.variant. Success-only text/JSON summary exits0;
+  typed safe refusal codes go to stderr and exit1 without untrusted causes/paths.
+  No configuration, KMX state, execution or private push/Lift authority involved.
+
 - `eval export --member ID --out FILE` is offline portable-evidence publication,
   not evaluation or a private push/Lift gate. Use shared suite v0.2.0 evidence
   types/VerifyEvaluation against the exact prepared OCI layout and full ordered

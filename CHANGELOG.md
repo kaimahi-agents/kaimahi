@@ -24,6 +24,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- `kmx eval verify --suite LAYOUT --evidence FILE --expect FILE` checks detached
+  public evidence offline using shared suite v0.2.0 VerifyEvaluation. Digest input
+  requires explicit `--from-layout DIR`, without registry/cache/state lookup.
+  Commit a complete reviewed ExpectedEvaluation JSON beside the suite for CI;
+  never derive accepted identities/policy from evidence being checked. Success
+  exits0 with text or `-o json` summary; typed safe refusals exit1. No model,
+  cluster, configuration or private push/Lift gate changes. Unsigned consistency
+  does not authenticate an evaluator or attest execution truth/readiness.
+
 - `kmx eval export --member ID --out FILE` writes detached portable evaluation
   evidence with suite v0.2.0's shared schema/types/offline verifier. It selects
   the latest completed exact-suite/member record without model/cluster/registry

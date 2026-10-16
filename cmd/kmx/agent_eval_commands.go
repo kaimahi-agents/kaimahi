@@ -20,7 +20,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	native := app.SuiteWorkspaceEvaluationOptions{ManagedPass: true}
 	var destination string
 	group := &cobra.Command{
-		Use: "eval", Short: "Evaluate a native workspace or export and compare saved evidence",
+		Use: "eval", Short: "Evaluate a native workspace or export, verify and compare saved evidence",
 		Long: "Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
 			"--to NAME resolves copied selectors from workspace-root kmx.yaml; explicit flags override. Without --to-context or --development-host, evalTarget may select a named destination. No remembered/current-context fallback.\n" +
 			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override, subset or content output. llmJudge requires an explicit --judge-base-url and authored judgeModel/judgeVersion; --judge-key-env names an optional HTTPS credential variable. Input, answer and rubric transfer to that provider for two independent samples per assertion; disagreement/error is unknown. No judge content is printed.\n" +
@@ -183,7 +183,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	_ = from.RegisterFlagCompletionFunc("sessions", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	})
-	group.AddCommand(diff, from, newEvalCleanupCommand(state), newSuiteEvalExportCommand(state))
+	group.AddCommand(diff, from, newEvalCleanupCommand(state), newSuiteEvalExportCommand(state), newSuiteEvalVerifyCommand(state))
 	return group
 }
 
