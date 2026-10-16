@@ -106,6 +106,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 			if errors.Is(err, workspace.ErrMultiMemberUnsupported) {
 				cause = errors.Join(cause, workspace.ErrMultiMemberUnsupported)
 			}
+			if errors.Is(err, workspace.ErrPolicyExecutionUnsupported) {
+				cause = errors.Join(cause, workspace.ErrPolicyExecutionUnsupported)
+			}
 			err = errors.Join(ErrReleaseLift, cause)
 		}
 	}()

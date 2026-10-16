@@ -40,6 +40,55 @@ func TestSuitePolicyCommandEmitsCanonicalPayloadAndDigest(t *testing.T) {
 	}
 }
 
+func TestSuitePolicyCommandNetworkV2(t *testing.T) {
+	const endpoint = `{"address":"10.20.30.40","protocol":"TCP","port":443}`
+	const other = `{"address":"10.20.30.41","protocol":"TCP","port":80}`
+	for _, tc := range []struct {
+		name, admin, want string
+		refused           bool
+	}{
+		{"omitted", "", `{"network":{"egressAllow":[{"address":"10.20.30.40","port":443,"protocol":"TCP"},{"address":"10.20.30.41","port":80,"protocol":"TCP"}]},"requiredCapabilities":["network/egress-allow/v1"],"version":"agentsuite.policy/v2"}`, false},
+		{"intersection", `{"network":{"egressAllow":[` + endpoint + `]}}`, `{"network":{"egressAllow":[{"address":"10.20.30.40","port":443,"protocol":"TCP"}]},"requiredCapabilities":["network/egress-allow/v1"],"version":"agentsuite.policy/v2"}`, false},
+		{"deny all", `{"network":{"egressAllow":[]}}`, `{"network":{"egressAllow":[]},"requiredCapabilities":["network/egress-allow/v1"],"version":"agentsuite.policy/v2"}`, false},
+		{"wrong version admin", `{"denyWritePaths":["/workspace"]}`, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			policyPath := filepath.Join(dir, "policy.json")
+			if err := os.WriteFile(policyPath, []byte(`{"version":"agentsuite.policy/v2","network":{"egressAllow":[`+other+`,`+endpoint+`]},"requiredCapabilities":["network/egress-allow/v1"]}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"suite", "policy", policyPath}
+			if tc.admin != "" {
+				adminPath := filepath.Join(dir, "admin.json")
+				if err := os.WriteFile(adminPath, []byte(tc.admin), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				args = append(args, "--administrative-policy", adminPath)
+			}
+			var output, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&output, &diagnostics)
+			err := execute(args, deps)
+			if *loads != 0 {
+				t.Fatal("policy resolution loaded operational config")
+			}
+			if tc.refused {
+				if err == nil || output.Len() != 0 {
+					t.Fatalf("want closed admin refusal, got %v / %q", err, output.String())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+			if len(lines) != 2 || lines[0] != tc.want || !strings.HasPrefix(lines[1], "sha256:") {
+				t.Fatalf("unexpected payload: %q", output.String())
+			}
+		})
+	}
+}
+
 func TestSuitePolicyCommandRejectsInvalidCapabilityContract(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "policy.json")
 	if err := os.WriteFile(path, []byte(`{"version":"agentsuite.policy/v1","denyWritePaths":["/workspace"],"requiredCapabilities":[]}`), 0o600); err != nil {

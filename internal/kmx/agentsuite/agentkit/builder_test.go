@@ -54,6 +54,22 @@ func TestBuildEmitsArchiveThroughBuildxExporter(t *testing.T) {
 	}
 }
 
+func TestBuildRefusesDeclaredPolicyBeforeExport(t *testing.T) {
+	plan := minimalPlan()
+	plan.Agent.Policy = &agentsuite.FileRef{Path: "policies/writer.json", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypePolicyV2, Digest: testDigest, Size: 1}}
+	calls := 0
+	builder := New(Options{ModelBaseURL: "https://models.example/v1", ModelAPIKeyEnv: "MODEL_API_KEY", exporter: ociExporterFunc(func(_ context.Context, _ agentImage, dst io.Writer) error {
+		calls++
+		_, err := dst.Write(testOCIArchive(t))
+		return err
+	})})
+	var output bytes.Buffer
+	_, err := builder.Build(t.Context(), plan, &output)
+	if err == nil || !strings.Contains(err.Error(), "policy") || calls != 0 || output.Len() != 0 {
+		t.Fatalf("declared policy was dropped: err=%v exports=%d bytes=%d", err, calls, output.Len())
+	}
+}
+
 func TestBuildStreamsIntoCallerStage(t *testing.T) {
 	archive := testOCIArchive(t)
 	stage, err := os.Create(filepath.Join(t.TempDir(), "stage.oci.tar"))

@@ -240,14 +240,14 @@ func TestArtifactArchiveBoundsAndClosedTypes(t *testing.T) {
 }
 
 func TestArtifactNativeInventoryFileBudgets(t *testing.T) {
-	for _, count := range []int{136, 140, 196, 197} {
+	for _, count := range []int{136, 140, 196, 197, 212, 213} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			headers := make([]*tar.Header, 0, count)
 			for i := range count {
 				headers = append(headers, &tar.Header{Name: fmt.Sprintf("file-%03d", i), Mode: 0644, Typeflag: tar.TypeReg, Size: 1})
 			}
 			files, err := artifactFiles(t.Context(), artifactArchive(t, headers))
-			if count == 197 {
+			if count == 213 {
 				if !errors.Is(err, ErrArtifact) {
 					t.Fatalf("excess inventory accepted: %v", err)
 				}

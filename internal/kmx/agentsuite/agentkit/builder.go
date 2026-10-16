@@ -127,6 +127,9 @@ func (b *Builder) validate(plan kmxsuite.SandboxPlan) error {
 	if plan.Agent.Model.Protocol != "openai-compatible" {
 		errs = append(errs, fmt.Errorf("experimental AgentKit builder does not support model protocol %q", plan.Agent.Model.Protocol))
 	}
+	if plan.Agent.Policy != nil {
+		errs = append(errs, errors.New("experimental AgentKit builder cannot enforce a declared policy"))
+	}
 	if plan.Agent.Model.EndpointEnv != "" {
 		errs = append(errs, errors.New("experimental AgentKit builder cannot represent model.endpointEnv"))
 	}

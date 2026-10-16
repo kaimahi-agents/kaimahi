@@ -53,7 +53,7 @@ func newSuitePolicyCommand() *cobra.Command {
 			if e != nil {
 				return e
 			}
-			admin, e = policy.DecodeAdministrativePolicy(b)
+			admin, e = policy.DecodeAdministrativePolicyForVersion(b, in.Version)
 			if e != nil {
 				return e
 			}

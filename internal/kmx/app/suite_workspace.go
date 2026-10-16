@@ -249,6 +249,11 @@ func (a *App) pushSuiteWorkspaceSelected(ctx context.Context, root, reference, l
 	if err != nil {
 		return oras.PushResult{}, err
 	}
+	if expectedS != nil || receipt != nil || (managed != nil && !managed.Unevaluated) {
+		if err := suite.RequirePolicyFree(); err != nil {
+			return oras.PushResult{}, err
+		}
+	}
 	var evidencePath string
 	if managed != nil {
 		store, openErr := openSuitePassStore(ctx, root, filepath.Join(state, "suites"), suite.Digest)

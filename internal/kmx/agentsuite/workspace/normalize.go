@@ -12,6 +12,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	godigest "github.com/opencontainers/go-digest"
+	"go.yaml.in/yaml/v3"
 )
 
 // Source layout differences end here; resolution consumes only normalized inputs.
@@ -116,6 +117,22 @@ func normalizeSource(ctx context.Context, root string) (*normalizedSource, error
 		}
 		if err := validateMember(m, instructions); err != nil {
 			return nil, err
+		}
+		if m.Policy.Kind != 0 {
+			if m.Policy.Kind != yaml.ScalarNode || m.Policy.Tag != "!!str" || !fs.ValidPath(m.Policy.Value) || strings.Contains(m.Policy.Value, "\\") {
+				return nil, errors.New("policy path must be a nonempty member-relative string")
+			}
+			if profile, _ := m.Runtime.profile(); profile.ID != "orka" {
+				return nil, errors.New("policy authoring supports Orka members only")
+			}
+			raw, err := read(path.Dir(memberPath) + "/" + m.Policy.Value)
+			if err != nil {
+				return nil, err
+			}
+			m.policyBytes, err = canonicalMemberPolicy(raw)
+			if err != nil {
+				return nil, err
+			}
 		}
 		caseDir := "eval"
 		if w.SchemaVersion == 2 {

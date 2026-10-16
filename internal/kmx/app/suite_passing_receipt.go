@@ -80,6 +80,11 @@ type suitePassingInventoryCase struct {
 // One ordered parse feeds receipt validation and later native execution. The
 // projection budget reserves maximum accepted Task identities before selection.
 func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventoryCase, string, error) {
+	if suite != nil {
+		if err := suite.RequirePolicyFree(); err != nil {
+			return nil, "", err
+		}
+	}
 	if suite == nil || len(suite.Cases) == 0 {
 		return nil, "", errSuitePassingReceipt
 	}

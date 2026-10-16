@@ -138,6 +138,14 @@ func validateMulti(files map[string][]byte) (string, error) {
 		if err != nil {
 			return "", refusal{err}
 		}
+		profile, err := m.Runtime.profile()
+		if err != nil {
+			return "", err
+		}
+		m.policyBytes, err = readMemberPolicy(files, agent, profile)
+		if err != nil {
+			return "", err
+		}
 		members = append(members, normalizedMember{member: m, instructions: files["instructions/"+m.ID+".md"], cases: cases})
 	}
 	expected, err := resolveMulti(suite.Name, members, files["build-profiles/default.json"])

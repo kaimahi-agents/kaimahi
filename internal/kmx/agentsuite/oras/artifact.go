@@ -32,10 +32,11 @@ const (
 	artifactEntriesLimit    = 256
 )
 
-// MaxArtifactFiles fits 4 shared files, 4 files per member (including its eval
-// index), and 128 total cases. One member needs 136 files; 16 need at most 196.
+// MaxArtifactFiles fits 4 shared files, 5 files per member (including its eval
+// index and optional policy), and 128 total cases. Policy-free inventories still
+// need at most 196 files; 16 policy-bearing members need at most 212.
 // Consumers still validate complete membership and per-suite case limits.
-const MaxArtifactFiles = 4 + 4*16 + 128
+const MaxArtifactFiles = 4 + 5*16 + 128
 
 // Artifact retains verified original packaged bytes, not source or a re-archive.
 // The bounds cover native inventories; execution support is consumer-owned.

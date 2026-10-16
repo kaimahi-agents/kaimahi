@@ -227,8 +227,12 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases []
 	if err != nil {
 		return nil, err
 	}
+	policyRef, err := bindMemberPolicy(files, m.ID, m.policyBytes)
+	if err != nil {
+		return nil, err
+	}
 	agentPath := "agents/" + m.ID + ".json"
-	agentDigest, agentSize, err := put(agentPath, agentsuite.Agent{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: agentsuite.FileRef{Path: "instructions/" + m.ID + ".md", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeInstructions, Digest: godigest.FromBytes(instructions).String(), Size: int64(len(instructions))}}, Model: agentsuite.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}, Evals: []agentsuite.FileRef{{Path: evalIndexPath(m.ID), Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeEvaluationIndex, Digest: indexDigest, Size: indexSize}}}})
+	agentDigest, agentSize, err := put(agentPath, agentsuite.Agent{Policy: policyRef, SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: agentsuite.FileRef{Path: "instructions/" + m.ID + ".md", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeInstructions, Digest: godigest.FromBytes(instructions).String(), Size: int64(len(instructions))}}, Model: agentsuite.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}, Evals: []agentsuite.FileRef{{Path: evalIndexPath(m.ID), Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeEvaluationIndex, Digest: indexDigest, Size: indexSize}}}})
 	if err != nil {
 		return nil, err
 	}
@@ -346,6 +350,10 @@ func validateNative(files map[string][]byte) (string, error) {
 	_, cases, err := packagedCases(files, agent)
 	if err != nil {
 		return "", refusal{err}
+	}
+	m.policyBytes, err = readMemberPolicy(files, agent, profile)
+	if err != nil {
+		return "", err
 	}
 	expected, err := resolve(suite.Name, m, files["instructions/"+m.ID+".md"], files["build-profiles/default.json"], cases)
 	if err != nil {

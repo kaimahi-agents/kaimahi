@@ -36,6 +36,7 @@ type NativeSuite struct {
 	ExecutionProfile   string
 	Cases              []PackagedCase
 	RequiredImages     []string
+	Policy             *NativePolicy
 }
 
 // Load reads only the single verified packaged snapshot, not live workspace
@@ -127,6 +128,10 @@ func loadNativeMember(ctx context.Context, files map[string][]byte, suite agents
 		ExecutionProfile:   native.ExecutionProfile,
 		Cases:              cases,
 		RequiredImages:     []string{},
+	}
+	if member.Policy != nil {
+		ref := *member.Policy
+		result.Policy = &NativePolicy{Path: ref.Path, Descriptor: ref.Descriptor, Bytes: files[ref.Path]}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

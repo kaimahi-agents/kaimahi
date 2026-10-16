@@ -31,6 +31,27 @@ fresh-target creation/occupied refusal. Standalone registry-package evaluation
 remains unavailable. Legacy user `agent.yaml` creation, evaluation, lift and
 receipts are removed; no conversion or migration is provided.
 
+## Optional member egress policy (offline only)
+
+Orka members may declare `policy: policy.json` in `agents/<id>/member.yaml`.
+The file is member-relative public `agentsuite.policy/v2` JSON, allowing only
+literal IPv4 + TCP + explicit port; an empty allowance list denies all.
+Preparation packages authored canonical bytes under `policies/<id>.json`, bound
+through `Agent.policy` and the suite digest. Endpoint order and duplicates are
+preserved; formatting-only changes affect source fingerprints, not packaged
+identity. Omitting policy preserves existing policy-free fingerprints and bytes.
+See the [policy contract](portable-policy.md) for examples and administrative
+intersection semantics.
+
+This is offline authoring/transfer, not runtime support. Root push with
+`--unevaluated` retains the policy; eval, private native preparation, evaluated
+publication, composed/digest Lift and the experimental sandbox builder refuse a
+declared policy before execution/export. kagent and AgentSessions policy source
+declarations refuse. No enforcing CNI, installed NetworkPolicy, active worker
+observation or status capability is implied. Static unsafe paths, symlinks and
+nonregular policy files refuse using existing bounded reads; concurrent hostile
+workspace mutation is outside their guarantees.
+
 ## Provisional multi-member source (offline only)
 
 A separate KMX-local source format supports deterministic offline preparation and
@@ -62,9 +83,10 @@ binding, approval, coordination or evaluation semantics are enabled here.
 
 The bounded format accepts 2–16 members, at least one case per member and at most
 128 cases in total, with independent 8 MiB source/artifact limits and 1 MiB per
-file. The file budget is `4 shared + 4 per member + 128 cases`: 136 for one member,
-140 for two and 196 for sixteen. Shared source-free readers admit at most 196 files;
-complete native graph validation enforces membership and case coverage.
+file. Policy-free file budgets remain `4 shared + 4 per member + 128 cases`:
+136 for one member, 140 for two and 196 for sixteen. Each optional policy adds one
+file, so source-free readers admit at most 212 files (16 policy-bearing members).
+Complete native graph validation enforces membership, policy bindings and case coverage.
 
 Member order is canonical by ID; each member's case index preserves authored
 filename order. Cases are packaged under `evals/<member>/index.json` and
@@ -1063,9 +1085,9 @@ or local OCI layout without authored source, a preparation fingerprint or a buil
 It retains original packaged bytes; it never re-archives or publishes them.
 Only the selected layout graph is read, not unrelated references. The reader
 bounds the manifest to 1 MiB, the exact empty config to two bytes, compressed
-content to 9 MiB, raw decompressed tar to 10 MiB, 256 entries, 196 regular files,
+content to 9 MiB, raw decompressed tar to 10 MiB, 256 entries, 212 regular files,
 1 MiB per file and 8 MiB total file content before public/native validation.
-A one-member native graph remains limited to 136 files (including its index and
+A policy-free one-member native graph needs at most 136 files (137 with a policy, including its index and
 128 cases); offline multi-member inventories use the derived budget above.
 Links, special files, PAX records, unsafe/duplicate paths and trailing or multiple
 gzip streams refuse. Existing general suite push/pull limits are unchanged.

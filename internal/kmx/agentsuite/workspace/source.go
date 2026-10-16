@@ -89,7 +89,9 @@ type sourceMember struct {
 		Protocol string `yaml:"protocol"`
 		Model    string `yaml:"model"`
 	} `yaml:"model"`
-	Runtime *sourceRuntime `yaml:"runtime,omitempty"`
+	Runtime     *sourceRuntime `yaml:"runtime,omitempty"`
+	Policy      yaml.Node      `yaml:"policy,omitempty"`
+	policyBytes []byte
 }
 
 func safeText(value string) error {

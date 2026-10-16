@@ -281,7 +281,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   source/create prompts are unchanged. Both formats use public `evals/ID/` indexes
   and cases through `DecodePackagedCase`; no private case list or migration reader.
   Preserve merged one-member packaging/receipt rules. File budgets are 4 shared +
-  4 per member + 128 total cases (136 at one member, 196 at sixteen).
+  4 per policy-free member + 128 total cases (136 at one member, 196 at sixteen).
+  Each optional policy adds one file; shared source-free readers admit at most 212.
 - Multi-member `Prepare`/`LoadInventory` is offline only. Preserve complete closed
   graph/case coverage, canonical member ordering and bounded confined reads. Existing
   execution `Load`/`LoadArtifact` refuse rather than choosing a first member.
@@ -289,6 +290,20 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   before state, output or operational selection; verified multi artifacts cannot
   reach reference-Lift target observations. No binding, approval, invocation or
   evaluation semantics, mixed-runtime execution or runtime qualification is implied.
+
+## Optional member policy boundary
+
+Orka member YAML accepts optional member-relative `policy: policy.json` containing
+public `agentsuite.policy/v2` IPv4/TCP/port JSON. Freeze the original selected
+source; package authored JCS bytes at `policies/<id>.json` through `Agent.policy`
+with an ordinary descriptor digest, never an effective-policy framed digest.
+Preserve authored array order/duplicates and policy-free bytes/fingerprints.
+Offline loaders and explicitly unevaluated transfer retain policy. Native eval,
+private preparation, composed/digest Lift, evaluated publication and AgentKit
+sandbox export refuse declared policies until qualified enforcement is supported.
+kagent/AgentSessions source declarations refuse. Existing reads refuse static
+symlinks/FIFOs; concurrent hostile workspace mutation is outside their guarantee.
+Do not infer enforcement from authoring, transfer, readiness, labels or annotations.
 
 ## AgentSuite evaluation storage
 
