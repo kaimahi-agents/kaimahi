@@ -54,6 +54,16 @@ func TestBuildEmitsArchiveThroughBuildxExporter(t *testing.T) {
 	}
 }
 
+func TestBuildRefusesProfiledPlanBeforeExport(t *testing.T) {
+	plan := minimalPlan()
+	plan.Composition.RuntimeProfile = "orka"
+	plan.RuntimeProfile = &agentsuite.RuntimeProfile{ID: "orka"}
+	builder := New(Options{ModelBaseURL: "https://model.example.test/v1", exporter: ociExporterFunc(func(context.Context, agentImage, io.Writer) error { t.Fatal("profile reached exporter"); return nil })})
+	if err := buildError(builder, plan); !strings.Contains(err, "profiled") {
+		t.Fatal(err)
+	}
+}
+
 func TestBuildRefusesDeclaredPolicyBeforeExport(t *testing.T) {
 	plan := minimalPlan()
 	plan.Agent.Policy = &agentsuite.FileRef{Path: "policies/writer.json", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypePolicyV2, Digest: testDigest, Size: 1}}

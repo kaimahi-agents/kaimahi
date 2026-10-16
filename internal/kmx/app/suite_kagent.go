@@ -45,6 +45,9 @@ type suiteKagentPrepared struct {
 }
 
 func (a *App) prepareSuiteKagent(ctx context.Context, s *workspace.NativeSuite, b agentruntime.KagentBindings) (*suiteKagentPrepared, error) {
+	if err := s.RequireUnprofiled(); err != nil {
+		return nil, err
+	}
 	if s == nil || s.Runtime != (workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}) || s.RendererVersion != "kmx.native-kagent/v2" || s.ExecutionProfile != "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai/v1" || s.RequiredImages == nil || len(s.RequiredImages) != 0 {
 		return nil, fmt.Errorf("suite Kagent requires exact tool-free v0.10.3 Go profile and empty member images")
 	}

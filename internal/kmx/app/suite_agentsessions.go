@@ -33,6 +33,9 @@ type suiteSessionsHostSnapshot struct {
 }
 
 func snapshotSuiteSessionsHost(path string, suite *workspace.NativeSuite) (*suiteSessionsHostSnapshot, error) {
+	if err := suite.RequireUnprofiled(); err != nil {
+		return nil, err
+	}
 	// The shared no-follow bounded reader anchors both file and directory identity;
 	// enforce private permissions before accepting operator declarations.
 	raw, parent, file, err := readSuiteKagentBindings(path)

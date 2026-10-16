@@ -42,6 +42,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	var (
 		buildAgent               string
 		buildPlatform            string
+		buildRuntimeProfile      string
 		buildOutput              string
 		buildModelURL            string
 		buildModelKeyEnv         string
@@ -58,11 +59,14 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 			"SBOM and max-mode provenance attestations are requested by default. A confirmed unsupported-attestation rejection retries without either attestation and warns. Use --require-attestations to fail instead, or --attestations=false to opt out. Missing requested attestations in a successful archive warn; required attestations must be present and bind to the image.\n\n" +
 			"The canonical image digest identifies the runnable image manifest. The separate index digest includes attestations when present and may vary per build. SBOM inspection reads directly from the local archive.\n\n" +
 			"WARNING: --model-api-key-env accepts the environment variable name, never the API key value.\n\n" +
+			"Profiled suites require --runtime-profile ID and an exact --platform when ambiguous. Selection resolves public requirements offline; the current AgentKit producer refuses every profiled plan, without falling back to Orka or another builder.\n\n" +
 			"The current implementation treats the build profile's harness image as a monolithic AgentKit adapter and does not yet compose the runtime-base image, so its output is not AgentSuite-conformant.",
 		Args: usageArgs(1, 1, "kmx suite build <directory> --agent <id> --platform <platform> --model-base-url <url> --output <file>"),
 	}
 	build.Flags().StringVar(&buildAgent, "agent", "", "agent id (optional only when the suite contains one agent)")
-	build.Flags().StringVar(&buildPlatform, "platform", "", "exact platform (optional only when the agent has one composition)")
+	build.Flags().StringVar(&buildPlatform, "platform", "", "exact platform (optional only when the selected profile has one composition)")
+	build.Flags().StringVar(&buildRuntimeProfile, "runtime-profile", "", "exact public runtime profile ID; required for profiled suites (AgentKit refuses profiled builds)")
+	_ = build.RegisterFlagCompletionFunc("runtime-profile", staticCompletion(nil))
 	build.Flags().StringVar(&buildOutput, "output", "", "new OCI image-layout tar path")
 	build.Flags().StringVar(&buildModelURL, "model-base-url", "", "OpenAI-compatible model endpoint embedded by the experimental AgentKit adapter")
 	build.Flags().StringVar(&buildModelKeyEnv, "model-api-key-env", "", "environment variable name containing the model API key; never pass the key value")
@@ -75,6 +79,14 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	_ = build.MarkFlagFilename("output")
 	_ = build.RegisterFlagCompletionFunc("platform", staticCompletion([]string{"linux/amd64", "linux/arm64"}))
 	build.RunE = func(cmd *cobra.Command, args []string) error {
+		for _, name := range []string{"runtime-profile", "platform"} {
+			if cmd.Flags().Changed(name) {
+				value, _ := cmd.Flags().GetString(name)
+				if strings.TrimSpace(value) == "" {
+					return fmt.Errorf("--%s cannot be empty", name)
+				}
+			}
+		}
 		if err := agentkitbuilder.ValidateModelAPIKeyEnv(buildModelKeyEnv); err != nil {
 			return err
 		}
@@ -97,7 +109,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		result, err := a.BuildSuite(ctx, args[0], buildOutput, kmxsuite.BuildSelection{
-			Agent: buildAgent, Platform: buildPlatform,
+			Agent: buildAgent, Platform: buildPlatform, RuntimeProfile: buildRuntimeProfile,
 		}, builder)
 		if err != nil {
 			return err
@@ -223,7 +235,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 // newSuitePushCommand shares publication flags and safety contracts between
 // root workspace publication and the extracted-directory suite transfer.
 func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command {
-	var target, pushWorkspace, evaluation string
+	var target, pushWorkspace, evaluation, runtimeProfile, platform string
 	var pushPlainHTTP, pushForce, pushProvenance, pushRequireProvenance, unevaluated bool
 	push := &cobra.Command{
 		Use:   "push <directory> <reference>",
@@ -245,6 +257,14 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 			"  kmx suite push ./suite --to-layout ./layout agentsuites/team:v1",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if workspaceMode {
+				for _, name := range []string{"runtime-profile", "platform"} {
+					if cmd.Flags().Changed(name) {
+						value, _ := cmd.Flags().GetString(name)
+						if strings.TrimSpace(value) == "" {
+							return fmt.Errorf("--%s cannot be empty", name)
+						}
+					}
+				}
 				if len(args) > 1 {
 					return fmt.Errorf("workspace push accepts at most one destination reference")
 				}
@@ -274,7 +294,8 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 		push.Long = "Prepare one native workspace member and its authored cases, require completed exact-suite passing evidence, then copy that exact OCI graph.\n" +
 			"Explicit REPO:TAG is preserved unchanged. Bare push requires publishRepository in workspace kmx.yaml and derives only its tag as s-<full-S-hex>; --to-layout still requires an explicit reference. Discover the nearest ancestor workspace.yaml, or select an exact root without fallback with --workspace <directory>.\n" +
 			"By default select the latest completed private pass for this workspace and exact S, naming it on stderr. Missing/corrupt proof refuses before transfer; push never runs evaluation. --unevaluated explicitly opts out. Managed evidence is historical execution proof, not current target health.\n" +
-			"Stderr names the absolute workspace path and prepared OCI manifest digest. No member images are required; this does not deploy or evaluate an Agent.\n" +
+			"SchemaVersion 3 packages all explicit runtime profiles. Select an offline view with --runtime-profile ID and, when ambiguous, --platform OS/ARCH. Selection never strips profiles or changes S. Profiled publication requires --unevaluated; evaluated push, private/public proof export, execution and Lift are unavailable even for runtime.id=orka. Image/policy declarations are not enforcement or execution support. Legacy workspaces reject these selectors.\n" +
+			"Stderr names the absolute workspace path and prepared OCI manifest digest. Legacy native members require no images; this does not deploy or evaluate an Agent.\n" +
 			"--evaluation consumes a private full-passing native receipt file and refuses a different exact suite manifest or incoherent case inventory before transfer. Unsigned observations are not authentication or a policy gate.\n\n" + push.Long
 		push.Example = "  kmx push registry.example.com/team:v1\n" +
 			"  kmx push\n" +
@@ -284,6 +305,10 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 		push.Flags().StringVar(&pushWorkspace, "workspace", "", "select exactly this workspace instead of nearest-ancestor discovery")
 		push.Flags().StringVar(&evaluation, "evaluation", "", "explicit private full-passing receipt; overrides managed lookup without fallback")
 		push.Flags().BoolVar(&unevaluated, "unevaluated", false, "explicitly publish without passing evidence; never evaluates or deploys")
+		push.Flags().StringVar(&runtimeProfile, "runtime-profile", "", "exact public runtime profile ID for offline schemaVersion 3 transfer; requires --unevaluated")
+		push.Flags().StringVar(&platform, "platform", "", "exact OS/ARCH within the selected runtime profile; not applicable to legacy workspaces")
+		_ = push.RegisterFlagCompletionFunc("runtime-profile", staticCompletion(nil))
+		_ = push.RegisterFlagCompletionFunc("platform", staticCompletion([]string{"linux/amd64", "linux/arm64"}))
 		_ = push.MarkFlagDirname("workspace")
 	}
 	push.Flags().StringVar(&target, "to-layout", "", "local OCI image-layout target directory")
@@ -339,7 +364,7 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 			a.Err = cmd.ErrOrStderr()
 			result, err = a.PushSuiteWorkspaceManaged(cmd.Context(), app.SuiteWorkspacePushOptions{
 				Workspace: pushWorkspace, Reference: reference, Repository: repository, Layout: target,
-				PlainHTTP: pushPlainHTTP, Force: pushForce, Provenance: provenance, Evaluation: evaluation, Unevaluated: unevaluated,
+				PlainHTTP: pushPlainHTTP, Force: pushForce, Provenance: provenance, Evaluation: evaluation, Unevaluated: unevaluated, RuntimeProfile: runtimeProfile, Platform: platform,
 			})
 			if err != nil {
 				return &suiteDiagnosticError{err}

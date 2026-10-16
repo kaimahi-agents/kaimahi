@@ -46,11 +46,106 @@ intersection semantics.
 This is offline authoring/transfer, not runtime support. Root push with
 `--unevaluated` retains the policy; eval, private native preparation, evaluated
 publication, composed/digest Lift and the experimental sandbox builder refuse a
-declared policy before execution/export. kagent and AgentSessions policy source
-declarations refuse. No enforcing CNI, installed NetworkPolicy, active worker
+declared policy before execution/export. Legacy kagent and AgentSessions policy source
+declarations refuse; v3 retains policy as a shared declaration only. No enforcing CNI, installed NetworkPolicy, active worker
 observation or status capability is implied. Static unsafe paths, symlinks and
 nonregular policy files refuse using existing bounded reads; concurrent hostile
 workspace mutation is outside their guarantees.
+
+## Explicit runtime profiles (offline only)
+
+Single-member `schemaVersion: 3` packages multiple public runtime/build-profile
+requirements into **one OCI suite digest S**. Author this format manually; create
+continues to emit the unchanged legacy format:
+
+```yaml
+schemaVersion: 3
+name: greeter
+member: agents/greeter/member.yaml
+profiles:
+  - runtimeProfile: runtime-profiles/orka.json
+    buildProfile: build-profiles/orka.json
+    platform: linux/amd64
+  - runtimeProfile: runtime-profiles/sessions.json
+    buildProfile: build-profiles/sessions.json
+    platform: linux/amd64
+```
+
+Each row references a complete public AgentSuite RuntimeProfile and BuildProfile
+JSON document; IDs come from those validated documents, not filenames. Runtime
+profiles pin runtime/harness/renderer identities, a consumer-owned
+`configurationABI` and `imageRequired`. Declarations may name unknown portable
+implementations: format acceptance is not support for running or building them.
+The selected build profile must cover the platform and pin the same harness
+digest as the runtime profile. Build-profile `execution` is image-serving
+metadata, not a runtime selector or the AgentSessions harness protocol.
+
+Keep instructions, exact model, flat `eval/*.yaml` cases and optional member
+policy once. V3 forbids `members`, the legacy top-level `buildProfile` and
+`member.runtime`, including explicit empty/null declarations. Legacy v1/v2
+forbid `profiles`; their bytes/digests and default Orka interpretation are
+unchanged. At most 16 unique profile/platform tuples are allowed. Conflicting
+same-ID documents, missing references, mixed forms, unknown fields, unsafe paths,
+symlinks and nonregular/oversize inputs refuse. All selected authored profile
+files enter the fingerprint and provenance closure, with the existing 1 MiB
+per-file and 8 MiB aggregate source/artifact limits.
+
+```sh
+kmx push --workspace ./profiled --runtime-profile orka --platform linux/amd64 \
+  --unevaluated --to-layout ./layout greeter:v1
+```
+
+`--runtime-profile` is mandatory even with one profile. Omit `--platform` only
+when that explicitly selected profile has one candidate. Unknown or conflicting
+selectors refuse; legacy workspace push rejects both new selectors. Selection
+changes the offline view, **never S or the transferred graph**: all profiles,
+compositions, cases and the shared policy remain packaged. V3 has no singleton
+private native runtime metadata. Policy packaging is declaration only, not
+Sessions enforcement.
+
+Internal `LoadSelected`/`LoadArtifactSelected` expose the verified public
+requirements, profile digest and platform. Ordinary `Load`/`LoadArtifact` and
+both inventory loaders refuse profiled input even with one profile. The retained
+verified graph resolves exact same-S composition digests without rereading source
+or aliasing mutable selected bytes. There is no profiled inventory API.
+
+`suite build DIRECTORY --runtime-profile ID [--platform OS/ARCH]` resolves an
+exact composition/build profile offline, but the existing AgentKit producer
+**refuses every profiled plan** before exporting or invoking Docker. There is no
+producer fallback, Sessions image-build adapter or suite/image association here.
+Profiled execution, evaluated push, private receipt creation/export, native public
+evidence export and Lift all refuse, including profiles declaring `runtime.id=orka`.
+Only explicit unevaluated publication is available. Independent `eval verify`
+can check externally produced portable evidence against separately reviewed
+expectations; it grants no private push/Lift authority.
+
+### Offline private receipt consistency
+
+The private scanner resolves each record's own composition in the same S, then
+runs all existing receipt structural, runtime/host, render, member, build-profile
+and case-coherence checks before deciding whether it matches the selected view.
+A valid other-profile record neither corrupts the selected history nor authorizes
+fallback; malformed, foreign, unknown-composition or wrong-member records refuse.
+Allocation uses the global maximum sequence; companion metadata lookup uses the
+selected receipt's sequence.
+
+For this comparison only, kmx owns three **legacy receipt declaration labels**:
+
+| `configurationABI` label | Existing declaration mapping |
+|---|---|
+| `kmx-native-orka-v2` | Orka, `kmx.native-orka/v2` renderer |
+| `kmx-native-kagent-v2` | Exact kagent v0.10.3 Go and its existing native renderer/execution labels |
+| `kmx-native-agentsessions-v2` | Exact pinned development-chat AgentSessions commit and its existing native renderer/execution labels |
+
+These are not upstream image ABIs or runtime qualification. Mapping requires the
+matching runtime ID, linux/amd64 and `imageRequired: false`; kagent/Sessions also
+require their existing pinned version. Unknown mappings refuse proof lookup.
+The receipt-only projection preserves the profiled marker/graph, never fills or
+changes observed receipt runtime/host facts, and cannot enter execution or export.
+Public implementation digests are **not qualified** by this consistency check.
+Synthetic tests demonstrate only lookup/binding consistency, not two-runtime
+execution. Real profiled execution/evidence integration and image association
+remain unavailable.
 
 ## Provisional multi-member source (offline only)
 
@@ -984,7 +1079,7 @@ kmx push ghcr.io/me/my-agents:v1       # supplied tag stays v1
 kmx push                             # saved publishRepository:s-<full-S-hex>
 ```
 
-Root push requires completed full-passing evidence for the exact prepared OCI
+Legacy native root push requires completed full-passing evidence for the exact prepared OCI
 manifest S by default. It selects the latest completed pass for this workspace/S,
 validates its packaged runtime/cases, and identifies the selected record on stderr
 before transfer. It does not evaluate or contact the cluster to repair missing proof.
@@ -1051,8 +1146,10 @@ validates it, prepares a private local OCI layout under KMX state, then copies
 that exact descriptor graph to the registry. It does not re-archive the prepared
 artifact during publication. A single stderr line names the absolute workspace
 path and prepared OCI manifest digest. Result stdout still includes the suite
-digest, a digest-pinned registry reference and `Required member images: []`.
-The manifest digest binds member content, cases and private native metadata.
+digest and a digest-pinned registry reference. Legacy output includes
+`Required member images: []`; v3 instead confirms all runtime profiles are retained
+and image/policy requirements are declarations only. The manifest digest binds
+member content, cases and either legacy private metadata or all public profiles.
 
 The content includes exact member instructions, the member's authored cases as
 public AgentSuite evaluation cases under `evals/<member>/`, and a versioned

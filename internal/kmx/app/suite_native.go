@@ -96,6 +96,9 @@ func (a *App) prepareSuiteNativeCandidate(ctx context.Context, suite *workspace.
 
 func (a *App) prepareSuiteNativeProjection(ctx context.Context, suite *workspace.NativeSuite, namespace, selectedProvider, physical, runID string) (*suiteNativePrepared, error) {
 	if suite != nil {
+		if err := suite.RequireUnprofiled(); err != nil {
+			return nil, err
+		}
 		if err := suite.RequirePolicyFree(); err != nil {
 			return nil, err
 		}

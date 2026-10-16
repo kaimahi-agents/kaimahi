@@ -121,6 +121,7 @@ func workspacePathLabel(path string) string {
 // used only when Reference is empty; explicit tags are never rewritten.
 type SuiteWorkspacePushOptions struct {
 	Workspace, Reference, Repository, Layout, Evaluation string
+	RuntimeProfile, Platform                             string
 	PlainHTTP, Force, Unevaluated                        bool
 	Provenance                                           SuitePushProvenance
 }
@@ -245,11 +246,18 @@ func (a *App) pushSuiteWorkspaceSelected(ctx context.Context, root, reference, l
 	if err != nil {
 		return oras.PushResult{}, err
 	}
-	suite, err := workspace.Load(ctx, prepared)
+	var selection workspace.Selection
+	if managed != nil {
+		selection.RuntimeProfile, selection.Platform = managed.RuntimeProfile, managed.Platform
+	}
+	suite, err := workspace.LoadSelected(ctx, prepared, selection)
 	if err != nil {
 		return oras.PushResult{}, err
 	}
 	if expectedS != nil || receipt != nil || (managed != nil && !managed.Unevaluated) {
+		if err := suite.RequireUnprofiled(); err != nil {
+			return oras.PushResult{}, err
+		}
 		if err := suite.RequirePolicyFree(); err != nil {
 			return oras.PushResult{}, err
 		}
@@ -350,7 +358,11 @@ func (a *App) pushSuiteWorkspaceSelected(ctx context.Context, root, reference, l
 	if sourceWarning != "" && result.Provenance != nil {
 		result.Warnings = append(result.Warnings, sourceWarning)
 	}
-	if _, err := fmt.Fprintf(a.Out, "Pushed %s AgentSuite %s to %s (%s)\nRequired member images: []\n", nativeSuiteLabel(suite.Runtime), prepared.Name, result.Path, result.Descriptor.Digest); err != nil {
+	label, requirements := nativeSuiteLabel(suite.Runtime), "Required member images: []"
+	if suite.Profile != nil {
+		label, requirements = "profiled", "All runtime profiles retained; image/policy requirements are declarations only"
+	}
+	if _, err := fmt.Fprintf(a.Out, "Pushed %s AgentSuite %s to %s (%s)\n%s\n", label, prepared.Name, result.Path, result.Descriptor.Digest, requirements); err != nil {
 		return result, err
 	}
 	if layout == "" {

@@ -194,6 +194,18 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   resources against legacy adoption, copying, bundle authorization and retirement.
   Registry workspace publication shares unsigned suite provenance defaults/flags and records Git source only from
   fingerprint-bound authored inputs matching HEAD; local layouts get no referrers.
+- Single-member `schemaVersion: 3` is offline profiled packaging only: explicit
+  `push --runtime-profile ID [--platform OS/ARCH] --unevaluated` transfers all
+  profiles/compositions under unchanged S. Legacy push rejects these selectors.
+  Unselected Load/LoadArtifact and both inventory loaders refuse profiled input,
+  even with one profile. Selected views keep a private immutable graph marker;
+  receipt-only legacy declaration projection must preserve it and cannot qualify
+  public implementation pins or manufacture observed runtime/host facts.
+  `suite build` resolves exact profile tuples but AgentKit refuses profiled plans.
+  All profiled execution/private proof creation or export/evaluated publication/
+  native public evidence export/Lift remain unsupported; no image adapter,
+  association, registry/auth or target-runtime qualification is implied.
+  V3 policy is shared declaration only, never Sessions enforcement.
 - Root `eval --development-host FILE` separately supports the packaged
   AgentSessions chat inventory under the development boundary above; every
   cluster/inference/bindings/result selector (including explicit defaults) refuses.

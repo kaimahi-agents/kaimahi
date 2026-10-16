@@ -84,6 +84,9 @@ func (e *suitePassingExport) unchanged() error {
 // Full offline coherence is required at this API, not only at construction.
 // Errors after the exclusive link may leave the published output in place.
 func (e *suitePassingExport) publish(ctx context.Context, r *suitePassingReceipt, suite *workspace.NativeSuite) (err error) {
+	if err := suite.RequireUnprofiled(); err != nil {
+		return err
+	}
 	raw, err := canonicalSuitePassingReceipt(ctx, r, suite)
 	if err != nil {
 		return err

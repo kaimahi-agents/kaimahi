@@ -95,23 +95,41 @@ func resolveMarker(root string) error {
 func parseSourceWorkspace(b []byte) (sourceWorkspace, error) {
 	// Pointers distinguish absent fields from empty mixed-form declarations.
 	var descriptor struct {
-		SchemaVersion int       `yaml:"schemaVersion"`
-		Name          string    `yaml:"name"`
-		Member        *string   `yaml:"member"`
-		Members       *[]string `yaml:"members"`
-		BuildProfile  string    `yaml:"buildProfile"`
+		SchemaVersion int              `yaml:"schemaVersion"`
+		Name          string           `yaml:"name"`
+		Member        *string          `yaml:"member"`
+		Members       *[]string        `yaml:"members"`
+		BuildProfile  *string          `yaml:"buildProfile"`
+		Profiles      *[]sourceProfile `yaml:"profiles"`
 	}
 	var w sourceWorkspace
-	if err := strictYAML(b, &descriptor); err != nil {
+	if err := strictSourceYAML(b, &descriptor, true); err != nil {
 		// YAML diagnostics can quote decoded credential-shaped keys/content.
 		return w, errors.New("workspace.yaml: invalid workspace descriptor; check source fields and integer schemaVersion")
 	}
-	w.SchemaVersion, w.Name, w.BuildProfile = descriptor.SchemaVersion, descriptor.Name, descriptor.BuildProfile
-	if !namePattern.MatchString(w.Name) || w.Name == "." || w.Name == ".." || w.BuildProfile != "build-profiles/default.json" {
+	w.SchemaVersion, w.Name = descriptor.SchemaVersion, descriptor.Name
+	if descriptor.BuildProfile != nil {
+		w.BuildProfile = *descriptor.BuildProfile
+	}
+	if !namePattern.MatchString(w.Name) || w.Name == "." || w.Name == ".." {
 		return w, errors.New("unsupported workspace schema/name/build profile")
+	}
+	if w.SchemaVersion != 3 && (w.BuildProfile != "build-profiles/default.json" || descriptor.Profiles != nil) {
+		return w, errors.New("legacy workspace requires the default build profile and forbids profiles")
 	}
 	var members []string
 	switch w.SchemaVersion {
+	case 3:
+		if descriptor.Member == nil || descriptor.Members != nil || descriptor.BuildProfile != nil || descriptor.Profiles == nil || len(*descriptor.Profiles) == 0 || len(*descriptor.Profiles) > 16 {
+			return w, errors.New("schemaVersion 3 requires member and one to 16 profiles; forbids members and buildProfile")
+		}
+		w.Member, w.Profiles = *descriptor.Member, *descriptor.Profiles
+		members = []string{w.Member}
+		for _, row := range w.Profiles {
+			if row.RuntimeProfile == "" || row.BuildProfile == "" || row.Platform == "" {
+				return w, errors.New("profile rows require runtimeProfile, buildProfile and platform")
+			}
+		}
 	case 1:
 		if descriptor.Member == nil || descriptor.Members != nil {
 			return w, errors.New("schemaVersion 1 requires member and forbids members")

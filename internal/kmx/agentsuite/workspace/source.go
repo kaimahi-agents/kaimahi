@@ -75,11 +75,18 @@ type CreateOptions struct {
 	Runtime                                    RuntimeProfile
 }
 type sourceWorkspace struct {
-	SchemaVersion int      `yaml:"schemaVersion"`
-	Name          string   `yaml:"name"`
-	Member        string   `yaml:"member,omitempty"`
-	BuildProfile  string   `yaml:"buildProfile"`
-	Members       []string `yaml:"members,omitempty"`
+	SchemaVersion int             `yaml:"schemaVersion"`
+	Name          string          `yaml:"name"`
+	Member        string          `yaml:"member,omitempty"`
+	BuildProfile  string          `yaml:"buildProfile"`
+	Members       []string        `yaml:"members,omitempty"`
+	Profiles      []sourceProfile `yaml:"profiles,omitempty"`
+}
+
+type sourceProfile struct {
+	RuntimeProfile string `yaml:"runtimeProfile"`
+	BuildProfile   string `yaml:"buildProfile"`
+	Platform       string `yaml:"platform"`
 }
 type sourceMember struct {
 	ID           string `yaml:"id"`
@@ -348,7 +355,9 @@ func writeFiles(root string, files map[string][]byte) error {
 	return nil
 }
 
-func strictYAML(b []byte, out any) error {
+func strictYAML(b []byte, out any) error { return strictSourceYAML(b, out, false) }
+
+func strictSourceYAML(b []byte, out any, profileRows bool) error {
 	if err := safeText(string(b)); err != nil {
 		return err
 	}
@@ -363,8 +372,8 @@ func strictYAML(b []byte, out any) error {
 	if len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
 		return errors.New("source must be a YAML mapping")
 	}
-	var visit func(*yaml.Node, int) error
-	visit = func(n *yaml.Node, depth int) error {
+	var visit func(*yaml.Node, int, bool) error
+	visit = func(n *yaml.Node, depth int, rows bool) error {
 		if depth > 32 || n.Kind == yaml.AliasNode || n.Anchor != "" || n.Tag == "!!null" || n.Tag == "!!binary" {
 			return errors.New("unsupported source YAML alias, anchor, null, binary or excessive nesting")
 		}
@@ -373,7 +382,7 @@ func strictYAML(b []byte, out any) error {
 		}
 		if n.Kind == yaml.SequenceNode {
 			for _, item := range n.Content {
-				if item.Kind != yaml.ScalarNode || item.Tag != "!!str" {
+				if !(rows && item.Kind == yaml.MappingNode) && (item.Kind != yaml.ScalarNode || item.Tag != "!!str") {
 					return errors.New("source lists must contain only strings")
 				}
 			}
@@ -394,13 +403,14 @@ func strictYAML(b []byte, out any) error {
 					return errors.New("source fields must be strings, without scalar coercion")
 				}
 			}
-			if err := visit(c, depth+1); err != nil {
+			allowRows := profileRows && depth == 0 && n.Kind == yaml.MappingNode && i%2 == 1 && n.Content[i-1].Value == "profiles"
+			if err := visit(c, depth+1, allowRows); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	if err := visit(doc.Content[0], 0); err != nil {
+	if err := visit(doc.Content[0], 0, false); err != nil {
 		return err
 	}
 	dec = yaml.NewDecoder(bytes.NewReader(b))

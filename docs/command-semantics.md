@@ -133,6 +133,14 @@ standalone until candidate-scoped evaluation/cleanup is qualified. See
 
 ## Offline suite workspace
 
+Single-member [explicit runtime profiles](suite-workspace.md#explicit-runtime-profiles-offline-only)
+use source v3. Root push accepts `--runtime-profile ID [--platform OS/ARCH]`
+only for offline v3 `--unevaluated` transfer; all profiles remain in S. Suite build
+uses the same selectors for exact planning, but AgentKit refuses profiled plans.
+Eval/Lift expose neither flag. Profiled execution, private/public native export
+and evaluated publication remain unsupported; external portable eval verify is
+an independent consistency check, not private proof authority.
+
 `create <name> --model <model> --instructions <file> [--workspace <directory>]`
 authors one tool-free native-Orka member offline by default. Model and an
 instructions file are required; description is optional. Create and push share

@@ -123,6 +123,11 @@ func newSuiteSessionsPassingReceipt(ctx context.Context, p *PreparedSuiteWorkspa
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if p != nil {
+		if err := p.suite.RequireUnprofiled(); err != nil {
+			return nil, err
+		}
+	}
 	if p == nil || p.prepared == nil || p.suite == nil {
 		return nil, errSuitePassingReceipt
 	}

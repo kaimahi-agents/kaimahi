@@ -25,8 +25,9 @@ const (
 
 // BuildSelection identifies one runnable agent composition.
 type BuildSelection struct {
-	Agent    string
-	Platform string
+	Agent          string
+	Platform       string
+	RuntimeProfile string
 }
 
 // SelectedToolProvider is one exact provider bundle selected by a composition.
@@ -44,16 +45,19 @@ type SelectedToolProvider struct {
 // sandbox image builder. The current experimental contract does not yet expose
 // verified image blobs or ToolProvider payload content.
 type SandboxPlan struct {
-	Suite             agentsuite.Suite
-	SuiteManifestHash string
-	Agent             agentsuite.Agent
-	Instructions      []byte
-	Composition       agentsuite.Composition
-	CompositionDigest string
-	BuildProfile      agentsuite.BuildProfile
-	RuntimeBase       agentsuite.PlatformImage
-	Harness           agentsuite.PlatformImage
-	ToolProviders     []SelectedToolProvider
+	Suite                    agentsuite.Suite
+	SuiteManifestHash        string
+	Agent                    agentsuite.Agent
+	Instructions             []byte
+	Composition              agentsuite.Composition
+	CompositionDigest        string
+	RuntimeProfile           *agentsuite.RuntimeProfile
+	RuntimeProfileDescriptor agentsuite.Descriptor
+	BuildProfileDigest       string
+	BuildProfile             agentsuite.BuildProfile
+	RuntimeBase              agentsuite.PlatformImage
+	Harness                  agentsuite.PlatformImage
+	ToolProviders            []SelectedToolProvider
 }
 
 // BuildResult describes archive emission and its inspection policy. Streaming
@@ -124,9 +128,16 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 		return nil, fmt.Errorf("AgentSuite has no agent %q", agentID)
 	}
 
+	profiled := len(v.suite.RuntimeProfiles) != 0
+	if profiled && selection.RuntimeProfile == "" {
+		return nil, errors.New("profiled suite requires --runtime-profile")
+	}
+	if !profiled && selection.RuntimeProfile != "" {
+		return nil, errors.New("--runtime-profile is not applicable to an unprofiled suite")
+	}
 	var candidates []agentsuite.Composition
 	for _, composition := range v.compositions {
-		if composition.Agent == agentID {
+		if composition.Agent == agentID && composition.RuntimeProfile == selection.RuntimeProfile {
 			candidates = append(candidates, composition)
 		}
 	}
@@ -177,9 +188,24 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 	}
 	compositionDigest := ""
 	for _, ref := range v.suite.Compositions {
-		if ref.Agent == composition.Agent && ref.Platform == composition.Platform {
+		if ref.Agent == composition.Agent && ref.Platform == composition.Platform && ref.RuntimeProfile == composition.RuntimeProfile {
 			compositionDigest = ref.Descriptor.Digest
 			break
+		}
+	}
+	var runtimeProfile *agentsuite.RuntimeProfile
+	var runtimeDescriptor agentsuite.Descriptor
+	for _, ref := range v.suite.RuntimeProfiles {
+		if ref.ID == composition.RuntimeProfile {
+			p := v.runtimes[ref.ID]
+			runtimeProfile = &p
+			runtimeDescriptor = ref.Descriptor
+		}
+	}
+	var buildDigest string
+	for _, ref := range v.suite.BuildProfiles {
+		if ref.ID == composition.BuildProfile {
+			buildDigest = ref.Descriptor.Digest
 		}
 	}
 	selected, err := resolveSelectedToolProviders(v, composition)
@@ -187,16 +213,19 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 		return nil, err
 	}
 	return &SandboxPlan{
-		Suite:             v.suite,
-		SuiteManifestHash: suiteHash,
-		Agent:             agent,
-		Instructions:      instructions,
-		Composition:       composition,
-		CompositionDigest: compositionDigest,
-		BuildProfile:      profile,
-		RuntimeBase:       runtimeBase,
-		Harness:           harness,
-		ToolProviders:     selected,
+		Suite:                    v.suite,
+		SuiteManifestHash:        suiteHash,
+		Agent:                    agent,
+		Instructions:             instructions,
+		Composition:              composition,
+		CompositionDigest:        compositionDigest,
+		RuntimeProfile:           runtimeProfile,
+		RuntimeProfileDescriptor: runtimeDescriptor,
+		BuildProfileDigest:       buildDigest,
+		BuildProfile:             profile,
+		RuntimeBase:              runtimeBase,
+		Harness:                  harness,
+		ToolProviders:            selected,
 	}, nil
 }
 
@@ -205,6 +234,7 @@ func ResolveSandboxPlan(root string, selection BuildSelection) (*SandboxPlan, er
 type buildMetadata struct {
 	suite               agentsuite.Suite
 	agents              map[string]agentsuite.Agent
+	runtimes            map[string]agentsuite.RuntimeProfile
 	builds              map[string]agentsuite.BuildProfile
 	compositions        []agentsuite.Composition
 	toolProviders       map[string]agentsuite.ToolProvider
@@ -214,6 +244,7 @@ type buildMetadata struct {
 func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error) {
 	v := &buildMetadata{
 		agents:              map[string]agentsuite.Agent{},
+		runtimes:            map[string]agentsuite.RuntimeProfile{},
 		builds:              map[string]agentsuite.BuildProfile{},
 		toolProviders:       map[string]agentsuite.ToolProvider{},
 		toolProviderDigests: map[string]string{},
@@ -255,6 +286,13 @@ func loadBuildMetadata(root *os.Root, suiteBytes []byte) (*buildMetadata, error)
 			return nil, err
 		}
 		v.agents[ref.ID] = agent
+	}
+	for _, ref := range v.suite.RuntimeProfiles {
+		var profile agentsuite.RuntimeProfile
+		if err := readJSON(ref.Path, ref.Descriptor, &profile); err != nil {
+			return nil, err
+		}
+		v.runtimes[ref.ID] = profile
 	}
 	for _, ref := range v.suite.BuildProfiles {
 		var profile agentsuite.BuildProfile

@@ -222,10 +222,11 @@ func (s *suitePassStore) Close() error {
 }
 
 type suitePassScan struct {
-	latest       *suitePassingReceipt
-	path         string
-	sequence     uint64
-	count, bytes int
+	latest           *suitePassingReceipt
+	path             string
+	sequence         uint64 // global allocation maximum
+	selectedSequence uint64 // latest coherent receipt for the selected composition
+	count, bytes     int
 }
 
 func (s *suitePassStore) scan(ctx context.Context, suite *workspace.NativeSuite) (result suitePassScan, err error) {
@@ -299,16 +300,29 @@ func (s *suitePassStore) scan(ctx context.Context, suite *workspace.NativeSuite)
 			if e != nil || receipt.suiteDigest() != s.suiteDigest {
 				return result, errSuitePassStore
 			}
+			if seq > result.sequence {
+				result.sequence = seq
+			}
 			if suite != nil {
-				if _, err := canonicalSuitePassingReceipt(ctx, receipt, suite); err != nil {
+				own, err := suite.ForCompositionDigest(ctx, receipt.compositionDigest())
+				if err != nil {
 					if err := ctx.Err(); err != nil {
 						return result, err
 					}
 					return result, errSuitePassStore
 				}
+				if _, err := canonicalSuitePassingReceipt(ctx, receipt, own); err != nil {
+					if err := ctx.Err(); err != nil {
+						return result, err
+					}
+					return result, errSuitePassStore
+				}
+				if own.CompositionDigest != suite.CompositionDigest {
+					continue
+				}
 			}
-			if seq > result.sequence {
-				result.sequence = seq
+			if seq > result.selectedSequence {
+				result.selectedSequence = seq
 				result.latest = receipt
 				result.path = filepath.Join(s.partition, name)
 			}
@@ -366,6 +380,9 @@ func (s *suitePassStore) latest(ctx context.Context, suite *workspace.NativeSuit
 }
 
 func (s *suitePassStore) commit(ctx context.Context, raw []byte, suite *workspace.NativeSuite) (string, error) {
+	if err := suite.RequireUnprofiled(); err != nil {
+		return "", err
+	}
 	if s.completion == nil || suite == nil || suite.Digest != s.suiteDigest {
 		return "", errSuitePassStore
 	}

@@ -37,6 +37,10 @@ type NativeSuite struct {
 	Cases              []PackagedCase
 	RequiredImages     []string
 	Policy             *NativePolicy
+	Profile            *agentsuite.RuntimeProfile
+	ProfileDigest      string
+	Platform           agentsuite.Platform
+	profiled           *profiledGraph
 }
 
 // Load reads only the single verified packaged snapshot, not live workspace
@@ -52,6 +56,9 @@ func Load(ctx context.Context, p *Prepared) (*NativeSuite, error) {
 	}
 	if _, multi := files[multiNativePath]; multi {
 		return nil, ErrMultiMemberUnsupported
+	}
+	if hasRuntimeProfiles(files) {
+		return nil, ErrProfileSelectionRequired
 	}
 	return loadNativeFiles(ctx, files, p.Descriptor.Digest.String())
 }
@@ -71,6 +78,9 @@ func LoadArtifact(ctx context.Context, artifact *suiteoras.Artifact) (*NativeSui
 	}
 	if _, multi := files[multiNativePath]; multi {
 		return nil, ErrMultiMemberUnsupported
+	}
+	if hasRuntimeProfiles(files) {
+		return nil, ErrProfileSelectionRequired
 	}
 	return loadNativeFiles(ctx, files, artifact.Descriptor().Digest.String())
 }

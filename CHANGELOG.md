@@ -32,6 +32,23 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   evaluation, repair or annotation backfill. Ready is not answered/evaluated;
   unsigned records do not prove original UID continuity.
 
+- Single-member source `schemaVersion: 3` packages explicit public runtime/build
+  profiles and profile-qualified compositions under one unchanged OCI digest S.
+  Root `push --runtime-profile ID [--platform OS/ARCH] --unevaluated` selects an
+  offline view and transfers every profile, shared member/case/policy descriptor
+  and composition. Unselected native and inventory loaders refuse profiled input.
+  `suite build` resolves exact profile tuples; the AgentKit producer refuses all
+  profiled plans. Per-composition private lookup preserves all existing coherence
+  checks, using receipt-only kmx legacy declaration labels, separate selected
+  metadata sequence and global allocation maximum. Synthetic consistency tests
+  are not runtime qualification. Profiled execution, pass creation/export,
+  evaluated publication, native public evidence export and Lift remain unavailable;
+  no Sessions image adapter/association or upstream ABI support is claimed.
+  Legacy v1/v2 bytes/digests and policy enforcement refusals are unchanged.
+  Portable suite dependency pins genuine public
+  `v0.3.2-0.20261016151746-76e3988b7f1d` with module sums; no replace/workspace file.
+  See [offline runtime profiles](docs/suite-workspace.md#explicit-runtime-profiles-offline-only).
+
 - `kmx eval verify --suite LAYOUT --evidence FILE --expect FILE` checks detached
   public evidence offline using shared suite v0.3.1 VerifyEvaluation. Digest input
   requires explicit `--from-layout DIR`, without registry/cache/state lookup.

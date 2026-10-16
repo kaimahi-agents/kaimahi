@@ -101,7 +101,11 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 	var files map[string][]byte
 	renderer, executionProfile := multiRendererVersion, ""
 	var declaredRuntime *RuntimeProfile
-	if s.workspace.SchemaVersion == 2 {
+	if s.workspace.SchemaVersion == 3 {
+		m := s.members[0]
+		files, err = resolveProfiled(s.workspace.Name, m, s.profiles)
+		renderer = profiledLayoutVersion
+	} else if s.workspace.SchemaVersion == 2 {
 		files, err = resolveMulti(s.workspace.Name, s.members, s.profile)
 	} else {
 		m := s.members[0]
@@ -182,59 +186,19 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases []
 	if !bytes.Equal(bpBytes, approvedBytes) {
 		return nil, errors.New("unsupported build profile; use the pinned default profile")
 	}
-	files := map[string][]byte{"instructions/" + m.ID + ".md": instructions, "build-profiles/default.json": bpBytes}
+	files, agentRef, catalogRef, err := resolveMemberGraph(m, instructions, cases)
+	if err != nil {
+		return nil, err
+	}
+	files["build-profiles/default.json"] = bpBytes
 	put := func(name string, value any) (string, int64, error) {
 		b, err := agentsuite.Marshal(value)
 		if err != nil {
 			return "", 0, err
 		}
 		files[name] = b
-		digest, err := agentsuite.Digest(b)
-		if err != nil {
-			return "", 0, err
-		}
-		return digest, int64(len(b)), nil
-	}
-	catalogPath := "tool-providers/catalog.json"
-	catalogDigest, catalogSize, err := put(catalogPath, agentsuite.ToolProviderCatalog{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeToolProviderCatalog, ToolProviders: []agentsuite.ManifestRef{}})
-	if err != nil {
-		return nil, err
-	}
-	if len(cases) == 0 || len(cases) > maxPackagedCases {
-		return nil, errors.New("one to 128 authored cases are required")
-	}
-	index := agentsuite.EvaluationIndex{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeEvaluationIndex, Agent: m.ID, Cases: make([]agentsuite.FileRef, 0, len(cases)), Limits: agentsuite.EvaluationLimits{MaxCases: maxPackagedCases, MaxCaseBytes: maxPackagedCaseBytes}}
-	ids := map[string]bool{}
-	for _, c := range cases {
-		// Case files are named by ID; avoid case-insensitive collisions.
-		if ids[strings.ToLower(c.ID)] {
-			return nil, errors.New("duplicate evaluation case ID (IDs must differ by more than letter case)")
-		}
-		ids[strings.ToLower(c.ID)] = true
-		b, err := publicCase(c)
-		if err != nil {
-			return nil, err
-		}
-		p := evalCasePath(m.ID, c.ID)
-		files[p] = b
-		digest, err := agentsuite.Digest(b)
-		if err != nil {
-			return nil, err
-		}
-		index.Cases = append(index.Cases, agentsuite.FileRef{Path: p, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeEvaluationCase, Digest: digest, Size: int64(len(b))}})
-	}
-	indexDigest, indexSize, err := put(evalIndexPath(m.ID), index)
-	if err != nil {
-		return nil, err
-	}
-	policyRef, err := bindMemberPolicy(files, m.ID, m.policyBytes)
-	if err != nil {
-		return nil, err
-	}
-	agentPath := "agents/" + m.ID + ".json"
-	agentDigest, agentSize, err := put(agentPath, agentsuite.Agent{Policy: policyRef, SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: agentsuite.FileRef{Path: "instructions/" + m.ID + ".md", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeInstructions, Digest: godigest.FromBytes(instructions).String(), Size: int64(len(instructions))}}, Model: agentsuite.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}, Evals: []agentsuite.FileRef{{Path: evalIndexPath(m.ID), Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeEvaluationIndex, Digest: indexDigest, Size: indexSize}}}})
-	if err != nil {
-		return nil, err
+		d, err := agentsuite.Digest(b)
+		return d, int64(len(b)), err
 	}
 	platform := agentsuite.Platform{OS: "linux", Architecture: "amd64"}
 	compositionPath := "compositions/" + m.ID + "-linux-amd64.json"
@@ -246,7 +210,7 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases []
 	if err != nil {
 		return nil, err
 	}
-	_, _, err = put("agentsuite.json", agentsuite.Suite{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeSuite, Name: name, Agents: []agentsuite.ManifestRef{{ID: m.ID, Path: agentPath, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeAgent, Digest: agentDigest, Size: agentSize}}}, ToolProviderCatalog: agentsuite.ManifestRef{Path: catalogPath, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeToolProviderCatalog, Digest: catalogDigest, Size: catalogSize}}, Compositions: []agentsuite.CompositionRef{{Agent: m.ID, Platform: platform, Path: compositionPath, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeComposition, Digest: compositionDigest, Size: compositionSize}}}, BuildProfiles: []agentsuite.ManifestRef{{ID: bp.ID, Path: "build-profiles/default.json", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeBuildProfile, Digest: profileDigest, Size: int64(len(bpBytes))}}}})
+	_, _, err = put("agentsuite.json", agentsuite.Suite{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeSuite, Name: name, Agents: []agentsuite.ManifestRef{agentRef}, ToolProviderCatalog: catalogRef, Compositions: []agentsuite.CompositionRef{{Agent: m.ID, Platform: platform, Path: compositionPath, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeComposition, Digest: compositionDigest, Size: compositionSize}}}, BuildProfiles: []agentsuite.ManifestRef{{ID: bp.ID, Path: "build-profiles/default.json", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeBuildProfile, Digest: profileDigest, Size: int64(len(bpBytes))}}}})
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +231,65 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases []
 	}
 	_, _, err = put(metadataPath, record)
 	return files, err
+}
+
+// resolveMemberGraph is shared by legacy and profiled packaging; content is authored once.
+func resolveMemberGraph(m sourceMember, instructions []byte, cases []runtime.EvaluationCase) (map[string][]byte, agentsuite.ManifestRef, agentsuite.ManifestRef, error) {
+	files := map[string][]byte{"instructions/" + m.ID + ".md": instructions}
+	put := func(name string, value any) (string, int64, error) {
+		b, err := agentsuite.Marshal(value)
+		if err != nil {
+			return "", 0, err
+		}
+		files[name] = b
+		digest, err := agentsuite.Digest(b)
+		if err != nil {
+			return "", 0, err
+		}
+		return digest, int64(len(b)), nil
+	}
+	catalogPath := "tool-providers/catalog.json"
+	catalogDigest, catalogSize, err := put(catalogPath, agentsuite.ToolProviderCatalog{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeToolProviderCatalog, ToolProviders: []agentsuite.ManifestRef{}})
+	if err != nil {
+		return nil, agentsuite.ManifestRef{}, agentsuite.ManifestRef{}, err
+	}
+	if len(cases) == 0 || len(cases) > maxPackagedCases {
+		return nil, agentsuite.ManifestRef{}, agentsuite.ManifestRef{}, errors.New("one to 128 authored cases are required")
+	}
+	index := agentsuite.EvaluationIndex{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeEvaluationIndex, Agent: m.ID, Cases: make([]agentsuite.FileRef, 0, len(cases)), Limits: agentsuite.EvaluationLimits{MaxCases: maxPackagedCases, MaxCaseBytes: maxPackagedCaseBytes}}
+	ids := map[string]bool{}
+	for _, c := range cases {
+		// Case files are named by ID; avoid case-insensitive collisions.
+		if ids[strings.ToLower(c.ID)] {
+			return nil, agentsuite.ManifestRef{}, agentsuite.ManifestRef{}, errors.New("duplicate evaluation case ID (IDs must differ by more than letter case)")
+		}
+		ids[strings.ToLower(c.ID)] = true
+		b, err := publicCase(c)
+		if err != nil {
+			return nil, agentsuite.ManifestRef{}, agentsuite.ManifestRef{}, err
+		}
+		p := evalCasePath(m.ID, c.ID)
+		files[p] = b
+		digest, err := agentsuite.Digest(b)
+		if err != nil {
+			return nil, agentsuite.ManifestRef{}, agentsuite.ManifestRef{}, err
+		}
+		index.Cases = append(index.Cases, agentsuite.FileRef{Path: p, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeEvaluationCase, Digest: digest, Size: int64(len(b))}})
+	}
+	indexDigest, indexSize, err := put(evalIndexPath(m.ID), index)
+	if err != nil {
+		return nil, agentsuite.ManifestRef{}, agentsuite.ManifestRef{}, err
+	}
+	policyRef, err := bindMemberPolicy(files, m.ID, m.policyBytes)
+	if err != nil {
+		return nil, agentsuite.ManifestRef{}, agentsuite.ManifestRef{}, err
+	}
+	agentPath := "agents/" + m.ID + ".json"
+	agentDigest, agentSize, err := put(agentPath, agentsuite.Agent{Policy: policyRef, SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: agentsuite.FileRef{Path: "instructions/" + m.ID + ".md", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeInstructions, Digest: godigest.FromBytes(instructions).String(), Size: int64(len(instructions))}}, Model: agentsuite.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}, Evals: []agentsuite.FileRef{{Path: evalIndexPath(m.ID), Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeEvaluationIndex, Digest: indexDigest, Size: indexSize}}}})
+	if err != nil {
+		return nil, agentsuite.ManifestRef{}, agentsuite.ManifestRef{}, err
+	}
+	return files, agentsuite.ManifestRef{ID: m.ID, Path: agentPath, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeAgent, Digest: agentDigest, Size: agentSize}}, agentsuite.ManifestRef{Path: catalogPath, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeToolProviderCatalog, Digest: catalogDigest, Size: catalogSize}}, nil
 }
 
 // nativeProfile dispatches only by one complete private declaration. No target,
@@ -326,6 +349,9 @@ func nativeProfile(files map[string][]byte) (nativeRecord, RuntimeProfile, error
 func validateNative(files map[string][]byte) (string, error) {
 	if err := nativeBounds(files); err != nil {
 		return "", err
+	}
+	if hasRuntimeProfiles(files) {
+		return validateProfiled(files)
 	}
 	if _, multi := files[multiNativePath]; multi {
 		return validateMulti(files)

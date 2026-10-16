@@ -370,6 +370,11 @@ func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 }
 
 func canonicalSuitePassingReceipt(ctx context.Context, r *suitePassingReceipt, suite *workspace.NativeSuite) ([]byte, error) {
+	view, err := suiteReceiptDeclarationView(suite)
+	if err != nil {
+		return nil, err
+	}
+	suite = view
 	inventory, casesDigest, err := suitePassingInventory(suite)
 	if err != nil {
 		return nil, err

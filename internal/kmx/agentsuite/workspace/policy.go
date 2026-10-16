@@ -63,9 +63,19 @@ func readMemberPolicy(files map[string][]byte, agent agentsuite.Agent, profile R
 	if agent.Policy == nil {
 		return nil, nil
 	}
+	if profile.ID != "orka" {
+		return nil, errors.New("unsupported native member policy binding")
+	}
+	return readDeclaredMemberPolicy(files, agent)
+}
+
+func readDeclaredMemberPolicy(files map[string][]byte, agent agentsuite.Agent) ([]byte, error) {
+	if agent.Policy == nil {
+		return nil, nil
+	}
 	ref := *agent.Policy
 	raw, exists := files[ref.Path]
-	if profile.ID != "orka" || ref.Path != "policies/"+agent.ID+".json" || ref.Descriptor.MediaType != agentsuite.MediaTypePolicyV2 || !exists || !agentsuite.MatchesCanonicalDescriptor(raw, ref.Descriptor) {
+	if ref.Path != "policies/"+agent.ID+".json" || ref.Descriptor.MediaType != agentsuite.MediaTypePolicyV2 || !exists || !agentsuite.MatchesCanonicalDescriptor(raw, ref.Descriptor) {
 		return nil, errors.New("unsupported native member policy binding")
 	}
 	canonical, err := canonicalMemberPolicy(raw)

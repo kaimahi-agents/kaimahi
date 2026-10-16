@@ -63,6 +63,9 @@ func (a *App) ExportSuiteEvaluation(ctx context.Context, opt SuiteEvaluationExpo
 		return errSuitePublicSubject
 	}
 	suite, e := workspace.LoadArtifact(ctx, artifact)
+	if errors.Is(e, workspace.ErrProfileSelectionRequired) {
+		return workspace.ErrProfileExecutionUnsupported
+	}
 	if e != nil || suite.MemberID != opt.Member {
 		return errSuitePublicSubject
 	}
@@ -325,6 +328,9 @@ func suitePublicExpected(artifact *suiteoras.Artifact, suite *workspace.NativeSu
 }
 
 func suitePublicEvidence(ctx context.Context, artifact *suiteoras.Artifact, suite *workspace.NativeSuite, r *suitePassingReceipt, m *suitePublicMetadata) (agentsuite.EvaluationEvidence, agentsuite.ExpectedEvaluation, error) {
+	if err := suite.RequireUnprofiled(); err != nil {
+		return agentsuite.EvaluationEvidence{}, agentsuite.ExpectedEvaluation{}, err
+	}
 	var evidence agentsuite.EvaluationEvidence
 	var empty agentsuite.ExpectedEvaluation
 	if _, err := canonicalSuitePassingReceipt(ctx, r, suite); err != nil {

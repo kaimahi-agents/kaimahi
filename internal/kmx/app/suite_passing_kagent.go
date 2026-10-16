@@ -235,6 +235,11 @@ func coherentSuiteKagentPassingProof(p *suiteKagentPassingProof, suite *workspac
 }
 
 func newSuiteKagentPassingReceipt(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation, o *suiteKagentObservation, observations []suitePassingObservation) (*suitePassingReceipt, error) {
+	if p != nil {
+		if err := p.suite.RequireUnprofiled(); err != nil {
+			return nil, err
+		}
+	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}

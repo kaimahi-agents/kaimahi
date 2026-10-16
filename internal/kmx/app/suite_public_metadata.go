@@ -198,6 +198,9 @@ func (m *suitePublicMetadata) filename() string {
 }
 
 func (s *suitePassStore) publishPublicMetadata(ctx context.Context, raw []byte, suite *workspace.NativeSuite, m *suitePublicMetadata) error {
+	if err := suite.RequireUnprofiled(); err != nil {
+		return err
+	}
 	if s.completion == nil || m == nil {
 		return errSuitePublicMetadata
 	}
@@ -278,7 +281,7 @@ func (s *suitePassStore) readPublicMetadata(ctx context.Context, suite *workspac
 	if err != nil {
 		return nil, errSuitePublicMetadata
 	}
-	expected := suitePublicMetadata{Workspace: s.identity, SuiteDigest: s.suiteDigest, Sequence: scan.sequence, ReceiptDigest: suitePublicHash(canonical)}
+	expected := suitePublicMetadata{Workspace: s.identity, SuiteDigest: s.suiteDigest, Sequence: scan.selectedSequence, ReceiptDigest: suitePublicHash(canonical)}
 	root, name, parent, err := openSessionReferenceDirectory(filepath.Join(s.partition, expected.filename()))
 	if err != nil || parent.Mode().Perm()&0077 != 0 {
 		if root != nil {

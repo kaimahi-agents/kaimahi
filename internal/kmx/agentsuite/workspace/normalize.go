@@ -25,6 +25,7 @@ type normalizedSource struct {
 	workspace sourceWorkspace
 	members   []normalizedMember
 	profile   []byte
+	profiles  []resolvedProfile
 	selected  map[string]string
 	source    map[string]SourceFile
 }
@@ -47,6 +48,9 @@ func normalizeSource(ctx context.Context, root string) (*normalizedSource, error
 	read := func(name string) ([]byte, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if existing, ok := s.source[name]; ok {
+			return existing.Data, nil
 		}
 		b, err := readBounded(r, name)
 		if err != nil {
@@ -90,7 +94,11 @@ func normalizeSource(ctx context.Context, root string) (*normalizedSource, error
 			return nil, err
 		}
 	}
-	s.profile, err = read(w.BuildProfile)
+	if w.SchemaVersion == 3 {
+		s.profiles, err = readSourceProfiles(w.Profiles, read)
+	} else {
+		s.profile, err = read(w.BuildProfile)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +111,9 @@ func normalizeSource(ctx context.Context, root string) (*normalizedSource, error
 		var m sourceMember
 		if err := strictYAML(mb, &m); err != nil {
 			return nil, fmt.Errorf("member: %w", err)
+		}
+		if w.SchemaVersion == 3 && m.Runtime != nil {
+			return nil, errors.New("schemaVersion 3 forbids member.runtime; use profiles")
 		}
 		if memberPath != "agents/"+m.ID+"/member.yaml" {
 			return nil, errors.New("workspace member path and ID disagree")
@@ -122,7 +133,7 @@ func normalizeSource(ctx context.Context, root string) (*normalizedSource, error
 			if m.Policy.Kind != yaml.ScalarNode || m.Policy.Tag != "!!str" || !fs.ValidPath(m.Policy.Value) || strings.Contains(m.Policy.Value, "\\") {
 				return nil, errors.New("policy path must be a nonempty member-relative string")
 			}
-			if profile, _ := m.Runtime.profile(); profile.ID != "orka" {
+			if profile, _ := m.Runtime.profile(); w.SchemaVersion != 3 && profile.ID != "orka" {
 				return nil, errors.New("policy authoring supports Orka members only")
 			}
 			raw, err := read(path.Dir(memberPath) + "/" + m.Policy.Value)

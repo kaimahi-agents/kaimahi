@@ -111,6 +111,9 @@ func (b *Builder) Build(
 }
 
 func (b *Builder) validate(plan kmxsuite.SandboxPlan) error {
+	if plan.RuntimeProfile != nil || plan.Composition.RuntimeProfile != "" || len(plan.Suite.RuntimeProfiles) != 0 {
+		return errors.New("experimental AgentKit builder does not support profiled compositions; a qualified runtime build adapter is required")
+	}
 	var errs []error
 	if b.options.DisableAttestations && b.options.RequireAttestations {
 		errs = append(errs, errors.New("--require-attestations cannot be used with --attestations=false"))

@@ -47,6 +47,9 @@ func LoadArtifactInventory(ctx context.Context, artifact *suiteoras.Artifact) (*
 }
 
 func loadInventoryFiles(ctx context.Context, files map[string][]byte, digest string) (*NativeInventory, error) {
+	if hasRuntimeProfiles(files) {
+		return nil, ErrProfileSelectionRequired
+	}
 	if _, multi := files[multiNativePath]; !multi {
 		member, err := loadNativeFiles(ctx, files, digest)
 		if err != nil {
