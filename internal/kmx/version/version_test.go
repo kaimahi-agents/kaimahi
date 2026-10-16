@@ -1,6 +1,7 @@
 package version
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -97,7 +98,33 @@ func TestResolveReadsTheThreeSourcesInOrder(t *testing.T) {
 			if got.Version != c.wantVer || got.Source != c.wantSource || got.Release != c.release {
 				t.Errorf("Resolve() = %+v, want {%s %s %v}", got, c.wantVer, c.wantSource, c.release)
 			}
+			wantRevision, wantModified := "", false
+			if c.info != nil {
+				for _, setting := range c.info.Settings {
+					if setting.Key == "vcs.revision" {
+						wantRevision = setting.Value
+					}
+					if setting.Key == "vcs.modified" {
+						wantModified = setting.Value == "true"
+					}
+				}
+			}
+			if got.Revision != wantRevision || got.Modified != wantModified {
+				t.Errorf("build VCS identity = (%q, %v), want (%q, %v)", got.Revision, got.Modified, wantRevision, wantModified)
+			}
 		})
+	}
+}
+
+func TestBuildUserAgentIsBoundedHTTPProduct(t *testing.T) {
+	build := Build{Version: " v0.2.0 dev/branch\n"}
+	if got, want := build.UserAgent(), "kmx/v0.2.0-dev-branch"; got != want {
+		t.Fatalf("UserAgent() = %q, want %q", got, want)
+	}
+	req := httptest.NewRequest("GET", "https://example.test", nil)
+	req.Header.Set("User-Agent", build.UserAgent())
+	if got := req.Header.Get("User-Agent"); got != build.UserAgent() {
+		t.Fatalf("User-Agent = %q", got)
 	}
 }
 

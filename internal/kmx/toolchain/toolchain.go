@@ -42,6 +42,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 // Pinned versions. They are pins rather than "latest" for the reason every
@@ -318,7 +320,12 @@ func rebase(url, base string) string {
 
 func get(url string) ([]byte, error) {
 	client := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := client.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("cannot construct download request for %s: %w", url, err)
+	}
+	version.SetUserAgent(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cannot download %s: %w", url, err)
 	}

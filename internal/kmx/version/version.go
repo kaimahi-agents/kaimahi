@@ -24,6 +24,7 @@
 package version
 
 import (
+	"net/http"
 	"runtime/debug"
 	"strings"
 )
@@ -52,13 +53,29 @@ type Build struct {
 	// Release reports whether this is a build produced from a tag by the
 	// release job.
 	Release bool
+	// Revision is the full VCS revision recorded by the Go toolchain, when
+	// available. Version remains the concise operator-facing identity.
+	Revision string
+	// Modified reports that Revision came from a dirty checkout.
+	Modified bool
 }
 
 // Resolve reads the three sources in order. info/ok are what
 // debug.ReadBuildInfo returns, passed in so the decision is testable.
 func Resolve(info *debug.BuildInfo, ok bool) Build {
+	rev, dirty := "", false
+	if ok && info != nil {
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				rev = s.Value
+			case "vcs.modified":
+				dirty = s.Value == "true"
+			}
+		}
+	}
 	if tag := strings.TrimSpace(Tag); tag != "" {
-		return Build{Version: tag, Source: "release build", Release: true}
+		return Build{Version: tag, Source: "release build", Release: true, Revision: rev, Modified: dirty}
 	}
 	if !ok || info == nil {
 		return Build{Version: Unknown, Source: "no build information recorded"}
@@ -69,15 +86,6 @@ func Resolve(info *debug.BuildInfo, ok bool) Build {
 	// toolchain ALSO synthesises Main.Version from the VCS state in a checkout
 	// build — reading Main.Version first would label every developer's
 	// own binary "installed with go install".
-	rev, dirty := "", false
-	for _, s := range info.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			rev = s.Value
-		case "vcs.modified":
-			dirty = s.Value == "true"
-		}
-	}
 	main := info.Main.Version
 	usable := main != "" && main != "(devel)"
 	if rev != "" {
@@ -88,7 +96,7 @@ func Resolve(info *debug.BuildInfo, ok bool) Build {
 		if usable {
 			// The toolchain's own synthesised pseudo-version, which
 			// already carries its own dirty marker.
-			return Build{Version: main, Source: source}
+			return Build{Version: main, Source: source, Revision: rev, Modified: dirty}
 		}
 		// Never present a bare sha as a version: prefix it so it reads as
 		// what it is — a build standing in front of no release at all.
@@ -96,7 +104,7 @@ func Resolve(info *debug.BuildInfo, ok bool) Build {
 		if dirty {
 			v += ".dirty"
 		}
-		return Build{Version: v, Source: source}
+		return Build{Version: v, Source: source, Revision: rev, Modified: dirty}
 	}
 	if usable {
 		return Build{Version: main, Source: "installed with go install"}
@@ -106,6 +114,41 @@ func Resolve(info *debug.BuildInfo, ok bool) Build {
 
 // String is "<version> (<source>)".
 func (b Build) String() string { return b.Version + " (" + b.Source + ")" }
+
+// Current resolves the identity embedded in the running binary.
+func Current() Build {
+	info, ok := debug.ReadBuildInfo()
+	return Resolve(info, ok)
+}
+
+// Identifier is a bounded HTTP product token suitable for diagnostics.
+func (b Build) Identifier() string {
+	value := strings.TrimSpace(b.Version)
+	if value == "" {
+		value = Unknown
+	}
+	var out strings.Builder
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", r) {
+			out.WriteRune(r)
+		} else {
+			out.WriteByte('-')
+		}
+		if out.Len() == 128 {
+			break
+		}
+	}
+	if out.Len() == 0 {
+		return Unknown
+	}
+	return out.String()
+}
+
+// UserAgent identifies an HTTP request as originating from this kmx build.
+func (b Build) UserAgent() string { return "kmx/" + b.Identifier() }
+
+// SetUserAgent identifies a request made directly by the running kmx binary.
+func SetUserAgent(req *http.Request) { req.Header.Set("User-Agent", Current().UserAgent()) }
 
 func short(rev string) string {
 	if len(rev) > 12 {

@@ -28,6 +28,12 @@ KMX installs Orka's chart in harness-v2 controller mode, not the upstream harnes
 ABI. Runtimes and harnesses own execution, enforcement and model access. Orka
 already supplies OTLP telemetry using GenAI conventions; extend that upstream
 capability instead of adding a parallel KMX exporter.
+Direct HTTP requests made by KMX identify the resolved binary build as
+`kmx/<version>` in `User-Agent`. Newly created native runtime resources carry
+the diagnostic-only `kaimahi.dev/created-by-version` annotation. Release builds
+use their stamped tag; development builds use the Go module version or a
+short VCS revision with a dirty marker. Neither signal grants ownership,
+evaluation authority or provenance.
 
 Plane CLI administration, model overlays, credential exchange and workload
 migration are removed, together with the nested source module, image-build

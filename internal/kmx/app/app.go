@@ -16,6 +16,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/toolchain"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 type progressPresenter interface {
@@ -43,6 +44,7 @@ type App struct {
 	// InvocationCommand is the shell-quoted CLI invocation used for guard retry
 	// advice. Interactive sub-operations leave it empty and supply their own.
 	InvocationCommand string
+	buildIdentity     version.Build
 	chatVerbose       bool
 	chatInference     string
 	copilotCLI        string
@@ -98,6 +100,12 @@ type App struct {
 	// Only this invocation's successful opaque placement may authorize its answer.
 	quickstartPrepared  *preparedQuickstartSuite
 	quickstartPlacement *ReleaseLiftResult
+}
+
+// SetBuildIdentity attaches the invoking kmx build to diagnostic-only
+// request headers and create-time annotations.
+func (a *App) SetBuildIdentity(build version.Build) {
+	a.buildIdentity = build
 }
 
 // New builds an App around the process's own streams.

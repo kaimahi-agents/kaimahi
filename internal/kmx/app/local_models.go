@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 type localModel struct {
@@ -46,6 +48,7 @@ func (d ollamaDetector) Detect(ctx context.Context) ([]localModel, error) {
 	if err != nil {
 		return nil, err
 	}
+	version.SetUserAgent(req)
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return nil, nil // A runtime not listening is the ordinary no-match case.

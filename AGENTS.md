@@ -11,6 +11,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   [command alignment record](docs/command-semantics.md). Track outstanding
   renames and decisions in [#301](https://github.com/kaimahi-agents/kaimahi/issues/301).
   Proposed spellings are not implemented capabilities.
+- Direct KMX HTTP requests use `User-Agent: kmx/<resolved-version>`. Newly
+  created native runtime resources carry the diagnostic-only
+  `kaimahi.dev/created-by-version` annotation; preflight the exact annotated
+  document. Neither signal is ownership, evidence, provenance or authorization,
+  and existing resources are never patched just to add it.
 - Canonical context commands are `kmx context show` and
   `kmx context use <context>`; canonical local setup/teardown commands are
   `kmx local up/down`. Root `up`, `down`, the AKS `lift` alias and `lift down`

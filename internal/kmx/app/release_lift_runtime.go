@@ -44,6 +44,9 @@ func (a *App) guardReleaseLift(ctx context.Context, p *PreparedReleaseLift) erro
 }
 func (a *App) admitReleaseLift(ctx context.Context, p *PreparedReleaseLift, i int, doc map[string]any) (releaseLiftAdmission, error) {
 	var admitted releaseLiftAdmission
+	if err := a.annotateCreatedByVersion(doc); err != nil {
+		return admitted, err
+	}
 	body, err := json.Marshal(doc)
 	if err != nil {
 		return admitted, err

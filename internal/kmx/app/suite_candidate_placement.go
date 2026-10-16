@@ -225,6 +225,9 @@ func (a *App) admitSuiteCandidatePair(ctx context.Context, r *suiteCandidateRun,
 	if err := r.check(ctx, a); err != nil {
 		return err
 	}
+	if err := a.annotateCreatedByVersion(doc); err != nil {
+		return err
+	}
 	body, err := json.Marshal(doc)
 	if err != nil {
 		return err

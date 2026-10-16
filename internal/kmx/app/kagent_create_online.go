@@ -1059,6 +1059,9 @@ func validateKagentProofSpecAndMarkers(rawSpec json.RawMessage, annotations map[
 
 func (a *App) createKagentObject(ctx context.Context, namespace string, doc map[string]any, proof kagentObjectProof) (kagentIdentity, error) {
 	id := kagentIdentity{Kind: doc["kind"].(string), Name: kagentObjectName(doc), Proof: proof}
+	if err := a.annotateCreatedByVersion(doc); err != nil {
+		return id, err
+	}
 	body, err := json.Marshal(doc)
 	if err != nil {
 		return id, err

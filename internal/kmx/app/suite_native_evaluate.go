@@ -186,6 +186,9 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 	if err = worker.orkaAbsent(caseCtx, ns, task); err != nil {
 		return observation, err
 	}
+	if err = worker.annotateCreatedByVersion(task); err != nil {
+		return observation, err
+	}
 	body, err := json.Marshal(task)
 	if err != nil {
 		return observation, err

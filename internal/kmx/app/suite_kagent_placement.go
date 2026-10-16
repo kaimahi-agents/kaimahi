@@ -102,6 +102,9 @@ func (a *App) placeSuiteKagent(ctx context.Context, p *suiteKagentPrepared, expe
 		if err = absent(); err != nil {
 			return result, err
 		}
+		if err = w.annotateCreatedByVersion(doc); err != nil {
+			return result, err
+		}
 		body, e := json.Marshal(doc)
 		if e != nil {
 			return fail("document encoding", e)

@@ -187,6 +187,9 @@ func (a *App) createOrkaObject(ctx context.Context, namespace string, doc map[st
 // A failed or ambiguous create is never followed by a recovery read.
 func (a *App) createOrkaObjectObserved(ctx context.Context, namespace string, doc map[string]any) (orkaIdentity, []byte, error) {
 	id := orkaIdentity{Kind: doc["kind"].(string), Name: orkaObjectName(doc)}
+	if err := a.annotateCreatedByVersion(doc); err != nil {
+		return id, nil, err
+	}
 	body, err := json.Marshal(doc)
 	if err != nil {
 		return id, nil, err

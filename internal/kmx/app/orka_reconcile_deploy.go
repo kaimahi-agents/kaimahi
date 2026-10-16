@@ -97,6 +97,9 @@ func (a *App) inspectOrkaPlacement(ctx context.Context, namespace string, desire
 			return check, fmt.Errorf("prepare %s/%s create: %w", kind, name, err)
 		}
 		addOrkaMarker(doc, marker)
+		if err := a.annotateCreatedByVersion(doc); err != nil {
+			return check, fmt.Errorf("prepare %s/%s build identity: %w", kind, name, err)
+		}
 		body, err := json.Marshal(doc)
 		if err != nil {
 			return check, fmt.Errorf("encode %s/%s create: %w", kind, name, err)

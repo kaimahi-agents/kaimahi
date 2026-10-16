@@ -423,6 +423,7 @@ func (a *App) fetchOrkaInstaller() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	a.setUserAgent(request)
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("fetching Orka's installer from %s: %w\n"+

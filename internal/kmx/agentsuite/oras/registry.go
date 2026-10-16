@@ -19,6 +19,8 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 // PushRegistry packages and pushes an extracted AgentSuite to an OCI registry.
@@ -225,6 +227,7 @@ type registryTransport struct {
 }
 
 func (t *registryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	version.SetUserAgent(req)
 	remoteHTTP := req.URL.Scheme == "http" && !isLoopbackHost(req.URL.Hostname())
 	if (remoteHTTP && !t.anonymous) || (t.anonymous && len(req.Header.Values("Authorization")) != 0) {
 		if req.Body != nil {
