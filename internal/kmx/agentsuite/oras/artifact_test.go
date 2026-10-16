@@ -14,14 +14,14 @@ import (
 	"strings"
 	"testing"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 )
 
 func TestReadArtifactKeepsExactDigestAndOwnedBytes(t *testing.T) {
-	source := filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal")
+	source := filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal")
 	layout := filepath.Join(t.TempDir(), "layout")
 	p, err := Push(t.Context(), source, layout, "minimal:v1")
 	if err != nil {
@@ -59,7 +59,7 @@ func TestReadArtifactRegistryIsPullOnly(t *testing.T) {
 	defer server.Close()
 	t.Setenv("DOCKER_CONFIG", t.TempDir())
 	ref := strings.TrimPrefix(server.URL, "http://") + "/team/suite:v1"
-	p, err := PushRegistry(t.Context(), filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), ref, true, false, PushOptions{})
+	p, err := PushRegistry(t.Context(), filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), ref, true, false, PushOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +91,8 @@ func (s *artifactFetchSpy) Fetch(_ context.Context, d ocispec.Descriptor) (io.Re
 func TestReadArtifactRefusesBudgetBeforeChildTransfer(t *testing.T) {
 	for _, tc := range []string{"root", "layer", "config", "fanout", "urls", "digest", "overlong body", "cancel"} {
 		t.Run(tc, func(t *testing.T) {
-			config := content.NewDescriptorFromBytes(spec.MediaTypeEmptyConfig, []byte("{}"))
-			layer := content.NewDescriptorFromBytes(spec.MediaTypeContent, []byte("not a gzip"))
+			config := content.NewDescriptorFromBytes(agentsuite.MediaTypeEmptyConfig, []byte("{}"))
+			layer := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, []byte("not a gzip"))
 			switch tc {
 			case "layer":
 				layer.Size = 64 << 20
@@ -101,7 +101,7 @@ func TestReadArtifactRefusesBudgetBeforeChildTransfer(t *testing.T) {
 			case "urls":
 				layer.URLs = []string{"https://example.invalid/content"}
 			}
-			m := ocispec.Manifest{MediaType: ocispec.MediaTypeImageManifest, ArtifactType: spec.MediaTypeArtifact, Config: config, Layers: []ocispec.Descriptor{layer}}
+			m := ocispec.Manifest{MediaType: ocispec.MediaTypeImageManifest, ArtifactType: agentsuite.MediaTypeArtifact, Config: config, Layers: []ocispec.Descriptor{layer}}
 			m.SchemaVersion = 2
 			if tc == "fanout" {
 				m.Layers = append(m.Layers, layer)
@@ -259,7 +259,7 @@ func TestArtifactNativeInventoryFileBudgets(t *testing.T) {
 }
 
 func TestReadArtifactDoesNotMutateLayout(t *testing.T) {
-	src := filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal")
+	src := filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal")
 	layout := filepath.Join(t.TempDir(), "layout")
 	p, err := Push(t.Context(), src, layout, "minimal:v1")
 	if err != nil {

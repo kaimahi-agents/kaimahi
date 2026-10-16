@@ -498,10 +498,10 @@ answer hashes or judge scores as identity changes; the authored repeat policy
 and judge configuration remain comparison identities.
 
 The field names, defaults and validation follow
-[AgentSuite §8.2.2 — Case documents and assertions](../agentsuite/spec.md#822-case-documents-and-assertions).
+[AgentSuite §8.2.2 — Case documents and assertions](https://github.com/agent-primitives/suite/blob/main/spec.md#822-case-documents-and-assertions).
 KMX uses private YAML authoring and receipts rather than the spec's embedded
 JSON format. Its 100-run cap is an additional execution resource limit, allowed
-by [§8.2.1](../agentsuite/spec.md#821-index-and-bounds); it refuses larger policies
+by [§8.2.1](https://github.com/agent-primitives/suite/blob/main/spec.md#821-index-and-bounds); it refuses larger policies
 rather than truncating them.
 
 For an open-ended answer, author a judge assertion in the ordinary case file:

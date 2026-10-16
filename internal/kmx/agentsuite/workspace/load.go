@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
 
@@ -84,24 +84,24 @@ func verificationFailed(err error) error {
 }
 
 func loadNativeFiles(ctx context.Context, files map[string][]byte, digest string) (*NativeSuite, error) {
-	var suite spec.Suite
-	if err := spec.Unmarshal(files["agentsuite.json"], &suite); err != nil {
+	var suite agentsuite.Suite
+	if err := agentsuite.Unmarshal(files["agentsuite.json"], &suite); err != nil {
 		return nil, errors.New("invalid packaged suite manifest")
 	}
 	native, profile, err := nativeProfile(files)
 	if err != nil {
 		return nil, errors.New("invalid packaged native metadata")
 	}
-	graphDigest, err := spec.Digest(files["agentsuite.json"])
+	graphDigest, err := agentsuite.Digest(files["agentsuite.json"])
 	if err != nil {
 		return nil, errors.New("invalid packaged graph identity")
 	}
 	return loadNativeMember(ctx, files, suite, native, profile, digest, graphDigest, 0)
 }
 
-func loadNativeMember(ctx context.Context, files map[string][]byte, suite spec.Suite, native nativeRecord, profile RuntimeProfile, digest, graphDigest string, index int) (*NativeSuite, error) {
-	var member spec.Agent
-	if err := spec.Unmarshal(files[suite.Agents[index].Path], &member); err != nil {
+func loadNativeMember(ctx context.Context, files map[string][]byte, suite agentsuite.Suite, native nativeRecord, profile RuntimeProfile, digest, graphDigest string, index int) (*NativeSuite, error) {
+	var member agentsuite.Agent
+	if err := agentsuite.Unmarshal(files[suite.Agents[index].Path], &member); err != nil {
 		return nil, errors.New("invalid packaged native member")
 	}
 	cases, _, err := packagedCases(files, member)

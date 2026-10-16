@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -292,7 +292,7 @@ func (s *suitePassStore) scan(ctx context.Context, suite *workspace.NativeSuite)
 				return result, errSuitePassStore
 			}
 			var record suitePassRecord
-			if spec.Unmarshal(raw, &record) != nil || record.SchemaVersion != 1 || record.Workspace != s.identity || record.SuiteDigest != s.suiteDigest || record.Sequence != seq {
+			if agentsuite.Unmarshal(raw, &record) != nil || record.SchemaVersion != 1 || record.Workspace != s.identity || record.SuiteDigest != s.suiteDigest || record.Sequence != seq {
 				return result, errSuitePassStore
 			}
 			receipt, e := parseSuitePassingReceipt(record.Receipt)
@@ -388,7 +388,7 @@ func (s *suitePassStore) commit(ctx context.Context, raw []byte, suite *workspac
 		return "", errSuitePassStore
 	}
 	record := suitePassRecord{1, s.identity, s.suiteDigest, seq, canonical}
-	encoded, err := spec.Marshal(record)
+	encoded, err := agentsuite.Marshal(record)
 	if err == nil && len(encoded) > maxSuitePassRecordBytes {
 		err = errSuitePassStore
 	}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
 
@@ -54,15 +54,15 @@ func loadInventoryFiles(ctx context.Context, files map[string][]byte, digest str
 		}
 		return &NativeInventory{Digest: digest, GraphDigest: member.GraphDigest, Name: member.Name, Members: []NativeSuite{*member}}, nil
 	}
-	var suite spec.Suite
-	if err := spec.Unmarshal(files["agentsuite.json"], &suite); err != nil {
+	var suite agentsuite.Suite
+	if err := agentsuite.Unmarshal(files["agentsuite.json"], &suite); err != nil {
 		return nil, errors.New("invalid packaged suite manifest")
 	}
 	var metadata multiRecord
-	if err := spec.Unmarshal(files[multiNativePath], &metadata); err != nil {
+	if err := agentsuite.Unmarshal(files[multiNativePath], &metadata); err != nil {
 		return nil, errors.New("invalid packaged native metadata")
 	}
-	graphDigest, err := spec.Digest(files["agentsuite.json"])
+	graphDigest, err := agentsuite.Digest(files["agentsuite.json"])
 	if err != nil {
 		return nil, errors.New("invalid packaged graph identity")
 	}

@@ -35,6 +35,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   semantics are added.
   Authoring remains provisional pending [#526](https://github.com/kaimahi-agents/kaimahi/issues/526).
 
+### Breaking
+
+- The portable AgentSuite Go package moves from `github.com/kaimahi-agents/kaimahi/agentsuite`
+  to the independent `github.com/agent-primitives/suite` module. There is no forwarding package.
+  **Instead:** import it explicitly as `agentsuite "github.com/agent-primitives/suite"`
+  and pin the module release. The package name stays `agentsuite`; schema IDs,
+  media types, canonical bytes, digests and kmx CLI behavior are unchanged.
+
 ## v0.7.0 — 2026-10-15
 
 ### Added

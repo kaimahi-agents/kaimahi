@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -66,16 +66,16 @@ func extract(t *testing.T, p *workspace.Prepared) string {
 }
 
 // rebindEvals edits evals and recomputes public digests so only native checks can refuse.
-func rebindEvals(t *testing.T, out string, mutate func(index *spec.EvaluationIndex, firstCase map[string]any)) {
+func rebindEvals(t *testing.T, out string, mutate func(index *agentsuite.EvaluationIndex, firstCase map[string]any)) {
 	t.Helper()
 	rebindMemberEvals(t, out, "greeter", mutate)
 }
 
-func rebindMemberEvals(t *testing.T, out, member string, mutate func(index *spec.EvaluationIndex, firstCase map[string]any)) {
+func rebindMemberEvals(t *testing.T, out, member string, mutate func(index *agentsuite.EvaluationIndex, firstCase map[string]any)) {
 	t.Helper()
 	indexName := filepath.Join(out, "evals", member, "index.json")
-	var index spec.EvaluationIndex
-	if err := spec.Unmarshal(readFile(t, indexName), &index); err != nil {
+	var index agentsuite.EvaluationIndex
+	if err := agentsuite.Unmarshal(readFile(t, indexName), &index); err != nil {
 		t.Fatal(err)
 	}
 	caseName := filepath.Join(out, index.Cases[0].Path)
@@ -86,23 +86,23 @@ func rebindMemberEvals(t *testing.T, out, member string, mutate func(index *spec
 		t.Fatal(err)
 	}
 	mutate(&index, first)
-	cb, err := spec.Marshal(first)
+	cb, err := agentsuite.Marshal(first)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, caseName, string(cb))
 	index.Cases[0].Descriptor.Size = int64(len(cb))
-	if index.Cases[0].Descriptor.Digest, err = spec.Digest(cb); err != nil {
+	if index.Cases[0].Descriptor.Digest, err = agentsuite.Digest(cb); err != nil {
 		t.Fatal(err)
 	}
-	ib, err := spec.Marshal(index)
+	ib, err := agentsuite.Marshal(index)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, indexName, string(ib))
-	rebindMemberAgent(t, out, member, func(agent *spec.Agent) {
+	rebindMemberAgent(t, out, member, func(agent *agentsuite.Agent) {
 		agent.Evals[0].Descriptor.Size = int64(len(ib))
-		if agent.Evals[0].Descriptor.Digest, err = spec.Digest(ib); err != nil {
+		if agent.Evals[0].Descriptor.Digest, err = agentsuite.Digest(ib); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -114,40 +114,40 @@ func removeEvals(t *testing.T, out string) {
 	if err := os.RemoveAll(filepath.Join(out, "evals")); err != nil {
 		t.Fatal(err)
 	}
-	rebindAgent(t, out, func(agent *spec.Agent) { agent.Evals = nil })
+	rebindAgent(t, out, func(agent *agentsuite.Agent) { agent.Evals = nil })
 }
 
-func rebindAgent(t *testing.T, out string, mutate func(*spec.Agent)) {
+func rebindAgent(t *testing.T, out string, mutate func(*agentsuite.Agent)) {
 	t.Helper()
 	rebindMemberAgent(t, out, "greeter", mutate)
 }
 
-func rebindMemberAgent(t *testing.T, out, member string, mutate func(*spec.Agent)) {
+func rebindMemberAgent(t *testing.T, out, member string, mutate func(*agentsuite.Agent)) {
 	t.Helper()
 	agentName := filepath.Join(out, "agents", member+".json")
-	var agent spec.Agent
-	if err := spec.Unmarshal(readFile(t, agentName), &agent); err != nil {
+	var agent agentsuite.Agent
+	if err := agentsuite.Unmarshal(readFile(t, agentName), &agent); err != nil {
 		t.Fatal(err)
 	}
 	mutate(&agent)
-	mb, err := spec.Marshal(agent)
+	mb, err := agentsuite.Marshal(agent)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, agentName, string(mb))
-	var suite spec.Suite
-	if err := spec.Unmarshal(readFile(t, filepath.Join(out, "agentsuite.json")), &suite); err != nil {
+	var suite agentsuite.Suite
+	if err := agentsuite.Unmarshal(readFile(t, filepath.Join(out, "agentsuite.json")), &suite); err != nil {
 		t.Fatal(err)
 	}
 	for i := range suite.Agents {
 		if suite.Agents[i].ID == member {
 			suite.Agents[i].Descriptor.Size = int64(len(mb))
-			if suite.Agents[i].Descriptor.Digest, err = spec.Digest(mb); err != nil {
+			if suite.Agents[i].Descriptor.Digest, err = agentsuite.Digest(mb); err != nil {
 				t.Fatal(err)
 			}
 		}
 	}
-	sb, err := spec.Marshal(suite)
+	sb, err := agentsuite.Marshal(suite)
 	if err != nil {
 		t.Fatal(err)
 	}

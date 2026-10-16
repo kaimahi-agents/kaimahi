@@ -28,7 +28,7 @@ func pushProvenanceFixture(t *testing.T, referrersAPI bool) (string, string, *te
 	t.Cleanup(server.Close)
 	t.Setenv("DOCKER_CONFIG", t.TempDir())
 	source := filepath.Join(t.TempDir(), "source")
-	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), source)
 	return source, strings.TrimPrefix(server.URL, "http://") + "/team/suite", registry
 }
 
@@ -410,7 +410,7 @@ func TestProvenanceListingFailureIsReported(t *testing.T) {
 func packedMinimalSuite(t *testing.T) (*memory.Store, ocispec.Descriptor) {
 	t.Helper()
 	ctx := context.Background()
-	staged, store, packed, err := packDirectory(ctx, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"))
+	staged, store, packed, err := packDirectory(ctx, filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"))
 	if err != nil {
 		t.Fatal(err)
 	}

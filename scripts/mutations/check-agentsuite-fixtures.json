@@ -1,0 +1,26 @@
+{
+  "checker": "check-agentsuite-fixtures.py",
+  "why": "Consumer fixture snapshots must detect byte, executable-mode and inventory drift independently of the recorded provenance.",
+  "verify": ["python3", "scripts/check-agentsuite-fixtures.py", "--selftest"],
+  "signature": "OK",
+  "mutations": [
+    {
+      "name": "changed fixture bytes are ignored",
+      "breaks": "A fixture may change its canonical content while retaining stale provenance.",
+      "find": "if hashlib.sha256(path.read_bytes()).hexdigest() != expected[\"sha256\"]:",
+      "replace": "if False:"
+    },
+    {
+      "name": "executable-mode drift is ignored",
+      "breaks": "An executable fixture can be accepted as identical to the recorded non-executable source.",
+      "find": "if path.is_symlink() or mode != expected[\"mode\"]:",
+      "replace": "if False:"
+    },
+    {
+      "name": "unlisted fixture files are ignored",
+      "breaks": "Fixture additions can silently evade the reviewed provenance inventory.",
+      "find": "if actual - METADATA != set(files):",
+      "replace": "if False:"
+    }
+  ]
+}

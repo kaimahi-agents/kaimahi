@@ -155,7 +155,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   still abort. AgentSessions development evaluation shares this repeat policy.
   Private repeated rows retain ordinal/policy and actual outcomes; default
   one-run encoding stays unchanged. Field names/defaults/validation follow
-  [AgentSuite §8.2.2](agentsuite/spec.md#822-case-documents-and-assertions):
+  [AgentSuite §8.2.2](https://github.com/agent-primitives/suite/blob/main/spec.md#822-case-documents-and-assertions):
   minPasses requires runs and both are positive integers. KMX additionally caps
   runs at 100 under the spec's consumer resource-limit allowance.
   Root push requires latest completed private exact-S evidence by default;
@@ -282,14 +282,20 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 ## AgentSuite evaluation storage
 
-- Keep the draft `agentsuite/spec.md` implementation-neutral and focused on the
-  current format. Put KMX details, migration notes, and design history in
-  implementation documentation, issues, or the changelog. Shared JSON and
-  identity rules belong in common sections; eval bindings belong in §8.2.
+- The portable format, validator and schemas are owned by
+  [AgentSuite](https://github.com/agent-primitives/suite/blob/main/spec.md).
+  Keep KMX details, migration notes, and design history in this repository's
+  implementation documentation, issues, or changelog. Import the public module
+  explicitly as `agentsuite "github.com/agent-primitives/suite"`; use `kmxsuite`
+  for the internal builder package and `suiteoras` for its ORAS adapter.
+  Keep byte-identical consumer fixtures under `testdata/agentsuite`; refresh
+  their provenance manifest only with reviewed upstream changes and run
+  `python3 scripts/check-agentsuite-fixtures.py`.
 - Public embedded evaluations are optional (`SHOULD` for producers), rooted at
   `evals/<agent>/index.json` and bound through the agent's `evals` reference.
   Indexes bind ordered JSON cases with JCS digests; no evals remains conformant.
-  Follow `agentsuite/spec.md` §8.2 and its closed schemas. The public validator
+  Follow [AgentSuite §8.2](https://github.com/agent-primitives/suite/blob/main/spec.md#82-agent-evaluations)
+  and its closed schemas. The public validator
   checks storage and identity only, never executes assertions or claims a pass.
 - Preserve KMX's authored assertion `id`/`type`/operand spellings when mapping
   cases; public JSON identities are not private YAML/framed receipt identities.
@@ -337,7 +343,8 @@ canonical; kagent/Sessions/judge behavior and all existing timeouts are unchange
 ## Verification
 
 The browser documentation preview renders the root README and `docs/*.md`
-directly, plus `agentsuite/spec.md` while it remains local. Keep Markdown
+directly; AgentSuite specification links lead to its standalone repository.
+Keep Markdown
 authoritative: navigation and theme code may link to maintained content but must
 not copy it. Keep VitePress output,
 caches, and `node_modules` untracked. Documentation changes retain the existing

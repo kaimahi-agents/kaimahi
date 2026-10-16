@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
 
@@ -52,7 +52,7 @@ func resolveMulti(name string, members []normalizedMember, profile []byte) (map[
 	slices.SortFunc(members, func(a, b normalizedMember) int { return strings.Compare(a.member.ID, b.member.ID) })
 	files := map[string][]byte{}
 	metadata := multiRecord{SchemaVersion: multiRecordVersion, RendererVersion: multiRendererVersion, Members: []nativeRecord{}}
-	var suite spec.Suite
+	var suite agentsuite.Suite
 	caseCount := 0
 	for i, m := range members {
 		if i > 0 && members[i-1].member.ID == m.member.ID {
@@ -70,8 +70,8 @@ func resolveMulti(name string, members []normalizedMember, profile []byte) (map[
 		if err != nil {
 			return nil, err
 		}
-		var root spec.Suite
-		if err := spec.Unmarshal(single["agentsuite.json"], &root); err != nil {
+		var root agentsuite.Suite
+		if err := agentsuite.Unmarshal(single["agentsuite.json"], &root); err != nil {
 			return nil, err
 		}
 		if i == 0 {
@@ -92,12 +92,12 @@ func resolveMulti(name string, members []normalizedMember, profile []byte) (map[
 		}
 		metadata.Members = append(metadata.Members, record)
 	}
-	root, err := spec.Marshal(suite)
+	root, err := agentsuite.Marshal(suite)
 	if err != nil {
 		return nil, err
 	}
 	files["agentsuite.json"] = root
-	b, err := spec.Marshal(metadata)
+	b, err := agentsuite.Marshal(metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -111,12 +111,12 @@ func resolveMulti(name string, members []normalizedMember, profile []byte) (map[
 // Regeneration compares the entire file map, including every reference, digest,
 // metadata field and public case. Extra public extensions cannot be silently dropped.
 func validateMulti(files map[string][]byte) (string, error) {
-	var suite spec.Suite
-	if err := spec.Unmarshal(files["agentsuite.json"], &suite); err != nil {
+	var suite agentsuite.Suite
+	if err := agentsuite.Unmarshal(files["agentsuite.json"], &suite); err != nil {
 		return "", err
 	}
 	var metadata multiRecord
-	if err := spec.Unmarshal(files[multiNativePath], &metadata); err != nil {
+	if err := agentsuite.Unmarshal(files[multiNativePath], &metadata); err != nil {
 		return "", err
 	}
 	if metadata.SchemaVersion != multiRecordVersion || metadata.RendererVersion != multiRendererVersion || len(metadata.Members) < 2 || len(metadata.Members) > maxMembers {
@@ -124,8 +124,8 @@ func validateMulti(files map[string][]byte) (string, error) {
 	}
 	members := make([]normalizedMember, 0, len(metadata.Members))
 	for _, record := range metadata.Members {
-		var agent spec.Agent
-		if err := spec.Unmarshal(files["agents/"+record.Member+".json"], &agent); err != nil {
+		var agent agentsuite.Agent
+		if err := agentsuite.Unmarshal(files["agents/"+record.Member+".json"], &agent); err != nil {
 			return "", err
 		}
 		m := sourceMember{ID: agent.ID, Description: agent.Description}

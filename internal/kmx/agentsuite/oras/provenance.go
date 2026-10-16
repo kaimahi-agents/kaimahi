@@ -11,7 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	godigest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -224,7 +224,7 @@ func buildProvenance(root ocispec.Descriptor, suiteName string, options Provenan
 
 // pushProvenance always writes the manifest: without the referrers API,
 // that is when the referrer gets indexed.
-func pushProvenance(ctx context.Context, dst agentsuite.Storage, artifact provenanceArtifact) error {
+func pushProvenance(ctx context.Context, dst kmxsuite.Storage, artifact provenanceArtifact) error {
 	for _, blob := range []struct {
 		descriptor ocispec.Descriptor
 		data       []byte
@@ -243,7 +243,7 @@ func pushProvenance(ctx context.Context, dst agentsuite.Storage, artifact proven
 	return nil
 }
 
-func pushIfMissing(ctx context.Context, dst agentsuite.Storage, descriptor ocispec.Descriptor, data []byte) error {
+func pushIfMissing(ctx context.Context, dst kmxsuite.Storage, descriptor ocispec.Descriptor, data []byte) error {
 	exists, err := dst.Exists(ctx, descriptor)
 	if err != nil {
 		return err
@@ -259,14 +259,14 @@ func pushIfMissing(ctx context.Context, dst agentsuite.Storage, descriptor ocisp
 }
 
 func isAlreadyExists(err error) bool {
-	return errors.Is(err, agentsuite.ErrAlreadyExists) || errors.Is(err, errdef.ErrAlreadyExists)
+	return errors.Is(err, kmxsuite.ErrAlreadyExists) || errors.Is(err, errdef.ErrAlreadyExists)
 }
 
 // provenanceFor returns valid kmx provenance for root. Malformed kmx
 // referrers become warnings; other producers' are skipped.
 func provenanceFor(
 	ctx context.Context,
-	source agentsuite.ReadOnlyStorage,
+	source kmxsuite.ReadOnlyStorage,
 	root ocispec.Descriptor,
 ) ([]Provenance, []string, error) {
 	referrers, truncated, err := listInTotoReferrers(ctx, source, root)
@@ -299,7 +299,7 @@ func provenanceFor(
 // listInTotoReferrers stops at the cap instead of reading every page.
 func listInTotoReferrers(
 	ctx context.Context,
-	source agentsuite.ReadOnlyStorage,
+	source kmxsuite.ReadOnlyStorage,
 	root ocispec.Descriptor,
 ) ([]ocispec.Descriptor, bool, error) {
 	var referrers []ocispec.Descriptor
@@ -330,7 +330,7 @@ func listInTotoReferrers(
 
 func verifyProvenance(
 	ctx context.Context,
-	source agentsuite.Fetcher,
+	source kmxsuite.Fetcher,
 	root ocispec.Descriptor,
 	referrer ocispec.Descriptor,
 ) (Provenance, error) {
@@ -431,7 +431,7 @@ func statementNames(statement inTotoStatement, digest godigest.Digest) bool {
 }
 
 // fetchBounded checks size before reading and digest after.
-func fetchBounded(ctx context.Context, source agentsuite.Fetcher, descriptor ocispec.Descriptor) ([]byte, error) {
+func fetchBounded(ctx context.Context, source kmxsuite.Fetcher, descriptor ocispec.Descriptor) ([]byte, error) {
 	if descriptor.Size < 0 || descriptor.Size > maxProvenanceObjectBytes {
 		return nil, fmt.Errorf("size %d exceeds %d bytes", descriptor.Size, maxProvenanceObjectBytes)
 	}

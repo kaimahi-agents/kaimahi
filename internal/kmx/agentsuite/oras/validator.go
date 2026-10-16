@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	oraslib "oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/oci"
@@ -16,13 +16,13 @@ import (
 // storage using the existing OCI layout validator.
 type LayoutValidator struct{}
 
-var _ agentsuite.Validator = LayoutValidator{}
+var _ kmxsuite.Validator = LayoutValidator{}
 
 func (LayoutValidator) Validate(
 	ctx context.Context,
-	src agentsuite.ReadOnlyStorage,
+	src kmxsuite.ReadOnlyStorage,
 	root ocispec.Descriptor,
-) (*spec.Report, error) {
+) (*agentsuite.Report, error) {
 	if src == nil {
 		return nil, fmt.Errorf("AgentSuite validation source is required")
 	}
@@ -41,5 +41,5 @@ func (LayoutValidator) Validate(
 	if err := stage.Tag(ctx, root, "validation"); err != nil {
 		return nil, fmt.Errorf("index AgentSuite validation root: %w", err)
 	}
-	return spec.ValidatePath(stageRoot)
+	return agentsuite.ValidatePath(stageRoot)
 }

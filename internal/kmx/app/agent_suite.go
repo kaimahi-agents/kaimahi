@@ -9,9 +9,9 @@ import (
 	"slices"
 	"strings"
 
-	agentsuitecore "github.com/kaimahi-agents/kaimahi/agentsuite"
-	suitebuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
-	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	agentsuite "github.com/agent-primitives/suite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
@@ -32,7 +32,7 @@ type SuiteBuildResult struct {
 // ValidateSuite validates an extracted AgentSuite or OCI image layout
 // entirely offline.
 func (a *App) ValidateSuite(path, output string) error {
-	report, err := agentsuitecore.ValidatePath(path)
+	report, err := agentsuite.ValidatePath(path)
 	if err != nil {
 		return fmt.Errorf("AgentSuite is not conformant: %w", err)
 	}
@@ -58,8 +58,8 @@ func (a *App) PushSuite(
 	source string,
 	target string,
 	reference string,
-) (agentsuite.PushResult, error) {
-	return agentsuite.Push(ctx, source, target, reference)
+) (suiteoras.PushResult, error) {
+	return suiteoras.Push(ctx, source, target, reference)
 }
 
 // SuitePushProvenance requests provenance on a registry push.
@@ -78,20 +78,20 @@ func (a *App) PushSuiteRegistry(
 	plainHTTP bool,
 	force bool,
 	provenance SuitePushProvenance,
-) (agentsuite.PushResult, error) {
+) (suiteoras.PushResult, error) {
 	options, sourceWarning := suitePushOptions(ctx, source, provenance, nil)
-	result, err := agentsuite.PushRegistry(ctx, source, reference, plainHTTP, force, options)
+	result, err := suiteoras.PushRegistry(ctx, source, reference, plainHTTP, force, options)
 	if err == nil && sourceWarning != "" && result.Provenance != nil {
 		result.Warnings = append(result.Warnings, sourceWarning)
 	}
 	return result, err
 }
 
-func suitePushOptions(ctx context.Context, source string, provenance SuitePushProvenance, inputs map[string]workspace.SourceFile) (agentsuite.PushOptions, string) {
-	var options agentsuite.PushOptions
+func suitePushOptions(ctx context.Context, source string, provenance SuitePushProvenance, inputs map[string]workspace.SourceFile) (suiteoras.PushOptions, string) {
+	var options suiteoras.PushOptions
 	var sourceWarning string
 	if provenance.Enabled {
-		var revision *agentsuite.ProvenanceSource
+		var revision *suiteoras.ProvenanceSource
 		var reason string
 		if inputs == nil {
 			revision, reason = suiteSourceRevision(ctx, source)
@@ -101,7 +101,7 @@ func suitePushOptions(ctx context.Context, source string, provenance SuitePushPr
 		if revision == nil {
 			sourceWarning = "AgentSuite provenance records no source commit: " + reason
 		}
-		options.Provenance = &agentsuite.ProvenanceOptions{
+		options.Provenance = &suiteoras.ProvenanceOptions{
 			BuilderVersion: provenance.BuilderVersion,
 			Source:         revision,
 			Require:        provenance.Require,
@@ -117,8 +117,8 @@ func (a *App) PullSuite(
 	source string,
 	reference string,
 	output string,
-) (agentsuite.PullResult, error) {
-	return agentsuite.Pull(ctx, source, reference, output)
+) (suiteoras.PullResult, error) {
+	return suiteoras.Pull(ctx, source, reference, output)
 }
 
 // PullSuiteRegistry pulls one referenced AgentSuite from a registry and
@@ -128,8 +128,8 @@ func (a *App) PullSuiteRegistry(
 	reference string,
 	output string,
 	plainHTTP bool,
-) (agentsuite.PullResult, error) {
-	return agentsuite.PullRegistry(ctx, reference, output, plainHTTP)
+) (suiteoras.PullResult, error) {
+	return suiteoras.PullRegistry(ctx, reference, output, plainHTTP)
 }
 
 // BuildSuite resolves one AgentSuite composition and atomically publishes the
@@ -138,13 +138,13 @@ func (a *App) BuildSuite(
 	ctx context.Context,
 	source string,
 	output string,
-	selection suitebuilder.BuildSelection,
-	builder suitebuilder.SandboxBuilder,
+	selection kmxsuite.BuildSelection,
+	builder kmxsuite.SandboxBuilder,
 ) (SuiteBuildResult, error) {
 	if builder == nil {
 		return SuiteBuildResult{}, fmt.Errorf("AgentSuite sandbox builder is required")
 	}
-	plan, err := suitebuilder.ResolveSandboxPlan(source, selection)
+	plan, err := kmxsuite.ResolveSandboxPlan(source, selection)
 	if err != nil {
 		return SuiteBuildResult{}, fmt.Errorf("resolve AgentSuite sandbox plan: %w", err)
 	}
@@ -187,7 +187,7 @@ func (a *App) BuildSuite(
 		_ = stage.Close()
 		return SuiteBuildResult{}, fmt.Errorf("stat staged AgentSuite build output: %w", err)
 	}
-	verified, err := suitebuilder.InspectImageArchive(ctx, stage, info.Size(), plan.Composition.Platform, result.AttestationsRequested, result.RequireAttestations)
+	verified, err := kmxsuite.InspectImageArchive(ctx, stage, info.Size(), plan.Composition.Platform, result.AttestationsRequested, result.RequireAttestations)
 	if err != nil {
 		_ = stage.Close()
 		return SuiteBuildResult{}, fmt.Errorf("inspect AgentSuite image archive: %w", err)

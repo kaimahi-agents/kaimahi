@@ -429,7 +429,7 @@ func TestWorkspaceHelpAndCompletionHaveNoOperationalEffects(t *testing.T) {
 }
 
 func TestWorkspacePushRoutingAndArity(t *testing.T) {
-	fixture := copySuiteFixture(t, filepath.Join("..", "..", "agentsuite", "testdata", "minimal"))
+	fixture := copySuiteFixture(t, filepath.Join("..", "..", "testdata", "agentsuite", "minimal"))
 	for _, tc := range []struct {
 		name  string
 		route []string

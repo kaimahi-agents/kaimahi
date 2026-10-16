@@ -142,7 +142,7 @@ verdicts; omitted threshold requires all runs. Each run has its own deadline;
 repeat preflight states the total run-time budget, excluding placement. There is
 no early success; any unknown or execution error aborts. AgentSessions development
 evaluation uses fresh Session/config/Exec per run under the same policy. Field names/defaults follow
-[AgentSuite §8.2.2](../agentsuite/spec.md#822-case-documents-and-assertions):
+[AgentSuite §8.2.2](https://github.com/agent-primitives/suite/blob/main/spec.md#822-case-documents-and-assertions):
 `minPasses` requires `runs`, and both are positive integers. KMX's private YAML
 and receipts remain separate from the spec's embedded JSON format.
 Public Orka uses fresh S/run candidates and exports only after verified root/child

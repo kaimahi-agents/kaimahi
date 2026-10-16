@@ -9,7 +9,7 @@ renaming or converting these formats into one another.
 | Format | Current consumer / boundary |
 |---|---|
 | Editable native workspace | Root `create/eval/push`: `workspace.yaml`, member metadata/instructions, authored cases and pinned build profiles. [Workspace guide](suite-workspace.md). |
-| Public AgentSuite content / OCI graph | Public `agentsuite/` validation, schemas, identities and semantic diff; CLI `suite validate/diff/build/push/pull`. [AgentSuite specification](../agentsuite/spec.md). |
+| Public AgentSuite content / OCI graph | External `github.com/agent-primitives/suite` validation, schemas, identities and semantic diff; CLI `suite validate/diff/build/push/pull`. [AgentSuite specification](https://github.com/agent-primitives/suite/blob/main/spec.md). |
 | Public AgentSuite / ToolProvider implementation bundle | Typed portable graph content and locked references, not old user `agent.yaml` lifecycle state. Public format validation does not imply native execution-profile support. |
 | Prepared native suite | Exact content-addressed OCI manifest plus KMX-private packaged runtime/profile/model/case metadata. Root digest Lift consumes it and separate private full-passing evidence, not workspace source. |
 | Private native passing evidence | Full-workspace Orka or exact-v0.10.3 Go kagent proof. Evaluated push, same-runtime offline `eval diff` and digest Lift require exact coherence. Evidence is unsigned observation, not authentication. |

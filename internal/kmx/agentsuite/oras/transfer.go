@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	oraslib "oras.land/oras-go/v2"
 )
@@ -16,7 +16,7 @@ type Puller struct {
 	source oraslib.ReadOnlyTarget
 }
 
-var _ agentsuite.ArtifactPuller = (*Puller)(nil)
+var _ kmxsuite.ArtifactPuller = (*Puller)(nil)
 
 // NewPuller binds pulls to source. Authentication and transport configuration
 // remain properties of the supplied target.
@@ -29,7 +29,7 @@ func NewPuller(source oraslib.ReadOnlyTarget) *Puller {
 func (p *Puller) Pull(
 	ctx context.Context,
 	reference string,
-	dst agentsuite.Storage,
+	dst kmxsuite.Storage,
 ) (ocispec.Descriptor, error) {
 	if p == nil || p.source == nil {
 		return ocispec.Descriptor{}, errors.New("AgentSuite pull source is required")
@@ -56,7 +56,7 @@ type Pusher struct {
 	destination oraslib.Target
 }
 
-var _ agentsuite.ArtifactPusher = (*Pusher)(nil)
+var _ kmxsuite.ArtifactPusher = (*Pusher)(nil)
 
 // NewPusher binds pushes to destination. Authentication and transport
 // configuration remain properties of the supplied target.
@@ -69,7 +69,7 @@ func NewPusher(destination oraslib.Target) *Pusher {
 // root descriptor.
 func (p *Pusher) Push(
 	ctx context.Context,
-	src agentsuite.ReadOnlyStorage,
+	src kmxsuite.ReadOnlyStorage,
 	root ocispec.Descriptor,
 	reference string,
 ) (ocispec.Descriptor, error) {

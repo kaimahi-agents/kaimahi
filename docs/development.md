@@ -132,10 +132,12 @@ config location, while macOS uses `~/Library/Application Support`. `KMX_HOME`
 is the repository's explicit cross-platform isolation contract.
 
 ```bash
-formatted=$(gofmt -l agentsuite cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go build ./... && go test ./...
+formatted=$(gofmt -l cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go build ./... && go test ./...
 npm --prefix docs ci --ignore-scripts && npm --prefix docs run docs:check
 python3 scripts/check-doc-links.py --selftest
 python3 scripts/check-doc-links.py
+python3 scripts/check-agentsuite-fixtures.py --selftest
+python3 scripts/check-agentsuite-fixtures.py
 python3 scripts/check-secret-shapes.py --selftest
 python3 scripts/check-secret-shapes.py
 bash scripts/check-no-azure-ids-test.sh
@@ -144,13 +146,30 @@ bash scripts/kube-guard-test.sh
 python3 scripts/test_model_fixtures.py -v
 ```
 
+### AgentSuite dependency and consumer fixtures
+
+Import the separate module as `agentsuite "github.com/agent-primitives/suite"`.
+The internal builder uses `kmxsuite` and the ORAS adapter uses `suiteoras`.
+`go.mod` pins the published release `v0.1.0`, with its sums in `go.sum`.
+Verify releases with `GOWORK=off`. For coordinated local development, select an
+external absolute `go.work` containing both modules with
+`GOWORK=/absolute/path/to/go.work`; do not commit workspace files, `replace`
+directives or invented sums.
+
+`testdata/agentsuite` holds owned consumer snapshots with frozen source and
+per-file SHA256/mode provenance. The offline fixture checker above protects those
+bytes; add `--upstream /absolute/path/to/suite` to compare a standalone checkout.
+Portable conformance belongs upstream; internal incident-analyst fixtures remain
+kmx-owned and separate.
+
 ### Documentation preview
 
 Node.js 22.12 or newer is required only for the browser documentation tooling.
 `make docs-preview` installs the exact lockfile and serves on `127.0.0.1`;
 `make docs-build` performs the same build and generated-site assertions as CI.
-The preview renders the root README and `docs/*.md` directly, plus
-`agentsuite/spec.md` while it remains local. Do not copy guide content into
+The preview renders the root README and `docs/*.md` directly; specification
+links lead to the [standalone AgentSuite contract](https://github.com/agent-primitives/suite/blob/main/spec.md).
+Do not copy guide content into
 VitePress configuration or commit `docs/.vitepress/dist`, caches, or
 `node_modules`.
 

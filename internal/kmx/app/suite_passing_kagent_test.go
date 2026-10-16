@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
@@ -75,7 +75,7 @@ func TestSuiteKagentPassingReceiptRiskMutations(t *testing.T) {
 			if _, err := canonicalSuitePassingReceipt(t.Context(), r, p.suite); !errors.Is(err, errSuitePassingReceipt) {
 				t.Fatalf("canonical accepted mutation: %v", err)
 			}
-			raw, err := spec.Marshal(r)
+			raw, err := agentsuite.Marshal(r)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -154,7 +154,7 @@ func TestReleaseLiftSelectorRuntimeFencesBeforeCluster(t *testing.T) {
 
 func TestSuiteKagentPushRequiresCoherence(t *testing.T) {
 	r := suiteDiffFixtures(t)["native-kagent"]
-	raw, err := spec.Marshal(r)
+	raw, err := agentsuite.Marshal(r)
 	if err != nil {
 		t.Fatal(err)
 	}

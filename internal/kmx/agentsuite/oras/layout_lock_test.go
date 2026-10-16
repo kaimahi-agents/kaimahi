@@ -18,7 +18,7 @@ import (
 func TestPreparedLayoutConcurrentProcessesPreserveEverySuccessfulReference(t *testing.T) {
 	ctx := context.Background()
 	source := filepath.Join(t.TempDir(), "suite")
-	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), source)
 	prepared := filepath.Join(t.TempDir(), "prepared")
 	original, err := Push(ctx, source, prepared, "prepared")
 	if err != nil {
@@ -80,7 +80,7 @@ func TestPreparedLayoutConcurrentProcessesPreserveEverySuccessfulReference(t *te
 func TestBothLayoutPublicationModesRefuseCompetingWriterBeforeStoreOpen(t *testing.T) {
 	ctx := context.Background()
 	source := filepath.Join(t.TempDir(), "suite")
-	copyDirectory(t, filepath.Join("..", "..", "..", "..", "agentsuite", "testdata", "minimal"), source)
+	copyDirectory(t, filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal"), source)
 	prepared := filepath.Join(t.TempDir(), "prepared")
 	original, err := Push(ctx, source, prepared, "prepared")
 	if err != nil {

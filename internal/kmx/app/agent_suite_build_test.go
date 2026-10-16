@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 )
 
 func TestBuildSuiteAtomicallyReplacesExistingOutput(t *testing.T) {
@@ -19,12 +19,12 @@ func TestBuildSuiteAtomicallyReplacesExistingOutput(t *testing.T) {
 	}
 	archive, _, _, _ := buildSuiteArchive(t, false)
 	called := false
-	builder := sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
+	builder := sandboxBuilderFunc(func(_ context.Context, _ kmxsuite.SandboxPlan, dst io.Writer) (kmxsuite.BuildResult, error) {
 		called = true
 		_, err := dst.Write(archive)
-		return agentsuite.BuildResult{}, err
+		return kmxsuite.BuildResult{}, err
 	})
-	if _, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, agentsuite.BuildSelection{}, builder); err != nil {
+	if _, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder); err != nil {
 		t.Fatalf("BuildSuite() error = %v", err)
 	}
 	if !called {
@@ -45,11 +45,11 @@ func TestBuildSuitePreservesExistingOutputAfterBuilderFailure(t *testing.T) {
 	if err := os.WriteFile(output, []byte("existing"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	builder := sandboxBuilderFunc(func(_ context.Context, _ agentsuite.SandboxPlan, dst io.Writer) (agentsuite.BuildResult, error) {
+	builder := sandboxBuilderFunc(func(_ context.Context, _ kmxsuite.SandboxPlan, dst io.Writer) (kmxsuite.BuildResult, error) {
 		_, _ = dst.Write([]byte("partial"))
-		return agentsuite.BuildResult{}, errors.New("build failed")
+		return kmxsuite.BuildResult{}, errors.New("build failed")
 	})
-	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, agentsuite.BuildSelection{}, builder)
+	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder)
 	if err == nil || !strings.Contains(err.Error(), "build failed") {
 		t.Fatalf("BuildSuite() error = %v", err)
 	}
@@ -75,10 +75,10 @@ func TestBuildSuiteRejectsNonDirectoryOutputParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := filepath.Join(parent, "image.oci.tar")
-	builder := sandboxBuilderFunc(func(context.Context, agentsuite.SandboxPlan, io.Writer) (agentsuite.BuildResult, error) {
-		return agentsuite.BuildResult{}, nil
+	builder := sandboxBuilderFunc(func(context.Context, kmxsuite.SandboxPlan, io.Writer) (kmxsuite.BuildResult, error) {
+		return kmxsuite.BuildResult{}, nil
 	})
-	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, agentsuite.BuildSelection{}, builder)
+	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder)
 	if err == nil {
 		t.Fatal("BuildSuite() succeeded")
 	}
@@ -89,25 +89,25 @@ func TestBuildSuiteRejectsDirectoryOutput(t *testing.T) {
 	if err := os.Mkdir(output, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	builder := sandboxBuilderFunc(func(context.Context, agentsuite.SandboxPlan, io.Writer) (agentsuite.BuildResult, error) {
-		return agentsuite.BuildResult{}, nil
+	builder := sandboxBuilderFunc(func(context.Context, kmxsuite.SandboxPlan, io.Writer) (kmxsuite.BuildResult, error) {
+		return kmxsuite.BuildResult{}, nil
 	})
-	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, agentsuite.BuildSelection{}, builder)
+	_, err := (&App{}).BuildSuite(context.Background(), minimalSuitePath(), output, kmxsuite.BuildSelection{}, builder)
 	if err == nil || !strings.Contains(err.Error(), "is a directory") {
 		t.Fatalf("BuildSuite() error = %v", err)
 	}
 }
 
 func minimalSuitePath() string {
-	return filepath.Join("..", "..", "..", "agentsuite", "testdata", "minimal")
+	return filepath.Join("..", "..", "..", "testdata", "agentsuite", "minimal")
 }
 
-type sandboxBuilderFunc func(context.Context, agentsuite.SandboxPlan, io.Writer) (agentsuite.BuildResult, error)
+type sandboxBuilderFunc func(context.Context, kmxsuite.SandboxPlan, io.Writer) (kmxsuite.BuildResult, error)
 
 func (fn sandboxBuilderFunc) Build(
 	ctx context.Context,
-	plan agentsuite.SandboxPlan,
+	plan kmxsuite.SandboxPlan,
 	dst io.Writer,
-) (agentsuite.BuildResult, error) {
+) (kmxsuite.BuildResult, error) {
 	return fn(ctx, plan, dst)
 }

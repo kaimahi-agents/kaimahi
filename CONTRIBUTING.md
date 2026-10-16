@@ -101,6 +101,7 @@ npm --prefix docs ci --ignore-scripts && npm --prefix docs run docs:check
 python3 scripts/check-doc-links.py --selftest && python3 scripts/check-doc-links.py
 python3 scripts/check-secret-shapes.py --selftest && python3 scripts/check-secret-shapes.py
 python3 scripts/check-repository-map.py --selftest && python3 scripts/check-repository-map.py
+python3 scripts/check-agentsuite-fixtures.py --selftest && python3 scripts/check-agentsuite-fixtures.py
 python3 scripts/check-legacy-runtime.py --selftest && python3 scripts/check-legacy-runtime.py
 python3 scripts/check-comment-history.py --selftest && python3 scripts/check-comment-history.py
 python3 scripts/test_check_mutations.py
@@ -111,7 +112,7 @@ python3 scripts/check-brand-assets.py
 python3 scripts/homebrew-formula.py --selftest
 bash scripts/check-no-azure-ids-test.sh && bash scripts/check-no-azure-ids.sh
 bash scripts/kube-guard-test.sh
-formatted=$(gofmt -l agentsuite cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go test ./...
+formatted=$(gofmt -l cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go test ./...
 python3 scripts/test_model_fixtures.py -v
 python3 scripts/test_kagent_lift.py -v
 python3 scripts/test_kagent_lift_shell.py -v
@@ -126,8 +127,8 @@ actionlint .github/workflows/ci.yml
 ```
 
 For a browser preview of the maintained Markdown, run `make docs-preview` with
-Node.js 22.12 or newer. The root README and `docs/*.md`, plus
-`agentsuite/spec.md` while it remains local, are the source of truth; generated
+Node.js 22.12 or newer. The root README and `docs/*.md` are the source of truth;
+AgentSuite specification links lead to the standalone repository. Generated
 HTML and caches are ignored. See the
 [documentation site](docs/docs-site.md) for versioning, publication and
 removal boundaries.
@@ -144,7 +145,7 @@ unused exceptions and unreadable or insufficient text coverage fail the gate.
 Conventional tests/testdata, source comments and historical releases are records,
 not current instructions. Runtime behavior remains the command tests' responsibility.
 
-The mutation harness checks 41 representative mutants across ten checkers,
+The mutation harness checks 44 representative mutants across eleven checkers,
 not every failure mode. This bounded set keeps verification practical but
 intentionally drops some unique mutation coverage; checker self-tests and
 ordinary tree checks still run. Checkers run in parallel with a worker count
@@ -157,12 +158,20 @@ change classification is uncertain. It runs the harness in full on main pushes
 and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
 
-One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), the public
-AgentSuite format package (`agentsuite`), and the application interface
-(`pkg/kmx`). AgentSuite does not have a separate module or version pin; root
-`go test ./...` tests it alongside the CLI, including first-class Orka paths
-and exact-v0.10.3 Go packaged workspace evaluation/evaluated push and
-create-only digest Lift.
+One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`) and application
+interface (`pkg/kmx`). Portable AgentSuite validation is a separate dependency:
+`agentsuite "github.com/agent-primitives/suite"`, pinned to `v0.1.0` in `go.mod`.
+Root `go test ./...` covers kmx consumers, including first-class Orka paths and
+exact-v0.10.3 Go packaged workspace evaluation/evaluated push and create-only
+digest Lift; portable conformance tests run in the suite repository.
+
+Run release verification with `GOWORK=off` against the published dependency
+and its checked-in sums. For coordinated local development, select an external
+absolute `go.work` containing both checkouts explicitly with `GOWORK`; never
+commit a `replace`, a workspace file or manufactured module sums. Consumer tests
+use owned snapshots under `testdata/agentsuite`, not module-cache paths. The fixture checker verifies
+recorded bytes, modes and inventory offline; `--upstream /path/to/suite` optionally
+compares an upstream checkout. Internal incident-analyst fixtures are independent.
 Plane commands, administration, the source module (including checked-in SQL),
 build helper, embedded assets and plane-only scripts/fixtures are removed.
 Historical source remains in Git history. This cleanup deletes no deployed

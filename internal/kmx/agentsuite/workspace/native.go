@@ -13,7 +13,7 @@ import (
 	"slices"
 	"strings"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	godigest "github.com/opencontainers/go-digest"
 )
@@ -121,7 +121,7 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 		return nil, err
 	}
 	// Bind the public case layout for every runtime and source schema.
-	framed, err := spec.Marshal(struct {
+	framed, err := agentsuite.Marshal(struct {
 		Renderer         string            `json:"renderer"`
 		Layout           string            `json:"layout"`
 		Files            map[string]string `json:"files"`
@@ -131,7 +131,7 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	fingerprint, err := spec.Digest(framed)
+	fingerprint, err := agentsuite.Digest(framed)
 	if err != nil {
 		return nil, err
 	}
@@ -163,19 +163,19 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases []
 	if err := validateMember(m, instructions); err != nil {
 		return nil, err
 	}
-	var bp, approved spec.BuildProfile
-	if err := spec.Unmarshal(profile, &bp); err != nil {
+	var bp, approved agentsuite.BuildProfile
+	if err := agentsuite.Unmarshal(profile, &bp); err != nil {
 		// Strict JSON diagnostics may quote decoded keys or trailing content.
 		return nil, errors.New("invalid pinned build profile JSON")
 	}
-	if err := spec.Unmarshal(defaultProfile, &approved); err != nil {
+	if err := agentsuite.Unmarshal(defaultProfile, &approved); err != nil {
 		return nil, err
 	}
-	bpBytes, err := spec.Marshal(bp)
+	bpBytes, err := agentsuite.Marshal(bp)
 	if err != nil {
 		return nil, err
 	}
-	approvedBytes, err := spec.Marshal(approved)
+	approvedBytes, err := agentsuite.Marshal(approved)
 	if err != nil {
 		return nil, err
 	}
@@ -184,26 +184,26 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases []
 	}
 	files := map[string][]byte{"instructions/" + m.ID + ".md": instructions, "build-profiles/default.json": bpBytes}
 	put := func(name string, value any) (string, int64, error) {
-		b, err := spec.Marshal(value)
+		b, err := agentsuite.Marshal(value)
 		if err != nil {
 			return "", 0, err
 		}
 		files[name] = b
-		digest, err := spec.Digest(b)
+		digest, err := agentsuite.Digest(b)
 		if err != nil {
 			return "", 0, err
 		}
 		return digest, int64(len(b)), nil
 	}
 	catalogPath := "tool-providers/catalog.json"
-	catalogDigest, catalogSize, err := put(catalogPath, spec.ToolProviderCatalog{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeToolProviderCatalog, ToolProviders: []spec.ManifestRef{}})
+	catalogDigest, catalogSize, err := put(catalogPath, agentsuite.ToolProviderCatalog{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeToolProviderCatalog, ToolProviders: []agentsuite.ManifestRef{}})
 	if err != nil {
 		return nil, err
 	}
 	if len(cases) == 0 || len(cases) > maxPackagedCases {
 		return nil, errors.New("one to 128 authored cases are required")
 	}
-	index := spec.EvaluationIndex{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeEvaluationIndex, Agent: m.ID, Cases: make([]spec.FileRef, 0, len(cases)), Limits: spec.EvaluationLimits{MaxCases: maxPackagedCases, MaxCaseBytes: maxPackagedCaseBytes}}
+	index := agentsuite.EvaluationIndex{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeEvaluationIndex, Agent: m.ID, Cases: make([]agentsuite.FileRef, 0, len(cases)), Limits: agentsuite.EvaluationLimits{MaxCases: maxPackagedCases, MaxCaseBytes: maxPackagedCaseBytes}}
 	ids := map[string]bool{}
 	for _, c := range cases {
 		// Case files are named by ID; avoid case-insensitive collisions.
@@ -217,32 +217,32 @@ func resolve(name string, m sourceMember, instructions, profile []byte, cases []
 		}
 		p := evalCasePath(m.ID, c.ID)
 		files[p] = b
-		digest, err := spec.Digest(b)
+		digest, err := agentsuite.Digest(b)
 		if err != nil {
 			return nil, err
 		}
-		index.Cases = append(index.Cases, spec.FileRef{Path: p, Descriptor: spec.Descriptor{MediaType: spec.MediaTypeEvaluationCase, Digest: digest, Size: int64(len(b))}})
+		index.Cases = append(index.Cases, agentsuite.FileRef{Path: p, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeEvaluationCase, Digest: digest, Size: int64(len(b))}})
 	}
 	indexDigest, indexSize, err := put(evalIndexPath(m.ID), index)
 	if err != nil {
 		return nil, err
 	}
 	agentPath := "agents/" + m.ID + ".json"
-	agentDigest, agentSize, err := put(agentPath, spec.Agent{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: spec.FileRef{Path: "instructions/" + m.ID + ".md", Descriptor: spec.Descriptor{MediaType: spec.MediaTypeInstructions, Digest: godigest.FromBytes(instructions).String(), Size: int64(len(instructions))}}, Model: spec.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}, Evals: []spec.FileRef{{Path: evalIndexPath(m.ID), Descriptor: spec.Descriptor{MediaType: spec.MediaTypeEvaluationIndex, Digest: indexDigest, Size: indexSize}}}})
+	agentDigest, agentSize, err := put(agentPath, agentsuite.Agent{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeAgent, ID: m.ID, Description: m.Description, Instructions: agentsuite.FileRef{Path: "instructions/" + m.ID + ".md", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeInstructions, Digest: godigest.FromBytes(instructions).String(), Size: int64(len(instructions))}}, Model: agentsuite.ModelRequirement{Protocol: m.Model.Protocol, Model: m.Model.Model}, Evals: []agentsuite.FileRef{{Path: evalIndexPath(m.ID), Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeEvaluationIndex, Digest: indexDigest, Size: indexSize}}}})
 	if err != nil {
 		return nil, err
 	}
-	platform := spec.Platform{OS: "linux", Architecture: "amd64"}
+	platform := agentsuite.Platform{OS: "linux", Architecture: "amd64"}
 	compositionPath := "compositions/" + m.ID + "-linux-amd64.json"
-	compositionDigest, compositionSize, err := put(compositionPath, spec.Composition{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeComposition, Agent: m.ID, Platform: platform, BuildProfile: bp.ID, ToolProviders: []spec.ResolvedToolProvider{}})
+	compositionDigest, compositionSize, err := put(compositionPath, agentsuite.Composition{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeComposition, Agent: m.ID, Platform: platform, BuildProfile: bp.ID, ToolProviders: []agentsuite.ResolvedToolProvider{}})
 	if err != nil {
 		return nil, err
 	}
-	profileDigest, err := spec.Digest(bpBytes)
+	profileDigest, err := agentsuite.Digest(bpBytes)
 	if err != nil {
 		return nil, err
 	}
-	_, _, err = put("agentsuite.json", spec.Suite{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeSuite, Name: name, Agents: []spec.ManifestRef{{ID: m.ID, Path: agentPath, Descriptor: spec.Descriptor{MediaType: spec.MediaTypeAgent, Digest: agentDigest, Size: agentSize}}}, ToolProviderCatalog: spec.ManifestRef{Path: catalogPath, Descriptor: spec.Descriptor{MediaType: spec.MediaTypeToolProviderCatalog, Digest: catalogDigest, Size: catalogSize}}, Compositions: []spec.CompositionRef{{Agent: m.ID, Platform: platform, Path: compositionPath, Descriptor: spec.Descriptor{MediaType: spec.MediaTypeComposition, Digest: compositionDigest, Size: compositionSize}}}, BuildProfiles: []spec.ManifestRef{{ID: bp.ID, Path: "build-profiles/default.json", Descriptor: spec.Descriptor{MediaType: spec.MediaTypeBuildProfile, Digest: profileDigest, Size: int64(len(bpBytes))}}}})
+	_, _, err = put("agentsuite.json", agentsuite.Suite{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeSuite, Name: name, Agents: []agentsuite.ManifestRef{{ID: m.ID, Path: agentPath, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeAgent, Digest: agentDigest, Size: agentSize}}}, ToolProviderCatalog: agentsuite.ManifestRef{Path: catalogPath, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeToolProviderCatalog, Digest: catalogDigest, Size: catalogSize}}, Compositions: []agentsuite.CompositionRef{{Agent: m.ID, Platform: platform, Path: compositionPath, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeComposition, Digest: compositionDigest, Size: compositionSize}}}, BuildProfiles: []agentsuite.ManifestRef{{ID: bp.ID, Path: "build-profiles/default.json", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeBuildProfile, Digest: profileDigest, Size: int64(len(bpBytes))}}}})
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +295,7 @@ func nativeProfile(files map[string][]byte) (nativeRecord, RuntimeProfile, error
 	if json.Unmarshal(files[metadataPath], &previous) == nil && previous.SchemaVersion == 1 {
 		return record, RuntimeProfile{}, refusal{errPreviousNativeSuite}
 	}
-	if err := spec.Unmarshal(files[metadataPath], &record); err != nil {
+	if err := agentsuite.Unmarshal(files[metadataPath], &record); err != nil {
 		return record, RuntimeProfile{}, err
 	}
 	if record.SchemaVersion != nativeRecordVersion || record.ExecutionMode != mode || record.RendererVersion != renderer || record.RequiredImages == nil || len(record.RequiredImages) != 0 {
@@ -326,16 +326,16 @@ func validateNative(files map[string][]byte) (string, error) {
 	if _, multi := files[multiNativePath]; multi {
 		return validateMulti(files)
 	}
-	var suite spec.Suite
-	if err := spec.Unmarshal(files["agentsuite.json"], &suite); err != nil {
+	var suite agentsuite.Suite
+	if err := agentsuite.Unmarshal(files["agentsuite.json"], &suite); err != nil {
 		return "", err
 	}
 	record, profile, err := nativeProfile(files)
 	if err != nil {
 		return "", err
 	}
-	var agent spec.Agent
-	if err := spec.Unmarshal(files["agents/"+record.Member+".json"], &agent); err != nil {
+	var agent agentsuite.Agent
+	if err := agentsuite.Unmarshal(files["agents/"+record.Member+".json"], &agent); err != nil {
 		return "", err
 	}
 	m := sourceMember{ID: agent.ID, Description: agent.Description, Runtime: &sourceRuntime{ID: profile.ID}}
@@ -370,14 +370,14 @@ func evalCasePath(member, id string) string {
 
 // publicCase converts an authored case; expectContains keeps its expectContains.N IDs.
 func publicCase(c runtime.EvaluationCase) ([]byte, error) {
-	out := spec.EvaluationCase{SchemaVersion: spec.SpecVersion, MediaType: spec.MediaTypeEvaluationCase, ID: c.ID, Input: c.Input, Runs: c.Runs, MinPasses: c.MinPasses, Assertions: []spec.EvaluationAssertion{}}
+	out := agentsuite.EvaluationCase{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeEvaluationCase, ID: c.ID, Input: c.Input, Runs: c.Runs, MinPasses: c.MinPasses, Assertions: []agentsuite.EvaluationAssertion{}}
 	for _, a := range runtime.EvaluationCaseAssertions(c) {
 		if strings.ContainsAny(a.Value+a.Tool, "\u2028\u2029") {
 			return nil, fmt.Errorf("case %s: assertion %s must not contain Unicode line or paragraph separators", c.ID, a.ID)
 		}
-		out.Assertions = append(out.Assertions, spec.EvaluationAssertion{ID: a.ID, Type: a.Type, Value: a.Value, Pattern: a.Pattern, Tool: a.Tool, Rubric: a.Rubric, MinScore: a.MinScore, JudgeModel: a.JudgeModel, JudgeVersion: a.JudgeVersion})
+		out.Assertions = append(out.Assertions, agentsuite.EvaluationAssertion{ID: a.ID, Type: a.Type, Value: a.Value, Pattern: a.Pattern, Tool: a.Tool, Rubric: a.Rubric, MinScore: a.MinScore, JudgeModel: a.JudgeModel, JudgeVersion: a.JudgeVersion})
 	}
-	b, err := spec.Marshal(out)
+	b, err := agentsuite.Marshal(out)
 	if err != nil {
 		return nil, fmt.Errorf("case %s: %w", c.ID, err)
 	}
@@ -389,11 +389,11 @@ func publicCase(c runtime.EvaluationCase) ([]byte, error) {
 
 // DecodePackagedCase converts a packaged case back; unsupported features are refused, not ignored.
 func DecodePackagedCase(b []byte) (runtime.EvaluationCase, error) {
-	var pc spec.EvaluationCase
-	if err := spec.Unmarshal(b, &pc); err != nil {
+	var pc agentsuite.EvaluationCase
+	if err := agentsuite.Unmarshal(b, &pc); err != nil {
 		return runtime.EvaluationCase{}, errors.New("invalid packaged evaluation case JSON")
 	}
-	if pc.SchemaVersion != spec.SpecVersion || pc.MediaType != spec.MediaTypeEvaluationCase {
+	if pc.SchemaVersion != agentsuite.SpecVersion || pc.MediaType != agentsuite.MediaTypeEvaluationCase {
 		return runtime.EvaluationCase{}, errors.New("unsupported packaged evaluation case schemaVersion or mediaType")
 	}
 	c := runtime.EvaluationCase{ID: pc.ID, Input: pc.Input, Runs: pc.Runs, MinPasses: pc.MinPasses}
@@ -418,12 +418,12 @@ func DecodePackagedCase(b []byte) (runtime.EvaluationCase, error) {
 }
 
 // packagedCases reads an agent's evaluation index in order.
-func packagedCases(files map[string][]byte, agent spec.Agent) ([]PackagedCase, []runtime.EvaluationCase, error) {
+func packagedCases(files map[string][]byte, agent agentsuite.Agent) ([]PackagedCase, []runtime.EvaluationCase, error) {
 	if len(agent.Evals) != 1 || agent.Evals[0].Path != evalIndexPath(agent.ID) {
 		return nil, nil, errors.New("native member requires exactly one evaluation index")
 	}
-	var index spec.EvaluationIndex
-	if err := spec.Unmarshal(files[agent.Evals[0].Path], &index); err != nil {
+	var index agentsuite.EvaluationIndex
+	if err := agentsuite.Unmarshal(files[agent.Evals[0].Path], &index); err != nil {
 		return nil, nil, errors.New("invalid packaged evaluation index")
 	}
 	if index.Agent != agent.ID {

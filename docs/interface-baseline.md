@@ -96,7 +96,7 @@ uses `--bindings`; pinned AgentSessions chat instead requires a private
 runtime-specific full-passing evidence. Orka/kagent and development AgentSessions support authored `llmJudge`
 with explicit judge transport and identity, plus optional KMX case `runs`/`minPasses`
 (default one run/all passes; unknown vetoes). AgentSessions uses fresh Session/config/Exec per run. Repeat field names/defaults/validation follow
-[AgentSuite §8.2.2](../agentsuite/spec.md#822-case-documents-and-assertions):
+[AgentSuite §8.2.2](https://github.com/agent-primitives/suite/blob/main/spec.md#822-case-documents-and-assertions):
 `minPasses` requires `runs`, and both are positive integers. KMX's execution cap
 is 100 runs, within the spec's consumer resource-limit allowance.
 No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
@@ -133,10 +133,11 @@ matrix](runtime-adapters.md#revision-pinned-support-and-qualification-matrix).
 
 ## Public Go surfaces
 
-The repository has two distinct public Go areas:
+The CLI consumes a portable Go library and retains its own alpha public area:
 
-1. `agentsuite/` is the implemented portable format library: model, media types,
-   canonical JSON, schemas, offline validation and semantic diff.
+1. `github.com/agent-primitives/suite` is the separate portable format module:
+   model, media types, canonical JSON, schemas, offline validation and semantic
+   diff. Consumers import it explicitly as `agentsuite`.
 2. `pkg/kmx/` is alpha design evidence. It has exactly three exported
    interfaces and no concrete implementation or CLI wiring.
 

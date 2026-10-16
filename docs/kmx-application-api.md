@@ -3,7 +3,7 @@
 **Status:** Experimental design evidence
 
 **Depends on:** [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md)
-and the [AgentSuite Artifact Specification](../agentsuite/spec.md)
+and the [AgentSuite Artifact Specification](https://github.com/agent-primitives/suite/blob/main/spec.md)
 
 **Implementation status:** `pkg/kmx` defines only the three northbound interfaces
 and their caller-facing values. `AgentEnvironment` currently has one setup

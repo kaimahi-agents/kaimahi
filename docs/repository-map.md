@@ -47,12 +47,12 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | Area | Packaging / checkout | Demonstration | Scaffolding |
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
-| `agentsuite/` | public specification, Go model, schemas and conformance validator | — | conformance fixtures |
+| `testdata/agentsuite/` | — | — | owned portable consumer fixtures; implementation and conformance live in the external suite module |
 | `internal/` | `kmx/` (17 packages), including schema fixtures | — | experimental lifecycle contracts and tests |
 | `pkg/` | — | — | experimental KMX environment setup, AgentSuite and deployment contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
-| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 59 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
+| `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 61 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
 | `docs/` | 54 tracked files; native guides, design, site scaffolding and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
@@ -62,37 +62,41 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 |---|---|---|
 | `cmd/kmx` (53 files) | **Installed** | Terminal create prompts for missing exact model/file inputs; scripts require both flags. Composed Orka workspace Lift with four-stage/verbose/JSON presentation alongside explicit digest Lift. Named workspace destinations with resolve-once eval/Lift selectors, offline list-only `ctx` and optional bounded local-context/anonymous registry checks (not capability or execution proof). Root native workspace create/eval/push/digest Lift, Orka install/status/show/list, independent live `run --agent`/chat and Task results, quickstart/native console creation, context/local and hidden AKS setup/teardown, read-only targets, public suite validation/diff/build/push/pull. Eval diff reads only strict full-passing native Orka/kagent suite receipts; pinned AgentSessions native authoring/development eval and exact-S evaluated push remain independent of deleted bundle evaluation, with no cluster settings, auth or remote lifecycle; from-sessions exports private references only. Removed bundle/live-create routes are unknown; interactive Lift only prints the move notice. |
 
-## `agentsuite/` — public specification package
+## `testdata/agentsuite/` — owned consumer fixtures (`testdata/`)
 
-The portable Go model, canonical JSON serializer, OCI/content safety checks,
-and offline graph validator are importable from the root Go module.
-`spec.md` is the normative specification and `README.md` introduces the package.
-Builders, packing, transfer, credentials, and sandbox construction remain under
-`internal/`, including the builder-owned incident-analyst fixture. Counts are
-direct non-test files, including documentation and data; every file-bearing
-directory has its own row.
+The portable Go model, canonical JSON, schemas, safety checks, offline graph
+validator and conformance tests live in the separate
+[agent-primitives/suite](https://github.com/agent-primitives/suite) module. The normative
+[specification](https://github.com/agent-primitives/suite/blob/main/spec.md) is
+maintained there; kmx imports the module explicitly as `agentsuite`.
+
+These snapshots retain byte-identical consumer-test inputs without depending on
+a module-cache path. `provenance.json` records source repository/path, frozen
+commit, published upstream `v0.1.0` and its commit, per-file SHA256 and Git mode. `scripts/check-agentsuite-fixtures.py` checks inventory/bytes/modes
+offline and optionally compares an upstream checkout. The internal builder's
+incident-analyst fixture remains separate and unchanged. Counts are direct
+non-test files; every file-bearing directory has its own row.
 
 | Package or data directory | Non-test files | Class | What it is |
 |---|---|---|---|
-| `.` | 12 | Checkout | Portable Go model, canonical JSON, OCI image-reference/content safety, semantic record and affected-agent diffing, and offline graph validation including optional agent-bound authored evaluations (not execution/results), plus package documentation and the normative specification. |
-| `schema/` | 8 | Checkout | Closed JSON Schema 2020-12 reference documents for suite, agent, ToolProvider and provider composition, build-profile, evaluation-index and evaluation-case records. |
-| `testdata/minimal/` | 1 | Scaffolding | Root manifest for the minimal conformant suite. |
-| `testdata/minimal/agents/` | 1 | Scaffolding | Minimal writer agent manifest. |
-| `testdata/minimal/build-profiles/` | 1 | Scaffolding | Exact Linux build profile with pinned example descriptors. |
-| `testdata/minimal/instructions/` | 1 | Scaffolding | Digest-bound writer instructions. |
-| `testdata/minimal/compositions/` | 1 | Scaffolding | Empty agent composition for Linux amd64. |
-| `testdata/minimal/tool-providers/` | 1 | Scaffolding | Empty closed ToolProvider catalog. |
-| `testdata/coordinator-workers/` | 1 | Scaffolding | Root manifest for the coordinator, writer and reviewer suite. |
-| `testdata/coordinator-workers/agents/` | 3 | Scaffolding | Coordinator, writer and reviewer manifests with directional invocation edges. |
-| `testdata/coordinator-workers/build-profiles/` | 1 | Scaffolding | Shared exact Linux build profile. |
-| `testdata/coordinator-workers/instructions/` | 3 | Scaffolding | Digest-bound coordinator, writer and reviewer instructions. |
-| `testdata/coordinator-workers/evals/writer/` | 1 | Scaffolding | Agent-bound evaluation index with ordered JCS case references and limits. |
-| `testdata/coordinator-workers/evals/writer/cases/` | 2 | Scaffolding | Authored runtime-neutral capital and arithmetic cases; no embedded results. |
-| `testdata/coordinator-workers/compositions/` | 3 | Scaffolding | Empty per-agent Linux amd64 compositions. |
-| `testdata/coordinator-workers/tool-providers/` | 1 | Scaffolding | Empty closed ToolProvider catalog. |
-| `testdata/tool-providers/` | 4 | Scaffolding | `kubectl` and Azure CLI ToolProvider manifests plus the OPA provider and provider composition examples. |
-| `testdata/remote-mcp/` | 1 | Scaffolding | Remote Streamable HTTP ToolProvider manifest. |
-| `testdata/remote-mcp/schemas/` | 4 | Scaffolding | Digest-bound input and output schemas for the remote provider's classified, delegated-user-authorized callable Tools. |
+| `.` | 2 | Scaffolding | Snapshot ownership README and per-file provenance manifest. |
+| `minimal/` | 1 | Scaffolding | Root manifest for the minimal conformant suite. |
+| `minimal/agents/` | 1 | Scaffolding | Minimal writer agent manifest. |
+| `minimal/build-profiles/` | 1 | Scaffolding | Exact Linux build profile with pinned example descriptors. |
+| `minimal/instructions/` | 1 | Scaffolding | Digest-bound writer instructions. |
+| `minimal/compositions/` | 1 | Scaffolding | Empty agent composition for Linux amd64. |
+| `minimal/tool-providers/` | 1 | Scaffolding | Empty closed ToolProvider catalog. |
+| `coordinator-workers/` | 1 | Scaffolding | Root manifest for the coordinator, writer and reviewer suite. |
+| `coordinator-workers/agents/` | 3 | Scaffolding | Coordinator, writer and reviewer manifests with directional invocation edges. |
+| `coordinator-workers/build-profiles/` | 1 | Scaffolding | Shared exact Linux build profile. |
+| `coordinator-workers/instructions/` | 3 | Scaffolding | Digest-bound coordinator, writer and reviewer instructions. |
+| `coordinator-workers/evals/writer/` | 1 | Scaffolding | Agent-bound evaluation index with ordered JCS case references and limits. |
+| `coordinator-workers/evals/writer/cases/` | 2 | Scaffolding | Authored runtime-neutral capital and arithmetic cases; no embedded results. |
+| `coordinator-workers/compositions/` | 3 | Scaffolding | Empty per-agent Linux amd64 compositions. |
+| `coordinator-workers/tool-providers/` | 1 | Scaffolding | Empty closed ToolProvider catalog. |
+| `tool-providers/` | 4 | Scaffolding | `kubectl` and Azure CLI ToolProvider manifests plus the OPA provider and provider composition examples. |
+| `remote-mcp/` | 1 | Scaffolding | Remote Streamable HTTP ToolProvider manifest. |
+| `remote-mcp/schemas/` | 4 | Scaffolding | Digest-bound input and output schemas for the remote provider's classified, delegated-user-authorized callable Tools. |
 
 ## `internal/` — CLI packages and retained support
 
@@ -192,10 +196,10 @@ Packaging tests require every retained asset to be readable and reject retired
 plane, egress and observability assets. Setup does not deploy a model plane,
 custom scrape configuration or workbook.
 
-## `scripts/` — 63 tracked files, native helpers and scaffolding
+## `scripts/` — 65 tracked files, native helpers and scaffolding
 
-**Reference coverage:** 53 of the 63 are named by something outside themselves,
-and 10 are named by nothing. The ten mutation specifications are discovered by
+**Reference coverage:** 54 of the 65 are named by something outside themselves,
+and 11 are named by nothing. The eleven mutation specifications are discovered by
 glob. Map and repository-map checker mentions are not caller evidence; textual
 references, including script cross-references and test data, are not necessarily
 invocations or active CI coverage.
@@ -205,12 +209,12 @@ invocations or active CI coverage.
 | Class | Count | Files |
 |---|---|---|
 | **Embedded packaging** — native provisioning, guard and Tool helpers | 4 | `aks-up.sh`, `aks-down.sh`, `kube-guard.sh`, `orka-k8s-tool.py` |
-| **Scaffolding** — checkers, self-tests and release packaging | 33 | the eleven `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py`, `test_kagent_lift_qualification.py`, `test_kagent_lift_audit.py`, `test_kagent_lift_qualify.py`, `test_kagent_lift_ci.py`, `test_suite_native.py`, `test_suite_native_lift.py`, `test_suite_kagent.py`, `test_orka_runtime_fixture.py`, `test_bundle_retirement_ci.py`, `test_orka_native_reference.py` |
+| **Scaffolding** — checkers, self-tests and release packaging | 34 | the twelve `check-*` files, `comment-history-go.go`, `kube-guard-test.sh`, `install-sh-test.sh`, `release-notes.py`, `homebrew-formula.py`, `test_model_fixtures.py`, `test_orka_k8s_tool.py`, `test_check_mutations.py`, `test_registry_mirrors.py`, `test_kagent_lift.py`, `test_kagent_lift_shell.py`, `test_kagent_lift_fixture.py`, `test_kagent_lift_qualification.py`, `test_kagent_lift_audit.py`, `test_kagent_lift_qualify.py`, `test_kagent_lift_ci.py`, `test_suite_native.py`, `test_suite_native_lift.py`, `test_suite_kagent.py`, `test_orka_runtime_fixture.py`, `test_bundle_retirement_ci.py`, `test_orka_native_reference.py` |
 | **Scaffolding** — native/eval CI and qualification fixtures | 15 | `scripts/ci/`: `orka-tool-model.py`, `orka-tool-model.yaml`, `eval-loop-model.yaml`, `eval-loop-warmup.json`, `registry-mirrors.py`, `kagent-lift.sh`, `kagent-lift.py`, `kagent-lift-fixture.py`, `kagent-lift-audit.py`, `suite-native.py`, `suite-native-audit.py`, `native-suite-model.yaml`, `suite-kagent.py`, `orka-runtime-fixture.py`, `orka-native-reference.go` |
-| **Scaffolding** — mutation specifications | 10 | `scripts/mutations/*.json` |
+| **Scaffolding** — mutation specifications | 11 | `scripts/mutations/*.json` |
 | **Scaffolding** — retired-command scanner's exact inert exceptions | 1 | `legacy-runtime-allowlist.json` |
 
-`kube-guard.sh` is counted once as embedded, and is one of the ten checkers
+`kube-guard.sh` is counted once as embedded, and is one of the eleven checkers
 the mutation harness breaks on purpose. `scripts/test_check_mutations.py`
 checks the mutation runner and is invoked by CONTRIBUTING's local verification
 commands and CI's hygiene job.

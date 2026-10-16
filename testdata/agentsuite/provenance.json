@@ -1,0 +1,131 @@
+{
+  "source_repository": "https://github.com/kaimahi-agents/kaimahi",
+  "source_path": "agentsuite/testdata",
+  "source_commit": "e48f063f422bd38b7f92173351defd21bfcda5cc",
+  "upstream_repository": "https://github.com/agent-primitives/suite",
+  "upstream_path": "testdata",
+  "upstream_version": "v0.1.0",
+  "upstream_commit": "6281ce09a3d7f4f2fc4b3a556d602b07eeab7ffa",
+  "files": {
+    "coordinator-workers/agents/coordinator.json": {
+      "sha256": "5228a15e81e7b854391771c7f112731a3eefbbc18ebff00026ae6b50318f4278",
+      "mode": "100644"
+    },
+    "coordinator-workers/agents/reviewer.json": {
+      "sha256": "2798abcfc91d5e08465766a3724e6ff56033e5eb4ead28042d5b1eb4b45abe01",
+      "mode": "100644"
+    },
+    "coordinator-workers/agents/writer.json": {
+      "sha256": "4b4cca93b854e51a03a70a8a34d7db096b4ba8a02218fabc39c732933289a0f8",
+      "mode": "100644"
+    },
+    "coordinator-workers/agentsuite.json": {
+      "sha256": "79b6faeff4180a7d4e2605d2d611c355749102285cfb603057ba9480dede7b1d",
+      "mode": "100644"
+    },
+    "coordinator-workers/build-profiles/default.json": {
+      "sha256": "a7e6136d7e7daf2fcd7e61a149000382032dcbf140f2dda1076d2ee85d0a62cd",
+      "mode": "100644"
+    },
+    "coordinator-workers/compositions/coordinator-linux-amd64.json": {
+      "sha256": "1549ee400c89659c63257cd97963ad1e4f98cf1435f531196e41729f12205b29",
+      "mode": "100644"
+    },
+    "coordinator-workers/compositions/reviewer-linux-amd64.json": {
+      "sha256": "7944749017eca10606dc5c02b48084943883ba94a769afdcdee8dc998f934544",
+      "mode": "100644"
+    },
+    "coordinator-workers/compositions/writer-linux-amd64.json": {
+      "sha256": "c19a6173a3bad6723b5f4c36f49c8ee21afbd65317d9c9c4275ebd130b2223d5",
+      "mode": "100644"
+    },
+    "coordinator-workers/evals/writer/cases/arithmetic.json": {
+      "sha256": "a37f60068526aa1a5c83674574273aefa49528c6f16afeb0f4586722cbf804af",
+      "mode": "100644"
+    },
+    "coordinator-workers/evals/writer/cases/capital.json": {
+      "sha256": "b8dc8bb6bc77fa7c09e2f7968e1d7f08216e97d461489d201fff930c2c905f1b",
+      "mode": "100644"
+    },
+    "coordinator-workers/evals/writer/index.json": {
+      "sha256": "f96e916194c06440ef5a16283ae495b7c7d48db94ee5eebca0847afe354c9119",
+      "mode": "100644"
+    },
+    "coordinator-workers/instructions/coordinator.md": {
+      "sha256": "ac9a925737cfa43cf4c5f50251f393770eae4b451dd52de50166e5c3b289f1f4",
+      "mode": "100644"
+    },
+    "coordinator-workers/instructions/reviewer.md": {
+      "sha256": "daaf4fc0ea017bdc02e8b66a8bb6d36e062dbf4f0955f64cb47fcbaa953210fe",
+      "mode": "100644"
+    },
+    "coordinator-workers/instructions/writer.md": {
+      "sha256": "516ff360a8ebb5e36e87f0d401a3cc7436ad2ad1059aae64670aff1078171df8",
+      "mode": "100644"
+    },
+    "coordinator-workers/tool-providers/catalog.json": {
+      "sha256": "933283a1fa90fd488db3f872fb89dc1572a5f638bf0a81514a542333e310ef95",
+      "mode": "100644"
+    },
+    "minimal/agents/writer.json": {
+      "sha256": "2fe4605b0a28a5cebebb3e351c7288cb9a1dee03205a5f380afbad2d735cc274",
+      "mode": "100644"
+    },
+    "minimal/agentsuite.json": {
+      "sha256": "e6da2d13cea35ffd08f6f9a032050a74646c540c82156e6adf9dbb76ba1e4cc0",
+      "mode": "100644"
+    },
+    "minimal/build-profiles/default.json": {
+      "sha256": "a7e6136d7e7daf2fcd7e61a149000382032dcbf140f2dda1076d2ee85d0a62cd",
+      "mode": "100644"
+    },
+    "minimal/compositions/writer-linux-amd64.json": {
+      "sha256": "c19a6173a3bad6723b5f4c36f49c8ee21afbd65317d9c9c4275ebd130b2223d5",
+      "mode": "100644"
+    },
+    "minimal/instructions/writer.md": {
+      "sha256": "516ff360a8ebb5e36e87f0d401a3cc7436ad2ad1059aae64670aff1078171df8",
+      "mode": "100644"
+    },
+    "minimal/tool-providers/catalog.json": {
+      "sha256": "933283a1fa90fd488db3f872fb89dc1572a5f638bf0a81514a542333e310ef95",
+      "mode": "100644"
+    },
+    "remote-mcp/schemas/flag-result-input.json": {
+      "sha256": "3f1da568747f47b3011a2eb49b2bde3148742b9ee44032e9194cc214fc7ba89a",
+      "mode": "100644"
+    },
+    "remote-mcp/schemas/flag-result-output.json": {
+      "sha256": "65f08e7039785f328c92220872280718765b558cdebdbfa880e152b9896db7be",
+      "mode": "100644"
+    },
+    "remote-mcp/schemas/search-input.json": {
+      "sha256": "25f52652219a4e1e8581e76db1955df62b26a1174a2612eb12538b3efa9d8c84",
+      "mode": "100644"
+    },
+    "remote-mcp/schemas/search-output.json": {
+      "sha256": "5d694e1c4645dbba200792defc1de3ee4956e519657e4e581ee770dd6f5fb203",
+      "mode": "100644"
+    },
+    "remote-mcp/tool-provider.json": {
+      "sha256": "bb710606f860c12a9134dfc6062915dcd24f5d0fa0293ae707d7e108e746fba6",
+      "mode": "100644"
+    },
+    "tool-providers/azure-cli-tool-provider.json": {
+      "sha256": "5574743bfd7f7618408f1eea1803122589583f0e4a63fd81f667a9265cc4b770",
+      "mode": "100644"
+    },
+    "tool-providers/kubectl-tool-provider.json": {
+      "sha256": "7a0f3e5800cab5537940c926540227d6b1a0e41782449907e18df08f1c461d50",
+      "mode": "100644"
+    },
+    "tool-providers/opa-tool-provider-composition.json": {
+      "sha256": "d78ed68b8c1b03aa98058dc25e9c7e0d253ff7059917db3b5ab9af6f0e1337dc",
+      "mode": "100644"
+    },
+    "tool-providers/opa-tool-provider.json": {
+      "sha256": "dda3b3c02a347137d7aedd7619371e6754e12063a125e846f6e9c114cd15b3b7",
+      "mode": "100644"
+    }
+  }
+}

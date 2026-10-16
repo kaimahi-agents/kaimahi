@@ -12,9 +12,9 @@ import (
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/registry"
 
-	agentsuitecore "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
-	agentsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
@@ -96,7 +96,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 		a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		result, err := a.BuildSuite(ctx, args[0], buildOutput, agentsuitecore.BuildSelection{
+		result, err := a.BuildSuite(ctx, args[0], buildOutput, kmxsuite.BuildSelection{
 			Agent: buildAgent, Platform: buildPlatform,
 		}, builder)
 		if err != nil {
@@ -171,7 +171,7 @@ func newSuiteCommand(state *commandState) *cobra.Command {
 	_ = pull.MarkFlagDirname("output")
 	pull.RunE = func(cmd *cobra.Command, args []string) error {
 		a := &app.App{Out: cmd.OutOrStdout()}
-		var result agentsuite.PullResult
+		var result suiteoras.PullResult
 		var err error
 		source := args[0]
 		if cmd.Flags().Changed("from-layout") {
@@ -294,7 +294,7 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 	_ = push.MarkFlagDirname("to-layout")
 	push.RunE = func(cmd *cobra.Command, args []string) error {
 		a := &app.App{Out: cmd.OutOrStdout()}
-		var result agentsuite.PushResult
+		var result suiteoras.PushResult
 		var err error
 		if pushRequireProvenance && !pushProvenance {
 			return fmt.Errorf("--require-provenance cannot be used with --provenance=false")
@@ -397,7 +397,7 @@ func newSuitePushCommand(state *commandState, workspaceMode bool) *cobra.Command
 	return push
 }
 
-func printPushedProvenance(cmd *cobra.Command, result agentsuite.PushResult) error {
+func printPushedProvenance(cmd *cobra.Command, result suiteoras.PushResult) error {
 	for _, warning := range result.Warnings {
 		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", terminalLine(warning)); err != nil {
 			return err
@@ -410,7 +410,7 @@ func printPushedProvenance(cmd *cobra.Command, result agentsuite.PushResult) err
 	return err
 }
 
-func printPulledProvenance(cmd *cobra.Command, result agentsuite.PullResult) error {
+func printPulledProvenance(cmd *cobra.Command, result suiteoras.PullResult) error {
 	for _, warning := range result.Warnings {
 		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", terminalLine(warning)); err != nil {
 			return err
@@ -433,7 +433,7 @@ func printPulledProvenance(cmd *cobra.Command, result agentsuite.PullResult) err
 }
 
 // provenanceClaims prints only fields verification already checked.
-func provenanceClaims(provenance agentsuite.Provenance) string {
+func provenanceClaims(provenance suiteoras.Provenance) string {
 	claims := "kmx"
 	if provenance.BuilderVersion != "" {
 		claims += " " + provenance.BuilderVersion

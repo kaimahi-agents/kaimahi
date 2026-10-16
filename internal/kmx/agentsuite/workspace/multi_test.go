@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -162,24 +162,24 @@ func TestMultiPrepareDeterministicScopedGraphAndSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := extract(t, p)
-	var suite spec.Suite
-	if err := spec.Unmarshal(readFile(t, filepath.Join(out, "agentsuite.json")), &suite); err != nil {
+	var suite agentsuite.Suite
+	if err := agentsuite.Unmarshal(readFile(t, filepath.Join(out, "agentsuite.json")), &suite); err != nil {
 		t.Fatal(err)
 	}
 	if suite.Name != "team" || len(suite.Agents) != 2 || len(suite.Compositions) != 2 || suite.Agents[0].ID != "member-00" || suite.Agents[1].ID != "member-01" {
 		t.Fatalf("incomplete or unordered graph: %+v", suite)
 	}
 	for _, id := range []string{"member-00", "member-01"} {
-		var agent spec.Agent
-		if err := spec.Unmarshal(readFile(t, filepath.Join(out, "agents", id+".json")), &agent); err != nil {
+		var agent agentsuite.Agent
+		if err := agentsuite.Unmarshal(readFile(t, filepath.Join(out, "agents", id+".json")), &agent); err != nil {
 			t.Fatal(err)
 		}
 		indexPath := "evals/" + id + "/index.json"
 		if len(agent.Evals) != 1 || agent.Evals[0].Path != indexPath {
 			t.Fatalf("member %s did not bind its public evaluation index: %+v", id, agent.Evals)
 		}
-		var index spec.EvaluationIndex
-		if err := spec.Unmarshal(readFile(t, filepath.Join(out, indexPath)), &index); err != nil {
+		var index agentsuite.EvaluationIndex
+		if err := agentsuite.Unmarshal(readFile(t, filepath.Join(out, indexPath)), &index); err != nil {
 			t.Fatal(err)
 		}
 		if index.Agent != id || len(index.Cases) != 2 {
@@ -390,24 +390,24 @@ func TestMultiClosedArtifactRegeneration(t *testing.T) {
 			case "private-case-extra":
 				writeFile(t, filepath.Join(out, "metadata/kmx/eval/member-01/extra.yaml"), "id: extra\ninput: question\nexpectContains: [answer]\n")
 			case "index-limits":
-				rebindMemberEvals(t, out, "member-01", func(index *spec.EvaluationIndex, _ map[string]any) {
+				rebindMemberEvals(t, out, "member-01", func(index *agentsuite.EvaluationIndex, _ map[string]any) {
 					index.Limits.MaxCases = 127
 				})
 			case "agent-evals-missing":
 				if err := os.RemoveAll(filepath.Join(out, "evals/member-01")); err != nil {
 					t.Fatal(err)
 				}
-				rebindMemberAgent(t, out, "member-01", func(agent *spec.Agent) { agent.Evals = nil })
+				rebindMemberAgent(t, out, "member-01", func(agent *agentsuite.Agent) { agent.Evals = nil })
 				want += ": native member requires exactly one evaluation index"
 			case "graph-member-omitted":
-				var suite spec.Suite
+				var suite agentsuite.Suite
 				path := filepath.Join(out, "agentsuite.json")
-				if err := spec.Unmarshal(readFile(t, path), &suite); err != nil {
+				if err := agentsuite.Unmarshal(readFile(t, path), &suite); err != nil {
 					t.Fatal(err)
 				}
 				suite.Agents = suite.Agents[:1]
 				suite.Compositions = suite.Compositions[:1]
-				b, err := spec.Marshal(suite)
+				b, err := agentsuite.Marshal(suite)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -438,7 +438,7 @@ func TestMultiClosedArtifactRegeneration(t *testing.T) {
 			case "metadata-profile":
 				second["rendererVersion"] = "unsupported-renderer"
 			}
-			b, err := spec.Marshal(rec)
+			b, err := agentsuite.Marshal(rec)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -479,7 +479,7 @@ func TestMultiInventoryAndSingleOnlyLoaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inventory.Name != "team" || inventory.Digest != p.Descriptor.Digest.String() || !spec.IsValidDigest(inventory.GraphDigest) || len(inventory.Members) != 2 {
+	if inventory.Name != "team" || inventory.Digest != p.Descriptor.Digest.String() || !agentsuite.IsValidDigest(inventory.GraphDigest) || len(inventory.Members) != 2 {
 		t.Fatalf("invalid inventory: %+v", inventory)
 	}
 	for i, m := range inventory.Members {

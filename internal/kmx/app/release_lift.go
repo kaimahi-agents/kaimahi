@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -165,7 +165,7 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 	// Receipt validation already classifies its random run ID. The native
 	// subject has no run ID and its generic key-shape hash guard cannot be used
 	// for this typed plan without misclassifying valid evidence identities.
-	review, err := spec.Marshal(struct {
+	review, err := agentsuite.Marshal(struct {
 		Domain string
 		Plan   ReleaseLiftSummary
 	}{"kmx.release-lift.plan/v1", s})
@@ -180,7 +180,7 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
 	ref, digest, pinned := strings.Cut(opt.Reference, "@")
 	provider := strings.TrimPrefix(opt.Inference, "provider:")
-	if !pinned || !verificationIdentity(ref) || !spec.IsValidDigest(digest) ||
+	if !pinned || !verificationIdentity(ref) || !agentsuite.IsValidDigest(digest) ||
 		!verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil ||
 		(opt.Inference == "") == (opt.Bindings == "") ||
 		opt.Inference != "" && (!strings.HasPrefix(opt.Inference, "provider:") || scaffold.ValidateObjectName(provider) != nil) ||

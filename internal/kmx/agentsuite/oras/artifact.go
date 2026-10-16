@@ -11,8 +11,8 @@ import (
 	"os"
 	"strings"
 
-	spec "github.com/kaimahi-agents/kaimahi/agentsuite"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	agentsuite "github.com/agent-primitives/suite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
@@ -75,7 +75,7 @@ func ReadArtifactLayout(ctx context.Context, layout, digest string) (a *Artifact
 		return nil, err
 	}
 	var layoutRecord ocispec.ImageLayout
-	if spec.Unmarshal(layoutBytes, &layoutRecord) != nil || layoutRecord.Version != ocispec.ImageLayoutVersion {
+	if agentsuite.Unmarshal(layoutBytes, &layoutRecord) != nil || layoutRecord.Version != ocispec.ImageLayoutVersion {
 		return nil, ErrArtifact
 	}
 	indexBytes, err := source.read(ctx, "index.json")
@@ -83,7 +83,7 @@ func ReadArtifactLayout(ctx context.Context, layout, digest string) (a *Artifact
 		return nil, err
 	}
 	var index ocispec.Index
-	if spec.Unmarshal(indexBytes, &index) != nil || index.SchemaVersion != 2 || (index.MediaType != "" && index.MediaType != ocispec.MediaTypeImageIndex) || len(index.Manifests) > 1000 {
+	if agentsuite.Unmarshal(indexBytes, &index) != nil || index.SchemaVersion != 2 || (index.MediaType != "" && index.MediaType != ocispec.MediaTypeImageIndex) || len(index.Manifests) > 1000 {
 		return nil, ErrArtifact
 	}
 	// ORAS read-only-store initialization indexes EVERY graph. Select the
@@ -146,7 +146,7 @@ func artifactDescriptor(d ocispec.Descriptor, media string, limit int64) bool {
 		(d.Data == nil || int64(len(d.Data)) == d.Size && godigest.FromBytes(d.Data) == d.Digest)
 }
 
-func artifactRead(ctx context.Context, src agentsuite.Fetcher, d ocispec.Descriptor) ([]byte, error) {
+func artifactRead(ctx context.Context, src kmxsuite.Fetcher, d ocispec.Descriptor) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -164,12 +164,12 @@ func artifactRead(ctx context.Context, src agentsuite.Fetcher, d ocispec.Descrip
 	return raw, ctx.Err()
 }
 
-func readArtifact(ctx context.Context, src agentsuite.Fetcher, root ocispec.Descriptor, expected string) (a *Artifact, err error) {
+func readArtifact(ctx context.Context, src kmxsuite.Fetcher, root ocispec.Descriptor, expected string) (a *Artifact, err error) {
 	defer func() { err = artifactError(ctx, err) }()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if src == nil || !artifactDigest(expected) || root.Digest.String() != expected || (root.ArtifactType != "" && root.ArtifactType != spec.MediaTypeArtifact) || !artifactDescriptor(root, ocispec.MediaTypeImageManifest, artifactManifestBytes) {
+	if src == nil || !artifactDigest(expected) || root.Digest.String() != expected || (root.ArtifactType != "" && root.ArtifactType != agentsuite.MediaTypeArtifact) || !artifactDescriptor(root, ocispec.MediaTypeImageManifest, artifactManifestBytes) {
 		return nil, ErrArtifact
 	}
 	manifestBytes, err := artifactRead(ctx, src, root)
@@ -177,11 +177,11 @@ func readArtifact(ctx context.Context, src agentsuite.Fetcher, root ocispec.Desc
 		return nil, err
 	}
 	var m ocispec.Manifest
-	if spec.Unmarshal(manifestBytes, &m) != nil || m.SchemaVersion != 2 || (m.MediaType != "" && m.MediaType != ocispec.MediaTypeImageManifest) || m.ArtifactType != spec.MediaTypeArtifact || m.Subject != nil || len(m.Layers) != 1 {
+	if agentsuite.Unmarshal(manifestBytes, &m) != nil || m.SchemaVersion != 2 || (m.MediaType != "" && m.MediaType != ocispec.MediaTypeImageManifest) || m.ArtifactType != agentsuite.MediaTypeArtifact || m.Subject != nil || len(m.Layers) != 1 {
 		return nil, ErrArtifact
 	}
 	// Validate the entire small graph BEFORE fetching any children.
-	if !artifactDescriptor(m.Config, spec.MediaTypeEmptyConfig, 2) || m.Config.Size != 2 || m.Config.Digest != godigest.FromString("{}") || !artifactDescriptor(m.Layers[0], spec.MediaTypeContent, artifactCompressedBytes) {
+	if !artifactDescriptor(m.Config, agentsuite.MediaTypeEmptyConfig, 2) || m.Config.Size != 2 || m.Config.Digest != godigest.FromString("{}") || !artifactDescriptor(m.Layers[0], agentsuite.MediaTypeContent, artifactCompressedBytes) {
 		return nil, ErrArtifact
 	}
 	config, err := artifactRead(ctx, src, m.Config)
@@ -219,7 +219,7 @@ func readArtifact(ctx context.Context, src agentsuite.Fetcher, root ocispec.Desc
 	if err := store.Tag(ctx, root, "artifact"); err != nil {
 		return nil, err
 	}
-	if _, err := spec.ValidatePath(stage); err != nil {
+	if _, err := agentsuite.ValidatePath(stage); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {

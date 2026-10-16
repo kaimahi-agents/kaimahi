@@ -10,13 +10,13 @@ import (
 	"net/url"
 	"regexp"
 
+	agentsuite "github.com/agent-primitives/suite"
 	"github.com/distribution/reference"
-	"github.com/kaimahi-agents/kaimahi/agentsuite"
-	suitebuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
+	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 )
 
 const (
-	OCIArchiveMediaType = suitebuilder.OCIArchiveMediaType
+	OCIArchiveMediaType = kmxsuite.OCIArchiveMediaType
 	agentKitFrontend    = "ghcr.io/orka-agents/agentkit/agentkit@sha256:8899d3ab38bdd8020b4ab21de128002bbc66ffd65111d7097daa8f8fd21805d9"
 	// TODO: Source the harness runtime from AgentSuite once its portable contract represents it.
 	agentKitRuntime = "pydantic-ai"
@@ -53,7 +53,7 @@ type Builder struct {
 	options Options
 }
 
-var _ suitebuilder.SandboxBuilder = (*Builder)(nil)
+var _ kmxsuite.SandboxBuilder = (*Builder)(nil)
 
 // New returns an experimental AgentKit builder.
 func New(options Options) *Builder {
@@ -71,22 +71,22 @@ func New(options Options) *Builder {
 
 func (b *Builder) Build(
 	ctx context.Context,
-	plan suitebuilder.SandboxPlan,
+	plan kmxsuite.SandboxPlan,
 	dst io.Writer,
-) (suitebuilder.BuildResult, error) {
+) (kmxsuite.BuildResult, error) {
 	if b == nil {
-		return suitebuilder.BuildResult{}, errors.New("AgentKit builder is required")
+		return kmxsuite.BuildResult{}, errors.New("AgentKit builder is required")
 	}
 	if dst == nil {
-		return suitebuilder.BuildResult{}, errors.New("AgentKit build output is required")
+		return kmxsuite.BuildResult{}, errors.New("AgentKit build output is required")
 	}
 	if err := b.validate(plan); err != nil {
-		return suitebuilder.BuildResult{}, err
+		return kmxsuite.BuildResult{}, err
 	}
 
 	agentkitFile, err := b.agentkitFile(plan)
 	if err != nil {
-		return suitebuilder.BuildResult{}, fmt.Errorf("render AgentKit build input: %w", err)
+		return kmxsuite.BuildResult{}, fmt.Errorf("render AgentKit build input: %w", err)
 	}
 	// The caller owns staging and inspection before publishing identities.
 	platform := plan.Composition.Platform
@@ -98,9 +98,9 @@ func (b *Builder) Build(
 		SourceEpoch:  plan.BuildProfile.SourceEpoch,
 	}, dst)
 	if err != nil {
-		return suitebuilder.BuildResult{}, fmt.Errorf("build experimental AgentKit image: %w", err)
+		return kmxsuite.BuildResult{}, fmt.Errorf("build experimental AgentKit image: %w", err)
 	}
-	result := suitebuilder.BuildResult{
+	result := kmxsuite.BuildResult{
 		MediaType:             OCIArchiveMediaType,
 		AttestationsRequested: exported.AttestationsRequested,
 		RequireAttestations:   b.options.RequireAttestations,
@@ -110,7 +110,7 @@ func (b *Builder) Build(
 	return result, nil
 }
 
-func (b *Builder) validate(plan suitebuilder.SandboxPlan) error {
+func (b *Builder) validate(plan kmxsuite.SandboxPlan) error {
 	var errs []error
 	if b.options.DisableAttestations && b.options.RequireAttestations {
 		errs = append(errs, errors.New("--require-attestations cannot be used with --attestations=false"))
@@ -164,7 +164,7 @@ func validateDigestReference(name, value string) error {
 	return nil
 }
 
-func (b *Builder) agentkitFile(plan suitebuilder.SandboxPlan) ([]byte, error) {
+func (b *Builder) agentkitFile(plan kmxsuite.SandboxPlan) ([]byte, error) {
 	config := agentConfig{
 		APIVersion: "v1alpha1",
 		Kind:       "Agent",
