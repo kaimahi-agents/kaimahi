@@ -18,7 +18,7 @@ kmx <noun> <verb> [object] [flags]
 
 - **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
   `push` and full-workspace `eval`. Root `eval` also retains helpers (`diff`,
-  `export`, `from-sessions`, `cleanup`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
+  `export`, `verify`, `from-sessions`, `cleanup`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
   `suite build/diff/push/pull/validate` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
@@ -49,6 +49,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `chat` | Open an interactive session. | `kmx chat <name>` |
 | `eval` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
 | `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx eval export --member greeter --out ../evidence.json` |
+| `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx eval verify --suite ./layout --evidence evidence.json --expect expected.json` |
 | `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx eval cleanup [run-id] --to dev` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `policy` | Resolve portable suite restrictions offline without granting authority or selecting an enforcement provider. | `kmx suite policy POLICY.json [--administrative-policy ADMIN.json]` |

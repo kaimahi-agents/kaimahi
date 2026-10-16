@@ -307,8 +307,20 @@ Do not infer enforcement from authoring, transfer, readiness, labels or annotati
 
 ## AgentSuite evaluation storage
 
+- `eval verify --suite LAYOUT --evidence FILE --expect FILE` is the state-free
+  offline CI consumer of shared VerifyEvaluation. Digest form requires explicit
+  `--from-layout DIR`; never resolve a registry, prepare a workspace or search
+  caches/private proof. ExpectedEvaluation is a complete independently reviewed
+  policy file committed beside the suite, never copied from evidence claims.
+  Inputs are bounded public regular JSON files; strict required presence includes
+  `judges: []` and empty platform.variant. Success-only text/JSON summary exits0;
+  typed safe refusal codes go to stderr and exit1 without untrusted causes/paths.
+  No configuration, KMX state, execution or private push/Lift authority involved.
+  Require suite v0.3.1 or later for nonblocking, no-follow OCI special-file refusal;
+  do not replace the shared loader fix with a KMX preflight or timeout workaround.
+
 - `eval export --member ID --out FILE` is offline portable-evidence publication,
-  not evaluation or a private push/Lift gate. Use shared suite v0.2.0 evidence
+  not evaluation or a private push/Lift gate. Use shared suite v0.3.1 evidence
   types/VerifyEvaluation against the exact prepared OCI layout and full ordered
   case/run/assertion inventory. Never serialize or redact private receipts.
   Fresh managed evaluations capture Go build info on every platform: tagged

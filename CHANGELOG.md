@@ -24,8 +24,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
-- Pin AgentSuite v0.3.1 (including the OCI loader nonregular-file/FIFO fix) and
-  support version-aware offline v2 network policy
+- `kmx eval verify --suite LAYOUT --evidence FILE --expect FILE` checks detached
+  public evidence offline using shared suite v0.3.1 VerifyEvaluation. Digest input
+  requires explicit `--from-layout DIR`, without registry/cache/state lookup.
+  Commit a complete reviewed ExpectedEvaluation JSON beside the suite for CI;
+  never derive accepted identities/policy from evidence being checked. Success
+  exits0 with text or `-o json` summary; typed safe refusals exit1. No model,
+  cluster, configuration or private push/Lift gate changes. Unsigned consistency
+  does not authenticate an evaluator or attest execution truth/readiness. The
+  published v0.3.1 loader refuses special files/symlinks in OCI metadata and
+  referenced blobs instead of blocking on FIFO inputs; module sums are pinned.
+- Support version-aware offline v2 network policy
   resolution, including administrative intersection and explicit deny-all.
   Orka member YAML accepts member-relative `policy: policy.json`; preparation
   packages authored JCS at `policies/<id>.json` through `Agent.policy`, preserving
@@ -45,8 +54,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   retain canonical evidence and acknowledged outcomes, including partial failures.
   Exact reuse and verified skips stay no-write; no provenance backfill, replay
   authority or destination-status command is added.
+
 - `kmx eval export --member ID --out FILE` writes detached portable evaluation
-  evidence with suite v0.2.0's shared schema/types/offline verifier. It selects
+  evidence with suite v0.3.1's shared schema/types/offline verifier. It selects
   the latest completed exact-suite/member record without model/cluster/registry
   calls, preserves every case/run/assertion outcome and refuses incomplete proof.
   Fresh evaluation must capture a tagged Go module version plus module checksum,

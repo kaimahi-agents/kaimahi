@@ -83,6 +83,14 @@ builds, pseudo-versions without a clean revision and legacy metadata refuse.
 Private receipts and push/Lift authority remain unchanged.
 See [public evidence](suite-workspace.md#export-portable-evaluation-evidence).
 
+`eval verify --suite LAYOUT --evidence FILE --expect FILE [-o text|json]` is the
+state-independent offline public-evidence CI gate. Digest-form `--suite sha256:…`
+requires `--from-layout DIR`; no registry/cache search or workspace preparation.
+The complete ExpectedEvaluation file is independently reviewed and committed
+beside the suite, never populated from evidence. Success-only stdout summary
+exits0; stable safe refusal codes on stderr exit1. No private receipt authority,
+configuration, model, cluster or KMX state access. See [CI verification](suite-workspace.md#verify-portable-evaluation-evidence-in-ci).
+
 Offline `eval diff` compares strict full-passing native Orka/kagent suite evidence
 only; old normalized Orka/kagent/AgentSessions bundle receipts are unreadable.
 Zero is comparison, not a new pass or promotion gate.
