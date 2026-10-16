@@ -24,11 +24,13 @@ type ReleaseLiftOutcome struct {
 // ReleaseLiftResult is a placement observation, never destination evaluation.
 // A partial result preserves acknowledged identities without granting reuse.
 type ReleaseLiftResult struct {
-	Summary   ReleaseLiftSummary   `json:"summary"`
-	State     string               `json:"state"`
-	Resources []ReleaseLiftOutcome `json:"resources"`
-	placement *suiteNativePlacement
-	kagent    *releaseLiftKagentPlacement
+	Summary         ReleaseLiftSummary   `json:"summary"`
+	State           string               `json:"state"`
+	Resources       []ReleaseLiftOutcome `json:"resources"`
+	LiftID          string               `json:"liftID,omitempty"`
+	ProvenanceState string               `json:"provenanceState,omitempty"`
+	placement       *suiteNativePlacement
+	kagent          *releaseLiftKagentPlacement
 }
 
 type releaseLiftInputs struct {
@@ -153,7 +155,27 @@ func (a *App) checkReleaseLiftLeaves(ctx context.Context, p *PreparedReleaseLift
 func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, reviewedDigest string) (result ReleaseLiftResult, err error) {
 	result.State = "not-applied"
 	guardFailure := false
+	var record *releaseLiftRecordWriter
+	provenanceFailed := false
 	defer func() {
+		if record != nil {
+			// Local bounded persistence must retain acknowledged effects even when
+			// the operation context was cancelled. It grants no recovery authority.
+			if !provenanceFailed {
+				result.ProvenanceState = "recorded"
+			}
+			persistErr := record.checkpoint(context.WithoutCancel(ctx), result)
+			closeErr := record.Close()
+			if persistErr != nil || closeErr != nil || provenanceFailed {
+				result.ProvenanceState = "unknown"
+				if result.State == "ready" {
+					result.State = "partial"
+					result.placement = nil
+					result.kagent = nil
+				}
+				err = errors.Join(err, errReleaseLiftProvenance)
+			}
+		}
 		if err != nil && !guardFailure {
 			cause := ctx.Err()
 			if cause == nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
@@ -161,6 +183,9 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			}
 			if errors.Is(err, errSuiteKagentOccupied) {
 				cause = errors.Join(cause, errSuiteKagentOccupied)
+			}
+			if errors.Is(err, errReleaseLiftProvenance) {
+				cause = errors.Join(cause, errReleaseLiftProvenance)
 			}
 			err = errors.Join(ErrReleaseLiftApply, cause)
 		}
@@ -206,6 +231,13 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 	if err != nil {
 		return result, err
 	}
+	record, result.LiftID, err = worker.prepareReleaseLiftProvenance(ctx, p, docs)
+	if err != nil {
+		return result, errors.Join(errReleaseLiftProvenance, ctx.Err())
+	}
+	if record != nil {
+		result.ProvenanceState = "pending"
+	}
 	admitted := make([]releaseLiftAdmission, len(docs))
 	// Preflight both creations before the first persistent write. Reuse never
 	// enters admission, and no Secret skeleton or Task belongs to this path.
@@ -235,6 +267,10 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			result.State, row.Outcome = "partial", "unknown"
 			row.UID, row.Generation, row.ResourceVersion, row.SpecDigest = "", 0, "", ""
 			created[i], err = worker.createReleaseLift(ctx, p, doc, admitted[i], row)
+			if persistErr := record.checkpoint(context.WithoutCancel(ctx), result); persistErr != nil {
+				provenanceFailed = true
+				return result, errors.Join(err, errReleaseLiftProvenance)
+			}
 			if err != nil {
 				return result, err
 			}
@@ -264,6 +300,10 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			result.kagent = nil
 			return result, err
 		}
+	}
+	if err := worker.verifyReleaseLiftProvenance(ctx, p, docs, result); err != nil {
+		result.placement, result.kagent = nil, nil
+		return result, err
 	}
 	if p.kagent != nil {
 		result.Resources[1].Ready = true

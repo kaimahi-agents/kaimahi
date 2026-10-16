@@ -347,6 +347,13 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 			return r, errWorkspaceLiftState
 		}
 	}
+	// Known storage constraints must refuse before evaluation/publication spend.
+	// A verified placement skip never opens or repairs the provenance store.
+	if placement.record == nil {
+		if err = preflightReleaseLiftStorage(ctx); err != nil {
+			return r, err
+		}
+	}
 	var missing []string
 	if !cached {
 		missing = append(missing, "eval")
@@ -509,6 +516,7 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 	opt := p.options.Destination
 	opt.Reference = p.options.Repository + "@" + p.plan.SuiteDigest
 	opt.Evidence = evidence.path
+	opt.EvaluationName = p.plan.EvalName
 	r.Lift.Status = "failed"
 	release, err := worker.PrepareReleaseLift(ctx, opt)
 	if err != nil {

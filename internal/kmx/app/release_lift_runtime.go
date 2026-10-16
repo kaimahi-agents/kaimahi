@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"maps"
 )
 
 // Closed, private effect facts: each runtime retains its own typed proof.
@@ -16,16 +17,21 @@ type releaseLiftAdmission struct {
 }
 
 func (p *PreparedReleaseLift) releaseDocuments() ([]map[string]any, error) {
+	var desiredDocs []map[string]any
 	if p.kagent != nil {
-		return p.kagent.prepared.documents, nil
+		desiredDocs = p.kagent.prepared.documents
+	} else {
+		desiredDocs = []map[string]any{p.native.bundle.Provider, p.native.bundle.Agent}
 	}
 	docs := make([]map[string]any, 0, 2)
-	for _, desired := range []map[string]any{p.native.bundle.Provider, p.native.bundle.Agent} {
+	for _, desired := range desiredDocs {
 		doc, err := cloneOrkaDoc(desired)
 		if err != nil {
 			return nil, err
 		}
-		addOrkaMarker(doc, suiteNativeOwner(p.native.Subject).markers())
+		if p.kagent == nil {
+			addOrkaMarker(doc, suiteNativeOwner(p.native.Subject).markers())
+		}
 		docs = append(docs, doc)
 	}
 	return docs, nil
@@ -55,6 +61,18 @@ func (a *App) admitReleaseLift(ctx context.Context, p *PreparedReleaseLift, i in
 		}
 		// Server dry-run may assign metadata; it never becomes create authority.
 		admitted.kagent, err = validateKagentAdmissionProof(raw, doc, p.kagent.prepared.proofs[i])
+		if err == nil {
+			// Retain the create-time metadata in this invocation's admission proof,
+			// without changing the suite ownership set or the prepared plan.
+			admitted.kagent.Markers = maps.Clone(admitted.kagent.Markers)
+			if admitted.kagent.Markers == nil {
+				admitted.kagent.Markers = map[string]string{}
+			}
+			ann := doc["metadata"].(map[string]any)["annotations"].(map[string]any)
+			if value, ok := ann[releaseLiftRecordAnnotation].(string); ok {
+				admitted.kagent.Markers[releaseLiftRecordAnnotation] = value
+			}
+		}
 		return admitted, err
 	}
 	raw, err := a.orkaCapture(ctx, body, "-n", ns, "create", "--dry-run=server", "--validate=strict", "-f", "-", "-o", "json")

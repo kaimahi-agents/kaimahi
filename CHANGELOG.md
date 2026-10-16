@@ -24,6 +24,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Release Lift stamps newly created Orka/kagent primary objects with non-secret
+  `kaimahi.dev/lift-record` metadata: suite and consumed receipt identity,
+  evaluation environment, actual promotion gate and UTC attempt time. Operators
+  can read the same record from another machine. Separate bounded private records
+  retain canonical evidence and acknowledged outcomes, including partial failures.
+  Exact reuse and verified skips stay no-write; no provenance backfill, replay
+  authority or destination-status command is added.
+
 - Provisional KMX-local `schemaVersion: 2` member-list source supports bounded,
   deterministic offline multi-member preparation and inventory loading, with
   each member's public `evals/<member>/` index/cases and complete graph/digest

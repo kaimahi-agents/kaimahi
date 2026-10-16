@@ -41,6 +41,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   with verbose/JSON details. Exact-version private completion observations authorize
   GET-only skips, never Apply/reuse/adoption/repair. Keep kagent out of composed
   Lift until its candidate-scoped placement and ownership-safe cleanup are qualified.
+- Release Lift stamps only newly created primaries with versioned non-secret
+  `kaimahi.dev/lift-record` JSON: exact consumed canonical receipt identity,
+  source/destination, actual gate, attempt time and expected specs. Actor is omitted
+  unless known. Exact Orka reuse and composed skips remain no-write; never repair
+  or infer missing companion provenance. Separate bounded private `release-lifts`
+  intent/outcome records retain canonical receipts and acknowledged partial effects;
+  they grant no evaluation, ownership, skip or replay authority. Keep provenance out
+  of plan digests, suite ownership markers, portable schemas and candidate eval.
+  Root destination status remains a separate change. See
+  [cluster-visible Lift provenance](docs/suite-workspace.md#cluster-visible-lift-provenance).
 - Everyday operations are root `create/chat/run`; live inspection is `orka show/list`.
   Legacy `bundle` operations are removed outright without aliases/stubs.
   `kmx agent` is removed entirely, without an alias or retirement stub.

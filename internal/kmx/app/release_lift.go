@@ -25,6 +25,8 @@ type ReleaseLiftOptions struct {
 	PlainHTTP, Promote                                                           bool
 	// ExpectedRuntime is checked offline against the loaded package before GETs.
 	ExpectedRuntime string
+	// EvaluationName is an optional frozen display alias, never target authority.
+	EvaluationName string
 }
 
 type ReleaseLiftTarget struct {
@@ -180,6 +182,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
 	ref, digest, pinned := strings.Cut(opt.Reference, "@")
 	provider := strings.TrimPrefix(opt.Inference, "provider:")
+	if opt.EvaluationName != "" && (len(opt.EvaluationName) > 63 || !verificationIdentity(opt.EvaluationName) || scaffold.RefuseKeyShapes(opt.EvaluationName) != nil) {
+		return ErrReleaseLift
+	}
 	if !pinned || !verificationIdentity(ref) || !agentsuite.IsValidDigest(digest) ||
 		!verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil ||
 		(opt.Inference == "") == (opt.Bindings == "") ||
