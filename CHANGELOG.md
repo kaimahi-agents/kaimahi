@@ -24,7 +24,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
-- Pin AgentSuite v0.3.0 and support version-aware offline v2 network policy
+- Pin AgentSuite v0.3.1 (including the OCI loader nonregular-file/FIFO fix) and
+  support version-aware offline v2 network policy
   resolution, including administrative intersection and explicit deny-all.
   Orka member YAML accepts member-relative `policy: policy.json`; preparation
   packages authored JCS at `policies/<id>.json` through `Agent.policy`, preserving

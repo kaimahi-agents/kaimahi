@@ -2,7 +2,7 @@
 
 The `github.com/agent-primitives/suite/policy` package owns policy validation,
 composition, canonical effective bytes and effective digest generation. KMX pins
-suite v0.3.0. Resolving or packaging a policy does **not** select, install or
+suite v0.3.1, including its OCI loader nonregular-file/FIFO fix. Resolving or packaging a policy does **not** select, install or
 qualify an enforcement implementation.
 
 ## Resolve offline
