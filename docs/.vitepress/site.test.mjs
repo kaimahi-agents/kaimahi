@@ -36,7 +36,7 @@ test('the homepage renders the interactive journey and channel boundary', async 
   for (const marker of [
     'Build, Prove and Lift your agents',
     'Development docs',
-    'Stable v0.6.0',
+    'Stable v0.7.0',
     'Choose your path',
     'role="tablist"',
     'Get your first answer'
