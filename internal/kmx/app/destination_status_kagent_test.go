@@ -52,7 +52,7 @@ func statusTestKagentFixture(t *testing.T) (*App, map[string]string, *bytes.Buff
 	meta := deployment["metadata"].(map[string]any)
 	meta["ownerReferences"] = statusTestOwnerRef("kagent.dev/v1alpha2", "Agent", "greeter", "agent-uid")
 	meta["annotations"] = map[string]any{"deployment.kubernetes.io/revision": "1"}
-	template := map[string]any{"metadata": map[string]any{"labels": map[string]any{"app": "greeter"}}, "spec": map[string]any{"containers": []any{map[string]any{"name": "kagent", "image": "test.invalid/kagent:fixture"}}}}
+	template := map[string]any{"metadata": map[string]any{"labels": map[string]any{"app": "greeter"}}, "spec": map[string]any{"containers": []any{map[string]any{"name": "kagent", "image": "test.invalid/kagent:fixture", "ports": []any{map[string]any{"name": "http", "containerPort": 8080, "protocol": "TCP"}}}}}}
 	deployment["spec"] = map[string]any{"replicas": 1, "selector": map[string]any{"matchLabels": map[string]any{"app": "greeter"}}, "template": template}
 	deployment["status"] = map[string]any{"observedGeneration": 1, "replicas": 1, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1, "unavailableReplicas": 0}
 	rs := objects["ReplicaSet"]
@@ -78,7 +78,7 @@ func statusTestKagentFixture(t *testing.T) (*App, map[string]string, *bytes.Buff
 	meta["name"] = "greeter-pod"
 	meta["labels"] = map[string]any{"app": "greeter"}
 	meta["ownerReferences"] = statusTestOwnerRef("apps/v1", "ReplicaSet", "greeter-rs", "replicaset-uid")
-	pod["spec"] = map[string]any{"nodeName": "fixture-node", "containers": []any{map[string]any{"name": "kagent", "image": "test.invalid/kagent:fixture"}}}
+	pod["spec"] = map[string]any{"nodeName": "fixture-node", "containers": []any{map[string]any{"name": "kagent", "image": "test.invalid/kagent:fixture", "ports": []any{map[string]any{"name": "http", "containerPort": 8080, "protocol": "TCP"}}}}}
 	pod["status"] = map[string]any{"phase": "Running", "conditions": []any{map[string]any{"type": "Ready", "status": "True"}}, "containerStatuses": []any{map[string]any{"name": "kagent", "ready": true}}}
 	statusTestKagentRefresh(responses, objects)
 	return a, responses, out, objects

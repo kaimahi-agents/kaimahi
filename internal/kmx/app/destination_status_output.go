@@ -62,7 +62,7 @@ func (o *destinationStatusObserver) render(format string) error {
 		if r.CandidateRun != nil {
 			run = *r.CandidateRun
 		}
-		fmt.Fprintf(&buf, "  Candidate %s %s/%s run=%s: provenance=%s; %s: %s\n", r.Runtime, r.Kind, r.Name, run, r.Provenance.State, r.Readiness.State, r.Readiness.Reason)
+		fmt.Fprintf(&buf, "  Candidate %s %s/%s run=%s: provenance=%s (%s); %s: %s\n", r.Runtime, r.Kind, r.Name, run, r.Provenance.State, r.Provenance.Reason, r.Readiness.State, r.Readiness.Reason)
 	}
 	for _, reason := range o.report.Errors {
 		fmt.Fprintln(&buf, "Unknown:", reason)

@@ -109,6 +109,7 @@ func (a *App) DestinationStatus(opt DestinationStatusOptions) error {
 			o.problem("expected runtime Agent API is unavailable or unknown")
 		}
 		if state != "served" {
+			o.candidateRoots(api)
 			continue
 		}
 		objects, _ := o.list(api.prefix, "agents", "Agent", api.version, "")

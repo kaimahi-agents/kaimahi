@@ -182,6 +182,16 @@ func (o *destinationStatusObserver) list(prefix, plural, kind, version, selector
 		revision = rv
 		for _, value := range items {
 			doc, ok := value.(map[string]any)
+			if ok {
+				// Typed Kubernetes lists may omit item GVK. Only the validated
+				// collection supplies protocol type; never provenance or identity.
+				if _, present := doc["kind"]; !present {
+					doc["kind"] = kind
+				}
+				if _, present := doc["apiVersion"]; !present {
+					doc["apiVersion"] = version
+				}
+			}
 			if !ok || !o.validObjectName(doc, kind, version) {
 				o.problem(kind + " inventory contains an unknown identity")
 				complete = false

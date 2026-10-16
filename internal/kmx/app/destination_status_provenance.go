@@ -37,6 +37,9 @@ func statusOwnership(runtime string, meta map[string]any) (*destinationStatusOwn
 			return nil, "unknown"
 		}
 	}
+	if !statusSafeText(v[0]) || !statusSafeText(v[2]) {
+		return nil, "unknown"
+	}
 	run := ""
 	if raw, present := ann[suiteCandidateRunMarker]; present {
 		var good bool
@@ -237,7 +240,7 @@ func (o *destinationStatusObserver) agent(api destinationStatusAPI, doc map[stri
 		}
 		row.Readiness = statusWorseReadiness(row.Readiness, r.Readiness)
 	}
-	if api.runtime == "kagent" && primary.Readiness.State == "ready" {
+	if api.runtime == "kagent" && primary.Readiness.State != "unknown" {
 		var workloadReadiness destinationStatusReadiness
 		row.Workloads, workloadReadiness = o.kagentWorkloads(doc)
 		row.Readiness = statusWorseReadiness(row.Readiness, workloadReadiness)

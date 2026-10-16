@@ -94,6 +94,39 @@ func statusRollout(doc map[string]any, desired int64) destinationStatusReadiness
 	if observed != generation {
 		return pending
 	}
+	// Conditions describe the acknowledged rollout, not an earlier generation.
+	// Available=False alone is normal during initial progress.
+	if raw, present := status["conditions"]; present {
+		conditions, valid := raw.([]any)
+		if !valid || len(conditions) > 64 {
+			return unknown
+		}
+		seen := map[string]bool{}
+		failed := false
+		for _, value := range conditions {
+			c, valid := value.(map[string]any)
+			if !valid {
+				return unknown
+			}
+			typ, typeOK := c["type"].(string)
+			state, stateOK := c["status"].(string)
+			if !typeOK || typ == "" || seen[typ] || !stateOK || state != "True" && state != "False" && state != "Unknown" {
+				return unknown
+			}
+			seen[typ] = true
+			reason, reasonOK := c["reason"].(string)
+			if _, present := c["reason"]; present && !reasonOK {
+				return unknown
+			}
+			if (typ == "Progressing" || typ == "ReplicaFailure") && state == "Unknown" {
+				return unknown
+			}
+			failed = failed || typ == "ReplicaFailure" && state == "True" || doc["kind"] == "Deployment" && typ == "Progressing" && state == "False" && reason == "ProgressDeadlineExceeded"
+		}
+		if failed {
+			return destinationStatusReadiness{"unhealthy", "owned workload reports an explicit current-generation rollout failure"}
+		}
+	}
 	keys := []string{"replicas", "readyReplicas", "availableReplicas"}
 	if doc["kind"] == "Deployment" {
 		keys = append(keys, "updatedReplicas")
@@ -169,20 +202,11 @@ func (o *destinationStatusObserver) kagentWorkloads(agent map[string]any) ([]des
 	}
 	serviceReady := destinationStatusReadiness{"ready", "Service is controlled by the observed Agent UID and matches its Deployment"}
 	ss := statusMap(service, "spec")
-	port := false
-	if ports, ok := ss["ports"].([]any); ok {
-		for _, value := range ports {
-			p, ok := value.(map[string]any)
-			if ok {
-				n, valid := statusInteger(p["port"])
-				port = port || valid && n == 8080 && p["protocol"] == "TCP"
-			}
-		}
-	}
+	targetPort := statusServiceTargetPort(ss, statusMap(statusMap(ds, "template"), "spec"))
 	terminating, valid := statusTerminating(statusMap(service, "metadata"))
 	if !valid {
 		serviceReady = unknown
-	} else if !statusControllerOwner(statusMap(service, "metadata"), "kagent.dev/v1alpha2", "Agent", name, uid) || !reflect.DeepEqual(selector, statusLabels(statusMap(ss, "selector"))) || !port || terminating {
+	} else if !statusControllerOwner(statusMap(service, "metadata"), "kagent.dev/v1alpha2", "Agent", name, uid) || !reflect.DeepEqual(selector, statusLabels(statusMap(ss, "selector"))) || targetPort == 0 || terminating {
 		serviceReady = drift
 	}
 	rows = append(rows, statusWorkloadRow(service, serviceReady))
@@ -242,6 +266,9 @@ func (o *destinationStatusObserver) kagentWorkloads(agent map[string]any) ([]des
 	for _, pod := range pods {
 		pm := statusMap(pod, "metadata")
 		podReady := statusPodReadiness(pod, ds)
+		if podReady.State == "ready" && statusServiceTargetPort(ss, statusMap(pod, "spec")) != targetPort {
+			podReady = drift
+		}
 		if !statusControllerOwner(pm, "apps/v1", "ReplicaSet", statusString(rm, "name"), statusString(rm, "uid")) || !kagentLabelsContain(statusLabels(statusMap(pm, "labels")), selector) {
 			podReady = drift
 		}
@@ -287,6 +314,81 @@ func (o *destinationStatusObserver) kagentWorkloads(agent map[string]any) ([]des
 		}
 	}
 	return rows, ready
+}
+
+// Resolve Service TCP/8080 against exactly one observed kagent container.
+// An omitted target defaults to the Service port; names resolve through TCP
+// container declarations. This observes routing only, not a listening endpoint.
+func statusServiceTargetPort(service, spec map[string]any) int64 {
+	ports, ok := service["ports"].([]any)
+	if !ok {
+		return 0
+	}
+	var target any
+	found := 0
+	for _, value := range ports {
+		p, ok := value.(map[string]any)
+		if !ok {
+			return 0
+		}
+		n, valid := statusInteger(p["port"])
+		if valid && n == 8080 && (p["protocol"] == "TCP" || p["protocol"] == nil) {
+			found++
+			target = p["targetPort"]
+			if _, present := p["targetPort"]; !present {
+				target = p["port"]
+			}
+		}
+	}
+	if found != 1 {
+		return 0
+	}
+	numeric, numberOK := statusInteger(target)
+	name, nameOK := target.(string)
+	if !numberOK && (!nameOK || name == "") || numberOK && (numeric < 1 || numeric > 65535) {
+		return 0
+	}
+	containers, ok := spec["containers"].([]any)
+	if !ok {
+		return 0
+	}
+	containerCount, matches := 0, 0
+	resolved := int64(0)
+	for _, value := range containers {
+		c, ok := value.(map[string]any)
+		if !ok {
+			return 0
+		}
+		if c["name"] != "kagent" {
+			continue
+		}
+		containerCount++
+		declared, ok := c["ports"].([]any)
+		if !ok {
+			return 0
+		}
+		for _, value := range declared {
+			p, ok := value.(map[string]any)
+			if !ok {
+				return 0
+			}
+			n, valid := statusInteger(p["containerPort"])
+			if !valid || n < 1 || n > 65535 {
+				return 0
+			}
+			if p["protocol"] != nil && p["protocol"] != "TCP" {
+				continue
+			}
+			if numberOK && n == numeric || nameOK && p["name"] == name {
+				matches++
+				resolved = n
+			}
+		}
+	}
+	if containerCount != 1 || matches != 1 {
+		return 0
+	}
+	return resolved
 }
 
 func statusPodReadiness(pod, desired map[string]any) destinationStatusReadiness {
