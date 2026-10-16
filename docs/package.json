@@ -7,7 +7,9 @@
   },
   "scripts": {
     "docs:build": "vitepress build .",
-    "docs:check": "vitepress build . && node --test .vitepress/site.test.mjs",
+    "docs:check": "vitepress build . && node --test .vitepress/site.test.mjs .vitepress/schema.test.mjs",
+    "docs:schemas": "node .vitepress/schemas.mjs --upstream",
+    "docs:schemas-live": "node .vitepress/schemas.mjs --live",
     "docs:dev": "vitepress dev . --host 127.0.0.1",
     "docs:preview": "vitepress preview . --host 127.0.0.1"
   },

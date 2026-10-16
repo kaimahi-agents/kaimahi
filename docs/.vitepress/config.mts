@@ -154,6 +154,7 @@ export default defineConfig({
     config: rewriteRepositoryLinks
   },
   vite: {
+    publicDir: 'docs/public',
     resolve: {
       alias: {
         'brand/ketu.svg': path.join(repositoryRoot, 'brand/ketu.svg'),

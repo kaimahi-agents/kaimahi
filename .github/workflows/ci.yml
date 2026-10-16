@@ -197,6 +197,8 @@ jobs:
         run: |
           npm --prefix docs ci --ignore-scripts
           npm --prefix docs run docs:check
+      - name: Published AgentSuite schema parity
+        run: npm --prefix docs run docs:schemas
       # The release job's notes come from CHANGELOG.md and it REFUSES
       # to publish a version with no section there. That refusal is the only
       # thing making "every release has notes" true, so the extractor is

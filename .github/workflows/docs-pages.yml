@@ -39,6 +39,8 @@ jobs:
         run: |
           npm --prefix docs ci --ignore-scripts
           npm --prefix docs run docs:check
+      - name: Published AgentSuite schema parity
+        run: npm --prefix docs run docs:schemas
       - name: Upload the documentation site
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
