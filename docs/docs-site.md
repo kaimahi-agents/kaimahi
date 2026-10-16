@@ -45,8 +45,8 @@ search service or credentials.
 AgentSuite links and navigation use the standalone specification on `main`,
 including section fragments. There is no local specification page or issue-link
 fallback. The generated-site checks assert the external destination and a case-
-document fragment. Tag links are reserved for releases that have actually been
-published; Phase 1 only anticipates `v0.1.0`.
+document fragment. These links follow the current format; the Go dependency is
+pinned separately to the published `v0.1.0` release.
 
 ## Version boundary
 

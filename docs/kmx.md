@@ -99,6 +99,11 @@ Everyday operations are now root `create/chat/run`, live Orka inspection is
 These routes and root workspace `push` require a current development build;
 tagged v0.5.1 still uses the `agent` routes. Workspace authoring/publication
 are unreleased.
+The provisional [multi-member source](suite-workspace.md#provisional-multi-member-source-offline-only)
+format supports internal offline preparation/inventory loading only. Root workspace
+push (including `--unevaluated`), eval and workspace Lift refuse it; existing
+single-member authoring/create prompts and public-case receipt rules are unchanged.
+
 Root `eval` evaluates a full packaged native Orka/kagent workspace, or pinned
 AgentSessions chat through explicit `--development-host FILE`, and retains offline `diff` and
 `from-sessions` helpers. Public Orka eval uses fresh candidates and verifies cleanup

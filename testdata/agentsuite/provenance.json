@@ -4,8 +4,8 @@
   "source_commit": "e48f063f422bd38b7f92173351defd21bfcda5cc",
   "upstream_repository": "https://github.com/agent-primitives/suite",
   "upstream_path": "testdata",
-  "anticipated_version": "v0.1.0",
-  "version_status": "anticipated; not published during Phase 1 rehearsal",
+  "upstream_version": "v0.1.0",
+  "upstream_commit": "6281ce09a3d7f4f2fc4b3a556d602b07eeab7ffa",
   "files": {
     "coordinator-workers/agents/coordinator.json": {
       "sha256": "5228a15e81e7b854391771c7f112731a3eefbbc18ebff00026ae6b50318f4278",

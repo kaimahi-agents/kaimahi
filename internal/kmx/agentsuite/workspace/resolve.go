@@ -93,20 +93,79 @@ func resolveMarker(root string) error {
 }
 
 func parseSourceWorkspace(b []byte) (sourceWorkspace, error) {
+	// Pointers distinguish absent fields from empty mixed-form declarations.
+	var descriptor struct {
+		SchemaVersion int       `yaml:"schemaVersion"`
+		Name          string    `yaml:"name"`
+		Member        *string   `yaml:"member"`
+		Members       *[]string `yaml:"members"`
+		BuildProfile  string    `yaml:"buildProfile"`
+	}
 	var w sourceWorkspace
-	if err := strictYAML(b, &w); err != nil {
+	if err := strictYAML(b, &descriptor); err != nil {
 		// YAML diagnostics can quote decoded credential-shaped keys/content.
 		return w, errors.New("workspace.yaml: invalid workspace descriptor; check source fields and integer schemaVersion")
 	}
-	if w.SchemaVersion != 1 || !namePattern.MatchString(w.Name) || w.Name == "." || w.Name == ".." || w.BuildProfile != "build-profiles/default.json" {
+	w.SchemaVersion, w.Name, w.BuildProfile = descriptor.SchemaVersion, descriptor.Name, descriptor.BuildProfile
+	if !namePattern.MatchString(w.Name) || w.Name == "." || w.Name == ".." || w.BuildProfile != "build-profiles/default.json" {
 		return w, errors.New("unsupported workspace schema/name/build profile")
 	}
-	parts := strings.Split(w.Member, "/")
-	if len(parts) != 3 || parts[0] != "agents" || parts[2] != "member.yaml" {
-		return w, errors.New("workspace member path must select agents/ID/member.yaml")
+	var members []string
+	switch w.SchemaVersion {
+	case 1:
+		if descriptor.Member == nil || descriptor.Members != nil {
+			return w, errors.New("schemaVersion 1 requires member and forbids members")
+		}
+		w.Member = *descriptor.Member
+		members = []string{w.Member}
+	case 2:
+		if descriptor.Member != nil || descriptor.Members == nil || len(*descriptor.Members) < 2 || len(*descriptor.Members) > maxMembers {
+			return w, errors.New("unsupported workspace: schemaVersion 2 requires two to 16 members and forbids member")
+		}
+		w.Members = *descriptor.Members
+		members = w.Members
+	default:
+		return w, errors.New("unsupported workspace schema/name/build profile")
 	}
-	if err := scaffold.ValidateName(parts[1]); err != nil {
-		return w, fmt.Errorf("workspace member path: %w", err)
+	seen := map[string]bool{}
+	for _, member := range members {
+		parts := strings.Split(member, "/")
+		if len(parts) != 3 || parts[0] != "agents" || parts[2] != "member.yaml" {
+			return w, errors.New("workspace member path must select agents/ID/member.yaml")
+		}
+		if err := scaffold.ValidateName(parts[1]); err != nil {
+			return w, fmt.Errorf("workspace member path: %w", err)
+		}
+		if seen[member] {
+			return w, errors.New("duplicate workspace member")
+		}
+		seen[member] = true
 	}
 	return w, nil
+}
+
+// RequireSingleMember is a bounded, read-only descriptor preflight for operations
+// that cannot support multi-member workspaces. It does not inspect member files.
+func RequireSingleMember(root string) error {
+	root, err := safeAbsolute(root)
+	if err != nil {
+		return err
+	}
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	b, err := readBounded(r, "workspace.yaml")
+	if err != nil {
+		return err
+	}
+	w, err := parseSourceWorkspace(b)
+	if err != nil {
+		return err
+	}
+	if w.SchemaVersion == 2 {
+		return ErrMultiMemberUnsupported
+	}
+	return nil
 }

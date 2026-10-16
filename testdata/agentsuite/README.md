@@ -7,8 +7,9 @@ The [standalone suite](https://github.com/agent-primitives/suite) keeps the port
 contract and conformance tests; kmx owns only these consumer-test inputs.
 
 `provenance.json` records the frozen source, per-file SHA256 and Git file mode.
-The intended first module release is **v0.1.0**, anticipated but not published
-as part of the Phase 1 rehearsal. This is not a claim of tag availability.
+The same fixtures are published in **v0.1.0** of the standalone module, at
+commit `6281ce09a3d7f4f2fc4b3a556d602b07eeab7ffa`. The provenance manifest records
+that release alongside their original source.
 
 Run `python3 scripts/check-agentsuite-fixtures.py --selftest` and
 `python3 scripts/check-agentsuite-fixtures.py` from the repository root.

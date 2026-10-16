@@ -22,6 +22,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- Provisional KMX-local `schemaVersion: 2` member-list source supports bounded,
+  deterministic offline multi-member preparation and inventory loading, with
+  each member's public `evals/<member>/` index/cases and complete graph/digest
+  checks. The derived file budget is 4 shared + 4 per member + 128 total cases:
+  136 for one member, 140 for two and 196 for sixteen. Root eval, workspace push
+  (including unevaluated) and workspace Lift refuse before operational effects;
+  execution loaders refuse multi-member artifacts. One-member source/create and
+  public-case receipt rules are unchanged; no binding, approval or evaluation
+  semantics are added.
+  Authoring remains provisional pending [#526](https://github.com/kaimahi-agents/kaimahi/issues/526).
+
 ### Breaking
 
 - The portable AgentSuite Go package moves from `github.com/kaimahi-agents/kaimahi/agentsuite`

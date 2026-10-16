@@ -68,7 +68,12 @@ func extract(t *testing.T, p *workspace.Prepared) string {
 // rebindEvals edits evals and recomputes public digests so only native checks can refuse.
 func rebindEvals(t *testing.T, out string, mutate func(index *agentsuite.EvaluationIndex, firstCase map[string]any)) {
 	t.Helper()
-	indexName := filepath.Join(out, "evals/greeter/index.json")
+	rebindMemberEvals(t, out, "greeter", mutate)
+}
+
+func rebindMemberEvals(t *testing.T, out, member string, mutate func(index *agentsuite.EvaluationIndex, firstCase map[string]any)) {
+	t.Helper()
+	indexName := filepath.Join(out, "evals", member, "index.json")
 	var index agentsuite.EvaluationIndex
 	if err := agentsuite.Unmarshal(readFile(t, indexName), &index); err != nil {
 		t.Fatal(err)
@@ -95,7 +100,7 @@ func rebindEvals(t *testing.T, out string, mutate func(index *agentsuite.Evaluat
 		t.Fatal(err)
 	}
 	writeFile(t, indexName, string(ib))
-	rebindAgent(t, out, func(agent *agentsuite.Agent) {
+	rebindMemberAgent(t, out, member, func(agent *agentsuite.Agent) {
 		agent.Evals[0].Descriptor.Size = int64(len(ib))
 		if agent.Evals[0].Descriptor.Digest, err = agentsuite.Digest(ib); err != nil {
 			t.Fatal(err)
@@ -114,7 +119,12 @@ func removeEvals(t *testing.T, out string) {
 
 func rebindAgent(t *testing.T, out string, mutate func(*agentsuite.Agent)) {
 	t.Helper()
-	agentName := filepath.Join(out, "agents/greeter.json")
+	rebindMemberAgent(t, out, "greeter", mutate)
+}
+
+func rebindMemberAgent(t *testing.T, out, member string, mutate func(*agentsuite.Agent)) {
+	t.Helper()
+	agentName := filepath.Join(out, "agents", member+".json")
 	var agent agentsuite.Agent
 	if err := agentsuite.Unmarshal(readFile(t, agentName), &agent); err != nil {
 		t.Fatal(err)
@@ -129,9 +139,13 @@ func rebindAgent(t *testing.T, out string, mutate func(*agentsuite.Agent)) {
 	if err := agentsuite.Unmarshal(readFile(t, filepath.Join(out, "agentsuite.json")), &suite); err != nil {
 		t.Fatal(err)
 	}
-	suite.Agents[0].Descriptor.Size = int64(len(mb))
-	if suite.Agents[0].Descriptor.Digest, err = agentsuite.Digest(mb); err != nil {
-		t.Fatal(err)
+	for i := range suite.Agents {
+		if suite.Agents[i].ID == member {
+			suite.Agents[i].Descriptor.Size = int64(len(mb))
+			if suite.Agents[i].Descriptor.Digest, err = agentsuite.Digest(mb); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	sb, err := agentsuite.Marshal(suite)
 	if err != nil {

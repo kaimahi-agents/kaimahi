@@ -19,6 +19,9 @@ func resolveWorkspaceLiftOptions(cmd *cobra.Command, name string, destination ap
 	if name == "" {
 		return opt, fmt.Errorf("workspace lift requires explicit --to NAME")
 	}
+	if err := refuseMultiMemberWorkspace(""); err != nil {
+		return opt, err
+	}
 	root, doc, err := resolveDestinations("")
 	if err != nil {
 		return opt, err

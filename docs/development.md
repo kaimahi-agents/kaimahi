@@ -150,10 +150,11 @@ python3 scripts/test_model_fixtures.py -v
 
 Import the separate module as `agentsuite "github.com/agent-primitives/suite"`.
 The internal builder uses `kmxsuite` and the ORAS adapter uses `suiteoras`.
-`go.mod` pins the anticipated first release `v0.1.0`; Phase 1 does not publish it.
-For rehearsal, select an external absolute `go.work` containing both modules
-with `GOWORK=/absolute/path/to/go.work`. No committed `replace` or invented sums
-are allowed. Once the tag is actually published, verify with `GOWORK=off`.
+`go.mod` pins the published release `v0.1.0`, with its sums in `go.sum`.
+Verify releases with `GOWORK=off`. For coordinated local development, select an
+external absolute `go.work` containing both modules with
+`GOWORK=/absolute/path/to/go.work`; do not commit workspace files, `replace`
+directives or invented sums.
 
 `testdata/agentsuite` holds owned consumer snapshots with frozen source and
 per-file SHA256/mode provenance. The offline fixture checker above protects those

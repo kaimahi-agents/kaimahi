@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -67,6 +68,9 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 				break
 			}
 		}
+	}
+	if errors.Is(err, workspace.ErrMultiMemberUnsupported) {
+		return errors.Join(workspace.ErrMultiMemberUnsupported, cause)
 	}
 	var port *orkaResultPortError
 	if errors.As(err, &port) {

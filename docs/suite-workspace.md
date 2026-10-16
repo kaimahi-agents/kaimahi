@@ -31,6 +31,62 @@ fresh-target creation/occupied refusal. Standalone registry-package evaluation
 remains unavailable. Legacy user `agent.yaml` creation, evaluation, lift and
 receipts are removed; no conversion or migration is provided.
 
+## Provisional multi-member source (offline only)
+
+A separate KMX-local source format supports deterministic offline preparation and
+inventory loading of tool-free members. Its authoring shape is **provisional**
+pending [#526](https://github.com/kaimahi-agents/kaimahi/issues/526); it is not a
+new public AgentSuite schema. Existing `schemaVersion: 1` authoring and create
+prompts are unchanged; both source formats use the public evaluation packaging
+and receipt rules below. Earlier private-case packages/receipts are not migrated.
+
+Author the list manually in `workspace.yaml`:
+
+```yaml
+schemaVersion: 2
+name: writing-team
+members:
+  - agents/writer/member.yaml
+  - agents/reviewer/member.yaml
+buildProfile: build-profiles/default.json
+```
+
+Each `member.yaml` uses the existing member fields (`id`, `instructions`, exact
+`model`, optional supported `runtime`); its ID must match its directory, and
+instruction paths stay relative to that member. Keep cases in `eval/writer/`
+and `eval/reviewer/`, not the singular format's flat `eval/`. Each directory must
+contain regular YAML case files. For example, both members may independently
+have an `example.yaml` containing case ID `example`; neither replaces the other.
+The existing pinned build profile is shared. No tools or `invokes` authoring,
+binding, approval, coordination or evaluation semantics are enabled here.
+
+The bounded format accepts 2–16 members, at least one case per member and at most
+128 cases in total, with independent 8 MiB source/artifact limits and 1 MiB per
+file. The file budget is `4 shared + 4 per member + 128 cases`: 136 for one member,
+140 for two and 196 for sixteen. Shared source-free readers admit at most 196 files;
+complete native graph validation enforces membership and case coverage.
+
+Member order is canonical by ID; each member's case index preserves authored
+filename order. Cases are packaged under `evals/<member>/index.json` and
+`evals/<member>/cases/<case-id>.json`, bound through that member's agent manifest.
+Every inventory uses the same packaged-case decoder as one-member evaluation.
+Case edits change both the public graph digest and the suite OCI digest; comments
+or formatting in authored YAML change only the source fingerprint when parsed
+content/order stays the same. There is no private case list or dual-write.
+Duplicate/unresolved members, mixed `member`/`members` forms, undeclared member/case
+directories, symlinks, unsafe paths and graph/case digest drift refuse without
+rewriting source.
+
+Preparation uses the internal workspace API (`Prepare` then `LoadInventory`);
+there is no new CLI prepare command. The execution loaders remain single-member
+only. Root `eval`, root workspace `push` (including `--unevaluated`) and composed
+workspace Lift refuse this format before operational state, output or target
+activity. Exact-reference Lift also refuses verified multi-member native artifacts
+before target observations; existing prerequisite validation remains unchanged.
+General extracted-directory `suite push` is still format transfer, not execution
+or evaluated publication. None of these paths can use a one-member receipt to
+qualify a larger suite. Multi-member runtime support is a separate change.
+
 ## Named destinations
 
 Keep operational selectors in optional workspace-root `kmx.yaml`, separate from
@@ -869,8 +925,10 @@ or local OCI layout without authored source, a preparation fingerprint or a buil
 It retains original packaged bytes; it never re-archives or publishes them.
 Only the selected layout graph is read, not unrelated references. The reader
 bounds the manifest to 1 MiB, the exact empty config to two bytes, compressed
-content to 9 MiB, raw decompressed tar to 10 MiB, 256 entries, 136 regular files,
+content to 9 MiB, raw decompressed tar to 10 MiB, 256 entries, 196 regular files,
 1 MiB per file and 8 MiB total file content before public/native validation.
+A one-member native graph remains limited to 136 files (including its index and
+128 cases); offline multi-member inventories use the derived budget above.
 Links, special files, PAX records, unsafe/duplicate paths and trailing or multiple
 gzip streams refuse. Existing general suite push/pull limits are unchanged.
 

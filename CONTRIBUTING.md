@@ -165,11 +165,11 @@ Root `go test ./...` covers kmx consumers, including first-class Orka paths and
 exact-v0.10.3 Go packaged workspace evaluation/evaluated push and create-only
 digest Lift; portable conformance tests run in the suite repository.
 
-During Phase 1, `v0.1.0` is anticipated, not published. Rehearsal uses an external
-absolute `go.work` containing both checkouts, selected explicitly with `GOWORK`;
-never commit a `replace` or manufacture module sums. Published-tag verification
-with `GOWORK=off` remains a release-day gate. Consumer tests use owned snapshots
-under `testdata/agentsuite`, not module-cache paths. The fixture checker verifies
+Run release verification with `GOWORK=off` against the published dependency
+and its checked-in sums. For coordinated local development, select an external
+absolute `go.work` containing both checkouts explicitly with `GOWORK`; never
+commit a `replace`, a workspace file or manufactured module sums. Consumer tests
+use owned snapshots under `testdata/agentsuite`, not module-cache paths. The fixture checker verifies
 recorded bytes, modes and inventory offline; `--upstream /path/to/suite` optionally
 compares an upstream checkout. Internal incident-analyst fixtures are independent.
 Plane commands, administration, the source module (including checked-in SQL),

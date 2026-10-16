@@ -32,11 +32,13 @@ const (
 	artifactEntriesLimit    = 256
 )
 
-// MaxArtifactFiles fits 7 native files, 1 eval index and 128 cases.
-const MaxArtifactFiles = 136
+// MaxArtifactFiles fits 4 shared files, 4 files per member (including its eval
+// index), and 128 total cases. One member needs 136 files; 16 need at most 196.
+// Consumers still validate complete membership and per-suite case limits.
+const MaxArtifactFiles = 4 + 4*16 + 128
 
 // Artifact retains verified original packaged bytes, not source or a re-archive.
-// The limits are for the initial one-member declarative execution profile.
+// The bounds cover native inventories; execution support is consumer-owned.
 type Artifact struct {
 	descriptor ocispec.Descriptor
 	files      map[string][]byte
