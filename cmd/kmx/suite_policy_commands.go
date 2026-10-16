@@ -29,7 +29,12 @@ func readPolicyFile(path string) ([]byte, error) {
 
 func newSuitePolicyCommand() *cobra.Command {
 	var adminPath string
-	cmd := &cobra.Command{Use: "policy FILE", Short: "Resolve a portable AgentSuite policy", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "policy FILE", Short: "Resolve a portable AgentSuite policy", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) (err error) {
+		defer func() {
+			if err != nil {
+				err = &suiteDiagnosticError{err}
+			}
+		}()
 		raw, err := readPolicyFile(args[0])
 		if err != nil {
 			return err
