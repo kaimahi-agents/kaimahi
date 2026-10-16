@@ -9,7 +9,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v6 v6.6.0
-	github.com/agent-primitives/suite v0.1.0
+	github.com/agent-primitives/suite v0.2.0
 	github.com/aramase/agentsessions v0.1.3-0.20261013201528-ca85f47a2ec1
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/distribution/reference v0.6.0

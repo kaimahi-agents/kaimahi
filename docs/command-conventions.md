@@ -18,7 +18,7 @@ kmx <noun> <verb> [object] [flags]
 
 - **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
   `push` and full-workspace `eval`. Root `eval` also retains helpers (`diff`,
-  `from-sessions`, `cleanup`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
+  `export`, `from-sessions`, `cleanup`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
   `suite build/diff/push/pull/validate` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
@@ -48,6 +48,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `run` | Execute once on an independent live Orka Agent. | `kmx run --agent NAME` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
 | `eval` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
+| `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx eval export --member greeter --out ../evidence.json` |
 | `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx eval cleanup [run-id] --to dev` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `lift` | Lift an evaluated suite; no-reference workspace mode composes missing Orka eval/push/Lift. | `kmx lift --to NAME`; deploy-only: `kmx lift <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |

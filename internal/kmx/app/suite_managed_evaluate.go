@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
@@ -63,8 +64,23 @@ func (a *App) finishManagedEvaluation(ctx context.Context, p *PreparedSuiteWorks
 		}
 		return err
 	}
+	// Completion follows runtime cleanup, deferred closes and final input fences.
+	if p.publicMetadata != nil {
+		p.publicMetadata.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	var warningErr error
+	if metadataErr := p.store.publishPublicMetadata(ctx, p.completed, p.suite, p.publicMetadata); metadataErr != nil {
+		// Public metadata must never poison ordinary private completion. Retain
+		// reporting failure until after commit, without exposing writer causes.
+		if a.Err != nil {
+			if _, e := fmt.Fprintln(a.Err, metadataErr); e != nil {
+				warningErr = errors.New("public metadata warning reporting failed; inspect private managed proof before re-evaluating")
+			}
+		}
+	}
 	p.record, err = p.store.commit(ctx, p.completed, p.suite)
 	p.completed = nil
+	err = errors.Join(err, warningErr)
 	if err != nil {
 		if p.record == "" && p.options.Out != "" {
 			return fmt.Errorf("managed proof not registered; complete explicit receipt exists at %q: %w", p.options.Out, err)

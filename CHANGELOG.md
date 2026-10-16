@@ -24,6 +24,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- `kmx eval export --member ID --out FILE` writes detached portable evaluation
+  evidence with suite v0.2.0's shared schema/types/offline verifier. It selects
+  the latest completed exact-suite/member record without model/cluster/registry
+  calls, preserves every case/run/assertion outcome and refuses incomplete proof.
+  Fresh evaluation from a clean VCS-stamped build is required: missing revision,
+  modified builds and older records without capture metadata cannot export.
+  `go install module@version` builds generally lack VCS settings; use a release
+  binary with recorded provenance or build from a clean checkout and re-evaluate.
+  Public evidence is unsigned consistency, not authenticity or a private
+  push/Lift gate. Existing private receipt/envelope formats remain unchanged.
+
 - Provisional KMX-local `schemaVersion: 2` member-list source supports bounded,
   deterministic offline multi-member preparation and inventory loading, with
   each member's public `evals/<member>/` index/cases and complete graph/digest
