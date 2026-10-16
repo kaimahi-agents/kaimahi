@@ -771,7 +771,7 @@ kmx eval export --workspace ./workspace --member greeter --out ../evidence.json
 `eval export` is offline. It prepares the exact selected workspace snapshot,
 requires its sole member to match `--member`, selects the latest completed
 managed record for that workspace and OCI manifest digest, and verifies the
-public projection with [suite v0.2.0's verifier](https://github.com/agent-primitives/suite/blob/v0.2.0/spec.md#824-portable-evaluation-evidence)
+public projection with [suite v0.3.1's verifier](https://github.com/agent-primitives/suite/blob/v0.3.1/spec.md#824-portable-evaluation-evidence)
 before writing. There are no model, cluster, registry or operational configuration
 calls. Multi-member workspaces, subsets and runtime/model overrides refuse.
 
@@ -804,7 +804,7 @@ offline export does not query that database or attest the compiled executable.
 KMX-owned renderer/profile digests identify the canonical build-source projection,
 not executable bytes or authenticated provenance. An optional binary digest may
 be captured from reliable Linux `/proc/self/exe`; its absence is allowed on every
-platform and it remains private companion metadata, not a v0.2.0 public-schema
+platform and it remains private companion metadata, not a public-schema
 extension or a substitute for the required module/VCS provenance. Runtime/harness
 image or declared binary identities remain distinct from the producer source
 identity.
@@ -845,9 +845,114 @@ Consumers supply an independently resolved expected subject/policy to
 `evaluation: not verified` on refusal; a CI consumer should fail closed. This
 checks unsigned consistency, not who ran the evaluation, whether observations
 are true, model attestation, trusted time or deployment readiness. It does not
-replace private `--evaluation`/`--evidence` push/Lift gates. There is no KMX
-`eval verify` command, signature policy or registry-referrer transport in this
-export slice. Offline fixture tests are not live execution qualification.
+replace private `--evaluation`/`--evidence` push/Lift gates. The offline CLI
+consumer is described below; signatures and registry-referrer transport are not
+implemented. Offline fixture tests are not live execution qualification.
+
+## Verify portable evaluation evidence in CI
+
+Commit a **reviewed `expected.json` beside the suite**. This is your acceptance
+policy, not an export of the untrusted claims you are checking. For example:
+
+```text
+verification/
+  suite-layout/      # local OCI layout, including all referenced blobs
+  evidence.json      # detached public evidence
+  expected.json      # reviewed and version-controlled ExpectedEvaluation
+```
+
+After checking out these inputs and obtaining a pinned KMX binary during CI
+setup, run the gate without network access or KMX configuration/state:
+
+```sh
+set -eu
+kmx eval verify --suite ./verification/suite-layout \
+  --evidence ./verification/evidence.json \
+  --expect ./verification/expected.json -o json
+```
+
+The digest form pins the same local artifact explicitly. It **still needs the
+bytes**; it never fetches them or searches a private preparation cache:
+
+```sh
+kmx eval verify --suite sha256:<reviewed-manifest-digest> \
+  --from-layout ./verification/suite-layout \
+  --evidence ./verification/evidence.json \
+  --expect ./verification/expected.json
+```
+
+The explicit digest must match `expected.subject.manifest.digest`, and shared
+verification binds that descriptor to the actual raw manifest bytes and complete
+content graph. Only a single-manifest OCI layout is accepted; an extracted suite
+directory or multi-reference layout refuses. The pinned suite v0.3.1 loader
+refuses FIFOs, devices, sockets and symlinks in OCI metadata/referenced blobs,
+and symlinked blob directories; these are `artifact` refusals, not blocking reads.
+Path-form `--suite` selectors cannot
+contain `:` or `@`, or begin with `//`: these reference-shaped inputs refuse even
+if a similarly named local directory exists. Verification does not prepare a
+workspace, read a managed receipt, load operational configuration, create KMX
+state, or call a runtime, model, cluster, registry or checksum database.
+
+### The reviewed expectation file
+
+`--expect` requires the complete shared
+[`agentsuite.ExpectedEvaluation`](https://github.com/agent-primitives/suite/blob/v0.3.1/evidence_types.go),
+not a subject-only JSON object and not an evidence document:
+
+| Required section | What reviewers pin independently |
+|---|---|
+| `subject` | Full OCI manifest media type/digest/size, member ID/digest, composition and build-profile digests, platform OS/architecture/variant |
+| `execution` | Runtime, model, harness, renderer, profile and non-secret configuration identities/digests |
+| `evaluator` | Accepted evaluator ID/version and policy ID/version/configuration digest |
+| `judges` | Explicit allowlist of complete model/version/policy configurations; `[]` when no judge is accepted |
+
+Include all fields, even `platform.variant: ""` and `judges: []`; null, missing,
+unknown or duplicate fields refuse. Identities and configuration digests must
+come from independently reviewed artifact descriptors and accepted producer/
+execution contracts, not from selecting fields out of `evidence.json`. The
+[export contract](#export-portable-evaluation-evidence) explains KMX's non-secret
+configuration projections; other producers need their own reviewed contract.
+
+Review expectation changes like policy changes, using your repository's required
+review or ownership rules. Do not automatically regenerate `expected.json` from
+new evidence to make a red gate pass, and do not let an untrusted change rewrite
+both the evidence and its acceptance policy without that review. KMX cannot prove
+that your expectation file was reviewed or independently authored.
+
+### Output and refusal contract
+
+On success, exit status is **0**. Text output is a bounded verified summary;
+`-o json` emits one shared `VerifiedEvaluation` document with the expected
+subject, case/run counts, claimed completion time and `unsigned: true`.
+Completion time is an unsigned claim, not a freshness guarantee. JSON is
+success-only; a refusal prints no success document to stdout.
+
+On refusal, exit status is **1**, with a fixed explanation on stderr:
+`evaluation: not verified [CODE]: …`. The typed shared refusal remains available
+to Go callers. Parser details, file paths and unverified payloads are not echoed.
+
+| Code | Meaning |
+|---|---|
+| `missing` | Required input or semantic identity is absent |
+| `malformed` | Input JSON/file shape is invalid or cannot be read safely |
+| `unsupported` | Schema, policy or feature version is unsupported |
+| `limit` | An input or declared evaluation exceeds supported bounds |
+| `artifact` | Local suite layout/content is absent, invalid or unsupported |
+| `subject` | Digest, member, platform or execution identity does not match |
+| `coverage` | Ordered cases, repeats, runs or assertions are incomplete/mismatched |
+| `policy` | Evaluator/judge configuration or recomputed outcomes disagree |
+| `unknown` | Execution or assertion observations are unknown/unavailable |
+| `not-passing` | Complete known outcomes do not pass the authored policy |
+
+Evidence and expectation files must be regular, non-symlink inputs, each at most
+4 MiB. Expectation JSON nesting/member-limit parser errors are `malformed`;
+semantic verifier limits retain the shared `limit` code. Usage errors and output
+write failures also exit 1, but are not verification refusals. A summary write
+failure never becomes a successful gate.
+
+This checks **unsigned consistency**, not who ran the evaluation, whether the
+observations are true, model/binary attestation, trusted time or deployment
+readiness. It does not authorize private evaluated push or Lift.
 
 ## Publish
 

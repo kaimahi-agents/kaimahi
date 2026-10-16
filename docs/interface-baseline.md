@@ -77,6 +77,7 @@ Workspace --create/eval--> AgentSuite artifact --push--> OCI location
 | `create` | Workspace | Author one offline member; no cluster or model call |
 | `eval` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE`; stop later cases after the first non-pass |
 | `eval export` | Latest completed exact-suite/member managed proof | Write new detached public evidence offline; captured tagged module/checksum or clean VCS provenance required, no evaluation or private-gate replacement |
+| `eval verify` | Local single-manifest OCI layout + detached evidence + reviewed ExpectedEvaluation | State-free offline CI gate; digest input also requires explicit layout, text/JSON success exits0, coded refusal exits1; no private-gate authority |
 | `push` | Prepared AgentSuite | Transfer exact OCI graph with latest completed exact-S proof, explicit --evaluation override or --unevaluated opt-out; explicit tags unchanged, bare push uses saved `repository:s-<S>`; no deployment |
 | `lift` | Workspace or exact supported packaged native AgentSuite | No-reference `--to NAME` composes missing Orka eval/push/Lift with one frozen-plan confirmation and verified exact-version skips. Explicit reference stays deploy-only by digest with private evidence; Orka uses `--inference`, kagent uses `--bindings`; `--plan` has no execution/publication/admission |
 | `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |

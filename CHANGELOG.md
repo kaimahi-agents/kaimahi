@@ -32,6 +32,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   evaluation, repair or annotation backfill. Ready is not answered/evaluated;
   unsigned records do not prove original UID continuity.
 
+- `kmx eval verify --suite LAYOUT --evidence FILE --expect FILE` checks detached
+  public evidence offline using shared suite v0.3.1 VerifyEvaluation. Digest input
+  requires explicit `--from-layout DIR`, without registry/cache/state lookup.
+  Commit a complete reviewed ExpectedEvaluation JSON beside the suite for CI;
+  never derive accepted identities/policy from evidence being checked. Success
+  exits0 with text or `-o json` summary; typed safe refusals exit1. No model,
+  cluster, configuration or private push/Lift gate changes. Unsigned consistency
+  does not authenticate an evaluator or attest execution truth/readiness. The
+  published v0.3.1 loader refuses special files/symlinks in OCI metadata and
+  referenced blobs instead of blocking on FIFO inputs; module sums are pinned.
+
 - Release Lift stamps newly created Orka/kagent primary objects with non-secret
   `kaimahi.dev/lift-record` metadata: suite and consumed receipt identity,
   evaluation environment, actual promotion gate and UTC attempt time. Operators
@@ -39,8 +50,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   retain canonical evidence and acknowledged outcomes, including partial failures.
   Exact reuse and verified skips stay no-write; no provenance backfill, replay
   authority or destination-status command is added.
+
 - `kmx eval export --member ID --out FILE` writes detached portable evaluation
-  evidence with suite v0.2.0's shared schema/types/offline verifier. It selects
+  evidence with suite v0.3.1's shared schema/types/offline verifier. It selects
   the latest completed exact-suite/member record without model/cluster/registry
   calls, preserves every case/run/assertion outcome and refuses incomplete proof.
   Fresh evaluation must capture a tagged Go module version plus module checksum,
