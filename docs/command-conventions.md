@@ -52,6 +52,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx eval verify --suite ./layout --evidence evidence.json --expect expected.json` |
 | `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx eval cleanup [run-id] --to dev` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
+| `policy` | Resolve portable suite restrictions offline without granting authority or selecting an enforcement provider. | `kmx suite policy POLICY.json [--administrative-policy ADMIN.json]` |
 | `lift` | Lift an evaluated suite; no-reference workspace mode composes missing Orka eval/push/Lift. | `kmx lift --to NAME`; deploy-only: `kmx lift <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |
 | `result` | Retrieve the outcome of an existing execution. | `kmx task result <task>` |
 

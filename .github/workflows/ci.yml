@@ -811,6 +811,12 @@ jobs:
           done
           ! grep -q -- '--- SKIP:' state-dir.out app-state.out
 
+          go test ./cmd/kmx \
+            -run '^TestPrivateTempDirReturnsCanonicalPrivatePath$' \
+            -count=1 -v | tee private-temp-dir.out
+          grep -q -- '--- PASS: TestPrivateTempDirReturnsCanonicalPrivatePath' private-temp-dir.out
+          ! grep -q -- '--- SKIP:' private-temp-dir.out
+
   # Existing native shards prove quickstart, exact-version kagent create,
   # Orka runtime and Helm integration, and clusterless live evaluation.
   # Their docs guards and schedule semantics remain unchanged.

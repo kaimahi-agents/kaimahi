@@ -30,11 +30,66 @@ func suiteEvalSource(t *testing.T) (string, string) {
 
 func privateTempDir(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := filepath.Abs(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Chmod(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved = filepath.Clean(resolved)
+	if !filepath.IsAbs(resolved) {
+		t.Fatalf("private temp directory is not absolute: %q", resolved)
+	}
+	return resolved
+}
+
+func TestPrivateTempDirReturnsCanonicalPrivatePath(t *testing.T) {
+	base, err := os.MkdirTemp("", "kmx-private-temp-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(base); err != nil {
+			t.Errorf("remove temporary root: %v", err)
+		}
+	})
+	target := filepath.Join(base, "target")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "alias")
+	if err := os.Symlink(target, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", alias)
+
+	got := privateTempDir(t)
+	canonicalTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(canonicalTarget, got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		t.Fatalf("private temp directory %q is outside canonical target %q", got, canonicalTarget)
+	}
+	if strings.Contains(got, alias) {
+		t.Fatalf("private temp directory retained symlink alias: %q", got)
+	}
+	info, err := os.Stat(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotMode := info.Mode().Perm(); gotMode != 0700 {
+		t.Fatalf("private temp directory mode = %#o, want 0700", gotMode)
+	}
 }
 
 func TestSuiteEvalOfflineBeforeConfiguration(t *testing.T) {

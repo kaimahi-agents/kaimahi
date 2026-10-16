@@ -33,6 +33,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   cluster, configuration or private push/Lift gate changes. Unsigned consistency
   does not authenticate an evaluator or attest execution truth/readiness.
 
+- Release Lift stamps newly created Orka/kagent primary objects with non-secret
+  `kaimahi.dev/lift-record` metadata: suite and consumed receipt identity,
+  evaluation environment, actual promotion gate and UTC attempt time. Operators
+  can read the same record from another machine. Separate bounded private records
+  retain canonical evidence and acknowledged outcomes, including partial failures.
+  Exact reuse and verified skips stay no-write; no provenance backfill, replay
+  authority or destination-status command is added.
+
 - `kmx eval export --member ID --out FILE` writes detached portable evaluation
   evidence with suite v0.2.0's shared schema/types/offline verifier. It selects
   the latest completed exact-suite/member record without model/cluster/registry

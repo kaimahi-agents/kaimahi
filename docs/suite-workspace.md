@@ -187,8 +187,8 @@ or a current/remembered context. It runs missing evaluation, publication and
 placement in that order, using the existing disposable candidate and release gates.
 Promotion is selected automatically and disclosed as **passed on the evaluation
 target, not evaluated on the destination**; explicit `--promote=false` stays strict.
-No annotations, guided authoring, tag-based Lift, destination update or rollback
-are included.
+Newly created release objects carry the non-secret provenance described below.
+Guided authoring, tag-based Lift, destination update and rollback are not included.
 
 The default stage transcript has four stderr lines: Plan, Eval, Push and Lift;
 failures may add a safe refusal or critical cleanup warning. Skipped stages keep
@@ -228,6 +228,56 @@ A failed or uncertain evaluation/cleanup stops publication and placement. A fail
 publication can already have transferred content; inspect its incomplete/unknown
 outcome rather than assuming nothing reached the registry. Partial Lift resources
 may remain. No later stage runs as an automatic repair, retry or rollback.
+
+## Cluster-visible Lift provenance
+
+Reference Lift, composed Lift and native Quickstart stamp **newly created** Orka
+Provider/Agent and kagent ModelConfig/Agent objects with the same versioned JSON
+annotation, `kaimahi.dev/lift-record`. Existing exact Orka reuse and verified
+composed skips remain no-write: they never add, refresh or repair annotations.
+A mixed create/reuse pair can therefore have different or missing provenance;
+never attribute the new object's record to its reused companion.
+
+The annotation contains only metadata:
+
+| Field | Meaning |
+|---|---|
+| `version`, `liftID` | Version 1; opaque 32-hex-character attempt ID. |
+| `suiteDigest`, `receiptDigest`, `receiptRunID` | Exact OCI suite digest and canonical consumed receipt digest/run—not the latest available pass. |
+| `evaluation`, `target` | Concrete context, cluster UID, namespace and namespace UID for source and destination. |
+| `evaluationName` | Optional frozen named evaluation alias, supplied by composed Lift; never inferred from context names. |
+| `gate`, `evaluatedOnTarget` | Actual `same-subject` or `promotion` decision. Promotion is source-only evidence, **not evaluated on this target**; a requested `--promote` alone does not determine the gate. |
+| `attemptedAt` | UTC attempt time, not successful pair-completion time or Kubernetes creation time. |
+| `resourceSpecs` | Expected per-kind spec digests for readback comparison. |
+| `actor` | Omitted unless known; no actor is inferred from a local username or context. |
+
+A same-subject receipt describes earlier execution in that environment, **not
+fresh evaluation of newly created objects**. Readiness is separate from evaluation.
+The annotations are visible to operators with object-read permission, including
+on another machine without local Lift history. They contain no receipt body,
+prompts, answers, Secret values, binding bytes or local evidence paths. They are
+unsigned observations: copying them cannot prove original UID continuity, signer
+identity, ownership or permission to replay a placement. AgentSuite's portable
+format and KMX ownership/plan digests are unchanged.
+
+Before native admission or creates, Lift retains the canonical receipt and intent
+in separate private state at `KMX_HOME/release-lifts/<liftID>/` (under the ordinary
+KMX state directory when `KMX_HOME` is unset). Immutable `intent.json`, per-create
+`1.json`/`2.json`, and a final checkpoint up to `3.json` retain acknowledged
+identities, outcomes and readiness, including partial/failed attempts. File modes
+are 0600 under 0700 directories. Four slots are preflighted; storage is bounded to
+256 attempts and 64 MiB, with no automatic pruning. Operator retention decisions
+are separate from Lift; these records grant no skip, evaluation or recovery authority.
+
+A storage/metadata-retention error refuses further creates without retry, cleanup
+or rollback; resources already created may remain. Result JSON includes `liftID`
+and `provenanceState` (`recorded` or `unknown` on returned attempts). `recorded`
+means private observations were persisted, not that placement or evaluation passed.
+A cold composed Lift checks known storage constraints before evaluation/publication;
+late failures can still leave published content or acknowledged resources.
+`--plan`, all-reuse and already-lifted paths do not open this provenance store.
+Root `status` is still the existing runtime report; destination inventory is not
+part of this change.
 
 ## Create
 
