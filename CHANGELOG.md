@@ -22,6 +22,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+- Added internal presentation hooks to the existing native workspace Lift pipeline:
+  value-only confirmation requests and metadata-only stage progress. Custom input
+  still uses the shared context guard and source/target rechecks. This is the
+  foundation for AgentSuite-centered console integration; current CLI/console
+  commands, output and supported runtimes are unchanged.
+
 ### Added
 
 - Provisional KMX-local `schemaVersion: 2` member-list source supports bounded,

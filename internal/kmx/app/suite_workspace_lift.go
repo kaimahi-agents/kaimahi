@@ -27,6 +27,12 @@ import (
 // Rendering belongs to this backend: four stderr lines, verbose diagnostics, or
 // one JSON result on stdout. Promote nil selects disclosed source-only promotion.
 type WorkspaceLiftOptions struct {
+	// Confirm replaces only the input presentation. Its exact answer is still
+	// validated by the shared guard; cancellation/empty answers never fall back.
+	Confirm func(context.Context, WorkspaceLiftConfirmation) (string, error)
+	// Progress receives ordered metadata snapshots synchronously. Implementations
+	// must return promptly (for a TUI, enqueue into its bounded event channel).
+	Progress                              func(WorkspaceLiftProgress)
 	Workspace                             string
 	Evaluation                            SuiteWorkspaceEvaluationOptions
 	Destination                           ReleaseLiftOptions
@@ -34,6 +40,22 @@ type WorkspaceLiftOptions struct {
 	PlanOnly, Verbose, JSON               bool
 	Promote                               *bool
 	Provenance                            SuitePushProvenance
+}
+
+// WorkspaceLiftConfirmation contains value-only copies of the resolved plan and
+// challenge. Editing them cannot change the prepared source or target selections.
+type WorkspaceLiftConfirmation struct {
+	Plan                                WorkspaceLiftPlan
+	EvalNamespace, DestinationNamespace string
+	Challenge                           string
+}
+
+// WorkspaceLiftProgress reports phase state, never subprocess output, credentials,
+// prompts, answers, receipts or a placement authority. Terminal states describe
+// that phase's effects; a later persistence/close error can still fail the operation.
+type WorkspaceLiftProgress struct {
+	Stage, Status string
+	Passed, Total int
 }
 type WorkspaceLiftPlan struct {
 	SuiteDigest        string `json:"suiteDigest"`
@@ -184,7 +206,7 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 	writePlan := func() error {
 		planWritten = true
 		ending := "\n"
-		if !p.options.PlanOnly && !p.options.JSON && a.Cfg != nil && a.Cfg.Confirm == "" && a.Stdin != nil && term.IsTerminal(int(a.Stdin.Fd())) {
+		if p.options.Confirm == nil && !p.options.PlanOnly && !p.options.JSON && a.Cfg != nil && a.Cfg.Confirm == "" && a.Stdin != nil && term.IsTerminal(int(a.Stdin.Fd())) {
 			ending = ""
 			planOpen = true
 		}
@@ -251,6 +273,25 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 	if a.Cfg == nil || a.Run == nil {
 		return r, errors.New("workspace Lift requires operational configuration")
 	}
+	emit := func(stage, status string, passed, total int) {
+		if p.options.Progress != nil {
+			p.options.Progress(WorkspaceLiftProgress{Stage: stage, Status: status, Passed: passed, Total: total})
+		}
+	}
+	activeStage := "Plan"
+	emit("Plan", "running", 0, 0)
+	defer func() {
+		if err != nil && activeStage != "" {
+			status := "failed"
+			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+				status = "cancelled"
+			}
+			if activeStage == "Push" && r.Push.Status == "unknown" {
+				status = "unknown"
+			}
+			emit(activeStage, status, 0, 0)
+		}
+	}()
 	worker := *a
 	cfg := *a.Cfg
 	worker.Cfg = &cfg
@@ -370,10 +411,32 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 	if publication.record == nil {
 		r.Plan.Disclosure += "; publication of source/cases"
 	}
-	if !p.options.JSON || a.Cfg.Confirm == "" && a.Stdin != nil && term.IsTerminal(int(a.Stdin.Fd())) {
+	if !p.options.JSON || p.options.Confirm == nil && a.Cfg.Confirm == "" && a.Stdin != nil && term.IsTerminal(int(a.Stdin.Fd())) {
 		if err = writePlan(); err != nil {
 			return r, err
 		}
+	}
+	if p.options.Confirm != nil {
+		kube, e := guard.ParseKubeconfig(p.kube)
+		if e != nil {
+			return r, e
+		}
+		challenge, e := guard.PipelineChallenge(kube, []string{p.plan.EvalContext, p.plan.DestinationContext})
+		if e != nil {
+			return r, e
+		}
+		emit("Plan", "awaiting-confirmation", 0, p.plan.CaseRuns)
+		answer, e := p.options.Confirm(ctx, WorkspaceLiftConfirmation{Plan: r.Plan, EvalNamespace: p.options.Evaluation.ToNamespace, DestinationNamespace: p.options.Destination.ToNamespace, Challenge: challenge})
+		if e != nil {
+			return r, e
+		}
+		if e = ctx.Err(); e != nil {
+			return r, e
+		}
+		if answer == "" {
+			return r, errors.New("workspace Lift presentation did not confirm; no effects authorized")
+		}
+		worker.Cfg.Confirm = answer
 	}
 	grant, err := worker.workspaceLiftConsent(ctx, p, observedEval.Subject, observedDest.Subject, r.Plan.Disclosure, diagnostics)
 	if err != nil {
@@ -398,6 +461,8 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 	if err = boundary(); err != nil {
 		return r, err
 	}
+	emit("Plan", "complete", 0, p.plan.CaseRuns)
+	activeStage = "Eval"
 	if cached {
 		r.Eval.Status = "skipped"
 		for _, row := range receipt.Cases {
@@ -407,6 +472,7 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 		}
 		r.Eval.Detail = fmt.Sprintf("%d/%d runs passed on %s; fresh subject matched; candidate resources cleaned", r.Eval.Passed, r.Eval.Total, p.plan.EvalName)
 	} else {
+		emit("Eval", "running", 0, r.Eval.Total)
 		r.Eval.Status = "failed"
 		if err = p.store.reserve(ctx); err != nil {
 			return r, err
@@ -439,6 +505,8 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 			return r, err
 		}
 	}
+	emit("Eval", r.Eval.Status, r.Eval.Passed, r.Eval.Total)
+	activeStage = ""
 	if err = boundary(); err != nil {
 		return r, err
 	}
@@ -475,6 +543,8 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 			return r, err
 		}
 		r.Push.Status = "unknown"
+		activeStage = "Push"
+		emit("Push", "running", 0, 0)
 		r.Push.Detail = "publication incomplete/unknown; copied blobs or tag may exist; destination unchanged"
 		var pushed suiteoras.PushResult
 		pushed, err = suiteoras.PushLayoutRegistry(ctx, p.review.prepared.Path, p.options.Repository+":s-"+strings.TrimPrefix(p.plan.SuiteDigest, "sha256:"), p.options.Destination.PlainHTTP, false, p.review.prepared.Descriptor, pushOptions)
@@ -495,6 +565,8 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 			return r, err
 		}
 	}
+	emit("Push", r.Push.Status, 0, 0)
+	activeStage = ""
 	if err = boundary(); err != nil {
 		return r, err
 	}
@@ -504,12 +576,15 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 		}
 		r.Lift.Status = "skipped"
 		r.Lift.Detail = p.plan.DestinationName + " Ready; recorded placement verified GET-only"
+		emit("Lift", "skipped", 0, 0)
 		return r, nil
 	}
 	opt := p.options.Destination
 	opt.Reference = p.options.Repository + "@" + p.plan.SuiteDigest
 	opt.Evidence = evidence.path
 	r.Lift.Status = "failed"
+	activeStage = "Lift"
+	emit("Lift", "running", 0, 0)
 	release, err := worker.PrepareReleaseLift(ctx, opt)
 	if err != nil {
 		r.Lift.Error = err.Error()
@@ -529,6 +604,10 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 	r.Lift.Detail = p.plan.DestinationName + " Ready; passed on " + p.plan.EvalName + ", not evaluated on " + p.plan.DestinationName
 	if err = placement.commit(ctx, result.placement); err != nil {
 		r.Lift.Detail += "; placement succeeded, completion persistence incomplete"
+	}
+	if err == nil {
+		emit("Lift", "complete", 0, 0)
+		activeStage = ""
 	}
 	return r, err
 }

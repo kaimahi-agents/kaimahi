@@ -41,6 +41,12 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   with verbose/JSON details. Exact-version private completion observations authorize
   GET-only skips, never Apply/reuse/adoption/repair. Keep kagent out of composed
   Lift until its candidate-scoped placement and ownership-safe cleanup are qualified.
+  Internal workspace Lift presentation hooks receive value-only plan/challenge
+  snapshots and metadata-only stage events. Callback answers still pass the shared
+  pipeline guard and post-consent source/target checks; blank/cancelled answers
+  never fall back to terminal or environment consent. Callbacks grant no placement
+  or evaluation authority. Keep the normal CLI output contract and offline plan
+  behavior; console wiring is a separate incremental change.
 - Everyday operations are root `create/chat/run`; live inspection is `orka show/list`.
   Legacy `bundle` operations are removed outright without aliases/stubs.
   `kmx agent` is removed entirely, without an alias or retirement stub.

@@ -4,6 +4,51 @@
 
 ## Direction
 
+### Incremental AgentSuite-centered console delivery
+
+The integration prototype is being split into independently reviewable changes.
+The intended console treats an authored AgentSuite and its exact packaged version
+as the lifecycle object; members are agent rows, and independently deployed Agents
+remain independent resources until explicitly extracted. The UI selects and
+presents; the normal CLI application operations own evaluation, cleanup, evidence,
+publication and Lift. This sequence is a delivery plan, not a claim that all of it
+is implemented on main:
+
+1. **Shared workspace-Lift presentation foundation (this change).** Optional
+   `WorkspaceLiftOptions.Confirm` receives a value-only plan, target namespaces and
+   the shared guard's exact challenge. It returns the user's text, not an approval
+   token. The existing guard and post-consent source/target checks still decide
+   whether work can proceed. Optional `Progress` reports ordered Plan/Eval/Push/Lift
+   stage/status/count snapshots, with no raw logs, prompts, answers or credentials.
+   CLI output and offline plan-only behavior remain unchanged. This internal seam
+   is not yet wired into the current console.
+2. **Native AgentSuite console.** Make source/package/member selection central;
+   connect source/case review and the existing composed workspace Lift through the
+   foundation hooks. Preserve one backend, shared free-port selection, public
+   packaged cases and the pinned external AgentSuite library. Land tests proving
+   selections reach the same operation and cannot skip its consent/evidence checks.
+3. **Extraction and retained member interaction.** Separate read-only extraction,
+   live inspection and retained status/run/chat from console presentation. Confirm
+   how private invocation evidence relates to completion records and coordinate
+   with [#539](https://github.com/kaimahi-agents/kaimahi/pull/539); completion skips
+   never become reuse/adoption authority.
+4. **Guided access, inference and runtime setup.** Add fuzzy context/AKS/ACR/model
+   discovery, explicit credential setup and isolated runtime preparation in small
+   runtime-specific slices, using existing guards and reporting unknowns honestly.
+5. **Image profile integration and interaction polish.** Refresh
+   [#448](https://github.com/kaimahi-agents/kaimahi/pull/448) and
+   [#449](https://github.com/kaimahi-agents/kaimahi/pull/449) against
+   `github.com/agent-primitives/suite` rather than restoring a local spec copy;
+   layer mouse/fuzzy-search polish and explicit local host-execution choices on
+   the common console. Image evidence stays runtime-specific.
+
+Every chunk must build and pass its affected CLI/application tests and repository
+checks. The prototype's prior headless live AKS/ACR run is integration evidence
+only, not qualification of this first chunk or the latest external format. First
+chunk tests cover rejected/empty/cancelled consent, source/binding drift, immutable
+presentation copies, successful execution, GET-only repeat skips and inert offline
+planning. Keep generated artifacts and authored local agents out of these PRs.
+
 The workspace is what people author; the suite is the portable release and lifecycle object. Everyday commands stay few, while their internals are split into small capabilities.
 
 This develops the [walkthrough](https://github.com/kaimahi-agents/kaimahi/issues/328#issuecomment-6104051141) and Tatsinnit's reply, alongside the [lifecycle interface decision](kmx-lifecycle-interfaces.md), not as a replacement for it. Follow-ups belong to [#344](https://github.com/kaimahi-agents/kaimahi/issues/344). The merged [#355](https://github.com/kaimahi-agents/kaimahi/pull/355) makes the portable format public in `agentsuite/`; construction and transfer remain internal. Current supported packaged-native placement uses root `lift`; future image-backed placement should extend that verb rather than introduce `suite lift` as a second lifecycle.

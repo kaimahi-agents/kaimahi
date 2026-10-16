@@ -24,6 +24,12 @@ func TestPipelineConfirmationContexts(t *testing.T) {
 		{[]string{"kind-dev"}, "", false},
 		{[]string{"absent"}, "absent", false},
 	} {
+		if tc.pass {
+			challenge, err := PipelineChallenge(cfg, tc.contexts)
+			if err != nil || challenge != tc.confirm {
+				t.Fatalf("presentation challenge=%q err=%v want=%q", challenge, err, tc.confirm)
+			}
+		}
 		if err := ConfirmPipeline(context.Background(), cfg, tc.contexts, tc.confirm, "eval,push,lift", io.Discard, nil); (err == nil) != tc.pass {
 			t.Errorf("contexts=%v confirm=%q err=%v", tc.contexts, tc.confirm, err)
 		}
