@@ -87,7 +87,7 @@ func (p *PreparedWorkspaceLift) Close() error {
 // PrepareWorkspaceLift is offline and must precede operational configuration.
 // Cold plan-only performs source preparation, not proof lookup or state writes.
 func PrepareWorkspaceLift(ctx context.Context, opt WorkspaceLiftOptions) (*PreparedWorkspaceLift, error) {
-	if opt.Evaluation.Workspace != "" && opt.Evaluation.Workspace != opt.Workspace || opt.Evaluation.Out != "" || opt.Evaluation.Bindings != "" || opt.Evaluation.DevelopmentHost != "" || opt.Destination.Reference != "" || opt.Destination.FromLayout != "" || opt.Destination.Evidence != "" {
+	if opt.Evaluation.Workspace != "" && opt.Evaluation.Workspace != opt.Workspace || opt.Evaluation.Out != "" || opt.Evaluation.JSON || opt.Evaluation.Bindings != "" || opt.Evaluation.DevelopmentHost != "" || opt.Destination.Reference != "" || opt.Destination.FromLayout != "" || opt.Destination.Evidence != "" {
 		return nil, errors.New("workspace Lift requires only frozen workspace and concrete Orka selections")
 	}
 	ref, err := registry.ParseReference(opt.Repository)

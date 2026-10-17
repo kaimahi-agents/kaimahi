@@ -263,7 +263,7 @@ func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 		// Never serialize causes: transports, writers and runtime errors can
 		// carry content. Publication/finalization failures may leave proof.
 		report.Error = "native evaluation failed; inspect diagnostics and private proof state before retrying"
-		if p.runs.Aborted {
+		if p.runs.Aborted || p.runs.ReportingFailed {
 			report.Detail += "; no passing evidence published"
 		}
 	}

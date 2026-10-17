@@ -163,6 +163,43 @@ func TestWorkspaceLiftPlanColdOffline(t *testing.T) {
 	}
 }
 
+func TestWorkspaceLiftEvaluationJSONRefusedOffline(t *testing.T) {
+	t.Setenv("KMX_HOME", privateSuiteDir(t))
+	eval := nativeEvaluationOptions(t)
+	eval.Out, eval.JSON = "", true
+	opt := WorkspaceLiftOptions{Workspace: eval.Workspace, Evaluation: eval, Destination: ReleaseLiftOptions{ToContext: "remote-prod", Inference: "provider:inference"}, EvalName: "dev", DestinationName: "prod", Repository: "registry.invalid/agents"}
+	p, err := PrepareWorkspaceLift(t.Context(), opt)
+	if p != nil {
+		p.Close()
+	}
+	if p != nil || err == nil || err.Error() != "workspace Lift requires only frozen workspace and concrete Orka selections" {
+		t.Fatalf("nested evaluation JSON was not refused offline: prepared=%t err=%v", p != nil, err)
+	}
+	state, e := config.StateDir()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e := os.Stat(filepath.Join(state, "suites")); !os.IsNotExist(e) {
+		t.Fatal("nested JSON refusal reached private proof state", e)
+	}
+
+	// The outer format still owns the single composed report, without config.
+	opt.Evaluation.JSON, opt.JSON, opt.PlanOnly = false, true, true
+	p, err = PrepareWorkspaceLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	var stdout bytes.Buffer
+	if _, err := (&App{Out: &stdout}).LiftWorkspace(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+	var report WorkspaceLiftResult
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil || report.Eval.Status != "not-attempted" || report.Plan.CaseRuns != 2 {
+		t.Fatal("outer Lift JSON lost its offline report", stdout.String(), err)
+	}
+}
+
 func TestWorkspaceLiftFailureStopsLaterEffects(t *testing.T) {
 	for _, mode := range []string{"case", "cleanup", "consent", "source", "strict", "drift"} {
 		t.Run(mode, func(t *testing.T) {

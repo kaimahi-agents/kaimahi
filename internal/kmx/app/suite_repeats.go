@@ -108,9 +108,10 @@ func validateSuiteRunGroups(rows []suitePassingCase) error {
 // SuiteRunExecutionSummary is run-local Orka reporting, never passing evidence.
 // A TaskUID records execution even when no assertions could be evaluated.
 type SuiteRunExecutionSummary struct {
-	Executed    int  `json:"executed"`
-	NotExecuted int  `json:"notExecuted"`
-	Aborted     bool `json:"aborted"`
+	Executed        int  `json:"executed"`
+	NotExecuted     int  `json:"notExecuted"`
+	Aborted         bool `json:"aborted"`
+	ReportingFailed bool `json:"reportingFailed,omitempty"`
 }
 
 type suiteRunSummary struct {
@@ -119,8 +120,15 @@ type suiteRunSummary struct {
 }
 
 func (s suiteRunSummary) String() string {
-	if s.Aborted {
-		return fmt.Sprintf("%d of %d runs executed; %d passed; aborted on execution error; %d not executed", s.Executed, s.Total, s.Passed, s.NotExecuted)
+	if s.Aborted || s.ReportingFailed {
+		reason := "reporting error"
+		if s.Aborted {
+			reason = "execution error"
+			if s.ReportingFailed {
+				reason += " and reporting error"
+			}
+		}
+		return fmt.Sprintf("%d of %d runs executed; %d passed; aborted on %s; %d not executed", s.Executed, s.Total, s.Passed, reason, s.NotExecuted)
 	}
 	if s.NotExecuted > 0 {
 		return fmt.Sprintf("%d of %d runs executed; %d passed; %d not executed", s.Executed, s.Total, s.Passed, s.NotExecuted)
@@ -137,10 +145,10 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 // Only the Orka candidate caller supplies a TaskUID-based diagnostic summary.
 // Other runtimes retain their own execution identities and existing behavior.
 func evaluateSuiteRunsReporting(ctx context.Context, frames []suitePassingInventoryCase, timeout time.Duration, out io.Writer, run func(context.Context, suitePassingInventoryCase) (suitePassingObservation, error), summary *suiteRunSummary) (observations []suitePassingObservation, err error) {
-	thresholdMiss := false
+	thresholdMiss, reportingOnly := false, false
 	if summary != nil {
 		*summary = suiteRunSummary{Total: len(frames), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(frames)}}
-		defer func() { summary.Aborted = err != nil && !thresholdMiss }()
+		defer func() { summary.Aborted = err != nil && !thresholdMiss && !reportingOnly }()
 	}
 	observations = make([]suitePassingObservation, 0, len(frames))
 	for i := 0; i < len(frames); {
@@ -184,7 +192,15 @@ func evaluateSuiteRunsReporting(ctx context.Context, frames []suitePassingInvent
 			if errors.As(err, &port) {
 				result = port.Error()
 			}
+			// Diagnostic delivery cannot erase a validated passing observation.
+			if summary != nil && err == nil && verdict == agentruntime.EvaluationPass {
+				summary.Passed++
+			}
 			if _, outputErr := fmt.Fprintf(out, "%s: %s\n", label, result); outputErr != nil {
+				reportingOnly = complete && verdict != agentruntime.EvaluationUnknown && (err == nil || errors.Is(err, errSuiteNativeCaseFailed) && verdict == agentruntime.EvaluationFail)
+				if summary != nil {
+					summary.ReportingFailed = true
+				}
 				cancel()
 				return nil, outputErr
 			}
@@ -207,9 +223,6 @@ func evaluateSuiteRunsReporting(ctx context.Context, frames []suitePassingInvent
 			observed.Verdict = verdict
 			if verdict == agentruntime.EvaluationPass {
 				passes++
-				if summary != nil {
-					summary.Passed++
-				}
 			}
 			observations = append(observations, observed)
 			cancel()
