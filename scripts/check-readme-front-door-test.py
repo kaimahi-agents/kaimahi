@@ -15,10 +15,10 @@ INSTALL = """brew install kaimahi-agents/tap/kmx
 # or
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 # or
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.8.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.8.1
 """
 RELEASE_NOTE = """> [!NOTE]
-> The table below describes v0.8.0's one-member workflow; these docs follow main and may also describe unreleased behavior.
+> The table below describes v0.8.1's one-member workflow; these docs follow main and may also describe unreleased behavior.
 """
 JOURNEY = RELEASE_NOTE + """| Stage | Current checkout |
 |---|---|
@@ -90,7 +90,7 @@ for label, literal in [
 for label, literal in [
     ("Homebrew install", "brew install kaimahi-agents/tap/kmx\n"),
     ("release installer", "curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh\n"),
-    ("pinned Go install", "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.8.0\n"),
+    ("pinned Go install", "go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.8.1\n"),
     ("kmx version", "kmx version\n"),
     ("kmx quickstart", "kmx quickstart\n"),
 ]:
@@ -113,9 +113,9 @@ CASES += [
     ("lift qualification missing", GOOD.replace("qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation", "has tests"), "Lift qualification scope is missing"),
     ("lift qualification broadened", GOOD.replace("it does not prove every promotion, creation or partial-outcome path", "root Lift proves every path"), "Lift qualification limits are missing"),
     ("lift qualification after table", GOOD.replace("Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n", "").replace("## Getting Starter: Get Your First Answer", "Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n## Getting Starter: Get Your First Answer"), "Lift qualification scope is missing"),
-    ("late release note", GOOD.replace(RELEASE_NOTE, "").replace("| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |", "| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |\n" + RELEASE_NOTE.rstrip()), "v0.8.0 release note must precede"),
-    ("missing release note", GOOD.replace(RELEASE_NOTE, ""), "v0.8.0 release note must precede"),
-    ("old release note", GOOD.replace("The table below describes v0.8.0's one-member workflow; these docs follow main and may also describe unreleased behavior.", "The table below describes unreleased main; v0.6.0 keeps its released defaults."), "v0.8.0 release note must precede"),
+    ("late release note", GOOD.replace(RELEASE_NOTE, "").replace("| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |", "| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |\n" + RELEASE_NOTE.rstrip()), "v0.8.1 release note must precede"),
+    ("missing release note", GOOD.replace(RELEASE_NOTE, ""), "v0.8.1 release note must precede"),
+    ("old release note", GOOD.replace("The table below describes v0.8.1's one-member workflow; these docs follow main and may also describe unreleased behavior.", "The table below describes unreleased main; v0.6.0 keeps its released defaults."), "v0.8.1 release note must precede"),
     ("outdated table label", GOOD.replace("| Stage | Current checkout |", "| Stage | Current development build |"), "exact two-column header"),
     ("malformed table separator", GOOD.replace("|---|---|", "|---|"), "separator is missing or malformed"),
     ("extra suite row", GOOD.replace("| **Lift** |", "| **Inspect** | Future status. |\n| **Lift** |"), "exactly four rows"),
@@ -132,8 +132,8 @@ CASES += [
     ("agentsessions judge policy missing", GOOD.replace("explicit judging and repeated cases share Orka/kagent semantics", "judging remains unsupported"), "agentsessions boundary is missing"),
     ("runtime provider distinction removed", GOOD.replace("A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.\n", ""), "runtime/inference distinction is missing"),
     ("wrong tap", GOOD.replace("kaimahi-agents/tap/kmx", "other/tap/kmx"), "Homebrew install is missing"),
-    ("moving Go source", GOOD.replace("cmd/kmx@v0.8.0", "cmd/kmx@main"), "pinned Go install is missing"),
-    ("old Go release", GOOD.replace("cmd/kmx@v0.8.0", "cmd/kmx@v0.7.0"), "pinned Go install is missing"),
+    ("moving Go source", GOOD.replace("cmd/kmx@v0.8.1", "cmd/kmx@main"), "pinned Go install is missing"),
+    ("old Go release", GOOD.replace("cmd/kmx@v0.8.1", "cmd/kmx@v0.8.0"), "pinned Go install is missing"),
     ("wrong installer", GOOD.replace("kaimahi/main/install.sh", "other/main/install.sh"), "release installer is missing"),
     ("install routes out of order", GOOD.replace("brew install kaimahi-agents/tap/kmx\n# or\ncurl", "curl").replace("install.sh | sh\n# or\ngo install", "install.sh | sh\n# or\nbrew install kaimahi-agents/tap/kmx\n# or\ngo install"), "release installer is missing"),
     ("first answer out of order", GOOD.replace("kmx version\nkmx quickstart", "kmx quickstart\nkmx version"), "kmx quickstart is missing"),

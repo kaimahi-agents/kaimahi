@@ -189,7 +189,7 @@ export default defineConfig({
         text: 'main · development',
         items: [
           { text: 'These docs follow main', link: '/docs/docs-site#version-boundary' },
-          { text: 'Stable release v0.8.0', link: `${repositoryURL}/tree/v0.8.0` }
+          { text: 'Stable release v0.8.1', link: `${repositoryURL}/tree/v0.8.1` }
         ]
       }
     ],

@@ -29,13 +29,13 @@ and Lift.
 
 ## Create, Prove, Lift
 
-**Create → Prove → Lift** is available in v0.8.0 for one-member native Orka and
+**Create → Prove → Lift** is available in v0.8.1 for one-member native Orka and
 exact-v0.10.3 Go kagent suites. Bounded CI qualifies root Lift for Orka exact
 reuse, bounded absent-pair registry promotion and kagent fresh-target creation;
 it does not prove every promotion, creation or partial-outcome path.
 
 > [!NOTE]
-> The table below describes v0.8.0's one-member workflow; these docs follow main and may also describe unreleased behavior.
+> The table below describes v0.8.1's one-member workflow; these docs follow main and may also describe unreleased behavior.
 > See [command migration](CHANGELOG.md#upgrading)
 > and [releases](docs/releases.md) when upgrading from an older version.
 
@@ -68,7 +68,7 @@ brew install kaimahi-agents/tap/kmx
 # or
 curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install.sh | sh
 # or
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.8.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.8.1
 ```
 
 Check what was installed, then run the fixed, non-interactive local proof:

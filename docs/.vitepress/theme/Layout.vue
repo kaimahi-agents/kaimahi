@@ -17,7 +17,7 @@ const { Layout } = DefaultTheme
       <aside class="docs-channel" aria-label="Documentation version">
         <span class="docs-channel__signal" aria-hidden="true"></span>
         <span><strong>Development docs</strong> from <code>main</code>; unreleased behavior may appear.</span>
-        <a href="https://github.com/kaimahi-agents/kaimahi/tree/v0.8.0">Stable v0.8.0</a>
+        <a href="https://github.com/kaimahi-agents/kaimahi/tree/v0.8.1">Stable v0.8.1</a>
       </aside>
     </template>
 
@@ -25,7 +25,7 @@ const { Layout } = DefaultTheme
       <aside class="docs-channel docs-channel--page" aria-label="Documentation version">
         <span class="docs-channel__signal" aria-hidden="true"></span>
         <span><strong>Development docs</strong> from <code>main</code>.</span>
-        <a href="https://github.com/kaimahi-agents/kaimahi/tree/v0.8.0">Stable v0.8.0</a>
+        <a href="https://github.com/kaimahi-agents/kaimahi/tree/v0.8.1">Stable v0.8.1</a>
       </aside>
     </template>
 
