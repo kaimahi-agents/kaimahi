@@ -199,6 +199,7 @@ func TestPrepareRejectsUnsupportedOrUnsafeSources(t *testing.T) {
 		{"tools", "agents/greeter/member.yaml", "tools: []\n"},
 		{"delegation", "agents/greeter/member.yaml", "invokes: []\n"},
 		{"model credential", "agents/greeter/member.yaml", ""},
+		{"model placeholder", "agents/greeter/member.yaml", ""},
 		{"escaped credential", "agents/greeter/member.yaml", ""},
 		{"unsupported protocol", "agents/greeter/member.yaml", ""},
 		{"instruction escape", "agents/greeter/member.yaml", ""},
@@ -217,6 +218,8 @@ func TestPrepareRejectsUnsupportedOrUnsafeSources(t *testing.T) {
 			switch test.name {
 			case "model credential":
 				replacement = strings.ReplaceAll(original, "qwen-3.5-2b", "ghp_"+strings.Repeat("x", 36))
+			case "model placeholder":
+				replacement = strings.ReplaceAll(original, "qwen-3.5-2b", "<exact-model-or-deployment-name>")
 			case "escaped credential":
 				replacement = strings.ReplaceAll(original, "Public questions", `"\x67hp_`+strings.Repeat("x", 36)+`"`)
 			case "unsupported protocol":

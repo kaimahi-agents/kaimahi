@@ -122,7 +122,7 @@ func (a *App) Quickstart(opt QuickstartOptions) error {
 		toolchain.Report(a.Err, a.provisioned)
 	}
 
-	if err := a.GuardCreateIn("create a local cluster and a first agent", "kmx quickstart", OrkaPathNamespaces); err != nil {
+	if err := a.GuardCreateIn("create a local cluster and a first agent", a.operationCommand("quickstart"), OrkaPathNamespaces); err != nil {
 		return err
 	}
 
@@ -256,9 +256,18 @@ func shellArg(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
+func (a *App) commandExecutable() string {
+	executable := a.Executable
+	if executable == "" {
+		executable = "kmx"
+	}
+	return executable
+}
+
 // operationCommand pins follow-up actions to the context this operation used.
 func (a *App) operationCommand(args ...string) string {
-	parts := []string{"kmx", "--context", shellArg(a.Cfg.KubeContext)}
+	executable := a.commandExecutable()
+	parts := []string{shellArg(executable), "--context", shellArg(a.Cfg.KubeContext)}
 	if len(args) > 0 && (args[0] == "local" || args[0] == "up" || args[0] == "plane" || args[0] == "down") {
 		parts = append([]string{"KIND_CLUSTER=" + shellArg(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + shellArg(a.Cfg.ContainerEngine)}, parts...)
 	}

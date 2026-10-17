@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -98,35 +97,14 @@ func orkaChartCRDs(chart []byte) ([]byte, int, error) {
 	return bytes.Join(crds, []byte("\n---\n")), len(crds), nil
 }
 
-// helmMajor returns the Helm client major version, or 0 when it cannot be read.
-func (a *App) helmMajor() int {
-	out, err := a.Run.Capture("helm", "version", "--template", "{{.Version}}")
-	if err != nil {
-		return 0
-	}
-	return parseHelmMajor(out)
-}
-
-func parseHelmMajor(v string) int {
-	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
-	major, _, _ := strings.Cut(v, ".")
-	n, err := strconv.Atoi(major)
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
-}
-
 // A tag alone does not prove kmx owns a release. Only its chart version,
 // release status, explicit harness mode and marker together allow a repeat.
 func (a *App) orkaInstallState() (bool, error) {
 	listArgs := []string{"list", "-n", OrkaNamespace, "--kube-context", a.Cfg.KubeContext,
-		"-o", "json", "-f", "^" + orkaRelease + "$"}
-	// Helm 3 hides non-deployed releases unless asked; Helm 4 removed --all
-	// and lists every status by default. Unknown versions keep Helm 3 behavior.
-	if a.helmMajor() < 4 {
-		listArgs = append(listArgs, "--all")
-	}
+		"-o", "json", "-f", "^" + orkaRelease + "$",
+		// Helm 3's --all was removed in Helm 4. These filters are shared by
+		// both versions and keep partial/history releases visible.
+		"--deployed", "--failed", "--pending", "--uninstalling", "--superseded", "--uninstalled"}
 	raw, err := a.Run.Capture("helm", listArgs...)
 	if err != nil {
 		return false, fmt.Errorf("cannot inspect Orka Helm releases: %w", err)
@@ -198,6 +176,13 @@ func (a *App) orkaInstallState() (bool, error) {
 			}
 			return false, fmt.Errorf("kmx-owned Orka Helm release is %s; refusing automatic retry over a partial installation. Inspect `helm --kube-context %s -n %s status %s` and Pod events. After resolving any pending operation, an operator may explicitly retry the same SHA-256-verified chart with `helm --kube-context %s -n %s upgrade %s <verified-orka-0.2.0.tgz> --reuse-values --wait` (never --force), or clean the target before retrying kmx. %s", status, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
 		}
+		status := releases[0].Status
+		switch status {
+		case "deployed", "failed", "pending-install", "pending-upgrade", "pending-rollback", "uninstalling", "superseded", "uninstalled":
+		default:
+			status = "an unrecognized state"
+		}
+		return false, fmt.Errorf("existing Orka %s Helm release is %s but lacks KMX's exact ownership marker or harness-v2/fullname configuration; refusing to adopt or overwrite it. Inspect `helm --kube-context %s -n %s get values %s` and `helm --kube-context %s -n %s status %s` before choosing an operator-managed repair or cleanup. %s", OrkaVersion, status, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, shellArg(a.Cfg.KubeContext), OrkaNamespace, orkaRelease, a.orkaInstallRecovery())
 	}
 	if len(releases) != 0 {
 		return false, fmt.Errorf("existing Orka Helm release is not kmx's %s harness-v2 chart; refusing to overwrite it. %s", OrkaVersion, a.orkaInstallRecovery())

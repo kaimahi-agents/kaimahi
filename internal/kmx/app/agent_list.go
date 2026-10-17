@@ -11,10 +11,9 @@ import (
 
 // ListAgents prints the Orka Agents in one namespace.
 //
-// These are the agents `kmx agent create` writes and `kmx agent show`
-// inspects. Orka watches namespaces explicitly, so the namespace is part of
-// the question: an omitted one reads the namespace the pinned installer uses,
-// which is the same default `kmx agent chat` resolves against.
+// These are live Orka Agents. Orka watches namespaces explicitly, so the
+// namespace is part of the question; an omitted one reads the namespace the
+// pinned installer uses.
 func (a *App) ListAgents(output, namespace string) error {
 	namespace = strings.TrimSpace(namespace)
 	if namespace == "" {
@@ -76,8 +75,8 @@ func (a *App) listOrkaAgents(output, namespace string) error {
 	fmt.Fprintln(a.Out, ui.Heading(heading))
 	if len(rows) == 0 {
 		fmt.Fprintln(a.Out, "  none")
-		a.notef("  Nothing in %s. `%s` makes one.", namespace,
-			a.operationCommand("create", "--live", "<name>", "--namespace", namespace))
+		a.notef("  Nothing in %s. Author workspace source with `%s`, prove it with eval, then Lift its immutable digest.", namespace,
+			a.operationCommand("create", "<name>", "--workspace", "<directory>", "--model", "<exact-model>", "--instructions", "<file>"))
 		return nil
 	}
 	humanTable(a.Out, orkaAgentColumns, rows)

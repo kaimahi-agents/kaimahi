@@ -136,7 +136,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			}
 			// Named guard retry advice must preserve this digest, evidence and selectors,
 			// not synthesize the legacy create route or refused global --context flag.
-			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine), "kmx"}
+			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine), quoteShell(state.executable())}
 			for _, arg := range state.argv {
 				parts = append(parts, quoteShell(arg))
 			}

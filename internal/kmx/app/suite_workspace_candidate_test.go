@@ -205,6 +205,9 @@ func TestCandidateCorePrivateLifecycleOrderingAndCancellation(t *testing.T) {
 
 func TestCandidateCorePublicEvaluationUsesCandidate(t *testing.T) {
 	a, _, f, state := publicNativeEvaluationFixture(t)
+	a.Executable = "./bin with space/kmx"
+	diagnostics := &bytes.Buffer{}
+	a.Err = diagnostics
 	opt := nativeEvaluationOptions(t)
 	opt.ResultPort = f.opt.ResultPort
 	p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
@@ -230,6 +233,9 @@ func TestCandidateCorePublicEvaluationUsesCandidate(t *testing.T) {
 	}
 	if len(marked) != 3 || marked["Provider"] != marked["Agent"] || marked["Agent"] != marked["Task"] {
 		t.Fatal("full run annotation not stamped on all KMX roots", marked)
+	}
+	if !strings.Contains(diagnostics.String(), "Recovery: './bin with space/kmx' eval cleanup") {
+		t.Fatalf("candidate recovery changed executable:\n%s", diagnostics)
 	}
 	receipt, err := readSuitePassingReceipt(t.Context(), opt.Out)
 	if err != nil || receipt.CandidateCleanup != "complete" || !evaluationRunID(receipt.Subject.EvaluationRun) || receipt.Subject.PhysicalMember == "" || len(state.deletes) != 4 || len(state.objects) != 0 {

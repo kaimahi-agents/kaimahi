@@ -28,7 +28,11 @@ func liftAuditApp(t *testing.T) (*App, *bytes.Buffer, string) {
 	t.Setenv("LIFT_FAIL", "")
 	t.Setenv("KAIMAHI_CONFIRM", "wrong-inherited-value")
 	for name, body := range map[string]string{
-		"az": `printf 'az %s\n' "$*" >> "$LIFT_CALLS"
+		"az": `[ -d "$AZURE_EXTENSION_DIR" ] || exit 97
+[ "$AZURE_EXTENSION_SYS_DIR" = "$AZURE_EXTENSION_DIR" ] || exit 97
+[ -z "$AZURE_EXTENSION_DEV_SOURCES" ] || exit 97
+[ "$AZURE_EXTENSION_USE_DYNAMIC_INSTALL" = no ] || exit 97
+printf 'az %s\n' "$*" >> "$LIFT_CALLS"
 case "$*" in
   version) exit 0 ;;
   'account show'*) printf '%s\n' '{"id":"test-subscription","name":"Test","user":{"name":"test"}}' ;;
@@ -60,7 +64,7 @@ esac`,
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"bash", "sed"} {
+	for _, name := range []string{"bash", "mktemp", "rm", "sed"} {
 		path, err := exec.LookPath(name)
 		if err != nil {
 			t.Fatal(err)
@@ -219,12 +223,13 @@ func TestLiftDownUnknownAndZeroAreNotCompleteCleanup(t *testing.T) {
 }
 
 func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
-	a := &App{Cfg: &config.Config{KubeContext: "kind-unrelated"}}
+	a := &App{Cfg: &config.Config{KubeContext: "kind-unrelated"}, Executable: "./bin with space/kmx"}
 	opt := lift.Options{Payload: lift.PayloadOrka, ResourceGroup: "demo(rg)", Cluster: "demo-cluster", Registry: "reg12345",
 		Location: "eastus", NodeSize: "size'$(false)", NodeCount: 3, NetworkPolicy: "calico", NetworkPolicySet: true, Step: "orka"}
 	command := a.liftCommand(opt, false)
-	// Execute only a shell function named kmx, never a real command.
-	out, err := exec.Command("/bin/sh", "-c", "kmx() { printf '%s\\000' \"$@\"; }; "+command).Output()
+	// Replace the quoted executable with a shell function; never run a real command.
+	probe := strings.Replace(command, shellArg(a.Executable), "kmx", 1)
+	out, err := exec.Command("/bin/sh", "-c", "kmx() { printf '%s\\000' \"$@\"; }; "+probe).Output()
 	if err != nil {
 		t.Fatalf("command is not shell-safe: %s: %v", command, err)
 	}
@@ -241,6 +246,9 @@ func TestLiftRecoveryCommandsPreserveOptionsAndShellArguments(t *testing.T) {
 	// operator cannot paste back, which is the only thing it is for.
 	if !strings.Contains(command, "--payload "+opt.Payload) {
 		t.Fatalf("the recovery command omits the mandatory payload: %s", command)
+	}
+	if !strings.HasPrefix(command, shellArg(a.Executable)+" --context ") {
+		t.Fatalf("the recovery command changed the invoking executable: %s", command)
 	}
 	opt.BringYourOwn = true
 	down := a.liftCommand(opt, true)

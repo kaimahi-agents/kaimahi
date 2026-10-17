@@ -290,7 +290,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   capabilities have production implementations and evidence.
 - Preserve historical release records and explicit compatibility tests when
   updating current examples. Do not bulk-rename historical text or serialized
-  state. Generated recovery commands must preserve selectors and shell quoting.
+  state. Generated recovery commands must preserve the invoking executable,
+  selectors and shell quoting.
 
 ## Offline multi-member workspace boundary
 

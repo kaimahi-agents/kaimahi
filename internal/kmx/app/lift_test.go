@@ -1,8 +1,10 @@
 package app
 
 import (
+	"bytes"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -52,6 +54,214 @@ func TestAKSUpPrintsDirectLiftCommandsWhenLiftInvokesIt(t *testing.T) {
 	if !strings.Contains(text, `if [ -n "${KMX_LIFT_CONTINUE:-}" ]`) ||
 		!strings.Contains(text, "This standalone script does not create a KMX ownership record") {
 		t.Error("aks-up.sh no longer keeps its direct-script guidance as the fallback")
+	}
+}
+
+func TestAKSUpIsolatesExtensionsAndUsesCoreClusterReads(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	extensionPath := filepath.Join(dir, "extension-path")
+	configDir := filepath.Join(dir, "caller-azure-config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AKS_RESOURCE_GROUP", "demo-rg")
+	t.Setenv("ACR_NAME", "reg12345")
+	t.Setenv("AKS_CLUSTER", "demo-cluster")
+	t.Setenv("AKS_NETWORK_POLICY", "cilium")
+	t.Setenv("AZURE_CONFIG_DIR", configDir)
+	t.Setenv("AZURE_EXTENSION_DIR", filepath.Join(dir, "caller-extensions"))
+	t.Setenv("AZURE_EXTENSION_SYS_DIR", filepath.Join(dir, "caller-system-extensions"))
+	t.Setenv("AZURE_EXTENSION_DEV_SOURCES", filepath.Join(dir, "caller-dev-extensions"))
+	t.Setenv("AZURE_EXTENSION_USE_DYNAMIC_INSTALL", "yes_without_prompt")
+	t.Setenv("KMX_TEST_AZ_CALLS", calls)
+	t.Setenv("KMX_TEST_AZ_EXTENSION_PATH", extensionPath)
+	t.Setenv("KMX_TEST_AZ_CONFIG_DIR", configDir)
+
+	az := `#!/bin/sh
+set -eu
+[ "$AZURE_CONFIG_DIR" = "$KMX_TEST_AZ_CONFIG_DIR" ]
+[ -d "$AZURE_EXTENSION_DIR" ]
+[ "$AZURE_EXTENSION_SYS_DIR" = "$AZURE_EXTENSION_DIR" ]
+[ -z "$AZURE_EXTENSION_DEV_SOURCES" ]
+[ "$AZURE_EXTENSION_USE_DYNAMIC_INSTALL" = no ]
+printf '%s' "$AZURE_EXTENSION_DIR" > "$KMX_TEST_AZ_EXTENSION_PATH"
+printf 'az %s\n' "$*" >> "$KMX_TEST_AZ_CALLS"
+case "$*" in
+  'account show'*) exit 0 ;;
+  'group exists'*) printf 'true\n' ;;
+  'group show'*) printf 'p5b\n' ;;
+  'acr show'*'--query id'*) printf '/registry-id\n' ;;
+  'acr show'*) exit 0 ;;
+  'resource show'*'properties.networkProfile.networkPolicy'*) printf 'cilium\n' ;;
+  'resource show'*'properties.identityProfile.kubeletidentity.objectId'*) printf 'kubelet-identity\n' ;;
+  'resource show'*) exit 0 ;;
+  'role definition list'*) printf 'acrpull-role\n' ;;
+  'rest '*) printf '1\n' ;;
+  'aks get-credentials'*)
+    printf '%s\n' "ERROR: Error loading command module 'serviceconnector': deadlock detected by _ModuleLock('azure.core.pipeline') at 4393405264" >&2
+    if [ -n "${KMX_TEST_AZ_FAIL_CREDENTIALS:-}" ]; then
+      printf 'real get-credentials failure\n' >&2
+      exit 42
+    fi
+    printf 'retained Azure diagnostic\n' >&2 ;;
+  'aks show'*) printf 'unrelated AKS command-module load\n' >&2; exit 97 ;;
+  *) printf 'unexpected Azure call: %s\n' "$*" >&2; exit 98 ;;
+esac
+`
+	kubectl := `#!/bin/sh
+case "$*" in
+  '--context demo-cluster get nodes') exit 0 ;;
+  *) printf 'unexpected kubectl call: %s\n' "$*" >&2; exit 99 ;;
+esac
+`
+	for name, body := range map[string]string{"az": az, "kubectl": kubectl} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	script := filepath.Join("..", "..", "..", "scripts", "aks-up.sh")
+	cmd := exec.Command("bash", script)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("aks-up failed: %v\n%s", err, output)
+	}
+	if strings.Contains(string(output), "serviceconnector") || !strings.Contains(string(output), "retained Azure diagnostic") {
+		t.Fatalf("stderr filter removed the wrong diagnostic:\n%s", output)
+	}
+	asked, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(asked), "az aks show") {
+		t.Fatalf("read-only cluster inspection loaded the AKS command group:\n%s", asked)
+	}
+	for _, query := range []string{"properties.networkProfile.networkPolicy", "properties.identityProfile.kubeletidentity.objectId"} {
+		if !strings.Contains(string(asked), "az resource show") || !strings.Contains(string(asked), query) {
+			t.Errorf("missing core resource query %q:\n%s", query, asked)
+		}
+	}
+	isolated, err := os.ReadFile(extensionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(isolated) == os.Getenv("AZURE_EXTENSION_DIR") {
+		t.Fatal("aks-up retained the caller's extension directory")
+	}
+	if _, err := os.Stat(string(isolated)); !os.IsNotExist(err) {
+		t.Fatalf("private extension workspace survived script exit: %v", err)
+	}
+
+	t.Setenv("KMX_TEST_AZ_FAIL_CREDENTIALS", "true")
+	failed := exec.Command("bash", script)
+	failureOutput, failureErr := failed.CombinedOutput()
+	if failureErr == nil || !strings.Contains(string(failureOutput), "real get-credentials failure") {
+		t.Fatalf("Azure failure status/diagnostic was lost: %v\n%s", failureErr, failureOutput)
+	}
+	if strings.Contains(string(failureOutput), "serviceconnector") {
+		t.Fatalf("known non-fatal loader line leaked on Azure failure:\n%s", failureOutput)
+	}
+}
+
+func TestRunAzureFiltersOnlyKnownLoaderDeadlock(t *testing.T) {
+	dir := t.TempDir()
+	extensionPath := filepath.Join(dir, "extension-path")
+	t.Setenv("AZURE_CONFIG_DIR", filepath.Join(dir, "config"))
+	t.Setenv("AZURE_EXTENSION_DIR", filepath.Join(dir, "caller-extensions"))
+	t.Setenv("KMX_TEST_AZ_EXTENSION_PATH", extensionPath)
+	az := `#!/bin/sh
+[ "$AZURE_CONFIG_DIR" = "` + os.Getenv("AZURE_CONFIG_DIR") + `" ] || exit 90
+[ -d "$AZURE_EXTENSION_DIR" ] || exit 91
+[ "$AZURE_EXTENSION_SYS_DIR" = "$AZURE_EXTENSION_DIR" ] || exit 92
+[ -z "$AZURE_EXTENSION_DEV_SOURCES" ] || exit 93
+[ "$AZURE_EXTENSION_USE_DYNAMIC_INSTALL" = no ] || exit 94
+printf '%s' "$AZURE_EXTENSION_DIR" > "$KMX_TEST_AZ_EXTENSION_PATH"
+printf '%s\n' "ERROR: Error loading command module 'serviceconnector': deadlock detected by _ModuleLock('azure.core.pipeline') at 4393405264" >&2
+printf 'keep this diagnostic\n' >&2
+[ "$1" != fail ] || { printf 'actual Azure failure\n' >&2; exit 23; }
+`
+	if err := os.WriteFile(filepath.Join(dir, "az"), []byte(az), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var stderr bytes.Buffer
+	a := &App{Run: &run.Runner{Stderr: &stderr}}
+	if err := a.runAzure("success"); err != nil {
+		t.Fatal(err)
+	}
+	if got := stderr.String(); strings.Contains(got, "serviceconnector") || !strings.Contains(got, "keep this diagnostic") {
+		t.Fatalf("filtered success stderr incorrectly: %q", got)
+	}
+	isolated, err := os.ReadFile(extensionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(isolated) == os.Getenv("AZURE_EXTENSION_DIR") {
+		t.Fatal("direct Azure call retained the caller's extension directory")
+	}
+	if _, err := os.Stat(string(isolated)); !os.IsNotExist(err) {
+		t.Fatalf("direct Azure extension workspace survived: %v", err)
+	}
+
+	stderr.Reset()
+	if err := a.runAzure("fail"); err == nil {
+		t.Fatal("failed Azure command returned success")
+	}
+	if got := stderr.String(); strings.Contains(got, "serviceconnector") || !strings.Contains(got, "actual Azure failure") {
+		t.Fatalf("filtered failure stderr incorrectly: %q", got)
+	}
+}
+
+func TestCaptureAzureUsesIsolationAndFiltersOnlyKnownDiagnostic(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AZURE_EXTENSION_DIR", filepath.Join(dir, "caller-extensions"))
+	t.Setenv("AZURE_EXTENSION_SYS_DIR", filepath.Join(dir, "caller-system-extensions"))
+	t.Setenv("AZURE_EXTENSION_DEV_SOURCES", filepath.Join(dir, "caller-dev-extensions"))
+	t.Setenv("AZURE_EXTENSION_USE_DYNAMIC_INSTALL", "yes_without_prompt")
+	az := `#!/bin/sh
+[ -d "$AZURE_EXTENSION_DIR" ] || exit 91
+[ "$AZURE_EXTENSION_SYS_DIR" = "$AZURE_EXTENSION_DIR" ] || exit 92
+[ -z "$AZURE_EXTENSION_DEV_SOURCES" ] || exit 93
+[ "$AZURE_EXTENSION_USE_DYNAMIC_INSTALL" = no ] || exit 94
+printf '%s\n' "ERROR: Error loading command module 'serviceconnector': deadlock detected by _ModuleLock('azure.core.pipeline') at 4393405264" >&2
+printf 'keep capture diagnostic\n' >&2
+printf 'captured value\n'
+[ "$1" != fail ] || exit 23
+`
+	if err := os.WriteFile(filepath.Join(dir, "az"), []byte(az), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var diagnostics bytes.Buffer
+	a := &App{Run: &run.Runner{}, Err: &diagnostics}
+	out, err := a.captureAzure("success")
+	if err != nil || out != "captured value" || diagnostics.String() != "keep capture diagnostic\n" {
+		t.Fatalf("capture=%q err=%v diagnostics=%q", out, err, diagnostics.String())
+	}
+	diagnostics.Reset()
+	out, err = a.captureAzure("fail")
+	if err == nil || out != "captured value" || strings.Contains(err.Error(), "serviceconnector") || !strings.Contains(err.Error(), "keep capture diagnostic") {
+		t.Fatalf("failed capture=%q err=%v", out, err)
+	}
+}
+
+func TestAzureStderrFilterBoundsUnterminatedDiagnostics(t *testing.T) {
+	var out bytes.Buffer
+	filter := &azureStderrFilter{out: &out}
+	payload := []byte(strings.Repeat("x", 4096))
+	if n, err := filter.Write(payload); err != nil || n != len(payload) {
+		t.Fatalf("write=%d err=%v", n, err)
+	}
+	if len(filter.pending) != 0 || !filter.passthrough || out.Len() != len(payload) {
+		t.Fatalf("filter retained unbounded data: pending=%d passthrough=%t out=%d", len(filter.pending), filter.passthrough, out.Len())
+	}
+	if _, err := filter.Write([]byte("more\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); got != string(payload)+"more\n" {
+		t.Fatalf("diagnostic changed: len=%d", len(got))
 	}
 }
 

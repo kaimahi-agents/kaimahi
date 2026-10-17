@@ -232,6 +232,7 @@ func TestRunAgentTimeoutReturnsPendingRecoveryWithoutRetry(t *testing.T) {
 }
 
 func TestRunWaitErrorKeepsTerminalFailureAndRefusalAfterDeadline(t *testing.T) {
+	a := &App{}
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 	defer cancel()
 	for _, tc := range []struct {
@@ -242,18 +243,19 @@ func TestRunWaitErrorKeepsTerminalFailureAndRefusalAfterDeadline(t *testing.T) {
 		{"result refusal", errors.New("Orka result read refused (HTTP 403)")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := runTaskWaitError(ctx, tc.err, "task", "kind-test", "orka-system")
+			got := a.runTaskWaitError(ctx, tc.err, "task", "kind-test", "orka-system")
 			if errors.Is(got, ErrTaskPending) || !errors.Is(got, tc.err) {
 				t.Fatalf("deadline masked %s: %v", tc.name, got)
 			}
 		})
 	}
-	if got := runTaskWaitError(ctx, fmt.Errorf("waiting: %w", context.DeadlineExceeded), "task", "kind-test", "orka-system"); !errors.Is(got, ErrTaskPending) {
+	if got := a.runTaskWaitError(ctx, fmt.Errorf("waiting: %w", context.DeadlineExceeded), "task", "kind-test", "orka-system"); !errors.Is(got, ErrTaskPending) {
 		t.Fatalf("expired wait not pending: %v", got)
 	}
 }
 
 func TestRunWaitErrorRecognizesOnlyExpiredOrkaPhases(t *testing.T) {
+	a := &App{}
 	phase, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 	defer cancel()
 	for _, tc := range []struct {
@@ -268,7 +270,7 @@ func TestRunWaitErrorRecognizesOnlyExpiredOrkaPhases(t *testing.T) {
 		{"result refusal", orkaPhaseError(t.Context(), phase, errors.New("Orka result read refused (HTTP 403)")), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := runTaskWaitError(t.Context(), tc.err, "task", "kind-test", "orka-system")
+			got := a.runTaskWaitError(t.Context(), tc.err, "task", "kind-test", "orka-system")
 			if errors.Is(got, ErrTaskPending) != tc.pending {
 				t.Fatalf("pending=%t: %v", tc.pending, got)
 			}
@@ -293,10 +295,10 @@ func TestOrkaDefaultPhaseDeadlinePreservesOriginalError(t *testing.T) {
 		}
 		// A live caller cannot turn a default phase's independent request
 		// deadline into pending; an expired caller still can, as before.
-		if live := runTaskWaitError(t.Context(), got, "task", "kind-test", "orka-system"); live != original {
+		if live := a.runTaskWaitError(t.Context(), got, "task", "kind-test", "orka-system"); live != original {
 			t.Fatalf("default phase changed live-parent classification: %v", live)
 		}
-		if expired := runTaskWaitError(parent, got, "task", "kind-test", "orka-system"); !errors.Is(expired, ErrTaskPending) {
+		if expired := a.runTaskWaitError(parent, got, "task", "kind-test", "orka-system"); !errors.Is(expired, ErrTaskPending) {
 			t.Fatalf("default phase lost expired-parent classification: %v", expired)
 		}
 	}
@@ -432,8 +434,9 @@ func TestRunAgentPromptFileStdin(t *testing.T) {
 }
 
 func TestTaskRecoveryQuotesContext(t *testing.T) {
-	got := taskRecovery("safe-task", "kind-prod;echo-danger", "orka-system")
-	want := "kmx task result safe-task --context 'kind-prod;echo-danger' --namespace orka-system --wait 5m"
+	a := &App{Executable: "./bin with space/kmx"}
+	got := a.taskRecovery("safe-task", "kind-prod;echo-danger", "orka-system")
+	want := "'./bin with space/kmx' task result safe-task --context 'kind-prod;echo-danger' --namespace orka-system --wait 5m"
 	if got != want {
 		t.Fatalf("recovery command = %q, want %q", got, want)
 	}
@@ -460,7 +463,7 @@ func TestRunAgentRefusesSymlinkPromptFile(t *testing.T) {
 }
 
 func TestTaskRecoveryWaitHasExplicitDuration(t *testing.T) {
-	got := taskRecovery("safe-task", "kind-test", "orka-system")
+	got := (&App{}).taskRecovery("safe-task", "kind-test", "orka-system")
 	if !strings.HasSuffix(got, "--wait 5m") {
 		t.Fatalf("recovery command = %q", got)
 	}
@@ -499,7 +502,7 @@ func TestRunAgentSessionLossAfterCreateIncludesRecovery(t *testing.T) {
 			taskName = call.Document["metadata"].(map[string]any)["name"].(string)
 		}
 	}
-	if taskName == "" || !strings.Contains(err.Error(), taskRecovery(taskName, "kind-test", "orka-system")) {
+	if taskName == "" || !strings.Contains(err.Error(), f.app.taskRecovery(taskName, "kind-test", "orka-system")) {
 		t.Fatalf("missing context-pinned recovery after lost session: %v", err)
 	}
 }

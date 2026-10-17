@@ -65,14 +65,14 @@ func ValidateKagentProvider(provider, model, baseURL string) error {
 	if provider != "openai" && provider != "anthropic" {
 		return fmt.Errorf("an explicit Kagent model provider is required: openai or anthropic")
 	}
-	if strings.TrimSpace(model) == "" {
-		return fmt.Errorf("an explicit Kagent model identifier is required")
-	}
-	if err := ValidateSingleLineText(model); err != nil {
-		return fmt.Errorf("Kagent model %w", err)
+	if err := ValidateModelIdentifier(model); err != nil {
+		return fmt.Errorf("Kagent %w", err)
 	}
 	if baseURL == "" {
 		return nil
+	}
+	if strings.ContainsAny(baseURL, "<>") {
+		return fmt.Errorf("Kagent model baseURL: %w", ErrUnresolvedPlaceholder)
 	}
 	if err := ValidateSingleLineText(baseURL); err != nil {
 		return fmt.Errorf("Kagent model baseURL must be an absolute HTTP(S) URL with a host and no credentials, query, or fragment")

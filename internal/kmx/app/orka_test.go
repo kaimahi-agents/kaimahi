@@ -136,9 +136,9 @@ exit 0
 const fakeOrkaHelm = `#!/bin/sh
 printf 'helm %s\n' "$*" >> "$KMX_TEST_ARGS"
 case "$*" in
-  *"version "*) printf '%s' "${KMX_TEST_HELM_VERSION:-v3.14.0}"; exit 0 ;;
+  *"version "*) printf 'v4.1.0'; exit 0 ;;
   *"list "*)
-    case "$*" in *"--all"*) if [ "$KMX_TEST_HELM_VERSION" != "${KMX_TEST_HELM_VERSION#v4}" ]; then printf 'Error: unknown flag: --all\n' >&2; exit 1; fi ;; esac
+    case "$*" in *"--all"*) printf 'Error: unknown flag: --all\n' >&2; exit 1 ;; esac
     printf '%s' "${KMX_TEST_HELM_LIST:-[]}"; exit 0 ;;
   *"get values "*)
     if [ "$KMX_TEST_HELM_VALUES_READ" = failed ]; then printf 'helm failure (fixture-sensitive-token)\n' >&2; exit 1; fi
@@ -574,7 +574,7 @@ func TestOrkaInstallRefusesOldLabelWithoutWrites(t *testing.T) {
 		v["labels"] = map[string]any{"kmx.kaimahi.ai/installed": "true"}
 	}))
 	t.Setenv("KMX_TEST_DEPLOY_JSON", orkaDeployJSON(t, orkaDeployWithImage("chart-controller", "ghcr.io/orka-agents/orka@"+orkaControllerDigest)))
-	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err == nil || !strings.Contains(err.Error(), "refusing to adopt or overwrite") {
 		t.Fatalf("old marker authorized installation: %v", err)
 	}
 	if writes := f.writes(t); writes != "" {
@@ -588,8 +588,14 @@ func TestOrkaInstallRefusesUnmarkedChart(t *testing.T) {
 	f.app.orkaInstallerDigest = digestOf(chart)
 	t.Setenv("KMX_TEST_HELM_LIST", `[{"name":"orka","chart":"orka-0.2.0","app_version":"v0.2.0","status":"deployed"}]`)
 	t.Setenv("KMX_TEST_HELM_VALUES", `{"controller":{"mode":"harness-v2"},"fullnameOverride":"orka-api"}`)
-	if err := f.app.OrkaInstall(OrkaOptions{Provider: "-"}); err == nil {
+	err := f.app.OrkaInstall(OrkaOptions{Provider: "-"})
+	if err == nil {
 		t.Fatal("foreign chart adopted without kmx marker")
+	}
+	for _, want := range []string{"lacks KMX's exact ownership marker", "harness-v2/fullname", "get values", "status orka", "repair or cleanup"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("unmarked release refusal does not say %q: %v", want, err)
+		}
 	}
 	if writes := f.writes(t); writes != "" {
 		t.Fatalf("foreign chart mutated: %s", writes)
@@ -1255,8 +1261,8 @@ func TestOrkaNextStepsPinTheClusterAndKeepTheKeyOutOfArgv(t *testing.T) {
 	}
 }
 
-// The lift creates no Agent and no Provider, so the closing text must not
-// claim one or send the operator to `agent chat`.
+// The lift creates or inspects no Agent and no Provider, so the closing text
+// must not claim absence or send the operator to chat.
 func TestOrkaClosingTextDoesNotPromiseAnAgent(t *testing.T) {
 	var buf bytes.Buffer
 	a := &App{Cfg: &config.Config{KubeContext: "demo-cluster"}, Err: &buf, Out: &buf}
@@ -1268,8 +1274,11 @@ func TestOrkaClosingTextDoesNotPromiseAnAgent(t *testing.T) {
 			t.Errorf("the closing text promises %q, but the lift created no agent:\n%s", forbidden, got)
 		}
 	}
-	if !strings.Contains(got, "no Provider and no Agent yet") {
-		t.Errorf("the closing text does not say what is still missing:\n%s", got)
+	if !strings.Contains(got, "did not create or inspect a Provider or") {
+		t.Errorf("the closing text does not bound its Provider/Agent claim:\n%s", got)
+	}
+	if strings.Contains(got, "no Provider and no Agent") {
+		t.Errorf("the closing text infers absence without a read:\n%s", got)
 	}
 }
 
@@ -1450,34 +1459,26 @@ func TestOrkaProviderChecksTheInClusterServiceOnlyForTheInClusterEndpoint(t *tes
 	}
 }
 
-func TestParseHelmMajor(t *testing.T) {
-	for in, want := range map[string]int{"v3.14.0": 3, "v4.2.2": 4, " 4.0.0\n": 4, "": 0, "garbage": 0} {
-		if got := parseHelmMajor(in); got != want {
-			t.Errorf("parseHelmMajor(%q)=%d want %d", in, got, want)
+func TestOrkaInstallStateUsesCrossMajorHelmStatusFilters(t *testing.T) {
+	f := newOrkaFixture(t, orkaChart(t))
+	if _, err := f.app.orkaInstallState(); err != nil {
+		t.Fatalf("helm list rejected: %v", err)
+	}
+	var list string
+	for _, line := range strings.Split(f.calls(t), "\n") {
+		if strings.HasPrefix(line, "helm list ") {
+			list = line
 		}
 	}
-}
-
-func TestOrkaInstallStateHelmListFlagByMajor(t *testing.T) {
-	for _, tc := range []struct {
-		version string
-		all     bool
-	}{{"v3.14.0", true}, {"v4.2.2", false}} {
-		t.Run(tc.version, func(t *testing.T) {
-			f := newOrkaFixture(t, orkaChart(t))
-			t.Setenv("KMX_TEST_HELM_VERSION", tc.version)
-			if _, err := f.app.orkaInstallState(); err != nil && strings.Contains(err.Error(), "unknown flag") {
-				t.Fatalf("helm list rejected: %v", err)
-			}
-			var list string
-			for _, l := range strings.Split(f.calls(t), "\n") {
-				if strings.HasPrefix(l, "helm list ") {
-					list = l
-				}
-			}
-			if list == "" || strings.Contains(list, "--all") != tc.all {
-				t.Fatalf("want --all=%v, got %q", tc.all, list)
-			}
-		})
+	if list == "" || strings.Contains(list, "--all") {
+		t.Fatalf("Helm 4-compatible list missing or used --all: %q", list)
+	}
+	for _, flag := range []string{"--deployed", "--failed", "--pending", "--uninstalling", "--superseded", "--uninstalled"} {
+		if !strings.Contains(list, flag) {
+			t.Errorf("helm list does not include %s: %q", flag, list)
+		}
+	}
+	if strings.Contains(f.calls(t), "helm version ") {
+		t.Fatalf("release inspection guessed behavior from a second version probe:\n%s", f.calls(t))
 	}
 }

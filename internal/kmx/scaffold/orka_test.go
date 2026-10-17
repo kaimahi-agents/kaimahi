@@ -88,6 +88,7 @@ func TestOrkaRejectsIncompleteOrUnsafeInputs(t *testing.T) {
 		"unknown provider":             func(s *OrkaSpec) { s.ProviderType = "local" },
 		"azure deployment unsupported": func(s *OrkaSpec) { s.ProviderType = "azure-openai" },
 		"model":                        func(s *OrkaSpec) { s.Model = " \t" },
+		"model placeholder":            func(s *OrkaSpec) { s.Model = "<exact-model>" },
 		"model newline":                func(s *OrkaSpec) { s.Model = "test\nother: value" },
 		"secret":                       func(s *OrkaSpec) { s.SecretName = "" },
 		"bad secret":                   func(s *OrkaSpec) { s.SecretName = "invalid/name" },
@@ -158,7 +159,7 @@ func TestOrkaBaseURLBoundaries(t *testing.T) {
 			t.Errorf("baseURL changed: %v", got)
 		}
 	}
-	for _, bad := range []string{"api.example.test/v1", "ftp://example.test", "https:///v1", "http://:8080", "https://user:password@example.test/v1", "https://user@example.test", "https://example.test?token=value", "https://example.test?", "https://example.test#token", "https://example.test#"} {
+	for _, bad := range []string{"api.example.test/v1", "ftp://example.test", "https:///v1", "http://:8080", "https://<openai-compatible-endpoint>/v1", "https://user:password@example.test/v1", "https://user@example.test", "https://example.test?token=value", "https://example.test?", "https://example.test#token", "https://example.test#"} {
 		s := orkaSpec()
 		s.BaseURL = bad
 		if b, err := GenerateOrka(s); err == nil || b != nil {

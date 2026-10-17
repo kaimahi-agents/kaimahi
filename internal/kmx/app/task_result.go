@@ -59,7 +59,7 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 	if err != nil {
 		inspected := fmt.Errorf("cannot inspect Task %s/%s: %w", namespace, opt.Task, err)
 		if follow {
-			return runTaskWaitError(inspectCtx, inspected, opt.Task, a.Cfg.KubeContext, namespace)
+			return a.runTaskWaitError(inspectCtx, inspected, opt.Task, a.Cfg.KubeContext, namespace)
 		}
 		return inspected
 	}
@@ -93,7 +93,7 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 		task, err := worker.readOrkaObject(ctx, namespace, id)
 		if err != nil {
 			if follow {
-				return runTaskWaitError(ctx, err, opt.Task, a.Cfg.KubeContext, namespace)
+				return a.runTaskWaitError(ctx, err, opt.Task, a.Cfg.KubeContext, namespace)
 			}
 			return err
 		}
@@ -110,7 +110,7 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 			}
 		}
 		if !follow {
-			return pendingTask(opt.Task, a.Cfg.KubeContext, namespace)
+			return a.pendingTask(opt.Task, a.Cfg.KubeContext, namespace)
 		}
 		if !statusStarted {
 			var stopStatus context.CancelFunc
@@ -120,7 +120,7 @@ func (a *App) TaskResult(opt TaskResultOptions) error {
 		}
 		if err := worker.pause(ctx, time.Second); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
-				return pendingTask(opt.Task, a.Cfg.KubeContext, namespace)
+				return a.pendingTask(opt.Task, a.Cfg.KubeContext, namespace)
 			}
 			return fmt.Errorf("waiting for Task %s/%s: %w", namespace, opt.Task, err)
 		}
@@ -131,7 +131,7 @@ func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdent
 	session, err := a.openOrkaResultSession(ctx, CreateOptions{Namespace: namespace, ResultServiceAccount: orkaResultAccount, ResultPort: port})
 	if err != nil {
 		if follow {
-			return runTaskWaitError(ctx, err, id.Name, a.Cfg.KubeContext, namespace)
+			return a.runTaskWaitError(ctx, err, id.Name, a.Cfg.KubeContext, namespace)
 		}
 		return err
 	}
@@ -139,10 +139,10 @@ func (a *App) taskResultRead(ctx context.Context, namespace string, id orkaIdent
 	answer, err := a.readOrkaTaskResult(session.ctx, namespace, id, session, nil, follow)
 	if err != nil {
 		if errors.Is(err, ErrTaskPending) {
-			return pendingTask(id.Name, a.Cfg.KubeContext, namespace)
+			return a.pendingTask(id.Name, a.Cfg.KubeContext, namespace)
 		}
 		if follow {
-			return runTaskWaitError(ctx, err, id.Name, a.Cfg.KubeContext, namespace)
+			return a.runTaskWaitError(ctx, err, id.Name, a.Cfg.KubeContext, namespace)
 		}
 		return err
 	}

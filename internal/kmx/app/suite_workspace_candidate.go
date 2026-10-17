@@ -10,6 +10,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 // Keep payload-bearing causes available to errors.Is without exposing API/model
@@ -25,6 +26,9 @@ func (e *suiteCandidateOutcome) Error() string {
 	verdict := "native candidate evaluation outcome unknown"
 	if !e.effects {
 		verdict = "native evaluation refused before native changes"
+	}
+	if !e.effects && errors.Is(e.cause, scaffold.ErrUnresolvedPlaceholder) {
+		verdict = "native suite contains an unresolved model or endpoint placeholder; set concrete values, then rerun eval"
 	}
 	if errors.Is(e.cause, errSuiteNativeCaseFailed) {
 		verdict = "native candidate evaluation case failed"
@@ -104,7 +108,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 		return err
 	}
 	worker.reportCandidateStartup(ctx, native.Subject.Target)
-	if _, err := fmt.Fprintf(worker.Err, "Current candidate: run=%s context=%q clusterUID=%s namespace=%q namespaceUID=%s member=%s suite=%s\nRecovery: kmx eval cleanup %s --to-context %s --to-namespace %s\n", runID, cfg.KubeContext, native.Subject.Target.ClusterUID, native.Subject.Target.Namespace, native.Subject.Target.NamespaceUID, native.Subject.PhysicalMember, native.Subject.SuiteDigest, runID, shellArg(cfg.KubeContext), shellArg(native.Subject.Target.Namespace)); err != nil {
+	if _, err := fmt.Fprintf(worker.Err, "Current candidate: run=%s context=%q clusterUID=%s namespace=%q namespaceUID=%s member=%s suite=%s\nRecovery: %s eval cleanup %s --to-context %s --to-namespace %s\n", runID, cfg.KubeContext, native.Subject.Target.ClusterUID, native.Subject.Target.Namespace, native.Subject.Target.NamespaceUID, native.Subject.PhysicalMember, native.Subject.SuiteDigest, shellArg(worker.commandExecutable()), runID, shellArg(cfg.KubeContext), shellArg(native.Subject.Target.Namespace)); err != nil {
 		return err
 	}
 	if !validSuitePassingSubject(native.Subject) {

@@ -244,6 +244,9 @@ func ValidateOrkaRefNames(field string, refs []string) error {
 // ValidateOrkaProvider checks the Provider fields this repository can
 // scaffold. It never echoes baseURL: the URL itself may carry credentials.
 func ValidateOrkaProvider(providerType, model, baseURL, deployment, version string) error {
+	if err := ValidateModelIdentifier(model); err != nil {
+		return fmt.Errorf("Orka Provider %w", err)
+	}
 	switch providerType {
 	case "openai", "anthropic":
 		if deployment != "" || version != "" {
@@ -273,20 +276,17 @@ func ValidateOrkaProvider(providerType, model, baseURL, deployment, version stri
 		if baseURL == "" {
 			return fmt.Errorf("azure-openai requires resource baseURL")
 		}
-		if strings.TrimSpace(model) == "" {
-			return fmt.Errorf("an explicit Orka Provider model identifier is required")
-		}
 		if model != deployment {
 			return fmt.Errorf("effective model %q differs from Azure deployment %q: a different deployment is a different model; the revision that passed evaluation must be the one that runs", model, deployment)
 		}
 	default:
 		return fmt.Errorf("an explicit Orka Provider type is required: openai, anthropic or azure-openai")
 	}
-	if strings.TrimSpace(model) == "" {
-		return fmt.Errorf("an explicit Orka Provider model identifier is required")
-	}
 	if baseURL == "" {
 		return nil
+	}
+	if strings.ContainsAny(baseURL, "<>") {
+		return fmt.Errorf("Orka Provider baseURL: %w", ErrUnresolvedPlaceholder)
 	}
 	u, err := url.Parse(baseURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||

@@ -248,10 +248,10 @@ These are safety-semantic and format fixes, not merely color changes:
   match of its fixed Provider and Agent; a differing live spec is refused
   rather than overwritten. Every run creates a fresh Task. Orka setup uses the
   verified v0.2.0 Helm chart; retiring the legacy chart did not remove Helm.
-- Guard and recovery commands preserve the relevant target, options, and shell
-  argument boundaries. Kind creation/image loading refuses mismatched cluster
-  and context names. Native Provider Secret references are validated without
-  printing their values.
+- Guard and recovery commands preserve the invoking executable, relevant target,
+  options, and shell argument boundaries. Kind creation/image loading refuses
+  mismatched cluster and context names. Native Provider Secret references are
+  validated without printing their values.
 - Lift confirms before any deletion, retains records for incomplete cleanup, and
   scopes telemetry, ownership, and billing claims to what was actually checked.
 - Chat names the selected agent/context and distinguishes tool activity from

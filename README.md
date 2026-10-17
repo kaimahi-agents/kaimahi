@@ -154,6 +154,7 @@ records exact pins and evidence rather than claiming feature parity.
 | Find every implemented command | [`kmx` reference](docs/kmx.md) |
 | Read the portable artifact contract | [AgentSuite specification](https://github.com/agent-primitives/suite/blob/main/spec.md) |
 | Select models and inference | [Models](docs/models.md), [Copilot](docs/copilot-inference.md), [Foundry](docs/local-foundry-inference.md) |
+| Run a local-proof to ACR to AKS example | [AKS Create, Prove, Lift demo](docs/aks-demo.md) |
 | Install or upgrade | [Releases](docs/releases.md) |
 | Browse all guides | [Documentation index](docs/README.md) |
 

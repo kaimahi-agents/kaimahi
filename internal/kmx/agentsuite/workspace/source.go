@@ -117,7 +117,13 @@ func validateMember(m sourceMember, instructions []byte) error {
 	if err := scaffold.ValidateName(m.ID); err != nil {
 		return err
 	}
-	if m.Model.Protocol != "openai-compatible" || strings.TrimSpace(m.Model.Model) == "" || strings.TrimSpace(m.Model.Model) != m.Model.Model || strings.IndexFunc(m.Model.Model, unicode.IsControl) >= 0 {
+	if m.Model.Protocol != "openai-compatible" {
+		return errors.New("an explicit exact model and openai-compatible protocol are required")
+	}
+	if err := scaffold.ValidateModelIdentifier(m.Model.Model); err != nil {
+		return fmt.Errorf("model: %w", err)
+	}
+	if strings.IndexFunc(m.Model.Model, unicode.IsControl) >= 0 {
 		return errors.New("an explicit exact model and openai-compatible protocol are required")
 	}
 	if strings.TrimSpace(string(instructions)) == "" {

@@ -44,6 +44,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   promotion gate and attempt time on newly created Orka/kagent primary objects.
   Exact reuse and verified skips remain no-write; existing objects are not
   backfilled and records grant no replay authority.
+- A copy-paste AKS Free-tier walkthrough now follows the supported lifecycle:
+  author and prove a native Orka workspace locally before creating billable
+  Azure resources, configure owner-held Provider credentials, publish an exact
+  ACR digest, review source-evidence promotion, Lift once, inspect, and teardown.
+  It validates conservative model/endpoint/name inputs before setup and records
+  the local state that teardown intentionally leaves behind. [AKS demo](docs/aks-demo.md).
 - `kmx status --to NAME [--workspace DIR] [-o table|json]` inventories deployed
   Orka/kagent Agents, provenance and placement readiness using bounded GETs only.
   Missing, unknown and foreign provenance remain distinct. No Secrets, private
@@ -63,6 +69,34 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Development-runtime/profile and proof identity pins are unchanged; this does
   not upgrade operator daemons or qualify new lifecycle, approval or tool-executor
   capabilities.
+
+### Fixed
+
+- Orka installation inspects every Helm release state with status filters shared
+  by Helm 3 and Helm 4. It no longer guesses from a second version probe or uses
+  Helm 3's removed `helm list --all` flag.
+- AKS plan, provisioning, optional observability, ownership reads, and teardown
+  isolate Azure CLI core commands from installed extensions without moving the
+  caller's authentication/configuration. Managed-cluster inspection uses the
+  core ARM resource command. Azure CLI 2.86's non-fatal built-in Service
+  Connector module-lock line is narrowly suppressed while every other diagnostic
+  and command failure remains visible.
+- Generated retry and follow-up commands preserve the executable that launched
+  KMX. A run started with `./bin/kmx` no longer prints a bare `kmx` recovery that
+  can resolve to an older installation on `PATH`.
+- AKS setup no longer suggests the removed `create --live` route after installing
+  Orka. It points to owner-managed Provider configuration and the current offline
+  Create, Prove, publication and digest Lift guide. Exact-version Helm releases
+  missing KMX ownership/configuration now get a specific repair-or-cleanup refusal.
+- Native workspace and Orka/kagent binding validation rejects unresolved
+  whole-value model placeholders while loading source and angle-bracket endpoint
+  placeholders before placement or execution. Pre-effect refusals name safe
+  remediation without echoing authored values; later drift retains unknown,
+  no-retry semantics. Candidate cleanup recovery also preserves the invoking
+  executable.
+- Remaining runtime/setup/list/show messages no longer generate the removed
+  `create --live` command. They point to guided quickstart or offline
+  Create-Prove-Lift, as appropriate.
 
 ### Breaking
 

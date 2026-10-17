@@ -28,8 +28,8 @@ commands require a newer build.
 The redirected context report retains its `source: kmx ctx` provenance label
 for saved selections as a compatibility format. That label is not a next-step
 command. Generated selection and local teardown instructions use the canonical
-spellings. Invocation-specific confirmation preserves the caller's selectors
-and exact arguments.
+spellings. Invocation-specific confirmation preserves the invoking executable,
+the caller's selectors and exact arguments.
 
 Generated local commands preserve `KIND_CLUSTER`, `CONTAINER_ENGINE` and
 `--context`. AKS retry/teardown instructions use the common effective-option

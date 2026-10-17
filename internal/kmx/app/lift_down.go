@@ -167,7 +167,7 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	if record.Before.WeEnabledMetrics() {
 		a.warnAboutScrapeJobsTheAddonOwns()
 		a.notef("turning off the Managed Prometheus this run enabled")
-		if err := a.Run.Run("az", "aks", "update", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
+		if err := a.runAzure("aks", "update", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
 			"--disable-azure-monitor-metrics", "--output", "none"); err != nil {
 			return fmt.Errorf("could not disable Managed Prometheus on your cluster — stopping before deleting anything it still points at: %w", err)
 		}
@@ -176,7 +176,7 @@ func (a *App) liftDownBringYourOwn(opt lift.Options, record *lift.Record) error 
 	}
 	if record.Before.WeEnabledLogs() {
 		a.notef("turning off the Container Insights this run enabled")
-		if err := a.Run.Run("az", "aks", "disable-addons", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
+		if err := a.runAzure("aks", "disable-addons", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
 			"--addons", "monitoring", "--output", "none"); err != nil {
 			return fmt.Errorf("could not disable Container Insights on your cluster — stopping before deleting anything it still points at: %w", err)
 		}
@@ -308,7 +308,7 @@ func (a *App) removeRecorded(resources []lift.Resource) error {
 		rm := lift.PlanRemoval(res, state, resolved)
 		switch {
 		case rm.Delete:
-			if err := a.Run.Run("az", "resource", "delete", "--ids", res.ID, "--output", "none"); err != nil {
+			if err := a.runAzure("resource", "delete", "--ids", res.ID, "--output", "none"); err != nil {
 				rm.Delete = false
 				rm.Reason = fmt.Sprintf("the delete failed and it may still be billing: %v", err)
 			} else {

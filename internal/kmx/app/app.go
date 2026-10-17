@@ -40,6 +40,10 @@ type App struct {
 	Cfg               *config.Config
 	Run               *run.Runner
 	Out               io.Writer
+	// Executable is the CLI path that launched this App. Generated follow-up
+	// commands retain it so a checkout binary cannot redirect to an older kmx
+	// earlier on PATH. Empty keeps the installed-command spelling "kmx".
+	Executable string
 	// InvocationCommand is the shell-quoted CLI invocation used for guard retry
 	// advice. Interactive sub-operations leave it empty and supply their own.
 	InvocationCommand string

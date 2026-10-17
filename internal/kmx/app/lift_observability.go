@@ -30,7 +30,7 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 		return err
 	}
 
-	_, state := a.resourceID("aks", "show", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup)
+	_, state := a.resourceID(managedClusterAzureArgs(opt)...)
 	if state != lift.Present {
 		return fmt.Errorf("kmx aks up: cannot resolve the cluster's resource id — refusing to wire monitoring to something that could not be identified")
 	}
@@ -68,7 +68,7 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 		Kind: kindMetricsWorkspace, Name: metricsName, InResourceGroup: true,
 		Billing: "retains ingested samples for 18 months; charges per sample ingested and per query",
 	}, func() (string, error) {
-		if err := a.Run.Run("az", "monitor", "account", "create", "--name", metricsName,
+		if err := a.runAzure("monitor", "account", "create", "--name", metricsName,
 			"--resource-group", opt.ResourceGroup, "--location", location, "--output", "none"); err != nil {
 			return "", err
 		}
@@ -87,7 +87,7 @@ func (a *App) liftObservability(opt lift.Options, record *lift.Record, save func
 		Kind: kindLogsWorkspace, Name: logsName, InResourceGroup: true,
 		Billing: "charges per GB ingested and for retention beyond the included period; keeps costing while anything still sends to it",
 	}, func() (string, error) {
-		if err := a.Run.Run("az", "monitor", "log-analytics", "workspace", "create", "--name", logsName,
+		if err := a.runAzure("monitor", "log-analytics", "workspace", "create", "--name", logsName,
 			"--resource-group", opt.ResourceGroup, "--location", location, "--output", "none"); err != nil {
 			return "", err
 		}
@@ -165,7 +165,8 @@ type monitorState struct {
 // or a cluster whose monitoring we quietly take over.
 func (a *App) readMonitorState(opt lift.Options) (monitorState, error) {
 	var st monitorState
-	out, err := a.Run.Capture("az", "aks", "show", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup, "-o", "json")
+	args := append(managedClusterAzureArgs(opt), "--query", "properties", "-o", "json")
+	out, err := a.captureAzure(args...)
 	if err != nil {
 		return st, fmt.Errorf("cannot read the cluster's current monitoring configuration, so whether this would be enabling it or taking it over is unknown — refusing: %w", err)
 	}
@@ -280,7 +281,7 @@ func (a *App) enableMetricsAddon(opt lift.Options, metricsID string) error {
 		return nil
 	}
 	a.notef("enabling Managed Prometheus on the cluster (a few minutes)")
-	return a.Run.Run("az", "aks", "update", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
+	return a.runAzure("aks", "update", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
 		"--enable-azure-monitor-metrics", "--azure-monitor-workspace-resource-id", metricsID, "--output", "none")
 }
 
@@ -306,7 +307,7 @@ func (a *App) enableLogsAddon(opt lift.Options, logsID string) error {
 			opt.Cluster, opt.ResourceGroup)
 	}
 	a.notef("enabling Container Insights on the cluster (a few minutes)")
-	return a.Run.Run("az", "aks", "enable-addons", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
+	return a.runAzure("aks", "enable-addons", "--name", opt.Cluster, "--resource-group", opt.ResourceGroup,
 		"--addons", "monitoring", "--workspace-resource-id", logsID, "--output", "none")
 }
 
@@ -377,7 +378,7 @@ func (a *App) ensureRecorded(record *lift.Record, save func() error, res lift.Re
 }
 
 func (a *App) groupLocation(group string) (string, error) {
-	out, err := a.Run.Capture("az", "group", "show", "--name", group, "--query", "location", "-o", "tsv")
+	out, err := a.captureAzure("group", "show", "--name", group, "--query", "location", "-o", "tsv")
 	if err != nil {
 		return "", fmt.Errorf("cannot read the resource group's region: %w", err)
 	}
@@ -418,8 +419,8 @@ var addOnCreatedTypes = []string{
 // exists. That is precisely how the Prometheus rule groups escaped the first
 // time, and the fix must not reintroduce it one level up.
 func (a *App) monitoringGroups(opt lift.Options) ([]string, error) {
-	node, err := a.Run.Capture("az", "aks", "show", "--name", opt.Cluster,
-		"--resource-group", opt.ResourceGroup, "--query", "nodeResourceGroup", "-o", "tsv")
+	args := append(managedClusterAzureArgs(opt), "--query", "properties.nodeResourceGroup", "-o", "tsv")
+	node, err := a.captureAzure(args...)
 	if err != nil {
 		return nil, fmt.Errorf(`cannot read the cluster's managed node resource group, so what the monitoring add-ons create there could not be watched for.
 
@@ -455,7 +456,7 @@ func (a *App) dataCollectionResourcesIn(groups []string) (map[string]bool, error
 func (a *App) dataCollectionResources(group string) (map[string]bool, error) {
 	found := map[string]bool{}
 	for _, kind := range addOnCreatedTypes {
-		out, err := a.Run.Capture("az", "resource", "list", "--resource-group", group,
+		out, err := a.captureAzure("resource", "list", "--resource-group", group,
 			"--resource-type", kind, "--query", "[].id", "-o", "json")
 		if err != nil {
 			return nil, fmt.Errorf("cannot list %s in %s — refusing to enable monitoring without knowing what was there first: %w", kind, group, err)

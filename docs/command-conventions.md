@@ -146,7 +146,8 @@ Keep these distinctions:
 
   A new exit code needs its own documentation in [kmx.md](kmx.md).
 - **Errors say what failed and what to run next.** Generated commands keep
-  the caller's context, selectors and shell quoting.
+  the caller's executable, context, selectors and shell quoting, so a checkout
+  binary does not redirect recovery to an older `kmx` on `PATH`.
 
 ## 6. Interactive surfaces
 

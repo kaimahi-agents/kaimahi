@@ -32,7 +32,7 @@ func (a *App) Ctx(context string) error {
 		Source:     config.SourceSelected,
 		Namespaces: config.GuardNamespaceHint,
 		Confirm:    a.Cfg.Confirm,
-		Command:    "kmx context use " + shellArg(context),
+		Command:    shellArg(a.commandExecutable()) + " context use " + shellArg(context),
 	}, a.Err, a.Stdin); err != nil {
 		return err
 	}

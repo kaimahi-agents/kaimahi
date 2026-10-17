@@ -248,7 +248,7 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	}
 	command := worker.InvocationCommand
 	if command == "" {
-		command = "kmx eval cleanup " + opt.RunID + " --to-context " + shellArg(target.Context) + " --to-namespace " + shellArg(target.Namespace)
+		command = shellArg(worker.commandExecutable()) + " eval cleanup " + shellArg(opt.RunID) + " --to-context " + shellArg(target.Context) + " --to-namespace " + shellArg(target.Namespace)
 	}
 	if err := guard.CheckContext(ctx, kube, guard.Request{Action: "delete the displayed candidate run root UIDs and verify child closure", Context: target.Context, Source: cfg.ContextSource, Namespaces: target.Namespace, Confirm: cfg.Confirm, Command: command, MustBeKnown: true, RequireConfirmation: true}, worker.Err, worker.Stdin); err != nil {
 		return err

@@ -177,7 +177,7 @@ func (a *App) quickstartWizardTarget() (quickstartTarget, error) {
 	// Only the already-safe local path moves its banner into the TUI. A remote
 	// or unverified target retains GuardCreate's visible confirmation flow.
 	if !posture.Local {
-		if err := a.GuardCreateIn(action, "kmx quickstart --interactive", OrkaPathNamespaces); err != nil {
+		if err := a.GuardCreateIn(action, a.operationCommand("quickstart", "--interactive"), OrkaPathNamespaces); err != nil {
 			return quickstartTarget{}, err
 		}
 	} else {

@@ -164,7 +164,7 @@ func (a *App) OrkaInstall(opt OrkaOptions) error {
 	}
 
 	if err := a.Guard(fmt.Sprintf("install Orka %s (chart CRDs, harness-v2 controller) into namespace %s",
-		OrkaVersion, OrkaNamespace), "kmx orka install"); err != nil {
+		OrkaVersion, OrkaNamespace), a.operationCommand("orka", "install")); err != nil {
 		return err
 	}
 

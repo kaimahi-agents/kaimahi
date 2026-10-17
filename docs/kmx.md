@@ -585,6 +585,11 @@ kind requires both a kind-shaped name and loopback server; remote mutations
 require typed confirmation or `KAIMAHI_CONFIRM=<context>`. Non-interactive runs
 without consent refuse. Read-only reports do not prompt.
 
+Generated retries and follow-up commands preserve the executable used to launch
+the operation. For example, `./bin/kmx aks up ...` produces a
+`./bin/kmx ... --step orka` recovery rather than a bare `kmx` that could resolve
+to an older installation on `PATH`.
+
 The implicit `kind-kaimahi-p1` fallback refuses when kubeconfig contains other
 possible targets and nobody chose this one. An empty machine, or corroboration
 that the fallback is already current, permits first setup. Current-context is

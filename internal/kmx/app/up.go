@@ -17,9 +17,8 @@ import (
 var UpSteps = []string{"cluster", "ollama", "model", "orka"}
 
 // UpDefaultSteps is what a bare `kmx local up` runs: a cluster, a keyless model
-// server and the pinned Orka runtime. It deploys no agent — `kmx quickstart`
-// is the command that ends with one answering, and `kmx create --live` is the
-// one that authors your own.
+// server and the pinned Orka runtime. It deploys no agent: `kmx quickstart`
+// ends with one answering, while root create authors workspace source offline.
 //
 // It holds the same four names as UpSteps, and that is the point rather than
 // a duplication: a bare run does everything that can be asked for one step at
@@ -95,7 +94,8 @@ func (a *App) Up(step string) error {
 
 	if step == "" {
 		a.complete("Runtime setup finished", started)
-		a.notef("\nTRY   %s", a.operationCommand("create", "--live"))
+		a.notef("\nNEXT  %s  # guided first answer", a.operationCommand("quickstart", "--interactive"))
+		a.notef("      %s  # author workspace source offline", a.operationCommand("create", "--help"))
 	}
 	return nil
 }
@@ -205,13 +205,13 @@ func (a *App) rememberInventedContext() {
 	if err != nil {
 		// Not fatal: the cluster is up, and the cost of failing here is one
 		// `kmx context use <name>` the operator types themselves.
-		a.notef("could not record %q as the context kmx acts on (%v) — set it with: kmx context use %s",
-			a.Cfg.KubeContext, err, shellArg(a.Cfg.KubeContext))
+		a.notef("could not record %q as the context kmx acts on (%v) — set it with: %s context use %s",
+			a.Cfg.KubeContext, err, shellArg(a.commandExecutable()), shellArg(a.Cfg.KubeContext))
 		return
 	}
 	a.Cfg.ContextSource = config.SourceSelected
-	a.notef("kmx will act on context %q from now on (recorded in %s); change it with: kmx context use <name>",
-		a.Cfg.KubeContext, path)
+	a.notef("kmx will act on context %q from now on (recorded in %s); change it with: %s context use <name>",
+		a.Cfg.KubeContext, path, shellArg(a.commandExecutable()))
 }
 
 // stepCluster brings up the kind cluster: create it, or on Podman recover it.

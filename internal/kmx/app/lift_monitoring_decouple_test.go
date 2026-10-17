@@ -76,12 +76,16 @@ func TestLiftMonitoringCreatesOnlyAzureMonitoringResources(t *testing.T) {
 	t.Setenv("LIFT_MONITOR_CALLS", calls)
 	t.Setenv("PATH", dir)
 	az := `#!/bin/sh
+[ -d "$AZURE_EXTENSION_DIR" ] || exit 97
+[ "$AZURE_EXTENSION_SYS_DIR" = "$AZURE_EXTENSION_DIR" ] || exit 97
+[ -z "$AZURE_EXTENSION_DEV_SOURCES" ] || exit 97
+[ "$AZURE_EXTENSION_USE_DYNAMIC_INSTALL" = no ] || exit 97
 printf 'az %s\n' "$*" >> "$LIFT_MONITOR_CALLS"
 case "$*" in
-  'aks show'*'--query id '*) echo /resourceGroups/rg/providers/test/cluster ;;
+  'resource show'*'--query id '*) echo /resourceGroups/rg/providers/test/cluster ;;
   'group show'*) echo westus3 ;;
-  'aks show'*'--query nodeResourceGroup '*) echo nodes ;;
-  'aks show'*) echo '{}' ;;
+  'resource show'*'properties.nodeResourceGroup'*) echo nodes ;;
+  'resource show'*'--query properties '*) echo '{}' ;;
   'monitor account create'*|'monitor log-analytics workspace create'*|'aks update'*|'aks enable-addons'*) exit 0 ;;
   'monitor account show'*) echo /resourceGroups/rg/providers/test/metrics ;;
   'monitor log-analytics workspace show'*) echo /resourceGroups/rg/providers/test/logs ;;
@@ -196,10 +200,13 @@ func TestLiftNextStepsOfferNativeOrkaWithoutPlaneAdvice(t *testing.T) {
 				t.Errorf("retired advice %q:\n%s", forbidden, out.String())
 			}
 		}
-		for _, want := range []string{"orka status", "kmx --context cluster create --live", "no Provider", "COSTS MONEY", "aks down"} {
+		for _, want := range []string{"orka status", "https://kaimahi.dev/docs/aks-demo", "offline Create, Prove", "did not create or inspect a Provider", "COSTS MONEY", "aks down"} {
 			if !strings.Contains(out.String(), want) {
 				t.Errorf("missing native next step %q:\n%s", want, out.String())
 			}
+		}
+		if strings.Contains(out.String(), "create --live") {
+			t.Fatalf("AKS next steps restored removed live create:\n%s", out.String())
 		}
 	}
 }

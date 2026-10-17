@@ -21,7 +21,7 @@ func (a *App) aimAtTheCluster(opt lift.Options) {
 // branches: on a created cluster aks-up.sh has already done it, and doing it
 // again is how a resumed --step gets a context without re-running the create.
 func (a *App) liftCredentials(opt lift.Options) error {
-	return a.Run.Run("az", "aks", "get-credentials", "--name", opt.Cluster,
+	return a.runAzure("aks", "get-credentials", "--name", opt.Cluster,
 		"--resource-group", opt.ResourceGroup, "--overwrite-existing", "--output", "none")
 }
 
@@ -47,9 +47,9 @@ func (a *App) liftOrka(opt lift.Options) error {
 	a.notef("  printf %%s \"$ORKA_API_KEY\" | kubectl --context %s -n %s \\\n"+
 		"      create secret generic <name> --from-file=api-key=/dev/stdin",
 		shellArg(a.Cfg.KubeContext), OrkaNamespace)
-	a.notef("  %s", a.operationCommand("create", "--live", "<agent>",
-		"--namespace", OrkaNamespace, "--provider-type", "openai",
-		"--model", "<model>", "--secret", "<name>", "--base-url", "<endpoint>"))
+	a.notef("  Configure a native openai Provider through Orka's installed schema using\n" +
+		"  that Secret, then follow https://kaimahi.dev/docs/aks-demo for offline Create, Prove,\n" +
+		"  publication and digest Lift.")
 	a.notef("\n  printf keeps the trailing newline out of the Secret; a newline there\n" +
 		"  corrupts the Authorization header on every request.")
 	return nil

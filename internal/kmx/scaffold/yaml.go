@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -20,6 +21,10 @@ import (
 // This prevents YAML injection (CWE-74), such as a newline in a tool name
 // introducing another sequence entry.
 
+// ErrUnresolvedPlaceholder classifies a documentation token that cannot be used
+// as runtime identity. It carries no authored value.
+var ErrUnresolvedPlaceholder = errors.New("unresolved documentation placeholder")
+
 // ValidateSingleLineText states the control-character policy a value rendered
 // as a single-line YAML scalar is held to, without rendering anything. It is
 // exported so that a caller which only decides whether text is acceptable —
@@ -34,6 +39,22 @@ func ValidateSingleLineText(value string) error {
 		if r == '\n' || r == '\r' || (r < 0x20 && r != '\t') || r == 0x7f {
 			return fmt.Errorf("must not contain line breaks or other control characters")
 		}
+	}
+	return nil
+}
+
+// ValidateModelIdentifier requires a concrete identity rather than a whole-value
+// documentation placeholder such as <model>. Ordinary model spellings remain
+// runtime-owned and otherwise follow the single-line text contract.
+func ValidateModelIdentifier(value string) error {
+	if strings.TrimSpace(value) == "" || strings.TrimSpace(value) != value {
+		return fmt.Errorf("an explicit exact model identifier is required")
+	}
+	if err := ValidateSingleLineText(value); err != nil {
+		return fmt.Errorf("model identifier %w", err)
+	}
+	if strings.HasPrefix(value, "<") && strings.HasSuffix(value, ">") {
+		return fmt.Errorf("model identifier: %w", ErrUnresolvedPlaceholder)
 	}
 	return nil
 }

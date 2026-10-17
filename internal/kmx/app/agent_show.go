@@ -30,10 +30,9 @@ import (
 
 // ShowOptions are `kmx orka show`'s knobs.
 type ShowOptions struct {
-	// Namespace the Orka controller watches. Required for the same reason
-	// `kmx create --live` requires it: Orka watches namespaces explicitly,
-	// and a default that guessed wrong would report "not found" about a
-	// namespace the operator never meant.
+	// Namespace the Orka controller watches. Orka watches namespaces explicitly,
+	// and a default that guessed wrong would report "not found" about a namespace
+	// the operator never meant.
 	Namespace string
 	// Output selects table (default) or json.
 	Output string
@@ -170,10 +169,10 @@ func (a *App) readOrkaAgent(namespace, name string) (*orkaAgentSpec, error) {
 	if err != nil {
 		if isNotFound(err) {
 			return nil, fmt.Errorf("no Orka Agent %q in namespace %s.\n"+
-				"  `%s` shows what is there; `%s` makes one",
+				"  `%s` shows what is there. Author workspace source with `%s`, prove it with eval, then Lift its immutable digest",
 				name, namespace,
 				a.operationCommand("orka", "list", "--namespace", namespace),
-				a.operationCommand("create", "--live", "<name>", "--namespace", namespace))
+				a.operationCommand("create", "<name>", "--workspace", "<directory>", "--model", "<exact-model>", "--instructions", "<file>"))
 		}
 		return nil, fmt.Errorf("cannot read Orka Agent %q in namespace %s: %w", name, namespace, err)
 	}

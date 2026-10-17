@@ -225,6 +225,7 @@ func TestCreateRejectsInvalidInput(t *testing.T) {
 		{"", "model", "instructions"}, {"../escape", "model", "instructions"},
 		{"with.dots", "model", "instructions"}, {"with_underscore", "model", "instructions"}, {"trailing-", "model", "instructions"},
 		{"greeter", "", "instructions"}, {"greeter", " model ", "instructions"},
+		{"greeter", "<exact-model-or-deployment-name>", "instructions"},
 		{"greeter", "model", "  \n"}, {"greeter", "model", credential},
 		{credential, "model", "instructions"},
 	} {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 // Overlay Task admission only; native reads/placement and result transport retain
@@ -93,6 +94,41 @@ func TestSuiteWorkspaceEvaluationOfflineRefusals(t *testing.T) {
 	p, err = PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
 	if p != nil || !errors.Is(err, errSuitePassingFile) {
 		t.Fatalf("output not refused offline: %v", err)
+	}
+}
+
+func TestSuiteWorkspaceEvaluationNamesPlaceholderBeforeConfiguration(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	opt := nativeEvaluationOptions(t)
+	member := filepath.Join(opt.Workspace, "agents/greeter/member.yaml")
+	raw, err := os.ReadFile(member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, member, strings.Replace(string(raw), "packaged-model", "<exact-model-or-deployment-name>", 1))
+	p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+	if p != nil || err == nil || !strings.Contains(err.Error(), "unresolved model or endpoint placeholder") {
+		t.Fatalf("placeholder refusal is not actionable: p=%v err=%v", p, err)
+	}
+	if _, statErr := os.Stat(opt.Out); !os.IsNotExist(statErr) {
+		t.Fatalf("placeholder refusal created output: %v", statErr)
+	}
+}
+
+func TestSuiteEvaluationPlaceholderAfterEffectsKeepsNoRetryClassification(t *testing.T) {
+	err := suiteEvaluationError(t.Context(), fmt.Errorf("provider drift: %w", scaffold.ErrUnresolvedPlaceholder), true)
+	if !errors.Is(err, errSuiteNativeEvaluation) {
+		t.Fatalf("post-effect placeholder lost classification: %v", err)
+	}
+	if strings.Contains(err.Error(), "rerun eval") {
+		t.Fatalf("post-effect placeholder recommended an unsafe retry: %v", err)
+	}
+}
+
+func TestCandidatePlaceholderBeforeEffectsNamesRemediation(t *testing.T) {
+	err := (&suiteCandidateOutcome{phase: "preflight", cause: scaffold.ErrUnresolvedPlaceholder}).Error()
+	if !strings.Contains(err, "set concrete values, then rerun eval") || !strings.Contains(err, "candidate cleanup not required") {
+		t.Fatalf("pre-effect candidate placeholder is not actionable: %s", err)
 	}
 }
 

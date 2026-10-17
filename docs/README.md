@@ -25,6 +25,7 @@ runtime contract when extending or comparing implementations.
 | Inspect deployed agents, per-object Lift provenance and readiness without writes | [Destination status](destination-status.md) |
 | Discover models and configure native inference | [Models](models.md), [Copilot inference](copilot-inference.md), [Foundry inference](local-foundry-inference.md) |
 | Chat with an existing Orka Agent | [Interactive chat](interactive-chat.md) |
+| Run the local-proof to ACR to AKS walkthrough | [AKS Create, Prove, Lift demo](aks-demo.md) |
 | Use an existing AKS cluster or provision a disposable one | [AKS](aks.md) |
 | Find a command, its safety contract, and supported output modes | [kmx reference](kmx.md) |
 | Install a tagged release or understand version and upgrade limits | [Releases](releases.md) |

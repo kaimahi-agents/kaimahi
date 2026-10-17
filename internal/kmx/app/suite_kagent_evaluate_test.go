@@ -14,6 +14,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 func suiteKagentEvaluationOptions(t *testing.T) SuiteWorkspaceEvaluationOptions {
@@ -317,4 +318,16 @@ func TestSuiteKagentEvaluationOfflineBindingSelection(t *testing.T) {
 			}
 		})
 	}
+	t.Run("placeholder", func(t *testing.T) {
+		bad := opt
+		bad.Bindings = filepath.Join(privateSuiteDir(t), "placeholder")
+		writeFile(t, bad.Bindings, strings.Replace(string(p.bindings.raw), "    provider: openai\n", "    provider: openai\n    baseURL: https://<endpoint>/v1\n", 1))
+		got, err := PrepareSuiteWorkspaceEvaluation(t.Context(), bad)
+		if got != nil {
+			got.Close()
+		}
+		if !errors.Is(err, scaffold.ErrUnresolvedPlaceholder) {
+			t.Fatalf("placeholder classification lost: %v", err)
+		}
+	})
 }

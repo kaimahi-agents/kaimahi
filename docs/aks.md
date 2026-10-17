@@ -3,10 +3,15 @@
 [Orka](orka.md) is the platform; Kaimahi helps developers get agents onto it.
 Agents reach models through owner-configured Orka Providers directly.
 This page documents the **current AKS implementation**, which lands Orka on a
-cluster it provisions. The former Kagent Copilot demo journey and its lift
-payload remain retired. Explicit Kagent v0.10.2 create can target a separately
-installed compatible cluster. KMX does not manage that installation, and the
-alternate-runtime AKS payload remains retired.
+cluster it provisions. The former Kagent Copilot demo journey and its AKS
+payload remain retired. Exact-v0.10.3 packaged kagent evaluation and digest Lift
+can target a separately installed compatible cluster; KMX does not manage that
+installation.
+
+For a copyable end-to-end example, see the
+[AKS Create, Prove, Lift demo](aks-demo.md). It proves an Orka workspace locally,
+then provisions a disposable Free-tier control plane, publishes to ACR, and reviews
+an explicit source-evidence promotion before Lift.
 
 `kmx aks up` and `kmx aks down` are **temporary compatibility routes**,
 not a first-class KMX domain. They are hidden from root help and shell
@@ -24,7 +29,9 @@ it has no Azure credential and does not re-prove live cloud behavior.
 
 - An authenticated `az` CLI and subscription permissions for the intended
   resources. kmx does not install `az`. Created-cluster registry attachment also
-  requires permission to create the pull-role assignment.
+  requires permission to create the pull-role assignment. The carried provisioning
+  script uses only Azure CLI core commands and disables extension discovery for
+  its invocation, while retaining the caller's Azure login, cloud and subscription.
 - Phase-specific tools: kubectl and Bash for cluster provisioning. The Orka
   phase uses Helm from PATH or the pinned, checksum-verified kmx toolchain. Script phases
   require Linux, macOS or WSL, not native Windows. `--plan` requires only the
@@ -148,6 +155,11 @@ invocation.
 
 `--step` is validated against the `kmx aks up` phases, so a retired phase such
 as `--step agents` is refused and names the phases that exist.
+
+Recovery commands preserve the executable that started the operation. A run
+started as `./bin/kmx aks up ...` therefore prints `./bin/kmx ... --step orka`,
+not bare `kmx`; this prevents a copied retry from resolving to an older install
+earlier on `PATH`.
 
 The former `boundary`, `credential` and `plane` phases are not accepted.
 Plane administration commands are also removed from KMX.

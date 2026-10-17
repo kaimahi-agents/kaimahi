@@ -10,6 +10,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 var errSuiteNativeEvaluation = errors.New("native evaluation outcome unknown; resources may remain; no retry or cleanup")
@@ -71,6 +72,9 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 	}
 	if errors.Is(err, workspace.ErrMultiMemberUnsupported) {
 		return errors.Join(workspace.ErrMultiMemberUnsupported, cause)
+	}
+	if !mayHaveChanged && errors.Is(err, scaffold.ErrUnresolvedPlaceholder) {
+		return errors.Join(errors.New("native suite contains an unresolved model or endpoint placeholder; set concrete values, then rerun eval"), cause)
 	}
 	var port *orkaResultPortError
 	if errors.As(err, &port) {

@@ -111,7 +111,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 				a.Cfg.ContextSource = selection.Source
 			}
 			// Native retry advice must not synthesize the refused global --context.
-			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine), "kmx"}
+			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine), quoteShell(state.executable())}
 			for _, arg := range suiteEvaluationRecoveryArgs(state.argv) {
 				parts = append(parts, quoteShell(arg))
 			}

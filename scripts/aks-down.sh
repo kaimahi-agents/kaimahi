@@ -41,7 +41,45 @@ fi
   echo "usage: AKS_RESOURCE_GROUP=<rg> [AKS_CLUSTER=<name>] $0" >&2
   exit 1; }
 
-command -v az >/dev/null 2>&1 || { echo "aks-down: the az CLI is not installed" >&2; exit 1; }
+AZURE_CLI=$(type -P az) || { echo "aks-down: the az CLI is not installed" >&2; exit 1; }
+AZURE_EXTENSION_HOME=$(mktemp -d "${TMPDIR:-/tmp}/kmx-az-extensions.XXXXXX") || {
+  echo "aks-down: cannot create the private Azure CLI extension workspace" >&2
+  exit 1
+}
+trap 'rm -rf "$AZURE_EXTENSION_HOME"' EXIT
+azure_cli_stderr() {
+  local line address
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "ERROR: Error loading command module 'serviceconnector': deadlock detected by _ModuleLock('azure.core.pipeline') at "*)
+        address=${line##* at }
+        case "$address" in
+          '' | *[!0-9]*) ;;
+          *) continue ;;
+        esac
+        ;;
+    esac
+    printf '%s\n' "$line" >&2
+  done
+}
+az() {
+  local statuses
+  exec 3>&1
+  if AZURE_EXTENSION_DIR="$AZURE_EXTENSION_HOME" \
+    AZURE_EXTENSION_SYS_DIR="$AZURE_EXTENSION_HOME" \
+    AZURE_EXTENSION_DEV_SOURCES='' \
+    AZURE_EXTENSION_USE_DYNAMIC_INSTALL=no \
+      "$AZURE_CLI" "$@" 2>&1 1>&3 3>&- | azure_cli_stderr; then
+    statuses=("${PIPESTATUS[@]}")
+  else
+    statuses=("${PIPESTATUS[@]}")
+  fi
+  exec 3>&-
+  if [ "${statuses[0]}" -ne 0 ]; then
+    return "${statuses[0]}"
+  fi
+  return "${statuses[1]}"
+}
 az account show >/dev/null 2>&1 || {
   echo "aks-down: not logged in — run: az login" >&2; exit 1; }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 var errSuiteKagentBindings = errors.New("native kagent requires bounded confined author-owned bindings; inputs must remain unchanged")
@@ -61,6 +62,9 @@ func snapshotSuiteKagentBindings(path string) (*suiteKagentBindingSnapshot, erro
 		return nil, err
 	}
 	b, err := agentruntime.ParseKagentBindings(raw)
+	if errors.Is(err, scaffold.ErrUnresolvedPlaceholder) {
+		return nil, err
+	}
 	if err != nil || b.ModelConfig.Provider != "openai" {
 		return nil, errSuiteKagentBindings
 	}

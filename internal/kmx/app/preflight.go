@@ -61,8 +61,14 @@ func (a *App) preflight(dependencies ...dependency) error {
 		if len(dep.probe) == 0 {
 			continue
 		}
-		if _, err := a.Run.Capture(path, dep.probe...); err != nil {
-			problems = append(problems, fmt.Sprintf("%s was found at %s but is unusable: %v\n  install: %s", dep.name, path, err, dep.install))
+		var probeErr error
+		if dep.name == depAz.name {
+			_, probeErr = a.captureAzure(dep.probe...)
+		} else {
+			_, probeErr = a.Run.Capture(path, dep.probe...)
+		}
+		if probeErr != nil {
+			problems = append(problems, fmt.Sprintf("%s was found at %s but is unusable: %v\n  install: %s", dep.name, path, probeErr, dep.install))
 		}
 	}
 	if len(problems) == 0 {

@@ -20,6 +20,7 @@ func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
 	loads := 0
 	deps := productionDependencies()
 	deps.stdout, deps.stderr = out, errOut
+	deps.executable = "kmx"
 	deps.loadConfig = func(context, engine string) (*config.Config, error) {
 		loads++
 		return &config.Config{KubeContext: context}, nil
@@ -265,6 +266,47 @@ func TestGuardRetryKeepsInvocationArgumentsAndResolvedTarget(t *testing.T) {
 	want := "KIND_CLUSTER=other CONTAINER_ENGINE=podman kmx --context kind-other orka show 'a'\"'\"'b; $(bad)' --namespace team"
 	if invocation != want {
 		t.Fatalf("retry lost target or arguments:\n got: %s\nwant: %s", invocation, want)
+	}
+}
+
+func TestGeneratedCommandsPreserveInvokingExecutable(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, _ := testDependencies(&out, &errOut)
+	deps.executable = "./build with space/kmx"
+	deps.loadConfig = func(string, string) (*config.Config, error) {
+		return &config.Config{KubeContext: "remote", KindCluster: "demo", ContainerEngine: "docker"}, nil
+	}
+	state := &commandState{deps: deps, argv: []string{"orka", "show", "demo", "--namespace", "team"}}
+	root := newRootCommand(state)
+	cmd, _, err := root.Find([]string{"orka", "show"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var invocation string
+	cmd.RunE = appRun(state, func(a *app.App) error {
+		invocation = a.InvocationCommand
+		return nil
+	})
+	root.SetArgs(state.argv)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(invocation, "'./build with space/kmx'") || strings.Contains(invocation, " kmx --context") {
+		t.Errorf("guard retry changed executable: %s", invocation)
+	}
+}
+
+func TestInvocationExecutableMakesOnlyPathInvocationsAbsolute(t *testing.T) {
+	if got := invocationExecutable("kmx"); got != "kmx" {
+		t.Fatalf("installed executable changed: %q", got)
+	}
+	relative := filepath.Join("build with space", "kmx")
+	want, err := filepath.Abs(relative)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := invocationExecutable(relative); got != want {
+		t.Fatalf("path executable = %q, want %q", got, want)
 	}
 }
 

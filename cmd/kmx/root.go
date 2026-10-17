@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 
@@ -21,6 +22,7 @@ type dependencies struct {
 	stdin              *os.File
 	stdout             io.Writer
 	stderr             io.Writer
+	executable         string
 	loadConfig         func(string, string) (*config.Config, error)
 	newApp             func(*config.Config) *app.App
 	buildInfo          func() (*debug.BuildInfo, bool)
@@ -30,11 +32,26 @@ type dependencies struct {
 func productionDependencies() dependencies {
 	return dependencies{
 		stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
+		executable: invocationExecutable(os.Args[0]),
 		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
 		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {
 			return agentkitbuilder.New(options)
 		},
 	}
+}
+
+// invocationExecutable keeps installed names concise, but makes a path-based
+// checkout invocation independent of the directory a recovery runs from. It
+// deliberately does not resolve symlinks.
+func invocationExecutable(value string) string {
+	if !strings.ContainsRune(value, filepath.Separator) {
+		return value
+	}
+	absolute, err := filepath.Abs(value)
+	if err != nil {
+		return value
+	}
+	return absolute
 }
 
 type commandState struct {
@@ -43,6 +60,13 @@ type commandState struct {
 	containerEngineFlag string
 	app                 *app.App
 	argv                []string
+}
+
+func (s *commandState) executable() string {
+	if s.deps.executable == "" {
+		return "kmx"
+	}
+	return s.deps.executable
 }
 
 func (s *commandState) application() (*app.App, error) {
@@ -55,6 +79,7 @@ func (s *commandState) application() (*app.App, error) {
 	}
 	a := s.deps.newApp(cfg)
 	a.Out, a.Err, a.Stdin = s.deps.stdout, s.deps.stderr, s.deps.stdin
+	a.Executable = s.executable()
 	a.Run.Stdout, a.Run.Stderr = s.deps.stdout, s.deps.stderr
 	s.app = a
 	return a, nil
@@ -71,7 +96,7 @@ func (s *commandState) operationApplication(cmd *cobra.Command) (*app.App, error
 	// command would not repeat the mutation they are asking to confirm.
 	if cmd.Name() != "chat" && cmd.Name() != "console" && len(s.argv) > 0 {
 		parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine),
-			"kmx", "--context", quoteShell(a.Cfg.KubeContext)}
+			quoteShell(s.executable()), "--context", quoteShell(a.Cfg.KubeContext)}
 		for _, arg := range s.argv {
 			parts = append(parts, quoteShell(arg))
 		}

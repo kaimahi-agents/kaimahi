@@ -81,7 +81,7 @@ func runWorkspaceLiftCommand(cmd *cobra.Command, state *commandState, opt app.Wo
 		return err
 	}
 	// Keep recovery advice on this route; global --context is refused by Lift.
-	parts := []string{"kmx"}
+	parts := []string{quoteShell(state.executable())}
 	for _, arg := range suiteEvaluationRecoveryArgs(state.argv) {
 		parts = append(parts, quoteShell(arg))
 	}

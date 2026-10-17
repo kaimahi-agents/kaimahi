@@ -87,7 +87,7 @@ func newEvalCleanupCommand(state *commandState) *cobra.Command {
 			}
 			a.Cfg.ContextSource = source
 			// Never synthesize root --context in recovery advice for this route.
-			parts := []string{"kmx", "eval", "cleanup"}
+			parts := []string{quoteShell(state.executable()), "eval", "cleanup"}
 			if len(args) == 1 {
 				parts = append(parts, args[0])
 			}

@@ -77,6 +77,7 @@ const userGuides = [
   { text: 'Orka', link: '/docs/orka' },
   { text: 'Models and inference', link: '/docs/models' },
   { text: 'Interactive chat', link: '/docs/interactive-chat' },
+  { text: 'AKS Create, Prove, Lift demo', link: '/docs/aks-demo' },
   { text: 'AKS', link: '/docs/aks' },
   { text: 'Releases and upgrades', link: '/docs/releases' },
   { text: 'FAQ', link: '/docs/FAQ' }
@@ -140,6 +141,7 @@ export default defineConfig({
     'SECURITY.md',
     'testdata/**',
     'ax-harness/**',
+    'aks-greeter-demo/**',
     'brand/**',
     'internal/**',
     'node_modules/**'

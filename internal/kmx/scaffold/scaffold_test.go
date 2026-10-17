@@ -33,6 +33,17 @@ func TestNameValidation(t *testing.T) {
 	}
 }
 
+func TestModelIdentifierRejectsWholeValuePlaceholder(t *testing.T) {
+	if err := ValidateModelIdentifier("<exact-model-or-deployment-name>"); !errors.Is(err, ErrUnresolvedPlaceholder) {
+		t.Fatalf("model placeholder accepted: %v", err)
+	}
+	for _, model := range []string{"real-model", "provider/model:version"} {
+		if err := ValidateModelIdentifier(model); err != nil {
+			t.Fatalf("model %q refused: %v", model, err)
+		}
+	}
+}
+
 // Keep this CI-named parser/injection proof, now for the Orka artifact. The Go
 // parser is a dependency, so the proof runs keylessly without PyYAML or skips.
 func TestGeneratedManifestParsesAndKeepsInstructionsInsideTheScalar(t *testing.T) {

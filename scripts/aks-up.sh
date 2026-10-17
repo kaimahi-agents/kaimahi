@@ -116,7 +116,53 @@ network_flags=(--network-plugin azure --network-plugin-mode overlay
   --network-policy "$NETWORK_POLICY")
 [ "$NETWORK_POLICY" = cilium ] && network_flags+=(--network-dataplane cilium)
 
-command -v az >/dev/null 2>&1 || { echo "aks-up: the az CLI is not installed" >&2; exit 1; }
+AZURE_CLI=$(type -P az) || { echo "aks-up: the az CLI is not installed" >&2; exit 1; }
+# This lifecycle uses only Azure CLI core commands. Installed extensions can
+# override those commands or fail during unrelated eager imports, so isolate
+# extension discovery for this invocation. Keep AZURE_CONFIG_DIR unchanged:
+# login tokens, active cloud and subscription still come from the caller.
+AZURE_EXTENSION_HOME=$(mktemp -d "${TMPDIR:-/tmp}/kmx-az-extensions.XXXXXX") || {
+  echo "aks-up: cannot create the private Azure CLI extension workspace" >&2
+  exit 1
+}
+trap 'rm -rf "$AZURE_EXTENSION_HOME"' EXIT
+azure_cli_stderr() {
+  local line address
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "ERROR: Error loading command module 'serviceconnector': deadlock detected by _ModuleLock('azure.core.pipeline') at "*)
+        address=${line##* at }
+        case "$address" in
+          '' | *[!0-9]*) ;;
+          *) continue ;;
+        esac
+        ;;
+    esac
+    printf '%s\n' "$line" >&2
+  done
+}
+az() {
+  local statuses
+  # Azure CLI 2.86.0 can report a non-fatal Python module-lock error while
+  # loading its unrelated built-in Service Connector module for `az aks`.
+  # Keep stdout separate, stream every other diagnostic, and preserve both
+  # the Azure command and stderr-filter exit statuses.
+  exec 3>&1
+  if AZURE_EXTENSION_DIR="$AZURE_EXTENSION_HOME" \
+    AZURE_EXTENSION_SYS_DIR="$AZURE_EXTENSION_HOME" \
+    AZURE_EXTENSION_DEV_SOURCES='' \
+    AZURE_EXTENSION_USE_DYNAMIC_INSTALL=no \
+      "$AZURE_CLI" "$@" 2>&1 1>&3 3>&- | azure_cli_stderr; then
+    statuses=("${PIPESTATUS[@]}")
+  else
+    statuses=("${PIPESTATUS[@]}")
+  fi
+  exec 3>&-
+  if [ "${statuses[0]}" -ne 0 ]; then
+    return "${statuses[0]}"
+  fi
+  return "${statuses[1]}"
+}
 az account show >/dev/null 2>&1 || {
   echo "aks-up: not logged in — run: az login" >&2; exit 1; }
 
@@ -181,13 +227,22 @@ else
 fi
 
 # --- cluster --------------------------------------------------------------
+# Read managed-cluster ARM state through the core resource command. Azure CLI
+# releases can index unrelated modules under `az aks`; loading one of those
+# modules must not break an existence, policy or identity read.
+managed_cluster_show() {
+  az resource show --name "$CLUSTER" --resource-group "$RG" \
+    --resource-type Microsoft.ContainerService/managedClusters \
+    --api-version 2025-08-01 "$@"
+}
+
 # What the control plane reports as its policy engine. Only a well-formed
 # answer counts (standing guidance): an errored query must never read as
 # "no engine" — or as "the right one".
 cluster_policy() { # -> prints the engine ('' when none); nonzero if unusable
   local out
-  out=$(az aks show --name "$CLUSTER" --resource-group "$RG" \
-    --query 'networkProfile.networkPolicy' -o tsv 2>/dev/null) || return 1
+  out=$(managed_cluster_show \
+    --query 'properties.networkProfile.networkPolicy' -o tsv 2>/dev/null) || return 1
   case "$out" in
     '' | none | cilium | azure | calico) printf '%s' "$out" ;;
     *) return 1 ;;
@@ -202,7 +257,7 @@ cluster_policy() { # -> prints the engine ('' when none); nonzero if unusable
 # never to perform.
 cluster_exists() { # -> prints true|false; nonzero if the answer is unusable
   local err
-  if err=$(az aks show --name "$CLUSTER" --resource-group "$RG" --output none 2>&1); then
+  if err=$(managed_cluster_show --output none 2>&1); then
     printf 'true'
   elif printf '%s' "$err" | grep -q 'NotFound'; then
     printf 'false'
@@ -228,7 +283,7 @@ if [ "$cluster_state" = true ]; then
   # script now asks for one.
   if ! have=$(cluster_policy); then
     echo "aks-up: cannot read the existing cluster's network policy engine —" >&2
-    echo "  refusing to assume it enforces. Check: az aks show ... --query networkProfile" >&2
+    echo "  refusing to assume it enforces. Inspect networkProfile in Azure and re-run." >&2
     exit 1
   fi
   if [ "$have" != "$NETWORK_POLICY" ]; then
@@ -270,7 +325,7 @@ fi
 # workload policy enforcement, which needs workload-specific network tests.
 if ! have=$(cluster_policy); then
   echo "aks-up: the cluster's network policy engine could not be read." >&2
-  echo "  Not claiming an enforcing cluster. Re-run once 'az aks show' works." >&2
+  echo "  Not claiming an enforcing cluster. Re-run once the ARM read works." >&2
   exit 1
 fi
 if [ "$have" != "$NETWORK_POLICY" ]; then
@@ -293,8 +348,8 @@ echo "aks-up: network policy engine '$NETWORK_POLICY' confirmed by the control p
 # only a well-formed positive).
 echo "aks-up: checking AcrPull for the cluster's kubelet identity" >&2
 acr_id=$(az acr show --name "$ACR" --resource-group "$RG" --query id -o tsv)
-kubelet_oid=$(az aks show --name "$CLUSTER" --resource-group "$RG" \
-  --query identityProfile.kubeletidentity.objectId -o tsv)
+kubelet_oid=$(managed_cluster_show \
+  --query properties.identityProfile.kubeletidentity.objectId -o tsv)
 if [ -z "$acr_id" ] || [ -z "$kubelet_oid" ]; then
   echo "aks-up: could not resolve the registry or kubelet identity — refusing to guess" >&2
   exit 1

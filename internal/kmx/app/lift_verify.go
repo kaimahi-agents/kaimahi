@@ -20,8 +20,8 @@ func (a *App) liftVerify(opt lift.Options) error {
 	if err := a.OrkaStatus(); err != nil {
 		return err
 	}
-	a.notef("Orka is installed and its controllers are ready. No model call was made:\n" +
-		"  this AKS setup creates no Provider, so there is nothing yet that could answer.")
+	a.notef("Orka is installed and its controllers are ready. No model call was made.\n" +
+		"  This AKS setup did not create or inspect any Provider or Agent.")
 	if !opt.Observability {
 		a.notef("observability is disabled; Azure metrics and log arrival were not checked.")
 	} else {
@@ -46,24 +46,24 @@ func (a *App) readLiftRecord(group, cluster string) (*lift.Record, error) {
 // liftNextSteps explains the owner-created model binding and ongoing costs.
 func (a *App) liftNextSteps(opt lift.Options) {
 	fmt.Fprintf(a.Err, `
-  Orka is running on AKS. It has no Provider and no Agent yet — those are
-  yours to create, because kmx holds no credential for a hosted model and
-  this cluster runs no in-cluster one.
+  Orka is running on AKS. This setup did not create or inspect a Provider or
+  Agent. Configure those separately because kmx holds no hosted-model
+  credential and this cluster runs no in-cluster model.
 
     %s      what is installed, and what it resolves
 
-  Create a Secret you control, then an Agent against it. The Secret is read
-  from stdin so the key stays out of argv and shell history:
+  Create a Secret you control, then configure a native openai Provider through
+  Orka's installed schema. The Secret is read from stdin so the key stays out
+  of argv and shell history:
 
     printf %%s "$ORKA_API_KEY" | kubectl --context %s -n %s \
         create secret generic <name> --from-file=api-key=/dev/stdin
-    %s
+
+  Then follow https://kaimahi.dev/docs/aks-demo for offline Create, Prove,
+  publication and digest Lift.
 
 `, a.operationCommand("orka", "status"),
-		shellArg(a.Cfg.KubeContext), OrkaNamespace,
-		a.operationCommand("create", "--live", "<agent>", "--namespace", OrkaNamespace,
-			"--provider-type", "openai", "--model", "<model>", "--secret", "<name>",
-			"--base-url", "<endpoint>"))
+		shellArg(a.Cfg.KubeContext), OrkaNamespace)
 	if opt.Observability {
 		fmt.Fprintln(a.Err, "  Azure monitoring add-ons and their owned resources were configured.\n"+
 			"  Azure metrics and logs were not checked; application telemetry remains yours to configure.")

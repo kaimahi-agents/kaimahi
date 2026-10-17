@@ -55,12 +55,12 @@ func orkaResultPort(port string) (string, error) {
 	return strconv.FormatUint(parsed, 10), nil
 }
 
-func taskRecovery(name, contextName, namespace string) string {
-	return fmt.Sprintf("kmx task result %s --context %s --namespace %s --wait 5m", shellArg(name), shellArg(contextName), shellArg(namespace))
+func (a *App) taskRecovery(name, contextName, namespace string) string {
+	return fmt.Sprintf("%s task result %s --context %s --namespace %s --wait 5m", shellArg(a.commandExecutable()), shellArg(name), shellArg(contextName), shellArg(namespace))
 }
 
-func pendingTask(name, contextName, namespace string) error {
-	return fmt.Errorf("%w: Task %s may still be running or its result is not yet available; recover with: %s", ErrTaskPending, name, taskRecovery(name, contextName, namespace))
+func (a *App) pendingTask(name, contextName, namespace string) error {
+	return fmt.Errorf("%w: Task %s may still be running or its result is not yet available; recover with: %s", ErrTaskPending, name, a.taskRecovery(name, contextName, namespace))
 }
 
 // orkaPhaseDeadlineError identifies expiry of a bounded Orka phase, even when
@@ -81,10 +81,10 @@ func orkaPhaseError(parent, phase context.Context, err error) error {
 	return err
 }
 
-func runTaskWaitError(ctx context.Context, err error, name, contextName, namespace string) error {
+func (a *App) runTaskWaitError(ctx context.Context, err error, name, contextName, namespace string) error {
 	var phaseDeadline *orkaPhaseDeadlineError
 	if err != nil && errors.Is(err, context.DeadlineExceeded) && (ctx.Err() == context.DeadlineExceeded || errors.As(err, &phaseDeadline)) {
-		return pendingTask(name, contextName, namespace)
+		return a.pendingTask(name, contextName, namespace)
 	}
 	return err
 }
@@ -253,7 +253,7 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	if err != nil {
 		return fmt.Errorf("Task name could not be written; no Task created: %w", err)
 	}
-	recoveryLine := fmt.Sprintf("Recovery: %s\n", taskRecovery(taskName, worker.Cfg.KubeContext, namespace))
+	recoveryLine := fmt.Sprintf("Recovery: %s\n", worker.taskRecovery(taskName, worker.Cfg.KubeContext, namespace))
 	n, err = io.WriteString(worker.Err, recoveryLine)
 	if err == nil && n != len(recoveryLine) {
 		err = io.ErrShortWrite
@@ -264,15 +264,15 @@ func (a *App) RunAgent(opt RunAgentOptions) error {
 	task := map[string]any{"apiVersion": "core.orka.ai/v1alpha1", "kind": "Task", "metadata": map[string]any{"name": taskName, "namespace": namespace}, "spec": map[string]any{"type": "ai", "prompt": prompt, "agentRef": map[string]any{"name": name, "namespace": namespace}, "resources": map[string]any{}}}
 	id, err := worker.createOrkaObject(execCtx, namespace, task)
 	if err != nil {
-		return fmt.Errorf("Task %s creation failed or was ambiguous; it may exist or be running, do not retry; recover with %s: %w", taskName, taskRecovery(taskName, worker.Cfg.KubeContext, namespace), err)
+		return fmt.Errorf("Task %s creation failed or was ambiguous; it may exist or be running, do not retry; recover with %s: %w", taskName, worker.taskRecovery(taskName, worker.Cfg.KubeContext, namespace), err)
 	}
 	answer, err := worker.waitOrkaTaskResult(execCtx, namespace, id, session)
 	if err != nil {
-		outcome := runTaskWaitError(execCtx, err, taskName, worker.Cfg.KubeContext, namespace)
+		outcome := worker.runTaskWaitError(execCtx, err, taskName, worker.Cfg.KubeContext, namespace)
 		if errors.Is(outcome, ErrTaskPending) {
 			return outcome
 		}
-		return fmt.Errorf("%w; recover with: %s", outcome, taskRecovery(taskName, worker.Cfg.KubeContext, namespace))
+		return fmt.Errorf("%w; recover with: %s", outcome, worker.taskRecovery(taskName, worker.Cfg.KubeContext, namespace))
 	}
 	_, err = fmt.Fprintln(worker.Out, answer)
 	return err
