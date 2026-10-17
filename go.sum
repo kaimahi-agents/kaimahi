@@ -26,14 +26,14 @@ github.com/AzureAD/microsoft-authentication-library-for-go v1.8.0 h1:Nljr4q1GRA/
 github.com/AzureAD/microsoft-authentication-library-for-go v1.8.0/go.mod h1:Y33QHnf0FfdVewFFISOGe20mkZbxX4H839o955/PoeI=
 github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ4pzQ=
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
+github.com/agent-primitives/sessions v0.2.0 h1:gFAFuCwN+QaAHzA0jsz/97bZ8M+89nOIhDaXInQITMA=
+github.com/agent-primitives/sessions v0.2.0/go.mod h1:DZCwTLhJb6bltufqRqKK7IOEsx+s6isnMK7PMiaR7Ts=
 github.com/agent-primitives/suite v0.3.1 h1:Qm5qfCzlabaKiL8+Da6N1Ear5/oTUp36OnmfqMibXfM=
 github.com/agent-primitives/suite v0.3.1/go.mod h1:2l3r2UvhAciPbbMQshClXJbihFhs9BXW6srj1HPL9gQ=
 github.com/agent-primitives/suite v0.3.2-0.20261016151746-76e3988b7f1d h1:lIXJyaiFekrRklqHfBDlk3WEOLT3egf4tG77z4GKWls=
 github.com/agent-primitives/suite v0.3.2-0.20261016151746-76e3988b7f1d/go.mod h1:2l3r2UvhAciPbbMQshClXJbihFhs9BXW6srj1HPL9gQ=
 github.com/agent-primitives/suite v0.4.0 h1:QjhXMBdHOu1nuuzb0mfrSJ2m7jUpwDF8yixdl8JKOzU=
 github.com/agent-primitives/suite v0.4.0/go.mod h1:2l3r2UvhAciPbbMQshClXJbihFhs9BXW6srj1HPL9gQ=
-github.com/aramase/agentsessions v0.1.3-0.20261013201528-ca85f47a2ec1 h1:WYC4n36Xgwba5CA51PwUL9NyS48iaf0K1+ps+3C0viE=
-github.com/aramase/agentsessions v0.1.3-0.20261013201528-ca85f47a2ec1/go.mod h1:vJcj1gvbiMSrrN06LRAVR3oxdO/mRQsPHlOTXgWtNAY=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-udiff v0.4.1 h1:OEIrQ8maEeDBXQDoGCbbTTXYJMYRCRO1fnodZ12Gv5o=

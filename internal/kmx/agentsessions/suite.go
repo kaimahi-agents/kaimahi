@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	v1 "github.com/aramase/agentsessions/api/genpb"
-	"github.com/aramase/agentsessions/wire"
+	v1 "github.com/agent-primitives/sessions/api/genpb"
+	"github.com/agent-primitives/sessions/wire"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

@@ -3,7 +3,7 @@ package agentsessions
 import (
 	"context"
 
-	"github.com/aramase/agentsessions/eventlog"
+	"github.com/agent-primitives/sessions/eventlog"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

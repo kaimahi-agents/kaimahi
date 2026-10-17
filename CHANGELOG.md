@@ -195,6 +195,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- AgentSessions consumer dependency moves to `github.com/agent-primitives/sessions`
+  `v0.2.0` with verified module sums. Runtime/profile and proof identity pins stay
+  unchanged; this does not upgrade operator daemons or qualify new lifecycle,
+  approval or tool-executor capabilities.
+
 - Quickstart and console creation now use native suite evaluation, publication
   and reviewed Lift. Console Ready means placement, not an answer.
 - New local kind clusters use a five-second kubelet sync cadence; existing

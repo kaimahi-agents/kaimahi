@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	v1 "github.com/aramase/agentsessions/api/genpb"
+	v1 "github.com/agent-primitives/sessions/api/genpb"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"google.golang.org/grpc"

@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	sdk "github.com/aramase/agentsessions/client"
+	sdk "github.com/agent-primitives/sessions/client"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

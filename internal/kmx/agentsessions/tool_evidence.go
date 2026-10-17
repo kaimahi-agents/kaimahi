@@ -1,7 +1,7 @@
 package agentsessions
 
 import (
-	v1 "github.com/aramase/agentsessions/api/genpb"
+	v1 "github.com/agent-primitives/sessions/api/genpb"
 	"google.golang.org/protobuf/proto"
 )
 

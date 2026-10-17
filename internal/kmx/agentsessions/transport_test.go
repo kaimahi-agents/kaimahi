@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/aramase/agentsessions/api/genpb"
+	v1 "github.com/agent-primitives/sessions/api/genpb"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
