@@ -27,7 +27,7 @@ BADGE_PATTERNS = [
 INSTALL_COMMANDS = [
     ("Homebrew install", r"^brew install kaimahi-agents/tap/kmx$"),
     ("release installer", r"^curl -fsSL https://raw\.githubusercontent\.com/kaimahi-agents/kaimahi/main/install\.sh \| sh$"),
-    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.7\.0$"),
+    ("pinned Go install", r"^go install github\.com/kaimahi-agents/kaimahi/cmd/kmx@v0\.8\.0$"),
 ]
 FIRST_ANSWER_COMMANDS = [
     ("kmx version", r"^kmx version$"),
@@ -132,10 +132,10 @@ def check(text: str) -> str | None:
     if table_problem is not None:
         return "README front door: " + table_problem
     table_at = journey.find(JOURNEY_HEADER)
-    release = "The table below describes v0.7.0's one-member workflow; these docs follow main and may also describe unreleased behavior."
+    release = "The table below describes v0.8.0's one-member workflow; these docs follow main and may also describe unreleased behavior."
     release_at = journey.find(release)
     if not 0 <= release_at < table_at:
-        return "README front door: v0.7.0 release note must precede the suite journey table"
+        return "README front door: v0.8.0 release note must precede the suite journey table"
     for index, (label, purpose_pattern) in enumerate(JOURNEY_ROWS):
         if rows[index][0] != label or re.search(purpose_pattern, rows[index][1]) is None:
             return f"README front door: {label} row is missing or out of order"
