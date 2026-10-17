@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
 
@@ -45,6 +47,54 @@ func TestAgentEvalDiffRejectsLegacyReceiptOfflineCLI(t *testing.T) {
 				t.Fatal("private content exposed")
 			}
 		})
+	}
+}
+
+func TestRootEvalOutputSelectionBeforeConfiguration(t *testing.T) {
+	for _, format := range []string{"yaml", "", "JSON"} {
+		var out, diagnostics bytes.Buffer
+		deps, loads := testDependencies(&out, &diagnostics)
+		err := execute([]string{"eval", "--output=" + format}, deps)
+		if err == nil || !strings.Contains(err.Error(), "eval output must be text or json") || *loads != 0 || out.Len() != 0 {
+			t.Fatalf("invalid format reached configuration or stdout: err=%v loads=%d out=%s", err, *loads, &out)
+		}
+	}
+	for _, format := range []string{"text", "json"} {
+		t.Run(format, func(t *testing.T) {
+			t.Setenv("KMX_HOME", t.TempDir())
+			root, _ := suiteEvalSource(t)
+			var out, diagnostics bytes.Buffer
+			deps, loads := testDependencies(&out, &diagnostics)
+			boundary := errors.New("configured boundary")
+			deps.loadConfig = func(string, string) (*config.Config, error) { *loads++; return nil, boundary }
+			err := execute([]string{"eval", "--workspace", root, "--to-context", "kind-test", "--inference", "provider:inference", "-o", format}, deps)
+			if !errors.Is(err, boundary) || *loads != 1 || out.Len() != 0 {
+				t.Fatalf("selection rejected or contaminated stdout: %v loads=%d out=%s", err, *loads, &out)
+			}
+		})
+	}
+}
+
+func TestRootEvalJSONRefusalIsOneSafeDocument(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	root, _ := suiteEvalSource(t)
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	deps.newApp = func(cfg *config.Config) *app.App {
+		// Refuse at the configured evaluator boundary, without a runtime call.
+		cfg.KubeContext = "different"
+		return app.New(cfg)
+	}
+	err := execute([]string{"eval", "--workspace", root, "--to-context", "kind-test", "--inference", "provider:inference", "-o", "json"}, deps)
+	var report struct {
+		Status, Detail               string
+		Executed, Total, NotExecuted int
+	}
+	if e := json.Unmarshal(out.Bytes(), &report); e != nil || err == nil || *loads != 1 || report.Status != "failed" || report.Executed != 0 || report.Total != 1 || report.NotExecuted != 1 {
+		t.Fatalf("bad JSON refusal: %s err=%v decode=%v loads=%d", &out, err, e, *loads)
+	}
+	if !strings.Contains(report.Detail, "0 of 1 runs executed; 0 passed; 1 not executed") || strings.Contains(report.Detail, "aborted on execution error") {
+		t.Fatal("preflight refusal misreported as completed run set or execution abort", report.Detail)
 	}
 }
 

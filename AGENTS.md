@@ -170,7 +170,12 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   repeat preflight states the summed run-time budget excluding placement.
   Any unknown vetoes the threshold. Only
   completed attributable assertion failures are countable; execution errors
-  still abort. AgentSessions development evaluation shares this repeat policy.
+  still abort. Orka abort reports count executed runs from returned nonempty
+  TaskUIDs, not assertion completion; total remains planned. Root eval's local
+  -o text|json defaults to text for every runtime; JSON is Orka-only and emits
+  one payload-free outcome document with diagnostics on stderr. Composed Lift
+  adds the same run-local counts, omitting them for GET-only cached skips.
+  AgentSessions development evaluation shares this repeat policy.
   Private repeated rows retain ordinal/policy and actual outcomes; default
   one-run encoding stays unchanged. Field names/defaults/validation follow
   [AgentSuite §8.2.2](https://github.com/agent-primitives/suite/blob/main/spec.md#822-case-documents-and-assertions):

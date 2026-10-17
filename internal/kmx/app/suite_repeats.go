@@ -105,10 +105,44 @@ func validateSuiteRunGroups(rows []suitePassingCase) error {
 	return nil
 }
 
+// SuiteRunExecutionSummary is run-local Orka reporting, never passing evidence.
+// A TaskUID records execution even when no assertions could be evaluated.
+type SuiteRunExecutionSummary struct {
+	Executed    int  `json:"executed"`
+	NotExecuted int  `json:"notExecuted"`
+	Aborted     bool `json:"aborted"`
+}
+
+type suiteRunSummary struct {
+	SuiteRunExecutionSummary
+	Passed, Total int
+}
+
+func (s suiteRunSummary) String() string {
+	if s.Aborted {
+		return fmt.Sprintf("%d of %d runs executed; %d passed; aborted on execution error; %d not executed", s.Executed, s.Total, s.Passed, s.NotExecuted)
+	}
+	if s.NotExecuted > 0 {
+		return fmt.Sprintf("%d of %d runs executed; %d passed; %d not executed", s.Executed, s.Total, s.Passed, s.NotExecuted)
+	}
+	return fmt.Sprintf("%d/%d runs passed", s.Passed, s.Total)
+}
+
 // Each fresh run gets the configured deadline, including its judging and
 // attribution checks. A late unknown vetoes an already attainable threshold.
 func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, timeout time.Duration, out io.Writer, run func(context.Context, suitePassingInventoryCase) (suitePassingObservation, error)) ([]suitePassingObservation, error) {
-	observations := make([]suitePassingObservation, 0, len(frames))
+	return evaluateSuiteRunsReporting(ctx, frames, timeout, out, run, nil)
+}
+
+// Only the Orka candidate caller supplies a TaskUID-based diagnostic summary.
+// Other runtimes retain their own execution identities and existing behavior.
+func evaluateSuiteRunsReporting(ctx context.Context, frames []suitePassingInventoryCase, timeout time.Duration, out io.Writer, run func(context.Context, suitePassingInventoryCase) (suitePassingObservation, error), summary *suiteRunSummary) (observations []suitePassingObservation, err error) {
+	thresholdMiss := false
+	if summary != nil {
+		*summary = suiteRunSummary{Total: len(frames), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(frames)}}
+		defer func() { summary.Aborted = err != nil && !thresholdMiss }()
+	}
+	observations = make([]suitePassingObservation, 0, len(frames))
 	for i := 0; i < len(frames); {
 		count, required := frames[i].Case.RunPolicy()
 		if count > len(frames)-i {
@@ -119,6 +153,10 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 			frame := frames[i+j]
 			runCtx, cancel := context.WithTimeout(ctx, timeout)
 			observed, err := run(runCtx, frame)
+			if summary != nil && observed.TaskUID != "" {
+				summary.Executed++
+				summary.NotExecuted--
+			}
 			if cause := runCtx.Err(); cause != nil {
 				// Cancellation invalidates a countable failure, but must retain
 				// other classified errors and the ambiguous-outcome disclosure.
@@ -133,14 +171,15 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 			verdict := agentruntime.EvaluationUnknown
 			if complete && (err == nil || errors.Is(err, errSuiteNativeCaseFailed)) {
 				verdict = suiteRunVerdict(observed.Assertions)
-			} else if errors.Is(err, errSuiteNativeCaseFailed) && observed.Verdict == agentruntime.EvaluationFail {
-				verdict = agentruntime.EvaluationFail
 			}
 			label := frame.Case.ID
 			if count > 1 {
 				label = fmt.Sprintf("%s run %d/%d", label, j+1, count)
 			}
 			result := string(verdict)
+			if !complete && errors.Is(err, errSuiteNativeCaseFailed) && observed.Verdict == agentruntime.EvaluationFail {
+				result = "execution failed (assertions not evaluated)"
+			}
 			var port *orkaResultPortError
 			if errors.As(err, &port) {
 				result = port.Error()
@@ -168,11 +207,15 @@ func evaluateSuiteRuns(ctx context.Context, frames []suitePassingInventoryCase, 
 			observed.Verdict = verdict
 			if verdict == agentruntime.EvaluationPass {
 				passes++
+				if summary != nil {
+					summary.Passed++
+				}
 			}
 			observations = append(observations, observed)
 			cancel()
 		}
 		if passes < required {
+			thresholdMiss = true
 			return nil, errSuiteNativeCaseFailed
 		}
 		i += count

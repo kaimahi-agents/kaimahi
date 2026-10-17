@@ -3,7 +3,9 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,8 +15,280 @@ import (
 	"time"
 
 	agentsuite "github.com/agent-primitives/suite"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
+
+// A single repeated case keeps planned runs distinct from executed Tasks.
+func repeatedCandidateCase(t *testing.T, root string) {
+	t.Helper()
+	writeFile(t, filepath.Join(root, "eval/example.yaml"), "id: first\ninput: '"+nativeCanary+" first'\nexpectContains: ['"+nativeCanary+"']\nruns: 3\nminPasses: 2\n")
+	if err := os.Remove(filepath.Join(root, "eval/second.yaml")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func candidateAbortScenario(t *testing.T, state *publicCandidateFixture, mode string) *int {
+	t.Helper()
+	tasks := new(int)
+	state.afterCreate = func(key string) {
+		if !strings.HasPrefix(key, "Task/") {
+			return
+		}
+		*tasks++
+		if mode == "late" && *tasks < 3 {
+			return
+		}
+		phase := "Failed"
+		if mode == "Cancelled" {
+			phase = mode
+		}
+		state.externalTasks = false
+		state.objects[key]["status"] = map[string]any{"phase": phase, "message": nativeCanary}
+	}
+	if mode == "no TaskUID" {
+		state.change = func(_ string, cmd *exec.Cmd) error {
+			if slices.Contains(cmd.Args, "token") && len(state.creates) == 2 {
+				return errors.New(nativeCanary)
+			}
+			return nil
+		}
+	}
+	if mode == "cleanup" {
+		state.beforeDelete = func(context.Context, *exec.Cmd) error { return errors.New(nativeCanary) }
+	}
+	return tasks
+}
+
+func TestCandidateExecutionAbortSummary(t *testing.T) {
+	for _, mode := range []string{"Failed", "Cancelled", "late", "no TaskUID", "cleanup"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("KMX_HOME", privateSuiteDir(t))
+			a, _, f, state := publicNativeEvaluationFixture(t)
+			opt := nativeEvaluationOptions(t)
+			opt.ResultPort, opt.ManagedPass = f.opt.ResultPort, true
+			repeatedCandidateCase(t, opt.Workspace)
+			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			f.answers[nativeCanary+" first"] = nativeCanary + " answer"
+			tasks := candidateAbortScenario(t, state, mode)
+			err = a.EvaluateSuiteWorkspace(t.Context(), p)
+			wantExecuted, wantPassed := 1, 0
+			if mode == "late" {
+				wantExecuted, wantPassed = 3, 2
+			}
+			if mode == "no TaskUID" {
+				wantExecuted = 0
+			}
+			want := fmt.Sprintf("%d of 3 runs executed; %d passed; aborted on execution error; %d not executed", wantExecuted, wantPassed, 3-wantExecuted)
+			if err == nil || !strings.Contains(err.Error(), want) || *tasks != wantExecuted {
+				t.Fatalf("dishonest abort: tasks=%d err=%v; want %q", *tasks, err, want)
+			}
+			if mode == "cleanup" {
+				if strings.Contains(err.Error(), "cleanup completed") || len(state.objects) == 0 {
+					t.Fatal("claimed incomplete cleanup complete", err)
+				}
+			} else if len(state.objects) != 0 || !strings.Contains(err.Error(), "cleanup completed") {
+				t.Fatal("cleanup not verified", err)
+			}
+			if mode != "no TaskUID" && !strings.Contains(f.out.String(), "execution failed (assertions not evaluated)") {
+				t.Fatal("missing execution failure label", f.out.String())
+			}
+			if strings.Contains(err.Error()+f.out.String()+fmt.Sprint(a.Err), nativeCanary) {
+				t.Fatal("payload leaked")
+			}
+			if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
+				t.Fatal("abort exported receipt", e)
+			}
+			if _, _, e := p.store.latest(t.Context(), p.suite); !errors.Is(e, errSuitePassMissing) {
+				t.Fatal("abort registered proof", e)
+			}
+		})
+	}
+}
+
+func TestRootEvalJSONRefusesOtherRuntimeCountsOffline(t *testing.T) {
+	for _, runtime := range []string{"kagent", "agentsessions"} {
+		t.Run(runtime, func(t *testing.T) {
+			t.Setenv("KMX_HOME", privateSuiteDir(t))
+			var opt SuiteWorkspaceEvaluationOptions
+			if runtime == "kagent" {
+				opt = suiteKagentEvaluationOptions(t)
+			} else {
+				opt = nativeEvaluationOptions(t)
+				member := filepath.Join(opt.Workspace, "agents/greeter/member.yaml")
+				raw, err := os.ReadFile(member)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, member, strings.Split(string(raw), "\nruntime:")[0]+"\nruntime: {id: agentsessions, version: "+workspace.AgentSessionsVersion+", engine: chat}\n")
+				opt.ToContext, opt.ToNamespace, opt.Inference, opt.ResultPort = "", "", "", ""
+				opt.DevelopmentHost = filepath.Join(t.TempDir(), "missing-host.json")
+			}
+			opt.JSON = true
+			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+			if p != nil {
+				p.Close()
+			}
+			if p != nil || err == nil || err.Error() != "native eval JSON output supports only Orka" {
+				t.Fatalf("unsupported runtime counts not refused before execution prerequisites: %v", err)
+			}
+			if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
+				t.Fatal("JSON refusal wrote evidence", e)
+			}
+		})
+	}
+}
+
+func TestRootEvalJSONRunSummary(t *testing.T) {
+	for _, mode := range []string{"Failed", "Cancelled", "late", "no TaskUID", "cleanup", "threshold pass", "threshold miss"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("KMX_HOME", privateSuiteDir(t))
+			a, _, f, state := publicNativeEvaluationFixture(t)
+			opt := nativeEvaluationOptions(t)
+			opt.ResultPort, opt.ManagedPass, opt.JSON = f.opt.ResultPort, true, true
+			repeatedCandidateCase(t, opt.Workspace)
+			p, err := PrepareSuiteWorkspaceEvaluation(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			f.answers[nativeCanary+" first"] = nativeCanary + " answer"
+			executed, passed, aborted := 1, 0, true
+			var tasks *int
+			if strings.HasPrefix(mode, "threshold") {
+				tasks = new(int)
+				state.afterCreate = func(key string) {
+					if strings.HasPrefix(key, "Task/") {
+						*tasks++
+						f.answers[nativeCanary+" first"] = nativeCanary + " answer"
+						if *tasks == 1 || mode == "threshold miss" && *tasks == 2 {
+							f.answers[nativeCanary+" first"] = "wrong"
+						}
+					}
+				}
+				executed, passed, aborted = 3, 2, false
+				if mode == "threshold miss" {
+					passed = 1
+				}
+			} else {
+				tasks = candidateAbortScenario(t, state, mode)
+				if mode == "late" {
+					executed, passed = 3, 2
+				}
+				if mode == "no TaskUID" {
+					executed = 0
+				}
+			}
+			var out, diagnostics bytes.Buffer
+			a.Out, a.Err = &out, &diagnostics
+			err = a.EvaluateSuiteWorkspace(t.Context(), p)
+			var report struct {
+				Status, Detail, Error, Cleanup       string
+				Executed, NotExecuted, Passed, Total int
+				Aborted                              bool
+			}
+			if e := json.Unmarshal(out.Bytes(), &report); e != nil {
+				t.Fatalf("stdout is not one JSON document: %s (%v)", &out, e)
+			}
+			if report.Executed != executed || report.NotExecuted != 3-executed || report.Passed != passed || report.Total != 3 || report.Aborted != aborted || *tasks != executed {
+				t.Fatalf("dishonest run report: %+v Tasks=%d err=%v", report, *tasks, err)
+			}
+			if mode == "threshold pass" {
+				if err != nil || report.Status != "complete" || !strings.Contains(report.Detail, "2/3 runs passed") {
+					t.Fatal("threshold pass refused", report, err)
+				}
+				if _, _, e := p.store.latest(t.Context(), p.suite); e != nil {
+					t.Fatal("pass not registered", e)
+				}
+			} else {
+				if err == nil || report.Status != "failed" || report.Error == "" {
+					t.Fatal("abort claimed success", report, err)
+				}
+				if mode == "threshold miss" && (!strings.Contains(report.Detail, "1/3 runs passed") || strings.Contains(report.Detail, "aborted")) {
+					t.Fatal("threshold miss claimed execution abort", report)
+				}
+				if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
+					t.Fatal("failure exported", e)
+				}
+			}
+			if mode == "cleanup" {
+				if strings.Contains(report.Cleanup, "completed") || len(state.objects) == 0 {
+					t.Fatal("false cleanup claim", report)
+				}
+			} else if report.Cleanup != "candidate cleanup completed" || len(state.objects) != 0 {
+				t.Fatal("missing verified cleanup", report)
+			}
+			if !strings.Contains(diagnostics.String(), "Workspace:") || strings.Contains(out.String()+diagnostics.String()+fmt.Sprint(err), nativeCanary) {
+				t.Fatal("bad JSON channels/privacy", &out, &diagnostics, err)
+			}
+		})
+	}
+}
+
+func TestWorkspaceLiftExecutionAbortSummary(t *testing.T) {
+	for _, jsonOutput := range []bool{false, true} {
+		for _, mode := range []string{"Failed", "Cancelled", "late", "no TaskUID", "cleanup"} {
+			t.Run(fmt.Sprintf("json=%t/%s", jsonOutput, mode), func(t *testing.T) {
+				a, opt, state, _, _, writes := workspaceLiftFixture(t, func(root string) { repeatedCandidateCase(t, root) })
+				opt.JSON, opt.Verbose = jsonOutput, !jsonOutput
+				var out, diagnostics bytes.Buffer
+				a.Out, a.Err = &out, &diagnostics
+				tasks := candidateAbortScenario(t, state, mode)
+				p, err := PrepareWorkspaceLift(t.Context(), opt)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer p.Close()
+				r, err := a.LiftWorkspace(t.Context(), p)
+				executed, passed := 1, 0
+				if mode == "late" {
+					executed, passed = 3, 2
+				}
+				if mode == "no TaskUID" {
+					executed = 0
+				}
+				want := fmt.Sprintf("%d of 3 runs executed; %d passed; aborted on execution error; %d not executed", executed, passed, 3-executed)
+				if err == nil || *tasks != executed || !strings.Contains(r.Eval.Detail, want) || r.Eval.Passed != passed || r.Eval.Total != 3 {
+					t.Fatalf("dishonest Lift abort: %+v, %v; Tasks=%d", r, err, *tasks)
+				}
+				if mode == "cleanup" {
+					if strings.Contains(r.Eval.Detail, "cleanup completed") || len(state.objects) == 0 {
+						t.Fatal("false cleanup claim", r)
+					}
+				} else if len(state.objects) != 0 || !strings.Contains(r.Eval.Detail, "cleanup completed") {
+					t.Fatal("cleanup not verified", r)
+				}
+				if *writes != 0 || r.Push.Status != "not-attempted" || r.Lift.Status != "not-attempted" || len(persistentOrkaCalls(t, os.Getenv("KMX_RECONCILE_DIR"))) != 0 {
+					t.Fatal("abort advanced pipeline", r)
+				}
+				// Lift finalizes its store before returning; inspect persisted output.
+				if records, e := filepath.Glob(filepath.Join(p.store.partition, "*.json")); e != nil || len(records) != 0 {
+					t.Fatal("abort registered proof", records, e)
+				}
+				if jsonOutput {
+					var document struct {
+						Eval struct {
+							Executed, NotExecuted int
+							Aborted               bool
+						}
+					}
+					if e := json.Unmarshal(out.Bytes(), &document); e != nil || document.Eval.Executed != executed || document.Eval.NotExecuted != 3-executed || !document.Eval.Aborted {
+						t.Fatalf("missing JSON counts: %s (%v)", &out, e)
+					}
+				} else if out.Len() != 0 || !strings.Contains(diagnostics.String(), want) {
+					t.Fatal("bad text channels", &out, &diagnostics)
+				}
+				if strings.Contains(out.String()+diagnostics.String()+err.Error(), nativeCanary) {
+					t.Fatal("payload leaked")
+				}
+			})
+		}
+	}
+}
 
 func TestCandidateCoreRepeatThreshold(t *testing.T) {
 	for _, scenario := range []string{"threshold pass", "threshold fail", "late cancellation"} {
@@ -71,6 +345,9 @@ func TestCandidateCoreRepeatThreshold(t *testing.T) {
 				}
 				if _, e := os.Stat(opt.Out); !os.IsNotExist(e) {
 					t.Fatal("failed threshold exported")
+				}
+				if !strings.Contains(err.Error(), "3 of 4 runs executed; 0 passed; 1 not executed") || strings.Contains(err.Error(), "aborted on execution error") {
+					t.Fatal("partial threshold miss misreported as complete or execution abort", err)
 				}
 				return
 			}
