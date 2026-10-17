@@ -51,7 +51,7 @@ pinned separately to the published `v0.1.0` release.
 ## Version boundary
 
 The published site and local preview render `main`, which can describe
-unreleased behavior. The global channel notice links to the stable v0.7.0 source.
+unreleased behavior. The global channel notice links to the stable v0.8.0 source.
 Tagged Markdown remains the historical release record. A version selector and
 generated copies of older guides are deliberately not implemented in this draft.
 

@@ -16,7 +16,7 @@ For a repeatable install, pin the release with Go or use the checksum-verified
 [release installer](releases.md#install):
 
 ```bash
-go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.7.0
+go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.8.0
 kmx version
 ```
 
@@ -25,7 +25,7 @@ Put Go's binary directory on PATH. Inspect the effective context with
 See [release upgrades](releases.md#upgrading-kmx) when moving from an older version,
 and [command alignment](command-semantics.md) for compatibility and retirement details.
 The root `create/chat/run/eval/push/lift` commands below are available in
-v0.7.0. When upgrading, see the [migration guidance](../CHANGELOG.md#upgrading)
+v0.8.0. When upgrading, see the [migration guidance](../CHANGELOG.md#upgrading)
 for removed commands and legacy bundle workflows.
 
 ## Prerequisites
