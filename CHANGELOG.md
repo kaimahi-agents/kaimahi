@@ -22,6 +22,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+## v0.8.1 — 2026-10-17
+
 ### Added
 
 - A copy-paste AKS Free-tier walkthrough now follows the supported lifecycle:
@@ -45,19 +47,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - Generated retry and follow-up commands preserve the executable that launched
   KMX. A run started with `./bin/kmx` no longer prints a bare `kmx` recovery that
   can resolve to an older installation on `PATH`.
-- AKS setup no longer suggests the removed `create --live` route after installing
-  Orka. It points to owner-managed Provider configuration and the current offline
-  Create, Prove, publication and digest Lift guide. Exact-version Helm releases
-  missing KMX ownership/configuration now get a specific repair-or-cleanup refusal.
+- AKS setup and runtime/list/show messages no longer suggest the removed
+  `create --live` command. They point to guided quickstart or offline
+  Create-Prove-Lift, with owner-managed Provider configuration after AKS setup.
+  Exact-version Helm releases missing KMX ownership/configuration now get a
+  specific repair-or-cleanup refusal.
 - Native workspace and Orka/kagent binding validation rejects unresolved
   whole-value model placeholders while loading source and angle-bracket endpoint
   placeholders before placement or execution. Pre-effect refusals name safe
   remediation without echoing authored values; later drift retains unknown,
   no-retry semantics. Candidate cleanup recovery also preserves the invoking
   executable.
-- Remaining runtime/setup/list/show messages no longer generate the removed
-  `create --live` command. They point to guided quickstart or offline
-  Create-Prove-Lift, as appropriate.
 - Orka workspace eval and composed Lift distinguish unsuccessful Task execution
   from assertion failures and report executed, planned, passed and unexecuted
   runs after an abort. Root eval adds `-o text|json` (default text; JSON is
