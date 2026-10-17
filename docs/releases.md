@@ -294,9 +294,10 @@ Replace removed commands as follows:
 | Chat `/lift` / old console Lift | Root digest Lift with explicit evidence; console creation separately composes the native workflow |
 | Chat/quickstart `--azure-discovery` | Explicit destination context; provision AKS separately with `kmx aks up` |
 
-Root `status` remains the table-only Orka runtime report, also available as
-`orka status`, not a suite observer. `eval diff/from-sessions` remain root
-helpers, but diff reads only full-passing Orka/kagent suite receipts.
+Root `status --to NAME` is GET-only destination inventory; `orka status`
+retains the table-only Orka runtime report. Neither is suite-source evaluation
+or a legacy-state reader. `eval diff/from-sessions` remain root helpers, but
+diff reads only full-passing Orka/kagent suite receipts.
 Suite status and retirement have **no replacement**. No old-receipt conversion,
 automatic migration or saved-file/resource deletion occurs. Preserve old state
 only with a historical release that understands it. See the

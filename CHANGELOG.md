@@ -22,107 +22,67 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+## v0.8.0 — 2026-10-17
+
 ### Added
 
+- Provisional multi-member workspaces support deterministic offline preparation
+  and inventory loading with `schemaVersion: 2`. Multi-member eval, workspace push and Lift
+  remain unavailable.
+- `kmx suite policy FILE [--administrative-policy FILE]` resolves portable
+  deny-write and v2 network policies offline; administrative policy can only
+  add restrictions. Orka members can declare `policy: policy.json` for
+  packaging and unevaluated publication. No policy is installed or enforced;
+  eval, evaluated publication, Lift and AgentKit export refuse declared policies.
+- `kmx eval export --member ID --out FILE` exports completed exact-suite/member
+  evidence without model, cluster or registry calls.
+  `kmx eval verify --suite LAYOUT --evidence FILE --expect FILE` checks it offline
+  against independently reviewed expectations. Unsigned consistency is not
+  evaluator authentication, execution attestation or a replacement for private
+  push/Lift evidence.
+- Release Lift records suite/consumed-evidence identity, evaluation environment,
+  promotion gate and attempt time on newly created Orka/kagent primary objects.
+  Exact reuse and verified skips remain no-write; existing objects are not
+  backfilled and records grant no replay authority.
 - `kmx status --to NAME [--workspace DIR] [-o table|json]` inventories deployed
-  Orka/kagent Agents, per-object suite/consumed-evidence provenance and current
-  placement readiness using bounded GETs only. Missing, unknown and foreign
-  provenance stay distinct; readable partial rows and separate candidate roots
-  remain visible. No private-history fallback, Secret reads, tool provisioning,
-  evaluation, repair or annotation backfill. Ready is not answered/evaluated;
-  unsigned records do not prove original UID continuity.
+  Orka/kagent Agents, provenance and placement readiness using bounded GETs only.
+  Missing, unknown and foreign provenance remain distinct. No Secrets, private
+  history, evaluation or repair; Ready means placement, not an evaluated answer.
+- Single-member `schemaVersion: 3` packages explicit runtime/build profiles
+  under one suite digest.
+  `push --runtime-profile ID [--platform OS/ARCH] --unevaluated` selects an offline
+  view while transferring every profile; `suite build` resolves exact profile
+  tuples. Profiled execution, proof creation/export, evaluated publication, Lift
+  and AgentKit production remain
+  unavailable. [Offline runtime profiles](docs/suite-workspace.md#explicit-runtime-profiles-offline-only).
 
-- Single-member source `schemaVersion: 3` packages explicit public runtime/build
-  profiles and profile-qualified compositions under one unchanged OCI digest S.
-  Root `push --runtime-profile ID [--platform OS/ARCH] --unevaluated` selects an
-  offline view and transfers every profile, shared member/case/policy descriptor
-  and composition. Unselected native and inventory loaders refuse profiled input.
-  `suite build` resolves exact profile tuples; the AgentKit producer refuses all
-  profiled plans. Per-composition private lookup preserves all existing coherence
-  checks, using receipt-only kmx legacy declaration labels, separate selected
-  metadata sequence and global allocation maximum. Synthetic consistency tests
-  are not runtime qualification. Profiled execution, pass creation/export,
-  evaluated publication, native public evidence export and Lift remain unavailable;
-  no Sessions image adapter/association or upstream ABI support is claimed.
-  Legacy v1/v2 bytes/digests and policy enforcement refusals are unchanged.
-  Portable suite dependency pins published minor release
-  `v0.4.0` with verified module sums; no replace/workspace file.
-  See [offline runtime profiles](docs/suite-workspace.md#explicit-runtime-profiles-offline-only).
+### Changed
 
-- `kmx eval verify --suite LAYOUT --evidence FILE --expect FILE` checks detached
-  public evidence offline using shared suite v0.3.1 VerifyEvaluation. Digest input
-  requires explicit `--from-layout DIR`, without registry/cache/state lookup.
-  Commit a complete reviewed ExpectedEvaluation JSON beside the suite for CI;
-  never derive accepted identities/policy from evidence being checked. Success
-  exits0 with text or `-o json` summary; typed safe refusals exit1. No model,
-  cluster, configuration or private push/Lift gate changes. Unsigned consistency
-  does not authenticate an evaluator or attest execution truth/readiness. The
-  published v0.3.1 loader refuses special files/symlinks in OCI metadata and
-  referenced blobs instead of blocking on FIFO inputs; module sums are pinned.
-- Support version-aware offline v2 network policy
-  resolution, including administrative intersection and explicit deny-all.
-  Orka member YAML accepts member-relative `policy: policy.json`; preparation
-  packages authored JCS at `policies/<id>.json` through `Agent.policy`, preserving
-  authored arrays and policy-free bytes/digests. Offline inventories and
-  unevaluated publication retain policy. Eval, private preparation, evaluated
-  publication, composed/digest Lift and experimental AgentKit export refuse
-  declared policies until qualified enforcement exists; no policy is installed
-  or enforced. kagent/AgentSessions policy source declarations refuse. File-count
-  budgets allow one optional policy per member (212 maximum), with existing byte
-  limits unchanged. Static path checks are not protection against concurrent
-  hostile workspace mutation. [Policy contract](docs/portable-policy.md).
-
-- Release Lift stamps newly created Orka/kagent primary objects with non-secret
-  `kaimahi.dev/lift-record` metadata: suite and consumed receipt identity,
-  evaluation environment, actual promotion gate and UTC attempt time. Operators
-  can read the same record from another machine. Separate bounded private records
-  retain canonical evidence and acknowledged outcomes, including partial failures.
-  Exact reuse and verified skips stay no-write; no provenance backfill, replay
-  authority or destination-status command is added.
-
-- `kmx eval export --member ID --out FILE` writes detached portable evaluation
-  evidence with suite v0.3.1's shared schema/types/offline verifier. It selects
-  the latest completed exact-suite/member record without model/cluster/registry
-  calls, preserves every case/run/assertion outcome and refuses incomplete proof.
-  Fresh evaluation must capture a tagged Go module version plus module checksum,
-  or a full VCS revision with explicit unmodified status. Tagged `go install
-  module@version` builds qualify without VCS settings. Modified builds, unstamped
-  development/pseudo-version builds and older records without capture metadata
-  refuse; use an identified build and re-evaluate.
-  Public evidence is unsigned consistency, not authenticity or a private
-  push/Lift gate. Existing private receipt/envelope formats remain unchanged.
-
-- `kmx suite policy FILE [--administrative-policy FILE]` resolves a portable
-  deny-write policy offline and prints canonical effective-policy JSON followed
-  by its domain-separated digest. Administrative paths can only add restrictions.
-  Inputs are bounded to 4 MiB; explicitly empty administrative-policy flags refuse
-  and malformed-input diagnostics are terminal-safe. No enforcement or provider
-  selection is performed. [Policy contract](docs/portable-policy.md).
-
-- Provisional KMX-local `schemaVersion: 2` member-list source supports bounded,
-  deterministic offline multi-member preparation and inventory loading, with
-  each member's public `evals/<member>/` index/cases and complete graph/digest
-  checks. The derived file budget is 4 shared + 4 per member + 128 total cases:
-  136 for one member, 140 for two and 196 for sixteen. Root eval, workspace push
-  (including unevaluated) and workspace Lift refuse before operational effects;
-  execution loaders refuse multi-member artifacts. One-member source/create and
-  public-case receipt rules are unchanged; no binding, approval or evaluation
-  semantics are added.
-  Authoring remains provisional pending [#526](https://github.com/kaimahi-agents/kaimahi/issues/526).
+- AgentSuite now comes from `github.com/agent-primitives/suite v0.4.0`.
+- AgentSessions now uses `github.com/agent-primitives/sessions v0.2.0`.
+  Development-runtime/profile and proof identity pins are unchanged; this does
+  not upgrade operator daemons or qualify new lifecycle, approval or tool-executor
+  capabilities.
 
 ### Breaking
 
-- Root `kmx status` requires `--to NAME` and becomes a table/JSON destination
-  observer. **Instead:** use `kmx orka status` for the unchanged table-only Orka
-  runtime report. Bare status refuses with both usage hints. Destination status
-  exits1 for unknown/unhealthy/drift,2 for complete known pending placement and0
-  for complete ready/empty; failure takes precedence over pending.
+- Root `kmx status` now requires a named destination.
+  **Instead:** use `kmx status --to NAME` for destination inventory or
+  `kmx orka status` for the unchanged table-only Orka runtime report.
+- The in-repository portable AgentSuite Go package is removed without forwarding.
+  **Instead:** import `agentsuite "github.com/agent-primitives/suite"` and pin
+  `v0.4.0`; the package name remains `agentsuite`.
 
-- The portable AgentSuite Go package moves from `github.com/kaimahi-agents/kaimahi/agentsuite`
-  to the independent `github.com/agent-primitives/suite` module. There is no forwarding package.
-  **Instead:** import it explicitly as `agentsuite "github.com/agent-primitives/suite"`
-  and pin the module release. The package name stays `agentsuite`; schema IDs,
-  media types, canonical bytes, digests and kmx CLI behavior are unchanged.
+### Upgrading
+
+- Portable evidence export needs fresh evaluation from an identified, unmodified
+  build. Use a tagged Go module build with its checksum, or a clean checkout
+  with a full VCS revision, and re-evaluate older records lacking capture metadata.
+  Existing private receipts and push/Lift gates are unchanged.
+- Destination status exits 1 for unknown/unhealthy/drift, 2 for complete known
+  pending placement and 0 for complete ready/empty inventory; failure takes
+  precedence over pending. Unsigned provenance does not prove original UID
+  continuity.
 
 ## v0.7.0 — 2026-10-15
 
@@ -194,11 +154,6 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   runtime approval implementation.
 
 ### Changed
-
-- AgentSessions consumer dependency moves to `github.com/agent-primitives/sessions`
-  `v0.2.0` with verified module sums. Runtime/profile and proof identity pins stay
-  unchanged; this does not upgrade operator daemons or qualify new lifecycle,
-  approval or tool-executor capabilities.
 
 - Quickstart and console creation now use native suite evaluation, publication
   and reviewed Lift. Console Ready means placement, not an answer.
