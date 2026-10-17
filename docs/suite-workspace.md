@@ -630,6 +630,12 @@ substitution, case subset or `--show-content` is available. Orka/kagent and Agen
 receipt-budget overflow and invalid output destinations refuse offline before
 loading cluster configuration.
 
+Output defaults to `-o text` for all runtimes. Orka-only `-o json` writes one
+payload-free outcome document on success or execution abort; run lines, guard
+messages and other diagnostics go to stderr. Invalid formats and JSON selection
+for kagent/AgentSessions refuse before cluster configuration. This report is not
+passing evidence and does not replace `--out` or managed proof.
+
 Orka/kagent and AgentSessions development cases optionally declare repeated execution:
 
 ```yaml
@@ -656,6 +662,21 @@ failure, missing answer, drift or cancellation still aborts later sends.
 Preflight discloses the total Task count and two judge requests per assertion
 per run. AgentSessions uses fresh Session/config/Exec rather than Tasks; its default
 one-run text receipt encoding is unchanged.
+
+An unsuccessful terminal Orka Task reports `execution failed (assertions not
+evaluated)`, not an assertion failure or an underlying runtime cause. Abort
+summaries distinguish returned TaskUIDs from completed assertions: for example,
+`1 of 3 runs executed; 0 passed; aborted on execution error; 2 not executed`,
+followed by the cleanup outcome. `total` remains planned, `executed` counts
+nonempty TaskUIDs, `notExecuted` is the remainder, and `aborted` identifies an
+execution error rather than a threshold miss. Root eval JSON includes these
+counts plus `passed`, `total`, `status`, `detail`, `cleanup` and a fixed safe
+`error` on failure. Composed Lift adds the execution fields to its existing
+`eval` stage; GET-only cached skips omit them rather than claiming fresh Tasks.
+A fully executed threshold miss retains `N/total runs passed`; an assertion fail
+followed by two passes completes a three-run, two-pass policy as `2/3`.
+Abort, cleanup and no-publication behavior are unchanged; cleanup failures never
+claim cleanup completed.
 
 Passing private receipts store contiguous per-run rows, with `run` ordinals and
 the declared `runs`/`minPasses`, actual pass/fail verdicts, assertion evidence and

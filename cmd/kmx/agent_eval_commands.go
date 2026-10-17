@@ -19,6 +19,7 @@ import (
 func newAgentEvalCommand(state *commandState) *cobra.Command {
 	native := app.SuiteWorkspaceEvaluationOptions{ManagedPass: true}
 	var destination string
+	var output string
 	group := &cobra.Command{
 		Use: "eval", Short: "Evaluate a native workspace or export, verify and compare saved evidence",
 		Long: "Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
@@ -29,6 +30,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			"Public Orka uses fresh digest/run-scoped candidates, never adoption/update/reuse, and exports passing evidence only after verified cleanup and final source/shared-input checks. Startup reports leftovers without deleting or blocking a fresh evaluation. Use eval cleanup [full-run-id] for explicit confirmed recovery; unanchored orphans refuse. Private Quickstart/console and other runtimes are unchanged.\n" +
 			"Cases optionally declare runs/minPasses (default one run; omitted threshold requires all runs). Each run submits a fresh Task or AgentSessions Session/config/Exec, never retried, within its own per-run deadline including judging. Repeated cases disclose the total run-time budget in preflight.\n" +
 			"Any unknown run vetoes a pass. Execution failure, drift or cancellation aborts without a receipt; resources or Sessions may remain.\n" +
+			"Output defaults to text for all runtimes. Orka-only -o json emits one payload-free outcome document on success or execution abort; diagnostics go to stderr. Execution counts use returned TaskUIDs, not assertion completion; total remains planned.\n" +
 			"Completed passing metadata is registered in private KMX state after successful evaluation, Orka cleanup and finalization. --out optionally also writes a new standalone receipt in an existing private directory outside workspace/cache trees. Only full passing metadata is stored, unsigned and not a policy gate.\n" +
 			"Case inputs are sent to the runtime and model; upstream storage/audit policy may retain them. Real native CLI execution qualification remains separate from hermetic checks.",
 		Example: "  kmx eval\n" +
@@ -42,6 +44,9 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			return nil
 		},
 		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if output != "text" && output != "json" {
+				return fmt.Errorf("eval output must be text or json")
+			}
 			if err := validateContainerEngineFlag(cmd, args); err != nil {
 				return err
 			}
@@ -72,6 +77,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 				return err
 			}
 			selectedNative := native
+			selectedNative.JSON = output == "json"
 			if !cmd.Flags().Changed("to-namespace") {
 				selectedNative.ToNamespace = ""
 			}
@@ -120,6 +126,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 		},
 	}
 	registerDestinationFlag(group, &destination)
+	group.Flags().StringVarP(&output, "output", "o", "text", "output: text|json (JSON: Orka only)")
 	group.Flags().StringVar(&native.Workspace, "workspace", "", "select an exact workspace root instead of nearest-ancestor discovery")
 	group.Flags().StringVar(&native.ToContext, "to-context", "", "explicit native evaluation context")
 	group.Flags().StringVar(&native.ToNamespace, "to-namespace", app.OrkaNamespace, "native evaluation namespace")

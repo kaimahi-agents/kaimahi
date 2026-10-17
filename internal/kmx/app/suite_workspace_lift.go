@@ -51,6 +51,7 @@ type WorkspaceLiftPlan struct {
 	DestinationServer  string `json:"destinationServer,omitempty"`
 }
 type WorkspaceLiftStage struct {
+	*SuiteRunExecutionSummary
 	Status string `json:"status"`
 	Detail string `json:"detail"`
 	Error  string `json:"error,omitempty"`
@@ -86,7 +87,7 @@ func (p *PreparedWorkspaceLift) Close() error {
 // PrepareWorkspaceLift is offline and must precede operational configuration.
 // Cold plan-only performs source preparation, not proof lookup or state writes.
 func PrepareWorkspaceLift(ctx context.Context, opt WorkspaceLiftOptions) (*PreparedWorkspaceLift, error) {
-	if opt.Evaluation.Workspace != "" && opt.Evaluation.Workspace != opt.Workspace || opt.Evaluation.Out != "" || opt.Evaluation.Bindings != "" || opt.Evaluation.DevelopmentHost != "" || opt.Destination.Reference != "" || opt.Destination.FromLayout != "" || opt.Destination.Evidence != "" {
+	if opt.Evaluation.Workspace != "" && opt.Evaluation.Workspace != opt.Workspace || opt.Evaluation.Out != "" || opt.Evaluation.JSON || opt.Evaluation.Bindings != "" || opt.Evaluation.DevelopmentHost != "" || opt.Destination.Reference != "" || opt.Destination.FromLayout != "" || opt.Destination.Evidence != "" {
 		return nil, errors.New("workspace Lift requires only frozen workspace and concrete Orka selections")
 	}
 	ref, err := registry.ParseReference(opt.Repository)
@@ -431,12 +432,13 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 			output.Close()
 			return r, e
 		}
-		ep := &PreparedSuiteWorkspaceEvaluation{prepared: p.review.prepared, suite: p.review.suite, inventory: p.review.inventory, root: p.review.root, options: p.options.Evaluation, output: output, store: p.store, judge: judge, candidateRun: runID}
+		ep := &PreparedSuiteWorkspaceEvaluation{prepared: p.review.prepared, suite: p.review.suite, inventory: p.review.inventory, root: p.review.root, options: p.options.Evaluation, output: output, store: p.store, judge: judge, candidateRun: runID, runs: suiteRunSummary{Total: len(p.review.inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(p.review.inventory)}}, cleanup: "candidate cleanup not required"}
 		err = eval.EvaluateSuiteWorkspace(ctx, ep)
-		r.Eval.Passed = ep.liftPassed
+		r.Eval.Passed = ep.runs.Passed
+		r.Eval.SuiteRunExecutionSummary = &ep.runs.SuiteRunExecutionSummary
 		r.Eval.Detail = fmt.Sprintf("%d/%d runs passed on %s; candidate resources cleaned", r.Eval.Passed, r.Eval.Total, p.plan.EvalName)
 		if err != nil {
-			r.Eval.Detail = fmt.Sprintf("%d/%d runs passed; %s; nothing published; destination unchanged", r.Eval.Passed, r.Eval.Total, err)
+			r.Eval.Detail = fmt.Sprintf("%s; nothing published; destination unchanged", err)
 			r.Eval.Error = err.Error()
 			return r, err
 		}

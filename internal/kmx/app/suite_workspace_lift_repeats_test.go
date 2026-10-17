@@ -2,12 +2,41 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestWorkspaceLiftEvaluationPreflightCounts(t *testing.T) {
+	a, opt, state, _, _, writes := workspaceLiftFixture(t, func(root string) { repeatedCandidateCase(t, root) })
+	a.Out, a.Err = io.Discard, io.Discard
+	state.change = func(_ string, cmd *exec.Cmd) error {
+		if slices.Contains(cmd.Args, "serviceaccount") && slices.Contains(cmd.Args, orkaResultAccount) {
+			return errors.New(nativeCanary)
+		}
+		return nil
+	}
+	p, err := PrepareWorkspaceLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	r, err := a.LiftWorkspace(t.Context(), p)
+	if err == nil || r.Eval.Total != 3 || r.Eval.SuiteRunExecutionSummary == nil || r.Eval.Executed != 0 || r.Eval.NotExecuted != 3 || r.Eval.Aborted {
+		t.Fatal("pre-run refusal lost planned run count", r, err)
+	}
+	if len(state.creates) != 0 || *writes != 0 || r.Push.Status != "not-attempted" || r.Lift.Status != "not-attempted" {
+		t.Fatal("preflight refusal advanced", r)
+	}
+	if strings.Contains(r.Eval.Detail, "cleanup completed") || strings.Contains(r.Eval.Error, nativeCanary) {
+		t.Fatal("unsafe preflight report", r)
+	}
+}
 
 func TestWorkspaceLiftCachedThresholdDoesNotInventPassingRuns(t *testing.T) {
 	a, opt, state, _, f, _ := workspaceLiftFixture(t, func(root string) {
@@ -55,6 +84,15 @@ func TestWorkspaceLiftCachedThresholdDoesNotInventPassingRuns(t *testing.T) {
 		}
 		if result.Eval.Passed != 2 || result.Eval.Total != 3 {
 			t.Fatalf("run %d invented passed runs: %+v", run, result.Eval)
+		}
+		if run == 0 && (result.Eval.SuiteRunExecutionSummary == nil || result.Eval.Executed != 3 || result.Eval.NotExecuted != 0 || result.Eval.Aborted) {
+			t.Fatal("missing fresh execution counts", result.Eval)
+		}
+		if run == 1 {
+			raw, err := json.Marshal(result.Eval)
+			if err != nil || strings.Contains(string(raw), "executed") || strings.Contains(string(raw), "notExecuted") || strings.Contains(string(raw), "aborted") {
+				t.Fatal("cached GET-only skip claimed current execution", string(raw), err)
+			}
 		}
 	}
 	if tasks != 3 {

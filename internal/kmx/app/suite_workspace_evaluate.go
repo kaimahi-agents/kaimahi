@@ -28,6 +28,8 @@ type SuiteWorkspaceEvaluationOptions struct {
 	// ManagedPass is public root eval's private completed-proof registration.
 	// Convenience evaluators keep their existing explicit output behavior.
 	ManagedPass bool
+	// JSON selects the Orka-only run-local report, not receipt content.
+	JSON bool
 }
 
 // PreparedSuiteWorkspaceEvaluation owns its offline source snapshot and anchored
@@ -47,7 +49,8 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	completed      []byte
 	record         string
 	candidateRun   string
-	liftPassed     int
+	runs           suiteRunSummary
+	cleanup        string
 	publicMetadata *suitePublicMetadata
 }
 
@@ -121,6 +124,9 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, suiteEvaluationError(ctx, err, false)
 	}
+	if opt.JSON && suite.Runtime.ID != "orka" {
+		return nil, errors.New("native eval JSON output supports only Orka")
+	}
 	if opt.ExpectedRuntime != "" && opt.ExpectedRuntime != suite.Runtime.ID {
 		return nil, errors.New("destination runtime declaration does not match packaged runtime")
 	}
@@ -173,7 +179,7 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	if err != nil {
 		return nil, err
 	}
-	p := &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge}
+	p := &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge, runs: suiteRunSummary{Total: len(inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(inventory)}}, cleanup: "candidate cleanup not required"}
 	if opt.ManagedPass {
 		p.store, err = openSuitePassStore(ctx, root, cache, suite.Digest)
 		if err == nil {
@@ -232,6 +238,39 @@ func (a *App) preflightSuiteNativeResults(ctx context.Context, ns string) error 
 // only full passing metadata. Orka uses run-scoped candidates and cleanup;
 // convenience callers separately retain the internal canonical evaluator.
 func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
+	if p == nil || !p.options.JSON {
+		return a.evaluateSuiteWorkspaceWithProof(ctx, p)
+	}
+	// JSON owns stdout. Keep the evaluator, guard and proof lifecycle unchanged,
+	// routing their text diagnostics separately from the one safe report.
+	worker := *a
+	worker.Out = a.Err
+	if worker.Out == nil {
+		worker.Out = io.Discard
+	}
+	err := worker.evaluateSuiteWorkspaceWithProof(ctx, p)
+	report := struct {
+		SuiteRunExecutionSummary
+		Status  string `json:"status"`
+		Detail  string `json:"detail"`
+		Passed  int    `json:"passed"`
+		Total   int    `json:"total"`
+		Cleanup string `json:"cleanup"`
+		Error   string `json:"error,omitempty"`
+	}{SuiteRunExecutionSummary: p.runs.SuiteRunExecutionSummary, Status: "complete", Detail: p.runs.String() + "; " + p.cleanup, Passed: p.runs.Passed, Total: p.runs.Total, Cleanup: p.cleanup}
+	if err != nil {
+		report.Status = "failed"
+		// Never serialize causes: transports, writers and runtime errors can
+		// carry content. Publication/finalization failures may leave proof.
+		report.Error = "native evaluation failed; inspect diagnostics and private proof state before retrying"
+		if p.runs.Aborted || p.runs.ReportingFailed {
+			report.Detail += "; no passing evidence published"
+		}
+	}
+	return errors.Join(err, json.NewEncoder(a.Out).Encode(report))
+}
+
+func (a *App) evaluateSuiteWorkspaceWithProof(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
 	if p != nil && p.options.ManagedPass {
 		if p.store == nil || p.store.unchanged() != nil {
 			return errSuitePassStore

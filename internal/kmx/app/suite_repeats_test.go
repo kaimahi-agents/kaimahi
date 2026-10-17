@@ -333,35 +333,43 @@ func TestSuiteRunDriverUnknownDeadlineAndFailure(t *testing.T) {
 }
 
 func TestSuiteRepeatFailedNativeTaskStillAborts(t *testing.T) {
-	a, placement, _, f := nativeEvaluationFixture(t)
-	frames := repeatDriverFrames(t, "runs: 3\nminPasses: 1\n")
-	capture := a.captureCommand
-	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
-		if slices.Contains(cmd.Args, "get") && slices.Contains(cmd.Args, "tasks.core.orka.ai") && !slices.Contains(cmd.Args, "name") {
-			var response bytes.Buffer
-			out := cmd.Stdout
-			cmd.Stdout = &response
-			err := capture(ctx, cmd)
-			cmd.Stdout = out
-			if err != nil {
-				return err
+	for _, phase := range []string{"Failed", "Cancelled"} {
+		t.Run(phase, func(t *testing.T) {
+			a, placement, _, f := nativeEvaluationFixture(t)
+			frames := repeatDriverFrames(t, "runs: 3\nminPasses: 2\n")
+			capture := a.captureCommand
+			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+				if slices.Contains(cmd.Args, "get") && slices.Contains(cmd.Args, "tasks.core.orka.ai") && !slices.Contains(cmd.Args, "name") {
+					var response bytes.Buffer
+					out := cmd.Stdout
+					cmd.Stdout = &response
+					err := capture(ctx, cmd)
+					cmd.Stdout = out
+					if err != nil {
+						return err
+					}
+					var doc map[string]any
+					if err = json.Unmarshal(response.Bytes(), &doc); err != nil {
+						return err
+					}
+					doc["status"].(map[string]any)["phase"] = phase
+					return json.NewEncoder(out).Encode(doc)
+				}
+				return capture(ctx, cmd)
 			}
-			var doc map[string]any
-			if err = json.Unmarshal(response.Bytes(), &doc); err != nil {
-				return err
+			calls := 0
+			var out bytes.Buffer
+			_, err := evaluateSuiteRuns(t.Context(), frames, time.Second*30, &out, func(ctx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
+				calls++
+				return a.evaluateSuiteNative(ctx, placement, frame, f.opt.ResultPort, nil)
+			})
+			if !errors.Is(err, errSuiteNativeCaseFailed) || calls != 1 {
+				t.Fatalf("failed Task treated as tolerated assertion: %v, calls %d", err, calls)
 			}
-			doc["status"].(map[string]any)["phase"] = "Failed"
-			return json.NewEncoder(out).Encode(doc)
-		}
-		return capture(ctx, cmd)
-	}
-	calls := 0
-	_, err := evaluateSuiteRuns(t.Context(), frames, time.Second*30, io.Discard, func(ctx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
-		calls++
-		return a.evaluateSuiteNative(ctx, placement, frame, f.opt.ResultPort, nil)
-	})
-	if !errors.Is(err, errSuiteNativeCaseFailed) || calls != 1 {
-		t.Fatalf("failed Task treated as tolerated assertion: %v, calls %d", err, calls)
+			if out.String() != "first run 1/3: execution failed (assertions not evaluated)\n" {
+				t.Fatalf("unsuccessful Task reported as assertion failure: %q", out.String())
+			}
+		})
 	}
 }
 
@@ -444,7 +452,12 @@ func TestSuiteRunAbortKeepsDefaultCaseSummary(t *testing.T) {
 				}
 				return suitePassingObservation{EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: "first", Verdict: verdict}}, cause
 			})
-			if err == nil || out.String() != "first: "+string(verdict)+"\n" {
+			want := string(verdict)
+			if verdict == agentruntime.EvaluationFail {
+				// An incomplete unsuccessful Task has no assertion verdict to count.
+				want = "execution failed (assertions not evaluated)"
+			}
+			if err == nil || out.String() != "first: "+want+"\n" {
 				t.Fatalf("lost aborted case summary: %q, %v", out.String(), err)
 			}
 		})

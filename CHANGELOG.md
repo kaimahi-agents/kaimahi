@@ -22,6 +22,15 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Fixed
+
+- Orka workspace eval and composed Lift distinguish unsuccessful Task execution
+  from assertion failures and report executed, planned, passed and unexecuted
+  runs after an abort. Root eval adds `-o text|json` (default text; JSON is
+  Orka-only); Lift JSON adds run-local execution counts without changing existing
+  fields. Abort, verified cleanup, passing-evidence and publication rules are
+  unchanged; fully executed threshold misses retain normal run-pass summaries.
+
 ## v0.8.0 — 2026-10-17
 
 ### Added
