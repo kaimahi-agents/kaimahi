@@ -78,10 +78,30 @@ open private history or claim that continuity, even when local records exist.
 Context aliases are access names; target comparison uses cluster/namespace UIDs
 and the namespace, not matching kubeconfig aliases across machines.
 
-Current specs are compared only against that object's applicable recorded expected
-spec digest. No annotation means no historical spec baseline. Status-only resource
-version changes are not spec drift; identity/spec/ownership changes across reads
-are reported as unknown rather than retried or repaired.
+## GitOps and spec drift
+
+Follow the [one-writer ownership boundary](suite-first-lifecycle.md#gitops-ownership)
+when using GitOps alongside KMX. Status compares current specs only against each
+object's applicable recorded expected spec digest, not against Git's desired
+state. It neither fetches that desired state nor repairs GitOps changes.
+
+- With a preserved, valid and applicable Lift annotation, a changed Agent or
+  Provider/ModelConfig spec digest produces per-resource `spec=drifted`, drifted
+  readiness and exit **1**.
+- Status/resourceVersion-only changes and unrelated metadata edits are not spec
+  drift. Status is not a blanket metadata drift detector: changes to suite
+  ownership or provenance markers can instead make ownership/provenance `unknown`.
+- Removing the Lift annotation while retaining valid suite ownership yields
+  `provenance not recorded` and `spec=not recorded`: there is no recorded spec
+  baseline, not a claimed match. Removing ownership markers changes classification;
+  no native or legacy reservation markers means `not kmx-owned`, even with a
+  copied Lift annotation. Incomplete, malformed or conflicting markers can yield
+  `unknown`.
+
+Identity/spec/ownership changes across reads within an inspection are reported as
+unknown rather than retried or repaired. Copied annotations do not authenticate
+original UID continuity, even if the current spec matches. Status does not
+re-evaluate an agent, check model credentials or certify model behavior.
 
 ## Readiness and incomplete results
 

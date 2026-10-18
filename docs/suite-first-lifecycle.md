@@ -60,6 +60,9 @@ mutable tag for Lift. Prompts and answers stay out of the receipt, but the
 published suite includes authored case inputs. Lift never builds, repacks or
 publishes. `--plan` is GET-only; apply creates absent resources or reuses exact
 receipt-bound resources, without update, adoption, ambiguous retry or rollback.
+See [day-two limits](FAQ.md#how-do-i-ship-v2-or-roll-back) and the proposed
+[update/rollback design (#561)](https://github.com/kaimahi-agents/kaimahi/issues/561);
+that design is not implemented.
 
 ## Lift and read-only status; execution remains separate
 
@@ -102,6 +105,20 @@ the packaged-suite operation. Root `status --to NAME` is destination inventory;
 | Future image-backed path | Member authoring joins root create; publication joins root push; deployment uses root lift rather than `suite lift`. |
 
 Keep **Create → Prove → Lift**, as [#302](https://github.com/kaimahi-agents/kaimahi/pull/302) and the [command alignment record](command-semantics.md) decided. Root `lift` now implements the bounded packaged Orka and exact-kagent paths. Follow the [command conventions](command-conventions.md), including aligned help, interactive labels, recovery commands and compatibility tests, when extending it.
+
+## GitOps ownership
+
+KMX handles authoring, proof, publication and an explicit placement operation; it
+is **not a continuous reconciler**. It can coexist with GitOps-managed runtime
+and inference infrastructure, but there is no supported Argo/Flux AgentSuite
+deployment integration. Choose one writer for the Agent/Provider fields (or
+kagent Agent/ModelConfig fields) KMX records; do not have a GitOps controller and
+Lift independently manage the same objects.
+
+[Destination status](destination-status.md#gitops-and-spec-drift) compares current
+specs with applicable per-object Lift observations, not with Git's desired state.
+It reports drift or uncertainty without repairing changes. It does not turn
+[create-only placement](FAQ.md#how-do-i-ship-v2-or-roll-back) into update or rollback.
 
 ## Explicit decisions
 

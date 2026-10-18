@@ -25,6 +25,28 @@ would install, not proof of what someone else installed. An unreadable
 cluster is not an empty cluster. See [Orka installation](orka.md) for
 inspection, no-write planning, dry-run and upgrade limits.
 
+## How do I ship v2 or roll back?
+
+In v0.8.1, Lift does not update an existing deployment or roll it back. Plain
+Lift is create-only, except for narrow, no-write Orka reuse of exact suite-owned
+resources matching the evaluated UID, generation and whole spec, with exact suite
+markers and current-generation readiness.
+[Composed Lift](suite-workspace.md#composed-workspace-lift) may skip only an
+exact-version successful placement recorded in private completion state, after
+GET-only checks of destination inputs, ownership, UIDs, whole specs and readiness.
+Neither path replaces or repairs resources.
+
+Passing proof for a new digest does not replace occupied resources. Re-lifting a
+previous digest is not rollback. For disposable testing, deliberately choose a
+fresh destination/name and manage cleanup separately; this is not a production
+upgrade procedure.
+
+[Update and rollback by digest (#561)](https://github.com/kaimahi-agents/kaimahi/issues/561)
+is proposed, not implemented; its proposed command syntax is not available in
+v0.8.1. See the [Lift contract](suite-workspace.md#digest-lift),
+[GitOps ownership](suite-first-lifecycle.md#gitops-ownership) and
+[destination status](destination-status.md#gitops-and-spec-drift) for current limits.
+
 ## What kagent support exists now?
 
 Orka remains default. Explicit native kagent workspaces use exact v0.10.3
