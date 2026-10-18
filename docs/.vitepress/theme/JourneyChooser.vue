@@ -4,22 +4,22 @@ import { withBase } from 'vitepress'
 
 const paths = [
   {
+    label: 'Build a suite',
+    eyebrow: '01 · Ship it',
+    title: 'Create an agent, then Lift it',
+    summary: 'Start with a prepared runtime and inference, registry authentication, and kmx.yaml with publishRepository, destination selectors and evaluationTarget; create supplies none of these. Lift freezes inputs and composes missing proof, publication and placement with source-only promotion.',
+    command: 'kmx create … → kmx lift --to NAME',
+    link: '/docs/getting-started#an-agent-of-your-own',
+    action: 'Create and Lift your agent'
+  },
+  {
     label: 'First answer',
-    eyebrow: '01 · Try it',
+    eyebrow: '02 · Try it',
     title: 'Start locally with a real answer',
     summary: 'Bring up kind, Ollama, and pinned Orka, then require a fresh Task to return a readable result.',
     command: 'kmx quickstart',
-    link: '/docs/getting-started',
-    action: 'Open getting started'
-  },
-  {
-    label: 'Build a suite',
-    eyebrow: '02 · Ship it',
-    title: 'Create, prove, publish, and lift',
-    summary: 'Author one workspace member, evaluate every case once, publish the exact OCI graph, and lift its immutable digest.',
-    command: 'create → eval → push → lift',
-    link: '/docs/suite-workspace',
-    action: 'Follow the workspace lifecycle'
+    link: '/docs/getting-started#one-command-and-an-agent-that-answers',
+    action: 'Open the local quickstart'
   },
   {
     label: 'Use an agent',

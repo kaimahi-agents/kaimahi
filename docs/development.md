@@ -150,7 +150,7 @@ python3 scripts/test_model_fixtures.py -v
 
 Import the separate module as `agentsuite "github.com/agent-primitives/suite"`.
 The internal builder uses `kmxsuite` and the ORAS adapter uses `suiteoras`.
-`go.mod` pins the published release `v0.1.0`, with its sums in `go.sum`.
+`go.mod` pins the published release `v0.4.0`, with its sums in `go.sum`.
 Verify releases with `GOWORK=off`. For coordinated local development, select an
 external absolute `go.work` containing both modules with
 `GOWORK=/absolute/path/to/go.work`; do not commit workspace files, `replace`

@@ -1,10 +1,11 @@
 # Getting started
 
-Install the latest release, get a deterministic Orka answer, then **Create → Prove → Lift**
-an agent of your own. Orka is the platform; Kaimahi provides installation and native
-authoring tools. The selected runtime owns execution and enforcement.
+Install kmx, then **Create → Prove → Lift** an agent of your own with two commands.
+Lift composes missing evaluation, publication and placement; the selected runtime
+owns execution and enforcement. Need a local test environment first? Use the
+[local quickstart](#one-command-and-an-agent-that-answers) below.
 
-## Current Orka path
+## Install kmx
 
 Install the latest release with Homebrew:
 
@@ -41,6 +42,57 @@ for removed commands and legacy bundle workflows.
 Set `KMX_TOOLCHAIN=off` if missing tools should fail rather than download.
 [kmx installation](kmx.md#install) describes cache verification and release trust.
 Azure is not needed for the keyless local quickstart.
+
+## An agent of your own
+
+Before either command, have a prepared runtime and inference (Orka today) in both
+evaluation and destination environments, arrange registry authentication, and save
+workspace-root `kmx.yaml` with `publishRepository`, named destination
+context/namespace/inference selectors and the destination's `evaluationTarget`.
+Create supplies none of these. Follow the [named configuration example](suite-workspace.md#named-destinations);
+the local setup path below can prepare a test environment.
+
+From that workspace root, provide an exact model name and an instructions file:
+
+```bash
+kmx create my-agent --workspace . \
+  --model qwen2.5:3b --instructions ./instructions.md
+kmx lift --to prod
+```
+
+Create authors one tool-free workspace member offline. Lift freezes the exact
+suite and selectors, runs missing evaluation, publication and placement stages,
+and discloses source-only promotion: passed on the evaluation target, not
+evaluated on the destination. Review its frozen plan before confirming.
+See [composed Lift](suite-workspace.md#composed-workspace-lift) for stage output,
+read-only skips and partial outcomes.
+
+Provide an instructions **file**, not inline text; model is required and exact.
+Omit `--workspace` to discover the nearest ancestor `workspace.yaml`. If none
+exists, terminal use asks `Start one here? [Y/n]`; nonterminal or redirected use
+requires `--workspace DIR`, which selects/initializes that exact root without a
+prompt. Invalid nearest markers refuse without fallback. An existing one-member
+workspace refuses a second member without changing files; select a new root.
+See [workspace authoring, evaluation, publication and digest Lift](suite-workspace.md).
+
+For manual stages, packaged workspace evaluation is implemented for native Orka
+with `--inference` and exact-v0.10.3 Go kagent with `--bindings`; matching
+full-passing evidence can authorize evaluated push. Standalone package evaluation
+remains unavailable; explicit-reference `kmx lift REF@sha256:DIGEST` instead
+deploys an exact registry or local-layout native package using a separate matching
+private evidence file and explicit target. Orka uses a Ready `openai` inference
+Provider; its public evaluation produces candidate evidence, so manual reference
+Lift requires `--promote` even in the same environment. Kagent uses author-owned
+bindings and refuses any occupied target.
+
+### Retired live authoring
+
+`create --live`, live-only/preview flags, its wizard and user bundle
+commands/readers/writers are removed outright. No conversion/migration or saved
+receipt/resource deletion occurs. Old bundle receipts are unreadable. Suite
+status/retirement remain unavailable. Root run requires `--agent` for independent
+live Orka Agents; suite ownership refuses legacy invocation. Task/result access
+remains independent, without resend.
 
 ## One command, and an agent that answers
 
@@ -136,40 +188,6 @@ A cluster that still carries kagent is untouched by Orka setup. Outside those
 version-qualified operations, use upstream tools or kubectl.
 Owners must deliberately remove or replace obsolete gateway references; setup
 does not repoint existing tools. Interactive `/help` lists local controls.
-
-## An agent of your own
-
-Default create authors one native-Orka workspace member offline, not live
-resources or a PortableAgent bundle:
-
-```bash
-kmx create my-agent --workspace ./my-workspace \
-  --model qwen2.5:3b --instructions ./instructions.md
-```
-
-Provide an instructions **file**, not inline text; model is required and exact.
-Omit `--workspace` to discover the nearest ancestor `workspace.yaml`. If none
-exists, terminal use asks `Start one here? [Y/n]`; nonterminal or redirected use
-requires `--workspace DIR`, which selects/initializes that exact root without a
-prompt. Invalid nearest markers refuse without fallback. An existing one-member
-workspace refuses a second member without changing files; select a new root.
-See [workspace authoring, evaluation, publication and digest Lift](suite-workspace.md).
-Packaged workspace evaluation is implemented for native Orka with `--inference`
-and exact-v0.10.3 Go kagent with `--bindings`; matching full-passing evidence can
-authorize evaluated push. Standalone package evaluation remains unavailable; root
-`kmx lift REF@sha256:DIGEST` instead deploys an exact registry or local-layout
-native package using a separate matching private evidence file and explicit
-target. Orka uses a Ready `openai` inference Provider; kagent uses author-owned
-bindings and refuses any occupied target.
-
-### Retired live authoring
-
-`create --live`, live-only/preview flags, its wizard and user bundle
-commands/readers/writers are removed outright. No conversion/migration or saved
-receipt/resource deletion occurs. Old bundle receipts are unreadable. Suite
-status/retirement remain unavailable. Root run requires `--agent` for independent
-live Orka Agents; suite ownership refuses legacy invocation. Task/result access
-remains independent, without resend.
 
 ## Using Podman instead of Docker
 

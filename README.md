@@ -29,6 +29,24 @@ and Lift.
 
 ## Create, Prove, Lift
 
+For the shipped two-command path in v0.8.1, start in the workspace root with a
+prepared runtime and inference (Orka today), registry authentication, and
+`kmx.yaml` containing `publishRepository`, context/namespace/inference selectors
+for both targets and the destination's `evaluationTarget`. Create supplies none of
+these. Provide an exact model name and an instructions file:
+
+```bash
+kmx create NAME --workspace . --model MODEL --instructions FILE
+kmx lift --to NAME
+```
+
+Lift freezes the exact suite and selectors, runs missing evaluation, publication
+and placement stages, and discloses source-only promotion (not destination evaluation).
+Review the frozen plan before confirming. See [composed Lift](docs/suite-workspace.md#composed-workspace-lift)
+and [named configuration](docs/suite-workspace.md#named-destinations) for setup.
+
+The stages are also available individually:
+
 **Create → Prove → Lift** is available in v0.8.1 for one-member native Orka and
 exact-v0.10.3 Go kagent suites. Bounded CI qualifies root Lift for Orka exact
 reuse, bounded absent-pair registry promotion and kagent fresh-target creation;
@@ -44,20 +62,21 @@ it does not prove every promotion, creation or partial-outcome path.
 | **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
 | **Prove** | Orka uses `kmx eval --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, with no cluster selectors. Each evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes private evidence only when the full policy passes. |
 | **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
-| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets. Inspect placement with `kmx status --to NAME`; retirement remains unavailable. |
+| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets. Orka candidate evidence requires `--promote`, even in the same environment. Inspect placement with `kmx status --to NAME`; retirement remains unavailable. |
 
 Root eval also keeps completed passing metadata in private KMX state, so `--out`
 is optional. With named `evalTarget`, `kmx eval` needs no selectors; then
 `kmx push REPO:TAG` uses the latest completed exact-suite proof and preserves TAG.
 Bare `kmx push` requires saved `publishRepository` and derives `s-<full-S-hex>`.
-These conveniences do not compose Lift or relax its digest/evidence requirements.
+Explicit-reference Lift still requires its digest and private evidence; use
+`kmx lift --to NAME` without a reference to compose the missing stages.
 
 Create and push discover the nearest ancestor `workspace.yaml`; `--workspace DIR`
 selects an exact root without fallback. Read the [workspace lifecycle](docs/suite-workspace.md)
 for identities, evidence privacy, exact evaluated-subject reuse, absent-only
 source-evidence `--promote`, partial outcomes, and fresh-evaluation requirements.
 
-## Getting Starter: Get Your First Answer
+## Getting Started: Get Your First Answer
 
 Install Docker or Podman (`CONTAINER_ENGINE=podman` selects Podman), then choose
 one independent install route for the latest stable release. Go installs require
@@ -88,7 +107,7 @@ context selection.
 
 | Path | What it means |
 |---|---|
-| Workspace | Default `kmx create`, root `eval`, and root `push` operate on editable source. Digest-based root `lift` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
+| Workspace | Default `kmx create`, root `eval`, and root `push` operate on editable source; `kmx lift --to NAME` composes missing evaluation, publication and placement from that workspace. Digest-based root `lift` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
 | Local environment | `kmx local up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
 | Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task on an independent live Orka Agent; `kmx chat NAME` opens an Orka session. Suite-owned Agents refuse legacy invocation; neither is workspace-local execution. |
 | Legacy bundle | Removed outright: user `agent.yaml` readers/writers, commands and receipts, `create --live` including previews/wizard, run's bundle mode and `--bundles` flags. Old receipts are unreadable; no conversion, migration or on-disk/resource deletion. Public AgentSuite implementation bundles are a different format and remain supported. |

@@ -20,12 +20,23 @@ go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.8.1
 RELEASE_NOTE = """> [!NOTE]
 > The table below describes v0.8.1's one-member workflow; these docs follow main and may also describe unreleased behavior.
 """
+COMPOSED = """Start in the workspace root with a prepared runtime and inference, registry authentication,
+and kmx.yaml containing publishRepository, context/namespace/inference selectors
+and the destination's evaluationTarget. Create supplies none of these.
+```bash
+kmx create NAME --workspace . --model MODEL --instructions FILE
+kmx lift --to NAME
+```
+Lift freezes inputs and runs missing evaluation, publication and placement stages.
+It discloses source-only promotion, not destination evaluation.
+
+"""
 JOURNEY = RELEASE_NOTE + """| Stage | Current checkout |
 |---|---|
 | **Create** | `kmx create NAME --workspace DIR` authors source. |
 | **Prove** | `kmx eval --workspace DIR` evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes evidence only when the full policy passes. |
 | **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` copies the suite. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
-| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |
+| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. Orka candidate evidence requires `--promote`, even in the same environment. |
 """
 GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 **Agent Builder CLI for Kubernetes.**
@@ -33,8 +44,8 @@ GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 [![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)
 [![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)
 ## Create, Prove, Lift
-Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.
-""" + JOURNEY + """## Getting Starter: Get Your First Answer
+""" + COMPOSED + """Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.
+""" + JOURNEY + """## Getting Started: Get Your First Answer
 ```bash
 """ + INSTALL + """```
 ```bash
@@ -73,7 +84,7 @@ for label, literal in [
     ("ketu icon", '<img src="brand/ketu.svg" alt="Kaimahi ketu mark">\n'),
     ("product line", "**Agent Builder CLI for Kubernetes.**\n"),
     ("journey heading", "## Create, Prove, Lift\n"),
-    ("first-answer heading", "## Getting Starter: Get Your First Answer\n"),
+    ("first-answer heading", "## Getting Started: Get Your First Answer\n"),
     ("workspace/live heading", "## Workspace And Live Paths\n"),
     ("runtime boundaries heading", "## Runtime Boundaries\n"),
     ("safety/status heading", "## Safety And Status\n"),
@@ -97,6 +108,20 @@ for label, literal in [
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 
 CASES += [
+    ("missing composed path", GOOD.replace(COMPOSED, ""), "two-command workspace path"),
+    ("composed commands reversed", GOOD.replace("kmx create NAME --workspace . --model MODEL --instructions FILE\nkmx lift --to NAME", "kmx lift --to NAME\nkmx create NAME --workspace . --model MODEL --instructions FILE"), "two-command workspace path"),
+    ("composed path after manual stages", GOOD.replace(COMPOSED, "").replace("## Getting Started", COMPOSED + "## Getting Started"), "two-command workspace path"),
+    ("missing runtime prerequisite", GOOD.replace("prepared runtime and inference", "inference"), "prepared runtime"),
+    ("missing inference prerequisite", GOOD.replace("prepared runtime and inference", "prepared runtime"), "inference prerequisite"),
+    ("missing registry authentication", GOOD.replace("registry authentication", "registry access"), "registry authentication"),
+    ("missing operational config", GOOD.replace("kmx.yaml", "workspace.yaml"), "kmx.yaml"),
+    ("missing repository", GOOD.replace("publishRepository", "repository"), "publishRepository"),
+    ("missing target selectors", GOOD.replace("context/namespace/inference selectors", "target name"), "destination selectors"),
+    ("missing evaluation target", GOOD.replace("evaluationTarget", "evalTarget"), "evaluationTarget"),
+    ("create claims bootstrap", GOOD.replace("Create supplies none of these", "Create supplies all of these"), "offline create prerequisite boundary"),
+    ("missing source-only disclosure", GOOD.replace("source-only promotion, not destination evaluation", "destination evaluation"), "source-only promotion"),
+    ("missing candidate promotion", GOOD.replace("Orka candidate evidence requires `--promote`, even in the same environment.", ""), "candidate evidence promotion"),
+    ("candidate command omits promotion", GOOD.replace("--inference provider:NAME --promote", "--inference provider:NAME"), "Lift row must preserve runtime-specific bindings"),
     ("command in purpose column only", GOOD.replace("| **Create** | `kmx create", "| Author | **Create** with `kmx create"), "Create row is missing"),
     ("suite rows out of order", GOOD.replace("| **Create** |", "| **TEMP** |").replace("| **Prove** |", "| **Create** |").replace("| **TEMP** |", "| **Prove** |"), "Create row is missing"),
     ("missing eval", GOOD.replace("`kmx eval --workspace DIR`", "`kmx run`"), "Prove row is missing"),
@@ -112,8 +137,8 @@ CASES += [
     ("kagent occupied reuse claimed", GOOD.replace("kagent refuses occupied targets", "kagent reuses occupied targets"), "Lift row must preserve kagent create-only placement"),
     ("lift qualification missing", GOOD.replace("qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation", "has tests"), "Lift qualification scope is missing"),
     ("lift qualification broadened", GOOD.replace("it does not prove every promotion, creation or partial-outcome path", "root Lift proves every path"), "Lift qualification limits are missing"),
-    ("lift qualification after table", GOOD.replace("Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n", "").replace("## Getting Starter: Get Your First Answer", "Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n## Getting Starter: Get Your First Answer"), "Lift qualification scope is missing"),
-    ("late release note", GOOD.replace(RELEASE_NOTE, "").replace("| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |", "| **Lift** | `kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME` or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. |\n" + RELEASE_NOTE.rstrip()), "v0.8.1 release note must precede"),
+    ("lift qualification after table", GOOD.replace("Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n", "").replace("## Getting Started: Get Your First Answer", "Bounded CI qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n## Getting Started: Get Your First Answer"), "Lift qualification scope is missing"),
+    ("late release note", GOOD.replace(RELEASE_NOTE, "").replace("## Getting Started", RELEASE_NOTE + "## Getting Started"), "v0.8.1 release note must precede"),
     ("missing release note", GOOD.replace(RELEASE_NOTE, ""), "v0.8.1 release note must precede"),
     ("old release note", GOOD.replace("The table below describes v0.8.1's one-member workflow; these docs follow main and may also describe unreleased behavior.", "The table below describes unreleased main; v0.6.0 keeps its released defaults."), "v0.8.1 release note must precede"),
     ("outdated table label", GOOD.replace("| Stage | Current checkout |", "| Stage | Current development build |"), "exact two-column header"),
