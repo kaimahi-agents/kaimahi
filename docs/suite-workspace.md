@@ -1242,7 +1242,8 @@ HEAD; generated cache files and unrelated files are excluded from that compariso
 Source commit detection requires Git 2.40+ (`check-attr --source`) to inspect HEAD's
 rewriting attributes without trusting live overrides. Older Git, dirty or non-Git
 source still publishes a source-less claim and explains why.
-Unsigned provenance is informational, not evaluation or promotion evidence.
+Unsigned provenance is informational, not evaluation or promotion evidence. For
+artifact authentication, see [sign the published suite digest in CI](#sign-the-published-suite-digest-in-ci).
 
 For offline transfer, the local target's parent directory must exist:
 
@@ -1278,6 +1279,86 @@ source or the preparation record, and publication can require an expected OCI
 manifest digest. This identity check alone is not evaluation evidence or release
 authorization. Workspace evaluation adds passing observations through the CLI;
 root digest lift consumes that explicit private file before deployment.
+
+### Sign the published suite digest in CI
+
+Sign the **pushed OCI manifest digest**, not a tag, the AgentSuite graph digest,
+or the [CLI release checksum manifest](releases.md#verify-a-release). This GitHub
+Actions **job fragment** assumes a trusted-branch workflow, a checked-out workspace,
+pinned KMX v0.8.1, Bash/Docker, and completed matching private evaluation proof.
+Replace the example repository and workflow identity with reviewed values. Grant
+this workflow access to the GHCR package; `packages: write` alone does not grant
+access to an existing package owned elsewhere. See [GHCR authentication](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-in-a-github-actions-workflow).
+
+```yaml
+permissions:
+  contents: read
+  packages: write
+  id-token: write # GitHub Actions OIDC for keyless signing
+steps:
+  - name: Install pinned cosign
+    uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+    with:
+      cosign-release: v3.1.3
+  - name: Publish, sign and verify the exact suite
+    shell: bash
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_ACTOR: ${{ github.actor }}
+      SUITE_REPOSITORY: ghcr.io/example/my-agents
+      EXPECTED_WORKFLOW_IDENTITY: https://github.com/example/agents/.github/workflows/publish-suite.yml@refs/heads/main
+    run: |
+      set -euo pipefail
+      printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+      kmx push "$SUITE_REPOSITORY:$GITHUB_SHA" > "$RUNNER_TEMP/suite-push.txt"
+      SUITE_REF=$(awk 'sub(/^Pin this AgentSuite: /, "") { print }' "$RUNNER_TEMP/suite-push.txt")
+      SUITE_DIGEST=${SUITE_REF#"$SUITE_REPOSITORY@"}
+      [[ "$SUITE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+        echo 'Expected exactly one pushed suite manifest digest for this repository' >&2
+        exit 1
+      }
+      SUITE_REF="$SUITE_REPOSITORY@$SUITE_DIGEST"
+      cosign sign --yes "$SUITE_REF"
+      cosign verify \
+        --certificate-identity "$EXPECTED_WORKFLOW_IDENTITY" \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+        "$SUITE_REF"
+```
+
+KMX v0.8.1 root workspace `push` prints `Pin this AgentSuite: REPOSITORY@sha256:…`
+on stdout after successful transfer. The recipe captures that invocation's output
+and requires exactly one matching reference with a full digest; missing, duplicate
+or wrong-repository output fails closed. It does not scrape the prepared-digest
+stderr line, a provenance referrer digest, or resolve the mutable tag afterward.
+This is a version-specific text parser, not a KMX machine-readable output flag.
+
+The expected workflow URI (repository, workflow file and exact ref) and issuer are
+**independent acceptance policy**: set them through review, never copy them from a
+signature's claims or derive them from an arbitrary triggering workflow/ref.
+For reusable workflows, review the actual certificate identity before setting
+policy. See [Cosign's verification options](https://github.com/sigstore/cosign/blob/v3.1.3/doc/cosign_verify.md).
+Keep any external deployment decision after successful verification, with no
+`continue-on-error` or ignored exit status. This fragment deploys nothing.
+Public Sigstore signing publishes certificate identity and artifact digest in
+public transparency infrastructure, even for a private registry package.
+
+The [installer is commit-pinned and verifies its downloaded binary](https://github.com/sigstore/cosign-installer/blob/6f9f17788090df1f26f669e9d70d6ae9567deba6/action.yml);
+the selected [Cosign v3.1.3 release](https://github.com/sigstore/cosign/releases/tag/v3.1.3)
+[lists GHCR as supported](https://github.com/sigstore/cosign/blob/v3.1.3/README.md#registry-support).
+Cosign v3 uses [OCI 1.1 referring artifacts](https://docs.sigstore.dev/cosign/signing/signing_with_containers/#signature-location-and-management);
+its registry client supports the [referrers fallback index tag](https://github.com/google/go-containerregistry/blob/v0.21.7/pkg/v1/remote/referrers.go)
+when the API is unavailable. Allow reads/writes for signatures and that index in
+the same package. This recipe has **not been qualified by a live GHCR/OIDC
+push-sign-verify roundtrip**; qualify your registry permissions, referrer discovery
+and retention policy before relying on it. Offline syntax/help checks cannot
+establish those properties.
+
+Private evaluation evidence, public suite provenance and `kaimahi.dev/lift-record`
+remain **unsigned**. A suite signature does not sign those separate records or
+prove evaluation truth or destination execution. **v0.8.1 Lift does not enforce
+signatures or signer policy**, and KMX has no signing flag. Evaluation/promotion
+policy is tracked in [#350](https://github.com/kaimahi-agents/kaimahi/issues/350);
+pre-Lift signature/attestation checks in [#374](https://github.com/kaimahi-agents/kaimahi/issues/374).
 
 ## Digest lift
 
