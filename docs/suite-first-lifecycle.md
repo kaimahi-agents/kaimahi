@@ -96,7 +96,7 @@ the packaged-suite operation. Root `status --to NAME` is destination inventory;
 |---|---|
 | Root `create`, `eval`, `push` | Implemented suite workspace authoring, packaged Orka/kagent proof and exact ordinary or evaluated publication. |
 | Root `lift REF@sha256:DIGEST` | Implemented deploy-only packaged Orka/kagent placement with mandatory runtime-matching private evidence; Orka exact reuse and kagent fresh-target creation have bounded live qualification. |
-| Root `chat`, `run --agent NAME` | Independent live Orka only, not workspace-local execution; native suite-owned objects refuse legacy invocation. |
+| Root `chat`, `run --agent NAME` | Live Orka Agents, including suite-owned Agents, selected by context/namespace/name; not workspace-local execution or fresh suite evaluation, and no adoption/copy/retirement authority. |
 | Legacy user bundle lifecycle / `create --live` | Removed outright including readers/writers/receipts and previews/wizard; no migration or conversion. |
 | `suite push DIRECTORY REFERENCE` | Existing extracted-artifact transfer without workspace discovery; root `push` is the workspace-aware operation. |
 | Future image-backed path | Member authoring joins root create; publication joins root push; deployment uses root lift rather than `suite lift`. |
@@ -149,9 +149,10 @@ cleanup exists. Public AgentSuite/ToolProvider implementation bundles remain.
 Legacy RecordedExecution, Sessions evaluation/replay/judges are removed;
 `eval from-sessions` is independent private reference extraction/export without
 a native consumer. Native eval requires author-owned cases/full-passing evidence.
-Suite status/retirement and member execution remain unavailable, with no
-replacement/parity claim. Chat `/lift` and console Lift print only the digest-Lift
-move notice; no GUI or source-less live-copy fallback remains. Quickstart composes
+Suite status/retirement and workspace-local member execution remain unavailable,
+with no replacement/parity claim. Direct run/chat can invoke lifted Orka Agents
+by live identity; this does not evaluate their suite. Chat `/lift` and console Lift
+print only the digest-Lift move notice; no GUI or source-less live-copy fallback remains. Quickstart composes
 native lifecycle before a separate fresh answer; console Ready is placement only.
 
 ## Open questions
@@ -162,4 +163,4 @@ native lifecycle before a separate fresh answer; console Ready is placement only
 4. Which signatures and policies permit promotion across targets or model bindings? **Owner:** #350; signer policy is not yet decided.
 5. How are target/binding identities, aggregate deployment revisions, partial outcomes, recovery and retained retirement recorded? **Owners:** #348, #346 and #347; session-runtime conformance belongs to #352.
 6. How do lifted-member run/chat selection and aggregate status converge with the implemented root Lift destination/inference contract? **Owners:** #301/#302 and #351, coordinated with #447.
-7. How does a lifted suite member get chatted with on its destination? Today's chat targets live Agents, and suite-owned objects deliberately refuse legacy access. **Owner:** #344.
+7. What suite/member-aware chat selection is needed beyond today's direct live-Agent path? Orka chat already accepts suite-owned Agents by context/namespace/name, without workspace-local execution or fresh suite evaluation. **Owner:** #344.

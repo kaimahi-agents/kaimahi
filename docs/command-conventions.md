@@ -46,7 +46,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `create` | Author one tool-free workspace member offline; terminal prompts complete missing model/file inputs, scripts require both flags. No runtime/model bootstrap. | `kmx create <name>` |
 | `install` | Install runtime software onto a cluster. | `kmx orka install` |
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
-| `run` | Execute once on an independent live Orka Agent. | `kmx run --agent NAME` |
+| `run` | Execute once on a live Orka Agent, including a suite-owned Agent; not workspace-local execution or suite evaluation. | `kmx run --agent NAME` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
 | `eval` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
 | `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx eval export --member greeter --out ../evidence.json` |

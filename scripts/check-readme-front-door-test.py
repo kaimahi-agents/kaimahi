@@ -46,7 +46,7 @@ kmx quickstart
 |---|---|
 | Workspace | Default `kmx create`, root `eval`, and root `push` operate on editable source. Digest-based root `lift` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
 | Local environment | `kmx local up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
-| Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. Suite-owned Agents refuse legacy invocation. |
+| Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. Both target live Agents, including suite-owned Agents; neither is workspace-local execution or suite evaluation. |
 | Legacy bundle | Removed outright: `agent.yaml` readers/writers, commands and receipts, `create --live`. Old receipts are unreadable; no conversion, migration or on-disk/resource deletion. Public AgentSuite implementation bundles are a different format. |
 ## Runtime Boundaries
 A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.
@@ -141,7 +141,8 @@ CASES += [
     ("duplicate workspace path", GOOD.replace("| Local environment |", "| Workspace | Duplicate. |\n| Local environment |"), "workspace/live paths must contain the exact four rows"),
     ("workspace runs directly", GOOD.replace("does not consume workspace source", "runs workspace source directly"), "Workspace path boundary is missing"),
     ("environment interface wired", GOOD.replace("is setup-only and is not wired", "is fully wired"), "Local environment path boundary is missing"),
-    ("suite-owned invocation broadened", GOOD.replace("Suite-owned Agents refuse legacy invocation.", "All Agents may be invoked."), "Live Agent path boundary is missing"),
+    ("suite-owned invocation incorrectly refused", GOOD.replace("including suite-owned Agents", "Suite-owned Agents refuse legacy invocation"), "Live Agent path boundary is missing"),
+    ("live invocation claims suite execution", GOOD.replace("neither is workspace-local execution or suite evaluation", "both execute workspace source and evaluate the suite"), "Live Agent path boundary is missing"),
     ("legacy bundle made callable", GOOD.replace("Removed outright:", "Hidden but callable:"), "Legacy bundle path boundary is missing"),
     ("missing developer guide", GOOD.replace("[developer guide](docs/development.md)\n", ""), "developer guide link is missing"),
     ("missing codebase overview", GOOD.replace("[codebase overview](docs/codebase-overview.md)\n", ""), "codebase overview link is missing"),

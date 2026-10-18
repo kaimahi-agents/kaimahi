@@ -15,8 +15,10 @@ leave a cloud environment billing before there is a passing package.
 
 > [!IMPORTANT]
 > Lift verifies placement and readiness, not an answer from AKS. It sends no
-> Task or model request. Root `run` and `chat` intentionally refuse suite-owned
-> Agents.
+> Task or model request. A separate root `run --agent NAME` or supported Orka
+> `chat NAME`, with the destination context and namespace, can invoke the lifted
+> Agent. That fresh invocation is not suite evaluation or proof of destination
+> behavior from Lift itself.
 
 ## Prerequisites
 

@@ -13,8 +13,10 @@ Go interfaces remain. User agent.yaml readers/writers/receipts, bundle lifecycle
 live create/previews/wizard, run bundle mode and `--bundles` flags are removed.
 Old bundle receipts are unreadable; no migration or on-disk/resource deletion.
 Independent AKS setup/teardown, internal App.Lift, live Orka run/chat and Task/result
-access remain; suite-owned objects refuse legacy invocation. Suite status and
-retirement are unavailable. Root/Orka status remain runtime-only.
+access remain, including direct invocation of suite-owned Orka Agents by live
+identity, not workspace-local execution or suite evaluation. Legacy adoption,
+copying and retirement fences remain. Suite status and retirement are unavailable.
+Root/Orka status remain runtime-only.
 
 Plane commands, administration, model overlays, credential exchange and
 workload migration are removed, along with their source module, image-build

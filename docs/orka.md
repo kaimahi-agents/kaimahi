@@ -114,9 +114,12 @@ exact graph with matching private evidence and Lift its digest. See the
 [workspace lifecycle](suite-workspace.md). Suite status/retirement are unavailable.
 
 Quickstart composes setup and this native lifecycle, verifies placement and then
-sends a separate fresh answer Task. Console Ready is placement only. Independent
-live Orka Agents can use `run --agent` and chat; suite-owned Agents refuse legacy
-invocation. `task result` reads existing Task phase/answer without resending.
+sends a separate fresh answer Task. Console Ready is placement only. Live Orka
+Agents, including suite-owned Agents placed by Lift, can use `run --agent` and
+chat with the selected context/namespace/name. Neither is workspace-local
+execution or fresh suite evaluation. Ownership fences still prevent legacy
+adoption, copying and retirement. `task result` reads existing Task phase/answer
+without resending.
 
 Result reads require a separately provisioned namespaced Task-get account.
 KMX installation/local setup provisions `orka-result-reader`; upstream-installed

@@ -169,10 +169,12 @@ Partial CLI outcomes are not established by these fixed scenarios.
 User `agent.yaml` readers/writers/receipts, `bundle` commands, live create,
 run bundle mode and `--bundles` flags are removed. Old receipts are unreadable;
 no conversion/migration or saved-file/resource deletion occurs. Suite-owned
-objects retain legacy invocation/adoption/copy refusals. Public AgentSuite/
+objects retain legacy adoption/copy/retirement fences. Public AgentSuite/
 ToolProvider implementation-bundle graphs/build/pull and alpha Go interfaces
-remain. Independent live Orka run/chat and Task/result reads remain, without
-claiming suite-workspace run/chat, legacy status compatibility or retirement.
+remain. Live Orka run/chat includes suite-owned Agents selected by
+context/namespace/name; it is not workspace-local execution or fresh suite
+evaluation. Independent Task/result reads remain, without legacy status
+compatibility or retirement.
 
 ## Safety invariants
 

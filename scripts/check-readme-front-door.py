@@ -180,7 +180,7 @@ def check(text: str) -> str | None:
     for label, required in {
         "Workspace": ["`kmx create`", "root `eval`", "root `push`", "does not consume workspace source", "separate private evidence"],
         "Local environment": ["`kmx local up`", "without creating an Agent", "setup-only", "not wired"],
-        "Live Agent": ["`kmx run --agent NAME --prompt TEXT`", "`kmx chat NAME`", "Suite-owned Agents refuse legacy invocation"],
+        "Live Agent": ["`kmx run --agent NAME --prompt TEXT`", "`kmx chat NAME`", "including suite-owned Agents", "neither is workspace-local execution or suite evaluation"],
         "Legacy bundle": ["Removed outright", "`agent.yaml` readers/writers", "Old receipts are unreadable", "no conversion, migration or on-disk/resource deletion", "Public AgentSuite implementation bundles"],
     }.items():
         if any(marker not in paths[label] for marker in required):

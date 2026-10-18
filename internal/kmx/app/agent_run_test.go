@@ -3,9 +3,12 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -115,6 +118,90 @@ func TestRunAgentDirectDoesNotRequireBundleOwnership(t *testing.T) {
 	}
 	if got := f.out.String(); got != "direct\n" {
 		t.Fatalf("stdout=%q", got)
+	}
+}
+
+// Suite ownership must not turn live invocation into a legacy ownership check.
+// Run and chat still target the selected Agent, without changing its resources.
+func TestSuiteOwnedLiveAgentInvocation(t *testing.T) {
+	for _, mode := range []string{"run", "chat"} {
+		t.Run(mode, func(t *testing.T) {
+			f := runFixture(t)
+			f.answers["private prompt"] = "suite-owned answer"
+			path := filepath.Join(f.dir, "agent.json")
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var agent map[string]any
+			if err := json.Unmarshal(raw, &agent); err != nil {
+				t.Fatal(err)
+			}
+			owner := orkaSuiteOwnership{
+				Suite: "sample-suite", Digest: "sha256:" + strings.Repeat("a", 64),
+				Member: f.name, Renderer: "kmx.native-orka/v2",
+				BindingDigest: strings.Repeat("b", 64), RenderedDigest: strings.Repeat("c", 64),
+			}
+			agent["metadata"].(map[string]any)["annotations"] = owner.markers()
+			agent["spec"] = map[string]any{"tools": []any{}}
+			raw, err = json.Marshal(agent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			if mode == "run" {
+				err = f.app.RunAgent(runOption(f))
+			} else {
+				// The existing Task/result harness handles the session; only API
+				// discovery needs an additional response for automatic selection.
+				f.app.captureCommand = func(_ context.Context, cmd *exec.Cmd) error {
+					if slices.Contains(cmd.Args, "api-resources") {
+						_, err := io.WriteString(cmd.Stdout, "agents.core.orka.ai\n")
+						return err
+					}
+					return cmd.Run()
+				}
+				t.Setenv("KMX_EVAL_FORWARD_TARGET", f.resultAddress)
+				in, openErr := os.CreateTemp(t.TempDir(), "input")
+				if openErr != nil {
+					t.Fatal(openErr)
+				}
+				defer in.Close()
+				if _, err := in.WriteString("/exit\n"); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := in.Seek(0, 0); err != nil {
+					t.Fatal(err)
+				}
+				f.app.Stdin = in
+				err = f.app.ChatWithOptions(ChatOptions{Agent: f.name, Namespace: "orka-system", Task: "private prompt"})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(f.out.String(), "suite-owned answer") || f.taskCreates(t) != 1 {
+				t.Fatalf("answer=%q Task creates=%d", f.out, f.taskCreates(t))
+			}
+			for _, call := range orkaCalls(t, f.dir) {
+				if call.Document == nil {
+					continue
+				}
+				if call.Document["kind"] != "Task" || !slices.Contains(call.Args, "create") {
+					t.Fatalf("invocation wrote a non-Task resource: %+v", call)
+				}
+				spec := call.Document["spec"].(map[string]any)
+				ref := spec["agentRef"].(map[string]any)
+				if spec["prompt"] != "private prompt" || ref["name"] != f.name || ref["namespace"] != "orka-system" {
+					t.Fatalf("Task did not target the selected live Agent: %+v", spec)
+				}
+			}
+			if after, err := os.ReadFile(path); err != nil || !bytes.Equal(raw, after) {
+				t.Fatalf("invocation changed the suite-owned Agent: %v", err)
+			}
+		})
 	}
 }
 

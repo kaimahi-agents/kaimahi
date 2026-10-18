@@ -45,7 +45,7 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 |---|---|---|
 | `agent create [name]` / `create --live` | Removed | No live resource/bundle creation, previews or wizard. Root `create NAME` authors native workspace source offline. |
 | `agent chat <name> [message...]` | `chat <name> [message...]` | Interactive Orka session, not workspace execution. |
-| `agent run [<bundle-dir>]` | `run --agent NAME` | Bundle mode removed; independent live Orka Task/answer/result contracts retained. Suite-owned Agents refuse legacy invocation. |
+| `agent run [<bundle-dir>]` | `run --agent NAME` | Bundle mode removed; live Orka Task/answer/result contracts retained, including suite-owned Agents. Not workspace-local execution or fresh suite evaluation; ownership fences are unchanged. |
 | `agent show <name>` / `agent list` | `orka show <name>` / `orka list` | Live Orka detail/inventory, not workspace inspection. Show still requires namespace. |
 | `agent evaluate/lift/retire/status` / `bundle ...` | Removed | Old commands/readers/writers/receipts removed outright, no stubs or migration. No legacy-status reader or retirement replacement. |
 | `agent verify` / `bundle verify` | Removed | Legacy replay/judges and RecordedExecution are removed without a native replacement. |

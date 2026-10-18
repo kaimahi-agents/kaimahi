@@ -125,7 +125,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   Preserve public AgentSuite/ToolProvider implementation-bundle graph/build/pull,
   extracted-directory transfer and alpha `pkg/kmx` interfaces. PortableAgent typed
   scaffolding used by native preparation is not a persistent old reader.
-  Native suite-owned resources refuse legacy invocation/adoption/copying.
+  Root `run --agent` and supported Orka chat target live Agents, including
+  suite-owned Agents, by context/namespace/name. Neither is workspace-local
+  execution or fresh suite evaluation, nor authority to adopt, update, copy or
+  retire resources. Preserve the native suite ownership fences below.
   Private packaged-native preparation and ownership-safe placement feed full-workspace
   evaluation. The existing Orka CI shard configures three cases against the pinned
   runtime/model: two text cases and one open-ended llmJudge case using the same

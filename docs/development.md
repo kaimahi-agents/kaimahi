@@ -50,8 +50,10 @@ current ownership, UID, generation, spec and readiness to live snapshots. A late
 failure can leave resources for a later explicit invocation.
 Native ownership annotations, including the full candidate run ID, reserve objects against legacy adoption, reuse,
 copying, bundle authorization and retirement, even with malformed values. These
-fences retain legacy invocation/adoption/copy refusals for suite-owned objects. Fake readiness is
-not model execution or cluster qualification.
+fences do not forbid direct `run --agent` or supported Orka chat on suite-owned
+live Agents. Invocation by context/namespace/name is not workspace-local execution,
+fresh suite evaluation or adoption/update/copy/retirement authority. Fake readiness
+is not model execution or cluster qualification.
 
 Private full-passing receipts project Task/answer and ordered case/assertion
 identities only, never prompts, answers, operands, reasons or diagnostics. Their

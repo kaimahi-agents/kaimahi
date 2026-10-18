@@ -106,8 +106,11 @@ is 100 runs, within the spec's consumer resource-limit allowance.
 No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
 AgentSessions evidence is explicitly refused by diff and Lift;
 `eval from-sessions` is reference extraction/export without a native consumer.
-Suite-owned live resources refuse legacy invocation. Chat `/lift` and console
-Lift only print `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+Root `run --agent` and supported Orka chat select live Agents by
+context/namespace/name, including suite-owned Agents. They are not workspace-local
+execution or fresh suite evaluation and grant no adoption/update/copy/retirement
+authority. Chat `/lift` and console Lift only print
+`Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
 No new GUI or source-less copying. Console Ready means placement, not an answer.
 
 ## Context, environment, target and inference

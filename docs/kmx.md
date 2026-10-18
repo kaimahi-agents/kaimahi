@@ -22,8 +22,9 @@ No release GUI or source-less live-copy fallback remains. Host Foundry/Copilot
 chat controls remain independent; live tools/inference editing and automatic
 wizard tool attachment are retired. Independent AKS setup/teardown and internal
 App.Lift remain. Plane and `kmx agent` commands remain removed. Native
-suite-owned resources refuse legacy invocation/adoption/copying. Readiness is
-not an answer or evaluated execution.
+suite-owned resources remain reserved against legacy adoption, copying and
+retirement; direct live invocation is separate. Readiness is not an answer or
+evaluated execution.
 
 ## Install
 
@@ -172,7 +173,7 @@ See [digest lift](suite-workspace.md#digest-lift) for gates and partial outcomes
 | `kmx suite diff <before> <after>` | validate and semantically compare two extracted AgentSuites or local OCI image layouts, including supplemental packaged content and artifact identities. The default unified view uses `-` and `+` field lines; `--view split` renders before and after values side by side, and `-o json` emits the versioned change and affected-agent report. [Suite artifact diff](#suite-artifact-diff). |
 | `kmx eval from-sessions UID... --sessions SOURCE --assertions CASE.yaml --out MANIFEST.json` | Independent private reference extraction/export only. [Reference extraction](#reference-extraction) |
 | `kmx eval diff BEFORE AFTER` | Offline strict full-passing native suite evidence only; old bundle receipts unreadable. [Native receipt diff](#native-receipt-diff) |
-| `kmx run --agent NAME --prompt TEXT` | One Task on an independent live Orka Agent, answer-only stdout; suite-owned Agents refuse legacy invocation. [Task execution and results](#task-execution-and-results) |
+| `kmx run --agent NAME --prompt TEXT` | One Task on a live Orka Agent, including suite-owned Agents, with answer-only stdout; not workspace-local execution or suite evaluation. [Task execution and results](#task-execution-and-results) |
 | `kmx task result TASK [--wait 5m]` | Read existing Task phase/answer without resending; retain context/namespace. [Task execution and results](#task-execution-and-results) |
 | `kmx context show` / `kmx context use <context>` | read effective context/source/posture or remember KMX's guarded access selection; never change kubectl current-context |
 | `kmx console` | Live Orka inventory and source-reviewed native workspace creation/eval/push/Lift. Ready is placement only. Interactive Lift and bundle comparison are retired; `--demo` uses sample data. |
@@ -660,10 +661,18 @@ and cases](suite-workspace.md).
 ## Task execution and results
 
 `kmx run --agent NAME --prompt TEXT` or `--prompt-file PATH` (`-` for stdin)
-submits one Task to an independent live Orka Agent. `--wait` defaults to 5m,
+submits one Task to a Ready live Orka Agent, including a suite-owned Agent placed
+by Lift. Select its context with `--context` and its namespace with `--namespace`
+(default `orka-system`); `--agent` names the live Agent. `--wait` defaults to 5m,
 maximum 9m. stdout contains only the answer; stderr retains Task identity and
-retrieval instructions. Bundle-directory selection is removed. Native suite-owned
-Agents refuse legacy invocation; root run is not a suite-workspace execution path.
+retrieval instructions. Bundle-directory selection is removed.
+
+`kmx chat NAME --namespace NAMESPACE --context CONTEXT` opens the supported Orka
+chat path against a live Agent, including suite-owned Agents. Each native chat
+message creates a fresh Task; neither run nor chat executes workspace source or
+produces fresh suite evaluation evidence. Invocation retains the caller's
+effective authority and existing access checks; it does not authorize adoption,
+update, copying or retirement of the Agent or its companion resources.
 
 `kmx task result TASK` reads an existing Task without resending. It reads phase
 once by default and opens a result session only for a readable terminal answer.

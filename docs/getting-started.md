@@ -111,7 +111,7 @@ To prepare the runtime without creating an Agent, use `kmx local up` instead of 
 ```bash
 kmx local up
 kmx orka status
-# For an independent live Orka Agent, not a suite-owned member:
+# For an existing live Agent, including one placed by Lift:
 kmx chat --namespace orka-system <agent-name>
 ```
 
@@ -167,9 +167,10 @@ bindings and refuses any occupied target.
 `create --live`, live-only/preview flags, its wizard and user bundle
 commands/readers/writers are removed outright. No conversion/migration or saved
 receipt/resource deletion occurs. Old bundle receipts are unreadable. Suite
-status/retirement remain unavailable. Root run requires `--agent` for independent
-live Orka Agents; suite ownership refuses legacy invocation. Task/result access
-remains independent, without resend.
+status/retirement remain unavailable. Root run requires `--agent` for a live Orka
+Agent, including one placed by Lift; chat also targets those live Agents. Neither is
+workspace-local execution or suite evaluation. Task/result access remains
+independent, without resend.
 
 ## Using Podman instead of Docker
 
