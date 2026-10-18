@@ -199,6 +199,9 @@ func TestReleaseLiftRecordRefusesUnsafeStorage(t *testing.T) {
 					if err := os.WriteFile(filepath.Join(base, "lock"), nil, 0644); err != nil {
 						t.Fatal(err)
 					}
+					if err := os.Chmod(filepath.Join(base, "lock"), 0644); err != nil {
+						t.Fatal(err)
+					}
 				default:
 					old := filepath.Join(base, strings.Repeat("a", 32))
 					if err := os.Mkdir(old, 0700); err != nil {
@@ -210,6 +213,9 @@ func TestReleaseLiftRecordRefusesUnsafeStorage(t *testing.T) {
 						}
 					} else {
 						if err := os.WriteFile(filepath.Join(old, "intent.json"), []byte("{}"), 0644); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Chmod(filepath.Join(old, "intent.json"), 0644); err != nil {
 							t.Fatal(err)
 						}
 					}

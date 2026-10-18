@@ -303,6 +303,9 @@ func writeFile(t *testing.T, root, name string, data []byte, mode os.FileMode) {
 	if err := os.WriteFile(path, data, mode); err != nil {
 		t.Fatalf("write %s: %v", name, err)
 	}
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatalf("chmod %s: %v", name, err)
+	}
 }
 
 func canonicalDigest(t *testing.T, data []byte) string {
