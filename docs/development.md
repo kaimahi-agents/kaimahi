@@ -269,6 +269,19 @@ scaffold, not removed live-create flags. Evaluation is not retried; broader
 promotion, absent creation and partial paths remain unqualified.
 Quickstart independently verifies placement before its separate fresh answer Task.
 
+The Orka runtime shard also runs `TestReleaseUpdatePinnedRV` and
+`TestReleaseStatePinnedCAS` with `KMX_RELEASE_UPDATE_LIVE=1` and
+`KMX_LIVE_KIND_CONTEXT=kind-kmx-orka`. These opt-in tests require the exact
+pinned chart/controller and a verified loopback API. They characterize status-only
+resourceVersion churn, isolated generation/spec preconditions, current-generation
+readiness and a shared ConfigMap reservation's UID/RV/data CAS. A synthetic
+local-only prerequisite and unusable inference endpoint keep these checks free of
+model execution; they do not authorize or enable user-facing Lift updates.
+For local qualification, use a separately owned `kind-kmx-update-proof` cluster
+with the pinned installer, never a demo or shared destination. The tests leave
+freshly named fixtures for the owned cluster's teardown; they never delete an
+occupied record or take over a reservation.
+
 The checkout-only [kagent qualification shell](../scripts/ci/kagent-lift.sh)
 retains exact v0.10.3 bootstrap, raw upstream Tool smoke and a direct single A2A
 MCP proof, separately from tool-free packaged-suite two-case evaluation,

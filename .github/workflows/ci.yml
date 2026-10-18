@@ -1482,6 +1482,11 @@ jobs:
         run: |
           echo 'KMX_NATIVE_STARTED=1' >> "$GITHUB_ENV"
           python3 scripts/ci/suite-native.py kind-kmx-orka kind-kmx-orka-promote "$RUNNER_TEMP/kmx-suite-native"
+      - name: Pinned update preconditions — fresh RV and pair reservation
+        if: steps.changes.outputs.docs_only != 'true'
+        run: |
+          KMX_RELEASE_UPDATE_LIVE=1 KMX_LIVE_KIND_CONTEXT=kind-kmx-orka go test ./internal/kmx/app \
+            -run '^TestRelease(UpdatePinnedRV|StatePinnedCAS)$' -count=1 -v
       - name: Upload only passing native metadata
         if: steps.changes.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v4
