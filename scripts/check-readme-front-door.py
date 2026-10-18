@@ -10,7 +10,7 @@ ORDER = [
     ("ketu icon", r'src="brand/ketu\.svg"'),
     ("product line", r"^\*\*Agent Builder CLI for Kubernetes\.\*\*$"),
     ("journey heading", r"^## Create, Prove, Lift$"),
-    ("first-answer heading", r"^## Getting Starter: Get Your First Answer$"),
+    ("first-answer heading", r"^## Getting Started: Get Your First Answer$"),
     ("workspace/live heading", r"^## Workspace And Live Paths$"),
     ("runtime boundaries heading", r"^## Runtime Boundaries$"),
     ("safety/status heading", r"^## Safety And Status$"),
@@ -132,6 +132,28 @@ def check(text: str) -> str | None:
     if table_problem is not None:
         return "README front door: " + table_problem
     table_at = journey.find(JOURNEY_HEADER)
+    preamble = journey[:table_at]
+    blocks = list(FENCE.finditer(preamble))
+    if not blocks or ordered_in(blocks[0].group(1), [
+        ("create", r"^kmx create NAME --workspace \. --model MODEL --instructions FILE$"),
+        ("composed Lift", r"^kmx lift --to NAME$"),
+    ]) is not None:
+        return "README front door: two-command workspace path must precede manual stages"
+    prerequisites = " ".join(preamble[:blocks[0].start()].split())
+    for label, marker in [
+        ("prepared runtime", "prepared runtime"),
+        ("inference prerequisite", "runtime and inference"),
+        ("registry authentication", "registry authentication"),
+        ("kmx.yaml", "kmx.yaml"),
+        ("publishRepository", "publishRepository"),
+        ("destination selectors", "context/namespace/inference selectors"),
+        ("evaluationTarget", "evaluationTarget"),
+        ("offline create prerequisite boundary", "Create supplies none of these"),
+    ]:
+        if marker not in prerequisites.replace("`", ""):
+            return f"README front door: {label} must accompany the two-command path"
+    if "source-only promotion" not in preamble or "not destination evaluation" not in preamble:
+        return "README front door: composed Lift must disclose source-only promotion"
     release = "The table below describes v0.8.1's one-member workflow; these docs follow main and may also describe unreleased behavior."
     release_at = journey.find(release)
     if not 0 <= release_at < table_at:
@@ -153,11 +175,13 @@ def check(text: str) -> str | None:
         return "README front door: Lift row must stay deploy-only"
     if "`--plan` is GET-only" not in rows[3][1]:
         return "README front door: Lift row must preserve the GET-only plan boundary"
-    if "Orka `--inference provider:NAME` or kagent `--bindings FILE`" not in rows[3][1]:
+    if "Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE`" not in rows[3][1]:
         return "README front door: Lift row must preserve runtime-specific bindings"
     if "kagent refuses occupied targets" not in rows[3][1]:
         return "README front door: Lift row must preserve kagent create-only placement"
-    normalized_preamble = " ".join(journey[:table_at].split())
+    if "Orka candidate evidence requires `--promote`, even in the same environment" not in rows[3][1]:
+        return "README front door: Lift row must describe candidate evidence promotion"
+    normalized_preamble = " ".join(preamble.split())
     if "qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation" not in normalized_preamble:
         return "README front door: Lift qualification scope is missing"
     if "it does not prove every promotion, creation or partial-outcome path" not in normalized_preamble:

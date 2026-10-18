@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import test from 'node:test'
@@ -47,6 +48,56 @@ test('the homepage renders the interactive journey and channel boundary', async 
   ]) {
     assert.match(homepage, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
+})
+
+/** Inspect rendered instructions without syntax-highlighter markup. */
+function plainText(html) {
+  return html.replace(/<\/(?:p|pre|h[1-6])>/g, '\n').replace(/<[^>]*>/g, '').replaceAll('&gt;', '>').replaceAll('&lt;', '<').replaceAll('&amp;', '&')
+}
+
+test('the front doors lead with composed Lift and its prerequisites', async () => {
+  const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
+  const firstPanel = homepage.match(/<article[^>]*id="journey-panel-0"[\s\S]*?<\/article>/)?.[0]
+  assert.ok(firstPanel, 'the default journey is rendered')
+  const chooser = plainText(firstPanel)
+  assert.match(chooser, /kmx create[^\n]*kmx lift --to NAME/)
+  for (const prerequisite of ['prepared runtime', 'inference', 'registry authentication', 'kmx.yaml', 'publishRepository', 'evaluationTarget']) {
+    assert.ok(chooser.includes(prerequisite), `chooser prerequisite: ${prerequisite}`)
+  }
+  for (const page of ['index.html', 'docs/getting-started.html']) {
+    const text = plainText(await readFile(path.join(dist, page), 'utf8'))
+    const create = text.indexOf('kmx create ')
+    const lift = text.indexOf('kmx lift --to ')
+    assert.ok(create >= 0 && lift > create, `${page}: create precedes composed Lift`)
+    const quickstart = text.indexOf('kmx quickstart')
+    assert.ok(quickstart > lift, `${page}: composed path precedes quickstart`)
+    const introduction = text.slice(0, lift)
+    for (const prerequisite of ['prepared', 'inference', 'registry authentication', 'kmx.yaml', 'publishRepository', 'evaluationTarget']) {
+      assert.ok(introduction.includes(prerequisite), `${page} prerequisite: ${prerequisite}`)
+    }
+    assert.ok(text.includes('source-only promotion'), `${page}: promotion disclosure`)
+  }
+})
+
+test('active installation guidance pins the stable CLI without rewriting history', async () => {
+  for (const [page, heading] of [
+    ['index.html', 'getting-started-get-your-first-answer'],
+    ['docs/getting-started.html', 'install-kmx'],
+    ['docs/kmx.html', 'install']
+  ]) {
+    const html = await readFile(path.join(dist, page), 'utf8')
+    const start = html.indexOf(`<h2 id="${heading}"`)
+    assert.ok(start >= 0, `${page}: active install section`)
+    const end = html.indexOf('<h2 ', start + 1)
+    const section = plainText(html.slice(start, end < 0 ? undefined : end))
+    const pins = [...section.matchAll(/go install github\.com\/kaimahi-agents\/kaimahi\/cmd\/kmx@(\S+)/g)].map((match) => match[1])
+    assert.deepEqual(pins, ['v0.8.1'], `${page}: repeatable Go installation`)
+    if (page === 'docs/kmx.html') assert.ok(section.includes('--version=v0.8.1'))
+  }
+  const help = execFileSync('sh', [path.join(root, 'install.sh'), '--help'], { encoding: 'utf8' })
+  assert.match(help, /Pin @v0\.8\.1 for a repeatable build/)
+  const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8'))
+  assert.match(reference, /historical v0\.5\.1 uses the/)
 })
 
 test('checkout-only references point to source while guide links stay local', async () => {
