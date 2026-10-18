@@ -211,6 +211,7 @@ func publicNativeEvaluationFixture(t *testing.T) (*App, *nativeReadFixture, *eva
 		}
 		return capture(ctx, cmd)
 	}
+	f.nativeReads.records = attachReleaseStateAPI(t, a)
 	return a, f.nativeReads, f, state
 }
 

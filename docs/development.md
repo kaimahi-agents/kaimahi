@@ -210,6 +210,24 @@ commands/assets, not kagent vocabulary or version claims. It uses bounded litera
 command tokenization and exact inert exceptions; production command tests own
 runtime selection and supported-operation validation.
 
+### Release retention boundary
+
+Complete fresh Orka Lift creates retain a shared UID-bound baseline and a new
+explicit private ownership proof; reused/mixed placements never enroll. Private
+observation slots `intent.json` through `3.json` alone remain non-authoritative.
+Pre-reserved `4.json` additionally binds an acknowledged shared completion before
+any later operation can use that proof. Unknown writes/checkpoints cannot be
+resolved by re-reading live objects or by an automatic resend/takeover. Only a
+live writer whose object writes have ceased may persist a known partial and
+release its reservation. Pending/partial shared proof never rolls; completed
+history rolls at ten entries within 64 KiB. See
+[retention and operator recovery](suite-workspace.md#release-retention-and-operator-recovery).
+The update/rollback backend remains private and unwired to CLI flags. Its tests
+must distinguish same-digest no-write, fresh-RV-without-new-authority, old/new
+known partials, a separate client/private home, and lost final acknowledgments.
+Pinned API characterization is necessary but does not substitute for complete
+Lift/retention qualification or prove a model answer. Keep existing CI budgets.
+
 ### Local loop
 
 ```bash

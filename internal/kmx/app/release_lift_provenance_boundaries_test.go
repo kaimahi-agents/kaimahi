@@ -81,8 +81,9 @@ func TestReleaseLiftProvenanceCheckpointFailureStopsNextCreate(t *testing.T) {
 	capture := a.captureCommand
 	injected := false
 	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+		pairCreate := nativePairCreate(cmd)
 		err := capture(ctx, cmd)
-		if err == nil && slices.Contains(cmd.Args, "create") && !slices.Contains(cmd.Args, "--dry-run=server") {
+		if err == nil && pairCreate && !slices.Contains(cmd.Args, "--dry-run=server") {
 			entries, e := os.ReadDir(filepath.Join(home, "release-lifts"))
 			if e != nil {
 				return e

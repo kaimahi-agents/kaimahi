@@ -24,11 +24,12 @@ type ReleaseLiftOutcome struct {
 // ReleaseLiftResult is a placement observation, never destination evaluation.
 // A partial result preserves acknowledged identities without granting reuse.
 type ReleaseLiftResult struct {
-	Summary         ReleaseLiftSummary   `json:"summary"`
-	State           string               `json:"state"`
-	Resources       []ReleaseLiftOutcome `json:"resources"`
-	LiftID          string               `json:"liftID,omitempty"`
-	ProvenanceState string               `json:"provenanceState,omitempty"`
+	Summary         ReleaseLiftSummary        `json:"summary"`
+	State           string                    `json:"state"`
+	Resources       []ReleaseLiftOutcome      `json:"resources"`
+	LiftID          string                    `json:"liftID,omitempty"`
+	ProvenanceState string                    `json:"provenanceState,omitempty"`
+	ReleaseRecord   *ReleaseRecordObservation `json:"releaseRecord,omitempty"`
 	placement       *suiteNativePlacement
 	kagent          *releaseLiftKagentPlacement
 }
@@ -156,8 +157,13 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 	result.State = "not-applied"
 	guardFailure := false
 	var record *releaseLiftRecordWriter
+	var shared *releaseStateSnapshot
+	var worker *App
 	provenanceFailed := false
 	defer func() {
+		if shared != nil && err == nil && result.State == "ready" {
+			record.updateProof, err = releaseCreateProof(shared, result)
+		}
 		if record != nil {
 			// Local bounded persistence must retain acknowledged effects even when
 			// the operation context was cancelled. It grants no recovery authority.
@@ -165,8 +171,7 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 				result.ProvenanceState = "recorded"
 			}
 			persistErr := record.checkpoint(context.WithoutCancel(ctx), result)
-			closeErr := record.Close()
-			if persistErr != nil || closeErr != nil || provenanceFailed {
+			if persistErr != nil || provenanceFailed {
 				result.ProvenanceState = "unknown"
 				if result.State == "ready" {
 					result.State = "partial"
@@ -175,6 +180,24 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 				}
 				err = errors.Join(err, errReleaseLiftProvenance)
 			}
+		}
+		if shared != nil && err == nil && result.State == "ready" {
+			var released *releaseStateSnapshot
+			released, err = worker.finishReleaseCreate(ctx, shared)
+			if err == nil {
+				err = record.acknowledge(ctx, released, result)
+			}
+			if err == nil {
+				result.ReleaseRecord.State = "ready"
+			}
+		}
+		if closeErr := record.Close(); closeErr != nil {
+			err = errors.Join(err, errReleaseLiftProvenance)
+			result.ProvenanceState = "unknown"
+		}
+		if result.ReleaseRecord != nil && err != nil && result.State == "ready" {
+			result.State, result.ReleaseRecord.State = "partial", "unknown"
+			result.placement = nil
 		}
 		if err != nil && !guardFailure {
 			cause := ctx.Err()
@@ -186,6 +209,9 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			}
 			if errors.Is(err, errReleaseLiftProvenance) {
 				cause = errors.Join(cause, errReleaseLiftProvenance)
+			}
+			if isReleaseStateError(err) {
+				cause = errors.Join(cause, err)
 			}
 			err = errors.Join(ErrReleaseLiftApply, cause)
 		}
@@ -203,7 +229,7 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 	if !p.started.CompareAndSwap(false, true) {
 		return result, ErrReleaseLiftApply
 	}
-	worker := a.releaseLiftWorker(ctx, p.options)
+	worker = a.releaseLiftWorker(ctx, p.options)
 	if p.kagent != nil {
 		// Preserve the closed qualified profile, but use this invocation's App
 		// transports and context rather than a preparation-time worker.
@@ -213,6 +239,11 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 	created := make([]releaseLiftEffect, 2)
 	var docs []map[string]any
 	recheck := func() error {
+		if shared != nil {
+			if err := worker.checkReleaseReservation(ctx, shared); err != nil {
+				return err
+			}
+		}
 		if err := worker.recheckReleaseLiftInputs(ctx, p); err != nil {
 			return err
 		}
@@ -236,6 +267,11 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 	docs, err = p.releaseDocuments()
 	if err != nil {
 		return result, err
+	}
+	if releaseFreshPair(p) {
+		if err := worker.preflightReleaseStateCreate(ctx, releaseStateSubject(p.native.Subject)); err != nil {
+			return result, err
+		}
 	}
 	record, result.LiftID, err = worker.prepareReleaseLiftProvenance(ctx, p, docs)
 	if err != nil {
@@ -262,6 +298,19 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 	if err := recheck(); err != nil {
 		return result, err
 	}
+	if releaseFreshPair(p) {
+		intent, e := releaseCreateIntent(p, docs, result.LiftID)
+		if e != nil {
+			return result, e
+		}
+		result.ReleaseRecord = &ReleaseRecordObservation{Name: releaseStateName(intent.Suite, intent.Member, intent.Runtime), State: "unknown"}
+		result.State = "partial"
+		shared, err = worker.createReleaseState(ctx, intent)
+		if err != nil {
+			return result, err
+		}
+		result.ReleaseRecord.UID, result.ReleaseRecord.State = shared.UID, "pending"
+	}
 	for i, doc := range docs {
 		if err := recheck(); err != nil {
 			return result, err
@@ -279,6 +328,13 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			}
 			if err != nil {
 				return result, err
+			}
+			if shared != nil {
+				sharedNext, e := worker.checkpointReleaseCreate(ctx, shared, i, *row)
+				if e != nil {
+					return result, e
+				}
+				shared = sharedNext
 			}
 			if err := worker.waitReleaseLift(ctx, p, doc, created[i]); err != nil {
 				return result, err

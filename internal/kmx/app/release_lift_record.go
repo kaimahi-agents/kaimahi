@@ -26,10 +26,11 @@ var (
 	releaseLiftRecordID  = regexp.MustCompile(`^[0-9a-f]{32}$`)
 )
 
-// These immutable snapshots are history only, separate from passing evidence and
-// workspace skip authority. Four fixed slots are reserved before admission. A
-// store-level OS lock bounds concurrent reservations and is never unlinked.
-// Layout: release-lifts/<opaque ID>/{intent,1,2,3}.json.
+// Original intent/outcome fields are observations, not evaluation or skip
+// authority. New complete Orka creates/updates reserve a separate fifth snapshot
+// for explicit ownership plus acknowledged shared completion. Old observations
+// are never upgraded. A store-level OS lock bounds capacity, not pair concurrency.
+// Layout: release-lifts/<opaque ID>/{intent,1,2,3[,4]}.json.
 type releaseLiftRecordWriter struct {
 	root                         *os.Root
 	lock                         *os.File
@@ -38,6 +39,8 @@ type releaseLiftRecordWriter struct {
 	outputs                      []*suitePassingExport
 	summary, receipt, annotation json.RawMessage
 	next                         int
+	updateProof                  *releaseOwnershipProof
+	releaseDataDigest            string
 }
 
 func releaseLiftRecordError(reason string) error {
@@ -240,7 +243,7 @@ func (w *releaseLiftRecordWriter) capacity(ctx context.Context) error {
 		}
 		total += n
 	}
-	if count >= maxReleaseLiftAttempts || total+4*maxReleaseLiftRecordBytes > maxReleaseLiftStoreBytes {
+	if count >= maxReleaseLiftAttempts || total+5*maxReleaseLiftRecordBytes > maxReleaseLiftStoreBytes {
 		return releaseLiftRecordError("storage capacity exceeded")
 	}
 	return w.unchanged()
@@ -310,7 +313,11 @@ func preflightReleaseLiftRecord(ctx context.Context, id string, summary ReleaseL
 		}
 		return nil, releaseLiftRecordError("unsafe attempt directory creation")
 	}
-	for _, name := range []string{"intent.json", "1.json", "2.json", "3.json"} {
+	slots := []string{"intent.json", "1.json", "2.json", "3.json"}
+	if summary.Runtime == "orka" && len(summary.Resources) == 2 && ((summary.Resources[0].Action == "create" && summary.Resources[1].Action == "create") || summary.Resources[0].Action == "update") {
+		slots = append(slots, "4.json")
+	}
+	for _, name := range slots {
 		path := filepath.Join(w.path, id, name)
 		// The publisher needs no workspace exclusion here: this destination is
 		// selected solely from validated private state and an opaque fixed ID.
@@ -382,13 +389,15 @@ func (w *releaseLiftRecordWriter) write(ctx context.Context, state string, resou
 		}
 	}
 	raw, err := json.Marshal(struct {
-		SchemaVersion int             `json:"schemaVersion"`
-		ID            string          `json:"id"`
-		Summary       json.RawMessage `json:"summary"`
-		Annotation    json.RawMessage `json:"annotation"`
-		State         string          `json:"state"`
-		Resources     json.RawMessage `json:"resources"`
-	}{1, w.id, w.summary, w.annotation, state, rows})
+		SchemaVersion     int                    `json:"schemaVersion"`
+		ID                string                 `json:"id"`
+		Summary           json.RawMessage        `json:"summary"`
+		Annotation        json.RawMessage        `json:"annotation"`
+		State             string                 `json:"state"`
+		Resources         json.RawMessage        `json:"resources"`
+		UpdateProof       *releaseOwnershipProof `json:"updateProof,omitempty"`
+		ReleaseDataDigest string                 `json:"releaseDataDigest,omitempty"`
+	}{1, w.id, w.summary, w.annotation, state, rows, w.updateProof, w.releaseDataDigest})
 	if err != nil {
 		return releaseLiftRecordError("invalid snapshot JSON")
 	}

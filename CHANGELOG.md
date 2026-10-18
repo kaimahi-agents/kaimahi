@@ -22,6 +22,26 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Changed
+
+- Complete fresh Orka Lift creates now retain a namespace-local shared release
+  record and explicit private ownership proof for the forthcoming updater
+  ([#561](https://github.com/kaimahi-agents/kaimahi/issues/561)). Composed Lift
+  preflights retention before evaluation/publication spend. Shared completion
+  uses conditional writes and requires a private acknowledgment checkpoint;
+  ambiguous or partial first creates remain blocked, without automatic cleanup.
+  Exact reuse/mixed reuse/skips never enroll. Kagent is unchanged. The public
+  command remains create-only; no `--update` flag is enabled by this backend slice.
+
+### Breaking
+
+- Fresh Orka pair Lift now requires namespace-local ConfigMap create plus
+  named-record get/patch access and available private retention capacity. Missing
+  access/storage and stale records fail closed. Shared history rolls only old
+  completed entries (ten retained, 64 KiB total); pending/partial proof never
+  rolls. Agents lifted by v0.8.1 or earlier are not enrolled for update; explicitly
+  recreate when ready. See [operator recovery](docs/suite-workspace.md#release-retention-and-operator-recovery).
+
 ## v0.8.1 — 2026-10-17
 
 ### Added

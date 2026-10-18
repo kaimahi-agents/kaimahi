@@ -32,6 +32,7 @@ func releaseApplyFixture(t *testing.T, absent string) (*App, *nativeReadFixture,
 		}
 		return reconcileCaptureFixture(ctx, cmd)
 	}
+	f.records = attachReleaseStateAPI(t, a)
 	return a, f, opt, dir
 }
 

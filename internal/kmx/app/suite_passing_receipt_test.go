@@ -17,9 +17,12 @@ import (
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
-func passingFixture(t *testing.T) (string, *workspace.Prepared, *workspace.NativeSuite, *suiteNativePlacement, []suitePassingObservation) {
+func passingFixture(t *testing.T, edits ...func(string)) (string, *workspace.Prepared, *workspace.NativeSuite, *suiteNativePlacement, []suitePassingObservation) {
 	t.Helper()
 	_, root, _ := gitWorkspaceRepository(t, false)
+	for _, edit := range edits {
+		edit(root)
+	}
 	writeFile(t, filepath.Join(root, "eval/second.yaml"), "id: second\ninput: Say four\nassertions:\n- {id: positive, type: contains, value: '4'}\n- {id: negative, type: notContains, value: refuse}\n")
 	prepared, err := workspace.Prepare(t.Context(), root, filepath.Join(t.TempDir(), "cache"))
 	if err != nil {

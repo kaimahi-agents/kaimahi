@@ -16,6 +16,8 @@ import (
 
 const maxReleaseStateBytes = 64 << 10
 
+var errReleaseStateRBAC = errors.New("release record RBAC unavailable; require namespace-local ConfigMap get/create/patch permission before retrying; no placement writes attempted")
+
 var errReleaseStateUnavailable = errors.New("release record read unavailable; check ConfigMap get access and API connectivity; no state inferred")
 
 var errReleaseStateWrite = errors.New("conditional release-record write conflicted or acknowledgment is unknown; do not resend; inspect the current reservation and object outcomes; wait for an active update, never take over an unresolved one")
@@ -227,7 +229,7 @@ func (a *App) preflightReleaseStateCreate(ctx context.Context, expected releaseS
 		}
 		raw, err := a.orkaCapture(ctx, nil, "-n", expected.Target.Namespace, "auth", "can-i", verb, resource)
 		if err != nil || strings.TrimSpace(string(raw)) != "yes" {
-			return errors.Join(errors.New("release record RBAC unavailable; require namespace-local ConfigMap get/create/patch permission before retrying; no placement writes attempted"), ctx.Err())
+			return errors.Join(errReleaseStateRBAC, ctx.Err())
 		}
 	}
 	return nil

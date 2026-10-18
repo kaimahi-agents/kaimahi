@@ -351,6 +351,9 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 	// Known storage constraints must refuse before evaluation/publication spend.
 	// A verified placement skip never opens or repairs the provenance store.
 	if placement.record == nil {
+		if err = dest.preflightReleaseStateCreate(ctx, releaseStateSubject(observedDest.Subject)); err != nil {
+			return r, err
+		}
 		if err = preflightReleaseLiftStorage(ctx); err != nil {
 			return r, err
 		}

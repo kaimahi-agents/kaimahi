@@ -15,7 +15,7 @@ PRESENCE = re.compile(r'go-template=secret\n\{\{range \$key, \$_ := \.data\}\}\{
 READS = {"namespace", "namespaces", "ns", "providers.core.orka.ai", "agents.core.orka.ai", "tasks.core.orka.ai",
          "secret", "serviceaccount", "serviceaccounts", "sa", "svc", "service", "services", "deployment", "deployments",
          "deploy", "pods", "pod", "crd", "customresourcedefinitions"}
-VERBS = {"get", "create", "replace", "delete", "config", "version", "port-forward", "rollout"}
+VERBS = {"get", "create", "replace", "delete", "config", "version", "port-forward", "rollout", "auth", "patch"}
 ROOTS = {"providers": "Provider", "agents": "Agent", "tasks": "Task"}
 INVENTORIES = {"/apis/batch/v1/namespaces/orka-system/jobs": "Job",
                "/api/v1/namespaces/orka-system/pods": "Pod", "/api/v1/namespaces/orka-system/configmaps": "ConfigMap",
@@ -53,6 +53,67 @@ def raw_prefix(args, verb):
             raise ValueError("audit-raw-option")
 
 
+RELEASE_NAME = re.compile(r"kmx-release-[0-9a-f]{40}")
+OPAQUE = re.compile(r"[a-zA-Z0-9._:-]{1,128}")
+
+
+def release_payload(data):
+    if not isinstance(data, str) or len(data.encode()) > 64 << 10:
+        raise ValueError("audit-record-size")
+    state = json.loads(data, object_pairs_hook=unique_object)
+    def check(ok):
+        if not ok:
+            raise ValueError("audit-record-schema")
+    def digest(v):
+        return isinstance(v, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", v)
+    def objects(rows):
+        check(isinstance(rows, list) and len(rows) == 2)
+        for kind, row in zip(("Provider", "Agent"), rows):
+            check(isinstance(row, dict) and not set(row) - {"kind", "uid", "generation", "specDigest", "ownershipDigest", "liftRecordDigest"})
+            check(row.get("kind") == kind and all(digest(row.get(k)) for k in ("specDigest", "ownershipDigest", "liftRecordDigest")))
+            uid, gen = row.get("uid", ""), row.get("generation", 0)
+            check(type(gen) is int and gen >= 0 and isinstance(uid, str) and ((not uid and gen == 0) or (OPAQUE.fullmatch(uid) and gen > 0)))
+    check(isinstance(state, dict) and not set(state) - {"version", "suite", "member", "runtime", "target", "originLiftID", "operation", "baseline", "pending", "history"})
+    check(state.get("version") == 1 and type(state["version"]) is int and state.get("runtime") == "orka")
+    check(all(isinstance(state.get(k), str) and re.fullmatch(r"[a-z0-9][-a-z0-9.]{0,252}", state[k]) for k in ("suite", "member")))
+    check(isinstance(state.get("originLiftID"), str) and re.fullmatch(r"[0-9a-f]{32}", state["originLiftID"]))
+    target = state.get("target")
+    check(isinstance(target, dict) and set(target) == {"context", "namespace", "clusterUID", "namespaceUID"})
+    check(target["namespace"] == "orka-system" and all(isinstance(v, str) and re.fullmatch(r"[-a-zA-Z0-9._:/]{1,253}", v) for v in target.values()))
+    history = state.get("history", [])
+    check(isinstance(history, list) and len(history) <= 10)
+    pending = state.get("pending")
+    if pending is None:
+        check(not state.get("operation") and bool(state.get("baseline")))
+    else:
+        check(state.get("operation") == pending.get("liftID") == state["originLiftID"])
+    if "baseline" in state:
+        objects(state["baseline"])
+    for revision in history + ([pending] if pending is not None else []):
+        check(isinstance(revision, dict) and not set(revision) - {"liftID", "suiteDigest", "evidenceDigest", "state", "before", "objects"})
+        check(isinstance(revision.get("liftID"), str) and re.fullmatch(r"[0-9a-f]{32}", revision["liftID"]))
+        check(all(digest(revision.get(k)) for k in ("suiteDigest", "evidenceDigest")))
+        check(revision.get("state") in ({"pending"} if revision is pending else {"completed", "partial"}))
+        objects(revision.get("objects"))
+        if "before" in revision:
+            objects(revision["before"])
+    rows = pending["objects"] if pending else state["baseline"]
+    return {"releaseDigest": hashlib.sha256(data.encode()).hexdigest(),
+            "releasePhase": "pending" if pending else "completed", "releaseAcknowledged": sum(bool(r.get("uid")) for r in rows)}
+
+
+def release_document(doc):
+    if (not isinstance(doc, dict) or set(doc) - {"apiVersion", "kind", "metadata", "data"} or
+            doc.get("apiVersion") != "v1" or doc.get("kind") != "ConfigMap" or
+            not isinstance(doc.get("data"), dict) or set(doc["data"]) != {"release.json"}):
+        raise ValueError("audit-record-document")
+    meta = doc["metadata"]
+    if (not RELEASE_NAME.fullmatch(meta.get("name", "")) or meta.get("namespace") != "orka-system" or
+            meta.get("labels") != {"app.kubernetes.io/managed-by": "kmx", "kaimahi.dev/release-state": "v1"}):
+        raise ValueError("audit-record-metadata")
+    return release_payload(doc["data"]["release.json"])
+
+
 def classify(args, raw=b""):
     verb = next((a for a in args if a in VERBS), "")
     if not verb:
@@ -65,7 +126,34 @@ def classify(args, raw=b""):
     if any(a.startswith("--namespace") for a in args):
         raise ValueError("audit-namespace-override")
     preconditions = None
-    if verb == "delete":
+    record = {}
+    if verb == "auth":
+        raw_prefix(args, verb)
+        if ("-n" not in args or len(tail) != 3 or tail[:1] != ["can-i"] or
+                not (tail[1:] == ["create", "configmaps"] or tail[1] in {"get", "patch"} and
+                     tail[2].startswith("configmaps/") and RELEASE_NAME.fullmatch(tail[2][11:]))):
+            raise ValueError("audit-record-auth")
+        resource, name = "release-permission", tail[2].removeprefix("configmaps/") if "/" in tail[2] else ""
+        record = {"releaseRecord": True, "permission": tail[1]}
+    elif verb == "patch":
+        raw_prefix(args, verb)
+        if "-n" not in args or not RELEASE_NAME.fullmatch(name) or tail != ["configmap", name, "--type=json", "--patch-file=/dev/stdin", "-o", "json"]:
+            raise ValueError("audit-record-patch")
+        ops = json.loads(raw, object_pairs_hook=unique_object)
+        if (not isinstance(ops, list) or len(ops) != 4 or
+                [(op.get("op"), op.get("path")) for op in ops] != [("test", "/metadata/uid"), ("test", "/metadata/resourceVersion"),
+                ("test", "/data/release.json"), ("replace", "/data/release.json")] or any(set(op) != {"op", "path", "value"} for op in ops) or
+                any(not isinstance(op["value"], str) or not OPAQUE.fullmatch(op["value"]) for op in ops[:2])):
+            raise ValueError("audit-record-cas")
+        before, after = release_payload(ops[2]["value"]), release_payload(ops[3]["value"])
+        record = {"releaseRecord": True, **after, "priorDigest": before["releaseDigest"], "recordUID": ops[0]["value"], "recordRV": ops[1]["value"]}
+        resource, persistent = "ConfigMap", True
+    elif verb == "get" and resource == "configmap":
+        raw_prefix(args, verb)
+        if "-n" not in args or not RELEASE_NAME.fullmatch(name) or tail != ["configmap", name, "--ignore-not-found", "-o", "json"]:
+            raise ValueError("audit-record-get")
+        resource, record = "ConfigMap", {"releaseRecord": True}
+    elif verb == "delete":
         match = re.fullmatch(r"/apis/core\.orka\.ai/v1alpha1/namespaces/orka-system/(providers|agents|tasks)/([a-z0-9][-a-z0-9.]{0,252})", name)
         if not match or tail != ["--raw", name, "-f", "-"]:
             raise ValueError("audit-delete-path")
@@ -84,9 +172,14 @@ def classify(args, raw=b""):
         else:
             if "-f" not in tail or tail[tail.index("-f") + 1] != "-":
                 raise ValueError("audit-input")
-            doc = json.loads(raw)
+            doc = json.loads(raw, object_pairs_hook=unique_object)
             resource, name = doc["kind"], doc["metadata"]["name"]
-            if resource not in {"Provider", "Agent", "Task"} or doc["apiVersion"] != "core.orka.ai/v1alpha1":
+            if resource == "ConfigMap":
+                raw_prefix(args, verb)
+                if verb != "create" or "-n" not in args or tail != ["-f", "-", "--validate=strict", "-o", "json"] or set(doc["metadata"]) != {"name", "namespace", "labels"}:
+                    raise ValueError("audit-record-create")
+                record = {"releaseRecord": True, **release_document(doc)}
+            elif resource not in {"Provider", "Agent", "Task"} or doc["apiVersion"] != "core.orka.ai/v1alpha1":
                 raise ValueError("audit-resource")
             if doc["metadata"].get("namespace") != "orka-system":
                 raise ValueError("audit-namespace")
@@ -129,9 +222,9 @@ def classify(args, raw=b""):
         name = ""  # list reads have no named object
     if name and not re.fullmatch(r"[a-zA-Z0-9._-]{1,253}", name):
         raise ValueError("audit-name")
-    return {**({"preconditions": preconditions} if preconditions is not None else {}),
+    return {**record, **({"preconditions": preconditions} if preconditions is not None else {}),
             "verb": verb, "resource": resource, "name": name, "persistent": persistent,
-            "admission": verb in {"create", "replace"} and "--dry-run=client" not in tail,
+            "admission": verb in {"create", "replace"} and "--dry-run=client" not in tail and not bool(record),
             "taskAttempt": resource == "Task" and verb in {"create", "replace"},
             "stdinDigest": hashlib.sha256(raw).hexdigest(), "stdinBytes": len(raw)}
 
@@ -172,6 +265,10 @@ def response_snapshot(raw):
                 "continueDigest": hashlib.sha256(doc["metadata"].get("continue", "").encode()).hexdigest(),
                 "continueBytes": len(doc["metadata"].get("continue", "").encode()),
                 "items": [metadata(item) for item in doc["items"]]}
+    if kind == "ConfigMap" and RELEASE_NAME.fullmatch(doc.get("metadata", {}).get("name", "")):
+        # Retain only fingerprints and typed progress, never the shared bytes.
+        projection = release_document({k: doc[k] for k in ("apiVersion", "kind", "metadata", "data")})
+        return {"apiVersion": "v1", "kind": kind, "metadata": metadata(doc), **projection}
     if kind not in {"Provider", "Agent", "Task"}:
         return None  # no arbitrary API/Secret/CRD payload projection
     result = {"apiVersion": doc["apiVersion"], "kind": kind, "metadata": metadata(doc), "specDigest": spec_digest(doc["spec"])}
@@ -194,15 +291,16 @@ def response_snapshot(raw):
 
 def validate_response(response):
     allowed = {"absent", "apiVersion", "kind", "metadata", "specDigest", "ready", "inputDigest", "agentRef", "taskType",
-               "phase", "resultAvailable", "taskSpecDigest", "resourceVersion", "continueDigest", "continueBytes", "items", "status"}
+               "phase", "resultAvailable", "taskSpecDigest", "resourceVersion", "continueDigest", "continueBytes", "items", "status",
+               "releaseDigest", "releasePhase", "releaseAcknowledged"}
     if not isinstance(response, dict) or set(response) - allowed:
         raise ValueError("audit-response")
     if "absent" in response and response != {"absent": True}:
         raise ValueError("audit-response-absence")
-    kinds = {"Provider", "Agent", "Task", "Status"} | {k + "List" for k in INVENTORIES.values()}
+    kinds = {"Provider", "Agent", "Task", "Status", "ConfigMap"} | {k + "List" for k in INVENTORIES.values()}
     if "kind" in response:
         kind = response["kind"]
-        version = "batch/v1" if kind == "JobList" else "v1" if kind in {"Status", "PodList", "ConfigMapList"} else "core.orka.ai/v1alpha1"
+        version = "batch/v1" if kind == "JobList" else "v1" if kind in {"Status", "PodList", "ConfigMapList", "ConfigMap"} else "core.orka.ai/v1alpha1"
         if kind not in kinds or response.get("apiVersion") != version:
             raise ValueError("audit-response-kind")
     if "status" in response and (response.get("kind") != "Status" or response["status"] not in {"Success", "Failure"}):
@@ -217,7 +315,7 @@ def validate_response(response):
     for key in ("ready", "resultAvailable"):
         if key in response and type(response[key]) is not bool:
             raise ValueError("audit-response-bool")
-    for key in ("specDigest", "inputDigest", "taskSpecDigest", "continueDigest"):
+    for key in ("specDigest", "inputDigest", "taskSpecDigest", "continueDigest", "releaseDigest"):
         if key in response and not (isinstance(response[key], str) and re.fullmatch(r"[0-9a-f]{64}", response[key])):
             raise ValueError("audit-response-hash")
     if response.get("phase") not in {None, "Pending", "Running", "Succeeded", "Failed", "Unknown", "Scheduled", "Canceled", "Cancelled"}:
@@ -318,14 +416,15 @@ def main():
             raise ValueError("audit-builder")
         args = sys.argv[1:]
         check_scope(args, os.environ["KMX_NATIVE_CONTEXT"])
-        raw = sys.stdin.buffer.read() if "-f" in args else b""
+        stdin = "-f" in args or "--patch-file=/dev/stdin" in args
+        raw = sys.stdin.buffer.read() if stdin else b""
         frame = {**classify(args, raw), "requestID": uuid.uuid4().hex}
         real = os.environ["KMX_NATIVE_KUBECTL"]
         append({**frame, "stage": "intent"})
         if frame["verb"] == "port-forward":
             # The existing client proves owned bind; execv owns its lifecycle.
             os.execv(real, [real, *args])
-        capture = frame["verb"] in {"get", "create", "replace", "delete"} and ("--raw" in args or
+        capture = frame["verb"] in {"get", "create", "replace", "delete", "patch"} and ("--raw" in args or
                   ("-o" in args and args[args.index("-o") + 1] == "json")) and frame["resource"] in {
                       "Provider", "Agent", "Task", "providers.core.orka.ai", "agents.core.orka.ai", "tasks.core.orka.ai",
                       "Job", "Pod", "ConfigMap"}
@@ -334,8 +433,8 @@ def main():
             # A bounded private memory buffer; forward the original bytes, never
             # append server error bodies or payloads to the metadata-only ledger.
             buffer, overflow = bytearray(), False
-            with subprocess.Popen([real, *args], stdin=subprocess.PIPE if "-f" in args else None, stdout=subprocess.PIPE) as child:
-                if "-f" in args:
+            with subprocess.Popen([real, *args], stdin=subprocess.PIPE if stdin else None, stdout=subprocess.PIPE) as child:
+                if stdin:
                     child.stdin.write(raw)
                     child.stdin.close()
                 while True:
@@ -361,7 +460,7 @@ def main():
                 except Exception:
                     observation["responseError"] = True
         else:
-            code = subprocess.run([real, *args], input=raw if "-f" in args else None, check=False).returncode
+            code = subprocess.run([real, *args], input=raw if stdin else None, check=False).returncode
         append({**frame, **observation, "stage": "complete", "returnCode": code})
 
         return code

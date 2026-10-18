@@ -34,6 +34,89 @@ def pair(frame, identity="request-one", code=0):
     return [{**frame, "requestID": identity, "stage": "intent"}, {**frame, "requestID": identity, "stage": "complete", "returnCode": code}]
 
 
+RECORD = "kmx-release-" + "a" * 40
+
+
+def record_state(ack=0, final=False):
+    objects = [{"kind": k, "specDigest": "sha256:" + "1" * 64,
+                "ownershipDigest": "sha256:" + "2" * 64, "liftRecordDigest": "sha256:" + "3" * 64,
+                **({"uid": k + "-uid", "generation": 1} if i < ack else {})}
+               for i, k in enumerate(("Provider", "Agent"))]
+    revision = {"liftID": "b" * 32, "suiteDigest": "sha256:" + "4" * 64,
+                "evidenceDigest": "sha256:" + "5" * 64, "state": "completed" if final else "pending", "objects": objects}
+    return json.dumps({"version": 1, "suite": "suite", "member": "member", "runtime": "orka",
+                      "target": {"context": "kind-owned", "namespace": "orka-system", "clusterUID": "cluster", "namespaceUID": "namespace"},
+                      "originLiftID": "b" * 32,
+                      **({"baseline": objects, "history": [revision]} if final else {"operation": "b" * 32, "pending": revision})})
+
+
+def record_doc(data, rv=None):
+    return {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": RECORD, "namespace": "orka-system",
+            "labels": {"app.kubernetes.io/managed-by": "kmx", "kaimahi.dev/release-state": "v1"},
+            **({"uid": "record-uid", "resourceVersion": str(rv)} if rv else {})}, "data": {"release.json": data}}
+
+
+def record_sequence():
+    frames = []
+    def add(args, body=b"", response=None):
+        f = A.classify(["-n", "orka-system", *args], body)
+        p = pair(f, str(len(frames)))
+        if response is not None:
+            p[1]["response"] = A.response_snapshot(json.dumps(response).encode())
+        frames.extend(p)
+    add(["get", "configmap", RECORD, "--ignore-not-found", "-o", "json"])
+    for verb in ("get", "create", "patch"):
+        add(["auth", "can-i", verb, "configmaps" + ("/" + RECORD if verb != "create" else "")])
+    for kind in ("Provider", "Agent"):
+        add(["create", "--dry-run=server", "-f", "-"], json.dumps({"apiVersion": "core.orka.ai/v1alpha1", "kind": kind,
+            "metadata": {"name": "member", "namespace": "orka-system"}}).encode())
+    data = record_state()
+    add(["create", "-f", "-", "--validate=strict", "-o", "json"], json.dumps(record_doc(data)).encode(), record_doc(data, 1))
+    for i in range(3):
+        if i < 2:
+            kind = ("Provider", "Agent")[i]
+            add(["create", "-f", "-"], json.dumps({"apiVersion": "core.orka.ai/v1alpha1", "kind": kind,
+                "metadata": {"name": "member", "namespace": "orka-system"}}).encode())
+        next_data = record_state(min(i + 1, 2), i == 2)
+        ops = [{"op": "test", "path": path, "value": value} for path, value in
+               (("/metadata/uid", "record-uid"), ("/metadata/resourceVersion", str(i + 1)), ("/data/release.json", data))]
+        ops.append({"op": "replace", "path": "/data/release.json", "value": next_data})
+        add(["patch", "configmap", RECORD, "--type=json", "--patch-file=/dev/stdin", "-o", "json"],
+            json.dumps(ops).encode(), record_doc(next_data, i + 2))
+        data = next_data
+    return frames
+
+
+class ReleaseRecordAudit(unittest.TestCase):
+    def test_full_record_sequence_is_distinct_from_native_admission(self):
+        raw = record_sequence()
+        frames = A.completed(raw)
+        Q.verify_promote_effects(frames, "member")
+        Q.verify_promote_completion_order(raw)
+        self.assertEqual(sum(f["admission"] for f in frames), 4)
+        self.assertEqual(sum(f["persistent"] for f in frames), 6)
+        self.assertNotIn("release.json", json.dumps(frames))
+        for removed in range(4):
+            effects = [f for f in frames if f.get("releaseRecord") and f["persistent"]]
+            with self.subTest(removed=removed), self.assertRaises(ValueError):
+                Q.verify_promote_effects([f for f in frames if f is not effects[removed]], "member")
+
+    def test_record_boundary_refuses_broader_commands_and_payloads(self):
+        for args in (["auth", "can-i", "get", "configmaps"], ["auth", "can-i", "patch", "configmaps"],
+                     ["auth", "can-i", "get", "secrets"], ["get", "configmap", "foreign", "--ignore-not-found", "-o", "json"],
+                     ["get", "configmap", RECORD.upper(), "--ignore-not-found", "-o", "json"],
+                     ["patch", "configmap", RECORD, "--type=merge", "--patch-file=/dev/stdin", "-o", "json"]):
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                A.classify(["-n", "orka-system", *args], b"{}")
+        doc = record_doc(record_state())
+        for mutate in (lambda d: d["data"].update(prompt="PRIVATE_CANARY"),
+                       lambda d: d.update(spec={}), lambda d: d["metadata"].update(name="candidate-child"),
+                       lambda d: d["data"].update({"release.json": record_state()[:-1] + ',"prompt":"PRIVATE_CANARY"}'})):
+            bad = copy.deepcopy(doc); mutate(bad)
+            with self.assertRaises(ValueError):
+                A.classify(["-n", "orka-system", "create", "-f", "-", "--validate=strict", "-o", "json"], json.dumps(bad).encode())
+
+
 class AuditEffects(unittest.TestCase):
     def test_interrupted_real_wrapper_keeps_attempt_intent_without_payload(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -171,12 +254,7 @@ class LiftProofs(unittest.TestCase):
         result = {"summary": summary, "state": "ready", "resources": [{**row, "outcome": "created", "ready": True,
                    "uid": "canonical-" + row["kind"], "generation": 1} for row in summary["resources"]]}
         def effect_frames():
-            frames = []
-            for i, (kind, dry) in enumerate((("Provider", True), ("Agent", True), ("Provider", False), ("Agent", False))):
-                doc = {"apiVersion": "core.orka.ai/v1alpha1", "kind": kind, "metadata": {"name": "member", "namespace": "orka-system"}}
-                f = A.classify(["create"] + (["--dry-run=server"] if dry else []) + ["-f", "-"], json.dumps(doc).encode())
-                frames.extend(pair(f, str(i)))
-            return frames
+            return record_sequence()
         with tempfile.TemporaryDirectory() as directory:
             q = Q.Qualification.__new__(Q.Qualification)
             q.work = pathlib.Path(directory)
@@ -238,7 +316,7 @@ class PromotionProofs(unittest.TestCase):
                               "metadata": {"name": "member", "namespace": "orka-system"}}).encode()
             args = ["create"] + (["--dry-run=server"] if dry else []) + ["-f", "-"]
             return {**A.classify(args, raw), "returnCode": 0}
-        frames = [request(k, dry) for dry in (True, False) for k in ("Provider", "Agent")]
+        frames = A.completed(record_sequence())
         Q.verify_promote_effects(frames, "member")
         for bad in (frames[1:], frames + [frames[-1]], [frames[0], frames[2], frames[1], frames[3]],
                     frames + [request("Task")], [{**frames[0], "returnCode": 1}, *frames[1:]],
@@ -247,20 +325,13 @@ class PromotionProofs(unittest.TestCase):
                 Q.verify_promote_effects(bad, "member")
 
     def test_preflight_completion_precedes_first_persistent_intent(self):
-        def request(kind, dry, identity):
-            raw = json.dumps({"apiVersion": "core.orka.ai/v1alpha1", "kind": kind,
-                              "metadata": {"name": "member", "namespace": "orka-system"}}).encode()
-            args = ["create"] + (["--dry-run=server"] if dry else []) + ["-f", "-"]
-            return pair(A.classify(args, raw), identity)
-        p, a, cp, ca = [request(k, dry, str(i)) for i, (k, dry) in enumerate(
-            (("Provider", True), ("Agent", True), ("Provider", False), ("Agent", False)))]
-        raw = [*p, *a, *cp, *ca]
+        raw = record_sequence()
         Q.verify_promote_completion_order(raw)
-        # Normalization still accepts this ordering: raw completions must catch it.
-        premature = [p[0], a[0], *cp, *ca, p[1], a[1]]
+        # Intent order is unchanged, but the reservation starts before dryrun completion.
+        premature = raw[:9] + raw[10:14] + [raw[9]] + raw[14:]
         Q.verify_promote_effects(A.completed(premature), "member")
-        for bad in (premature, [*p, *cp, *a, *ca], raw[:-1],
-                    [{**p[0]}, {**p[1], "returnCode": 1}, *a, *cp, *ca]):
+        failed = copy.deepcopy(raw); failed[9]["returnCode"] = 1
+        for bad in (premature, raw[:-1], failed):
             with self.subTest(frames=bad), self.assertRaises(ValueError):
                 Q.verify_promote_completion_order(bad)
 

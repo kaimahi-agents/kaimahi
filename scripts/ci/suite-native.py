@@ -397,19 +397,54 @@ def qualify_status(work, placement, evidence, run_id, run, env, kubectl):
 def verify_promote_effects(frames, member):
     require(all(f["verb"] != "blocked" and f.get("returnCode", 0) == 0 and not f.get("taskAttempt") for f in frames), "promote-audit")
     effects = [f for f in frames if f.get("admission") or f["persistent"]]
-    require([(f["verb"], f["resource"], f["name"], f["admission"], f["persistent"]) for f in effects] ==
-            [("create", kind, member, True, persistent) for persistent in (False, True) for kind in ("Provider", "Agent")], "promote-effects")
-    require(effects[0]["stdinDigest"] == effects[2]["stdinDigest"] and
-            effects[1]["stdinDigest"] == effects[3]["stdinDigest"], "promote-admitted-input")
+    records = [f for f in frames if f.get("releaseRecord")]
+    writes = [f for f in records if f["persistent"]]
+    require(len(writes) == 4 and re.fullmatch(r"kmx-release-[0-9a-f]{40}", writes[0]["name"]), "promote-record-count")
+    name = writes[0]["name"]
+    expected = [("create", kind, member, True, False) for kind in ("Provider", "Agent")]
+    expected += [("create", "ConfigMap", name, False, True), ("create", "Provider", member, True, True),
+                 ("patch", "ConfigMap", name, False, True), ("create", "Agent", member, True, True),
+                 ("patch", "ConfigMap", name, False, True), ("patch", "ConfigMap", name, False, True)]
+    require([(f["verb"], f["resource"], f["name"], bool(f["admission"]), f["persistent"]) for f in effects] == expected, "promote-effects")
+    native = [f for f in effects if not f.get("releaseRecord")]
+    require(native[0]["stdinDigest"] == native[2]["stdinDigest"] and
+            native[1]["stdinDigest"] == native[3]["stdinDigest"], "promote-admitted-input")
+    preflight = records[:4]
+    require([(f["verb"], f.get("permission"), f["name"]) for f in preflight] ==
+            [("get", None, name), ("auth", "get", name), ("auth", "create", ""), ("auth", "patch", name)], "promote-record-preflight")
+    require(all(f["verb"] == "get" and f["name"] == name for f in records[4:] if not f["persistent"]), "promote-record-reads")
+    prior = None
+    for i, f in enumerate(writes):
+        response = f.get("response", {})
+        meta = response.get("metadata", {})
+        require(f.get("releasePhase") == ("completed" if i == 3 else "pending") and
+                f.get("releaseAcknowledged") == min(i, 2) and response.get("releaseDigest") == f.get("releaseDigest") and
+                response.get("releasePhase") == f.get("releasePhase") and
+                response.get("releaseAcknowledged") == f.get("releaseAcknowledged") and
+                meta.get("name") == name and meta.get("uid") and meta.get("resourceVersion"), "promote-record-response")
+        if prior is not None:
+            require(f.get("recordUID") == prior["metadata"]["uid"] == meta["uid"] and
+                    f.get("recordRV") == prior["metadata"]["resourceVersion"] and
+                    f.get("priorDigest") == prior["releaseDigest"], "promote-record-cas")
+        prior = response
 
 
 def verify_promote_completion_order(frames):
-    effects = [(i, f) for i, f in enumerate(frames) if f.get("admission") or f["persistent"]]
-    completed = [i for i, f in effects if f["stage"] == "complete" and not f["persistent"]]
-    writes = [i for i, f in effects if f["stage"] == "intent" and f["persistent"]]
-    finished_writes = [i for i, f in effects if f["stage"] == "complete" and f["persistent"]]
-    require(len(completed) == len(writes) == len(finished_writes) == 2 and max(completed) < min(writes) and
-            all(f["returnCode"] == 0 for _, f in effects if f["stage"] == "complete"), "promote-completion-order")
+    effects = [f for f in frames if f.get("admission") or f["persistent"] or f.get("releaseRecord")]
+    pending = None
+    for f in effects:
+        if f["stage"] == "intent":
+            require(pending is None, "promote-completion-order")
+            pending = f["requestID"]
+        else:
+            require(pending == f["requestID"] and f.get("returnCode") == 0, "promote-completion-order")
+            pending = None
+    require(pending is None, "promote-completion-order")
+    persistent = [f for f in effects if f["persistent"] and f["stage"] == "intent"]
+    require(len(persistent) == 6, "promote-completion-order")
+    first = effects.index(persistent[0])
+    require(sum(f["stage"] == "complete" and f.get("admission") and not f["persistent"] for f in effects[:first]) == 2,
+            "promote-completion-order")
 
 
 def verify_model_only_change(before, after, model):
@@ -763,7 +798,7 @@ class Qualification:
                 placement = {"subject": subject, **{row["kind"].lower(): {"UID": row["uid"], "Generation": row["generation"],
                              "SpecDigest": row["specDigest"]} for row in result["resources"]}}
                 self.pair_proof(placement)
-                results["local"].update(gate="promotion", sourceOnlyEvidence=True, admissions=4, nativeWrites=2,
+                results["local"].update(gate="promotion", sourceOnlyEvidence=True, admissions=4, nativeWrites=2, recordCreates=1, recordPatches=3,
                                         freshAnswer=self.fresh_run("local", placement, yaml.safe_load(cases[sorted(cases)[0]])))
                 for transport, reference, selected_layout in (("local", local, layout), ("registry", registry, None)):
                     before = self.task_inventory()
@@ -897,7 +932,7 @@ class Qualification:
                 "sourceTarget": result["summary"]["sourceTarget"], "target": result["summary"]["target"],
                 "bindingDigest": subject["BindingDigest"], "renderedDigest": subject["RenderedDigest"],
                 "resources": [{k: row[k] for k in ("kind", "uid", "generation", "specDigest")} for row in result["resources"]],
-                "plans": 3, "admissions": 4, "nativeWrites": 2, "taskAttempts": 0, "freshAnswer": answer, "status": status,
+                "plans": 3, "admissions": 4, "nativeWrites": 2, "recordCreates": 1, "recordPatches": 3, "taskAttempts": 0, "freshAnswer": answer, "status": status,
                 "refusal": {"name": "model-mismatch", "admissions": 0, "nativeWrites": 0, "taskAttempts": 0}}
 
     def empty_member(self, member):

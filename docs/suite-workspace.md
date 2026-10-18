@@ -382,9 +382,12 @@ in separate private state at `KMX_HOME/release-lifts/<liftID>/` (under the ordin
 KMX state directory when `KMX_HOME` is unset). Immutable `intent.json`, per-create
 `1.json`/`2.json`, and a final checkpoint up to `3.json` retain acknowledged
 identities, outcomes and readiness, including partial/failed attempts. File modes
-are 0600 under 0700 directories. Four slots are preflighted; storage is bounded to
-256 attempts and 64 MiB, with no automatic pruning. Operator retention decisions
-are separate from Lift; these records grant no skip, evaluation or recovery authority.
+are 0600 under 0700 directories. Ordinary observation-only attempts retain four
+slots. New complete Orka pair creates additionally reserve `4.json` for explicit
+record-bound ownership and acknowledged shared completion (below). Storage remains
+bounded to 256 attempts and 64 MiB, with no automatic pruning. These intent/outcome
+observations never grant skip, evaluation or replay authority; older observations
+are never converted into the new explicit ownership proof.
 
 A storage/metadata-retention error refuses further creates without retry, cleanup
 or rollback; resources already created may remain. Result JSON includes `liftID`
@@ -396,6 +399,69 @@ late failures can still leave published content or acknowledged resources.
 [Root `status --to NAME`](destination-status.md) reads the destination namespace
 and these per-object annotations without private history, writes or repair. It
 preserves missing/unknown/foreign distinctions; `orka status` remains runtime-only.
+
+## Release retention and operator recovery
+
+**The public Lift command remains create-only; `--update` is not enabled.**
+New complete Orka Provider/Agent pair creates now require namespace-local
+ConfigMap `create`, and `get`/`patch` for the stable
+`kmx-release-<40-hex-character-key>` record. The key binds suite/member/runtime;
+the record binds cluster and namespace UIDs. Composed Lift checks availability,
+permissions and private capacity before evaluation/publication spend; actual
+conditional creation checks again. An unreadable API, denied permission, stale
+record or unavailable storage refuses—never infer absence or delete anything.
+Existing exact reuse, mixed reuse and verified placement skips do not enroll,
+write or repair a baseline. Kagent is unchanged.
+
+The shared record contains only digests, resource identities, operation ID and
+acknowledged outcomes: no specs, receipt bodies, prompts, answers, Secret values
+or binding bytes. A CAS reservation spans both native objects. After acknowledged
+creation, private `4.json` binds the exact pair to the ConfigMap UID **and the
+acknowledged completed shared payload**. It is published only after the shared
+completion response succeeds. A lost final response or failed private checkpoint
+therefore cannot authorize the next attempt, even if the API committed its write.
+JSON results identify this object separately as `releaseRecord` with name, UID
+when acknowledged, and `pending`, `ready` or `unknown` state.
+
+Shared history rolls only the oldest completed entries beyond ten; pending and
+partial proof never rolls. The entire shared record is capped at 64 KiB. Overflow
+that cannot safely roll refuses before object effects. Back up private KMX state;
+annotations, a copied ConfigMap or old observation files alone cannot replace it.
+Agents lifted by **v0.8.1 or earlier cannot be updated yet**. Reused or otherwise
+unenrolled placements also lack update-capable proof. Explicitly recreate the
+owned pair with this version when ready; no enrollment/backfill is performed.
+
+A pending first create, crash, ambiguous write, failed checkpoint or missing
+completion acknowledgment stays blocked without expiration or automatic takeover.
+For operator recovery:
+
+1. Stop every original writer for that context/namespace/member, including other
+   hosts or automation, and arrange a quiet window. If you cannot establish that
+   writes have stopped, **do not remove the reservation**.
+2. Inspect the reported per-object outcomes, private attempt and named release
+   ConfigMap. Verify the concrete cluster/namespace and owned resource UIDs;
+   inspect other Agents for references before removing a Provider. Never delete
+   an object you cannot establish belongs to this workload.
+3. Explicitly tear down the owned Agent, its exclusive owned Provider and the
+   named release ConfigMap using your administrative deletion procedure. Verify
+   absence. Partial first creates may have only one object. This is an operator
+   action, not a KMX retry/cleanup option; removing only the record is not recovery.
+4. Recreate into the now-absent placement with this version and the exact passing
+   evidence. Preserve the old private history; never hand-edit proof or reset
+   private state to bypass a reservation. Capacity/unreadable-state errors must
+   be resolved deliberately, not with automatic pruning or guessed recovery.
+
+The private updater is covered by backend tests only until its CLI slice lands
+([#561](https://github.com/kaimahi-agents/kaimahi/issues/561)). It keeps model,
+inference binding, runtime and names fixed, requires complete bounded cluster-wide
+Agent-list access to refuse shared Providers, and conditionally patches with
+UID/RV/generation/spec/owned-metadata checks. Ready is not required to inspect an
+old known revision for rollback. Only fully recorded old/new states permit a
+known-partial follow-up; unknown writes stay blocked. It sends no Tasks and never
+re-evaluates rollback evidence. Mutation provenance uses version 2, retaining the
+original create observation separately; the shipped v0.8.1 status reader treats
+that version as unknown rather than attributing the old record to a new revision.
+No draining, zero-downtime, in-flight-work or release-readiness claim is made.
 
 ## Create
 

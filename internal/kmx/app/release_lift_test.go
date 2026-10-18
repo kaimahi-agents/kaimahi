@@ -15,9 +15,9 @@ import (
 	godigest "github.com/opencontainers/go-digest"
 )
 
-func releaseLiftFixture(t *testing.T) (*App, *nativeReadFixture, ReleaseLiftOptions, *suiteNativePrepared) {
+func releaseLiftFixture(t *testing.T, edits ...func(string)) (*App, *nativeReadFixture, ReleaseLiftOptions, *suiteNativePrepared) {
 	t.Helper()
-	root, p, suite, placement, observations := passingFixture(t)
+	root, p, suite, placement, observations := passingFixture(t, edits...)
 	a, _, f := nativeFixture(t)
 	native, err := a.prepareSuiteNative(t.Context(), suite, OrkaNamespace, "inference")
 	if err != nil {

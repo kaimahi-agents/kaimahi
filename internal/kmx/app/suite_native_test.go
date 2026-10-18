@@ -21,6 +21,7 @@ import (
 const nativeCanary = "private-content-canary-never-captured"
 
 type nativeReadFixture struct {
+	records *releaseStateAPIFixture
 	objects map[string]map[string]any
 	calls   int
 	change  func(string, int, map[string]any) error

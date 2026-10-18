@@ -35,8 +35,12 @@ type releaseLiftProvenance struct {
 
 func (a *App) prepareReleaseLiftProvenance(ctx context.Context, p *PreparedReleaseLift, docs []map[string]any) (*releaseLiftRecordWriter, string, error) {
 	creates := false
+	version := 1
 	for _, r := range p.summary.Resources {
-		creates = creates || r.Action == "create"
+		creates = creates || r.Action == "create" || r.Action == "update"
+		if r.Action == "update" {
+			version = 2
+		}
 	}
 	if !creates {
 		return nil, "", nil
@@ -45,7 +49,7 @@ func (a *App) prepareReleaseLiftProvenance(ctx context.Context, p *PreparedRelea
 	if err != nil {
 		return nil, "", errReleaseLiftProvenance
 	}
-	r := releaseLiftProvenance{Version: 1, LiftID: id, SuiteDigest: p.summary.SuiteDigest, ReceiptDigest: p.summary.EvidenceDigest, ReceiptRunID: p.summary.EvidenceRunID, Evaluation: p.summary.SourceTarget, EvaluationName: p.options.EvaluationName, Target: p.summary.Target, Gate: p.summary.Gate, EvaluatedOnTarget: p.summary.Gate == "same-subject", AttemptedAt: a.timeNow().UTC().Format(time.RFC3339Nano), ResourceSpecs: map[string]string{}}
+	r := releaseLiftProvenance{Version: version, LiftID: id, SuiteDigest: p.summary.SuiteDigest, ReceiptDigest: p.summary.EvidenceDigest, ReceiptRunID: p.summary.EvidenceRunID, Evaluation: p.summary.SourceTarget, EvaluationName: p.options.EvaluationName, Target: p.summary.Target, Gate: p.summary.Gate, EvaluatedOnTarget: p.summary.Gate == "same-subject", AttemptedAt: a.timeNow().UTC().Format(time.RFC3339Nano), ResourceSpecs: map[string]string{}}
 	for _, resource := range p.summary.Resources {
 		r.ResourceSpecs[resource.Kind] = resource.SpecDigest
 	}
@@ -72,7 +76,7 @@ func (a *App) prepareReleaseLiftProvenance(ctx context.Context, p *PreparedRelea
 		return nil, "", err
 	}
 	for i, doc := range docs {
-		if p.summary.Resources[i].Action == "create" {
+		if p.summary.Resources[i].Action == "create" || p.summary.Resources[i].Action == "update" {
 			meta := doc["metadata"].(map[string]any)
 			ann, _ := meta["annotations"].(map[string]any)
 			if ann == nil {

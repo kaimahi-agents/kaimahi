@@ -155,10 +155,13 @@ func TestWorkspaceLiftCachedPassMustMatchSelectedFreshSubject(t *testing.T) {
 }
 
 func TestWorkspaceLiftEditedVersionFailsEvalBeforeInspectingOccupiedDestination(t *testing.T) {
-	a, opt, state, _, f, writes := workspaceLiftFixture(t)
+	a, opt, state, reads, f, writes := workspaceLiftFixture(t)
 	a.Out, a.Err = io.Discard, io.Discard
 	runWorkspaceLift(t, a, opt)
 	before := len(state.creates)
+	// Isolate the historical no-record occupied-target path; retained new
+	// records refuse before spend and are covered separately.
+	clear(reads.records.objects)
 	writeFile(t, filepath.Join(opt.Workspace, "agents", "greeter", "instructions.md"), "Edited instructions for the new version.\n")
 	f.answers[nativeCanary+" first"] = "wrong"
 	p, err := PrepareWorkspaceLift(t.Context(), opt)

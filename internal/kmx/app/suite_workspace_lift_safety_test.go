@@ -283,7 +283,7 @@ func TestWorkspaceLiftCompletionFailurePreservesSuccessfulEffects(t *testing.T) 
 }
 
 func TestWorkspaceLiftChangedSuiteDoesNotConsumePreviousPass(t *testing.T) {
-	a, opt, _, _, f, _ := workspaceLiftFixture(t)
+	a, opt, _, reads, f, _ := workspaceLiftFixture(t)
 	first := runWorkspaceLift(t, a, opt)
 	// Clear destination to isolate exact-S proof selection from occupied-target
 	// refusal. This is a test fixture, never product cleanup/recovery.
@@ -292,6 +292,7 @@ func TestWorkspaceLiftChangedSuiteDoesNotConsumePreviousPass(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	clear(reads.records.objects) // Explicit fixture-only pair + record teardown.
 	writeFile(t, filepath.Join(opt.Workspace, "eval/example.yaml"), "id: changed\ninput: changed\nexpectContains: [new]\n")
 	f.answers["changed"] = "wrong"
 	p, err := PrepareWorkspaceLift(t.Context(), opt)

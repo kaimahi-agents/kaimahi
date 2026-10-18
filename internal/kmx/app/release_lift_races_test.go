@@ -26,7 +26,7 @@ func TestReleaseLiftAdmissionAndCreateRaces(t *testing.T) {
 			capture := a.captureCommand
 			triggered := false
 			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
-				if !slices.Contains(cmd.Args, "create") {
+				if !slices.Contains(cmd.Args, "create") || !slices.Contains(cmd.Args, "-f") {
 					return capture(ctx, cmd)
 				}
 				raw, err := io.ReadAll(cmd.Stdin)
@@ -40,6 +40,9 @@ func TestReleaseLiftAdmissionAndCreateRaces(t *testing.T) {
 				}
 				dry := slices.Contains(cmd.Args, "--dry-run=server")
 				kind := doc["kind"].(string)
+				if kind != "Provider" && kind != "Agent" {
+					return capture(ctx, cmd)
+				}
 				if tc == "create collision" && !dry && kind == "Provider" {
 					triggered = true
 					seedReconcile(t, dir, doc)
