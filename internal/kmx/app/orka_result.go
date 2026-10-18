@@ -180,7 +180,7 @@ func (a *App) openOrkaResultSession(ctx context.Context, opt CreateOptions) (*or
 	if request.Status.Expiration.Before(deadline.Add(30 * time.Second)) {
 		return nil, fmt.Errorf("granted token lifetime does not cover the total execution deadline plus 30 seconds; refusing execution")
 	}
-	a.notef("Task execution uses the selected ServiceAccount's full effective authority. v0.2.0 Task-read enforcement is unverified; v0.1.3 only authenticates result reads. Retain the namespaced Task-get grant. Discarding the token is not revocation.")
+	a.notef("Result access uses ServiceAccount %q; authority details: docs/orka.md#runtime-and-result-access", opt.ResultServiceAccount)
 	// Token coverage above uses the original execution cap, not an injected
 	// forward deadline. Bound this phase only once all session preflight passed.
 	forwardParent, stop := a.waitContext(ctx, "orka-result-forward", 0)

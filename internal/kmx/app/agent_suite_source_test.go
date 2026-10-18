@@ -22,6 +22,10 @@ func gitSuiteRepository(t *testing.T) (string, string) {
 	suite := filepath.Join(root, "suites", "minimal")
 	copyTree(t, filepath.Join("..", "..", "..", "testdata", "agentsuite", "minimal"), suite)
 	runGit(t, root, "init", "-q")
+	// A commit may otherwise launch detached auto-maintenance that keeps writing
+	// under .git after git exits and races t.TempDir cleanup.
+	runGit(t, root, "config", "gc.auto", "0")
+	runGit(t, root, "config", "maintenance.auto", "false")
 	runGit(t, root, "add", ".")
 	runGit(t, root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "suite")
 	return root, suite

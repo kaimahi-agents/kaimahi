@@ -121,12 +121,19 @@ execution or fresh suite evaluation. Ownership fences still prevent legacy
 adoption, copying and retirement. `task result` reads existing Task phase/answer
 without resending.
 
+### Runtime and result access
+
 Result reads require a separately provisioned namespaced Task-get account.
 KMX installation/local setup provisions `orka-result-reader`; upstream-installed
 runtime owners must arrange it separately. Tokens carry the account's effective
-authority and discarding one is not revocation. Results use a context-pinned
-loopback forward/connection and stop on connection loss, not resubmit. Ready
-or admission alone does not prove model execution or result-read access.
+authority and discarding one is not revocation. Orka v0.2.0 Task-read
+enforcement is unverified; v0.1.3 authenticates result reads only. A namespaced
+Task-get grant is therefore required but does not by itself prove server-side
+enforcement for Task execution. Results use a context-pinned loopback
+forward/connection and stop on connection loss, not resubmit. Ready or admission
+alone does not prove model execution or result-read access. Normal successful
+commands print only a short pointer to this boundary; authorization and
+transport failures remain explicit errors.
 
 ## The whole journey, from nothing
 

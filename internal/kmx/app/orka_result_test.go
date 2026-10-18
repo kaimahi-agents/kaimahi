@@ -193,8 +193,8 @@ func TestOrkaResultSessionEstablishesAndReusesOneConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer session.close()
-	if notice := diagnostics.String(); !strings.Contains(notice, "v0.2.0 Task-read enforcement is unverified") || strings.Contains(notice, "v0.2.0 enforces Task-get RBAC") {
-		t.Fatalf("result authority notice overstates enforcement: %s", notice)
+	if notice := diagnostics.String(); notice != "Result access uses ServiceAccount \"reader\"; authority details: docs/orka.md#runtime-and-result-access\n" {
+		t.Fatalf("result authority notice is not concise and actionable: %q", notice)
 	}
 	select {
 	case <-connected:

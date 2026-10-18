@@ -55,6 +55,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Fixed
 
+- Successful Orka result sessions print one concise ServiceAccount notice and
+  link to the detailed authority boundary instead of repeating version-specific
+  RBAC caveats before every answer. Permissions and failure diagnostics are unchanged.
 - Orka installation inspects every Helm release state with status filters shared
   by Helm 3 and Helm 4. It no longer guesses from a second version probe or uses
   Helm 3's removed `helm list --all` flag.
