@@ -47,6 +47,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Exact reuse/mixed reuse/skips never enroll. Kagent is unchanged; plain Lift
   remains create-only. See the [update contract](docs/suite-workspace.md#update-and-rollback).
 
+### Fixed
+
+- A private Orka ownership checkpoint could leave visible `4.json` after a
+  post-link persistence failure, incorrectly authorizing a later update. Fresh
+  create and internal update now require a final `committed.json` marker after
+  publication checks and output cleanup succeed. Lost shared-write responses
+  still block; there is no retry, backfill or automatic cleanup.
+
 ### Breaking
 
 - Destination status now reads the exact shared release ConfigMap for owned Orka
@@ -54,6 +62,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   observation unknown and the report incomplete (exit 1), including legacy v1
   rows. Existing object provenance remains visible; no permission is granted or
   inferred automatically. See [status access](docs/destination-status.md#selection-and-access).
+- All unmarked private ownership proofs are refused, including successful test
+  baselines from unreleased #573 builds. A visible `4.json` alone is not a
+  completed acknowledgment. Recreate an owned pair explicitly when ready; no
+  migration, enrollment, backfill or deletion is performed automatically. #573
+  has not been released; this affects only those unreleased test baselines.
 - Fresh Orka pair Lift now requires namespace-local ConfigMap create plus
   named-record get/patch access and available private retention capacity. Missing
   access/storage and stale records fail closed. Shared history rolls only old

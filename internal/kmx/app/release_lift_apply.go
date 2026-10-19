@@ -193,6 +193,8 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			}
 			if err == nil {
 				result.ReleaseRecord.State = "ready"
+			} else {
+				result.ProvenanceState = "unknown"
 			}
 		}
 		if closeErr := record.Close(); closeErr != nil {
