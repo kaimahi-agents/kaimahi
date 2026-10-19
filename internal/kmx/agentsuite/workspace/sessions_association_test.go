@@ -17,8 +17,8 @@ import (
 
 const declaredHarness = "ghcr.io/orka-agents/agentkit/serve-pydantic-ai@sha256:8c4c17dc3d778c02097ad7e1ea88e9084b3f1aad6c36458829ff9cec9b4d043c"
 
-// Deliberately synthetic/unqualified implementations: PR1 checks declarations,
-// not support or image bytes. The image is never fetched or inspected.
+// Deliberately synthetic/unqualified implementations: only declarations are
+// checked, not support or image bytes. The image is never fetched or inspected.
 func associationFixture(t *testing.T, change func(string)) (*workspace.NativeSuite, *workspace.NativeSuite) {
 	t.Helper()
 	root, cache := profiledWorkspace(t)
