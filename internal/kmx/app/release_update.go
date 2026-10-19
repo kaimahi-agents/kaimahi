@@ -25,6 +25,7 @@ type preparedReleaseUpdate struct {
 	before         *releaseStateSnapshot
 	origin, latest *releaseOwnershipRecord
 	current        []map[string]any
+	dependencies   *releaseTargetDependencies
 	noop           bool
 	started        atomic.Bool
 }
@@ -99,7 +100,14 @@ func (a *App) prepareReleaseUpdate(ctx context.Context, opt ReleaseLiftOptions) 
 			return nil, errReleaseUpdateUnsupported
 		}
 	}
-	if latest.Summary.Model != inputs.suite.Model || latest.Summary.Inference != opt.Inference || latest.Summary.BindingDigest != native.Subject.BindingDigest ||
+	dependencies, err := worker.readReleaseTargetDependencies(ctx, native.Subject)
+	if err != nil {
+		return nil, err
+	}
+	if !sameReleaseTargetDependencies(origin.UpdateProof.Dependencies, dependencies) || !sameReleaseTargetDependencies(latest.UpdateProof.Dependencies, dependencies) {
+		return nil, errReleaseUpdateCompatibility
+	}
+	if latest.Summary.Model != inputs.suite.Model || latest.Summary.Inference != opt.Inference ||
 		origin.Summary.Suite != state.State.Suite || origin.Summary.Member != state.State.Member || origin.Summary.Runtime != "orka" || !statusSameTarget(origin.Summary.Target, state.State.Target) {
 		return nil, errReleaseUpdateCompatibility
 	}
@@ -135,7 +143,7 @@ func (a *App) prepareReleaseUpdate(ctx context.Context, opt ReleaseLiftOptions) 
 	}
 	s.PlanDigest = godigest.FromBytes(review).String()
 	lift := &PreparedReleaseLift{options: opt, artifact: inputs.artifact, native: native, receipt: inputs.receipt, summary: s}
-	return &preparedReleaseUpdate{lift: lift, before: state, origin: origin, latest: latest, current: current, noop: noop}, nil
+	return &preparedReleaseUpdate{lift: lift, before: state, origin: origin, latest: latest, current: current, dependencies: dependencies, noop: noop}, nil
 }
 
 func (a *App) inspectReleaseUpdatePair(ctx context.Context, subject suiteNativeSubject, expected []releaseStateObject) ([]map[string]any, error) {
@@ -261,6 +269,10 @@ func (a *App) recheckReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate
 	}
 	if err := a.recheckReleaseLiftInputs(ctx, p.lift); err != nil {
 		return nil, err
+	}
+	dependencies, err := a.readReleaseTargetDependencies(ctx, p.lift.native.Subject)
+	if err != nil || !reflect.DeepEqual(dependencies, p.dependencies) {
+		return nil, errReleaseUpdateCompatibility
 	}
 	if err := a.checkReleaseUpdateDependents(ctx, p.lift.native.Subject, objects[1].UID); err != nil {
 		return nil, err

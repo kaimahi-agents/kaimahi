@@ -89,7 +89,7 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 			known = inspectErr == nil && worker.checkReleaseReservation(finalCtx, cursor) == nil
 		}
 		if known && changed {
-			record.updateProof = &releaseOwnershipProof{Version: 1, RecordUID: cursor.UID, Objects: append([]releaseStateObject(nil), objects...)}
+			record.updateProof = &releaseOwnershipProof{Version: 2, RecordUID: cursor.UID, Objects: append([]releaseStateObject(nil), objects...), Dependencies: p.dependencies}
 		}
 		persistErr := record.checkpoint(context.WithoutCancel(ctx), result)
 		if persistErr != nil {

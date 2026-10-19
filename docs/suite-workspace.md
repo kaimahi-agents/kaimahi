@@ -389,6 +389,15 @@ bounded to 256 attempts and 64 MiB, with no automatic pruning. These intent/outc
 observations never grant skip, evaluation or replay authority; older observations
 are never converted into the new explicit ownership proof.
 
+New creation also retains a bounded, versioned **target-dependency proof**:
+inference Provider UID/generation/whole-spec digest and Secret reference, Secret
+UID/resourceVersion/key-presence, and exact runtime identity. Only between
+separate revisions may that inference Provider's resourceVersion differ while
+all authoritative fields remain unchanged. Any spec, identity, Secret reference
+or runtime change refuses; within-operation prepared-input checks remain exact.
+Old observations cannot reconstruct this target proof from a source receipt,
+especially after promotion, and are never enrolled or backfilled.
+
 A storage/metadata-retention error refuses further creates without retry, cleanup
 or rollback; resources already created may remain. Result JSON includes `liftID`
 and `provenanceState` (`recorded` or `unknown` on returned attempts). `recorded`

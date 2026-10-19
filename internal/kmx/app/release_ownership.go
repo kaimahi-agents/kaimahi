@@ -81,7 +81,7 @@ func readReleaseOwnership(ctx context.Context, id string) (*releaseOwnershipReco
 			UpdateProof       *releaseOwnershipProof `json:"updateProof"`
 			ReleaseDataDigest string                 `json:"releaseDataDigest"`
 		}
-		if agentsuite.Unmarshal(raw, &wire) != nil || wire.SchemaVersion != 1 || wire.ID != id || (wire.State != "ready" && wire.State != "partial" && wire.State != "not-applied") || wire.UpdateProof == nil || wire.UpdateProof.Version != 1 ||
+		if agentsuite.Unmarshal(raw, &wire) != nil || wire.SchemaVersion != 1 || wire.ID != id || (wire.State != "ready" && wire.State != "partial" && wire.State != "not-applied") || wire.UpdateProof == nil || wire.UpdateProof.Version != 2 || !validReleaseTargetDependencies(wire.UpdateProof.Dependencies) ||
 			!statusOpaque(wire.UpdateProof.RecordUID) || !validReleaseStateObjects(wire.UpdateProof.Objects, true) || len(wire.Resources) != 2 || godigest.FromBytes(wire.Receipt).String() != wire.Summary.EvidenceDigest {
 			return nil, errReleaseUpdateUnsupported
 		}

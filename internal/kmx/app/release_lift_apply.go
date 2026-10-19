@@ -158,11 +158,12 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 	guardFailure := false
 	var record *releaseLiftRecordWriter
 	var shared *releaseStateSnapshot
+	var dependencies *releaseTargetDependencies
 	var worker *App
 	provenanceFailed := false
 	defer func() {
 		if shared != nil && err == nil && result.State == "ready" {
-			record.updateProof, err = releaseCreateProof(shared, result)
+			record.updateProof, err = releaseCreateProof(shared, result, dependencies)
 		}
 		if record != nil {
 			// Local bounded persistence must retain acknowledged effects even when
@@ -299,6 +300,10 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 		return result, err
 	}
 	if releaseFreshPair(p) {
+		dependencies, err = worker.readReleaseTargetDependencies(ctx, p.native.Subject)
+		if err != nil {
+			return result, ErrReleaseLiftApply
+		}
 		intent, e := releaseCreateIntent(p, docs, result.LiftID)
 		if e != nil {
 			return result, e

@@ -11,9 +11,10 @@ import (
 // Only a newly created complete pair gets new-version private ownership proof.
 // Historical observations and exact or mixed reuse are never enrolled.
 type releaseOwnershipProof struct {
-	Version   int                  `json:"version"`
-	RecordUID string               `json:"recordUID"`
-	Objects   []releaseStateObject `json:"objects"`
+	Version      int                        `json:"version"`
+	RecordUID    string                     `json:"recordUID"`
+	Objects      []releaseStateObject       `json:"objects"`
+	Dependencies *releaseTargetDependencies `json:"dependencies"`
 }
 
 type ReleaseRecordObservation struct {
@@ -97,9 +98,9 @@ func (a *App) checkpointReleaseCreate(ctx context.Context, before *releaseStateS
 	return a.writeReleaseState(ctx, before, next, next.Operation)
 }
 
-func releaseCreateProof(state *releaseStateSnapshot, result ReleaseLiftResult) (*releaseOwnershipProof, error) {
+func releaseCreateProof(state *releaseStateSnapshot, result ReleaseLiftResult, dependencies *releaseTargetDependencies) (*releaseOwnershipProof, error) {
 	objects := state.State.Pending.Objects
-	if !validReleaseStateObjects(objects, true) || len(result.Resources) != 2 {
+	if !validReleaseStateObjects(objects, true) || len(result.Resources) != 2 || !validReleaseTargetDependencies(dependencies) {
 		return nil, errReleaseState
 	}
 	for i, object := range objects {
@@ -108,7 +109,7 @@ func releaseCreateProof(state *releaseStateSnapshot, result ReleaseLiftResult) (
 			return nil, errReleaseState
 		}
 	}
-	return &releaseOwnershipProof{Version: 1, RecordUID: state.UID, Objects: append([]releaseStateObject(nil), objects...)}, nil
+	return &releaseOwnershipProof{Version: 2, RecordUID: state.UID, Objects: append([]releaseStateObject(nil), objects...), Dependencies: dependencies}, nil
 }
 
 func (a *App) finishReleaseCreate(ctx context.Context, before *releaseStateSnapshot) (*releaseStateSnapshot, error) {

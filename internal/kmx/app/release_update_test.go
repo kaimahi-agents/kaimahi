@@ -28,7 +28,7 @@ type updateAPIFixture struct {
 	mutateAdmission   bool
 }
 
-func releaseUpdateFixture(t *testing.T) (*App, *nativeReadFixture, ReleaseLiftOptions, ReleaseLiftOptions, string, *updateAPIFixture) {
+func releaseUpdateFixture(t *testing.T, configure ...func(*nativeReadFixture)) (*App, *nativeReadFixture, ReleaseLiftOptions, ReleaseLiftOptions, string, *updateAPIFixture) {
 	t.Helper()
 	toolPath := os.Getenv("PATH")
 	_, _, next, _ := releaseLiftFixture(t, func(root string) {
@@ -36,6 +36,9 @@ func releaseUpdateFixture(t *testing.T) (*App, *nativeReadFixture, ReleaseLiftOp
 	})
 	t.Setenv("PATH", toolPath)
 	a, reads, first, dir := releaseApplyFixture(t, "both")
+	for _, edit := range configure {
+		edit(reads)
+	}
 	p, err := a.PrepareReleaseLift(t.Context(), first)
 	if err != nil {
 		t.Fatal(err)
