@@ -16,6 +16,8 @@ import (
 
 const maxReleaseStateBytes = 64 << 10
 
+var errReleaseCreateOccupied = errors.New("release record already exists; plain Lift never replaces or deletes an existing placement; inspect the retained record and owned pair, or select a fresh destination (docs/suite-workspace.md)")
+
 var errReleaseStateRBAC = errors.New("release record RBAC unavailable; require namespace-local ConfigMap get/create/patch permission before retrying; no placement writes attempted")
 
 var errReleaseStateUnavailable = errors.New("release record read unavailable; check ConfigMap get access and API connectivity; no state inferred")
@@ -220,7 +222,10 @@ func (a *App) preflightReleaseStateCreate(ctx context.Context, expected releaseS
 		return err
 	}
 	if record != nil {
-		return errReleaseState
+		if record.State.Operation != "" {
+			return errReleaseOperationInProgress
+		}
+		return errReleaseCreateOccupied
 	}
 	for _, verb := range []string{"get", "create", "patch"} {
 		resource := "configmaps"

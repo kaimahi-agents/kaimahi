@@ -431,8 +431,14 @@ Agents lifted by **v0.8.1 or earlier cannot be updated yet**. Reused or otherwis
 unenrolled placements also lack update-capable proof. Explicitly recreate the
 owned pair with this version when ready; no enrollment/backfill is performed.
 
-A pending first create, crash, ambiguous write, failed checkpoint or missing
-completion acknowledgment stays blocked without expiration or automatic takeover.
+A pre-send refusal does not mint a partial revision or change object markers.
+After a reservation but before any object send, the active writer can restore only
+the exact old shared data after freshly re-proving the pair and reservation.
+Bounded metadata-only finalization may finish after cancellation; it never resumes
+object writes or resolves an ambiguous native send/failed checkpoint.
+
+A pending first create, crash, ambiguous native write, failed checkpoint or missing
+completion acknowledgment for changed objects stays blocked without expiration or automatic takeover.
 For operator recovery:
 
 1. Stop every original writer for that context/namespace/member, including other
@@ -454,7 +460,8 @@ For operator recovery:
 The private updater is covered by backend tests only until its CLI slice lands
 ([#561](https://github.com/kaimahi-agents/kaimahi/issues/561)). It keeps model,
 inference binding, runtime and names fixed, requires complete bounded cluster-wide
-Agent-list access to refuse shared Providers, and conditionally patches with
+Agent-list access to refuse shared Providers (including model fallbacks and
+potentially Task-namespace-resolved unqualified references), and conditionally patches with
 UID/RV/generation/spec/owned-metadata checks. Ready is not required to inspect an
 old known revision for rollback. Only fully recorded old/new states permit a
 known-partial follow-up; unknown writes stay blocked. It sends no Tasks and never

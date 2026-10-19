@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	agentsuite "github.com/agent-primitives/suite"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	godigest "github.com/opencontainers/go-digest"
 )
 
@@ -182,23 +183,52 @@ func (a *App) checkReleaseUpdateDependents(ctx context.Context, s suiteNativeSub
 		if item["kind"] != "Agent" || ns == "" || spec == nil {
 			return errReleaseUpdateDependents
 		}
-		ref, present := spec["providerRef"]
-		if !present {
-			continue
+		uses := false
+		if ref, present := spec["providerRef"]; present {
+			provider, ok := ref.(map[string]any)
+			if !ok {
+				return errReleaseUpdateDependents
+			}
+			providerNS := ""
+			if value, present := provider["namespace"]; present {
+				var ok bool
+				providerNS, ok = value.(string)
+				if !ok {
+					return errReleaseUpdateDependents
+				}
+			}
+			name, ok := provider["name"].(string)
+			if !ok || scaffold.ValidateObjectName(name) != nil || providerNS != "" && scaffold.ValidateNamespace(providerNS) != nil {
+				return errReleaseUpdateDependents
+			}
+			// Unqualified refs can resolve in a Task's namespace. Without
+			// invocation inventory, another namespace cannot prove exclusivity.
+			uses = name == s.Member && (providerNS == "" || providerNS == s.Target.Namespace)
 		}
-		provider, ok := ref.(map[string]any)
-		if !ok {
-			return errReleaseUpdateDependents
+		if value, present := spec["model"]; present {
+			model, ok := value.(map[string]any)
+			if !ok {
+				return errReleaseUpdateDependents
+			}
+			if value, present := model["fallbacks"]; present {
+				fallbacks, ok := value.([]any)
+				if !ok {
+					return errReleaseUpdateDependents
+				}
+				for _, value := range fallbacks {
+					fallback, ok := value.(map[string]any)
+					if !ok {
+						return errReleaseUpdateDependents
+					}
+					name, ok := fallback["providerRef"].(string)
+					if !ok || scaffold.ValidateObjectName(name) != nil {
+						return errReleaseUpdateDependents
+					}
+					uses = uses || name == s.Member
+				}
+			}
 		}
-		providerNS, _ := provider["namespace"].(string)
-		if providerNS == "" {
-			providerNS = ns
-		}
-		name, ok := provider["name"].(string)
-		if !ok || name == "" {
-			return errReleaseUpdateDependents
-		}
-		if name != s.Member || providerNS != s.Target.Namespace {
+		if !uses {
 			continue
 		}
 		if meta["uid"] != agentUID || meta["name"] != s.Member || ns != s.Target.Namespace {

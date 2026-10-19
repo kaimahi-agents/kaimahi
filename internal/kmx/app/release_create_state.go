@@ -123,5 +123,5 @@ func (a *App) finishReleaseCreate(ctx context.Context, before *releaseStateSnaps
 
 func isReleaseStateError(err error) bool {
 	return errors.Is(err, errReleaseState) || errors.Is(err, errReleaseStateUnavailable) || errors.Is(err, errReleaseStateWrite) ||
-		errors.Is(err, errReleaseOperationInProgress) || errors.Is(err, errReleaseStateRBAC)
+		errors.Is(err, errReleaseOperationInProgress) || errors.Is(err, errReleaseStateRBAC) || errors.Is(err, errReleaseCreateOccupied)
 }

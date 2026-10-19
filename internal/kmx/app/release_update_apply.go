@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"time"
 
 	agentsuite "github.com/agent-primitives/suite"
 	godigest "github.com/opencontainers/go-digest"
@@ -77,12 +78,17 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 	defer func() {
 		// No resolution of ambiguous writes or failed checkpoints. Only a live
 		// writer that has stopped object effects can release exact known states.
-		known := reserved && !uncertain && ctx.Err() == nil
+		// Finalization is bounded metadata-only work after all object sends have
+		// ceased. Cancellation never resumes an object PATCH. An unknown send or
+		// failed checkpoint still forbids this path, even if reads look healthy.
+		finalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		known := reserved && !uncertain
 		if known {
-			_, inspectErr := worker.inspectReleaseUpdatePair(ctx, p.lift.native.Subject, objects)
-			known = inspectErr == nil && worker.checkReleaseReservation(ctx, cursor) == nil
+			_, inspectErr := worker.inspectReleaseUpdatePair(finalCtx, p.lift.native.Subject, objects)
+			known = inspectErr == nil && worker.checkReleaseReservation(finalCtx, cursor) == nil
 		}
-		if known {
+		if known && changed {
 			record.updateProof = &releaseOwnershipProof{Version: 1, RecordUID: cursor.UID, Objects: append([]releaseStateObject(nil), objects...)}
 		}
 		persistErr := record.checkpoint(context.WithoutCancel(ctx), result)
@@ -91,7 +97,21 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 			err = errors.Join(err, errReleaseLiftProvenance)
 			known = false
 		}
-		if known {
+		if known && !changed {
+			// No object request was ever sent. Restore the exact prior data, not
+			// a fake partial revision: its existing ownership ACK remains valid.
+			// A lost restore response may leave the reservation, but cannot make
+			// the old baseline or its unchanged object outcomes ambiguous.
+			_, restoreErr := worker.writeReleaseState(finalCtx, cursor, p.before.State, id)
+			if restoreErr != nil {
+				err = errors.Join(err, restoreErr)
+				result.ReleaseRecord.State = "unknown"
+			} else {
+				result.ReleaseRecord.State = p.before.State.History[len(p.before.State.History)-1].State
+				result.ProvenanceState = "recorded"
+			}
+		}
+		if known && changed {
 			next := cursor.State
 			terminal := *next.Pending
 			terminal.Objects = append([]releaseStateObject(nil), objects...)
@@ -102,9 +122,9 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 			next.Baseline = terminal.Objects
 			next.History = append(append([]releaseStateRevision(nil), next.History...), terminal)
 			next.Pending, next.Operation = nil, ""
-			released, releaseErr := worker.writeReleaseState(ctx, cursor, next, id)
+			released, releaseErr := worker.writeReleaseState(finalCtx, cursor, next, id)
 			if releaseErr == nil {
-				releaseErr = record.acknowledge(ctx, released, result)
+				releaseErr = record.acknowledge(finalCtx, released, result)
 			}
 			if releaseErr != nil {
 				err = errors.Join(err, releaseErr)
@@ -136,15 +156,9 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 	if err = reserveReleaseUpdateCapacity(next); err != nil {
 		return result, err
 	}
-	result.ReleaseRecord = &ReleaseRecordObservation{Name: releaseStateName(next.Suite, next.Member, next.Runtime), UID: cursor.UID, State: "unknown"}
-	cursor, err = worker.writeReleaseState(ctx, cursor, next, id)
-	if err != nil {
-		return result, err
-	}
-	reserved = true
-	result.ReleaseRecord = &ReleaseRecordObservation{Name: releaseStateName(next.Suite, next.Member, next.Runtime), UID: cursor.UID, State: "pending"}
-	// Preflight both admissions without native effects. Re-prove the complete
-	// pair/reservation and use the freshest safe RV at every later boundary.
+	// Initial admissions precede even the reservation write; ordinary refusal
+	// cannot consume non-rollable shared partial history. They are not authority
+	// for a later write: the reserved loop re-proves and re-admits each patch.
 	for i, doc := range docs {
 		live, e := worker.recheckReleaseUpdate(ctx, p, cursor, objects)
 		if e != nil {
@@ -155,10 +169,16 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 			return result, e
 		}
 	}
+	result.ReleaseRecord = &ReleaseRecordObservation{Name: releaseStateName(next.Suite, next.Member, next.Runtime), UID: cursor.UID, State: "unknown"}
+	cursor, err = worker.writeReleaseState(ctx, cursor, next, id)
+	if err != nil {
+		return result, err
+	}
+	reserved = true
+	result.ReleaseRecord.State = "pending"
 	for i, doc := range docs {
 		live, e := worker.recheckReleaseUpdate(ctx, p, cursor, objects)
 		if e != nil {
-			uncertain = true
 			return result, e
 		}
 		// Admission is repeated against the exact re-proved fresh version, never
@@ -168,7 +188,6 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 		}
 		live, e = worker.recheckReleaseUpdate(ctx, p, cursor, objects)
 		if e != nil {
-			uncertain = true
 			return result, e
 		}
 		row := &result.Resources[i]
@@ -209,7 +228,6 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 		row.Ready = true
 	}
 	if _, err = worker.recheckReleaseUpdate(ctx, p, cursor, objects); err != nil {
-		uncertain = true
 		return result, err
 	}
 	if err = worker.finishReleaseUpdate(ctx, p, objects, &result); err != nil {

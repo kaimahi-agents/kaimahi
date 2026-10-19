@@ -215,6 +215,21 @@ func TestReleaseCreatePartialKeepsReservation(t *testing.T) {
 	}
 }
 
+func TestReleaseCreateOccupiedRecordDoesNotPrescribeTeardown(t *testing.T) {
+	a, _, opt, _ := releaseApplyFixture(t, "both")
+	p, err := a.PrepareReleaseLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ApplyReleaseLift(t.Context(), p, p.Summary().PlanDigest); err != nil {
+		t.Fatal(err)
+	}
+	err = a.preflightReleaseStateCreate(t.Context(), releaseStateSubject(p.native.Subject))
+	if err == nil || strings.Contains(err.Error(), "tear down") || !strings.Contains(err.Error(), "already exists") {
+		t.Fatal("healthy occupied record prescribed destructive recovery", err)
+	}
+}
+
 func TestReleaseCreateLostFinalAckCannotAuthorizeUpdate(t *testing.T) {
 	a, reads, opt, _ := releaseApplyFixture(t, "both")
 	p, err := a.PrepareReleaseLift(t.Context(), opt)

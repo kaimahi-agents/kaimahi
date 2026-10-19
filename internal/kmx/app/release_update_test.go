@@ -18,12 +18,14 @@ import (
 )
 
 type updateAPIFixture struct {
-	patches         int
-	unreadyProvider bool
-	afterProvider   func()
-	shared          bool
-	loseNativeAck   string
-	mutateAdmission bool
+	patches           int
+	unreadyProvider   bool
+	afterProvider     func()
+	shared            bool
+	sharedFallback    bool
+	sharedUnqualified bool
+	loseNativeAck     string
+	mutateAdmission   bool
 }
 
 func releaseUpdateFixture(t *testing.T) (*App, *nativeReadFixture, ReleaseLiftOptions, ReleaseLiftOptions, string, *updateAPIFixture) {
@@ -63,9 +65,16 @@ func releaseUpdateFixture(t *testing.T) (*App, *nativeReadFixture, ReleaseLiftOp
 				t.Fatal("missing live Agent fixture")
 			}
 			items := []any{doc}
-			if fixture.shared {
+			if fixture.shared || fixture.sharedFallback || fixture.sharedUnqualified {
 				other, _ := cloneOrkaDoc(doc)
 				nativeMetadata(other)["uid"], nativeMetadata(other)["name"], nativeMetadata(other)["namespace"] = "other-uid", "other-agent", "other-namespace"
+				if fixture.sharedFallback {
+					delete(other["spec"].(map[string]any), "providerRef")
+					other["spec"].(map[string]any)["model"] = map[string]any{"fallbacks": []any{map[string]any{"providerRef": "greeter"}}}
+				}
+				if fixture.sharedUnqualified {
+					delete(other["spec"].(map[string]any)["providerRef"].(map[string]any), "namespace")
+				}
 				items = append(items, other)
 			}
 			return json.NewEncoder(cmd.Stdout).Encode(map[string]any{"apiVersion": "core.orka.ai/v1alpha1", "kind": "AgentList", "metadata": map[string]any{}, "items": items})
@@ -175,7 +184,7 @@ func TestReleaseUpdateAndRollbackOriginalEvidence(t *testing.T) {
 }
 
 func TestReleaseUpdateRefusesDriftOrSharing(t *testing.T) {
-	for _, change := range []string{"spec", "uid", "metadata", "provenance", "shared", "missing-private-proof"} {
+	for _, change := range []string{"spec", "uid", "metadata", "provenance", "shared", "fallback shared", "unqualified shared", "missing-private-proof"} {
 		t.Run(change, func(t *testing.T) {
 			a, _, _, next, dir, api := releaseUpdateFixture(t)
 			path := filepath.Join(dir, "agents.core.orka.ai.json")
@@ -193,6 +202,10 @@ func TestReleaseUpdateRefusesDriftOrSharing(t *testing.T) {
 				nativeMetadata(doc)["annotations"].(map[string]any)[releaseLiftRecordAnnotation] = "{}"
 			case "shared":
 				api.shared = true
+			case "fallback shared":
+				api.sharedFallback = true
+			case "unqualified shared":
+				api.sharedUnqualified = true
 			case "missing-private-proof":
 				t.Setenv("KMX_HOME", privateSuiteDir(t))
 			}
@@ -305,14 +318,70 @@ func TestReleaseUpdateAmbiguousNativeWriteStaysBlocked(t *testing.T) {
 }
 
 func TestReleaseUpdateAdmissionRewriteRefusesBeforeNativeEffects(t *testing.T) {
-	a, _, _, next, _, api := releaseUpdateFixture(t)
-	p, err := a.prepareReleaseUpdate(t.Context(), next)
+	a, reads, old, next, _, api := releaseUpdateFixture(t)
+	api.mutateAdmission = true
+	before := reads.records.writes
+	for i := 0; i < 5; i++ {
+		p, err := a.prepareReleaseUpdate(t.Context(), next)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.applyReleaseUpdate(t.Context(), p, p.lift.summary.PlanDigest); err == nil || api.patches != 0 || reads.records.writes != before {
+			t.Fatal("admission refusal wrote or accumulated non-rollable history", err)
+		}
+	}
+	p, err := a.prepareReleaseUpdate(t.Context(), old)
 	if err != nil {
 		t.Fatal(err)
 	}
-	api.mutateAdmission = true
-	if _, err := a.applyReleaseUpdate(t.Context(), p, p.lift.summary.PlanDigest); err == nil || api.patches != 0 {
-		t.Fatal("admission mutation reached a persistent native patch")
+	if _, err := a.applyReleaseUpdate(t.Context(), p, p.lift.summary.PlanDigest); err != nil || api.patches != 0 || reads.records.writes != before {
+		t.Fatal("no-effect refusals invalidated same-digest no-write", err)
+	}
+}
+
+func TestReleaseUpdatePreSendRefusalRestoresKnownRecord(t *testing.T) {
+	for _, failure := range []string{"transient inventory", "pre-send cancel"} {
+		t.Run(failure, func(t *testing.T) {
+			a, _, old, next, _, api := releaseUpdateFixture(t)
+			p, err := a.prepareReleaseUpdate(t.Context(), next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			prior := a.captureCommand
+			reserved, failed := false, false
+			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+				args := cmd.Args
+				if reserved && !failed && ((failure == "transient inventory" && slices.Contains(args, "--raw") && strings.Contains(strings.Join(args, " "), "/agents?limit=256")) || (failure == "pre-send cancel" && slices.Contains(args, "get") && slices.Contains(args, "configmap"))) {
+					failed = true
+					if failure == "pre-send cancel" {
+						cancel()
+						return context.Canceled
+					}
+					return errors.New("transient list failure")
+				}
+				err := prior(ctx, cmd)
+				if err == nil && slices.Contains(args, "patch") && slices.Contains(args, "configmap") {
+					reserved = true
+				}
+				return err
+			}
+			if _, err := a.applyReleaseUpdate(ctx, p, p.lift.summary.PlanDigest); err == nil || !failed || api.patches != 0 {
+				t.Fatal("pre-send failure was not exercised", err)
+			}
+			state, err := a.readReleaseState(t.Context(), p.before.State)
+			if err != nil || state == nil || state.State.Operation != "" || state.data != p.before.data {
+				t.Fatal("known zero-effect refusal stranded or advanced the release", err)
+			}
+			retry, err := a.prepareReleaseUpdate(t.Context(), old)
+			if err != nil {
+				t.Fatal("healthy pair now requires destructive recovery", err)
+			}
+			if _, err := a.applyReleaseUpdate(t.Context(), retry, retry.lift.summary.PlanDigest); err != nil || api.patches != 0 {
+				t.Fatal("old no-write operation stopped being a no-op", err)
+			}
+		})
 	}
 }
 
