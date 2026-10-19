@@ -278,7 +278,7 @@ func (o *destinationStatusObserver) agent(api destinationStatusAPI, doc map[stri
 // the ordinary status recheck. RV-only churn and unrelated annotations stay inert.
 func (o *destinationStatusObserver) recheckReleasePrimary(api destinationStatusAPI, plural string, before map[string]any) (destinationStatusReadiness, bool) {
 	meta := statusMap(before, "metadata")
-	owner, _ := statusOwnership(api.runtime, meta)
+	owner, ownerState := statusOwnership(api.runtime, meta)
 	if api.runtime != "orka" || owner == nil || statusString(statusMap(meta, "annotations"), releaseLiftRecordAnnotation) == "" {
 		return o.recheck(api, plural, before)
 	}
@@ -293,7 +293,8 @@ func (o *destinationStatusObserver) recheckReleasePrimary(api destinationStatusA
 	}
 	initial, err := fingerprint(before)
 	latest, latestErr := fingerprint(after)
-	return statusPrimaryReadiness(api.runtime, after), err == nil && latestErr == nil && initial == latest
+	freshOwner, freshState := statusOwnership(api.runtime, statusMap(after, "metadata"))
+	return statusPrimaryReadiness(api.runtime, after), err == nil && latestErr == nil && initial == latest && reflect.DeepEqual(owner, freshOwner) && ownerState == freshState
 }
 
 // Shared state is an unsigned observation, never private update/skip authority.

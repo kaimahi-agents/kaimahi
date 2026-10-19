@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -69,6 +70,140 @@ func TestWorkspaceLiftUpdateNoopReprovesBaselineWithoutSpend(t *testing.T) {
 	r, err := a.LiftWorkspace(t.Context(), p)
 	if err != nil || r.Lift.Status != "skipped" || len(state.creates) != beforeTasks || reads.records.writes != beforeWrites || *writes != 0 {
 		t.Fatal("RV-only update no-op used stale completion or spent", r.Lift.Status, err, len(state.creates), reads.records.writes)
+	}
+}
+
+func TestWorkspaceUpdateNoopRechecksFrozenSource(t *testing.T) {
+	a, opt, _, reads, _, _ := workspaceLiftFixture(t)
+	p, err := PrepareWorkspaceLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.LiftWorkspace(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+	p.Close()
+	attachWorkspaceUpdateReads(t, a)
+	opt.Destination.Update = true
+	p, err = PrepareWorkspaceLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	prior := a.captureCommand
+	changed := false
+	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+		if !changed && slices.Contains(cmd.Args, "get") && slices.Contains(cmd.Args, "configmap") {
+			changed = true
+			path := filepath.Join(opt.Workspace, "agents/greeter/instructions.md")
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(path, append(raw, []byte("\nChanged during update inspection.\n")...), 0600); err != nil {
+				return err
+			}
+		}
+		return prior(ctx, cmd)
+	}
+	writes := reads.records.writes
+	result, err := a.LiftWorkspace(t.Context(), p)
+	if !changed || err == nil || result.Lift.Status == "skipped" || reads.records.writes != writes {
+		t.Fatal("no-op credited a changed workspace", result.Lift.Status, err)
+	}
+}
+
+func TestWorkspaceUpdateSharedCapacityBeforeSpend(t *testing.T) {
+	a, opt, tasks, reads, _, pushes := workspaceLiftFixture(t)
+	p, err := PrepareWorkspaceLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.LiftWorkspace(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+	p.Close()
+	api := attachReleaseUpdateAPI(t, a, os.Getenv("KMX_RECONCILE_DIR"))
+	attachWorkspaceUpdateReads(t, a)
+	native, err := a.prepareSuiteNative(t.Context(), p.review.suite, opt.Destination.ToNamespace, "inference")
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := a.inspectReleaseUpdateBaseline(t.Context(), native, opt.Destination.Inference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Model protected historical partials at the external shared-state boundary.
+	// Retain the real current pair/receipt/dependencies and publish its matching
+	// private acknowledgment through the actual writer, not hand-made markers.
+	state := baseline.before.State
+	current := state.History[len(state.History)-1]
+	current.LiftID = "fffffffffffffffffffffffffffffffe"
+	state.History = []releaseStateRevision{current}
+	var raw []byte
+	found := false
+	for i := 1; i < 100; i++ {
+		raw, err = releaseStateBytes(state)
+		if err != nil {
+			t.Fatal("fixture exceeded valid shared capacity", err)
+		}
+		next := state
+		next.Operation = "ffffffffffffffffffffffffffffffff"
+		next.Pending = &releaseStateRevision{LiftID: next.Operation, SuiteDigest: current.SuiteDigest, EvidenceDigest: current.EvidenceDigest, State: "pending", Before: state.Baseline, Objects: state.Baseline}
+		if reserveReleaseUpdateCapacity(next) != nil {
+			found = true
+			break
+		}
+		partial := current
+		partial.LiftID = fmt.Sprintf("%032x", i)
+		partial.State = "partial"
+		state.History = append([]releaseStateRevision{partial}, state.History...)
+	}
+	if !found {
+		t.Fatal("no valid near-capacity shared fixture")
+	}
+	snap := *baseline.before
+	snap.State, snap.data = state, string(raw)
+	name := releaseStateName(state.Suite, state.Member, state.Runtime)
+	reads.records.objects[name]["data"].(map[string]any)["release.json"] = snap.data
+	annotation, err := json.Marshal(baseline.latest.Annotation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := preflightReleaseLiftRecord(t.Context(), current.LiftID, baseline.latest.Summary, baseline.latest.Receipt, string(annotation))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer.updateProof = baseline.latest.UpdateProof
+	result := ReleaseLiftResult{State: baseline.latest.State, Resources: baseline.latest.Resources}
+	if err := writer.acknowledge(t.Context(), &snap, result); err != nil {
+		writer.Close()
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.inspectReleaseUpdateBaseline(t.Context(), native, opt.Destination.Inference); err != nil {
+		t.Fatal("capacity fixture must retain valid acknowledged authority", err)
+	}
+	path := filepath.Join(opt.Workspace, "agents/greeter/instructions.md")
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(source, []byte("\nA version with no passing cache.\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	opt.Destination.Update = true
+	p, err = PrepareWorkspaceLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	beforeTasks, beforeRecords, beforePushes, beforePatches := len(tasks.creates), reads.records.writes, *pushes, api.patches
+	resultWorkspace, err := a.LiftWorkspace(t.Context(), p)
+	if err == nil || resultWorkspace.Eval.Status != "not-attempted" || resultWorkspace.Push.Status != "not-attempted" || len(tasks.creates) != beforeTasks || reads.records.writes != beforeRecords || *pushes != beforePushes || api.patches != beforePatches {
+		t.Fatal("shared capacity refused only after spend", resultWorkspace.Eval.Status, resultWorkspace.Push.Status, err)
 	}
 }
 

@@ -271,6 +271,21 @@ func (a *App) finishReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate,
 	return nil
 }
 
+// Check shared capacity before a workspace can spend on missing evidence or
+// publication. Fixed-width digests and acknowledged identities size the pending
+// and terminal forms; this in-memory placeholder is never persisted as proof.
+// Apply still checks its actual reservation immediately before effects.
+func preflightReleaseUpdateCapacity(s releaseState, suiteDigest string) error {
+	id, err := randomHex(16)
+	if err != nil {
+		return err
+	}
+	s.Operation = id
+	s.Pending = &releaseStateRevision{LiftID: id, SuiteDigest: suiteDigest, EvidenceDigest: "sha256:" + strings.Repeat("0", 64), State: "pending",
+		Before: append([]releaseStateObject(nil), s.Baseline...), Objects: append([]releaseStateObject(nil), s.Baseline...)}
+	return reserveReleaseUpdateCapacity(s)
+}
+
 // Reserve the largest acknowledged pending/terminal forms before any shared
 // reservation or object patch. Known UIDs are preserved; 128 bytes cover all
 // int64 generation growth in the two baseline and two revision fields. These

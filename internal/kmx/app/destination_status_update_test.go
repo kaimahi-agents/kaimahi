@@ -280,7 +280,7 @@ func TestDestinationStatusPartialTableIdentifiesEachAttempt(t *testing.T) {
 }
 
 func TestDestinationStatusReleaseRecordRechecksWholeFingerprint(t *testing.T) {
-	for _, key := range []string{"kaimahi.dev/description", releaseCreateRecordAnnotation} {
+	for _, key := range []string{"kaimahi.dev/description", releaseCreateRecordAnnotation, "kaimahi.dev/bundle"} {
 		t.Run(key, func(t *testing.T) {
 			a, responses, out, _, _ := statusTestFixture(t)
 			agent, provider, state := statusUpdatePair(t, 2)

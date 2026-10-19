@@ -323,12 +323,18 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 			if e = dest.checkReleaseReservation(ctx, baseline.before); e != nil {
 				return r, e
 			}
+			if err = checkSource(); err != nil {
+				return r, err
+			}
 			r.Plan.Disclosure = "verify-only update; acknowledged desired placement; no eval, publication or mutation"
 			r.Eval.Status, r.Push.Status, r.Lift.Status = "skipped", "skipped", "skipped"
 			r.Eval.Detail = "not needed; retained desired placement, no fresh evaluation claim"
 			r.Push.Detail = "not needed; no publication or registry repair"
 			r.Lift.Detail = p.plan.DestinationName + " Ready; retained desired placement verified GET-only"
 			return r, nil
+		}
+		if e = preflightReleaseUpdateCapacity(baseline.before.State, p.plan.SuiteDigest); e != nil {
+			return r, e
 		}
 		if e = dest.preflightReleaseUpdateWrites(ctx, observedDest.Subject, baseline.before); e != nil {
 			return r, e
