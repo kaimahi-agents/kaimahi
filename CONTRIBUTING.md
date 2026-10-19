@@ -228,7 +228,11 @@ candidate root/child absence, source-withheld explicit promotion and no-effect
 refusal audits gate its metadata artifacts. Source answer/verdict/judge metadata
 is product-observed after cleanup, not re-fetched from deleted Tasks. Only passing
 metadata and scalar `qualification.json` are uploaded; raw captures are private.
-Existing cluster deletion owns all runtime/model cleanup. The native-only
+Existing cluster deletion owns all runtime/model cleanup.
+The shard also runs `TestReleaseUpdatePinnedRV` and `TestReleaseStatePinnedCAS`
+against the pinned controller after native qualification. The full private
+updater round trip is a separate opt-in test using two real passing digests.
+The native-only
 inventory has two text cases plus one open-ended rubric case, with exactly two
 judge samples from the same pinned AIKit workload over an owned keyless loopback
 forward. Independent receipt checks bind declared model/version, policy, threshold,

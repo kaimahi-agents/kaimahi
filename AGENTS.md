@@ -41,13 +41,17 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   with verbose/JSON details. Exact-version private completion observations authorize
   GET-only skips, never Apply/reuse/adoption/repair. Keep kagent out of composed
   Lift until its candidate-scoped placement and ownership-safe cleanup are qualified.
-- Release Lift stamps only newly created primaries with versioned non-secret
+- Create-only Release Lift stamps only newly created primaries with versioned non-secret
   `kaimahi.dev/lift-record` JSON: exact consumed canonical receipt identity,
   source/destination, actual gate, attempt time and expected specs. Actor is omitted
   unless known. Exact Orka reuse and composed skips remain no-write; never repair
   or infer missing companion provenance. Separate bounded private `release-lifts`
   intent/outcome records retain canonical receipts and acknowledged partial effects;
-  they grant no evaluation, ownership, skip or replay authority. Keep provenance out
+  observations alone grant no evaluation, ownership, skip or replay authority.
+  Complete new Orka creates additionally retain acknowledged versioned target
+  ownership/dependency proof tied to a shared release record; only that new proof
+  authorizes the private update/rollback backend. Older or mixed placements never
+  enroll. Keep provenance out
   of plan digests, suite ownership markers, portable schemas and candidate eval.
   Root destination status reads these annotations without private-state enrichment;
   it never infers missing fields from companions or local history. See
@@ -156,7 +160,12 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   is guarded and single-use, rechecks artifact/evidence/target/owned proof, preflights
   both creates after the guard, and only conditionally creates or exactly reuses.
   Partial outcomes retain acknowledged UIDs and readiness separately; no update,
-  adoption, retry, rollback or cleanup. VerifyReleaseLiftPlacement rechecks an opaque
+  adoption, retry, rollback or cleanup.
+  A separate private Orka updater requires shared reservation and acknowledged new
+  ownership/target-dependency proof. Fresh per-patch identity/spec/markers and exact
+  prepared inputs remain mandatory; only between-revision inference-Provider RV
+  churn may pass unchanged authoritative-field reproof. No public update flag.
+  VerifyReleaseLiftPlacement rechecks an opaque
   success before caller invocation. Created/recreated UIDs require fresh evaluation
   before later receipt-bound reuse. Root lift supports registry/local --from-layout,
   --plan and text/JSON, with explicit selectors or named --to and private --evidence; --promote
