@@ -12,6 +12,7 @@ import pathlib
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
@@ -661,6 +662,29 @@ def verify_runtime(expected, controller, worker):
     require(observed_runtime(controller, worker) == expected, "runtime-identity")
 
 
+def verify_lift_commit(home, result, shared):
+    """Independent local completion observation; never synthesize ownership."""
+    lift_id = result.get("liftID", "")
+    require(re.fullmatch(r"[0-9a-f]{32}", lift_id), "commit-lift-id")
+    attempt = home / "release-lifts" / lift_id
+    snapshots = []
+    limit = (1 << 20) + (48 << 10)
+    for name in ("4.json", "committed.json"):
+        path = attempt / name
+        require(path.exists(), "commit-file-missing")
+        info = path.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_mode & 0o077 == 0 and info.st_size <= limit, "commit-file-boundary")
+        with path.open("rb") as stream:
+            raw = stream.read(limit + 1)
+        require(len(raw) <= limit, "commit-file-size")
+        snapshots.append(raw)
+    require(snapshots[0] == snapshots[1], "commit-candidate-mismatch")
+    proof = json.loads(snapshots[0])
+    require(proof.get("id") == lift_id and proof.get("updateProof", {}).get("recordUID") ==
+            shared["metadata"]["uid"] == result["releaseRecord"]["uid"] and
+            proof.get("releaseDataDigest") == "sha256:" + sha(shared["data"]["release.json"].encode()), "commit-shared-binding")
+
+
 class Qualification:
     def __init__(self, context, work, promotion_context=None):
         # The owned CI fixture uses one kubeconfig file. Capture its selection
@@ -973,6 +997,7 @@ class Qualification:
         member = receipt["subject"]["Member"]
         record = release_record_name(receipt["subject"]["Suite"], member)
         require(initial.get("releaseRecord", {}).get("name") == record and initial.get("liftID"), "update-owned-baseline")
+        verify_lift_commit(self.work / "kmx-home", initial, self.get("configmap", record))
         before = self.task_inventory()
         source_bytes, second_bytes = path.read_bytes(), revision["path"].read_bytes()
         old_instructions = self.fixture_instructions
@@ -998,6 +1023,7 @@ class Qualification:
                 verify_update_effects(self.raw_frames()[start:], member, record)
                 verify_update_result(result, desired, evidence_path.read_bytes(), subject, specs, previous, record, seen)
                 require(result["releaseRecord"]["uid"] == initial["releaseRecord"]["uid"], "update-record-replaced")
+                verify_lift_commit(self.work / "kmx-home", result, self.get("configmap", record))
                 result["provenanceVersion"] = 2
                 status = self.status(result, desired, evidence_path.read_bytes(), name="status-update-" + label)
                 placement = {"subject": subject, **{r["kind"].lower(): {"UID": r["uid"], "Generation": r["generation"], "SpecDigest": r["specDigest"]}
@@ -1032,7 +1058,8 @@ class Qualification:
             require(self.task_inventory() == before and path.read_bytes() == source_bytes and revision["path"].read_bytes() == second_bytes,
                     "digest-update-task-or-evidence-change")
             require(snapshot(revision["layout"]) == revision["layoutSnapshot"], "v2-layout-mutated")
-            return {"publicCLI": True, "transitions": observations, "sameDigestNoop": status, "forcedStatusOnlyRV": True,
+            return {"publicCLI": True, "committedOwnershipIndependent": True,
+                    "transitions": observations, "sameDigestNoop": status, "forcedStatusOnlyRV": True,
                     "digestUpdateTaskAttempts": 0, "digestUpdateEvaluations": 0, "digestUpdatePublications": 0,
                     "workspaceStaleCompletionLiveQualified": False, "interleavingLiveQualified": False}
         finally:

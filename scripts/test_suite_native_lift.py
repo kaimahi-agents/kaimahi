@@ -88,6 +88,41 @@ def record_sequence():
     return frames
 
 
+class CommittedOwnership(unittest.TestCase):
+    def test_exact_candidate_marker_and_shared_ack_required(self):
+        for failure in (None, "absent", "different", "record UID", "shared digest", "attempt ID", "public", "symlink"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                home = pathlib.Path(tmp)
+                lift_id = "b" * 32
+                attempt = home / "release-lifts" / lift_id
+                attempt.mkdir(parents=True, mode=0o700)
+                shared = record_doc(record_state(2, True), 4)
+                result = {"liftID": lift_id, "releaseRecord": {"uid": "record-uid"}}
+                proof = {"id": lift_id, "releaseDataDigest": "sha256:" + Q.sha(shared["data"]["release.json"].encode()),
+                         "updateProof": {"recordUID": "record-uid"}}
+                if failure == "record UID":
+                    proof["updateProof"]["recordUID"] = "foreign"
+                if failure == "shared digest":
+                    proof["releaseDataDigest"] = "sha256:" + "f" * 64
+                if failure == "attempt ID":
+                    proof["id"] = "c" * 32
+                raw = Q.canonical(proof)
+                candidate, marker = attempt / "4.json", attempt / "committed.json"
+                candidate.write_bytes(raw)
+                candidate.chmod(0o600)
+                if failure != "absent":
+                    if failure == "symlink":
+                        marker.symlink_to(candidate)
+                    else:
+                        marker.write_bytes(raw + (b"\n" if failure == "different" else b""))
+                        marker.chmod(0o644 if failure == "public" else 0o600)
+                if failure:
+                    with self.assertRaises(ValueError):
+                        Q.verify_lift_commit(home, result, shared)
+                else:
+                    Q.verify_lift_commit(home, result, shared)
+
+
 class ReleaseRecordAudit(unittest.TestCase):
     def test_full_record_sequence_is_distinct_from_native_admission(self):
         raw = record_sequence()
