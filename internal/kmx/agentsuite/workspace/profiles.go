@@ -213,8 +213,9 @@ func validateProfiled(files map[string][]byte) (string, error) {
 }
 
 type profiledGraph struct {
-	files  map[string][]byte
-	digest string
+	files     map[string][]byte
+	digest    string
+	selection Selection // frozen resolved tuple for detached declaration consumers
 }
 
 // RequireUnprofiled is a consumer gate, independent of declared runtime.id.
@@ -320,7 +321,7 @@ func loadSelectedFiles(ctx context.Context, files map[string][]byte, digest stri
 		return nil, err
 	}
 	// Retained graph bytes never alias mutable caller-visible selection fields.
-	graph := &profiledGraph{files: cloneProfileFiles(files), digest: digest}
+	graph := &profiledGraph{files: cloneProfileFiles(files), digest: digest, selection: Selection{Member: ref.Agent, Platform: ref.Platform.String(), RuntimeProfile: ref.RuntimeProfile}}
 	result := &NativeSuite{
 		Digest: digest, GraphDigest: graphDigest, Name: root.Name,
 		MemberID: agent.ID, Description: agent.Description, Model: agent.Model.Model,

@@ -22,6 +22,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- Internal offline detached Sessions association records bind exact selected suite,
+  profile, build-profile, platform and chat config declarations without changing
+  suite bytes. Image references are explicitly `declared-unverified`; no image
+  verification, runtime qualification, executable plan, CLI consumer or Apply
+  support is enabled.
+
 ### Fixed
 
 - A private Orka ownership checkpoint could leave visible `4.json` after a
@@ -31,6 +39,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   still block; there is no retry, backfill or automatic cleanup.
 
 ### Changed
+
+- Credential-shaped suite instructions now add a fixed redacted warning before
+  the existing source/package hard refusal. Instructions are non-confidential
+  and must never contain secrets; clean lint is not a secret-free guarantee.
+  Package diagnostics expose this fixed warning instead of only a generic
+  verification failure. Other credential and invalid-Unicode refusals remain.
 
 - Complete fresh Orka Lift creates now retain a namespace-local shared release
   record and explicit private ownership proof for the forthcoming updater

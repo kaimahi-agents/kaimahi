@@ -112,12 +112,50 @@ or aliasing mutable selected bytes. There is no profiled inventory API.
 `suite build DIRECTORY --runtime-profile ID [--platform OS/ARCH]` resolves an
 exact composition/build profile offline, but the existing AgentKit producer
 **refuses every profiled plan** before exporting or invoking Docker. There is no
-producer fallback, Sessions image-build adapter or suite/image association here.
+producer fallback or Sessions image-build adapter.
 Profiled execution, evaluated push, private receipt creation/export, native public
 evidence export and Lift all refuse, including profiles declaring `runtime.id=orka`.
 Only explicit unevaluated publication is available. Independent `eval verify`
 can check externally produced portable evidence against separately reviewed
 expectations; it grants no private push/Lift authority.
+
+### Detached Sessions declarations (internal, offline only)
+
+Internal `workspace.NewSessionsAssociation` and `CheckSessionsAssociation` create
+and check canonical detached `SessionsAssociationV1` JSON against the frozen
+selected graph. They do not write files, alter S, discover records from caches,
+read source or contact a registry. There is no CLI association flag or consumer.
+
+The closed record requires `version: 1`, `kind: "kmx.sessions-association"`,
+`suiteDigest`, `memberID`, `runtimeProfile: {id, digest}`,
+`compositionDigest`, `buildProfileDigest`, `platform: {os, architecture, variant}`
+(including empty `variant`), `harnessImage`, `executionKind: "harnesswire-chat-v1"`,
+`configDigest` and `imageVerification: "declared-unverified"`. Inputs are at most
+16 KiB and must exactly match independently derived canonical bytes; missing,
+null, unknown, duplicate or mismatched fields refuse without echoing payloads.
+
+Only a selected declaration with `runtime.id=agentsessions`, no member policy and
+no build-profile `execution` contract is eligible. This selects a declaration
+family, not a supported runtime. The image reference must echo the selected
+build profile's exact digest-pinned harness reference; mirrored repositories,
+tags and profile/build-profile harness digest mismatches refuse. Config uses
+the existing framed hash of the exact JSON `system_prompt` bytes. Mutable
+selected-view fields cannot change the frozen selection or its config.
+
+**The image digest and platform are declared, not verified.** No image bytes are
+read; runtime/harness/renderer versions and configuration ABI are not qualified.
+Successful declaration checks grant no execution, evidence, evaluated-publication
+or Lift authority. Profiled execution and Apply remain refused.
+
+Suite instructions are **non-confidential and must never contain secrets**.
+Authorized Sessions Replay readers, journal-at-rest readers and route-config
+readers may see injected instructions; credentials must stay host-side.
+Source and packaged-native preflight reuse the existing credential-shape checker.
+A match in valid UTF-8 instructions adds a fixed, redacted `Warning:` line before
+the existing hard refusal in the returned error diagnostic; it is not an
+admission mode or a separate warnings result. No matched bytes are printed.
+Other credential and invalid-Unicode refusals stay in place. Clean lint does
+not establish that instructions are secret-free.
 
 ### Offline private receipt consistency
 
@@ -144,8 +182,7 @@ The receipt-only projection preserves the profiled marker/graph, never fills or
 changes observed receipt runtime/host facts, and cannot enter execution or export.
 Public implementation digests are **not qualified** by this consistency check.
 Synthetic tests demonstrate only lookup/binding consistency, not two-runtime
-execution. Real profiled execution/evidence integration and image association
-remain unavailable.
+execution. Real profiled execution/evidence integration remains unavailable.
 
 ## Provisional multi-member source (offline only)
 

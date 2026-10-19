@@ -220,8 +220,14 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   public implementation pins or manufacture observed runtime/host facts.
   `suite build` resolves exact profile tuples but AgentKit refuses profiled plans.
   All profiled execution/private proof creation or export/evaluated publication/
-  native public evidence export/Lift remain unsupported; no image adapter,
-  association, registry/auth or target-runtime qualification is implied.
+  native public evidence export/Lift remain unsupported. Internal detached
+  SessionsAssociationV1 creation/checking binds frozen selected declarations
+  without altering S; imageVerification is always declared-unverified. No image
+  byte/platform verification, implementation/ABI qualification, execution or Apply
+  authority is implied; no CLI association consumer, image adapter or registry/auth
+  support. Instruction credential lint returns a fixed redacted warning before
+  the existing hard refusal in source/package preflight. Instructions are
+  non-confidential and must never contain secrets; clean lint is not a guarantee.
   V3 policy is shared declaration only, never Sessions enforcement.
 - Root `eval --development-host FILE` separately supports the packaged
   AgentSessions chat inventory under the development boundary above; every
