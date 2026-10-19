@@ -18,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 // Configuration contains routing metadata only. Tokens remain host-side and are
@@ -172,6 +173,7 @@ func (c *foundryChatClient) complete(ctx context.Context, messages []foundryMess
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	version.SetUserAgent(req)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return empty, fmt.Errorf("Foundry request failed; check host network access or cancellation")

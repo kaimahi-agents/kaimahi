@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
+
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
@@ -168,6 +170,7 @@ func TestOrkaProviderSemanticNoop(t *testing.T) {
 	for _, mode := range []string{"get cancelled", "get deadline", "normalize cancelled", "normalize deadline", "match", "model", "url", "secret", "capability", "absent", "read failure", "invalid json", "wrong name", "wrong namespace", "wrong kind", "missing uid", "missing version", "terminating", "invalid spec", "normalize failure", "normalize invalid", "normalize identity"} {
 		t.Run(mode, func(t *testing.T) {
 			a, _, args := upFixture(t)
+			a.SetBuildIdentity(version.Build{Version: "v0.4.0", Release: true})
 			opt := orkaDefaults(OrkaOptions{Provider: "custom", Model: "qwen2.5:3b"})
 			ctx, cancel := context.WithCancel(t.Context())
 			if strings.HasSuffix(mode, "deadline") {
@@ -210,6 +213,7 @@ func TestOrkaProviderSemanticNoop(t *testing.T) {
 				live["spec"] = "invalid"
 			}
 			gets, dryruns := 0, 0
+			created := false
 			a.captureCommand = func(_ context.Context, cmd *exec.Cmd) error {
 				if slices.Contains(cmd.Args, "get") && slices.Contains(cmd.Args, orkaProviderKind) {
 					gets++
@@ -267,6 +271,22 @@ func TestOrkaProviderSemanticNoop(t *testing.T) {
 					candidate["spec"].(map[string]any)["capabilities"] = map[string]any{"tools": false}
 					return json.NewEncoder(cmd.Stdout).Encode(candidate)
 				}
+				if slices.Contains(cmd.Args, "create") && slices.Contains(cmd.Args, "-f") {
+					var candidate map[string]any
+					if err := json.NewDecoder(cmd.Stdin).Decode(&candidate); err != nil {
+						t.Fatal(err)
+					}
+					annotations := candidate["metadata"].(map[string]any)["annotations"].(map[string]any)
+					if annotations[createdByVersionAnnotation] != "v0.4.0" {
+						t.Fatalf("fresh Provider build identity = %v", annotations)
+					}
+					if !slices.Contains(cmd.Args, "--dry-run=server") {
+						metadata := candidate["metadata"].(map[string]any)
+						metadata["uid"], metadata["generation"] = "provider-new", 1
+						created = true
+					}
+					return json.NewEncoder(cmd.Stdout).Encode(candidate)
+				}
 				return cmd.Run()
 			}
 			err := a.orkaProvider(opt)
@@ -285,8 +305,18 @@ func TestOrkaProviderSemanticNoop(t *testing.T) {
 				t.Fatal("unsafe error disclosure")
 			}
 			_, statErr := os.Stat(args + ".provider")
-			if (statErr == nil) != wantWrite {
-				t.Fatalf("Provider written=%v, want %v", statErr == nil, wantWrite)
+			written := statErr == nil || created
+			if written != wantWrite {
+				t.Fatalf("Provider written=%v, want %v", written, wantWrite)
+			}
+			if wantWrite && mode != "absent" {
+				raw, readErr := os.ReadFile(args + ".provider")
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if strings.Contains(string(raw), createdByVersionAnnotation) {
+					t.Fatal("existing Provider update was backfilled with build identity")
+				}
 			}
 			if gets != 1 {
 				t.Fatalf("Provider GETs=%d, want 1", gets)
@@ -296,6 +326,9 @@ func TestOrkaProviderSemanticNoop(t *testing.T) {
 			}
 			if mode == "absent" && dryruns != 0 {
 				t.Fatal("normalized an absent Provider")
+			}
+			if created != (mode == "absent") {
+				t.Fatalf("fresh Provider created=%v for mode %q", created, mode)
 			}
 		})
 	}

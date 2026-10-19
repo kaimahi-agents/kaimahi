@@ -22,6 +22,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- KMX now identifies direct HTTP requests with `User-Agent: kmx/<version>` and
+  annotates newly created native runtime resources with the diagnostic-only
+  `kaimahi.dev/created-by-version` value. Tagged builds use the release version;
+  checkout builds add a non-release discriminator, short revision and dirty
+  marker when available.
+
 ### Fixed
 
 - A private Orka ownership checkpoint could leave visible `4.json` after a

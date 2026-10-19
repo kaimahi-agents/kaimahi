@@ -231,6 +231,8 @@ def classify(args, raw=b""):
 
 MARKERS = ("kaimahi.dev/suite", "kaimahi.dev/suite-digest", "kaimahi.dev/suite-member", "kaimahi.dev/suite-renderer",
            "kaimahi.dev/suite-binding-digest", "kaimahi.dev/suite-rendered-digest", "kaimahi.dev/suite-evaluation-run")
+CREATED_BY_VERSION = "kaimahi.dev/created-by-version"
+RETAINED_ANNOTATIONS = MARKERS + (CREATED_BY_VERSION,)
 RESPONSE_LIMIT = 4 << 20
 
 
@@ -244,7 +246,7 @@ def metadata(doc):
     meta = doc["metadata"]
     return {k: meta[k] for k in ("name", "namespace", "uid", "resourceVersion", "generation") if k in meta} | {
         "terminating": bool(meta.get("deletionTimestamp")),
-        "annotations": {k: meta["annotations"][k] for k in MARKERS if k in meta.get("annotations", {})},
+        "annotations": {k: meta["annotations"][k] for k in RETAINED_ANNOTATIONS if k in meta.get("annotations", {})},
         "taskLabel": meta.get("labels", {}).get("orka.ai/task", ""),
         "ownerReferences": [{k: owner[k] for k in ("apiVersion", "kind", "name", "uid", "controller") if k in owner}
                             for owner in meta.get("ownerReferences", [])]}
@@ -332,10 +334,10 @@ def validate_response(response):
         if "generation" in meta and (type(meta["generation"]) is not int or meta["generation"] < 0):
             raise ValueError("audit-response-generation")
         for key, value in meta.get("annotations", {}).items():
-            pattern = r"[0-9a-f]{32}" if key == MARKERS[-1] else r"sha256:[0-9a-f]{64}" if key == MARKERS[1] else r"[0-9a-f]{64}" if key in MARKERS[4:6] else r"[-a-zA-Z0-9._/]{1,253}"
+            pattern = r"[A-Za-z0-9!#$%&'*+\-.^_`|~]{1,128}" if key == CREATED_BY_VERSION else r"[0-9a-f]{32}" if key == MARKERS[-1] else r"sha256:[0-9a-f]{64}" if key == MARKERS[1] else r"[0-9a-f]{64}" if key in MARKERS[4:6] else r"[-a-zA-Z0-9._/]{1,253}"
             if not isinstance(value, str) or not re.fullmatch(pattern, value):
                 raise ValueError("audit-response-marker")
-        if set(meta.get("annotations", {})) - set(MARKERS) or len(meta.get("ownerReferences", [])) > 8:
+        if set(meta.get("annotations", {})) - set(RETAINED_ANNOTATIONS) or len(meta.get("ownerReferences", [])) > 8:
             raise ValueError("audit-response-owner")
         for owner in meta.get("ownerReferences", []):
             if set(owner) - {"apiVersion", "kind", "name", "uid", "controller"} or any(not isinstance(value, str) or

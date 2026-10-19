@@ -28,6 +28,7 @@ JUDGE_POLICY_DIGEST = "2866b5c14b0efa8dd13964a40030ffd79877bba4dc00405c112100011
 
 MARKERS = ("kaimahi.dev/suite", "kaimahi.dev/suite-digest", "kaimahi.dev/suite-member", "kaimahi.dev/suite-renderer",
            "kaimahi.dev/suite-binding-digest", "kaimahi.dev/suite-rendered-digest")
+CREATED_BY_VERSION = "kaimahi.dev/created-by-version"
 
 
 def canonical(value):
@@ -105,16 +106,29 @@ def verify_candidate(receipt, frames, cases, specs):
     require(any(f["verb"] == "create" and f["resource"] == "token" for f in frames), "candidate-token")
     markers = dict(zip(MARKERS, [subject[k] for k in ("Suite", "SuiteDigest", "Member", "Renderer", "BindingDigest", "RenderedDigest")]))
     markers["kaimahi.dev/suite-evaluation-run"] = run
+    diagnostic_present, diagnostic_version = None, None
     observations = {}
     require(len(rows) == len(cases), "candidate-case-count")
     for created, (kind, name) in zip(creates, wanted):
         observed = created.get("response", {})
         meta = observed.get("metadata", {})
+        annotations = meta.get("annotations", {})
+        current_present = CREATED_BY_VERSION in annotations
+        current_version = annotations.get(CREATED_BY_VERSION)
+        require(not current_present or isinstance(current_version, str) and 0 < len(current_version) <= 128 and
+                re.fullmatch(r"[A-Za-z0-9!#$%&'*+\-.^_`|~]+", current_version), "candidate-created-version")
+        if diagnostic_present is None:
+            diagnostic_present = current_present
+            diagnostic_version = current_version
+        expected_annotations = set(markers) | ({CREATED_BY_VERSION} if diagnostic_present else set())
+        require(current_present == diagnostic_present and current_version == diagnostic_version and
+                {k: annotations.get(k) for k in markers} == markers and
+                set(annotations) == expected_annotations, "candidate-created-markers")
         owned = pair[kind] if kind != "Task" else {"UID": rows[wanted.index((kind, name)) - 2]["taskUID"], "Generation": 1}
         require(observed.get("apiVersion") == "core.orka.ai/v1alpha1" and observed.get("kind") == kind and
                 meta.get("name") == name and meta.get("namespace") == "orka-system" and meta.get("uid") == owned["UID"] and
                 meta.get("generation") == owned["Generation"] == 1 and not meta.get("terminating") and
-                meta.get("annotations") == markers, "candidate-created-identity")
+                current_version == diagnostic_version, "candidate-created-identity")
         seen = [f["response"] for f in frames if f["verb"] == "get" and f.get("response", {}).get("kind") == kind and
                 f["response"].get("metadata", {}).get("name") == name]
         require(bool(seen), "candidate-independent-get")
@@ -122,7 +136,11 @@ def verify_candidate(receipt, frames, cases, specs):
             cm = current["metadata"]
             # Cleanup may observe a same-UID finalized object at generation+1;
             # that observation is not Ready/evaluation authority.
-            require(cm["uid"] == owned["UID"] and cm["namespace"] == "orka-system" and cm["annotations"] == markers and
+            current_annotations = cm["annotations"]
+            require(cm["uid"] == owned["UID"] and cm["namespace"] == "orka-system" and
+                    {k: current_annotations.get(k) for k in markers} == markers and
+                    set(current_annotations) == expected_annotations and
+                    current_annotations.get(CREATED_BY_VERSION) == diagnostic_version and
                     (cm["generation"] == 1 or cm["terminating"] and cm["generation"] == 2) and
                     current["specDigest"] == observed["specDigest"], "candidate-get-drift")
         if kind != "Task":

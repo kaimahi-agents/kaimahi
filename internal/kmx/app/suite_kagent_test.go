@@ -12,6 +12,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 func suiteKagentFixture(t *testing.T, scenario string) (*App, *workspace.NativeSuite, agentruntime.KagentBindings, string) {
@@ -103,6 +104,7 @@ func TestSuiteKagentPrepareRefusesUnsupported(t *testing.T) {
 
 func TestSuiteKagentNewReuseOccupied(t *testing.T) {
 	a, s, b, dir := suiteKagentFixture(t, "")
+	a.SetBuildIdentity(version.Build{Version: "v0.4.0", Release: true})
 	p, err := a.prepareSuiteKagent(t.Context(), s, b)
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +117,14 @@ func TestSuiteKagentNewReuseOccupied(t *testing.T) {
 		t.Fatalf("incomplete observation: %+v", placed)
 	}
 	assertKagentWriteKinds(t, kagentCalls(t, dir), "ModelConfig", "Agent")
+	for _, call := range kagentCalls(t, dir) {
+		if slices.Contains(call.Args, "-f") {
+			annotations := call.Body["metadata"].(map[string]any)["annotations"].(map[string]any)
+			if annotations[createdByVersionAnnotation] != "v0.4.0" {
+				t.Fatalf("%s build identity = %v", call.Body["kind"], annotations)
+			}
+		}
+	}
 	before := len(kagentCalls(t, dir))
 	reused, err := a.placeSuiteKagent(t.Context(), p, placed.Observation)
 	if err != nil {

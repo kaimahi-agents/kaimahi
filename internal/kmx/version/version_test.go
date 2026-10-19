@@ -1,6 +1,7 @@
 package version
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -97,7 +98,51 @@ func TestResolveReadsTheThreeSourcesInOrder(t *testing.T) {
 			if got.Version != c.wantVer || got.Source != c.wantSource || got.Release != c.release {
 				t.Errorf("Resolve() = %+v, want {%s %s %v}", got, c.wantVer, c.wantSource, c.release)
 			}
+			wantRevision, wantModified := "", false
+			if c.info != nil {
+				for _, setting := range c.info.Settings {
+					if setting.Key == "vcs.revision" {
+						wantRevision = setting.Value
+					}
+					if setting.Key == "vcs.modified" {
+						wantModified = setting.Value == "true"
+					}
+				}
+			}
+			if got.Revision != wantRevision || got.Modified != wantModified {
+				t.Errorf("build VCS identity = (%q, %v), want (%q, %v)", got.Revision, got.Modified, wantRevision, wantModified)
+			}
 		})
+	}
+}
+
+func TestBuildUserAgentIsBoundedHTTPProduct(t *testing.T) {
+	build := Build{Version: " v0.2.0 dev/branch\n", Revision: "fb456ebfb456ebfb456ebfb456ebfb456ebfb456e"}
+	if got, want := build.UserAgent(), "kmx/v0.2.0-dev-branch-dev.fb456ebfb456"; got != want {
+		t.Fatalf("UserAgent() = %q, want %q", got, want)
+	}
+	req := httptest.NewRequest("GET", "https://example.test", nil)
+	req.Header.Set("User-Agent", build.UserAgent())
+	if got := req.Header.Get("User-Agent"); got != build.UserAgent() {
+		t.Fatalf("User-Agent = %q", got)
+	}
+}
+
+func TestBuildIdentifierDistinguishesReleaseFromCheckout(t *testing.T) {
+	release := Build{Version: "v0.8.1", Release: true, Revision: "fb456ebfb456ebfb456ebfb456ebfb456ebfb456e"}
+	checkout := Build{Version: "v0.8.1", Revision: release.Revision}
+	if got, want := release.Identifier(), "v0.8.1"; got != want {
+		t.Fatalf("release Identifier() = %q, want %q", got, want)
+	}
+	if got, want := checkout.Identifier(), "v0.8.1-dev.fb456ebfb456"; got != want {
+		t.Fatalf("checkout Identifier() = %q, want %q", got, want)
+	}
+	if release.Identifier() == checkout.Identifier() {
+		t.Fatal("release and checkout identities are indistinguishable")
+	}
+	long := Build{Version: strings.Repeat("v", 200), Revision: release.Revision, Modified: true}
+	if got := long.Identifier(); len(got) != 128 || !strings.HasSuffix(got, "-dev.fb456ebfb456.dirty") {
+		t.Fatalf("bounded checkout Identifier() = %q", got)
 	}
 }
 
