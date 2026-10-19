@@ -222,11 +222,19 @@ live writer whose object writes have ceased may persist a known partial and
 release its reservation. Pending/partial shared proof never rolls; completed
 history rolls at ten entries within 64 KiB. See
 [retention and operator recovery](suite-workspace.md#release-retention-and-operator-recovery).
-The update/rollback backend remains private and unwired to CLI flags. Its tests
-must distinguish same-digest no-write, fresh-RV-without-new-authority, old/new
+The public `lift --update` route uses the retained Orka backend. Tests must
+distinguish same-digest no-write, fresh-RV-without-new-authority, old/new
 known partials, a separate client/private home, and lost final acknowledgments.
 Pinned API characterization is necessary but does not substitute for complete
-Lift/retention qualification or prove a model answer. Keep existing CI budgets.
+Lift/retention qualification or prove a model answer. The existing native Python
+qualifier now independently evaluates and publishes v2, then drives the public
+CLI v1→v2→original-evidence v1→v2 and status-only dependency-RV no-op against its
+owned pair. It checks current status, stable UIDs, fresh mutation IDs, original
+evidence and no Task/evaluation/publication during digest updates. Offline audit
+tests do not establish live qualification or job headroom. Workspace historical
+skip invalidation and separate-client/known-partial cases also retain focused Go
+coverage; do not describe those as live-qualified without corresponding evidence.
+Keep existing CI budgets.
 
 ### Local loop
 

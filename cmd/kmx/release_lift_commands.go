@@ -27,24 +27,27 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "lift [<ref>@<digest>]", Short: "Lift a workspace or an evaluated packaged suite",
 		Long: "Without a reference, --to NAME composes missing native Orka workspace eval, push and Lift. Requires saved publishRepository and destination evaluationTarget.\n" +
-			"Freezes the source and selectors, automatically discloses source-only promotion, confirms one plan, and verifies exact-version skips read-only. No updates/adoption/repair.\n" +
+			"Freezes the source and selectors, automatically discloses source-only promotion, confirms one plan, and verifies exact-version skips read-only. Plain Lift is create-only; --update selects the retained Orka lifecycle, never adoption or repair.\n" +
 			"Default workspace output is four stderr lines (Plan/Eval/Push/Lift); -v shows details, -o json emits one result. Nonterminal confirmation must name the concrete contexts disclosed in Plan.\n" +
 			"Evaluation sends case inputs to the runtime/model; llmJudge additionally transfers inputs, answers and rubrics. Cleanup does not erase retained upstream data.\n" +
 			"With an explicit digest, deploy the original suite from a registry or --from-layout OCI directory without source, builds, repacking or publishing.\n" +
 			"Requires explicit private full-passing --evidence for exactly this suite and either --to NAME from workspace-root kmx.yaml or explicit --to-context; Orka uses Ready --inference provider:NAME, kagent uses author-owned --bindings FILE.\n" +
 			"Named selectors resolve once; explicit flags override. No evalTarget or remembered/current-context fallback for Lift. Without --to, reference Lift never discovers a workspace or kmx.yaml.\n" +
 			"Runtime/model come from the packaged member: native Orka or exact v0.10.3 Go kagent with openai-type inference. No runtime/model override.\n" +
-			"Default evidence must match the exact destination. Candidate evidence requires --promote even in the same environment, with absent canonical resources and a Ready Provider defaultModel matching the packaged model.\n" +
+			"Default evidence must match the exact destination. Candidate evidence requires --promote even in the same environment and a Ready Provider defaultModel matching the packaged model. Plain Lift requires absent canonical resources; --update requires an eligible retained pair.\n" +
 			"--promote explicitly allows source-only evidence for the same suite, member, model and runtime,\n" +
 			"with the packaged model declaration (Orka: Ready Provider; kagent: rendered ModelConfig). Evidence proves the source only, not destination evaluation or authenticated approval.\n" +
-			"Kagent creates new ModelConfig/Agent only; occupied names always refuse. Orka may reuse exact evaluated UID/generation/spec. Never update, adopt or retry ambiguous writes.\n" +
+			"Kagent creates new ModelConfig/Agent only; occupied names and --update always refuse. Plain Orka Lift may reuse exact evaluated UID/generation/spec, never update or adopt.\n" +
+			"--update changes only new-version retained Orka placements to a passing digest, or rolls back with original passing evidence without evaluation. Older/unrecorded placements must be explicitly recreated; no enrollment.\n" +
+			"Requires an operator-arranged quiet window. A pair-wide reservation refuses concurrent updates; unknown outcomes stay blocked. No automatic retry, takeover, undo or deletion.\n" +
 			"Created/recreated resources need fresh evaluation before later receipt-bound reuse. Partial resources may remain; readiness is not execution.\n" +
-			"--plan is GET-only: no mutation guard, admission, writes, Tasks or placement records. JSON reports contain identities, never prompts or credentials.",
-		Example: "  kmx lift --to prod\n  kmx lift --to prod --plan\n" +
+			"--plan is GET-only: no mutation guard, admission, writes, Tasks or placement records. Digest update plans inspect retained proof and a bounded cluster-wide Agent list. Cold workspace plans stay offline and do not establish live update eligibility. JSON reports contain identities, never prompts or credentials.",
+		Example: "  kmx lift --to prod\n  kmx lift --to prod --plan\n  kmx lift --to prod --update\n" +
+			"  kmx lift registry.example/suite@sha256:<previous-passing-digest> --to prod --evidence ../private/original-pass.json --promote --update\n" +
 			"  kmx lift registry.example/suite@sha256:<digest> --to prod --evidence ../private/pass.json --promote --plan\n" +
 			"  kmx lift registry.example/suite@sha256:<digest> --to-context prod --inference provider:inference --evidence ../private/pass.json --promote --plan\n" +
 			"  kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo --inference provider:inference --evidence ../private/pass.json --promote -o json",
-		Args: usageArgs(0, 1, "kmx lift --to NAME | kmx lift <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--plan]"),
+		Args: usageArgs(0, 1, "kmx lift --to NAME | kmx lift <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--update] [--plan]"),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateContainerEngineFlag(cmd, args); err != nil {
 				return err
@@ -193,6 +196,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&opt.FromLayout, "from-layout", "", "read exact digest from a local OCI directory")
 	cmd.Flags().BoolVar(&opt.PlainHTTP, "plain-http", false, "allow plain HTTP registry transport (not with --from-layout)")
 	cmd.Flags().BoolVar(&opt.Promote, "promote", false, "explicit same-suite/model/runtime promotion; source-only evidence")
+	cmd.Flags().BoolVar(&opt.Update, "update", false, "update an eligible retained Orka placement, or roll back with original passing evidence; no enrollment")
 	cmd.Flags().BoolVar(&planOnly, "plan", false, "GET-only review; no admission or placement")
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "output: text|json")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show workspace stage diagnostics")

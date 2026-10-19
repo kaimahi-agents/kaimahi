@@ -50,6 +50,13 @@ func statusTestFixture(t *testing.T) (*App, map[string]string, *bytes.Buffer, *b
 		statusTestAPI + "/namespaces/" + statusTestNS + "/agents?limit=128": statusTestList(),
 	}
 	a.captureCommand = func(_ context.Context, cmd *exec.Cmd) error {
+		// Optional shared state is an exact GET, never a ConfigMap inventory.
+		if slices.Equal(cmd.Args[1:], []string{"--context", "production", "--request-timeout=10s", "-n", statusTestNS, "get", "configmap", releaseStateName("release-notes", "greeter", "orka"), "--ignore-not-found", "-o", "json"}) {
+			if raw, _ := io.ReadAll(cmd.Stdin); len(raw) != 0 {
+				t.Fatal("GET received input")
+			}
+			return nil // Older placements have no shared release record.
+		}
 		want := []string{"--context", "production", "--request-timeout=10s", "get", "--raw"}
 		if len(cmd.Args) != 7 || !slices.Equal(cmd.Args[1:6], want) {
 			t.Fatalf("not an explicitly targeted GET-only request: %v", cmd.Args)

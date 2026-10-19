@@ -49,6 +49,12 @@ func releaseUpdateFixture(t *testing.T, configure ...func(*nativeReadFixture)) (
 	if next.Reference == first.Reference {
 		t.Fatal("fixture did not create two exact passing digests")
 	}
+	fixture := attachReleaseUpdateAPI(t, a, dir)
+	return a, reads, first, next, dir, fixture
+}
+
+func attachReleaseUpdateAPI(t *testing.T, a *App, dir string) *updateAPIFixture {
+	t.Helper()
 	fixture := &updateAPIFixture{}
 	prior := a.captureCommand
 	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
@@ -148,7 +154,7 @@ func releaseUpdateFixture(t *testing.T, configure ...func(*nativeReadFixture)) (
 		}
 		return json.NewEncoder(cmd.Stdout).Encode(doc)
 	}
-	return a, reads, first, next, dir, fixture
+	return fixture
 }
 
 func TestReleaseUpdateAndRollbackOriginalEvidence(t *testing.T) {
@@ -514,7 +520,7 @@ func TestReleaseUpdateStatusChurnDoesNotRefreshAuthority(t *testing.T) {
 	if ann["example.invalid/independent"] != "preserve" {
 		t.Fatal("update overwrote independent metadata")
 	}
-	if statusRecord(ann[releaseLiftRecordAnnotation].(string), "orka") != nil {
+	if frozenV081StatusRecord(ann[releaseLiftRecordAnnotation].(string), "orka") != nil {
 		t.Fatal("v0.8.1 reader credited mutation provenance")
 	}
 	if !json.Valid([]byte(ann[releaseCreateRecordAnnotation].(string))) {

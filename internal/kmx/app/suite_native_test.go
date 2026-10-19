@@ -21,10 +21,11 @@ import (
 const nativeCanary = "private-content-canary-never-captured"
 
 type nativeReadFixture struct {
-	records *releaseStateAPIFixture
-	objects map[string]map[string]any
-	calls   int
-	change  func(string, int, map[string]any) error
+	records        *releaseStateAPIFixture
+	registryLayout string // Optional second graph for workspace lifecycle fixtures.
+	objects        map[string]map[string]any
+	calls          int
+	change         func(string, int, map[string]any) error
 }
 
 func nativeFixture(t *testing.T, profiles ...workspace.RuntimeProfile) (*App, *workspace.NativeSuite, *nativeReadFixture) {

@@ -45,17 +45,18 @@ type destinationStatusWorkload struct {
 	Readiness destinationStatusReadiness `json:"readiness"`
 }
 type destinationStatusAgent struct {
-	Kind         string                      `json:"kind"`
-	Name         string                      `json:"name"`
-	Runtime      string                      `json:"runtime"`
-	Suite        string                      `json:"suite,omitempty"`
-	Member       string                      `json:"member,omitempty"`
-	SuiteDigest  string                      `json:"suiteDigest,omitempty"`
-	CandidateRun *string                     `json:"candidateRun"`
-	Provenance   destinationStatusProvenance `json:"provenance"`
-	Readiness    destinationStatusReadiness  `json:"readiness"`
-	Resources    []destinationStatusResource `json:"resources"`
-	Workloads    []destinationStatusWorkload `json:"workloads"`
+	Kind          string                      `json:"kind"`
+	Name          string                      `json:"name"`
+	Runtime       string                      `json:"runtime"`
+	Suite         string                      `json:"suite,omitempty"`
+	Member        string                      `json:"member,omitempty"`
+	SuiteDigest   string                      `json:"suiteDigest,omitempty"`
+	CandidateRun  *string                     `json:"candidateRun"`
+	Provenance    destinationStatusProvenance `json:"provenance"`
+	ReleaseRecord *ReleaseRecordObservation   `json:"releaseRecord,omitempty"`
+	Readiness     destinationStatusReadiness  `json:"readiness"`
+	Resources     []destinationStatusResource `json:"resources"`
+	Workloads     []destinationStatusWorkload `json:"workloads"`
 }
 type destinationStatusRuntime struct {
 	Runtime string `json:"runtime"`
@@ -86,7 +87,7 @@ type destinationStatusAPI struct{ runtime, version, prefix string }
 var destinationStatusAPIs = []destinationStatusAPI{{"orka", "core.orka.ai/v1alpha1", "/apis/core.orka.ai/v1alpha1"}, {"kagent", "kagent.dev/v1alpha2", "/apis/kagent.dev/v1alpha2"}}
 
 // DestinationStatus observes a namespace without setup, private history, retries,
-// admission or evaluation. Every subprocess is an explicitly targeted raw GET.
+// admission or evaluation. Every subprocess is an explicitly targeted GET.
 func (a *App) DestinationStatus(opt DestinationStatusOptions) error {
 	if opt.Output != "" && opt.Output != "table" && opt.Output != "json" {
 		return fmt.Errorf("status output must be table or json")
@@ -129,8 +130,15 @@ func (a *App) DestinationStatus(opt DestinationStatusOptions) error {
 	// Bracket successful identity reads; an unavailable initial read is never retried.
 	for _, identity := range []struct{ namespace, uid string }{{"kube-system", o.report.Target.ClusterUID}, {opt.Namespace, o.report.Target.NamespaceUID}} {
 		if identity.uid != "" {
-			if observed := o.namespaceUID(identity.namespace); observed != "" && observed != identity.uid {
-				o.problem("cluster or namespace identity changed during observation")
+			if observed := o.namespaceUID(identity.namespace); observed == "" || observed != identity.uid {
+				if observed != "" {
+					o.problem("cluster or namespace identity changed during observation")
+				}
+				for i := range o.report.Agents {
+					if record := o.report.Agents[i].ReleaseRecord; record != nil {
+						record.State = "unknown"
+					}
+				}
 			}
 		}
 	}
@@ -155,10 +163,17 @@ func (a *App) DestinationStatus(opt DestinationStatusOptions) error {
 		if row.Readiness.State == "unknown" || row.Provenance.State == "unknown" {
 			o.report.Complete = false
 		}
-		if row.Readiness.State == "unhealthy" || row.Readiness.State == "drifted" {
+		releaseState := ""
+		if row.ReleaseRecord != nil {
+			releaseState = row.ReleaseRecord.State
+		}
+		if releaseState == "unknown" {
+			o.report.Complete = false
+		}
+		if row.Readiness.State == "unhealthy" || row.Readiness.State == "drifted" || releaseState == "partial" {
 			result = errDestinationStatus
 		}
-		if row.Readiness.State == "pending" && result == nil {
+		if (row.Readiness.State == "pending" || releaseState == "pending") && result == nil {
 			result = ErrDestinationStatusPending
 		}
 	}

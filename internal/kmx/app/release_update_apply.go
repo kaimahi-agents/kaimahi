@@ -52,11 +52,8 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 	if _, err = worker.recheckReleaseUpdate(ctx, p, cursor, objects); err != nil {
 		return result, err
 	}
-	for _, resource := range []string{"configmaps/" + releaseStateName(p.before.State.Suite, p.before.State.Member, "orka"), "providers.core.orka.ai/" + p.lift.summary.Member, "agents.core.orka.ai/" + p.lift.summary.Member} {
-		raw, e := worker.orkaCapture(ctx, nil, "-n", p.lift.summary.Target.Namespace, "auth", "can-i", "patch", resource)
-		if e != nil || strings.TrimSpace(string(raw)) != "yes" {
-			return result, errors.Join(errReleaseStateRBAC, ctx.Err())
-		}
+	if err = worker.preflightReleaseUpdateWrites(ctx, p.lift.native.Subject, p.before); err != nil {
+		return result, err
 	}
 	docs, err := p.lift.releaseDocuments()
 	if err != nil {
@@ -246,6 +243,16 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 	}
 	result.State = "ready"
 	return result, nil
+}
+
+func (a *App) preflightReleaseUpdateWrites(ctx context.Context, subject suiteNativeSubject, before *releaseStateSnapshot) error {
+	for _, resource := range []string{"configmaps/" + releaseStateName(before.State.Suite, before.State.Member, "orka"), "providers.core.orka.ai/" + subject.Member, "agents.core.orka.ai/" + subject.Member} {
+		raw, e := a.orkaCapture(ctx, nil, "-n", subject.Target.Namespace, "auth", "can-i", "patch", resource)
+		if e != nil || strings.TrimSpace(string(raw)) != "yes" {
+			return errors.Join(errReleaseStateRBAC, ctx.Err())
+		}
+	}
+	return nil
 }
 
 func (a *App) finishReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, objects []releaseStateObject, result *ReleaseLiftResult) error {

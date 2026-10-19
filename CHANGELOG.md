@@ -22,19 +22,38 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Added
+
+- Opt-in Orka `kmx lift --to <destination> --update` and digest/evidence update
+  or rollback. Only newly created, acknowledged retained pairs qualify; v0.8.1
+  and earlier, reused, mixed and unrecorded placements are never enrolled.
+  Original passing evidence supports rollback without re-evaluation. Same-digest
+  updates are no-write checks; workspace updates re-prove the actual cluster
+  baseline instead of trusting a historical placement skip. Arrange a quiet
+  window: there is no draining, zero-downtime or automatic recovery guarantee.
+- Destination status reads v1 creates and v2 mutation attempts, with a bounded
+  exact-name shared-record GET reporting pending/partial/completed/unknown
+  separately from readiness. These unsigned observations never grant update
+  authority or prove local completion acknowledgment.
+
 ### Changed
 
 - Complete fresh Orka Lift creates now retain a namespace-local shared release
-  record and explicit private ownership proof for the forthcoming updater
+  record and explicit private ownership proof for the opt-in updater
   ([#561](https://github.com/kaimahi-agents/kaimahi/issues/561)). Composed Lift
   preflights retention before evaluation/publication spend. Shared completion
   uses conditional writes and requires a private acknowledgment checkpoint;
   ambiguous or partial first creates remain blocked, without automatic cleanup.
-  Exact reuse/mixed reuse/skips never enroll. Kagent is unchanged. The public
-  command remains create-only; no `--update` flag is enabled by this backend slice.
+  Exact reuse/mixed reuse/skips never enroll. Kagent is unchanged; plain Lift
+  remains create-only. See the [update contract](docs/suite-workspace.md#update-and-rollback).
 
 ### Breaking
 
+- Destination status now reads the exact shared release ConfigMap for owned Orka
+  rows. Read-only roles need named-record `get` access; denial makes the shared
+  observation unknown and the report incomplete (exit 1), including legacy v1
+  rows. Existing object provenance remains visible; no permission is granted or
+  inferred automatically. See [status access](docs/destination-status.md#selection-and-access).
 - Fresh Orka pair Lift now requires namespace-local ConfigMap create plus
   named-record get/patch access and available private retention capacity. Missing
   access/storage and stale records fail closed. Shared history rolls only old

@@ -154,6 +154,9 @@ func (a *App) checkReleaseLiftLeaves(ctx context.Context, p *PreparedReleaseLift
 // gate/guard refusals precede admission. Only absent-conditional CREATE and exact
 // receipt-bound no-write reuse are permitted; eval's update policy is unchanged.
 func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, reviewedDigest string) (result ReleaseLiftResult, err error) {
+	if p != nil && p.update != nil {
+		return a.applyReleaseUpdate(ctx, p.update, reviewedDigest)
+	}
 	result.State = "not-applied"
 	guardFailure := false
 	var record *releaseLiftRecordWriter
