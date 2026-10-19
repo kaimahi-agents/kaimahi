@@ -38,6 +38,32 @@ func dependencyPromotionFixture(reads *nativeReadFixture) {
 	reads.objects["providers.core.orka.ai/inference"]["spec"].(map[string]any)["defaultModel"] = "test-model"
 }
 
+func TestReleaseUpdateSameDigestRVChurnIsNoWrite(t *testing.T) {
+	a, reads, old, _, dir, api := releaseUpdateFixture(t, dependencyPromotionFixture)
+	old.Promote = true
+	nativeMetadata(reads.objects["providers.core.orka.ai/inference"])["resourceVersion"] = "status-only-new"
+	p, err := a.prepareReleaseUpdate(t.Context(), old)
+	if err != nil || !p.noop {
+		t.Fatal("same-digest dependency refresh not eligible", err)
+	}
+	before := reads.records.writes
+	r, err := a.applyReleaseUpdate(t.Context(), p, p.lift.summary.PlanDigest)
+	if err != nil || r.State != "ready" || r.placement == nil || api.patches != 0 || reads.records.writes != before || r.LiftID != "" {
+		t.Fatal("RV-only no-op failed or rewrote the placement", r.State, err)
+	}
+	if err := a.VerifyReleaseLiftPlacement(t.Context(), r); err != nil {
+		t.Fatal("fresh dependency proof invalidated retained no-write placement", err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "agents.core.orka.ai.json"))
+	var doc map[string]any
+	_ = json.Unmarshal(raw, &doc)
+	nativeMetadata(doc)["annotations"].(map[string]any)["kaimahi.dev/description"] = "changed owned metadata"
+	seedReconcile(t, dir, doc)
+	if err := a.VerifyReleaseLiftPlacement(t.Context(), r); err == nil {
+		t.Fatal("retained-marker verification relaxed full ownership proof")
+	}
+}
+
 func TestReleaseUpdateInferenceProviderWholeSpecDriftRefuses(t *testing.T) {
 	a, reads, _, next, _, api := releaseUpdateFixture(t, dependencyPromotionFixture)
 	// defaultModel is absent from the native binding projection. The exact

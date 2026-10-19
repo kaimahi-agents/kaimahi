@@ -85,8 +85,19 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 		defer cancel()
 		known := reserved && !uncertain
 		if known {
-			_, inspectErr := worker.inspectReleaseUpdatePair(finalCtx, p.lift.native.Subject, objects)
-			known = inspectErr == nil && worker.checkReleaseReservation(finalCtx, cursor) == nil
+			_, finalErr := worker.inspectReleaseUpdatePair(finalCtx, p.lift.native.Subject, objects)
+			if finalErr == nil {
+				finalErr = worker.checkReleaseReservation(finalCtx, cursor)
+			}
+			if finalErr != nil {
+				known = false
+				err = errors.Join(err, finalErr)
+				result.ReleaseRecord.State = "unknown"
+				if result.State == "ready" {
+					result.State = "partial"
+					result.placement = nil
+				}
+			}
 		}
 		if known && changed {
 			record.updateProof = &releaseOwnershipProof{Version: 2, RecordUID: cursor.UID, Objects: append([]releaseStateObject(nil), objects...), Dependencies: p.dependencies}
@@ -239,6 +250,12 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 
 func (a *App) finishReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, objects []releaseStateObject, result *ReleaseLiftResult) error {
 	placement := &suiteNativePlacement{Subject: p.lift.native.Subject, Provider: suiteNativeOwnedResource{UID: objects[0].UID, Generation: objects[0].Generation, SpecDigest: strings.TrimPrefix(objects[0].SpecDigest, "sha256:")}, Agent: suiteNativeOwnedResource{UID: objects[1].UID, Generation: objects[1].Generation, SpecDigest: strings.TrimPrefix(objects[1].SpecDigest, "sha256:")}}
+	if p.noop {
+		// Keep the acknowledged placement's complete ownership fingerprint;
+		// a fresh dependency RV does not authorize re-stamping its markers.
+		// Subject remains fresh for strict current-input and later verification.
+		placement.releaseBaseline = append([]releaseStateObject(nil), objects...)
+	}
 	if err := a.verifySuiteNative(ctx, placement); err != nil {
 		return err
 	}

@@ -75,6 +75,25 @@ func TestReleaseUpdateLiveOriginalEvidenceRoundTrip(t *testing.T) {
 			t.Fatal("real private completion acknowledgment missing", err)
 		}
 	}
+	// Force a second status-only dependency RV change specifically before the
+	// same-digest no-op. Its owned markers must remain exactly as acknowledged.
+	raw, err := a.orkaCapture(ctx, nil, "-n", OrkaNamespace, "get", "providers.core.orka.ai", "native-suite-inference", "-o", "json")
+	var inference map[string]any
+	if err != nil || json.Unmarshal(raw, &inference) != nil {
+		t.Fatal("no-op RV fixture read refused", err)
+	}
+	meta := inference["metadata"].(map[string]any)
+	patch := []map[string]any{}
+	for _, key := range []string{"uid", "resourceVersion", "generation"} {
+		patch = append(patch, map[string]any{"op": "test", "path": "/metadata/" + key, "value": meta[key]})
+	}
+	patch = append(patch, map[string]any{"op": "test", "path": "/spec", "value": inference["spec"]}, map[string]any{"op": "add", "path": "/status/message", "value": "Owned no-op RV qualification"})
+	body, _ := json.Marshal(patch)
+	raw, err = a.orkaCapture(ctx, body, "-n", OrkaNamespace, "patch", "providers.core.orka.ai", "native-suite-inference", "--subresource=status", "--type=json", "--patch-file=/dev/stdin", "-o", "json")
+	var refreshed map[string]any
+	if err != nil || json.Unmarshal(raw, &refreshed) != nil || refreshed["metadata"].(map[string]any)["resourceVersion"] == meta["resourceVersion"] {
+		t.Fatal("no-op RV churn not exercised", err)
+	}
 	p, err := a.prepareReleaseUpdate(ctx, options[0])
 	if err != nil {
 		t.Fatal(err)
@@ -82,8 +101,16 @@ func TestReleaseUpdateLiveOriginalEvidenceRoundTrip(t *testing.T) {
 	if !p.noop {
 		t.Fatal("rollback did not invalidate the later digest baseline")
 	}
-	if _, err := a.applyReleaseUpdate(ctx, p, p.lift.summary.PlanDigest); err != nil {
-		t.Fatal("same-digest real no-op refused", err)
+	r, err := a.applyReleaseUpdate(ctx, p, p.lift.summary.PlanDigest)
+	if err != nil || r.State != "ready" || r.LiftID != "" {
+		t.Fatal("same-digest real no-op after RV churn refused", err)
+	}
+	if err := a.VerifyReleaseLiftPlacement(ctx, r); err != nil {
+		t.Fatal("real retained placement proof unusable after no-op", err)
+	}
+	state, err := a.readReleaseState(ctx, p.before.State)
+	if err != nil || state.ResourceVersion != p.before.ResourceVersion || state.data != p.before.data {
+		t.Fatal("real no-op changed shared record", err)
 	}
 	if count() != before {
 		t.Fatal("update or original-evidence rollback sent a Task")

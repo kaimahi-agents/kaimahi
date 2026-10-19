@@ -13,6 +13,9 @@ import (
 type suiteNativePlacement struct {
 	Subject         suiteNativeSubject
 	Provider, Agent suiteNativeOwnedResource
+	// Only acknowledged release no-ops may retain older marker fingerprints
+	// alongside freshly proved dependency inputs. Never populated from summaries.
+	releaseBaseline []releaseStateObject
 }
 type suiteNativeOwnedResource struct {
 	UID        string
@@ -145,6 +148,9 @@ func (a *App) verifySuiteNative(ctx context.Context, p *suiteNativePlacement) er
 	if p == nil {
 		return fmt.Errorf("native placement required")
 	}
+	if p.releaseBaseline != nil && !validReleaseStateObjects(p.releaseBaseline, true) {
+		return fmt.Errorf("native release baseline required")
+	}
 	if err := a.verifySuiteNativeInputs(ctx, p.Subject); err != nil {
 		return err
 	}
@@ -167,7 +173,12 @@ func (a *App) verifySuiteNative(ctx context.Context, p *suiteNativePlacement) er
 		if err != nil {
 			return err
 		}
-		if owned.UID != id.UID || owned.Generation != id.Generation || owned.SpecDigest != digest || !reflect.DeepEqual(owner.markers(), suiteOnlyMarkers(ann)) {
+		metadataMatches := reflect.DeepEqual(owner.markers(), suiteOnlyMarkers(ann))
+		if p.releaseBaseline != nil {
+			actual, err := releaseObjectFingerprint(doc, id.UID, id.Generation)
+			metadataMatches = err == nil && actual == p.releaseBaseline[i]
+		}
+		if owned.UID != id.UID || owned.Generation != id.Generation || owned.SpecDigest != digest || !metadataMatches {
 			return fmt.Errorf("%s/%s native placement changed", kind, id.Name)
 		}
 		var object orkaObject

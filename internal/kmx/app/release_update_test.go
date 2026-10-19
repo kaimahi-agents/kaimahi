@@ -186,6 +186,43 @@ func TestReleaseUpdateAndRollbackOriginalEvidence(t *testing.T) {
 	}
 }
 
+func TestReleaseUpdateFinalReadFailureCannotReturnAuthority(t *testing.T) {
+	for _, failure := range []string{"pair", "reservation"} {
+		t.Run(failure, func(t *testing.T) {
+			a, _, _, next, _, api := releaseUpdateFixture(t)
+			p, err := a.prepareReleaseUpdate(t.Context(), next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prior := a.captureCommand
+			verified, failed := false, false
+			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+				args := cmd.Args
+				if verified && !failed && slices.Contains(args, "get") && ((failure == "pair" && slices.Contains(args, "providers.core.orka.ai") && slices.Contains(args, "greeter")) || (failure == "reservation" && slices.Contains(args, "configmap"))) {
+					failed = true
+					return errors.New("final inspection read unavailable")
+				}
+				err := prior(ctx, cmd)
+				if err == nil && slices.Contains(args, "agents.core.orka.ai") && slices.Contains(args, "--ignore-not-found=true") {
+					verified = true
+				}
+				return err
+			}
+			r, err := a.applyReleaseUpdate(t.Context(), p, p.lift.summary.PlanDigest)
+			if !failed || api.patches != 2 {
+				t.Fatal("finalization failure was not isolated", err)
+			}
+			if err == nil || r.State == "ready" || r.placement != nil || r.ReleaseRecord.State != "unknown" {
+				t.Fatal("unacknowledged finalization returned placement authority", r.State, err)
+			}
+			state, err := a.readReleaseState(t.Context(), p.before.State)
+			if err != nil || state.State.Operation == "" {
+				t.Fatal("unknown final observation released the reservation", err)
+			}
+		})
+	}
+}
+
 func TestReleaseUpdateRefusesDriftOrSharing(t *testing.T) {
 	for _, change := range []string{"spec", "uid", "metadata", "provenance", "shared", "fallback shared", "unqualified shared", "missing-private-proof"} {
 		t.Run(change, func(t *testing.T) {
