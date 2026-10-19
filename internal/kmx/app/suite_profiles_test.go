@@ -17,6 +17,11 @@ import (
 // are not execution proof or qualification of public implementation pins.
 func profiledPassFixture(t *testing.T) (*suitePassStore, *workspace.NativeSuite, *workspace.NativeSuite, *suitePassingReceipt, *suitePassingReceipt) {
 	t.Helper()
+	return profiledPassFixtureRuntime(t, "orka")
+}
+
+func profiledPassFixtureRuntime(t *testing.T, runtimeID string) (*suitePassStore, *workspace.NativeSuite, *workspace.NativeSuite, *suitePassingReceipt, *suitePassingReceipt) {
+	t.Helper()
 	root, old, legacy, placement, observations := passingFixture(t)
 	receipt, err := newSuitePassingReceipt(t.Context(), old, placement, observations)
 	if err != nil {
@@ -38,7 +43,7 @@ func profiledPassFixture(t *testing.T) (*suitePassStore, *workspace.NativeSuite,
 	}
 	rows := ""
 	for _, id := range []string{"a", "b"} {
-		rp := agentsuite.RuntimeProfile{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeRuntimeProfile, ID: id, Runtime: agentsuite.EvidenceImplementation{ID: "orka", Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: agentsuite.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: agentsuite.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "kmx-native-orka-v2", ImageRequired: false}
+		rp := agentsuite.RuntimeProfile{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeRuntimeProfile, ID: id, Runtime: agentsuite.EvidenceImplementation{ID: runtimeID, Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: agentsuite.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: agentsuite.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "kmx-native-orka-v2", ImageRequired: false}
 		raw, err := agentsuite.Marshal(rp)
 		if err != nil {
 			t.Fatal(err)
@@ -139,6 +144,37 @@ func TestProfiledReceiptProjectionCannotAuthorizeConsumers(t *testing.T) {
 	}
 	if _, _, err := suitePublicEvidence(t.Context(), nil, view, receipt, nil); !errors.Is(err, workspace.ErrProfileExecutionUnsupported) {
 		t.Fatal("projection reached portable export", err)
+	}
+}
+
+// Consistent detached declarations confer no execution, evidence or Lift authority.
+func TestSessionsAssociationCannotQualifyOrAuthorize(t *testing.T) {
+	_, suite, _, receipt, _ := profiledPassFixtureRuntime(t, "agentsessions")
+	const image = "ghcr.io/orka-agents/agentkit/serve-pydantic-ai@sha256:8c4c17dc3d778c02097ad7e1ea88e9084b3f1aad6c36458829ff9cec9b4d043c"
+	raw, err := workspace.NewSessionsAssociation(t.Context(), suite, image)
+	if err != nil || workspace.CheckSessionsAssociation(t.Context(), raw, suite) != nil {
+		t.Fatal("consistent declaration refused", err)
+	}
+	if !bytes.Contains(raw, []byte(`"imageVerification":"declared-unverified"`)) {
+		t.Fatal("image declaration lost unverified status")
+	}
+	app, _, calls := nativeFixture(t)
+	before := calls.calls
+	for _, operation := range []func() error{
+		suite.RequireUnprofiled,
+		func() error { _, err := app.prepareSuiteNative(t.Context(), suite, "ns", "provider"); return err },
+		func() error { _, err := snapshotSuiteSessionsHost("unread", suite); return err },
+		func() error { _, _, err := suitePublicEvidence(t.Context(), nil, suite, receipt, nil); return err },
+	} {
+		if err := operation(); !errors.Is(err, workspace.ErrProfileExecutionUnsupported) {
+			t.Fatal("association bypassed profile refusal", err)
+		}
+	}
+	if _, err := parseSuitePassingReceipt(raw); err == nil {
+		t.Fatal("association became private Lift/evaluated-publication evidence")
+	}
+	if calls.calls != before {
+		t.Fatal("declaration reached runtime effects")
 	}
 }
 

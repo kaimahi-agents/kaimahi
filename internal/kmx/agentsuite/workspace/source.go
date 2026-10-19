@@ -111,6 +111,11 @@ func validateMember(m sourceMember, instructions []byte) error {
 	if _, err := m.Runtime.profile(); err != nil {
 		return err
 	}
+	// Report only a fixed diagnostic, before the existing hard refusal. Neither
+	// the matched value nor scanner details may cross source/package preflight.
+	if utf8.Valid(instructions) && secretshapes.Match(string(instructions)) != nil {
+		return refusal{errors.New("Warning: instructions contain credential-shaped content (redacted); instructions are non-confidential and must never contain secrets\nrefusing invalid Unicode or credential-shaped content")}
+	}
 	if err := safeText(m.ID + "\n" + m.Description + "\n" + m.Model.Model + "\n" + string(instructions)); err != nil {
 		return err
 	}
