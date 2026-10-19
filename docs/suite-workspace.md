@@ -383,8 +383,9 @@ KMX state directory when `KMX_HOME` is unset). Immutable `intent.json`, per-crea
 `1.json`/`2.json`, and a final checkpoint up to `3.json` retain acknowledged
 identities, outcomes and readiness, including partial/failed attempts. File modes
 are 0600 under 0700 directories. Ordinary observation-only attempts retain four
-slots. New complete Orka pair creates additionally reserve `4.json` for explicit
-record-bound ownership and acknowledged shared completion (below). Storage remains
+slots. New complete Orka pair creates additionally reserve `4.json` as a
+record-bound ownership candidate and a final `committed.json` acknowledgment
+marker (below). Storage remains
 bounded to 256 attempts and 64 MiB, with no automatic pruning. These intent/outcome
 observations never grant skip, evaluation or replay authority; older observations
 are never converted into the new explicit ownership proof.
@@ -427,8 +428,21 @@ acknowledged outcomes: no specs, receipt bodies, prompts, answers, Secret values
 or binding bytes. A CAS reservation spans both native objects. After acknowledged
 creation, private `4.json` binds the exact pair to the ConfigMap UID **and the
 acknowledged completed shared payload**. It is published only after the shared
-completion response succeeds. A lost final response or failed private checkpoint
-therefore cannot authorize the next attempt, even if the API committed its write.
+completion response succeeds, but visibility alone is not commitment: publication
+can still fail after its hard link. The writer installs `committed.json` as a
+final exclusive hard link only after publication checks and fallible output cleanup
+succeed. Readers require both files with exactly matching bytes, plus all existing
+record/target/object/dependency checks. A lost shared response or failed private
+checkpoint therefore cannot authorize the next attempt, even if the shared API
+committed its write or `4.json` is visible.
+
+The final marker link is the local eligibility commit point. Capacity exclusion
+remains held through it. No post-link sync, cancellation or handle-cleanup failure
+retroactively labels a committed acknowledgment unknown. The final directory entry
+is not promised crash-durable: losing it after a crash conservatively blocks further
+updates. A copied complete backup must preserve both files' exact bytes, not their
+hard-link identity. These are unsigned private records, not tamper authentication;
+never create a marker by hand or prune a candidate to bypass a failed checkpoint.
 JSON results identify this object separately as `releaseRecord` with name, UID
 when acknowledged, and `pending`, `ready` or `unknown` state.
 
@@ -439,6 +453,10 @@ annotations, a copied ConfigMap or old observation files alone cannot replace it
 Agents lifted by **v0.8.1 or earlier cannot be updated yet**. Reused or otherwise
 unenrolled placements also lack update-capable proof. Explicitly recreate the
 owned pair with this version when ready; no enrollment/backfill is performed.
+Unmarked proofs from unreleased #573 builds also refuse, including previously
+successful test baselines: their visible `4.json` cannot distinguish successful
+publication from a failed post-link checkpoint. No migration or marker repair is
+performed; explicit owned-pair recreation is required.
 
 A pre-send refusal does not mint a partial revision or change object markers.
 After a reservation but before any object send, the active writer can restore only

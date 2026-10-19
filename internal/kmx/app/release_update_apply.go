@@ -139,6 +139,7 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 			}
 			if releaseErr != nil {
 				err = errors.Join(err, releaseErr)
+				result.ProvenanceState = "unknown"
 				result.ReleaseRecord.State = "unknown"
 			} else {
 				result.ReleaseRecord.State = terminal.State
@@ -317,5 +318,5 @@ func (w *releaseLiftRecordWriter) acknowledge(ctx context.Context, state *releas
 	if err := w.checkpoint(ctx, result); err != nil {
 		return errReleaseLiftProvenance
 	}
-	return nil
+	return w.commitAcknowledgment(ctx)
 }

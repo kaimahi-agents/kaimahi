@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -47,28 +48,14 @@ func readReleaseOwnership(ctx context.Context, id string) (*releaseOwnershipReco
 	if info.Mode().Perm()&0077 != 0 {
 		return nil, errReleaseUpdateUnsupported
 	}
-	for _, name := range []string{"4.json", "3.json", "2.json", "1.json"} {
-		info, err := root.Lstat(name)
-		if os.IsNotExist(err) {
+	for _, name := range []string{releaseCommitMarker, "4.json", "3.json", "2.json", "1.json"} {
+		_, statErr := root.Lstat(name)
+		if os.IsNotExist(statErr) {
 			continue
 		}
-		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > maxReleaseLiftRecordBytes {
-			return nil, errReleaseUpdateUnsupported
-		}
-		file, err := root.Open(name)
+		raw, err := readReleaseOwnershipSnapshot(root, name)
 		if err != nil {
-			return nil, errReleaseUpdateUnsupported
-		}
-		opened, openErr := file.Stat()
-		if openErr != nil || !os.SameFile(info, opened) {
-			file.Close()
-			return nil, errReleaseUpdateUnsupported
-		}
-		raw, readErr := io.ReadAll(io.LimitReader(file, maxReleaseLiftRecordBytes+1))
-		closeErr := file.Close()
-		after, afterErr := root.Lstat(name)
-		if readErr != nil || closeErr != nil || afterErr != nil || !os.SameFile(info, after) || len(raw) > maxReleaseLiftRecordBytes {
-			return nil, errReleaseUpdateUnsupported
+			return nil, errReleaseState
 		}
 		var wire struct {
 			SchemaVersion     int                    `json:"schemaVersion"`
@@ -81,11 +68,18 @@ func readReleaseOwnership(ctx context.Context, id string) (*releaseOwnershipReco
 			UpdateProof       *releaseOwnershipProof `json:"updateProof"`
 			ReleaseDataDigest string                 `json:"releaseDataDigest"`
 		}
-		if agentsuite.Unmarshal(raw, &wire) != nil || wire.SchemaVersion != 1 || wire.ID != id || (wire.State != "ready" && wire.State != "partial" && wire.State != "not-applied") || wire.UpdateProof == nil || wire.UpdateProof.Version != 2 || !validReleaseTargetDependencies(wire.UpdateProof.Dependencies) ||
+		if agentsuite.Unmarshal(raw, &wire) != nil {
+			return nil, errReleaseState
+		}
+		if wire.SchemaVersion != 1 || wire.ID != id || (wire.State != "ready" && wire.State != "partial" && wire.State != "not-applied") || wire.UpdateProof == nil || wire.UpdateProof.Version != 2 || !validReleaseTargetDependencies(wire.UpdateProof.Dependencies) ||
 			!statusOpaque(wire.UpdateProof.RecordUID) || !validReleaseStateObjects(wire.UpdateProof.Objects, true) || len(wire.Resources) != 2 || godigest.FromBytes(wire.Receipt).String() != wire.Summary.EvidenceDigest {
 			return nil, errReleaseUpdateUnsupported
 		}
-		if name != "4.json" || !agentsuite.IsValidDigest(wire.ReleaseDataDigest) {
+		if name != releaseCommitMarker || !agentsuite.IsValidDigest(wire.ReleaseDataDigest) {
+			return nil, errReleaseState
+		}
+		candidate, err := readReleaseOwnershipSnapshot(root, "4.json")
+		if err != nil || !bytes.Equal(raw, candidate) {
 			return nil, errReleaseState
 		}
 		for i, row := range wire.Resources {
@@ -97,6 +91,31 @@ func readReleaseOwnership(ctx context.Context, id string) (*releaseOwnershipReco
 		return &releaseOwnershipRecord{wire.SchemaVersion, wire.ID, wire.Summary, wire.Annotation, wire.State, wire.Resources, wire.Receipt, wire.ReleaseDataDigest, wire.UpdateProof}, nil
 	}
 	return nil, errReleaseUpdateUnsupported
+}
+
+// Each name is independently bounded and bracketed; copied committed backups
+// need not retain hard-link identity, but must retain exactly the same bytes.
+func readReleaseOwnershipSnapshot(root *os.Root, name string) ([]byte, error) {
+	info, err := root.Lstat(name)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > maxReleaseLiftRecordBytes {
+		return nil, errReleaseState
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return nil, errReleaseState
+	}
+	opened, openErr := file.Stat()
+	if openErr != nil || !os.SameFile(info, opened) {
+		file.Close()
+		return nil, errReleaseState
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(file, maxReleaseLiftRecordBytes+1))
+	closeErr := file.Close()
+	after, afterErr := root.Lstat(name)
+	if readErr != nil || closeErr != nil || afterErr != nil || !os.SameFile(info, after) || len(raw) > maxReleaseLiftRecordBytes {
+		return nil, errReleaseState
+	}
+	return raw, nil
 }
 
 func releaseOwnershipMatches(record *releaseOwnershipRecord, state *releaseStateSnapshot) bool {

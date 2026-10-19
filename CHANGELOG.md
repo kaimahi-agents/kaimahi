@@ -22,6 +22,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+### Fixed
+
+- A private Orka ownership checkpoint could leave visible `4.json` after a
+  post-link persistence failure, incorrectly authorizing a later update. Fresh
+  create and internal update now require a final `committed.json` marker after
+  publication checks and output cleanup succeed. Lost shared-write responses
+  still block; there is no retry, backfill or automatic cleanup.
+
 ### Changed
 
 - Complete fresh Orka Lift creates now retain a namespace-local shared release
@@ -35,6 +43,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- All unmarked private ownership proofs are refused, including successful test
+  baselines from unreleased #573 builds. A visible `4.json` alone is not a
+  completed acknowledgment. Recreate an owned pair explicitly when ready; no
+  migration, enrollment, backfill or deletion is performed automatically. #573
+  has not been released; this affects only those unreleased test baselines.
 - Fresh Orka pair Lift now requires namespace-local ConfigMap create plus
   named-record get/patch access and available private retention capacity. Missing
   access/storage and stale records fail closed. Shared history rolls only old

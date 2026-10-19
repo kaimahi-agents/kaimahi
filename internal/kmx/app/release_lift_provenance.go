@@ -75,6 +75,9 @@ func (a *App) prepareReleaseLiftProvenance(ctx context.Context, p *PreparedRelea
 	if err != nil {
 		return nil, "", err
 	}
+	if a.releaseRecordPrepared != nil {
+		a.releaseRecordPrepared(writer)
+	}
 	for i, doc := range docs {
 		if p.summary.Resources[i].Action == "create" || p.summary.Resources[i].Action == "update" {
 			meta := doc["metadata"].(map[string]any)

@@ -19,6 +19,7 @@ const (
 	maxReleaseLiftAttempts    = 256
 	maxReleaseLiftStoreBytes  = 64 << 20
 	maxReleaseLiftRecordBytes = maxSuitePassingReceiptBytes + (48 << 10)
+	releaseCommitMarker       = "committed.json"
 )
 
 var (
@@ -28,9 +29,10 @@ var (
 
 // Original intent/outcome fields are observations, not evaluation or skip
 // authority. New complete Orka creates/updates reserve a separate fifth snapshot
-// for explicit ownership plus acknowledged shared completion. Old observations
-// are never upgraded. A store-level OS lock bounds capacity, not pair concurrency.
-// Layout: release-lifts/<opaque ID>/{intent,1,2,3[,4]}.json.
+// as an ownership candidate. Only a final committed.json marker acknowledges it.
+// Old observations are never upgraded. A store-level OS lock bounds capacity,
+// not pair concurrency. Layout: release-lifts/<ID>/{intent,1,2,3[,4]}.json,
+// plus committed.json for acknowledged ownership (the same bytes as 4.json).
 type releaseLiftRecordWriter struct {
 	root                         *os.Root
 	lock                         *os.File
@@ -41,6 +43,10 @@ type releaseLiftRecordWriter struct {
 	next                         int
 	updateProof                  *releaseOwnershipProof
 	releaseDataDigest            string
+	commitRoot                   *os.Root
+	committed                    bool
+	// commitLink injects the final filesystem boundary in tests; nil uses Link.
+	commitLink func(*os.Root, string, string) error
 }
 
 func releaseLiftRecordError(reason string) error {
@@ -243,7 +249,7 @@ func (w *releaseLiftRecordWriter) capacity(ctx context.Context) error {
 		}
 		total += n
 	}
-	if count >= maxReleaseLiftAttempts || total+5*maxReleaseLiftRecordBytes > maxReleaseLiftStoreBytes {
+	if count >= maxReleaseLiftAttempts || total+6*maxReleaseLiftRecordBytes > maxReleaseLiftStoreBytes {
 		return releaseLiftRecordError("storage capacity exceeded")
 	}
 	return w.unchanged()
@@ -340,6 +346,11 @@ func preflightReleaseLiftRecord(ctx context.Context, id string, summary ReleaseL
 		}
 		w.outputs = append(w.outputs, &suitePassingExport{root: root, directory: dir, parent: parent, path: path, name: leaf})
 	}
+	if len(w.outputs) == 5 {
+		if _, err := w.outputs[4].root.Lstat(releaseCommitMarker); !os.IsNotExist(err) {
+			return nil, releaseLiftRecordError("commit marker collision")
+		}
+	}
 	resources := make([]ReleaseLiftOutcome, 0, len(summary.Resources))
 	for _, resource := range summary.Resources {
 		resources = append(resources, ReleaseLiftOutcome{ReleaseLiftResource: resource, Outcome: "not-attempted"})
@@ -417,15 +428,75 @@ func (w *releaseLiftRecordWriter) write(ctx context.Context, state string, resou
 	return nil
 }
 
+// Output-close errors still veto commitment. Retain the anchored attempt root
+// and capacity lock through the final link; neither closing them nor checking
+// cancellation afterward may retroactively make a committed ACK uncertain.
+func (w *releaseLiftRecordWriter) closeOutputs() (err error) {
+	for _, output := range w.outputs {
+		if output.root == w.commitRoot {
+			err = errors.Join(err, output.directory.Close())
+		} else {
+			err = errors.Join(err, output.Close())
+		}
+	}
+	w.outputs = nil
+	return err
+}
+
+func (w *releaseLiftRecordWriter) commitAcknowledgment(ctx context.Context) error {
+	output := w.outputs[4]
+	candidate, err := output.root.Lstat(output.name)
+	if err != nil || !candidate.Mode().IsRegular() || candidate.Mode().Perm()&0077 != 0 || candidate.Size() > maxReleaseLiftRecordBytes {
+		return errReleaseLiftProvenance
+	}
+	w.commitRoot = output.root
+	if err := w.closeOutputs(); err != nil {
+		return errors.Join(errReleaseLiftProvenance, err)
+	}
+	if err := w.unchanged(); err != nil {
+		return errors.Join(errReleaseLiftProvenance, err)
+	}
+	if _, err := w.lock.Stat(); err != nil {
+		return errReleaseLiftProvenance
+	}
+	parent, err := w.commitRoot.Stat(".")
+	if err != nil || !os.SameFile(parent, output.parent) || output.unchanged() != nil {
+		return errReleaseLiftProvenance
+	}
+	current, err := w.commitRoot.Lstat(output.name)
+	if err != nil || !os.SameFile(candidate, current) {
+		return errReleaseLiftProvenance
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(errReleaseLiftProvenance, err)
+	}
+	link := w.commitLink
+	if link == nil {
+		link = func(root *os.Root, oldName, newName string) error { return root.Link(oldName, newName) }
+	}
+	if err := link(w.commitRoot, output.name, releaseCommitMarker); err != nil {
+		// A retransmitted filesystem request can report EEXIST after committing.
+		// Only this exact candidate inode establishes a known committed outcome.
+		marker, readErr := w.commitRoot.Lstat(releaseCommitMarker)
+		if readErr != nil || !os.SameFile(candidate, marker) {
+			return errors.Join(errReleaseLiftProvenance, err)
+		}
+	}
+	// This exclusive link is the commit point. No fallible publication checks
+	// follow it. Crash loss of the unsynced final entry can only block readers.
+	w.committed = true
+	return nil
+}
+
 func (w *releaseLiftRecordWriter) Close() error {
 	if w == nil {
 		return nil
 	}
-	var err error
-	for _, output := range w.outputs {
-		err = errors.Join(err, output.Close())
+	err := w.closeOutputs()
+	if w.commitRoot != nil {
+		err = errors.Join(err, w.commitRoot.Close())
+		w.commitRoot = nil
 	}
-	w.outputs = nil
 	if w.lock != nil {
 		err = errors.Join(err, w.lock.Close())
 		w.lock = nil
@@ -434,7 +505,7 @@ func (w *releaseLiftRecordWriter) Close() error {
 		err = errors.Join(err, w.root.Close())
 		w.root = nil
 	}
-	if err != nil {
+	if err != nil && !w.committed {
 		return errors.Join(errReleaseLiftRecord, err)
 	}
 	return nil

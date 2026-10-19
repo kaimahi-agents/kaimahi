@@ -59,6 +59,9 @@ type App struct {
 	// captureCommand replaces execution of an already-prepared kubectl capture
 	// in tests only. Nil retains the real subprocess boundary.
 	captureCommand func(context.Context, *exec.Cmd) error
+	// releaseRecordPrepared configures the real private publisher in boundary tests.
+	// Nil leaves persistence unchanged.
+	releaseRecordPrepared func(*releaseLiftRecordWriter)
 	// waitTiming overrides retry pacing and phase deadlines in tests only.
 	// Nil preserves every production interval and timeout.
 	waitTiming *waitTiming

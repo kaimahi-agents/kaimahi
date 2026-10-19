@@ -215,8 +215,15 @@ runtime selection and supported-operation validation.
 Complete fresh Orka Lift creates retain a shared UID-bound baseline and a new
 explicit private ownership proof; reused/mixed placements never enroll. Private
 observation slots `intent.json` through `3.json` alone remain non-authoritative.
-Pre-reserved `4.json` additionally binds an acknowledged shared completion before
-any later operation can use that proof. Unknown writes/checkpoints cannot be
+Pre-reserved `4.json` binds an acknowledged shared completion, but is only a
+candidate until the final exclusive `committed.json` link succeeds. Readers require
+both bounded private files with byte-identical content; all unmarked proofs,
+including unreleased #573 test baselines, refuse without migration or backfill.
+Publication checks and output closes precede the commit point; the capacity lock
+remains held through it. Post-commit handle cleanup cannot revoke commitment,
+and crash loss of the final directory entry conservatively blocks. Deterministic
+post-link sync-failure tests exercise real create/update Apply and next-prepare
+refusal; retain the separate lost-shared-response regressions. Unknown writes/checkpoints cannot be
 resolved by re-reading live objects or by an automatic resend/takeover. Only a
 live writer whose object writes have ceased may persist a known partial and
 release its reservation. Pending/partial shared proof never rolls; completed
