@@ -136,9 +136,36 @@ func TestWorkspaceUpdateSharedCapacityBeforeSpend(t *testing.T) {
 	// Model protected historical partials at the external shared-state boundary.
 	// Retain the real current pair/receipt/dependencies and publish its matching
 	// private acknowledgment through the actual writer, not hand-made markers.
+	receipt, err := baseline.retainedReleaseEvidence(t.Context(), p.plan.SuiteDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Obtain both IDs from separate normal provenance operations. Do not encode
+	// or mutate a literal ID: the prospective operation must differ from the
+	// current revision while preserving the production record/receipt path.
+	lift := &PreparedReleaseLift{native: native, receipt: receipt, summary: baseline.latest.Summary, options: opt.Destination}
+	docs, err := lift.releaseDocuments()
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, pendingID, err := a.prepareReleaseLiftProvenance(t.Context(), lift, docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := probe.Close(); err != nil {
+		t.Fatal(err)
+	}
+	writer, currentID, err := a.prepareReleaseLiftProvenance(t.Context(), lift, docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	if currentID == pendingID || currentID == baseline.latest.ID || pendingID == baseline.latest.ID {
+		t.Fatal("normal provenance operations did not produce distinct IDs")
+	}
 	state := baseline.before.State
 	current := state.History[len(state.History)-1]
-	current.LiftID = "fffffffffffffffffffffffffffffffe"
+	current.LiftID = currentID
 	state.History = []releaseStateRevision{current}
 	var raw []byte
 	found := false
@@ -148,7 +175,7 @@ func TestWorkspaceUpdateSharedCapacityBeforeSpend(t *testing.T) {
 			t.Fatal("fixture exceeded valid shared capacity", err)
 		}
 		next := state
-		next.Operation = "ffffffffffffffffffffffffffffffff"
+		next.Operation = pendingID
 		next.Pending = &releaseStateRevision{LiftID: next.Operation, SuiteDigest: current.SuiteDigest, EvidenceDigest: current.EvidenceDigest, State: "pending", Before: state.Baseline, Objects: state.Baseline}
 		if reserveReleaseUpdateCapacity(next) != nil {
 			found = true
@@ -166,14 +193,6 @@ func TestWorkspaceUpdateSharedCapacityBeforeSpend(t *testing.T) {
 	snap.State, snap.data = state, string(raw)
 	name := releaseStateName(state.Suite, state.Member, state.Runtime)
 	reads.records.objects[name]["data"].(map[string]any)["release.json"] = snap.data
-	annotation, err := json.Marshal(baseline.latest.Annotation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writer, err := preflightReleaseLiftRecord(t.Context(), current.LiftID, baseline.latest.Summary, baseline.latest.Receipt, string(annotation))
-	if err != nil {
-		t.Fatal(err)
-	}
 	writer.updateProof = baseline.latest.UpdateProof
 	result := ReleaseLiftResult{State: baseline.latest.State, Resources: baseline.latest.Resources}
 	if err := writer.acknowledge(t.Context(), &snap, result); err != nil {
