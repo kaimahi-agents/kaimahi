@@ -94,6 +94,12 @@ test('Test is canonical while compatibility and current runtime limits stay expl
     assert.match(text, /WSL/, `${page}: Windows boundary retained`)
     assert.doesNotMatch(text, /kmx publish|kmx test --local/)
   }
+  for (const page of ['docs/azure/cpu-model/index.html', 'docs/aks-demo.html', 'docs/suite-workspace.html']) {
+    const text = plainText(await readFile(path.join(dist, page), 'utf8')).replace(/\s+/g, ' ')
+    assert.match(text, /v0\.8\.1 uses kmx eval and kmx lift/, `${page}: both stable substitutions`)
+  }
+  const azure = plainText(await readFile(path.join(dist, 'docs/azure/cpu-model/index.html'), 'utf8')).replace(/\s+/g, ' ')
+  assert.match(azure, /kmx test cleanup[^.]*kmx eval cleanup/, 'Azure cleanup uses the stable helper spelling')
   const workflow = plainText(await readFile(path.join(dist, 'docs/workflow-overview.html'), 'utf8'))
   assert.match(workflow, /kmx run --agent NAME --prompt TEXT[^\n]*live Agents[^\n]*neither is workspace-local execution/)
   assert.match(workflow, /kmx push --workspace DIR --evaluation RECEIPT REF/)

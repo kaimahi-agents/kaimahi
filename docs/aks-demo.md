@@ -29,8 +29,8 @@ You need:
 
 - an authenticated Azure CLI with permission to create AKS, ACR, and role assignments;
 - Docker, `kubectl`, and enough local capacity for one kind cluster;
-- one exact KMX main-checkout executable implementing this guide (`deploy` is
-  unreleased; v0.8.1 uses `lift` with the same arguments);
+- one exact KMX main-checkout executable implementing this guide (`test` and
+  `deploy` are unreleased; v0.8.1 uses `kmx eval` and `kmx lift` with the same arguments);
 - an OpenAI-compatible HTTPS endpoint reachable from kind and AKS;
 - its exact model/deployment name and a non-empty API key.
 

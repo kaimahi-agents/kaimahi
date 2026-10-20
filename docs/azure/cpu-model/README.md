@@ -15,9 +15,12 @@ to self-hosted inference. For the shared lifecycle contract, see
 ## Before you start
 
 The main path uses **Bash on Linux**, with Azure CLI and the Kubernetes tools
-in the same environment. Start in the repository root. The `kmx deploy` spelling
-is unreleased; use a main checkout build, or `kmx lift` with the same arguments
-on v0.8.1. See [Deploy compatibility](../../kmx.md#deploy-compatibility-unreleased).
+in the same environment. Start in the repository root. The `kmx test` and
+`kmx deploy` spellings are unreleased; use a main checkout build for these examples.
+v0.8.1 uses `kmx eval` and `kmx lift` with the same arguments instead. This applies
+to helpers too: replace `kmx test cleanup` with `kmx eval cleanup` in the cleanup
+examples below. See [Test compatibility](../../kmx.md#test-compatibility-unreleased)
+and [Deploy compatibility](../../kmx.md#deploy-compatibility-unreleased).
 **Windows users:** run KMX in WSL; see [Windows setup](#windows-setup) for the
 PowerShell/Azure authentication handoff. Native Windows KMX is unsupported.
 

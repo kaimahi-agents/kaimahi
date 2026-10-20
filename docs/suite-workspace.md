@@ -1,8 +1,9 @@
 # Author and publish a one-member native suite
 
-These docs follow main. **Deploy is unreleased**; v0.8.1 uses `kmx lift` with
-identical arguments. See [Deploy compatibility](kmx.md#deploy-compatibility-unreleased)
-for the hidden deprecated route and unchanged machine/API contracts.
+These docs follow main. **Test and Deploy are unreleased**; v0.8.1 uses `kmx eval` and `kmx lift`
+with identical arguments. See [Test compatibility](kmx.md#test-compatibility-unreleased)
+and [Deploy compatibility](kmx.md#deploy-compatibility-unreleased) for the hidden
+deprecated routes and unchanged machine/API contracts.
 
 A workspace is editable source. Its prepared AgentSuite is an immutable OCI
 artifact, identified by its manifest digest. Native Orka and exact-v0.10.3 Go
