@@ -234,6 +234,22 @@ notice described [above](#test-command-unreleased); stdout, arguments, exit
 codes and saved state are unchanged. Do not rename authored `eval/` cases,
 packaged `evals/` files or configuration fields.
 
+### AgentSessions bindings (unreleased)
+
+AgentSessions `kmx test --development-host FILE` also requires `--bindings FILE`:
+an [`AgentSessionsBinding`](suite-workspace.md#agentsessionsbinding) whose
+`model.name` equals the packaged model. Evidence records the binding digest.
+AgentSessions passing receipts are now v2 (`kmx.agentsessions-suite.passing/v2`);
+push and deploy refuse v1 receipts and managed v1 proofs, with no fallback.
+Evaluate again with `--development-host FILE --bindings FILE`. Orka and kagent
+receipts are unchanged.
+
+The new plan-only `kmx deploy REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST
+--bindings FILE --evidence FILE --plan` renders a substrate ActorTemplate and
+HarnessRegistration offline and applies nothing; receipt diff still refuses
+AgentSessions evidence. See the
+[AgentSessions deploy plan](suite-workspace.md#agentsessions-deploy-plan).
+
 ### Upgrading from v0.6.0
 
 Keep authored workspace source, including `eval/*.yaml`. Native suite
@@ -320,18 +336,10 @@ adoption. Composed kagent Lift remains unsupported. Explicit-reference Lift
 still requires a digest, never a tag.
 
 Pinned AgentSessions chat is a separate offline packaging and
-`eval --development-host FILE --bindings FILE` route, with no cluster selectors.
-It requires an explicit literal-loopback, unauthenticated development host,
-discloses cleartext journal retention, and requires an
-[`AgentSessionsBinding`](suite-workspace.md#agentsessionsbinding) whose
-`model.name` equals the packaged model; evidence records the binding digest.
-Its full-pass evidence supports evaluated push and a plan-only Lift:
-`kmx lift REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST --bindings FILE --evidence FILE --plan`
-renders a substrate ActorTemplate and HarnessRegistration offline, and nothing
-applies them. Receipt diff refuses the evidence.
-AgentSessions passing receipts are now v2 (`kmx.agentsessions-suite.passing/v2`);
-v1 receipts and managed proofs are not eligible for push or Lift; evaluate again with
-`--bindings FILE`. See the [workspace guide](suite-workspace.md#agentsessions-deploy-plan).
+`eval --development-host FILE` route, with no cluster selectors. It requires
+an explicit literal-loopback, unauthenticated development host and discloses
+cleartext journal retention. Its full-pass evidence supports evaluated push,
+not Lift or receipt diff. See the [workspace guide](suite-workspace.md).
 
 Replace removed commands as follows:
 
