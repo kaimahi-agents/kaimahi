@@ -78,6 +78,9 @@ func TestSuiteFailureJudgeHeadersAreWithheldBeforeNormalization(t *testing.T) {
 	if strings.Contains(out.String(), "private-one") || strings.Contains(out.String(), "private-two") {
 		t.Fatal("parser normalization hid headers from diagnostic privacy checks")
 	}
+	if !strings.Contains(out.String(), "rationale: unavailable or withheld") || strings.Contains(out.String(), `rationale: ""`) {
+		t.Fatal("withheld parser rationale was displayed as empty")
+	}
 }
 
 func TestSuiteFailureJudgeDiagnosticChannel(t *testing.T) {

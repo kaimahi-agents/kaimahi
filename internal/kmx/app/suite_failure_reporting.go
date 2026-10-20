@@ -87,6 +87,9 @@ func writeSuiteFailureDetail(out io.Writer, d suiteFailureDetail, content bool) 
 			if a.Expected != "" {
 				fmt.Fprintf(&b, "      expected: %q\n", a.Expected)
 			}
+			if a.RationaleUnavailable {
+				fmt.Fprintln(&b, "      rationale: unavailable or withheld")
+			}
 			for _, reason := range a.Reasons {
 				fmt.Fprintf(&b, "      rationale: %q\n", reason)
 			}

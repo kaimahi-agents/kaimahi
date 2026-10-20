@@ -65,16 +65,17 @@ type suiteFailureDetail struct {
 	Assertions   []suiteFailureAssertion `json:"assertions,omitempty"`
 }
 type suiteFailureAssertion struct {
-	ID          string   `json:"id"`
-	Type        string   `json:"type"`
-	Verdict     string   `json:"verdict"`
-	Class       string   `json:"class,omitempty"`
-	Expected    string   `json:"expected,omitempty"`
-	Threshold   *int     `json:"threshold,omitempty"`
-	Scores      []int    `json:"scores,omitempty"`
-	Reasons     []string `json:"reasons,omitempty"`
-	Excerpt     string   `json:"excerpt,omitempty"`
-	ExcerptKind string   `json:"excerptKind,omitempty"`
+	ID                   string   `json:"id"`
+	Type                 string   `json:"type"`
+	Verdict              string   `json:"verdict"`
+	Class                string   `json:"class,omitempty"`
+	Expected             string   `json:"expected,omitempty"`
+	Threshold            *int     `json:"threshold,omitempty"`
+	Scores               []int    `json:"scores,omitempty"`
+	Reasons              []string `json:"reasons,omitempty"`
+	RationaleUnavailable bool     `json:"rationaleUnavailable,omitempty"`
+	Excerpt              string   `json:"excerpt,omitempty"`
+	ExcerptKind          string   `json:"excerptKind,omitempty"`
 }
 
 // Withhold known header fields and consecutive header-like fields. Ambiguous
@@ -265,8 +266,10 @@ func captureSuiteFailure(frame suitePassingInventoryCase, observation suitePassi
 				if !available {
 					break
 				}
-				if safe, ok := suiteDiagnosticText(reason, 512, keys); ok {
+				if safe, ok := suiteDiagnosticText(reason, 512, keys); ok && strings.TrimSpace(safe) != "" {
 					a.Reasons = append(a.Reasons, safe)
+				} else {
+					a.RationaleUnavailable = true
 				}
 			}
 		}

@@ -38,6 +38,18 @@ func TestSuiteFailureReporting(t *testing.T) {
 			t.Fatal("payload entered summary projection")
 		}
 	}
+	for _, missing := range []string{"", " \t", "Authorization: opaque-private-value"} {
+		detail := captureSuiteFailure(frame, obs, "no action required", map[string]suiteJudgeDiagnostic{"quality": {Reasons: []string{"public rationale", missing}}}, nil)
+		for _, show := range []bool{false, true} {
+			var out bytes.Buffer
+			if err := writeSuiteFailureDetail(&out, *detail, show); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(out.String(), "rationale: unavailable or withheld") != show || strings.Contains(out.String(), `rationale: ""`) || strings.Contains(out.String(), "public rationale") != show {
+				t.Fatal("missing rationale was not identified without losing safe rationale")
+			}
+		}
+	}
 	// Delivery failure must not erase collected detail or execution accounting.
 	var details []suiteFailureDetail
 	ctx := withSuiteFailureReporting(t.Context(), &details, suiteSummaryObserver(func([]byte) (int, error) { return 0, io.ErrClosedPipe }), false)
