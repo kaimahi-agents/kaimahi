@@ -1140,7 +1140,7 @@ state. The completion message counts removed diagnostic files, including staging
 exclusive. Clearing is ordinary local file deletion, not secure erasure of disk
 snapshots, backups or upstream runtime/model history. The private lock and empty
 directories may remain. These unsigned diagnostics cannot authorize publication
-or Lift, and receipts contain no diagnostic references.
+or Deploy, and receipts contain no diagnostic references.
 
 Before truncation, diagnostics check full raw and terminal-normalized content for
 known credential shapes and the configured judge key. Credential-shaped,

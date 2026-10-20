@@ -13,7 +13,7 @@ func newEvalExplainCommand(state *commandState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "explain [failure-id]",
 		Short:             "Inspect or clear private local evaluation failures offline",
-		Long:              "List retained non-pass runs for the current or explicit workspace, or inspect one failure ID. Content is withheld by default; --show-content prints sanitized bounded excerpts, expected values and rationale. Local diagnostics are not evidence and cannot authorize push or Lift. Retention is limited to 10 runs across suite revisions, 64 KiB per answer and 128 KiB per record. --clear removes one ID, or all records only with explicit --workspace DIR; it does not clear runtime/model history or passing proof.",
+		Long:              "List retained non-pass runs for the current or explicit workspace, or inspect one failure ID. Content is withheld by default; --show-content prints sanitized bounded excerpts, expected values and rationale. Local diagnostics are not evidence and cannot authorize push or Deploy. Retention is limited to 10 runs across suite revisions, 64 KiB per answer and 128 KiB per record. --clear removes one ID, or all records only with explicit --workspace DIR; it does not clear runtime/model history or passing proof.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: cobra.NoFileCompletions,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
