@@ -184,7 +184,12 @@ author-owned `--bindings FILE`, unsecure auth and no `--result-port`. Only full
 passing metadata is registered in private KMX state; --out optionally also exports
 a standalone private file outside workspace/cache. Failure, unknown, drift,
 cancellation or output error stops later sends. No
-package reference, subset or content output is accepted. Authored `llmJudge`
+package reference or subset mode is accepted. Non-pass diagnostics identify the
+case/run, assertion IDs/types and judge scores/threshold by default. --show-content
+opts into sanitized bounded failure content on stderr for eval and executing
+workspace Lift, never evidence or JSON payloads; --verbose alone does not opt in.
+Failure diagnostics are transient only; retention and offline explain are not
+implemented. Authored `llmJudge`
 requires explicit `--judge-base-url`, optional `--judge-key-env` and authored
 model/version/threshold. Two independent samples must agree on the threshold
 side; errors/splits stay unknown. Judges use the fixed modern Chat Completions
@@ -194,7 +199,9 @@ Evidence binds that style; old judge receipts require fresh evaluation.
 Judgment shares the current run's deadline and is
 followed by attribution rechecks. Passing rows bind judge identity, endpoint
 configuration hash and both scores without reasoning or raw judge URLs; recovery
-commands omit the endpoint. Text-only receipt encoding is unchanged. Development
+commands omit the endpoint. Clarified policy wording permits separate local
+non-evidence diagnostics while preserving the historical v2 evidence fingerprint;
+existing judge receipts remain valid. Text-only receipt encoding is unchanged. Development
 AgentSessions evaluation shares this judge transport, evidence and per-run deadline.
 `push --evaluation FILE` checks runtime-specific private receipt coherence and
 exact manifest S before publication, overriding managed lookup without fallback.

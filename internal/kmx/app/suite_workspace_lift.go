@@ -24,7 +24,7 @@ import (
 )
 
 // WorkspaceLiftOptions contains resolved selectors only, never a live config file.
-// Rendering belongs to this backend: four stderr lines, verbose diagnostics, or
+// Rendering belongs to this backend: four stage lines plus failure details, or
 // one JSON result on stdout. Promote nil selects disclosed source-only promotion.
 type WorkspaceLiftOptions struct {
 	Workspace                             string
@@ -52,11 +52,12 @@ type WorkspaceLiftPlan struct {
 }
 type WorkspaceLiftStage struct {
 	*SuiteRunExecutionSummary
-	Status string `json:"status"`
-	Detail string `json:"detail"`
-	Error  string `json:"error,omitempty"`
-	Passed int    `json:"passed,omitempty"`
-	Total  int    `json:"total,omitempty"`
+	Status   string               `json:"status"`
+	Detail   string               `json:"detail"`
+	Error    string               `json:"error,omitempty"`
+	Passed   int                  `json:"passed,omitempty"`
+	Total    int                  `json:"total,omitempty"`
+	Failures []suiteFailureDetail `json:"failures,omitempty"`
 }
 type WorkspaceLiftResult struct {
 	Plan      WorkspaceLiftPlan  `json:"plan"`
@@ -74,6 +75,7 @@ type PreparedWorkspaceLift struct {
 	started         bool
 	kube            []byte
 	completionSlots int
+	failures        []suiteFailureDetail
 }
 
 func (p *PreparedWorkspaceLift) Summary() WorkspaceLiftPlan { return p.plan }
@@ -493,13 +495,16 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 		for i, f := range p.review.inventory {
 			cases[i] = f.Case
 		}
-		judge, e := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: p.options.Evaluation.JudgeBaseURL, KeyEnv: p.options.Evaluation.JudgeKeyEnv}, cases, worker.Err)
+		var diagnosticKey string
+		judge, e := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: p.options.Evaluation.JudgeBaseURL, KeyEnv: p.options.Evaluation.JudgeKeyEnv, diagnosticKey: &diagnosticKey}, cases, io.Discard)
 		if e != nil {
 			output.Close()
 			return r, e
 		}
-		ep := &PreparedSuiteWorkspaceEvaluation{prepared: p.review.prepared, suite: p.review.suite, inventory: p.review.inventory, root: p.review.root, options: p.options.Evaluation, output: output, store: p.store, judge: judge, candidateRun: runID, runs: suiteRunSummary{Total: len(p.review.inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(p.review.inventory)}}, cleanup: "candidate cleanup not required"}
+		ep := &PreparedSuiteWorkspaceEvaluation{prepared: p.review.prepared, suite: p.review.suite, inventory: p.review.inventory, root: p.review.root, options: p.options.Evaluation, output: output, store: p.store, judge: judge, diagnosticKey: diagnosticKey, candidateRun: runID, runs: suiteRunSummary{Total: len(p.review.inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(p.review.inventory)}}, cleanup: "candidate cleanup not required", failureWriter: diagnostics}
 		err = eval.EvaluateSuiteWorkspace(ctx, ep)
+		p.failures = ep.failures
+		r.Eval.Failures = suiteFailureSummaries(ep.failures)
 		r.Eval.Passed = ep.runs.Passed
 		r.Eval.SuiteRunExecutionSummary = &ep.runs.SuiteRunExecutionSummary
 		r.Eval.Detail = fmt.Sprintf("%d/%d runs passed on %s; candidate resources cleaned", r.Eval.Passed, r.Eval.Total, p.plan.EvalName)

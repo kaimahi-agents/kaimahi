@@ -231,7 +231,7 @@ func TestSuiteJudgeReceiptCoherenceAndDiff(t *testing.T) {
 	observations := make([]suitePassingObservation, len(inventory))
 	for i, frame := range inventory {
 		rows := judge(ctx, frame.Case, agentruntime.EvaluationEvidence{Answer: "4", AnswerAvailable: true})
-		observations[i] = suitePassingObservation{frame.Metadata.CaseDigest, frame.Metadata.InputDigest, agentruntime.EvaluationReceipt{CaseID: frame.Case.ID, Verdict: agentruntime.EvaluationPass, TaskName: "task-" + frame.Case.ID, TaskUID: "uid-" + frame.Case.ID, AnswerSHA256: agentruntime.EvaluationAnswerDigest("4"), Assertions: rows}}
+		observations[i] = suitePassingObservation{CaseDigest: frame.Metadata.CaseDigest, InputDigest: frame.Metadata.InputDigest, EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: frame.Case.ID, Verdict: agentruntime.EvaluationPass, TaskName: "task-" + frame.Case.ID, TaskUID: "uid-" + frame.Case.ID, AnswerSHA256: agentruntime.EvaluationAnswerDigest("4"), Assertions: rows}}
 	}
 	r, err := newSuitePassingReceipt(t.Context(), prepared, placement, observations)
 	if err != nil {

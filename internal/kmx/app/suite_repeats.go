@@ -159,7 +159,8 @@ func evaluateSuiteRunsReporting(ctx context.Context, frames []suitePassingInvent
 		passes := 0
 		for j := 0; j < count; j++ {
 			frame := frames[i+j]
-			runCtx, cancel := context.WithTimeout(ctx, timeout)
+			bounded, cancel := context.WithTimeout(ctx, timeout)
+			runCtx, notes := newSuiteFailureContext(bounded)
 			observed, err := run(runCtx, frame)
 			if summary != nil && observed.TaskUID != "" {
 				summary.Executed++
@@ -172,6 +173,12 @@ func evaluateSuiteRunsReporting(ctx context.Context, frames []suitePassingInvent
 					err = nil
 				}
 				err = errors.Join(err, errSuiteNativeEvaluation, cause)
+				// A run may finish just as its deadline/cancellation fires. Keep
+				// execution counts, but no content from the invalidated result.
+				diagnostic := observed
+				diagnostic.AnswerSHA256, diagnostic.Assertions = "", nil
+				observed.failure = captureSuiteFailure(frame, diagnostic, "", nil, cause, notes.key)
+				notes.class = suiteFailureClass(cause)
 			}
 			// The Orka executor uses CaseFailed for both a failed Task and a failed
 			// assertion. Only full attributed assertion evidence permits continuing.
@@ -180,7 +187,7 @@ func evaluateSuiteRunsReporting(ctx context.Context, frames []suitePassingInvent
 			if complete && (err == nil || errors.Is(err, errSuiteNativeCaseFailed)) {
 				verdict = suiteRunVerdict(observed.Assertions)
 			}
-			label := frame.Case.ID
+			label := suiteDiagnosticIdentity(frame.Case.ID, []string{notes.key})
 			if count > 1 {
 				label = fmt.Sprintf("%s run %d/%d", label, j+1, count)
 			}
@@ -196,7 +203,23 @@ func evaluateSuiteRunsReporting(ctx context.Context, frames []suitePassingInvent
 			if summary != nil && err == nil && verdict == agentruntime.EvaluationPass {
 				summary.Passed++
 			}
-			if _, outputErr := fmt.Fprintf(out, "%s: %s\n", label, result); outputErr != nil {
+			var outputErr error
+			if verdict != agentruntime.EvaluationPass {
+				if observed.failure == nil {
+					observed.failure = captureSuiteFailure(frame, observed, "", notes.judge, err, notes.key)
+					observed.failure.Answer, observed.failure.AnswerStatus = "", "unavailable"
+				}
+				detail := observed.failure
+				detail.Run, detail.Runs, detail.Verdict = j+1, count, string(verdict)
+				if notes.class != "" {
+					detail.Class = notes.class
+				}
+				outputErr = reportSuiteFailure(ctx, detail)
+			}
+			if outputErr == nil {
+				_, outputErr = fmt.Fprintf(out, "%s: %s\n", label, result)
+			}
+			if outputErr != nil {
 				reportingOnly = complete && verdict != agentruntime.EvaluationUnknown && (err == nil || errors.Is(err, errSuiteNativeCaseFailed) && verdict == agentruntime.EvaluationFail)
 				if summary != nil {
 					summary.ReportingFailed = true

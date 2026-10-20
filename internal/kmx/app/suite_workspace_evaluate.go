@@ -30,6 +30,8 @@ type SuiteWorkspaceEvaluationOptions struct {
 	ManagedPass bool
 	// JSON selects the Orka-only run-local report, not receipt content.
 	JSON bool
+	// ShowContent opts into sanitized answer/operand/rationale diagnostics on stderr.
+	ShowContent bool
 }
 
 // PreparedSuiteWorkspaceEvaluation owns its offline source snapshot and anchored
@@ -52,6 +54,10 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	runs           suiteRunSummary
 	cleanup        string
 	publicMetadata *suitePublicMetadata
+	failures       []suiteFailureDetail
+	// Composed Lift keeps its real diagnostic writer separate from quiet stage workers.
+	failureWriter io.Writer
+	diagnosticKey string
 }
 
 func (p *PreparedSuiteWorkspaceEvaluation) Close() error {
@@ -175,11 +181,12 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	for i, frame := range inventory {
 		cases[i] = frame.Case
 	}
-	judge, err := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: opt.JudgeBaseURL, KeyEnv: opt.JudgeKeyEnv}, cases, io.Discard)
+	var diagnosticKey string
+	judge, err := newEvaluationCaseJudge(evaluationJudgeConfig{BaseURL: opt.JudgeBaseURL, KeyEnv: opt.JudgeKeyEnv, diagnosticKey: &diagnosticKey}, cases, io.Discard)
 	if err != nil {
 		return nil, err
 	}
-	p := &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge, runs: suiteRunSummary{Total: len(inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(inventory)}}, cleanup: "candidate cleanup not required"}
+	p := &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory, root: root, options: opt, bindings: bindings, sessions: sessions, judge: judge, diagnosticKey: diagnosticKey, runs: suiteRunSummary{Total: len(inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(inventory)}}, cleanup: "candidate cleanup not required"}
 	if opt.ManagedPass {
 		p.store, err = openSuitePassStore(ctx, root, cache, suite.Digest)
 		if err == nil {
@@ -238,6 +245,13 @@ func (a *App) preflightSuiteNativeResults(ctx context.Context, ns string) error 
 // only full passing metadata. Orka uses run-scoped candidates and cleanup;
 // convenience callers separately retain the internal canonical evaluator.
 func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
+	if p != nil {
+		out := a.Err
+		if p.failureWriter != nil {
+			out = p.failureWriter
+		}
+		ctx = withSuiteFailureReporting(ctx, &p.failures, out, p.options.ShowContent, p.diagnosticKey)
+	}
 	if p == nil || !p.options.JSON {
 		return a.evaluateSuiteWorkspaceWithProof(ctx, p)
 	}
@@ -251,13 +265,14 @@ func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 	err := worker.evaluateSuiteWorkspaceWithProof(ctx, p)
 	report := struct {
 		SuiteRunExecutionSummary
-		Status  string `json:"status"`
-		Detail  string `json:"detail"`
-		Passed  int    `json:"passed"`
-		Total   int    `json:"total"`
-		Cleanup string `json:"cleanup"`
-		Error   string `json:"error,omitempty"`
-	}{SuiteRunExecutionSummary: p.runs.SuiteRunExecutionSummary, Status: "complete", Detail: p.runs.String() + "; " + p.cleanup, Passed: p.runs.Passed, Total: p.runs.Total, Cleanup: p.cleanup}
+		Status   string               `json:"status"`
+		Detail   string               `json:"detail"`
+		Passed   int                  `json:"passed"`
+		Total    int                  `json:"total"`
+		Cleanup  string               `json:"cleanup"`
+		Error    string               `json:"error,omitempty"`
+		Failures []suiteFailureDetail `json:"failures,omitempty"`
+	}{Failures: suiteFailureSummaries(p.failures), SuiteRunExecutionSummary: p.runs.SuiteRunExecutionSummary, Status: "complete", Detail: p.runs.String() + "; " + p.cleanup, Passed: p.runs.Passed, Total: p.runs.Total, Cleanup: p.cleanup}
 	if err != nil {
 		report.Status = "failed"
 		// Never serialize causes: transports, writers and runtime errors can
@@ -323,7 +338,7 @@ func (a *App) evaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 				}
 			}
 		}
-		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run's deadline. Identity/version are user-declared, not provider attestation. Endpoint omitted from recovery advice; supply it again. Reasoning is discarded.\n", count); err != nil {
+		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run's deadline. Identity/version are user-declared, not provider attestation. Endpoint omitted from recovery advice; supply it again. Non-pass reasoning is diagnostic-only; --show-content opts into sanitized bounded content on stderr.\n", count); err != nil {
 			return err
 		}
 	}

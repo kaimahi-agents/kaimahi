@@ -38,7 +38,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   composes missing Orka evaluation/publication/Lift from one frozen workspace and
   selector plan. Require saved publishRepository and destination evaluationTarget;
   automatic disclosed promotion, one scoped confirmation, four default stage lines
-  with verbose/JSON details. Exact-version private completion observations authorize
+  plus compact non-pass evaluation details, with verbose/JSON stage diagnostics. Exact-version private completion observations authorize
   GET-only skips, never Apply/reuse/adoption/repair. Keep kagent out of composed
   Lift until its candidate-scoped placement and ownership-safe cleanup are qualified.
 - Create-only Release Lift stamps only newly created primaries with versioned non-secret
@@ -252,7 +252,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   flags and a nonpersistent operational hook. Unsupported/budget/output checks
   run before config; one fresh outer guard covers pair placement and all Tasks.
   Fail/unknown/drift/cancel/output errors stop later sends with no partial export.
-  No model/runtime override, subset/content mode or standalone package
+  No model/runtime override, subset mode or standalone package
   reference is accepted. Authored llmJudge is supported for Orka/kagent and explicit AgentSessions development hosts with
   explicit --judge-base-url and optional --judge-key-env (environment name only).
   The fixed openai-chat-completions-v1 request style uses max_completion_tokens
@@ -260,8 +260,18 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   judge. No request-style flag, model inference or error fallback. Two independent
   scores must agree on the threshold side;
   unavailable/malformed/split results stay unknown. Judgment shares the existing
-  per-run deadline and attribution is rechecked afterward. Root eval discards
-  reasoning and omits judge endpoints from recovery commands. Private passing
+  per-run deadline and attribution is rechecked afterward. Root eval and composed
+  Lift report non-pass case/run, assertion IDs/types and both judge scores/threshold;
+  --show-content alone opts into sanitized bounded expected values, rationale and
+  answer excerpts on stderr. Lift --verbose does not opt into content. Default
+  Orka JSON remains payload-free; cached Lift skips invent no diagnostics.
+  Diagnostic content is transient only, not evidence, never a receipt field,
+  reference, signature or portable export. No retained failure store or explain
+  command is implemented yet. Post-judge attribution failure withholds content;
+  known credential shapes/keys and header-like content are withheld before
+  truncation. This is not a guarantee that arbitrary secrets are detected.
+  The clarified local-storage policy sentence preserves the historical v2
+  evidence fingerprint and existing receipts. Recovery omits judge endpoints. Private passing
   rows bind authored model/version, request style, threshold, policy, endpoint
   configuration hash, both scores and aligned modelMatches observations. Returned
   model identity matches only the exact authored model or model+"-"+version,

@@ -28,7 +28,12 @@ const (
 
 var evaluationJudgeKeyEnvRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-type evaluationJudgeConfig struct{ BaseURL, KeyEnv string }
+type evaluationJudgeConfig struct {
+	BaseURL, KeyEnv string
+	// Snapshot the already validated credential for diagnostic redaction before
+	// any run starts; callers must never serialize this transient value.
+	diagnosticKey *string
+}
 
 type evaluationJudgeClient struct {
 	baseURL    string
@@ -86,6 +91,9 @@ func newEvaluationCaseJudge(config evaluationJudgeConfig, selectedCases []agentr
 		if strings.Contains(baseURL, key) || strings.Contains(parsedURL.Path, key) {
 			return nil, fmt.Errorf("judge URL must not contain credentials")
 		}
+	}
+	if config.diagnosticKey != nil {
+		*config.diagnosticKey = key
 	}
 	if out == nil {
 		out = io.Discard
@@ -150,6 +158,9 @@ func canonicalEvaluationJudgeURL(raw string) (string, error) {
 // evaluate preserves ordinary assertion rows and fills only judge rows while the
 // attributed answer is ephemeral. Adapters invoke it only after execution succeeds.
 func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase agentruntime.EvaluationCase, evidence agentruntime.EvaluationEvidence) []agentruntime.EvaluationAssertionResult {
+	if notes := suiteFailureRunNotes(ctx); notes != nil {
+		notes.key = c.key
+	}
 	rows := agentruntime.EvaluateAssertions(evaluationCase, evidence)
 	assertions := agentruntime.EvaluationCaseAssertions(evaluationCase)
 	for i, a := range assertions {
@@ -161,12 +172,15 @@ func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase age
 			continue
 		}
 		row := &rows[i]
+		note := suiteJudgeDiagnostic{CaseID: evaluationCase.ID, AssertionID: a.ID, Class: "judge-unavailable"}
+		defer func() { recordSuiteJudgeDiagnostic(ctx, note) }()
 		row.Judge = &agentruntime.EvaluationJudgeEvidence{
 			Model: a.JudgeModel, ModelVersion: a.JudgeVersion, Provenance: "user-declared", RequestStyle: agentruntime.EvaluationJudgeRequestStyle,
 			EvaluatorDigest:     agentruntime.EvaluationJudgeEvaluatorDigest(),
 			ConfigurationDigest: agentruntime.EvaluationJudgeConfigurationDigest(c.baseURL, a.JudgeModel, a.JudgeVersion), MinScore: *a.MinScore,
 		}
 		if !evidence.AnswerAvailable {
+			note.Class = "answer-unavailable"
 			row.Reason = "answer unavailable"
 			continue
 		}
@@ -186,12 +200,13 @@ func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase age
 				failure = "judge response unavailable"
 				break
 			}
-			score, reason, match, errReason := c.sample(ctx, payload, a.JudgeModel, a.JudgeVersion)
+			score, reason, match, errReason, class := c.sample(ctx, payload, a.JudgeModel, a.JudgeVersion)
 			if errReason != "" {
 				// Attempt the other independent sample while the deadline remains active,
 				// but never retain a partial score or turn an unavailable sample into a pass.
 				if failure == "" {
 					failure = errReason
+					note.Class = class
 				}
 				continue
 			}
@@ -203,6 +218,7 @@ func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase age
 			row.Reason = failure
 			continue
 		}
+		note.Class, note.Reasons = "", reasons
 		row.Judge.Scores, row.Judge.ModelMatches = scores, matches
 		row.Verdict = agentruntime.EvaluationJudgeVerdict(scores, *a.MinScore)
 		switch row.Verdict {
@@ -212,8 +228,9 @@ func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase age
 			row.Reason = "assertion not satisfied"
 		default:
 			row.Reason = "judge verdict split"
+			note.Class = "judge-split"
 		}
-		if c.out != nil {
+		if c.out != nil && suiteFailureRunNotes(ctx) == nil {
 			for _, reason := range reasons {
 				// Output failure cannot change already valid evidence; discard writer errors
 				// rather than exposing an error that could itself contain provider payloads.
@@ -249,10 +266,10 @@ func evaluationJudgePayload(input, answer string, a agentruntime.EvaluationAsser
 	return payload, err == nil && len(payload) <= evaluationJudgeRequestLimit
 }
 
-func (c *evaluationJudgeClient) sample(ctx context.Context, payload []byte, model, version string) (int, string, string, string) {
+func (c *evaluationJudgeClient) sample(ctx context.Context, payload []byte, model, version string) (int, string, string, string, string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return 0, "", "", "judge response unavailable"
+		return 0, "", "", "judge response unavailable", "judge-unavailable"
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.key != "" {
@@ -264,24 +281,24 @@ func (c *evaluationJudgeClient) sample(ctx context.Context, payload []byte, mode
 	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	response, err := httpClient.Do(req)
 	if err != nil {
-		return 0, "", "", "judge response unavailable"
+		return 0, "", "", "judge response unavailable", suiteFailureClass(err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return 0, "", "", "judge response unavailable"
+		return 0, "", "", "judge response unavailable", suiteFailureClass(suiteHTTPDiagnostic("judge", response.StatusCode))
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, evaluationJudgeResponseLimit+1))
 	if err != nil {
-		return 0, "", "", "judge response unavailable"
+		return 0, "", "", "judge response unavailable", suiteFailureClass(err)
 	}
 	if len(body) > evaluationJudgeResponseLimit {
-		return 0, "", "", "judge response malformed"
+		return 0, "", "", "judge response malformed", "judge-malformed"
 	}
 	score, reason, match, ok := parseEvaluationJudgeResponse(body, model, version, c.key)
 	if !ok {
-		return 0, "", "", "judge response malformed"
+		return 0, "", "", "judge response malformed", "judge-malformed"
 	}
-	return score, reason, match, ""
+	return score, reason, match, "", ""
 }
 
 func parseEvaluationJudgeResponse(body []byte, model, version, key string) (int, string, string, bool) {
@@ -343,6 +360,12 @@ func parseEvaluationJudgeResponse(body []byte, model, version, key string) (int,
 		if (key != "" && strings.Contains(text, key)) || secretshapes.Match(text) != nil {
 			return 0, "", "", false
 		}
+	}
+	// Header-block boundaries can disappear when CR/LF are stripped. Inspect
+	// the original rationale before returning its normalized display form;
+	// withholding non-evidence text must not discard an otherwise valid score.
+	if _, ok := suiteDiagnosticText(reasoning, len(reasoning), []string{key}); !ok {
+		safe = ""
 	}
 	return score, safe, match, true
 }

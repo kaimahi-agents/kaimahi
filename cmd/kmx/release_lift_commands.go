@@ -28,7 +28,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 		Use: "lift [<ref>@<digest>]", Short: "Lift a workspace or an evaluated packaged suite",
 		Long: "Without a reference, --to NAME composes missing native Orka workspace eval, push and Lift. Requires saved publishRepository and destination evaluationTarget.\n" +
 			"Freezes the source and selectors, automatically discloses source-only promotion, confirms one plan, and verifies exact-version skips read-only. Plain Lift is create-only; --update selects the retained Orka lifecycle, never adoption or repair.\n" +
-			"Default workspace output is four stderr lines (Plan/Eval/Push/Lift); -v shows details, -o json emits one result. Nonterminal confirmation must name the concrete contexts disclosed in Plan.\n" +
+			"Default workspace output is four stage lines (Plan/Eval/Push/Lift) plus compact evaluation failure detail on stderr; -v shows stage diagnostics, --show-content additionally prints sanitized bounded failure excerpts, expected values and judge rationale (never evidence); -o json emits one result. Nonterminal confirmation must name the concrete contexts disclosed in Plan.\n" +
 			"Evaluation sends case inputs to the runtime/model; llmJudge additionally transfers inputs, answers and rubrics. Cleanup does not erase retained upstream data.\n" +
 			"With an explicit digest, deploy the original suite from a registry or --from-layout OCI directory without source, builds, repacking or publishing.\n" +
 			"Requires explicit private full-passing --evidence for exactly this suite and either --to NAME from workspace-root kmx.yaml or explicit --to-context; Orka uses Ready --inference provider:NAME, kagent uses author-owned --bindings FILE.\n" +
@@ -51,6 +51,9 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateContainerEngineFlag(cmd, args); err != nil {
 				return err
+			}
+			if cmd.Flags().Changed("show-content") && (len(args) != 0 || planOnly) {
+				return fmt.Errorf("--show-content requires executing workspace evaluation")
 			}
 			if state.contextFlag != "" || cmd.Flags().Changed("context") {
 				return fmt.Errorf("--context cannot be used with suite lift; use --to-context")
@@ -199,6 +202,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	cmd.Flags().BoolVar(&opt.Update, "update", false, "update an eligible retained Orka placement, or roll back with original passing evidence; no enrollment")
 	cmd.Flags().BoolVar(&planOnly, "plan", false, "GET-only review; no admission or placement")
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "output: text|json")
+	cmd.Flags().BoolVar(&evaluation.ShowContent, "show-content", false, "print sanitized bounded evaluation failure content on stderr (workspace execution only; not evidence)")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show workspace stage diagnostics")
 	cmd.Flags().DurationVar(&evaluation.CaseTimeout, "case-timeout", 5*time.Minute, "workspace evaluation deadline per run, at most 9m")
 	cmd.Flags().StringVar(&evaluation.ResultPort, "result-port", "", "workspace evaluation loopback result-forward port (omitted: choose automatically)")

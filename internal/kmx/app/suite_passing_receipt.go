@@ -68,6 +68,7 @@ type suitePassingAssertion struct {
 	Judge            *agentruntime.EvaluationJudgeEvidence `json:"judge,omitempty"`
 }
 type suitePassingObservation struct {
+	failure                 *suiteFailureDetail
 	CaseDigest, InputDigest string
 	agentruntime.EvaluationReceipt
 }

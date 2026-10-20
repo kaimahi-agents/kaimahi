@@ -151,7 +151,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 				}
 			}
 		}
-		if _, err := fmt.Fprintf(worker.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run's deadline. Identity/version are user-declared, not provider attestation. Reasoning is discarded.\n", count); err != nil {
+		if _, err := fmt.Fprintf(worker.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run's deadline. Identity/version are user-declared, not provider attestation. Non-pass reasoning is diagnostic-only; --show-content opts into sanitized bounded content on stderr.\n", count); err != nil {
 			return err
 		}
 	}
@@ -191,7 +191,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 		}
 		outcome.runs = &p.runs
 		observations, err = evaluateSuiteRunsReporting(ctx, p.inventory, p.options.CaseTimeout, worker.Out, func(runCtx context.Context, frame suitePassingInventoryCase) (suitePassingObservation, error) {
-			outcome.phase, outcome.caseID = "case execution", frame.Case.ID
+			outcome.phase, outcome.caseID = "case execution", suiteDiagnosticIdentity(frame.Case.ID, []string{p.diagnosticKey})
 			if err := checkSource(runCtx); err != nil {
 				return suitePassingObservation{}, err
 			}

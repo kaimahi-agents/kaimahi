@@ -255,9 +255,9 @@ func TestEvaluationJudgeDigestBindsAuthoredPolicyAndKeepsOldDigests(t *testing.T
 			t.Fatalf("old %s digest changed", old.Type)
 		}
 	}
-	sum := sha256.Sum256([]byte(EvaluationJudgePolicy))
+	sum := sha256.Sum256([]byte(evaluationJudgeEvidencePolicy))
 	if EvaluationJudgeEvaluatorDigest() != hex.EncodeToString(sum[:]) {
-		t.Fatal("evaluator digest does not bind fixed policy")
+		t.Fatal("evaluator digest does not bind historical evidence policy")
 	}
 	policyFrames := frameEntry("type", []byte(a.Type))
 	policyFrames = append(policyFrames, frameEntry("operand", []byte(a.Rubric))...)
