@@ -46,10 +46,12 @@ test('AgentSuite links retain their standalone destination and section fragment'
   assert.doesNotMatch(guide, /href="[^"]*(?:issues\/491|\/agentsuite\/spec)(?:["#])/)
 })
 
-test('renamed deployment headings retain legacy guide fragments', async () => {
+test('renamed headings retain legacy guide fragments', async () => {
   for (const [page, fragments] of [
     ['docs/suite-workspace.html', ['digest-lift', 'digest-deploy', 'composed-workspace-lift', 'composed-workspace-deploy']],
-    ['docs/workflow-overview.html', ['create-prove-lift', 'create-prove-deploy']]
+    ['docs/workflow-overview.html', ['create-prove-lift', 'create-prove-deploy', 'run-test-publish']],
+    ['docs/aks-demo.html', ['aks-free-tier-demo-create-prove-lift', 'aks-free-tier-demo-create-prove-deploy', '5-prove-locally', '5-test-locally']],
+    ['docs/azure/cpu-model/index.html', ['5-create-and-prove-the-agent-locally', '5-create-and-test-the-agent-locally']]
   ]) {
     const html = await readFile(path.join(dist, page), 'utf8')
     for (const fragment of fragments) {
@@ -61,7 +63,7 @@ test('renamed deployment headings retain legacy guide fragments', async () => {
 test('the homepage renders the interactive journey and channel boundary', async () => {
   const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
   for (const marker of [
-    'Build, Prove and Deploy your agents',
+    'Run, Test and Publish your agents',
     'Development docs',
     'Stable v0.8.1',
     'Choose your path',
@@ -70,6 +72,31 @@ test('the homepage renders the interactive journey and channel boundary', async 
   ]) {
     assert.match(homepage, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
+})
+
+test('Test is canonical while compatibility and current runtime limits stay explicit', async () => {
+  const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8'))
+  for (const helper of ['cleanup', 'diff', 'export', 'verify', 'from-sessions']) {
+    assert.ok(reference.includes(`kmx test ${helper}`), `canonical helper: ${helper}`)
+  }
+  const html = await readFile(path.join(dist, 'docs/kmx.html'), 'utf8')
+  assert.ok(html.includes('id="test-compatibility-unreleased"'))
+  for (const marker of [
+    'v0.8.1 uses kmx eval', 'at least one released version',
+    'kmx eval is deprecated; use kmx test (same arguments).',
+    'stdout', 'exit codes', 'state', 'evalTarget', 'evaluationTarget'
+  ]) assert.ok(reference.includes(marker), `compatibility boundary: ${marker}`)
+  for (const page of ['index.html', 'docs/getting-started.html', 'docs/workflow-overview.html']) {
+    const text = plainText(await readFile(path.join(dist, page), 'utf8'))
+    assert.match(text, /Run[^\n]*Test[^\n]*Publish/, `${page}: developer vocabulary`)
+    assert.match(text, /v0\.8\.1 uses[^\n]*eval/, `${page}: stable spelling`)
+    assert.match(text, /Docker/, `${page}: container prerequisite retained`)
+    assert.match(text, /WSL/, `${page}: Windows boundary retained`)
+    assert.doesNotMatch(text, /kmx publish|kmx test --local/)
+  }
+  const workflow = plainText(await readFile(path.join(dist, 'docs/workflow-overview.html'), 'utf8'))
+  assert.match(workflow, /kmx run --agent NAME --prompt TEXT[^\n]*live Agents[^\n]*neither is workspace-local execution/)
+  assert.match(workflow, /kmx push --workspace DIR --evaluation RECEIPT REF/)
 })
 
 /** Inspect rendered instructions without syntax-highlighter markup. */

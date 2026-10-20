@@ -282,7 +282,7 @@ afterward:
 ```bash
 # Author and prove one native AgentSuite workspace locally.
 kmx create greeter --workspace ./greeter --model qwen2.5:3b --instructions instructions.md
-kmx eval --workspace ./greeter --to-context kind-kmx-local \
+kmx test --workspace ./greeter --to-context kind-kmx-local \
   --inference provider:local --out ../private/passing.json
 
 # Fixed demonstration that ends with an answer.

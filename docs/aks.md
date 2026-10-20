@@ -9,7 +9,7 @@ can target a separately installed compatible cluster; KMX does not manage that
 installation.
 
 For a copyable end-to-end example, see the
-[AKS Create, Prove, Deploy demo](aks-demo.md). It proves an Orka workspace locally,
+[AKS Create, Test, Deploy demo](aks-demo.md). It proves an Orka workspace locally,
 then provisions a disposable Free-tier control plane, publishes to ACR, and reviews
 an explicit source-evidence promotion before Deploy.
 

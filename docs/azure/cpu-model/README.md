@@ -2,11 +2,11 @@
 
 # Build and Deploy a CPU-model agent on Azure
 
-Create a release-notes agent, prove it on local Kubernetes, publish the tested
+Create a release-notes agent, test it on local Kubernetes, publish the tested
 version to ACR, and Deploy that exact version to AKS. Both clusters run the same
 small CPU model. No GPU, Foundry account or hosted-model API key is needed.
 
-**Create → Prove locally → Publish → Deploy to AKS → Ask**
+**Create → Test locally → Publish → Deploy to AKS → Ask**
 
 This adapts the [release-notes demo](https://gist.github.com/gambtho/2956e055b7bbe47562cd%36a4946589ab6)
 to self-hosted inference. For the shared lifecycle contract, see
@@ -295,7 +295,9 @@ The Provider uses the `openai` protocol, **not a hosted OpenAI service**.
 The installer supplies the explicit noncredential placeholder required by
 [Orka's keyless contract](../../orka.md#the-provider-connects-the-local-model-without-a-key).
 
-## 5. Create and prove the agent locally
+<a id="5-create-and-prove-the-agent-locally"></a>
+
+## 5. Create and test the agent locally
 
 Write the instructions, then create a tool-free workspace:
 
@@ -345,7 +347,7 @@ assertions:
 Evaluate the complete workspace on **local kind**, not AKS:
 
 ```bash
-KUBECONFIG="$LOCAL_KUBECONFIG" kmx eval --workspace "$WORKSPACE" \
+KUBECONFIG="$LOCAL_KUBECONFIG" kmx test --workspace "$WORKSPACE" \
   --to-context "$LOCAL_CONTEXT" --to-namespace orka-system \
   --inference provider:cpu-inference --out "$STATE/passing.json"
 ```
@@ -488,7 +490,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Private WSL credential setup failed' }
 | API timeout | Check the actual VPN/tunnel route and approved public egress CIDR. Never use `0.0.0.0/0`, an empty allowlist or a private VPN adapter IP. Follow local security policy. |
 | TLS-verified HTTP 401 | Network/TLS works; authenticated Kubernetes access is not yet proved. Check the exec plugin and cluster RBAC. |
 | Slow cleanup; “scope changed or unknown” | Measure payload-free API timings and compare cluster/namespace UIDs. Windows authentication took 2–3 seconds per subprocess in this test, exhausting the fixed 90-second budget. An approved expiry-aware private credential cache resolved cleanup; do not raise timeouts or use static kubeconfig tokens. |
-| Leftover candidates | List with `KUBECONFIG="$LOCAL_KUBECONFIG" kmx eval cleanup --to-context "$LOCAL_CONTEXT" --to-namespace orka-system`; confirm with `KUBECONFIG="$LOCAL_KUBECONFIG" kmx eval cleanup <full-run-id> --to-context "$LOCAL_CONTEXT" --to-namespace orka-system`. Do not bulk-delete Agents. |
+| Leftover candidates | List with `KUBECONFIG="$LOCAL_KUBECONFIG" kmx test cleanup --to-context "$LOCAL_CONTEXT" --to-namespace orka-system`; confirm with `KUBECONFIG="$LOCAL_KUBECONFIG" kmx test cleanup <full-run-id> --to-context "$LOCAL_CONTEXT" --to-namespace orka-system`. Do not bulk-delete Agents. |
 | `unresolved` assertion fails | Require the literal prefix in instructions. The first local version ran successfully but passed 0/3; revised instructions passed 3/3 without weakening assertions. |
 | Pending model or policy denial | Inspect scheduling/allocatable resources and policy-owner guidance. Do not bypass policy or infer usage from readiness. |
 | Run Command needed | Use Windows `az aks command invoke` with explicit subscription/group/cluster; inspect returned `exitCode`, not just CLI success. Attached scripts need LF endings. Keep logs private. This is not a way to run the entire KMX lifecycle remotely. |

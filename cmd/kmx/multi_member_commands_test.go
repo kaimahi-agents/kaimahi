@@ -50,6 +50,8 @@ func TestMultiMemberCommandsRefuseBeforeOperationalSelection(t *testing.T) {
 			wantDiagnostics := ""
 			if args[0] == "lift" {
 				wantDiagnostics = legacyLiftNotice
+			} else if args[0] == "eval" {
+				wantDiagnostics = legacyEvalNotice
 			}
 			if *loads != 0 || out.Len() != 0 || diagnostics.String() != wantDiagnostics {
 				t.Fatalf("refusal loaded configuration or emitted output: loads=%d, %q, %q", *loads, out.String(), diagnostics.String())

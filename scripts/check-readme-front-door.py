@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ORDER = [
-    ("journey heading", r"^## Create, Prove, Deploy$"),
+    ("journey heading", r"^## Run, Test, Publish$"),
     ("first-answer heading", r"^## Getting Started: Get Your First Answer$"),
     ("workspace/live heading", r"^## Workspace And Live Paths$"),
     ("runtime boundaries heading", r"^## Runtime Boundaries$"),
@@ -33,7 +33,7 @@ FIRST_ANSWER_COMMANDS = [
 ]
 JOURNEY_ROWS = [
     ("Create", r"`kmx create NAME\b"),
-    ("Prove", r"`kmx eval --workspace DIR\b"),
+    ("Test", r"`kmx test --workspace DIR\b"),
     ("Publish", r"`kmx push --workspace DIR --evaluation RECEIPT REF`"),
     ("Deploy", r"`kmx deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT`"),
 ]
@@ -152,7 +152,7 @@ def check_workflow(text: str) -> str | None:
             return f"README front door: {label} must accompany the two-command path"
     if "source-only promotion" not in preamble or "not destination evaluation" not in preamble:
         return "README front door: composed Deploy must disclose source-only promotion"
-    release = "The table below describes main's one-member workflow. Deploy is unreleased; v0.8.1 uses `lift` with the same arguments."
+    release = "The table below describes main's one-member workflow. Test and Deploy are unreleased; v0.8.1 uses `eval` and `lift` with the same arguments."
     release_at = journey.find(release)
     if not 0 <= release_at < table_at:
         return "README front door: v0.8.1 release note must precede the suite journey table"
@@ -160,11 +160,11 @@ def check_workflow(text: str) -> str | None:
         if rows[index][0] != label or re.search(purpose_pattern, rows[index][1]) is None:
             return f"README front door: {label} row is missing or out of order"
     if "only when the full policy passes" not in rows[1][1]:
-        return "README front door: Prove row must require a full pass"
+        return "README front door: Test row must require a full pass"
     if "optional `runs`/`minPasses` (default once)" not in rows[1][1]:
-        return "README front door: Prove row must describe declared repeats"
+        return "README front door: Test row must describe declared repeats"
     if "stops after a case misses its threshold or any unknown/error" not in rows[1][1]:
-        return "README front door: Prove row must preserve fail-fast execution"
+        return "README front door: Test row must preserve fail-fast execution"
     if "Neither form deploys" not in rows[2][1]:
         return "README front door: Publish row must say it does not deploy"
     if "Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out" not in rows[2][1]:
@@ -200,7 +200,7 @@ def check_workflow(text: str) -> str | None:
     if list(paths) != PATH_ROWS:
         return "README front door: workspace/live paths must contain the exact four rows"
     for label, required in {
-        "Workspace": ["`kmx create`", "root `eval`", "root `push`", "does not consume workspace source", "separate private evidence"],
+        "Workspace": ["`kmx create`", "root `test`", "root `push`", "does not consume workspace source", "separate private evidence"],
         "Local environment": ["`kmx local up`", "without creating an Agent", "setup-only", "not wired"],
         "Live Agent": ["`kmx run --agent NAME --prompt TEXT`", "`kmx chat NAME`", "including suite-owned Agents", "neither is workspace-local execution or suite evaluation"],
         "Legacy bundle": ["Removed outright", "`agent.yaml` readers/writers", "Old receipts are unreadable", "no conversion, migration or on-disk/resource deletion", "Public AgentSuite implementation bundles"],
@@ -214,8 +214,8 @@ def check_workflow(text: str) -> str | None:
         return "README front door: runtime/inference distinction is missing"
     for label, pattern in [
         ("Orka default", r"\*\*Orka\*\* is the default runtime\..*packaged workspace path supports\s+evaluation, evaluated publication and root digest Deploy with exact evaluated\s+reuse;.*independent live Orka run and chat remain"),
-        ("kagent version boundary", r"\*\*kagent\*\* support is exact-version.*v0\.10\.3\s+Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated\s+publication and create-only root digest Deploy\. Standalone run/chat, Python,\s+RemoteMCP and retirement remain unavailable\. Read-only destination status\s+observes placement without enabling those execution/lifecycle capabilities\."),
-        ("agentsessions boundary", r"\*\*agentsessions\*\* supports pinned-chat offline suite create/prepare/load/ordinary\s+push and explicit private `eval --development-host FILE`: one fresh\s+Session/config/Exec per declared run, full-pass private proof and exact-S evaluated\s+push\..*literal-loopback development path loads no cluster\s+settings; explicit judging and repeated cases share Orka/kagent semantics\. It supports no tools, Deploy/chat/status or remote lifecycle\.\s+Receipt diff refuses its proof\."),
+        ("kagent version boundary", r"\*\*kagent\*\* support is exact-version.*v0\.10\.3\s+Go/linux-amd64 packaged workspace authoring, `test --bindings`, evaluated\s+publication and create-only root digest Deploy\. Standalone run/chat, Python,\s+RemoteMCP and retirement remain unavailable\. Read-only destination status\s+observes placement without enabling those execution/lifecycle capabilities\."),
+        ("agentsessions boundary", r"\*\*agentsessions\*\* supports pinned-chat offline suite create/prepare/load/ordinary\s+push and explicit private `test --development-host FILE`: one fresh\s+Session/config/Exec per declared run, full-pass private proof and exact-S evaluated\s+push\..*literal-loopback development path loads no cluster\s+settings; explicit judging and repeated cases share Orka/kagent semantics\. It supports no tools, Deploy/chat/status or remote lifecycle\.\s+Receipt diff refuses its proof\."),
     ]:
         if re.search(pattern, runtime, re.S) is None:
             return f"README front door: {label} is missing"

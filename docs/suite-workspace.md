@@ -16,7 +16,7 @@ boundary. Deploy, chat/status and Orka/kagent operational consumers refuse it.
 **Implemented:** offline creation, preparation and publication, and full-inventory
 native Orka or exact kagent v0.10.3 Go/linux-amd64 evaluation of one tool-free
 member with an exact OpenAI-compatible model. Orka remains the authoring default;
-`--runtime kagent` authors the private profile. Root eval derives that packaged
+`--runtime kagent` authors the private profile. Root test derives that packaged
 runtime and uses explicit author-owned bindings; evaluated push accepts only
 matching runtime-specific passing evidence. Root digest Deploy supports both
 profiles. Kagent Deploy is create-only: any occupied primary or generated child
@@ -119,7 +119,7 @@ exact composition/build profile offline, but the existing AgentKit producer
 producer fallback or Sessions image-build adapter.
 Profiled execution, evaluated push, private receipt creation/export, native public
 evidence export and Deploy all refuse, including profiles declaring `runtime.id=orka`.
-Only explicit unevaluated publication is available. Independent `eval verify`
+Only explicit unevaluated publication is available. Independent `test verify`
 can check externally produced portable evidence against separately reviewed
 expectations; it grants no private push/Deploy authority.
 
@@ -237,7 +237,7 @@ rewriting source.
 
 Preparation uses the internal workspace API (`Prepare` then `LoadInventory`);
 there is no new CLI prepare command. The execution loaders remain single-member
-only. Root `eval`, root workspace `push` (including `--unevaluated`) and composed
+only. Root `test`, root workspace `push` (including `--unevaluated`) and composed
 workspace Deploy refuse this format before operational state, output or target
 activity. Exact-reference Deploy also refuses verified multi-member native artifacts
 before target observations; existing prerequisite validation remains unchanged.
@@ -320,7 +320,7 @@ Source-free `suiteview.LoadLayoutFlowV1Alpha1` and
 **every** portable member recipe in suite order. Explicit native flow inventory
 readers additionally require the complete closed native graph. Ordinary
 layout/archive/native loaders and current transfer/registry paths remain strict;
-they do not retry or discard a required extension. Root eval/push/Deploy remain
+they do not retry or discard a required extension. Root test/push/Deploy remain
 unsupported for these suites, including unevaluated push. No member receipt or
 storage validation is a whole-suite execution proof.
 
@@ -353,7 +353,7 @@ registries:
 ```sh
 kmx ctx
 kmx ctx --check -o json
-kmx eval --to dev --out ../private/passing.json
+kmx test --to dev --out ../private/passing.json
 kmx push --evaluation ../private/passing.json registry.example/team/agents:v1
 kmx deploy registry.example/team/agents@sha256:<digest> --to prod \
   --evidence ../private/passing.json --promote --plan
@@ -374,7 +374,7 @@ tools or makes a model call. Authentication-required is not repository access;
 runtime/inference/bindings are explicitly not checked. Independent rows remain
 visible if a check is unknown or fails; the command then exits nonzero.
 
-`eval --to NAME` and digest `deploy --to NAME` resolve concrete selectors once,
+`test --to NAME` and digest `deploy --to NAME` resolve concrete selectors once,
 print them and their source, then retain those values for the entire invocation.
 Editing `kmx.yaml` during confirmation cannot change that operation. Existing
 source/binding-file/runtime/remote-state checks still apply. Explicit `--to-context`,
@@ -401,7 +401,7 @@ and published content.
 This is selector configuration, not environment installation or deployment
 identity. `publishRepository` supplies bare push and composed Deploy's repository;
 `evaluationTarget` explicitly selects where a destination's missing proof runs.
-Root eval keeps managed passing proof with optional `--out`; explicit push
+Root test keeps managed passing proof with optional `--out`; explicit push
 references are preserved. Explicit-reference Deploy remains deploy-only and requires
 a digest/private evidence and explicit `--promote` for source-only evidence.
 **Kagent stays out of composed Deploy until its own candidate-scoped evaluation
@@ -793,7 +793,7 @@ exact `system_prompt` config sent every time. It loads no Kubernetes settings.
 No registry, authentication, Deploy, chat/status or remote-host support is added.
 
 ```sh
-kmx eval --workspace ./sessions-workspace --development-host ./private/host.json \
+kmx test --workspace ./sessions-workspace --development-host ./private/host.json \
   --out ./private/passing.json --case-timeout 30s
 kmx push --workspace ./sessions-workspace --evaluation ./private/passing.json \
   --to-layout ./sessions-layout greeter:v1
@@ -882,15 +882,15 @@ member images remain `[]`.
 
 ```sh
 mkdir -m 700 ../private-evidence
-kmx eval --to-context kind-demo --inference provider:inference \
+kmx test --to-context kind-demo --inference provider:inference \
   --out ../private-evidence/passing.json
 kmx push --evaluation ../private-evidence/passing.json ghcr.io/me/my-agents:v1
 ```
 
-Root `eval` discovers the nearest workspace, or selects an exact root without
+Root `test` discovers the nearest workspace, or selects an exact root without
 fallback using `--workspace DIR`. It accepts no positional package reference.
 A destination context (explicit `--to-context`, named `--to`, or saved `evalTarget`)
-is required. Root eval stores completed passing metadata privately under KMX
+is required. Root test stores completed passing metadata privately under KMX
 state; `--out` optionally also writes a new standalone receipt. Orka requires
 `--inference provider:NAME`, directly or
 through the named destination;
@@ -946,7 +946,7 @@ summaries distinguish returned TaskUIDs from completed assertions: for example,
 `1 of 3 runs executed; 0 passed; aborted on execution error; 2 not executed`,
 followed by the cleanup outcome. `total` remains planned, `executed` counts
 nonempty TaskUIDs, `notExecuted` is the remainder, and `aborted` identifies an
-execution error rather than a threshold miss. Root eval JSON includes these
+execution error rather than a threshold miss. Root test JSON includes these
 counts plus `passed`, `total`, `status`, `detail`, `cleanup` and a fixed safe
 `error` on failure. Composed Deploy adds the execution fields to its existing
 `eval` stage; GET-only cached skips omit them rather than claiming fresh Tasks.
@@ -1051,7 +1051,7 @@ comes only from the packaged member. Explicit `--to-namespace` must agree with
 bindings; `--result-port` refuses. For example:
 
 ```sh
-kmx eval --workspace ./kagent-workspace --to-context kind-demo \
+kmx test --workspace ./kagent-workspace --to-context kind-demo \
   --bindings ./private/kagent-bindings.yaml --out ../private-evidence/kagent-pass.json
 ```
 
@@ -1068,7 +1068,7 @@ For Orka, the temporary result session uses the selected ServiceAccount's **full
 authority**. Discarding its bearer is not revocation; Task-read enforcement is
 unverified for v0.2.0. One pinned loopback connection is opened per run, without
 reconnect. Default summaries omit prompts, answers, assertion operands and
-reasoning. `eval --show-content` and executing workspace `deploy --show-content`
+reasoning. `test --show-content` and executing workspace `deploy --show-content`
 opt into expected values/patterns, short judge rationale and answer excerpts on
 stderr. Orka outcome JSON stays one payload-free document with non-pass metadata.
 The flag is refused for deploy-only or plan-only Deploy. Request inputs/rubrics are
@@ -1176,10 +1176,10 @@ payloads or execution history. Runtime/model/audit retention may outlive cleanup
 ### Inspect and clean candidate leftovers
 
 ```sh
-kmx eval cleanup --to dev
-kmx eval cleanup <full-run-id> --to dev
+kmx test cleanup --to dev
+kmx test cleanup <full-run-id> --to dev
 # Explicit access also works without the original workspace or inference:
-kmx eval cleanup <full-run-id> --to-context kind-demo --to-namespace orka-system
+kmx test cleanup <full-run-id> --to-context kind-demo --to-namespace orka-system
 ```
 
 Without a run ID this is read-only: no prompt, deletion or passing receipt. A full
@@ -1204,7 +1204,7 @@ one 90-second budget. Large namespaces, unreadable pages or stuck finalizers
 fail closed; these limits are not proof that a selected run has no leftovers.
 Prefer a dedicated evaluation namespace. If a limit prevents recovery, have the
 cluster owner inspect retained resources and reduce unrelated inventory through
-their own verified-ownership process, then rerun read-only `kmx eval cleanup`.
+their own verified-ownership process, then rerun read-only `kmx test cleanup`.
 Missing anchors instead require independent operator-reviewed, UID-specific
 inspection/cleanup; do not infer ownership from labels, prefixes or age, or use
 a namespace-wide delete to work around a refusal. KMX never authorizes shared
@@ -1217,14 +1217,14 @@ allowed; a changed case/model/instruction artifact is refused. Unsigned receipts
 are observations, not authentication, policy gates or release authorization.
 Root push requires matching completed evidence by default; `--unevaluated`
 explicitly opts out. Extracted-directory `suite push` does not gain the
-`--evaluation` flag. `eval diff` reads strict passing suite receipts and
+`--evaluation` flag. `test diff` reads strict passing suite receipts and
 compares only compatible same-runtime subjects/case inventories; Orka/kagent
 comparison refuses as incompatible, never as equivalent behavior. Comparison
 also requires identical observed ownership. Fresh Orka candidate runs and separate
 kagent CLI runs have different identities, so their receipts are incompatible
 rather than a cross-run behavior comparison. Root Deploy dispatches only matching runtime evidence;
 cross-runtime evidence refuses. Old Orka/kagent/AgentSessions bundle receipts are
-unreadable. `eval from-sessions` remains private reference extraction/export only,
+unreadable. `test from-sessions` remains private reference extraction/export only,
 with no native manifest consumer. RecordedExecution/legacy replay/judges are removed.
 
 ### Qualification boundary
@@ -1269,11 +1269,11 @@ execution. Standalone package evaluation remains unavailable.
 ## Export portable evaluation evidence
 
 ```sh
-kmx eval --to dev
-kmx eval export --workspace ./workspace --member greeter --out ../evidence.json
+kmx test --to dev
+kmx test export --workspace ./workspace --member greeter --out ../evidence.json
 ```
 
-`eval export` is offline. It prepares the exact selected workspace snapshot,
+`test export` is offline. It prepares the exact selected workspace snapshot,
 requires its sole member to match `--member`, selects the latest completed
 managed record for that workspace and OCI manifest digest, and verifies the
 public projection with [suite v0.3.1's verifier](https://github.com/agent-primitives/suite/blob/v0.3.1/spec.md#824-portable-evaluation-evidence)
@@ -1371,7 +1371,7 @@ setup, run the gate without network access or KMX configuration/state:
 
 ```sh
 set -eu
-kmx eval verify --suite ./verification/suite-layout \
+kmx test verify --suite ./verification/suite-layout \
   --evidence ./verification/evidence.json \
   --expect ./verification/expected.json -o json
 ```
@@ -1380,7 +1380,7 @@ The digest form pins the same local artifact explicitly. It **still needs the
 bytes**; it never fetches them or searches a private preparation cache:
 
 ```sh
-kmx eval verify --suite sha256:<reviewed-manifest-digest> \
+kmx test verify --suite sha256:<reviewed-manifest-digest> \
   --from-layout ./verification/suite-layout \
   --evidence ./verification/evidence.json \
   --expect ./verification/expected.json
@@ -1462,7 +1462,7 @@ readiness. It does not authorize private evaluated push or Deploy.
 ## Publish
 
 ```sh
-kmx eval                             # saved evalTarget, no --out needed
+kmx test                             # saved evalTarget, no --out needed
 kmx push ghcr.io/me/my-agents:v1       # supplied tag stays v1
 kmx push                             # saved publishRepository:s-<full-S-hex>
 ```
@@ -1506,7 +1506,7 @@ before eval effects. A full partition still supports push from existing proof;
 select a different private `KMX_HOME` for new evaluation registrations. No automatic
 evidence deletion, cleanup sweep, journal or durable cleanup blockade is added.
 
-One OS-held per-workspace lock excludes concurrent root eval/push; process exit
+One OS-held per-workspace lock excludes concurrent root test/push; process exit
 releases it without deleting its stable lock file. All root push modes, including
 --evaluation and --unevaluated, require safe symlink-free, lockable KMX state;
 --unevaluated opts out of proof, not exclusion or private-state validation. Never delete that file to bypass
@@ -1574,7 +1574,7 @@ and refuses public features KMX cannot execute (`critical: false`, extension
 assertion types, more than 100 runs) instead of ignoring them, and names that
 reason in its error. Suites packaged
 by v0.6.0 no longer validate; receipts recorded against them refuse with a
-remedy to rerun `kmx eval` and `kmx push`. There is no migration reader.
+remedy to rerun `kmx test` and `kmx push`. There is no migration reader.
 
 `native-orka.json` records the member, renderer version and required images.
 The alternative kagent declaration is

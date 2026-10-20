@@ -45,7 +45,7 @@ func TestConsoleMutationMenusRefuseWithoutDispatch(t *testing.T) {
 		if strings.Contains(m.status, "lift is not yet available") {
 			t.Fatal("retirement remedy denies the implemented suite lift")
 		}
-		for _, want := range []string{"authored", "workspace", "eval", "push", "deploy"} {
+		for _, want := range []string{"authored", "workspace", "test", "push", "deploy"} {
 			if !strings.Contains(m.status, want) {
 				t.Errorf("missing remedy %q: %s", want, m.status)
 			}
@@ -60,7 +60,7 @@ func TestConsoleInferenceSaveRefusesBeforeReadsAuthOrWrites(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			f := newOrkaFixture(t, nil)
 			err := f.app.consoleSaveInference(t.Context(), agentTUIEnvironment{Name: "local", Local: true}, agentTUIAgent{Name: "sample", Namespace: "agents"}, consoleInferenceSnapshot{}, consoleInferenceSource{Kind: kind}, "")
-			if err == nil || !strings.Contains(err.Error(), "authored") || !strings.Contains(err.Error(), "eval") {
+			if err == nil || !strings.Contains(err.Error(), "authored") || !strings.Contains(err.Error(), "test") {
 				t.Errorf("wrong refusal: %v", err)
 			}
 			if calls := f.calls(t); calls != "" {

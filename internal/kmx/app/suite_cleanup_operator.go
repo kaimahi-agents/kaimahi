@@ -215,7 +215,7 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 		return nil
 	}
 	if inventory.uncertain != "" {
-		return fmt.Errorf("%w: uncertain candidate inventory at %s; inspect with eval cleanup before selecting a run", errSuiteCandidateCleanup, inventory.uncertain)
+		return fmt.Errorf("%w: uncertain candidate inventory at %s; inspect with %s cleanup before selecting a run", errSuiteCandidateCleanup, inventory.uncertain, worker.testCommandVerb())
 	}
 	selected := map[string]suiteCleanupRoot{}
 	roots := []suiteCandidateResource{}
@@ -227,7 +227,7 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	}
 	// No selected roots is not a proof that a crashed run's descendants are gone.
 	if len(roots) == 0 {
-		return fmt.Errorf("%w: no roots for selected run; use eval cleanup to list observable runs, not proof of orphan absence", errSuiteCandidateCleanup)
+		return fmt.Errorf("%w: no roots for selected run; use %s cleanup to list observable runs, not proof of orphan absence", errSuiteCandidateCleanup, worker.testCommandVerb())
 	}
 	// Freeze child UID chains before consent; replacements during confirmation
 	// must fail the engine's pre-effect closure check, not become initial proof.
@@ -248,7 +248,7 @@ func (a *App) CleanupSuiteCandidates(ctx context.Context, opt SuiteCandidateClea
 	}
 	command := worker.InvocationCommand
 	if command == "" {
-		command = shellArg(worker.commandExecutable()) + " eval cleanup " + shellArg(opt.RunID) + " --to-context " + shellArg(target.Context) + " --to-namespace " + shellArg(target.Namespace)
+		command = shellArg(worker.commandExecutable()) + " " + worker.testCommandVerb() + " cleanup " + shellArg(opt.RunID) + " --to-context " + shellArg(target.Context) + " --to-namespace " + shellArg(target.Namespace)
 	}
 	if err := guard.CheckContext(ctx, kube, guard.Request{Action: "delete the displayed candidate run root UIDs and verify child closure", Context: target.Context, Source: cfg.ContextSource, Namespaces: target.Namespace, Confirm: cfg.Confirm, Command: command, MustBeKnown: true, RequireConfirmation: true}, worker.Err, worker.Stdin); err != nil {
 		return err

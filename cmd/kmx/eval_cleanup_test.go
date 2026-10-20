@@ -18,7 +18,7 @@ func TestCandidateEvaluationAndLiftHelp(t *testing.T) {
 		command string
 		terms   []string
 	}{
-		{"eval", []string{"fresh digest/run-scoped candidates", "verified cleanup", "eval cleanup"}},
+		{"eval", []string{"fresh digest/run-scoped candidates", "verified cleanup", "test cleanup"}},
 		{"lift", []string{"requires --promote even in the same environment", "absent canonical resources"}},
 	} {
 		var out bytes.Buffer

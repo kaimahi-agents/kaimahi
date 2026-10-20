@@ -60,6 +60,7 @@ type commandState struct {
 	containerEngineFlag string
 	app                 *app.App
 	argv                []string
+	evalNoticeShown     bool
 }
 
 func (s *commandState) executable() string {
@@ -114,12 +115,18 @@ func execute(argv []string, deps dependencies) error {
 		if err != nil {
 			// No Cobra hook runs after preprocessing refuses. Preserve that
 			// refusal, but still disclose a recognizable legacy invocation.
-			if legacyLiftInvocation(original) {
+			notice := ""
+			if legacyCommandInvocation(original, "lift") {
+				notice = "kmx lift is deprecated; use kmx deploy (same arguments)."
+			} else if legacyCommandInvocation(original, "eval") {
+				notice = evalDeprecationNotice
+			}
+			if notice != "" {
 				diagnostics := deps.stderr
 				if diagnostics == nil {
 					diagnostics = os.Stderr
 				}
-				if _, noticeErr := fmt.Fprintln(diagnostics, "kmx lift is deprecated; use kmx deploy (same arguments)."); noticeErr != nil {
+				if _, noticeErr := fmt.Fprintln(diagnostics, notice); noticeErr != nil {
 					return errors.Join(err, noticeErr)
 				}
 			}
@@ -131,20 +138,31 @@ func execute(argv []string, deps dependencies) error {
 	root.InitDefaultHelpCmd()
 	help, _, _ := root.Find([]string{"help"})
 	// Cobra otherwise reports an unknown help topic on stdout but exits zero.
-	help.Args = func(_ *cobra.Command, args []string) error {
+	help.Args = func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 && args[0] == "agent" {
 			return fmt.Errorf("unknown command %q for %q", args[0], root.Name())
 		}
+		if legacyCommandInvocation(argv, "eval") {
+			return state.noticeLegacyEval(cmd)
+		}
 		return nil
 	}
+	// Explicit help parses its own flags and validates global flags before
+	// dispatching to a topic's HelpFunc. Cover those refusals without hooks.
+	help.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		if legacyCommandInvocation(argv, "eval") {
+			return errors.Join(state.noticeLegacyEval(cmd), err)
+		}
+		return err
+	})
 	root.SetArgs(argv)
 	return root.Execute()
 }
 
 // Recognize only the root command (or explicit help topic) after known global
 // flags. Unknown flags, other commands and -- stop discovery: their arguments
-// may contain an opaque value equal to "lift" and are never searched.
-func legacyLiftInvocation(argv []string) bool {
+// may contain an opaque value equal to a legacy verb and are never searched.
+func legacyCommandInvocation(argv []string, verb string) bool {
 	helpTopic := false
 	for i := 0; i < len(argv); i++ {
 		name, _, inline := strings.Cut(argv[i], "=")
@@ -161,7 +179,7 @@ func legacyLiftInvocation(argv []string) bool {
 			}
 			helpTopic = true
 		default:
-			return argv[i] == "lift"
+			return argv[i] == verb
 		}
 	}
 	return false
@@ -190,7 +208,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newQuickstartCommand(state), newAKSCommand(state),
 		newConsoleCommand(state), newOrkaCommand(state),
 		newStatusCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
-		newAgentEvalCommand(state), newReleaseDeployCommand(state), newReleaseLiftCommand(state), newTaskCommand(state),
+		newAgentTestCommand(state), newAgentEvalCommand(state), newReleaseDeployCommand(state), newReleaseLiftCommand(state), newTaskCommand(state),
 		newSuiteCommand(state), newSuitePushCommand(state, true), newTargetsCommand(state),
 		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),
 	)

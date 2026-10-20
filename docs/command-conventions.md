@@ -17,7 +17,7 @@ kmx <noun> <verb> [object] [flags]
 ```
 
 - **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
-  `push` and full-workspace `eval`. Root `eval` also retains helpers (`diff`,
+  `push` and full-workspace `test`. Root `test` also retains helpers (`diff`,
   `export`, `verify`, `from-sessions`, `cleanup`); root digest `deploy` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
   `suite build/diff/push/pull/validate` and `orka install/status/show/list`. `kmx agent` is removed entirely,
@@ -48,11 +48,11 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
 | `run` | Execute once on a live Orka Agent, including a suite-owned Agent; not workspace-local execution or suite evaluation. | `kmx run --agent NAME` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
-| `eval` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
-| `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx eval export --member greeter --out ../evidence.json` |
-| `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace selection. | `kmx eval explain [failure-id] [--workspace DIR] [--show-content\|--clear]` |
-| `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx eval verify --suite ./layout --evidence evidence.json --expect expected.json` |
-| `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx eval cleanup [run-id] --to dev` |
+| `test` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx test --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
+| `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx test export --member greeter --out ../evidence.json` |
+| `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace selection. | `kmx test explain [failure-id] [--workspace DIR] [--show-content\|--clear]` |
+| `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx test verify --suite ./layout --evidence evidence.json --expect expected.json` |
+| `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx test cleanup [run-id] --to dev` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `policy` | Resolve portable suite restrictions offline without granting authority or selecting an enforcement provider. | `kmx suite policy POLICY.json [--administrative-policy ADMIN.json]` |
 | `deploy` | Deploy an evaluated suite; no-reference workspace mode composes missing Orka eval/push/Deploy. | `kmx deploy --to NAME`; deploy-only: `kmx deploy <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |
@@ -60,10 +60,15 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 
 Keep these distinctions:
 
-- **Deploy is canonical.** The workflow story is Create, Prove, Deploy.
-  `deploy` is unreleased; v0.8.1 uses `lift` with the same arguments. Keep the
-  hidden deprecated `lift` route under the compatibility contract below; do not
-  change the test/Prove copy or `eval` namespace in this rename.
+- **Run / Test / Publish** is the developer vocabulary. Run is existing live
+  Orka invocation, Test is full-workspace `test`, and Publish is registry `push`.
+  Deploy remains real-target placement. `test` and `deploy` are unreleased;
+  v0.8.1 uses `eval` and `lift` with the same arguments. Keep both hidden
+  deprecated routes for at least one released version, preserving stdout,
+  arguments, flags, exit codes and state, with one stderr notice per legacy
+  invocation. See [Test compatibility](kmx.md#test-compatibility-unreleased) and
+  [Deploy compatibility](kmx.md#deploy-compatibility-unreleased). Data directory
+  names, fields, schemas, APIs and machine JSON are not renamed.
 - **Workload management is not `down`.** Destination status is read-only inspection;
   retirement remains unavailable. Environment teardown grants no workload-specific replacement contract.
 - **`result` is not retry.** Reading a result never resubmits work.

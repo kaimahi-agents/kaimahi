@@ -4,7 +4,7 @@ Tracking issue: [#301](https://github.com/kaimahi-agents/kaimahi/issues/301).
 The [CLI reference](kmx.md) documents the implemented interface and the
 [command conventions](command-conventions.md) govern future changes. This page
 distinguishes implemented alignment from proposed follow-ups. The implemented
-earlier alignment is available in v0.7.0; the Deploy rename and retained Orka
+earlier alignment is available in v0.7.0; the Test/Deploy renames and retained Orka
 updates below are unreleased. Historical section names remain for stable links.
 
 ## Implemented entry-point alignment (unreleased)
@@ -50,15 +50,15 @@ arguments instead of a deleted Make target or an invented BYO recovery route.
 | `agent show <name>` / `agent list` | `orka show <name>` / `orka list` | Live Orka detail/inventory, not workspace inspection. Show still requires namespace. |
 | `agent evaluate/lift/retire/status` / `bundle ...` | Removed | Old commands/readers/writers/receipts removed outright, no stubs or migration. No legacy-status reader or retirement replacement. |
 | `agent verify` / `bundle verify` | Removed | Legacy replay/judges and RecordedExecution are removed without a native replacement. |
-| `agent eval diff <before.json> <after.json>` | `eval diff <before.json> <after.json>` | Offline receipt comparison, not evaluation execution. |
-| `agent eval from-sessions <session-uid>...` | `eval from-sessions <session-uid>...` | Private reference-case preparation, not execution. |
+| `agent eval diff <before.json> <after.json>` | `test diff <before.json> <after.json>` | Offline receipt comparison, not evaluation execution. |
+| `agent eval from-sessions <session-uid>...` | `test from-sessions <session-uid>...` | Private reference-case preparation, not execution. |
 | `suite push --workspace DIR REF` / `suite push REF` | `push [--workspace DIR] [REF]` | Exact prepared workspace graph publication; discovers the nearest ancestor `workspace.yaml`, or selects an exact root without fallback with `--workspace`. |
 
 The entire `kmx agent` group is removed, including its hidden edit stub, with no
 aliases or retirement stubs. Use kubectl to edit live Orka resources. Root
 `status --to NAME` separately inventories deployed Orka/kagent Agents and per-object
 Deploy provenance with GET-only table/JSON reports; `orka status` retains the table-only
-runtime report. There is no legacy-status reader or retirement replacement. Root `eval` executes a full native workspace inventory with explicit
+runtime report. There is no legacy-status reader or retirement replacement. Root `test` executes a full native workspace inventory with explicit
 target selection, optional private output and exactly one runtime-derived model binding: Orka
 `--inference` or packaged kagent `--bindings`. Standalone packaged-reference
 evaluation remains unimplemented. Root digest `deploy` deploys a packaged native
@@ -73,13 +73,14 @@ rollback. See [update and rollback](suite-workspace.md#update-and-rollback). `ta
 offline and prints canonical effective-policy bytes plus their digest; it does
 not authenticate, authorize, select or invoke an enforcement provider. See the
 [portable policy contract](portable-policy.md).
-These routes and workspace authoring/publication are available in v0.7.0;
-historical v0.5.1 retains the `agent` routes. Existing operation handlers, arguments, applicable flags,
+The earlier root-route alignment and workspace authoring/publication are available
+in v0.7.0; historical v0.5.1 retains the `agent` routes. The canonical `test` and
+`deploy` spellings are unreleased; v0.8.1 uses `eval` and `lift`. Existing operation handlers, arguments, applicable flags,
 stdout and exit contracts are preserved; this is not a receipt or bundle migration.
 
 ## Independent evaluation helpers
 
-`eval export [--workspace DIR] --member ID --out FILE` writes detached public
+`test export [--workspace DIR] --member ID --out FILE` writes detached public
 AgentSuite evidence from the latest completed exact-suite managed evaluation.
 It runs offline with explicit member matching, strict public-library verification,
 new-file publication and no cluster/model/registry calls. Fresh captured Go build
@@ -89,7 +90,7 @@ builds, pseudo-versions without a clean revision and legacy metadata refuse.
 Private receipts and push/Deploy authority remain unchanged.
 See [public evidence](suite-workspace.md#export-portable-evaluation-evidence).
 
-`eval verify --suite LAYOUT --evidence FILE --expect FILE [-o text|json]` is the
+`test verify --suite LAYOUT --evidence FILE --expect FILE [-o text|json]` is the
 state-independent offline public-evidence CI gate. Digest-form `--suite sha256:…`
 requires `--from-layout DIR`; no registry/cache search or workspace preparation.
 The complete ExpectedEvaluation file is independently reviewed and committed
@@ -97,18 +98,18 @@ beside the suite, never populated from evidence. Success-only stdout summary
 exits0; stable safe refusal codes on stderr exit1. No private receipt authority,
 configuration, model, cluster or KMX state access. See [CI verification](suite-workspace.md#verify-portable-evaluation-evidence-in-ci).
 
-Offline `eval diff` compares strict full-passing native Orka/kagent suite evidence
+Offline `test diff` compares strict full-passing native Orka/kagent suite evidence
 only; old normalized Orka/kagent/AgentSessions bundle receipts are unreadable.
 Zero is comparison, not a new pass or promotion gate.
 
-`eval from-sessions UID... --sessions SOURCE --assertions CASE.yaml --out FILE`
+`test from-sessions UID... --sessions SOURCE --assertions CASE.yaml --out FILE`
 remains private read-only reference extraction/export, not execution. Existing
 output appends atomically; duplicates refuse. No recorded payloads are persisted.
 RecordedExecution, legacy bundle Sessions evaluation/replay/judges and their
 consumers are removed. There is no native reference-manifest consumer; author
 native workspace cases. See [reference extraction](kmx.md#reference-extraction).
 
-`eval cleanup --to NAME` lists candidates read-only. `eval cleanup RUN --to NAME`
+`test cleanup --to NAME` lists candidates read-only. `test cleanup RUN --to NAME`
 previews one full run's frozen identities, confirms even on local kind and performs
 UID/resourceVersion-safe cleanup. Explicit context/namespace needs no workspace or
 inference. Missing Task/Job anchors remain uncertain, never guessed from labels;
@@ -116,7 +117,7 @@ there is no automatic sweep, lease, local journal or later-publication blockade.
 
 ## Named workspace destinations
 
-Optional workspace-root `kmx.yaml` supplies selectors to existing `eval/deploy --to NAME`.
+Optional workspace-root `kmx.yaml` supplies selectors to existing `test/deploy --to NAME`.
 Individual eval may use its explicitly saved `evalTarget`; digest Deploy has no
 implicit destination. Resolve once to concrete values, print their source, then
 pass those copies through the operation. Editing config during confirmation
@@ -132,7 +133,7 @@ one source/selector plan, automatically discloses promotion, and confirms that p
 once. Four default stage lines retain skips; verbose/JSON carries details. Private
 exact-version completion observations permit only verified GET-only skips, never
 Apply, adoption, replacement or repair. Explicit-reference Deploy remains digest/private
-evidence based; eval --out and the push reference remain optional. Kagent stays
+evidence based; test --out and the push reference remain optional. Kagent stays
 standalone until candidate-scoped evaluation/cleanup is qualified. See
 [composed Deploy](suite-workspace.md#composed-workspace-lift).
 
@@ -143,7 +144,7 @@ use source v3. Root push accepts `--runtime-profile ID [--platform OS/ARCH]`
 only for offline v3 `--unevaluated` transfer; all profiles remain in S. Suite build
 uses the same selectors for exact planning, but AgentKit refuses profiled plans.
 Eval/Deploy expose neither flag. Profiled execution, private/public native export
-and evaluated publication remain unsupported; external portable eval verify is
+and evaluated publication remain unsupported; external portable test verify is
 an independent consistency check, not private proof authority.
 
 `create <name> --model <model> --instructions <file> [--workspace <directory>]`
@@ -170,7 +171,7 @@ replacement remain as documented. Old `suite push <directory> <reference>` retai
 extracted-artifact transfer behavior without workspace discovery; suite push no
 longer accepts `--workspace` or one positional reference. Root push refuses two
 positional arguments.
-Root `eval --to-context CTX [--out FILE]` performs offline workspace/inventory/
+Root `test --to-context CTX [--out FILE]` performs offline workspace/inventory/
 managed-proof and optional output preparation before configuration, then one guarded runtime-specific
 placement and one fresh Task per declared run of each ordered case (default one).
 Optional KMX YAML `runs`/`minPasses` counts completed attributable assertion
@@ -216,7 +217,7 @@ AgentSessions evaluation shares this judge transport, evidence and per-run deadl
 `push --evaluation FILE` checks runtime-specific private receipt coherence and
 exact manifest S before publication, overriding managed lookup without fallback.
 Root push otherwise requires the latest completed exact-S pass from private managed
-state; --unevaluated explicitly opts out. Root eval's --out is optional. Explicit
+state; --unevaluated explicitly opts out. Root test's --out is optional. Explicit
 push tags stay unchanged; only bare push uses saved `publishRepository:s-<full-S-hex>`. Receipts are
 unsigned observations, not policy gates. Dedicated shards qualify bounded Orka
 and kagent workspace scenarios; the native Orka inventory includes two text cases
@@ -230,7 +231,21 @@ promotion, creation or partial-outcome path. See [suite workspace](suite-workspa
 
 ## Vocabulary
 
-**Decided: Create → Prove → Deploy.** Canonical `kmx deploy` is unreleased;
+**Decided: Run / Test / Publish.** Run invokes an existing live Orka Agent;
+Test checks workspace cases; Publish transfers the OCI graph with `kmx push`.
+This does not add local workspace Run, numbered versions, a plugin or a new
+Publish command. Deploy remains real-target placement.
+
+Canonical `kmx test` is unreleased; v0.8.1 uses `kmx eval` with the same
+arguments. Hidden `eval` and all five helpers remain callable for at least one
+released version. Each legacy invocation adds exactly one stderr line:
+`kmx eval is deprecated; use kmx test (same arguments).`
+Arguments, flags, stdout, existing stderr labels, exit codes and state are
+unchanged apart from that notice. Authored `eval/`, packaged `evals/`,
+`evalTarget`/`evaluationTarget`, schemas, APIs and machine JSON remain unchanged.
+See [Test compatibility](kmx.md#test-compatibility-unreleased).
+
+Canonical `kmx deploy` is also unreleased;
 v0.8.1 uses `kmx lift` with the same arguments. The hidden deprecated `lift`
 route remains callable for at least one released version. Each legacy invocation
 adds exactly one stderr line: `kmx lift is deprecated; use kmx deploy (same arguments).`
@@ -239,7 +254,6 @@ help/completion is inert. Canonical human output says Deploy; machine JSON
 keys/values (including `targets` operation `"lift"`), Go/API/internal `Lift` names,
 evidence, storage and annotations remain unchanged. Removal requires a later
 announced breaking release. See [Deploy compatibility](kmx.md#deploy-compatibility-unreleased).
-The test/Prove wording and `eval` namespace are unchanged.
 
 Root digest Deploy deploys an exact
 packaged native suite using private full-passing evidence, not old bundle state.
@@ -255,7 +269,7 @@ recovery or teardown behavior. Ready/answered/evaluated are distinct evidence.
 - **Runtime adapter:** KMX's integration with an execution platform.
 - **Inference provider/backend:** an independent model-access route.
 - **Provision** infrastructure; **install** runtime software; **create** source;
-  **eval** full cases; **push** exact graph; **deploy** an evaluated digest.
+  **test** full cases; **push** exact graph; **deploy** an evaluated digest.
   Live Orka **show/list** and independent **run/chat** remain separate.
 - **Ready**, **answered** and **evaluated** are different evidence.
   **Unknown** is not **absent**; **retry** resubmits; **result** only retrieves.
@@ -335,9 +349,9 @@ preserve raw and answer-only stdout.
 3. **Capability view:** `kmx targets` is implemented for #289; retain that
    spelling and its read-only/offline-default contract rather than adding synonyms.
 4. **Authoring/execution verbs:** default `create` now authors offline;
-   live create is removed. Reconcile `evaluate` with `test`
-   and root `run` with canvas-service `run start` through #276 and its
-   authoring/execution work. Their scopes differ.
+   live create is removed. `test` is now the canonical workspace evaluation
+   command under #594. Root `run` and canvas-service `run start` still need
+   alignment through #276; their scopes differ.
 5. **Runtime selection:** settle operator/saved configuration versus public
    selection through #224/#238; retain current capabilities in rename slices.
 6. **Target flags:** decide `--to-*` versus `--context/--namespace` with runtime-specific

@@ -17,7 +17,7 @@ runtime contract when extending or comparing implementations.
 | I want to… | Read |
 |---|---|
 | Set up the current development CLI and understand prerequisites | [Getting started](getting-started.md) |
-| Review Create, Prove, Deploy stages, workspace/live paths and safety limits | [Workflow overview](workflow-overview.md) |
+| Review Run, Test, Publish and Deploy stages, workspace/live paths and safety limits | [Workflow overview](workflow-overview.md) |
 | Inspect compiled runtime support and qualification evidence with `kmx targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](https://github.com/agent-primitives/suite/blob/main/spec.md) |
@@ -27,7 +27,7 @@ runtime contract when extending or comparing implementations.
 | Discover models and configure native inference | [Models](models.md), [Copilot inference](copilot-inference.md), [Foundry inference](local-foundry-inference.md) |
 | Build single-node AKS and ACR with Bicep, then test CPU-model inference and the agent lifecycle | [Azure CPU-model demo](azure/cpu-model/README.md) |
 | Chat with an existing Orka Agent | [Interactive chat](interactive-chat.md) |
-| Run the local-proof to ACR to AKS walkthrough | [AKS Create, Prove, Deploy demo](aks-demo.md) |
+| Run the local-proof to ACR to AKS walkthrough | [AKS Create, Test, Deploy demo](aks-demo.md) |
 | Use an existing AKS cluster or provision a disposable one | [AKS](aks.md) |
 | Find a command, its safety contract, and supported output modes | [kmx reference](kmx.md) |
 | Install a tagged release or understand version and upgrade limits | [Releases](releases.md) |

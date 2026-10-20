@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/main/install
 go install github.com/kaimahi-agents/kaimahi/cmd/kmx@v0.8.1
 """
 RELEASE_NOTE = """> [!NOTE]
-> The table below describes main's one-member workflow. Deploy is unreleased; v0.8.1 uses `lift` with the same arguments.
+> The table below describes main's one-member workflow. Test and Deploy are unreleased; v0.8.1 uses `eval` and `lift` with the same arguments.
 """
 COMPOSED = """Start in the workspace root with a prepared runtime and inference, registry authentication,
 and kmx.yaml containing publishRepository, context/namespace/inference selectors
@@ -34,7 +34,7 @@ It discloses source-only promotion, not destination evaluation.
 JOURNEY = RELEASE_NOTE + """| Stage | Current checkout |
 |---|---|
 | **Create** | `kmx create NAME --workspace DIR` authors source. |
-| **Prove** | `kmx eval --workspace DIR` evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes evidence only when the full policy passes. |
+| **Test** | `kmx test --workspace DIR` evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes evidence only when the full policy passes. |
 | **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` copies the suite. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
 | **Deploy** | `kmx deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets; legacy bundle lift is separate. Orka candidate evidence requires `--promote`, even in the same environment. |
 """
@@ -43,7 +43,7 @@ GOOD = """<img src="brand/ketu.svg" alt="Kaimahi ketu mark">
 [![CI](https://github.com/kaimahi-agents/kaimahi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kaimahi-agents/kaimahi/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/kaimahi-agents/kaimahi)](https://github.com/kaimahi-agents/kaimahi/releases)
 [![License](https://img.shields.io/github/license/kaimahi-agents/kaimahi)](LICENSE)
-## Create, Prove, Deploy
+## Run, Test, Publish
 """ + COMPOSED + """Bounded CI qualifies root Deploy for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.
 """ + JOURNEY + """## Getting Started: Get Your First Answer
 ```bash
@@ -55,15 +55,15 @@ kmx quickstart
 ## Workspace And Live Paths
 | Path | What it means |
 |---|---|
-| Workspace | Default `kmx create`, root `eval`, and root `push` operate on editable source. Digest-based root `lift` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
+| Workspace | Default `kmx create`, root `test`, and root `push` operate on editable source. Digest-based root `deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |
 | Local environment | `kmx local up` prepares kind, model and runtime without creating an Agent. The experimental Go `AgentEnvironment` interface is setup-only and is not wired to this command yet. |
 | Live Agent | `kmx run --agent NAME --prompt TEXT` performs one Task; `kmx chat NAME` opens an Orka session. Both target live Agents, including suite-owned Agents; neither is workspace-local execution or suite evaluation. |
 | Legacy bundle | Removed outright: `agent.yaml` readers/writers, commands and receipts, `create --live`. Old receipts are unreadable; no conversion, migration or on-disk/resource deletion. Public AgentSuite implementation bundles are a different format. |
 ## Runtime Boundaries
 A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.
 - **Orka** is the default runtime. Its packaged workspace path supports evaluation, evaluated publication and root digest Deploy with exact evaluated reuse; independent live Orka run and chat remain.
-- **kagent** support is exact-version and operation-specific: v0.10.3 Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated publication and create-only root digest Deploy. Standalone run/chat, Python, RemoteMCP and retirement remain unavailable. Read-only destination status observes placement without enabling those execution/lifecycle capabilities.
-- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary push and explicit private `eval --development-host FILE`: one fresh Session/config/Exec per declared run, full-pass private proof and exact-S evaluated push. This unauthenticated literal-loopback development path loads no cluster settings; explicit judging and repeated cases share Orka/kagent semantics. It supports no tools, Deploy/chat/status or remote lifecycle. Receipt diff refuses its proof.
+- **kagent** support is exact-version and operation-specific: v0.10.3 Go/linux-amd64 packaged workspace authoring, `test --bindings`, evaluated publication and create-only root digest Deploy. Standalone run/chat, Python, RemoteMCP and retirement remain unavailable. Read-only destination status observes placement without enabling those execution/lifecycle capabilities.
+- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary push and explicit private `test --development-host FILE`: one fresh Session/config/Exec per declared run, full-pass private proof and exact-S evaluated push. This unauthenticated literal-loopback development path loads no cluster settings; explicit judging and repeated cases share Orka/kagent semantics. It supports no tools, Deploy/chat/status or remote lifecycle. Receipt diff refuses its proof.
 ## Safety And Status
 > [!IMPORTANT]
 > **Kaimahi is experimental and under active development.** Interfaces may change.
@@ -81,7 +81,7 @@ A **runtime** executes and governs the agent. An **inference provider** is the s
 
 CASES = [("valid workflow overview", GOOD, None)]
 for label, literal in [
-    ("journey heading", "## Create, Prove, Deploy\n"),
+    ("journey heading", "## Run, Test, Publish\n"),
     ("first-answer heading", "## Getting Started: Get Your First Answer\n"),
     ("workspace/live heading", "## Workspace And Live Paths\n"),
     ("runtime boundaries heading", "## Runtime Boundaries\n"),
@@ -118,12 +118,14 @@ CASES += [
     ("missing candidate promotion", GOOD.replace("Orka candidate evidence requires `--promote`, even in the same environment.", ""), "candidate evidence promotion"),
     ("candidate command omits promotion", GOOD.replace("--inference provider:NAME --promote", "--inference provider:NAME"), "Deploy row must preserve runtime-specific bindings"),
     ("command in purpose column only", GOOD.replace("| **Create** | `kmx create", "| Author | **Create** with `kmx create"), "Create row is missing"),
-    ("suite rows out of order", GOOD.replace("| **Create** |", "| **TEMP** |").replace("| **Prove** |", "| **Create** |").replace("| **TEMP** |", "| **Prove** |"), "Create row is missing"),
-    ("missing eval", GOOD.replace("`kmx eval --workspace DIR`", "`kmx run`"), "Prove row is missing"),
-    ("partial evidence accepted", GOOD.replace("only when the full policy passes", "after any case"), "Prove row must require a full pass"),
-    ("repeat policy missing", GOOD.replace("optional `runs`/`minPasses` (default once)", "unbounded repeats"), "Prove row must describe declared repeats"),
-    ("later cases continue after failure", GOOD.replace("stops after a case misses its threshold or any unknown/error", "continues through every case"), "Prove row must preserve fail-fast execution"),
-    ("unknown ignored", GOOD.replace(" or any unknown/error", ""), "Prove row must preserve fail-fast execution"),
+    ("suite rows out of order", GOOD.replace("| **Create** |", "| **TEMP** |").replace("| **Test** |", "| **Create** |").replace("| **TEMP** |", "| **Test** |"), "Create row is missing"),
+    ("missing test", GOOD.replace("`kmx test --workspace DIR`", "`kmx run`"), "Test row is missing"),
+    ("legacy eval in Test row", GOOD.replace("`kmx test --workspace DIR`", "`kmx eval --workspace DIR`"), "Test row is missing"),
+    ("legacy eval in workspace row", GOOD.replace("root `test`", "root `eval`"), "Workspace path boundary is missing"),
+    ("partial evidence accepted", GOOD.replace("only when the full policy passes", "after any case"), "Test row must require a full pass"),
+    ("repeat policy missing", GOOD.replace("optional `runs`/`minPasses` (default once)", "unbounded repeats"), "Test row must describe declared repeats"),
+    ("later cases continue after failure", GOOD.replace("stops after a case misses its threshold or any unknown/error", "continues through every case"), "Test row must preserve fail-fast execution"),
+    ("unknown ignored", GOOD.replace(" or any unknown/error", ""), "Test row must preserve fail-fast execution"),
     ("push implies deployment", GOOD.replace("Neither form deploys", "Then it deploys"), "Publish row must say it does not deploy"),
     ("plain push bypasses evidence", GOOD.replace("Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. ", ""), "Publish row must require evidence or explicit opt-out"),
     ("lift builds", GOOD.replace("without building, repacking, or publishing", "after rebuilding and publishing"), "Deploy row must stay deploy-only"),
@@ -135,7 +137,7 @@ CASES += [
     ("lift qualification after table", GOOD.replace("Bounded CI qualifies root Deploy for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n", "").replace("## Getting Started: Get Your First Answer", "Bounded CI qualifies root Deploy for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation; it does not prove every promotion, creation or partial-outcome path.\n## Getting Started: Get Your First Answer"), "Deploy qualification scope is missing"),
     ("late release note", GOOD.replace(RELEASE_NOTE, "").replace("## Getting Started", RELEASE_NOTE + "## Getting Started"), "v0.8.1 release note must precede"),
     ("missing release note", GOOD.replace(RELEASE_NOTE, ""), "v0.8.1 release note must precede"),
-    ("old release note", GOOD.replace("The table below describes main's one-member workflow. Deploy is unreleased; v0.8.1 uses `lift` with the same arguments.", "The table below describes unreleased main; v0.6.0 keeps its released defaults."), "v0.8.1 release note must precede"),
+    ("old release note", GOOD.replace("The table below describes main's one-member workflow. Test and Deploy are unreleased; v0.8.1 uses `eval` and `lift` with the same arguments.", "The table below describes unreleased main; v0.6.0 keeps its released defaults."), "v0.8.1 release note must precede"),
     ("outdated table label", GOOD.replace("| Stage | Current checkout |", "| Stage | Current development build |"), "exact two-column header"),
     ("malformed table separator", GOOD.replace("|---|---|", "|---|"), "separator is missing or malformed"),
     ("extra suite row", GOOD.replace("| **Deploy** |", "| **Inspect** | Future status. |\n| **Deploy** |"), "exactly four rows"),
@@ -143,7 +145,7 @@ CASES += [
     ("removed legacy guide", GOOD.replace("docs/suite-workspace.md", "docs/agent-lift.md"), "removed agent-lift guide"),
     ("Orka suite support broadened", GOOD.replace("packaged workspace path supports evaluation, evaluated publication and root digest Deploy with exact evaluated reuse", "owns every suite operation"), "Orka default is missing"),
     ("wrong kagent version", GOOD.replace("v0.10.3 Go", "v1.0 Python"), "kagent version boundary is missing"),
-    ("kagent suite evaluation removed", GOOD.replace("`eval --bindings`, evaluated publication and ", ""), "kagent version boundary is missing"),
+    ("kagent suite evaluation removed", GOOD.replace("`test --bindings`, evaluated publication and ", ""), "kagent version boundary is missing"),
     ("kagent digest lift removed", GOOD.replace("create-only root digest Deploy.", ""), "kagent version boundary is missing"),
     ("kagent status grants execution", GOOD.replace("Read-only destination status observes placement without enabling those execution/lifecycle capabilities.", "Destination status evaluates and repairs agents."), "kagent version boundary is missing"),
     ("kagent retirement claimed", GOOD.replace("RemoteMCP and retirement remain unavailable.", "RemoteMCP and retirement are supported."), "kagent version boundary is missing"),
@@ -157,7 +159,7 @@ CASES += [
     ("wrong installer", GOOD.replace("kaimahi/main/install.sh", "other/main/install.sh"), "release installer is missing"),
     ("install routes out of order", GOOD.replace("brew install kaimahi-agents/tap/kmx\n# or\ncurl", "curl").replace("install.sh | sh\n# or\ngo install", "install.sh | sh\n# or\nbrew install kaimahi-agents/tap/kmx\n# or\ngo install"), "release installer is missing"),
     ("first answer out of order", GOOD.replace("kmx version\nkmx quickstart", "kmx quickstart\nkmx version"), "kmx quickstart is missing"),
-    ("missing workspace path", GOOD.replace("| Workspace | Default `kmx create`, root `eval`, and root `push` operate on editable source. Digest-based root `lift` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |\n", ""), "workspace/live paths must contain the exact four rows"),
+    ("missing workspace path", GOOD.replace("| Workspace | Default `kmx create`, root `test`, and root `push` operate on editable source. Digest-based root `deploy` does not consume workspace source; it uses the packaged artifact and separate private evidence with explicit target and inference inputs. Run/chat still target live Agents. |\n", ""), "workspace/live paths must contain the exact four rows"),
     ("duplicate workspace path", GOOD.replace("| Local environment |", "| Workspace | Duplicate. |\n| Local environment |"), "workspace/live paths must contain the exact four rows"),
     ("workspace runs directly", GOOD.replace("does not consume workspace source", "runs workspace source directly"), "Workspace path boundary is missing"),
     ("environment interface wired", GOOD.replace("is setup-only and is not wired", "is fully wired"), "Local environment path boundary is missing"),
@@ -178,7 +180,7 @@ for name, text, expected in CASES:
     print(("ok  " if ok else "FAIL") + f" [{name}] -> {got or 'valid'}")
     failed += not ok
 
-FRONT = GOOD.split("## Create, Prove, Deploy")[0].replace("**Agent Builder CLI for Kubernetes.**\n", "") + """# Kaimahi
+FRONT = GOOD.split("## Run, Test, Publish")[0].replace("**Agent Builder CLI for Kubernetes.**\n", "") + """# Kaimahi
 
 Developers need to test an agent before shipping it to a cluster.
 
@@ -204,7 +206,7 @@ kmx quickstart
 
 [Workflow and runtime details](docs/workflow-overview.md)
 """
-WORKFLOW = GOOD[GOOD.index("## Create, Prove, Deploy"):].replace("](docs/", "](")
+WORKFLOW = GOOD[GOOD.index("## Run, Test, Publish"):].replace("](docs/", "](")
 FRONT_CASES = [("short front door with linked workflow", FRONT, WORKFLOW, None)]
 for name, literal, expected in [
     ("missing front-door icon", '<img src="brand/ketu.svg" alt="Kaimahi ketu mark">\n', "ketu icon is missing"),
@@ -222,7 +224,7 @@ FRONT_CASES += [
     ("front-door commands reversed", FRONT.replace("kmx version\nkmx quickstart", "kmx quickstart\nkmx version"), WORKFLOW, "kmx quickstart is missing from the local trial"),
     ("late status", FRONT.replace("**Status: experimental. Not recommended for production use.**\n", "") + "\n**Status: experimental. Not recommended for production use.**\n", WORKFLOW, "experimental status must precede"),
     ("missing workflow file", FRONT, None, "cannot read required documentation"),
-    ("unsafe linked workflow", FRONT, WORKFLOW.replace("only when the full policy passes", "after any case"), "Prove row must require a full pass"),
+    ("unsafe linked workflow", FRONT, WORKFLOW.replace("only when the full policy passes", "after any case"), "Test row must require a full pass"),
 ]
 for name, text, workflow, expected in FRONT_CASES:
     with tempfile.TemporaryDirectory() as tmp:

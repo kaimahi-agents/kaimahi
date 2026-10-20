@@ -503,7 +503,7 @@ jobs:
           proof = [r"(?s)^Orka says hello[.]\n*$", 'receipt["candidateCleanup"] == "complete"',
                    "kubectl --context kind-kmx-clone-free -n orka-system get tasks.core.orka.ai",
                    "--ignore-not-found", 'test -z "$remaining"', "--promote"]
-          if "kmx eval --workspace" not in joined or any(part not in joined for part in proof):
+          if "kmx test --workspace" not in joined or any(part not in joined for part in proof):
               problems.append("no exact authored evaluation, complete cleanup, independent Task absence and explicit promotion proof")
           logical = joined.replace("\\\n", " ")
           if not re.search(r"^\s*kmx deploy [^\n]*--promote(?:\s|$)", logical, re.M):
@@ -512,7 +512,7 @@ jobs:
               problems.append("the exact-answer regex must be authored before evaluation")
           if "task result" in joined:
               problems.append("a deleted candidate Task cannot supply a post-evaluation result")
-          eval_at, push_at, lift_at = [joined.find("kmx " + verb + " ") for verb in ("eval", "push", "deploy")]
+          eval_at, push_at, lift_at = [joined.find("kmx " + verb + " ") for verb in ("test", "push", "deploy")]
           if not (0 <= eval_at < joined.find('receipt["candidateCleanup"]') <
                   joined.find('test -z "$remaining"') < push_at < lift_at):
               problems.append("candidate cleanup/absence must be checked before push and explicit Deploy")
@@ -1911,7 +1911,7 @@ jobs:
           kmx create orka-hello --workspace workspace --model qwen2.5:3b --instructions instructions.txt
           printf '%s\n' 'id: example' 'input: "Reply with exactly this text: Orka says hello."' \
             'assertions:' '  - id: exact-answer' '    type: regex' "    pattern: '(?s)^Orka says hello[.]\n*$'" > workspace/eval/example.yaml
-          kmx eval --workspace workspace --to-context kind-kmx-clone-free --to-namespace orka-system \
+          kmx test --workspace workspace --to-context kind-kmx-clone-free --to-namespace orka-system \
             --inference provider:local --out evidence/passing.json
           task=$(python3 - <<'PY'
           import json

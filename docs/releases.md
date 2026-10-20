@@ -16,6 +16,23 @@ The official Homebrew namespace is limited to the public
 claimed; the remaining publication constraints are recorded in
 [NAMING.md](NAMING.md).
 
+## Test command (unreleased)
+
+Current main uses `kmx test` and all five helpers (`cleanup`, `diff`, `export`,
+`verify`, `from-sessions`). This rename is unreleased; v0.8.1 uses `kmx eval`
+with the same arguments. Hidden `eval` and its helpers remain callable for at
+least one released version, adding exactly one stderr line per legacy invocation:
+`kmx eval is deprecated; use kmx test (same arguments).`
+Arguments, flags, stdout, existing stderr labels, exit codes and state remain
+unchanged apart from that notice. No data migration is needed: `eval/`/`evals/`,
+`evalTarget`/`evaluationTarget`, schemas, APIs and machine JSON remain unchanged.
+Removal requires a later announced breaking release. See
+[Test compatibility](kmx.md#test-compatibility-unreleased).
+
+Run still invokes an existing live Orka Agent; Test evaluates workspace cases;
+Publish still transfers an OCI graph with `kmx push`. These names do not add
+local workspace Run, numbered local versions, a plugin or a new Publish command.
+
 ## Deploy command (unreleased)
 
 Current main calls packaged-suite deployment `kmx deploy`. This rename is not in
@@ -206,6 +223,15 @@ from:
 | `v0.0.0-dev+fb456eb.dirty (development build from a MODIFIED checkout)` | a clone with uncommitted changes |
 
 ## Upgrading kmx
+
+### Moving to main's Test spelling (unreleased)
+
+Use `kmx test` in maintained commands and scripts, including all five helpers.
+Keep `kmx eval` when running v0.8.1. In newer builds the hidden compatibility
+route remains callable for at least one released version with only the stderr
+notice described [above](#test-command-unreleased); stdout, arguments, exit
+codes and saved state are unchanged. Do not rename authored `eval/` cases,
+packaged `evals/` files or configuration fields.
 
 ### Upgrading from v0.6.0
 

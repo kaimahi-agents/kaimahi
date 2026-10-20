@@ -4,7 +4,10 @@ This document is a reviewable snapshot of the interfaces implemented on current
 `main`. It is not a proposal for future syntax. The [`kmx` reference](kmx.md)
 remains authoritative for command flags and output contracts.
 
-`deploy` is unreleased; v0.8.1 uses `lift` with the same arguments. The deprecated
+`test` and `deploy` are unreleased; v0.8.1 uses `eval` and `lift` with the same
+arguments. Hidden `eval` and its five helpers remain callable for at least one
+released version, with one stderr notice and unchanged arguments, stdout, exit
+codes and state. See [Test compatibility](kmx.md#test-compatibility-unreleased). The deprecated
 packaged-suite `lift` route stays hidden but callable for at least one released
 version, with one stderr notice and unchanged legacy output/exit contracts. See
 [Deploy compatibility](kmx.md#deploy-compatibility-unreleased). Public Go/API
@@ -17,8 +20,11 @@ Visible product commands:
 ```text
 kmx
 ├── create <name>
-├── eval
+├── test
+│   ├── cleanup [<run-id>]
 │   ├── diff <before.json> <after.json>
+│   ├── export --member <id> --out <file>
+│   ├── verify --suite <layout-or-digest> --evidence <file> --expect <file>
 │   └── from-sessions <session-uid>...
 ├── push [reference]
 ├── deploy [<ref>@<digest>]
@@ -52,13 +58,14 @@ kmx
 └── version
 ```
 
-`eval` is an operational workspace command with offline diff and independent
+`test` is an operational workspace command with offline diff and independent
 read-only reference extraction/export helpers. Cobra also supplies `help`.
 
 Hidden but callable:
 
 | Route | Contract |
 |---|---|
+| `kmx eval` and `cleanup/diff/export/verify/from-sessions` | Deprecated Test spellings; same arguments/flags/stdout/exit/state, exactly one stderr notice per legacy invocation |
 | `kmx lift [<ref>@<digest>]` | Deprecated deployment spelling; same arguments/flags, one stderr notice, legacy stdout and stderr stage labels retained |
 | `kmx aks up/down` | Guarded AKS compatibility path with historical ownership records |
 | `kmx quickstart-wizard` | Retirement stub directing callers to `quickstart --interactive` |
@@ -74,7 +81,7 @@ removed outright. Old bundle receipts are unreadable; no migration/resource dele
 ## Everyday object flow
 
 ```text
-Workspace --create/eval--> AgentSuite artifact --push--> OCI location
+Workspace --create/test--> AgentSuite artifact --push--> OCI location
                                                     |
                                                     +-> exact-digest native deploy
 ```
@@ -82,9 +89,9 @@ Workspace --create/eval--> AgentSuite artifact --push--> OCI location
 | Command | Primary object | Current effect |
 |---|---|---|
 | `create` | Workspace | Author one offline member; no cluster or model call |
-| `eval` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE`; stop later cases after the first non-pass |
-| `eval export` | Latest completed exact-suite/member managed proof | Write new detached public evidence offline; captured tagged module/checksum or clean VCS provenance required, no evaluation or private-gate replacement |
-| `eval verify` | Local single-manifest OCI layout + detached evidence + reviewed ExpectedEvaluation | State-free offline CI gate; digest input also requires explicit layout, text/JSON success exits0, coded refusal exits1; no private-gate authority |
+| `test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE`; stop later cases after the first non-pass |
+| `test export` | Latest completed exact-suite/member managed proof | Write new detached public evidence offline; captured tagged module/checksum or clean VCS provenance required, no evaluation or private-gate replacement |
+| `test verify` | Local single-manifest OCI layout + detached evidence + reviewed ExpectedEvaluation | State-free offline CI gate; digest input also requires explicit layout, text/JSON success exits0, coded refusal exits1; no private-gate authority |
 | `push` | Prepared AgentSuite | Transfer exact OCI graph with latest completed exact-S proof, explicit --evaluation override or --unevaluated opt-out; explicit tags unchanged, bare push uses saved `repository:s-<S>`; no deployment |
 | `deploy` | Workspace or exact supported packaged native AgentSuite | No-reference `--to NAME` composes missing Orka eval/push/Deploy with one frozen-plan confirmation and verified exact-version skips. Explicit reference stays deploy-only by digest with private evidence; Orka uses `--inference`, kagent uses `--bindings`; `--plan` has no execution/publication/admission |
 | `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |
@@ -101,7 +108,7 @@ selects or initializes one exact root. The current source profile has a
 one-member limit.
 
 Live create/previews/wizard are removed; their flags are unknown before config.
-Root eval runs full native authored cases only: Orka uses `--inference`, kagent
+Root test runs full native authored cases only: Orka uses `--inference`, kagent
 uses `--bindings`; pinned AgentSessions chat instead requires a private
 `--development-host FILE`, with no cluster selectors or fallback. All export only
 runtime-specific full-passing evidence. Orka/kagent and development AgentSessions support authored `llmJudge`
@@ -112,7 +119,7 @@ with explicit judge transport and identity, plus optional KMX case `runs`/`minPa
 is 100 runs, within the spec's consumer resource-limit allowance.
 No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
 AgentSessions evidence is explicitly refused by diff and Deploy;
-`eval from-sessions` is reference extraction/export without a native consumer.
+`test from-sessions` is reference extraction/export without a native consumer.
 Root `run --agent` and supported Orka chat select live Agents by
 context/namespace/name, including suite-owned Agents. They are not workspace-local
 execution or fresh suite evaluation and grant no adoption/update/copy/retirement

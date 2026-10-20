@@ -112,7 +112,7 @@ func TestBareUsageNamesEveryTopLevelCommand(t *testing.T) {
 		if child.Hidden {
 			// Retirement stubs and compatibility routes remain parseable but
 			// are not advertised alongside canonical commands.
-			if child.Name() != "quickstart-wizard" && child.Name() != "aks" && child.Name() != "bundle" && child.Name() != "lift" {
+			if child.Name() != "quickstart-wizard" && child.Name() != "aks" && child.Name() != "bundle" && child.Name() != "lift" && child.Name() != "eval" {
 				t.Errorf("command %q is unexpectedly hidden", child.Name())
 			}
 			continue

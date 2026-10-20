@@ -1,13 +1,14 @@
 <a id="aks-free-tier-demo-create-prove-lift"></a>
+<a id="aks-free-tier-demo-create-prove-deploy"></a>
 
-# AKS Free-tier demo: Create, Prove, Deploy
+# AKS Free-tier demo: Create, Test, Deploy
 
 This copy-paste walkthrough uses one shell session to author a native Orka
-workspace, prove the exact package on local kind, provision a disposable AKS
+workspace, test the exact package on local kind, provision a disposable AKS
 target, publish to Azure Container Registry (ACR), and Deploy the immutable digest.
 
 ```text
-Create source -> Prove locally -> Provision destination -> Push digest -> Deploy
+Create source -> Test locally -> Provision destination -> Publish digest -> Deploy
 ```
 
 AKS uses the **Free control-plane tier**, but its worker VM, disk, ACR,
@@ -299,7 +300,9 @@ configure_provider "$LOCAL_CONTEXT" || false
 
 Provider Ready is configuration evidence, not proof of a model answer.
 
-## 5. Prove locally
+<a id="5-prove-locally"></a>
+
+## 5. Test locally
 
 Evaluation creates a fresh candidate and Task. Existing evidence avoids another
 model call, but is still checked against the current exact package before Azure
@@ -327,7 +330,7 @@ prove_demo_workspace() {
     printf 'Evidence path is not a regular non-symlink file.\n' >&2
     return 1
   else
-    "$KMX" eval \
+    "$KMX" test \
       --workspace "$WORKSPACE" \
       --to-context "$LOCAL_CONTEXT" \
       --to-namespace orka-system \

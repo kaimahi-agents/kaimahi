@@ -113,7 +113,7 @@ workspace.Prepare
   -> public evaluation index and cases, plus private native profile
   -> validated private OCI layout in KMX state
 
-kmx eval
+kmx test
   -> exact prepared suite
   -> observed target, runtime and runtime-specific model binding
   -> Orka Provider/Agent or kagent ModelConfig/Agent placement

@@ -305,7 +305,7 @@ const (
 
 const interactiveLiftRetirement = "Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …"
 
-const agentMutationRetirement = "In-place agent tools/inference/prompt editing is retired; edit the authored member/workspace, then eval → push → deploy."
+const agentMutationRetirement = "In-place agent tools/inference/prompt editing is retired; edit the authored member/workspace, then test → push → deploy."
 
 func (a *App) consoleSaveInference(ctx context.Context, env agentTUIEnvironment, agent agentTUIAgent, snapshot consoleInferenceSnapshot, source consoleInferenceSource, model string) error {
 	return fmt.Errorf("%s", agentMutationRetirement)

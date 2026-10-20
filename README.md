@@ -22,8 +22,15 @@ package to the selected cluster. It is not an agent runtime.
 
 **Status: experimental. Not recommended for production use.**
 
-These docs follow main. `kmx deploy` is unreleased; v0.8.1 uses `kmx lift`
-with the same arguments. See [command compatibility](docs/kmx.md#deploy-compatibility-unreleased).
+**Run / Test / Publish:** Run invokes an existing live Orka Agent; Test checks
+workspace cases with `kmx test`; Publish transfers the tested package with
+`kmx push`. Deploy places that package on a real target. Run is not local
+workspace execution.
+
+These docs follow main. `kmx test` and `kmx deploy` are unreleased; v0.8.1 uses
+`kmx eval` and `kmx lift` with the same arguments. See
+[Test compatibility](docs/kmx.md#test-compatibility-unreleased) and
+[Deploy compatibility](docs/kmx.md#deploy-compatibility-unreleased).
 
 ## Try it locally
 

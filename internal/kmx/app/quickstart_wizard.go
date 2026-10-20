@@ -38,7 +38,7 @@ type quickstartTarget struct {
 // wizard; its complete log is emitted after the terminal has been restored.
 func (a *App) QuickstartWizard(opt QuickstartWizardOptions) error {
 	if opt.Inference == "foundry" || opt.Inference == "copilot" {
-		return fmt.Errorf("quickstart host Foundry/Copilot modes are retired; use an existing Ready destination Orka openai Provider with an exact model in the authored suite workspace, then eval → push → deploy")
+		return fmt.Errorf("quickstart host Foundry/Copilot modes are retired; use an existing Ready destination Orka openai Provider with an exact model in the authored suite workspace, then test → push → deploy")
 	}
 	if err := validateQuickstartSourceOptions(opt.Create); err != nil {
 		return err
@@ -263,7 +263,7 @@ func (a *App) quickstartWizardSetup(modelPick <-chan *localModel, report func(qu
 	if err := a.operationContext().Err(); err != nil {
 		return err
 	}
-	note := "Native Orka inference; host Foundry/Copilot quickstart modes are retired. Review the authored workspace and every scaffold case, then select a Ready destination Orka openai Provider with the exact model before eval → push → deploy."
+	note := "Native Orka inference; host Foundry/Copilot quickstart modes are retired. Review the authored workspace and every scaffold case, then select a Ready destination Orka openai Provider with the exact model before test → push → deploy."
 	report(quickstartSetupEvent{step: 0, status: "done", models: models, note: note})
 	var choice *localModel
 	select {
@@ -275,7 +275,7 @@ func (a *App) quickstartWizardSetup(modelPick <-chan *localModel, report func(qu
 		return fmt.Errorf("inference selection is required")
 	}
 	if choice.Provider == "foundry" || choice.Provider == "copilot" {
-		return fmt.Errorf("quickstart host Foundry/Copilot modes are retired; use an existing Ready destination Orka openai Provider with an exact model via authored suite eval → push → deploy")
+		return fmt.Errorf("quickstart host Foundry/Copilot modes are retired; use an existing Ready destination Orka openai Provider with an exact model via authored suite test → push → deploy")
 	}
 	a.chatInference = "local"
 	if choice.Provider == "existing" {

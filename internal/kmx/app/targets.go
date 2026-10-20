@@ -183,7 +183,7 @@ func writeTargetsTable(out io.Writer, report TargetsReport) error {
 			case "native Orka commands and immutable suite lift":
 				scope = "native Orka commands and immutable suite deploy"
 			case "exact Go-only native suite create/eval and immutable digest lift":
-				scope = "exact Go-only native suite create/eval and immutable digest deploy"
+				scope = "exact Go-only native suite create/test and immutable digest deploy"
 			}
 			fmt.Fprintf(&buffer, "  qualified %s: %s (%s)\n", q.Version, scope, q.Evidence)
 		}
@@ -193,11 +193,20 @@ func writeTargetsTable(out io.Writer, report TargetsReport) error {
 				state = "supported"
 			}
 			operation, reason := c.Operation, c.Reason
-			if operation == "lift" {
+			switch operation {
+			case "lift":
 				operation = "deploy"
+			case "eval":
+				operation = "test"
 			}
 			if reason == "native authored workspace and immutable suite workflow; lift requires explicit evidence and reviewed Apply/Verify" {
 				reason = "native authored workspace and immutable suite workflow; deploy requires explicit evidence and reviewed Apply/Verify"
+			}
+			switch reason {
+			case "eval from-sessions exports reference cases separately; no recorded-manifest execution":
+				reason = "test from-sessions exports reference cases separately; no recorded-manifest execution"
+			case "development AgentSessions receipts are refused by eval diff":
+				reason = "development AgentSessions receipts are refused by test diff"
 			}
 			fmt.Fprintf(&buffer, "  %s: %s — %s\n", operation, state, reason)
 		}

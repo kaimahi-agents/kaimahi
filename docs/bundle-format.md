@@ -8,11 +8,11 @@ renaming or converting these formats into one another.
 
 | Format | Current consumer / boundary |
 |---|---|
-| Editable native workspace | Root `create/eval/push`: `workspace.yaml`, member metadata/instructions, authored cases and pinned build profiles. [Workspace guide](suite-workspace.md). |
+| Editable native workspace | Root `create/test/push`: `workspace.yaml`, member metadata/instructions, authored cases and pinned build profiles. [Workspace guide](suite-workspace.md). |
 | Public AgentSuite content / OCI graph | External `github.com/agent-primitives/suite` validation, schemas, identities and semantic diff; CLI `suite validate/diff/build/push/pull`. [AgentSuite specification](https://github.com/agent-primitives/suite/blob/main/spec.md). |
 | Public AgentSuite / ToolProvider implementation bundle | Typed portable graph content and locked references, not old user `agent.yaml` lifecycle state. Public format validation does not imply native execution-profile support. |
 | Prepared native suite | Exact content-addressed OCI manifest plus KMX-private packaged runtime/profile/model/case metadata. Root digest Deploy consumes it and separate private full-passing evidence, not workspace source. |
-| Private native passing evidence | Full-workspace Orka or exact-v0.10.3 Go kagent proof. Evaluated push, same-runtime offline `eval diff` and digest Deploy require exact coherence. Evidence is unsigned observation, not authentication. |
+| Private native passing evidence | Full-workspace Orka or exact-v0.10.3 Go kagent proof. Evaluated push, same-runtime offline `test diff` and digest Deploy require exact coherence. Evidence is unsigned observation, not authentication. |
 | Removed user PortableAgent operational bundle | Old `agent.yaml`, target bindings, lift/evaluation/replay receipts and policies no longer have persistent readers/writers or CLI consumers. Old Orka/kagent/AgentSessions receipts are unreadable. |
 
 ## Preserved public formats
@@ -34,7 +34,7 @@ User bundle commands, readers/writers/receipts, `create --live` including previe
 and wizard, root run bundle-directory mode and `--bundles` flags are removed
 outright, with no stubs, migration or conversion. Saved receipts and resources on
 disk/cluster are not deleted. Legacy RecordedExecution, Sessions replay/evaluation
-and judge consumers are removed; `eval from-sessions` remains independent private
+and judge consumers are removed; `test from-sessions` remains independent private
 reference extraction/export with no native manifest consumer. Native eval requires
 authored cases and private full-passing evidence.
 

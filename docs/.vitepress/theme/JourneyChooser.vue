@@ -4,10 +4,10 @@ import { withBase } from 'vitepress'
 
 const paths = [
   {
-    label: 'Build a suite',
+    label: 'Test and publish',
     eyebrow: '01 · Ship it',
-    title: 'Create an agent, then Deploy it',
-    summary: 'Start with a prepared runtime and inference, registry authentication, and kmx.yaml with publishRepository, destination selectors and evaluationTarget; create supplies none of these. Deploy freezes inputs and composes missing proof, publication and placement with source-only promotion.',
+    title: 'Create, Test and Publish before Deploy',
+    summary: 'Start with a prepared runtime and inference, registry authentication, and kmx.yaml with publishRepository, destination selectors and evaluationTarget; create supplies none of these. Deploy freezes inputs and composes missing Test, Publish (registry push) and placement with source-only promotion.',
     command: 'kmx create … → kmx deploy --to NAME',
     link: '/docs/getting-started#an-agent-of-your-own',
     action: 'Create and Deploy your agent'
@@ -25,7 +25,7 @@ const paths = [
     label: 'Use an agent',
     eyebrow: '03 · Operate it',
     title: 'Run or chat with an existing Orka Agent',
-    summary: 'Send one Task or open an interactive session while keeping live runtime operations separate from workspace proof.',
+    summary: 'Run sends one Task to an existing live Orka Agent, or chat opens a session; neither executes a workspace locally.',
     command: 'kmx run · kmx chat',
     link: '/docs/interactive-chat',
     action: 'Explore live interaction'

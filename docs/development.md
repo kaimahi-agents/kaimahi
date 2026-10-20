@@ -64,14 +64,14 @@ exclusive hard link, not history or replacement. The private receipt-file push
 consumer parses before cache writes, compares exact S, and validates packaged
 subject/render/inventory coherence before provenance or transfer. Source
 fingerprint is authored spelling, not a durable publication lock. These unsigned
-observations prove neither authenticity nor cross-object atomicity. Root `eval`
+observations prove neither authenticity nor cross-object atomicity. Root `test`
 prepares workspace/inventory/export offline before configuration, then consents
 once to native pair placement and all ordered one-shot Tasks. Public Orka eval
 also covers bounded UID/RV cleanup and verified owner-UID child closure before
 full-pass export. Startup reports never delete or block a fresh eval. Explicit
-`eval cleanup [run-id]` lists or confirms a frozen run/UID snapshot, refusing
+`test cleanup [run-id]` lists or confirms a frozen run/UID snapshot, refusing
 unattributable orphans; it creates no execution or passing-evidence authority.
-No cleanup journal, lease or later-publication blockade is implemented. Root eval
+No cleanup journal, lease or later-publication blockade is implemented. Root test
 registers completed proof in private immutable per-workspace/per-S state, with optional
 standalone --out. Root push selects the latest exact-S pass; --evaluation FILE
 explicitly overrides lookup without fallback and --unevaluated explicitly retains
@@ -270,7 +270,7 @@ unsigned Deploy provenance with GETs only. It does not read suite member content
 private history or Secrets, and does not imply retirement.
 
 KMX never installs/upgrades kagent. Its exact-v0.10.3 Go/linux-amd64 packaged
-profile uses author-owned `--bindings` for root eval/Deploy, without runtime/model
+profile uses author-owned `--bindings` for root test/Deploy, without runtime/model
 overrides. Profiles never fall back between installed runtimes. Live create and
 all bundle lifecycle/readers/receipts are removed.
 

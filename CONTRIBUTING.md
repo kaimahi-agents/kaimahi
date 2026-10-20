@@ -37,7 +37,7 @@ artifact.
 Root `kmx create NAME` authors one tool-free native workspace member offline,
 Orka by default, exact v0.10.3 Go/linux-amd64 kagent or pinned AgentSessions
 chat explicitly. AgentSessions prepare/load/ordinary push and explicit private
-literal-loopback `eval --development-host FILE` remain independent of deleted
+literal-loopback `test --development-host FILE` remain independent of deleted
 bundle Sessions evaluation/replay: one fresh Session/config/Exec per declared run of each ordered
 case, full-pass private proof and exact-S evaluated push, no cluster settings,
 tools, auth, Deploy/chat/status or remote lifecycle. Receipt diff refuses
@@ -51,7 +51,7 @@ AgentSessions shares the same judge and repeat policy. Exact model and
 file-valued instructions are required: terminal create prompts for omitted inputs,
 while nonterminal use requires both flags. Core authoring stays strict;
 create/push share workspace discovery.
-No runtime/model bootstrap belongs in workspace create. Root eval registers
+No runtime/model bootstrap belongs in workspace create. Root test registers
 completed exact-suite passing metadata in private managed state; --out is optional.
 Root push requires that proof by default, or explicit --evaluation FILE without
 fallback; --unevaluated retains ordinary publication. Explicit REPO:TAG is preserved,

@@ -54,7 +54,7 @@ See [update and rollback](suite-workspace.md#update-and-rollback),
 ## What kagent support exists now?
 
 Orka remains default. Explicit native kagent workspaces use exact v0.10.3
-Go/linux-amd64: create, `eval --bindings FILE`, evaluated push, native receipt
+Go/linux-amd64: create, `test --bindings FILE`, evaluated push, native receipt
 diff and create-only digest Deploy. Every occupied target refuses, even with
 matching evaluated UIDs. Eval is unsecure-only, one fresh blocking A2A Task per
 case, never retried; trusted-proxy refuses before admission/send. No Python,

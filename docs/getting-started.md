@@ -1,9 +1,13 @@
 # Getting started
 
-Install kmx, then **Create → Prove → Deploy** an agent of your own with two commands.
-Deploy composes missing evaluation, publication and placement; the selected runtime
-owns execution and enforcement. Need a local test environment first? Use the
-[local quickstart](#one-command-and-an-agent-that-answers) below.
+**Run / Test / Publish** are the developer operations: Run invokes an existing
+live Orka Agent, Test checks workspace cases with `kmx test`, and Publish transfers
+the package with `kmx push`. Run is not workspace-local execution.
+
+Install kmx, then create and Deploy an agent of your own with two commands.
+Deploy composes missing evaluation, publication and placement on real targets;
+the selected runtime owns execution and enforcement. Need a local test environment
+first? Use the [local quickstart](#one-command-and-an-agent-that-answers) below.
 
 ## Install kmx
 
@@ -29,10 +33,12 @@ Put Go's binary directory on PATH. Inspect the effective context with
 `kmx context show` or select one with `kmx context use <context>`.
 See [release upgrades](releases.md#upgrading-kmx) when moving from an older version,
 and [command alignment](command-semantics.md) for compatibility and retirement details.
-The root `create/chat/run/eval/push` commands below are available in v0.8.1.
-`kmx deploy` is unreleased; v0.8.1 calls it `kmx lift` with the same arguments.
-Use a main checkout build for the `deploy` examples below, or `lift` with v0.8.1.
-See [Deploy compatibility](kmx.md#deploy-compatibility-unreleased). When upgrading,
+The root `create/chat/run/push` commands below are available in v0.8.1.
+`kmx test` and `kmx deploy` are unreleased; v0.8.1 uses `eval` and `lift` with
+the same arguments. Use a main checkout build for the `test`/`deploy` examples
+below, or `eval`/`lift` with v0.8.1. See
+[Test compatibility](kmx.md#test-compatibility-unreleased) and
+[Deploy compatibility](kmx.md#deploy-compatibility-unreleased). When upgrading,
 see the [migration guidance](../CHANGELOG.md#upgrading) for removed commands and
 legacy bundle workflows.
 
@@ -108,7 +114,7 @@ The local quickstart below is the **supported deterministic Orka first-answer
 path**: it ends with a native Orka Agent answering a question. For guided
 custom authoring and a first answer, use the wizard described below.
 kmx does not install/upgrade kagent. Exact v0.10.3 Go/linux-amd64 packaged
-workspaces support `eval --bindings`, evaluated push and create-only digest Deploy
+workspaces support `test --bindings`, evaluated push and create-only digest Deploy
 on operator-prepared installations; see [native profiles](suite-workspace.md).
 Live create and bundle operations are removed.
 
