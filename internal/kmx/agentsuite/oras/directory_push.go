@@ -42,6 +42,16 @@ func Push(
 	destination string,
 	reference string,
 ) (result PushResult, err error) {
+	return pushDirectoryLayout(ctx, source, destination, reference, false)
+}
+
+// PrepareFlowV1Alpha1Layout packages the fixed experimental flow contract into
+// a filesystem OCI layout only. It does not enable registry publication.
+func PrepareFlowV1Alpha1Layout(ctx context.Context, source, destination, reference string) (PushResult, error) {
+	return pushDirectoryLayout(ctx, source, destination, reference, true)
+}
+
+func pushDirectoryLayout(ctx context.Context, source, destination, reference string, flowMode bool) (result PushResult, err error) {
 	if reference == "" {
 		return PushResult{}, errors.New("AgentSuite push reference is required")
 	}
@@ -74,7 +84,7 @@ func Push(
 		return PushResult{}, errors.New("AgentSuite target must be outside the source directory")
 	}
 
-	packedRoot, packedStore, packed, err := packDirectory(ctx, sourcePath)
+	packedRoot, packedStore, packed, err := packDirectoryMode(ctx, sourcePath, flowMode)
 	if err != nil {
 		return PushResult{}, err
 	}
@@ -135,6 +145,10 @@ func packDirectory(
 	ctx context.Context,
 	source string,
 ) (string, *oci.Store, kmxsuite.PackResult, error) {
+	return packDirectoryMode(ctx, source, false)
+}
+
+func packDirectoryMode(ctx context.Context, source string, flowMode bool) (string, *oci.Store, kmxsuite.PackResult, error) {
 	sourceRoot, err := os.MkdirTemp("", "agentsuite-source-cas-*")
 	if err != nil {
 		return "", nil, kmxsuite.PackResult{}, err
@@ -158,7 +172,11 @@ func packDirectory(
 		_ = os.RemoveAll(packedRoot)
 		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)
 	}
-	packed, err := New(nil).Pack(ctx, sourceStore, packedStore, contentDescriptor)
+	var validator kmxsuite.Validator = LayoutValidator{}
+	if flowMode {
+		validator = flowV1Alpha1LayoutValidator{}
+	}
+	packed, err := New(validator).Pack(ctx, sourceStore, packedStore, contentDescriptor)
 	if err != nil {
 		_ = os.RemoveAll(packedRoot)
 		return "", nil, kmxsuite.PackResult{}, err

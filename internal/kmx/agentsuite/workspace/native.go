@@ -94,7 +94,11 @@ func caseName(name string) bool {
 	return safeText(name) == nil && path.Base(name) == name && name != "." && name != ".." && !strings.Contains(name, "\\") && (strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml"))
 }
 func loadSource(ctx context.Context, root string) (*snapshot, error) {
-	s, err := normalizeSource(ctx, root)
+	return loadSourceMode(ctx, root, false)
+}
+
+func loadSourceMode(ctx context.Context, root string, flowMode bool) (*snapshot, error) {
+	s, err := normalizeSourceMode(ctx, root, flowMode)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +127,14 @@ func loadSource(ctx context.Context, root string) (*snapshot, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if flowMode {
+		if err := attachFlow(files, s.flow); err != nil {
+			return nil, err
+		}
+		if _, err := validateFlowFiles(ctx, files); err != nil {
+			return nil, err
+		}
 	}
 	// Bind the public case layout for every runtime and source schema.
 	framed, err := agentsuite.Marshal(struct {

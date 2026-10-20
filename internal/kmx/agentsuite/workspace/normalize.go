@@ -25,12 +25,13 @@ type normalizedSource struct {
 	workspace sourceWorkspace
 	members   []normalizedMember
 	profile   []byte
+	flow      []byte
 	profiles  []resolvedProfile
 	selected  map[string]string
 	source    map[string]SourceFile
 }
 
-func normalizeSource(ctx context.Context, root string) (*normalizedSource, error) {
+func normalizeSourceMode(ctx context.Context, root string, flowMode bool) (*normalizedSource, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -45,14 +46,14 @@ func normalizeSource(ctx context.Context, root string) (*normalizedSource, error
 	defer r.Close()
 	s := &normalizedSource{selected: map[string]string{}, source: map[string]SourceFile{}}
 	total := 0
-	read := func(name string) ([]byte, error) {
+	readLimit := func(name string, limit int) ([]byte, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		if existing, ok := s.source[name]; ok {
 			return existing.Data, nil
 		}
-		b, err := readBounded(r, name)
+		b, err := readLimited(r, name, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -68,6 +69,7 @@ func normalizeSource(ctx context.Context, root string) (*normalizedSource, error
 		s.source[name] = SourceFile{Data: b, Mode: info.Mode()}
 		return b, nil
 	}
+	read := func(name string) ([]byte, error) { return readLimit(name, maxFile) }
 	wb, err := read("workspace.yaml")
 	if err != nil {
 		return nil, err
@@ -75,6 +77,9 @@ func normalizeSource(ctx context.Context, root string) (*normalizedSource, error
 	w, err := parseSourceWorkspace(wb)
 	if err != nil {
 		return nil, err
+	}
+	if (w.Flow != "") != flowMode {
+		return nil, errors.New("flow requires the explicit experimental preparation route")
 	}
 	s.workspace = w
 	paths := []string{w.Member}
@@ -173,6 +178,12 @@ func normalizeSource(ctx context.Context, root string) (*normalizedSource, error
 			return nil, err
 		}
 		s.members = append(s.members, normalizedMember{member: m, instructions: instructions, cases: parsed})
+	}
+	if flowMode {
+		s.flow, err = readLimit(w.Flow, maxFlowFile)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return s, nil
 }

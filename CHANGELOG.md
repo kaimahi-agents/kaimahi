@@ -24,6 +24,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Experimental offline multi-agent flow authoring with `kmx create NAME
+  --workspace DIR --members FILE --flow FILE`, deterministic preparation and
+  explicit native/public layout/archive inventory readers. Strict JSON imports
+  preserve the critical flow contract and one artifact identity; default readers,
+  execution and transfer/registry paths remain strict. No pipeline execution,
+  approval enforcement, publication or whole-suite evaluation is enabled.
+
 - Opt-in Orka `kmx lift --to <destination> --update` and digest/evidence update
   or rollback. Only newly created, acknowledged retained pairs qualify; v0.8.1
   and earlier, reused, mixed and unrecorded placements are never enrolled.

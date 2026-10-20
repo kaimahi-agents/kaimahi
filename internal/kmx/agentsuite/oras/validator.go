@@ -23,6 +23,16 @@ func (LayoutValidator) Validate(
 	src kmxsuite.ReadOnlyStorage,
 	root ocispec.Descriptor,
 ) (*agentsuite.Report, error) {
+	return validateLayout(ctx, src, root, false)
+}
+
+type flowV1Alpha1LayoutValidator struct{}
+
+func (flowV1Alpha1LayoutValidator) Validate(ctx context.Context, src kmxsuite.ReadOnlyStorage, root ocispec.Descriptor) (*agentsuite.Report, error) {
+	return validateLayout(ctx, src, root, true)
+}
+
+func validateLayout(ctx context.Context, src kmxsuite.ReadOnlyStorage, root ocispec.Descriptor, flowMode bool) (*agentsuite.Report, error) {
 	if src == nil {
 		return nil, fmt.Errorf("AgentSuite validation source is required")
 	}
@@ -40,6 +50,14 @@ func (LayoutValidator) Validate(
 	}
 	if err := stage.Tag(ctx, root, "validation"); err != nil {
 		return nil, fmt.Errorf("index AgentSuite validation root: %w", err)
+	}
+	if flowMode {
+		graph, err := agentsuite.ValidatePathFlowV1Alpha1(stageRoot)
+		if err != nil {
+			return nil, err
+		}
+		report := graph.Report()
+		return &report, nil
 	}
 	return agentsuite.ValidatePath(stageRoot)
 }

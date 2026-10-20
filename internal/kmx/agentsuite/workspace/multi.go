@@ -28,14 +28,20 @@ type multiRecord struct {
 	Members         []nativeRecord `json:"members"`
 }
 
-func nativeBounds(files map[string][]byte) error {
+func nativeBounds(files map[string][]byte) error { return nativeBoundsMode(files, false) }
+
+func nativeBoundsMode(files map[string][]byte, flowMode bool) error {
 	if len(files) > suiteoras.MaxArtifactFiles {
 		return errors.New("native artifact exceeds file count limit")
 	}
 	total := 0
-	for _, b := range files {
+	for name, b := range files {
+		limit := maxFile
+		if flowMode && name == agentsuite.FlowPathV1Alpha1 {
+			limit = maxFlowFile
+		}
 		total += len(b)
-		if len(b) > maxFile || total > maxNativeBytes {
+		if len(b) > limit || total > maxNativeBytes {
 			return errors.New("native artifact exceeds size limit")
 		}
 	}
@@ -110,7 +116,12 @@ func resolveMulti(name string, members []normalizedMember, profile []byte) (map[
 
 // Regeneration compares the entire file map, including every reference, digest,
 // metadata field and public case. Extra public extensions cannot be silently dropped.
-func validateMulti(files map[string][]byte) (string, error) {
+func validateMulti(files map[string][]byte) (string, error) { return validateMultiMode(files, false) }
+
+func validateMultiMode(files map[string][]byte, flowMode bool) (string, error) {
+	if err := nativeBoundsMode(files, flowMode); err != nil {
+		return "", err
+	}
 	var suite agentsuite.Suite
 	if err := agentsuite.Unmarshal(files["agentsuite.json"], &suite); err != nil {
 		return "", err
@@ -151,6 +162,11 @@ func validateMulti(files map[string][]byte) (string, error) {
 	expected, err := resolveMulti(suite.Name, members, files["build-profiles/default.json"])
 	if err != nil {
 		return "", err
+	}
+	if flowMode {
+		if err := attachFlow(expected, files[agentsuite.FlowPathV1Alpha1]); err != nil {
+			return "", err
+		}
 	}
 	if !equalFiles(expected, files) {
 		return "", errors.New("unsupported native graph or incomplete case coverage")

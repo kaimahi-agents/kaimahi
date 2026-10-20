@@ -345,6 +345,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   reach reference-Lift target observations. No binding, approval, invocation or
   evaluation semantics, mixed-runtime execution or runtime qualification is implied.
 
+- Experimental `create NAME --workspace DIR --members FILE --flow FILE` imports strict JSON member rows and the public critical `kmx.flow.v1alpha1` document, without prompts, runtime selectors or operational configuration. Member model strings use the existing fixed openai-compatible protocol; relative input paths are confined to the members-file directory. All inputs and complete graph closure validate before destination writes. Source schemaVersion 2 alone permits an optional workspace-relative `flow` path. Explicit PrepareFlow/flow inventory and read-only suiteview flow APIs preserve all members, original S/F and copied recipes; default loaders and all current execution/transfer/registry paths remain strict. The flow file alone gets 4 MiB, retaining 1 MiB other-file/8 MiB total/212-file/256-entry ceilings and 128 combined member+flow cases. This is offline authoring/storage, not qualified execution, approval enforcement or whole-suite evidence.
+
 ## Optional member policy boundary
 
 Orka member YAML accepts optional member-relative `policy: policy.json` containing

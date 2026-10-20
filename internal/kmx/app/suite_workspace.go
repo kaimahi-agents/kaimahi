@@ -97,6 +97,19 @@ func (a *App) CreateSuiteMember(ctx context.Context, root string, opt workspace.
 	return err
 }
 
+// CreateSuiteFlow authors a complete experimental suite offline. It requires an
+// exact new workspace root and never resolves operational configuration.
+func (a *App) CreateSuiteFlow(ctx context.Context, root string, opt workspace.FlowCreateOptions) error {
+	if strings.TrimSpace(root) == "" {
+		return errors.New("experimental flow creation requires --workspace DIR")
+	}
+	if err := workspace.CreateFlow(ctx, root, opt); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(a.Out, "Created experimental offline AgentSuite workspace %s (not deployed)\n", workspacePathLabel(root))
+	return err
+}
+
 func nativeSuiteLabel(profile workspace.RuntimeProfile) string {
 	if profile.ID == "kagent" {
 		return "native-kagent v0.10.3 Go"

@@ -241,6 +241,85 @@ General extracted-directory `suite push` is still format transfer, not execution
 or evaluated publication. None of these paths can use a one-member receipt to
 qualify a larger suite. Multi-member runtime support is a separate change.
 
+## Experimental flow authoring (offline only)
+
+`kmx create NAME --workspace DIR --members members.json --flow flow.json`
+authors a complete tool-free Orka suite using the explicitly selected
+`kmx.flow.v1alpha1` contract. It does not run a pipeline, evaluate members,
+publish, deploy, enforce approvals or qualify a runtime. The default
+single-member command and source/artifact bytes are unchanged.
+
+The members input is strict JSON, not a source workspace descriptor:
+
+```json
+{
+  "schemaVersion": "kmx.members/v1alpha1",
+  "members": [
+    {"id": "writer", "model": "exact-writer", "instructions": "writer.md", "cases": ["facts.yaml"]},
+    {"id": "reviewer", "model": "exact-reviewer", "instructions": "reviewer.md", "cases": ["facts.yaml"]}
+  ]
+}
+```
+
+Member IDs are unique; the exact model string uses the existing fixed
+`openai-compatible` protocol, without discovery or inference. Instructions and
+case paths are literal, confined paths relative to the members file's directory.
+Each member needs reviewed YAML cases; basenames must be unique within a member,
+and existing filename ordering determines evaluation order. No example cases
+are invented. Instructions, cases and flow inputs are non-confidential: do not
+put credentials in them.
+
+The flow input is the closed public experimental JSON document, for example:
+
+```json
+{
+  "schemaVersion": "kmx.flow/v1alpha1",
+  "id": "release",
+  "mode": "pipeline",
+  "entry": "writer",
+  "edgeRequirements": [],
+  "steps": [
+    {"id": "draft", "member": "writer", "input": {"source": "run.input"}},
+    {"id": "review", "member": "reviewer", "input": {"source": "draft.output", "context": "run.input"}, "approval": "policy-controlled"}
+  ],
+  "cases": [
+    {"id": "review-facts", "input": "Frozen facts and task", "assertions": [
+      {"step": "review", "check": {"id": "verdict", "type": "contains", "value": "Verdict: PASS"}}
+    ]}
+  ]
+}
+```
+
+Create requires all three flags explicitly. It never prompts or accepts the
+single-member model/instructions/description/runtime selectors, including explicit
+defaults. Every input and the complete generated graph is validated before
+destination writes; occupied workspace/member paths refuse without replacement.
+The imported files are copied into editable schemaVersion 2 source, with optional
+`flow: coordination/flow.json`. Hand-authored flow paths must be confined
+workspace-relative files and are allowed only in schemaVersion 2.
+
+Internal `workspace.PrepareFlow` and `LoadFlowInventory` select the contract
+before ingestion and retain every native member. The fixed flow document is
+canonicalized at `coordination/flow.json`, bound by its original critical
+selector digest F. Preparation checks shared storage semantics and complete
+native-file regeneration, including flow, without stripping the extension.
+Original authored bytes bind the source fingerprint. A semantic member/flow edit
+changes the one OCI artifact S; no old evaluation authority follows that edit.
+
+The flow file alone may be at most 4 MiB; other files remain at most 1 MiB.
+Existing 8 MiB source/artifact, 212-file and 256-content-tar-entry ceilings remain.
+The shared 128-case budget includes both member and flow cases. The two-step
+contract does not turn the 2–16-member offline inventory into executable support.
+
+Source-free `suiteview.LoadLayoutFlowV1Alpha1` and
+`LoadArchiveFlowV1Alpha1` return original artifact identity, copied flow/F and
+**every** portable member recipe in suite order. Explicit native flow inventory
+readers additionally require the complete closed native graph. Ordinary
+layout/archive/native loaders and current transfer/registry paths remain strict;
+they do not retry or discard a required extension. Root eval/push/Lift remain
+unsupported for these suites, including unevaluated push. No member receipt or
+storage validation is a whole-suite execution proof.
+
 ## Named destinations
 
 Keep operational selectors in optional workspace-root `kmx.yaml`, separate from

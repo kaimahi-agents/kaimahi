@@ -92,7 +92,7 @@ func privateTree(root string, setMode bool) error {
 		return nil
 	})
 }
-func cached(ctx context.Context, key string, s *snapshot) (*Prepared, error) {
+func cached(ctx context.Context, key string, s *snapshot, flowMode bool) (*Prepared, error) {
 	if err := privateTree(key, false); err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func cached(ctx context.Context, key string, s *snapshot) (*Prepared, error) {
 		return nil, errors.New("prepared cache source identity mismatch")
 	}
 	p := &Prepared{filepath.Join(key, "layout"), rec.Fingerprint, rec.Descriptor, rec.Name}
-	files, err := verify(ctx, p)
+	files, err := verifyMode(ctx, p, flowMode)
 	if err != nil {
 		return nil, fmt.Errorf("corrupt prepared cache: %w", err)
 	}
@@ -126,6 +126,10 @@ func cached(ctx context.Context, key string, s *snapshot) (*Prepared, error) {
 // Prepare atomically publishes a complete private cache entry. Concurrent
 // candidates may duplicate work; only a verified complete winner is reused.
 func Prepare(ctx context.Context, root, cacheDir string) (*Prepared, error) {
+	return prepare(ctx, root, cacheDir, false)
+}
+
+func prepare(ctx context.Context, root, cacheDir string, flowMode bool) (*Prepared, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -140,7 +144,7 @@ func Prepare(ctx context.Context, root, cacheDir string) (*Prepared, error) {
 	if within(root, cacheDir) || within(cacheDir, root) {
 		return nil, errors.New("prepared cache must be outside and not contain the workspace")
 	}
-	s, err := loadSource(ctx, root)
+	s, err := loadSourceMode(ctx, root, flowMode)
 	if err != nil {
 		return nil, err
 	}
@@ -156,11 +160,11 @@ func Prepare(ctx context.Context, root, cacheDir string) (*Prepared, error) {
 	}
 	key := filepath.Join(cacheDir, strings.TrimPrefix(s.fingerprint, "sha256:"))
 	if _, err := os.Lstat(key); err == nil {
-		p, err := cached(ctx, key, s)
+		p, err := cached(ctx, key, s, flowMode)
 		if err != nil {
 			return nil, err
 		}
-		if err := CheckCurrent(ctx, root, p); err != nil {
+		if err := checkCurrent(ctx, root, p, flowMode); err != nil {
 			return nil, err
 		}
 		return p, nil
@@ -176,7 +180,11 @@ func Prepare(ctx context.Context, root, cacheDir string) (*Prepared, error) {
 	if err := writeFiles(source, s.files); err != nil {
 		return nil, err
 	}
-	result, err := suiteoras.Push(ctx, source, filepath.Join(stage, "layout"), "prepared")
+	pack := suiteoras.Push
+	if flowMode {
+		pack = suiteoras.PrepareFlowV1Alpha1Layout
+	}
+	result, err := pack(ctx, source, filepath.Join(stage, "layout"), "prepared")
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +195,7 @@ func Prepare(ctx context.Context, root, cacheDir string) (*Prepared, error) {
 		return nil, err
 	}
 	p := &Prepared{result.Path, s.fingerprint, result.Descriptor, s.name}
-	if err := Verify(ctx, p); err != nil {
+	if _, err := verifyMode(ctx, p, flowMode); err != nil {
 		return nil, err
 	}
 	record, err := agentsuite.Marshal(cacheRecord{p.Fingerprint, p.Descriptor, p.Name})
@@ -197,21 +205,21 @@ func Prepare(ctx context.Context, root, cacheDir string) (*Prepared, error) {
 	if err := os.WriteFile(filepath.Join(stage, "prepared.json"), record, 0o600); err != nil {
 		return nil, err
 	}
-	if err := CheckCurrent(ctx, root, p); err != nil {
+	if err := checkCurrent(ctx, root, p, flowMode); err != nil {
 		return nil, err
 	}
 	if err := os.Rename(stage, key); err != nil {
 		if _, statErr := os.Lstat(key); statErr != nil {
 			return nil, err
 		}
-		p, err = cached(ctx, key, s)
+		p, err = cached(ctx, key, s, flowMode)
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		p.Path = filepath.Join(key, "layout")
 	}
-	if err := CheckCurrent(ctx, root, p); err != nil {
+	if err := checkCurrent(ctx, root, p, flowMode); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -220,10 +228,14 @@ func Prepare(ctx context.Context, root, cacheDir string) (*Prepared, error) {
 // CheckCurrent refuses a silently substituted publication candidate. It does
 // not reinterpret source identity as a PortableAgent digest or evidence.
 func CheckCurrent(ctx context.Context, root string, p *Prepared) error {
+	return checkCurrent(ctx, root, p, false)
+}
+
+func checkCurrent(ctx context.Context, root string, p *Prepared, flowMode bool) error {
 	if p == nil {
 		return errors.New("prepared artifact is required")
 	}
-	s, err := loadSource(ctx, root)
+	s, err := loadSourceMode(ctx, root, flowMode)
 	if err != nil {
 		return err
 	}
@@ -235,6 +247,17 @@ func CheckCurrent(ctx context.Context, root string, p *Prepared) error {
 
 // Verify validates both the public OCI graph and the closed native profile.
 func Verify(ctx context.Context, p *Prepared) error { _, err := verify(ctx, p); return err }
+func verifyMode(ctx context.Context, p *Prepared, flowMode bool) (map[string][]byte, error) {
+	if !flowMode {
+		return verify(ctx, p)
+	}
+	a, err := readPreparedFlow(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	return a.Files(), nil
+}
+
 func verify(ctx context.Context, p *Prepared) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

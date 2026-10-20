@@ -662,6 +662,13 @@ bootstraps runtime/model, builds images, deploys or evaluates. `--live` and its
 live-only/preview flags are unknown before config loads. See [workspace source
 and cases](suite-workspace.md).
 
+Experimental `kmx create NAME --workspace DIR --members FILE --flow FILE` imports
+strict JSON members and a public `kmx.flow.v1alpha1` document as one offline suite.
+All three flags are required; single-member/runtime selectors refuse, including
+explicit defaults. It does not evaluate, run, publish or deploy the flow. See
+[experimental flow authoring](suite-workspace.md#experimental-flow-authoring-offline-only)
+for file shapes, path confinement, limits and the explicit read-only APIs.
+
 ## Task execution and results
 
 `kmx run --agent NAME --prompt TEXT` or `--prompt-file PATH` (`-` for stdin)

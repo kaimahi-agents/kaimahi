@@ -22,7 +22,11 @@ const (
 )
 
 // ReadArchive freezes and reads an uncompressed OCI image-layout tar.
-func ReadArchive(ctx context.Context, source io.ReaderAt, size int64, digest string) (a *Artifact, err error) {
+func ReadArchive(ctx context.Context, source io.ReaderAt, size int64, digest string) (*Artifact, error) {
+	return readArchive(ctx, source, size, digest, false)
+}
+
+func readArchive(ctx context.Context, source io.ReaderAt, size int64, digest string, flowMode bool) (a *Artifact, err error) {
 	defer func() { err = artifactError(ctx, err) }()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -41,7 +45,7 @@ func ReadArchive(ctx context.Context, source io.ReaderAt, size int64, digest str
 	if err != nil {
 		return nil, err
 	}
-	return readSource(ctx, archiveSource{files: files}, digest)
+	return readSource(ctx, archiveSource{files: files}, digest, flowMode)
 }
 
 type archiveSource struct{ files map[string][]byte }

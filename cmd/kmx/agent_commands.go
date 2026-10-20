@@ -62,15 +62,19 @@ resolves against.`,
 }
 
 func newAgentCreateCommand(state *commandState) *cobra.Command {
-	var root, name, description, model, instructions, runtimeID, version, engine string
+	var root, name, description, model, instructions, runtimeID, version, engine, members, flow string
 	var profile workspace.RuntimeProfile
 	cmd := &cobra.Command{
 		Use: "create <name>", Short: "Author an offline workspace member",
-		Long:    "Author a tool-free Orka, exact kagent Go or pinned AgentSessions chat member in a local workspace. AgentSessions evaluation uses an explicit development host; its lift, chat and status remain unavailable.\n\nOn a visible terminal, missing model and instructions-file inputs are prompted. Scripts require both --model and --instructions.\n\nCreate does not evaluate, publish, deploy or load cluster configuration.\nReview the saved instructions and cases before eval, push or lift.",
-		Example: "  kmx create greeter\n  kmx create greeter --workspace ./greeter --model qwen-3.5-2b --instructions instructions.md",
+		Long:    "Author a tool-free Orka, exact kagent Go or pinned AgentSessions chat member in a local workspace. AgentSessions evaluation uses an explicit development host; its lift, chat and status remain unavailable.\n\nOn a visible terminal, missing model and instructions-file inputs are prompted. Scripts require both --model and --instructions.\n\nExperimental flow authoring requires --workspace DIR --members FILE --flow FILE (strict JSON inputs). It refuses single-member/runtime selectors and supports offline authoring only.\n\nCreate does not evaluate, publish, deploy or load cluster configuration.\nReview the saved instructions and cases before eval, push or lift.",
+		Example: "  kmx create greeter\n  kmx create greeter --workspace ./greeter --model qwen-3.5-2b --instructions instructions.md\n  kmx create release-team --workspace ./release-team --members members.json --flow flow.json",
 	}
 	cmd.Flags().StringVar(&root, "workspace", "", "select an exact workspace directory (skip workspace-initialization confirmation)")
 	_ = cmd.MarkFlagDirname("workspace")
+	cmd.Flags().StringVar(&members, "members", "", "experimental members JSON file (requires --flow and --workspace)")
+	cmd.Flags().StringVar(&flow, "flow", "", "experimental public flow JSON file (offline only; requires --members)")
+	_ = cmd.MarkFlagFilename("members", "json")
+	_ = cmd.MarkFlagFilename("flow", "json")
 	cmd.Flags().StringVar(&description, "description", "", "one-line description")
 	cmd.Flags().StringVar(&model, "model", "", "exact authored model identifier (prompted on a visible terminal if omitted)")
 	cmd.Flags().StringVar(&instructions, "instructions", "", "file containing the system message (prompted on a visible terminal if omitted)")
@@ -91,6 +95,17 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 			return fmt.Errorf("workspace creation requires a name: kmx create <name> --model <model> --instructions <file>")
 		}
 		name = args[0]
+		if cmd.Flags().Changed("members") || cmd.Flags().Changed("flow") {
+			for _, flag := range []string{"model", "instructions", "description", "runtime", "runtime-version", "kagent-runtime"} {
+				if cmd.Flags().Changed(flag) {
+					return fmt.Errorf("--%s cannot be used with experimental flow creation", flag)
+				}
+			}
+			if strings.TrimSpace(root) == "" || strings.TrimSpace(members) == "" || strings.TrimSpace(flow) == "" {
+				return fmt.Errorf("experimental flow creation requires --workspace DIR --members FILE --flow FILE")
+			}
+			return nil
+		}
 		profile = workspace.RuntimeProfile{ID: runtimeID}
 		if runtimeID == "kagent" {
 			if version != "v0.10.3" || engine != "go" {
@@ -111,6 +126,10 @@ func newAgentCreateCommand(state *commandState) *cobra.Command {
 		return nil
 	}
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		if cmd.Flags().Changed("members") || cmd.Flags().Changed("flow") {
+			a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr(), Stdin: state.deps.stdin}
+			return a.CreateSuiteFlow(cmd.Context(), root, workspace.FlowCreateOptions{Name: name, MembersFile: members, FlowFile: flow})
+		}
 		opt := workspace.CreateOptions{Name: name, Description: description, Model: model, InstructionsFile: instructions, Runtime: profile}
 		if err := completeCreateInputs(cmd.Context(), state.deps.stdin, cmd.ErrOrStderr(), &opt); err != nil {
 			return err

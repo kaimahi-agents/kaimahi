@@ -48,6 +48,7 @@ type Fetcher interface {
 type Artifact struct {
 	descriptor ocispec.Descriptor
 	files      map[string][]byte
+	graph      *agentsuite.FlowV1Alpha1Graph
 }
 
 func (a *Artifact) Descriptor() ocispec.Descriptor { return cloneOCIDescriptor(a.descriptor) }
@@ -66,7 +67,11 @@ type source interface {
 }
 
 // ReadLayout selects the sole root when digest is empty, or one exact root.
-func ReadLayout(ctx context.Context, layout, digest string) (a *Artifact, err error) {
+func ReadLayout(ctx context.Context, layout, digest string) (*Artifact, error) {
+	return readLayout(ctx, layout, digest, false)
+}
+
+func readLayout(ctx context.Context, layout, digest string, flowMode bool) (a *Artifact, err error) {
 	defer func() { err = artifactError(ctx, err) }()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -79,10 +84,10 @@ func ReadLayout(ctx context.Context, layout, digest string) (a *Artifact, err er
 		return nil, err
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
-	return readSource(ctx, layoutSource{root: root}, digest)
+	return readSource(ctx, layoutSource{root: root}, digest, flowMode)
 }
 
-func readSource(ctx context.Context, source source, digest string) (*Artifact, error) {
+func readSource(ctx context.Context, source source, digest string, flowMode bool) (*Artifact, error) {
 	layoutBytes, err := source.read(ctx, "oci-layout")
 	if err != nil {
 		return nil, err
@@ -110,11 +115,15 @@ func readSource(ctx context.Context, source source, digest string) (*Artifact, e
 	if err != nil {
 		return nil, err
 	}
-	return Read(ctx, source, rootDescriptor, rootDescriptor.Digest.String())
+	return read(ctx, source, rootDescriptor, rootDescriptor.Digest.String(), flowMode)
 }
 
 // Read verifies one selected AgentSuite graph from descriptor-addressed bytes.
-func Read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected string) (a *Artifact, err error) {
+func Read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected string) (*Artifact, error) {
+	return read(ctx, source, root, expected, false)
+}
+
+func read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected string, flowMode bool) (a *Artifact, err error) {
 	defer func() { err = artifactError(ctx, err) }()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -155,39 +164,40 @@ func Read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected
 	if err != nil {
 		return nil, err
 	}
-	files, err := Files(ctx, layerBytes)
+	files, err := contentFiles(ctx, layerBytes, flowMode)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateSelectedGraph(ctx, root, manifestBytes, config, configBytes, layer, layerBytes); err != nil {
+	graph, err := validateSelectedGraph(ctx, root, manifestBytes, config, configBytes, layer, layerBytes, flowMode)
+	if err != nil {
 		return nil, err
 	}
-	return &Artifact{descriptor: cloneOCIDescriptor(root), files: files}, ctx.Err()
+	return &Artifact{descriptor: cloneOCIDescriptor(root), files: files, graph: graph}, ctx.Err()
 }
 
-func validateSelectedGraph(ctx context.Context, root ocispec.Descriptor, manifestBytes []byte, config ocispec.Descriptor, configBytes []byte, layer ocispec.Descriptor, layerBytes []byte) (err error) {
+func validateSelectedGraph(ctx context.Context, root ocispec.Descriptor, manifestBytes []byte, config ocispec.Descriptor, configBytes []byte, layer ocispec.Descriptor, layerBytes []byte, flowMode bool) (graph *agentsuite.FlowV1Alpha1Graph, err error) {
 	stage, err := os.MkdirTemp("", "kmx-artifact-*")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { err = errors.Join(err, os.RemoveAll(stage)) }()
 	if err := os.MkdirAll(pathOnDisk(stage, "blobs/sha256"), 0o700); err != nil {
-		return err
+		return nil, err
 	}
 	for _, item := range []struct {
 		descriptor ocispec.Descriptor
 		body       []byte
 	}{{root, manifestBytes}, {config, configBytes}, {layer, layerBytes}} {
 		if err := os.WriteFile(pathOnDisk(stage, "blobs/sha256/"+item.descriptor.Digest.Encoded()), item.body, 0o600); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	layoutBytes, err := agentsuite.Marshal(ocispec.ImageLayout{Version: ocispec.ImageLayoutVersion})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := os.WriteFile(pathOnDisk(stage, "oci-layout"), layoutBytes, 0o600); err != nil {
-		return err
+		return nil, err
 	}
 	selected := cloneOCIDescriptor(root)
 	index := ocispec.Index{Manifests: []ocispec.Descriptor{selected}}
@@ -195,15 +205,20 @@ func validateSelectedGraph(ctx context.Context, root ocispec.Descriptor, manifes
 	index.MediaType = ocispec.MediaTypeImageIndex
 	indexBytes, err := json.Marshal(index)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := os.WriteFile(pathOnDisk(stage, "index.json"), indexBytes, 0o600); err != nil {
-		return err
+		return nil, err
 	}
-	if _, err := agentsuite.ValidatePath(stage); err != nil {
-		return err
+	if flowMode {
+		graph, err = agentsuite.ValidatePathFlowV1Alpha1(stage)
+	} else {
+		_, err = agentsuite.ValidatePath(stage)
 	}
-	return ctx.Err()
+	if err != nil {
+		return nil, err
+	}
+	return graph, ctx.Err()
 }
 
 func pathOnDisk(root, slashPath string) string {
@@ -213,6 +228,10 @@ func pathOnDisk(root, slashPath string) string {
 // Files reads the bounded AgentSuite content layer and retains regular files.
 // Confined links are validated but do not create aliases in the returned map.
 func Files(ctx context.Context, compressed []byte) (map[string][]byte, error) {
+	return contentFiles(ctx, compressed, false)
+}
+
+func contentFiles(ctx context.Context, compressed []byte, flowMode bool) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -277,7 +296,11 @@ func Files(ctx context.Context, compressed []byte) (map[string][]byte, error) {
 				return nil, ErrArtifact
 			}
 		case tar.TypeReg, 0:
-			if len(files) >= MaxFiles || header.Size > fileBytes || header.Size > contentBytes-total {
+			limit := int64(fileBytes)
+			if flowMode && name == agentsuite.FlowPathV1Alpha1 {
+				limit = 4 << 20
+			}
+			if len(files) >= MaxFiles || header.Size > limit || header.Size > contentBytes-total {
 				return nil, ErrArtifactLimit
 			}
 			if header.Size < 0 {

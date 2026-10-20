@@ -9,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -81,6 +83,7 @@ type sourceWorkspace struct {
 	BuildProfile  string          `yaml:"buildProfile"`
 	Members       []string        `yaml:"members,omitempty"`
 	Profiles      []sourceProfile `yaml:"profiles,omitempty"`
+	Flow          string          `yaml:"flow,omitempty"`
 }
 
 type sourceProfile struct {
@@ -188,7 +191,9 @@ func confined(r *os.Root, name string) error {
 	}
 	return nil
 }
-func readBounded(r *os.Root, name string) ([]byte, error) {
+func readBounded(r *os.Root, name string) ([]byte, error) { return readLimited(r, name, maxFile) }
+
+func readLimited(r *os.Root, name string, limit int) ([]byte, error) {
 	if err := confined(r, name); err != nil {
 		return nil, fmt.Errorf("read %s: %w", name, err)
 	}
@@ -197,8 +202,8 @@ func readBounded(r *os.Root, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Size() > maxFile {
-		return nil, errors.New("source must be a regular file of at most 1 MiB")
+	if !info.Mode().IsRegular() || info.Size() > int64(limit) {
+		return nil, fmt.Errorf("source must be a regular file of at most %d MiB", limit>>20)
 	}
 	f, err := r.Open(name)
 	if err != nil {
@@ -209,14 +214,14 @@ func readBounded(r *os.Root, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Size() > maxFile {
-		return nil, errors.New("source must be a regular file of at most 1 MiB")
+	if !info.Mode().IsRegular() || info.Size() > int64(limit) {
+		return nil, fmt.Errorf("source must be a regular file of at most %d MiB", limit>>20)
 	}
-	b, err := io.ReadAll(io.LimitReader(f, maxFile+1))
+	b, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(b) > maxFile || int64(len(b)) != info.Size() {
+	if len(b) > limit || int64(len(b)) != info.Size() {
 		return nil, errors.New("source size changed or exceeds limit")
 	}
 	return b, nil
@@ -281,7 +286,36 @@ func Create(ctx context.Context, root string, opt CreateOptions) error {
 	if err != nil {
 		return err
 	}
-	root, err = safeAbsolute(root)
+	w := sourceWorkspace{SchemaVersion: 1, Name: opt.Name, Member: "agents/" + opt.Name + "/member.yaml", BuildProfile: "build-profiles/default.json"}
+	wb, err := yaml.Marshal(w)
+	if err != nil {
+		return err
+	}
+	mb, err := yaml.Marshal(m)
+	if err != nil {
+		return err
+	}
+	files := map[string][]byte{"workspace.yaml": wb, w.Member: mb, "agents/" + opt.Name + "/instructions.md": instructions, w.BuildProfile: defaultProfile, "eval/example.yaml": []byte("id: example\ninput: What is 2+2?\nexpectContains: [\"4\"]\n")}
+	return createSourceFiles(ctx, root, files)
+}
+
+func createSourceFiles(ctx context.Context, root string, files map[string][]byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	dirs := map[string]bool{"agents": true, "eval": true, "build-profiles": true}
+	for name := range files {
+		for dir := path.Dir(name); dir != "."; dir = path.Dir(dir) {
+			dirs[dir] = true
+		}
+	}
+	var topDirs []string
+	for dir := range dirs {
+		if !strings.Contains(dir, "/") {
+			topDirs = append(topDirs, dir)
+		}
+	}
+	root, err := safeAbsolute(root)
 	if err != nil {
 		return err
 	}
@@ -293,7 +327,7 @@ func Create(ctx context.Context, root string, opt CreateOptions) error {
 		return err
 	}
 	defer r.Close()
-	for _, name := range []string{"workspace.yaml", "agent.yaml", "agentsuite.json", "agents", "eval", "build-profiles"} {
+	for _, name := range append([]string{"workspace.yaml", "agent.yaml", "agentsuite.json"}, topDirs...) {
 		if _, err := r.Lstat(name); !os.IsNotExist(err) {
 			return fmt.Errorf("refusing existing workspace/member/bundle path %s", name)
 		}
@@ -303,16 +337,6 @@ func Create(ctx context.Context, root string, opt CreateOptions) error {
 		return err
 	}
 	defer os.RemoveAll(stage)
-	w := sourceWorkspace{SchemaVersion: 1, Name: opt.Name, Member: "agents/" + opt.Name + "/member.yaml", BuildProfile: "build-profiles/default.json"}
-	wb, err := yaml.Marshal(w)
-	if err != nil {
-		return err
-	}
-	mb, err := yaml.Marshal(m)
-	if err != nil {
-		return err
-	}
-	files := map[string][]byte{"workspace.yaml": wb, w.Member: mb, "agents/" + opt.Name + "/instructions.md": instructions, w.BuildProfile: defaultProfile, "eval/example.yaml": []byte("id: example\ninput: What is 2+2?\nexpectContains: [\"4\"]\n")}
 	if err := writeFiles(stage, files); err != nil {
 		return err
 	}
@@ -325,14 +349,11 @@ func Create(ctx context.Context, root string, opt CreateOptions) error {
 			}
 		}
 	}()
-	for _, name := range []string{"agents", "build-profiles", "eval"} {
+	for _, name := range slices.Sorted(maps.Keys(dirs)) {
 		if err := r.Mkdir(name, 0o700); err != nil {
 			return err
 		}
 		owned = append(owned, name)
-	}
-	if err := r.Mkdir("agents/"+opt.Name, 0o700); err != nil {
-		return err
 	}
 	for name := range files {
 		if name == "workspace.yaml" {

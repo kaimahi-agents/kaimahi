@@ -9,7 +9,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.1
 	github.com/agent-primitives/sessions v0.2.0
-	github.com/agent-primitives/suite v0.5.0
+	github.com/agent-primitives/suite v0.6.0
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/distribution/reference v0.6.0
 	github.com/google/jsonschema-go v0.4.3

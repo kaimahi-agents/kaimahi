@@ -3,6 +3,7 @@ package workspace
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,6 +102,7 @@ func parseSourceWorkspace(b []byte) (sourceWorkspace, error) {
 		Members       *[]string        `yaml:"members"`
 		BuildProfile  *string          `yaml:"buildProfile"`
 		Profiles      *[]sourceProfile `yaml:"profiles"`
+		Flow          *string          `yaml:"flow"`
 	}
 	var w sourceWorkspace
 	if err := strictSourceYAML(b, &descriptor, true); err != nil {
@@ -108,6 +110,12 @@ func parseSourceWorkspace(b []byte) (sourceWorkspace, error) {
 		return w, errors.New("workspace.yaml: invalid workspace descriptor; check source fields and integer schemaVersion")
 	}
 	w.SchemaVersion, w.Name = descriptor.SchemaVersion, descriptor.Name
+	if descriptor.Flow != nil {
+		if w.SchemaVersion != 2 || !fs.ValidPath(*descriptor.Flow) || *descriptor.Flow == "." || strings.Contains(*descriptor.Flow, "\\") {
+			return w, errors.New("flow requires a schemaVersion 2 workspace-relative file")
+		}
+		w.Flow = *descriptor.Flow
+	}
 	if descriptor.BuildProfile != nil {
 		w.BuildProfile = *descriptor.BuildProfile
 	}
