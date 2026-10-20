@@ -390,7 +390,7 @@ class WorkflowRoutingTests(unittest.TestCase):
         expression = expression.replace("github.event_name", repr(event))
         expression = expression.replace("steps.mutation_changes.outputs.scripts_changed", repr(scripts_changed))
         expression = expression.replace("github.ref", repr("refs/heads/main"))
-        expression = expression.replace("always()", "True").replace("&&", " and ").replace("||", " or ")
+        expression = expression.replace("!cancelled()", "True").replace("always()", "True").replace("&&", " and ").replace("||", " or ")
         return bool(eval(expression, {"__builtins__": {}}, {}))
 
     def test_mutations_run_for_scripts_pr_and_all_non_pr_events(self):
@@ -418,7 +418,7 @@ class WorkflowRoutingTests(unittest.TestCase):
         for name, job in self.workflow["jobs"].items():
             with self.subTest(job=name):
                 expression = job.get("if", "True")
-                self.assertEqual(self.enabled(expression, "schedule"), name in {"hygiene", "classify-change", "e2e-kagent-lift", "e2e-hello-world"})
+                self.assertEqual(self.enabled(expression, "schedule"), name in {"hygiene", "app-tests", "classify-change", "e2e-kagent-lift", "e2e-hello-world"})
                 if name not in {"kmx-clone-free", "e2e-kagent-lift"}:
                     self.assertTrue(self.enabled(expression, "pull_request"))
         triggers = self.workflow.get("on", self.workflow.get(True))

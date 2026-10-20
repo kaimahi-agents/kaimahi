@@ -106,6 +106,7 @@ python3 scripts/check-agentsuite-fixtures.py --selftest && python3 scripts/check
 python3 scripts/check-legacy-runtime.py --selftest && python3 scripts/check-legacy-runtime.py
 python3 scripts/check-comment-history.py --selftest && python3 scripts/check-comment-history.py
 python3 scripts/test_check_mutations.py
+python3 scripts/test_app_tests.py
 python3 scripts/check-mutations.py
 python3 scripts/check-readme-front-door.py
 python3 scripts/check-readme-front-door-test.py
@@ -138,6 +139,14 @@ The checkers above are the ones you can usefully run by hand. CI's hygiene
 job runs each checker, each checker's self-test, and a set of inline
 meta-checks over CI's own guards; it is the authority on what gates a
 merge, not this list.
+
+The Linux app tests run in four process-isolated CI shards, assigned by SHA-256
+of each compiled top-level test name. Subtests stay with their parent. The
+required `hygiene` check requires every shard to succeed and still runs the other
+packages and focused app regressions. Each shard retains the 600-second package
+limit and publishes payload-free per-test timings. To run one shard locally,
+use `python3 scripts/ci/app-tests.py --shard 0 --shards 4`; ordinary
+`go test ./...` still runs the complete suite without sharding.
 
 The retired-command scanner checks concrete removed commands and assets, not
 kagent API/image identifiers or runtime-version support. Its small exact

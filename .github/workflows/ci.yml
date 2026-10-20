@@ -28,8 +28,43 @@ jobs:
       - id: changes
         uses: ./.github/actions/classify-change
 
+  # Each process retains serial fixture isolation; top-level names are assigned
+  # exactly once without splitting dynamic subtests from their parent.
+  app-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: App tests and scalar timing summary
+        id: app_tests
+        run: python3 scripts/ci/app-tests.py --shard ${{ matrix.shard }} --shards 4
+      - name: App test timings (no test output)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kmx-app-timings-${{ matrix.shard }}
+          path: kmx-app-test.timings.json
+          if-no-files-found: ignore
+      - name: App test failure diagnostics
+        if: failure() && steps.app_tests.outcome == 'failure' && hashFiles('kmx-app-test.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kmx-app-test-json-${{ matrix.shard }}
+          path: kmx-app-test.json
+          retention-days: 3
+
   hygiene:
     runs-on: ubuntu-latest
+    needs: [app-tests]
+    if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -138,6 +173,7 @@ jobs:
       - name: Live eval gate and failure diagnostics self-tests
         run: |
           python3 scripts/test_orka_runtime_fixture.py
+          python3 scripts/test_app_tests.py
           python3 scripts/test_bundle_retirement_ci.py
       - name: kagent bootstrap, qualification and deterministic fixture self-tests
         run: |
@@ -632,11 +668,15 @@ jobs:
       - name: kmx — test (guard port, scaffolder, toolchain digests)
         id: kmx_tests
         run: |
-          # Run once: -json changes the test flags, so a preceding plain
-          # `go test ./...` would not warm this run's cache. Preserve its exit
-          # status, including build failures outside the required packages.
+          set -euo pipefail
+          # App runs in its own process-isolated shards, required by this job's
+          # final gate. Keep every other package and preserve discovery/build
+          # failures as well as test failures.
+          remaining=$(go list ./... | grep -vx "github.com/kaimahi-agents/kaimahi/internal/kmx/app")
+          test -n "$remaining"
+          mapfile -t packages <<< "$remaining"
           go_status=0
-          go test ./... -json > kmx-test.json 2>&1 || go_status=$?
+          go test "${packages[@]}" -json > kmx-test.json 2>&1 || go_status=$?
           # `ok  <package>` can mean every test SKIPPED. Each required
           # package must pass at least one test and have no failures.
           # Replay package/build Output events and non-JSON lines: build
@@ -670,7 +710,6 @@ jobs:
               # Go's flag parsing stops at the first positional: native
               # agent commands must preserve argument order and refusals.
               "cmd/kmx": "native command argument order and retired-command refusals",
-              "internal/kmx/app": "native operations and their refusals",
               # One list of credential shapes, read by the scaffolder, the
               # model configuration and the tree scan.
               "internal/kmx/secretshapes": "the shared credential-shape list",
@@ -772,6 +811,23 @@ jobs:
           go test ./cmd/kmx -run '^TestSuiteDiffArtifactsEndToEnd$' -count=1 -v | tee suite-diff-e2e.out
           grep -q -- '--- PASS: TestSuiteDiffArtifactsEndToEnd' suite-diff-e2e.out
           ! grep -q -- '--- SKIP:' suite-diff-e2e.out
+      # Preserve the required check's name and collect other hygiene diagnostics
+      # even if an app shard fails. Missing, skipped and cancelled shards refuse.
+      - name: Every app test shard succeeded
+        if: always()
+        env:
+          SHARDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys
+          needs = json.loads(os.environ["SHARDS"])
+          if set(needs) != {"app-tests"}:
+              print("missing or unexpected app shard dependency — refusing success"); sys.exit(1)
+          result = needs["app-tests"].get("result", "unknown")
+          print(f"app-tests: {result}")
+          if result != "success":
+              print("app shards did not all succeed — refusing success"); sys.exit(1)
+          EOF
 
   # Linux uses its XDG user-config location while macOS uses
   # ~/Library/Application Support. Cross-compiling a Darwin binary does not
