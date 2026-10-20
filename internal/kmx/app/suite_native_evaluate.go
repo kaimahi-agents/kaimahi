@@ -70,6 +70,9 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 			}
 		}
 	}
+	if !mayHaveChanged && errors.Is(err, workspace.ErrCacheMigration) {
+		return errors.Join(workspace.ErrCacheMigration, cause)
+	}
 	if errors.Is(err, workspace.ErrMultiMemberUnsupported) {
 		return errors.Join(workspace.ErrMultiMemberUnsupported, cause)
 	}

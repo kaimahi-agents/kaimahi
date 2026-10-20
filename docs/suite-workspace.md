@@ -1412,6 +1412,54 @@ it requires `publishRepository` in workspace `kmx.yaml`. A local `--to-layout`
 target still needs an explicit reference. TLS, exact-host HTTP opt-in, credential
 and provenance defaults remain unchanged.
 
+### Portable directory modes and preparation-cache upgrade
+
+Loose-directory packaging follows AgentSuite v0.6.0: regular files default to
+non-executable `0644`, directories to `0755`, and supported symlinks to `0777`.
+ToolProvider payload inventories supply their exact declared modes, including
+executable, zero and directory/link modes; conflicting declarations refuse.
+Host execute bits do not select archive modes. Host access/security checks still
+apply independently. Git executable-mode checks for source provenance are not
+portable content metadata and remain separate.
+
+Existing OCI artifacts are different: their stored tar modes and exact manifest
+identity S remain authoritative. Transfer or verify the original OCI layout or
+registry artifact to retain that identity. Repacking a loose extraction can
+produce a different layer and S even when file bytes and the public graph match.
+Do not relabel old artifacts, edit receipts, or use graph equality instead of S.
+Recompute saved loose-directory diff/content identities with the selected reader.
+Changing an authored inventory also requires rebinding its variant, provider,
+composition/dependency pins and ancestor descriptors as applicable.
+
+Preparation entries carry a packing-policy marker. An entry without the current
+marker refuses before cache reuse, evaluation, publication or composed Lift,
+with a `packaging policy` remedy. This includes older entries with identical file
+bytes: byte equality alone does not establish the tar-mode policy. No entry,
+receipt or deployed resource is automatically repaired or removed.
+
+To recover, stop operations using that workspace and **move aside only the
+identified prepared-cache entry**, then rerun the command. Ordinary preparation
+errors name that entry under `KMX_HOME/suites/<source-fingerprint-hex>/` (or the
+platform KMX state location). Public evidence export and eval use payload-free
+errors; retry the workspace's ordinary preparation through `kmx push` to identify
+the entry if needed—the old entry refuses before transfer. Keep
+`KMX_HOME/passing/` and standalone receipts; do not clear all KMX state or add the
+marker to an old entry by hand. Avoid sharing preparation entries between kmx
+versions: an older binary refuses the new record with an `unknown field
+packaging` error. For downgrade or mixed-version use, keep version-specific KMX
+state or move aside only the selected entry with operations stopped; do not
+delete passing evidence.
+
+Normal generated native packages already used non-executable regular files, so
+this cache-format upgrade preserves their artifact S and authored fingerprint.
+Repreparation with the same S retains eligible exact-S managed, explicit and
+public proof. If S changes, previous proof cannot qualify the new artifact:
+rerun `kmx eval` before evaluated `kmx push`, and obtain fresh approval/signing
+where required. An explicit mismatched `--evaluation` refuses without falling
+back; managed lookup considers only the new exact-S partition. Source-free digest
+Lift still consumes the original artifact and its matching receipt, without
+repreparing a workspace. This packaging change does not enable native Windows.
+
 ### Managed passing proof
 
 Managed state is outside workspace/preparation cache, under

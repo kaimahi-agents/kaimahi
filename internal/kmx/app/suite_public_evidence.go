@@ -55,6 +55,9 @@ func (a *App) ExportSuiteEvaluation(ctx context.Context, opt SuiteEvaluationExpo
 		return errSuitePublicOutput
 	}
 	prepared, e := workspace.Prepare(ctx, root, cache)
+	if errors.Is(e, workspace.ErrCacheMigration) {
+		return workspace.ErrCacheMigration
+	}
 	if e != nil {
 		return errSuitePublicSubject
 	}

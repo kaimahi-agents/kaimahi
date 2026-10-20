@@ -17,8 +17,7 @@ import (
 )
 
 func TestPushDirectoryIsIndependentOfFilesystemTimestamps(t *testing.T) {
-	root := t.TempDir()
-	mustWrite(t, root, "agentsuite.json", []byte(`{"name":"example"}`), 0o644)
+	root := minimalSuiteCopy(t)
 	mustWrite(t, root, "bin/tool", []byte("#!/bin/sh\n"), 0o755)
 
 	firstStore := memory.New()

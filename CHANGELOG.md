@@ -67,6 +67,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- Loose-directory packaging uses default non-executable regular-file modes and
+  exact declared ToolProvider payload modes, independent of host execute bits.
+  Existing OCI tar metadata and exact artifact identities remain authoritative.
+  Normal generated native artifacts retain their identities and eligible proofs.
 - Workspace `lift --verbose` no longer prints judge rationale by itself; use
   `--show-content` for non-pass content. Deploy-only and plan-only Lift refuse
   that flag. The judge policy's local-diagnostics clarification preserves the
@@ -103,6 +107,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Breaking
 
+- Older preparation-cache entries refuse without a current packing-policy marker.
+  Move aside only the named entry and retry; keep managed passing state and
+  standalone receipts. Rebuilding a different artifact requires fresh evaluation,
+  never edited or relabeled proof. See the
+  [cache upgrade](docs/suite-workspace.md#portable-directory-modes-and-preparation-cache-upgrade).
 - Suite loading now refuses Suite/ToolProvider extensions without an explicit
   `critical` boolean, present empty/null ToolProvider `variants`, and explicitly
   null tool `outputSchema` properties. ToolProvider JSON decoding also rejects

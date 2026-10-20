@@ -373,6 +373,15 @@ Do not infer enforcement from authoring, transfer, readiness, labels or annotati
 
 ## AgentSuite evaluation storage
 
+- Loose-directory packaging uses default non-executable regular files and exact
+  declared ToolProvider inventory modes, never host execute bits. Keep Git-mode
+  provenance separate. Prepared cache records require the current packing-policy
+  marker; absent/unknown markers refuse with move-aside guidance, never repair or
+  delete old entries. Keep that safe remedy through redacted eval/public-export
+  boundaries. Cache policy is not authored fingerprint or OCI S: unchanged native
+  S retains exact-S proof, while changed S requires fresh evaluation. Original
+  source-free OCI artifacts retain their tar metadata and existing receipt rules.
+
 - `eval verify --suite LAYOUT --evidence FILE --expect FILE` is the state-free
   offline CI consumer of shared VerifyEvaluation. Digest form requires explicit
   `--from-layout DIR`; never resolve a registry, prepare a workspace or search
