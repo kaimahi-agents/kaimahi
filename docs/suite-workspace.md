@@ -871,6 +871,50 @@ failure with no export, and Replay/reference reconstruction with unchanged model
 counter. That is runtime/config/journal qualification, not real-LLM quality or
 production/authenticated host qualification. No model or host is installed by KMX.
 
+### AgentSessionsBinding
+
+An `AgentSessionsBinding` is the per-environment half of an AgentSessions
+deployment. It lives outside the suite, one per environment. The suite pins the
+exact model; the binding says where that model is served and where sessions are
+placed. Its `model.name` must be exactly the packaged model (no case folding,
+prefix or version matching); a different model is a new suite version and a new
+evaluation. KMX defines and validates this document; no command reads it yet.
+
+```yaml
+apiVersion: kmx.kaimahi.dev/v1alpha1
+kind: AgentSessionsBinding
+target: {platform: kubernetes, id: agentsuite-demo}
+placement: {backend: substrate}
+atespace: agentsuite-demo
+sandbox: {class: microvm, configName: microvm}
+snapshot: {fidelity: MEMORY, storageLocation: "gs://ate-snapshots/agentsuite-demo/"}
+resources: {cpu: "1", memory: 512Mi}
+workerSelector:
+  matchLabels: {workload: agentsuite-demo-microvm}
+model:
+  name: fixture-model
+  provider: openai
+  baseURL: http://fakemodel.agentsuite-demo.svc:8080/v1
+  secretRef: {name: model-credentials, key: api-key}
+```
+
+| Field | Rule |
+|---|---|
+| `target` | `platform: kubernetes`; `id` is a Kubernetes object name. |
+| `placement.backend` | `substrate` only. |
+| `atespace` | RFC 1123 label. |
+| `sandbox` | `class` `microvm` or `gvisor`; `configName` names the cluster SandboxConfig. |
+| `snapshot` | `fidelity` `MEMORY`, `ROOTFS` (micro-VM only) or `VOLUMES`; `storageLocation` is an object-storage URI of at most 959 bytes without credentials, query, fragment or `\`, and without empty path segments or segments of only `.` and spaces (one trailing `/` is allowed). |
+| `resources` | Required `cpu` and `memory`: positive Kubernetes quantities of at most 32 characters, cpu at most 999.999 cores. Substrate sizes and schedules the actor by them. |
+| `workerSelector.matchLabels` | Optional Kubernetes label selector of at most 10 labels; an empty `matchLabels` is the same binding (and digest) as an omitted `workerSelector`. |
+| `model` | `name` is the served model; `provider: openai` (OpenAI-compatible); optional HTTP(S) `baseURL`; `secretRef` names the credential Secret and key. |
+
+Parsing is strict: one YAML (or JSON) document, known fields only, no anchors,
+aliases or merge keys, and credential-shaped values refuse without being echoed.
+The credential is referenced, never embedded. The binding digest is the SHA-256 of
+the RFC 8785 (JCS) form of its JSON mapping, so comments, key order and
+YAML/JSON spelling do not change it.
+
 ## Evaluate the whole workspace
 
 For Orka, provision the pinned v0.2.0 harness-v2 runtime, a Ready

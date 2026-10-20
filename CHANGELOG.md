@@ -31,6 +31,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   execution and transfer/registry paths remain strict. No pipeline execution,
   approval enforcement, publication or whole-suite evaluation is enabled.
 
+- `AgentSessionsBinding` (`kmx.kaimahi.dev/v1alpha1`) is a closed per-environment
+  binding document for AgentSessions: target, substrate placement, atespace,
+  sandbox, snapshot, required cpu/memory resources, worker selector and model
+  name/provider/baseURL/Secret ref. It has strict parsing, a JCS digest and an
+  exact check against the suite's pinned model; no command reads it yet.
+  `snapshot.storageLocation` refuses `\`, empty path segments and segments of
+  only `.` and spaces; an empty `workerSelector.matchLabels` has the same digest
+  as an omitted selector.
 - Eval and composed workspace Lift show non-pass case/run, assertion IDs/types,
   both judge scores against the threshold and safe unknown-outcome classes.
   `--show-content` opts into sanitized bounded expected values, judge rationale
