@@ -55,7 +55,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
 | `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 61 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
-| `docs/` | 57 tracked files; native guides, design, site scaffolding and history | — | maintainer and process docs |
+| `docs/` | 62 tracked files; native guides, design, site scaffolding and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
@@ -290,7 +290,7 @@ Existing cluster deletion
 owns runtime/model cleanup. These files are checkout-only scaffolding, not an
 installer or new CLI/API capability.
 
-## `docs/` — 57 tracked files, native guides, site scaffolding and design/history
+## `docs/` — 62 tracked files, native guides, site scaffolding and design/history
 
 **Guides and index (17):** `README.md`, `getting-started.md`, `kmx.md`,
 `aks.md`, `aks-demo.md`, `models.md`, `releases.md`, `FAQ.md`, `orka.md`,
@@ -312,6 +312,11 @@ installer or new CLI/API capability.
 **Schema assets and provenance (9):** `agentsuite-schemas.json` and
 `public/schemas/agentsuite/v1/`. These serve immutable AgentSuite v0.1.0 bytes
 at the frozen schema IDs; the site tests and separate upstream parity gate check them.
+
+**Azure guidance and templates (5):** `azure/README.md`, `azure/acr.bicep`,
+`azure/aikit-cpu-namespace.yaml`, `azure/aikit-cpu.yaml`, `azure/template_test.go`.
+These checkout-only assets provide optional single-node CPU inference tests;
+they are not embedded or invoked by KMX setup.
 
 ## `brand/` — identity assets
 
