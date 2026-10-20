@@ -43,12 +43,47 @@ type orkaResultSession struct {
 type orkaResultConn struct {
 	net.Conn
 	cancel context.CancelFunc
+	mu     sync.Mutex
+	class  string
+}
+
+func (c *orkaResultConn) rememberFailure(err error) {
+	if errors.Is(err, net.ErrClosed) {
+		c.cancel()
+		return
+	}
+	c.mu.Lock()
+	if c.class == "" {
+		c.class = suiteFailureClass(err)
+	}
+	c.mu.Unlock()
+	c.cancel()
+}
+
+func (c *orkaResultConn) failureClass() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.class
+}
+
+func (s *orkaResultSession) failureClass(err error) string {
+	class := suiteFailureClass(err)
+	// A socket close is secondary to an explicit timeout. Only recover a
+	// remembered cause when lifetime cancellation obscured the original error.
+	if class == "canceled" || class == "unknown" {
+		if conn, ok := s.conn.(*orkaResultConn); ok {
+			if remembered := conn.failureClass(); remembered != "" {
+				return remembered
+			}
+		}
+	}
+	return class
 }
 
 func (c *orkaResultConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if err != nil {
-		c.cancel()
+		c.rememberFailure(err)
 	}
 	return n, err
 }
@@ -56,7 +91,7 @@ func (c *orkaResultConn) Read(p []byte) (int, error) {
 func (c *orkaResultConn) Write(p []byte) (int, error) {
 	n, err := c.Conn.Write(p)
 	if err != nil {
-		c.cancel()
+		c.rememberFailure(err)
 	}
 	return n, err
 }
@@ -302,15 +337,16 @@ func (s *orkaResultSession) getTaskResource(ctx context.Context, namespace, name
 	req.Header.Set("Accept", "application/json")
 	response, err := s.client.Do(req)
 	if err != nil {
+		class := s.failureClass(err)
 		if ctx.Err() == context.DeadlineExceeded {
-			return 0, nil, fmt.Errorf("Orka result request failed or timed out: %w", ctx.Err())
+			return 0, nil, withSuiteFailureClass(fmt.Errorf("Orka result request failed or timed out: %w", ctx.Err()), "timeout")
 		}
-		return 0, nil, fmt.Errorf("Orka result request failed or timed out")
+		return 0, nil, withSuiteFailureClass(fmt.Errorf("Orka result request failed or timed out"), class)
 	}
 	defer response.Body.Close()
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
-		return response.StatusCode, nil, fmt.Errorf("Orka result endpoint returned non-JSON content (HTTP %d)", response.StatusCode)
+		return response.StatusCode, nil, withSuiteFailureClass(fmt.Errorf("Orka result endpoint returned non-JSON content (HTTP %d)", response.StatusCode), suiteFailureClass(suiteHTTPDiagnostic("result", response.StatusCode)))
 	}
 	const maxBody = 1 << 20
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxBody+1))
@@ -318,7 +354,7 @@ func (s *orkaResultSession) getTaskResource(ctx context.Context, namespace, name
 		if ctx.Err() == context.DeadlineExceeded {
 			return response.StatusCode, nil, fmt.Errorf("Orka result response read timed out: %w", ctx.Err())
 		}
-		return response.StatusCode, nil, fmt.Errorf("Orka result response could not be read within the size limit")
+		return response.StatusCode, nil, withSuiteFailureClass(fmt.Errorf("Orka result response could not be read within the size limit"), suiteFailureClass(err))
 	}
 	if len(body) > maxBody {
 		return response.StatusCode, nil, fmt.Errorf("Orka result response could not be read within the size limit")
@@ -357,7 +393,7 @@ func (s *orkaResultSession) probeBeforeCreate(ctx context.Context, namespace, na
 	}
 	code, message, valid := orkaResultError(envelope)
 	if status != http.StatusNotFound || !valid || code != 404 || message != "task not found" {
-		return fmt.Errorf("Orka result access preflight refused (HTTP %d); expected the exact absent-Task JSON response. %s", status, failureScope)
+		return withSuiteFailureClass(fmt.Errorf("Orka result access preflight refused (HTTP %d); expected the exact absent-Task JSON response. %s", status, failureScope), suiteFailureClass(suiteHTTPDiagnostic("result", status)))
 	}
 	return nil
 }
@@ -448,7 +484,7 @@ func (a *App) readOrkaTaskResult(ctx context.Context, namespace string, id orkaI
 			}
 			retry = true
 		default:
-			return "", fmt.Errorf("Orka result read refused (HTTP %d)", status)
+			return "", withSuiteFailureClass(fmt.Errorf("Orka result read refused (HTTP %d)", status), suiteFailureClass(suiteHTTPDiagnostic("result", status)))
 		}
 		after, err := a.readOrkaObject(ctx, namespace, id)
 		if err != nil {

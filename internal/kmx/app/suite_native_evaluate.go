@@ -84,6 +84,10 @@ func suiteEvaluationError(ctx context.Context, err error, mayHaveChanged bool) e
 	if errors.As(err, &placement) {
 		return errors.Join(placement, cause)
 	}
+	var diagnostic *suiteDiagnosticError
+	if errors.As(err, &diagnostic) {
+		cause = errors.Join(cause, &suiteDiagnosticError{class: diagnostic.class})
+	}
 	classified := errSuiteNativeRefused
 	if mayHaveChanged {
 		classified = errSuiteNativeEvaluation
@@ -112,7 +116,22 @@ func (a *App) evaluateSuiteNative(ctx context.Context, placement *suiteNativePla
 
 func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNativePlacement, frame suitePassingInventoryCase, port string, judge agentruntime.EvaluationJudge, run *suiteCandidateRun) (observation suitePassingObservation, err error) {
 	observation = suitePassingObservation{CaseDigest: frame.Metadata.CaseDigest, InputDigest: frame.Metadata.InputDigest, EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: frame.Case.ID, Verdict: agentruntime.EvaluationUnknown}}
+	var answer string
+	attributed := false
 	defer func() {
+		diagnostic := observation
+		if !attributed || ctx.Err() != nil {
+			if answer != "" {
+				recordSuiteFailureClass(ctx, "attribution-unverified")
+			}
+			if ctx.Err() != nil {
+				recordSuiteFailureClass(ctx, suiteFailureClass(ctx.Err()))
+			}
+			diagnostic.AnswerSHA256, diagnostic.Assertions = "", nil
+			answer = ""
+		}
+		captureSuiteFailureContext(ctx, frame, &diagnostic, answer, err)
+		observation.failure = diagnostic.failure
 		if err != nil {
 			if run != nil {
 				count, _ := frame.Case.RunPolicy()
@@ -230,7 +249,7 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 	observation.TaskUID = id.UID
 	// The installed Task CRD has a status subresource: a spec change bumps
 	// generation. Existing UID/generation polls bind this CREATE spec frame.
-	answer, err := worker.waitOrkaTaskResult(caseCtx, ns, id, session)
+	answer, err = worker.waitOrkaTaskResult(caseCtx, ns, id, session)
 	if err != nil {
 		var ended *orkaTaskEndedError
 		if errors.As(err, &ended) {
@@ -273,6 +292,7 @@ func (a *App) evaluateSuiteNativeTracked(ctx context.Context, placement *suiteNa
 			return observation, errSuiteNativeEvaluation
 		}
 	}
+	attributed = true
 	observation.Verdict = agentruntime.EvaluationPass
 	for _, row := range observation.Assertions {
 		if row.Verdict != agentruntime.EvaluationPass {

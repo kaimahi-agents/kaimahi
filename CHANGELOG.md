@@ -24,6 +24,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Eval and composed workspace Lift show non-pass case/run, assertion IDs/types,
+  both judge scores against the threshold and safe unknown-outcome classes.
+  `--show-content` opts into sanitized bounded expected values, judge rationale
+  and answer excerpts on stderr; outcome JSON remains payload-free. Diagnostics
+  are transient and separate from evidence; local retention/explain is not yet
+  implemented. Known credentials/headers are withheld before truncation, but
+  shape checks cannot detect arbitrary secrets.
 - Opt-in Orka `kmx lift --to <destination> --update` and digest/evidence update
   or rollback. Only newly created, acknowledged retained pairs qualify; v0.8.1
   and earlier, reused, mixed and unrecorded placements are never enrolled.
@@ -53,6 +60,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- Workspace `lift --verbose` no longer prints judge rationale by itself; use
+  `--show-content` for non-pass content. Deploy-only and plan-only Lift refuse
+  that flag. The judge policy's local-diagnostics clarification preserves the
+  historical v2 evidence fingerprint and existing receipts; no new receipt
+  fields, diagnostic references, signatures or exports are introduced.
 - AgentSuite validation now uses `github.com/agent-primitives/suite v0.5.0`.
   Editor and external-validator registries should select the complete v0.5.0
   schema bundle with `/schema/v0.5/` IDs. Historical hosted v0.1.0 schemas

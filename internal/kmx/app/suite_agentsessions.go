@@ -137,7 +137,7 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 				}
 			}
 		}
-		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run\x27s deadline. Identity/version are user-declared, not provider attestation. Reasoning is discarded.\n", count); err != nil {
+		if _, err := fmt.Fprintf(a.Err, "Judge preflight: %d independent requests over case inputs, attributed answers and authored rubrics; shares each run\x27s deadline. Identity/version are user-declared, not provider attestation. Non-pass reasoning is diagnostic-only; --show-content opts into sanitized bounded content on stderr.\n", count); err != nil {
 			return err
 		}
 	}
@@ -176,6 +176,7 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 			return observed, err
 		}
 		observed.AnswerSHA256, observed.Assertions = agentruntime.EvaluationAnswerDigest(result.Output), rows
+		captureSuiteFailureContext(runCtx, frame, &observed, result.Output, nil)
 		observations = append(observations, suiteSessionsObservation{Result: result, Assertions: rows})
 		return observed, nil
 	})

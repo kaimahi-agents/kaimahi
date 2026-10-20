@@ -187,18 +187,29 @@ func (a *App) evaluateSuiteKagentWorkspace(ctx context.Context, p *PreparedSuite
 			return observation, nil
 		}
 		ref := agentruntime.AgentRef{Runtime: agentruntime.Kagent, Context: p.options.ToContext, Namespace: p.options.ToNamespace, Name: p.suite.MemberID, UID: placement.Observation.Resources[1].UID}
-		result, _, e := worker.executeKagentEvaluationCase(caseCtx, ref, frame.Case, execution, &runOperation, observe, p.judge)
+		result, answer, e := worker.executeKagentEvaluationCase(caseCtx, ref, frame.Case, execution, &runOperation, observe, p.judge)
 		if e == nil {
 			e = caseCtx.Err()
 		}
 		if e == nil && p.judge != nil {
 			// Judging is external I/O: re-observe attribution before crediting a case.
 			_, e = observe()
+			if e != nil {
+				recordSuiteFailureClass(caseCtx, "attribution-unverified")
+			}
 		}
 		if e == nil && result.Detail != "" && result.Verdict == agentruntime.EvaluationFail {
 			e = errSuiteNativeCaseFailed
 		}
-		return suitePassingObservation{frame.Metadata.CaseDigest, frame.Metadata.InputDigest, result}, e
+		observed := suitePassingObservation{CaseDigest: frame.Metadata.CaseDigest, InputDigest: frame.Metadata.InputDigest, EvaluationReceipt: result}
+		diagnostic := observed
+		if e != nil && !errors.Is(e, errSuiteNativeCaseFailed) {
+			diagnostic.AnswerSHA256, diagnostic.Assertions = "", nil
+			answer = ""
+		}
+		captureSuiteFailureContext(caseCtx, frame, &diagnostic, answer, e)
+		observed.failure = diagnostic.failure
+		return observed, e
 	})
 	if err != nil {
 		return err

@@ -345,7 +345,8 @@ Newly created release objects carry the non-secret provenance described below.
 Guided authoring and tag-based Lift are not included. Destination update and
 rollback require the explicit retained Orka path below; plain Lift stays create-only.
 
-The default stage transcript has four stderr lines: Plan, Eval, Push and Lift;
+The default stage transcript has four stage lines on stderr: Plan, Eval, Push and Lift,
+plus compact non-pass evaluation detail;
 failures may add a safe refusal or critical cleanup warning. Skipped stages keep
 their line. Counts are case runs (Tasks), also named `caseRuns` in JSON; a completed
 evaluation means each case's threshold was met, not that every run passed.
@@ -902,7 +903,12 @@ per judge assertion per run**, sharing that run's deadline. Both
 scores at/above the threshold pass, both below fail, and disagreement, malformed
 or unavailable responses are unknown. There are no retries or candidate Tasks beyond the authored runs. Native
 attribution is checked again after judging; late drift/deadline
-prevents a case pass and export. Reasoning is discarded, never printed.
+prevents a case pass and export. Failure summaries include assertion IDs/types and
+both judge scores versus the threshold; unavailable or split outcomes have safe
+classes. Only `--show-content` prints sanitized bounded rationale and answer
+excerpts on stderr, including in composed Lift. `lift --verbose` alone does not
+opt into content. The storage-only policy wording clarification leaves the
+historical v2 evidence fingerprint, scoring rules and existing receipts unchanged.
 Choose a judge model strong enough for the rubric: two agreeing scores do not
 make an incorrect judgment correct; validate it against known pass/fail examples.
 
@@ -971,9 +977,35 @@ Service-proxy audit bodies and model transfers. No auth settings are modified.
 For Orka, the temporary result session uses the selected ServiceAccount's **full effective
 authority**. Discarding its bearer is not revocation; Task-read enforcement is
 unverified for v0.2.0. One pinned loopback connection is opened per run, without
-reconnect. Prompts, answers, assertion operands and reasoning stay out of KMX
-terminal summaries and receipts, but runtime/model storage and Kubernetes audit
-policy may retain them. Published suites themselves contain authored inputs.
+reconnect. Default summaries omit prompts, answers, assertion operands and
+reasoning. `eval --show-content` and executing workspace `lift --show-content`
+opt into expected values/patterns, short judge rationale and answer excerpts on
+stderr. Orka outcome JSON stays one payload-free document with non-pass metadata.
+The flag is refused for deploy-only or plan-only Lift. Prompts are never printed
+by these diagnostics, and receipts still contain no content or references to it.
+Runtime/model storage and Kubernetes audit policy may retain inputs and answers.
+Published suites themselves contain authored inputs.
+
+Failure content is diagnostic-only and currently transient: no retained failure
+store, offline explain, signing or export path is implemented. Each answer is
+bounded to 64 KiB in memory; rationale is bounded to 512 UTF-8 bytes per sample,
+expected values to 512 bytes, and displayed excerpts to 512 bytes per assertion
+and 2 KiB total per run. Forbidden-text failures show an excerpt around the match;
+a missing positive match or judge failure shows a labeled leading excerpt, not
+an invented failure span. Failed individual runs are reported even if their group
+later meets minPasses. Unknown outcomes with unverified attribution expose no
+answer or rationale.
+
+Before truncation, diagnostics check full raw and terminal-normalized content for
+known credential shapes and the configured judge key. Credential-shaped,
+header-like and invalid-UTF-8 fields are withheld, not partially redacted.
+Conservative header checks can withhold ordinary colon-delimited text as well.
+Clean checks do not prove arbitrary secrets or personal data are absent; only opt
+into content on a private terminal. No raw transport/subprocess errors, headers
+or judge endpoint URLs are retained in these diagnostic fields. Known typed
+transport failures preserve fixed classes (timeout, connection-refused, EOF,
+TLS or HTTP status); kagent subprocess failures use stage classes, never inferred
+HTTP/network causes. Cleanup does not erase independently retained upstream data.
 
 A missed pass threshold, unknown results, execution failure, drift, cancellation
 or output failure stops later cases
