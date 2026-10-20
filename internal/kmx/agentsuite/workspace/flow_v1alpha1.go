@@ -33,21 +33,41 @@ func PrepareFlow(ctx context.Context, root, cache string) (*Prepared, error) {
 	return prepare(ctx, root, cache, true)
 }
 
-func attachFlow(files map[string][]byte, raw []byte) error {
+func canonicalFlow(raw []byte) ([]byte, error) {
 	if len(raw) > maxFlowFile {
-		return errors.New("flow exceeds 4 MiB")
+		return nil, errors.New("flow exceeds 4 MiB")
 	}
 	var flow agentsuite.FlowV1Alpha1
 	if agentsuite.Unmarshal(raw, &flow) != nil {
-		return errors.New("invalid flow JSON")
+		return nil, errors.New("invalid flow JSON")
+	}
+	// JSON escaping can hide a detector boundary (for example newline becomes
+	// a word-character n); inspect decoded text before any staging or packaging.
+	for _, c := range flow.Cases {
+		if err := safeText(c.Input); err != nil {
+			return nil, err
+		}
+		for _, a := range c.Assertions {
+			if err := safeText(a.Check.Value + "\n" + a.Check.Pattern); err != nil {
+				return nil, err
+			}
+		}
 	}
 	// Canonicalize original structure, not typed values: required/null/omitted
 	// fields must reach the shared contract validator without reinterpretation.
 	canonical, err := agentsuite.Marshal(json.RawMessage(raw))
 	if err != nil {
-		return errors.New("invalid flow JSON")
+		return nil, errors.New("invalid flow JSON")
 	}
 	if err := safeText(string(canonical)); err != nil {
+		return nil, err
+	}
+	return canonical, nil
+}
+
+func attachFlow(files map[string][]byte, raw []byte) error {
+	canonical, err := canonicalFlow(raw)
+	if err != nil {
 		return err
 	}
 	f, err := agentsuite.Digest(canonical)
@@ -233,6 +253,9 @@ func CreateFlow(ctx context.Context, root string, opt FlowCreateOptions) error {
 	if err != nil {
 		return err
 	}
+	if _, err := canonicalFlow(flow); err != nil {
+		return err
+	}
 	w := sourceWorkspace{SchemaVersion: 2, Name: opt.Name, BuildProfile: "build-profiles/default.json", Flow: agentsuite.FlowPathV1Alpha1}
 	files := map[string][]byte{w.BuildProfile: defaultProfile, w.Flow: flow}
 	seen := map[string]bool{}
@@ -287,7 +310,11 @@ func CreateFlow(ctx context.Context, root string, opt FlowCreateOptions) error {
 	if err != nil {
 		return err
 	}
-	stage, err := os.MkdirTemp("", "kmx-flow-create-*")
+	tmp, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(tmp, "kmx-flow-create-*")
 	if err != nil {
 		return err
 	}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/localartifact"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 const authoredFlow = `{"schemaVersion":"kmx.flow/v1alpha1","id":"release","mode":"pipeline","entry":"writer","edgeRequirements":[],"steps":[{"id":"draft","member":"writer","input":{"source":"run.input"}},{"id":"review","member":"reviewer","input":{"source":"draft.output","context":"run.input"},"approval":"policy-controlled"}],"cases":[{"id":"facts","input":"frozen sources","runs":3,"minPasses":2,"assertions":[{"step":"review","check":{"id":"verdict","type":"contains","value":"Verdict: PASS"}}]}]}`
@@ -315,6 +317,96 @@ func TestFlowCanceledInventoryPreservesIdentity(t *testing.T) {
 	}
 	if _, err := workspace.LoadFlowArtifactInventory(ctx, nil); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
+	}
+}
+
+func TestFlowDecodedCredentialsRefuseBeforePersistence(t *testing.T) {
+	key := strings.Repeat("a1b2", 8)
+	secret := "facts\n" + key + "\nend"
+	if secretshapes.Match(secret) == nil {
+		t.Fatal("synthetic decoded fixture must match detector")
+	}
+	for _, field := range []string{"input", "regex"} {
+		t.Run(field, func(t *testing.T) {
+			var flow agentsuite.FlowV1Alpha1
+			if err := json.Unmarshal([]byte(authoredFlow), &flow); err != nil {
+				t.Fatal(err)
+			}
+			if field == "input" {
+				flow.Cases[0].Input = secret
+			} else {
+				check := &flow.Cases[0].Assertions[0].Check
+				check.Type = field
+				check.Value = secret
+				if field == "regex" {
+					check.Value = ""
+					check.Pattern = secret
+				}
+			}
+			raw, err := json.Marshal(flow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if secretshapes.Match(string(raw)) != nil {
+				t.Fatal("fixture must reproduce JSON boundary masking")
+			}
+			root, opt := flowCreateInputs(t)
+			writeFile(t, opt.FlowFile, string(raw))
+			err = workspace.CreateFlow(t.Context(), root, opt)
+			if err == nil {
+				t.Error("CreateFlow persisted decoded credential-shaped text")
+			} else if strings.Contains(err.Error(), key) {
+				t.Error("error disclosed synthetic credential")
+			}
+			if _, err := os.Stat(root); !os.IsNotExist(err) {
+				t.Error("rejected create touched destination")
+			}
+			clean, cleanOpt := flowCreateInputs(t)
+			if err := workspace.CreateFlow(t.Context(), clean, cleanOpt); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(clean, "coordination/flow.json"), string(raw))
+			cache := filepath.Join(t.TempDir(), "credential-cache")
+			_, err = workspace.PrepareFlow(t.Context(), clean, cache)
+			if err == nil {
+				t.Error("PrepareFlow persisted decoded credential-shaped text")
+			} else if strings.Contains(err.Error(), key) {
+				t.Error("error disclosed synthetic credential")
+			}
+			if _, err := os.Stat(cache); !os.IsNotExist(err) {
+				t.Error("rejected prepare wrote cache")
+			}
+		})
+	}
+}
+
+func TestFlowCreateWithSymlinkedSystemTemp(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix TMPDIR symlink boundary")
+	}
+	root, opt := flowCreateInputs(t)
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "alias")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Skip(err)
+	}
+	t.Setenv("TMPDIR", alias)
+	if err := workspace.CreateFlow(t.Context(), root, opt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "workspace.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(real)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("temporary stages not cleaned", err)
 	}
 }
 
