@@ -14,6 +14,7 @@ import (
 	kaimahi "github.com/kaimahi-agents/kaimahi"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/toolchain"
 )
@@ -59,6 +60,9 @@ type App struct {
 	// captureCommand replaces execution of an already-prepared kubectl capture
 	// in tests only. Nil retains the real subprocess boundary.
 	captureCommand func(context.Context, *exec.Cmd) error
+	// compileOrkaSchema replaces installed-schema compilation in tests only.
+	// Nil compiles each fresh observed CRD set without caching.
+	compileOrkaSchema func(map[string][]byte) (*orkaschema.Validator, error)
 	// releaseRecordPrepared configures the real private publisher in boundary tests.
 	// Nil leaves persistence unchanged.
 	releaseRecordPrepared func(*releaseLiftRecordWriter)
@@ -140,6 +144,13 @@ func (a *App) withRunContext(ctx context.Context) *App {
 	runner.Context = ctx
 	app.Run = &runner
 	return &app
+}
+
+func (a *App) installedOrkaSchema(crds map[string][]byte) (*orkaschema.Validator, error) {
+	if a.compileOrkaSchema != nil {
+		return a.compileOrkaSchema(crds)
+	}
+	return orkaschema.Installed(crds)
 }
 
 func (a *App) executeCapture(ctx context.Context, cmd *exec.Cmd) error {

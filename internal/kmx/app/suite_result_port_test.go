@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -19,7 +17,7 @@ import (
 // These exercise the real result session through both suite error boundaries:
 // a regression to requested-port dialing/defaulting cannot reach the service.
 func TestSuiteEvaluationResultPort(t *testing.T) {
-	for _, mode := range []string{"occupied 19180", "explicit", "occupied explicit", "canonical occupied explicit"} {
+	for _, mode := range []string{"automatic", "explicit", "occupied explicit", "canonical occupied explicit"} {
 		t.Run(mode, func(t *testing.T) {
 			canonical := strings.HasPrefix(mode, "canonical")
 			var a *App
@@ -33,22 +31,20 @@ func TestSuiteEvaluationResultPort(t *testing.T) {
 			t.Setenv("KMX_EVAL_FORWARD_TARGET", f.resultAddress)
 			opt := nativeEvaluationOptions(t)
 			opt.ResultPort = ""
-			address := "127.0.0.1:0"
-			if mode == "occupied 19180" {
-				address = "127.0.0.1:19180"
-			}
-			listener, err := net.Listen("tcp4", address)
-			if err != nil && (mode != "occupied 19180" || !errors.Is(err, syscall.EADDRINUSE)) {
+			listener, err := net.Listen("tcp4", "127.0.0.1:0")
+			if err != nil {
 				t.Fatal(err)
 			}
-			if listener != nil {
-				t.Cleanup(func() { _ = listener.Close() })
-				if mode != "occupied 19180" {
-					_, opt.ResultPort, _ = net.SplitHostPort(listener.Addr().String())
-				}
-				if mode == "explicit" {
-					_ = listener.Close()
-				}
+			t.Cleanup(func() { _ = listener.Close() })
+			_, heldPort, err := net.SplitHostPort(listener.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode != "automatic" {
+				opt.ResultPort = heldPort
+			}
+			if mode == "explicit" {
+				_ = listener.Close()
 			}
 			// Exercise repeat stdout as well as the returned error.
 			casePath := filepath.Join(opt.Workspace, "eval/example.yaml")
@@ -92,7 +88,7 @@ func TestSuiteEvaluationResultPort(t *testing.T) {
 			}
 			for range len(ports) {
 				_, port, _ := net.SplitHostPort(<-ports)
-				if port == "" || mode == "occupied 19180" && port == "19180" || mode == "explicit" && port != opt.ResultPort {
+				if port == "" || mode == "automatic" && (port == "19180" || port == heldPort) || mode == "explicit" && port != opt.ResultPort {
 					t.Fatalf("wrong live result port %q (requested %q)", port, opt.ResultPort)
 				}
 			}

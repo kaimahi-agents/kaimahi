@@ -8,7 +8,6 @@ import (
 
 	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -131,7 +130,7 @@ func (a *App) prepareSuiteNativeProjection(ctx context.Context, suite *workspace
 		}
 		crds[kind] = raw
 	}
-	validator, err := orkaschema.Installed(crds)
+	validator, err := a.installedOrkaSchema(crds)
 	if err != nil {
 		return nil, err
 	}

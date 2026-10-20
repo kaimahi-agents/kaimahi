@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -59,7 +58,7 @@ func (app *App) planOrkaPlacement(ctx context.Context, identity orkaPlacementIde
 		}
 		crds[kind] = raw
 	}
-	validator, err := orkaschema.Installed(crds)
+	validator, err := app.installedOrkaSchema(crds)
 	if err != nil {
 		return nil, err
 	}

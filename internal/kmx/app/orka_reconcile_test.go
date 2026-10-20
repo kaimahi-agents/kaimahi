@@ -27,6 +27,7 @@ func reconcileFixtureMode(t *testing.T, inProcess bool) (orkaRuntimeAdapter, str
 	t.Setenv("KMX_RECONCILE_FIXTURES", fixtures)
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	a := &App{Cfg: &config.Config{KubeContext: "kind-test", ContextSource: config.SourceFlag}, Run: &run.Runner{}, Out: io.Discard, Err: io.Discard, waitTiming: fastWaitTiming()}
+	a.compileOrkaSchema = fixtureOrkaSchemaCompiler(t)
 	if inProcess {
 		a.captureCommand = reconcileCaptureFixture
 		forbidKubectlLaunch(t, dir)
