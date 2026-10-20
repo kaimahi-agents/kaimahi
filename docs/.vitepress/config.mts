@@ -84,7 +84,7 @@ const userGuides = [
   { text: 'Runtime support', link: '/docs/runtime-adapters' },
   { text: 'Orka', link: '/docs/orka' },
   { text: 'Models and inference', link: '/docs/models' },
-  { text: 'Azure CPU-model demo', link: '/docs/azure/' },
+  { text: 'Azure CPU-model demo', link: '/docs/azure/cpu-model/' },
   { text: 'Interactive chat', link: '/docs/interactive-chat' },
   { text: 'AKS Create, Prove, Lift demo', link: '/docs/aks-demo' },
   { text: 'AKS', link: '/docs/aks' },

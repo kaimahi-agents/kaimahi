@@ -151,7 +151,7 @@ func TestCPUModelTemplate(t *testing.T) {
 		}
 	}
 
-	fixture := modelDocuments(t, filepath.Join("..", "..", "scripts", "ci", "native-suite-model.yaml"))
+	fixture := modelDocuments(t, filepath.Join("..", "..", "..", "scripts", "ci", "native-suite-model.yaml"))
 	wantImage := modelField(t, fixture["Deployment"], "spec", "template", "spec", "containers", "0", "image").Value
 	if got := modelField(t, container, "image").Value; got != wantImage || !strings.Contains(got, "@sha256:") {
 		t.Errorf("model image = %q, want existing digest pin %q", got, wantImage)
@@ -160,7 +160,7 @@ func TestCPUModelTemplate(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(modelField(t, resources["ConfigMap"], "data", "config.yaml").Value), &gotConfig); err != nil {
 		t.Fatal(err)
 	}
-	fixtureConfig, err := os.ReadFile(filepath.Join("..", "..", "scripts", "ci", "eval-loop-model.yaml"))
+	fixtureConfig, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "ci", "eval-loop-model.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
