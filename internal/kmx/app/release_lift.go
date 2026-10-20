@@ -22,7 +22,7 @@ var ErrReleaseLift = errors.New("release lift planning refused; no native admiss
 // FromLayout uses the digest in Reference; otherwise Reference is a registry ref.
 type ReleaseLiftOptions struct {
 	Reference, FromLayout, ToContext, ToNamespace, Inference, Evidence, Bindings string
-	PlainHTTP, Promote                                                           bool
+	PlainHTTP, Promote, Update                                                   bool
 	// ExpectedRuntime is checked offline against the loaded package before GETs.
 	ExpectedRuntime string
 	// EvaluationName is an optional frozen display alias, never target authority.
@@ -74,6 +74,7 @@ type PreparedReleaseLift struct {
 	artifact *suiteoras.Artifact
 	native   *suiteNativePrepared
 	kagent   *releaseLiftKagent
+	update   *preparedReleaseUpdate
 	receipt  *suitePassingReceipt
 	summary  ReleaseLiftSummary
 	started  atomic.Bool
@@ -89,6 +90,14 @@ func (p *PreparedReleaseLift) Summary() ReleaseLiftSummary {
 // artifact retrieval and GETs, not server dry-run/admission, Tasks or placement.
 // Matching unsigned operator-selected observations do not authenticate a signer.
 func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (plan *PreparedReleaseLift, err error) {
+	if opt.Update {
+		prepared, err := a.prepareReleaseUpdate(ctx, opt)
+		if err != nil {
+			return nil, errors.Join(ErrReleaseLift, err)
+		}
+		prepared.lift.update = prepared
+		return prepared.lift, nil
+	}
 	defer func() {
 		if err != nil {
 			cause := ctx.Err()
@@ -108,6 +117,11 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 			}
 			if errors.Is(err, workspace.ErrPolicyExecutionUnsupported) {
 				cause = errors.Join(cause, workspace.ErrPolicyExecutionUnsupported)
+			}
+			for _, known := range []error{errReleaseUpdateRequired, errReleaseUpdateUnsupported, errReleaseOperationInProgress, errReleaseStateUnavailable, errReleaseState, errReleaseStateWrite} {
+				if errors.Is(err, known) {
+					cause = errors.Join(cause, known)
+				}
 			}
 			err = errors.Join(ErrReleaseLift, cause)
 		}
@@ -159,7 +173,7 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 		}
 		resource, err := worker.inspectReleaseLiftResource(ctx, native.Subject, doc, proof)
 		if err != nil {
-			return nil, err
+			return nil, worker.releaseLiftOccupiedAdvice(ctx, native, opt.Inference, err)
 		}
 		s.Resources = append(s.Resources, resource)
 	}
@@ -183,6 +197,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 
 // ValidateReleaseLiftOptions checks selectors without config, retrieval or I/O.
 func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
+	if opt.Update && (opt.Bindings != "" || opt.ExpectedRuntime != "" && opt.ExpectedRuntime != "orka") {
+		return errors.Join(ErrReleaseLift, errors.New("updates support native Orka only; no enrollment or binding migration"))
+	}
 	ref, digest, pinned := strings.Cut(opt.Reference, "@")
 	provider := strings.TrimPrefix(opt.Inference, "provider:")
 	if opt.EvaluationName != "" && (len(opt.EvaluationName) > 63 || !verificationIdentity(opt.EvaluationName) || scaffold.RefuseKeyShapes(opt.EvaluationName) != nil) {

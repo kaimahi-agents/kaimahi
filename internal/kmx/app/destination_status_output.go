@@ -40,17 +40,28 @@ func (o *destinationStatusObserver) render(format string) error {
 	fmt.Fprintf(&buf, "Destination: %s (context=%s; namespace=%s)\n", o.report.Destination, o.report.Target.Context, o.report.Target.Namespace)
 	fmt.Fprintln(&buf, o.report.Observation)
 	writer := tabwriter.NewWriter(&buf, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(writer, "AGENT/MEMBER\tRUNTIME\tSUITE DIGEST\tRECEIPT\tEVIDENCE\tATTEMPT/ACTOR\tAGENT PROVENANCE\tREADY")
+	fmt.Fprintln(writer, "AGENT/MEMBER\tRUNTIME\tSUITE DIGEST\tRECEIPT\tEVIDENCE\tATTEMPT/ACTOR\tAGENT PROVENANCE\tRELEASE STATE\tLIFT ATTEMPT\tREADY")
 	for _, r := range o.report.Agents {
 		receipt, evidence, attempt := statusEvidence(r.Provenance)
-		fmt.Fprintf(writer, "%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s: %s\n", r.Name, valueOr(r.Member, "unknown"), r.Runtime, statusShortDigest(r.SuiteDigest), receipt, evidence, attempt, r.Provenance.State, r.Readiness.State, r.Readiness.Reason)
+		release, lift := "not recorded", r.Provenance.State
+		if r.ReleaseRecord != nil {
+			release = r.ReleaseRecord.State
+		}
+		if record := r.Provenance.Record; record != nil {
+			lift = fmt.Sprintf("v%d/%s", record.Version, record.LiftID)
+		}
+		fmt.Fprintf(writer, "%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s: %s\n", r.Name, valueOr(r.Member, "unknown"), r.Runtime, statusShortDigest(r.SuiteDigest), receipt, evidence, attempt, r.Provenance.State, release, lift, r.Readiness.State, r.Readiness.Reason)
 	}
 	if err := writer.Flush(); err != nil {
 		return err
 	}
 	for _, r := range o.report.Agents {
 		for _, resource := range r.Resources {
-			fmt.Fprintf(&buf, "  %s/%s: provenance=%s (%s); spec=%s; %s: %s\n", resource.Kind, resource.Name, resource.Provenance.State, resource.Provenance.Reason, resource.SpecDrift, resource.Readiness.State, resource.Readiness.Reason)
+			lift := resource.Provenance.State
+			if record := resource.Provenance.Record; record != nil {
+				lift = fmt.Sprintf("v%d/%s", record.Version, record.LiftID)
+			}
+			fmt.Fprintf(&buf, "  %s/%s: provenance=%s (%s); spec=%s; %s: %s; lift=%s\n", resource.Kind, resource.Name, resource.Provenance.State, resource.Provenance.Reason, resource.SpecDrift, resource.Readiness.State, resource.Readiness.Reason, lift)
 		}
 		for _, workload := range r.Workloads {
 			fmt.Fprintf(&buf, "  %s/%s: %s: %s\n", workload.Kind, workload.Name, workload.Readiness.State, workload.Readiness.Reason)

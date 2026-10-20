@@ -49,21 +49,25 @@ The caller needs GET access to API discovery and the `kube-system` and selected
 Namespace identities, plus GET/list access to Agents and their namespace-local
 prerequisites. Candidate-root inventory also lists served Orka Providers/Tasks or
 kagent ModelConfigs. Kagent readiness additionally reads Deployments and Services,
-and lists/reads ReplicaSets and Pods in that namespace. Status grants no permissions.
+and lists/reads ReplicaSets and Pods in that namespace. Owned deployed Orka rows
+also GET only their exact hashed `kmx-release-…` ConfigMap; ConfigMap listing is not
+required. An unreadable record is unknown, never proof of absence or completion.
+Status grants no permissions.
 It reads no Secret contents or metadata, Nodes, controller proxies or auth probes.
 
 ## Provenance is per object
 
 | Reported state | Meaning |
 |---|---|
-| `recorded` | A valid, applicable unsigned create-time Lift observation is present. |
+| `recorded` | A valid, applicable unsigned Lift attempt observation is present (v1 create or Orka v2 mutation). |
 | `provenance not recorded` | Native suite ownership is valid, but this object has no Lift annotation. This is normal for older objects or no-write reuse; it does not prove the object's age. |
 | `unknown` | Ownership or provenance is incomplete, malformed, conflicting, unsupported, changed during inspection, or cannot be observed safely. |
 | `not kmx-owned` | No native suite or legacy reservation markers are present. A copied Lift annotation alone cannot change this classification. |
 
 The table shows agent/member, runtime, shortened OCI suite and consumed-receipt
 digests, evaluation environment and actual gate, UTC **attempt** time, optional
-actor, provenance and readiness. JSON retains full digests and identities. The
+actor, provenance, release state, Lift attempt version/ID and readiness. JSON
+retains full digests and identities. The
 per-object resource rows keep Agent and Provider/ModelConfig observations separate:
 an unstamped reused prerequisite never inherits its Agent's annotation.
 
@@ -77,6 +81,32 @@ Copied annotations do not prove original resource-UID continuity. Status does no
 open private history or claim that continuity, even when local records exist.
 Context aliases are access names; target comparison uses cluster/namespace UIDs
 and the namespace, not matching kubeconfig aliases across machines.
+
+## Shared release observation
+
+Owned deployed Orka rows optionally include `releaseRecord` (`name`, `uid` when
+observed, `state`). The bounded exact-name GET validates the shared schema and
+cluster/namespace identity, without opening private KMX history or creating state:
+
+- `pending`: a shared operation still holds the pair reservation (exit 2 if the
+  rest of the observation is complete and no higher-priority error applies).
+- `partial`: the latest shared terminal revision is partial (exit 1).
+- `completed`: the shared terminal revision, baseline, both current full pair
+  fingerprints and applicable attempt annotations consistently match.
+- `unknown`: absent v2 record, unreadable/invalid data, mixed revisions, changed
+  fingerprints or conflicting observations (exit 1). Absent v1 legacy records
+  remain ordinary per-object observations, never enrolled placements.
+
+These are **unsigned shared-cluster observations**, not proof that the original
+writer received the final API response or persisted its private acknowledgment.
+Even `completed` cannot authorize an update, clear a reservation or reconstruct
+lost private ownership. The updater separately requires its retained private proof.
+A v2 annotation alone is an attempt, not successful pair completion; individual
+resources may show different attempts after a partial mutation. Current readiness
+and the currently observed Agent digest stay distinct from shared operation state.
+The v0.8.1 reader does not understand v2 and reports unknown rather than attributing
+an old create observation to the new revision. Future unsupported versions are
+also unknown.
 
 ## GitOps and spec drift
 
@@ -128,7 +158,7 @@ accepted-response budget. No polling or automatic retry is performed.
 |---|---|
 | `0` | Complete inventory; deployed Agents ready, or verified empty. |
 | `2` | Complete observation with known pending deployed placement. |
-| `1` | Incomplete/unknown, unhealthy or drifted placement, runtime mismatch, or output failure. This takes precedence over pending. |
+| `1` | Incomplete/unknown, partial shared revision, unhealthy or drifted placement, runtime mismatch, or output failure. This takes precedence over pending. |
 
 stdout contains only the table or one unstyled versioned JSON document. Resource
 reasons are fixed diagnostics, never raw specs, annotation bodies, controller

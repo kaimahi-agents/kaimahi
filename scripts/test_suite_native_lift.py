@@ -2,6 +2,7 @@
 """Boundary tests for live lift qualification; not a live execution claim."""
 import copy
 import importlib.util
+import inspect
 import json
 import os
 import pathlib
@@ -85,6 +86,41 @@ def record_sequence():
             json.dumps(ops).encode(), record_doc(next_data, i + 2))
         data = next_data
     return frames
+
+
+class CommittedOwnership(unittest.TestCase):
+    def test_exact_candidate_marker_and_shared_ack_required(self):
+        for failure in (None, "absent", "different", "record UID", "shared digest", "attempt ID", "public", "symlink"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                home = pathlib.Path(tmp)
+                lift_id = "b" * 32
+                attempt = home / "release-lifts" / lift_id
+                attempt.mkdir(parents=True, mode=0o700)
+                shared = record_doc(record_state(2, True), 4)
+                result = {"liftID": lift_id, "releaseRecord": {"uid": "record-uid"}}
+                proof = {"id": lift_id, "releaseDataDigest": "sha256:" + Q.sha(shared["data"]["release.json"].encode()),
+                         "updateProof": {"recordUID": "record-uid"}}
+                if failure == "record UID":
+                    proof["updateProof"]["recordUID"] = "foreign"
+                if failure == "shared digest":
+                    proof["releaseDataDigest"] = "sha256:" + "f" * 64
+                if failure == "attempt ID":
+                    proof["id"] = "c" * 32
+                raw = Q.canonical(proof)
+                candidate, marker = attempt / "4.json", attempt / "committed.json"
+                candidate.write_bytes(raw)
+                candidate.chmod(0o600)
+                if failure != "absent":
+                    if failure == "symlink":
+                        marker.symlink_to(candidate)
+                    else:
+                        marker.write_bytes(raw + (b"\n" if failure == "different" else b""))
+                        marker.chmod(0o644 if failure == "public" else 0o600)
+                if failure:
+                    with self.assertRaises(ValueError):
+                        Q.verify_lift_commit(home, result, shared)
+                else:
+                    Q.verify_lift_commit(home, result, shared)
 
 
 class ReleaseRecordAudit(unittest.TestCase):
@@ -489,6 +525,221 @@ class StatusProofs(unittest.TestCase):
                     self.assertFalse(marker.exists())
             self.assertTrue((work / "audit.jsonl").exists(), "every rejected attempt needs a trace")
             self.assertNotIn("PRIVATE_CANARY", (work / "audit.jsonl").read_text())
+
+
+def update_patch(kind="Agent", generation=1):
+    old = {"instructions": "PRIVATE_CANARY"}
+    new = {"instructions": "PRIVATE_CHANGED"}
+    annotations = {"kaimahi.dev/suite": "suite"}
+    return [{"op": "test", "path": path, "value": value} for path, value in (
+        ("/metadata/uid", kind + "-uid"), ("/metadata/resourceVersion", "9"),
+        ("/metadata/generation", generation), ("/spec", old), ("/metadata/annotations", annotations))] + [
+        {"op": "replace", "path": "/spec", "value": new},
+        {"op": "replace", "path": "/metadata/annotations", "value": {**annotations, "kaimahi.dev/suite-digest": "sha256:" + "6" * 64}}]
+
+
+def update_sequence():
+    frames = []
+    scope = {"member": "member", "record": RECORD}
+    def add(args, body=b"", response=None):
+        f = A.classify(["-n", "orka-system", *args], body, update=scope)
+        p = pair(f, str(len(frames)))
+        if response is not None:
+            p[1]["response"] = A.response_snapshot(json.dumps(response).encode())
+        frames.extend(p)
+    before = record_state(2, True)
+    data = before
+    add(["get", "configmap", RECORD, "--ignore-not-found", "-o", "json"], response=record_doc(data, 1))
+    for resource in ("configmaps/" + RECORD, "providers.core.orka.ai/member", "agents.core.orka.ai/member"):
+        add(["auth", "can-i", "patch", resource])
+    def native(kind, dry):
+        ops = update_patch(kind)
+        doc = {"apiVersion": "core.orka.ai/v1alpha1", "kind": kind, "metadata": {"name": "member", "namespace": "orka-system",
+               "uid": kind + "-uid", "resourceVersion": "10", "generation": 2, "annotations": ops[-1]["value"]}, "spec": ops[-2]["value"]}
+        add(["patch", kind.lower() + "s.core.orka.ai", "member", "--type=json", "--patch-file=/dev/stdin", "-o", "json"] +
+            (["--dry-run=server"] if dry else []), json.dumps(ops).encode(), doc)
+    def checkpoint(index):
+        nonlocal data
+        state = json.loads(before)
+        pending = json.loads(record_state(min(index, 2), index == 3))["history" if index == 3 else "pending"]
+        if index == 3:
+            revision = pending[0]
+            revision["liftID"] = "c" * 32
+            state.update(baseline=revision["objects"], history=state["history"] + [revision])
+        else:
+            pending["liftID"] = "c" * 32
+            pending["before"] = state["baseline"]
+            state.update(operation="c" * 32, pending=pending)
+        after = json.dumps(state)
+        ops = [{"op": "test", "path": p, "value": v} for p, v in (
+            ("/metadata/uid", "record-uid"), ("/metadata/resourceVersion", str(index + 1)), ("/data/release.json", data))]
+        ops.append({"op": "replace", "path": "/data/release.json", "value": after})
+        add(["patch", "configmap", RECORD, "--type=json", "--patch-file=/dev/stdin", "-o", "json"], json.dumps(ops).encode(), record_doc(after, index + 2))
+        data = after
+    for kind in ("Provider", "Agent"):
+        native(kind, True)
+    checkpoint(0)
+    for i, kind in enumerate(("Provider", "Agent")):
+        native(kind, True); native(kind, False); checkpoint(i + 1)
+    checkpoint(3)
+    return frames
+
+
+class PublicUpdateProofs(unittest.TestCase):
+    scope = {"member": "member", "record": RECORD}
+
+    def native(self, ops=None, kind="Agent", dry=False, scope=None):
+        self.assertIn("update", inspect.signature(A.classify).parameters, "missing exact update-phase audit")
+        args = ["-n", "orka-system", "patch", kind.lower() + "s.core.orka.ai", "member",
+                "--type=json", "--patch-file=/dev/stdin", "-o", "json"]
+        return A.classify(args + (["--dry-run=server"] if dry else []),
+                          json.dumps(ops if ops is not None else update_patch(kind)).encode(), update=scope or self.scope)
+
+    def test_production_native_patch_is_exact_and_phase_scoped_without_plaintext(self):
+        dry, live = self.native(dry=True), self.native()
+        self.assertTrue(dry["admission"] and live["admission"])
+        self.assertFalse(dry["persistent"])
+        self.assertTrue(live["persistent"])
+        self.assertEqual(live["updateUID"], "Agent-uid")
+        self.assertEqual(live["desiredSpecDigest"], A.spec_digest({"instructions": "PRIVATE_CHANGED"}))
+        self.assertNotIn("PRIVATE", json.dumps(live))
+        args = ["-n", "orka-system", "patch", "agents.core.orka.ai", "member", "--type=json", "--patch-file=/dev/stdin", "-o", "json"]
+        with self.assertRaises(ValueError):
+            A.classify(args, json.dumps(update_patch()).encode())
+        mutations = [lambda p: p.pop(0), lambda p: p.append(p[-1]),
+                     lambda p: p[0].update(op="replace"), lambda p: p[2].update(value=True),
+                     lambda p: p[4].update(path="/metadata/labels"), lambda p: p[5].update(path="/status"),
+                     lambda p: p[6].update(value=[]), lambda p: p[0].update(extra="secret")]
+        for change in mutations:
+            ops = update_patch(); change(ops)
+            with self.subTest(ops=ops), self.assertRaises(ValueError):
+                self.native(ops)
+        with self.assertRaises(ValueError):
+            self.native(scope={"member": "foreign", "record": RECORD})
+        for tail in (["auth", "can-i", "patch", "agents.core.orka.ai/foreign"],
+                     ["auth", "can-i", "patch", "tasks.core.orka.ai/member"]):
+            with self.assertRaises(ValueError):
+                A.classify(["-n", "orka-system", *tail], update=self.scope)
+
+    def test_update_record_preserves_origin_and_limits_cas_to_owned_key(self):
+        self.assertIn("update", inspect.signature(A.classify).parameters, "missing exact update-phase CAS scope")
+        before = record_state(2, True)
+        state = json.loads(before)
+        state["pending"] = copy.deepcopy(state["history"][0])
+        state["pending"].update(liftID="c" * 32, state="pending", before=state["baseline"])
+        state["operation"] = "c" * 32
+        after = json.dumps(state)
+        ops = [{"op": "test", "path": p, "value": v} for p, v in (
+            ("/metadata/uid", "record-uid"), ("/metadata/resourceVersion", "7"), ("/data/release.json", before))]
+        ops.append({"op": "replace", "path": "/data/release.json", "value": after})
+        args = ["-n", "orka-system", "patch", "configmap", RECORD, "--type=json", "--patch-file=/dev/stdin", "-o", "json"]
+        frame = A.classify(args, json.dumps(ops).encode(), update=self.scope)
+        self.assertEqual(frame["releasePhase"], "pending")
+        self.assertNotIn("release.json", json.dumps(frame))
+        with self.assertRaises(ValueError):
+            A.classify(args, json.dumps(ops).encode(), update={"member": "member", "record": "kmx-release-" + "f" * 40})
+
+    def test_dependent_inventory_and_native_permissions_are_update_phase_only(self):
+        self.assertIn("update", inspect.signature(A.classify).parameters, "missing bounded update inventory")
+        args = ["get", "--raw", "/apis/core.orka.ai/v1alpha1/agents?limit=256"]
+        frame = A.classify(args, update=self.scope)
+        self.assertEqual(frame["resource"], "Agent")
+        for bad in (args, ["get", "--raw", "/apis/core.orka.ai/v1alpha1/agents?limit=257"],
+                    ["get", "--raw", "/apis/core.orka.ai/v1alpha1/tasks?limit=256"]):
+            with self.assertRaises(ValueError):
+                A.classify(bad, update=None if bad == args else self.scope)
+        for kind in ("providers", "agents"):
+            frame = A.classify(["-n", "orka-system", "auth", "can-i", "patch", kind + ".core.orka.ai/member"], update=self.scope)
+            self.assertEqual(frame["permission"], "patch")
+
+    def test_status_allows_only_the_exact_stable_release_get(self):
+        import hashlib
+        expected = "kmx-release-" + hashlib.sha256(b"kmx.release-state/v1\x00proof-suite\x00proof\x00orka").hexdigest()[:40]
+        self.assertTrue(callable(getattr(Q, "release_record_name", None)), "missing exact stable release key")
+        self.assertEqual(Q.release_record_name("proof-suite", "proof"), expected)
+        args = ["--context", "kind-owned", "--request-timeout=10s", "-n", "orka-system", "get", "configmap", expected, "--ignore-not-found", "-o", "json"]
+        Q.status_get_args(args, "kind-owned", "orka-system", expected)
+        for bad in ([*args[:7], RECORD, *args[8:]], args + ["--watch"],
+                    ["--context", "kind-owned", "--request-timeout=10s", "get", "--raw", "/api/v1/namespaces/orka-system/configmaps?limit=128"]):
+            with self.assertRaises(ValueError):
+                Q.status_get_args(bad, "kind-owned", "orka-system", expected)
+
+    def test_update_effects_require_ordered_admissions_cas_chain_and_only_owned_pair(self):
+        self.assertTrue(callable(getattr(Q, "verify_update_effects", None)), "missing bounded update effect proof")
+        raw = update_sequence()
+        Q.verify_update_effects(raw, "member", RECORD)
+        mutations = [lambda f: f.pop(10), lambda f: f.append(f[-1]),
+                     lambda f: f[17].update(returnCode=1),
+                     lambda f: f[17]["response"]["metadata"].update(uid="replacement"),
+                     lambda f: f[17]["response"].update(specDigest="0" * 64),
+                     lambda f: f[19].update(recordRV="stale"),
+                     lambda f: f[16].update(name="foreign"),
+                     lambda f: f[13]["response"].update(releasePhase="completed"),
+                     lambda f: f[8].update(desiredAnnotationsDigest="0" * 64),
+                     lambda f: f[9].update(desiredAnnotationsDigest="0" * 64)]
+        for change in mutations:
+            bad = copy.deepcopy(raw); change(bad)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                Q.verify_update_effects(bad, "member", RECORD)
+        # Preserve request intent order while crossing a completion boundary.
+        premature = raw[:13] + raw[14:16] + [raw[13]] + raw[16:]
+        with self.assertRaises(ValueError):
+            Q.verify_update_effects(premature, "member", RECORD)
+
+    def test_update_result_binds_original_uids_current_generation_and_new_attempt(self):
+        self.assertTrue(callable(getattr(Q, "verify_update_result", None)), "missing public update result proof")
+        f = LiftProofs(); f.setUp()
+        specs = {kind: {"type": "native"} for kind in ("Provider", "Agent")}
+        destination = copy.deepcopy(f.receipt["subject"])
+        previous = {"liftID": "b" * 32, "resources": [{"kind": k, "name": "member", "uid": k + "-uid", "generation": 1} for k in specs]}
+        summary = copy.deepcopy(f.summary)
+        summary.update(promote=True, gate="promotion", servingModel="model")
+        summary["resources"] = [{**row, "action": "update", "resourceVersion": "9", "specDigest": Q.native_digest("kmx.native-orka.spec/v1", specs[row["kind"]])} for row in previous["resources"]]
+        result = {"summary": summary, "state": "ready", "liftID": "c" * 32, "provenanceState": "recorded",
+                  "releaseRecord": {"name": RECORD, "uid": "record-uid", "state": "completed"},
+                  "resources": [{**r, "generation": 2, "outcome": "updated", "ready": True} for r in summary["resources"]]}
+        Q.verify_update_result(result, f.receipt, b"receipt", destination, specs, previous, RECORD, {"b" * 32})
+        for change in (lambda r: r.update(liftID="b" * 32), lambda r: r["resources"][0].update(uid="replacement"),
+                       lambda r: r["resources"][1].update(generation=1), lambda r: r["resources"][1].update(ready=False),
+                       lambda r: r["releaseRecord"].update(state="partial"), lambda r: r["summary"].update(evidenceDigest="wrong")):
+            bad = copy.deepcopy(result); change(bad)
+            with self.assertRaises(ValueError):
+                Q.verify_update_result(bad, f.receipt, b"receipt", destination, specs, previous, RECORD, {"b" * 32})
+
+    def test_public_lift_update_uses_real_cli_route_and_scopes_only_its_audit(self):
+        self.assertIn("update", inspect.signature(Q.Qualification.lift).parameters, "missing public CLI update route")
+        q = Q.Qualification.__new__(Q.Qualification)
+        q.context = "kind-owned"
+        q.product_env = {"KMX_HOME": "/private"}
+        calls = []
+        q.cli = lambda *args, **kwargs: calls.append((args, kwargs))
+        q.lift("suite@sha256:" + "1" * 64, pathlib.Path("original.json"), pathlib.Path("layout"), update=True, plan=True, promote=True, member="member", record=RECORD)
+        args, kwargs = calls[0]
+        for flag in ("--update", "--plan", "--promote", "--evidence", "--from-layout"):
+            self.assertIn(flag, args)
+        self.assertEqual(kwargs["env"]["KMX_NATIVE_UPDATE_MEMBER"], "member")
+        self.assertEqual(kwargs["env"]["KMX_NATIVE_UPDATE_RECORD"], RECORD)
+        self.assertNotIn("KMX_NATIVE_UPDATE_MEMBER", q.product_env)
+
+    def test_v2_status_requires_fresh_liftid_and_completed_shared_observation(self):
+        placement, report, table = status_fixture()
+        placement["liftID"] = "e" * 32
+        placement["provenanceVersion"] = 2
+        row = report["agents"][0]
+        row["releaseRecord"] = {"name": RECORD, "uid": "record-uid", "state": "completed"}
+        placement["releaseRecord"] = dict(row["releaseRecord"])
+        for provenance in [row["provenance"], *[r["provenance"] for r in row["resources"]]]:
+            provenance["record"].update(version=2, liftID=placement["liftID"])
+        table += "RELEASE STATE LIFT ATTEMPT\ncompleted v2/" + placement["liftID"] + "\n"
+        try:
+            Q.verify_status(report, table, placement, b"receipt", "d" * 32)
+        except ValueError as error:
+            self.fail("current v2 status rejected: " + str(error))
+        for change in (lambda r: r["agents"][0]["releaseRecord"].update(state="pending"),
+                       lambda r: r["agents"][0]["provenance"]["record"].update(liftID="f" * 32)):
+            bad = copy.deepcopy(report); change(bad)
+            with self.assertRaises(ValueError):
+                Q.verify_status(bad, table, placement, b"receipt", "d" * 32)
 
 
 if __name__ == "__main__":

@@ -342,7 +342,8 @@ placement in that order, using the existing disposable candidate and release gat
 Promotion is selected automatically and disclosed as **passed on the evaluation
 target, not evaluated on the destination**; explicit `--promote=false` stays strict.
 Newly created release objects carry the non-secret provenance described below.
-Guided authoring, tag-based Lift, destination update and rollback are not included.
+Guided authoring and tag-based Lift are not included. Destination update and
+rollback require the explicit retained Orka path below; plain Lift stays create-only.
 
 The default stage transcript has four stderr lines: Plan, Eval, Push and Lift;
 failures may add a safe refusal or critical cleanup warning. Skipped stages keep
@@ -449,7 +450,8 @@ preserves missing/unknown/foreign distinctions; `orka status` remains runtime-on
 
 ## Release retention and operator recovery
 
-**The public Lift command remains create-only; `--update` is not enabled.**
+**Plain Lift remains create-only. Updates require explicit `--update` and the
+retained Orka ownership proof described here.**
 New complete Orka Provider/Agent pair creates now require namespace-local
 ConfigMap `create`, and `get`/`patch` for the stable
 `kmx-release-<40-hex-character-key>` record. The key binds suite/member/runtime;
@@ -521,8 +523,8 @@ For operator recovery:
    private state to bypass a reservation. Capacity/unreadable-state errors must
    be resolved deliberately, not with automatic pruning or guessed recovery.
 
-The private updater is covered by backend tests only until its CLI slice lands
-([#561](https://github.com/kaimahi-agents/kaimahi/issues/561)). It keeps model,
+The opt-in Orka updater ([#561](https://github.com/kaimahi-agents/kaimahi/issues/561))
+keeps model,
 inference binding, runtime and names fixed, requires complete bounded cluster-wide
 Agent-list access to refuse shared Providers (including model fallbacks and
 potentially Task-namespace-resolved unqualified references), and conditionally patches with
@@ -533,6 +535,53 @@ re-evaluates rollback evidence. Mutation provenance uses version 2, retaining th
 original create observation separately; the shipped v0.8.1 status reader treats
 that version as unknown rather than attributing the old record to a new revision.
 No draining, zero-downtime, in-flight-work or release-readiness claim is made.
+
+## Update and rollback
+
+This is the **unreleased** retained Orka lifecycle, not functionality in v0.8.1.
+Arrange a quiet window before updating: no draining, zero-downtime or in-flight-work
+claim is made. Plain Lift never changes occupied resources. Kagent, old/mixed/reused
+placements and missing completion acknowledgments refuse; no enrollment or repair.
+
+```bash
+# Review a desired workspace version without contacting the cluster.
+kmx lift --to prod --update --plan
+# Compose missing evaluation/publication, then update the eligible retained pair.
+kmx lift --to prod --update
+# Or place an already-published passing version, including a previous version.
+kmx lift registry.example/team/agents@sha256:<passing-digest> --to prod \
+  --evidence ../private/original-pass.json --promote --update --plan
+kmx lift registry.example/team/agents@sha256:<passing-digest> --to prod \
+  --evidence ../private/original-pass.json --promote --update
+kmx status --to prod
+```
+
+Digest update/rollback consumes the exact artifact and original full passing
+receipt: no evaluation, build, publication or Task send. `--promote` still means
+source-only evidence, **not evaluated on the destination**. Strict evidence mode
+is not bypassed by a no-op. Digest `--plan` reads retained proof, current pair,
+prerequisites and a bounded cluster-wide Agent inventory; it performs no auth
+probe, admission, reservation or writes. Cold workspace plans remain offline and
+only describe conditional stages: they do not establish live update eligibility.
+
+Workspace updates check current shared/private baseline, target dependencies,
+exclusive Provider references, patch permissions and retention before missing
+stage spend. Historical exact-version full passing evidence is reused as historical
+proof, including original evidence retained with a placement if its redundant
+managed-pass cache is gone; it is never relabeled as a fresh evaluation. Publication
+reuse is separately checked. Previously recorded placement generations cannot skip
+a needed update after rollback. Update mode never rewrites those immutable
+completion observations or serializes opaque authority into them.
+
+An already-desired update verifies acknowledged full pair fingerprints, fresh
+prerequisites and current-generation Ready without writes, a new Lift ID or marker
+repair. Workspace no-op skips evaluation and publication as unnecessary; it does
+not claim fresh evaluation or verify/repair a different repository's publication.
+Only inference-Provider resourceVersion drift may be tolerated between revisions
+after unchanged authoritative-field reproof. Within one operation, proofs remain
+exact. One reservation covers the pair; conditional patches recheck UID, generation,
+whole spec and owned metadata. Known partials can reconcile only recorded old/new
+states; unknown effects or checkpoint failures remain blocked. See recovery above.
 
 ## Create
 

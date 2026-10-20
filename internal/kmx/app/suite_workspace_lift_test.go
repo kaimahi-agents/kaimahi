@@ -55,11 +55,14 @@ func workspaceLiftFixture(t *testing.T, configure ...func(string)) (*App, Worksp
 			return
 		}
 		if strings.HasPrefix(part, "s-") {
-			part = suite.Digest
+			part = "sha256:" + strings.TrimPrefix(part, "s-")
 		}
 		raw, ok := blobs[part]
 		if !ok {
 			raw, err = os.ReadFile(filepath.Join(prepared.Path, "blobs", "sha256", strings.TrimPrefix(part, "sha256:")))
+			if err != nil && reads.registryLayout != "" {
+				raw, err = os.ReadFile(filepath.Join(reads.registryLayout, "blobs", "sha256", strings.TrimPrefix(part, "sha256:")))
+			}
 			ok = err == nil
 			if ok {
 				blobs[part] = raw

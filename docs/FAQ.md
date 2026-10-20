@@ -27,25 +27,29 @@ inspection, no-write planning, dry-run and upgrade limits.
 
 ## How do I ship v2 or roll back?
 
-In v0.8.1, Lift does not update an existing deployment or roll it back. Plain
-Lift is create-only, except for narrow, no-write Orka reuse of exact suite-owned
-resources matching the evaluated UID, generation and whole spec, with exact suite
-markers and current-generation readiness.
-[Composed Lift](suite-workspace.md#composed-workspace-lift) may skip only an
-exact-version successful placement recorded in private completion state, after
-GET-only checks of destination inputs, ownership, UIDs, whole specs and readiness.
-Neither path replaces or repairs resources.
+The unreleased Orka lifecycle adds opt-in `kmx lift --to prod --update`.
+Plain Lift remains create-only, including its narrow exact evaluated reuse and
+GET-only workspace skip checks. Kagent updates are not supported.
 
-Passing proof for a new digest does not replace occupied resources. Re-lifting a
-previous digest is not rollback. For disposable testing, deliberately choose a
-fresh destination/name and manage cleanup separately; this is not a production
-upgrade procedure.
+For an eligible retained pair, evaluate and publish v2, then use `--update` with
+its exact digest and passing evidence. Roll back by selecting the previous passing
+digest and **its original evidence**, without re-evaluation. Workspace `--update`
+composes missing stages, reuses retained exact-version evidence and checks the
+actual current baseline rather than an old completion. Same-digest update verifies
+the acknowledged placement without writes or repair.
 
-[Update and rollback by digest (#561)](https://github.com/kaimahi-agents/kaimahi/issues/561)
-is proposed, not implemented; its proposed command syntax is not available in
-v0.8.1. See the [Lift contract](suite-workspace.md#digest-lift),
+Agents lifted by **v0.8.1 or earlier cannot be updated**. Old, mixed, reused or
+unrecorded placements are never enrolled or adopted. Explicitly recreate your
+owned pair with a build containing this feature when ready; KMX deletes nothing
+for you. Arrange an operator-controlled quiet window and preserve private KMX
+state. Shared reservations fence concurrent writers; ambiguous effects stay
+blocked without takeover, automatic retry, undo or cleanup. No draining,
+zero-downtime or in-flight-work guarantee is made.
+
+See [update and rollback](suite-workspace.md#update-and-rollback),
+[operator recovery](suite-workspace.md#release-retention-and-operator-recovery),
 [GitOps ownership](suite-first-lifecycle.md#gitops-ownership) and
-[destination status](destination-status.md#gitops-and-spec-drift) for current limits.
+[destination status](destination-status.md#gitops-and-spec-drift).
 
 ## What kagent support exists now?
 

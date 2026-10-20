@@ -12,6 +12,7 @@ import pathlib
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
@@ -265,8 +266,14 @@ def private_model_route(source, destination, internal_ip, port):
 
 
 
-def status_get_args(args, context, namespace):
+def release_record_name(suite, member):
+    return "kmx-release-" + sha(("kmx.release-state/v1\x00" + suite + "\x00" + member + "\x00orka").encode())[:40]
+
+
+def status_get_args(args, context, namespace, record=None):
     # Finite status-only boundary: no API proxy, Secret, POST, admission or setup.
+    if record and args == ["--context", context, "--request-timeout=10s", "-n", namespace, "get", "configmap", record, "--ignore-not-found", "-o", "json"]:
+        return
     require(args[:5] == ["--context", context, "--request-timeout=10s", "get", "--raw"] and len(args) == 6, "status-command")
     path = urllib.parse.urlsplit(args[5])
     require(not path.scheme and not path.netloc and not path.fragment, "status-path")
@@ -300,7 +307,7 @@ def status_kubectl(args):
         with audit.open("a") as stream:
             stream.write(json.dumps(frame, sort_keys=True) + "\n")
     try:
-        status_get_args(args, os.environ["KMX_STATUS_CONTEXT"], os.environ["KMX_STATUS_NAMESPACE"])
+        status_get_args(args, os.environ["KMX_STATUS_CONTEXT"], os.environ["KMX_STATUS_NAMESPACE"], os.environ.get("KMX_STATUS_RECORD"))
     except Exception:
         record({"stage": "blocked"})
         return 1
@@ -324,7 +331,7 @@ def verify_status(report, table, placement, evidence, run_id):
     def provenance(value):
         require(value.get("state") == "recorded" and isinstance(value.get("record"), dict), "status-recorded")
         record = value["record"]
-        expected = {"version": 1, "suiteDigest": summary["suiteDigest"], "receiptDigest": "sha256:" + sha(evidence),
+        expected = {"version": placement.get("provenanceVersion", 1), "suiteDigest": summary["suiteDigest"], "receiptDigest": "sha256:" + sha(evidence),
                     "receiptRunID": run_id, "evaluation": summary["sourceTarget"], "target": summary["target"],
                     "gate": "promotion", "evaluatedOnTarget": False, "resourceSpecs": expected_specs}
         require(all(record.get(k) == v for k, v in expected.items()) and re.fullmatch(r"[0-9a-f]{32}", record.get("liftID", "")),
@@ -334,6 +341,11 @@ def verify_status(report, table, placement, evidence, run_id):
         require("actor" in record and (record["actor"] is None or isinstance(record["actor"], str)), "status-actor")
         return record
     record = provenance(row["provenance"])
+    if placement.get("provenanceVersion") == 2:
+        require(row.get("releaseRecord") == placement["releaseRecord"] and row["releaseRecord"]["state"] == "completed" and
+                record["liftID"] == placement["liftID"], "status-update-completion")
+        require("RELEASE STATE" in table and "LIFT ATTEMPT" in table and "completed" in table and
+                "v2/" + record["liftID"] in table, "status-update-table")
     require(len(row["resources"]) == len(placement["resources"]), "status-pair")
     for expected in placement["resources"]:
         resources = [r for r in row["resources"] if r["kind"] == expected["kind"] and r["name"] == expected["name"]]
@@ -351,8 +363,8 @@ def verify_status(report, table, placement, evidence, run_id):
         require(text in table.lower() and text in report.get("observation", "").lower(), "status-observation-caveat")
 
 
-def qualify_status(work, placement, evidence, run_id, run, env, kubectl):
-    root = private_root(work / "destination-status")
+def qualify_status(work, placement, evidence, run_id, run, env, kubectl, name="destination-status"):
+    root = private_root(work / name)
     workspace, wrappers, home = root / "workspace", root / "bin", root / "kmx-home"
     workspace.mkdir(mode=0o700)
     wrappers.mkdir(mode=0o700)
@@ -374,7 +386,8 @@ def qualify_status(work, placement, evidence, run_id, run, env, kubectl):
     audit = root / "kubectl.jsonl"
     env = dict(env, PATH=str(wrappers) + ":" + env["PATH"], KMX_HOME=str(home),
                KMX_STATUS_CONTEXT=target["context"], KMX_STATUS_NAMESPACE=target["namespace"],
-               KMX_STATUS_KUBECTL=str(kubectl), KMX_STATUS_AUDIT=str(audit), PYTHONDONTWRITEBYTECODE="1")
+               KMX_STATUS_KUBECTL=str(kubectl), KMX_STATUS_AUDIT=str(audit),
+               KMX_STATUS_RECORD=release_record_name(summary["suite"], summary["member"]), PYTHONDONTWRITEBYTECODE="1")
     outputs = []
     for format in ("json", "table"):
         require(not home.exists(), "status-created-home")
@@ -386,7 +399,7 @@ def qualify_status(work, placement, evidence, run_id, run, env, kubectl):
         for intent, complete in zip(frames[::2], frames[1::2]):
             require(intent.get("stage") == "intent" and complete.get("stage") == "complete" and
                     complete.get("returnCode") == 0 and intent.get("args") == complete.get("args"), "status-audit")
-            status_get_args(intent["args"], target["context"], target["namespace"])
+            status_get_args(intent["args"], target["context"], target["namespace"], env["KMX_STATUS_RECORD"])
         outputs.append(result.stdout)
     verify_status(json.loads(outputs[0]), outputs[1].decode(), placement, evidence, run_id)
     for format, output in zip(("json", "table"), outputs):
@@ -445,6 +458,85 @@ def verify_promote_completion_order(frames):
     first = effects.index(persistent[0])
     require(sum(f["stage"] == "complete" and f.get("admission") and not f["persistent"] for f in effects[:first]) == 2,
             "promote-completion-order")
+
+
+def verify_update_effects(raw, member, record):
+    frames = load_audit_completed(raw)
+    require(all(f.get("returnCode", 0) == 0 and not f.get("taskAttempt") and f["verb"] != "blocked" for f in frames), "update-audit")
+    relevant = [f for f in raw if f.get("admission") or f["persistent"] or f.get("releaseRecord") or f.get("nativePermission")]
+    pending = None
+    for f in relevant:
+        if f["stage"] == "intent":
+            require(pending is None, "update-effect-overlap")
+            pending = f["requestID"]
+        else:
+            require(pending == f["requestID"] and f["returnCode"] == 0, "update-effect-completion")
+            pending = None
+    require(pending is None, "update-effect-interrupted")
+    effects = [f for f in frames if f.get("admission") or f["persistent"]]
+    dry = lambda kind: ("patch", kind, member, True, False)
+    live = lambda kind: ("patch", kind, member, True, True)
+    checkpoint = ("patch", "ConfigMap", record, False, True)
+    require([(f["verb"], f["resource"], f["name"], f["admission"], f["persistent"]) for f in effects] ==
+            [dry("Provider"), dry("Agent"), checkpoint, dry("Provider"), live("Provider"), checkpoint,
+             dry("Agent"), live("Agent"), checkpoint, checkpoint], "update-effects")
+    writes = [f for f in effects if f.get("releaseRecord")]
+    prior = None
+    for index, f in enumerate(writes):
+        response, meta = f.get("response", {}), f.get("response", {}).get("metadata", {})
+        require(f["releasePhase"] == ("completed" if index == 3 else "pending") and
+                f["releaseAcknowledged"] == min(index, 2) and
+                all(response.get(k) == f[k] for k in ("releaseDigest", "releasePhase", "releaseAcknowledged")) and
+                meta.get("name") == record and meta.get("uid") and meta.get("resourceVersion"), "update-record-response")
+        if prior is not None:
+            require(f["recordUID"] == meta["uid"] == prior["metadata"]["uid"] and
+                    f["recordRV"] == prior["metadata"]["resourceVersion"] and
+                    f["priorDigest"] == prior["releaseDigest"], "update-record-chain")
+        prior = response
+    for kind in ("Provider", "Agent"):
+        patches = [f for f in effects if f["resource"] == kind]
+        require(len(patches) == 3 and len({(f["desiredSpecDigest"], f["desiredAnnotationsDigest"], f["updateUID"]) for f in patches}) == 1,
+                "update-admitted-intent")
+    for f in effects:
+        if f.get("releaseRecord"):
+            continue
+        response, meta = f.get("response", {}), f.get("response", {}).get("metadata", {})
+        require(f.get("nativeUpdate") and meta.get("uid") == f["updateUID"] and meta.get("name") == member and
+                meta.get("generation", 0) >= f["updateGeneration"] and response.get("specDigest") == f["desiredSpecDigest"],
+                "update-native-response")
+
+
+def load_audit_completed(raw):
+    spec = importlib.util.spec_from_file_location("update_audit", pathlib.Path(__file__).with_name("suite-native-audit.py"))
+    audit = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(audit)
+    return audit.completed(raw)
+
+
+def verify_update_summary(summary, receipt, evidence, destination, specs, previous):
+    create_summary = copy.deepcopy(summary)
+    create_summary["resources"] = [{"kind": r["kind"], "name": r["name"], "action": "create", "specDigest": r["specDigest"]}
+                                   for r in summary["resources"]]
+    verify_promote_summary(create_summary, receipt, evidence, destination, specs)
+    require(len(summary["resources"]) == len(previous["resources"]) == 2, "update-plan-pair")
+    for row, old in zip(summary["resources"], previous["resources"]):
+        require(row["kind"] == old["kind"] and row["name"] == old["name"] and row["action"] == "update" and
+                row["uid"] == old["uid"] and row["generation"] == old["generation"] and
+                re.fullmatch(r"[a-zA-Z0-9._:-]{1,128}", row.get("resourceVersion", "")), "update-plan-baseline")
+
+
+def verify_update_result(result, receipt, evidence, destination, specs, previous, record, seen):
+    verify_update_summary(result["summary"], receipt, evidence, destination, specs, previous)
+    require(result["state"] == "ready" and result.get("provenanceState") == "recorded" and
+            re.fullmatch(r"[0-9a-f]{32}", result.get("liftID", "")) and result["liftID"] not in seen and
+            result.get("releaseRecord", {}).get("state") == "completed" and
+            result["releaseRecord"].get("name") == record and result["releaseRecord"].get("uid"), "update-completed")
+    require(len(result["resources"]) == 2, "update-result-pair")
+    for row, planned, old in zip(result["resources"], result["summary"]["resources"], previous["resources"]):
+        require(all(row.get(k) == planned[k] for k in ("kind", "name", "action", "specDigest", "uid")) and
+                row["uid"] == old["uid"] and row["outcome"] == "updated" and row["ready"] is True and
+                row["generation"] >= old["generation"] and (row["kind"] != "Agent" or row["generation"] > old["generation"]),
+                "update-current-ready")
 
 
 def verify_model_only_change(before, after, model):
@@ -568,6 +660,29 @@ def observed_runtime(controller, worker):
 
 def verify_runtime(expected, controller, worker):
     require(observed_runtime(controller, worker) == expected, "runtime-identity")
+
+
+def verify_lift_commit(home, result, shared):
+    """Independent local completion observation; never synthesize ownership."""
+    lift_id = result.get("liftID", "")
+    require(re.fullmatch(r"[0-9a-f]{32}", lift_id), "commit-lift-id")
+    attempt = home / "release-lifts" / lift_id
+    snapshots = []
+    limit = (1 << 20) + (48 << 10)
+    for name in ("4.json", "committed.json"):
+        path = attempt / name
+        require(path.exists(), "commit-file-missing")
+        info = path.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_mode & 0o077 == 0 and info.st_size <= limit, "commit-file-boundary")
+        with path.open("rb") as stream:
+            raw = stream.read(limit + 1)
+        require(len(raw) <= limit, "commit-file-size")
+        snapshots.append(raw)
+    require(snapshots[0] == snapshots[1], "commit-candidate-mismatch")
+    proof = json.loads(snapshots[0])
+    require(proof.get("id") == lift_id and proof.get("updateProof", {}).get("recordUID") ==
+            shared["metadata"]["uid"] == result["releaseRecord"]["uid"] and
+            proof.get("releaseDataDigest") == "sha256:" + sha(shared["data"]["release.json"].encode()), "commit-shared-binding")
 
 
 class Qualification:
@@ -713,7 +828,8 @@ class Qualification:
         docs = json.loads(self.kube("-n", "orka-system", "get", "tasks.core.orka.ai", "-o", "json"))["items"]
         return {d["metadata"]["name"]: d for d in docs if d.get("spec", {}).get("agentRef", {}).get("name") == member}
 
-    def lift(self, reference, receipt_path, layout=None, plan=False, evidence=True, success=True, inference="native-suite-inference", promote=False):
+    def lift(self, reference, receipt_path, layout=None, plan=False, evidence=True, success=True, inference="native-suite-inference", promote=False,
+             update=False, member=None, record=None):
         args = ["lift", reference, "--to-context", self.context, "--to-namespace", "orka-system", "--inference", "provider:" + inference, "-o", "json"]
         args += ["--from-layout", layout] if layout else ["--plain-http"]
         if evidence:
@@ -722,6 +838,11 @@ class Qualification:
             args += ["--plan"]
         if promote:
             args += ["--promote"]
+        if update:
+            require(member and record and re.fullmatch(r"kmx-release-[0-9a-f]{40}", record), "update-audit-scope")
+            args += ["--update"]
+            env = dict(self.product_env, KMX_NATIVE_UPDATE_MEMBER=member, KMX_NATIVE_UPDATE_RECORD=record)
+            return self.cli(*args, success=success, timeout=180, env=env)
         return self.cli(*args, success=success, timeout=180)
 
     def fresh_run(self, transport, receipt, case):
@@ -752,12 +873,12 @@ class Qualification:
         require(inspect_task(self.get("tasks.core.orka.ai", name), row, member, case["input"]) == task, "fresh-task-drift")
         return {**task, "inputDigest": sha(case["input"].encode()), "answerDigest": result_digest(output)}
 
-    def status(self, placement, receipt, evidence):
+    def status(self, placement, receipt, evidence, name="destination-status"):
         self.phase = "destination-status"
         return qualify_status(self.work, placement, evidence, receipt["runID"],
-                              lambda args, env: self.cli(*args, env=env), self.product_env, self.kubectl)
+                              lambda args, env: self.cli(*args, env=env), self.product_env, self.kubectl, name=name)
 
-    def lift_qualification(self, workspace, layout, changed_layout, changed_s, receipt_path, receipt, cases):
+    def lift_qualification(self, workspace, layout, changed_layout, changed_s, receipt_path, receipt, cases, revision=None):
         evidence, original = receipt_path.read_bytes(), snapshot(workspace)
         layout_before = snapshot(layout)
         source = receipt["subject"]
@@ -765,10 +886,23 @@ class Qualification:
         results = {}
         with self.registry() as registry:
             self.cli("push", "--workspace", workspace, "--evaluation", receipt_path, "--plain-http", "--provenance=false", registry)
+            if revision:
+                revision["registry"] = registry.rsplit(":", 1)[0] + ":v2"
+                self.cli("push", "--workspace", revision["workspace"], "--evaluation", revision["path"],
+                         "--plain-http", "--provenance=false", revision["registry"])
+                revision["registry"] = revision["registry"].rsplit(":", 1)[0] + "@" + revision["receipt"]["subject"]["SuiteDigest"]
+                pulled = self.work / "v2-registry-pulled"
+                self.cli("suite", "pull", "--plain-http", "--output", pulled, revision["registry"])
+                verify_transfer(revision["layout"], pulled, revision["receipt"]["subject"], cases)
             registry = registry.rsplit(":", 1)[0] + "@" + source["SuiteDigest"]
             hidden = self.work / "source-withheld"
             workspace.rename(hidden)
             hidden.chmod(0)
+            hidden2 = None
+            if revision:
+                hidden2 = self.work / "v2-source-withheld"
+                revision["workspace"].rename(hidden2)
+                hidden2.chmod(0)
             try:
                 self.empty_member(source["Member"])
                 subject, specs = self.promotion_subject(receipt)
@@ -813,12 +947,123 @@ class Qualification:
                 if self.promotion_context:
                     results["promotion"] = self.promote_qualification(registry, receipt_path, receipt, cases, placement)
                 self.pair_proof(placement)
+                if revision:
+                    results["updates"] = self.update_qualification(result, receipt_path, receipt, layout, revision)
             finally:
+                if hidden2:
+                    hidden2.chmod(0o700)
+                    hidden2.rename(revision["workspace"])
                 hidden.chmod(0o700)
                 hidden.rename(workspace)
         require(snapshot(workspace) == original and snapshot(layout) == layout_before and receipt_path.read_bytes() == evidence, "lift-input-changed")
         return results
 
+
+    def passing_revision(self, receipt, cases):
+        self.phase = "evaluate-v2"
+        instructions = self.work / "v2-instructions.txt"
+        instructions.write_text(self.fixture_instructions + "\nKeep each response concise.\n")
+        workspace, path, layout = self.work / "v2-workspace", self.work / "receipt/v2-passing.json", self.work / "v2-layout"
+        self.author(receipt["subject"]["Member"], workspace, instructions, cases)
+        original = snapshot(workspace)
+        start = len(self.frames())
+        old = self.fixture_instructions
+        self.fixture_instructions = instructions.read_text()
+        try:
+            with self.model_forward():
+                self.evaluation(workspace, path)
+            second = json.loads(path.read_bytes())
+            require(second["result"] == "pass" and second["runID"] != receipt["runID"] and
+                    second["subject"]["SuiteDigest"] != receipt["subject"]["SuiteDigest"] and
+                    second["sourceFingerprint"] == fingerprint(original) and snapshot(workspace) == original and
+                    path.stat().st_mode & 0o777 == 0o600, "v2-independent-pass")
+            verify_cases(second["cases"], cases, second["subject"]["Member"])
+            specs, payload = self.candidate_specs(second["subject"])
+            require(second["subject"]["PayloadDigest"] == payload, "v2-candidate-payload")
+            frames = self.frames()[start:]
+            verify_candidate(second, frames, cases, specs)
+            self.audit.verify_cleanup_order(self.raw_frames())
+            self.cleanup_proof(second["subject"], frames)
+            self.cli("push", "--workspace", workspace, "--evaluation", path, "--to-layout", layout, "native-suite:v2")
+            extracted = self.work / "v2-pulled"
+            self.cli("suite", "pull", "--from-layout", layout, "--output", extracted, "native-suite:v2")
+            verify_transfer(layout, extracted, second["subject"], cases)
+            return {"workspace": workspace, "path": path, "layout": layout, "receipt": second,
+                    "instructions": instructions.read_text(), "source": original, "layoutSnapshot": snapshot(layout)}
+        finally:
+            self.fixture_instructions = old
+
+    def update_qualification(self, initial, path, receipt, layout, revision):
+        member = receipt["subject"]["Member"]
+        record = release_record_name(receipt["subject"]["Suite"], member)
+        require(initial.get("releaseRecord", {}).get("name") == record and initial.get("liftID"), "update-owned-baseline")
+        verify_lift_commit(self.work / "kmx-home", initial, self.get("configmap", record))
+        before = self.task_inventory()
+        source_bytes, second_bytes = path.read_bytes(), revision["path"].read_bytes()
+        old_instructions = self.fixture_instructions
+        seen, previous, observations = {initial["liftID"]}, initial, []
+        transitions = [("v2", revision["receipt"], revision["path"], revision["layout"], None, revision["instructions"]),
+                       ("original-v1", receipt, path, layout, None, old_instructions),
+                       ("v2-registry", revision["receipt"], revision["path"], None, revision["registry"], revision["instructions"])]
+        try:
+            for label, desired, evidence_path, selected_layout, reference, instructions in transitions:
+                self.phase = "public-update-" + label
+                self.fixture_instructions = instructions
+                subject, specs = self.promotion_subject(desired)
+                reference = reference or "native-suite@" + desired["subject"]["SuiteDigest"]
+                options = dict(promote=True, update=True, member=member, record=record)
+                home = snapshot(self.work / "kmx-home")
+                start = len(self.frames())
+                planned = json.loads(self.lift(reference, evidence_path, selected_layout, plan=True, **options).stdout)
+                self.audit.verify_read_only(self.frames()[start:])
+                require(snapshot(self.work / "kmx-home") == home, "update-plan-private-write")
+                verify_update_summary(planned, desired, evidence_path.read_bytes(), subject, specs, previous)
+                start = len(self.raw_frames())
+                result = json.loads(self.lift(reference, evidence_path, selected_layout, **options).stdout)
+                verify_update_effects(self.raw_frames()[start:], member, record)
+                verify_update_result(result, desired, evidence_path.read_bytes(), subject, specs, previous, record, seen)
+                require(result["releaseRecord"]["uid"] == initial["releaseRecord"]["uid"], "update-record-replaced")
+                verify_lift_commit(self.work / "kmx-home", result, self.get("configmap", record))
+                result["provenanceVersion"] = 2
+                status = self.status(result, desired, evidence_path.read_bytes(), name="status-update-" + label)
+                placement = {"subject": subject, **{r["kind"].lower(): {"UID": r["uid"], "Generation": r["generation"], "SpecDigest": r["specDigest"]}
+                                                    for r in result["resources"]}}
+                self.pair_proof(placement)
+                seen.add(result["liftID"])
+                observations.append({"version": label, "liftID": result["liftID"], "suiteDigest": desired["subject"]["SuiteDigest"],
+                                     "receiptDigest": "sha256:" + sha(evidence_path.read_bytes()), "status": status,
+                                     "resources": [{k: r[k] for k in ("kind", "uid", "generation", "specDigest")} for r in result["resources"]]})
+                previous = result
+            self.phase = "public-update-rv-noop"
+            provider = self.get("providers.core.orka.ai", "native-suite-inference")
+            meta = provider["metadata"]
+            ops = [{"op": "test", "path": "/metadata/" + k, "value": meta[k]} for k in ("uid", "resourceVersion", "generation")]
+            ops += [{"op": "test", "path": "/spec", "value": provider["spec"]},
+                    {"op": "add", "path": "/status/message", "value": "Owned public update no-op RV qualification"}]
+            changed = json.loads(self.kube("-n", "orka-system", "patch", "providers.core.orka.ai", "native-suite-inference",
+                                         "--subresource=status", "--type=json", "--patch-file=/dev/stdin", "-o", "json", raw=canonical(ops)))
+            require(changed["metadata"]["uid"] == meta["uid"] and changed["metadata"]["generation"] == meta["generation"] and
+                    changed["metadata"]["resourceVersion"] != meta["resourceVersion"] and changed["spec"] == provider["spec"] and
+                    changed["status"]["ready"] is True, "update-status-only-rv")
+            home = snapshot(self.work / "kmx-home")
+            start = len(self.frames())
+            noop = json.loads(self.lift(revision["registry"], revision["path"], promote=True, update=True, member=member, record=record).stdout)
+            self.audit.verify_read_only(self.frames()[start:])
+            require(noop["state"] == "ready" and not noop.get("liftID") and snapshot(self.work / "kmx-home") == home and
+                    len(noop["resources"]) == 2, "update-noop-writes")
+            for row, old in zip(noop["resources"], previous["resources"]):
+                require(row["outcome"] == "reused" and row["ready"] is True and
+                        all(row.get(k) == old[k] for k in ("kind", "name", "uid", "generation", "specDigest")), "update-noop-baseline")
+            status = self.status(previous, revision["receipt"], second_bytes, name="status-update-noop")
+            require(self.task_inventory() == before and path.read_bytes() == source_bytes and revision["path"].read_bytes() == second_bytes,
+                    "digest-update-task-or-evidence-change")
+            require(snapshot(revision["layout"]) == revision["layoutSnapshot"], "v2-layout-mutated")
+            return {"publicCLI": True, "committedOwnershipIndependent": True,
+                    "transitions": observations, "sameDigestNoop": status, "forcedStatusOnlyRV": True,
+                    "digestUpdateTaskAttempts": 0, "digestUpdateEvaluations": 0, "digestUpdatePublications": 0,
+                    "workspaceStaleCompletionLiveQualified": False, "interleavingLiveQualified": False}
+        finally:
+            self.fixture_instructions = old_instructions
 
     def promote_qualification(self, reference, receipt_path, receipt, cases, source_placement):
         self.phase = "promote-setup"
@@ -1148,8 +1393,8 @@ class Qualification:
         require(not self.frames(), "offline-audit")
         self.fixture_instructions = instructions.read_text()
         self.phase = "evaluate"
-        # Exactly one positive evaluation; its two judge samples use the same
-        # pinned model through this owned forward, with no additional warmup.
+        # The original full evaluation and the independent v2 full evaluation
+        # share this one pinned CPU workload, with no additional warmup.
         with self.model_forward():
             self.evaluation(workspace, receipt_path)
         receipt = json.loads(receipt_path.read_bytes())
@@ -1187,7 +1432,9 @@ class Qualification:
         # Cases are in the graph, so a case edit changes S and G.
         require(changed_s != subject["SuiteDigest"] and sha(canonical(json.loads((changed / "agentsuite.json").read_bytes()))) != subject["GraphDigest"][7:], "mutation-S-and-G")
         case_path.write_bytes(cases[case_path.name])
-        lift_results = self.lift_qualification(workspace, layout, changed_layout, changed_s, receipt_path, receipt, cases)
+        revision = self.passing_revision(receipt, cases)
+        lift_results = self.lift_qualification(workspace, layout, changed_layout, changed_s, receipt_path, receipt, cases, revision=revision)
+        require(snapshot(revision["workspace"]) == revision["source"], "v2-source-changed")
         lift_results["candidateChildrenAbsent"] = children
         self.refusals(workspace, instructions, cases, subject)
         self.artifacts(receipt_path, receipt, tasks, lift_results)

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"reflect"
 	"strings"
 	"time"
 
@@ -82,7 +83,7 @@ func statusRecord(raw string, runtime string) *destinationStatusRecord {
 	if _, ok := fields["evaluatedOnTarget"].(bool); !ok {
 		return nil
 	}
-	if r.Version != 1 || !evaluationRunID(r.LiftID) || !evaluationRunID(r.ReceiptRunID) || !agentsuite.IsValidDigest(r.SuiteDigest) || !agentsuite.IsValidDigest(r.ReceiptDigest) || !statusTargetValid(r.Target) || !statusTargetValid(r.Evaluation) || r.EvaluationName != "" && !statusSafeText(r.EvaluationName) || r.Actor != "" && !statusSafeText(r.Actor) {
+	if (r.Version != 1 && (r.Version != 2 || runtime != "orka")) || !evaluationRunID(r.LiftID) || !evaluationRunID(r.ReceiptRunID) || !agentsuite.IsValidDigest(r.SuiteDigest) || !agentsuite.IsValidDigest(r.ReceiptDigest) || !statusTargetValid(r.Target) || !statusTargetValid(r.Evaluation) || r.EvaluationName != "" && !statusSafeText(r.EvaluationName) || r.Actor != "" && !statusSafeText(r.Actor) {
 		return nil
 	}
 	if r.Gate != "promotion" && r.Gate != "same-subject" || r.EvaluatedOnTarget != (r.Gate == "same-subject") || r.Gate == "same-subject" && !statusSameTarget(r.Evaluation, r.Target) {
@@ -176,6 +177,9 @@ func (o *destinationStatusObserver) resource(api destinationStatusAPI, doc map[s
 		return resource
 	}
 	p.State, p.Reason = "recorded", "unsigned create-time Lift observation; not authentication or UID continuity proof"
+	if p.Record.Version == 2 {
+		p.Reason = "unsigned mutation attempt; not completion, authentication or UID continuity proof"
+	}
 	resource.Provenance = p
 	var digest string
 	var err error
@@ -255,7 +259,7 @@ func (o *destinationStatusObserver) agent(api destinationStatusAPI, doc map[stri
 		if i == 1 {
 			collection = plural
 		}
-		latest, unchanged := o.recheck(api, collection, before)
+		latest, unchanged := o.recheckReleasePrimary(api, collection, before)
 		if !unchanged {
 			latest = destinationStatusReadiness{"unknown", "primary identity, spec or ownership changed or became unreadable"}
 			row.Resources[i].Provenance.State = "unknown"
@@ -266,8 +270,116 @@ func (o *destinationStatusObserver) agent(api destinationStatusAPI, doc map[stri
 		row.Readiness = statusWorseReadiness(row.Readiness, latest)
 	}
 	row.Provenance = row.Resources[0].Provenance
+	o.observeReleaseRecord(&row, doc, observed)
 	return row
 }
+
+// Release fingerprints also bind original create metadata and description, beyond
+// the ordinary status recheck. RV-only churn and unrelated annotations stay inert.
+func (o *destinationStatusObserver) recheckReleasePrimary(api destinationStatusAPI, plural string, before map[string]any) (destinationStatusReadiness, bool) {
+	meta := statusMap(before, "metadata")
+	owner, ownerState := statusOwnership(api.runtime, meta)
+	if api.runtime != "orka" || owner == nil || statusString(statusMap(meta, "annotations"), releaseLiftRecordAnnotation) == "" {
+		return o.recheck(api, plural, before)
+	}
+	after, ok := o.workloadObject(api.prefix, plural, statusString(before, "kind"), api.version, statusString(meta, "name"))
+	if !ok {
+		return destinationStatusReadiness{}, false
+	}
+	fingerprint := func(doc map[string]any) (releaseStateObject, error) {
+		m := statusMap(doc, "metadata")
+		generation, _ := statusInteger(m["generation"])
+		return releaseObjectFingerprint(doc, statusString(m, "uid"), generation)
+	}
+	initial, err := fingerprint(before)
+	latest, latestErr := fingerprint(after)
+	freshOwner, freshState := statusOwnership(api.runtime, statusMap(after, "metadata"))
+	return statusPrimaryReadiness(api.runtime, after), err == nil && latestErr == nil && initial == latest && reflect.DeepEqual(owner, freshOwner) && ownerState == freshState
+}
+
+// Shared state is an unsigned observation, never private update/skip authority.
+// Read only the stable key after independently observing and rechecking the pair.
+func (o *destinationStatusObserver) observeReleaseRecord(row *destinationStatusAgent, agent, provider map[string]any) {
+	owner, _ := statusOwnership(row.Runtime, statusMap(agent, "metadata"))
+	if row.Runtime != "orka" || owner == nil || owner.Run != "" {
+		return
+	}
+	record := &ReleaseRecordObservation{Name: releaseStateName(owner.Suite, owner.Member, "orka"), State: "unknown"}
+	mutation := false
+	for _, resource := range row.Resources {
+		mutation = mutation || resource.Provenance.Record != nil && resource.Provenance.Record.Version == 2
+	}
+	unknown := func(reason string) {
+		row.ReleaseRecord = record
+		o.problem(reason)
+		if mutation {
+			row.Provenance.State, row.Provenance.Reason = "unknown", reason
+		}
+	}
+	if !statusTargetValid(o.report.Target) || o.ctx.Err() != nil || o.calls >= 2048 || o.bytes >= 64<<20 {
+		unknown("shared release observation unavailable; target identity or observation budget is unknown")
+		return
+	}
+	o.calls++
+	expected := releaseState{Version: 1, Suite: owner.Suite, Member: owner.Member, Runtime: "orka", Target: o.report.Target}
+	snapshot, err := o.a.readReleaseState(o.ctx, expected)
+	// The strict decoder caps the envelope at 128KiB and release.json at 64KiB.
+	// Charge that envelope bound rather than adding uncounted optional reads.
+	o.bytes += 2 * maxReleaseStateBytes
+	if err != nil {
+		// A rejected envelope may have reached the transport's larger 4MiB cap.
+		o.bytes += (4 << 20) - 2*maxReleaseStateBytes
+	}
+	if err != nil || o.bytes > 64<<20 {
+		unknown("shared release record is unreadable or invalid; check ConfigMap get access and target identity; no completion inferred")
+		return
+	}
+	if snapshot == nil {
+		if mutation {
+			unknown("mutation attempt has no shared release record; completion is unknown")
+		}
+		return // A missing v1 record remains a legacy observation, not enrollment.
+	}
+	row.ReleaseRecord, record.UID = record, snapshot.UID
+	s := snapshot.State
+	if s.Operation != "" {
+		record.State = "pending"
+		return
+	}
+	if len(s.History) == 0 {
+		unknown("shared release record has no terminal observation; completion is unknown")
+		return
+	}
+	terminal := s.History[len(s.History)-1]
+	if terminal.State == "partial" {
+		record.State = "partial"
+		return
+	}
+	// A terminal label alone cannot complete an attempt: the root baseline,
+	// latest revision, both current fingerprints and both annotations must agree.
+	consistent := reflect.DeepEqual(terminal.Objects, s.Baseline)
+	for i, doc := range []map[string]any{provider, agent} {
+		resource := row.Resources[1-i]
+		other, _ := statusOwnership("orka", statusMap(doc, "metadata"))
+		p := resource.Provenance
+		if other == nil || *other != *owner || p.State != "recorded" || p.Record == nil || resource.SpecDrift != "matched" {
+			consistent = false
+			continue
+		}
+		proof, err := releaseObjectFingerprint(doc, resource.UID, resource.Generation)
+		if err != nil || len(s.Baseline) != 2 || proof != s.Baseline[i] ||
+			terminal.LiftID != p.Record.LiftID || terminal.SuiteDigest != p.Record.SuiteDigest || terminal.EvidenceDigest != p.Record.ReceiptDigest ||
+			!reflect.DeepEqual(p.Record, row.Resources[0].Provenance.Record) {
+			consistent = false
+		}
+	}
+	if !consistent {
+		unknown("shared release baseline and current pair do not consistently confirm completion")
+		return
+	}
+	record.State = "completed"
+}
+
 func statusWorseReadiness(a, b destinationStatusReadiness) destinationStatusReadiness {
 	rank := map[string]int{"ready": 0, "pending": 1, "unhealthy": 2, "drifted": 3, "unknown": 4}
 	if rank[b.State] > rank[a.State] {

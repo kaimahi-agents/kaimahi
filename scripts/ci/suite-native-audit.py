@@ -86,7 +86,8 @@ def release_payload(data):
     if pending is None:
         check(not state.get("operation") and bool(state.get("baseline")))
     else:
-        check(state.get("operation") == pending.get("liftID") == state["originLiftID"])
+        check(state.get("operation") == pending.get("liftID"))
+        check(bool(state.get("baseline")) or pending.get("liftID") == state["originLiftID"])
     if "baseline" in state:
         objects(state["baseline"])
     for revision in history + ([pending] if pending is not None else []):
@@ -114,7 +115,31 @@ def release_document(doc):
     return release_payload(doc["data"]["release.json"])
 
 
-def classify(args, raw=b""):
+def native_update_patch(args, raw, update):
+    raw_prefix(args, "patch")
+    tail = args[args.index("patch") + 1:]
+    kinds = {"providers.core.orka.ai": "Provider", "agents.core.orka.ai": "Agent"}
+    if (not update or "-n" not in args or tail[0] not in kinds or tail[1] != update["member"] or
+            tail[2:] not in (["--type=json", "--patch-file=/dev/stdin", "-o", "json"],
+                            ["--type=json", "--patch-file=/dev/stdin", "-o", "json", "--dry-run=server"]) or len(raw) > RESPONSE_LIMIT):
+        raise ValueError("audit-update-scope")
+    ops = json.loads(raw, object_pairs_hook=unique_object)
+    shape = [("test", "/metadata/" + key) for key in ("uid", "resourceVersion", "generation")]
+    shape += [("test", "/spec"), ("test", "/metadata/annotations"), ("replace", "/spec"), ("replace", "/metadata/annotations")]
+    if (not isinstance(ops, list) or len(ops) != 7 or any(not isinstance(op, dict) or set(op) != {"op", "path", "value"} for op in ops) or
+            [(op["op"], op["path"]) for op in ops] != shape or
+            any(not isinstance(op["value"], str) or not OPAQUE.fullmatch(op["value"]) for op in ops[:2]) or
+            type(ops[2]["value"]) is not int or ops[2]["value"] < 1 or
+            any(not isinstance(ops[i]["value"], dict) for i in (3, 4, 5, 6)) or
+            any(not isinstance(v, str) for i in (4, 6) for v in ops[i]["value"].values())):
+        raise ValueError("audit-update-cas")
+    digest = lambda value: hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    return {"nativeUpdate": True, "updateUID": ops[0]["value"], "updateRV": ops[1]["value"], "updateGeneration": ops[2]["value"],
+            "beforeSpecDigest": spec_digest(ops[3]["value"]), "desiredSpecDigest": spec_digest(ops[5]["value"]),
+            "beforeAnnotationsDigest": digest(ops[4]["value"]), "desiredAnnotationsDigest": digest(ops[6]["value"])}
+
+
+def classify(args, raw=b"", update=None):
     verb = next((a for a in args if a in VERBS), "")
     if not verb:
         raise ValueError("audit-command")
@@ -129,16 +154,26 @@ def classify(args, raw=b""):
     record = {}
     if verb == "auth":
         raw_prefix(args, verb)
+        native_permission = bool(update and len(tail) == 3 and tail[1] == "patch" and tail[2] in
+                                 {kind + ".core.orka.ai/" + update["member"] for kind in ("providers", "agents")})
         if ("-n" not in args or len(tail) != 3 or tail[:1] != ["can-i"] or
-                not (tail[1:] == ["create", "configmaps"] or tail[1] in {"get", "patch"} and
+                not (native_permission or tail[1:] == ["create", "configmaps"] or tail[1] in {"get", "patch"} and
                      tail[2].startswith("configmaps/") and RELEASE_NAME.fullmatch(tail[2][11:]))):
             raise ValueError("audit-record-auth")
-        resource, name = "release-permission", tail[2].removeprefix("configmaps/") if "/" in tail[2] else ""
-        record = {"releaseRecord": True, "permission": tail[1]}
+        resource, name = "release-permission", tail[2].split("/", 1)[1] if "/" in tail[2] else ""
+        record = {"nativePermission" if native_permission else "releaseRecord": True, "permission": tail[1]}
+        if update and not native_permission and name != update["record"]:
+            raise ValueError("audit-update-record-scope")
+    elif verb == "patch" and resource in {"providers.core.orka.ai", "agents.core.orka.ai"}:
+        record = native_update_patch(args, raw, update)
+        resource = "Provider" if resource.startswith("providers") else "Agent"
+        persistent = "--dry-run=server" not in tail
     elif verb == "patch":
         raw_prefix(args, verb)
         if "-n" not in args or not RELEASE_NAME.fullmatch(name) or tail != ["configmap", name, "--type=json", "--patch-file=/dev/stdin", "-o", "json"]:
             raise ValueError("audit-record-patch")
+        if update and name != update["record"]:
+            raise ValueError("audit-update-record-scope")
         ops = json.loads(raw, object_pairs_hook=unique_object)
         if (not isinstance(ops, list) or len(ops) != 4 or
                 [(op.get("op"), op.get("path")) for op in ops] != [("test", "/metadata/uid"), ("test", "/metadata/resourceVersion"),
@@ -152,6 +187,8 @@ def classify(args, raw=b""):
         raw_prefix(args, verb)
         if "-n" not in args or not RELEASE_NAME.fullmatch(name) or tail != ["configmap", name, "--ignore-not-found", "-o", "json"]:
             raise ValueError("audit-record-get")
+        if update and name != update["record"]:
+            raise ValueError("audit-update-record-scope")
         resource, record = "ConfigMap", {"releaseRecord": True}
     elif verb == "delete":
         match = re.fullmatch(r"/apis/core\.orka\.ai/v1alpha1/namespaces/orka-system/(providers|agents|tasks)/([a-z0-9][-a-z0-9.]{0,252})", name)
@@ -190,12 +227,15 @@ def classify(args, raw=b""):
         raw_prefix(args, verb)
         parsed = urllib.parse.urlsplit(name)
         query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
-        if (tail != ["--raw", name] or parsed.scheme or parsed.netloc or parsed.fragment or parsed.path not in INVENTORIES or
+        if update and name == "/apis/core.orka.ai/v1alpha1/agents?limit=256" and tail == ["--raw", name]:
+            resource, name = "Agent", ""
+        elif (tail != ["--raw", name] or parsed.scheme or parsed.netloc or parsed.fragment or parsed.path not in INVENTORIES or
                 query.get("limit") != ["128"] or set(query) not in ({"limit"}, {"limit", "continue"}) or
                 ("continue" in query and (len(query["continue"]) != 1 or not query["continue"][0] or
                                          len(query["continue"][0]) > 4096))):
             raise ValueError("audit-raw-read")
-        resource, name = INVENTORIES[parsed.path], ""
+        else:
+            resource, name = INVENTORIES[parsed.path], ""
     elif verb == "get":
         if resource not in READS:
             raise ValueError("audit-read")
@@ -222,9 +262,11 @@ def classify(args, raw=b""):
         name = ""  # list reads have no named object
     if name and not re.fullmatch(r"[a-zA-Z0-9._-]{1,253}", name):
         raise ValueError("audit-name")
+    if update and (persistent or verb in {"create", "replace", "delete"}) and not (record.get("nativeUpdate") or record.get("releaseRecord") and verb == "patch"):
+        raise ValueError("audit-update-unrelated-mutation")
     return {**record, **({"preconditions": preconditions} if preconditions is not None else {}),
             "verb": verb, "resource": resource, "name": name, "persistent": persistent,
-            "admission": verb in {"create", "replace"} and "--dry-run=client" not in tail and not bool(record),
+            "admission": bool(record.get("nativeUpdate")) or verb in {"create", "replace"} and "--dry-run=client" not in tail and not bool(record),
             "taskAttempt": resource == "Task" and verb in {"create", "replace"},
             "stdinDigest": hashlib.sha256(raw).hexdigest(), "stdinBytes": len(raw)}
 
@@ -258,7 +300,7 @@ def response_snapshot(raw):
     if kind == "Status":
         return {k: doc[k] for k in ("apiVersion", "kind", "status")}
     if kind in {k + "List" for k in INVENTORIES.values()}:
-        if len(doc["items"]) > 128:
+        if len(doc["items"]) > (256 if kind == "AgentList" else 128):
             raise ValueError("audit-page-size")
         return {"apiVersion": doc["apiVersion"], "kind": kind,
                 "resourceVersion": doc["metadata"]["resourceVersion"],
@@ -310,7 +352,7 @@ def validate_response(response):
         raise ValueError("audit-response-rv")
     if "continueBytes" in response and (type(response["continueBytes"]) is not int or not 0 <= response["continueBytes"] <= 4096):
         raise ValueError("audit-response-token")
-    if "items" in response and (not isinstance(response["items"], list) or len(response["items"]) > 128):
+    if "items" in response and (not isinstance(response["items"], list) or len(response["items"]) > (256 if response.get("kind") == "AgentList" else 128)):
         raise ValueError("audit-response-page")
     for key in ("ready", "resultAvailable"):
         if key in response and type(response[key]) is not bool:
@@ -418,7 +460,12 @@ def main():
         check_scope(args, os.environ["KMX_NATIVE_CONTEXT"])
         stdin = "-f" in args or "--patch-file=/dev/stdin" in args
         raw = sys.stdin.buffer.read() if stdin else b""
-        frame = {**classify(args, raw), "requestID": uuid.uuid4().hex}
+        update = None
+        if "KMX_NATIVE_UPDATE_MEMBER" in os.environ or "KMX_NATIVE_UPDATE_RECORD" in os.environ:
+            update = {"member": os.environ.get("KMX_NATIVE_UPDATE_MEMBER", ""), "record": os.environ.get("KMX_NATIVE_UPDATE_RECORD", "")}
+            if not re.fullmatch(r"[a-z0-9][-a-z0-9.]{0,252}", update["member"]) or not RELEASE_NAME.fullmatch(update["record"]):
+                raise ValueError("audit-update-scope")
+        frame = {**classify(args, raw, update=update), "requestID": uuid.uuid4().hex}
         real = os.environ["KMX_NATIVE_KUBECTL"]
         append({**frame, "stage": "intent"})
         if frame["verb"] == "port-forward":

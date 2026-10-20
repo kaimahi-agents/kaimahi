@@ -24,6 +24,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Opt-in Orka `kmx lift --to <destination> --update` and digest/evidence update
+  or rollback. Only newly created, acknowledged retained pairs qualify; v0.8.1
+  and earlier, reused, mixed and unrecorded placements are never enrolled.
+  Original passing evidence supports rollback without re-evaluation. Same-digest
+  updates are no-write checks; workspace updates re-prove the actual cluster
+  baseline instead of trusting a historical placement skip. Arrange a quiet
+  window: there is no draining, zero-downtime or automatic recovery guarantee.
+- Destination status reads v1 creates and v2 mutation attempts, with a bounded
+  exact-name shared-record GET reporting pending/partial/completed/unknown
+  separately from readiness. These unsigned observations never grant update
+  authority or prove local completion acknowledgment.
 - Public Go package `pkg/suiteview` returns a verified, read-only `MemberRecipe`
   for one explicit member: caller-owned instructions and the complete portable
   model requirement from a local
@@ -40,14 +51,6 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   verification, runtime qualification, executable plan, CLI consumer or Apply
   support is enabled.
 
-### Fixed
-
-- A private Orka ownership checkpoint could leave visible `4.json` after a
-  post-link persistence failure, incorrectly authorizing a later update. Fresh
-  create and internal update now require a final `committed.json` marker after
-  publication checks and output cleanup succeed. Lost shared-write responses
-  still block; there is no retry, backfill or automatic cleanup.
-
 ### Changed
 
 - AgentSuite validation now uses `github.com/agent-primitives/suite v0.5.0`.
@@ -63,13 +66,21 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   verification failure. Other credential and invalid-Unicode refusals remain.
 
 - Complete fresh Orka Lift creates now retain a namespace-local shared release
-  record and explicit private ownership proof for the forthcoming updater
+  record and explicit private ownership proof for the opt-in updater
   ([#561](https://github.com/kaimahi-agents/kaimahi/issues/561)). Composed Lift
   preflights retention before evaluation/publication spend. Shared completion
   uses conditional writes and requires a private acknowledgment checkpoint;
   ambiguous or partial first creates remain blocked, without automatic cleanup.
-  Exact reuse/mixed reuse/skips never enroll. Kagent is unchanged. The public
-  command remains create-only; no `--update` flag is enabled by this backend slice.
+  Exact reuse/mixed reuse/skips never enroll. Kagent is unchanged; plain Lift
+  remains create-only. See the [update contract](docs/suite-workspace.md#update-and-rollback).
+
+### Fixed
+
+- A private Orka ownership checkpoint could leave visible `4.json` after a
+  post-link persistence failure, incorrectly authorizing a later update. Fresh
+  create and internal update now require a final `committed.json` marker after
+  publication checks and output cleanup succeed. Lost shared-write responses
+  still block; there is no retry, backfill or automatic cleanup.
 
 ### Breaking
 
@@ -81,6 +92,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Changed documents require rebinding their descriptors and ancestors. Explicit
   `critical: false` remains valid; Agent extension acceptance is unchanged.
 
+- Destination status now reads the exact shared release ConfigMap for owned Orka
+  rows. Read-only roles need named-record `get` access; denial makes the shared
+  observation unknown and the report incomplete (exit 1), including legacy v1
+  rows. Existing object provenance remains visible; no permission is granted or
+  inferred automatically. See [status access](docs/destination-status.md#selection-and-access).
 - All unmarked private ownership proofs are refused, including successful test
   baselines from unreleased #573 builds. A visible `4.json` alone is not a
   completed acknowledgment. Recreate an owned pair explicitly when ready; no

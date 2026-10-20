@@ -16,6 +16,8 @@ import (
 const releaseCreateRecordAnnotation = "kaimahi.dev/lift-create-record"
 
 var errReleaseUpdate = errors.New("release update refused or incomplete; inspect resource outcomes; no automatic retry, undo or takeover")
+var errReleaseUpdateRequired = errors.New("owned retained placement already exists; request lift --update with passing evidence for compatibility-checked changes; plain Lift remains create-only")
+
 var errReleaseUpdateDrift = errors.New("recorded release identity, generation, spec or owned metadata changed; refusing update")
 var errReleaseUpdateCompatibility = errors.New("update requires the same suite/member/runtime/renderer/model/inference binding and retained ownership proof")
 var errReleaseUpdateDependents = errors.New("shared Provider or incomplete dependent inspection; require a complete cluster-wide Agent list of at most 256 objects; no update attempted")
@@ -71,7 +73,79 @@ func (a *App) prepareReleaseUpdate(ctx context.Context, opt ReleaseLiftOptions) 
 	if err != nil {
 		return nil, errReleaseUpdateCompatibility
 	}
-	state, err := worker.readReleaseState(ctx, releaseStateSubject(native.Subject))
+	p, err = worker.inspectReleaseUpdateBaseline(ctx, native, opt.Inference)
+	if err != nil {
+		return nil, err
+	}
+	state, current := p.before, p.current
+	s := ReleaseLiftSummary{Suite: inputs.suite.Name, SuiteDigest: inputs.suite.Digest, Member: inputs.suite.MemberID, Model: inputs.suite.Model, Runtime: "orka", Target: releaseLiftTarget(native.Subject.Target), SourceTarget: releaseLiftTarget(inputs.receipt.Subject.Target), Promote: opt.Promote, ServingModel: model, Inference: opt.Inference, BindingDigest: native.Subject.BindingDigest, RenderedDigest: native.Subject.RenderedDigest, EvidenceDigest: godigest.FromBytes(inputs.evidence).String(), EvidenceRunID: inputs.receipt.RunID, Gate: gate}
+	noop := state.State.History[len(state.State.History)-1].State == "completed"
+	for i, doc := range []map[string]any{native.bundle.Provider, native.bundle.Agent} {
+		digest, err := suiteNativeDigest("kmx.native-orka.spec/v1", doc["spec"])
+		if err != nil {
+			return nil, err
+		}
+		if i == 0 && "sha256:"+digest != state.State.Baseline[0].SpecDigest {
+			return nil, errReleaseUpdateCompatibility
+		}
+		meta, _ := current[i]["metadata"].(map[string]any)
+		ann := meta["annotations"].(map[string]any)
+		noop = noop && ann[orkaSuiteMarkers[1]] == s.SuiteDigest && "sha256:"+digest == state.State.Baseline[i].SpecDigest
+		s.Resources = append(s.Resources, ReleaseLiftResource{Kind: []string{"Provider", "Agent"}[i], Name: s.Member, Action: "update", UID: state.State.Baseline[i].UID, Generation: state.State.Baseline[i].Generation, ResourceVersion: meta["resourceVersion"].(string), SpecDigest: digest})
+	}
+	if noop {
+		for i := range s.Resources {
+			s.Resources[i].Action = "verify"
+		}
+	}
+	review, err := agentsuite.Marshal(struct {
+		Domain                string
+		Plan                  ReleaseLiftSummary
+		RecordUID, RecordData string
+	}{"kmx.release-update.plan/v1", s, state.UID, state.data})
+	if err != nil {
+		return nil, err
+	}
+	s.PlanDigest = godigest.FromBytes(review).String()
+	lift := &PreparedReleaseLift{options: opt, artifact: inputs.artifact, native: native, receipt: inputs.receipt, summary: s}
+	p.lift, p.noop = lift, noop
+	return p, nil
+}
+
+// Advice never enrolls a placement or prescribes deleting foreign resources.
+func (a *App) releaseLiftOccupiedAdvice(ctx context.Context, native *suiteNativePrepared, inference string, original error) error {
+	for _, kind := range []string{"Provider", "Agent"} {
+		raw, err := a.orkaCapture(ctx, nil, "-n", native.Subject.Target.Namespace, "get", orkaPlural(kind), native.Subject.Member, "-o", "json")
+		if err != nil {
+			return original
+		}
+		if _, _, err := inspectSuiteNativeLive(raw, native.Subject.Target.Namespace, kind, native.Subject.Member, suiteNativeOwner(native.Subject)); err != nil {
+			return original
+		}
+	}
+	if _, err := a.inspectReleaseUpdateOwnership(ctx, native, inference); err != nil {
+		return errors.Join(original, err)
+	}
+	return errReleaseUpdateRequired
+}
+
+// Inspect existing target authority before workspace evaluation/publication spend.
+// This grants no new evidence or mutation authority and does not require Ready.
+func (a *App) inspectReleaseUpdateBaseline(ctx context.Context, native *suiteNativePrepared, inference string) (*preparedReleaseUpdate, error) {
+	baseline, err := a.inspectReleaseUpdateOwnership(ctx, native, inference)
+	if err != nil {
+		return nil, err
+	}
+	if err = a.checkReleaseUpdateDependents(ctx, native.Subject, baseline.before.State.Baseline[1].UID); err != nil {
+		return nil, err
+	}
+	return baseline, nil
+}
+
+// Plain create-only refusal advice must not require update-only cluster access.
+// This proves retained ownership, not exclusive-dependency update eligibility.
+func (a *App) inspectReleaseUpdateOwnership(ctx context.Context, native *suiteNativePrepared, inference string) (*preparedReleaseUpdate, error) {
+	state, err := a.readReleaseState(ctx, releaseStateSubject(native.Subject))
 	if err != nil {
 		return nil, err
 	}
@@ -100,50 +174,67 @@ func (a *App) prepareReleaseUpdate(ctx context.Context, opt ReleaseLiftOptions) 
 			return nil, errReleaseUpdateUnsupported
 		}
 	}
-	dependencies, err := worker.readReleaseTargetDependencies(ctx, native.Subject)
+	dependencies, err := a.readReleaseTargetDependencies(ctx, native.Subject)
 	if err != nil {
 		return nil, err
 	}
 	if !sameReleaseTargetDependencies(origin.UpdateProof.Dependencies, dependencies) || !sameReleaseTargetDependencies(latest.UpdateProof.Dependencies, dependencies) {
 		return nil, errReleaseUpdateCompatibility
 	}
-	if latest.Summary.Model != inputs.suite.Model || latest.Summary.Inference != opt.Inference ||
+	if latest.Summary.Model != native.Subject.Model || latest.Summary.Inference != inference ||
 		origin.Summary.Suite != state.State.Suite || origin.Summary.Member != state.State.Member || origin.Summary.Runtime != "orka" || !statusSameTarget(origin.Summary.Target, state.State.Target) {
 		return nil, errReleaseUpdateCompatibility
 	}
-	current, err := worker.inspectReleaseUpdatePair(ctx, native.Subject, state.State.Baseline)
+	current, err := a.inspectReleaseUpdatePair(ctx, native.Subject, state.State.Baseline)
 	if err != nil {
 		return nil, err
 	}
-	if err := worker.checkReleaseUpdateDependents(ctx, native.Subject, state.State.Baseline[1].UID); err != nil {
-		return nil, err
+	digest, err := suiteNativeDigest("kmx.native-orka.spec/v1", native.bundle.Provider["spec"])
+	if err != nil || "sha256:"+digest != state.State.Baseline[0].SpecDigest {
+		return nil, errReleaseUpdateCompatibility
 	}
-	s := ReleaseLiftSummary{Suite: inputs.suite.Name, SuiteDigest: inputs.suite.Digest, Member: inputs.suite.MemberID, Model: inputs.suite.Model, Runtime: "orka", Target: releaseLiftTarget(native.Subject.Target), SourceTarget: releaseLiftTarget(inputs.receipt.Subject.Target), Promote: opt.Promote, ServingModel: model, Inference: opt.Inference, BindingDigest: native.Subject.BindingDigest, RenderedDigest: native.Subject.RenderedDigest, EvidenceDigest: godigest.FromBytes(inputs.evidence).String(), EvidenceRunID: inputs.receipt.RunID, Gate: gate}
-	noop := state.State.History[len(state.State.History)-1].State == "completed"
+	baseline := &preparedReleaseUpdate{before: state, origin: origin, latest: latest, current: current, dependencies: dependencies}
+	baseline.noop = state.State.History[len(state.State.History)-1].State == "completed"
 	for i, doc := range []map[string]any{native.bundle.Provider, native.bundle.Agent} {
-		digest, err := suiteNativeDigest("kmx.native-orka.spec/v1", doc["spec"])
-		if err != nil {
-			return nil, err
-		}
-		if i == 0 && "sha256:"+digest != state.State.Baseline[0].SpecDigest {
-			return nil, errReleaseUpdateCompatibility
+		spec, e := suiteNativeDigest("kmx.native-orka.spec/v1", doc["spec"])
+		if e != nil {
+			return nil, e
 		}
 		meta, _ := current[i]["metadata"].(map[string]any)
-		ann := meta["annotations"].(map[string]any)
-		noop = noop && ann[orkaSuiteMarkers[1]] == s.SuiteDigest && "sha256:"+digest == state.State.Baseline[i].SpecDigest
-		s.Resources = append(s.Resources, ReleaseLiftResource{Kind: []string{"Provider", "Agent"}[i], Name: s.Member, Action: "update", UID: state.State.Baseline[i].UID, Generation: state.State.Baseline[i].Generation, ResourceVersion: meta["resourceVersion"].(string), SpecDigest: digest})
+		ann, _ := meta["annotations"].(map[string]any)
+		baseline.noop = baseline.noop && ann[orkaSuiteMarkers[1]] == native.Subject.SuiteDigest && "sha256:"+spec == state.State.Baseline[i].SpecDigest
 	}
-	review, err := agentsuite.Marshal(struct {
-		Domain                string
-		Plan                  ReleaseLiftSummary
-		RecordUID, RecordData string
-	}{"kmx.release-update.plan/v1", s, state.UID, state.data})
+	return baseline, nil
+}
+
+// Historical receipts supply evidence only. Current pair ownership always comes
+// from the separately validated current shared/private baseline, never history.
+func (p *preparedReleaseUpdate) retainedReleaseEvidence(ctx context.Context, digest string) (*suitePassingReceipt, error) {
+	ids := []string{}
+	if p.origin.Summary.SuiteDigest == digest {
+		ids = append(ids, p.origin.ID)
+	}
+	for i := len(p.before.State.History) - 1; i >= 0; i-- {
+		revision := p.before.State.History[i]
+		if revision.SuiteDigest == digest {
+			ids = append(ids, revision.LiftID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, errSuitePassMissing
+	}
+	record, err := readReleaseOwnership(ctx, ids[0])
 	if err != nil {
 		return nil, err
 	}
-	s.PlanDigest = godigest.FromBytes(review).String()
-	lift := &PreparedReleaseLift{options: opt, artifact: inputs.artifact, native: native, receipt: inputs.receipt, summary: s}
-	return &preparedReleaseUpdate{lift: lift, before: state, origin: origin, latest: latest, current: current, dependencies: dependencies, noop: noop}, nil
+	if record.Summary.SuiteDigest != digest {
+		return nil, errReleaseUpdateUnsupported
+	}
+	receipt, err := parseSuitePassingReceipt(record.Receipt)
+	if err != nil || receipt.Subject.SuiteDigest != digest {
+		return nil, errReleaseUpdateUnsupported
+	}
+	return receipt, nil
 }
 
 func (a *App) inspectReleaseUpdatePair(ctx context.Context, subject suiteNativeSubject, expected []releaseStateObject) ([]map[string]any, error) {

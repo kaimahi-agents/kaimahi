@@ -50,7 +50,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   observations alone grant no evaluation, ownership, skip or replay authority.
   Complete new Orka creates additionally retain acknowledged versioned target
   ownership/dependency proof tied to a shared release record; only that new proof
-  authorizes the private update/rollback backend. Older or mixed placements never
+  authorizes opt-in public Orka update/rollback through the private backend. Older or mixed placements never
   enroll. Keep provenance out
   of plan digests, suite ownership markers, portable schemas and candidate eval.
   Root destination status reads these annotations without private-state enrichment;
@@ -156,15 +156,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   fields compare by default. Go workload image proof is observed after creation;
   mismatch leaves partial resources with no successful placement authority.
   No lift Tasks/model calls, fake Provider or destination evaluation is implied.
-  ApplyReleaseLift
-  is guarded and single-use, rechecks artifact/evidence/target/owned proof, preflights
-  both creates after the guard, and only conditionally creates or exactly reuses.
-  Partial outcomes retain acknowledged UIDs and readiness separately; no update,
-  adoption, retry, rollback or cleanup.
-  A separate private Orka updater requires shared reservation and acknowledged new
-  ownership/target-dependency proof. Fresh per-patch identity/spec/markers and exact
-  prepared inputs remain mandatory; only between-revision inference-Provider RV
-  churn may pass unchanged authoritative-field reproof. No public update flag.
+  ApplyReleaseLift is guarded and single-use, rechecks artifact/evidence/target/owned
+  proof, and in plain mode only conditionally creates or exactly reuses after both
+  create preflights. Partial outcomes retain acknowledged UIDs and readiness
+  separately; no adoption, automatic retry, rollback or cleanup.
+  Explicit public --update is Orka-only and uses the private updater with shared
+  reservation and acknowledged new ownership/target-dependency proof. Arrange a
+  quiet window; no draining or zero-downtime guarantee. Fresh per-patch
+  identity/spec/markers and exact prepared inputs remain mandatory; only
+  between-revision inference-Provider RV churn may pass unchanged authoritative-field
+  reproof. Rollback consumes original passing evidence without re-evaluation.
   VerifyReleaseLiftPlacement rechecks an opaque
   success before caller invocation. Created/recreated UIDs require fresh evaluation
   before later receipt-bound reuse. Root lift supports registry/local --from-layout,

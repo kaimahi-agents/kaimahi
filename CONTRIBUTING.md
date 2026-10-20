@@ -222,8 +222,8 @@ The existing `e2e-orka-runtime` shard also runs
 after its raw upstream Orka Tool/Task and model-answer proof. The checkout-only qualifier requires the
 shard's exclusive cluster-creation flag and a matching `KIND_CLUSTER`, refuses
 existing work/model fixtures, and uses a fresh private KMX home. It adds the pinned
-CPU AIKit model inside that owned cluster, warms it, then attempts one native
-full-workspace evaluation without retry. Historical API UID/spec/input snapshots,
+CPU AIKit model inside that owned cluster, warms it, then attempts two independent
+native full-workspace evaluations without retry. Historical API UID/spec/input snapshots,
 exact registry/layout transfer, verified
 candidate root/child absence, source-withheld explicit promotion and no-effect
 refusal audits gate its metadata artifacts. Source answer/verdict/judge metadata
@@ -231,8 +231,13 @@ is product-observed after cleanup, not re-fetched from deleted Tasks. Only passi
 metadata and scalar `qualification.json` are uploaded; raw captures are private.
 Existing cluster deletion owns all runtime/model cleanup.
 The shard also runs `TestReleaseUpdatePinnedRV` and `TestReleaseStatePinnedCAS`
-against the pinned controller after native qualification. The full private
-updater round trip is a separate opt-in test using two real passing digests.
+against the pinned controller after native qualification. The native qualifier
+also uses its two real passing digests for public CLI update, original-evidence
+rollback, forward update and status-only dependency-RV no-op. Stable UIDs, fresh
+mutation IDs, shared completion and unchanged Task inventory gate the result.
+Workspace stale-skip and known-partial cases retain focused Go coverage; do not
+claim those are live-qualified without separate evidence. A full private updater
+round trip remains available as a separate opt-in test.
 The native-only
 inventory has two text cases plus one open-ended rubric case, with exactly two
 judge samples from the same pinned AIKit workload over an owned keyless loopback

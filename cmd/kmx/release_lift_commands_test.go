@@ -26,6 +26,33 @@ func TestReleaseLiftHelpAndCompletionAreInert(t *testing.T) {
 	}
 }
 
+func TestReleaseLiftUpdateFlagReachesOperation(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	ref := "repo/suite@sha256:" + strings.Repeat("a", 64)
+	err := execute([]string{"lift", ref, "--to-context", "target", "--inference", "provider:inference", "--evidence", "private.json", "--update", "--plan"}, deps)
+	if err == nil || *loads != 1 || strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("update flag did not reach GET-only planning: err=%v loads=%d", err, *loads)
+	}
+}
+
+func TestReleaseLiftUpdateKagentRefusesOffline(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	err := execute([]string{"lift", "repo/suite@sha256:" + strings.Repeat("a", 64), "--to-context", "target", "--bindings", "bindings.yaml", "--evidence", "private.json", "--update"}, deps)
+	if err == nil || *loads != 0 || !strings.Contains(err.Error(), "Orka") {
+		t.Fatalf("unsupported update reached config: err=%v loads=%d", err, *loads)
+	}
+}
+
+func TestReleaseLiftUpdateHelpIsInert(t *testing.T) {
+	var out, diagnostics bytes.Buffer
+	deps, loads := testDependencies(&out, &diagnostics)
+	if err := execute([]string{"lift", "--help"}, deps); err != nil || *loads != 0 || !strings.Contains(out.String(), "--update") {
+		t.Fatal("public update help missing or operational", err)
+	}
+}
+
 func TestReleaseLiftKagentSelectorReachesOperation(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
