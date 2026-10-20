@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -37,9 +38,10 @@ model:
     name: fixture-model
     provider: openai
     baseURL: http://fakemodel.agentsuite-demo.svc:8080/v1
-    secretRef:
-        name: model-credentials
-        key: api-key
+    credential:
+        secretRef:
+            name: model-credentials
+            key: api-key
 `
 
 func validAgentSessionsBinding() AgentSessionsBinding {
@@ -52,10 +54,10 @@ func validAgentSessionsBinding() AgentSessionsBinding {
 		Resources:      AgentSessionsResourcesBinding{CPU: "1", Memory: "512Mi"},
 		WorkerSelector: AgentSessionsWorkerSelectorBinding{MatchLabels: map[string]string{"workload": "agentsuite-demo-microvm"}},
 		Model: AgentSessionsModelBinding{
-			Name:      "fixture-model",
-			Provider:  "openai",
-			BaseURL:   "http://fakemodel.agentsuite-demo.svc:8080/v1",
-			SecretRef: AgentSessionsSecretRefBinding{Name: "model-credentials", Key: "api-key"},
+			Name:       "fixture-model",
+			Provider:   "openai",
+			BaseURL:    "http://fakemodel.agentsuite-demo.svc:8080/v1",
+			Credential: AgentSessionsCredentialRef{SecretRef: &AgentSessionsSecretRef{Name: "model-credentials", Key: "api-key"}},
 		},
 	}
 }
@@ -81,7 +83,7 @@ func TestAgentSessionsBindingStrictlyDecodeAndRoundTrip(t *testing.T) {
 	if err != nil || string(fromValue) != validAgentSessionsBindingYAML {
 		t.Fatalf("encoding from a value lost fields: %v\n%s", err, fromValue)
 	}
-	if binding.Model.SecretRef != want.Model.SecretRef || binding.WorkerSelector.MatchLabels["workload"] != "agentsuite-demo-microvm" || binding.Resources != want.Resources {
+	if !reflect.DeepEqual(binding.Model.Credential, want.Model.Credential) || binding.WorkerSelector.MatchLabels["workload"] != "agentsuite-demo-microvm" || binding.Resources != want.Resources {
 		t.Fatalf("binding lost fields: %+v", binding)
 	}
 }
@@ -239,7 +241,7 @@ func TestAgentSessionsBindingRejectUnknownAmbiguousAndIncompleteDocuments(t *tes
 	for _, tc := range []struct{ name, doc string }{
 		{"unknown", strings.Replace(validAgentSessionsBindingYAML, "    provider: openai\n", "    provider: openai\n    value: forbidden\n", 1)},
 		{"unknown top level", validAgentSessionsBindingYAML + "image: example.invalid/harness\n"},
-		{"secret value field", strings.Replace(validAgentSessionsBindingYAML, "        key: api-key\n", "        key: api-key\n        value: forbidden\n", 1)},
+		{"secret value field", strings.Replace(validAgentSessionsBindingYAML, "            key: api-key\n", "            key: api-key\n            value: forbidden\n", 1)},
 		{"duplicate", strings.Replace(validAgentSessionsBindingYAML, "atespace: agentsuite-demo\n", "atespace: agentsuite-demo\natespace: other\n", 1)},
 		{"merge", strings.Replace(validAgentSessionsBindingYAML, "    class: microvm\n", "    <<: {class: gvisor}\n    class: microvm\n", 1)},
 		{"alias", strings.Replace(validAgentSessionsBindingYAML, "    class: microvm\n    configName: microvm\n", "    class: &c microvm\n    configName: *c\n", 1)},
@@ -255,7 +257,13 @@ func TestAgentSessionsBindingRejectUnknownAmbiguousAndIncompleteDocuments(t *tes
 		{"missing cpu", strings.Replace(validAgentSessionsBindingYAML, "    cpu: \"1\"\n", "", 1)},
 		{"missing memory", strings.Replace(validAgentSessionsBindingYAML, "    memory: 512Mi\n", "", 1)},
 		{"missing model", strings.Replace(validAgentSessionsBindingYAML, "    name: fixture-model\n", "", 1)},
-		{"missing secret key", strings.Replace(validAgentSessionsBindingYAML, "        key: api-key\n", "", 1)},
+		{"missing secret key", strings.Replace(validAgentSessionsBindingYAML, "            key: api-key\n", "", 1)},
+		{"missing credential", strings.Replace(validAgentSessionsBindingYAML, "    credential:\n        secretRef:\n            name: model-credentials\n            key: api-key\n", "", 1)},
+		{"empty credential", strings.Replace(validAgentSessionsBindingYAML, "    credential:\n        secretRef:\n            name: model-credentials\n            key: api-key\n", "    credential: {}\n", 1)},
+		{"null secretRef", strings.Replace(validAgentSessionsBindingYAML, "        secretRef:\n            name: model-credentials\n            key: api-key\n", "        secretRef: null\n", 1)},
+		{"both refs", strings.Replace(validAgentSessionsBindingYAML, "            key: api-key\n", "            key: api-key\n        hostRef:\n            type: env\n            name: MODEL_KEY\n", 1)},
+		{"host ref value field", strings.Replace(validAgentSessionsBindingYAML, "        secretRef:\n            name: model-credentials\n            key: api-key\n", "        hostRef:\n            type: env\n            name: MODEL_KEY\n            value: forbidden\n", 1)},
+		{"model-level secretRef", strings.Replace(validAgentSessionsBindingYAML, "    credential:\n        secretRef:\n            name: model-credentials\n            key: api-key\n", "    secretRef:\n        name: model-credentials\n        key: api-key\n", 1)},
 		{"sequence root", "- apiVersion: kmx.kaimahi.dev/v1alpha1\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -321,8 +329,24 @@ func TestAgentSessionsBindingValidateFields(t *testing.T) {
 		{"model provider", func(b *AgentSessionsBinding) { b.Model.Provider = "anthropic" }, "model.provider"},
 		{"base URL", func(b *AgentSessionsBinding) { b.Model.BaseURL = "https://user:password@example.invalid" }, "model.baseURL"},
 		{"base URL scheme", func(b *AgentSessionsBinding) { b.Model.BaseURL = "ftp://example.invalid" }, "model.baseURL"},
-		{"secret name", func(b *AgentSessionsBinding) { b.Model.SecretRef.Name = "review/key" }, "model.secretRef.name"},
-		{"secret key", func(b *AgentSessionsBinding) { b.Model.SecretRef.Key = "review/key" }, "model.secretRef.key"},
+		{"secret name", func(b *AgentSessionsBinding) { b.Model.Credential.SecretRef.Name = "review/key" }, "model.credential.secretRef.name"},
+		{"secret key", func(b *AgentSessionsBinding) { b.Model.Credential.SecretRef.Key = "review/key" }, "model.credential.secretRef.key"},
+		{"no credential", func(b *AgentSessionsBinding) { b.Model.Credential = AgentSessionsCredentialRef{} }, "exactly one of secretRef or hostRef"},
+		{"both credentials", func(b *AgentSessionsBinding) {
+			b.Model.Credential.HostRef = &AgentSessionsHostCredentialRef{Type: "env", Name: "MODEL_KEY"}
+		}, "exactly one of secretRef or hostRef"},
+		{"host type empty", func(b *AgentSessionsBinding) { b.Model.Credential = hostCredential("", "chat-model") }, "model.credential.hostRef.type"},
+		{"host type case", func(b *AgentSessionsBinding) { b.Model.Credential = hostCredential("Env", "MODEL_KEY") }, "model.credential.hostRef.type"},
+		{"host type length", func(b *AgentSessionsBinding) {
+			b.Model.Credential = hostCredential(strings.Repeat("a", 64), "chat-model")
+		}, "model.credential.hostRef.type"},
+		{"host name empty", func(b *AgentSessionsBinding) { b.Model.Credential = hostCredential("workload-identity", "") }, "model.credential.hostRef.name"},
+		{"host name space", func(b *AgentSessionsBinding) { b.Model.Credential = hostCredential("workload-identity", "chat model") }, "model.credential.hostRef.name"},
+		{"host name length", func(b *AgentSessionsBinding) {
+			b.Model.Credential = hostCredential("workload-identity", strings.Repeat("a", 254))
+		}, "model.credential.hostRef.name"},
+		{"env name syntax", func(b *AgentSessionsBinding) { b.Model.Credential = hostCredential("env", "chat-model") }, "model.credential.hostRef.name"},
+		{"env name digit", func(b *AgentSessionsBinding) { b.Model.Credential = hostCredential("env", "1KEY") }, "model.credential.hostRef.name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b := validAgentSessionsBinding()
@@ -350,7 +374,7 @@ func TestAgentSessionsBindingRejectInvalidUTF8(t *testing.T) {
 		t.Fatalf("invalid raw UTF-8 accepted: %v", err)
 	}
 	b := validAgentSessionsBinding()
-	b.Model.SecretRef.Name = "review\xffkey"
+	b.Model.Credential.SecretRef.Name = "review\xffkey"
 	if _, err := EncodeAgentSessionsBinding(b); err == nil || !strings.Contains(err.Error(), "UTF-8") || strings.Contains(err.Error(), "\xffkey") {
 		t.Fatalf("invalid decoded UTF-8 accepted or echoed: %v", err)
 	}
@@ -371,8 +395,10 @@ func TestAgentSessionsBindingNeverAcceptsCredentialValues(t *testing.T) {
 				strings.Replace(validAgentSessionsBindingYAML, "        workload: agentsuite-demo-microvm", "        workload: "+shape.Example, 1),
 				strings.Replace(validAgentSessionsBindingYAML, "    name: fixture-model", "    name: "+shape.Example, 1),
 				strings.Replace(validAgentSessionsBindingYAML, "    baseURL: http://fakemodel.agentsuite-demo.svc:8080/v1", "    baseURL: "+shape.Example, 1),
-				strings.Replace(validAgentSessionsBindingYAML, "        name: model-credentials", "        name: "+shape.Example, 1),
-				strings.Replace(validAgentSessionsBindingYAML, "        key: api-key", "        key: "+shape.Example, 1),
+				strings.Replace(validAgentSessionsBindingYAML, "            name: model-credentials", "            name: "+shape.Example, 1),
+				strings.Replace(validAgentSessionsBindingYAML, "            key: api-key", "            key: "+shape.Example, 1),
+				strings.Replace(validAgentSessionsHostRefYAML, "            type: workload-identity", "            type: "+shape.Example, 1),
+				strings.Replace(validAgentSessionsHostRefYAML, "            name: chat-model", "            name: "+shape.Example, 1),
 			} {
 				_, err := ParseAgentSessionsBinding([]byte(doc))
 				assertRefusedWithoutEcho(t, err, shape.Example)
@@ -388,7 +414,8 @@ func TestAgentSessionsBindingRefusesCredentialShapesAssembledByYAML(t *testing.T
 			continue
 		}
 		for _, doc := range []string{
-			strings.Replace(validAgentSessionsBindingYAML, "        key: api-key", "        key: "+escapedPortableKey(shape.Example), 1),
+			strings.Replace(validAgentSessionsBindingYAML, "            key: api-key", "            key: "+escapedPortableKey(shape.Example), 1),
+			strings.Replace(validAgentSessionsHostRefYAML, "            name: chat-model", "            name: "+escapedPortableKey(shape.Example), 1),
 			strings.Replace(validAgentSessionsBindingYAML, "        workload: agentsuite-demo-microvm", "        workload: "+escapedPortableKey(shape.Example), 1),
 		} {
 			if secretshapes.Match(doc) != nil {
@@ -444,6 +471,59 @@ func TestAgentSessionsBindingBoundsQuantityExponent(t *testing.T) {
 	} {
 		if err := validate(t, func(b *AgentSessionsBinding) { b.Resources.CPU, b.Resources.Memory = tc.cpu, tc.memory }); err != nil {
 			t.Fatalf("cpu %q memory %q refused: %v", tc.cpu, tc.memory, err)
+		}
+	}
+}
+
+var validAgentSessionsHostRefYAML = strings.Replace(validAgentSessionsBindingYAML, "        secretRef:\n            name: model-credentials\n            key: api-key\n", "        hostRef:\n            type: workload-identity\n            name: chat-model\n", 1)
+
+func hostCredential(typ, name string) AgentSessionsCredentialRef {
+	return AgentSessionsCredentialRef{HostRef: &AgentSessionsHostCredentialRef{Type: typ, Name: name}}
+}
+
+// A host-provided credential source, such as keyless workload identity, is a
+// typed reference the host resolves; the binding carries only the reference.
+func TestAgentSessionsBindingHostCredentialRef(t *testing.T) {
+	if validAgentSessionsHostRefYAML == validAgentSessionsBindingYAML {
+		t.Fatal("fixture has no secretRef to replace")
+	}
+	hosted, err := ParseAgentSessionsBinding([]byte(validAgentSessionsHostRefYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := hostCredential("workload-identity", "chat-model"); !reflect.DeepEqual(hosted.Model.Credential, want) {
+		t.Fatalf("host credential = %+v", hosted.Model.Credential)
+	}
+	encoded, err := EncodeAgentSessionsBinding(hosted)
+	if err != nil || string(encoded) != validAgentSessionsHostRefYAML {
+		t.Fatalf("host credential did not round-trip: %v\n%s", err, encoded)
+	}
+	secret, err := ParseAgentSessionsBinding([]byte(validAgentSessionsBindingYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostedDigest, err := AgentSessionsBindingDigest(hosted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secretDigest, _ := AgentSessionsBindingDigest(secret); hostedDigest == secretDigest {
+		t.Fatal("credential source does not change the binding digest")
+	}
+	direct, err := agentsuite.Digest([]byte(`{"apiVersion":"kmx.kaimahi.dev/v1alpha1","kind":"AgentSessionsBinding","target":{"platform":"kubernetes","id":"agentsuite-demo"},"placement":{"backend":"substrate"},"atespace":"agentsuite-demo","sandbox":{"class":"microvm","configName":"microvm"},"snapshot":{"fidelity":"MEMORY","storageLocation":"gs://ate-snapshots/agentsuite-demo/"},"resources":{"cpu":"1","memory":"512Mi"},"workerSelector":{"matchLabels":{"workload":"agentsuite-demo-microvm"}},"model":{"name":"fixture-model","provider":"openai","baseURL":"http://fakemodel.agentsuite-demo.svc:8080/v1","credential":{"hostRef":{"type":"workload-identity","name":"chat-model"}}}}`))
+	if err != nil || hostedDigest != direct {
+		t.Fatalf("host credential digest = %q; want JCS digest %q (%v)", hostedDigest, direct, err)
+	}
+	for _, ref := range []AgentSessionsCredentialRef{
+		hostCredential("env", "CHAT_MODEL_KEY"),
+		hostCredential("env", "_key"),
+		hostCredential("azure.workload-identity", "chat:model/v1"),
+		hostCredential("x", strings.Repeat("a", 253)),
+		hostCredential(strings.Repeat("a", 63), "a"),
+	} {
+		b := validAgentSessionsBinding()
+		b.Model.Credential = ref
+		if _, err := EncodeAgentSessionsBinding(b); err != nil {
+			t.Fatalf("host reference %+v refused: %v", *ref.HostRef, err)
 		}
 	}
 }

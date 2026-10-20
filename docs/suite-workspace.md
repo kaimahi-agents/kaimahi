@@ -895,7 +895,8 @@ model:
   name: fixture-model
   provider: openai
   baseURL: http://fakemodel.agentsuite-demo.svc:8080/v1
-  secretRef: {name: model-credentials, key: api-key}
+  credential:
+    secretRef: {name: model-credentials, key: api-key}
 ```
 
 | Field | Rule |
@@ -907,11 +908,15 @@ model:
 | `snapshot` | `fidelity` `MEMORY`, `ROOTFS` (micro-VM only) or `VOLUMES`; `storageLocation` is an object-storage URI of at most 959 bytes without credentials, query, fragment or `\`, and without empty path segments or segments of only `.` and spaces (one trailing `/` is allowed). |
 | `resources` | Required `cpu` and `memory`: positive Kubernetes quantities of at most 32 characters with a decimal exponent (`e`/`E`) of at most two digits, cpu at most 999.999 cores. Substrate sizes and schedules the actor by them. |
 | `workerSelector.matchLabels` | Optional Kubernetes label selector of at most 10 labels; an empty `matchLabels` is the same binding (and digest) as an omitted `workerSelector`. |
-| `model` | `name` is the served model; `provider: openai` (OpenAI-compatible); optional HTTP(S) `baseURL`; `secretRef` names the credential Secret and key. |
+| `model` | `name` is the served model; `provider: openai` (OpenAI-compatible); optional HTTP(S) `baseURL`; `credential` sets exactly one reference (below). |
+| `model.credential.secretRef` | `name` and `key` of a Kubernetes Secret holding the model key. |
+| `model.credential.hostRef` | A credential source the AgentSessions host owns: `type` is a lowercase source name of at most 63 characters (the stock host implements `env`; a host can add others, such as workload identity for a keyless endpoint) and `name` is the reference that source resolves, an environment variable name for `env`. KMX never resolves it. |
 
 Parsing is strict: one YAML (or JSON) document, known fields only, no anchors,
 aliases or merge keys, and credential-shaped values refuse without being echoed.
-The credential is referenced, never embedded. The binding digest is the SHA-256 of
+The credential is referenced, never embedded: the binding, its digest and
+anything recorded from it carry only the reference. `hostRef` has the shape of
+an AgentSessions host model-binding credential reference (`{type, name}`). The binding digest is the SHA-256 of
 the RFC 8785 (JCS) form of its JSON mapping, so comments, key order and
 YAML/JSON spelling do not change it.
 

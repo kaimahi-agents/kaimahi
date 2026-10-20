@@ -34,7 +34,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `AgentSessionsBinding` (`kmx.kaimahi.dev/v1alpha1`) is a closed per-environment
   binding document for AgentSessions: target, substrate placement, atespace,
   sandbox, snapshot, required cpu/memory resources, worker selector and model
-  name/provider/baseURL/Secret ref. It has strict parsing, a JCS digest and an
+  name/provider/baseURL plus a typed credential reference: a Kubernetes Secret
+  key (`secretRef`) or a host-owned source such as keyless workload identity
+  (`hostRef: {type, name}`). It has strict parsing, a JCS digest and an
   exact check against the suite's pinned model; no command reads it yet.
   Resource quantities refuse a decimal exponent of more than two digits before
   parsing.

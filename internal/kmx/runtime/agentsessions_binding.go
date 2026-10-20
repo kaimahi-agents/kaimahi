@@ -42,8 +42,8 @@ const (
 
 // AgentSessionsBinding is the per-environment half of an AgentSessions
 // deployment. The suite pins the exact model; this document says where that
-// model is served and where sessions are placed. It references a Secret
-// name/key for the model credential and cannot represent a value.
+// model is served and where sessions are placed. It references the model
+// credential by a typed reference and cannot represent a value.
 type AgentSessionsBinding struct {
 	APIVersion     string                             `yaml:"apiVersion" json:"apiVersion"`
 	Kind           string                             `yaml:"kind" json:"kind"`
@@ -88,20 +88,41 @@ type AgentSessionsWorkerSelectorBinding struct {
 	MatchLabels map[string]string `yaml:"matchLabels,omitempty" json:"matchLabels,omitempty"`
 }
 
-// AgentSessionsModelBinding mirrors KagentModelConfigBindings plus the served
-// model name, which must equal the suite's pinned model.
+// AgentSessionsModelBinding is the served model name, which must equal the
+// suite's pinned model, its OpenAI-compatible endpoint and a reference to the
+// credential the AgentSessions host uses for it.
 type AgentSessionsModelBinding struct {
-	Name      string                        `yaml:"name" json:"name"`
-	Provider  string                        `yaml:"provider" json:"provider"`
-	BaseURL   string                        `yaml:"baseURL,omitempty" json:"baseURL,omitempty"`
-	SecretRef AgentSessionsSecretRefBinding `yaml:"secretRef" json:"secretRef"`
+	Name       string                     `yaml:"name" json:"name"`
+	Provider   string                     `yaml:"provider" json:"provider"`
+	BaseURL    string                     `yaml:"baseURL,omitempty" json:"baseURL,omitempty"`
+	Credential AgentSessionsCredentialRef `yaml:"credential" json:"credential"`
 }
 
-// AgentSessionsSecretRefBinding names the host model credential by Secret
-// name and key. It cannot represent a value.
-type AgentSessionsSecretRefBinding struct {
+// AgentSessionsCredentialRef references the host's model credential. Exactly
+// one member is set. It names where the credential comes from and cannot
+// represent a value.
+type AgentSessionsCredentialRef struct {
+	// SecretRef names a Kubernetes Secret key.
+	SecretRef *AgentSessionsSecretRef `yaml:"secretRef,omitempty" json:"secretRef,omitempty"`
+	// HostRef names a credential source owned by the AgentSessions host, for
+	// example keyless workload identity.
+	HostRef *AgentSessionsHostCredentialRef `yaml:"hostRef,omitempty" json:"hostRef,omitempty"`
+}
+
+// AgentSessionsSecretRef names a Kubernetes Secret and key.
+type AgentSessionsSecretRef struct {
 	Name string `yaml:"name" json:"name"`
 	Key  string `yaml:"key" json:"key"`
+}
+
+// AgentSessionsHostCredentialRef has the shape of an AgentSessions host
+// model-binding credential reference: a source type the host implements (the
+// stock host implements env; embedders add others, such as workload identity)
+// and a name that source resolves on the host for each request. KMX never
+// resolves it.
+type AgentSessionsHostCredentialRef struct {
+	Type string `yaml:"type" json:"type"`
+	Name string `yaml:"name" json:"name"`
 }
 
 // ErrAgentSessionsModelMismatch classifies a binding that serves a model other
@@ -214,7 +235,17 @@ func AgentSessionsBindingDigest(binding AgentSessionsBinding) (string, error) {
 	return agentsuite.Digest(raw)
 }
 
-var agentSessionsURIScheme = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
+var (
+	agentSessionsURIScheme = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
+	// agentSessionsHostCredentialType is a lowercase source token such as env
+	// or workload-identity.
+	agentSessionsHostCredentialType = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,61}[a-z0-9])?$`)
+	// agentSessionsEnvName is the env source's variable-name syntax.
+	agentSessionsEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,252}$`)
+	// agentSessionsHostCredentialName is a single-token reference resolved by
+	// a host source.
+	agentSessionsHostCredentialName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.:/-]{0,252}$`)
+)
 
 // normalized gives equivalent spellings one form: an empty matchLabels adds no
 // label constraint, so it is the omitted selector.
@@ -242,8 +273,12 @@ func (b AgentSessionsBinding) validate() error {
 		{"model.name", b.Model.Name},
 		{"model.provider", b.Model.Provider},
 		{"model.baseURL", b.Model.BaseURL},
-		{"model.secretRef.name", b.Model.SecretRef.Name},
-		{"model.secretRef.key", b.Model.SecretRef.Key},
+	}
+	if ref := b.Model.Credential.SecretRef; ref != nil {
+		fields = append(fields, struct{ path, value string }{"model.credential.secretRef.name", ref.Name}, struct{ path, value string }{"model.credential.secretRef.key", ref.Key})
+	}
+	if ref := b.Model.Credential.HostRef; ref != nil {
+		fields = append(fields, struct{ path, value string }{"model.credential.hostRef.type", ref.Type}, struct{ path, value string }{"model.credential.hostRef.name", ref.Name})
 	}
 	labels := make([]string, 0, len(b.WorkerSelector.MatchLabels))
 	for key := range b.WorkerSelector.MatchLabels {
@@ -345,14 +380,34 @@ func (b AgentSessionsBinding) validate() error {
 			return fmt.Errorf("model.baseURL must be an absolute HTTP(S) URL with a host and no credentials, query, or fragment")
 		}
 	}
-	if err := scaffold.ValidateObjectName(b.Model.SecretRef.Name); err != nil {
-		return fmt.Errorf("model.secretRef.name: %w", err)
-	}
-	if b.Model.SecretRef.Key == "" {
-		return fmt.Errorf("model.secretRef.key is required")
-	}
-	if err := scaffold.ValidateKagentSecretKey(b.Model.SecretRef.Key); err != nil {
-		return fmt.Errorf("model.secretRef.key: %w", err)
+	return validateAgentSessionsCredential(b.Model.Credential)
+}
+
+func validateAgentSessionsCredential(c AgentSessionsCredentialRef) error {
+	switch {
+	case (c.SecretRef == nil) == (c.HostRef == nil):
+		return fmt.Errorf("model.credential must set exactly one of secretRef or hostRef")
+	case c.SecretRef != nil:
+		if err := scaffold.ValidateObjectName(c.SecretRef.Name); err != nil {
+			return fmt.Errorf("model.credential.secretRef.name: %w", err)
+		}
+		if c.SecretRef.Key == "" {
+			return fmt.Errorf("model.credential.secretRef.key is required")
+		}
+		if err := scaffold.ValidateKagentSecretKey(c.SecretRef.Key); err != nil {
+			return fmt.Errorf("model.credential.secretRef.key: %w", err)
+		}
+	default:
+		if !agentSessionsHostCredentialType.MatchString(c.HostRef.Type) {
+			return fmt.Errorf("model.credential.hostRef.type must be a lowercase source name of at most 63 characters, such as env")
+		}
+		name := agentSessionsHostCredentialName
+		if c.HostRef.Type == "env" {
+			name = agentSessionsEnvName
+		}
+		if !name.MatchString(c.HostRef.Name) {
+			return fmt.Errorf("model.credential.hostRef.name must be one reference of at most 253 characters (an environment variable name for type env)")
+		}
 	}
 	return nil
 }
