@@ -1,229 +1,426 @@
-# Guidance for Azure
+# Build and Lift a CPU-model agent on Azure
 
-## Development registry with Bicep
+Create a release-notes agent, prove it on local Kubernetes, publish the tested
+version to ACR, and Lift that exact version to AKS. Both clusters run the same
+small CPU model. No GPU, Foundry account or hosted-model API key is needed.
 
-[`acr.bicep`](acr.bicep) creates a Basic-tier Azure Container Registry in an
-**existing, explicitly selected resource group**. Use the same operator-owned
-development resource group as AKS, not another group just for the registry.
-The template enables the public HTTPS registry endpoint with Entra
-authentication, disables admin credentials, and creates no role assignments,
-passwords, AKS resources or model endpoint. ACR adds ongoing cost.
+**Create → Prove locally → Publish → Lift to AKS → Ask**
 
-Obtain approval for the exact subscription, group, region and globally unique
-registry name. Require successful reads to prove the name is absent; an
-unreadable target is not absent. Do not deploy over a registry you cannot prove
-you own. Review what-if, then separately approve the incremental deployment:
+This adapts the [release-notes demo](https://gist.github.com/gambtho/2956e055b7bbe47562cd6a4946589ab6)
+to self-hosted inference. For the shared lifecycle contract, see
+[suite workspaces](../suite-workspace.md).
 
-```bash
-az deployment group what-if --subscription "$SUBSCRIPTION" \
-  --resource-group "$RESOURCE_GROUP" \
-  --template-file docs/azure/acr.bicep \
-  --parameters registryName="$REGISTRY" location="$LOCATION"
-az deployment group create --subscription "$SUBSCRIPTION" \
-  --resource-group "$RESOURCE_GROUP" --name kaimahi-dev-acr \
-  --mode Incremental --template-file docs/azure/acr.bicep \
-  --parameters registryName="$REGISTRY" location="$LOCATION"
+## Before you start
+
+Use **Windows PowerShell for Azure CLI** and **WSL Bash for KMX, kind, kubectl
+and Helm**. KMX does not currently run natively on Windows. Start in the
+repository root in both shells.
+
+| Requirement | Development baseline |
+|---|---|
+| Local Kubernetes | Podman-backed kind, Linux/amd64; room for the model and Orka |
+| AKS | One `Standard_D4as_v5` node: 4 vCPUs, 16 GiB RAM, 64-GiB OS disk |
+| Model | Digest-pinned Qwen 3.5 2B Q4 AIKit; three CPU threads |
+| Tools | A recorded KMX revision, kubectl 1.35, Helm 3, kind, Podman, Python 3, curl, Azure CLI and Bicep |
+| Access | Approved Azure subscription, regional quota, cluster-scoped Kubernetes permissions and registry-scoped publication permissions |
+
+AKS Free tier covers the control plane, **not** the VM, disk, networking or ACR.
+Use a disposable environment and run one agent execution at a time.
+
+**Safety rule:** stop on unreadable state, occupied names or partial writes.
+Never interpret an error as absence, adopt an existing resource, or repeat an
+ambiguous create. Keep credentials, answers and diagnostic payloads private.
+
+## 1. Create AKS and ACR
+
+The templates create infrastructure only:
+
+- [`aks.bicep`](aks.bicep): one system node, CNI overlay/Cilium, managed identity,
+  Entra authentication, Azure RBAC and Azure Policy. Local accounts and node SSH
+  are disabled. No GPU, monitoring workspace or role assignments.
+- [`acr.bicep`](acr.bicep): Basic registry in the **same development resource
+  group**, with Entra authentication and admin/anonymous access disabled.
+
+In **PowerShell**, set these selectors explicitly:
+
+```powershell
+$SUBSCRIPTION = '<approved-subscription-id>'
+$RESOURCE_GROUP = '<new-development-group>'
+$NODE_RESOURCE_GROUP = '<new-development-group>-nodes'
+$CLUSTER = '<new-cluster>'
+$REGISTRY = '<globally-unique-registry-name>'
+$LOCATION = 'westus3' # Or westus2, after checking availability and quota.
+$PARAMETERS = '<absolute-path-to-private-aks-parameters.json>'
 ```
 
-Set all uppercase selectors explicitly before running these examples. Retain
-the deployment result and registry ID privately. Authenticate publication using
-the operator's existing Entra identity and a private Docker credential store;
-never enable admin credentials or put access tokens in argv, templates or logs.
-The template grants neither the operator nor AKS registry permissions.
+Choose an available exact Kubernetes version:
 
-For a disposable environment, deleting the development group deletes its ACR
-and all stored suites along with AKS; require explicit data-loss approval.
-AKS also creates a separate Azure-managed node resource group. Do not put ACR
-there or assume its contents are individually operator-owned. Group deletion
-does not preserve evaluation records, volumes or Orka snapshot keys automatically.
+```powershell
+az aks get-versions --subscription $SUBSCRIPTION --location $LOCATION -o table
+```
 
-## Single-node CPU inference test
+Save this parameter object at `$PARAMETERS`, replacing every placeholder.
+Names and region must match your selectors:
 
-Use [`aikit-cpu.yaml`](aikit-cpu.yaml) on an **existing** Linux/amd64 AKS dev
-cluster to serve **`qwen-3.5-2b`**, matching the authored test agent. It is a
-checkout-only, operator-owned template, not an Ollama tag or a KMX installer.
-Cluster creation, Orka installation and its Provider are separate operations.
-See [AKS](../aks.md), [Orka](../orka.md) and [models](../models.md).
+```json
+{
+  "clusterName": { "value": "<new-cluster>" },
+  "nodeResourceGroup": { "value": "<new-development-group>-nodes" },
+  "location": { "value": "westus3" },
+  "kubernetesVersion": { "value": "<supported-exact-version>" },
+  "tenantId": { "value": "<subscription-tenant-id>" },
+  "apiServerAuthorizedIpRanges": { "value": ["<reviewed-public-ipv4>/32"] }
+}
+```
 
-### Capacity and boundaries
+Check both group names and the registry name. Require successful results of
+`false`, `false`, and `true`, respectively:
 
-- One replica, digest-pinned Qwen 3.5 2B Q4 AIKit image, CPU backend, three threads.
-- Requests: 1 CPU, 3 GiB memory, 1 GiB ephemeral storage. Limits: 3 CPUs, 4 GiB
-  memory, 4 GiB ephemeral storage. No GPU, PVC or additional model pool.
-- The 4-vCPU / 16-GiB single-node baseline should leave room for system/runtime
-  pods; check **actual allocatable capacity and existing requests**, not VM RAM.
-  Test one agent execution at a time. No latency, concurrency or availability
-  guarantee is implied.
-- `Recreate` avoids a second model replica during rollout; updates have downtime.
-  Startup has a ten-minute probe budget. Readiness is not answer proof; no
-  liveness restart loop is added for slow CPU inference.
-- The preset uses a 4096-token context and 64-token default output budget for
-  smoke tests, not general agent quality. The image/configuration come from the
-  pinned CI fixture. The smoke check recorded below does not qualify this
-  three-CPU dev preset for agent evaluation or production use.
-- The ClusterIP endpoint is **not authenticated or network-isolated**. Do not
-  expose it with public ingress/load balancing or a non-loopback forward.
-  Image/model storage is node-local; node replacement may require image pulls.
+```powershell
+az group exists --subscription $SUBSCRIPTION --name $RESOURCE_GROUP
+az group exists --subscription $SUBSCRIPTION --name $NODE_RESOURCE_GROUP
+az acr check-name --name $REGISTRY --query nameAvailable -o tsv
+```
 
-### 1. Inspect, obtain consent and create
+After approving the target and cost, create the group and review both plans.
+Require exit code zero after **every** Azure CLI command:
 
-Use Bash/WSL from the repository root, with a compatible `kubectl` and the
-intended kubeconfig. Obtain operator approval for the exact context, dedicated
-namespace and workload resources. No command below chooses a subscription or
-creates cloud infrastructure.
+```powershell
+az group create --subscription $SUBSCRIPTION --name $RESOURCE_GROUP --location $LOCATION
+az deployment group what-if --subscription $SUBSCRIPTION `
+  --resource-group $RESOURCE_GROUP --template-file docs\azure\aks.bicep `
+  --parameters "@$PARAMETERS"
+az deployment group what-if --subscription $SUBSCRIPTION `
+  --resource-group $RESOURCE_GROUP --template-file docs\azure\acr.bicep `
+  --parameters registryName=$REGISTRY location=$LOCATION
+```
 
-Stop on unreadable state, occupied names, failed admission or partial writes.
-Do not adopt resources, weaken requests, enlarge the node or retry an ambiguous
-create to make the walkthrough pass. For another namespace, review private
-copies and change **all** namespace references, commands and the Provider URL.
+Approve the reviewed plans before running:
+
+```powershell
+az deployment group create --subscription $SUBSCRIPTION `
+  --resource-group $RESOURCE_GROUP --name kaimahi-dev-aks --mode Incremental `
+  --template-file docs\azure\aks.bicep --parameters "@$PARAMETERS"
+az deployment group create --subscription $SUBSCRIPTION `
+  --resource-group $RESOURCE_GROUP --name kaimahi-dev-acr --mode Incremental `
+  --template-file docs\azure\acr.bicep `
+  --parameters registryName=$REGISTRY location=$LOCATION
+az aks get-credentials --subscription $SUBSCRIPTION --resource-group $RESOURCE_GROUP `
+  --name $CLUSTER --file "$HOME\.kube\kaimahi-dev.yaml"
+```
+
+Retain acknowledged resource IDs privately. The templates grant no access:
+ask the resource owner to verify the necessary cluster-scoped AKS RBAC role and
+registry-scoped `AcrPush` or equivalent approved data-plane permissions.
+Do not enable admin credentials or self-grant broad roles to bypass a refusal.
+
+## 2. Prepare WSL and local Kubernetes
+
+Copy the AKS **user** kubeconfig into WSL with mode `0600`. Adapt its exec
+plugin to the verified Windows `kubelogin.exe` path under `/mnt/c/...`;
+preserve its full arguments and API version. Azure CLI login stays on Windows.
+Do not print raw kubeconfigs or credential responses.
+
+In **WSL Bash**, define the operation's paths and targets once:
 
 ```bash
 set -euo pipefail
 umask 077
-CTX='<approved-existing-context>'
-STATE='<new-private-directory-outside-the-checkout>'
-mkdir "$STATE"
-kubectl --context "$CTX" get nodes
+REPO="$PWD"
+STATE="$(mktemp -d "$HOME/kmx-cpu-demo.XXXXXX")"
+WORKSPACE="$STATE-workspace"
+export KMX_HOME="$STATE/kmx"
+export DOCKER_CONFIG="$STATE/docker"
+mkdir -p "$DOCKER_CONFIG"
+LOCAL_CLUSTER='<new-local-cluster>'
+LOCAL_CONTEXT="kind-$LOCAL_CLUSTER"
+LOCAL_KUBECONFIG="$STATE/local-kubeconfig"
+AKS_KUBECONFIG='<absolute-WSL-path-to-private-AKS-user-kubeconfig>'
+AKS_CONTEXT='<approved-AKS-context>'
+REGISTRY='<approved-registry-name>'
+```
+
+Use the intended Podman machine explicitly; do not rely on its default
+connection. Inventory existing kind clusters before creating a new one:
+
+```bash
+export KIND_EXPERIMENTAL_PROVIDER=podman
+export CONTAINER_HOST='<approved-Podman-socket-URI>'
+kind get clusters
+KUBECONFIG="$LOCAL_KUBECONFIG" kind create cluster --name "$LOCAL_CLUSTER" \
+  --image kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0 \
+  --wait 120s
+```
+
+On the tested Windows Podman setup, kind required the dedicated machine's
+rootful socket and its authorized owner. A rootless remote connection refused
+the delegation preflight; do not disable that check. If cluster creation needs
+an elevated shell, return the resulting kubeconfig to your ordinary WSL user,
+with mode `0600`. **Run KMX as that ordinary user.**
+
+Verify authenticated access to both clusters:
+
+```bash
+KUBECONFIG="$LOCAL_KUBECONFIG" kubectl --context "$LOCAL_CONTEXT" get nodes
+KUBECONFIG="$AKS_KUBECONFIG" kubectl --context "$AKS_CONTEXT" get nodes
+KUBECONFIG="$AKS_KUBECONFIG" kubectl --context "$AKS_CONTEXT" get --raw=/readyz
+```
+
+## Single-node CPU inference test
+
+Deploy the **same** [`aikit-cpu.yaml`](aikit-cpu.yaml) to both clusters.
+It requests 1 CPU/3 GiB RAM and limits usage to 3 CPUs/4 GiB RAM.
+Check allocatable capacity and existing requests, not just the machine's RAM.
+The internal Service is unauthenticated: never expose it publicly.
+
+Run this sequence twice: first with the local selectors shown, then with
+`KUBECONFIG="$AKS_KUBECONFIG"` and `CTX="$AKS_CONTEXT"`. Review and approve
+each target before creation:
+
+```bash
+export KUBECONFIG="$LOCAL_KUBECONFIG"
+CTX="$LOCAL_CONTEXT"
+TARGET_STATE="$STATE/$CTX"
+mkdir "$TARGET_STATE"
 kubectl --context "$CTX" describe nodes
-EXISTING_NAMESPACE="$(kubectl --context "$CTX" get namespace kmx-inference --ignore-not-found -o name)"
-test -z "$EXISTING_NAMESPACE"
-kubectl --context "$CTX" create --dry-run=server -f docs/azure/aikit-cpu-namespace.yaml
-```
-
-After approving that Namespace, create it and retain its acknowledged identity.
-Only then dry-run the namespaced objects: a dry-run Namespace is not persisted.
-
-```bash
-kubectl --context "$CTX" create -f docs/azure/aikit-cpu-namespace.yaml \
-  -o json > "$STATE/namespace.json"
-kubectl --context "$CTX" create --dry-run=server -f docs/azure/aikit-cpu.yaml
-```
-
-Review the objects, then separately authorize their creation:
-
-```bash
-kubectl --context "$CTX" create -f docs/azure/aikit-cpu.yaml \
-  -o json > "$STATE/model-resources.json"
+existing="$(kubectl --context "$CTX" get namespace kmx-inference --ignore-not-found -o name)"
+test -z "$existing"
+kubectl --context "$CTX" create --dry-run=server -f "$REPO/docs/azure/aikit-cpu-namespace.yaml"
+# Approve the Namespace before creating it.
+kubectl --context "$CTX" create -f "$REPO/docs/azure/aikit-cpu-namespace.yaml" \
+  -o json > "$TARGET_STATE/namespace.json"
+kubectl --context "$CTX" create --dry-run=server -f "$REPO/docs/azure/aikit-cpu.yaml"
+# Review and approve the namespaced objects before creating them.
+kubectl --context "$CTX" create -f "$REPO/docs/azure/aikit-cpu.yaml" \
+  -o json > "$TARGET_STATE/model-resources.json"
 kubectl --context "$CTX" -n kmx-inference rollout status deployment/aikit-cpu --timeout=15m
-kubectl --context "$CTX" -n kmx-inference get pods
 ```
 
-Retain acknowledged UIDs even if only some objects were created. A failed
-create/timeout can leave resources; inspect the exact target instead of repeating
-the multi-object command. Inspect scheduling events for Pending pods, model logs
-for startup failures and memory pressure/OOM for restarts. Logs may contain
-payloads; keep diagnostics private.
-
-### Restricted API access: AKS Run Command
-
-If direct `kubectl` connections fail, do not broaden the API allowlist or treat
-the failure as absence. An authorized operator can use AKS Run Command, which
-creates a temporary command pod and uses management-plane permissions. Pin the
-subscription, resource group and cluster on **every** invocation:
-
-```bash
-SUBSCRIPTION='<approved-subscription-id>'
-RESOURCE_GROUP='<approved-resource-group>'
-CLUSTER='<approved-cluster-name>'
-az aks command invoke --subscription "$SUBSCRIPTION" \
-  --resource-group "$RESOURCE_GROUP" --name "$CLUSTER" \
-  --command 'kubectl get nodes' -o json > "$STATE/access-check.json"
-```
-
-The CLI succeeding is insufficient: require the returned `exitCode` to be zero,
-and inspect its `logs` privately. Run the same absence checks, staged dry-runs
-and creates above through this path; retain each returned create result and
-acknowledged UID. Attach reviewed manifests with `--file`; their **basenames**
-are available in the command pod. Attach an operator-reviewed, **LF-terminated**
-shell script and invoke `sh script.sh` for multi-step commands. On Windows this
-also avoids `az.cmd` misinterpreting nested shell quotes. Inspect state after
-any failure; do not repeat a possibly partial create.
-
-For the answer check, the command pod can call the internal Service directly
-with `curl`; no port-forward is needed. Attach a request JSON file using the
-body below, send it once with `--fail --max-time 180`, and redirect the complete
-Run Command JSON response to a private local file. Validate its `exitCode` and
-parse `logs` as the answer JSON with local Python; do not assume Python exists
-inside the command pod. Apply the same exact-model/completion/content checks
-below and delete successful response payloads. Run Command output can contain
-the answer, so never print it or use it as a public setup receipt.
-
-### 2. Prove one answer
-
-In a second shell with the same explicit context/kubeconfig, start a tracked
-forward on a free loopback port:
+Readiness is not inference proof. In a second WSL shell, use the same
+kubeconfig/context and start a tracked loopback forward:
 
 ```bash
 kubectl --context "$CTX" -n kmx-inference port-forward --address 127.0.0.1 \
   service/aikit-cpu 18091:8080
 ```
 
-Back in the first shell, send one request with no retry. Require HTTP 200, valid
-JSON, the exact model, a nonempty assistant answer and successful completion.
-The response contains model output; do not print or share it as setup evidence.
+In the first shell, send one request without retries:
 
 ```bash
 HTTP_CODE="$(curl --silent --show-error --max-time 180 \
   -H 'Content-Type: application/json' \
   --data '{"model":"qwen-3.5-2b","stream":false,"max_tokens":16,"messages":[{"role":"user","content":"Reply with OK."}]}' \
-  --output "$STATE/model-response.json" --write-out '%{http_code}' \
+  --output "$TARGET_STATE/response.json" --write-out '%{http_code}' \
   http://127.0.0.1:18091/v1/chat/completions)"
 test "$HTTP_CODE" = 200
-python3 - "$STATE/model-response.json" <<'PY'
+python3 - "$TARGET_STATE/response.json" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as source:
     response = json.load(source)
-assert response["model"] == "qwen-3.5-2b"
 choice = response["choices"][0]
+assert response["model"] == "qwen-3.5-2b"
 assert choice["finish_reason"] == "stop"
 assert choice["message"]["role"] == "assistant"
 assert choice["message"]["content"].strip()
 print("Direct CPU inference: passed")
 PY
-rm "$STATE/model-response.json"
+rm "$TARGET_STATE/response.json"
 ```
 
-Stop the specific forward process on success **or failure**. A failed/truncated
-answer is not proof of inference success and does not authorize a model switch.
-Retain failed payloads privately only if needed for diagnosis.
+Stop that specific forward on success **or failure**. Repeat for AKS.
+Keep failed payloads private if needed for diagnosis.
 
-### 3. Bind Orka and evaluate
+## 4. Install Orka on both clusters
 
-The in-cluster OpenAI-compatible base URL is:
+For each cluster, select its kubeconfig and context as above, then run:
 
-```text
-http://aikit-cpu.kmx-inference.svc.cluster.local:8080/v1
+```bash
+kmx --context "$CTX" orka install --provider cpu-inference \
+  --model qwen-3.5-2b \
+  --model-url http://aikit-cpu.kmx-inference.svc.cluster.local:8080/v1
+kubectl --context "$CTX" -n orka-system wait \
+  --for=condition=Ready provider/cpu-inference --timeout=5m
 ```
 
-With Orka installed, separately create an owner-reviewed `openai` Provider in
-`orka-system` with that `baseURL` and `defaultModel: qwen-3.5-2b`. Its required
-`secretRef` must name an independently created Secret in the same namespace.
-For this keyless endpoint, use the explicit **noncredential** placeholder in
-[Orka's keyless Provider contract](../orka.md#the-provider-connects-the-local-model-without-a-key).
-Do not put real credentials in template YAML, argv, logs or ConfigMaps.
+Confirm the exact AKS context when prompted. For reviewed automation, scope
+`KAIMAHI_CONFIRM="$CTX"` to the individual command; do not export it globally.
+Inspect that Provider readiness describes its current generation.
 
-Require current-generation Provider readiness, then use
-[full workspace evaluation and Lift](../suite-workspace.md#evaluate-the-whole-workspace).
-Direct inference, ordered evaluation and Lift placement are different proofs;
-report them separately. The template does not evaluate, publish or Lift an agent.
+The Provider uses the `openai` protocol, **not a hosted OpenAI service**.
+The installer supplies the explicit noncredential placeholder required by
+[Orka's keyless contract](../orka.md#the-provider-connects-the-local-model-without-a-key).
 
-### 4. Stop and remove
+## 5. Create and prove the agent locally
 
-With approval, scale only the owned `aikit-cpu` Deployment to zero to release its
-CPU/memory requests; this does **not** stop node billing. Before deleting anything,
-compare recorded namespace/object UIDs and contents and remove separate Provider
-bindings deliberately. Delete only the owned resources from the explicit context.
-Namespace deletion also removes anything later placed there: require separate
-data-loss approval, and never infer ownership from a name or label.
+Write the instructions, then create a tool-free workspace:
 
-Template checks run offline with `go test ./docs/azure`. They do not create
-Kubernetes resources or prove live model execution.
+```bash
+cat > "$STATE/instructions.md" <<'EOF'
+Write brief release notes using only the supplied facts.
+Use exactly two Markdown headings: ## Changes and ## Known limitations.
+Put bullets under each heading. Mention retry and search changes.
+Under Known limitations, begin every bullet with the literal prefix "Unresolved:".
+Do not replace "Unresolved" with synonyms such as "not fixed".
+Never invent fixes, features or measurements. Stay under 40 words.
+EOF
+kmx create release-notes --workspace "$WORKSPACE" --model qwen-3.5-2b \
+  --instructions "$STATE/instructions.md"
+```
 
-The pinned three-CPU template was exercised on a single `Standard_D4as_v5`
-AKS node: one Ready replica, no restarts at inspection, and one completed
-exact-model assistant answer through the internal Service using Run Command.
-This is a basic inference smoke check, not an Orka evaluation, Lift proof,
-concurrency benchmark or sustained-memory qualification. Azure Policy may warn
-about the image allowlist even when admission succeeds; a deny must be resolved
-with the policy owner, never bypassed. If `kubectl top` fails, report resource
-usage as unknown rather than inferring it from Ready state.
+Replace `$WORKSPACE/eval/example.yaml` with this case. Do not leave the default
+math case alongside it:
+
+```yaml
+id: release-facts
+input: |
+  Write release notes from these facts only.
+  Added retry for failed sync. Fixed search filters resetting after refresh.
+  Known limitation: large CSV exports time out; not fixed.
+runs: 3
+minPasses: 2
+assertions:
+- id: changes-heading
+  type: regex
+  pattern: (?m)^#{1,2} Changes\s*$
+- id: limitations-heading
+  type: regex
+  pattern: (?m)^#{1,2} Known limitations\s*$
+- id: retry-fact
+  type: regex
+  pattern: (?i)\bretr(?:y|ies)\b
+- id: search-fact
+  type: regex
+  pattern: (?i)search
+- id: limitation-unresolved
+  type: regex
+  pattern: (?i)unresolved
+```
+
+Evaluate the complete workspace on **local kind**, not AKS:
+
+```bash
+KUBECONFIG="$LOCAL_KUBECONFIG" kmx eval --workspace "$WORKSPACE" \
+  --to-context "$LOCAL_CONTEXT" --to-namespace orka-system \
+  --inference provider:cpu-inference --out "$STATE/passing.json"
+```
+
+Require at least two passing runs, no unknown outcomes, completed candidate
+cleanup and exported evidence. Do not alter source after evaluation.
+Evidence binds this exact suite, runtime, model and case inventory; it is
+unsigned historical observation, not destination evaluation or authentication.
+
+## 6. Publish the tested version
+
+Authenticate ACR using Windows Azure CLI, but store the resulting credential
+only in the private **WSL** Docker config. A Windows login alone does not
+authenticate KMX in WSL. This PowerShell example passes the credential over
+stdin, never argv; set `$WSL_DOCKER_CONFIG` to the WSL `DOCKER_CONFIG` above:
+
+```powershell
+$WSL_DOCKER_CONFIG = '<absolute-WSL-path-to-demo-docker-directory>'
+$auth = az acr login --subscription $SUBSCRIPTION --name $REGISTRY `
+  --expose-token --output json --only-show-errors
+if ($LASTEXITCODE -ne 0) { throw 'ACR authentication failed' }
+$auth | wsl --distribution Ubuntu --exec python3 -c 'import sys,json,os,base64; from pathlib import Path; a=json.load(sys.stdin); p=Path(sys.argv[1]); p.mkdir(mode=0o700,parents=True,exist_ok=True); credential=base64.b64encode(("00000000-0000-0000-0000-000000000000:"+a["accessToken"]).encode()).decode(); fd=os.open(p/"config.json",os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.fdopen(fd,"w").write(json.dumps({"auths":{a["loginServer"]:{"auth":credential}}}))' $WSL_DOCKER_CONFIG
+$auth = $null
+if ($LASTEXITCODE -ne 0) { throw 'Private WSL credential setup failed' }
+```
+
+Back in WSL, publish with the matching receipt:
+
+```bash
+PUBLISH_REF="$REGISTRY.azurecr.io/agents/release-notes:<unique-tag>"
+kmx push --workspace "$WORKSPACE" "$PUBLISH_REF" --evaluation "$STATE/passing.json"
+```
+
+Require success and retain the returned manifest digest. Set `RELEASE_REF` to
+the published repository plus that exact `@sha256:...` digest, not a tag.
+
+## 7. Lift to AKS, then ask
+
+Review the GET-only plan. `--promote` explicitly uses **source-only** evidence;
+the destination must satisfy the same packaged runtime/model requirements:
+
+```bash
+RELEASE_REF="$REGISTRY.azurecr.io/agents/release-notes@sha256:<published-digest>"
+KUBECONFIG="$AKS_KUBECONFIG" kmx lift "$RELEASE_REF" --plan --promote \
+  --to-context "$AKS_CONTEXT" --to-namespace orka-system \
+  --inference provider:cpu-inference --evidence "$STATE/passing.json"
+```
+
+Approve that exact plan and remote context, then Lift:
+
+```bash
+KUBECONFIG="$AKS_KUBECONFIG" kmx lift "$RELEASE_REF" --promote \
+  --to-context "$AKS_CONTEXT" --to-namespace orka-system \
+  --inference provider:cpu-inference --evidence "$STATE/passing.json"
+```
+
+Require Ready placement. Lift sends no model Tasks; ask separately:
+
+```bash
+cat > "$STATE/prompt.txt" <<'EOF'
+Write release notes from these facts only.
+Added retry for failed sync. Fixed search filters resetting after refresh.
+Known limitation: large CSV exports time out; not fixed.
+EOF
+KUBECONFIG="$AKS_KUBECONFIG" kmx --context "$AKS_CONTEXT" run \
+  --namespace orka-system --agent release-notes \
+  --prompt-file "$STATE/prompt.txt" > "$STATE/answer.txt"
+```
+
+Check the five case assertions against the private answer. Exit zero alone
+proves execution, not correctness. Preserve the deployed digest; do not print
+answers as setup evidence.
+
+## 8. Demonstrate a failed edit
+
+Save the tested instructions privately. Change only the workspace instructions
+to `Answer in one sentence, with no headings or bullet points.` Run a **new**
+local evaluation with a new output path.
+
+Require complete assertion failures and completed cleanup—not execution errors.
+Do not publish or Lift the edit. Independently inspect the AKS placement and
+send a fresh Task: the tested digest must remain deployed and answering.
+Restore the saved instructions deliberately; never relabel evidence across edits.
+
+## Cleanup
+
+Review retained IDs and the contents of each target before deleting anything.
+Deleting a test-cluster name is not proof that everything there belongs to you.
+
+- Delete only the approved local cluster with `kind delete cluster --name "$LOCAL_CLUSTER"`,
+  using its original Podman connection. Preserve unrelated containers/machines.
+- Obtain explicit data-loss approval before deleting the Azure development group:
+  this removes AKS, ACR and **all published suites**. Use Windows Azure CLI with
+  the exact subscription/group; verify the development and managed node groups
+  are gone. Failed deletion can continue billing.
+- For partial cleanup, compare acknowledged UIDs before removing model resources
+  or Provider bindings. Namespace deletion also destroys later additions.
+- Remove private credentials and payloads only after retaining the nonsecret
+  records you need. Scaling the model to zero does not stop node billing.
+
+## Troubleshooting and verification limits
+
+| Symptom | Action |
+|---|---|
+| API timeout | Check the actual VPN/tunnel route and approved public egress CIDR. Never use `0.0.0.0/0`, an empty allowlist or a private VPN adapter IP. Follow local security policy. |
+| TLS-verified HTTP 401 | Network/TLS works; authenticated Kubernetes access is not yet proved. Check the exec plugin and cluster RBAC. |
+| Slow cleanup; “scope changed or unknown” | Measure payload-free API timings and compare cluster/namespace UIDs. Windows authentication took 2–3 seconds per subprocess in this test, exhausting the fixed 90-second budget. An approved expiry-aware private credential cache resolved cleanup; do not raise timeouts or use static kubeconfig tokens. |
+| Leftover candidates | List with `kmx eval cleanup --to-context "$CTX"`; confirm the full run ID for UID-safe cleanup. Do not bulk-delete Agents. |
+| `unresolved` assertion fails | Require the literal prefix in instructions. The first local version ran successfully but passed 0/3; revised instructions passed 3/3 without weakening assertions. |
+| Pending model or policy denial | Inspect scheduling/allocatable resources and policy-owner guidance. Do not bypass policy or infer usage from readiness. |
+| Run Command needed | Use Windows `az aks command invoke` with explicit subscription/group/cluster; inspect returned `exitCode`, not just CLI success. Attached scripts need LF endings. Keep logs private. This is not a way to run the entire KMX lifecycle remotely. |
+
+**Demonstrated:** identical CPU inference on Podman-backed kind and a single-node
+AKS cluster; three passing local Orka runs; evaluated ACR publication;
+registry-backed AKS promotion; a separate fresh answer passing all five checks;
+and a bad-instructions version failing 0/3 with cleanup completed and no evidence
+exported. The tested instructions were restored. A second destination answer
+after that refusal has not yet been checked.
+
+**Not demonstrated:** fresh AKS creation from `aks.bicep`, general model quality,
+concurrency, sustained memory use or production availability. Bicep compilation
+and `go test ./docs/azure` are offline checks, not deployment proof. The model
+has a 4096-token context and 64-token default output budget; it is a smoke-test
+preset, not a general agent-sizing recommendation.

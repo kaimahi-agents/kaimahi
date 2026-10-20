@@ -43,6 +43,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   covers explicit-context creation, answer proof, Orka binding and scoped cleanup.
   A Basic-tier ACR Bicep template keeps registry setup in the explicitly selected
   development resource group without admin credentials or new role assignments.
+  An AKS Bicep template and CPU-model demo guide cover explicit cluster creation,
+  WSL access, authentication-budget diagnostics and the gated agent lifecycle.
   No CLI default or installer changes; no live qualification is claimed.
 
 - Public Go package `pkg/suiteview` returns a verified, read-only `MemberRecipe`
