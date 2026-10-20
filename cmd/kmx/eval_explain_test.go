@@ -43,16 +43,27 @@ func TestSuiteFailureExplainCommand(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(path, "00000000000000000001-"+id+".json"), raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, show := range []bool{false, true} {
+	for _, tc := range []struct {
+		verb string
+		show bool
+	}{{"eval", false}, {"eval", true}, {"test", false}, {"test", true}} {
+		show := tc.show
 		var out, diagnostics bytes.Buffer
 		deps, loads := testDependencies(&out, &diagnostics)
-		args := []string{"eval", "explain", id, "--workspace", workspace}
+		args := []string{tc.verb, "explain", id, "--workspace", workspace}
 		if show {
 			args = append(args, "--show-content")
 		}
 		err := execute(args, deps)
 		if err != nil || *loads != 0 || !strings.Contains(out.String(), id) || strings.Contains(out.String(), "fictional failed answer") != show {
 			t.Fatalf("offline explain: %v loads=%d output=%s", err, *loads, out.String())
+		}
+		wantDiagnostics := ""
+		if tc.verb == "eval" {
+			wantDiagnostics = legacyEvalNotice
+		}
+		if diagnostics.String() != wantDiagnostics {
+			t.Fatalf("%s explain notice: %q", tc.verb, &diagnostics)
 		}
 	}
 	for _, tc := range []struct {

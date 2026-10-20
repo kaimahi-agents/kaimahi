@@ -18,8 +18,9 @@ claimed; the remaining publication constraints are recorded in
 
 ## Test command (unreleased)
 
-Current main uses `kmx test` and all five helpers (`cleanup`, `diff`, `export`,
-`verify`, `from-sessions`). This rename is unreleased; v0.8.1 uses `kmx eval`
+Current main uses `kmx test` and all six helpers (`cleanup`, `diff`, `explain`,
+`export`, `verify`, `from-sessions`). The `explain` helper is also unreleased and
+is not available in v0.8.1 under either spelling. This rename is unreleased; v0.8.1 uses `kmx eval`
 with the same arguments. Hidden `eval` and its helpers remain callable for at
 least one released version, adding exactly one stderr line per legacy invocation:
 `kmx eval is deprecated; use kmx test (same arguments).`
@@ -226,7 +227,7 @@ from:
 
 ### Moving to main's Test spelling (unreleased)
 
-Use `kmx test` in maintained commands and scripts, including all five helpers.
+Use `kmx test` in maintained commands and scripts, including all six helpers.
 Keep `kmx eval` when running v0.8.1. In newer builds the hidden compatibility
 route remains callable for at least one released version with only the stderr
 notice described [above](#test-command-unreleased); stdout, arguments, exit

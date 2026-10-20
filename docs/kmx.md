@@ -94,8 +94,9 @@ cluster, so a silent switch can target the wrong one.
 
 **Test is unreleased.** v0.8.1 uses `kmx eval` with the same arguments.
 Current main uses canonical `kmx test`; `kmx eval` remains hidden but callable
-for at least one released version. All five helpers are available under both
-roots: `cleanup`, `diff`, `export`, `verify` and `from-sessions`.
+for at least one released version. All six helpers are available under both
+roots: `cleanup`, `diff`, `explain`, `export`, `verify` and `from-sessions`.
+The `explain` helper is also unreleased; it is not available in v0.8.1 under either spelling.
 Each legacy invocation adds exactly one stderr line:
 
 ```text

@@ -37,7 +37,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   and answer excerpts on stderr; outcome JSON remains payload-free. Diagnostics
   remain separate from evidence. Non-pass runs are retained privately under
   KMX_HOME: last 10 per workspace across revisions, 64 KiB answers/128 KiB records,
-  owner-only and deterministically bounded. Offline `kmx eval explain` lists or
+  owner-only and deterministically bounded. Offline `kmx test explain` lists or
   shows retained diagnostics with opt-in content; --clear removes one ID or all
   only with explicit --workspace, without touching passing proof or upstream data.
   Failure JSON adds diagnostic/provenance IDs, completion/attribution flags and
@@ -76,8 +76,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
-- Canonical `kmx test` replaces `kmx eval`, including all five helpers:
-  `cleanup`, `diff`, `export`, `verify` and `from-sessions`. Test is unreleased;
+- Canonical `kmx test` replaces `kmx eval`, including all six helpers:
+  `cleanup`, `diff`, `explain`, `export`, `verify` and `from-sessions`. Test is unreleased;
   v0.8.1 uses `eval`. The hidden legacy root and helpers remain callable for at
   least one released version, adding exactly one stderr line per invocation:
   `kmx eval is deprecated; use kmx test (same arguments).`
@@ -165,7 +165,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Upgrading
 
 - For unreleased main builds, change maintained `kmx eval` invocations and all
-  five helper routes to `kmx test`. v0.8.1 still uses `eval`. The hidden alias
+  six helper routes to `kmx test`. v0.8.1 still uses `eval`. The hidden alias
   remains callable for at least one released version with one deprecation notice
   on stderr; stdout, arguments, exit codes and state do not change. Do not rename
   case directories, receipts or configuration fields. No data migration is needed.

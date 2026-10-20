@@ -71,7 +71,7 @@ func runWorkspaceLiftCommand(cmd *cobra.Command, state *commandState, opt app.Wo
 	}
 	defer func() { err = errors.Join(err, prepared.Close()) }()
 	if opt.PlanOnly {
-		_, err = (&app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr(), DeployPresentation: cmd.Name() == "deploy"}).LiftWorkspace(ctx, prepared)
+		_, err = (&app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr(), DeployPresentation: cmd.Name() == "deploy", TestPresentation: cmd.Name() == "deploy"}).LiftWorkspace(ctx, prepared)
 		return err
 	}
 	selected := *state
@@ -87,6 +87,7 @@ func runWorkspaceLiftCommand(cmd *cobra.Command, state *commandState, opt app.Wo
 	}
 	a.InvocationCommand = strings.Join(parts, " ")
 	a.DeployPresentation = cmd.Name() == "deploy"
+	a.TestPresentation = cmd.Name() == "deploy"
 	_, err = a.LiftWorkspace(ctx, prepared)
 	return err
 }

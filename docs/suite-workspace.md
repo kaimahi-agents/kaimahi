@@ -1092,11 +1092,11 @@ answer or rationale.
 ### Inspect or clear local evaluation failures
 
 ```bash
-kmx eval explain --workspace ./workspace
-kmx eval explain f-<32-hex-digits> --workspace ./workspace
-kmx eval explain f-<32-hex-digits> --workspace ./workspace --show-content
-kmx eval explain f-<32-hex-digits> --workspace ./workspace --clear
-kmx eval explain --workspace ./workspace --clear
+kmx test explain --workspace ./workspace
+kmx test explain f-<32-hex-digits> --workspace ./workspace
+kmx test explain f-<32-hex-digits> --workspace ./workspace --show-content
+kmx test explain f-<32-hex-digits> --workspace ./workspace --clear
+kmx test explain --workspace ./workspace --clear
 ```
 
 Saved runs print an opaque `f-` diagnostic ID. Inspection is offline: it reads the

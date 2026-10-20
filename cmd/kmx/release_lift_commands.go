@@ -161,6 +161,7 @@ func newReleaseCommand(state *commandState, verb string) *cobra.Command {
 			}
 			a.InvocationCommand = strings.Join(parts, " ")
 			a.DeployPresentation = verb == "deploy"
+			a.TestPresentation = verb == "deploy"
 			prepared, err := a.PrepareReleaseLift(ctx, opt)
 			if err != nil {
 				return err

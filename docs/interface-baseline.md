@@ -5,7 +5,7 @@ This document is a reviewable snapshot of the interfaces implemented on current
 remains authoritative for command flags and output contracts.
 
 `test` and `deploy` are unreleased; v0.8.1 uses `eval` and `lift` with the same
-arguments. Hidden `eval` and its five helpers remain callable for at least one
+arguments. Hidden `eval` and its six helpers remain callable for at least one
 released version, with one stderr notice and unchanged arguments, stdout, exit
 codes and state. See [Test compatibility](kmx.md#test-compatibility-unreleased). The deprecated
 packaged-suite `lift` route stays hidden but callable for at least one released
@@ -23,6 +23,7 @@ kmx
 ├── test
 │   ├── cleanup [<run-id>]
 │   ├── diff <before.json> <after.json>
+│   ├── explain [failure-id]
 │   ├── export --member <id> --out <file>
 │   ├── verify --suite <layout-or-digest> --evidence <file> --expect <file>
 │   └── from-sessions <session-uid>...
@@ -65,7 +66,7 @@ Hidden but callable:
 
 | Route | Contract |
 |---|---|
-| `kmx eval` and `cleanup/diff/export/verify/from-sessions` | Deprecated Test spellings; same arguments/flags/stdout/exit/state, exactly one stderr notice per legacy invocation |
+| `kmx eval` and `cleanup/diff/explain/export/verify/from-sessions` | Deprecated Test spellings; same arguments/flags/stdout/exit/state, exactly one stderr notice per legacy invocation |
 | `kmx lift [<ref>@<digest>]` | Deprecated deployment spelling; same arguments/flags, one stderr notice, legacy stdout and stderr stage labels retained |
 | `kmx aks up/down` | Guarded AKS compatibility path with historical ownership records |
 | `kmx quickstart-wizard` | Retirement stub directing callers to `quickstart --interactive` |

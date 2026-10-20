@@ -18,7 +18,7 @@ kmx <noun> <verb> [object] [flags]
 
 - **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
   `push` and full-workspace `test`. Root `test` also retains helpers (`diff`,
-  `export`, `verify`, `from-sessions`, `cleanup`); root digest `deploy` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
+  `explain`, `export`, `verify`, `from-sessions`, `cleanup`); root digest `deploy` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
   `suite build/diff/push/pull/validate` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
@@ -99,7 +99,7 @@ Keep these distinctions:
 | `--runtime-profile` | Exact public runtime profile ID for offline v3 workspace push or suite build planning, never an execution override. Profiled push requires --unevaluated; AgentKit refuses profiled builds. |
 | `--platform` | Exact OS/ARCH for offline profile/build selection; v3 push may infer it only for one candidate in the explicitly selected profile. Legacy workspace push rejects it. |
 | `--plan` | Read the target and print what would change. No writes. |
-| `--show-content` | Opt into sanitized bounded failure excerpts, expected values and rationale: stderr for eval/executing workspace Deploy, stdout for offline eval explain. Not evidence; never implied by --verbose; conflicts with explain --clear. |
+| `--show-content` | Opt into sanitized bounded failure excerpts, expected values and rationale: stderr for eval/executing workspace Deploy, stdout for offline test explain. Not evidence; never implied by --verbose; conflicts with explain --clear. |
 | `--no-apply` | Where supported by runtime setup, render without cluster writes; removed from workspace create. |
 | `--dry-run` | Where supported by runtime setup, check server admission without persistent writes; removed from workspace create. |
 | `--step` | Run one named phase of a multi-phase workflow. |

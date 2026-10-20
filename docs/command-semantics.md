@@ -196,7 +196,7 @@ opts into sanitized bounded failure content on stderr for eval and executing
 workspace Deploy, never evidence or JSON payloads; --verbose alone does not opt in.
 Failure diagnostics are retained privately under KMX_HOME, separately from
 passing proof: last 10 non-pass runs per workspace across revisions, 64 KiB answers
-and 128 KiB serialized records with deterministic truncation. Offline `eval explain
+and 128 KiB serialized records with deterministic truncation. Offline `test explain
 [failure-id] [--workspace DIR]` lists/shows records on stdout; --show-content opts
 into bounded content. --clear removes one ID, or all only with explicit
 --workspace; it conflicts with --show-content and never clears passing/candidate
@@ -237,7 +237,7 @@ This does not add local workspace Run, numbered versions, a plugin or a new
 Publish command. Deploy remains real-target placement.
 
 Canonical `kmx test` is unreleased; v0.8.1 uses `kmx eval` with the same
-arguments. Hidden `eval` and all five helpers remain callable for at least one
+arguments. Hidden `eval` and all six helpers remain callable for at least one
 released version. Each legacy invocation adds exactly one stderr line:
 `kmx eval is deprecated; use kmx test (same arguments).`
 Arguments, flags, stdout, existing stderr labels, exit codes and state are

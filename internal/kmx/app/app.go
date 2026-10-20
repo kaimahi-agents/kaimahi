@@ -129,7 +129,7 @@ func New(cfg *config.Config) *App {
 	r := run.Default()
 	r.Env = cfg.KindEnv()
 	r.Unset = cfg.KindUnset()
-	return &App{Cfg: cfg, Run: r, Out: os.Stdout, Err: os.Stderr, Stdin: os.Stdin}
+	return &App{Cfg: cfg, Run: r, Out: os.Stdout, Err: os.Stderr, Stdin: os.Stdin, TestPresentation: true}
 }
 
 // operationContext is shared by commands, network requests, and retry waits.

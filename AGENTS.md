@@ -273,7 +273,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   regular files, schema and privacy before offline reading or targeted deletion;
   refuse unsafe state rather than chmod/repair/RemoveAll. Retain before output
   even on abort; retention errors warn without changing verdicts or causing
-  another send. Offline eval explain lists/shows local records without config,
+  another send. Offline test explain lists/shows local records without config,
   Prepare, runtime, registry or model calls; --show-content opts into bounded
   stdout content, --clear deletes one ID or all only with explicit --workspace.
   Clearing never reaches passing/candidate state or upstream history. A bounded
@@ -316,7 +316,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   evaluates workspace cases; Publish is current registry `push`, not numbered
   local versions or a new command. Deploy remains real-target placement.
   Canonical `kmx test` is unreleased; v0.8.1 uses `kmx eval`. Keep hidden `eval`
-  and all five helpers callable for at least one released version, with exactly
+  and all six helpers callable for at least one released version, with exactly
   one stderr notice: `kmx eval is deprecated; use kmx test (same arguments).`
   Preserve arguments, flags, stdout, exit codes, state and existing stderr labels
   apart from the notice. Keep `eval/`/`evals/`, `evalTarget`/`evaluationTarget`,

@@ -75,8 +75,11 @@ test('the homepage renders the interactive journey and channel boundary', async 
 })
 
 test('Test is canonical while compatibility and current runtime limits stay explicit', async () => {
+  const runtimes = plainText(await readFile(path.join(dist, 'docs/runtime-adapters.html'), 'utf8'))
+  assert.match(runtimes, /profiles support root test,/)
+  assert.doesNotMatch(runtimes, /testuat/i)
   const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8'))
-  for (const helper of ['cleanup', 'diff', 'export', 'verify', 'from-sessions']) {
+  for (const helper of ['cleanup', 'diff', 'explain', 'export', 'verify', 'from-sessions']) {
     assert.ok(reference.includes(`kmx test ${helper}`), `canonical helper: ${helper}`)
   }
   const html = await readFile(path.join(dist, 'docs/kmx.html'), 'utf8')

@@ -32,7 +32,12 @@ func TestTestCommandTreesAndDiscovery(t *testing.T) {
 	if err != nil || !legacy.Hidden || canonical.Hidden || len(canonical.Aliases) != 0 {
 		t.Fatalf("independent tree visibility: err=%v canonical=%v legacy=%v", err, canonical, legacy)
 	}
-	for _, child := range []string{"", "cleanup", "diff", "export", "verify", "from-sessions"} {
+	for _, cmd := range []*cobra.Command{canonical, legacy} {
+		if !strings.Contains(cmd.Long, "use test explain") || strings.Contains(cmd.Long, "eval explain") {
+			t.Fatalf("%s help teaches legacy failure inspection: %s", cmd.Name(), cmd.Long)
+		}
+	}
+	for _, child := range []string{"", "cleanup", "diff", "explain", "export", "verify", "from-sessions"} {
 		left, right := canonical, legacy
 		if child != "" {
 			left, _, err = canonical.Find([]string{child})
@@ -79,7 +84,7 @@ func TestTestLegacyNoticeAtEveryNode(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "absent-state")
 	t.Setenv("KMX_HOME", home)
 	t.Chdir(t.TempDir())
-	for _, child := range []string{"", "cleanup", "diff", "export", "verify", "from-sessions"} {
+	for _, child := range []string{"", "cleanup", "diff", "explain", "export", "verify", "from-sessions"} {
 		for _, verb := range []string{"eval", "test"} {
 			path := []string{verb}
 			if child != "" {
@@ -137,6 +142,8 @@ func TestTestLegacyNoticeRequiredFlagsAndOfflineHelpers(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	root, output := suiteEvalSource(t)
 	for _, tail := range [][]string{
+		{"explain", "--clear"},
+		{"explain", "../../invalid"},
 		{"from-sessions", "uid"},
 		{"export", "--member", "greeter"},
 		{"export", "--out", output},
@@ -199,7 +206,7 @@ func TestTestCompletionIsInert(t *testing.T) {
 	t.Setenv("KMX_HOME", home)
 	for _, verb := range []string{"test", "eval"} {
 		for _, mode := range []string{"__complete", "__completeNoDesc"} {
-			for _, tail := range [][]string{{""}, {"--judge-base-url", ""}, {"cleanup", ""}, {"diff", ""}, {"export", "--member", ""}, {"verify", "--output", ""}, {"from-sessions", "--sessions", ""}, {"--context="}, {"--help"}} {
+			for _, tail := range [][]string{{""}, {"--judge-base-url", ""}, {"cleanup", ""}, {"diff", ""}, {"explain", ""}, {"export", "--member", ""}, {"verify", "--output", ""}, {"from-sessions", "--sessions", ""}, {"--context="}, {"--help"}} {
 				var out, diag bytes.Buffer
 				deps, loads := testDependencies(&out, &diag)
 				args := append([]string{mode, verb}, tail...)

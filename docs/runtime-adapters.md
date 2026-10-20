@@ -2,7 +2,7 @@
 
 Orka is the default native workspace runtime, chat and quickstart runtime.
 Explicit kagent workspaces use exact v0.10.3 Go/linux-amd64. Both packaged
-profiles support root testuation, evaluated publication and digest Deploy with
+profiles support root `test`, evaluated publication and digest Deploy with
 runtime-specific evidence/bindings. Kagent Deploy is create-only, refusing occupied
 targets. Pinned AgentSessions chat separately supports native offline authoring,
 prepare/source-free load/ordinary push and explicit `--development-host FILE`

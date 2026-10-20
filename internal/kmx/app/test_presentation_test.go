@@ -5,7 +5,16 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 )
+
+func TestTestNewAppDefaultsCanonicalRecovery(t *testing.T) {
+	a := New(&config.Config{})
+	if got := a.withRunContext(t.Context()).testCommandVerb(); got != "test" {
+		t.Fatalf("normal App and worker recovery uses %q, want test", got)
+	}
+}
 
 func TestTestCandidateRecoveryPreservesLegacySpelling(t *testing.T) {
 	for _, canonical := range []bool{false, true} {
