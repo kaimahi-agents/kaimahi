@@ -12,6 +12,9 @@ provide a replacement model proxy, budget service or automatic credential
 migration. Hosted calls can incur charges; configure access and limits through
 the selected provider and runtime.
 
+For the single-node AKS CPU test template and its explicit-context runbook, see
+[Azure CPU-model sample](azure/cpu-model/README.md#single-node-cpu-inference-test).
+
 ## Storing an API key
 
 Native Orka Providers reference an existing namespaced Kubernetes Secret.

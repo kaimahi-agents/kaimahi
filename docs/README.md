@@ -24,6 +24,7 @@ runtime contract when extending or comparing implementations.
 | Author one native suite member offline, evaluate the Orka or exact kagent profile, publish the exact OCI graph, and lift that packaged digest | [Suite workspace](suite-workspace.md) |
 | Inspect deployed agents, per-object Lift provenance and readiness without writes | [Destination status](destination-status.md) |
 | Discover models and configure native inference | [Models](models.md), [Copilot inference](copilot-inference.md), [Foundry inference](local-foundry-inference.md) |
+| Build single-node AKS and ACR with Bicep, then test CPU-model inference and the agent lifecycle | [Azure CPU-model demo](azure/cpu-model/README.md) |
 | Chat with an existing Orka Agent | [Interactive chat](interactive-chat.md) |
 | Run the local-proof to ACR to AKS walkthrough | [AKS Create, Prove, Lift demo](aks-demo.md) |
 | Use an existing AKS cluster or provision a disposable one | [AKS](aks.md) |

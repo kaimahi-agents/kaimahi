@@ -11,11 +11,19 @@ const repositoryURL = 'https://github.com/kaimahi-agents/kaimahi'
 const sourceRef = process.env.GITHUB_SHA || 'main'
 const agentSuiteDocsURL = 'https://github.com/agent-primitives/suite/blob/main/spec.md'
 
+function markdownPages(directory: string, prefix = 'docs'): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const relative = `${prefix}/${entry.name}`
+    if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+      return markdownPages(path.join(directory, entry.name), relative)
+    }
+    return entry.isFile() && entry.name.endsWith('.md') ? [relative] : []
+  })
+}
+
 const sitePages = new Set([
   'README.md',
-  ...readdirSync(path.join(repositoryRoot, 'docs'), { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
-    .map((entry) => `docs/${entry.name}`)
+  ...markdownPages(path.join(repositoryRoot, 'docs'))
 ])
 
 /** Return the repository-relative Markdown path used to resolve a page's links. */
@@ -55,8 +63,8 @@ function rewriteRepositoryLinks(md: any): void {
       token.attrSet('href', `/${matched?.[2] ?? ''}`)
       return render(tokens, index, options, env, self)
     }
-    if (resolved === 'docs/README.md') {
-      token.attrSet('href', `/docs/${matched?.[2] ?? ''}`)
+    if (resolved.endsWith('/README.md') && sitePages.has(resolved)) {
+      token.attrSet('href', `/${resolved.slice(0, -'README.md'.length)}${matched?.[2] ?? ''}`)
       return render(tokens, index, options, env, self)
     }
     if (sitePages.has(resolved)) return render(tokens, index, options, env, self)
@@ -76,6 +84,7 @@ const userGuides = [
   { text: 'Runtime support', link: '/docs/runtime-adapters' },
   { text: 'Orka', link: '/docs/orka' },
   { text: 'Models and inference', link: '/docs/models' },
+  { text: 'Azure CPU-model demo', link: '/docs/azure/cpu-model/' },
   { text: 'Interactive chat', link: '/docs/interactive-chat' },
   { text: 'AKS Create, Prove, Lift demo', link: '/docs/aks-demo' },
   { text: 'AKS', link: '/docs/aks' },
@@ -129,7 +138,9 @@ export default defineConfig({
   base: process.env.KMX_DOCS_BASE || '/',
   rewrites: {
     'README.md': 'index.md',
-    'docs/README.md': 'docs/index.md'
+    ...Object.fromEntries([...sitePages]
+      .filter((page) => page.endsWith('/README.md'))
+      .map((page) => [page, `${page.slice(0, -'README.md'.length)}index.md`]))
   },
   srcExclude: [
     'AGENTS.md',
