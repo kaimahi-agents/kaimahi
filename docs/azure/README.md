@@ -12,9 +12,10 @@ to self-hosted inference. For the shared lifecycle contract, see
 
 ## Before you start
 
-Use **Windows PowerShell for Azure CLI** and **WSL Bash for KMX, kind, kubectl
-and Helm**. KMX does not currently run natively on Windows. Start in the
-repository root in both shells.
+The main path uses **Bash on Linux**, with Azure CLI and the Kubernetes tools
+in the same environment. Start in the repository root.
+**Windows users:** run KMX in WSL; see [Windows setup](#windows-setup) for the
+PowerShell/Azure authentication handoff. Native Windows KMX is unsupported.
 
 | Requirement | Development baseline |
 |---|---|
@@ -65,22 +66,24 @@ The templates create infrastructure only:
 - [`acr.bicep`](acr.bicep): Basic registry in the **same development resource
   group**, with Entra authentication and admin/anonymous access disabled.
 
-In **PowerShell**, set these selectors explicitly:
+In **Bash**, set these selectors explicitly:
 
-```powershell
-$SUBSCRIPTION = '<approved-subscription-id>'
-$RESOURCE_GROUP = '<new-development-group>'
-$NODE_RESOURCE_GROUP = '<new-development-group>-nodes'
-$CLUSTER = '<new-cluster>'
-$REGISTRY = '<globally-unique-registry-name>'
-$LOCATION = 'westus3' # Or westus2, after checking availability and quota.
-$PARAMETERS = '<absolute-path-to-private-aks-parameters.json>'
+```bash
+set -euo pipefail
+umask 077
+SUBSCRIPTION='<approved-subscription-id>'
+RESOURCE_GROUP='<new-development-group>'
+NODE_RESOURCE_GROUP='<new-development-group>-nodes'
+CLUSTER='<new-cluster>'
+REGISTRY='<globally-unique-registry-name>'
+LOCATION='westus3' # Or westus2, after checking availability and quota.
+PARAMETERS='<absolute-path-to-private-aks-parameters.json>'
 ```
 
 Choose an available exact Kubernetes version:
 
-```powershell
-az aks get-versions --subscription $SUBSCRIPTION --location $LOCATION -o table
+```bash
+az aks get-versions --subscription "$SUBSCRIPTION" --location "$LOCATION" -o table
 ```
 
 Save this parameter object at `$PARAMETERS`, replacing every placeholder.
@@ -104,37 +107,35 @@ route to the AKS API.
 Check both group names and the registry name. Require successful results of
 `false`, `false`, and `true`, respectively:
 
-```powershell
-az group exists --subscription $SUBSCRIPTION --name $RESOURCE_GROUP
-az group exists --subscription $SUBSCRIPTION --name $NODE_RESOURCE_GROUP
-az acr check-name --name $REGISTRY --query nameAvailable -o tsv
+```bash
+az group exists --subscription "$SUBSCRIPTION" --name "$RESOURCE_GROUP"
+az group exists --subscription "$SUBSCRIPTION" --name "$NODE_RESOURCE_GROUP"
+az acr check-name --name "$REGISTRY" --query nameAvailable -o tsv
 ```
 
 After approving the target and cost, create the group and review both plans.
 Require exit code zero after **every** Azure CLI command:
 
-```powershell
-az group create --subscription $SUBSCRIPTION --name $RESOURCE_GROUP --location $LOCATION
-az deployment group what-if --subscription $SUBSCRIPTION `
-  --resource-group $RESOURCE_GROUP --template-file docs\azure\aks.bicep `
+```bash
+az group create --subscription "$SUBSCRIPTION" --name "$RESOURCE_GROUP" --location "$LOCATION"
+az deployment group what-if --subscription "$SUBSCRIPTION" \
+  --resource-group "$RESOURCE_GROUP" --template-file docs/azure/aks.bicep \
   --parameters "@$PARAMETERS"
-az deployment group what-if --subscription $SUBSCRIPTION `
-  --resource-group $RESOURCE_GROUP --template-file docs\azure\acr.bicep `
-  --parameters registryName=$REGISTRY location=$LOCATION
+az deployment group what-if --subscription "$SUBSCRIPTION" \
+  --resource-group "$RESOURCE_GROUP" --template-file docs/azure/acr.bicep \
+  --parameters registryName="$REGISTRY" location="$LOCATION"
 ```
 
 Approve the reviewed plans before running:
 
-```powershell
-az deployment group create --subscription $SUBSCRIPTION `
-  --resource-group $RESOURCE_GROUP --name kaimahi-dev-aks --mode Incremental `
-  --template-file docs\azure\aks.bicep --parameters "@$PARAMETERS"
-az deployment group create --subscription $SUBSCRIPTION `
-  --resource-group $RESOURCE_GROUP --name kaimahi-dev-acr --mode Incremental `
-  --template-file docs\azure\acr.bicep `
-  --parameters registryName=$REGISTRY location=$LOCATION
-az aks get-credentials --subscription $SUBSCRIPTION --resource-group $RESOURCE_GROUP `
-  --name $CLUSTER --file "$HOME\.kube\kaimahi-dev.yaml"
+```bash
+az deployment group create --subscription "$SUBSCRIPTION" \
+  --resource-group "$RESOURCE_GROUP" --name kaimahi-dev-aks --mode Incremental \
+  --template-file docs/azure/aks.bicep --parameters "@$PARAMETERS"
+az deployment group create --subscription "$SUBSCRIPTION" \
+  --resource-group "$RESOURCE_GROUP" --name kaimahi-dev-acr --mode Incremental \
+  --template-file docs/azure/acr.bicep \
+  --parameters registryName="$REGISTRY" location="$LOCATION"
 ```
 
 Retain acknowledged resource IDs privately. The templates grant no access:
@@ -142,14 +143,9 @@ ask the resource owner to verify the necessary cluster-scoped AKS RBAC role and
 registry-scoped `AcrPush` or equivalent approved data-plane permissions.
 Do not enable admin credentials or self-grant broad roles to bypass a refusal.
 
-## 2. Prepare WSL and local Kubernetes
+## 2. Prepare local Kubernetes and cluster access
 
-Copy the AKS **user** kubeconfig into WSL with mode `0600`. Adapt its exec
-plugin to the verified Windows `kubelogin.exe` path under `/mnt/c/...`;
-preserve its full arguments and API version. Azure CLI login stays on Windows.
-Do not print raw kubeconfigs or credential responses.
-
-In **WSL Bash**, define the operation's paths and targets once:
+In Bash, define the operation's paths and targets once:
 
 ```bash
 set -euo pipefail
@@ -163,10 +159,22 @@ mkdir -p "$DOCKER_CONFIG"
 LOCAL_CLUSTER='<new-local-cluster>'
 LOCAL_CONTEXT="kind-$LOCAL_CLUSTER"
 LOCAL_KUBECONFIG="$STATE/local-kubeconfig"
-AKS_KUBECONFIG='<absolute-WSL-path-to-private-AKS-user-kubeconfig>'
+AKS_KUBECONFIG="$STATE/aks-kubeconfig"
 AKS_CONTEXT='<approved-AKS-context>'
 REGISTRY='<approved-registry-name>'
 ```
+
+Retrieve a separate AKS **user** kubeconfig, never admin credentials:
+
+```bash
+az aks get-credentials --subscription "$SUBSCRIPTION" --resource-group "$RESOURCE_GROUP" \
+  --name "$CLUSTER" --file "$AKS_KUBECONFIG" --context "$AKS_CONTEXT"
+chmod 600 "$AKS_KUBECONFIG"
+```
+
+Use the supported Entra exec plugin (`kubelogin`) and your Azure CLI login.
+Do not print raw kubeconfigs or credential responses. Windows users use the
+platform-specific handoff below instead of retrieving credentials in Linux.
 
 Use the intended Podman machine explicitly; do not rely on its default
 connection. Inventory existing kind clusters before creating a new one:
@@ -180,11 +188,10 @@ KUBECONFIG="$LOCAL_KUBECONFIG" kind create cluster --name "$LOCAL_CLUSTER" \
   --wait 120s
 ```
 
-On the tested Windows Podman setup, kind required the dedicated machine's
-rootful socket and its authorized owner. A rootless remote connection refused
-the delegation preflight; do not disable that check. If cluster creation needs
-an elevated shell, return the resulting kubeconfig to your ordinary WSL user,
-with mode `0600`. **Run KMX as that ordinary user.**
+Use the socket's authorized owner. Rootless Podman requires kind's documented
+systemd delegation setup; do not disable its preflight. If cluster creation
+needs an elevated shell, return the kubeconfig to your ordinary user with mode
+`0600`. Run KMX as that ordinary user.
 
 Verify authenticated access to both clusters:
 
@@ -229,7 +236,7 @@ kubectl --context "$CTX" create -f "$REPO/docs/azure/aikit-cpu.yaml" \
 kubectl --context "$CTX" -n kmx-inference rollout status deployment/aikit-cpu --timeout=15m
 ```
 
-Readiness is not inference proof. In a second WSL shell, use the same
+Readiness is not inference proof. In a second Bash shell, use the same
 kubeconfig/context and start a tracked loopback forward. Shell variables do
 not carry across terminals: explicitly set `KUBECONFIG` and `CTX` there first:
 
@@ -345,22 +352,16 @@ unsigned historical observation, not destination evaluation or authentication.
 
 ## 6. Publish the tested version
 
-Authenticate ACR using Windows Azure CLI, but store the resulting credential
-only in the private **WSL** Docker config. A Windows login alone does not
-authenticate KMX in WSL. This PowerShell example passes the credential over
-stdin, never argv; set `$WSL_DOCKER_CONFIG` to the WSL `DOCKER_CONFIG` above:
+Authenticate with Azure CLI and write only to this demo's private Docker config.
+Pass credentials through stdin, never argv:
 
-```powershell
-$WSL_DOCKER_CONFIG = '<absolute-WSL-path-to-demo-docker-directory>'
-$auth = az acr login --subscription $SUBSCRIPTION --name $REGISTRY `
-  --expose-token --output json --only-show-errors
-if ($LASTEXITCODE -ne 0) { throw 'ACR authentication failed' }
-$auth | wsl --distribution Ubuntu --exec python3 -c 'import sys,json,os,base64; from pathlib import Path; a=json.load(sys.stdin); p=Path(sys.argv[1]); p.mkdir(mode=0o700,parents=True,exist_ok=True); credential=base64.b64encode(("00000000-0000-0000-0000-000000000000:"+a["accessToken"]).encode()).decode(); fd=os.open(p/"config.json",os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.fdopen(fd,"w").write(json.dumps({"auths":{a["loginServer"]:{"auth":credential}}}))' $WSL_DOCKER_CONFIG
-$auth = $null
-if ($LASTEXITCODE -ne 0) { throw 'Private WSL credential setup failed' }
+```bash
+az acr login --subscription "$SUBSCRIPTION" --name "$REGISTRY" \
+  --expose-token --output json --only-show-errors |
+  python3 -c 'import sys,json,os,base64; from pathlib import Path; a=json.load(sys.stdin); p=Path(os.environ["DOCKER_CONFIG"]); credential=base64.b64encode(("00000000-0000-0000-0000-000000000000:"+a["accessToken"]).encode()).decode(); fd=os.open(p/"config.json",os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.fdopen(fd,"w").write(json.dumps({"auths":{a["loginServer"]:{"auth":credential}}}))'
 ```
 
-Back in WSL, publish with the matching receipt:
+Windows users use the handoff below instead. Publish with the matching receipt:
 
 ```bash
 PUBLISH_REF="$REGISTRY.azurecr.io/agents/release-notes:<unique-tag>"
@@ -426,13 +427,48 @@ Deleting a test-cluster name is not proof that everything there belongs to you.
 - Delete only the approved local cluster with `kind delete cluster --name "$LOCAL_CLUSTER"`,
   using its original Podman connection. Preserve unrelated containers/machines.
 - Obtain explicit data-loss approval before deleting the Azure development group:
-  this removes AKS, ACR and **all published suites**. Use Windows Azure CLI with
+  this removes AKS, ACR and **all published suites**. Use Azure CLI with
   the exact subscription/group; verify the development and managed node groups
   are gone. Failed deletion can continue billing.
 - For partial cleanup, compare acknowledged UIDs before removing model resources
   or Provider bindings. Namespace deletion also destroys later additions.
 - Remove private credentials and payloads only after retaining the nonsecret
   records you need. Scaling the model to zero does not stop node billing.
+
+## Windows setup
+
+This section applies **only to Windows**. Run KMX, kind, kubectl and Helm in
+WSL, not native Windows. The tested setup kept Azure CLI on Windows:
+
+1. Run the infrastructure commands in PowerShell, translating Bash assignments,
+   continuation characters and file paths to PowerShell syntax. Keep the same
+   explicit subscription and resource selectors; check `$LASTEXITCODE` after
+   every Azure CLI call.
+2. Retrieve the AKS **user** kubeconfig on Windows with `az aks get-credentials`
+   using explicit subscription/group/cluster and a separate `--file`.
+   Copy it to `AKS_KUBECONFIG` in WSL and set mode `0600`. Adapt the exec plugin
+   to the verified Windows `kubelogin.exe` path under `/mnt/c/...`, preserving
+   its full arguments and API version. Azure CLI login remains on Windows.
+3. Select the dedicated Windows Podman machine's WSL socket explicitly.
+   The tested setup used its rootful socket and authorized owner; rootless
+   remote kind refused the delegation preflight. Do not disable that check.
+   Return any elevated-created kubeconfig to your ordinary WSL user before KMX.
+4. For publication, bridge Windows Azure authentication into the isolated WSL
+   Docker config. A Windows login alone does not authenticate KMX in WSL.
+
+Set the PowerShell selectors from section 1 and `$WSL_DOCKER_CONFIG` to the
+absolute WSL path printed by `echo "$DOCKER_CONFIG"`. The config file must
+not already exist; credentials are passed over stdin, never argv:
+
+```powershell
+$WSL_DOCKER_CONFIG = '<absolute-WSL-path-to-demo-docker-directory>'
+$auth = az acr login --subscription $SUBSCRIPTION --name $REGISTRY `
+  --expose-token --output json --only-show-errors
+if ($LASTEXITCODE -ne 0) { throw 'ACR authentication failed' }
+$auth | wsl --distribution Ubuntu --exec python3 -c 'import sys,json,os,base64; from pathlib import Path; a=json.load(sys.stdin); p=Path(sys.argv[1]); p.mkdir(mode=0o700,parents=True,exist_ok=True); credential=base64.b64encode(("00000000-0000-0000-0000-000000000000:"+a["accessToken"]).encode()).decode(); fd=os.open(p/"config.json",os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.fdopen(fd,"w").write(json.dumps({"auths":{a["loginServer"]:{"auth":credential}}}))' $WSL_DOCKER_CONFIG
+$auth = $null
+if ($LASTEXITCODE -ne 0) { throw 'Private WSL credential setup failed' }
+```
 
 ## Troubleshooting and verification limits
 

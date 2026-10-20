@@ -35,18 +35,6 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   exact-name shared-record GET reporting pending/partial/completed/unknown
   separately from readiness. These unsigned observations never grant update
   authority or prove local completion acknowledgment.
-
-- A checkout-only [CPU inference template](docs/azure/aikit-cpu.yaml) pins the existing
-  Qwen 3.5 2B AIKit backend for an operator-reviewed single-node dev cluster,
-  with one replica, three-CPU limit, bounded memory/storage and an internal-only
-  Service. [Azure guidance](docs/azure/README.md)
-  covers explicit-context creation, answer proof, Orka binding and scoped cleanup.
-  A Basic-tier ACR Bicep template keeps registry setup in the explicitly selected
-  development resource group without admin credentials or new role assignments.
-  An AKS Bicep template and CPU-model demo guide cover explicit cluster creation,
-  WSL access, authentication-budget diagnostics and the gated agent lifecycle.
-  No CLI default or installer changes; no live qualification is claimed.
-
 - Public Go package `pkg/suiteview` returns a verified, read-only `MemberRecipe`
   for one explicit member: caller-owned instructions and the complete portable
   model requirement from a local

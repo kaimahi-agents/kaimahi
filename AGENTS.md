@@ -450,8 +450,7 @@ canonical; kagent/Sessions/judge behavior and all existing timeouts are unchange
 
 ## Verification
 
-The browser documentation preview renders the root README and maintained Markdown
-under `docs/`, including provider subdirectories such as `docs/azure/`,
+The browser documentation preview renders the root README and `docs/*.md`
 directly; AgentSuite specification links lead to its standalone repository.
 Keep Markdown
 authoritative: navigation and theme code may link to maintained content but must
