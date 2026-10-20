@@ -468,6 +468,28 @@ def the_package_table_covers_internal(doc: Doc, tree: Tree) -> list[str]:
 
 
 @claim
+def the_package_table_covers_public_packages(doc: Doc, tree: Tree) -> list[str]:
+    """Every file-bearing public package has one exact non-test count."""
+    _, body = doc.section("`pkg/`")
+    rows = re.findall(r"^\| `(pkg/[a-z0-9/._-]+)` \| \*?\*?" + NUM + r"\*?\*? \|",
+                      body, re.M | re.I)
+    if not rows:
+        raise Anchor("the `pkg/` section no longer has a public-package table with file counts")
+    actual = {os.path.dirname(p) for p in tree.under("pkg")}
+    problems, named = [], set()
+    for package, count in rows:
+        if package in named:
+            problems.append(f"the public package table repeats `{package}`")
+        named.add(package)
+        if package not in actual:
+            problems.append(f"the public package table names `{package}`, which is not a directory in the tree")
+            continue
+        problems += compare_count(number(count), len(non_test(tree.directly_under(package))),
+                                  f"{package} non-test files")
+    return problems + compare_sets(named, actual, "pkg/ directory coverage")
+
+
+@claim
 def the_directory_table_covers_suite_fixtures(doc: Doc, tree: Tree) -> list[str]:
     """Owned consumer fixtures and provenance have direct, non-test counts.
 
@@ -972,6 +994,9 @@ SELFTEST_FILES = {
     "testdata/agentsuite/README.md": "# Consumer fixtures\n",
     "testdata/agentsuite/minimal/input.json": "{}\n",
     "internal/kmx/app/lift.go": "package app\n",
+    "pkg/kmx/doc.go": "package kmx\n",
+    "pkg/kmx/doc_test.go": "package kmx\n",
+    "pkg/suiteview/recipe.go": "package suiteview\n",
     "k8s/embedded.yaml": "kind: ConfigMap\n",
     "k8s/assets/config.yaml": "kind: ConfigMap\n",
     "k8s/checkout.yaml": "kind: ConfigMap\n",
@@ -1017,6 +1042,12 @@ Installed does not mean current direction, including one shell scripts.
 
 The plane module and image-build helper are absent.
 There is no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`.
+
+## `pkg/` — public Go packages
+| Public package | Non-test files | Status | Responsibility |
+|---|---:|---|---|
+| `pkg/kmx` | 1 | Alpha | Contracts |
+| `pkg/suiteview` | 1 | Concrete | Read-only member recipes |
 
 ## `k8s/` — installed and checkout artifacts
 Two of `k8s/`'s 6 files are embedded; four are not embedded.
@@ -1072,6 +1103,8 @@ MAP_EDITS = [
      "miscounts its open questions"),
     ("| `kmx/app` | 1 |", "| `kmx/app` | 2 |",
      "gets a package's source-file count wrong"),
+    ("| `pkg/suiteview` | 1 |", "| `pkg/suiteview` | 2 |",
+     "gets a public package's source-file count wrong"),
     ("| `.` | 2 |", "| `.` | 3 |",
      "gets the portable package's direct non-test file count wrong"),
     ("`embedded.yaml`, all one", "all one",
@@ -1284,6 +1317,39 @@ def selftest_fixture(tree: Tree) -> int:
             print(f"FAIL {label}: {findings}")
             failed += 1
 
+    public_map = (
+        "## `pkg/` — public Go packages\n"
+        "| Public package | Non-test files | Status | Responsibility |\n"
+        "|---|---:|---|---|\n"
+        "| `pkg/kmx` | 1 | Alpha | Contracts |\n"
+        "| `pkg/suiteview` | 1 | Concrete | Read-only member recipes |\n"
+    )
+    public_files = ["pkg/kmx/doc.go", "pkg/kmx/doc_test.go", "pkg/suiteview/recipe.go"]
+    for text, extra, expected, label in [
+        (public_map, [], "", "public package inventory passes and excludes Go tests"),
+        (public_map.replace("| `pkg/kmx` | 1 |", "| `pkg/kmx` | 2 |"), [],
+         "non-test files", "public package count drift is refused"),
+        (public_map, ["pkg/newpackage/file.go"], "directory coverage",
+         "unclassified public package is refused"),
+        (public_map.replace("| `pkg/suiteview` | 1 | Concrete | Read-only member recipes |\n", ""), [],
+         "directory coverage", "omitted public package is refused"),
+        (public_map.replace("pkg/suiteview", "pkg/missing"), [], "directory",
+         "equal-count wrong public package is refused"),
+        (public_map, ["pkg/suiteview/more_test.go"], "",
+         "additional public Go tests do not change non-test counts"),
+    ]:
+        variant = Tree(tree.root, files=public_files + extra)
+        try:
+            findings = the_package_table_covers_public_packages(Doc(text), variant)
+        except Anchor as exc:
+            findings = [str(exc)]
+        matched = not findings if not expected else any(expected in finding for finding in findings)
+        if matched:
+            print(f"ok   {label}")
+        else:
+            print(f"FAIL {label}: {findings}")
+            failed += 1
+
     # Embedded Python helpers count as scripts in the inventory but not shell
     # scripts in the preamble's language-specific claim.
     mixed_scripts = Tree(tree.root, files=["embed.go", "scripts/run.sh", "scripts/server.py"])
@@ -1454,6 +1520,7 @@ def selftest_fixture(tree: Tree) -> int:
     for phantom, where in [("scripts/brand-new.sh", "scripts/"),
                            ("docs/brand-new.md", "docs/"),
                            ("k8s/brand-new.yaml", "k8s/"),
+                           ("pkg/newpackage/file.go", "pkg/"),
                            ("brand-new.txt", "the repository root"),
                            ("newarea/thing.txt", "a top-level directory the map has no section for")]:
         grown = copy.copy(tree)

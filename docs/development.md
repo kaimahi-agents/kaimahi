@@ -102,6 +102,7 @@ classification.
 | Path | Responsibility |
 |---|---|
 | `cmd/kmx/`, `internal/kmx/`, `embed.go` | CLI command tree, Orka and version-bounded kagent lifecycle adapter, portable authoring, shared plumbing and embedded manifests |
+| `pkg/suiteview/` | concrete read-only selected-member projection from verified local AgentSuite OCI layouts/archives; no runtime/evidence authority |
 | `pkg/kmx/` | experimental public setup-only environment plus suite/deployment contracts, not wired into the installed CLI |
 | `k8s/ollama.yaml`, `k8s/orka-k8s-tool.yaml` | native local model and read-only Kubernetes Tool |
 | `scripts/`, `Makefile` | checks, packaging and repository helpers |
@@ -121,8 +122,9 @@ command tree plus `pkg/kmx` method sets, use the
 
 ## Build and verify
 
-Run from the repository root. AgentSuite is a public package in the same Go
-module, so these commands include it without a workspace or a dependency pin.
+Run from the repository root. Portable AgentSuite is a separate pinned Go module;
+KMX's public packages are part of this root module and the commands below include
+them without a nested workspace.
 CI's Go hygiene checks remain unguarded, including on documentation-only changes;
 only the live and clone-free operation steps use documentation-only guards.
 Formatting checks must test `gofmt` output because
@@ -134,7 +136,7 @@ config location, while macOS uses `~/Library/Application Support`. `KMX_HOME`
 is the repository's explicit cross-platform isolation contract.
 
 ```bash
-formatted=$(gofmt -l cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go build ./... && go test ./...
+formatted=$(gofmt -l cmd internal pkg embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go build ./... && go test ./...
 npm --prefix docs ci --ignore-scripts && npm --prefix docs run docs:check
 python3 scripts/check-doc-links.py --selftest
 python3 scripts/check-doc-links.py

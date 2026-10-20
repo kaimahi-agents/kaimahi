@@ -55,7 +55,7 @@ See [format boundaries](bundle-format.md) and [current CLI contracts](kmx.md).
 - [Suite-first lifecycle direction](suite-first-lifecycle.md): workspace, release, deployment and evaluation objects; partly implemented, not an operator recipe.
 - [KMX lifecycle interface decision](kmx-lifecycle-interfaces.md): rationale for the experimental target, platform, runtime, deployment and receipt boundaries.
 - [KMX application API](kmx-application-api.md): how another Go layer uses AgentEnvironment, AgentSuites and AgentDeployments while management ports remain internal.
-- [KMX public interface summary](kmx-public-interface.md): the current layering, setup-only environment contract and CLI-to-Go mapping; environment recovery and teardown remain deferred.
+- [KMX public interface summary](kmx-public-interface.md): the concrete read-only suite-member loader plus current alpha lifecycle layering, setup-only environment contract and CLI-to-Go mapping.
 - [Naming](NAMING.md): the name and publication constraints.
 
 ## Assessments that inform current work

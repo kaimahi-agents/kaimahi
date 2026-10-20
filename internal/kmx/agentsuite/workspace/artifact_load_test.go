@@ -8,6 +8,7 @@ import (
 
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/pkg/suiteview"
 )
 
 func TestLoadArtifactWithoutSourceFingerprint(t *testing.T) {
@@ -29,6 +30,10 @@ func TestLoadArtifactWithoutSourceFingerprint(t *testing.T) {
 	a, err := suiteoras.ReadArtifactLayout(t.Context(), layout, p.Descriptor.Digest.String())
 	if err != nil {
 		t.Fatal(err)
+	}
+	public, err := suiteview.LoadLayout(t.Context(), layout, suiteview.Selection{ManifestDigest: p.Descriptor.Digest.String(), MemberID: want.MemberID})
+	if err != nil || public.Artifact.Digest != want.Digest || public.Suite.GraphDigest != want.GraphDigest || public.Suite.Name != want.Name || public.Member.ID != want.MemberID || public.Member.Descriptor.Digest != want.MemberDigest || public.Description != want.Description || public.Model.Model != want.Model || public.InstructionsDescriptor.Digest != want.InstructionsDigest || !reflect.DeepEqual(public.Instructions, want.Instructions) {
+		t.Fatal("native loader diverged from public recipe", err, public)
 	}
 	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)

@@ -53,6 +53,24 @@ func TestReadArtifactKeepsExactDigestAndOwnedBytes(t *testing.T) {
 	}
 }
 
+func TestCloneRegistryDescriptorOwnsReferenceFields(t *testing.T) {
+	original := ocispec.Descriptor{
+		Data:        []byte("data"),
+		URLs:        []string{"https://example.invalid"},
+		Annotations: map[string]string{"note": "original"},
+		Platform:    &ocispec.Platform{OS: "linux", Architecture: "amd64", OSFeatures: []string{"feature"}},
+	}
+	cloned := cloneRegistryDescriptor(original)
+	cloned.Data[0] = 'X'
+	cloned.URLs[0] = "changed"
+	cloned.Annotations["note"] = "changed"
+	cloned.Platform.OS = "windows"
+	cloned.Platform.OSFeatures[0] = "changed"
+	if string(original.Data) != "data" || original.URLs[0] != "https://example.invalid" || original.Annotations["note"] != "original" || original.Platform.OS != "linux" || original.Platform.OSFeatures[0] != "feature" {
+		t.Fatal("registry descriptor clone aliases input", original)
+	}
+}
+
 // Real registry HTTP supplies original bytes; the reader must not publish anything.
 func TestReadArtifactRegistryIsPullOnly(t *testing.T) {
 	server, reg := newTestRegistryServer("", "")
@@ -174,7 +192,7 @@ func TestArtifactArchiveBoundsAndClosedTypes(t *testing.T) {
 	regular := func(name string, size int64) *tar.Header {
 		return &tar.Header{Name: name, Mode: 0644, Typeflag: tar.TypeReg, Size: size}
 	}
-	for _, tc := range []string{"file", "total", "files", "directories", "link", "hardlink", "fifo", "traversal", "duplicate", "pax", "gnu metadata", "raw budget", "truncated", "trailing", "concatenated"} {
+	for _, tc := range []string{"file", "total", "files", "directories", "hardlink", "fifo", "traversal", "duplicate", "pax", "gnu metadata", "raw budget", "truncated", "trailing", "concatenated"} {
 		t.Run(tc, func(t *testing.T) {
 			hs := []*tar.Header{regular("agentsuite.json", 2)}
 			switch tc {

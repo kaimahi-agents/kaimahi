@@ -27,7 +27,8 @@ internal/kmx/app ----------------------------+
    +-> lift, portforward, toolchain            |
                                              |
 external suite     public portable format   |
-pkg/kmx/            alpha Go contracts       |
+pkg/suiteview/   concrete read-only load |
+pkg/kmx/             alpha Go contracts      |
 internal/kmx/lifecycle experimental SPI -----+
 ```
 
@@ -44,8 +45,10 @@ can still be torn down conservatively.
 | `internal/kmx/app/` | Production orchestration and composition root: setup, runtime operations, AgentSuite workflows, receipts, terminal UI and external tools |
 | `github.com/agent-primitives/suite` (external) | Public AgentSuite object model, canonical JSON, schemas, OCI/content safety, validation and semantic diff; imported as `agentsuite` |
 | `internal/kmx/agentsuite/workspace/` | Closed one-member native workspace authoring, discovery, source snapshotting, preparation and packaged loading |
+| `internal/kmx/agentsuite/localartifact/` | Bounded local-only OCI layout/archive ingestion with strict envelope, special-file, link and limit handling; no registry/auth dependencies |
 | `internal/kmx/agentsuite/oras/` | Deterministic OCI packing, layouts, registry transfer, provenance and bounded exact-digest artifact reads |
 | `internal/kmx/agentsuite/agentkit/` | Experimental AgentKit/buildx adapter; not yet a conformant full-suite builder |
+| `pkg/suiteview/` | Concrete read-only projection of one explicit member's verified packaged identities, instructions and complete model requirement from local OCI layouts/archives; no runtime or evidence authority |
 | `internal/kmx/runtime/` | Runtime-neutral contract used by the installed CLI: portable agent parsing, render/deploy/status/evaluate, sessions, identities and evidence |
 | `internal/kmx/lifecycle/` | Experimental deployment SPI supporting the alpha `pkg/kmx` design; not the installed command path |
 | `pkg/kmx/` | Alpha, standard-library-only Go contracts: setup-only `AgentEnvironment`, image-backed `AgentSuites`, and `AgentDeployments`; no concrete implementation or CLI wiring |

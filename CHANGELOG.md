@@ -35,6 +35,16 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   exact-name shared-record GET reporting pending/partial/completed/unknown
   separately from readiness. These unsigned observations never grant update
   authority or prove local completion acknowledgment.
+- Public Go package `pkg/suiteview` returns a verified, read-only `MemberRecipe`
+  for one explicit member: caller-owned instructions and the complete portable
+  model requirement from a local
+  AgentSuite OCI layout or bounded uncompressed layout archive. It retains exact
+  artifact, graph, member and instruction identities, uses payload-free typed
+  refusals including a distinct resource-limit category, and performs no configuration, registry, runtime, evaluation,
+  publication or Lift operation. The recipe is intentionally not a complete
+  runtime/build/tool/policy/evaluation plan. KMX native loaders call the public
+  projection on their frozen snapshots before applying separate runtime-private
+  checks.
 - Internal offline detached Sessions association records bind exact selected suite,
   profile, build-profile, platform and chat config declarations without changing
   suite bytes. Image references are explicitly `declared-unverified`; no image

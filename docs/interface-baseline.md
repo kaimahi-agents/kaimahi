@@ -140,12 +140,17 @@ matrix](runtime-adapters.md#revision-pinned-support-and-qualification-matrix).
 
 ## Public Go surfaces
 
-The CLI consumes a portable Go library and retains its own alpha public area:
+The CLI consumes a portable Go library, exposes one concrete read-only package,
+and retains its own alpha lifecycle area:
 
 1. `github.com/agent-primitives/suite` is the separate portable format module:
    model, media types, canonical JSON, schemas, offline validation and semantic
    diff. Consumers import it explicitly as `agentsuite`.
-2. `pkg/kmx/` is alpha design evidence. It has exactly three exported
+2. `pkg/suiteview/` is a concrete local OCI layout/archive loader for one
+   explicit member. It returns copied instructions, the complete portable model
+   requirement and exact artifact/graph/member/instruction identities with typed
+   safe refusals. It has no runtime, evidence, registry or mutation authority.
+3. `pkg/kmx/` is alpha design evidence. It has exactly three exported
    interfaces and no concrete implementation or CLI wiring.
 
 ```go

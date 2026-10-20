@@ -52,19 +52,25 @@ class RetirementCITests(unittest.TestCase):
     def test_terminal_and_state_gates_require_retained_tests_without_skips(self):
         terminal = next(step["run"] for step in self.jobs["hygiene"]["steps"]
                         if step.get("name") == "agent-create wizard — terminal lifecycle")
+        suiteview = next(step["run"] for step in self.jobs["state-paths-macos"]["steps"]
+                         if step.get("name") == "Native macOS suite view safety")
         state = next(step["run"] for step in self.jobs["state-paths-macos"]["steps"]
                      if step.get("name") == "Native macOS state paths honor KMX_HOME")
-        groups = [(terminal, ["TestQuickstartWizardPTYCtrlCRestoresTerminal", "TestAgentTUIDemoPTYCommandsAndTerminalRestore",
+        self.assertIn("go test ./pkg/suiteview ./internal/kmx/agentsuite/localartifact", suiteview)
+        self.assertIn("suiteview-macos.out", suiteview)
+        self.assertIn("--- PASS:", suiteview)
+        self.assertIn("if grep -q -- '--- SKIP:' suiteview-macos.out; then", suiteview)
+        groups = [(terminal, "! grep -q -- '--- SKIP:'", ["TestQuickstartWizardPTYCtrlCRestoresTerminal", "TestAgentTUIDemoPTYCommandsAndTerminalRestore",
                               "TestCreateSuiteMemberTerminalConfirmation", "TestTimelinePTYEditsAndCancelsRunningResponse",
                               "TestOrkaGuardPromptCancellationAndInputOwnership", "TestQuickstartCancellationAcrossScreens",
                               "TestQuickstartNormalCompletionIsNotCancellation"]),
-                  (state, ["TestQuickstartWizardSuiteAuthorsOnlyPrivateSource", "TestAgentTUIStartupPrefersRememberedRemoteAndHonorsFlags",
+                  (state, "if grep -q -- '--- SKIP:'", ["TestQuickstartWizardSuiteAuthorsOnlyPrivateSource", "TestAgentTUIStartupPrefersRememberedRemoteAndHonorsFlags",
                            "TestStateDirUsesPortableOverrideAndNativeDefault", "TestContextResolutionOrder"])]
         sources = "\n".join(path.read_text() for folder in (ROOT / "internal/kmx/app", ROOT / "internal/kmx/config")
                             for path in folder.glob("*test.go"))
-        for body, names in groups:
+        for body, skip_guard, names in groups:
             self.assertIn("--- PASS:", body)
-            self.assertIn("! grep -q -- '--- SKIP:'", body)
+            self.assertIn(skip_guard, body)
             for name in names:
                 self.assertGreaterEqual(body.count(name), 2, name + " must be selected and required to pass")
                 self.assertIn("func " + name + "(", sources)

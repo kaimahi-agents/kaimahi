@@ -113,7 +113,7 @@ python3 scripts/check-brand-assets.py
 python3 scripts/homebrew-formula.py --selftest
 bash scripts/check-no-azure-ids-test.sh && bash scripts/check-no-azure-ids.sh
 bash scripts/kube-guard-test.sh
-formatted=$(gofmt -l cmd internal pkg/kmx embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go test ./...
+formatted=$(gofmt -l cmd internal pkg embed.go embed_test.go) && test -z "$formatted" && go vet ./... && go test ./...
 python3 scripts/test_model_fixtures.py -v
 python3 scripts/test_kagent_lift.py -v
 python3 scripts/test_kagent_lift_shell.py -v
@@ -159,8 +159,9 @@ change classification is uncertain. It runs the harness in full on main pushes
 and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
 
-One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`) and application
-interface (`pkg/kmx`). Portable AgentSuite validation is a separate dependency:
+One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), concrete
+read-only suite member recipe view (`pkg/suiteview`) and alpha application
+interfaces (`pkg/kmx`). Portable AgentSuite validation is a separate dependency:
 `agentsuite "github.com/agent-primitives/suite"`, pinned to the published minor release
 `v0.4.0` in `go.mod` with verified module sums.
 Public runtime-profile format acceptance enables offline packaging/selection, not

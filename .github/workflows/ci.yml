@@ -601,7 +601,7 @@ jobs:
         run: python3 scripts/check-comment-history.py
       - name: kmx — gofmt clean
         run: |
-          formatted=$(gofmt -l cmd internal pkg/kmx embed.go embed_test.go)
+          formatted=$(gofmt -l cmd internal pkg embed.go embed_test.go)
           test -z "$formatted"
       - name: kmx — vet
         run: go vet ./...
@@ -650,7 +650,9 @@ jobs:
           REQUIRED = {
               "internal/kmx/agentsuite": "internal sandbox construction contracts",
               "internal/kmx/agentsuite/agentkit": "AgentKit build and archive policy",
+              "internal/kmx/agentsuite/localartifact": "local bounded suite layout and archive ingestion",
               "internal/kmx/agentsuite/oras": "AgentSuite packing and registry transfer",
+              "pkg/suiteview": "public read-only suite member recipe views",
               # The reason this job is required at all.
               "internal/kmx/guard": "the context guard's port decisions",
               "internal/kmx/scaffold": "the scaffolder's key-shape refusals",
@@ -786,6 +788,15 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
+      - name: Native macOS suite view safety
+        run: |
+          set -euo pipefail
+          go test ./pkg/suiteview ./internal/kmx/agentsuite/localartifact \
+            -count=1 -v | tee suiteview-macos.out
+          grep -q -- '--- PASS:' suiteview-macos.out
+          if grep -q -- '--- SKIP:' suiteview-macos.out; then
+            exit 1
+          fi
       - name: Native macOS state paths honor KMX_HOME
         run: |
           set -euo pipefail
@@ -809,13 +820,17 @@ jobs:
             TestAgentTUIStartupPrefersRememberedRemoteAndHonorsFlags; do
             grep -q -- "--- PASS: $test" app-state.out
           done
-          ! grep -q -- '--- SKIP:' state-dir.out app-state.out
+          if grep -q -- '--- SKIP:' state-dir.out app-state.out; then
+            exit 1
+          fi
 
           go test ./cmd/kmx \
             -run '^TestPrivateTempDirReturnsCanonicalPrivatePath$' \
             -count=1 -v | tee private-temp-dir.out
           grep -q -- '--- PASS: TestPrivateTempDirReturnsCanonicalPrivatePath' private-temp-dir.out
-          ! grep -q -- '--- SKIP:' private-temp-dir.out
+          if grep -q -- '--- SKIP:' private-temp-dir.out; then
+            exit 1
+          fi
 
   # Existing native shards prove quickstart, exact-version kagent create,
   # Orka runtime and Helm integration, and clusterless live evaluation.

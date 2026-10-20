@@ -46,7 +46,8 @@ AgentSuite links and navigation use the standalone specification on `main`,
 including section fragments. There is no local specification page or issue-link
 fallback. The generated-site checks assert the external destination and a case-
 document fragment. These links follow the current format; the Go dependency is
-pinned separately to the published `v0.4.0` release.
+pinned separately to the published `v0.4.0` release. Frozen public schema assets
+and consumer fixtures retain their separately recorded v0.1.0 provenance.
 
 ## Version boundary
 

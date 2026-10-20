@@ -12,6 +12,7 @@ import (
 
 	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	"github.com/kaimahi-agents/kaimahi/pkg/suiteview"
 )
 
 const profiledLayoutVersion = "kmx.profiled-suite/v1"
@@ -214,7 +215,7 @@ func validateProfiled(files map[string][]byte) (string, error) {
 
 type profiledGraph struct {
 	files     map[string][]byte
-	digest    string
+	artifact  suiteview.ArtifactIdentity
 	selection Selection // frozen resolved tuple for detached declaration consumers
 }
 
@@ -237,7 +238,7 @@ func LoadSelected(ctx context.Context, p *Prepared, selection Selection) (*Nativ
 		}
 		return nil, verificationFailed(err)
 	}
-	return loadSelectedFiles(ctx, files, p.Descriptor.Digest.String(), selection)
+	return loadSelectedFiles(ctx, files, recipeArtifactIdentity(p.Descriptor), selection)
 }
 func LoadArtifactSelected(ctx context.Context, artifact *suiteoras.Artifact, selection Selection) (*NativeSuite, error) {
 	if err := ctx.Err(); err != nil {
@@ -250,9 +251,9 @@ func LoadArtifactSelected(ctx context.Context, artifact *suiteoras.Artifact, sel
 	if _, err := validateNative(files); err != nil {
 		return nil, verificationFailed(err)
 	}
-	return loadSelectedFiles(ctx, files, artifact.Descriptor().Digest.String(), selection)
+	return loadSelectedFiles(ctx, files, recipeArtifactIdentity(artifact.Descriptor()), selection)
 }
-func loadSelectedFiles(ctx context.Context, files map[string][]byte, digest string, selection Selection) (*NativeSuite, error) {
+func loadSelectedFiles(ctx context.Context, files map[string][]byte, artifact suiteview.ArtifactIdentity, selection Selection) (*NativeSuite, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -263,7 +264,7 @@ func loadSelectedFiles(ctx context.Context, files map[string][]byte, digest stri
 		if _, multi := files[multiNativePath]; multi {
 			return nil, ErrMultiMemberUnsupported
 		}
-		s, err := loadNativeFiles(ctx, files, digest)
+		s, err := loadNativeFiles(ctx, files, artifact)
 		if err == nil && selection.Member != "" && selection.Member != s.MemberID {
 			return nil, errors.New("unknown selected member")
 		}
@@ -289,6 +290,13 @@ func loadSelectedFiles(ctx context.Context, files map[string][]byte, digest stri
 		return nil, errors.New("ambiguous profile selection; --platform is required")
 	}
 	ref := matches[0]
+	recipe, err := suiteview.ProjectMember(ctx, files, ref.Agent)
+	if err != nil {
+		return nil, err
+	}
+	if len(root.Agents) != 1 || root.Agents[0].ID != ref.Agent {
+		return nil, errors.New("profiled member does not match composition")
+	}
 	var agent agentsuite.Agent
 	if err := agentsuite.Unmarshal(files[root.Agents[0].Path], &agent); err != nil {
 		return nil, err
@@ -316,17 +324,13 @@ func loadSelectedFiles(ctx context.Context, files map[string][]byte, digest stri
 	if err != nil {
 		return nil, err
 	}
-	graphDigest, err := agentsuite.Digest(files["agentsuite.json"])
-	if err != nil {
-		return nil, err
-	}
 	// Retained graph bytes never alias mutable caller-visible selection fields.
-	graph := &profiledGraph{files: cloneProfileFiles(files), digest: digest, selection: Selection{Member: ref.Agent, Platform: ref.Platform.String(), RuntimeProfile: ref.RuntimeProfile}}
+	graph := &profiledGraph{files: cloneProfileFiles(files), artifact: artifact, selection: Selection{Member: ref.Agent, Platform: ref.Platform.String(), RuntimeProfile: ref.RuntimeProfile}}
 	result := &NativeSuite{
-		Digest: digest, GraphDigest: graphDigest, Name: root.Name,
-		MemberID: agent.ID, Description: agent.Description, Model: agent.Model.Model,
-		Instructions: bytes.Clone(files[agent.Instructions.Path]),
-		MemberDigest: root.Agents[0].Descriptor.Digest, InstructionsDigest: agent.Instructions.Descriptor.Digest,
+		Digest: artifact.Digest, GraphDigest: recipe.Suite.GraphDigest, Name: recipe.Suite.Name,
+		MemberID: recipe.Member.ID, Description: recipe.Description, Model: recipe.Model.Model,
+		Instructions: recipe.Instructions,
+		MemberDigest: recipe.Member.Descriptor.Digest, InstructionsDigest: recipe.InstructionsDescriptor.Digest,
 		CompositionDigest: ref.Descriptor.Digest, BuildProfileDigest: buildDigest,
 		Cases: cases, RequiredImages: []string{},
 		Profile: &rp, ProfileDigest: profileDigest, Platform: ref.Platform, profiled: graph,
@@ -378,5 +382,5 @@ func (s *NativeSuite) ForCompositionDigest(ctx context.Context, digest string) (
 	if ref.Agent != s.MemberID {
 		return nil, errors.New("composition member mismatch")
 	}
-	return loadSelectedFiles(ctx, s.profiled.files, s.profiled.digest, Selection{Member: ref.Agent, Platform: ref.Platform.String(), RuntimeProfile: ref.RuntimeProfile})
+	return loadSelectedFiles(ctx, s.profiled.files, s.profiled.artifact, Selection{Member: ref.Agent, Platform: ref.Platform.String(), RuntimeProfile: ref.RuntimeProfile})
 }

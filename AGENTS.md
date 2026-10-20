@@ -212,6 +212,15 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   resources against legacy adoption, copying, bundle authorization and retirement.
   Registry workspace publication shares unsigned suite provenance defaults/flags and records Git source only from
   fingerprint-bound authored inputs matching HEAD; local layouts get no referrers.
+- `pkg/suiteview` is a concrete read-only public projection over verified
+  local AgentSuite OCI layouts and bounded uncompressed layout archives. It
+  returns exact artifact/graph/member/instruction identities, copied instructions
+  and the complete public model requirement for one explicit member. It grants no
+  runtime/profile/composition selection, policy enforcement, cases, evidence,
+  configuration, registry, execution, publication or Lift authority. Keep public
+  format ownership in `github.com/agent-primitives/suite`; KMX native loaders call
+  the public projection on their frozen snapshots before applying stricter private
+  runtime checks.
 - Single-member `schemaVersion: 3` is offline profiled packaging only: explicit
   `push --runtime-profile ID [--platform OS/ARCH] --unevaluated` transfers all
   profiles/compositions under unchanged S. Legacy push rejects these selectors.

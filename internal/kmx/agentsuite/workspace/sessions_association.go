@@ -52,7 +52,7 @@ func NewSessionsAssociation(ctx context.Context, selected *NativeSuite, harnessI
 	// Public fields are mutable views. Only this privately retained selection
 	// and immutable same-S graph may supply identities and instruction bytes.
 	graph := selected.profiled
-	s, err := loadSelectedFiles(ctx, graph.files, graph.digest, graph.selection)
+	s, err := loadSelectedFiles(ctx, graph.files, graph.artifact, graph.selection)
 	if err != nil || s.Profile == nil || s.Profile.Runtime.ID != "agentsessions" || s.Policy != nil {
 		return nil, errSessionsAssociation
 	}

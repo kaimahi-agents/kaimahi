@@ -15,6 +15,12 @@ transfer definition artifacts and experimentally build one member image, but do
 not implement this suite-wide northbound workflow. There is no exported
 composition root or end-to-end implementation of these interfaces.
 
+The concrete [`pkg/suiteview`](kmx-public-interface.md#view-one-members-portable-recipe)
+package is related but separate. It verifies and projects one selected member's
+local packaged instructions, model requirement and identities. It does not
+implement `AgentSuites.Validate`, build or publish a suite, resolve a target, or
+create lifecycle evidence, so it is not another northbound interface.
+
 ## Three northbound interfaces
 
 Another Go layer receives only the lifecycle areas it needs:

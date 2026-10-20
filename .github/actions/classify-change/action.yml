@@ -85,6 +85,7 @@ runs:
             # dependencies, deletions, renames or git-quoted filenames.
             if kagent_files=$(git diff --name-only --no-renames "$BASE" "$HEAD" -- \
                 internal/kmx/app/ internal/kmx/runtime/ internal/kmx/scaffold/ \
+                internal/kmx/agentsuite/ pkg/suiteview/ \
                 internal/kmx/guard/ internal/kmx/run/ internal/kmx/config/ \
                 internal/kmx/secretshapes/ internal/kmx/toolchain/ internal/kmx/portforward/ \
                 cmd/kmx/ go.mod go.sum embed.go embed_test.go \

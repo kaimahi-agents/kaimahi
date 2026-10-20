@@ -2,14 +2,18 @@
 
 **Status:** Experimental interface and usage summary
 
-KMX currently has two distinct public surfaces:
+KMX currently has three distinct public surfaces:
 
 1. The working `kmx` CLI.
-2. The experimental Go contracts in `pkg/kmx`.
+2. The concrete read-only Go loader in `pkg/suiteview`.
+3. The experimental lifecycle contracts in `pkg/kmx`.
 
-The CLI is the usable end-to-end product interface today. The Go package defines
-the intended application boundary, but it does not yet provide exported concrete
-implementations or constructors and is not wired to the CLI.
+The CLI is the usable end-to-end product interface today. `pkg/suiteview`
+implements one narrow local-artifact read path; KMX's native loaders call its
+public projection on already frozen snapshots. `pkg/kmx` defines the intended
+application boundary, but it does not yet
+provide exported concrete implementations or constructors and is not wired to
+the CLI.
 
 ## Layering
 
@@ -45,7 +49,9 @@ Another product / CLI / UI / controller / API
        Concrete platform, registry, and runtime adapters
 ```
 
-The top row is the public, implementation-neutral contract. The SPI row remains
+This diagram describes the `pkg/kmx` orchestration contracts. The separate
+`pkg/suiteview` package is a concrete read-only input adapter, not a fourth
+northbound lifecycle interface. The SPI row remains
 internal so a consumer cannot select concrete adapters directly or couple itself
 to Kubernetes, a cloud, a registry transport, or one runtime.
 
@@ -55,7 +61,59 @@ live under `internal/kmx/agentsuite` and `internal/kmx/lifecycle`. Application
 orchestration, durable stores, production adapters, and CLI wiring are not yet
 implemented end to end.
 
-## Public Go interfaces
+## View one member's portable recipe
+
+`pkg/suiteview` verifies one local packaged AgentSuite artifact and projects
+one explicit member without authoring, execution or deployment behavior:
+
+```text
+github.com/kaimahi-agents/kaimahi/pkg/suiteview
+```
+
+```go
+recipe, err := suiteview.LoadLayout(ctx, layout, suiteview.Selection{
+    ManifestDigest: "sha256:<exact-manifest>", // optional only for one root
+    MemberID:       "writer",
+})
+```
+
+`LoadArchive` accepts an already-open `io.ReaderAt`, its exact size and the same
+selection for a bounded uncompressed OCI image-layout tar. It freezes at most
+64 MiB before validation. Both loaders return:
+
+- the exact raw OCI manifest media type, digest and size;
+- the suite name and canonical `agentsuite.json` graph digest;
+- the member ID and complete Agent descriptor;
+- copied instruction bytes and their descriptor;
+- the complete `agentsuite.ModelRequirement`, including capability-based forms.
+
+`ProjectMember` is the lower-level projection KMX itself uses after it has
+already verified and frozen an artifact snapshot. It rechecks the selected
+member and instruction descriptors, but leaves `Artifact` empty because it does
+not validate or bind an enclosing OCI graph. Ordinary external callers should
+use `LoadLayout` or `LoadArchive`.
+
+The member ID is always required. A manifest digest may be omitted only when
+the OCI index contains one unambiguous root; multiple roots require an exact
+canonical SHA-256 digest. Returned bytes, member and instruction descriptor
+annotations, capability values and secret-reference names are caller-owned copies.
+
+Failures are `*suiteview.Refusal` values with stable, payload-free codes.
+Cancellation and deadline identity remain available through `errors.Is`.
+Filesystem/parser details, authored values and paths are not included in the
+public error. Consumer resource ceilings, including the 64 MiB outer archive,
+9 MiB compressed layer, 10 MiB expanded layer, 1 MiB retained file, 8 MiB
+retained content and 212-file limits, return the distinct `limit` code. Loading
+never reads KMX configuration or registry credentials,
+contacts a runtime/model/cluster, verifies evaluation evidence, publishes, or
+Lifts. Temporary private validation storage may be used and removed before
+return; caller input is never mutated. Evidence remains owned by
+`agentsuite.VerifyEvaluation`. `MemberRecipe` is the portable behavioral core
+shown above, not a complete runtime/build/tool/policy/evaluation recipe and not a
+serialized persistence or receipt format. Callers must not mutate a layout
+concurrently with `LoadLayout`.
+
+## Alpha lifecycle interfaces
 
 `pkg/kmx` exposes three consumer-facing interfaces:
 
@@ -239,7 +297,7 @@ Tagged v0.4.1 and earlier use `kmx quickstart-wizard` for custom authoring;
 
 ## Current limitations
 
-The Go package is alpha design evidence rather than a ready-to-instantiate SDK:
+The `pkg/kmx` package is alpha design evidence rather than a ready-to-instantiate SDK:
 
 - No exported concrete implementation or constructor exists.
 - The interfaces are not wired to the current CLI.

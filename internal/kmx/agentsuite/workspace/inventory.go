@@ -6,6 +6,7 @@ import (
 
 	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	"github.com/kaimahi-agents/kaimahi/pkg/suiteview"
 )
 
 // NativeInventory is an offline snapshot, not execution authority or evaluation
@@ -27,7 +28,7 @@ func LoadInventory(ctx context.Context, p *Prepared) (*NativeInventory, error) {
 		}
 		return nil, verificationFailed(err)
 	}
-	return loadInventoryFiles(ctx, files, p.Descriptor.Digest.String())
+	return loadInventoryFiles(ctx, files, recipeArtifactIdentity(p.Descriptor))
 }
 
 // LoadArtifactInventory reads the full closed inventory without workspace source
@@ -43,19 +44,19 @@ func LoadArtifactInventory(ctx context.Context, artifact *suiteoras.Artifact) (*
 	if _, err := validateNative(files); err != nil {
 		return nil, verificationFailed(err)
 	}
-	return loadInventoryFiles(ctx, files, artifact.Descriptor().Digest.String())
+	return loadInventoryFiles(ctx, files, recipeArtifactIdentity(artifact.Descriptor()))
 }
 
-func loadInventoryFiles(ctx context.Context, files map[string][]byte, digest string) (*NativeInventory, error) {
+func loadInventoryFiles(ctx context.Context, files map[string][]byte, artifact suiteview.ArtifactIdentity) (*NativeInventory, error) {
 	if hasRuntimeProfiles(files) {
 		return nil, ErrProfileSelectionRequired
 	}
 	if _, multi := files[multiNativePath]; !multi {
-		member, err := loadNativeFiles(ctx, files, digest)
+		member, err := loadNativeFiles(ctx, files, artifact)
 		if err != nil {
 			return nil, err
 		}
-		return &NativeInventory{Digest: digest, GraphDigest: member.GraphDigest, Name: member.Name, Members: []NativeSuite{*member}}, nil
+		return &NativeInventory{Digest: artifact.Digest, GraphDigest: member.GraphDigest, Name: member.Name, Members: []NativeSuite{*member}}, nil
 	}
 	var suite agentsuite.Suite
 	if err := agentsuite.Unmarshal(files["agentsuite.json"], &suite); err != nil {
@@ -69,13 +70,13 @@ func loadInventoryFiles(ctx context.Context, files map[string][]byte, digest str
 	if err != nil {
 		return nil, errors.New("invalid packaged graph identity")
 	}
-	result := &NativeInventory{Digest: digest, GraphDigest: graphDigest, Name: suite.Name, Members: make([]NativeSuite, 0, len(metadata.Members))}
+	result := &NativeInventory{Digest: artifact.Digest, GraphDigest: graphDigest, Name: suite.Name, Members: make([]NativeSuite, 0, len(metadata.Members))}
 	for i, record := range metadata.Members {
 		profile := RuntimeProfile{ID: "orka"}
 		if record.Runtime != nil {
 			profile = *record.Runtime
 		}
-		member, err := loadNativeMember(ctx, files, suite, record, profile, digest, graphDigest, i)
+		member, err := loadNativeMember(ctx, files, suite, record, profile, artifact, graphDigest, i)
 		if err != nil {
 			return nil, err
 		}
