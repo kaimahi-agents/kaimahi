@@ -180,7 +180,7 @@ func TestAKSDemoInvalidatesEarlierProofWhenFreshCoherenceFails(t *testing.T) {
 	coherence := aksDemoBlock(t, "check_evidence_coherence()")
 	provision := aksDemoBlock(t, "provision_demo_aks()")
 	kmx, calls := fakeAKSDemoKMX(t, `case "$*" in
-  *"eval "*) : > "$EVIDENCE"; exit 0 ;;
+  *"test "*) : > "$EVIDENCE"; exit 0 ;;
   *"push "*) [ ! -e "$KMX_DEMO_TEST_FAIL_PUSH" ] ;;
   *"aks up"*) exit 0 ;;
   *) exit 99 ;;

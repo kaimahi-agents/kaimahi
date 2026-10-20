@@ -328,6 +328,19 @@ func TestTestCleanupRecoveryUsesInvokedRoot(t *testing.T) {
 	}
 }
 
+func TestTestUsagePreservesInvokedSpelling(t *testing.T) {
+	for _, verb := range []string{"test", "eval"} {
+		for _, tail := range [][]string{{"diff", "one"}, {"cleanup", "one", "two"}, {"from-sessions"}} {
+			var out, diag bytes.Buffer
+			deps, loads := testDependencies(&out, &diag)
+			err := execute(append([]string{verb}, tail...), deps)
+			if err == nil || !strings.HasPrefix(err.Error(), "usage: kmx "+verb+" "+tail[0]+" ") || out.Len() != 0 || *loads != 0 {
+				t.Fatalf("%s %v wrong usage boundary: err=%v stdout=%q loads=%d", verb, tail, err, &out, *loads)
+			}
+		}
+	}
+}
+
 func TestTestRecoveryArgsRetainOpaqueValuesAndRedactJudge(t *testing.T) {
 	for _, verb := range []string{"eval", "test"} {
 		args := []string{verb, "--workspace", "eval", "--bindings", "proof's eval.yaml", "--judge-base-url", "https://private.invalid/eval", "--judge-key-env", "eval", "--judge-base-url=https://other.invalid/eval", "--out", "eval"}

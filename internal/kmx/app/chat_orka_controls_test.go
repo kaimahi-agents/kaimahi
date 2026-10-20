@@ -25,7 +25,7 @@ func TestChatToolsRefuseBeforeTerminalAndMutation(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	b := &orkaChatBackend{app: f.app, agent: "sample", namespace: "agents"}
 	changed, err := b.Configure(t.Context(), "/tools", newChatRenderer(f.out))
-	if changed || err == nil || !strings.Contains(err.Error(), "authored") || !strings.Contains(err.Error(), "eval") {
+	if changed || err == nil || !strings.Contains(err.Error(), "authored") || !strings.Contains(err.Error(), "test") {
 		t.Errorf("wrong refusal: changed=%v err=%v", changed, err)
 	}
 	if calls := f.calls(t); calls != "" {

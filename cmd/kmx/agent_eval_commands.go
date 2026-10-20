@@ -167,7 +167,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 			"Exits nonzero for regressions, lost or missing evidence, changed sets, or incompatible runtime identities.\n" +
 			"A complete stable comparison can exit zero; it does not prove live drift absence.\n" +
 			"AgentSessions and legacy receipts are refused; no compatibility reader or conversion is provided.",
-		Args: usageArgs(2, 2, "kmx eval diff <before.json> <after.json>"),
+		Args: usageArgs(2, 2, "kmx "+verb+" diff <before.json> <after.json>"),
 		// Keep helpers cluster-independent and no-inference when eval gains an operational hook.
 		PersistentPreRunE: validateContainerEngineFlag,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -185,7 +185,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 			"Duplicates refuse the whole operation. No inference, recorded inputs or answers are exported.\n" +
 			"Case IDs combine the authored id with a stable source UID digest. References inherit source TTL.\n" +
 			"Keep manifests private; endpoint selection is not data-owner authorization.",
-		Args:              usageArgs(1, 1000, "kmx eval from-sessions <session-uid>... --sessions <source> --assertions <case.yaml> --out <manifest.json>"),
+		Args:              usageArgs(1, 1000, "kmx "+verb+" from-sessions <session-uid>... --sessions <source> --assertions <case.yaml> --out <manifest.json>"),
 		PersistentPreRunE: validateContainerEngineFlag,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opt.SessionUIDs = args

@@ -21,7 +21,7 @@ func newEvalCleanupCommand(state *commandState, verb string) *cobra.Command {
 		Example:           "  kmx test cleanup --to dev\n  kmx test cleanup <full-run-id> --to dev",
 		PersistentPreRunE: validateContainerEngineFlag,
 		Args: func(cmd *cobra.Command, args []string) error {
-			if err := usageArgs(0, 1, "kmx eval cleanup [full-run-id] --to NAME | --to-context CONTEXT")(cmd, args); err != nil {
+			if err := usageArgs(0, 1, "kmx "+verb+" cleanup [full-run-id] --to NAME | --to-context CONTEXT")(cmd, args); err != nil {
 				return err
 			}
 			if len(args) == 1 && (len(args[0]) != 32 || strings.Trim(args[0], "0123456789abcdef") != "") {

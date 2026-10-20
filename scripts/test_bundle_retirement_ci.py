@@ -132,7 +132,7 @@ if pathlib.Path(sys.argv[0]).name == "kubectl":
     print(os.environ.get("SURVIVING", ""), end="")
 elif args[0] == "create":
     pathlib.Path("workspace/eval").mkdir()
-elif args[0] == "eval":
+elif args[0] == "test":
     pathlib.Path("evidence/passing.json").write_text(json.dumps({
         "candidateCleanup": os.environ.get("CLEANUP", "complete"), "result": "pass",
         "cases": [{"taskName": "candidate-task", "assertions": [{"verdict": "pass"}]}]}))
