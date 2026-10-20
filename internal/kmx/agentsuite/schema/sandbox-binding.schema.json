@@ -1,6 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kaimahi.dev/schemas/agentsuite/v1/sandbox-binding.schema.json",
   "title": "Agent Sandbox Image binding",
   "type": "object",
   "additionalProperties": false,

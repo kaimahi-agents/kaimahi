@@ -113,6 +113,37 @@ func TestSuiteDiffArtifactsEndToEnd(t *testing.T) {
 			t.Errorf("JSON artifact diff is missing %s %s %s", expected.changeType, expected.kind, expected.id)
 		}
 	}
+
+	// Rebind every ancestor so only the missing extension criticality is invalid.
+	var provider map[string]any
+	providerPath := "tool-providers/incident-evidence/1.0.0/tool-provider.json"
+	readJSON(t, afterSuite, providerPath, &provider)
+	provider["extensions"] = []any{map[string]any{"name": "future-feature"}}
+	providerDigest, providerSize := writeJSON(t, afterSuite, providerPath, provider)
+	var catalog agentsuite.ToolProviderCatalog
+	readJSON(t, afterSuite, "tool-providers/catalog.json", &catalog)
+	catalog.ToolProviders[0].Descriptor = descriptorFor(agentsuite.MediaTypeToolProvider, providerDigest, providerSize)
+	catalogDigest, catalogSize := writeJSON(t, afterSuite, "tool-providers/catalog.json", catalog)
+	var composition agentsuite.Composition
+	compositionPath := "compositions/incident-analyst-linux-amd64.json"
+	readJSON(t, afterSuite, compositionPath, &composition)
+	composition.ToolProviders[0].ManifestDigest = providerDigest
+	compositionDigest, compositionSize := writeJSON(t, afterSuite, compositionPath, composition)
+	var providerComposition agentsuite.ToolProviderComposition
+	providerCompositionPath := "tool-provider-compositions/incident-evidence-linux-amd64.json"
+	readJSON(t, afterSuite, providerCompositionPath, &providerComposition)
+	providerComposition.ManifestDigest = providerDigest
+	providerCompositionDigest, providerCompositionSize := writeJSON(t, afterSuite, providerCompositionPath, providerComposition)
+	var suite agentsuite.Suite
+	readJSON(t, afterSuite, "agentsuite.json", &suite)
+	suite.ToolProviderCatalog.Descriptor = descriptorFor(agentsuite.MediaTypeToolProviderCatalog, catalogDigest, catalogSize)
+	suite.Compositions[0].Descriptor = descriptorFor(agentsuite.MediaTypeComposition, compositionDigest, compositionSize)
+	suite.ToolProviderCompositions[0].Descriptor = descriptorFor(agentsuite.MediaTypeToolProviderComposition, providerCompositionDigest, providerCompositionSize)
+	writeJSON(t, afterSuite, "agentsuite.json", suite)
+	command = exec.CommandContext(t.Context(), binary, "suite", "validate", afterSuite)
+	if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "non-null critical") {
+		t.Fatalf("missing provider extension criticality: error = %v, output = %s", err, output)
+	}
 }
 
 func mutateIncidentAnalystSuite(t *testing.T, root string) {

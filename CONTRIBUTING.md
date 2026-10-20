@@ -163,7 +163,7 @@ One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), concrete
 read-only suite member recipe view (`pkg/suiteview`) and alpha application
 interfaces (`pkg/kmx`). Portable AgentSuite validation is a separate dependency:
 `agentsuite "github.com/agent-primitives/suite"`, pinned to the published minor release
-`v0.4.0` in `go.mod` with verified module sums.
+`v0.5.0` in `go.mod` with verified module sums.
 Public runtime-profile format acceptance enables offline packaging/selection, not
 qualified image execution; see [runtime profiles](docs/suite-workspace.md#explicit-runtime-profiles-offline-only).
 Root `go test ./...` covers kmx consumers, including first-class Orka paths and

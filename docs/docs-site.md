@@ -46,7 +46,7 @@ AgentSuite links and navigation use the standalone specification on `main`,
 including section fragments. There is no local specification page or issue-link
 fallback. The generated-site checks assert the external destination and a case-
 document fragment. These links follow the current format; the Go dependency is
-pinned separately to the published `v0.4.0` release. Frozen public schema assets
+pinned separately to the published `v0.5.0` release. Frozen public schema assets
 and consumer fixtures retain their separately recorded v0.1.0 provenance.
 
 ## Version boundary
@@ -72,6 +72,28 @@ uses GitHub's run token and OIDC with `pages: write` and `id-token: write` scope
 only to its deployment job; it adds no repository secret, analytics, or remote
 search. The custom domain is `kaimahi.dev`; the frozen schema URLs below depend
 on keeping that Pages domain configured.
+
+## Current AgentSuite schema selection
+
+KMX consumes [AgentSuite v0.5.0](https://github.com/agent-primitives/suite/releases/tag/v0.5.0).
+Configure editors and external validators with the complete
+[v0.5.0 schema directory](https://github.com/agent-primitives/suite/tree/v0.5.0/schema),
+not the historical assets below. Its 14 schema IDs use
+`https://suite.agent-primitives.dev/schema/v0.5/<filename>.schema.json`;
+the [upstream catalog](https://suite.agent-primitives.dev/schema/catalog.json)
+records the release bundle and hashes.
+
+Obtain and verify the selected bundle during setup, then register each declared
+`$id` against its release-local bytes. Disable network retrieval during validation,
+including meta-schema fetching, and fail closed on missing or conflicting
+resources. Do not mix historical bundles into the current registry or alias old
+IDs to the new contract. The Go module pin does not configure an editor registry;
+KMX's Go validator remains offline and does not fetch schemas. Wire versions,
+media types and digests of unchanged instance documents remain unchanged.
+
+The KMX-owned sandbox-binding schema under `internal/kmx/agentsuite/schema/`
+is separate from upstream's bundle. It is checkout-only and self-contained,
+using document-local fragment references without a public schema ID.
 
 ## Frozen AgentSuite schema URLs
 

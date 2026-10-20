@@ -125,6 +125,8 @@ func TestResolveSandboxPlanRefusesInvalidSuiteBeforeSelection(t *testing.T) {
 	for _, test := range []struct{ name, old, replacement, want string }{
 		{"unsupported version", `"schemaVersion": "1.0.0-draft"`, `"schemaVersion": "unsupported"`, "schemaVersion"},
 		{"critical extension", `"name": "minimal",`, `"name": "minimal",` + "\n  " + `"extensions": [{"name":"future-feature","critical":true}],`, "critical extension"},
+		{"missing extension criticality", `"name": "minimal",`, `"name": "minimal",` + "\n  " + `"extensions": [{"name":"future-feature"}],`, "non-null critical"},
+		{"null extension criticality", `"name": "minimal",`, `"name": "minimal",` + "\n  " + `"extensions": [{"name":"future-feature","critical":null}],`, `field "critical": null is not allowed`},
 		{"missing child", `"path": "agents/writer.json"`, `"path": "agents/missing.json"`, "missing"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -143,6 +145,23 @@ func TestResolveSandboxPlanRefusesInvalidSuiteBeforeSelection(t *testing.T) {
 				t.Fatalf("invalid suite plan = %+v, error = %v", plan, err)
 			}
 		})
+	}
+}
+
+func TestResolveSandboxPlanAcceptsNoncriticalSuiteExtension(t *testing.T) {
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(specFixture("minimal"))); err != nil {
+		t.Fatal(err)
+	}
+	var suite agentsuite.Suite
+	if err := agentsuite.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
+		t.Fatal(err)
+	}
+	suite.Extensions = []agentsuite.Extension{{Name: "future-feature", Critical: false}}
+	writeBuilderTestJSON(t, root, "agentsuite.json", suite)
+	plan, err := ResolveSandboxPlan(root, BuildSelection{})
+	if err != nil || plan == nil || plan.Agent.ID != "writer" {
+		t.Fatalf("noncritical extension plan = %+v, error = %v", plan, err)
 	}
 }
 
