@@ -147,6 +147,7 @@ packages and focused app regressions. Each shard retains the 600-second package
 limit and publishes payload-free per-test timings. To run one shard locally,
 use `python3 scripts/ci/app-tests.py --shard 0 --shards 4`; ordinary
 `go test ./...` still runs the complete suite without sharding.
+Use `make test-app` locally to run all four CI shards; an unsharded local run can reach the 600s limit.
 
 The retired-command scanner checks concrete removed commands and assets, not
 kagent API/image identifiers or runtime-version support. Its small exact

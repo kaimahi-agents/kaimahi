@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -98,6 +99,34 @@ class AppShardTests(unittest.TestCase):
                 self.assertIn("-count=1", command)
                 self.assertIn("^(TestOne)$", command)
                 self.assertIn("-json", command)
+
+
+class LocalAppShardTests(unittest.TestCase):
+    def test_make_runs_all_four_isolated_shards_and_propagates_failure(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed), tempfile.TemporaryDirectory() as directory:
+                work = Path(directory)
+                capture = work / "calls"
+                python = work / "python3"
+                python.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CAPTURE\"\n"
+                                  "case \"$*\" in *'--shard 1 '*) exit \"$FAIL_SHARD\";; esac\n")
+                python.chmod(0o755)
+                result = subprocess.run(["make", "--no-print-directory", "test-app"], cwd=ROOT,
+                                        env={**os.environ, "PATH": directory + os.pathsep + os.environ["PATH"],
+                                             "TMPDIR": directory, "CAPTURE": str(capture),
+                                             "FAIL_SHARD": "7" if failed else "0"}, capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, not failed, result.stdout + result.stderr)
+                calls = [shlex.split(line) for line in capture.read_text().splitlines()]
+                self.assertEqual(len(calls), 4)
+                outputs = []
+                for index, call in enumerate(calls):
+                    self.assertEqual(call[:5], ["scripts/ci/app-tests.py", "--shard", str(index), "--shards", "4"])
+                    self.assertEqual(call[5], "--output")
+                    output = Path(call[6])
+                    self.assertEqual(output.parent.parent, work)
+                    self.assertIn(str(output.parent), result.stdout)
+                    outputs.append(output)
+                self.assertEqual(len(set(outputs)), 4)
 
 
 class AppShardWorkflowTests(unittest.TestCase):

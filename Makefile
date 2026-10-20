@@ -29,13 +29,23 @@ export KMX_KUBE_CTX := $(KUBE_CTX)
 GUARD_NS ?= ollama, orka-system (common, not exhaustive; see action for other namespaces)
 
 # Let Go's cache track all source, embedded data, and build-option changes.
-.PHONY: build test lint docs-check docs-build docs-preview guard aks-creds $(KMX)
+.PHONY: build test test-app lint docs-check docs-build docs-preview guard aks-creds $(KMX)
 
-## test, lint, docs-check: local checks matching the keyless CI gates
+## test, test-app, lint, docs-check: local checks matching the keyless CI gates
 test:
 	python3 scripts/check-agentsuite-fixtures.py --selftest
 	python3 scripts/check-agentsuite-fixtures.py
 	go test ./...
+
+test-app:
+	@set -eu; \
+	work=$$(mktemp -d); \
+	printf 'App test artifacts: %s\n' "$$work"; \
+	status=0; \
+	for shard in 0 1 2 3; do \
+		python3 scripts/ci/app-tests.py --shard "$$shard" --shards 4 --output "$$work/shard-$$shard.json" || status=1; \
+	done; \
+	exit "$$status"
 
 lint:
 	staticcheck ./...
