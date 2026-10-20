@@ -31,6 +31,30 @@ Use a disposable environment and run one agent execution at a time.
 Never interpret an error as absence, adopt an existing resource, or repeat an
 ambiguous create. Keep credentials, answers and diagnostic payloads private.
 
+### What depends on what
+
+Kubernetes hosts the workloads; **AIKit serves the model**, **Orka runs the
+agent**, and **KMX authors, evaluates, publishes and Lifts the suite**. Installing
+AKS or Orka alone does not provide inference. ACR stores the published suite,
+not a running agent or model server. See [models and inference](../models.md)
+for the endpoint contract.
+
+| File | Supplies | Used by |
+|---|---|---|
+| [`aks.bicep`](aks.bicep) | Remote Kubernetes compute, networking and authentication | AKS workloads; no model or Orka installation |
+| [`acr.bicep`](acr.bicep) | Registry for the tested OCI suite | KMX push and digest-based Lift |
+| [`aikit-cpu-namespace.yaml`](aikit-cpu-namespace.yaml) | Dedicated `kmx-inference` Namespace | Create before the namespaced model objects |
+| [`aikit-cpu.yaml`](aikit-cpu.yaml) | ConfigMap with model settings, Deployment with pinned model server, internal Service | Orka's inference Provider, in both kind and AKS |
+| [`template_test.go`](template_test.go) | Offline manifest/resource checks and model-pin parity with the CI fixture | Contributors running `go test ./docs/azure`; not deployed |
+| [`README.md`](README.md) | Setup order, commands and verification boundaries | Operator following this demo |
+
+The model image contains the packaged model; no separate model download command
+is needed. Kubernetes still needs registry access to pull that image and Orka's
+images. The agent suite does not install either dependency. Deploy the same
+model manifest to both clusters **before** binding Orka and evaluating or asking
+the agent. An existing compatible endpoint could replace AIKit, but that would
+be a different demo configuration requiring its own evaluation.
+
 ## 1. Create AKS and ACR
 
 The templates create infrastructure only:
@@ -72,6 +96,10 @@ Names and region must match your selectors:
   "apiServerAuthorizedIpRanges": { "value": ["<reviewed-public-ipv4>/32"] }
 }
 ```
+
+Review every CIDR: the template requires a nonempty list but does not validate
+its security. Do not use `0.0.0.0/0` or assume ordinary web egress matches the
+route to the AKS API.
 
 Check both group names and the registry name. Require successful results of
 `false`, `false`, and `true`, respectively:
@@ -173,13 +201,18 @@ It requests 1 CPU/3 GiB RAM and limits usage to 3 CPUs/4 GiB RAM.
 Check allocatable capacity and existing requests, not just the machine's RAM.
 The internal Service is unauthenticated: never expose it publicly.
 
-Run this sequence twice: first with the local selectors shown, then with
-`KUBECONFIG="$AKS_KUBECONFIG"` and `CTX="$AKS_CONTEXT"`. Review and approve
-each target before creation:
+Select the local target first:
 
 ```bash
 export KUBECONFIG="$LOCAL_KUBECONFIG"
 CTX="$LOCAL_CONTEXT"
+```
+
+Run the following block for that target. After its inference check, select
+`export KUBECONFIG="$AKS_KUBECONFIG"` and `CTX="$AKS_CONTEXT"` and repeat.
+Review and approve each target before creation:
+
+```bash
 TARGET_STATE="$STATE/$CTX"
 mkdir "$TARGET_STATE"
 kubectl --context "$CTX" describe nodes
@@ -197,7 +230,8 @@ kubectl --context "$CTX" -n kmx-inference rollout status deployment/aikit-cpu --
 ```
 
 Readiness is not inference proof. In a second WSL shell, use the same
-kubeconfig/context and start a tracked loopback forward:
+kubeconfig/context and start a tracked loopback forward. Shell variables do
+not carry across terminals: explicitly set `KUBECONFIG` and `CTX` there first:
 
 ```bash
 kubectl --context "$CTX" -n kmx-inference port-forward --address 127.0.0.1 \
