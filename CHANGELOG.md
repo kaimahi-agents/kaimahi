@@ -24,6 +24,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Internal experimental flow destination preflight and candidate projection: exact independent bindings, frozen observations, semantic/freshness separation and full-tuple ownership through cleanup/status. No CLI flow execution, evaluation, publication or Lift is enabled.
+
 - Experimental offline multi-agent flow authoring with `kmx create NAME
   --workspace DIR --members FILE --flow FILE`, deterministic preparation and
   explicit native/public layout/archive inventory readers. Strict JSON imports

@@ -39,8 +39,10 @@ func suiteCleanupOwner(markers map[string]any) *orkaSuiteOwnership {
 		}
 		values = append(values, value)
 	}
-	owner := &orkaSuiteOwnership{values[0], values[1], values[2], values[3], values[4], values[5], values[6]}
-	if !owner.valid() {
+	owner := &orkaSuiteOwnership{values[0], values[1], values[2], values[3], values[4], values[5], values[6], nil}
+	var err error
+	owner.FlowCandidate, err = flowCandidateOwner(markers)
+	if err != nil || !owner.valid() {
 		return nil
 	}
 	return owner
@@ -65,7 +67,7 @@ func (a *App) discoverSuiteCandidates(ctx context.Context, target suiteNativeTar
 			continue
 		}
 		for _, row := range rows {
-			if _, ok := row.Markers[suiteCandidateRunMarker]; !ok && strings.HasPrefix(row.Name, "kmx-eval-") {
+			if _, ok := row.Markers[suiteCandidateRunMarker]; !ok && (strings.HasPrefix(row.Name, "kmx-eval-") || strings.HasPrefix(row.Name, "kmx-flow-")) {
 				inventory.uncertain = kind + "/" + row.Name
 			}
 			if len(row.Markers) == 0 {
@@ -73,6 +75,9 @@ func (a *App) discoverSuiteCandidates(ctx context.Context, target suiteNativeTar
 			}
 			// Canonical owned resources aren't candidate leftovers.
 			if _, candidate := row.Markers[suiteCandidateRunMarker]; !candidate {
+				if _, flow := row.Markers[flowCandidateMarker]; flow {
+					inventory.uncertain = kind + "/" + row.Name
+				}
 				continue
 			}
 			owner := suiteCleanupOwner(row.Markers)
@@ -80,12 +85,12 @@ func (a *App) discoverSuiteCandidates(ctx context.Context, target suiteNativeTar
 				inventory.uncertain = kind + "/" + row.Name
 				continue
 			}
-			physical, err := suiteCandidatePhysicalName(owner.Digest, owner.EvaluationRun)
+			physical, err := owner.candidateName()
 			if err != nil || kind != "Task" && row.Name != physical || kind == "Task" && (row.AgentName != physical || row.AgentNamespace != target.Namespace || row.TaskType != "ai") {
 				inventory.uncertain = kind + "/" + row.Name
 				continue
 			}
-			if old := owners[owner.EvaluationRun]; old != nil && !reflect.DeepEqual(old, owner) {
+			if old := owners[owner.EvaluationRun]; old != nil && (!sameFlowOperationOwner(old, owner) || old.FlowCandidate == nil && !reflect.DeepEqual(old, owner)) {
 				inventory.uncertain = kind + "/" + row.Name
 			}
 			owners[owner.EvaluationRun] = owner

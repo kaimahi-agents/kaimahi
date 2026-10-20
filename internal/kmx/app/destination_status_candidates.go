@@ -9,8 +9,10 @@ func statusCandidateKinds(runtime string) []destinationStatusCandidateKind {
 	return []destinationStatusCandidateKind{{"modelconfigs", "ModelConfig"}}
 }
 func statusIsCandidate(doc map[string]any) bool {
-	_, present := statusMap(statusMap(doc, "metadata"), "annotations")[suiteCandidateRunMarker]
-	return present
+	ann := statusMap(statusMap(doc, "metadata"), "annotations")
+	_, present := ann[suiteCandidateRunMarker]
+	_, flow := ann[flowCandidateMarker]
+	return present || flow
 }
 
 // Candidates are counted as separately reserved evaluation roots, not deployed
