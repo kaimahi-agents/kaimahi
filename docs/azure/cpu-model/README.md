@@ -334,7 +334,7 @@ assertions:
   pattern: (?i)search
 - id: limitation-unresolved
   type: regex
-  pattern: (?i)unresolved
+  pattern: '(?m)^-[ \t]+Unresolved:'
 ```
 
 Evaluate the complete workspace on **local kind**, not AKS:
@@ -456,16 +456,20 @@ WSL, not native Windows. The tested setup kept Azure CLI on Windows:
 4. For publication, bridge Windows Azure authentication into the isolated WSL
    Docker config. A Windows login alone does not authenticate KMX in WSL.
 
-Set the PowerShell selectors from section 1 and `$WSL_DOCKER_CONFIG` to the
-absolute WSL path printed by `echo "$DOCKER_CONFIG"`. The config file must
-not already exist; credentials are passed over stdin, never argv:
+Set the PowerShell selectors from section 1, `$WSL_DISTRIBUTION` to the
+distribution running KMX, `$WSL_USER` to the ordinary WSL user running KMX, and
+`$WSL_DOCKER_CONFIG` to the absolute WSL path printed by
+`echo "$DOCKER_CONFIG"`. The config file must not already exist; credentials
+are passed over stdin, never argv:
 
 ```powershell
+$WSL_DISTRIBUTION = '<KMX-WSL-distribution>'
+$WSL_USER = '<KMX-WSL-user>'
 $WSL_DOCKER_CONFIG = '<absolute-WSL-path-to-demo-docker-directory>'
 $auth = az acr login --subscription $SUBSCRIPTION --name $REGISTRY `
   --expose-token --output json --only-show-errors
 if ($LASTEXITCODE -ne 0) { throw 'ACR authentication failed' }
-$auth | wsl --distribution Ubuntu --exec python3 -c 'import sys,json,os,base64; from pathlib import Path; a=json.load(sys.stdin); p=Path(sys.argv[1]); p.mkdir(mode=0o700,parents=True,exist_ok=True); credential=base64.b64encode(("00000000-0000-0000-0000-000000000000:"+a["accessToken"]).encode()).decode(); fd=os.open(p/"config.json",os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.fdopen(fd,"w").write(json.dumps({"auths":{a["loginServer"]:{"auth":credential}}}))' $WSL_DOCKER_CONFIG
+$auth | wsl --distribution $WSL_DISTRIBUTION --user $WSL_USER --exec python3 -c 'import sys,json,os,base64; from pathlib import Path; a=json.load(sys.stdin); p=Path(sys.argv[1]); p.mkdir(mode=0o700,parents=True,exist_ok=True); credential=base64.b64encode(("00000000-0000-0000-0000-000000000000:"+a["accessToken"]).encode()).decode(); fd=os.open(p/"config.json",os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.fdopen(fd,"w").write(json.dumps({"auths":{a["loginServer"]:{"auth":credential}}}))' $WSL_DOCKER_CONFIG
 $auth = $null
 if ($LASTEXITCODE -ne 0) { throw 'Private WSL credential setup failed' }
 ```
@@ -477,17 +481,19 @@ if ($LASTEXITCODE -ne 0) { throw 'Private WSL credential setup failed' }
 | API timeout | Check the actual VPN/tunnel route and approved public egress CIDR. Never use `0.0.0.0/0`, an empty allowlist or a private VPN adapter IP. Follow local security policy. |
 | TLS-verified HTTP 401 | Network/TLS works; authenticated Kubernetes access is not yet proved. Check the exec plugin and cluster RBAC. |
 | Slow cleanup; “scope changed or unknown” | Measure payload-free API timings and compare cluster/namespace UIDs. Windows authentication took 2–3 seconds per subprocess in this test, exhausting the fixed 90-second budget. An approved expiry-aware private credential cache resolved cleanup; do not raise timeouts or use static kubeconfig tokens. |
-| Leftover candidates | List with `kmx eval cleanup --to-context "$CTX"`; confirm the full run ID for UID-safe cleanup. Do not bulk-delete Agents. |
+| Leftover candidates | List with `KUBECONFIG="$LOCAL_KUBECONFIG" kmx eval cleanup --to-context "$LOCAL_CONTEXT" --to-namespace orka-system`; confirm with `KUBECONFIG="$LOCAL_KUBECONFIG" kmx eval cleanup <full-run-id> --to-context "$LOCAL_CONTEXT" --to-namespace orka-system`. Do not bulk-delete Agents. |
 | `unresolved` assertion fails | Require the literal prefix in instructions. The first local version ran successfully but passed 0/3; revised instructions passed 3/3 without weakening assertions. |
 | Pending model or policy denial | Inspect scheduling/allocatable resources and policy-owner guidance. Do not bypass policy or infer usage from readiness. |
 | Run Command needed | Use Windows `az aks command invoke` with explicit subscription/group/cluster; inspect returned `exitCode`, not just CLI success. Attached scripts need LF endings. Keep logs private. This is not a way to run the entire KMX lifecycle remotely. |
 
-**Demonstrated:** identical CPU inference on Podman-backed kind and a single-node
-AKS cluster; three passing local Orka runs; evaluated ACR publication;
-registry-backed AKS promotion; a separate fresh answer passing all five checks;
-and a bad-instructions version failing 0/3 with cleanup completed and no evidence
-exported. The tested instructions were restored. A second destination answer
-after that refusal has not yet been checked.
+**Historical demonstration only:** a pre-rebase development KMX build against
+Orka v0.2.0 demonstrated identical CPU inference on Podman-backed kind and a
+single-node AKS cluster; three passing local Orka runs; evaluated ACR
+publication; registry-backed AKS promotion; a separate fresh answer passing all
+five checks; and a bad-instructions version failing 0/3 with cleanup completed
+and no evidence exported. The exact KMX commit was not retained, so these results
+do not qualify this checkout. The tested instructions were restored. A second
+destination answer after that refusal has not yet been checked.
 
 **Not demonstrated:** fresh AKS creation from `aks.bicep`, general model quality,
 concurrency, sustained memory use or production availability. Bicep compilation
