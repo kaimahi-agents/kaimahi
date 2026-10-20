@@ -6,7 +6,7 @@ small CPU model. No GPU, Foundry account or hosted-model API key is needed.
 
 **Create → Prove locally → Publish → Lift to AKS → Ask**
 
-This adapts the [release-notes demo](https://gist.github.com/gambtho/2956e055b7bbe47562cd6a4946589ab6)
+This adapts the [release-notes demo](https://gist.github.com/gambtho/2956e055b7bbe47562cd%36a4946589ab6)
 to self-hosted inference. For the shared lifecycle contract, see
 [suite workspaces](../../suite-workspace.md).
 

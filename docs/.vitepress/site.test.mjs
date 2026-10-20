@@ -118,7 +118,7 @@ test('checkout-only references point to source while guide links stay local', as
 
   const azure = await readFile(path.join(dist, 'docs', 'azure', 'cpu-model', 'index.html'), 'utf8')
   assert.match(azure, /Single-node CPU inference test/)
-  assert.match(azure, /href="\.\.\/\.\.\/models"/)
+  assert.match(azure, /href="\.\/\.\.\/\.\.\/models"/)
   assert.ok(azure.includes(`https://github.com/kaimahi-agents/kaimahi/blob/${sourceRef}/docs/azure/cpu-model/aikit-cpu.yaml`))
   const models = await readFile(path.join(dist, 'docs', 'models.html'), 'utf8')
   assert.match(models, /href="[^"]*\/docs\/azure\/cpu-model\/#single-node-cpu-inference-test"/)
