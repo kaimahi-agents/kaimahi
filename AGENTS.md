@@ -41,6 +41,14 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   plus compact non-pass evaluation details, with verbose/JSON stage diagnostics. Exact-version private completion observations authorize
   GET-only skips, never Apply/reuse/adoption/repair. Keep kagent out of composed
   Lift until its candidate-scoped placement and ownership-safe cleanup are qualified.
+  Internal workspace Lift presentation hooks receive value-only plan/challenge
+  snapshots and metadata-only stage events. Callback answers still pass the shared
+  pipeline guard and post-consent source/target checks; blank/cancelled answers
+  never fall back to terminal or environment consent. Callbacks grant no placement
+  or evaluation authority. Keep the normal CLI output contract and offline plan
+  behavior; console wiring is a separate incremental change.
+  Conditional updates use the same hooks. Verified GET-only update no-ops emit
+  terminal stage skips without prompting, writing or claiming executed runs.
 - Create-only Release Lift stamps only newly created primaries with versioned non-secret
   `kaimahi.dev/lift-record` JSON: exact consumed canonical receipt identity,
   source/destination, actual gate, attempt time and expected specs. Actor is omitted

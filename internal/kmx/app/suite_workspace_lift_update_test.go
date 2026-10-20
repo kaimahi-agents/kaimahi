@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -319,8 +320,28 @@ func TestWorkspaceUpdateRefusesDriftAndRBACBeforeSpend(t *testing.T) {
 
 func TestWorkspaceUpdateRollbackNeverUsesStalePlacementSkip(t *testing.T) {
 	a, opt, state, reads, _, _ := workspaceLiftFixture(t)
+	confirmations := 0
+	var events []string
+	opt.Confirm = func(ctx context.Context, request WorkspaceLiftConfirmation) (string, error) {
+		confirmations++
+		if request.Plan.SuiteDigest == "" || request.Challenge != "kind-test" || request.EvalNamespace != opt.Evaluation.ToNamespace || request.DestinationNamespace != opt.Destination.ToNamespace {
+			t.Fatal("incomplete update confirmation", request)
+		}
+		if opt.Destination.Update && !strings.Contains(request.Plan.Disclosure, "conditional patch") {
+			t.Fatal("update confirmation omitted mutation disclosure")
+		}
+		return request.Challenge, nil
+	}
+	opt.Progress = func(event WorkspaceLiftProgress) {
+		events = append(events, event.Stage+"/"+event.Status)
+		if event.Stage == "Eval" && event.Status == "skipped" && event.Passed == 0 && event.Total != 0 {
+			t.Fatal("verify-only update invented executed runs", event)
+		}
+	}
 	partitions := map[string]string{}
 	run := func() WorkspaceLiftResult {
+		events = nil
+		beforeConfirmations := confirmations
 		p, err := PrepareWorkspaceLift(t.Context(), opt)
 		if err != nil {
 			t.Fatal(err)
@@ -330,6 +351,25 @@ func TestWorkspaceUpdateRollbackNeverUsesStalePlacementSkip(t *testing.T) {
 		r, err := a.LiftWorkspace(t.Context(), p)
 		if err != nil {
 			t.Fatal("workspace lifecycle failed", r, err)
+		}
+		want := []string{"Plan/running"}
+		if r.Lift.Status != "skipped" {
+			want = append(want, "Plan/awaiting-confirmation")
+			if confirmations != beforeConfirmations+1 {
+				t.Fatal("mutation did not use the shared confirmation hook")
+			}
+		} else if confirmations != beforeConfirmations {
+			t.Fatal("GET-only update prompted for mutation consent")
+		}
+		want = append(want, "Plan/complete")
+		for _, stage := range []struct{ name, status string }{{"Eval", r.Eval.Status}, {"Push", r.Push.Status}, {"Lift", r.Lift.Status}} {
+			if stage.status == "complete" {
+				want = append(want, stage.name+"/running")
+			}
+			want = append(want, stage.name+"/"+stage.status)
+		}
+		if !reflect.DeepEqual(events, want) {
+			t.Fatalf("update progress=%v want=%v", events, want)
 		}
 		return r
 	}

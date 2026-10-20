@@ -16,27 +16,9 @@ func ConfirmPipeline(ctx context.Context, cfg *Kubeconfig, contexts []string, co
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	var selected, remote []string
-	seen := map[string]bool{}
-	for _, name := range contexts {
-		posture, err := Classify(cfg, name)
-		if err != nil || posture.Host == "" {
-			return fmt.Errorf("pipeline context unavailable; refusing")
-		}
-		if !seen[name] {
-			selected = append(selected, name)
-			if !posture.Local {
-				remote = append(remote, name)
-			}
-			seen[name] = true
-		}
-	}
-	if len(remote) > 0 {
-		selected = remote
-	}
-	challenge := strings.Join(selected, ",")
-	if challenge == "" {
-		return fmt.Errorf("pipeline contexts required")
+	challenge, err := PipelineChallenge(cfg, contexts)
+	if err != nil {
+		return err
 	}
 	if confirm != "" {
 		if confirm != challenge {
@@ -58,4 +40,32 @@ func ConfirmPipeline(ctx context.Context, cfg *Kubeconfig, contexts []string, co
 		return fmt.Errorf("pipeline not confirmed; no effects authorized")
 	}
 	return nil
+}
+
+// PipelineChallenge supplies the same exact context challenge to terminal and
+// graphical presentations. It classifies access but grants no consent or authority.
+func PipelineChallenge(cfg *Kubeconfig, contexts []string) (string, error) {
+	var selected, remote []string
+	seen := map[string]bool{}
+	for _, name := range contexts {
+		posture, err := Classify(cfg, name)
+		if err != nil || posture.Host == "" {
+			return "", fmt.Errorf("pipeline context unavailable; refusing")
+		}
+		if !seen[name] {
+			selected = append(selected, name)
+			if !posture.Local {
+				remote = append(remote, name)
+			}
+			seen[name] = true
+		}
+	}
+	if len(remote) > 0 {
+		selected = remote
+	}
+	challenge := strings.Join(selected, ",")
+	if challenge == "" {
+		return "", fmt.Errorf("pipeline contexts required")
+	}
+	return challenge, nil
 }
