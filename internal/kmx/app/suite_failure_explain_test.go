@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -171,6 +172,114 @@ func TestSuiteFailureRetentionUnavailableLift(t *testing.T) {
 			}
 			if strings.Count(out.String(), "warning: local evaluation failure retention unavailable") != 1 {
 				t.Fatal("warning not bounded")
+			}
+		})
+	}
+}
+
+func TestSuiteFailureRetentionWarningWriteStopsLift(t *testing.T) {
+	for _, format := range []string{"text", "json"} {
+		t.Run(format, func(t *testing.T) {
+			a, opt, state, _, f, writes := workspaceLiftFixture(t, func(root string) { repeatedCandidateCase(t, root) })
+			opt.JSON = format == "json"
+			f.answers[nativeCanary+" first"] = "fictional failed answer"
+			var out bytes.Buffer
+			a.Out = io.Discard
+			a.Err = suiteSummaryObserver(func(raw []byte) (int, error) {
+				if strings.Contains(string(raw), "warning: local evaluation failure retention") {
+					return 0, io.ErrClosedPipe
+				}
+				return out.Write(raw)
+			})
+			base := filepath.Join(os.Getenv("KMX_HOME"), "eval-failures")
+			if err := os.MkdirAll(base, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(base, 0755); err != nil {
+				t.Fatal(err)
+			}
+			tasks := 0
+			state.afterCreate = func(key string) {
+				if strings.HasPrefix(key, "Task/") {
+					tasks++
+					if tasks > 1 {
+						f.answers[nativeCanary+" first"] = nativeCanary + " answer"
+					}
+				}
+			}
+			p, err := PrepareWorkspaceLift(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			result, err := a.LiftWorkspace(t.Context(), p)
+			if !errors.Is(err, io.ErrClosedPipe) || tasks != 1 || len(p.failures) != 1 || result.Eval.SuiteRunExecutionSummary == nil || result.Eval.Executed != 1 || result.Eval.NotExecuted != 2 || !result.Eval.ReportingFailed || result.Push.Status != "not-attempted" || result.Lift.Status != "not-attempted" || *writes != 0 {
+				t.Fatal("warning delivery failure allowed later effects", tasks, err)
+			}
+			if !p.failures[0].RetentionUnavailable || !strings.Contains(out.String(), "expectContains.0 (contains)") {
+				t.Fatal("collected detail was lost")
+			}
+			store, err := openSuitePassStore(t.Context(), p.review.root, p.store.cache, p.plan.SuiteDigest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			if _, _, err := store.latest(t.Context(), p.review.suite); !errors.Is(err, errSuitePassMissing) {
+				t.Fatal("warning failure registered proof", err)
+			}
+		})
+	}
+}
+
+func TestSuiteFailureAPIKeyRetention(t *testing.T) {
+	for _, name := range []string{"Api-Key", "api_key", "APIKEY"} {
+		t.Run(name, func(t *testing.T) {
+			root, meta := failureStoreFixture(t)
+			header := name + ": opaque-private-value"
+			payload, err := json.Marshal(map[string]any{"score": 20, "reasoning": header})
+			if err != nil {
+				t.Fatal(err)
+			}
+			score, reason, match, ok := parseEvaluationJudgeResponse([]byte(judgeEnvelope(string(payload))), "fixture/model", "pinned-v1", "")
+			if !ok || score != 20 || match != "requested" {
+				t.Fatal("privacy changed accepted judge evidence")
+			}
+			frame, obs := failureDetailFixture(header)
+			frame.Case.ID = header
+			frame.Case.Assertions[0].Value = header
+			d := *captureSuiteFailure(frame, obs, header, map[string]suiteJudgeDiagnostic{"quality": {Reasons: []string{reason, reason}}}, nil)
+			d.OperationID, d.SuiteDigest, d.Runtime, d.MemberID = meta.OperationID, meta.SuiteDigest, meta.Runtime, meta.MemberID
+			d.Complete, d.Attributed = true, true
+			id, err := saveSuiteFailure(t.Context(), root, d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			store, err := openSuiteFailureStore(root, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows, scanErr := store.scan()
+			closeErr := store.Close()
+			if scanErr != nil || closeErr != nil || len(rows) != 1 {
+				t.Fatal("readback failed", scanErr, closeErr)
+			}
+			raw, err := json.Marshal(rows[0].record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(raw), "opaque-private-value") || reason != "" || d.AnswerStatus != "withheld" || d.CaseID != "withheld" || d.Assertions[0].Expected != "" || !d.Assertions[1].RationaleUnavailable {
+				t.Fatal("standalone API-key header persisted")
+			}
+			if err := os.WriteFile(filepath.Join(root, "workspace.yaml"), []byte("schemaVersion: 1\nname: fictional\nmember: agents/fictional/member.yaml\nbuildProfile: build-profiles/default.json\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			a := &App{Out: &output}
+			if err := a.ExplainSuiteEvaluation(t.Context(), SuiteEvaluationExplainOptions{Workspace: root, ID: id, ShowContent: true}); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(output.String(), "opaque-private-value") || !strings.Contains(output.String(), "rationale: unavailable or withheld") {
+				t.Fatal("offline inspection exposed API key")
 			}
 		})
 	}

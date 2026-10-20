@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -51,6 +52,7 @@ func reportSuiteFailure(ctx context.Context, detail *suiteFailureDetail) error {
 	if !ok || detail == nil {
 		return nil
 	}
+	var warningErr error
 	if scope := reporter.retention; scope != nil {
 		detail.ID, detail.RetentionUnavailable = "", false
 		detail.OperationID, detail.SuiteDigest, detail.Runtime, detail.MemberID = scope.operationID, scope.suiteDigest, scope.runtime, scope.memberID
@@ -64,13 +66,13 @@ func reportSuiteFailure(ctx context.Context, detail *suiteFailureDetail) error {
 			detail.RetentionUnavailable = true
 			if !scope.warned {
 				scope.warned = true
-				// Optional retention cannot turn a verdict into an output failure.
-				_, _ = fmt.Fprintln(reporter.out, "warning: local evaluation failure retention unavailable or unconfirmed")
+				// Storage is best effort, but every diagnostic writer failure stops later effects.
+				_, warningErr = fmt.Fprintln(reporter.out, "warning: local evaluation failure retention unavailable or unconfirmed")
 			}
 		}
 	}
 	*reporter.details = append(*reporter.details, *detail)
-	return writeSuiteFailureDetail(reporter.out, *detail, reporter.content)
+	return errors.Join(warningErr, writeSuiteFailureDetail(reporter.out, *detail, reporter.content))
 }
 
 // summary is a payload-free projection, never a passing evidence row. Content

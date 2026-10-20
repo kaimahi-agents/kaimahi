@@ -92,7 +92,7 @@ type suiteFailureAssertion struct {
 // multi-line labels, bare URLs or times also fail closed. Shape and header
 // checks still cannot identify arbitrary opaque secrets.
 var suiteDiagnosticHeader = regexp.MustCompile("(?im)^HTTP/[0-9.]+[ \\t]+[0-9]{3}\\b|^[ \\t]*[!#$%&'*+.^_`|~0-9A-Za-z-]+:[ \\t]*[^\\r\\n]*\\r?\\n[ \\t]*[!#$%&'*+.^_`|~0-9A-Za-z-]+:[ \\t]*")
-var suiteDiagnosticSensitiveHeader = regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|cookie|set-cookie|x-[a-z0-9-]+|content-[a-z0-9-]+|user-agent|host|connection|transfer-encoding|www-authenticate)[ \t]*:`)
+var suiteDiagnosticSensitiveHeader = regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|x-[a-z0-9-]+|content-[a-z0-9-]+|user-agent|host|connection|transfer-encoding|www-authenticate)[ \t]*:`)
 
 func suiteDiagnosticText(raw string, limit int, keys []string) (string, bool) {
 	if !utf8.ValidString(raw) {
