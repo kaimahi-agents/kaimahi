@@ -103,6 +103,40 @@ func TestSuiteFailureEnvctlAnswerIsUseful(t *testing.T) {
 	}
 }
 
+func TestSuiteFailureHeaderWithoutWhitespace(t *testing.T) {
+	for _, separator := range []string{"\n", "\r\n"} {
+		header := "Api-Key:opaque-private-value" + separator + "Trace-Id:trace-private-value"
+		frame, obs := failureDetailFixture(header)
+		frame.Case.ID, frame.Case.Assertions[0].ID, frame.Case.Assertions[0].Value = header, header, header
+		obs.Assertions[0].ID = header
+		notes := map[string]suiteJudgeDiagnostic{"quality": {Reasons: []string{header}}}
+		d := captureSuiteFailure(frame, obs, header, notes, nil)
+		if d.Answer != "" || d.AnswerStatus != "withheld" || d.CaseID != "withheld" || d.Assertions[0].Expected != "" || len(d.Assertions[1].Reasons) != 0 {
+			t.Fatal("no-whitespace header block escaped privacy checks")
+		}
+		raw, err := json.Marshal(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := writeSuiteFailureDetail(&out, *d, true); err != nil {
+			t.Fatal(err)
+		}
+		for _, value := range []string{"opaque-private-value", "trace-private-value"} {
+			if strings.Contains(string(raw), value) || strings.Contains(out.String(), value) {
+				t.Fatal("header value serialized or printed")
+			}
+		}
+	}
+	// These can also be parsed as consecutive header fields. Prefer withholding
+	// ambiguous content rather than weakening the header privacy boundary.
+	for _, ambiguous := range []string{"**Score:** 20\n**Reason:** weak", "10:30 start\n11:00 end", "https://a.example/x\nhttps://b.example/y"} {
+		if _, ok := suiteDiagnosticText(ambiguous, len(ambiguous), nil); ok {
+			t.Fatal("ambiguous consecutive fields were not withheld")
+		}
+	}
+}
+
 func TestSuiteFailureAssertionExcerpts(t *testing.T) {
 	for _, kind := range []string{"contains", "regex", "notContains"} {
 		t.Run(kind, func(t *testing.T) {

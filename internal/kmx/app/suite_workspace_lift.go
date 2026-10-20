@@ -204,9 +204,6 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 		if err != nil {
 			r.Error = err.Error()
 		}
-		for _, failure := range p.failures {
-			err = errors.Join(err, writeSuiteFailureDetail(diagnostics, failure, p.options.Evaluation.ShowContent))
-		}
 		if p.options.JSON {
 			out := a.Out
 			if out == nil {
@@ -504,7 +501,7 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 			output.Close()
 			return r, e
 		}
-		ep := &PreparedSuiteWorkspaceEvaluation{prepared: p.review.prepared, suite: p.review.suite, inventory: p.review.inventory, root: p.review.root, options: p.options.Evaluation, output: output, store: p.store, judge: judge, diagnosticKey: diagnosticKey, candidateRun: runID, runs: suiteRunSummary{Total: len(p.review.inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(p.review.inventory)}}, cleanup: "candidate cleanup not required", failureQuiet: true}
+		ep := &PreparedSuiteWorkspaceEvaluation{prepared: p.review.prepared, suite: p.review.suite, inventory: p.review.inventory, root: p.review.root, options: p.options.Evaluation, output: output, store: p.store, judge: judge, diagnosticKey: diagnosticKey, candidateRun: runID, runs: suiteRunSummary{Total: len(p.review.inventory), SuiteRunExecutionSummary: SuiteRunExecutionSummary{NotExecuted: len(p.review.inventory)}}, cleanup: "candidate cleanup not required", failureWriter: diagnostics}
 		err = eval.EvaluateSuiteWorkspace(ctx, ep)
 		p.failures = ep.failures
 		r.Eval.Failures = suiteFailureSummaries(ep.failures)

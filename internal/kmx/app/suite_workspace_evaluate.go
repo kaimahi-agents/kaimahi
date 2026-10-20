@@ -55,8 +55,9 @@ type PreparedSuiteWorkspaceEvaluation struct {
 	cleanup        string
 	publicMetadata *suitePublicMetadata
 	failures       []suiteFailureDetail
-	failureQuiet   bool
-	diagnosticKey  string
+	// Composed Lift keeps its real diagnostic writer separate from quiet stage workers.
+	failureWriter io.Writer
+	diagnosticKey string
 }
 
 func (p *PreparedSuiteWorkspaceEvaluation) Close() error {
@@ -246,8 +247,8 @@ func (a *App) preflightSuiteNativeResults(ctx context.Context, ns string) error 
 func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorkspaceEvaluation) error {
 	if p != nil {
 		out := a.Err
-		if p.failureQuiet {
-			out = io.Discard
+		if p.failureWriter != nil {
+			out = p.failureWriter
 		}
 		ctx = withSuiteFailureReporting(ctx, &p.failures, out, p.options.ShowContent, p.diagnosticKey)
 	}

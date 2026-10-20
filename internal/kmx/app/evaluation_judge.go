@@ -361,6 +361,12 @@ func parseEvaluationJudgeResponse(body []byte, model, version, key string) (int,
 			return 0, "", "", false
 		}
 	}
+	// Header-block boundaries can disappear when CR/LF are stripped. Inspect
+	// the original rationale before returning its normalized display form;
+	// withholding non-evidence text must not discard an otherwise valid score.
+	if _, ok := suiteDiagnosticText(reasoning, len(reasoning), []string{key}); !ok {
+		safe = ""
+	}
 	return score, safe, match, true
 }
 

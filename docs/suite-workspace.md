@@ -999,7 +999,8 @@ answer or rationale.
 Before truncation, diagnostics check full raw and terminal-normalized content for
 known credential shapes and the configured judge key. Credential-shaped,
 header-like and invalid-UTF-8 fields are withheld, not partially redacted.
-Conservative header checks can withhold ordinary colon-delimited text as well.
+Conservative header checks can withhold consecutive Markdown labels, bare URL
+lines, times and other colon-delimited text that also parses as header fields.
 Clean checks do not prove arbitrary secrets or personal data are absent; only opt
 into content on a private terminal. No raw transport/subprocess errors, headers
 or judge endpoint URLs are retained in these diagnostic fields. Known typed

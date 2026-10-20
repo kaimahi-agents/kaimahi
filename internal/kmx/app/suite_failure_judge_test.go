@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -47,6 +48,35 @@ func TestSuiteFailureJudgeKeyProtectsNonJudgeCase(t *testing.T) {
 	captureSuiteFailureContext(ctx, frame, &obs, "prefix "+key, nil)
 	if obs.failure == nil || obs.failure.Answer != "" || obs.failure.AnswerStatus != "withheld" {
 		t.Fatal("judge key leaked from non-judge case")
+	}
+}
+
+func TestSuiteFailureJudgeHeadersAreWithheldBeforeNormalization(t *testing.T) {
+	reasoning := "First-Field: private-one\r\nSecond-Field: private-two"
+	payload, err := json.Marshal(map[string]any{"score": 20, "reasoning": reasoning})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, judgeEnvelope(string(payload))) }))
+	defer server.Close()
+	bounded, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	ctx, _ := newSuiteFailureContext(bounded)
+	client := evaluationJudgeClient{baseURL: server.URL, httpClient: server.Client(), out: io.Discard}
+	c := judgeCase()
+	rows := client.evaluate(ctx, c, agentruntime.EvaluationEvidence{Answer: "fixture answer", AnswerAvailable: true})
+	if rows[0].Verdict != agentruntime.EvaluationFail || len(rows[0].Judge.Scores) != 2 || rows[0].Judge.Scores[0] != 20 || len(rows[0].Judge.ModelMatches) != 2 {
+		t.Fatal("withholding rationale changed accepted scores or model matches", rows)
+	}
+	frame := suitePassingInventoryCase{Case: c, Metadata: suitePassingCase{Assertions: make([]suitePassingAssertion, len(rows))}}
+	obs := suitePassingObservation{EvaluationReceipt: agentruntime.EvaluationReceipt{CaseID: c.ID, Verdict: agentruntime.EvaluationFail, AnswerSHA256: agentruntime.EvaluationAnswerDigest("fixture answer"), Assertions: rows}}
+	captureSuiteFailureContext(ctx, frame, &obs, "fixture answer", nil)
+	var out bytes.Buffer
+	if err := writeSuiteFailureDetail(&out, *obs.failure, true); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "private-one") || strings.Contains(out.String(), "private-two") {
+		t.Fatal("parser normalization hid headers from diagnostic privacy checks")
 	}
 }
 

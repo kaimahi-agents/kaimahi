@@ -83,6 +83,53 @@ func TestSuiteFailureLateCancellationWithholdsContent(t *testing.T) {
 	}
 }
 
+func TestSuiteFailureLiftStopsOnDiagnosticWriteError(t *testing.T) {
+	for _, mode := range []string{"text", "json"} {
+		t.Run(mode, func(t *testing.T) {
+			a, opt, state, _, f, writes := workspaceLiftFixture(t, func(root string) { repeatedCandidateCase(t, root) })
+			opt.JSON = mode == "json"
+			tasks := 0
+			state.afterCreate = func(key string) {
+				if strings.HasPrefix(key, "Task/") {
+					tasks++
+					f.answers[nativeCanary+" first"] = nativeCanary + " answer"
+					if tasks == 1 {
+						f.answers[nativeCanary+" first"] = "wrong"
+					}
+				}
+			}
+			var out bytes.Buffer
+			a.Out = &out
+			a.Err = suiteSummaryObserver(func(raw []byte) (int, error) {
+				if strings.Contains(string(raw), "expectContains.0 (contains)") {
+					return 0, io.ErrClosedPipe
+				}
+				return len(raw), nil
+			})
+			p, err := PrepareWorkspaceLift(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			result, err := a.LiftWorkspace(t.Context(), p)
+			if !errors.Is(err, io.ErrClosedPipe) || tasks != 1 || *writes != 0 || result.Push.Status != "not-attempted" || result.Lift.Status != "not-attempted" {
+				t.Fatalf("diagnostics failed after later effects: tasks=%d registryWrites=%d result=%+v err=%v", tasks, *writes, result, err)
+			}
+			if result.Eval.SuiteRunExecutionSummary == nil || result.Eval.Executed != 1 || result.Eval.NotExecuted != 2 || !result.Eval.ReportingFailed || len(p.failures) != 1 {
+				t.Fatal("delivery failure erased execution accounting", result.Eval)
+			}
+			store, err := openSuitePassStore(t.Context(), p.review.root, p.store.cache, p.plan.SuiteDigest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			if _, _, err := store.latest(t.Context(), p.review.suite); !errors.Is(err, errSuitePassMissing) {
+				t.Fatal("diagnostic delivery failure registered passing proof", err)
+			}
+		})
+	}
+}
+
 func TestSuiteFailureLiftParity(t *testing.T) {
 	var expected []suiteFailureDetail
 	for _, mode := range []string{"eval-json", "lift", "lift-verbose-json"} {

@@ -77,10 +77,10 @@ type suiteFailureAssertion struct {
 	ExcerptKind string   `json:"excerptKind,omitempty"`
 }
 
-// Withhold known header fields and consecutive header blocks, including unknown
-// field names. Ordinary labels, URLs and times are not HTTP headers. Shape and
-// header checks still cannot identify arbitrary opaque secrets.
-var suiteDiagnosticHeader = regexp.MustCompile("(?im)^HTTP/[0-9.]+[ \\t]+[0-9]{3}\\b|^[ \\t]*[!#$%&'*+.^_`|~0-9A-Za-z-]+:[ \\t]+[^\\r\\n]*\\r?\\n[ \\t]*[!#$%&'*+.^_`|~0-9A-Za-z-]+:[ \\t]*")
+// Withhold known header fields and consecutive header-like fields. Ambiguous
+// multi-line labels, bare URLs or times also fail closed. Shape and header
+// checks still cannot identify arbitrary opaque secrets.
+var suiteDiagnosticHeader = regexp.MustCompile("(?im)^HTTP/[0-9.]+[ \\t]+[0-9]{3}\\b|^[ \\t]*[!#$%&'*+.^_`|~0-9A-Za-z-]+:[ \\t]*[^\\r\\n]*\\r?\\n[ \\t]*[!#$%&'*+.^_`|~0-9A-Za-z-]+:[ \\t]*")
 var suiteDiagnosticSensitiveHeader = regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|cookie|set-cookie|x-[a-z0-9-]+|content-[a-z0-9-]+|user-agent|host|connection|transfer-encoding|www-authenticate)[ \t]*:`)
 
 func suiteDiagnosticText(raw string, limit int, keys []string) (string, bool) {
