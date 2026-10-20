@@ -345,15 +345,11 @@ func TestFlowMaximumMemberAndCaseInventory(t *testing.T) {
 	if err := workspace.CreateFlow(ctx, root, opt); err != nil {
 		t.Fatal(err)
 	}
-	p, err := workspace.PrepareFlow(ctx, root, filepath.Join(t.TempDir(), "cache"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	// The maximal closed inventory also includes one optional policy per member.
 	for i := range 16 {
 		declarePolicy(t, root, fmt.Sprintf("member-%02d", i), networkPolicy(policyEndpointA))
 	}
-	p, err = workspace.PrepareFlow(ctx, root, filepath.Join(t.TempDir(), "policy-cache"))
+	p, err := workspace.PrepareFlow(ctx, root, filepath.Join(t.TempDir(), "policy-cache"))
 	if err != nil {
 		t.Fatal(err)
 	}
