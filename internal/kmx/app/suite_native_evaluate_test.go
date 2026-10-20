@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -350,6 +352,8 @@ func TestSuiteNativeEvaluationAdmittedFrameAndOneShot(t *testing.T) {
 			a, placement, frame, f := nativeEvaluationFixture(t)
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
+			var blankDeadline func() context.Context
+			var blankReads atomic.Int32
 			reached := false
 			capture := a.captureCommand
 			a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
@@ -429,11 +433,16 @@ func TestSuiteNativeEvaluationAdmittedFrameAndOneShot(t *testing.T) {
 			}
 			if stage == "blank" {
 				f.answers[frame.Case.Input] = " "
+				blankDeadline = orkaTestDeadline(t, a, "orka-task-result")
+				f.resultRequest = func(*http.Request) { blankReads.Add(1) }
 			}
 			if stage == "placement" {
 				placement.Agent.UID = "other"
 			}
 			observation, err := a.evaluateSuiteNative(ctx, placement, frame, f.opt.ResultPort, nil)
+			if stage == "blank" && (blankDeadline().Err() != context.DeadlineExceeded || blankReads.Load() == 0) {
+				t.Fatalf("blank-result deadline: phase=%v reads=%d", blankDeadline().Err(), blankReads.Load())
+			}
 			creates := 0
 			for _, call := range orkaCalls(t, f.dir) {
 				if call.Document != nil && call.Document["kind"] == "Task" && slices.Contains(call.Args, "create") && !slices.Contains(call.Args, "--dry-run=server") {
