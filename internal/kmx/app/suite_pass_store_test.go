@@ -306,11 +306,11 @@ func TestSuiteWorkspaceExclusionProcessExitAndStableInode(t *testing.T) {
 	}
 }
 
-// A managed AgentSessions proof without bindingDigest is ineligible. Default
-// push refuses it with an evaluate-again error instead of the opaque store
-// error, a new evaluation can still register after it, and a newer record is
-// selected over it but never the reverse.
-func TestSuitePassStoreAgentSessionsProofWithoutBindingDigest(t *testing.T) {
+// A managed AgentSessions passing receipt v1 is ineligible. Default push
+// refuses it with an evaluate-again error instead of the opaque store error, a
+// new evaluation can still register after it, and a newer record is selected
+// over it but never the reverse.
+func TestSuitePassStoreAgentSessionsReceiptV1(t *testing.T) {
 	p, subject, observations := sessionsPassingFixture(t)
 	receipt, err := newSuiteSessionsPassingReceipt(t.Context(), p, subject, observations)
 	if err != nil {
@@ -324,13 +324,40 @@ func TestSuitePassStoreAgentSessionsProofWithoutBindingDigest(t *testing.T) {
 	if err := json.Unmarshal(current, &document); err != nil {
 		t.Fatal(err)
 	}
+	document["domain"] = suiteSessionsPassingDomainV1
 	delete(document["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
 	old, err := agentsuite.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseSuitePassingReceipt(old); !errors.Is(err, errSuiteSessionsReceiptPredatesBinding) || !errors.Is(err, errSuitePassingReceipt) {
-		t.Fatalf("pre-binding receipt classification: %v", err)
+	if _, err := parseSuitePassingReceipt(old); !errors.Is(err, errSuiteSessionsReceiptV1) || !errors.Is(err, errSuitePassingReceipt) || !strings.Contains(err.Error(), "--bindings FILE") {
+		t.Fatalf("receipt v1 classification: %v", err)
+	}
+	// The version, not the field, is the classification: a v1 receipt that
+	// carries a binding digest is still v1, and a v2 receipt without one is
+	// invalid.
+	variant := func(edit func(map[string]any)) []byte {
+		t.Helper()
+		var v map[string]any
+		if err := json.Unmarshal(current, &v); err != nil {
+			t.Fatal(err)
+		}
+		edit(v)
+		raw, err := agentsuite.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	withDigest := variant(func(v map[string]any) { v["domain"] = suiteSessionsPassingDomainV1 })
+	if _, err := parseSuitePassingReceipt(withDigest); !errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("receipt v1 with a binding digest: %v", err)
+	}
+	missing := variant(func(v map[string]any) {
+		delete(v["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
+	})
+	if _, err := parseSuitePassingReceipt(missing); !errors.Is(err, errSuitePassingReceipt) || errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("receipt v2 without a binding digest: %v", err)
 	}
 	// Only a receipt that is otherwise complete gets the classified error.
 	document["result"] = "fail"
@@ -338,8 +365,8 @@ func TestSuitePassStoreAgentSessionsProofWithoutBindingDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseSuitePassingReceipt(broken); !errors.Is(err, errSuitePassingReceipt) || errors.Is(err, errSuiteSessionsReceiptPredatesBinding) {
-		t.Fatalf("incomplete receipt classified as pre-binding: %v", err)
+	if _, err := parseSuitePassingReceipt(broken); !errors.Is(err, errSuitePassingReceipt) || errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("incomplete receipt classified as v1: %v", err)
 	}
 
 	t.Setenv("KMX_HOME", privateSuiteDir(t))
@@ -364,8 +391,8 @@ func TestSuitePassStoreAgentSessionsProofWithoutBindingDigest(t *testing.T) {
 	}
 	store := open()
 	writeRecord(store, 1, old)
-	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassPredatesBinding) {
-		t.Fatalf("pre-binding stored proof: %v", err)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassSessionsV1) {
+		t.Fatalf("stored receipt v1: %v", err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
@@ -373,8 +400,8 @@ func TestSuitePassStoreAgentSessionsProofWithoutBindingDigest(t *testing.T) {
 
 	layout := filepath.Join(t.TempDir(), "layout")
 	_, err = (&App{Out: io.Discard, Err: io.Discard}).PushSuiteWorkspaceManaged(t.Context(), SuiteWorkspacePushOptions{Workspace: p.root, Reference: "suite:tag", Layout: layout})
-	if !errors.Is(err, errSuitePassPredatesBinding) || !strings.Contains(err.Error(), "--bindings FILE") {
-		t.Fatalf("default push with only pre-binding proof: %v", err)
+	if !errors.Is(err, errSuitePassSessionsV1) || !strings.Contains(err.Error(), "--bindings FILE") {
+		t.Fatalf("default push with only receipt v1: %v", err)
 	}
 	if _, err := os.Stat(layout); !os.IsNotExist(err) {
 		t.Fatal("refused push transferred")
@@ -388,27 +415,27 @@ func TestSuitePassStoreAgentSessionsProofWithoutBindingDigest(t *testing.T) {
 		t.Fatalf("new record %s", record)
 	}
 	if got, file, err := store.latest(t.Context(), p.suite); err != nil || file != record || got.Sessions.Subject.BindingDigest != subject.BindingDigest {
-		t.Fatalf("new proof after pre-binding record: %q %v", file, err)
+		t.Fatalf("new proof after receipt v1 record: %q %v", file, err)
 	}
-	// A newer pre-binding record never falls back to the older eligible one.
+	// A newer receipt v1 record never falls back to the older eligible one.
 	writeRecord(store, 3, old)
-	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassPredatesBinding) {
-		t.Fatalf("newest pre-binding record fell back: %v", err)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassSessionsV1) {
+		t.Fatalf("newest receipt v1 record fell back: %v", err)
 	}
-	// A pre-binding record whose embedded receipt names another suite is
-	// corruption, not a classified pre-binding proof.
+	// A receipt v1 record whose embedded receipt names another suite is
+	// corruption, not a classified receipt v1.
 	document["result"] = "pass"
 	document["agentsessions"].(map[string]any)["subject"].(map[string]any)["suiteDigest"] = "sha256:" + strings.Repeat("1", 64)
 	otherSuite, err := agentsuite.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseSuitePassingReceipt(otherSuite); !errors.Is(err, errSuiteSessionsReceiptPredatesBinding) {
-		t.Fatalf("other-suite pre-binding receipt classification: %v", err)
+	if _, err := parseSuitePassingReceipt(otherSuite); !errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("other-suite receipt v1 classification: %v", err)
 	}
 	writeRecord(store, 4, otherSuite)
-	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassStore) || errors.Is(err, errSuitePassPredatesBinding) {
-		t.Fatalf("pre-binding record for another suite: %v", err)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassStore) || errors.Is(err, errSuitePassSessionsV1) {
+		t.Fatalf("receipt v1 record for another suite: %v", err)
 	}
 	// So is one whose embedded receipt names a foreign composition.
 	subjectDocument := document["agentsessions"].(map[string]any)["subject"].(map[string]any)
@@ -418,19 +445,19 @@ func TestSuitePassStoreAgentSessionsProofWithoutBindingDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseSuitePassingReceipt(otherComposition); !errors.Is(err, errSuiteSessionsReceiptPredatesBinding) {
-		t.Fatalf("other-composition pre-binding receipt classification: %v", err)
+	if _, err := parseSuitePassingReceipt(otherComposition); !errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("other-composition receipt v1 classification: %v", err)
 	}
 	writeRecord(store, 4, otherComposition)
-	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassStore) || errors.Is(err, errSuitePassPredatesBinding) {
-		t.Fatalf("pre-binding record for another composition: %v", err)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassStore) || errors.Is(err, errSuitePassSessionsV1) {
+		t.Fatalf("receipt v1 record for another composition: %v", err)
 	}
 }
 
-// A superseded pre-binding record is never eligible, but it must still be
+// A superseded receipt v1 record is never eligible, but it must still be
 // coherent with its own composition: a corrupted suite-bound identity refuses
 // lookup even when a newer valid record follows it.
-func TestSuitePassStoreRefusesIncoherentPreBindingRecord(t *testing.T) {
+func TestSuitePassStoreRefusesIncoherentReceiptV1Record(t *testing.T) {
 	p, subject, observations := sessionsPassingFixture(t)
 	receipt, err := newSuiteSessionsPassingReceipt(t.Context(), p, subject, observations)
 	if err != nil {
@@ -447,14 +474,15 @@ func TestSuitePassStoreRefusesIncoherentPreBindingRecord(t *testing.T) {
 				t.Fatal(err)
 			}
 			subjectDocument := document["agentsessions"].(map[string]any)["subject"].(map[string]any)
+			document["domain"] = suiteSessionsPassingDomainV1
 			delete(subjectDocument, "bindingDigest")
 			subjectDocument[field] = "sha256:" + strings.Repeat("3", 64)
 			old, err := agentsuite.Marshal(document)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := parseSuitePassingReceipt(old); !errors.Is(err, errSuiteSessionsReceiptPredatesBinding) {
-				t.Fatalf("corrupted pre-binding receipt classification: %v", err)
+			if _, err := parseSuitePassingReceipt(old); !errors.Is(err, errSuiteSessionsReceiptV1) {
+				t.Fatalf("corrupted receipt v1 classification: %v", err)
 			}
 
 			t.Setenv("KMX_HOME", privateSuiteDir(t))
@@ -471,8 +499,8 @@ func TestSuitePassStoreRefusesIncoherentPreBindingRecord(t *testing.T) {
 				t.Fatal(err)
 			}
 			commitStoreReceipt(t, store, p.suite, current)
-			if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassStore) || errors.Is(err, errSuitePassPredatesBinding) {
-				t.Fatalf("superseded incoherent pre-binding record: %v", err)
+			if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassStore) || errors.Is(err, errSuitePassSessionsV1) {
+				t.Fatalf("superseded incoherent receipt v1 record: %v", err)
 			}
 		})
 	}

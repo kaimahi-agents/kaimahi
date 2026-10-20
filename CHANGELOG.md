@@ -161,7 +161,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   [cache upgrade](docs/suite-workspace.md#portable-directory-modes-and-preparation-cache-upgrade).
 - AgentSessions `kmx eval --development-host FILE` requires `--bindings FILE`
   and records the binding digest in its evidence, including judged and repeated
-  proof. AgentSessions receipts and managed proof without a binding digest are
+  proof. AgentSessions passing receipts move to v2
+  (`kmx.agentsessions-suite.passing/v2`); v1 receipts and managed v1 proof are
   refused, with no fallback to an older record; Orka/kagent receipts are unchanged.
   **Instead:** evaluate again with `--development-host FILE --bindings FILE`.
 - Suite loading now refuses Suite/ToolProvider extensions without an explicit

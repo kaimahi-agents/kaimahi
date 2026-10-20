@@ -87,8 +87,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   refuses a mismatch; a new model is a new suite version and evaluation).
   Evidence records the binding's JCS digest once for the whole run set, including
   judged and repeated runs; the host endpoint is not attested.
-  Receipts without bindingDigest are unreadable and need fresh evaluation; a
-  managed proof stored without one is ineligible (latest refuses, no fallback).
+  AgentSessions passing receipts are v2 (kmx.agentsessions-suite.passing/v2),
+  which records bindingDigest. v1 receipts are unreadable and need fresh
+  evaluation; a managed v1 proof is ineligible (latest refuses, no fallback).
   Operator declarations are not authenticated host/build attestation; cleartext
   journal retention is disclosed. Session replay cannot create candidate proof.
   Optional --runtime-version must match that commit; --kagent-runtime refuses.

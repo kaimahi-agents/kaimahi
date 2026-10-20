@@ -837,9 +837,9 @@ packaged model; a mismatch refuses before any Session. The receipt records the
 binding's digest once for the whole evaluation, including every judged or repeated
 run. The host's model endpoint is an operator declaration and is not
 checked against the binding. All cluster, namespace, inference and result-port
-selectors refuse, including explicitly supplied defaults. Receipts without a binding digest
-are unreadable; evaluate again. A managed proof stored without a binding digest
-is never selected: when it is the latest record, default push refuses with an
+selectors refuse, including explicitly supplied defaults. The receipt is
+version 2 (`kmx.agentsessions-suite.passing/v2`); a v1 receipt does not record a
+binding and is unreadable, so evaluate again. A managed v1 proof is never selected: when it is the latest record, default push refuses with an
 evaluate-again error rather than using an older record, and a new evaluation
 registers after it. No declaration or transport failure triggers fallback. Before
 Session creation, evaluation prints:

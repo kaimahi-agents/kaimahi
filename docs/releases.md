@@ -326,8 +326,9 @@ discloses cleartext journal retention, and requires an
 [`AgentSessionsBinding`](suite-workspace.md#agentsessionsbinding) whose
 `model.name` equals the packaged model; evidence records the binding digest.
 Its full-pass evidence supports evaluated push, not Lift or receipt diff.
-AgentSessions receipts and managed proofs without a binding digest are not
-eligible for push; evaluate again with `--bindings FILE`. See the [workspace guide](suite-workspace.md#agentsessions-development-evaluation).
+AgentSessions passing receipts are now v2 (`kmx.agentsessions-suite.passing/v2`);
+v1 receipts and managed proofs are not eligible for push; evaluate again with
+`--bindings FILE`. See the [workspace guide](suite-workspace.md#agentsessions-development-evaluation).
 
 Replace removed commands as follows:
 

@@ -59,7 +59,7 @@ func TestSuiteSessionsPassingRoundTripAndCoherence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fmt.Sprintf("%x", sha256.Sum256(raw)); got != "7ff3678d906acd6a92567c37e21bb3b41f1369472b75fd9033581c9ab8de75ad" {
+	if got := fmt.Sprintf("%x", sha256.Sum256(raw)); got != "9cb3f1a9cbc9049a72d081f3df0dad3781d4da174995b2764cd51a6a0361cdf4" {
 		t.Fatalf("single-run Sessions byte golden: %s", got)
 	}
 	if r.suiteDigest() != p.suite.Digest || bytes.Contains(raw, []byte(`"subject":null`)) || bytes.Contains(raw, []byte(`"provider"`)) || bytes.Contains(raw, []byte(`"output"`)) {
@@ -68,6 +68,9 @@ func TestSuiteSessionsPassingRoundTripAndCoherence(t *testing.T) {
 	var wire map[string]any
 	if json.Unmarshal(raw, &wire) != nil {
 		t.Fatal("invalid Sessions wire")
+	}
+	if wire["domain"] != "kmx.agentsessions-suite.passing/v2" || wire["agentsessions"].(map[string]any)["subject"].(map[string]any)["bindingDigest"] != subject.BindingDigest {
+		t.Fatalf("Sessions receipt is not v2 with a binding digest: %v", wire["domain"])
 	}
 	for _, c := range wire["cases"].([]any) {
 		for _, a := range c.(map[string]any)["assertions"].([]any) {

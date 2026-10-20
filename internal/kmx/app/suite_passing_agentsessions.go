@@ -10,7 +10,13 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
-const suiteSessionsPassingDomain = "kmx.agentsessions-suite.passing/v1"
+// suiteSessionsPassingDomain versions AgentSessions passing receipts. v2
+// receipts record the AgentSessionsBinding digest; v1 receipts did not and are
+// never eligible proof.
+const (
+	suiteSessionsPassingDomain   = "kmx.agentsessions-suite.passing/v2"
+	suiteSessionsPassingDomainV1 = "kmx.agentsessions-suite.passing/v1"
+)
 
 // These are explicit operator declarations, not authenticated host attestations.
 // Access locators and payloads deliberately stay outside the exported subject.

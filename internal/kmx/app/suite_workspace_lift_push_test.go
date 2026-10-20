@@ -114,10 +114,10 @@ func TestWorkspaceLiftSkipsCompletedStandaloneEvalAndPush(t *testing.T) {
 }
 
 // Root registry push registers a publication completion only after it selects
-// an AgentSessions proof that records its binding digest. A proof without one
-// refuses before any registry request or completion record, both from managed
-// lookup and from --evaluation.
-func TestManagedPublicationAgentSessionsRequiresBindingDigest(t *testing.T) {
+// an AgentSessions passing receipt v2, which records its binding digest. A v1
+// receipt refuses before any registry request or completion record, both from
+// managed lookup and from --evaluation.
+func TestManagedPublicationAgentSessionsRequiresReceiptV2(t *testing.T) {
 	p, subject, observations := sessionsPassingFixture(t)
 	receipt, err := newSuiteSessionsPassingReceipt(t.Context(), p, subject, observations)
 	if err != nil {
@@ -131,6 +131,7 @@ func TestManagedPublicationAgentSessionsRequiresBindingDigest(t *testing.T) {
 	if err := json.Unmarshal(current, &document); err != nil {
 		t.Fatal(err)
 	}
+	document["domain"] = suiteSessionsPassingDomainV1
 	delete(document["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
 	old, err := agentsuite.Marshal(document)
 	if err != nil {
@@ -186,13 +187,13 @@ func TestManagedPublicationAgentSessionsRequiresBindingDigest(t *testing.T) {
 	a := &App{Out: io.Discard, Err: io.Discard}
 	opt := SuiteWorkspacePushOptions{Workspace: p.root, Repository: strings.TrimPrefix(server.URL, "http://") + "/agents", PlainHTTP: true}
 
-	if _, err := a.PushSuiteWorkspaceManaged(t.Context(), opt); !errors.Is(err, errSuitePassPredatesBinding) {
-		t.Fatalf("managed proof without bindingDigest: %v", err)
+	if _, err := a.PushSuiteWorkspaceManaged(t.Context(), opt); !errors.Is(err, errSuitePassSessionsV1) {
+		t.Fatalf("managed receipt v1: %v", err)
 	}
 	explicitOld := opt
 	explicitOld.Evaluation = write("old.json", old)
-	if _, err := a.PushSuiteWorkspaceManaged(t.Context(), explicitOld); !errors.Is(err, errSuiteSessionsReceiptPredatesBinding) {
-		t.Fatalf("--evaluation proof without bindingDigest: %v", err)
+	if _, err := a.PushSuiteWorkspaceManaged(t.Context(), explicitOld); !errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("--evaluation receipt v1: %v", err)
 	}
 	if requests.Load() != 0 || len(records()) != 0 {
 		t.Fatalf("refused proof reached registry or registered publication: requests=%d records=%v", requests.Load(), records())
