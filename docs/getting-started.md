@@ -7,6 +7,10 @@ owns execution and enforcement. Need a local test environment first? Use the
 
 ## Install kmx
 
+**On Windows, use WSL for now.** Run the install commands and kmx inside
+your Linux WSL distribution, not PowerShell or Command Prompt. Native Windows
+builds are not supported yet; track [Windows support in #578](https://github.com/kaimahi-agents/kaimahi/issues/578).
+
 Install the latest release with Homebrew:
 
 ```bash

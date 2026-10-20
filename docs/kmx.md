@@ -28,6 +28,10 @@ evaluated execution.
 
 ## Install
 
+**On Windows, use WSL for now.** Install and run kmx inside your Linux
+WSL distribution, not PowerShell or Command Prompt. Native Windows builds
+are not supported yet; track [Windows support in #578](https://github.com/kaimahi-agents/kaimahi/issues/578).
+
 The stable release is available through the official Homebrew tap:
 
 ```bash

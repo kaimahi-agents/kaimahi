@@ -78,6 +78,10 @@ source-evidence `--promote`, partial outcomes, and fresh-evaluation requirements
 
 ## Getting Started: Get Your First Answer
 
+**On Windows, use WSL for now.** Install and run kmx inside your Linux
+WSL distribution, not PowerShell or Command Prompt. Native Windows builds
+are not supported yet; track [Windows support in #578](https://github.com/kaimahi-agents/kaimahi/issues/578).
+
 Install Docker or Podman (`CONTAINER_ENGINE=podman` selects Podman), then choose
 one independent install route for the latest stable release. Go installs require
 Go 1.26 or newer:

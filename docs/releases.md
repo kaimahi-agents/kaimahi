@@ -78,6 +78,10 @@ only Go module; no paired module release tag is needed.
 
 ## Install
 
+**On Windows, use WSL for now.** Install and run the Linux build inside your
+WSL distribution, not PowerShell or Command Prompt. Native Windows builds and
+release binaries are not supported yet; track [Windows support in #578](https://github.com/kaimahi-agents/kaimahi/issues/578).
+
 With Homebrew on macOS or Linux:
 
 ```bash
@@ -160,9 +164,9 @@ its own binary would be indefensible.
 **Platforms**: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`.
 kmx drives a Linux container runtime, so the machine running it is a Linux
 host or a Mac running one in a VM. Those are the four release platforms the
-installer and pinned toolchain support. Windows is served through WSL, which
-is `linux/amd64`; a native
-`windows/amd64` build would be an untested claim rather than a platform.
+installer and pinned toolchain support. On Windows, use the Linux build
+matching your WSL distribution's architecture (`amd64` or `arm64`). Native
+Windows support is tracked in [#578](https://github.com/kaimahi-agents/kaimahi/issues/578).
 
 A downloaded CLI needs no Go toolchain for native setup and agent workflows;
 it still requires the external tools described in [getting started](getting-started.md#prerequisites).
