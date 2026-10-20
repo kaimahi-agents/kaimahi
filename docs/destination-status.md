@@ -28,7 +28,7 @@ targets:
 
 The workspace resolver reads a valid `workspace.yaml` descriptor and `kmx.yaml`
 once. It does not load member files, build profiles, bindings, inference, registry
-content, passing receipts, or local Lift history. An operator can retain only the
+content, passing receipts, or local Deploy history. An operator can retain only the
 descriptor and destination configuration on another machine; the member paths need
 not exist for status. `--workspace` selects an exact root without fallback;
 otherwise the nearest ancestor workspace is selected.
@@ -59,14 +59,14 @@ It reads no Secret contents or metadata, Nodes, controller proxies or auth probe
 
 | Reported state | Meaning |
 |---|---|
-| `recorded` | A valid, applicable unsigned Lift attempt observation is present (v1 create or Orka v2 mutation). |
-| `provenance not recorded` | Native suite ownership is valid, but this object has no Lift annotation. This is normal for older objects or no-write reuse; it does not prove the object's age. |
+| `recorded` | A valid, applicable unsigned Deploy attempt observation is present (v1 create or Orka v2 mutation). |
+| `provenance not recorded` | Native suite ownership is valid, but this object has no Deploy annotation. This is normal for older objects or no-write reuse; it does not prove the object's age. |
 | `unknown` | Ownership or provenance is incomplete, malformed, conflicting, unsupported, changed during inspection, or cannot be observed safely. |
-| `not kmx-owned` | No native suite or legacy reservation markers are present. A copied Lift annotation alone cannot change this classification. |
+| `not kmx-owned` | No native suite or legacy reservation markers are present. A copied Deploy annotation alone cannot change this classification. |
 
 The table shows agent/member, runtime, shortened OCI suite and consumed-receipt
 digests, evaluation environment and actual gate, UTC **attempt** time, optional
-actor, provenance, release state, Lift attempt version/ID and readiness. JSON
+actor, provenance, release state, Deploy attempt version/ID and readiness. JSON
 retains full digests and identities. The
 per-object resource rows keep Agent and Provider/ModelConfig observations separate:
 an unstamped reused prerequisite never inherits its Agent's annotation.
@@ -115,17 +115,17 @@ when using GitOps alongside KMX. Status compares current specs only against each
 object's applicable recorded expected spec digest, not against Git's desired
 state. It neither fetches that desired state nor repairs GitOps changes.
 
-- With a preserved, valid and applicable Lift annotation, a changed Agent or
+- With a preserved, valid and applicable Deploy annotation, a changed Agent or
   Provider/ModelConfig spec digest produces per-resource `spec=drifted`, drifted
   readiness and exit **1**.
 - Status/resourceVersion-only changes and unrelated metadata edits are not spec
   drift. Status is not a blanket metadata drift detector: changes to suite
   ownership or provenance markers can instead make ownership/provenance `unknown`.
-- Removing the Lift annotation while retaining valid suite ownership yields
+- Removing the Deploy annotation while retaining valid suite ownership yields
   `provenance not recorded` and `spec=not recorded`: there is no recorded spec
   baseline, not a claimed match. Removing ownership markers changes classification;
   no native or legacy reservation markers means `not kmx-owned`, even with a
-  copied Lift annotation. Incomplete, malformed or conflicting markers can yield
+  copied Deploy annotation. Incomplete, malformed or conflicting markers can yield
   `unknown`.
 
 Identity/spec/ownership changes across reads within an inspection are reported as

@@ -86,7 +86,7 @@ const userGuides = [
   { text: 'Models and inference', link: '/docs/models' },
   { text: 'Azure CPU-model demo', link: '/docs/azure/cpu-model/' },
   { text: 'Interactive chat', link: '/docs/interactive-chat' },
-  { text: 'AKS Create, Prove, Lift demo', link: '/docs/aks-demo' },
+  { text: 'AKS Create, Prove, Deploy demo', link: '/docs/aks-demo' },
   { text: 'AKS', link: '/docs/aks' },
   { text: 'Releases and upgrades', link: '/docs/releases' },
   { text: 'FAQ', link: '/docs/FAQ' }
@@ -130,7 +130,7 @@ const designNotes = [
 export default defineConfig({
   title: 'Kaimahi',
   titleTemplate: ':title · Kaimahi',
-  description: 'Build, prove, and lift agents for Kubernetes.',
+  description: 'Build, prove, and deploy agents for Kubernetes.',
   lang: 'en-US',
   srcDir: '..',
   cleanUrls: true,
@@ -181,7 +181,7 @@ export default defineConfig({
       pageData.frontmatter.layout = 'home'
       pageData.frontmatter.hero = {
         name: 'Kaimahi',
-        text: 'Build, Prove and Lift your agents',
+        text: 'Build, Prove and Deploy your agents',
         tagline: 'A Kubernetes-native path from editable workspace to evidence-bound deployment.',
         actions: [
           { theme: 'brand', text: 'Get your first answer', link: '/docs/getting-started' },
@@ -193,7 +193,7 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Start', link: '/docs/getting-started' },
-      { text: 'Create · Prove · Lift', link: '/docs/suite-workspace' },
+      { text: 'Create · Prove · Deploy', link: '/docs/suite-workspace' },
       { text: 'Runtimes', link: '/docs/runtime-adapters' },
       { text: 'Reference', link: '/docs/kmx' },
       {

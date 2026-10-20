@@ -190,7 +190,7 @@ def command_hits(parts):
         if "--legacy-kagent" in flags:
             hits.add("retired --legacy-kagent opt-in")
         local = words[:1] == ["up"] or words[:2] == ["local", "up"]
-        cloud = words[:1] == ["lift"] or words[:2] == ["aks", "up"]
+        cloud = words[:1] in (["deploy"], ["lift"]) or words[:2] == ["aks", "up"]
         if local and LOCAL_STEPS.intersection(flags.get("--step", [])):
             hits.add("retired local installation step")
         if cloud and "kagent" in flags.get("--payload", []):
@@ -357,6 +357,7 @@ def selftest():
         'kmx --context=kind-x --confirm use orka', 'kmx up --step=agent',
         'kmx local up --step tools-agent', 'kmx quickstart --legacy-kagent',
         'kmx lift --payload=kagent', 'kmx aks up --step plane', 'kmx lift --step credential',
+        'kmx deploy --payload=kagent', 'kmx deploy --step credential',
         'kmx agent chat demo --session="abc"', 'kmx agent --context x chat --json=false',
         'kmx chat demo --session="abc"', 'kmx --context x chat --json=false',
         'args := []string{"chat", "demo", "--session", "abc"}',
@@ -411,6 +412,7 @@ def selftest():
         'kmx agent status demo --runtime kagent && echo --runtime-version v0.10.3',
         'kmx agent status demo --runtime kagent\n# --runtime-version v0.10.3',
         'kmx local up --step orka', 'kmx aks up --payload orka --step verify',
+        'kmx deploy suite@sha256:digest --plan',
         'kmx run demo --json', 'kmx chat demo # --session abc',
         'kmx chat demo && echo --json', 'kmx chat demo --json-output',
         'kmx agent run demo --json', 'kmx agent chat demo # --session abc',

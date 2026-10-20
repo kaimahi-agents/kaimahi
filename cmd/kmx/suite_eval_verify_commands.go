@@ -18,7 +18,7 @@ func newSuiteEvalVerifyCommand(state *commandState) *cobra.Command {
 		Long: "Verify unsigned evaluation evidence offline against a local single-manifest OCI layout and a complete, independently reviewed ExpectedEvaluation JSON file. No configuration, workspace, KMX state/cache, model, cluster or registry is accessed.\n\n" +
 			"Use --suite DIR for layout input, or --suite sha256:<digest> --from-layout DIR to pin the local bytes explicitly. A digest alone cannot supply artifact bytes. No registry references or cache lookup are supported.\n\n" +
 			"Commit a reviewed expected.json beside the suite in CI; never copy expectations from the evidence being checked or regenerate the policy to make a failing gate pass. All expected subject, execution, evaluator and judge policy fields are required.\n\n" +
-			"Success exits zero and prints a text or JSON verified summary. Refusals exit one with a stable code and safe explanation on stderr; JSON is success-only. Verification establishes unsigned consistency, not authenticity, execution truth, freshness or deployment readiness. Private push/Lift gates are unchanged.",
+			"Success exits zero and prints a text or JSON verified summary. Refusals exit one with a stable code and safe explanation on stderr; JSON is success-only. Verification establishes unsigned consistency, not authenticity, execution truth, freshness or deployment readiness. Private push/Deploy gates are unchanged.",
 		Example: "  kmx eval verify --suite ./suite-layout --evidence ./evidence.json --expect ./expected.json\n" +
 			"  kmx eval verify --suite sha256:<digest> --from-layout ./suite-layout --evidence ./evidence.json --expect ./expected.json -o json",
 		Args: func(_ *cobra.Command, args []string) error {

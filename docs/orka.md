@@ -11,7 +11,7 @@ certificate. kmx fetches the pinned release chart rather than requiring an
 Orka checkout or a manually created wrapper credential.
 
 Installation does not author an Agent or run a Task. Author a native Orka Agent with
-[native workspace authoring](suite-workspace.md), full eval, publication and digest Lift.
+[native workspace authoring](suite-workspace.md), full eval, publication and digest Deploy.
 Installation and authoring are deliberately separate operations.
 
 ## The command
@@ -110,12 +110,12 @@ an adopter should learn that here, not at their first model call.
 [Root create](kmx.md#kmx-create) authors native workspace source offline. Prepare
 the runtime/model/Ready openai Provider and result access separately; create
 never bootstraps them. Review authored cases, run full native eval, publish the
-exact graph with matching private evidence and Lift its digest. See the
+exact graph with matching private evidence and Deploy its digest. See the
 [workspace lifecycle](suite-workspace.md). Suite status/retirement are unavailable.
 
 Quickstart composes setup and this native lifecycle, verifies placement and then
 sends a separate fresh answer Task. Console Ready is placement only. Live Orka
-Agents, including suite-owned Agents placed by Lift, can use `run --agent` and
+Agents, including suite-owned Agents placed by Deploy, can use `run --agent` and
 chat with the selected context/namespace/name. Neither is workspace-local
 execution or fresh suite evaluation. Ownership fences still prevent legacy
 adoption, copying and retirement. `task result` reads existing Task phase/answer
@@ -171,7 +171,7 @@ traffic. Configure its runtime and model access through the upstream interfaces.
 
 ## Limits, stated
 
-- **Existing v0.1.3 reads remain supported.** Lift, status and the console
+- **Existing v0.1.3 reads remain supported.** Deploy, status and the console
   discover the controller by its Deployment role labels (legacy
   `control-plane=controller-manager`, chart
   `app.kubernetes.io/component=controller`), not by a release-specific name.
@@ -234,4 +234,4 @@ traffic. Configure its runtime and model access through the upstream interfaces.
 
 ## See also
 
-- [Native workspace lifecycle](suite-workspace.md) — source, eval, evaluated push and digest Lift
+- [Native workspace lifecycle](suite-workspace.md) — source, eval, evaluated push and digest Deploy

@@ -40,7 +40,7 @@ chat explicitly. AgentSessions prepare/load/ordinary push and explicit private
 literal-loopback `eval --development-host FILE` remain independent of deleted
 bundle Sessions evaluation/replay: one fresh Session/config/Exec per declared run of each ordered
 case, full-pass private proof and exact-S evaluated push, no cluster settings,
-tools, auth, Lift/chat/status or remote lifecycle. Receipt diff refuses
+tools, auth, Deploy/chat/status or remote lifecycle. Receipt diff refuses
 AgentSessions proof. Runtime-core assertions/llmJudge and all their test groups
 remain retained; native Orka/kagent and development AgentSessions eval supports authored llmJudge with an
 explicit endpoint, two threshold-side samples and payload-free declared identity
@@ -67,9 +67,9 @@ not suite-source evaluation or a retired-state reader. Preserve public AgentSuit
 build/pull/extracted-directory transfer and alpha `pkg/kmx` interfaces.
 
 Quickstart/console use native source → full eval → exact publication → reviewed
-Lift Apply/Verify. Quickstart then sends a separate fresh answer Task; console
-Ready means placement only. Chat `/lift` and console Lift only print
-`Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+Deploy Apply/Verify. Quickstart then sends a separate fresh answer Task; console
+Ready means placement only. Chat `/lift` and console Deploy only print
+`Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`.
 No release GUI/live-copy fallback. Wizard tools/host modes and live tools/inference
 editing are retired; host Foundry/Copilot chat controls remain independent.
 Standalone AKS up/down and internal App.Lift are independent operations.
@@ -80,7 +80,7 @@ one fresh blocking A2A Task per declared case run without retry. Optional KMX
 configured deadline independently per run, with summed budget disclosure;
 AgentSessions uses fresh Session/config/Exec per run. Draft #497's JSON
 case schema does not yet accept those fields. Evidence is full-passing and
-runtime-specific. Digest Lift refuses every occupied kagent primary/child; Orka
+runtime-specific. Digest Deploy refuses every occupied kagent primary/child; Orka
 permits exact evaluated reuse. No Python/RemoteMCP or kagent standalone chat/run.
 Keep privacy/current identity ResourceVersion/Secret metadata bracketing intact;
 readiness is not execution. See the [workspace guide](docs/suite-workspace.md).
@@ -178,7 +178,7 @@ Public runtime-profile format acceptance enables offline packaging/selection, no
 qualified image execution; see [runtime profiles](docs/suite-workspace.md#explicit-runtime-profiles-offline-only).
 Root `go test ./...` covers kmx consumers, including first-class Orka paths and
 exact-v0.10.3 Go packaged workspace evaluation/evaluated push and create-only
-digest Lift; portable conformance tests run in the suite repository.
+digest Deploy; portable conformance tests run in the suite repository.
 
 Run release verification with `GOWORK=off` against the published dependency
 and its checked-in sums. For coordinated local development, select an external
@@ -205,7 +205,7 @@ clears inherited Helm connection/auth overrides, and pulls charts without caller
 Helm/Docker credentials or plugins. Docker daemon access is preserved. It removes
 only its owned cluster and temporary work. A failed kind create is ambiguous and
 left for inspection. Bootstrap checks readiness and MCP discovery, not suite
-Lift or native A2A execution qualification; it is not an installed CLI installer.
+Deploy or native A2A execution qualification; it is not an installed CLI installer.
 Hygiene runs hermetic bootstrap, qualification, audit, shell, CI-routing and
 loopback fixture tests without creating a cluster.
 
@@ -216,7 +216,7 @@ separately from tool-free packaged-suite qualification.
 Native A2A execution is independently verified with exactly one MCP tool call,
 two model calls and one terminal answer, with no resend. A separate packaged
 workspace phase runs two tool-free cases, self-diff and evaluated push with
-stale-evidence refusal, then source-free digest Lift into a fresh namespace with
+stale-evidence refusal, then source-free digest Deploy into a fresh namespace with
 GET-only planning, ordered creation and occupied repeat refusal without another
 native execution. Only payload-free `qualification.json` and
 `suite-qualification.json` survive under `${RUNNER_TEMP:-/tmp}/kmx-kagent-lift/`;
@@ -255,7 +255,7 @@ forward. Independent receipt checks bind declared model/version, policy, thresho
 endpoint configuration digest and both scores; they do not attest model identity.
 No job, case or subprocess timeout is increased. The existing 660s outer limit
 bounds three sequential cases; it does not allow three full 5m waits. A successful
-run qualifies this fixed three-case native workspace and explicit-promoted Lift
+run qualifies this fixed three-case native workspace and explicit-promoted Deploy
 into absent canonical pairs, including a second exclusively owned kind cluster.
 The destination has its own Provider/Secret in orka-system, sharing the same
 source AIKit workload through a fixture-only private-network NodePort, never a

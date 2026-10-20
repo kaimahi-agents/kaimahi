@@ -67,6 +67,18 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Changed
 
+- Canonical `kmx deploy` replaces packaged-suite `kmx lift`, with the same
+  arguments, flags, runtime/evidence/consent guards and exit contracts. Deploy is
+  unreleased; v0.8.1 uses `lift`. Deprecated `kmx lift` stays hidden but callable
+  for at least one released version, preserving stdout and stderr stage labels
+  and adding exactly one stderr line per legacy invocation:
+  `kmx lift is deprecated; use kmx deploy (same arguments).`
+  Canonical human help/output says Deploy; machine JSON keys/values (including
+  `targets` operation `"lift"`), public Go/API/internal `Lift` names, evidence,
+  storage and annotations are unchanged. Old guide fragments remain valid.
+  Removal requires a later announced breaking release. Test/Prove wording and
+  the `eval` namespace are unchanged.
+
 - Workspace `lift --verbose` no longer prints judge rationale by itself; use
   `--show-content` for non-pass content. Deploy-only and plan-only Lift refuse
   that flag. The judge policy's local-diagnostics clarification preserves the

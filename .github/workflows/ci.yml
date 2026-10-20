@@ -506,16 +506,16 @@ jobs:
           if "kmx eval --workspace" not in joined or any(part not in joined for part in proof):
               problems.append("no exact authored evaluation, complete cleanup, independent Task absence and explicit promotion proof")
           logical = joined.replace("\\\n", " ")
-          if not re.search(r"^\s*kmx lift [^\n]*--promote(?:\s|$)", logical, re.M):
-              problems.append("the source-only evidence promotion flag must belong to Lift")
+          if not re.search(r"^\s*kmx deploy [^\n]*--promote(?:\s|$)", logical, re.M):
+              problems.append("the source-only evidence promotion flag must belong to Deploy")
           if "type: regex" not in joined or "> workspace/eval/example.yaml" not in joined:
               problems.append("the exact-answer regex must be authored before evaluation")
           if "task result" in joined:
               problems.append("a deleted candidate Task cannot supply a post-evaluation result")
-          eval_at, push_at, lift_at = [joined.find("kmx " + verb + " ") for verb in ("eval", "push", "lift")]
+          eval_at, push_at, lift_at = [joined.find("kmx " + verb + " ") for verb in ("eval", "push", "deploy")]
           if not (0 <= eval_at < joined.find('receipt["candidateCleanup"]') <
                   joined.find('test -z "$remaining"') < push_at < lift_at):
-              problems.append("candidate cleanup/absence must be checked before push and explicit Lift")
+              problems.append("candidate cleanup/absence must be checked before push and explicit Deploy")
           # Retired operations, forbidden by name. Bounded create/lift/status/evaluate
           # and API vocabulary are not globally banned; this Orka-only job
           # must not install the alternate runtime, use unsupported commands
@@ -1926,7 +1926,7 @@ jobs:
           test -z "$remaining"
           kmx push --workspace workspace --evaluation evidence/passing.json --to-layout layout hello:v1
           digest=$(python3 -c 'import json; print(json.load(open("layout/index.json"))["manifests"][0]["digest"])')
-          kmx lift "hello@$digest" --from-layout layout --to-context kind-kmx-clone-free \
+          kmx deploy "hello@$digest" --from-layout layout --to-context kind-kmx-clone-free \
             --to-namespace orka-system --inference provider:local --evidence evidence/passing.json --promote
       - name: Cluster state on failure
         if: failure() && steps.changes.outputs.docs_only != 'true'

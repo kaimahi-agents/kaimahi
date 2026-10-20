@@ -20,10 +20,10 @@ Create and push share workspace discovery; exact `--workspace` initializes
 without prompting. Live create/previews/wizard and user bundle commands,
 readers/writers/receipts are removed, not converted. Old receipts are unreadable;
 no files/resources are deleted. Quickstart/console compose native authoring,
-full eval, exact publication and reviewed Lift. Quickstart verifies placement
+full eval, exact publication and reviewed Deploy. Quickstart verifies placement
 before a separate fresh answer Task; console Ready means placement only.
 Kagent uses exact v0.10.3 Go/linux-amd64 packaged eval/evaluated push/create-only
-Lift; no installer, discovery, standalone chat/run or suite status/retirement.
+Deploy; no installer, discovery, standalone chat/run or suite status/retirement.
 KMX installs Orka's chart in harness-v2 controller mode, not the upstream harness
 ABI. Runtimes and harnesses own execution, enforcement and model access. Orka
 already supplies OTLP telemetry using GenAI conventions; extend that upstream
@@ -90,7 +90,7 @@ from deleted Tasks. Exact-S layout/registry transfer and source-withheld explici
 promotion qualify absent canonical destinations and fresh destination answers.
 Private captures are not artifacts; only passing metadata and a scalar report
 are uploaded. This fixed scenario does not qualify every creation, promotion,
-orphan-recovery or partial-outcome path. Hermetic tests are not live execution. The kagent qualifier proves source-free Lift into a
+orphan-recovery or partial-outcome path. Hermetic tests are not live execution. The kagent qualifier proves source-free Deploy into a
 fresh namespace and occupied repeat refusal without additional native execution.
 Standalone packaged evaluation is unavailable.
 
@@ -111,7 +111,7 @@ classification.
 
 The root CLI is the only Go module. Plain `make` builds `bin/kmx` only. The
 supported kagent surface is exact-v0.10.3 Go/linux-amd64 packaged workspace
-evaluation/evaluated push/create-only digest Lift through private App seams,
+evaluation/evaluated push/create-only digest Deploy through private App seams,
 not a user-bundle conversion layer. Public alpha ports remain unwired.
 
 For a narrative architecture view, including workspace preparation, native
@@ -217,7 +217,7 @@ runtime selection and supported-operation validation.
 
 ### Release retention boundary
 
-Complete fresh Orka Lift creates retain a shared UID-bound baseline and a new
+Complete fresh Orka Deploy creates retain a shared UID-bound baseline and a new
 explicit private ownership proof; reused/mixed placements never enroll. Private
 observation slots `intent.json` through `3.json` alone remain non-authoritative.
 Pre-reserved `4.json` binds an acknowledged shared completion, but is only a
@@ -234,11 +234,11 @@ live writer whose object writes have ceased may persist a known partial and
 release its reservation. Pending/partial shared proof never rolls; completed
 history rolls at ten entries within 64 KiB. See
 [retention and operator recovery](suite-workspace.md#release-retention-and-operator-recovery).
-The public `lift --update` route uses the retained Orka backend. Tests must
+The public `deploy --update` route uses the retained Orka backend. Tests must
 distinguish same-digest no-write, fresh-RV-without-new-authority, old/new
 known partials, a separate client/private home, and lost final acknowledgments.
 Pinned API characterization is necessary but does not substitute for complete
-Lift/retention qualification or prove a model answer. The existing native Python
+Deploy/retention qualification or prove a model answer. The existing native Python
 qualifier now independently evaluates and publishes v2, then drives the public
 CLI v1→v2→original-evidence v1→v2 and status-only dependency-RV no-op against its
 owned pair. It checks current status, stable UIDs, fresh mutation IDs, original
@@ -263,14 +263,14 @@ bin/kmx local down
 A bare `bin/kmx local up` installs the runtime without an Agent: kind, Ollama, the
 model and pinned Orka with its keyless `local` Provider. Author source with
 `bin/kmx create NAME --workspace DIR --model MODEL --instructions FILE`, then
-full eval, evaluated push and digest Lift with private evidence; or use guided
+full eval, evaluated push and digest Deploy with private evidence; or use guided
 `bin/kmx quickstart --interactive`. `orka status` is table-only runtime state;
 root `status --to NAME` independently observes destination Agent placement and
-unsigned Lift provenance with GETs only. It does not read suite member content,
+unsigned Deploy provenance with GETs only. It does not read suite member content,
 private history or Secrets, and does not imply retirement.
 
 KMX never installs/upgrades kagent. Its exact-v0.10.3 Go/linux-amd64 packaged
-profile uses author-owned `--bindings` for root eval/Lift, without runtime/model
+profile uses author-owned `--bindings` for root eval/Deploy, without runtime/model
 overrides. Profiles never fall back between installed runtimes. Live create and
 all bundle lifecycle/readers/receipts are removed.
 
@@ -314,7 +314,7 @@ pinned chart/controller and a verified loopback API. They characterize status-on
 resourceVersion churn, isolated generation/spec preconditions, current-generation
 readiness and a shared ConfigMap reservation's UID/RV/data CAS. A synthetic
 local-only prerequisite and unusable inference endpoint keep these checks free of
-model execution; they do not authorize or enable user-facing Lift updates.
+model execution; they do not authorize or enable user-facing Deploy updates.
 For local qualification, use a separately owned `kind-kmx-update-proof` cluster
 with the pinned installer, never a demo or shared destination. The tests leave
 freshly named fixtures for the owned cluster's teardown; they never delete an
@@ -323,10 +323,10 @@ occupied record or take over a reservation.
 The checkout-only [kagent qualification shell](../scripts/ci/kagent-lift.sh)
 retains exact v0.10.3 bootstrap, raw upstream Tool smoke and a direct single A2A
 MCP proof, separately from tool-free packaged-suite two-case evaluation,
-evaluated push and source-withheld digest Lift into a fresh namespace, with
+evaluated push and source-withheld digest Deploy into a fresh namespace, with
 occupied-repeat refusal. No legacy bundle receipts/status/judge proof is claimed.
 A2A proof requires one Tool call, two model calls and one terminal answer without
-resend. Suite Lift sends no native execution calls. Python/RemoteMCP, managed
+resend. Suite Deploy sends no native execution calls. Python/RemoteMCP, managed
 clusters and hosted providers remain unqualified.
 
 Build the final Go state with `go build -o bin/kmx ./cmd/kmx`, then run
@@ -342,7 +342,7 @@ alone are not execution evidence.
 
 Clone-free main/manual CI authors an exact-answer assertion inside full eval,
 checks completed candidate cleanup and independent Task absence, then performs
-evaluated layout publication and explicit-promoted digest Lift. It neither reads
+evaluated layout publication and explicit-promoted digest Deploy. It neither reads
 a deleted evaluation Task nor resends it, and claims no separate answer Task.
 No Azure credentials belong in fork-exposed CI. A docs-only skip is not a live rerun.
 

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ORDER = [
-    ("journey heading", r"^## Create, Prove, Lift$"),
+    ("journey heading", r"^## Create, Prove, Deploy$"),
     ("first-answer heading", r"^## Getting Started: Get Your First Answer$"),
     ("workspace/live heading", r"^## Workspace And Live Paths$"),
     ("runtime boundaries heading", r"^## Runtime Boundaries$"),
@@ -35,7 +35,7 @@ JOURNEY_ROWS = [
     ("Create", r"`kmx create NAME\b"),
     ("Prove", r"`kmx eval --workspace DIR\b"),
     ("Publish", r"`kmx push --workspace DIR --evaluation RECEIPT REF`"),
-    ("Lift", r"`kmx lift REF@sha256:DIGEST --to-context CTX --evidence RECEIPT`"),
+    ("Deploy", r"`kmx deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT`"),
 ]
 FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
 NEXT_SECTION = re.compile(r"^## ", re.M)
@@ -134,7 +134,7 @@ def check_workflow(text: str) -> str | None:
     blocks = list(FENCE.finditer(preamble))
     if not blocks or ordered_in(blocks[0].group(1), [
         ("create", r"^kmx create NAME --workspace \. --model MODEL --instructions FILE$"),
-        ("composed Lift", r"^kmx lift --to NAME$"),
+        ("composed Deploy", r"^kmx deploy --to NAME$"),
     ]) is not None:
         return "README front door: two-command workspace path must precede manual stages"
     prerequisites = " ".join(preamble[:blocks[0].start()].split())
@@ -151,8 +151,8 @@ def check_workflow(text: str) -> str | None:
         if marker not in prerequisites.replace("`", ""):
             return f"README front door: {label} must accompany the two-command path"
     if "source-only promotion" not in preamble or "not destination evaluation" not in preamble:
-        return "README front door: composed Lift must disclose source-only promotion"
-    release = "The table below describes v0.8.1's one-member workflow; these docs follow main and may also describe unreleased behavior."
+        return "README front door: composed Deploy must disclose source-only promotion"
+    release = "The table below describes main's one-member workflow. Deploy is unreleased; v0.8.1 uses `lift` with the same arguments."
     release_at = journey.find(release)
     if not 0 <= release_at < table_at:
         return "README front door: v0.8.1 release note must precede the suite journey table"
@@ -170,20 +170,20 @@ def check_workflow(text: str) -> str | None:
     if "Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out" not in rows[2][1]:
         return "README front door: Publish row must require evidence or explicit opt-out"
     if "without building, repacking, or publishing" not in rows[3][1]:
-        return "README front door: Lift row must stay deploy-only"
+        return "README front door: Deploy row must stay deploy-only"
     if "`--plan` is GET-only" not in rows[3][1]:
-        return "README front door: Lift row must preserve the GET-only plan boundary"
+        return "README front door: Deploy row must preserve the GET-only plan boundary"
     if "Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE`" not in rows[3][1]:
-        return "README front door: Lift row must preserve runtime-specific bindings"
+        return "README front door: Deploy row must preserve runtime-specific bindings"
     if "kagent refuses occupied targets" not in rows[3][1]:
-        return "README front door: Lift row must preserve kagent create-only placement"
+        return "README front door: Deploy row must preserve kagent create-only placement"
     if "Orka candidate evidence requires `--promote`, even in the same environment" not in rows[3][1]:
-        return "README front door: Lift row must describe candidate evidence promotion"
+        return "README front door: Deploy row must describe candidate evidence promotion"
     normalized_preamble = " ".join(preamble.split())
-    if "qualifies root Lift for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation" not in normalized_preamble:
-        return "README front door: Lift qualification scope is missing"
+    if "qualifies root Deploy for Orka exact reuse, bounded absent-pair registry promotion and kagent fresh-target creation" not in normalized_preamble:
+        return "README front door: Deploy qualification scope is missing"
     if "it does not prove every promotion, creation or partial-outcome path" not in normalized_preamble:
-        return "README front door: Lift qualification limits are missing"
+        return "README front door: Deploy qualification limits are missing"
 
     answer = section_after(text, matches["first-answer heading"])
     blocks = list(FENCE.finditer(answer))
@@ -213,9 +213,9 @@ def check_workflow(text: str) -> str | None:
     if runtime_boundary not in " ".join(runtime.split()):
         return "README front door: runtime/inference distinction is missing"
     for label, pattern in [
-        ("Orka default", r"\*\*Orka\*\* is the default runtime\..*packaged workspace path supports\s+evaluation, evaluated publication and root digest Lift with exact evaluated\s+reuse;.*independent live Orka run and chat remain"),
-        ("kagent version boundary", r"\*\*kagent\*\* support is exact-version.*v0\.10\.3\s+Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated\s+publication and create-only root digest Lift\. Standalone run/chat, Python,\s+RemoteMCP and retirement remain unavailable\. Read-only destination status\s+observes placement without enabling those execution/lifecycle capabilities\."),
-        ("agentsessions boundary", r"\*\*agentsessions\*\* supports pinned-chat offline suite create/prepare/load/ordinary\s+push and explicit private `eval --development-host FILE`: one fresh\s+Session/config/Exec per declared run, full-pass private proof and exact-S evaluated\s+push\..*literal-loopback development path loads no cluster\s+settings; explicit judging and repeated cases share Orka/kagent semantics\. It supports no tools, Lift/chat/status or remote lifecycle\.\s+Receipt diff refuses its proof\."),
+        ("Orka default", r"\*\*Orka\*\* is the default runtime\..*packaged workspace path supports\s+evaluation, evaluated publication and root digest Deploy with exact evaluated\s+reuse;.*independent live Orka run and chat remain"),
+        ("kagent version boundary", r"\*\*kagent\*\* support is exact-version.*v0\.10\.3\s+Go/linux-amd64 packaged workspace authoring, `eval --bindings`, evaluated\s+publication and create-only root digest Deploy\. Standalone run/chat, Python,\s+RemoteMCP and retirement remain unavailable\. Read-only destination status\s+observes placement without enabling those execution/lifecycle capabilities\."),
+        ("agentsessions boundary", r"\*\*agentsessions\*\* supports pinned-chat offline suite create/prepare/load/ordinary\s+push and explicit private `eval --development-host FILE`: one fresh\s+Session/config/Exec per declared run, full-pass private proof and exact-S evaluated\s+push\..*literal-loopback development path loads no cluster\s+settings; explicit judging and repeated cases share Orka/kagent semantics\. It supports no tools, Deploy/chat/status or remote lifecycle\.\s+Receipt diff refuses its proof\."),
     ]:
         if re.search(pattern, runtime, re.S) is None:
             return f"README front door: {label} is missing"

@@ -109,8 +109,20 @@ func execute(argv []string, deps dependencies) error {
 	contextFlag := ""
 	var err error
 	if len(argv) == 0 || argv[0] != "__complete" && argv[0] != "__completeNoDesc" {
+		original := argv
 		argv, contextFlag, err = extractContext(argv)
 		if err != nil {
+			// No Cobra hook runs after preprocessing refuses. Preserve that
+			// refusal, but still disclose a recognizable legacy invocation.
+			if legacyLiftInvocation(original) {
+				diagnostics := deps.stderr
+				if diagnostics == nil {
+					diagnostics = os.Stderr
+				}
+				if _, noticeErr := fmt.Fprintln(diagnostics, "kmx lift is deprecated; use kmx deploy (same arguments)."); noticeErr != nil {
+					return errors.Join(err, noticeErr)
+				}
+			}
 			return err
 		}
 	}
@@ -127,6 +139,32 @@ func execute(argv []string, deps dependencies) error {
 	}
 	root.SetArgs(argv)
 	return root.Execute()
+}
+
+// Recognize only the root command (or explicit help topic) after known global
+// flags. Unknown flags, other commands and -- stop discovery: their arguments
+// may contain an opaque value equal to "lift" and are never searched.
+func legacyLiftInvocation(argv []string) bool {
+	helpTopic := false
+	for i := 0; i < len(argv); i++ {
+		name, _, inline := strings.Cut(argv[i], "=")
+		switch name {
+		case "--context", "-context", "--container-engine":
+			if !inline {
+				i++
+			}
+		case "--help", "-h":
+			continue
+		case "help":
+			if inline || helpTopic {
+				return false
+			}
+			helpTopic = true
+		default:
+			return argv[i] == "lift"
+		}
+	}
+	return false
 }
 
 func newRootCommand(state *commandState) *cobra.Command {
@@ -152,7 +190,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newQuickstartCommand(state), newAKSCommand(state),
 		newConsoleCommand(state), newOrkaCommand(state),
 		newStatusCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
-		newAgentEvalCommand(state), newReleaseLiftCommand(state), newTaskCommand(state),
+		newAgentEvalCommand(state), newReleaseDeployCommand(state), newReleaseLiftCommand(state), newTaskCommand(state),
 		newSuiteCommand(state), newSuitePushCommand(state, true), newTargetsCommand(state),
 		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),
 	)

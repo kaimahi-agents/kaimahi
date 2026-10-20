@@ -1,7 +1,7 @@
 # FAQ and troubleshooting
 
 Start with [getting started](getting-started.md) for installation and a first
-answer and [suite workspace](suite-workspace.md) for author/eval/push/digest Lift.
+answer and [suite workspace](suite-workspace.md) for author/eval/push/digest Deploy.
 
 ## Why is `kmx orka` missing?
 
@@ -16,7 +16,7 @@ published tag, not the tip of `main`.
 No. Installation creates platform resources and, by default, a local Provider.
 It does not adopt an existing application or redirect its traffic. Author an
 native workspace member with [`kmx create`](kmx.md#kmx-create), then evaluate,
-publish and Lift with private evidence. Placement readiness is not an answer. Execution and enforcement belong to the selected runtime.
+publish and Deploy with private evidence. Placement readiness is not an answer. Execution and enforcement belong to the selected runtime.
 
 ## Why does status show a version different from the pin?
 
@@ -27,8 +27,8 @@ inspection, no-write planning, dry-run and upgrade limits.
 
 ## How do I ship v2 or roll back?
 
-The unreleased Orka lifecycle adds opt-in `kmx lift --to prod --update`.
-Plain Lift remains create-only, including its narrow exact evaluated reuse and
+The unreleased Orka lifecycle adds opt-in `kmx deploy --to prod --update`.
+Plain Deploy remains create-only, including its narrow exact evaluated reuse and
 GET-only workspace skip checks. Kagent updates are not supported.
 
 For an eligible retained pair, evaluate and publish v2, then use `--update` with
@@ -55,7 +55,7 @@ See [update and rollback](suite-workspace.md#update-and-rollback),
 
 Orka remains default. Explicit native kagent workspaces use exact v0.10.3
 Go/linux-amd64: create, `eval --bindings FILE`, evaluated push, native receipt
-diff and create-only digest Lift. Every occupied target refuses, even with
+diff and create-only digest Deploy. Every occupied target refuses, even with
 matching evaluated UIDs. Eval is unsecure-only, one fresh blocking A2A Task per
 case, never retried; trusted-proxy refuses before admission/send. No Python,
 RemoteMCP, standalone run/chat, retirement, installer/discovery,

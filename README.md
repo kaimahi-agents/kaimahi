@@ -14,13 +14,16 @@ You need to test an agent before shipping it, and deploy the same version you te
 >
 > When the tests pass, publish that exact package.
 >
-> Lift it to another cluster after reviewing the target and planned changes.
+> Deploy it to another cluster after reviewing the target and planned changes.
 
-Kaimahi's `kmx` command-line tool helps developers create, test and ship (lift)
+Kaimahi's `kmx` command-line tool helps developers create, test and deploy
 agents on Kubernetes. It packages the agent, runs test cases and moves that
 package to the selected cluster. It is not an agent runtime.
 
 **Status: experimental. Not recommended for production use.**
+
+These docs follow main. `kmx deploy` is unreleased; v0.8.1 uses `kmx lift`
+with the same arguments. See [command compatibility](docs/kmx.md#deploy-compatibility-unreleased).
 
 ## Try it locally
 

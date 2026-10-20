@@ -836,7 +836,7 @@ func (m agentTUIModel) View() tea.View {
 		body = "KEYS & COMMANDS\n\n" +
 			"h/l or ←/→  switch columns; j/k or ↑/↓  select agent\n" +
 			"<enter> actions · i inspect · R recent runs (Orka) · c chat · r refresh\n\n" +
-			"n create, evaluate and lift authored source in the focused environment\n" +
+			"n create, evaluate and deploy authored source in the focused environment\n" +
 			"/inspect [agent]     details in the focused column\n" +
 			"/chat [agent]        open chat, /exit returns here\n" +
 			interactiveLiftRetirement + "\n" +

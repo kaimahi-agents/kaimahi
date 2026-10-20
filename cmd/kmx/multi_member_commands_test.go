@@ -21,6 +21,8 @@ func TestMultiMemberCommandsRefuseBeforeOperationalSelection(t *testing.T) {
 		{"push", "--unevaluated", "registry.example/team:v1"},
 		{"push"},
 		{"push", "--unevaluated", "--to-layout", "output", "team:v1"},
+		{"deploy", "--to", "prod"},
+		{"deploy", "--to", "prod", "--plan"},
 		{"lift", "--to", "prod"},
 		{"lift", "--to", "prod", "--plan"},
 	} {
@@ -45,7 +47,11 @@ func TestMultiMemberCommandsRefuseBeforeOperationalSelection(t *testing.T) {
 			if !errors.Is(err, workspace.ErrMultiMemberUnsupported) || !strings.Contains(err.Error(), "multi-member") || !strings.Contains(err.Error(), "offline") {
 				t.Fatalf("expected multi-member offline-only refusal before downstream errors: %v", err)
 			}
-			if *loads != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
+			wantDiagnostics := ""
+			if args[0] == "lift" {
+				wantDiagnostics = legacyLiftNotice
+			}
+			if *loads != 0 || out.Len() != 0 || diagnostics.String() != wantDiagnostics {
 				t.Fatalf("refusal loaded configuration or emitted output: loads=%d, %q, %q", *loads, out.String(), diagnostics.String())
 			}
 			for _, absent := range []string{state, filepath.Join(root, "output")} {

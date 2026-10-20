@@ -4,7 +4,7 @@ Status: historical native Orka proposal and host-inference record, 2026-09-18.
 
 Current boundary: host Foundry chat controls remain independent and use saved
 local routes. Foundry wizard modes, interactive Lift/live copying and live
-source tools/inference editing are retired. Native create/eval/push/digest Lift
+source tools/inference editing are retired. Native create/eval/push/digest Deploy
 uses exact packaged models and Ready openai Providers; the historical integration
 proposal below is not a current recipe. See [native workspace](suite-workspace.md).
 

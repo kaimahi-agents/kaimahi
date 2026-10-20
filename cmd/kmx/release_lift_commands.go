@@ -15,7 +15,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func newReleaseDeployCommand(state *commandState) *cobra.Command {
+	return newReleaseCommand(state, "deploy")
+}
+
 func newReleaseLiftCommand(state *commandState) *cobra.Command {
+	return newReleaseCommand(state, "lift")
+}
+
+// Both spellings own independent flag storage but share every operational path.
+func newReleaseCommand(state *commandState, verb string) *cobra.Command {
+	label := "Deploy"
+	if verb == "lift" {
+		label = "Lift"
+	}
 	var opt app.ReleaseLiftOptions
 	var planOnly bool
 	var output string
@@ -25,7 +38,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	var verbose bool
 	var provenance = app.SuitePushProvenance{Enabled: true}
 	cmd := &cobra.Command{
-		Use: "lift [<ref>@<digest>]", Short: "Lift a workspace or an evaluated packaged suite",
+		Use: verb + " [<ref>@<digest>]", Short: "Deploy a workspace or an evaluated packaged suite",
 		Long: "Without a reference, --to NAME composes missing native Orka workspace eval, push and Lift. Requires saved publishRepository and destination evaluationTarget.\n" +
 			"Freezes the source and selectors, automatically discloses source-only promotion, confirms one plan, and verifies exact-version skips read-only. Plain Lift is create-only; --update selects the retained Orka lifecycle, never adoption or repair.\n" +
 			"Default workspace output is four stage lines (Plan/Eval/Push/Lift) plus compact evaluation failure detail on stderr; -v shows stage diagnostics, --show-content additionally prints sanitized bounded failure excerpts, expected values and judge rationale (never evidence); -o json emits one result. Nonterminal confirmation must name the concrete contexts disclosed in Plan.\n" +
@@ -47,7 +60,7 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			"  kmx lift registry.example/suite@sha256:<digest> --to prod --evidence ../private/pass.json --promote --plan\n" +
 			"  kmx lift registry.example/suite@sha256:<digest> --to-context prod --inference provider:inference --evidence ../private/pass.json --promote --plan\n" +
 			"  kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo --inference provider:inference --evidence ../private/pass.json --promote -o json",
-		Args: usageArgs(0, 1, "kmx lift --to NAME | kmx lift <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--update] [--plan]"),
+		Args: usageArgs(0, 1, "kmx "+verb+" --to NAME | kmx "+verb+" <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--update] [--plan]"),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateContainerEngineFlag(cmd, args); err != nil {
 				return err
@@ -56,24 +69,24 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 				return fmt.Errorf("--show-content requires executing workspace evaluation")
 			}
 			if state.contextFlag != "" || cmd.Flags().Changed("context") {
-				return fmt.Errorf("--context cannot be used with suite lift; use --to-context")
+				return fmt.Errorf("--context cannot be used with suite %s; use --to-context", verb)
 			}
 			for _, name := range []string{"to", "to-context", "to-namespace", "inference", "bindings", "evidence", "from-layout", "output", "result-port", "judge-base-url", "judge-key-env"} {
 				if f := cmd.Flag(name); f.Changed && strings.TrimSpace(f.Value.String()) == "" {
-					return fmt.Errorf("lift requires non-empty --%s", name)
+					return fmt.Errorf("%s requires non-empty --%s", verb, name)
 				}
 			}
 			if output != "text" && output != "json" {
-				return fmt.Errorf("lift output must be text or json")
+				return fmt.Errorf("%s output must be text or json", verb)
 			}
 			if len(args) == 0 {
 				for _, name := range []string{"evidence", "from-layout", "bindings"} {
 					if cmd.Flags().Changed(name) {
-						return fmt.Errorf("workspace lift refuses --%s; use explicit digest Lift", name)
+						return fmt.Errorf("workspace %s refuses --%s; use explicit digest %s", verb, name, label)
 					}
 				}
 				if destination == "" {
-					return fmt.Errorf("workspace lift requires explicit --to NAME")
+					return fmt.Errorf("workspace %s requires explicit --to NAME", verb)
 				}
 				if provenance.Require && !provenance.Enabled {
 					return fmt.Errorf("--require-provenance cannot be used with --provenance=false")
@@ -82,11 +95,11 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			}
 			for _, name := range []string{"case-timeout", "result-port", "judge-base-url", "judge-key-env", "provenance", "require-provenance"} {
 				if cmd.Flags().Changed(name) {
-					return fmt.Errorf("explicit-reference lift refuses --%s", name)
+					return fmt.Errorf("explicit-reference %s refuses --%s", verb, name)
 				}
 			}
 			if !cmd.Flags().Changed("evidence") {
-				return fmt.Errorf("%w: explicit-reference lift requires --evidence FILE", app.ErrReleaseLift)
+				return fmt.Errorf("%w: explicit-reference %s requires --evidence FILE", app.ErrReleaseLift, verb)
 			}
 			opt.Reference = args[0]
 			if !cmd.Flags().Changed("to-namespace") {
@@ -143,10 +156,11 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 			// Named guard retry advice must preserve this digest, evidence and selectors,
 			// not synthesize the legacy create route or refused global --context flag.
 			parts := []string{"KIND_CLUSTER=" + quoteShell(a.Cfg.KindCluster), "CONTAINER_ENGINE=" + quoteShell(a.Cfg.ContainerEngine), quoteShell(state.executable())}
-			for _, arg := range state.argv {
+			for _, arg := range deploymentRecoveryArgs(state.argv) {
 				parts = append(parts, quoteShell(arg))
 			}
 			a.InvocationCommand = strings.Join(parts, " ")
+			a.DeployPresentation = verb == "deploy"
 			prepared, err := a.PrepareReleaseLift(ctx, opt)
 			if err != nil {
 				return err
@@ -176,18 +190,36 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 				return nil
 			}
 			result, applyErr := a.ApplyReleaseLift(ctx, prepared, summary.PlanDigest)
-			if output == "json" {
-				return errors.Join(applyErr, json.NewEncoder(cmd.OutOrStdout()).Encode(result))
-			}
-			_, writeErr := fmt.Fprintf(cmd.OutOrStdout(), "Lift: %s\nSuite: %s\nMember: %s\nTarget: %q/%q\n", result.State, summary.SuiteDigest, summary.Member, summary.Target.Context, summary.Target.Namespace)
-			for _, r := range result.Resources {
-				if writeErr != nil {
-					break
-				}
-				_, writeErr = fmt.Fprintf(cmd.OutOrStdout(), "%s/%s: %s (ready=%t, UID=%q)\n", r.Kind, r.Name, r.Outcome, r.Ready, r.UID)
-			}
-			return errors.Join(applyErr, writeErr)
+			return reportReleaseLiftResult(cmd, output, summary, result, applyErr)
 		},
+	}
+	// Help is authored CLI copy, not operation data. Both routes teach the
+	// canonical spelling while the hidden route retains its own usage/flags.
+	cmd.Long = strings.NewReplacer("Lift", "Deploy", "lift", "deploy").Replace(cmd.Long)
+	cmd.Example = strings.ReplaceAll(cmd.Example, "kmx lift", "kmx deploy")
+	if verb == "lift" {
+		cmd.Hidden = true
+		noticed := false
+		notice := func() error {
+			if noticed {
+				return nil
+			}
+			noticed = true
+			_, err := fmt.Fprintln(cmd.ErrOrStderr(), "kmx lift is deprecated; use kmx deploy (same arguments).")
+			return err
+		}
+		args := cmd.Args
+		cmd.Args = func(cmd *cobra.Command, values []string) error {
+			return errors.Join(notice(), args(cmd, values))
+		}
+		cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+			return errors.Join(notice(), err)
+		})
+		help := cmd.HelpFunc()
+		cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+			_ = notice()
+			help(cmd, args)
+		})
 	}
 	registerDestinationFlag(cmd, &destination)
 	cmd.Flags().StringVar(&opt.ToContext, "to-context", "", "explicit destination kubeconfig context")
@@ -213,4 +245,24 @@ func newReleaseLiftCommand(state *commandState) *cobra.Command {
 	_ = cmd.MarkFlagDirname("from-layout")
 	_ = cmd.MarkFlagFilename("evidence")
 	return cmd
+}
+
+// Keep reporting separate from effects: output errors join the operation error,
+// and machine results never pass through human presentation formatting.
+func reportReleaseLiftResult(cmd *cobra.Command, output string, summary app.ReleaseLiftSummary, result app.ReleaseLiftResult, applyErr error) error {
+	if output == "json" {
+		return errors.Join(applyErr, json.NewEncoder(cmd.OutOrStdout()).Encode(result))
+	}
+	label := "Lift"
+	if cmd.Name() == "deploy" {
+		label = "Deploy"
+	}
+	_, writeErr := fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\nSuite: %s\nMember: %s\nTarget: %q/%q\n", label, result.State, summary.SuiteDigest, summary.Member, summary.Target.Context, summary.Target.Namespace)
+	for _, r := range result.Resources {
+		if writeErr != nil {
+			break
+		}
+		_, writeErr = fmt.Fprintf(cmd.OutOrStdout(), "%s/%s: %s (ready=%t, UID=%q)\n", r.Kind, r.Name, r.Outcome, r.Ready, r.UID)
+	}
+	return errors.Join(applyErr, writeErr)
 }

@@ -18,7 +18,7 @@ For the single-node AKS CPU test template and its explicit-context runbook, see
 ## Storing an API key
 
 Native Orka Providers reference an existing namespaced Kubernetes Secret.
-Provision it separately; native evaluation/Lift accepts only name/key references,
+Provision it separately; native evaluation/Deploy accepts only name/key references,
 not key bytes. Never put keys in command arguments, checked-in YAML, ConfigMaps
 or logs. Offline workspace create neither provisions credentials nor bootstraps a model.
 

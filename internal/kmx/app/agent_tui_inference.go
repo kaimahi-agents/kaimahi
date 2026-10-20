@@ -303,9 +303,9 @@ const (
 	consoleProviderKind = "providers.core.orka.ai"
 )
 
-const interactiveLiftRetirement = "Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …"
+const interactiveLiftRetirement = "Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …"
 
-const agentMutationRetirement = "In-place agent tools/inference/prompt editing is retired; edit the authored member/workspace, then eval → push → lift."
+const agentMutationRetirement = "In-place agent tools/inference/prompt editing is retired; edit the authored member/workspace, then eval → push → deploy."
 
 func (a *App) consoleSaveInference(ctx context.Context, env agentTUIEnvironment, agent agentTUIAgent, snapshot consoleInferenceSnapshot, source consoleInferenceSource, model string) error {
 	return fmt.Errorf("%s", agentMutationRetirement)

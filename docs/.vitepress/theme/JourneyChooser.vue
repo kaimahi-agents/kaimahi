@@ -6,11 +6,11 @@ const paths = [
   {
     label: 'Build a suite',
     eyebrow: '01 · Ship it',
-    title: 'Create an agent, then Lift it',
-    summary: 'Start with a prepared runtime and inference, registry authentication, and kmx.yaml with publishRepository, destination selectors and evaluationTarget; create supplies none of these. Lift freezes inputs and composes missing proof, publication and placement with source-only promotion.',
-    command: 'kmx create … → kmx lift --to NAME',
+    title: 'Create an agent, then Deploy it',
+    summary: 'Start with a prepared runtime and inference, registry authentication, and kmx.yaml with publishRepository, destination selectors and evaluationTarget; create supplies none of these. Deploy freezes inputs and composes missing proof, publication and placement with source-only promotion.',
+    command: 'kmx create … → kmx deploy --to NAME',
     link: '/docs/getting-started#an-agent-of-your-own',
-    action: 'Create and Lift your agent'
+    action: 'Create and Deploy your agent'
   },
   {
     label: 'First answer',

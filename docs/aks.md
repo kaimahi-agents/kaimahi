@@ -4,14 +4,14 @@
 Agents reach models through owner-configured Orka Providers directly.
 This page documents the **current AKS implementation**, which lands Orka on a
 cluster it provisions. The former Kagent Copilot demo journey and its AKS
-payload remain retired. Exact-v0.10.3 packaged kagent evaluation and digest Lift
+payload remain retired. Exact-v0.10.3 packaged kagent evaluation and digest Deploy
 can target a separately installed compatible cluster; KMX does not manage that
 installation.
 
 For a copyable end-to-end example, see the
-[AKS Create, Prove, Lift demo](aks-demo.md). It proves an Orka workspace locally,
+[AKS Create, Prove, Deploy demo](aks-demo.md). It proves an Orka workspace locally,
 then provisions a disposable Free-tier control plane, publishes to ACR, and reviews
-an explicit source-evidence promotion before Lift.
+an explicit source-evidence promotion before Deploy.
 
 `kmx aks up` and `kmx aks down` are **temporary compatibility routes**,
 not a first-class KMX domain. They are hidden from root help and shell
@@ -64,7 +64,7 @@ creating or resuming one.
 
 The former root `lift` AKS-provisioning alias and `lift down` are removed
 outright. Use `kmx aks up` and `kmx aks down`; root
-`kmx lift REF@sha256:DIGEST` now means one-member packaged native deployment:
+`kmx deploy REF@sha256:DIGEST` now means one-member packaged native deployment:
 Orka or exact-v0.10.3 Go kagent. Runtime-specific selectors come from the package
 contract.
 Existing run records and historical ownership teardown remain unchanged.
@@ -106,9 +106,9 @@ and a newline there corrupts the Authorization header on every request. See
 [models](models.md) for the same approach.
 
 The endpoint is your model backend. Once an openai Provider is Ready and serves
-the exact authored model, use [native workspace eval/evaluated push/digest Lift](suite-workspace.md)
+the exact authored model, use [native workspace eval/evaluated push/digest Deploy](suite-workspace.md)
 with private full-passing evidence and explicit target/inference. Live create,
-user bundles and interactive Lift are removed; AKS setup remains independent.
+user bundles and interactive Deploy are removed; AKS setup remains independent.
 
 The banner names the account, subscription name and destination. `--plan` stops
 after preflight/account inspection, without creating cloud resources. A real

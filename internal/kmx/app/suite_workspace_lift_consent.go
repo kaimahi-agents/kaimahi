@@ -28,7 +28,7 @@ func (a *App) workspaceLiftConsent(ctx context.Context, p *PreparedWorkspaceLift
 	}
 	disclosure := p.plan.SuiteDigest + " → " + p.plan.Repository
 	if p.options.JSON {
-		disclosure += "; " + selectedDisclosure
+		disclosure += "; " + a.workspaceLiftDisclosure(selectedDisclosure)
 	}
 	if err := guard.ConfirmPipeline(ctx, cfg, []string{eval.Target.Context, dest.Target.Context}, a.Cfg.Confirm, disclosure, out, a.Stdin); err != nil {
 		return nil, err

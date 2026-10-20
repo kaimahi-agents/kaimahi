@@ -1,10 +1,12 @@
-# Build and Lift a CPU-model agent on Azure
+<a id="build-and-lift-a-cpu-model-agent-on-azure"></a>
+
+# Build and Deploy a CPU-model agent on Azure
 
 Create a release-notes agent, prove it on local Kubernetes, publish the tested
-version to ACR, and Lift that exact version to AKS. Both clusters run the same
+version to ACR, and Deploy that exact version to AKS. Both clusters run the same
 small CPU model. No GPU, Foundry account or hosted-model API key is needed.
 
-**Create → Prove locally → Publish → Lift to AKS → Ask**
+**Create → Prove locally → Publish → Deploy to AKS → Ask**
 
 This adapts the [release-notes demo](https://gist.github.com/gambtho/2956e055b7bbe47562cd%36a4946589ab6)
 to self-hosted inference. For the shared lifecycle contract, see
@@ -13,7 +15,9 @@ to self-hosted inference. For the shared lifecycle contract, see
 ## Before you start
 
 The main path uses **Bash on Linux**, with Azure CLI and the Kubernetes tools
-in the same environment. Start in the repository root.
+in the same environment. Start in the repository root. The `kmx deploy` spelling
+is unreleased; use a main checkout build, or `kmx lift` with the same arguments
+on v0.8.1. See [Deploy compatibility](../../kmx.md#deploy-compatibility-unreleased).
 **Windows users:** run KMX in WSL; see [Windows setup](#windows-setup) for the
 PowerShell/Azure authentication handoff. Native Windows KMX is unsupported.
 
@@ -35,7 +39,7 @@ ambiguous create. Keep credentials, answers and diagnostic payloads private.
 ### What depends on what
 
 Kubernetes hosts the workloads; **AIKit serves the model**, **Orka runs the
-agent**, and **KMX authors, evaluates, publishes and Lifts the suite**. Installing
+agent**, and **KMX authors, evaluates, publishes and Deploys the suite**. Installing
 AKS or Orka alone does not provide inference. ACR stores the published suite,
 not a running agent or model server. See [models and inference](../../models.md)
 for the endpoint contract.
@@ -43,7 +47,7 @@ for the endpoint contract.
 | File | Supplies | Used by |
 |---|---|---|
 | [`aks.bicep`](aks.bicep) | Remote Kubernetes compute, networking and authentication | AKS workloads; no model or Orka installation |
-| [`acr.bicep`](acr.bicep) | Registry for the tested OCI suite | KMX push and digest-based Lift |
+| [`acr.bicep`](acr.bicep) | Registry for the tested OCI suite | KMX push and digest-based Deploy |
 | [`aikit-cpu-namespace.yaml`](aikit-cpu-namespace.yaml) | Dedicated `kmx-inference` Namespace | Create before the namespaced model objects |
 | [`aikit-cpu.yaml`](aikit-cpu.yaml) | ConfigMap with model settings, Deployment with pinned model server, internal Service | Orka's inference Provider, in both kind and AKS |
 | [`template_test.go`](template_test.go) | Offline manifest/resource checks and model-pin parity with the CI fixture | Contributors running `go test ./docs/azure/cpu-model`; not deployed |
@@ -372,27 +376,29 @@ kmx push --workspace "$WORKSPACE" "$PUBLISH_REF" --evaluation "$STATE/passing.js
 Require success and retain the returned manifest digest. Set `RELEASE_REF` to
 the published repository plus that exact `@sha256:...` digest, not a tag.
 
-## 7. Lift to AKS, then ask
+<a id="7-lift-to-aks-then-ask"></a>
+
+## 7. Deploy to AKS, then ask
 
 Review the GET-only plan. `--promote` explicitly uses **source-only** evidence;
 the destination must satisfy the same packaged runtime/model requirements:
 
 ```bash
 RELEASE_REF="$REGISTRY.azurecr.io/agents/release-notes@sha256:<published-digest>"
-KUBECONFIG="$AKS_KUBECONFIG" kmx lift "$RELEASE_REF" --plan --promote \
+KUBECONFIG="$AKS_KUBECONFIG" kmx deploy "$RELEASE_REF" --plan --promote \
   --to-context "$AKS_CONTEXT" --to-namespace orka-system \
   --inference provider:cpu-inference --evidence "$STATE/passing.json"
 ```
 
-Approve that exact plan and remote context, then Lift:
+Approve that exact plan and remote context, then Deploy:
 
 ```bash
-KUBECONFIG="$AKS_KUBECONFIG" kmx lift "$RELEASE_REF" --promote \
+KUBECONFIG="$AKS_KUBECONFIG" kmx deploy "$RELEASE_REF" --promote \
   --to-context "$AKS_CONTEXT" --to-namespace orka-system \
   --inference provider:cpu-inference --evidence "$STATE/passing.json"
 ```
 
-Require Ready placement. Lift sends no model Tasks; ask separately:
+Require Ready placement. Deploy sends no model Tasks; ask separately:
 
 ```bash
 cat > "$STATE/prompt.txt" <<'EOF'
@@ -416,7 +422,7 @@ to `Answer in one sentence, with no headings or bullet points.` Run a **new**
 local evaluation with a new output path.
 
 Require complete assertion failures and completed cleanup—not execution errors.
-Do not publish or Lift the edit. Independently inspect the AKS placement and
+Do not publish or Deploy the edit. Independently inspect the AKS placement and
 send a fresh Task: the tested digest must remain deployed and answering.
 Restore the saved instructions deliberately; never relabel evidence across edits.
 

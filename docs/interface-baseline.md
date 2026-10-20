@@ -4,6 +4,12 @@ This document is a reviewable snapshot of the interfaces implemented on current
 `main`. It is not a proposal for future syntax. The [`kmx` reference](kmx.md)
 remains authoritative for command flags and output contracts.
 
+`deploy` is unreleased; v0.8.1 uses `lift` with the same arguments. The deprecated
+packaged-suite `lift` route stays hidden but callable for at least one released
+version, with one stderr notice and unchanged legacy output/exit contracts. See
+[Deploy compatibility](kmx.md#deploy-compatibility-unreleased). Public Go/API
+`Lift` names and machine fields remain unchanged.
+
 ## Installed command tree
 
 Visible product commands:
@@ -15,7 +21,7 @@ kmx
 │   ├── diff <before.json> <after.json>
 │   └── from-sessions <session-uid>...
 ├── push [reference]
-├── lift [<ref>@<digest>]
+├── deploy [<ref>@<digest>]
 ├── run --agent <name>
 ├── chat <name> [message...]
 ├── quickstart
@@ -53,12 +59,13 @@ Hidden but callable:
 
 | Route | Contract |
 |---|---|
+| `kmx lift [<ref>@<digest>]` | Deprecated deployment spelling; same arguments/flags, one stderr notice, legacy stdout and stderr stage labels retained |
 | `kmx aks up/down` | Guarded AKS compatibility path with historical ownership records |
 | `kmx quickstart-wizard` | Retirement stub directing callers to `quickstart --interactive` |
 
 Removed outright: `kmx agent`, root `ctx`, `up`, `down`, the former
 AKS-provisioning meaning of root `lift`, and `lift down`. They are not
-compatibility aliases. Root `lift <ref>@<digest>` is now the distinct deploy-only
+compatibility aliases. Root `deploy <ref>@<digest>` is now the distinct deploy-only
 one-member packaged native Orka/exact-v0.10.3 Go kagent operation.
 User `agent.yaml` readers/writers/receipts, `bundle` commands, `create --live`
 including previews/wizard, root run bundle mode and `--bundles` flags are also
@@ -69,7 +76,7 @@ removed outright. Old bundle receipts are unreadable; no migration/resource dele
 ```text
 Workspace --create/eval--> AgentSuite artifact --push--> OCI location
                                                     |
-                                                    +-> exact-digest native lift
+                                                    +-> exact-digest native deploy
 ```
 
 | Command | Primary object | Current effect |
@@ -79,7 +86,7 @@ Workspace --create/eval--> AgentSuite artifact --push--> OCI location
 | `eval export` | Latest completed exact-suite/member managed proof | Write new detached public evidence offline; captured tagged module/checksum or clean VCS provenance required, no evaluation or private-gate replacement |
 | `eval verify` | Local single-manifest OCI layout + detached evidence + reviewed ExpectedEvaluation | State-free offline CI gate; digest input also requires explicit layout, text/JSON success exits0, coded refusal exits1; no private-gate authority |
 | `push` | Prepared AgentSuite | Transfer exact OCI graph with latest completed exact-S proof, explicit --evaluation override or --unevaluated opt-out; explicit tags unchanged, bare push uses saved `repository:s-<S>`; no deployment |
-| `lift` | Workspace or exact supported packaged native AgentSuite | No-reference `--to NAME` composes missing Orka eval/push/Lift with one frozen-plan confirmation and verified exact-version skips. Explicit reference stays deploy-only by digest with private evidence; Orka uses `--inference`, kagent uses `--bindings`; `--plan` has no execution/publication/admission |
+| `deploy` | Workspace or exact supported packaged native AgentSuite | No-reference `--to NAME` composes missing Orka eval/push/Deploy with one frozen-plan confirmation and verified exact-version skips. Explicit reference stays deploy-only by digest with private evidence; Orka uses `--inference`, kagent uses `--bindings`; `--plan` has no execution/publication/admission |
 | `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |
 | `status --to NAME` | Named destination namespace | GET-only table/JSON deployed-Agent provenance/readiness inventory; separate candidates, unknown is not absent |
 | `orka status` | Orka installation | Table-only runtime report, not destination placement inspection |
@@ -104,13 +111,13 @@ with explicit judge transport and identity, plus optional KMX case `runs`/`minPa
 `minPasses` requires `runs`, and both are positive integers. KMX's execution cap
 is 100 runs, within the spec's consumer resource-limit allowance.
 No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
-AgentSessions evidence is explicitly refused by diff and Lift;
+AgentSessions evidence is explicitly refused by diff and Deploy;
 `eval from-sessions` is reference extraction/export without a native consumer.
 Root `run --agent` and supported Orka chat select live Agents by
 context/namespace/name, including suite-owned Agents. They are not workspace-local
 execution or fresh suite evaluation and grant no adoption/update/copy/retirement
-authority. Chat `/lift` and console Lift only print
-`Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+authority. Chat `/lift` and console Deploy only print
+`Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`.
 No new GUI or source-less copying. Console Ready means placement, not an answer.
 
 ## Context, environment, target and inference
@@ -131,9 +138,9 @@ or deploy a runtime.
 
 | Runtime/integration | Implemented KMX scope |
 |---|---|
-| Orka | Default runtime; setup, independent live run/chat, workspace evaluation/evaluated publication and exact-digest native Lift; GET-only destination status, no retirement |
-| kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Lift; GET-only destination status, no retirement |
-| agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case run, shared explicit judging and repeat policy, no tools, cluster settings, registry/auth or remote lifecycle; Lift/chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. |
+| Orka | Default runtime; setup, independent live run/chat, workspace evaluation/evaluated publication and exact-digest native Deploy; GET-only destination status, no retirement |
+| kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Deploy; GET-only destination status, no retirement |
+| agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case run, shared explicit judging and repeat policy, no tools, cluster settings, registry/auth or remote lifecycle; Deploy/chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. |
 
 Support is operation- and version-specific. See the [runtime support
 matrix](runtime-adapters.md#revision-pinned-support-and-qualification-matrix).

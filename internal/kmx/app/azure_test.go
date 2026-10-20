@@ -44,7 +44,7 @@ func TestConsoleAzureClusterEditingRetired(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			source := consoleInferenceSource{Kind: "cluster", Name: "azure", Provider: "azure-openai", Model: tc.providerDefault, AzureDeployment: "chat-prod", Endpoint: "https://example.openai.azure.com"}
 			err := a.consoleSaveInference(t.Context(), env, agent, consoleInferenceSnapshot{}, source, tc.override)
-			if err == nil || !strings.Contains(err.Error(), "authored member/workspace") || !strings.Contains(err.Error(), "eval → push → lift") {
+			if err == nil || !strings.Contains(err.Error(), "authored member/workspace") || !strings.Contains(err.Error(), "eval → push → deploy") {
 				t.Fatalf("retired Provider edit not refused before patch: %v", err)
 			}
 		})

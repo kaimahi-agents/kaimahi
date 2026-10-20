@@ -1,7 +1,7 @@
 # Getting started
 
-Install kmx, then **Create → Prove → Lift** an agent of your own with two commands.
-Lift composes missing evaluation, publication and placement; the selected runtime
+Install kmx, then **Create → Prove → Deploy** an agent of your own with two commands.
+Deploy composes missing evaluation, publication and placement; the selected runtime
 owns execution and enforcement. Need a local test environment first? Use the
 [local quickstart](#one-command-and-an-agent-that-answers) below.
 
@@ -29,9 +29,12 @@ Put Go's binary directory on PATH. Inspect the effective context with
 `kmx context show` or select one with `kmx context use <context>`.
 See [release upgrades](releases.md#upgrading-kmx) when moving from an older version,
 and [command alignment](command-semantics.md) for compatibility and retirement details.
-The root `create/chat/run/eval/push/lift` commands below are available in
-v0.8.1. When upgrading, see the [migration guidance](../CHANGELOG.md#upgrading)
-for removed commands and legacy bundle workflows.
+The root `create/chat/run/eval/push` commands below are available in v0.8.1.
+`kmx deploy` is unreleased; v0.8.1 calls it `kmx lift` with the same arguments.
+Use a main checkout build for the `deploy` examples below, or `lift` with v0.8.1.
+See [Deploy compatibility](kmx.md#deploy-compatibility-unreleased). When upgrading,
+see the [migration guidance](../CHANGELOG.md#upgrading) for removed commands and
+legacy bundle workflows.
 
 ## Prerequisites
 
@@ -61,14 +64,14 @@ From that workspace root, provide an exact model name and an instructions file:
 ```bash
 kmx create my-agent --workspace . \
   --model qwen2.5:3b --instructions ./instructions.md
-kmx lift --to prod
+kmx deploy --to prod
 ```
 
-Create authors one tool-free workspace member offline. Lift freezes the exact
+Create authors one tool-free workspace member offline. Deploy freezes the exact
 suite and selectors, runs missing evaluation, publication and placement stages,
 and discloses source-only promotion: passed on the evaluation target, not
 evaluated on the destination. Review its frozen plan before confirming.
-See [composed Lift](suite-workspace.md#composed-workspace-lift) for stage output,
+See [composed Deploy](suite-workspace.md#composed-workspace-lift) for stage output,
 read-only skips and partial outcomes.
 
 Provide an instructions **file**, not inline text; model is required and exact.
@@ -77,16 +80,16 @@ exists, terminal use asks `Start one here? [Y/n]`; nonterminal or redirected use
 requires `--workspace DIR`, which selects/initializes that exact root without a
 prompt. Invalid nearest markers refuse without fallback. An existing one-member
 workspace refuses a second member without changing files; select a new root.
-See [workspace authoring, evaluation, publication and digest Lift](suite-workspace.md).
+See [workspace authoring, evaluation, publication and digest Deploy](suite-workspace.md).
 
 For manual stages, packaged workspace evaluation is implemented for native Orka
 with `--inference` and exact-v0.10.3 Go kagent with `--bindings`; matching
 full-passing evidence can authorize evaluated push. Standalone package evaluation
-remains unavailable; explicit-reference `kmx lift REF@sha256:DIGEST` instead
+remains unavailable; explicit-reference `kmx deploy REF@sha256:DIGEST` instead
 deploys an exact registry or local-layout native package using a separate matching
 private evidence file and explicit target. Orka uses a Ready `openai` inference
 Provider; its public evaluation produces candidate evidence, so manual reference
-Lift requires `--promote` even in the same environment. Kagent uses author-owned
+Deploy requires `--promote` even in the same environment. Kagent uses author-owned
 bindings and refuses any occupied target.
 
 ### Retired live authoring
@@ -95,7 +98,7 @@ bindings and refuses any occupied target.
 commands/readers/writers are removed outright. No conversion/migration or saved
 receipt/resource deletion occurs. Old bundle receipts are unreadable. Suite
 status/retirement remain unavailable. Root run requires `--agent` for a live Orka
-Agent, including one placed by Lift; chat also targets those live Agents. Neither is
+Agent, including one placed by Deploy; chat also targets those live Agents. Neither is
 workspace-local execution or suite evaluation. Task/result access remains
 independent, without resend.
 
@@ -105,7 +108,7 @@ The local quickstart below is the **supported deterministic Orka first-answer
 path**: it ends with a native Orka Agent answering a question. For guided
 custom authoring and a first answer, use the wizard described below.
 kmx does not install/upgrade kagent. Exact v0.10.3 Go/linux-amd64 packaged
-workspaces support `eval --bindings`, evaluated push and create-only digest Lift
+workspaces support `eval --bindings`, evaluated push and create-only digest Deploy
 on operator-prepared installations; see [native profiles](suite-workspace.md).
 Live create and bundle operations are removed.
 
@@ -120,7 +123,7 @@ kmx quickstart
 On a fresh cluster this creates kind, keyless Ollama, the pinned **Orka v0.2.0
 Helm chart**, a placeholder Provider Secret, the Task result-reader account and
 RBAC, and the tool-free `hello-world-agent` native source → full eval → publication →
-reviewed Lift/placement Verify workflow. It then asks a separate **fresh Task** and requires a readable answer; readiness alone is not an answer.
+reviewed Deploy/placement Verify workflow. It then asks a separate **fresh Task** and requires a readable answer; readiness alone is not an answer.
 The local model defaults to `qwen2.5:3b`; `MODEL` can override it.
 
 On an uncached first run, the default model downloads roughly **1.9GB**.
@@ -151,13 +154,13 @@ See [output contracts](kmx.md#output-contracts).
 ## Guided native authoring
 
 `kmx quickstart --interactive` guides native source/case review, full eval,
-publication and reviewed Lift before a separate fresh answer Task. Console
+publication and reviewed Deploy before a separate fresh answer Task. Console
 creation selects authored native source; Ready there is placement only.
 
 Automatic tools and host Foundry/Copilot wizard modes are retired; ordinary
-host-backed chat controls stay independent. Chat `/lift` and console Lift only
-print `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
-Use [digest Lift](suite-workspace.md#digest-lift) with exact package/private evidence
+host-backed chat controls stay independent. Chat `/lift` and console Deploy only
+print `Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`.
+Use [digest Deploy](suite-workspace.md#digest-lift) with exact package/private evidence
 and explicit target/bindings, not a release GUI/live-copy fallback. Cancellation
 can leave completed resources in place.
 
@@ -168,7 +171,7 @@ To prepare the runtime without creating an Agent, use `kmx local up` instead of 
 ```bash
 kmx local up
 kmx orka status
-# For an existing live Agent, including one placed by Lift:
+# For an existing live Agent, including one placed by Deploy:
 kmx chat --namespace orka-system <agent-name>
 ```
 

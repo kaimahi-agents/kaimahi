@@ -107,7 +107,7 @@ func (a *App) quickstartSuiteSource(ctx context.Context) (string, string, error)
 		return "", "", err
 	}
 	if actual.Descriptor.Digest != wanted.Descriptor.Digest {
-		return "", "", fmt.Errorf("quickstart workspace %q differs from its fixed source; keep your edits and use explicit eval, push and lift, or select a separate KMX_HOME for a fresh quickstart", root)
+		return "", "", fmt.Errorf("quickstart workspace %q differs from its fixed source; keep your edits and use explicit eval, push and deploy, or select a separate KMX_HOME for a fresh quickstart", root)
 	}
 	return root, wanted.Descriptor.Digest.String(), nil
 }
@@ -170,7 +170,7 @@ func (a *App) prepareWorkspaceSuiteLift(ctx context.Context, opt suiteWorkspaceL
 	if err != nil {
 		return nil, err
 	}
-	a.notef("Receipt-bound lift planning completed (%s)", a.timeNow().Sub(started).Round(time.Millisecond))
+	a.notef("Receipt-bound deploy planning completed (%s)", a.timeNow().Sub(started).Round(time.Millisecond))
 	return &preparedQuickstartSuite{Plan: plan, Workspace: opt.Workspace, Layout: layout, Evidence: evidence}, nil
 }
 
@@ -199,21 +199,21 @@ func (a *App) writeSuiteLiftSummary(p *preparedQuickstartSuite) error {
 // in diagnostics, and never turn an output failure into successful placement.
 func (a *App) applyWorkspaceSuiteLift(ctx context.Context, p *preparedQuickstartSuite, reviewedDigest string) (ReleaseLiftResult, error) {
 	if err := a.writeSuiteLiftSummary(p); err != nil {
-		return ReleaseLiftResult{State: "not-applied"}, fmt.Errorf("write lift review before apply: %w", err)
+		return ReleaseLiftResult{State: "not-applied"}, fmt.Errorf("write deploy review before apply: %w", err)
 	}
 	started := a.timeNow()
 	result, err := a.ApplyReleaseLift(ctx, p.Plan, reviewedDigest)
-	a.notef("Lift finished with state %s (%s)", result.State, a.timeNow().Sub(started).Round(time.Millisecond))
+	a.notef("Deploy finished with state %s (%s)", result.State, a.timeNow().Sub(started).Round(time.Millisecond))
 	for _, row := range result.Resources {
 		if _, outputErr := fmt.Fprintf(a.Err, "%s/%s: %s; observed Ready=%t; UID=%s\n", row.Kind, safeTerminal(row.Name), row.Outcome, row.Ready, safeTerminal(row.UID)); outputErr != nil {
-			return result, errors.Join(err, fmt.Errorf("lift state %s; reporting failed and completed resources remain: %w", result.State, outputErr))
+			return result, errors.Join(err, fmt.Errorf("deploy state %s; reporting failed and completed resources remain: %w", result.State, outputErr))
 		}
 	}
 	if err != nil {
 		return result, err
 	}
 	if result.State != "ready" {
-		return result, fmt.Errorf("lift did not establish a ready placement")
+		return result, fmt.Errorf("deploy did not establish a ready placement")
 	}
 	return result, nil
 }

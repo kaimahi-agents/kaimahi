@@ -176,14 +176,30 @@ func writeTargetsTable(out io.Writer, report TargetsReport) error {
 			fmt.Fprintf(&buffer, "  error [%s]: %s\n", row.Detection.Error.Code, row.Detection.Error)
 		}
 		for _, q := range row.QualifiedVersions {
-			fmt.Fprintf(&buffer, "  qualified %s: %s (%s)\n", q.Version, q.Scope, q.Evidence)
+			// JSON retains even historical descriptive values. Only these owned
+			// human descriptions change; observed/external text remains opaque.
+			scope := q.Scope
+			switch scope {
+			case "native Orka commands and immutable suite lift":
+				scope = "native Orka commands and immutable suite deploy"
+			case "exact Go-only native suite create/eval and immutable digest lift":
+				scope = "exact Go-only native suite create/eval and immutable digest deploy"
+			}
+			fmt.Fprintf(&buffer, "  qualified %s: %s (%s)\n", q.Version, scope, q.Evidence)
 		}
 		for _, c := range row.Capabilities {
 			state := "unsupported"
 			if c.Supported {
 				state = "supported"
 			}
-			fmt.Fprintf(&buffer, "  %s: %s — %s\n", c.Operation, state, c.Reason)
+			operation, reason := c.Operation, c.Reason
+			if operation == "lift" {
+				operation = "deploy"
+			}
+			if reason == "native authored workspace and immutable suite workflow; lift requires explicit evidence and reviewed Apply/Verify" {
+				reason = "native authored workspace and immutable suite workflow; deploy requires explicit evidence and reviewed Apply/Verify"
+			}
+			fmt.Fprintf(&buffer, "  %s: %s — %s\n", operation, state, reason)
 		}
 	}
 	fmt.Fprintln(&buffer, "\nStatic support is not installed-target qualification. This view does not select, install or deploy a runtime. Matrix: docs/runtime-adapters.md")

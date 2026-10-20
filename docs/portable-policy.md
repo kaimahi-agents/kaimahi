@@ -87,7 +87,7 @@ kagent or AgentSessions source members refuse. General suite transfer validates
 public-format bindings without claiming enforcement.
 
 **Execution is unavailable for declared policies.** Workspace eval, private native
-preparation, composed and digest Lift, evaluated publication and the experimental
+preparation, composed and digest Deploy, evaluated publication and the experimental
 AgentKit sandbox builder refuse rather than ignore a declaration. No policy is
 installed or enforced, and no allowed/blocked worker traffic has been qualified by
 these offline operations. Runtime enforcement requires a separately qualified

@@ -17,7 +17,7 @@ import (
 func resolveWorkspaceLiftOptions(cmd *cobra.Command, name string, destination app.ReleaseLiftOptions, evaluation app.SuiteWorkspaceEvaluationOptions) (app.WorkspaceLiftOptions, error) {
 	var opt app.WorkspaceLiftOptions
 	if name == "" {
-		return opt, fmt.Errorf("workspace lift requires explicit --to NAME")
+		return opt, fmt.Errorf("workspace %s requires explicit --to NAME", cmd.Name())
 	}
 	if err := refuseMultiMemberWorkspace(""); err != nil {
 		return opt, err
@@ -31,7 +31,7 @@ func resolveWorkspaceLiftOptions(cmd *cobra.Command, name string, destination ap
 		return opt, err
 	}
 	if target.EvaluationTarget == "" || doc.PublishRepository == "" {
-		return opt, fmt.Errorf("workspace lift requires publishRepository and destination evaluationTarget in kmx.yaml")
+		return opt, fmt.Errorf("workspace %s requires publishRepository and destination evaluationTarget in kmx.yaml", cmd.Name())
 	}
 	eval, err := doc.Target(target.EvaluationTarget)
 	if err != nil {
@@ -54,7 +54,7 @@ func resolveWorkspaceLiftOptions(cmd *cobra.Command, name string, destination ap
 	evaluation.ToContext, evaluation.ToNamespace = eval.Context, eval.Namespace
 	evaluation.Inference, evaluation.ExpectedRuntime = eval.Inference, eval.Runtime
 	if target.Bindings != "" || eval.Bindings != "" || target.Runtime != "" && target.Runtime != "orka" || eval.Runtime != "" && eval.Runtime != "orka" {
-		return opt, fmt.Errorf("composed workspace lift supports native Orka only")
+		return opt, fmt.Errorf("composed workspace %s supports native Orka only", cmd.Name())
 	}
 	opt.Workspace, opt.Repository = root, doc.PublishRepository
 	opt.EvalName, opt.DestinationName = target.EvaluationTarget, name
@@ -71,7 +71,7 @@ func runWorkspaceLiftCommand(cmd *cobra.Command, state *commandState, opt app.Wo
 	}
 	defer func() { err = errors.Join(err, prepared.Close()) }()
 	if opt.PlanOnly {
-		_, err = (&app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}).LiftWorkspace(ctx, prepared)
+		_, err = (&app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr(), DeployPresentation: cmd.Name() == "deploy"}).LiftWorkspace(ctx, prepared)
 		return err
 	}
 	selected := *state
@@ -82,10 +82,31 @@ func runWorkspaceLiftCommand(cmd *cobra.Command, state *commandState, opt app.Wo
 	}
 	// Keep recovery advice on this route; global --context is refused by Lift.
 	parts := []string{quoteShell(state.executable())}
-	for _, arg := range suiteEvaluationRecoveryArgs(state.argv) {
+	for _, arg := range deploymentRecoveryArgs(suiteEvaluationRecoveryArgs(state.argv)) {
 		parts = append(parts, quoteShell(arg))
 	}
 	a.InvocationCommand = strings.Join(parts, " ")
+	a.DeployPresentation = cmd.Name() == "deploy"
 	_, err = a.LiftWorkspace(ctx, prepared)
 	return err
+}
+
+// Only the root command token changes. A context, engine, evidence path or
+// reference containing "lift" remains opaque and is quoted by the caller.
+func deploymentRecoveryArgs(argv []string) []string {
+	args := append([]string(nil), argv...)
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--container-engine", args[i] == "--context":
+			i++
+		case strings.HasPrefix(args[i], "--container-engine="), strings.HasPrefix(args[i], "--context="), args[i] == "--":
+			continue
+		default:
+			if args[i] == "lift" {
+				args[i] = "deploy"
+			}
+			return args
+		}
+	}
+	return args
 }

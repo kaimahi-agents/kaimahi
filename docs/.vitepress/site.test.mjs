@@ -46,10 +46,22 @@ test('AgentSuite links retain their standalone destination and section fragment'
   assert.doesNotMatch(guide, /href="[^"]*(?:issues\/491|\/agentsuite\/spec)(?:["#])/)
 })
 
+test('renamed deployment headings retain legacy guide fragments', async () => {
+  for (const [page, fragments] of [
+    ['docs/suite-workspace.html', ['digest-lift', 'digest-deploy', 'composed-workspace-lift', 'composed-workspace-deploy']],
+    ['docs/workflow-overview.html', ['create-prove-lift', 'create-prove-deploy']]
+  ]) {
+    const html = await readFile(path.join(dist, page), 'utf8')
+    for (const fragment of fragments) {
+      assert.ok(html.includes(`id="${fragment}"`), `${page}: #${fragment} resolves`)
+    }
+  }
+})
+
 test('the homepage renders the interactive journey and channel boundary', async () => {
   const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
   for (const marker of [
-    'Build, Prove and Lift your agents',
+    'Build, Prove and Deploy your agents',
     'Development docs',
     'Stable v0.8.1',
     'Choose your path',
@@ -65,20 +77,20 @@ function plainText(html) {
   return html.replace(/<\/(?:p|pre|h[1-6])>/g, '\n').replace(/<[^>]*>/g, '').replaceAll('&gt;', '>').replaceAll('&lt;', '<').replaceAll('&amp;', '&')
 }
 
-test('the front doors lead with composed Lift and its prerequisites', async () => {
+test('the front doors lead with composed Deploy and its prerequisites', async () => {
   const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
   const firstPanel = homepage.match(/<article[^>]*id="journey-panel-0"[\s\S]*?<\/article>/)?.[0]
   assert.ok(firstPanel, 'the default journey is rendered')
   const chooser = plainText(firstPanel)
-  assert.match(chooser, /kmx create[^\n]*kmx lift --to NAME/)
+  assert.match(chooser, /kmx create[^\n]*kmx deploy --to NAME/)
   for (const prerequisite of ['prepared runtime', 'inference', 'registry authentication', 'kmx.yaml', 'publishRepository', 'evaluationTarget']) {
     assert.ok(chooser.includes(prerequisite), `chooser prerequisite: ${prerequisite}`)
   }
   for (const page of ['index.html', 'docs/getting-started.html', 'docs/workflow-overview.html']) {
     const text = plainText(await readFile(path.join(dist, page), 'utf8'))
     const create = text.indexOf('kmx create ')
-    const lift = text.indexOf('kmx lift --to ')
-    assert.ok(create >= 0 && lift > create, `${page}: create precedes composed Lift`)
+    const lift = text.indexOf('kmx deploy --to ')
+    assert.ok(create >= 0 && lift > create, `${page}: create precedes composed Deploy`)
     const quickstart = text.indexOf('kmx quickstart')
     assert.ok(quickstart > lift, `${page}: composed path precedes quickstart`)
     const introduction = text.slice(0, lift)

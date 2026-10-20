@@ -9,7 +9,7 @@ import (
 )
 
 func TestConsoleLiftMovedWithoutDispatch(t *testing.T) {
-	want := "Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …"
+	want := "Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …"
 	for _, entry := range []string{"key", "/lift", "/lift sample new"} {
 		t.Run(entry, func(t *testing.T) {
 			m := newAgentTUIModel(AgentTUIOptions{Demo: true})
@@ -45,7 +45,7 @@ func TestConsoleMutationMenusRefuseWithoutDispatch(t *testing.T) {
 		if strings.Contains(m.status, "lift is not yet available") {
 			t.Fatal("retirement remedy denies the implemented suite lift")
 		}
-		for _, want := range []string{"authored", "workspace", "eval", "push", "lift"} {
+		for _, want := range []string{"authored", "workspace", "eval", "push", "deploy"} {
 			if !strings.Contains(m.status, want) {
 				t.Errorf("missing remedy %q: %s", want, m.status)
 			}

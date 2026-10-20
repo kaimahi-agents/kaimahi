@@ -171,6 +171,25 @@ func PrepareWorkspaceLift(ctx context.Context, opt WorkspaceLiftOptions) (*Prepa
 	return p, err
 }
 
+// workspaceLiftDisclosure renders only the closed stage list preceding the
+// disclosure prose. Never rewrite selectors, opaque details or retained data.
+func (a *App) workspaceLiftDisclosure(disclosure string) string {
+	if !a.DeployPresentation {
+		return disclosure
+	}
+	stages, rest, found := strings.Cut(disclosure, ";")
+	if !found {
+		return disclosure
+	}
+	names := strings.Split(stages, ",")
+	for i, name := range names {
+		if name == "lift" {
+			names[i] = "deploy"
+		}
+	}
+	return strings.Join(names, ",") + ";" + rest
+}
+
 // LiftWorkspace is single-use. Completion observations authorize only GET-only
 // skips; no persisted result can enter Apply or manufacture receipt reuse.
 func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r WorkspaceLiftResult, err error) {
@@ -179,6 +198,10 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 	}
 	p.started = true
 	r.Plan = p.plan
+	label := "Lift"
+	if a.DeployPresentation {
+		label = "Deploy"
+	}
 	r.Eval = WorkspaceLiftStage{Status: "not-attempted", Detail: "not attempted", Total: p.plan.CaseRuns}
 	r.Push = WorkspaceLiftStage{Status: "not-attempted", Detail: "not attempted; nothing published"}
 	r.Lift = WorkspaceLiftStage{Status: "not-attempted", Detail: p.plan.DestinationName + " unchanged"}
@@ -194,7 +217,7 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 			ending = ""
 			planOpen = true
 		}
-		_, e := fmt.Fprintf(diagnostics, "Plan · %d case runs on %s (%s server=%s namespace=%s) → %s → %s (%s server=%s namespace=%s) · %s%s", p.plan.CaseRuns, p.plan.EvalName, p.plan.EvalContext, r.Plan.EvalServer, p.options.Evaluation.ToNamespace, p.plan.Repository, p.plan.DestinationName, p.plan.DestinationContext, r.Plan.DestinationServer, p.options.Destination.ToNamespace, r.Plan.Disclosure, ending)
+		_, e := fmt.Fprintf(diagnostics, "Plan · %d case runs on %s (%s server=%s namespace=%s) → %s → %s (%s server=%s namespace=%s) · %s%s", p.plan.CaseRuns, p.plan.EvalName, p.plan.EvalContext, r.Plan.EvalServer, p.options.Evaluation.ToNamespace, p.plan.Repository, p.plan.DestinationName, p.plan.DestinationContext, r.Plan.DestinationServer, p.options.Destination.ToNamespace, a.workspaceLiftDisclosure(r.Plan.Disclosure), ending)
 		return e
 	}
 	defer func() {
@@ -222,7 +245,7 @@ func (a *App) LiftWorkspace(ctx context.Context, p *PreparedWorkspaceLift) (r Wo
 		for _, row := range []struct {
 			name  string
 			stage WorkspaceLiftStage
-		}{{"Eval", r.Eval}, {"Push", r.Push}, {"Lift", r.Lift}} {
+		}{{"Eval", r.Eval}, {"Push", r.Push}, {label, r.Lift}} {
 			_, e := fmt.Fprintf(diagnostics, "%s · %s · %s\n", row.name, row.stage.Status, row.stage.Detail)
 			err = errors.Join(err, e)
 		}

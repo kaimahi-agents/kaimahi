@@ -1,11 +1,13 @@
-# AKS Free-tier demo: Create, Prove, Lift
+<a id="aks-free-tier-demo-create-prove-lift"></a>
+
+# AKS Free-tier demo: Create, Prove, Deploy
 
 This copy-paste walkthrough uses one shell session to author a native Orka
 workspace, prove the exact package on local kind, provision a disposable AKS
-target, publish to Azure Container Registry (ACR), and Lift the immutable digest.
+target, publish to Azure Container Registry (ACR), and Deploy the immutable digest.
 
 ```text
-Create source -> Prove locally -> Provision destination -> Push digest -> Lift
+Create source -> Prove locally -> Provision destination -> Push digest -> Deploy
 ```
 
 AKS uses the **Free control-plane tier**, but its worker VM, disk, ACR,
@@ -14,11 +16,11 @@ after local proof, so source, model access, Docker, and evaluation failures do n
 leave a cloud environment billing before there is a passing package.
 
 > [!IMPORTANT]
-> Lift verifies placement and readiness, not an answer from AKS. It sends no
+> Deploy verifies placement and readiness, not an answer from AKS. It sends no
 > Task or model request. A separate root `run --agent NAME` or supported Orka
-> `chat NAME`, with the destination context and namespace, can invoke the lifted
+> `chat NAME`, with the destination context and namespace, can invoke the deployed
 > Agent. That fresh invocation is not suite evaluation or proof of destination
-> behavior from Lift itself.
+> behavior from Deploy itself.
 
 ## Prerequisites
 
@@ -26,7 +28,8 @@ You need:
 
 - an authenticated Azure CLI with permission to create AKS, ACR, and role assignments;
 - Docker, `kubectl`, and enough local capacity for one kind cluster;
-- one exact KMX executable implementing this guide;
+- one exact KMX main-checkout executable implementing this guide (`deploy` is
+  unreleased; v0.8.1 uses `lift` with the same arguments);
 - an OpenAI-compatible HTTPS endpoint reachable from kind and AKS;
 - its exact model/deployment name and a non-empty API key.
 
@@ -439,13 +442,15 @@ else
 fi
 ```
 
-Never Lift the mutable `:v1` tag.
+Never Deploy the mutable `:v1` tag.
 
-## 9. Plan and apply Lift once
+<a id="9-plan-and-apply-lift-once"></a>
+
+## 9. Plan and apply Deploy once
 
 ```bash
 plan_and_lift_demo() {
-  "$KMX" lift "$SUITE_REF" \
+  "$KMX" deploy "$SUITE_REF" \
     --to-context "$AKS_CLUSTER" \
     --to-namespace orka-system \
     --inference "provider:$INFERENCE_PROVIDER" \
@@ -454,7 +459,7 @@ plan_and_lift_demo() {
     --plan || return
 
   KAIMAHI_CONFIRM="$AKS_CLUSTER" \
-  "$KMX" lift "$SUITE_REF" \
+  "$KMX" deploy "$SUITE_REF" \
     --to-context "$AKS_CLUSTER" \
     --to-namespace orka-system \
     --inference "provider:$INFERENCE_PROVIDER" \
@@ -523,6 +528,6 @@ complete subscription billing audit.
 | Eval | Existing receipt avoids another model call; changed source needs fresh proof. |
 | AKS setup | Reruns verify recorded ownership, identities, network policy and AcrPull before reuse; they do not prove every Azure size/SKU field. Interrupted phases print recovery. |
 | Push | Same exact digest/tag is a no-op and prints the immutable reference again. |
-| Lift | Plan before first Apply; promoted Apply is one-time; occupied repeats refuse. |
+| Deploy | Plan before first Apply; promoted Apply is one-time; occupied repeats refuse. |
 | List/show | Read-only and repeatable. |
 | Teardown | Ownership-recorded and confirmation-bound; inspect the final report. |

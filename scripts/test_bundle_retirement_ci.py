@@ -108,7 +108,7 @@ class RetirementCITests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, "embedded hygiene failed to enforce " + fragment)
         changed = copy.deepcopy(workflow)
         changed["jobs"]["kmx-clone-free"]["steps"][index]["run"] = clone[index]["run"].replace("--promote", "") + "\nfalse --promote\n"
-        self.assertNotEqual(check(changed).returncode, 0, "promotion flag must be attached to Lift, not merely mentioned")
+        self.assertNotEqual(check(changed).returncode, 0, "promotion flag must be attached to Deploy, not merely mentioned")
 
     def test_clonefree_authored_regex_preserves_only_trailing_lf_bash_semantics(self):
         body = next(s["run"] for s in self.jobs["kmx-clone-free"]["steps"] if s.get("name", "").startswith("create — native Orka"))
@@ -156,7 +156,7 @@ elif args[0] == "push":
                 authored = yaml.safe_load((root / "workspace/eval/example.yaml").read_bytes())
                 self.assertEqual(authored["assertions"], [{"id": "exact-answer", "type": "regex", "pattern": "(?s)^Orka says hello[.]\\n*$"}])
                 calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
-                lifted = [c for c in calls if c[:2] == ["kmx", "lift"]]
+                lifted = [c for c in calls if c[:2] == ["kmx", "deploy"]]
                 pushed = [c for c in calls if c[:2] == ["kmx", "push"]]
                 self.assertEqual(bool(lifted), success)
                 self.assertEqual(bool(pushed), success)

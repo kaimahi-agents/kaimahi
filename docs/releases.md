@@ -16,6 +16,19 @@ The official Homebrew namespace is limited to the public
 claimed; the remaining publication constraints are recorded in
 [NAMING.md](NAMING.md).
 
+## Deploy command (unreleased)
+
+Current main calls packaged-suite deployment `kmx deploy`. This rename is not in
+v0.8.1: use `kmx lift` there with the same arguments. In builds with Deploy,
+`kmx lift` remains hidden but callable for at least one released version. It adds
+exactly one stderr line per legacy invocation:
+`kmx lift is deprecated; use kmx deploy (same arguments).`
+Legacy arguments, flags, stdout, stderr stage labels and exit codes remain
+unchanged. Machine JSON, public Go/API/internal `Lift` names, evidence, storage
+and annotations are unchanged. Removal requires a later announced breaking
+release. See [Deploy compatibility](kmx.md#deploy-compatibility-unreleased).
+The tagged-release and upgrade records below retain their original command names.
+
 ## Verify a release
 
 Releases built with checksum signing include `checksums.txt.sigstore.json`, a

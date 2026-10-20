@@ -224,11 +224,11 @@ func (a *App) consoleWorkspaceLift(ctx context.Context, request consoleWorkspace
 	}
 	summary := request.prepared.Plan.Summary()
 	if summary.Target.Context != request.env.Name || summary.Target.Namespace != request.namespace || summary.SuiteDigest != request.review.suite.Digest || summary.Inference != "provider:"+request.provider {
-		return fail(fmt.Errorf("Lift plan differs from the reviewed source or destination"))
+		return fail(fmt.Errorf("Deploy plan differs from the reviewed source or destination"))
 	}
 	result, err := worker.applyWorkspaceSuiteLift(ctx, request.prepared, request.reviewedDigest)
 	if err == nil && result.State != "ready" {
-		err = fmt.Errorf("Lift did not return successful placement")
+		err = fmt.Errorf("Deploy did not return successful placement")
 	}
 	if err == nil {
 		err = worker.VerifyReleaseLiftPlacement(ctx, result)
@@ -257,7 +257,7 @@ type agentTUICreatePane struct {
 // specifications, execution content or the raw worker error.
 func suiteWorkspaceLiftOutcomeSummary(result ReleaseLiftResult) string {
 	var text strings.Builder
-	fmt.Fprintf(&text, "Lift state: %s", tuiOneLine(result.State))
+	fmt.Fprintf(&text, "Deploy state: %s", tuiOneLine(result.State))
 	for _, row := range result.Resources {
 		fmt.Fprintf(&text, "\n%s/%s: %s; observed Ready=%t; UID=%s", tuiOneLine(row.Kind), tuiOneLine(row.Name), tuiOneLine(row.Outcome), row.Ready, tuiOneLine(row.UID))
 	}
@@ -273,7 +273,7 @@ type suiteWorkspaceLiftReport struct {
 
 func (r suiteWorkspaceLiftReport) Run() error {
 	if err := r.report(r.pane.result); err != nil {
-		r.pane.err = errors.Join(r.pane.err, fmt.Errorf("report lift outcomes: %w", err))
+		r.pane.err = errors.Join(r.pane.err, fmt.Errorf("report deploy outcomes: %w", err))
 		r.pane.ready = false
 		return err
 	}
@@ -288,10 +288,10 @@ func (p *agentTUICreatePane) reviewLines(width int) []string {
 		// Summary is identity-only, including every resource decision. Pagination
 		// requires reaching the bottom before consuming its retained digest.
 		raw, _ := json.MarshalIndent(p.summary, "", "  ")
-		return agentTUIIndentedText("LIFT PLAN / IDENTITY REVIEW\n"+string(raw)+"\nConfirm Apply once, then Verify placement. Ready is not an answer.", width, 0)
+		return agentTUIIndentedText("DEPLOY PLAN / IDENTITY REVIEW\n"+string(raw)+"\nConfirm Apply once, then Verify placement. Ready is not an answer.", width, 0)
 	}
 	if p.stage == "consent" {
-		text := fmt.Sprintf("EXECUTION CONSENT\nContext: %s · Server: %s\nNamespace: %s · Inference: provider:%s (Ready openai only)\nSuite: %s\nSource fingerprint: %s\nAuthorize full inventory: %d evaluation Tasks and owned Provider/Agent resource placement, then exact local publication and Lift planning. No automatic chat or answer Task. Cancellation/errors may leave resources.", p.env.Name, p.server, p.namespace, p.provider, p.review.suite.Digest, p.review.prepared.Fingerprint, len(p.review.inventory))
+		text := fmt.Sprintf("EXECUTION CONSENT\nContext: %s · Server: %s\nNamespace: %s · Inference: provider:%s (Ready openai only)\nSuite: %s\nSource fingerprint: %s\nAuthorize full inventory: %d evaluation Tasks and owned Provider/Agent resource placement, then exact local publication and Deploy planning. No automatic chat or answer Task. Cancellation/errors may leave resources.", p.env.Name, p.server, p.namespace, p.provider, p.review.suite.Digest, p.review.prepared.Fingerprint, len(p.review.inventory))
 		if !p.env.Local {
 			text += "\nType selected context exactly to authorize: " + p.env.Name + "\n" + p.input.View()
 		} else {
@@ -338,7 +338,7 @@ func (m agentTUIModel) updateCreatePane(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "preparing":
 			if msg.prepared == nil || msg.prepared.Plan == nil {
 				p.finished = true
-				p.err = fmt.Errorf("Lift preparation returned no plan")
+				p.err = fmt.Errorf("Deploy preparation returned no plan")
 				return m, nil
 			}
 			p.prepared = msg.prepared
@@ -347,7 +347,7 @@ func (m agentTUIModel) updateCreatePane(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "applying":
 			p.finished = true
 			if !msg.verified || msg.result.State != "ready" {
-				p.err = fmt.Errorf("Lift placement was not verified")
+				p.err = fmt.Errorf("Deploy placement was not verified")
 				return m, nil
 			}
 			p.ready = true
@@ -513,7 +513,7 @@ func (m agentTUIModel) startWorkspaceReview(root string, previous *suiteWorkspac
 func (m agentTUIModel) startWorkspaceLift(apply bool) tea.Cmd {
 	p := m.creation
 	if m.startCreateLift == nil {
-		p.err = fmt.Errorf("suite Lift unavailable")
+		p.err = fmt.Errorf("suite Deploy unavailable")
 		return nil
 	}
 	request := consoleWorkspaceLiftRequest{env: p.env, server: p.server, namespace: p.namespace, provider: p.provider, typedContext: p.typedContext, review: p.review}
@@ -536,7 +536,7 @@ func (m agentTUIModel) creationView() string {
 	width, height := max(12, min(88, m.width-8)), max(8, min(26, m.height-2))
 	inner := width - 4
 	fit := func(s string) string { return ansi.Truncate(tuiOneLine(s), inner, "…") }
-	rows := []string{fit("CREATE AGENT · SOURCE → EVAL → LIFT · " + p.env.Name), fit("Namespace: " + p.namespace + " · Server: " + valueOr(p.server, "not available (not reloaded)"))}
+	rows := []string{fit("CREATE AGENT · SOURCE → EVAL → DEPLOY · " + p.env.Name), fit("Namespace: " + p.namespace + " · Server: " + valueOr(p.server, "not available (not reloaded)"))}
 	switch {
 	case p.finished:
 		message := "DEMO / review only · no execution"
@@ -558,7 +558,7 @@ func (m agentTUIModel) creationView() string {
 	case p.running:
 		message := "Reading authored source and complete case inventory…"
 		if p.stage == "preparing" {
-			message = "Evaluating full inventory, publishing exact suite and preparing Lift…"
+			message = "Evaluating full inventory, publishing exact suite and preparing Deploy…"
 		}
 		if p.stage == "applying" {
 			message = "Applying reviewed plan once, then verifying placement…"

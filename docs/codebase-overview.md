@@ -99,7 +99,9 @@ Bare `local up` creates no Agent. The setup-only `pkg/kmx.AgentEnvironment`
 contract maps conceptually to this operation but is not wired to it. Quickstart
 adds live creation and execution and therefore is not only environment setup.
 
-### Workspace create, prove and publish; packaged-digest lift
+<a id="workspace-create-prove-and-publish-packaged-digest-lift"></a>
+
+### Workspace create, prove and publish; packaged-digest deploy
 
 ```text
 kmx create NAME
@@ -123,7 +125,7 @@ kmx push [--evaluation RECEIPT] REF
   -> optional receipt coherence check
   -> optional unsigned provenance on registry publication
 
-kmx lift REF@sha256:DIGEST --to-context CTX \
+kmx deploy REF@sha256:DIGEST --to-context CTX \
   --evidence RECEIPT (--inference provider:NAME | --bindings FILE)
   -> source-free bounded retrieval of that exact OCI graph
   -> evidence and packaged identity revalidation
@@ -137,14 +139,16 @@ binds supplemental native metadata; cases are bound by both. Push never deploys.
 Native Orka workspace evaluation continuously qualifies one fixed two-case
 scenario. Exact-v0.10.3 Go kagent workspace evaluation, runtime-specific passing
 evidence, evaluated publication and same-runtime receipt comparison are also
-implemented and qualified. Root digest Lift supports both packaged profiles;
+implemented and qualified. Root digest Deploy supports both packaged profiles;
 GET-only `status --to NAME` inventories deployed Orka/kagent Agents and unsigned
-Lift observations independently of private state. Retirement is not implemented.
+Deploy observations independently of private state. Retirement is not implemented.
 
-### Native digest Lift
+<a id="native-digest-lift"></a>
+
+### Native digest Deploy
 
 Root digest Lift is available in v0.7.0.
-Root `kmx lift` and `App.PrepareReleaseLift` ingest one exact registry or read-only OCI-layout
+Root `kmx deploy` and `App.PrepareReleaseLift` ingest one exact registry or read-only OCI-layout
 digest, validate the packaged native suite, require a matching private passing
 receipt, observe the selected target and inspect desired resources with GETs.
 Preparation returns an immutable identity-only plan. `--plan` stops there,
@@ -210,10 +214,10 @@ Required live shards prove bounded scenarios rather than universal support:
 - stock Orka Helm integration;
 - exact kagent v0.10.3 raw upstream Tool smoke/direct single A2A MCP proof, separately packaged
   two-case workspace evaluation/evaluated publication, and source-free digest
-  Lift into a fresh target with occupied-repeat refusal.
+  Deploy into a fresh target with occupied-repeat refusal.
 
 The `e2e-hello-world` job fail-closed aggregates the four retained shards:
-kagent Lift, Orka runtime, stock Orka Helm and quickstart. Final retirement Go
+kagent Deploy, Orka runtime, stock Orka Helm and quickstart. Final retirement Go
 build/live checks are required before declaring new runtime qualification. A green shard qualifies its
 fixed versions and scenario; it is not a production-readiness claim.
 

@@ -14,8 +14,8 @@ func TestQuickstartWizardRetiredRequestsRefuseBeforeSetup(t *testing.T) {
 		opt    QuickstartWizardOptions
 		remedy []string
 	}{
-		{"foundry", QuickstartWizardOptions{Inference: "foundry"}, []string{"Ready", "Orka", "openai", "exact model", "eval", "push", "lift"}},
-		{"copilot", QuickstartWizardOptions{Inference: "copilot"}, []string{"Ready", "Orka", "openai", "exact model", "eval", "push", "lift"}},
+		{"foundry", QuickstartWizardOptions{Inference: "foundry"}, []string{"Ready", "Orka", "openai", "exact model", "eval", "push", "deploy"}},
+		{"copilot", QuickstartWizardOptions{Inference: "copilot"}, []string{"Ready", "Orka", "openai", "exact model", "eval", "push", "deploy"}},
 		{"tools", QuickstartWizardOptions{Create: CreateOptions{Tools: "k8s-get-resources"}}, []string{"ToolProvider", "suite", "future"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

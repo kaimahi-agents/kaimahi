@@ -45,6 +45,9 @@ type App struct {
 	// commands retain it so a checkout binary cannot redirect to an older kmx
 	// earlier on PATH. Empty keeps the installed-command spelling "kmx".
 	Executable string
+	// DeployPresentation selects current CLI stage labels only. Historical JSON,
+	// plan identities and consent-bound data remain unchanged; zero preserves Lift.
+	DeployPresentation bool
 	// InvocationCommand is the shell-quoted CLI invocation used for guard retry
 	// advice. Interactive sub-operations leave it empty and supply their own.
 	InvocationCommand string

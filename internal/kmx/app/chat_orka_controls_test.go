@@ -9,7 +9,7 @@ func TestChatLiftMovedBeforeTerminalAndMutation(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	b := &orkaChatBackend{app: f.app, agent: "sample", namespace: "agents"}
 	changed, err := b.Configure(t.Context(), "/lift", newChatRenderer(f.out))
-	want := "Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …"
+	want := "Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …"
 	if changed || err == nil || err.Error() != want {
 		t.Fatalf("moved notice: changed=%t err=%v", changed, err)
 	}
