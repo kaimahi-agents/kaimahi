@@ -299,7 +299,8 @@ Write the instructions, then create a tool-free workspace:
 cat > "$STATE/instructions.md" <<'EOF'
 Write brief release notes using only the supplied facts.
 Use exactly two Markdown headings: ## Changes and ## Known limitations.
-Put bullets under each heading. Mention retry and search changes.
+Put bullets under each heading. Under Changes, begin every bullet with the
+literal prefix "Added:" or "Fixed:" and mention retry and search changes.
 Under Known limitations, begin every bullet with the literal prefix "Unresolved:".
 Do not replace "Unresolved" with synonyms such as "not fixed".
 Never invent fixes, features or measurements. Stay under 40 words.
@@ -334,7 +335,7 @@ assertions:
   pattern: (?i)search
 - id: limitation-unresolved
   type: regex
-  pattern: '(?m)^-[ \t]+Unresolved:'
+  pattern: '\A[ \t]*#{1,2} Changes[ \t]*\n(?:[ \t]*\n)*-[ \t]+(?:Added|Fixed):[^\n]*(?:\n(?:[ \t]*\n)*-[ \t]+(?:Added|Fixed):[^\n]*)*\n(?:[ \t]*\n)*#{1,2} Known limitations[ \t]*\n(?:[ \t]*\n)*-[ \t]+Unresolved:[^\n]*(?:\n(?:[ \t]*\n)*-[ \t]+Unresolved:[^\n]*)*(?:\n[ \t]*)*\z'
 ```
 
 Evaluate the complete workspace on **local kind**, not AKS:

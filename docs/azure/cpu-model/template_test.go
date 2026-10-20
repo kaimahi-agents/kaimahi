@@ -6,10 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 
+	kmxruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -173,5 +175,60 @@ func TestCPUModelTemplate(t *testing.T) {
 	wantConfig[0]["threads"] = 3
 	if !reflect.DeepEqual(gotConfig, wantConfig) {
 		t.Errorf("model configuration must match the pinned CI preset with only threads changed to 3")
+	}
+}
+
+func TestREADMEEvaluationFormat(t *testing.T) {
+	data, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const fence = "```yaml\nid: release-facts\n"
+	start := bytes.Index(data, []byte(fence))
+	if start < 0 {
+		t.Fatal("release-facts YAML block not found")
+	}
+	start += len("```yaml\n")
+	end := bytes.Index(data[start:], []byte("\n```"))
+	if end < 0 {
+		t.Fatal("release-facts YAML block is not closed")
+	}
+	caseDoc, err := kmxruntime.ParseEvaluationCase(data[start : start+end])
+	if err != nil {
+		t.Fatalf("release-facts YAML: %v", err)
+	}
+	var pattern string
+	for _, assertion := range caseDoc.Assertions {
+		if assertion.ID == "limitation-unresolved" {
+			if pattern != "" {
+				t.Fatal("duplicate limitation-unresolved assertion")
+			}
+			pattern = assertion.Pattern
+		}
+	}
+	if pattern == "" {
+		t.Fatal("missing limitation-unresolved assertion")
+	}
+	format, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("limitation-unresolved pattern: %v", err)
+	}
+	for _, test := range []struct {
+		name   string
+		answer string
+		want   bool
+	}{
+		{"one limitation", "## Changes\n- Added: retry.\n- Fixed: search.\n\n## Known limitations\n- Unresolved: large CSV exports time out.\n", true},
+		{"multiple limitations", "# Changes\n- Added: retry.\n\n# Known limitations\n- Unresolved: large CSV exports time out.\n\n- Unresolved: another limitation.\n", true},
+		{"unprefixed limitation", "## Changes\n- Added: retry.\n\n## Known limitations\n- Large CSV exports time out.\n", false},
+		{"mixed limitation prefixes", "## Changes\n- Added: retry.\n\n## Known limitations\n- Unresolved: one.\n- Another limitation.\n", false},
+		{"prefix only under changes", "## Changes\n- Unresolved: retry issue.\n- Fixed: search.\n\n## Known limitations\n- Unresolved: large CSV exports time out.\n", false},
+		{"wrong prefix case", "## Changes\n- Added: retry.\n\n## Known limitations\n- unresolved: large CSV exports time out.\n", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := format.MatchString(test.answer); got != test.want {
+				t.Errorf("format match = %v, want %v", got, test.want)
+			}
+		})
 	}
 }
