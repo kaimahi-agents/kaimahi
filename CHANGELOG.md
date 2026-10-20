@@ -37,7 +37,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   name/provider/baseURL plus a typed credential reference: a Kubernetes Secret
   key (`secretRef`) or a host-owned source such as keyless workload identity
   (`hostRef: {type, name}`). It has strict parsing, a JCS digest and an
-  exact check against the suite's pinned model; no command reads it yet.
+  exact check against the suite's pinned model; AgentSessions eval refuses a
+  binding that serves another model.
   Resource quantities refuse a decimal exponent of more than two digits before
   parsing.
   `snapshot.storageLocation` refuses `\`, empty path segments and segments of
@@ -158,6 +159,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   standalone receipts. Rebuilding a different artifact requires fresh evaluation,
   never edited or relabeled proof. See the
   [cache upgrade](docs/suite-workspace.md#portable-directory-modes-and-preparation-cache-upgrade).
+- AgentSessions `kmx eval --development-host FILE` requires `--bindings FILE`
+  and records the binding digest in its evidence, including judged and repeated
+  proof. AgentSessions receipts and managed proof without a binding digest are
+  refused, with no fallback to an older record; Orka/kagent receipts are unchanged.
+  **Instead:** evaluate again with `--development-host FILE --bindings FILE`.
 - Suite loading now refuses Suite/ToolProvider extensions without an explicit
   `critical` boolean, present empty/null ToolProvider `variants`, and explicitly
   null tool `outputSchema` properties. ToolProvider JSON decoding also rejects

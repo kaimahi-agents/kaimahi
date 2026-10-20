@@ -44,6 +44,23 @@ func TestTargetsKagentEvaluationRemainsVersionScoped(t *testing.T) {
 	}
 }
 
+func TestTargetsAgentSessionsEvalNamesBindings(t *testing.T) {
+	for _, target := range compiledTargets() {
+		if target.ID != "agentsessions" {
+			continue
+		}
+		for _, capability := range target.Capabilities {
+			if capability.Operation == "eval" {
+				if !capability.Supported || !strings.Contains(capability.Reason, "--bindings") || !strings.Contains(capability.Reason, "binding digest") {
+					t.Fatalf("stale AgentSessions eval reason: %+v", capability)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("agentsessions eval capability missing")
+}
+
 func TestTargetsOrkaDetectionIsScopedReadOnlyAndFailClosed(t *testing.T) {
 	controller := func(containers string) string {
 		return `{"metadata":{"name":"controller","labels":{"app.kubernetes.io/name":"orka","app.kubernetes.io/component":"controller"}},"spec":{"template":{"spec":{"containers":` + containers + `}}}}`

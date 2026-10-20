@@ -79,6 +79,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   qualified journal and full ordered pass, then exports private runtime-specific
   proof. Exact-S --evaluation push accepts that proof offline. Cluster selectors,
   mixed-runtime proof, tools, deploy/chat/status and live create refuse.
+  AgentSessions eval also requires --bindings FILE: a closed AgentSessionsBinding
+  (runtime package; target, substrate placement, atespace, sandbox, snapshot,
+  required cpu/memory resources, workerSelector, model name/provider/baseURL and
+  a typed credential reference: secretRef or host-owned hostRef only). The
+  suite pins the model; the binding's model.name must equal it exactly (eval
+  refuses a mismatch; a new model is a new suite version and evaluation).
+  Evidence records the binding's JCS digest once for the whole run set, including
+  judged and repeated runs; the host endpoint is not attested.
+  Receipts without bindingDigest are unreadable and need fresh evaluation; a
+  managed proof stored without one is ineligible (latest refuses, no fallback).
   Operator declarations are not authenticated host/build attestation; cleartext
   journal retention is disclosed. Session replay cannot create candidate proof.
   Optional --runtime-version must match that commit; --kagent-runtime refuses.
@@ -240,8 +250,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   non-confidential and must never contain secrets; clean lint is not a guarantee.
   V3 policy is shared declaration only, never Sessions enforcement.
 - Root `test --development-host FILE` separately supports the packaged
-  AgentSessions chat inventory under the development boundary above; every
-  cluster/inference/bindings/result selector (including explicit defaults) refuses.
+  AgentSessions chat inventory under the development boundary above with a
+  required AgentSessionsBinding (--bindings); every cluster/inference/result
+  selector (including explicit defaults) refuses.
   Missing development selection never falls back. Sessions proof is refused by
   deploy and receipt diff; there is no registry or caller-auth integration.
 - Root `test` evaluates the full packaged Orka/kagent workspace inventory with

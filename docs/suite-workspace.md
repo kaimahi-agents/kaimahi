@@ -12,7 +12,8 @@ run a model or invoke Docker/buildx. The pinned AgentSessions chat profile also
 supports offline authoring, preparation, loading and explicitly unevaluated push
 (`--unevaluated`) with no member image. Full packaged evaluation and exact-suite evaluated push
 require the explicit [development host](#agentsessions-development-evaluation)
-boundary. Deploy, chat/status and Orka/kagent operational consumers refuse it.
+boundary and an [`AgentSessionsBinding`](#agentsessionsbinding). Deploy,
+chat/status and Orka/kagent operational consumers refuse it.
 
 **Implemented:** offline creation, preparation and publication, and full-inventory
 native Orka or exact kagent v0.10.3 Go/linux-amd64 evaluation of one tool-free
@@ -795,7 +796,7 @@ No registry, authentication, Deploy, chat/status or remote-host support is added
 
 ```sh
 kmx test --workspace ./sessions-workspace --development-host ./private/host.json \
-  --out ./private/passing.json --case-timeout 30s
+  --bindings ./private/binding.yaml --out ./private/passing.json --case-timeout 30s
 kmx push --workspace ./sessions-workspace --evaluation ./private/passing.json \
   --to-layout ./sessions-layout greeter:v1
 ```
@@ -830,9 +831,17 @@ contract must match the packaged member.
 }
 ```
 
-The address must be literal loopback, not `localhost`. All cluster, namespace,
-inference, kagent bindings and result-port selectors refuse, including explicitly
-supplied defaults. No declaration or transport failure triggers fallback. Before
+The address must be literal loopback, not `localhost`. `--bindings` must name an
+[`AgentSessionsBinding`](#agentsessionsbinding) whose `model.name` is exactly the
+packaged model; a mismatch refuses before any Session. The receipt records the
+binding's digest once for the whole evaluation, including every judged or repeated
+run. The host's model endpoint is an operator declaration and is not
+checked against the binding. All cluster, namespace, inference and result-port
+selectors refuse, including explicitly supplied defaults. Receipts without a binding digest
+are unreadable; evaluate again. A managed proof stored without a binding digest
+is never selected: when it is the latest record, default push refuses with an
+evaluate-again error rather than using an older record, and a new evaluation
+registers after it. No declaration or transport failure triggers fallback. Before
 Session creation, evaluation prints:
 **“Development: unauthenticated operator-observed host; not authenticated remote promotion.”**
 Instructions, inputs, answers and config are retained in the host journal in
@@ -844,8 +853,8 @@ unchanged observation file cannot detect a hostile process replacement.
 
 Execution requires an intact canonical five-record chat journal, exact
 harness/version/config/input/model-request fingerprint, attributable final text,
-terminal success and EOF. Deltas and Session metadata are not answers. Host-file
-and source snapshots are rechecked around each run, after judging and before export.
+terminal success and EOF. Deltas and Session metadata are not answers. Host-file,
+binding and source snapshots are rechecked around each run, after judging and before export.
 Only completed attributable assertion failures count against the authored threshold;
 unknown/partial/invalid evidence, drift, cancellation or output failure before
 publication stops later execution with no new pass. The shared publisher can
@@ -878,7 +887,8 @@ deployment. It lives outside the suite, one per environment. The suite pins the
 exact model; the binding says where that model is served and where sessions are
 placed. Its `model.name` must be exactly the packaged model (no case folding,
 prefix or version matching); a different model is a new suite version and a new
-evaluation. KMX defines and validates this document; no command reads it yet.
+evaluation. AgentSessions eval reads it with `--bindings FILE` and refuses a
+binding that serves another model.
 
 ```yaml
 apiVersion: kmx.kaimahi.dev/v1alpha1
@@ -918,7 +928,8 @@ The credential is referenced, never embedded: the binding, its digest and
 anything recorded from it carry only the reference. `hostRef` has the shape of
 an AgentSessions host model-binding credential reference (`{type, name}`). The binding digest is the SHA-256 of
 the RFC 8785 (JCS) form of its JSON mapping, so comments, key order and
-YAML/JSON spelling do not change it.
+YAML/JSON spelling do not change it. Evaluation records this digest in its
+evidence.
 
 ## Evaluate the whole workspace
 

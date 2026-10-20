@@ -84,7 +84,7 @@ func compiledTargets() []TargetInfo {
 			QualifiedVersions: []TargetQualification{{Version: agentsessions.ReferenceRevision, Scope: "pinned chat suite authoring and explicit development-host evaluation; not remote host attestation", Evidence: "pinned Go module; full-pass packaged chat evidence and reference export tests"}},
 			Capabilities: []TargetCapability{
 				{Operation: "create", Supported: true, Reason: "offline pinned chat suite authoring"},
-				{Operation: "eval", Supported: true, Reason: "explicit private literal-loopback development host; tool-free unauthenticated one-shot execution"},
+				{Operation: "eval", Supported: true, Reason: "explicit private literal-loopback development host and required --bindings AgentSessionsBinding; tool-free unauthenticated one-shot execution; evidence records the binding digest"},
 				{Operation: "push", Supported: true, Reason: "ordinary transfer or exact-S full-passing development evidence; no deployment"},
 				{Operation: "export", Supported: true, Reason: "eval from-sessions exports reference cases separately; no recorded-manifest execution"},
 				{Operation: "lift", Reason: "development evidence cannot authorize remote placement"},

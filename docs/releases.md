@@ -320,10 +320,14 @@ adoption. Composed kagent Lift remains unsupported. Explicit-reference Lift
 still requires a digest, never a tag.
 
 Pinned AgentSessions chat is a separate offline packaging and
-`eval --development-host FILE` route, with no cluster selectors. It requires
-an explicit literal-loopback, unauthenticated development host and discloses
-cleartext journal retention. Its full-pass evidence supports evaluated push,
-not Lift or receipt diff. See the [workspace guide](suite-workspace.md).
+`eval --development-host FILE --bindings FILE` route, with no cluster selectors.
+It requires an explicit literal-loopback, unauthenticated development host,
+discloses cleartext journal retention, and requires an
+[`AgentSessionsBinding`](suite-workspace.md#agentsessionsbinding) whose
+`model.name` equals the packaged model; evidence records the binding digest.
+Its full-pass evidence supports evaluated push, not Lift or receipt diff.
+AgentSessions receipts and managed proofs without a binding digest are not
+eligible for push; evaluate again with `--bindings FILE`. See the [workspace guide](suite-workspace.md#agentsessions-development-evaluation).
 
 Replace removed commands as follows:
 

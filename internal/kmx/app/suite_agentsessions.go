@@ -30,11 +30,66 @@ type suiteSessionsHostSnapshot struct {
 	parent, file os.FileInfo
 	raw          []byte
 	host         suiteSessionsHostFile
+	binding      *suiteSessionsBindingSnapshot
 }
 
-func snapshotSuiteSessionsHost(path string, suite *workspace.NativeSuite) (*suiteSessionsHostSnapshot, error) {
+var errSuiteSessionsBinding = errors.New("agentsessions requires --bindings FILE: one valid AgentSessionsBinding document")
+
+// suiteSessionsBindingSnapshot anchors the environment binding the evaluation
+// records. The development host's model serving is an operator declaration;
+// kmx checks the binding's served model, not the host's endpoint.
+type suiteSessionsBindingSnapshot struct {
+	path         string
+	parent, file os.FileInfo
+	raw          []byte
+	binding      agentruntime.AgentSessionsBinding
+	digest       string
+}
+
+func snapshotSuiteSessionsBinding(path string, suite *workspace.NativeSuite) (*suiteSessionsBindingSnapshot, error) {
+	if suite == nil {
+		return nil, errSuiteSessionsBinding
+	}
 	if err := suite.RequireUnprofiled(); err != nil {
 		return nil, err
+	}
+	raw, parent, file, err := readSuiteKagentBindings(path)
+	if err != nil {
+		return nil, errSuiteSessionsBinding
+	}
+	binding, err := agentruntime.ParseAgentSessionsBinding(raw)
+	if err != nil {
+		// Credential-shaped values are refused before field validation and are
+		// never echoed; an invalid identifier (a name or label) may be quoted.
+		return nil, errors.Join(errSuiteSessionsBinding, err)
+	}
+	if err := agentruntime.CheckAgentSessionsBindingModel(binding, suite.Model); err != nil {
+		return nil, err
+	}
+	digest, err := agentruntime.AgentSessionsBindingDigest(binding)
+	if err != nil {
+		return nil, errors.Join(errSuiteSessionsBinding, err)
+	}
+	return &suiteSessionsBindingSnapshot{path, parent, file, raw, binding, digest}, nil
+}
+
+func (s *suiteSessionsBindingSnapshot) recheck(suite *workspace.NativeSuite) error {
+	if s == nil {
+		return errSuiteSessionsBinding
+	}
+	current, err := snapshotSuiteSessionsBinding(s.path, suite)
+	if err != nil || !os.SameFile(s.parent, current.parent) || !os.SameFile(s.file, current.file) || !bytes.Equal(s.raw, current.raw) || current.digest != s.digest {
+		return errSuiteSessionsBinding
+	}
+	return nil
+}
+
+func snapshotSuiteSessionsHost(path string, suite *workspace.NativeSuite, binding *suiteSessionsBindingSnapshot) (*suiteSessionsHostSnapshot, error) {
+	if err := suite.RequireUnprofiled(); err != nil {
+		return nil, err
+	}
+	if binding == nil {
+		return nil, errSuiteSessionsBinding
 	}
 	// The shared no-follow bounded reader anchors both file and directory identity;
 	// enforce private permissions before accepting operator declarations.
@@ -46,10 +101,10 @@ func snapshotSuiteSessionsHost(path string, suite *workspace.NativeSuite) (*suit
 	if agentsuite.Unmarshal(raw, &host) != nil || host.SchemaVersion != 1 || !suiteSessionsLoopback(host.Address) {
 		return nil, errSuiteSessionsHost
 	}
-	if _, err := newSuiteSessionsSubject(suite, host.Observation); err != nil {
+	if _, err := newSuiteSessionsSubject(suite, host.Observation, binding.digest); err != nil {
 		return nil, errSuiteSessionsHost
 	}
-	return &suiteSessionsHostSnapshot{path, parent, file, raw, host}, nil
+	return &suiteSessionsHostSnapshot{path, parent, file, raw, host, binding}, nil
 }
 func suiteSessionsLoopback(address string) bool {
 	host, port, err := net.SplitHostPort(address)
@@ -64,7 +119,10 @@ func (s *suiteSessionsHostSnapshot) recheck(suite *workspace.NativeSuite) error 
 	if s == nil {
 		return errSuiteSessionsHost
 	}
-	current, err := snapshotSuiteSessionsHost(s.path, suite)
+	if err := s.binding.recheck(suite); err != nil {
+		return err
+	}
+	current, err := snapshotSuiteSessionsHost(s.path, suite, s.binding)
 	if err != nil || !os.SameFile(s.parent, current.parent) || !os.SameFile(s.file, current.file) || !bytes.Equal(s.raw, current.raw) {
 		return errSuiteSessionsHost
 	}
@@ -109,7 +167,7 @@ func (a *App) evaluateSuiteSessionsWorkspace(ctx context.Context, p *PreparedSui
 	if err := recheck(ctx); err != nil {
 		return err
 	}
-	subject, err := newSuiteSessionsSubject(p.suite, p.sessions.host.Observation)
+	subject, err := newSuiteSessionsSubject(p.suite, p.sessions.host.Observation, p.sessions.binding.digest)
 	if err != nil {
 		return err
 	}

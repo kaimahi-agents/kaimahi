@@ -29,7 +29,11 @@ const (
 var (
 	errSuitePassStore   = errors.New("managed passing evidence unavailable or unsafe; inspect private KMX state, or select --evaluation FILE explicitly")
 	errSuitePassMissing = errors.New("no completed passing evidence for this exact suite; run kmx eval, select --evaluation FILE, or explicitly push --unevaluated")
-	suitePassRecordName = regexp.MustCompile(`^[0-9]{20}\.json$`)
+	// errSuitePassPredatesBinding is the latest record holding an AgentSessions
+	// receipt without a binding digest. It is not proof and older records are
+	// not selected instead; a new evaluation commits after it.
+	errSuitePassPredatesBinding = errors.New("latest managed AgentSessions passing evidence for this exact suite predates recorded binding digests and is not eligible; run kmx eval --development-host FILE --bindings FILE again, select --evaluation FILE, or explicitly push --unevaluated")
+	suitePassRecordName         = regexp.MustCompile(`^[0-9]{20}\.json$`)
 )
 
 // The embedded receipt retains its existing private wire format. Directory and
@@ -227,6 +231,9 @@ type suitePassScan struct {
 	sequence         uint64 // global allocation maximum
 	selectedSequence uint64 // latest coherent receipt for the selected composition
 	count, bytes     int
+	// predatesBinding marks the selected record as an ineligible AgentSessions
+	// receipt without a binding digest; latest is then nil.
+	predatesBinding bool
 }
 
 func (s *suitePassStore) scan(ctx context.Context, suite *workspace.NativeSuite) (result suitePassScan, err error) {
@@ -296,7 +303,41 @@ func (s *suitePassStore) scan(ctx context.Context, suite *workspace.NativeSuite)
 			if agentsuite.Unmarshal(raw, &record) != nil || record.SchemaVersion != 1 || record.Workspace != s.identity || record.SuiteDigest != s.suiteDigest || record.Sequence != seq {
 				return result, errSuitePassStore
 			}
-			receipt, e := parseSuitePassingReceipt(record.Receipt)
+			receipt, predatesBinding, e := classifySuitePassingReceipt(record.Receipt)
+			if predatesBinding {
+				// Counted for capacity and ordering, never eligible. Apart from
+				// the placeholder binding digest it must be coherent with its own
+				// composition of this suite, like any other record; only the
+				// selected composition's record blocks lookup.
+				if receipt.suiteDigest() != s.suiteDigest {
+					return result, errSuitePassStore
+				}
+				if seq > result.sequence {
+					result.sequence = seq
+				}
+				if suite != nil {
+					own, err := suite.ForCompositionDigest(ctx, receipt.compositionDigest())
+					if err != nil {
+						if err := ctx.Err(); err != nil {
+							return result, err
+						}
+						return result, errSuitePassStore
+					}
+					if _, err := canonicalSuitePassingReceipt(ctx, receipt, own); err != nil {
+						if err := ctx.Err(); err != nil {
+							return result, err
+						}
+						return result, errSuitePassStore
+					}
+					if own.CompositionDigest != suite.CompositionDigest {
+						continue
+					}
+				}
+				if seq > result.selectedSequence {
+					result.selectedSequence, result.latest, result.path, result.predatesBinding = seq, nil, filepath.Join(s.partition, name), true
+				}
+				continue
+			}
 			if e != nil || receipt.suiteDigest() != s.suiteDigest {
 				return result, errSuitePassStore
 			}
@@ -322,9 +363,7 @@ func (s *suitePassStore) scan(ctx context.Context, suite *workspace.NativeSuite)
 				}
 			}
 			if seq > result.selectedSequence {
-				result.selectedSequence = seq
-				result.latest = receipt
-				result.path = filepath.Join(s.partition, name)
+				result.selectedSequence, result.latest, result.path, result.predatesBinding = seq, receipt, filepath.Join(s.partition, name), false
 			}
 		}
 		if readErr == io.EOF {
@@ -372,6 +411,9 @@ func (s *suitePassStore) latest(ctx context.Context, suite *workspace.NativeSuit
 	scan, err := s.scan(ctx, suite)
 	if err != nil {
 		return nil, "", err
+	}
+	if scan.predatesBinding {
+		return nil, "", errSuitePassPredatesBinding
 	}
 	if scan.latest == nil {
 		return nil, "", errSuitePassMissing
