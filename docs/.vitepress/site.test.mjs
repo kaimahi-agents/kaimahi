@@ -74,7 +74,7 @@ test('the front doors lead with composed Lift and its prerequisites', async () =
   for (const prerequisite of ['prepared runtime', 'inference', 'registry authentication', 'kmx.yaml', 'publishRepository', 'evaluationTarget']) {
     assert.ok(chooser.includes(prerequisite), `chooser prerequisite: ${prerequisite}`)
   }
-  for (const page of ['index.html', 'docs/getting-started.html']) {
+  for (const page of ['index.html', 'docs/getting-started.html', 'docs/workflow-overview.html']) {
     const text = plainText(await readFile(path.join(dist, page), 'utf8'))
     const create = text.indexOf('kmx create ')
     const lift = text.indexOf('kmx lift --to ')
@@ -91,7 +91,7 @@ test('the front doors lead with composed Lift and its prerequisites', async () =
 
 test('active installation guidance pins the stable CLI without rewriting history', async () => {
   for (const [page, heading] of [
-    ['index.html', 'getting-started-get-your-first-answer'],
+    ['docs/workflow-overview.html', 'getting-started-get-your-first-answer'],
     ['docs/getting-started.html', 'install-kmx'],
     ['docs/kmx.html', 'install']
   ]) {

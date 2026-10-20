@@ -55,7 +55,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
 | `scripts/` | 4 (4 embedded in the binary, 0 operator) | 0 | 63 (checkers, release packaging, native CI runners, qualification fixtures, mutation specs) |
-| `docs/` | 64 tracked files; native guides, design, site scaffolding and history | — | maintainer and process docs |
+| `docs/` | 65 tracked files; native guides, design, site scaffolding and history | — | maintainer and process docs |
 | `brand/` | 7 identity assets for repository and organization surfaces | — | its own checker |
 
 ## `cmd/` — installed CLI
@@ -290,9 +290,9 @@ Existing cluster deletion
 owns runtime/model cleanup. These files are checkout-only scaffolding, not an
 installer or new CLI/API capability.
 
-## `docs/` — 64 tracked files, native guides, site scaffolding and design/history
+## `docs/` — 65 tracked files, native guides, site scaffolding and design/history
 
-**Guides and index (17):** `README.md`, `getting-started.md`, `kmx.md`,
+**Guides and index (18):** `README.md`, `getting-started.md`, `workflow-overview.md`, `kmx.md`,
 `aks.md`, `aks-demo.md`, `models.md`, `releases.md`, `FAQ.md`, `orka.md`,
 `copilot-inference.md`, `interactive-chat.md`,
 `orka-k8s-tool.md`, `bundle-format.md`, `runtime-adapters.md`,

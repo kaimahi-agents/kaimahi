@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the KMX front door with synthetic README pages, not archived prose."""
+"""Exercise the README and linked workflow gate with synthetic documents."""
 import importlib.util
 import subprocess
 import sys
@@ -79,10 +79,8 @@ A **runtime** executes and governs the agent. An **inference provider** is the s
 [repository map](docs/repository-map.md)
 """
 
-CASES = [("valid front door", GOOD, None)]
+CASES = [("valid workflow overview", GOOD, None)]
 for label, literal in [
-    ("ketu icon", '<img src="brand/ketu.svg" alt="Kaimahi ketu mark">\n'),
-    ("product line", "**Agent Builder CLI for Kubernetes.**\n"),
     ("journey heading", "## Create, Prove, Lift\n"),
     ("first-answer heading", "## Getting Started: Get Your First Answer\n"),
     ("workspace/live heading", "## Workspace And Live Paths\n"),
@@ -92,9 +90,6 @@ for label, literal in [
     ("development heading", "## Development\n"),
     ("experimental notice", "> [!IMPORTANT]\n> **Kaimahi is experimental and under active development.** Interfaces may change.\n"),
     ("runtime ownership note", "> [!NOTE]\n> kmx is the Agent Builder and lifecycle layer, not a runtime or generic\n> governance control plane.\n"),
-    ("CI badge", "actions/workflows/ci.yml/badge.svg?branch=main"),
-    ("release badge", "img.shields.io/github/v/release/kaimahi-agents/kaimahi"),
-    ("license badge", "img.shields.io/github/license/kaimahi-agents/kaimahi"),
 ]:
     CASES.append((f"missing {label}", GOOD.replace(literal, ""), f"{label} is missing"))
 
@@ -173,24 +168,74 @@ CASES += [
     ("missing codebase overview", GOOD.replace("[codebase overview](docs/codebase-overview.md)\n", ""), "codebase overview link is missing"),
     ("missing interface baseline", GOOD.replace("[interface baseline](docs/interface-baseline.md)\n", ""), "interface baseline link is missing"),
     ("missing repository map", GOOD.replace("[repository map](docs/repository-map.md)\n", ""), "repository map link is missing"),
-    ("empty document", "", "ketu icon is missing"),
+    ("empty workflow", "", "journey heading is missing"),
 ]
 
 failed = 0
 for name, text, expected in CASES:
-    got = front_door.check(text)
+    got = front_door.check_workflow(text.replace("](docs/", "]("))
     ok = (got is None) if expected is None else (got is not None and expected in got)
     print(("ok  " if ok else "FAIL") + f" [{name}] -> {got or 'valid'}")
     failed += not ok
 
-with tempfile.TemporaryDirectory() as tmp:
-    for name, text, want in [("valid", GOOD, 0), ("invalid", "# Empty README\n", 1)]:
+FRONT = GOOD.split("## Create, Prove, Lift")[0].replace("**Agent Builder CLI for Kubernetes.**\n", "") + """# Kaimahi
+
+Developers need to test an agent before shipping it to a cluster.
+
+> Create a release-notes agent.
+> Check its answers against test cases.
+> Send the same package to a cluster.
+
+kmx is a command-line tool for Kubernetes. It is not an agent runtime.
+
+**Status: experimental. Not recommended for production use.**
+
+## Try it locally
+
+Have Docker running and Homebrew installed.
+
+```bash
+brew install kaimahi-agents/tap/kmx
+kmx version
+kmx quickstart
+```
+
+## Go deeper
+
+[Workflow and runtime details](docs/workflow-overview.md)
+"""
+WORKFLOW = GOOD[GOOD.index("## Create, Prove, Lift"):].replace("](docs/", "](")
+FRONT_CASES = [("short front door with linked workflow", FRONT, WORKFLOW, None)]
+for name, literal, expected in [
+    ("missing front-door icon", '<img src="brand/ketu.svg" alt="Kaimahi ketu mark">\n', "ketu icon is missing"),
+    ("missing front-door CI badge", "actions/workflows/ci.yml/badge.svg?branch=main", "CI badge is missing"),
+    ("missing front-door release badge", "img.shields.io/github/v/release/kaimahi-agents/kaimahi", "release badge is missing"),
+    ("missing front-door license badge", "img.shields.io/github/license/kaimahi-agents/kaimahi", "license badge is missing"),
+    ("missing front-door status", "**Status: experimental. Not recommended for production use.**\n", "experimental status must precede"),
+    ("missing preferred install", "brew install kaimahi-agents/tap/kmx\n", "Homebrew install is missing from the local trial"),
+    ("missing front-door version", "kmx version\n", "kmx version is missing from the local trial"),
+    ("missing front-door quickstart", "kmx quickstart\n", "kmx quickstart is missing from the local trial"),
+    ("missing workflow navigation", "[Workflow and runtime details](docs/workflow-overview.md)\n", "linked workflow guide is missing"),
+]:
+    FRONT_CASES.append((name, FRONT.replace(literal, ""), WORKFLOW, expected))
+FRONT_CASES += [
+    ("front-door commands reversed", FRONT.replace("kmx version\nkmx quickstart", "kmx quickstart\nkmx version"), WORKFLOW, "kmx quickstart is missing from the local trial"),
+    ("late status", FRONT.replace("**Status: experimental. Not recommended for production use.**\n", "") + "\n**Status: experimental. Not recommended for production use.**\n", WORKFLOW, "experimental status must precede"),
+    ("missing workflow file", FRONT, None, "cannot read required documentation"),
+    ("unsafe linked workflow", FRONT, WORKFLOW.replace("only when the full policy passes", "after any case"), "Prove row must require a full pass"),
+]
+for name, text, workflow, expected in FRONT_CASES:
+    with tempfile.TemporaryDirectory() as tmp:
         readme = Path(tmp) / "README.md"
         readme.write_text(text)
-        got = subprocess.run([sys.executable, str(CHECKER), str(readme)], capture_output=True, text=True)
-        ok = got.returncode == want
-        print(("ok  " if ok else "FAIL") + f" [as a script: {name}] -> exit {got.returncode}, want {want}")
+        if workflow is not None:
+            (Path(tmp) / "docs").mkdir()
+            (Path(tmp) / "docs/workflow-overview.md").write_text(workflow)
+        result = subprocess.run([sys.executable, str(CHECKER), str(readme)], capture_output=True, text=True)
+        want = 0 if expected is None else 1
+        ok = result.returncode == want and (expected is None or expected in result.stderr)
+        print(("ok  " if ok else "FAIL") + f" [{name}] -> exit {result.returncode}, want {want}: {result.stderr.strip()}")
         failed += not ok
 
-print(f"check-readme-front-door self-test: {len(CASES) + 2} case(s), {failed} failure(s)")
+print(f"check-readme-front-door self-test: {len(CASES) + len(FRONT_CASES)} case(s), {failed} failure(s)")
 sys.exit(1 if failed else 0)

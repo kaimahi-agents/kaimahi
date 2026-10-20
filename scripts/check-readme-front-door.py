@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the current suite-first workflow and its stable-release boundary."""
+"""Check the README entry point and linked workflow/release boundaries."""
 from __future__ import annotations
 
 import re
@@ -7,8 +7,6 @@ import sys
 from pathlib import Path
 
 ORDER = [
-    ("ketu icon", r'src="brand/ketu\.svg"'),
-    ("product line", r"^\*\*Agent Builder CLI for Kubernetes\.\*\*$"),
     ("journey heading", r"^## Create, Prove, Lift$"),
     ("first-answer heading", r"^## Getting Started: Get Your First Answer$"),
     ("workspace/live heading", r"^## Workspace And Live Paths$"),
@@ -116,8 +114,8 @@ def path_rows(section: str) -> dict[str, str]:
     return rows
 
 
-def check(text: str) -> str | None:
-    """Return a failure message, or None when the hierarchy is valid."""
+def check_workflow(text: str) -> str | None:
+    """Keep the detailed workflow and safety contract in the linked guide."""
     position = 0
     matches: dict[str, re.Match[str]] = {}
     for label, pattern in ORDER:
@@ -222,27 +220,53 @@ def check(text: str) -> str | None:
         if re.search(pattern, runtime, re.S) is None:
             return f"README front door: {label} is missing"
 
-    if re.search(r"\]\(docs/agent-lift\.md(?:#[^)]+)?\)", text):
+    if re.search(r"\]\((?:docs/)?agent-lift\.md(?:#[^)]+)?\)", text):
         return "README front door: removed agent-lift guide remains linked"
 
     development = section_after(text, matches["development heading"])
     for label, link in DEVELOPER_LINKS:
-        if link not in development:
+        if link.replace("](docs/", "](") not in development:
             return f"README front door: {label} link is missing"
 
-    for label, pattern in BADGE_PATTERNS:
-        if re.search(pattern, text) is None:
-            return f"README front door: {label} is missing"
     return None
 
 
+def check(text: str, workflow: str) -> str | None:
+    """Check the short entry point without requiring technical tables in it."""
+    for label, pattern in [("ketu icon", r'src="brand/ketu\.svg"'), *BADGE_PATTERNS]:
+        if re.search(pattern, text) is None:
+            return f"README front door: {label} is missing"
+    answer = re.search(r"^## Try it locally$", text, re.M)
+    guides = re.search(r"^## Go deeper$", text, re.M)
+    if answer is None or guides is None or guides.start() < answer.end():
+        return "README front door: local trial must precede deeper guides"
+    status = r"^\*\*Status: experimental\. Not recommended for production use\.\*\*$"
+    if re.search(status, text[:answer.start()], re.M) is None:
+        return "README front door: experimental status must precede the local trial"
+    blocks = list(FENCE.finditer(section_after(text, answer)))
+    if not blocks:
+        return "README front door: local trial command block is missing"
+    missing = ordered_in(blocks[0].group(1), INSTALL_COMMANDS[:1] + FIRST_ANSWER_COMMANDS)
+    if missing is not None:
+        return f"README front door: {missing} is missing from the local trial"
+    if "](docs/workflow-overview.md)" not in section_after(text, guides):
+        return "README front door: linked workflow guide is missing"
+    return check_workflow(workflow)
+
+
 def main(path: Path) -> int:
-    """Check one README path and return a process exit status."""
-    problem = check(path.read_text())
+    """Check the README and its required operator guide; missing inputs refuse."""
+    try:
+        text = path.read_text()
+        workflow = (path.parent / "docs/workflow-overview.md").read_text()
+    except (OSError, UnicodeError) as error:
+        print(f"README front door: cannot read required documentation: {error}", file=sys.stderr)
+        return 1
+    problem = check(text, workflow)
     if problem:
         print(problem, file=sys.stderr)
         return 1
-    print("README front door: stable quickstart, suite stages, runtime boundaries and developer path valid")
+    print("README front door: local trial and linked workflow boundaries valid")
     return 0
 
 

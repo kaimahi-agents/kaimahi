@@ -17,6 +17,7 @@ runtime contract when extending or comparing implementations.
 | I want to… | Read |
 |---|---|
 | Set up the current development CLI and understand prerequisites | [Getting started](getting-started.md) |
+| Review Create, Prove, Lift stages, workspace/live paths and safety limits | [Workflow overview](workflow-overview.md) |
 | Inspect compiled runtime support and qualification evidence with `kmx targets`; understand runtime and inference boundaries | [Runtime contract and support matrix](runtime-adapters.md) |
 | Install Orka, inspect before applying, or see the version actually running | [Orka](orka.md) |
 | Define or validate a portable OCI AgentSuite with bundled or remote ToolProviders and standalone provider sandbox images | [AgentSuite Artifact Specification](https://github.com/agent-primitives/suite/blob/main/spec.md) |
