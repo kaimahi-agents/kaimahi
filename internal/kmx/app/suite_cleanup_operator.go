@@ -53,6 +53,7 @@ func (a *App) discoverSuiteCandidates(ctx context.Context, target suiteNativeTar
 	inventory := suiteCleanupInventory{rows: map[string][]suiteCandidateCleanupMetadataRow{}}
 	count := 0
 	owners := map[string]*orkaSuiteOwnership{}
+	candidateOwners := map[string]*orkaSuiteOwnership{}
 	for _, kind := range []string{"Provider", "Agent", "Task", "Job", "ConfigMap", "Pod"} {
 		rows, err := a.suiteCandidateCleanupInventoryTarget(ctx, target, kind)
 		if err != nil {
@@ -94,6 +95,11 @@ func (a *App) discoverSuiteCandidates(ctx context.Context, target suiteNativeTar
 				inventory.uncertain = kind + "/" + row.Name
 			}
 			owners[owner.EvaluationRun] = owner
+			// An operation spans tuples; roots of one physical candidate must agree exactly.
+			if old := candidateOwners[physical]; old != nil && !reflect.DeepEqual(old, owner) {
+				inventory.uncertain = kind + "/" + row.Name
+			}
+			candidateOwners[physical] = owner
 			terminating := row.DeletionTimestamp != nil
 			if terminating {
 				if _, err := time.Parse(time.RFC3339Nano, *row.DeletionTimestamp); err != nil {
