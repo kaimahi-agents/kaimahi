@@ -44,6 +44,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   `snapshot.storageLocation` refuses `\`, empty path segments and segments of
   only `.` and spaces; an empty `workerSelector.matchLabels` has the same digest
   as an omitted selector.
+- Plan-only AgentSessions deploy: `kmx deploy REF@DIGEST --harness-image IMAGE@sha256:…
+  --bindings FILE --evidence FILE --plan` renders a substrate ActorTemplate and
+  HarnessRegistration offline from full-passing AgentSessions evidence, for
+  agent-substrate/substrate main at `f4f7b806255ffdc824391b857dbbf329a2556402`.
+  It reads no cluster configuration, calls no substrate or host and applies
+  nothing; Apply and `--update` refuse.
+  `scripts/validate-agentsessions-render.sh` checks the golden renders against
+  that commit. The template name hash covers the renderer version, the full
+  image reference (a mirrored image is another template) and the binding
+  digest. Composed `kmx deploy --to NAME` refuses `--harness-image` and
+  AgentSessions workspaces before evaluation or publication.
 - Eval and composed workspace Lift show non-pass case/run, assertion IDs/types,
   both judge scores against the threshold and safe unknown-outcome classes.
   `--show-content` opts into sanitized bounded expected values, judge rationale

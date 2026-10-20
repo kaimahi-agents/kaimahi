@@ -87,7 +87,7 @@ func compiledTargets() []TargetInfo {
 				{Operation: "eval", Supported: true, Reason: "explicit private literal-loopback development host and required --bindings AgentSessionsBinding; tool-free unauthenticated one-shot execution; evidence records the binding digest"},
 				{Operation: "push", Supported: true, Reason: "ordinary transfer or exact-S full-passing development evidence; no deployment"},
 				{Operation: "export", Supported: true, Reason: "eval from-sessions exports reference cases separately; no recorded-manifest execution"},
-				{Operation: "lift", Reason: "development evidence cannot authorize remote placement"},
+				{Operation: "lift", Reason: "plan-only render of a substrate ActorTemplate and HarnessRegistration from evidence and --bindings; apply refuses, no remote placement"},
 				{Operation: "chat", Reason: "no standalone AgentSessions chat"},
 				{Operation: "run", Reason: "no standalone AgentSessions run"},
 				{Operation: "inspect", Reason: "no AgentSessions live inspection"},

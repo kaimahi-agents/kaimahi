@@ -45,3 +45,32 @@ func TestSharedNamespaceAndObjectNameBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestValidSuiteName(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ok   bool
+	}{
+		{"a", true},
+		{"7", true},
+		{"support-desk", true},
+		{"support.desk_v2", true},
+		{"a.", true},
+		{strings.Repeat("a", 63), true},
+		{strings.Repeat("a", 64), false},
+		{"", false},
+		{".", false},
+		{"..", false},
+		{".a", false},
+		{"-a", false},
+		{"_a", false},
+		{"Support", false},
+		{"support/desk", false},
+		{"support desk", false},
+		{"support\n", false},
+	} {
+		if got := ValidSuiteName(tc.name); got != tc.ok {
+			t.Errorf("ValidSuiteName(%q) = %t, want %t", tc.name, got, tc.ok)
+		}
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/agent-primitives/sessions/runtime/local"
 	"github.com/agent-primitives/sessions/session"
 	"github.com/agent-primitives/sessions/sqlitelog"
+	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"google.golang.org/grpc"
 )
@@ -148,7 +150,120 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 			t.Fatal("mode refusal reached config/model", flags)
 		}
 	}
-	for _, helper := range [][]string{{"eval", "--help"}, {"__complete", "eval", "--development-host", ""}} {
+	// Plan-only AgentSessions deploy from the evaluated package and evidence.
+	layout := filepath.Join(t.TempDir(), "layout")
+	diagnostics.Reset()
+	if err := execute([]string{"push", "--workspace", root, "--evaluation", filepath.Join(dir, "pass.json"), "--to-layout", layout, "suite:v1"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	digest := regexp.MustCompile(`sha256:[0-9a-f]{64}`).FindString(diagnostics.String() + out.String())
+	if digest == "" {
+		t.Fatalf("push did not report its digest: %s", diagnostics.String())
+	}
+	image := "registry.example.invalid/harnessnode@sha256:" + strings.Repeat("e", 64)
+	receiptV1 := writeSessionsEvidenceV1(t, filepath.Join(dir, "pass.json"))
+	deploy := []string{"deploy", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--bindings", binding, "--evidence", filepath.Join(dir, "pass.json")}
+	for _, tc := range []struct {
+		extra []string
+		want  string
+	}{
+		{nil, "plan-only; pass --plan"},
+		{[]string{"--plan", "--to-context", "kind-other"}, "--harness-image refuses --to-context"},
+		{[]string{"--plan", "--inference", "provider:inference"}, "--harness-image refuses --inference"},
+		{[]string{"--plan", "--promote"}, "--harness-image refuses --promote"},
+		{[]string{"--plan", "--update"}, "--harness-image refuses --update"},
+		{[]string{"--plan", "--harness-image", "registry.example.invalid/harnessnode:v1"}, "--harness-image: harness image must be a digest-pinned reference"},
+		{[]string{"--plan", "--bindings", mismatch}, `serves model "other-model" but the suite pins "fixture-model"`},
+		{[]string{"--plan", "--evidence", receiptV1}, "evaluate again with --development-host FILE --bindings FILE"},
+		{[]string{"--plan", "--case-timeout", "1m"}, "explicit-reference deploy refuses --case-timeout"},
+		{[]string{"--plan", "--result-port", "19180"}, "explicit-reference deploy refuses --result-port"},
+		{[]string{"--plan", "--judge-base-url", "http://127.0.0.1:1"}, "explicit-reference deploy refuses --judge-base-url"},
+		{[]string{"--plan", "--judge-key-env", "JUDGE_KEY"}, "explicit-reference deploy refuses --judge-key-env"},
+		{[]string{"--plan", "--provenance=false"}, "explicit-reference deploy refuses --provenance"},
+		{[]string{"--plan", "--require-provenance"}, "explicit-reference deploy refuses --require-provenance"},
+	} {
+		if err := execute(append(append([]string{}, deploy...), tc.extra...), deps); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("deploy %v: %v, want %q", tc.extra, err, tc.want)
+		}
+	}
+	noBindings := []string{"deploy", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--evidence", filepath.Join(dir, "pass.json"), "--plan"}
+	if err := execute(noBindings, deps); err == nil || !strings.Contains(err.Error(), "requires --bindings FILE") {
+		t.Fatalf("deploy without bindings: %v", err)
+	}
+	noEvidence := []string{"deploy", "suite@" + digest, "--from-layout", layout, "--harness-image", image, "--bindings", binding, "--plan"}
+	if err := execute(noEvidence, deps); err == nil || !strings.Contains(err.Error(), "explicit-reference deploy requires --evidence FILE") {
+		t.Fatalf("deploy without evidence: %v", err)
+	}
+	// Workspace deploy composes Orka only: it refuses --harness-image before
+	// reading arguments, and refuses an AgentSessions workspace before any
+	// evaluation, publication or cluster configuration.
+	if err := os.WriteFile(filepath.Join(root, "kmx.yaml"), []byte(composedDestinationConfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"deploy", "--to", "prod", "--harness-image", image, "--plan"}, "workspace deploy refuses --harness-image"},
+		{[]string{"deploy", "--to", "prod", "--plan"}, "native Orka only"},
+		{[]string{"deploy", "--to", "prod"}, "native Orka only"},
+		{[]string{"lift", "--to", "prod", "--harness-image", image, "--plan"}, "workspace lift refuses --harness-image"},
+	} {
+		if err := execute(tc.args, deps); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("workspace %v: %v, want %q", tc.args, err, tc.want)
+		}
+	}
+	out.Reset()
+	diagnostics.Reset()
+	if err := execute(append(append([]string{}, deploy...), "--plan", "-o", "json"), deps); err != nil {
+		t.Fatal(err)
+	}
+	var plan struct {
+		Runtime       string `json:"runtime"`
+		Gate          string `json:"gate"`
+		AgentSessions struct {
+			HarnessImage  string `json:"harnessImage"`
+			ActorTemplate struct {
+				Metadata struct{ Atespace, Name string }
+			} `json:"actorTemplate"`
+			HarnessRegistration json.RawMessage `json:"harnessRegistration"`
+		} `json:"agentsessions"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &plan); err != nil {
+		t.Fatalf("deploy plan is not JSON: %v\n%s", err, out.String())
+	}
+	if plan.Runtime != "agentsessions" || plan.Gate != "plan-only" || plan.AgentSessions.HarnessImage != image || plan.AgentSessions.ActorTemplate.Metadata.Atespace != "demo" || !strings.Contains(string(plan.AgentSessions.HarnessRegistration), plan.AgentSessions.ActorTemplate.Metadata.Name) {
+		t.Fatalf("unexpected deploy plan: %s", out.String())
+	}
+	if strings.Contains(diagnostics.String(), "deprecated") || !strings.Contains(diagnostics.String(), "Plan-only: no substrate or AgentSessions host writes.") {
+		t.Fatalf("deploy plan diagnostics: %q", diagnostics.String())
+	}
+	if *loads != 0 || calls.Load() != 1 {
+		t.Fatal("AgentSessions deploy plan loaded cluster configuration or reached the model")
+	}
+	// The hidden legacy lift route renders the same plan after exactly one
+	// deprecation notice.
+	deployPlan := out.String()
+	out.Reset()
+	diagnostics.Reset()
+	legacy := append([]string{"lift"}, deploy[1:]...)
+	if err := execute(append(append([]string{}, legacy...), "--plan", "-o", "json"), deps); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != deployPlan {
+		t.Fatalf("legacy lift plan differs from deploy:\n%s\n%s", out.String(), deployPlan)
+	}
+	if !strings.HasPrefix(diagnostics.String(), legacyLiftNotice) || strings.Count(diagnostics.String(), "deprecated") != 1 {
+		t.Fatalf("legacy lift diagnostics: %q", diagnostics.String())
+	}
+	if err := execute(append(append([]string{}, legacy...), "--plan", "--update"), deps); err == nil || !strings.Contains(err.Error(), "AgentSessions lift is plan-only with no retained placement") {
+		t.Fatalf("legacy lift --update: %v", err)
+	}
+	if *loads != 0 || calls.Load() != 1 {
+		t.Fatal("legacy AgentSessions lift plan loaded cluster configuration or reached the model")
+	}
+	for _, helper := range [][]string{{"eval", "--help"}, {"__complete", "eval", "--development-host", ""}, {"deploy", "--help"}, {"lift", "--help"}} {
 		if err := execute(helper, deps); err != nil {
 			t.Fatal(err)
 		}
@@ -172,4 +287,29 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	if _, err := os.Stat(canonical[len(canonical)-1]); err != nil {
 		t.Fatal("no complete canonical CLI proof", err)
 	}
+}
+
+// writeSessionsEvidenceV1 writes a copy of AgentSessions passing evidence as
+// receipt v1, without agentsessions.subject.bindingDigest, beside it.
+func writeSessionsEvidenceV1(t *testing.T, evidence string) string {
+	t.Helper()
+	raw, err := os.ReadFile(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	document["domain"] = "kmx.agentsessions-suite.passing/v1"
+	delete(document["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
+	old, err := agentsuite.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(filepath.Dir(evidence), "pass-v1.json")
+	if err := os.WriteFile(path, old, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

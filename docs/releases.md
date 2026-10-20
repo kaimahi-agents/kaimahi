@@ -325,10 +325,13 @@ It requires an explicit literal-loopback, unauthenticated development host,
 discloses cleartext journal retention, and requires an
 [`AgentSessionsBinding`](suite-workspace.md#agentsessionsbinding) whose
 `model.name` equals the packaged model; evidence records the binding digest.
-Its full-pass evidence supports evaluated push, not Lift or receipt diff.
+Its full-pass evidence supports evaluated push and a plan-only Lift:
+`kmx lift REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST --bindings FILE --evidence FILE --plan`
+renders a substrate ActorTemplate and HarnessRegistration offline, and nothing
+applies them. Receipt diff refuses the evidence.
 AgentSessions passing receipts are now v2 (`kmx.agentsessions-suite.passing/v2`);
-v1 receipts and managed proofs are not eligible for push; evaluate again with
-`--bindings FILE`. See the [workspace guide](suite-workspace.md#agentsessions-development-evaluation).
+v1 receipts and managed proofs are not eligible for push or Lift; evaluate again with
+`--bindings FILE`. See the [workspace guide](suite-workspace.md#agentsessions-deploy-plan).
 
 Replace removed commands as follows:
 
