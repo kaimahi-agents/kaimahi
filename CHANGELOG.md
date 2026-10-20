@@ -35,8 +35,17 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   both judge scores against the threshold and safe unknown-outcome classes.
   `--show-content` opts into sanitized bounded expected values, judge rationale
   and answer excerpts on stderr; outcome JSON remains payload-free. Diagnostics
-  are transient and separate from evidence; local retention/explain is not yet
-  implemented. Known credentials/headers are withheld before truncation, but
+  remain separate from evidence. Non-pass runs are retained privately under
+  KMX_HOME: last 10 per workspace across revisions, 64 KiB answers/128 KiB records,
+  owner-only and deterministically bounded. Offline `kmx eval explain` lists or
+  shows retained diagnostics with opt-in content; --clear removes one ID or all
+  only with explicit --workspace, without touching passing proof or upstream data.
+  Failure JSON adds diagnostic/provenance IDs, completion/attribution flags and
+  retention status; receipt/evaluator fingerprints and portable exports stay
+  unchanged. Interrupted staging writes remain inspectable through healthy
+  history and recover with scoped clearing. Retention warnings include uncertain
+  post-publication outcomes, not just absent records.
+  Known credentials/headers are withheld before truncation, but
   shape checks cannot detect arbitrary secrets.
 - Opt-in Orka `kmx lift --to <destination> --update` and digest/evidence update
   or rollback. Only newly created, acknowledged retained pairs qualify; v0.8.1

@@ -50,6 +50,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `chat` | Open an interactive session. | `kmx chat <name>` |
 | `eval` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
 | `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx eval export --member greeter --out ../evidence.json` |
+| `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace selection. | `kmx eval explain [failure-id] [--workspace DIR] [--show-content\|--clear]` |
 | `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx eval verify --suite ./layout --evidence evidence.json --expect expected.json` |
 | `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx eval cleanup [run-id] --to dev` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
@@ -93,7 +94,7 @@ Keep these distinctions:
 | `--runtime-profile` | Exact public runtime profile ID for offline v3 workspace push or suite build planning, never an execution override. Profiled push requires --unevaluated; AgentKit refuses profiled builds. |
 | `--platform` | Exact OS/ARCH for offline profile/build selection; v3 push may infer it only for one candidate in the explicitly selected profile. Legacy workspace push rejects it. |
 | `--plan` | Read the target and print what would change. No writes. |
-| `--show-content` | Opt into sanitized bounded failure excerpts, expected values and judge rationale on stderr for eval or executing workspace Deploy; not evidence, and never implied by --verbose. |
+| `--show-content` | Opt into sanitized bounded failure excerpts, expected values and rationale: stderr for eval/executing workspace Deploy, stdout for offline eval explain. Not evidence; never implied by --verbose; conflicts with explain --clear. |
 | `--no-apply` | Where supported by runtime setup, render without cluster writes; removed from workspace create. |
 | `--dry-run` | Where supported by runtime setup, check server admission without persistent writes; removed from workspace create. |
 | `--step` | Run one named phase of a multi-phase workflow. |

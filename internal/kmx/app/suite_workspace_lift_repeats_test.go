@@ -71,6 +71,15 @@ func TestWorkspaceLiftCachedThresholdDoesNotInventPassingRuns(t *testing.T) {
 		if err := p.Close(); err != nil {
 			t.Fatal(err)
 		}
+		failures, err := openSuiteFailureStore(opt.Workspace, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, scanErr := failures.scan()
+		closeErr := failures.Close()
+		if scanErr != nil || closeErr != nil || len(rows) != 1 || rows[0].record.Detail.Run != 1 || rows[0].record.Detail.Verdict != "fail" {
+			t.Fatal("threshold pass or cached skip lost/invented failure history", scanErr, closeErr)
+		}
 		raw, err := json.Marshal(result.Plan)
 		if err != nil {
 			t.Fatal(err)

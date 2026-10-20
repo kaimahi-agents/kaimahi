@@ -1071,14 +1071,16 @@ reconnect. Default summaries omit prompts, answers, assertion operands and
 reasoning. `eval --show-content` and executing workspace `deploy --show-content`
 opt into expected values/patterns, short judge rationale and answer excerpts on
 stderr. Orka outcome JSON stays one payload-free document with non-pass metadata.
-The flag is refused for deploy-only or plan-only Deploy. Prompts are never printed
-by these diagnostics, and receipts still contain no content or references to it.
+The flag is refused for deploy-only or plan-only Deploy. Request inputs/rubrics are
+not copied into diagnostic fields, although answers can quote user text.
+Receipts still contain no content or references to diagnostics.
 Runtime/model storage and Kubernetes audit policy may retain inputs and answers.
 Published suites themselves contain authored inputs.
 
-Failure content is diagnostic-only and currently transient: no retained failure
-store, offline explain, signing or export path is implemented. Each answer is
-bounded to 64 KiB in memory; rationale is bounded to 512 UTF-8 bytes per sample,
+Failure content is diagnostic-only, never evidence, signed data or a portable
+export. Non-pass runs are retained locally under
+`KMX_HOME/eval-failures/<canonical-workspace-root-hash>/`, separately from passing
+proof and candidate state. Each answer is bounded to 64 KiB; rationale is bounded to 512 UTF-8 bytes per sample,
 expected values to 512 bytes, and displayed excerpts to 512 bytes per assertion
 and 2 KiB total per run. Forbidden-text failures show an excerpt around the match;
 a missing positive match or judge failure shows a labeled leading excerpt, not
@@ -1086,9 +1088,65 @@ an invented failure span. Failed individual runs are reported even if their grou
 later meets minPasses. Unknown outcomes with unverified attribution expose no
 answer or rationale.
 
+### Inspect or clear local evaluation failures
+
+```bash
+kmx eval explain --workspace ./workspace
+kmx eval explain f-<32-hex-digits> --workspace ./workspace
+kmx eval explain f-<32-hex-digits> --workspace ./workspace --show-content
+kmx eval explain f-<32-hex-digits> --workspace ./workspace --clear
+kmx eval explain --workspace ./workspace --clear
+```
+
+Saved runs print an opaque `f-` diagnostic ID. Inspection is offline: it reads the
+workspace descriptor and local records, not members/cases, operational config,
+Kubernetes, a registry or a model. Without `--workspace`, discover the nearest
+workspace. Without an ID, list records; with an ID, show that record's assertions
+and provenance. `--show-content` explicitly adds the same bounded excerpts,
+expected values and rationale as live diagnostics, on stdout. Empty or withheld
+rationale is identified rather than presented as an empty explanation.
+
+Keep the last **10 individual non-pass runs per workspace across suite revisions**,
+including failures in groups that later meet minPasses. Each record retains its
+suite digest, runtime/member, operation, case/run and completion/attribution
+metadata. The maximum is **128 KiB of serialized JSON per record** (1.25 MiB of
+visible records per partition), plus one bounded staging file during a write.
+Overflow deterministically removes the answer, then trailing excerpts, then
+trailing rationale/operands, then trailing assertion entries, with explicit
+truncation and omitted-assertion metadata. This is not a global limit across
+unlimited distinct workspaces.
+
+Managed directories are created 0700; files and the persistent nonblocking OS lock
+are 0600 and owned by the current user. Insecure existing state, symlinks, hard
+links, special files and corrupt/oversized records refuse rather than being
+repaired or chmodded. A bounded owner-only `.pending` staging file is never read
+or displayed and does not hide healthy completed records. It blocks new saves
+without evicting history until explicit whole-workspace `--clear` removes it.
+Other corrupt or unsafe state still refuses.
+
+Retention is best effort and happens before diagnostic output, including on
+aborts. At capacity the oldest record is removed before staging the replacement,
+so a subsequent write failure can leave nine completed records; the hard space
+bound takes priority. A fixed warning reports unavailable or unconfirmed retention
+without changing the evaluation outcome or causing another send. If an error
+occurs after publication, the observable ID is still reported, but durability
+remains unconfirmed (`retentionUnavailable: true`); that flag does not prove the
+record is absent. Diagnostic output errors still stop subsequent effects.
+
+`--clear` with an ID removes only that validated record. Clearing all requires
+an explicitly supplied `--workspace`; it also removes a validated owner-only
+staging file, but never reaches another workspace, passing proof or candidate
+state. The completion message counts removed diagnostic files, including staging. `--clear` and `--show-content` are mutually
+exclusive. Clearing is ordinary local file deletion, not secure erasure of disk
+snapshots, backups or upstream runtime/model history. The private lock and empty
+directories may remain. These unsigned diagnostics cannot authorize publication
+or Lift, and receipts contain no diagnostic references.
+
 Before truncation, diagnostics check full raw and terminal-normalized content for
 known credential shapes and the configured judge key. Credential-shaped,
-header-like and invalid-UTF-8 fields are withheld, not partially redacted.
+header-like and invalid-UTF-8 fields are withheld, not partially redacted. Clipped
+fields are checked again so a newly formed boundary cannot introduce a credential
+shape; an unsafe clipped field is withheld without dropping the whole record.
 Conservative header checks can withhold consecutive Markdown labels, bare URL
 lines, times and other colon-delimited text that also parses as header fields.
 Clean checks do not prove arbitrary secrets or personal data are absent; only opt

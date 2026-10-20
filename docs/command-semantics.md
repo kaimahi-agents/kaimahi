@@ -193,8 +193,13 @@ package reference or subset mode is accepted. Non-pass diagnostics identify the
 case/run, assertion IDs/types and judge scores/threshold by default. --show-content
 opts into sanitized bounded failure content on stderr for eval and executing
 workspace Deploy, never evidence or JSON payloads; --verbose alone does not opt in.
-Failure diagnostics are transient only; retention and offline explain are not
-implemented. Authored `llmJudge`
+Failure diagnostics are retained privately under KMX_HOME, separately from
+passing proof: last 10 non-pass runs per workspace across revisions, 64 KiB answers
+and 128 KiB serialized records with deterministic truncation. Offline `eval explain
+[failure-id] [--workspace DIR]` lists/shows records on stdout; --show-content opts
+into bounded content. --clear removes one ID, or all only with explicit
+--workspace; it conflicts with --show-content and never clears passing/candidate
+state or runtime history. Retention errors warn without changing eval outcomes. Authored `llmJudge`
 requires explicit `--judge-base-url`, optional `--judge-key-env` and authored
 model/version/threshold. Two independent samples must agree on the threshold
 side; errors/splits stay unknown. Judges use the fixed modern Chat Completions

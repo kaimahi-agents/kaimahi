@@ -265,9 +265,23 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   --show-content alone opts into sanitized bounded expected values, rationale and
   answer excerpts on stderr. Deploy --verbose does not opt into content. Default
   Orka JSON remains payload-free; cached Deploy skips invent no diagnostics.
-  Diagnostic content is transient only, not evidence, never a receipt field,
-  reference, signature or portable export. No retained failure store or explain
-  command is implemented yet. Post-judge attribution failure withholds content;
+  Diagnostic content is retained separately under KMX_HOME/eval-failures, never
+  evidence, a receipt field/reference, a signature or a portable export. The
+  per-canonical-workspace partition keeps 10 non-pass runs across revisions with
+  64 KiB answers and 128 KiB serialized records, owner-only 0700 directories/0600 files and
+  a separate persistent nonblocking flock. Validate UID, single links, bounded
+  regular files, schema and privacy before offline reading or targeted deletion;
+  refuse unsafe state rather than chmod/repair/RemoveAll. Retain before output
+  even on abort; retention errors warn without changing verdicts or causing
+  another send. Offline eval explain lists/shows local records without config,
+  Prepare, runtime, registry or model calls; --show-content opts into bounded
+  stdout content, --clear deletes one ID or all only with explicit --workspace.
+  Clearing never reaches passing/candidate state or upstream history. A bounded
+  owned .pending file is never read/displayed; only explicit whole-workspace
+  clearing removes it. It must not hide healthy records or cause pre-pruning on
+  blocked saves. Pre-write eviction preserves the hard bound but may lose the
+  oldest record on a subsequent write failure. Keep observable IDs on uncertain
+  post-publication errors; retentionUnavailable is not proof of absent files. Post-judge attribution failure withholds content;
   known credential shapes/keys and header-like content are withheld before
   truncation. This is not a guarantee that arbitrary secrets are detected.
   The clarified local-storage policy sentence preserves the historical v2

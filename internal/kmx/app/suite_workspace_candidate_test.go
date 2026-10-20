@@ -106,6 +106,19 @@ func TestCandidateExecutionAbortSummary(t *testing.T) {
 			if _, _, e := p.store.latest(t.Context(), p.suite); !errors.Is(e, errSuitePassMissing) {
 				t.Fatal("abort registered proof", e)
 			}
+			retained, e := openSuiteFailureStore(opt.Workspace, false)
+			if e != nil {
+				t.Fatal(e)
+			}
+			rows, scanErr := retained.scan()
+			closeErr := retained.Close()
+			if scanErr != nil || closeErr != nil || len(rows) != 1 {
+				t.Fatal("abort did not retain metadata", scanErr, closeErr)
+			}
+			detail := rows[0].record.Detail
+			if detail.Verdict != "unknown" || detail.Attributed || detail.Complete || detail.Answer != "" {
+				t.Fatal("aborted run retained attributable content")
+			}
 		})
 	}
 }
