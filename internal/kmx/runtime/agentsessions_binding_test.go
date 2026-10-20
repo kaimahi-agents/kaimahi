@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
@@ -400,5 +401,49 @@ func TestAgentSessionsBindingRefusesCredentialShapesAssembledByYAML(t *testing.T
 	}
 	if proven == 0 {
 		t.Fatal("decoded AgentSessions binding credential scan was not exercised")
+	}
+}
+
+// A decimal exponent is bounded before the quantity is parsed or compared, so
+// a value within the length limit whose power-of-ten expansion would not
+// finish refuses promptly.
+func TestAgentSessionsBindingBoundsQuantityExponent(t *testing.T) {
+	validate := func(t *testing.T, edit func(*AgentSessionsBinding)) error {
+		t.Helper()
+		done := make(chan error, 1)
+		go func() {
+			b := validAgentSessionsBinding()
+			edit(&b)
+			_, err := EncodeAgentSessionsBinding(b)
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			return err
+		case <-time.After(5 * time.Second):
+			t.Fatal("quantity validation did not finish")
+			return nil
+		}
+	}
+	for _, value := range []string{"1000000000000000000e1000000000", "1e-1000000000", "1e100", "1E+100", "1e-100", "1e0001", "1e"} {
+		t.Run(value, func(t *testing.T) {
+			if err := validate(t, func(b *AgentSessionsBinding) { b.Resources.CPU = value }); err == nil || !strings.Contains(err.Error(), "resources.cpu") || !strings.Contains(err.Error(), "decimal exponent of at most 2 digits") {
+				t.Fatalf("cpu %q: %v", value, err)
+			}
+			if err := validate(t, func(b *AgentSessionsBinding) { b.Resources.Memory = value }); err == nil || !strings.Contains(err.Error(), "resources.memory") {
+				t.Fatalf("memory %q: %v", value, err)
+			}
+		})
+	}
+	for _, tc := range []struct{ cpu, memory string }{
+		{"1e0", "512e6"},
+		{"5e-1", "1e18"},
+		{"1e-3", "1E"},
+		{"999.999", "512Mi"},
+		{"0.0000000000000000000000001e25", "1Gi"},
+	} {
+		if err := validate(t, func(b *AgentSessionsBinding) { b.Resources.CPU, b.Resources.Memory = tc.cpu, tc.memory }); err != nil {
+			t.Fatalf("cpu %q memory %q refused: %v", tc.cpu, tc.memory, err)
+		}
 	}
 }

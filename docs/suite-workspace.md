@@ -905,7 +905,7 @@ model:
 | `atespace` | RFC 1123 label. |
 | `sandbox` | `class` `microvm` or `gvisor`; `configName` names the cluster SandboxConfig. |
 | `snapshot` | `fidelity` `MEMORY`, `ROOTFS` (micro-VM only) or `VOLUMES`; `storageLocation` is an object-storage URI of at most 959 bytes without credentials, query, fragment or `\`, and without empty path segments or segments of only `.` and spaces (one trailing `/` is allowed). |
-| `resources` | Required `cpu` and `memory`: positive Kubernetes quantities of at most 32 characters, cpu at most 999.999 cores. Substrate sizes and schedules the actor by them. |
+| `resources` | Required `cpu` and `memory`: positive Kubernetes quantities of at most 32 characters with a decimal exponent (`e`/`E`) of at most two digits, cpu at most 999.999 cores. Substrate sizes and schedules the actor by them. |
 | `workerSelector.matchLabels` | Optional Kubernetes label selector of at most 10 labels; an empty `matchLabels` is the same binding (and digest) as an omitted `workerSelector`. |
 | `model` | `name` is the served model; `provider: openai` (OpenAI-compatible); optional HTTP(S) `baseURL`; `secretRef` names the credential Secret and key. |
 

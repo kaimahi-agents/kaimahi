@@ -33,6 +33,11 @@ const (
 	// Selector.match_labels and Limits.quantity bounds.
 	maxAgentSessionsWorkerLabels = 10
 	maxAgentSessionsQuantity     = 32
+	// maxAgentSessionsQuantityExponentDigits bounds a decimal exponent
+	// ("1e18") before resource.ParseQuantity, which does not finish for an
+	// exponent such as 1000000000. Within the 32-character limit, two digits
+	// spell every value from one nano-unit to substrate's limits.
+	maxAgentSessionsQuantityExponentDigits = 2
 )
 
 // AgentSessionsBinding is the per-environment half of an AgentSessions
@@ -307,9 +312,13 @@ func (b AgentSessionsBinding) validate() error {
 		if r.value == "" {
 			return fmt.Errorf("%s is required", r.path)
 		}
+		invalid := fmt.Errorf("%s must be a positive Kubernetes quantity of at most %s, with a decimal exponent of at most %d digits", r.path, r.bound, maxAgentSessionsQuantityExponentDigits)
+		if len(r.value) > maxAgentSessionsQuantity || !boundedQuantityExponent(r.value) {
+			return invalid
+		}
 		q, err := resource.ParseQuantity(r.value)
-		if len(r.value) > maxAgentSessionsQuantity || err != nil || q.Sign() <= 0 || q.Cmp(r.max) > 0 {
-			return fmt.Errorf("%s must be a positive Kubernetes quantity of at most %s", r.path, r.bound)
+		if err != nil || q.Sign() <= 0 || q.Cmp(r.max) > 0 {
+			return invalid
 		}
 	}
 	if len(labels) > maxAgentSessionsWorkerLabels {
@@ -346,6 +355,34 @@ func (b AgentSessionsBinding) validate() error {
 		return fmt.Errorf("model.secretRef.key: %w", err)
 	}
 	return nil
+}
+
+// boundedQuantityExponent reports whether a quantity's decimal exponent, if
+// any, has at most maxAgentSessionsQuantityExponentDigits digits. Kubernetes
+// quantities spell a decimal exponent as "e" or "E" followed by an optionally
+// signed integer; a bare "E" or "Ei" suffix is exa or exbi, not an exponent.
+// Other malformed spellings are left to resource.ParseQuantity.
+func boundedQuantityExponent(value string) bool {
+	i := strings.IndexAny(value, "eE")
+	if i < 0 {
+		return true
+	}
+	exponent := value[i+1:]
+	if exponent == "" || exponent == "i" {
+		return true
+	}
+	if exponent[0] == '+' || exponent[0] == '-' {
+		exponent = exponent[1:]
+	}
+	if exponent == "" || len(exponent) > maxAgentSessionsQuantityExponentDigits {
+		return false
+	}
+	for _, c := range exponent {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // validateAgentSessionsStorageLocation accepts an object-storage base URI

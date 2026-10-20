@@ -36,6 +36,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   sandbox, snapshot, required cpu/memory resources, worker selector and model
   name/provider/baseURL/Secret ref. It has strict parsing, a JCS digest and an
   exact check against the suite's pinned model; no command reads it yet.
+  Resource quantities refuse a decimal exponent of more than two digits before
+  parsing.
   `snapshot.storageLocation` refuses `\`, empty path segments and segments of
   only `.` and spaces; an empty `workerSelector.matchLabels` has the same digest
   as an omitted selector.
