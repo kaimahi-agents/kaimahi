@@ -372,7 +372,7 @@ Potential CLI adapters are:
 | `kmx local down` | No current `AgentEnvironment` method; installed teardown behavior is unchanged |
 | `kmx suite validate` | Conceptually `AgentSuites.Validate`; current command does not materialize the northbound result |
 | future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
-| `kmx bundle lift/status/retire` | `AgentDeployments` |
+| Historical `kmx bundle lift/status/retire` (removed) | `AgentDeployments` |
 
 Environment inspection/teardown/recovery, exact target resolution, run/cancel,
 quickstart, durable progress streams, and network APIs remain deferred.

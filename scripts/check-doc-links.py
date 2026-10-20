@@ -56,7 +56,8 @@ REF_USE = re.compile(r"(?<!\\)\[([^\]]*)\]\[([^\]]*)\]")
 def slugs(path):
     """Heading and explicit compatibility anchors, excluding code examples."""
     seen = {}
-    out = {m.group(1).lower() for m in AID.finditer(prose(path))}
+    visible = re.sub(r"<!--[\s\S]*?(?:-->|$)", "", prose(path))
+    out = {m.group(1).lower() for m in AID.finditer(visible)}
     in_fence = False
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -223,6 +224,12 @@ def selftest():
     case("an explicit anchor does not accept a different fragment",
          {"there.md": '<a id="digest-lift"></a>\n\n## Digest deploy\n',
           "a.md": '[typo](there.md#digest-lifts)\n'}, 1)
+    case("a commented-out anchor is not a compatibility target",
+         {"there.md": '<!--\n<a id="digest-lift"></a>\n-->\n',
+          "a.md": '[old link](there.md#digest-lift)\n'}, 1)
+    case("an anchor after an HTML comment remains a compatibility target",
+         {"there.md": '<!-- retired <a id="old"></a> -->\n<a id="digest-lift"></a>\n',
+          "a.md": '[old link](there.md#digest-lift)\n'}, 0)
     case("an example anchor in a fence is not a compatibility target",
          {"there.md": '```html\n<a id="digest-lift"></a>\n```\n',
           "a.md": '[old link](there.md#digest-lift)\n'}, 1)

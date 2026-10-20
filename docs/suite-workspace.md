@@ -320,7 +320,7 @@ Source-free `suiteview.LoadLayoutFlowV1Alpha1` and
 **every** portable member recipe in suite order. Explicit native flow inventory
 readers additionally require the complete closed native graph. Ordinary
 layout/archive/native loaders and current transfer/registry paths remain strict;
-they do not retry or discard a required extension. Root eval/push/Lift remain
+they do not retry or discard a required extension. Root eval/push/Deploy remain
 unsupported for these suites, including unevaluated push. No member receipt or
 storage validation is a whole-suite execution proof.
 
