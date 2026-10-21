@@ -36,7 +36,8 @@ type dependencies struct {
 
 func productionDependencies() dependencies {
 	return dependencies{
-		stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
+		fileRunner: app.NewDirectFileRunner(),
+		stdin:      os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
 		executable: invocationExecutable(os.Args[0]),
 		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
 		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {

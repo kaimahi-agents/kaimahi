@@ -158,14 +158,45 @@ func TestFileCommandsRefuseMixedModesBeforeConfig(t *testing.T) {
 		})
 	}
 }
-func TestFileCommandNoProductionFake(t *testing.T) {
+func TestFileCommandRequiresWiredRunner(t *testing.T) {
 	var out, diag bytes.Buffer
 	deps, loads := testDependencies(&out, &diag)
+	deps.fileRunner = nil
 	err := execute([]string{"test", cliPreviewFile(t), "-o", "json"}, deps)
 	if err == nil || *loads != 0 || !strings.Contains(out.String(), "runner_unavailable") {
 		t.Fatalf("%v / %s", err, out.String())
 	}
 }
+func TestFileCommandDirectPreviewDemo(t *testing.T) {
+	path := cliPreviewFile(t)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	working := strings.ReplaceAll(string(data), "Greet the input.", "Reply with exactly `PRIVATE OPERAND`.")
+	for _, broken := range []bool{false, true, false} {
+		text := working
+		if broken {
+			text = strings.ReplaceAll(text, "`PRIVATE OPERAND`", "`different response`")
+		}
+		if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+			t.Fatal(err)
+		}
+		for _, op := range []string{"run", "test"} {
+			var out, diag bytes.Buffer
+			deps, loads := testDependencies(&out, &diag)
+			err := execute([]string{op, path, "-o", "json"}, deps)
+			var r app.FilePreviewResult
+			if decodeErr := json.Unmarshal(out.Bytes(), &r); decodeErr != nil {
+				t.Fatal(decodeErr)
+			}
+			if (err != nil) != broken || r.FullPass == broken || r.Runner != "preview runner (no journal)" || *loads != 0 {
+				t.Fatalf("broken=%v: %+v / %v", broken, r, err)
+			}
+		}
+	}
+}
+
 func TestFilePreviewOutputWriteFailure(t *testing.T) {
 	var out, diag bytes.Buffer
 	deps, _ := testDependencies(&out, &diag)

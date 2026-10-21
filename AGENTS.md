@@ -402,8 +402,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 ## Agent-file preview boundary
 
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
-interface without cluster/workspace configuration. The production dependency is
-currently unwired and refuses; test fakes are `_test.go` only, not model/Sessions
+interface without cluster/workspace configuration. CLI uses a temporary direct
+`preview runner (no journal)` with one agent call per input/example and one judge
+call per llmJudge; no Sessions, journal, retries or fallback. Remove it when the
+embedded runner lands. Scripted test fakes remain `_test.go` only, not real-model
 qualification. `app.FilePreviewResult` v1 is the safe shared projection, not a
 native evidence receipt. Subset is always partial, execution/journal failure is
 unknown, and only an explicit caller override changes the judge route. Keep
