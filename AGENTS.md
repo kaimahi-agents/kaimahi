@@ -6,6 +6,12 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 ## Command consistency
 
+- `model list [-o table|json]` is config-free bounded local model discovery,
+  not cluster setup or inference. Keep `internal/kmx/modelaccess` independent of
+  App and Unix-only helpers. Foundry endpoint comes only from runtime status;
+  no fixed port, catalog download, service start or silent model selection.
+  Native model-access package tests are separate from Windows CLI qualification.
+
 - Follow the [command conventions](docs/command-conventions.md), the implemented
   interface in [docs/kmx.md](docs/kmx.md) and the
   [command alignment record](docs/command-semantics.md). Track outstanding

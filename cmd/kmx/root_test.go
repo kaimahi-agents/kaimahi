@@ -361,7 +361,7 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 		"test", "test cleanup", "test diff", "test explain", "test export", "test from-sessions", "test verify",
 		"create", "chat", "run", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "push", "deploy", "lift",
 		"aks", "aks up", "aks down", "completion",
-		"context", "context show", "context use", "ctx", "local", "local up", "local down",
+		"context", "context show", "context use", "ctx", "local", "local up", "local down", "model", "model list",
 		"orka", "orka install", "orka status", "orka show", "orka list",
 		"quickstart", "quickstart-wizard",
 		"status", "suite", "suite build", "suite diff", "suite policy", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",

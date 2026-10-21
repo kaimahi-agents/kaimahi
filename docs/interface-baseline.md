@@ -35,6 +35,8 @@ kmx
 ├── status
 ├── console
 ├── targets
+├── model
+│   └── list [-o table|json]
 ├── context
 │   ├── show
 │   └── use <context>
