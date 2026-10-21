@@ -192,7 +192,7 @@ a standalone private file outside workspace/cache. Failure, unknown, drift,
 cancellation or output error stops later sends. No
 package reference or subset mode is accepted. Non-pass diagnostics identify the
 case/run, assertion IDs/types and judge scores/threshold by default. --show-content
-opts into sanitized bounded failure content on stderr for eval and executing
+opts into sanitized bounded failure content on stderr for test and executing
 workspace Deploy, never evidence or JSON payloads; --verbose alone does not opt in.
 Failure diagnostics are retained privately under KMX_HOME, separately from
 passing proof: last 10 non-pass runs per workspace across revisions, 64 KiB answers
