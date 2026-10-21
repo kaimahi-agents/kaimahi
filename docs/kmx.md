@@ -37,6 +37,26 @@ port 11434. See [model discovery](models.md#installed-local-model-discovery) for
 requirements, sizes and the non-secret route contract. These commands are
 unreleased; native Windows package tests do not yet qualify the Windows CLI.
 
+## Copilot model access
+
+`kmx model login` starts GitHub device-code sign-in, printing the verification
+URI and user code on stderr. `kmx model login --gh` explicitly copies only the
+existing `gh auth token --hostname github.com` credential through private bounded
+stdout capture. Nothing implicitly reuses gh or editor sign-in.
+
+`kmx model list --provider copilot [-o table|json]` lists enabled Chat-compatible
+models as non-secret routes at `https://api.githubcopilot.com`; it never starts
+sign-in and fails clearly without auth. Local discovery remains the default.
+`kmx model logout` deletes only kmx's reusable credential and clears its memory;
+gh/editor sign-in is unchanged. Native OS keychain storage is required, with no
+plaintext fallback. Linux first login may prompt to create the dedicated
+`kmx-model-copilot` keyring collection; later access may show OS unlock UI, with
+no context-cancellation guarantee for native keychain calls. These commands are
+unreleased and do not enable local agent execution, a proxy, or change existing
+Copilot chat. See [storage and model routes](models.md#explicit-copilot-model-access)
+and [direct transport](copilot-inference.md#direct-model-access). Native package
+tests are not full Windows CLI qualification.
+
 ## Install
 
 **On Windows, use WSL for now.** Install and run kmx inside your Linux

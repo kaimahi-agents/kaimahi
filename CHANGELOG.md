@@ -24,6 +24,19 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Explicit direct Copilot model access: `kmx model login` uses GitHub device
+  flow; `login --gh` alone opts into bounded private gh token capture. Reusable
+  credentials live only in kmx's native OS keychain item, never a plaintext
+  cache; `model logout` removes only that item and clears memory. Explicit
+  `model list --provider copilot [-o table|json]` returns enabled Chat-compatible
+  non-secret routes without prompting for sign-in; default local discovery is
+  unchanged. The internal selected-route transport sends direct JSON/SSE Chat
+  Completions, establishing auth through the catalog and using legacy exchange
+  only after credential refusal. No inference replay, model substitution,
+  runner, proxy or change to the existing Copilot CLI-chat adapter. Hermetic
+  package tests are separate from live auth/keychain acceptance and full native
+  Windows CLI qualification, which follows native CLI support.
+
 - Read-only `kmx model list [-o table|json]` discovers cached Foundry Local
   models at the runtime-reported endpoint and installed Ollama models on loopback
   port 11434. Absent, empty, installed and failure states include explicit install

@@ -62,7 +62,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 
 | Path | Class | Evidence |
 |---|---|---|
-| `cmd/kmx` (72 files) | **Installed** | Terminal create prompts for missing exact model/file inputs; scripts require both flags. Composed Orka workspace Deploy with four-stage/verbose/JSON presentation alongside explicit digest Deploy. Named workspace destinations with resolve-once test/Deploy selectors, offline list-only `ctx` and optional bounded local-context/anonymous registry checks (not capability or execution proof). Root native workspace create/test/push/digest Deploy, Orka install/status/show/list, independent live `run --agent`/chat and Task results, quickstart/native console creation, context/local and hidden AKS setup/teardown, read-only targets, public suite validation/diff/build/push/pull, and offline policy resolution with optional administrative-policy composition. Offline test explain inspects and clears bounded owner-only local failure records with explicit content opt-in and no operational config. Offline test export publishes shared portable evidence from fresh captured tagged-module/checksum or clean VCS provenance without changing private gates. Offline test verify checks local layout/evidence against independently reviewed complete expectations as a state-free CI gate. Test diff reads only strict full-passing native Orka/kagent suite receipts; pinned AgentSessions native authoring/development eval and exact-S evaluated push remain independent of deleted bundle evaluation, with no cluster settings, auth or remote lifecycle; from-sessions exports private references only. Removed bundle/live-create routes are unknown; interactive Deploy only prints the move notice. |
+| `cmd/kmx` (74 files) | **Installed** | Config-free default local model discovery and explicit Copilot device/gh login, native-keychain-only logout and Chat-compatible route listing. No runner or proxy; existing CLI-chat adapter unchanged. Terminal create prompts for missing exact model/file inputs; scripts require both flags. Composed Orka workspace Deploy with four-stage/verbose/JSON presentation alongside explicit digest Deploy. Named workspace destinations with resolve-once test/Deploy selectors, offline list-only `ctx` and optional bounded local-context/anonymous registry checks (not capability or execution proof). Root native workspace create/test/push/digest Deploy, Orka install/status/show/list, independent live `run --agent`/chat and Task results, quickstart/native console creation, context/local and hidden AKS setup/teardown, read-only targets, public suite validation/diff/build/push/pull, and offline policy resolution with optional administrative-policy composition. Offline test explain inspects and clears bounded owner-only local failure records with explicit content opt-in and no operational config. Offline test export publishes shared portable evidence from fresh captured tagged-module/checksum or clean VCS provenance without changing private gates. Offline test verify checks local layout/evidence against independently reviewed complete expectations as a state-free CI gate. Test diff reads only strict full-passing native Orka/kagent suite receipts; pinned AgentSessions native authoring/development eval and exact-S evaluated push remain independent of deleted bundle evaluation, with no cluster settings, auth or remote lifecycle; from-sessions exports private references only. Removed bundle/live-create routes are unknown; interactive Deploy only prints the move notice. |
 
 ## `testdata/agentsuite/` — owned consumer fixtures (`testdata/`)
 
@@ -102,9 +102,9 @@ non-test files; every file-bearing directory has its own row.
 
 ## `internal/` — CLI packages and retained support
 
-`internal/kmx/` is eighteen packages at the top level (twenty-four Go packages
-including nested `runview/orka`, `agentsuite/agentkit`, `agentsuite/localartifact`, `agentsuite/oras`, `agentsuite/workspace`, and
-`app/kubectlfake`).
+`internal/kmx/` is eighteen packages at the top level (twenty-five Go packages
+including nested `runview/orka`, `agentsuite/agentkit`, `agentsuite/localartifact`, `agentsuite/oras`, `agentsuite/workspace`,
+`modelaccess/copilot`, and `app/kubectlfake`).
 The short version counts top-level directories.
 The plane module and image-build helper are absent.
 There is no `require`, and no `plane/...` import anywhere in root `cmd/` or `internal/`.
@@ -153,6 +153,7 @@ Startup only reports. No journal, lease, automatic sweep or publication blockade
 | `kmx/orkaschema/fixtures/main` | 3 | Installed | Immutable old main-snapshot CRDs for explicit offline validation, not a runtime support claim. |
 | `kmx/guard` | 3 | Installed | Context-safety checks, one context-bound pipeline confirmation and read-only target resolution. |
 | `kmx/modelaccess` | 3 | Installed | Non-secret exact model route validation and bounded read-only Foundry Local/Ollama discovery; `kmx model list` is config-free, without runtime startup, installation, catalog downloads or agent execution. Legacy kind reuse adapts only the Ollama inventory. |
+| `kmx/modelaccess/copilot` | 4 | Installed | Explicit GitHub device/gh sign-in, kmx-owned native OS keychain storage without plaintext fallback, memory-only bearer exchange/expiry, safe refusals and exact-route direct Chat Completions JSON/SSE transport. Catalog establishes auth before inference; no inference replay, runner, proxy, model substitution or implicit credential reuse. Independent of App and Unix helpers. |
 | `kmx/toolchain` | 2 | Installed | Pinned, checksum-verified kind, kubectl and Helm downloads. |
 | `kmx/portforward` | 1 | Installed | Owned loopback kubectl forwards with bind proof and process lifetime, shared by native Orka results and host tools. |
 | `kmx/lift` | 2 | Installed | Cloud-independent lift rules and persisted ownership records. |

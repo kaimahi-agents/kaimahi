@@ -52,6 +52,34 @@ The independent model-access package has native Windows/macOS/Linux tests.
 The installed Windows CLI remains blocked until native CLI support lands; these
 package tests do not qualify the full Windows executable.
 
+## Explicit Copilot model access
+
+```bash
+kmx model login                     # GitHub device code; URI/code on stderr
+kmx model login --gh                # explicitly copy existing github.com gh auth
+kmx model list --provider copilot -o json
+kmx model logout                    # only kmx's credential; not gh/editor logout
+```
+
+These unreleased, config-free commands are independent of the installed-CLI
+chat adapter. Device flow uses VS Code's public OAuth client
+`Iv1.b507a08c87ecfe98` with `read:user`. The reusable GitHub credential is stored
+in kmx's OS keychain item, never workspace/config files or a plaintext cache.
+Only native Windows Credential Manager, macOS Keychain (cgo) and Linux Secret
+Service are allowed. A headless or unavailable keychain fails closed, with no
+file/pass fallback. On Linux, first login may prompt to create the dedicated
+`kmx-model-copilot` keyring collection; subsequent access may show OS unlock UI.
+Native OS keychain prompts have no context-cancellation guarantee. Listing
+never initiates OAuth, invokes gh, reads editor credentials or selects a model.
+
+Copilot JSON output is an array of non-secret shared routes: provider `copilot`,
+exact available Chat model, endpoint `https://api.githubcopilot.com`, auth
+selector `copilot`. Only enabled Chat models supporting `/chat/completions` are
+listed. The default local list and its report shape are unchanged. There is no
+persisted/global selection, automatic model substitution, runner, proxy or
+request command. See [direct Copilot transport](copilot-inference.md#direct-model-access)
+for the internal caller seam, refusal codes and authentication behavior.
+
 ## Storing an API key
 
 Native Orka Providers reference an existing namespaced Kubernetes Secret.
