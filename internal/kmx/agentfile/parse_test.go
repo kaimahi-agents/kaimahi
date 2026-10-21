@@ -17,7 +17,9 @@ func sample(t testing.TB) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(b)
+	// Git may check out Markdown as CRLF on Windows. Test edits use LF;
+	// TestParseCanonical independently generates and checks both encodings.
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
 }
 
 func TestParseCanonical(t *testing.T) {
