@@ -51,7 +51,7 @@ examples or fabricated callers are needed to preserve mechanical coverage.
 |---|---|---|---|
 | `cmd/` | `kmx` | — | — |
 | `testdata/agentsuite/` | — | — | owned portable consumer fixtures; implementation and conformance live in the external suite module |
-| `internal/` | `kmx/` (20 packages), including schema fixtures | — | experimental lifecycle contracts and tests |
+| `internal/` | `kmx/` (21 packages), including schema fixtures | — | experimental lifecycle contracts and tests |
 | `pkg/` | — | — | concrete read-only suite member recipe view plus experimental KMX lifecycle contracts |
 | `ax-harness/` | preview projector source only; no built image or kmx adapter | — | synthetic Python tests |
 | `k8s/` | two embedded native manifests | — | native packaging checks |
@@ -103,7 +103,7 @@ non-test files; every file-bearing directory has its own row.
 
 ## `internal/` — CLI packages and retained support
 
-`internal/kmx/` is twenty packages at the top level (twenty-six Go packages
+`internal/kmx/` is twenty-one packages at the top level (twenty-seven Go packages
 including nested `runview/orka`, `agentsuite/agentkit`, `agentsuite/localartifact`, `agentsuite/oras`, `agentsuite/workspace`, and
 `app/kubectlfake`).
 The short version counts top-level directories.
@@ -162,6 +162,7 @@ The Windows CLI guard remains in place; library cross-builds do not enable it.
 | `kmx/runview/orka` | 1 | Installed | Bounded Orka Task lineage, event and trace reader with caller-scoped reads and safe projection. |
 | `kmx/runtime` | 13 | Installed | Closed AgentSessionsBinding parse/encode/validate, JCS digest and model match in `agentsessions_binding.go`. Runtime/session identity, capability and event contracts, internal native typed scaffolding/bindings, strict authored evaluation assertions/RE2 and private reference manifests. Only Orka chat/discovery is registered. No persistent old user bundle/normalized receipt or RecordedExecution consumer. Assertion and judge primitives are retained independently; native Orka/kagent and development AgentSessions eval wire declared llmJudge without changing runtime-core policy. |
 | `kmx/runtime/testdata` | 1 | Scaffolding | POC micro-VM AgentSessionsBinding in JSON with the model section. |
+| `kmx/mcp` | 7 | Scaffolding | Stdio-only four-operation protocol adapter and root-confined validated Create/Edit, with exclusive atomic publication, revision checks and OS-held writer locks. Edit preserves mode bits but does not copy ownership, ACLs or extended attributes; the replacement follows normal ownership and directory-inheritance rules. This is intended for the user's own files. No CLI registration or Run/Test execution binding. |
 | `kmx/lifecycle` | 4 | Scaffolding | Experimental deployment runtime ports; runtime-native documents/bundles, deploy options, recovery interfaces and deployment/retirement receipt factories behind the public `pkg/kmx` workflow. Environment setup has no mirrored southbound SPI. Focused AgentSuite builder, packing, storage and transfer ports remain in `internal/kmx/agentsuite`. |
 | `kmx/scaffold` | 6 | Installed | Native Orka authoring, exact Kagent v0.10.2 review scaffolding in `kagent.go`, shared name validators, YAML helpers and file writing. Model-overlay and migration generators are removed. |
 | `kmx/orkaschema` | 3 | Installed | Structural schema validator, attribution and upstream licence. |
