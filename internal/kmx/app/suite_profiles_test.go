@@ -139,7 +139,10 @@ func TestProfiledReceiptProjectionCannotAuthorizeConsumers(t *testing.T) {
 	if _, err := app.prepareSuiteNative(t.Context(), view, "ns", "provider"); !errors.Is(err, workspace.ErrProfileExecutionUnsupported) {
 		t.Fatal("projection reached native execution", err)
 	}
-	if _, err := snapshotSuiteSessionsHost("unread", view); !errors.Is(err, workspace.ErrProfileExecutionUnsupported) {
+	if _, err := snapshotSuiteSessionsBinding("unread", view); !errors.Is(err, workspace.ErrProfileExecutionUnsupported) {
+		t.Fatal("projection reached binding read", err)
+	}
+	if _, err := snapshotSuiteSessionsHost("unread", view, nil); !errors.Is(err, workspace.ErrProfileExecutionUnsupported) {
 		t.Fatal("projection reached host read", err)
 	}
 	if _, _, err := suitePublicEvidence(t.Context(), nil, view, receipt, nil); !errors.Is(err, workspace.ErrProfileExecutionUnsupported) {
@@ -163,7 +166,7 @@ func TestSessionsAssociationCannotQualifyOrAuthorize(t *testing.T) {
 	for _, operation := range []func() error{
 		suite.RequireUnprofiled,
 		func() error { _, err := app.prepareSuiteNative(t.Context(), suite, "ns", "provider"); return err },
-		func() error { _, err := snapshotSuiteSessionsHost("unread", suite); return err },
+		func() error { _, err := snapshotSuiteSessionsHost("unread", suite, nil); return err },
 		func() error { _, _, err := suitePublicEvidence(t.Context(), nil, suite, receipt, nil); return err },
 	} {
 		if err := operation(); !errors.Is(err, workspace.ErrProfileExecutionUnsupported) {

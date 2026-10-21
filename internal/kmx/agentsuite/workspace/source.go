@@ -13,7 +13,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"unicode"
@@ -31,8 +30,6 @@ const maxFile = 1 << 20
 
 // AgentSessionsVersion pins the host/chat config contract, not a floating release.
 const AgentSessionsVersion = "ca85f47a2ec17ca6e16029cfa69419cfe29442b3"
-
-var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
 // RuntimeProfile is KMX-private selection metadata, not a public AgentSuite SPI.
 // The zero value is accepted only as the historical Orka authoring default.

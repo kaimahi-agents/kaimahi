@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -301,5 +303,205 @@ func TestSuiteWorkspaceExclusionProcessExitAndStableInode(t *testing.T) {
 	after, err := os.Stat(lock)
 	if err != nil || !os.SameFile(before, after) {
 		t.Fatalf("lock inode replaced: %v", err)
+	}
+}
+
+// A managed AgentSessions passing receipt v1 is ineligible. Default push
+// refuses it with an evaluate-again error instead of the opaque store error, a
+// new evaluation can still register after it, and a newer record is selected
+// over it but never the reverse.
+func TestSuitePassStoreAgentSessionsReceiptV1(t *testing.T) {
+	p, subject, observations := sessionsPassingFixture(t)
+	receipt, err := newSuiteSessionsPassingReceipt(t.Context(), p, subject, observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := canonicalSuitePassingReceipt(t.Context(), receipt, p.suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(current, &document); err != nil {
+		t.Fatal(err)
+	}
+	document["domain"] = suiteSessionsPassingDomainV1
+	delete(document["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
+	old, err := agentsuite.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseSuitePassingReceipt(old); !errors.Is(err, errSuiteSessionsReceiptV1) || !errors.Is(err, errSuitePassingReceipt) || !strings.Contains(err.Error(), "--bindings FILE") {
+		t.Fatalf("receipt v1 classification: %v", err)
+	}
+	// The version, not the field, is the classification: a v1 receipt that
+	// carries a binding digest is still v1, and a v2 receipt without one is
+	// invalid.
+	variant := func(edit func(map[string]any)) []byte {
+		t.Helper()
+		var v map[string]any
+		if err := json.Unmarshal(current, &v); err != nil {
+			t.Fatal(err)
+		}
+		edit(v)
+		raw, err := agentsuite.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	withDigest := variant(func(v map[string]any) { v["domain"] = suiteSessionsPassingDomainV1 })
+	if _, err := parseSuitePassingReceipt(withDigest); !errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("receipt v1 with a binding digest: %v", err)
+	}
+	missing := variant(func(v map[string]any) {
+		delete(v["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
+	})
+	if _, err := parseSuitePassingReceipt(missing); !errors.Is(err, errSuitePassingReceipt) || errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("receipt v2 without a binding digest: %v", err)
+	}
+	// Only a receipt that is otherwise complete gets the classified error.
+	document["result"] = "fail"
+	broken, err := agentsuite.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseSuitePassingReceipt(broken); !errors.Is(err, errSuitePassingReceipt) || errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("incomplete receipt classified as v1: %v", err)
+	}
+
+	t.Setenv("KMX_HOME", privateSuiteDir(t))
+	cache := filepath.Join(os.Getenv("KMX_HOME"), "suites")
+	open := func() *suitePassStore {
+		t.Helper()
+		store, err := openSuitePassStore(t.Context(), p.root, cache, p.suite.Digest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return store
+	}
+	writeRecord := func(store *suitePassStore, seq uint64, receipt []byte) {
+		t.Helper()
+		b, err := agentsuite.Marshal(suitePassRecord{1, store.identity, p.suite.Digest, seq, receipt})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(store.partition, fmt.Sprintf("%020d.json", seq)), b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := open()
+	writeRecord(store, 1, old)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassSessionsV1) {
+		t.Fatalf("stored receipt v1: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	layout := filepath.Join(t.TempDir(), "layout")
+	_, err = (&App{Out: io.Discard, Err: io.Discard}).PushSuiteWorkspaceManaged(t.Context(), SuiteWorkspacePushOptions{Workspace: p.root, Reference: "suite:tag", Layout: layout})
+	if !errors.Is(err, errSuitePassSessionsV1) || !strings.Contains(err.Error(), "--bindings FILE") {
+		t.Fatalf("default push with only receipt v1: %v", err)
+	}
+	if _, err := os.Stat(layout); !os.IsNotExist(err) {
+		t.Fatal("refused push transferred")
+	}
+
+	store = open()
+	defer store.Close()
+	// Evaluation registration reserves and commits past the old record.
+	record := commitStoreReceipt(t, store, p.suite, current)
+	if !strings.HasSuffix(record, "00000000000000000002.json") {
+		t.Fatalf("new record %s", record)
+	}
+	if got, file, err := store.latest(t.Context(), p.suite); err != nil || file != record || got.Sessions.Subject.BindingDigest != subject.BindingDigest {
+		t.Fatalf("new proof after receipt v1 record: %q %v", file, err)
+	}
+	// A newer receipt v1 record never falls back to the older eligible one.
+	writeRecord(store, 3, old)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassSessionsV1) {
+		t.Fatalf("newest receipt v1 record fell back: %v", err)
+	}
+	// A receipt v1 record whose embedded receipt names another suite is
+	// corruption, not a classified receipt v1.
+	document["result"] = "pass"
+	document["agentsessions"].(map[string]any)["subject"].(map[string]any)["suiteDigest"] = "sha256:" + strings.Repeat("1", 64)
+	otherSuite, err := agentsuite.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseSuitePassingReceipt(otherSuite); !errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("other-suite receipt v1 classification: %v", err)
+	}
+	writeRecord(store, 4, otherSuite)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassStore) || errors.Is(err, errSuitePassSessionsV1) {
+		t.Fatalf("receipt v1 record for another suite: %v", err)
+	}
+	// So is one whose embedded receipt names a foreign composition.
+	subjectDocument := document["agentsessions"].(map[string]any)["subject"].(map[string]any)
+	subjectDocument["suiteDigest"] = p.suite.Digest
+	subjectDocument["compositionDigest"] = "sha256:" + strings.Repeat("2", 64)
+	otherComposition, err := agentsuite.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseSuitePassingReceipt(otherComposition); !errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("other-composition receipt v1 classification: %v", err)
+	}
+	writeRecord(store, 4, otherComposition)
+	if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassStore) || errors.Is(err, errSuitePassSessionsV1) {
+		t.Fatalf("receipt v1 record for another composition: %v", err)
+	}
+}
+
+// A superseded receipt v1 record is never eligible, but it must still be
+// coherent with its own composition: a corrupted suite-bound identity refuses
+// lookup even when a newer valid record follows it.
+func TestSuitePassStoreRefusesIncoherentReceiptV1Record(t *testing.T) {
+	p, subject, observations := sessionsPassingFixture(t)
+	receipt, err := newSuiteSessionsPassingReceipt(t.Context(), p, subject, observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := canonicalSuitePassingReceipt(t.Context(), receipt, p.suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"graphDigest", "instructionsDigest"} {
+		t.Run(field, func(t *testing.T) {
+			var document map[string]any
+			if err := json.Unmarshal(current, &document); err != nil {
+				t.Fatal(err)
+			}
+			subjectDocument := document["agentsessions"].(map[string]any)["subject"].(map[string]any)
+			document["domain"] = suiteSessionsPassingDomainV1
+			delete(subjectDocument, "bindingDigest")
+			subjectDocument[field] = "sha256:" + strings.Repeat("3", 64)
+			old, err := agentsuite.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := parseSuitePassingReceipt(old); !errors.Is(err, errSuiteSessionsReceiptV1) {
+				t.Fatalf("corrupted receipt v1 classification: %v", err)
+			}
+
+			t.Setenv("KMX_HOME", privateSuiteDir(t))
+			store, err := openSuitePassStore(t.Context(), p.root, filepath.Join(os.Getenv("KMX_HOME"), "suites"), p.suite.Digest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			b, err := agentsuite.Marshal(suitePassRecord{1, store.identity, p.suite.Digest, 1, old})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(store.partition, fmt.Sprintf("%020d.json", 1)), b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			commitStoreReceipt(t, store, p.suite, current)
+			if _, _, err := store.latest(t.Context(), p.suite); !errors.Is(err, errSuitePassStore) || errors.Is(err, errSuitePassSessionsV1) {
+				t.Fatalf("superseded incoherent receipt v1 record: %v", err)
+			}
+		})
 	}
 }

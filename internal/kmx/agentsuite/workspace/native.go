@@ -15,6 +15,7 @@ import (
 
 	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	godigest "github.com/opencontainers/go-digest"
 )
 
@@ -173,7 +174,7 @@ func authoredCases(cases map[string][]byte) ([]runtime.EvaluationCase, error) {
 // resolve builds the public graph bottom-up. Profile pins are declared build
 // inputs required by that format, not images required by native execution.
 func resolve(name string, m sourceMember, instructions, profile []byte, cases []runtime.EvaluationCase) (map[string][]byte, error) {
-	if !namePattern.MatchString(name) || name == "." || name == ".." {
+	if !scaffold.ValidSuiteName(name) || name == "." || name == ".." {
 		return nil, errors.New("invalid workspace name")
 	}
 	if err := validateMember(m, instructions); err != nil {

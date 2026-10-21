@@ -1,7 +1,9 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +12,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	agentsuite "github.com/agent-primitives/suite"
 )
 
 func TestManagedPublicationCompletionRequiresSuccessfulFinalization(t *testing.T) {
@@ -106,5 +110,110 @@ func TestWorkspaceLiftSkipsCompletedStandaloneEvalAndPush(t *testing.T) {
 	}
 	if len(state.creates) != 4 || *writes != 0 {
 		t.Fatal("composing completed verbs executed or republished")
+	}
+}
+
+// Root registry push registers a publication completion only after it selects
+// an AgentSessions passing receipt v2, which records its binding digest. A v1
+// receipt refuses before any registry request or completion record, both from
+// managed lookup and from --evaluation.
+func TestManagedPublicationAgentSessionsRequiresReceiptV2(t *testing.T) {
+	p, subject, observations := sessionsPassingFixture(t)
+	receipt, err := newSuiteSessionsPassingReceipt(t.Context(), p, subject, observations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := canonicalSuitePassingReceipt(t.Context(), receipt, p.suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(current, &document); err != nil {
+		t.Fatal(err)
+	}
+	document["domain"] = suiteSessionsPassingDomainV1
+	delete(document["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
+	old, err := agentsuite.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", privateSuiteDir(t))
+	cache := filepath.Join(os.Getenv("KMX_HOME"), "suites")
+	store, err := openSuitePassStore(t.Context(), p.root, cache, p.suite.Digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partition := store.partition
+	b, err := agentsuite.Marshal(suitePassRecord{1, store.identity, p.suite.Digest, 1, old})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(partition, fmt.Sprintf("%020d.json", 1)), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Method != "HEAD" {
+			t.Errorf("unexpected registry effect: %s", r.Method)
+			w.WriteHeader(500)
+			return
+		}
+		w.Header().Set("Docker-Content-Digest", p.suite.Digest)
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		w.Header().Set("Content-Length", "123")
+	}))
+	defer server.Close()
+	records := func() []string {
+		t.Helper()
+		files, err := filepath.Glob(filepath.Join(partition, "lift-publication-*.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return files
+	}
+	evidence := privateSuiteDir(t)
+	write := func(name string, raw []byte) string {
+		t.Helper()
+		path := filepath.Join(evidence, name)
+		if err := os.WriteFile(path, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	a := &App{Out: io.Discard, Err: io.Discard}
+	opt := SuiteWorkspacePushOptions{Workspace: p.root, Repository: strings.TrimPrefix(server.URL, "http://") + "/agents", PlainHTTP: true}
+
+	if _, err := a.PushSuiteWorkspaceManaged(t.Context(), opt); !errors.Is(err, errSuitePassSessionsV1) {
+		t.Fatalf("managed receipt v1: %v", err)
+	}
+	explicitOld := opt
+	explicitOld.Evaluation = write("old.json", old)
+	if _, err := a.PushSuiteWorkspaceManaged(t.Context(), explicitOld); !errors.Is(err, errSuiteSessionsReceiptV1) {
+		t.Fatalf("--evaluation receipt v1: %v", err)
+	}
+	if requests.Load() != 0 || len(records()) != 0 {
+		t.Fatalf("refused proof reached registry or registered publication: requests=%d records=%v", requests.Load(), records())
+	}
+
+	explicit := opt
+	explicit.Evaluation = write("current.json", current)
+	result, err := a.PushSuiteWorkspaceManaged(t.Context(), explicit)
+	if err != nil || result.Descriptor.Digest.String() != p.suite.Digest || len(records()) != 1 {
+		t.Fatalf("--evaluation with bindingDigest: result=%+v err=%v records=%v", result, err, records())
+	}
+	store, err = openSuitePassStore(t.Context(), p.root, cache, p.suite.Digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitStoreReceipt(t, store, p.suite, current)
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PushSuiteWorkspaceManaged(t.Context(), opt); err != nil || len(records()) != 1 {
+		t.Fatalf("managed proof with bindingDigest: err=%v records=%v", err, records())
 	}
 }

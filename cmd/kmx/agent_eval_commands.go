@@ -36,7 +36,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 		Long: "Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
 			"--to NAME resolves copied selectors from workspace-root kmx.yaml; explicit flags override. Without --to-context or --development-host, evalTarget may select a named destination. No remembered/current-context fallback.\n" +
 			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override or subset evaluation. llmJudge requires an explicit --judge-base-url and authored judgeModel/judgeVersion; --judge-key-env names an optional HTTPS credential variable. Input, answer and rubric transfer to that provider for two independent samples per assertion; disagreement/error is unknown. Failure summaries show assertion IDs/types and judge scores; --show-content additionally prints sanitized bounded answer excerpts, expected values and judge rationale on stderr. Non-pass runs are retained privately under KMX_HOME (last 10 per workspace across revisions); use test explain to inspect or clear them offline. Content is diagnostic-only, never evidence.\n" +
-			"Packaged AgentSessions requires --development-host FILE: an explicit private operator observation of a pinned built-in chat host on literal loopback, unauthenticated. It refuses all cluster/inference/bindings/result selectors and loads no cluster configuration. Authored llmJudge uses the same explicit judge transport options and transfers case inputs, attributed answers and rubrics.\n" +
+			"Packaged AgentSessions requires --development-host FILE: an explicit private operator observation of a pinned built-in chat host on literal loopback, unauthenticated, and --bindings FILE: an AgentSessionsBinding whose model.name is exactly the packaged model. Evidence records the binding digest, which covers every judged or repeated run; the host's endpoint is not attested. It refuses all cluster/inference/result selectors and loads no cluster configuration. Authored llmJudge uses the same explicit judge transport options and transfers case inputs, attributed answers and rubrics.\n" +
 			"Development journals retain instructions, inputs, answers and per-exec config in cleartext under operator-managed retention. This is not authenticated remote promotion.\n" +
 			"Public Orka uses fresh digest/run-scoped candidates, never adoption/update/reuse, and exports passing evidence only after verified cleanup and final source/shared-input checks. Startup reports leftovers without deleting or blocking a fresh evaluation. Use test cleanup [full-run-id] for explicit confirmed recovery; unanchored orphans refuse. Private Quickstart/console and other runtimes are unchanged.\n" +
 			"Cases optionally declare runs/minPasses (default one run; omitted threshold requires all runs). Each run submits a fresh Task or AgentSessions Session/config/Exec, never retried, within its own per-run deadline including judging. Repeated cases disclose the total run-time budget in preflight.\n" +
@@ -65,7 +65,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 				return fmt.Errorf("--context cannot be used with native eval; use --to-context")
 			}
 			if native.DevelopmentHost != "" {
-				for _, name := range []string{"to", "to-context", "to-namespace", "inference", "bindings", "result-port", "container-engine"} {
+				for _, name := range []string{"to", "to-context", "to-namespace", "inference", "result-port", "container-engine"} {
 					if cmd.Flag(name).Changed {
 						return fmt.Errorf("--development-host refuses --%s", name)
 					}
@@ -143,7 +143,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 	group.Flags().StringVar(&native.ToContext, "to-context", "", "explicit native evaluation context")
 	group.Flags().StringVar(&native.ToNamespace, "to-namespace", app.OrkaNamespace, "native evaluation namespace")
 	group.Flags().StringVar(&native.Inference, "inference", "", "existing inference Provider, as provider:NAME")
-	group.Flags().StringVar(&native.Bindings, "bindings", "", "author-owned KagentBindings file for the packaged kagent runtime")
+	group.Flags().StringVar(&native.Bindings, "bindings", "", "author-owned KagentBindings (kagent) or AgentSessionsBinding (agentsessions) file")
 	_ = group.MarkFlagFilename("bindings")
 	group.Flags().StringVar(&native.DevelopmentHost, "development-host", "", "private JSON observation selecting a loopback unauthenticated AgentSessions development host")
 	_ = group.MarkFlagFilename("development-host", "json")
