@@ -169,6 +169,11 @@ func parseExamples(file string, lines []string, firstLine int) ([]Example, error
 			if assertionIDs[assertion.ID] {
 				return nil, errAt(n, "use unique assertion IDs within each example")
 			}
+			for _, operand := range []string{assertion.Value, assertion.Pattern, assertion.Rubric} {
+				if strings.IndexFunc(operand, unsupportedControl) >= 0 {
+					return nil, errAt(n, "remove control characters except newline/tab and use LF or CRLF line breaks")
+				}
+			}
 			if err := runtime.ValidateEvaluationAssertions([]runtime.EvaluationAssertion{assertion}); err != nil {
 				return nil, errAt(n, "provide a valid assertion ID and operand; llmJudge requires rubric, minScore (0–100), judgeModel and judgeVersion")
 			}

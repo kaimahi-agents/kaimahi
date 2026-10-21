@@ -62,7 +62,7 @@ examples:
   fences or sections refuse rather than entering instructions.
 - Files are UTF-8, LF or CRLF; remove a leading byte-order mark. Controls other
   than newline/tab and Unicode line/paragraph separators refuse, including in
-  decoded YAML inputs. Instructions
+  decoded YAML strings. Instructions
   preserve the complete prefix before Examples, including identity/model metadata,
   with CRLF normalized to LF. Examples are never part of those instructions.
   The revision is `sha256:<hex>` of the **original bytes**, including line endings.

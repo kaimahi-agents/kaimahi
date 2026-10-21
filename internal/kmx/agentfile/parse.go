@@ -173,7 +173,7 @@ func Parse(filename string, data []byte) (*Agent, error) {
 	if s, ok := sections["Examples"]; ok {
 		a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
 		if _, at := secretshapes.MatchIndex(a.Instructions); at >= 0 {
-			return nil, refuse(filename, strings.Count(a.Instructions[:at], "\n")+1, 1, "Instructions", "refusing invalid Unicode or credential-shaped content")
+			return nil, refuse(filename, strings.Count(a.Instructions[:at+1], "\n")+1, 1, "Instructions", "remove credential-shaped content; instructions must not contain secrets")
 		}
 	}
 	missing := []string{}
