@@ -9,7 +9,7 @@ func TestChatLiftMovedBeforeTerminalAndMutation(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	b := &orkaChatBackend{app: f.app, agent: "sample", namespace: "agents"}
 	changed, err := b.Configure(t.Context(), "/lift", newChatRenderer(f.out))
-	want := "Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …"
+	want := "Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …"
 	if changed || err == nil || err.Error() != want {
 		t.Fatalf("moved notice: changed=%t err=%v", changed, err)
 	}
@@ -25,7 +25,7 @@ func TestChatToolsRefuseBeforeTerminalAndMutation(t *testing.T) {
 	f := newOrkaFixture(t, nil)
 	b := &orkaChatBackend{app: f.app, agent: "sample", namespace: "agents"}
 	changed, err := b.Configure(t.Context(), "/tools", newChatRenderer(f.out))
-	if changed || err == nil || !strings.Contains(err.Error(), "authored") || !strings.Contains(err.Error(), "eval") {
+	if changed || err == nil || !strings.Contains(err.Error(), "authored") || !strings.Contains(err.Error(), "test") {
 		t.Errorf("wrong refusal: changed=%v err=%v", changed, err)
 	}
 	if calls := f.calls(t); calls != "" {

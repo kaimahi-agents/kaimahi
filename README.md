@@ -14,13 +14,23 @@ You need to test an agent before shipping it, and deploy the same version you te
 >
 > When the tests pass, publish that exact package.
 >
-> Lift it to another cluster after reviewing the target and planned changes.
+> Deploy it to another cluster after reviewing the target and planned changes.
 
-Kaimahi's `kmx` command-line tool helps developers create, test and ship (lift)
+Kaimahi's `kmx` command-line tool helps developers create, test and deploy
 agents on Kubernetes. It packages the agent, runs test cases and moves that
 package to the selected cluster. It is not an agent runtime.
 
 **Status: experimental. Not recommended for production use.**
+
+**Run / Test / Publish:** Run invokes an existing live Orka Agent; Test checks
+workspace cases with `kmx test`; Publish transfers the tested package with
+`kmx push`. Deploy places that package on a real target. Run is not local
+workspace execution.
+
+These docs follow main. `kmx test` and `kmx deploy` are unreleased; v0.8.1 uses
+`kmx eval` and `kmx lift` with the same arguments. See
+[Test compatibility](docs/kmx.md#test-compatibility-unreleased) and
+[Deploy compatibility](docs/kmx.md#deploy-compatibility-unreleased).
 
 ## Try it locally
 

@@ -16,27 +16,38 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
 )
 
+func newAgentTestCommand(state *commandState) *cobra.Command {
+	return newAgentEvaluationCommand(state, "test")
+}
+
 func newAgentEvalCommand(state *commandState) *cobra.Command {
+	cmd := newAgentEvaluationCommand(state, "eval")
+	cmd.Hidden = true
+	addLegacyEvalNotice(cmd, state.noticeLegacyEval)
+	return cmd
+}
+
+func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command {
 	native := app.SuiteWorkspaceEvaluationOptions{ManagedPass: true}
 	var destination string
 	var output string
 	group := &cobra.Command{
-		Use: "eval", Short: "Evaluate a native workspace or export, verify and compare saved evidence",
+		Use: verb, Short: "Evaluate a native workspace or export, verify and compare saved evidence",
 		Long: "Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
 			"--to NAME resolves copied selectors from workspace-root kmx.yaml; explicit flags override. Without --to-context or --development-host, evalTarget may select a named destination. No remembered/current-context fallback.\n" +
-			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override or subset evaluation. llmJudge requires an explicit --judge-base-url and authored judgeModel/judgeVersion; --judge-key-env names an optional HTTPS credential variable. Input, answer and rubric transfer to that provider for two independent samples per assertion; disagreement/error is unknown. Failure summaries show assertion IDs/types and judge scores; --show-content additionally prints sanitized bounded answer excerpts, expected values and judge rationale on stderr. Content is diagnostic-only, never evidence.\n" +
+			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override or subset evaluation. llmJudge requires an explicit --judge-base-url and authored judgeModel/judgeVersion; --judge-key-env names an optional HTTPS credential variable. Input, answer and rubric transfer to that provider for two independent samples per assertion; disagreement/error is unknown. Failure summaries show assertion IDs/types and judge scores; --show-content additionally prints sanitized bounded answer excerpts, expected values and judge rationale on stderr. Non-pass runs are retained privately under KMX_HOME (last 10 per workspace across revisions); use test explain to inspect or clear them offline. Content is diagnostic-only, never evidence.\n" +
 			"Packaged AgentSessions requires --development-host FILE: an explicit private operator observation of a pinned built-in chat host on literal loopback, unauthenticated. It refuses all cluster/inference/bindings/result selectors and loads no cluster configuration. Authored llmJudge uses the same explicit judge transport options and transfers case inputs, attributed answers and rubrics.\n" +
 			"Development journals retain instructions, inputs, answers and per-exec config in cleartext under operator-managed retention. This is not authenticated remote promotion.\n" +
-			"Public Orka uses fresh digest/run-scoped candidates, never adoption/update/reuse, and exports passing evidence only after verified cleanup and final source/shared-input checks. Startup reports leftovers without deleting or blocking a fresh evaluation. Use eval cleanup [full-run-id] for explicit confirmed recovery; unanchored orphans refuse. Private Quickstart/console and other runtimes are unchanged.\n" +
+			"Public Orka uses fresh digest/run-scoped candidates, never adoption/update/reuse, and exports passing evidence only after verified cleanup and final source/shared-input checks. Startup reports leftovers without deleting or blocking a fresh evaluation. Use test cleanup [full-run-id] for explicit confirmed recovery; unanchored orphans refuse. Private Quickstart/console and other runtimes are unchanged.\n" +
 			"Cases optionally declare runs/minPasses (default one run; omitted threshold requires all runs). Each run submits a fresh Task or AgentSessions Session/config/Exec, never retried, within its own per-run deadline including judging. Repeated cases disclose the total run-time budget in preflight.\n" +
 			"Any unknown run vetoes a pass. Execution failure, drift or cancellation aborts without a receipt; resources or Sessions may remain.\n" +
 			"Output defaults to text for all runtimes. Orka-only -o json emits one payload-free outcome document on success or execution abort; diagnostics go to stderr. Execution counts use returned TaskUIDs, not assertion completion; total remains planned.\n" +
-			"Completed passing metadata is registered in private KMX state after successful evaluation, Orka cleanup and finalization. --out optionally also writes a new standalone receipt in an existing private directory outside workspace/cache trees. Only full passing metadata is stored, unsigned and not a policy gate.\n" +
+			"Completed passing metadata is registered in private KMX state after successful evaluation, Orka cleanup and finalization. --out optionally also writes a new standalone receipt in an existing private directory outside workspace/cache trees. Managed evidence retains only full passing metadata, unsigned and not a policy gate; failure diagnostics are separate.\n" +
 			"Case inputs are sent to the runtime and model; upstream storage/audit policy may retain them. Real native CLI execution qualification remains separate from hermetic checks.",
-		Example: "  kmx eval\n" +
-			"  kmx eval --to dev --out ../private/passing.json\n" +
-			"  kmx eval --to-context kind-demo --inference provider:inference --out ../private/passing.json\n" +
-			"  kmx eval --workspace ./workspace --to-context remote --to-namespace orka-system --inference provider:inference --out ../private/passing.json",
+		Example: "  kmx test\n" +
+			"  kmx test --to dev --out ../private/passing.json\n" +
+			"  kmx test --to-context kind-demo --inference provider:inference --out ../private/passing.json\n" +
+			"  kmx test --workspace ./workspace --to-context remote --to-namespace orka-system --inference provider:inference --out ../private/passing.json",
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) != 0 {
 				return fmt.Errorf("native evaluation accepts no positional references")
@@ -104,7 +115,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			}
 			defer func() { err = errors.Join(err, prepared.Close()) }()
 			if selectedNative.DevelopmentHost != "" {
-				return (&app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}).EvaluateSuiteWorkspace(ctx, prepared)
+				return (&app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr(), TestPresentation: verb == "test"}).EvaluateSuiteWorkspace(ctx, prepared)
 			}
 			selected := *state
 			selected.contextFlag = selectedNative.ToContext
@@ -112,6 +123,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			a.TestPresentation = verb == "test"
 			a.Cfg.ContextSource = config.SourceFlag
 			if selection.Source != "" && !cmd.Flags().Changed("to-context") {
 				a.Cfg.ContextSource = selection.Source
@@ -155,7 +167,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			"Exits nonzero for regressions, lost or missing evidence, changed sets, or incompatible runtime identities.\n" +
 			"A complete stable comparison can exit zero; it does not prove live drift absence.\n" +
 			"AgentSessions and legacy receipts are refused; no compatibility reader or conversion is provided.",
-		Args: usageArgs(2, 2, "kmx eval diff <before.json> <after.json>"),
+		Args: usageArgs(2, 2, "kmx "+verb+" diff <before.json> <after.json>"),
 		// Keep helpers cluster-independent and no-inference when eval gains an operational hook.
 		PersistentPreRunE: validateContainerEngineFlag,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -173,7 +185,7 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 			"Duplicates refuse the whole operation. No inference, recorded inputs or answers are exported.\n" +
 			"Case IDs combine the authored id with a stable source UID digest. References inherit source TTL.\n" +
 			"Keep manifests private; endpoint selection is not data-owner authorization.",
-		Args:              usageArgs(1, 1000, "kmx eval from-sessions <session-uid>... --sessions <source> --assertions <case.yaml> --out <manifest.json>"),
+		Args:              usageArgs(1, 1000, "kmx "+verb+" from-sessions <session-uid>... --sessions <source> --assertions <case.yaml> --out <manifest.json>"),
 		PersistentPreRunE: validateContainerEngineFlag,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opt.SessionUIDs = args
@@ -191,8 +203,48 @@ func newAgentEvalCommand(state *commandState) *cobra.Command {
 	_ = from.RegisterFlagCompletionFunc("sessions", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	})
-	group.AddCommand(diff, from, newEvalCleanupCommand(state), newSuiteEvalExportCommand(state), newSuiteEvalVerifyCommand(state))
+	group.AddCommand(diff, from, newEvalCleanupCommand(state, verb), newSuiteEvalExportCommand(state), newSuiteEvalVerifyCommand(state), newEvalExplainCommand(state))
 	return group
+}
+
+const evalDeprecationNotice = "kmx eval is deprecated; use kmx test (same arguments)."
+
+func (s *commandState) noticeLegacyEval(cmd *cobra.Command) error {
+	if s.evalNoticeShown {
+		return nil
+	}
+	s.evalNoticeShown = true
+	_, err := fmt.Fprintln(cmd.ErrOrStderr(), evalDeprecationNotice)
+	return err
+}
+
+// Notices are argument/parse/help concerns, not operational hooks. Each helper
+// owns its Args wrapper so required-flag checks and helper-specific hooks cannot
+// suppress it. Explicit help shares the same invocation-scoped notice.
+func addLegacyEvalNotice(tree *cobra.Command, notice func(*cobra.Command) error) {
+	var wrap func(*cobra.Command)
+	wrap = func(cmd *cobra.Command) {
+		args := cmd.Args
+		cmd.Args = func(cmd *cobra.Command, values []string) error {
+			var err error
+			if args != nil {
+				err = args(cmd, values)
+			}
+			return errors.Join(notice(cmd), err)
+		}
+		cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+			return errors.Join(notice(cmd), err)
+		})
+		help := cmd.HelpFunc()
+		cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+			_ = notice(cmd)
+			help(cmd, args)
+		})
+		for _, child := range cmd.Commands() {
+			wrap(child)
+		}
+	}
+	wrap(tree)
 }
 
 // Judge endpoints can be private. Recovery advice keeps access selectors but

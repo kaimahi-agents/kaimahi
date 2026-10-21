@@ -154,6 +154,17 @@ func packDirectoryMode(ctx context.Context, source string, flowMode bool) (strin
 		return "", nil, kmxsuite.PackResult{}, err
 	}
 	defer os.RemoveAll(sourceRoot)
+	// The public loose reader is the conformance authority. It accepts only a
+	// path, so it cannot share pushDirectory's handle transactionally; the
+	// packed archive is validated again below.
+	if flowMode {
+		_, err = agentsuite.ValidateDirectoryFlowV1Alpha1(source)
+	} else {
+		_, err = agentsuite.ValidateDirectory(source)
+	}
+	if err != nil {
+		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("validate AgentSuite directory: %w", err)
+	}
 	sourceStore, err := oci.New(sourceRoot)
 	if err != nil {
 		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("create AgentSuite source CAS: %w", err)
@@ -233,6 +244,10 @@ func pushDirectory(
 		return ocispec.Descriptor{}, fmt.Errorf("open AgentSuite directory: %w", err)
 	}
 	defer rootHandle.Close()
+	modes, err := kmxsuite.DirectoryModes(rootHandle)
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("read AgentSuite payload declarations: %w", err)
+	}
 
 	var names []string
 	if err := fs.WalkDir(rootHandle.FS(), ".", func(name string, _ fs.DirEntry, walkErr error) error {
@@ -257,7 +272,7 @@ func pushDirectory(
 	}
 	archivePath := archive.Name()
 	defer os.Remove(archivePath)
-	if err := writeArchive(ctx, rootHandle, names, archive); err != nil {
+	if err := writeArchive(ctx, rootHandle, names, modes, archive); err != nil {
 		archive.Close()
 		return ocispec.Descriptor{}, err
 	}
@@ -303,6 +318,7 @@ func writeArchive(
 	ctx context.Context,
 	root *os.Root,
 	names []string,
+	modes map[string]uint32,
 	dst io.Writer,
 ) (err error) {
 	gzipWriter := gzip.NewWriter(dst)
@@ -333,13 +349,10 @@ func writeArchive(
 		case mode.IsDir():
 			header.Name += "/"
 			header.Typeflag = tar.TypeDir
-			header.Mode = 0o755
+			header.Mode = declaredMode(modes, name, 0o755)
 		case mode.IsRegular():
 			header.Typeflag = tar.TypeReg
-			header.Mode = 0o644
-			if mode.Perm()&0o111 != 0 {
-				header.Mode = 0o755
-			}
+			header.Mode = declaredMode(modes, name, 0o644)
 			header.Size = info.Size()
 			file, err := root.Open(name)
 			if err != nil {
@@ -376,7 +389,7 @@ func writeArchive(
 				return fmt.Errorf("read AgentSuite symlink %s: %w", name, err)
 			}
 			header.Typeflag = tar.TypeSymlink
-			header.Mode = 0o777
+			header.Mode = declaredMode(modes, name, 0o777)
 			header.Linkname = filepath.ToSlash(target)
 		default:
 			return fmt.Errorf("AgentSuite content %s has unsupported file type %s", name, mode.Type())
@@ -386,6 +399,15 @@ func writeArchive(
 		}
 	}
 	return nil
+}
+
+// declaredMode applies an authored payload mode, including zero, or the
+// portable default. Host permission bits are never consulted.
+func declaredMode(modes map[string]uint32, name string, fallback int64) int64 {
+	if mode, ok := modes[filepath.ToSlash(name)]; ok {
+		return int64(mode)
+	}
+	return fallback
 }
 
 type contextReader struct {

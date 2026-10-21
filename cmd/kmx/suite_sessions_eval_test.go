@@ -89,8 +89,12 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 	if err := execute(missingJudge, deps); err == nil || !strings.Contains(err.Error(), "llmJudge assertions require --judge-base-url") || calls.Load() != 0 || judgeCalls.Load() != 0 {
 		t.Fatal("judge preflight reached execution or wrong refusal", err)
 	}
+	diagnostics.Reset()
 	if err := execute(args, deps); err != nil {
 		t.Fatal(err)
+	}
+	if strings.Count(diagnostics.String(), legacyEvalNotice) != 1 {
+		t.Fatalf("successful legacy evaluation notice: %q", &diagnostics)
 	}
 	if *loads != 0 || calls.Load() != 1 || judgeCalls.Load() != 2 || !strings.Contains(diagnostics.String(), "Development: unauthenticated operator-observed host") {
 		t.Fatal("development used cluster configuration or wrong execution", *loads, calls.Load(), diagnostics.String())
@@ -125,5 +129,21 @@ func TestSuiteSessionsCLIExplicitDevelopmentAndNoClusterConfiguration(t *testing
 		if *loads != 0 || calls.Load() != 1 {
 			t.Fatal("help/completion performed operation")
 		}
+	}
+	// Reuse the same real hermetic host/judge fixture for the canonical route;
+	// it must produce fresh complete proof with no compatibility notice.
+	canonical := append([]string{}, args...)
+	canonical[0] = "test"
+	canonical[len(canonical)-1] = filepath.Join(dir, "test-pass.json")
+	out.Reset()
+	diagnostics.Reset()
+	if err := execute(canonical, deps); err != nil {
+		t.Fatal(err)
+	}
+	if *loads != 0 || calls.Load() != 2 || judgeCalls.Load() != 4 || strings.Contains(diagnostics.String(), legacyEvalNotice) {
+		t.Fatalf("canonical evaluation diverged: loads=%d calls=%d judges=%d stderr=%q", *loads, calls.Load(), judgeCalls.Load(), &diagnostics)
+	}
+	if _, err := os.Stat(canonical[len(canonical)-1]); err != nil {
+		t.Fatal("no complete canonical CLI proof", err)
 	}
 }

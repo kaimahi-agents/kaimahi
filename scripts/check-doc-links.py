@@ -4,7 +4,8 @@
 Every link target that is not an absolute URL must resolve to a file in
 the tree, and a `#fragment` on a Markdown target must match a heading in
 that file under GitHub's slug rules (lowercase, punctuation dropped,
-spaces to hyphens, duplicates suffixed -1, -2, ...).
+spaces to hyphens, duplicates suffixed -1, -2, ...) or an explicit HTML
+anchor retained for compatibility.
 
 A link is not only `[text](target)`. Markdown documents on GitHub carry
 four forms that all break the same way, and this checker reads all of
@@ -47,14 +48,16 @@ CODESPAN = re.compile(r"`[^`\n]*`")
 # an `<img` with no src and nothing to check.
 IMG = re.compile(r"<img\b[^>]*?\bsrc\s*=\s*[\"']([^\"']*)[\"']", re.IGNORECASE | re.DOTALL)
 AHREF = re.compile(r"<a\b[^>]*?\bhref\s*=\s*[\"']([^\"']*)[\"']", re.IGNORECASE | re.DOTALL)
+AID = re.compile(r"<a\b[^>]*?\s+id\s*=\s*[\"']([^\"']*)[\"']", re.IGNORECASE | re.DOTALL)
 REF_DEF = re.compile(r"^ {0,3}\[([^\]]+)\]:[ \t]*<?([^>\s]+)>?", re.MULTILINE)
 REF_USE = re.compile(r"(?<!\\)\[([^\]]*)\]\[([^\]]*)\]")
 
 
 def slugs(path):
-    """Heading anchors as GitHub renders them."""
+    """Heading and explicit compatibility anchors, excluding code examples."""
     seen = {}
-    out = set()
+    visible = re.sub(r"<!--[\s\S]*?(?:-->|$)", "", prose(path))
+    out = {m.group(1).lower() for m in AID.finditer(visible)}
     in_fence = False
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -214,6 +217,25 @@ def selftest():
          dict(real, **{"a.md": "see [x](there.md#a-real-heading)\n"}), 0)
     case("an anchor with no heading fails",
          dict(real, **{"a.md": "see [x](there.md#no-such-heading)\n"}), 1)
+
+    case("an explicit compatibility anchor survives a renamed heading",
+         {"there.md": '<a id="digest-lift"></a>\n\n## Digest deploy\n',
+          "a.md": '[old link](there.md#digest-lift)\n'}, 0)
+    case("an explicit anchor does not accept a different fragment",
+         {"there.md": '<a id="digest-lift"></a>\n\n## Digest deploy\n',
+          "a.md": '[typo](there.md#digest-lifts)\n'}, 1)
+    case("a commented-out anchor is not a compatibility target",
+         {"there.md": '<!--\n<a id="digest-lift"></a>\n-->\n',
+          "a.md": '[old link](there.md#digest-lift)\n'}, 1)
+    case("an anchor after an HTML comment remains a compatibility target",
+         {"there.md": '<!-- retired <a id="old"></a> -->\n<a id="digest-lift"></a>\n',
+          "a.md": '[old link](there.md#digest-lift)\n'}, 0)
+    case("an example anchor in a fence is not a compatibility target",
+         {"there.md": '```html\n<a id="digest-lift"></a>\n```\n',
+          "a.md": '[old link](there.md#digest-lift)\n'}, 1)
+    case("an example anchor in a code span is not a compatibility target",
+         {"there.md": '`<a id="digest-lift"></a>`\n',
+          "a.md": '[old link](there.md#digest-lift)\n'}, 1)
 
     # HTML images — the README's hero pictures are written this way.
     case("an <img src> pointing at a file that exists passes",

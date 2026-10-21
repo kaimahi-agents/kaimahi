@@ -372,7 +372,7 @@ Potential CLI adapters are:
 | `kmx local down` | No current `AgentEnvironment` method; installed teardown behavior is unchanged |
 | `kmx suite validate` | Conceptually `AgentSuites.Validate`; current command does not materialize the northbound result |
 | future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
-| `kmx bundle lift/status/retire` | `AgentDeployments` |
+| Historical `kmx bundle lift/status/retire` (removed) | `AgentDeployments` |
 
 Environment inspection/teardown/recovery, exact target resolution, run/cancel,
 quickstart, durable progress streams, and network APIs remain deferred.
@@ -384,15 +384,17 @@ The installed local suite journey already composes independently:
 
 ```text
 workspace create -> local setup -> workspace eval -> package push
-                                                  -> packaged-digest lift
+                                                  -> packaged-digest deploy
 ```
 
 That is evidence for keeping workspace/AgentSuite identity separate from
 environment setup, not evidence that the commands use the northbound interfaces.
 The native execution profile requires no member image and does not implement the
-first image-backed northbound Build/Push contract. Installed root digest Lift is
-an internal runtime-dispatched Orka/exact-kagent application path, not an implementation of the alpha
-suite-wide `AgentDeployments` model above.
+first image-backed northbound Build/Push contract. Root digest `kmx deploy` is
+unreleased; v0.8.1 uses `kmx lift` with the same arguments. This internal
+runtime-dispatched Orka/exact-kagent path is not an implementation of the alpha
+suite-wide `AgentDeployments` model above. The public `Lift`/`RecoverLift` API
+names and request/receipt examples remain unchanged.
 
 ## Evidence required before stability
 

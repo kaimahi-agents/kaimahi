@@ -46,10 +46,24 @@ test('AgentSuite links retain their standalone destination and section fragment'
   assert.doesNotMatch(guide, /href="[^"]*(?:issues\/491|\/agentsuite\/spec)(?:["#])/)
 })
 
+test('renamed headings retain legacy guide fragments', async () => {
+  for (const [page, fragments] of [
+    ['docs/suite-workspace.html', ['digest-lift', 'digest-deploy', 'composed-workspace-lift', 'composed-workspace-deploy']],
+    ['docs/workflow-overview.html', ['create-prove-lift', 'create-prove-deploy', 'run-test-publish']],
+    ['docs/aks-demo.html', ['aks-free-tier-demo-create-prove-lift', 'aks-free-tier-demo-create-prove-deploy', '5-prove-locally', '5-test-locally']],
+    ['docs/azure/cpu-model/index.html', ['5-create-and-prove-the-agent-locally', '5-create-and-test-the-agent-locally']]
+  ]) {
+    const html = await readFile(path.join(dist, page), 'utf8')
+    for (const fragment of fragments) {
+      assert.ok(html.includes(`id="${fragment}"`), `${page}: #${fragment} resolves`)
+    }
+  }
+})
+
 test('the homepage renders the interactive journey and channel boundary', async () => {
   const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
   for (const marker of [
-    'Build, Prove and Lift your agents',
+    'Run, Test and Publish your agents',
     'Development docs',
     'Stable v0.8.1',
     'Choose your path',
@@ -60,25 +74,59 @@ test('the homepage renders the interactive journey and channel boundary', async 
   }
 })
 
+test('Test is canonical while compatibility and current runtime limits stay explicit', async () => {
+  const runtimes = plainText(await readFile(path.join(dist, 'docs/runtime-adapters.html'), 'utf8'))
+  assert.match(runtimes, /profiles support root test,/)
+  assert.doesNotMatch(runtimes, /testuat/i)
+  const reference = plainText(await readFile(path.join(dist, 'docs/kmx.html'), 'utf8'))
+  for (const helper of ['cleanup', 'diff', 'explain', 'export', 'verify', 'from-sessions']) {
+    assert.ok(reference.includes(`kmx test ${helper}`), `canonical helper: ${helper}`)
+  }
+  const html = await readFile(path.join(dist, 'docs/kmx.html'), 'utf8')
+  assert.ok(html.includes('id="test-compatibility-unreleased"'))
+  for (const marker of [
+    'v0.8.1 uses kmx eval', 'at least one released version',
+    'kmx eval is deprecated; use kmx test (same arguments).',
+    'stdout', 'exit codes', 'state', 'evalTarget', 'evaluationTarget'
+  ]) assert.ok(reference.includes(marker), `compatibility boundary: ${marker}`)
+  for (const page of ['index.html', 'docs/getting-started.html', 'docs/workflow-overview.html']) {
+    const text = plainText(await readFile(path.join(dist, page), 'utf8'))
+    assert.match(text, /Run[^\n]*Test[^\n]*Publish/, `${page}: developer vocabulary`)
+    assert.match(text, /v0\.8\.1 uses[^\n]*eval/, `${page}: stable spelling`)
+    assert.match(text, /Docker/, `${page}: container prerequisite retained`)
+    assert.match(text, /WSL/, `${page}: Windows boundary retained`)
+    assert.doesNotMatch(text, /kmx publish|kmx test --local/)
+  }
+  for (const page of ['docs/azure/cpu-model/index.html', 'docs/aks-demo.html', 'docs/suite-workspace.html']) {
+    const text = plainText(await readFile(path.join(dist, page), 'utf8')).replace(/\s+/g, ' ')
+    assert.match(text, /v0\.8\.1 uses kmx eval and kmx lift/, `${page}: both stable substitutions`)
+  }
+  const azure = plainText(await readFile(path.join(dist, 'docs/azure/cpu-model/index.html'), 'utf8')).replace(/\s+/g, ' ')
+  assert.match(azure, /kmx test cleanup[^.]*kmx eval cleanup/, 'Azure cleanup uses the stable helper spelling')
+  const workflow = plainText(await readFile(path.join(dist, 'docs/workflow-overview.html'), 'utf8'))
+  assert.match(workflow, /kmx run --agent NAME --prompt TEXT[^\n]*live Agents[^\n]*neither is workspace-local execution/)
+  assert.match(workflow, /kmx push --workspace DIR --evaluation RECEIPT REF/)
+})
+
 /** Inspect rendered instructions without syntax-highlighter markup. */
 function plainText(html) {
   return html.replace(/<\/(?:p|pre|h[1-6])>/g, '\n').replace(/<[^>]*>/g, '').replaceAll('&gt;', '>').replaceAll('&lt;', '<').replaceAll('&amp;', '&')
 }
 
-test('the front doors lead with composed Lift and its prerequisites', async () => {
+test('the front doors lead with composed Deploy and its prerequisites', async () => {
   const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
   const firstPanel = homepage.match(/<article[^>]*id="journey-panel-0"[\s\S]*?<\/article>/)?.[0]
   assert.ok(firstPanel, 'the default journey is rendered')
   const chooser = plainText(firstPanel)
-  assert.match(chooser, /kmx create[^\n]*kmx lift --to NAME/)
+  assert.match(chooser, /kmx create[^\n]*kmx deploy --to NAME/)
   for (const prerequisite of ['prepared runtime', 'inference', 'registry authentication', 'kmx.yaml', 'publishRepository', 'evaluationTarget']) {
     assert.ok(chooser.includes(prerequisite), `chooser prerequisite: ${prerequisite}`)
   }
   for (const page of ['index.html', 'docs/getting-started.html', 'docs/workflow-overview.html']) {
     const text = plainText(await readFile(path.join(dist, page), 'utf8'))
     const create = text.indexOf('kmx create ')
-    const lift = text.indexOf('kmx lift --to ')
-    assert.ok(create >= 0 && lift > create, `${page}: create precedes composed Lift`)
+    const lift = text.indexOf('kmx deploy --to ')
+    assert.ok(create >= 0 && lift > create, `${page}: create precedes composed Deploy`)
     const quickstart = text.indexOf('kmx quickstart')
     assert.ok(quickstart > lift, `${page}: composed path precedes quickstart`)
     const introduction = text.slice(0, lift)

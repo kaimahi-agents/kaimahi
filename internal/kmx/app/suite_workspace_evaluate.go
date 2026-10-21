@@ -251,6 +251,7 @@ func (a *App) EvaluateSuiteWorkspace(ctx context.Context, p *PreparedSuiteWorksp
 			out = p.failureWriter
 		}
 		ctx = withSuiteFailureReporting(ctx, &p.failures, out, p.options.ShowContent, p.diagnosticKey)
+		ctx = withSuiteFailureRetention(ctx, p.root, p.suite)
 	}
 	if p == nil || !p.options.JSON {
 		return a.evaluateSuiteWorkspaceWithProof(ctx, p)

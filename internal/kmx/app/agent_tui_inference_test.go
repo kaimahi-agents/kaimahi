@@ -101,7 +101,7 @@ func TestConsoleInferenceRefusalDoesNotStartAzureDiscovery(t *testing.T) {
 	m = tuiKey(m, tea.KeyEnter, "")
 	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
 	m = updated.(agentTUIModel)
-	if cmd != nil || m.inference != nil || m.action != nil || !strings.Contains(m.status, "eval") {
+	if cmd != nil || m.inference != nil || m.action != nil || !strings.Contains(m.status, "test") {
 		t.Fatalf("retired inference action started work: %s", m.status)
 	}
 }

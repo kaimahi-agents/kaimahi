@@ -1,10 +1,10 @@
 # Copilot inference and tools
 
 Host Copilot chat inference is independent from native workspace evaluation
-and Lift. Copilot wizard authoring is retired; automatic wizard tool attachment
+and Deploy. Copilot wizard authoring is retired; automatic wizard tool attachment
 and live source tools/inference edits remain retired. Outside the wizard,
 `/inference-copilot` discovers models through the authenticated installed CLI
-without rewriting the saved Orka Provider. Native eval/Lift requires its exact
+without rewriting the saved Orka Provider. Native eval/Deploy requires its exact
 packaged model and native binding, not host Copilot execution.
 
 On a local kind target, `/inference-copilot` opens a discovered-model picker.

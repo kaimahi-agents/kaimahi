@@ -52,8 +52,8 @@ editor below the existing transcript rather than erasing with obsolete cursor
 coordinates. Resize itself never submits a message or approval. The non-full-screen
 raw-input fallback retains its conservative resize-abort behavior.
 
-Chat `/lift` and console Lift only print
-`Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`.
+Chat `/lift` and console Deploy only print
+`Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`.
 They perform no release workflow or source-less copy. Host Foundry/Copilot
 controls remain independent; live source tools/inference editing is retired.
 

@@ -54,15 +54,25 @@ func recordSuiteFailureClass(ctx context.Context, class string) {
 }
 
 type suiteFailureDetail struct {
-	CaseID       string                  `json:"caseID"`
-	Run          int                     `json:"run"`
-	Runs         int                     `json:"runs"`
-	MinPasses    int                     `json:"minPasses"`
-	Verdict      string                  `json:"verdict"`
-	Class        string                  `json:"class,omitempty"`
-	Answer       string                  `json:"answer,omitempty"`
-	AnswerStatus string                  `json:"answerStatus"`
-	Assertions   []suiteFailureAssertion `json:"assertions,omitempty"`
+	ID                   string                  `json:"diagnosticID,omitempty"`
+	OperationID          string                  `json:"operationID,omitempty"`
+	SuiteDigest          string                  `json:"suiteDigest,omitempty"`
+	Runtime              string                  `json:"runtime,omitempty"`
+	MemberID             string                  `json:"memberID,omitempty"`
+	Complete             bool                    `json:"complete"`
+	Attributed           bool                    `json:"attributed"`
+	RetentionUnavailable bool                    `json:"retentionUnavailable,omitempty"`
+	ContentTruncated     bool                    `json:"contentTruncated,omitempty"`
+	OmittedAssertions    int                     `json:"omittedAssertions,omitempty"`
+	CaseID               string                  `json:"caseID"`
+	Run                  int                     `json:"run"`
+	Runs                 int                     `json:"runs"`
+	MinPasses            int                     `json:"minPasses"`
+	Verdict              string                  `json:"verdict"`
+	Class                string                  `json:"class,omitempty"`
+	Answer               string                  `json:"answer,omitempty"`
+	AnswerStatus         string                  `json:"answerStatus"`
+	Assertions           []suiteFailureAssertion `json:"assertions,omitempty"`
 }
 type suiteFailureAssertion struct {
 	ID                   string   `json:"id"`
@@ -82,7 +92,7 @@ type suiteFailureAssertion struct {
 // multi-line labels, bare URLs or times also fail closed. Shape and header
 // checks still cannot identify arbitrary opaque secrets.
 var suiteDiagnosticHeader = regexp.MustCompile("(?im)^HTTP/[0-9.]+[ \\t]+[0-9]{3}\\b|^[ \\t]*[!#$%&'*+.^_`|~0-9A-Za-z-]+:[ \\t]*[^\\r\\n]*\\r?\\n[ \\t]*[!#$%&'*+.^_`|~0-9A-Za-z-]+:[ \\t]*")
-var suiteDiagnosticSensitiveHeader = regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|cookie|set-cookie|x-[a-z0-9-]+|content-[a-z0-9-]+|user-agent|host|connection|transfer-encoding|www-authenticate)[ \t]*:`)
+var suiteDiagnosticSensitiveHeader = regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|x-[a-z0-9-]+|content-[a-z0-9-]+|user-agent|host|connection|transfer-encoding|www-authenticate)[ \t]*:`)
 
 func suiteDiagnosticText(raw string, limit int, keys []string) (string, bool) {
 	if !utf8.ValidString(raw) {
@@ -96,13 +106,22 @@ func suiteDiagnosticText(raw string, limit int, keys []string) (string, bool) {
 	}, safeTerminal(raw))
 	// Preserve newlines for excerpts, but also check their removal: controls
 	// can split a credential which becomes recognizable when copied/joined.
-	compact := strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, safe)
-	for _, s := range []string{raw, safe, compact} {
+	stripControls := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return -1
+			}
+			return r
+		}, s)
+	}
+	compact := stripControls(safe)
+	clipped := suiteDiagnosticCut(safe, limit)
+	checks := []string{raw, safe, compact}
+	// A cut can create a new credential/header boundary absent in the full field.
+	if len(clipped) < len(safe) {
+		checks = append(checks, clipped, stripControls(clipped))
+	}
+	for _, s := range checks {
 		if secretshapes.Match(s) != nil || suiteDiagnosticHeader.MatchString(s) || suiteDiagnosticSensitiveHeader.MatchString(s) {
 			return "", false
 		}
@@ -112,7 +131,7 @@ func suiteDiagnosticText(raw string, limit int, keys []string) (string, bool) {
 			}
 		}
 	}
-	return suiteDiagnosticCut(safe, limit), true
+	return clipped, true
 }
 func suiteDiagnosticCut(s string, limit int) string {
 	if len(s) <= limit {
@@ -203,6 +222,7 @@ func captureSuiteFailure(frame suitePassingInventoryCase, observation suitePassi
 		d.Run = 1
 	}
 	available := observation.AnswerSHA256 != "" && !observation.Stop && observation.Detail == ""
+	d.Complete, d.Attributed = suiteRunComplete(observation, frame), available
 	var full string
 	if available {
 		safe, ok := suiteDiagnosticText(answer, len(answer), keys)
@@ -210,10 +230,14 @@ func captureSuiteFailure(frame suitePassingInventoryCase, observation suitePassi
 			d.AnswerStatus = "withheld"
 		} else {
 			full = safe
-			d.Answer = suiteDiagnosticCut(safe, 64<<10)
-			d.AnswerStatus = "complete"
-			if len(d.Answer) < len(safe) {
+			d.Answer, ok = suiteDiagnosticText(suiteDiagnosticCut(safe, 64<<10), 64<<10, keys)
+			switch {
+			case !ok:
+				d.AnswerStatus = "withheld"
+			case len(d.Answer) < len(safe):
 				d.AnswerStatus = "truncated"
+			default:
+				d.AnswerStatus = "complete"
 			}
 		}
 	}
@@ -251,7 +275,8 @@ func captureSuiteFailure(frame suitePassingInventoryCase, observation suitePassi
 						a.ExcerptKind = "match"
 					}
 				}
-				a.Excerpt = suiteDiagnosticCut(full[start:], min(512, excerptBudget))
+				clipped := suiteDiagnosticCut(full[start:], min(512, excerptBudget))
+				a.Excerpt, _ = suiteDiagnosticText(clipped, len(clipped), keys)
 				excerptBudget -= len(a.Excerpt)
 			}
 		}

@@ -118,7 +118,7 @@ func (a *App) evaluateSuiteWorkspaceCandidate(ctx context.Context, p *PreparedSu
 		return err
 	}
 	worker.reportCandidateStartup(ctx, native.Subject.Target)
-	if _, err := fmt.Fprintf(worker.Err, "Current candidate: run=%s context=%q clusterUID=%s namespace=%q namespaceUID=%s member=%s suite=%s\nRecovery: %s eval cleanup %s --to-context %s --to-namespace %s\n", runID, cfg.KubeContext, native.Subject.Target.ClusterUID, native.Subject.Target.Namespace, native.Subject.Target.NamespaceUID, native.Subject.PhysicalMember, native.Subject.SuiteDigest, shellArg(worker.commandExecutable()), runID, shellArg(cfg.KubeContext), shellArg(native.Subject.Target.Namespace)); err != nil {
+	if _, err := fmt.Fprintf(worker.Err, "Current candidate: run=%s context=%q clusterUID=%s namespace=%q namespaceUID=%s member=%s suite=%s\nRecovery: %s %s cleanup %s --to-context %s --to-namespace %s\n", runID, cfg.KubeContext, native.Subject.Target.ClusterUID, native.Subject.Target.Namespace, native.Subject.Target.NamespaceUID, native.Subject.PhysicalMember, native.Subject.SuiteDigest, shellArg(worker.commandExecutable()), worker.testCommandVerb(), runID, shellArg(cfg.KubeContext), shellArg(native.Subject.Target.Namespace)); err != nil {
 		return err
 	}
 	if !validSuitePassingSubject(native.Subject) {

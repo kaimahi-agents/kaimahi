@@ -45,7 +45,14 @@ func SourceFiles(ctx context.Context, root string, prepared *Prepared) (map[stri
 	return s.source, nil
 }
 
+// ErrCacheMigration is payload-free so offline consumers can retain the remedy
+// when redacting untrusted preparation errors.
+var ErrCacheMigration = errors.New("prepared cache uses an earlier or unknown packaging policy; move aside only the affected prepared cache entry and retry; if the rebuilt artifact identity changes, rerun kmx test before kmx push; keep existing receipts and managed passing evidence")
+
+const cachePackaging = "kmx.directory-modes/v1"
+
 type cacheRecord struct {
+	Packaging   string             `json:"packaging"`
 	Fingerprint string             `json:"fingerprint"`
 	Descriptor  ocispec.Descriptor `json:"descriptor"`
 	Name        string             `json:"name"`
@@ -108,6 +115,9 @@ func cached(ctx context.Context, key string, s *snapshot, flowMode bool) (*Prepa
 	var rec cacheRecord
 	if err := agentsuite.Unmarshal(b, &rec); err != nil {
 		return nil, err
+	}
+	if rec.Packaging != cachePackaging {
+		return nil, fmt.Errorf("%w (entry %q)", ErrCacheMigration, key)
 	}
 	if rec.Fingerprint != s.fingerprint || rec.Name != s.name {
 		return nil, errors.New("prepared cache source identity mismatch")
@@ -198,7 +208,7 @@ func prepare(ctx context.Context, root, cacheDir string, flowMode bool) (*Prepar
 	if _, err := verifyMode(ctx, p, flowMode); err != nil {
 		return nil, err
 	}
-	record, err := agentsuite.Marshal(cacheRecord{p.Fingerprint, p.Descriptor, p.Name})
+	record, err := agentsuite.Marshal(cacheRecord{Packaging: cachePackaging, Fingerprint: p.Fingerprint, Descriptor: p.Descriptor, Name: p.Name})
 	if err != nil {
 		return nil, err
 	}

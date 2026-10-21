@@ -2,19 +2,23 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 type suiteFailureReportingKey struct{}
 type suiteFailureReporter struct {
-	details *[]suiteFailureDetail
-	out     io.Writer
-	content bool
-	key     string
+	details   *[]suiteFailureDetail
+	out       io.Writer
+	content   bool
+	key       string
+	retention *suiteFailureRetention
 }
 
 func withSuiteFailureReporting(ctx context.Context, details *[]suiteFailureDetail, out io.Writer, content bool, keys ...string) context.Context {
@@ -27,13 +31,48 @@ func withSuiteFailureReporting(ctx context.Context, details *[]suiteFailureDetai
 	}
 	return context.WithValue(ctx, suiteFailureReportingKey{}, reporter)
 }
+
+type suiteFailureRetention struct {
+	root, operationID, suiteDigest, runtime, memberID string
+	unavailable, warned                               bool
+}
+
+func withSuiteFailureRetention(ctx context.Context, root string, suite *workspace.NativeSuite) context.Context {
+	reporter, ok := ctx.Value(suiteFailureReportingKey{}).(suiteFailureReporter)
+	if !ok || suite == nil {
+		return ctx
+	}
+	op, err := randomHex(16)
+	reporter.retention = &suiteFailureRetention{root: root, operationID: "op-" + op, suiteDigest: suite.Digest, runtime: suite.Runtime.ID, memberID: suiteDiagnosticIdentity(suite.MemberID, []string{reporter.key}), unavailable: err != nil}
+	return context.WithValue(ctx, suiteFailureReportingKey{}, reporter)
+}
+
 func reportSuiteFailure(ctx context.Context, detail *suiteFailureDetail) error {
 	reporter, ok := ctx.Value(suiteFailureReportingKey{}).(suiteFailureReporter)
 	if !ok || detail == nil {
 		return nil
 	}
+	var warningErr error
+	if scope := reporter.retention; scope != nil {
+		detail.ID, detail.RetentionUnavailable = "", false
+		detail.OperationID, detail.SuiteDigest, detail.Runtime, detail.MemberID = scope.operationID, scope.suiteDigest, scope.runtime, scope.memberID
+		var id string
+		var err error
+		if !scope.unavailable {
+			id, err = saveSuiteFailure(context.WithoutCancel(ctx), scope.root, *detail)
+		}
+		detail.ID = id // A post-publication error must not hide the observable record ID.
+		if scope.unavailable || err != nil {
+			detail.RetentionUnavailable = true
+			if !scope.warned {
+				scope.warned = true
+				// Storage is best effort, but every diagnostic writer failure stops later effects.
+				_, warningErr = fmt.Fprintln(reporter.out, "warning: local evaluation failure retention unavailable or unconfirmed")
+			}
+		}
+	}
 	*reporter.details = append(*reporter.details, *detail)
-	return writeSuiteFailureDetail(reporter.out, *detail, reporter.content)
+	return errors.Join(warningErr, writeSuiteFailureDetail(reporter.out, *detail, reporter.content))
 }
 
 // summary is a payload-free projection, never a passing evidence row. Content
@@ -63,6 +102,9 @@ func suiteFailureSummaries(details []suiteFailureDetail) []suiteFailureDetail {
 func writeSuiteFailureDetail(out io.Writer, d suiteFailureDetail, content bool) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "  %s run %d/%d: %s", d.CaseID, d.Run, d.Runs, d.Verdict)
+	if d.ID != "" {
+		fmt.Fprintf(&b, "; diagnostic %s", d.ID)
+	}
 	if d.Class != "" {
 		fmt.Fprintf(&b, " [%s]", d.Class)
 	}

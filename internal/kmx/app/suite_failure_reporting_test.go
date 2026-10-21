@@ -138,6 +138,15 @@ func TestSuiteFailureLiftStopsOnDiagnosticWriteError(t *testing.T) {
 			if _, _, err := store.latest(t.Context(), p.review.suite); !errors.Is(err, errSuitePassMissing) {
 				t.Fatal("diagnostic delivery failure registered passing proof", err)
 			}
+			retained, err := openSuiteFailureStore(opt.Workspace, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows, scanErr := retained.scan()
+			closeErr := retained.Close()
+			if scanErr != nil || closeErr != nil || len(rows) != 1 || rows[0].record.Detail.ID != p.failures[0].ID {
+				t.Fatal("writer failure lost retained diagnostic", scanErr, closeErr)
+			}
 		})
 	}
 }
@@ -194,10 +203,33 @@ func TestSuiteFailureLiftParity(t *testing.T) {
 					t.Fatal("answer entered outcome JSON")
 				}
 			}
+			store, err := openSuiteFailureStore(opt.Workspace, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries, scanErr := store.scan()
+			closeErr := store.Close()
+			if scanErr != nil || closeErr != nil || len(entries) != len(details) {
+				t.Fatal("stored detail missing", scanErr, closeErr)
+			}
+			ids := map[string]bool{}
+			for i, entry := range entries {
+				if !reflect.DeepEqual(entry.record.Detail, details[i]) {
+					t.Fatal("stored and live diagnostics differ")
+				}
+				if !suiteFailureID.MatchString(details[i].ID) || ids[details[i].ID] || details[i].OperationID != details[0].OperationID {
+					t.Fatal("run identity not unique or operation identity changed")
+				}
+				ids[details[i].ID] = true
+			}
+			normalized := append([]suiteFailureDetail(nil), details...)
+			for i := range normalized {
+				normalized[i].ID, normalized[i].OperationID = "", ""
+			}
 			if strings.HasPrefix(mode, "eval") {
-				expected = details
-			} else if !reflect.DeepEqual(expected, details) {
-				t.Fatalf("standalone/Lift detail differs: %+v vs %+v", expected, details)
+				expected = normalized
+			} else if !reflect.DeepEqual(expected, normalized) {
+				t.Fatal("standalone/Lift recorded detail differs")
 			}
 		})
 	}

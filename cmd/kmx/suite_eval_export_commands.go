@@ -18,7 +18,7 @@ func newSuiteEvalExportCommand(state *commandState) *cobra.Command {
 		Long: "Export the latest completed passing evaluation for the exact prepared suite and explicitly selected member, without loading cluster configuration or calling a runtime, model or registry.\n" +
 			"The new detached JSON document contains public identity and result metadata, not prompts, answers, reasoning, endpoints or credentials. It is unsigned consistency evidence, not authentication or deployment authority.\n" +
 			"Fresh managed evaluation must capture Go build provenance: a tagged module version with its module checksum (including go install module@version), or a full VCS revision with an explicit unmodified state. Modified builds, unstamped development builds and pseudo-versions without a clean revision refuse. Use an identified release/module build or clean checkout, then evaluate again. A Linux binary digest is optional, never required.\n" +
-			"Legacy records without captured metadata refuse rather than invent timestamps. Private --evaluation push and Lift gates are unchanged; this public document does not replace private receipts.\n" +
+			"Legacy records without captured metadata refuse rather than invent timestamps. Private --evaluation push and Deploy gates are unchanged; this public document does not replace private receipts.\n" +
 			"--out must name a new file outside the workspace, suite cache and managed passing state. Existing files are never replaced. Select --workspace exactly or discover the nearest workspace.yaml.",
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) != 0 {

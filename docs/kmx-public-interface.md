@@ -241,7 +241,7 @@ The intended conceptual mapping is:
 | `kmx suite build` | Current one-member experimental command is not `AgentSuites.Build` |
 | `kmx suite push` / root `kmx push --workspace DIR REF` | Current extracted-definition/workspace transfer is not `AgentSuites.Push` |
 | Future suite-wide build/push workflow | `AgentSuites.Build` / `AgentSuites.Push` |
-| Root digest `kmx lift` | Related lifecycle vocabulary, not `AgentDeployments.Lift` wiring |
+| Root digest `kmx deploy` (unreleased; v0.8.1 uses `kmx lift`) | Related lifecycle vocabulary, not `AgentDeployments.Lift` wiring |
 | Root `status --to NAME` destination inventory | GET-only internal observer, not `AgentDeployments.Status` wiring; that interface remains alpha design evidence |
 | Suite retirement (unavailable) | `AgentDeployments.Retire` remains alpha design evidence |
 
@@ -282,7 +282,7 @@ afterward:
 ```bash
 # Author and prove one native AgentSuite workspace locally.
 kmx create greeter --workspace ./greeter --model qwen2.5:3b --instructions instructions.md
-kmx eval --workspace ./greeter --to-context kind-kmx-local \
+kmx test --workspace ./greeter --to-context kind-kmx-local \
   --inference provider:local --out ../private/passing.json
 
 # Fixed demonstration that ends with an answer.

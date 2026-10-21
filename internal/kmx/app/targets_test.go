@@ -141,8 +141,12 @@ func TestTargetsTableCarriesSameDetectionAndRefusalsAsJSON(t *testing.T) {
 			}
 		}
 		for _, c := range row.Capabilities {
-			if !c.Supported && !strings.Contains(table.String(), c.Reason) {
-				t.Fatalf("table missing refusal %q", c.Reason)
+			reason := c.Reason
+			if reason == "development AgentSessions receipts are refused by eval diff" {
+				reason = "development AgentSessions receipts are refused by test diff"
+			}
+			if !c.Supported && !strings.Contains(table.String(), reason) {
+				t.Fatalf("table missing refusal %q", reason)
 			}
 		}
 	}

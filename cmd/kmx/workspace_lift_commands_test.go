@@ -178,7 +178,7 @@ func TestWorkspaceLiftColdPlanNeedsNoOperationalConfigOrProof(t *testing.T) {
 				if err := json.Unmarshal(out.Bytes(), &result); err != nil {
 					t.Fatalf("not one JSON result: %s (%v)", &out, err)
 				}
-			} else if out.Len() != 0 || len(strings.Split(strings.TrimSpace(diag.String()), "\n")) != 4 {
+			} else if out.Len() != 0 || len(strings.Split(strings.TrimSpace(strings.TrimPrefix(diag.String(), legacyLiftNotice)), "\n")) != 4 {
 				t.Fatalf("not four stderr lines: stdout=%s stderr=%s", &out, &diag)
 			}
 			if strings.Contains(diag.String(), "Type ") {

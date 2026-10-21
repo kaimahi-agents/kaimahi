@@ -1,5 +1,10 @@
 # Author and publish a one-member native suite
 
+These docs follow main. **Test and Deploy are unreleased**; v0.8.1 uses `kmx eval` and `kmx lift`
+with identical arguments. See [Test compatibility](kmx.md#test-compatibility-unreleased)
+and [Deploy compatibility](kmx.md#deploy-compatibility-unreleased) for the hidden
+deprecated routes and unchanged machine/API contracts.
+
 A workspace is editable source. Its prepared AgentSuite is an immutable OCI
 artifact, identified by its manifest digest. Native Orka and exact-v0.10.3 Go
 kagent declarations require no member images; authoring and publication do not contact Kubernetes,
@@ -7,15 +12,15 @@ run a model or invoke Docker/buildx. The pinned AgentSessions chat profile also
 supports offline authoring, preparation, loading and explicitly unevaluated push
 (`--unevaluated`) with no member image. Full packaged evaluation and exact-suite evaluated push
 require the explicit [development host](#agentsessions-development-evaluation)
-boundary. Lift, chat/status and Orka/kagent operational consumers refuse it.
+boundary. Deploy, chat/status and Orka/kagent operational consumers refuse it.
 
 **Implemented:** offline creation, preparation and publication, and full-inventory
 native Orka or exact kagent v0.10.3 Go/linux-amd64 evaluation of one tool-free
 member with an exact OpenAI-compatible model. Orka remains the authoring default;
-`--runtime kagent` authors the private profile. Root eval derives that packaged
+`--runtime kagent` authors the private profile. Root test derives that packaged
 runtime and uses explicit author-owned bindings; evaluated push accepts only
-matching runtime-specific passing evidence. Root digest Lift supports both
-profiles. Kagent Lift is create-only: any occupied primary or generated child
+matching runtime-specific passing evidence. Root digest Deploy supports both
+profiles. Kagent Deploy is create-only: any occupied primary or generated child
 refuses, even with matching evaluated UIDs. Legacy status and retirement remain
 unavailable. Public Orka eval creates fresh disposable candidates and cleans them
 up before exporting proof. Kagent evaluation refuses occupied targets without a
@@ -23,7 +28,7 @@ complete caller-retained observation; qualified reuse is read-only, not
 update/adoption or restart recovery.
 Orka evaluation has hermetic command/Task tests and a pinned three-case native
 workspace CI qualifier. Packaged kagent evaluation has hermetic coverage and
-pinned exact-v0.10.3 CLI qualification. Root exact-digest Lift retrieves the
+pinned exact-v0.10.3 CLI qualification. Root exact-digest Deploy retrieves the
 package from a registry or local layout and separately consumes matching private
 full-passing evidence. Orka uses `--inference`; kagent uses author-owned
 `--bindings`. Bounded CI qualifies Orka exact registry/layout reuse and kagent
@@ -45,7 +50,7 @@ intersection semantics.
 
 This is offline authoring/transfer, not runtime support. Root push with
 `--unevaluated` retains the policy; eval, private native preparation, evaluated
-publication, composed/digest Lift and the experimental sandbox builder refuse a
+publication, composed/digest Deploy and the experimental sandbox builder refuse a
 declared policy before execution/export. Legacy kagent and AgentSessions policy source
 declarations refuse; v3 retains policy as a shared declaration only. No enforcing CNI, installed NetworkPolicy, active worker
 observation or status capability is implied. Static unsafe paths, symlinks and
@@ -114,10 +119,10 @@ exact composition/build profile offline, but the existing AgentKit producer
 **refuses every profiled plan** before exporting or invoking Docker. There is no
 producer fallback or Sessions image-build adapter.
 Profiled execution, evaluated push, private receipt creation/export, native public
-evidence export and Lift all refuse, including profiles declaring `runtime.id=orka`.
-Only explicit unevaluated publication is available. Independent `eval verify`
+evidence export and Deploy all refuse, including profiles declaring `runtime.id=orka`.
+Only explicit unevaluated publication is available. Independent `test verify`
 can check externally produced portable evidence against separately reviewed
-expectations; it grants no private push/Lift authority.
+expectations; it grants no private push/Deploy authority.
 
 ### Detached Sessions declarations (internal, offline only)
 
@@ -145,7 +150,7 @@ selected-view fields cannot change the frozen selection or its config.
 **The image digest and platform are declared, not verified.** No image bytes are
 read; runtime/harness/renderer versions and configuration ABI are not qualified.
 Successful declaration checks grant no execution, evidence, evaluated-publication
-or Lift authority. Profiled execution and Apply remain refused.
+or Deploy authority. Profiled execution and Apply remain refused.
 
 Suite instructions are **non-confidential and must never contain secrets**.
 Authorized Sessions Replay readers, journal-at-rest readers and route-config
@@ -233,9 +238,9 @@ rewriting source.
 
 Preparation uses the internal workspace API (`Prepare` then `LoadInventory`);
 there is no new CLI prepare command. The execution loaders remain single-member
-only. Root `eval`, root workspace `push` (including `--unevaluated`) and composed
-workspace Lift refuse this format before operational state, output or target
-activity. Exact-reference Lift also refuses verified multi-member native artifacts
+only. Root `test`, root workspace `push` (including `--unevaluated`) and composed
+workspace Deploy refuse this format before operational state, output or target
+activity. Exact-reference Deploy also refuses verified multi-member native artifacts
 before target observations; existing prerequisite validation remains unchanged.
 General extracted-directory `suite push` is still format transfer, not execution
 or evaluated publication. None of these paths can use a one-member receipt to
@@ -316,7 +321,7 @@ Source-free `suiteview.LoadLayoutFlowV1Alpha1` and
 **every** portable member recipe in suite order. Explicit native flow inventory
 readers additionally require the complete closed native graph. Ordinary
 layout/archive/native loaders and current transfer/registry paths remain strict;
-they do not retry or discard a required extension. Root eval/push/Lift remain
+they do not retry or discard a required extension. Root test/push/Deploy remain
 unsupported for these suites, including unevaluated push. No member receipt or
 storage validation is a whole-suite execution proof.
 
@@ -328,7 +333,7 @@ B binds concrete cluster/namespace incarnations, reference identities, exact mod
 
 Candidate names hash S/member/case/run/step/fresh-operation tuples. Versioned ownership retains the existing run marker so older readers fail closed. Explicit cleanup preserves operation-wide suite consistency and UID/RV deletion preconditions; malformed or foreign projections remain uncertain. Legacy passing receipts cannot consume flow candidates.
 
-These are internal GET-only preparation/rendering seams, not new commands or authority to execute, qualify, publish or Lift a flow. Existing CLI routes and default readers stay strict. No runtime/model or whole-suite flow qualification is claimed.
+These are internal GET-only preparation/rendering seams, not new commands or authority to execute, qualify, publish or Deploy a flow. Existing CLI routes and default readers stay strict. No runtime/model or whole-suite flow qualification is claimed.
 
 ## Named destinations
 
@@ -359,9 +364,9 @@ registries:
 ```sh
 kmx ctx
 kmx ctx --check -o json
-kmx eval --to dev --out ../private/passing.json
+kmx test --to dev --out ../private/passing.json
 kmx push --evaluation ../private/passing.json registry.example/team/agents:v1
-kmx lift registry.example/team/agents@sha256:<digest> --to prod \
+kmx deploy registry.example/team/agents@sha256:<digest> --to prod \
   --evidence ../private/passing.json --promote --plan
 ```
 
@@ -380,7 +385,7 @@ tools or makes a model call. Authentication-required is not repository access;
 runtime/inference/bindings are explicitly not checked. Independent rows remain
 visible if a check is unknown or fails; the command then exits nonzero.
 
-`eval --to NAME` and digest `lift --to NAME` resolve concrete selectors once,
+`test --to NAME` and digest `deploy --to NAME` resolve concrete selectors once,
 print them and their source, then retain those values for the entire invocation.
 Editing `kmx.yaml` during confirmation cannot change that operation. Existing
 source/binding-file/runtime/remote-state checks still apply. Explicit `--to-context`,
@@ -391,11 +396,11 @@ Runtime is an expectation checked against the package, never a runtime switch.
 
 Eval may use saved `evalTarget` when no destination is explicitly selected; it
 never guesses from a name, kubectl current-context or remembered access selection.
-Lift has no default destination. Explicit-reference Lift without `--to` remains
+Deploy has no default destination. Explicit-reference Deploy without `--to` remains
 source/workspace-independent. AgentSessions development evaluation ignores these
 cluster defaults and refuses named destination selection.
 
-Root workspace registry push and named Lift may use an **exact registry-host**
+Root workspace registry push and named Deploy may use an **exact registry-host**
 `plainHTTP` policy; explicit `--plain-http=false` wins. TLS remains the default;
 there is no HTTP fallback after TLS failure, and existing credential restrictions
 remain. Local layouts and extracted-directory `suite push` are unchanged.
@@ -405,25 +410,27 @@ config merging. Operational config is excluded from prepared S, source fingerpri
 and published content.
 
 This is selector configuration, not environment installation or deployment
-identity. `publishRepository` supplies bare push and composed Lift's repository;
+identity. `publishRepository` supplies bare push and composed Deploy's repository;
 `evaluationTarget` explicitly selects where a destination's missing proof runs.
-Root eval keeps managed passing proof with optional `--out`; explicit push
-references are preserved. Explicit-reference Lift remains deploy-only and requires
+Root test keeps managed passing proof with optional `--out`; explicit push
+references are preserved. Explicit-reference Deploy remains deploy-only and requires
 a digest/private evidence and explicit `--promote` for source-only evidence.
-**Kagent stays out of composed Lift until its own candidate-scoped evaluation
+**Kagent stays out of composed Deploy until its own candidate-scoped evaluation
 and ownership-safe cleanup are qualified**; standalone explicit kagent operations
 retain their existing boundaries. Named selectors never bypass remote confirmation.
 
-## Composed workspace Lift
+<a id="composed-workspace-lift"></a>
+
+## Composed workspace Deploy
 
 With the Orka prerequisites and named configuration above already prepared:
 
 ```sh
-kmx lift --to prod --plan
-kmx lift --to prod
+kmx deploy --to prod --plan
+kmx deploy --to prod
 ```
 
-Without a positional reference, Lift discovers the nearest workspace and freezes
+Without a positional reference, Deploy discovers the nearest workspace and freezes
 its exact packaged version and source fingerprint. It requires `publishRepository`
 and the destination's explicit `evaluationTarget`; it never substitutes `evalTarget`
 or a current/remembered context. It runs missing evaluation, publication and
@@ -431,16 +438,19 @@ placement in that order, using the existing disposable candidate and release gat
 Promotion is selected automatically and disclosed as **passed on the evaluation
 target, not evaluated on the destination**; explicit `--promote=false` stays strict.
 Newly created release objects carry the non-secret provenance described below.
-Guided authoring and tag-based Lift are not included. Destination update and
-rollback require the explicit retained Orka path below; plain Lift stays create-only.
+Guided authoring and tag-based Deploy are not included. Destination update and
+rollback require the explicit retained Orka path below; plain Deploy stays create-only.
 
-The default stage transcript has four stage lines on stderr: Plan, Eval, Push and Lift,
+The default stage transcript has four stage lines on stderr: Plan, Eval, Push and Deploy,
 plus compact non-pass evaluation detail;
 failures may add a safe refusal or critical cleanup warning. Skipped stages keep
 their line. Counts are case runs (Tasks), also named `caseRuns` in JSON; a completed
 evaluation means each case's threshold was met, not that every run passed.
 `-v` shows diagnostic detail; `-o json` writes one
-structured result to stdout, including stage and partial outcomes. Plan names the
+structured result to stdout, including stage and partial outcomes. JSON stage
+and result keys/values keep their existing `lift` spelling; this is not a data
+migration. Legacy `kmx lift` also retains its stdout and stderr stage labels,
+apart from its one deprecation notice. Plan names the
 concrete targets and repository before one confirmation covering evaluation Tasks,
 candidate cleanup, publication and source-only promotion. Inputs may remain in
 runtime/model storage after cleanup; authored cases are published content.
@@ -457,12 +467,12 @@ claim; explicit digest `--plan` retains its GET-only eligibility review.
 Skips are exact-version checks, not optimistic retries. Cached proof must match
 the selected evaluation environment/runtime/inference. Evaluated root registry
 push also registers publication completion, so independently completed eval/push
-can be skipped by composed Lift. Older publications without a local completion
+can be skipped by composed Deploy. Older publications without a local completion
 record do not confer skip authority. A recorded publication is verified by
 immutable digest, not a tag. With `--require-provenance`, bounded registry reads
 and temporary local extraction also verify existing provenance; missing or
 unverifiable attachments refuse without republishing or repair.
-A recorded successful Lift is rechecked
+A recorded successful Deploy is rechecked
 GET-only against destination inputs, ownership markers, resource UIDs, whole specs
 and current readiness. Private completion records grant only skip authority, never
 Apply, adoption or replacement. Missing, drifted or uncertain destination completion
@@ -471,12 +481,14 @@ and completion observations stay in private KMX state, outside authored source.
 
 A failed or uncertain evaluation/cleanup stops publication and placement. A failed
 publication can already have transferred content; inspect its incomplete/unknown
-outcome rather than assuming nothing reached the registry. Partial Lift resources
+outcome rather than assuming nothing reached the registry. Partial Deploy resources
 may remain. No later stage runs as an automatic repair, retry or rollback.
 
-## Cluster-visible Lift provenance
+<a id="cluster-visible-lift-provenance"></a>
 
-Reference Lift, composed Lift and native Quickstart stamp **newly created** Orka
+## Cluster-visible Deploy provenance
+
+Reference Deploy, composed Deploy and native Quickstart stamp **newly created** Orka
 Provider/Agent and kagent ModelConfig/Agent objects with the same versioned JSON
 annotation, `kaimahi.dev/lift-record`. Existing exact Orka reuse and verified
 composed skips remain no-write: they never add, refresh or repair annotations.
@@ -490,7 +502,7 @@ The annotation contains only metadata:
 | `version`, `liftID` | Version 1; opaque 32-hex-character attempt ID. |
 | `suiteDigest`, `receiptDigest`, `receiptRunID` | Exact OCI suite digest and canonical consumed receipt digest/run—not the latest available pass. |
 | `evaluation`, `target` | Concrete context, cluster UID, namespace and namespace UID for source and destination. |
-| `evaluationName` | Optional frozen named evaluation alias, supplied by composed Lift; never inferred from context names. |
+| `evaluationName` | Optional frozen named evaluation alias, supplied by composed Deploy; never inferred from context names. |
 | `gate`, `evaluatedOnTarget` | Actual `same-subject` or `promotion` decision. Promotion is source-only evidence, **not evaluated on this target**; a requested `--promote` alone does not determine the gate. |
 | `attemptedAt` | UTC attempt time, not successful pair-completion time or Kubernetes creation time. |
 | `resourceSpecs` | Expected per-kind spec digests for readback comparison. |
@@ -499,13 +511,13 @@ The annotation contains only metadata:
 A same-subject receipt describes earlier execution in that environment, **not
 fresh evaluation of newly created objects**. Readiness is separate from evaluation.
 The annotations are visible to operators with object-read permission, including
-on another machine without local Lift history. They contain no receipt body,
+on another machine without local Deploy history. They contain no receipt body,
 prompts, answers, Secret values, binding bytes or local evidence paths. They are
 unsigned observations: copying them cannot prove original UID continuity, signer
 identity, ownership or permission to replay a placement. AgentSuite's portable
 format and KMX ownership/plan digests are unchanged.
 
-Before native admission or creates, Lift retains the canonical receipt and intent
+Before native admission or creates, Deploy retains the canonical receipt and intent
 in separate private state at `KMX_HOME/release-lifts/<liftID>/` (under the ordinary
 KMX state directory when `KMX_HOME` is unset). Immutable `intent.json`, per-create
 `1.json`/`2.json`, and a final checkpoint up to `3.json` retain acknowledged
@@ -531,21 +543,21 @@ A storage/metadata-retention error refuses further creates without retry, cleanu
 or rollback; resources already created may remain. Result JSON includes `liftID`
 and `provenanceState` (`recorded` or `unknown` on returned attempts). `recorded`
 means private observations were persisted, not that placement or evaluation passed.
-A cold composed Lift checks known storage constraints before evaluation/publication;
+A cold composed Deploy checks known storage constraints before evaluation/publication;
 late failures can still leave published content or acknowledged resources.
-`--plan`, all-reuse and already-lifted paths do not open this provenance store.
+`--plan`, all-reuse and already-deployed paths do not open this provenance store.
 [Root `status --to NAME`](destination-status.md) reads the destination namespace
 and these per-object annotations without private history, writes or repair. It
 preserves missing/unknown/foreign distinctions; `orka status` remains runtime-only.
 
 ## Release retention and operator recovery
 
-**Plain Lift remains create-only. Updates require explicit `--update` and the
+**Plain Deploy remains create-only. Updates require explicit `--update` and the
 retained Orka ownership proof described here.**
 New complete Orka Provider/Agent pair creates now require namespace-local
 ConfigMap `create`, and `get`/`patch` for the stable
 `kmx-release-<40-hex-character-key>` record. The key binds suite/member/runtime;
-the record binds cluster and namespace UIDs. Composed Lift checks availability,
+the record binds cluster and namespace UIDs. Composed Deploy checks availability,
 permissions and private capacity before evaluation/publication spend; actual
 conditional creation checks again. An unreadable API, denied permission, stale
 record or unavailable storage refuses—never infer absence or delete anything.
@@ -630,18 +642,18 @@ No draining, zero-downtime, in-flight-work or release-readiness claim is made.
 
 This is the **unreleased** retained Orka lifecycle, not functionality in v0.8.1.
 Arrange a quiet window before updating: no draining, zero-downtime or in-flight-work
-claim is made. Plain Lift never changes occupied resources. Kagent, old/mixed/reused
+claim is made. Plain Deploy never changes occupied resources. Kagent, old/mixed/reused
 placements and missing completion acknowledgments refuse; no enrollment or repair.
 
 ```bash
 # Review a desired workspace version without contacting the cluster.
-kmx lift --to prod --update --plan
+kmx deploy --to prod --update --plan
 # Compose missing evaluation/publication, then update the eligible retained pair.
-kmx lift --to prod --update
+kmx deploy --to prod --update
 # Or place an already-published passing version, including a previous version.
-kmx lift registry.example/team/agents@sha256:<passing-digest> --to prod \
+kmx deploy registry.example/team/agents@sha256:<passing-digest> --to prod \
   --evidence ../private/original-pass.json --promote --update --plan
-kmx lift registry.example/team/agents@sha256:<passing-digest> --to prod \
+kmx deploy registry.example/team/agents@sha256:<passing-digest> --to prod \
   --evidence ../private/original-pass.json --promote --update
 kmx status --to prod
 ```
@@ -664,7 +676,7 @@ a needed update after rollback. Update mode never rewrites those immutable
 completion observations or serializes opaque authority into them.
 
 An already-desired update verifies acknowledged full pair fingerprints, fresh
-prerequisites and current-generation Ready without writes, a new Lift ID or marker
+prerequisites and current-generation Ready without writes, a new Deploy ID or marker
 repair. Workspace no-op skips evaluation and publication as unnecessary; it does
 not claim fresh evaluation or verify/repair a different repository's publication.
 Only inference-Provider resourceVersion drift may be tolerated between revisions
@@ -767,7 +779,7 @@ A name is required; live create/previews/wizard are removed. Quickstart composes
 fixed source, full eval, exact publication, reviewed Apply and placement Verify
 before a separate fresh answer Task. Console selects authored native-Orka source,
 reviews instructions/model/all cases, selects a Ready openai Provider, obtains
-execution consent and reviews the exact retained Lift plan before Apply/Verify.
+execution consent and reviews the exact retained Deploy plan before Apply/Verify.
 Source fingerprint and complete API URI are rechecked. Console Ready means
 placement only. Partial/evaluation errors can leave resources without retry/cleanup.
 Author appropriate cases; scaffold arithmetic is not arbitrary-agent quality proof.
@@ -789,10 +801,10 @@ reads are bounded, and credential-shaped content is refused.
 Select a pinned, operator-owned built-in `chat` host explicitly. This path uses
 one fresh, non-fork Session and one never-retried Exec per declared case run, with
 exact `system_prompt` config sent every time. It loads no Kubernetes settings.
-No registry, authentication, Lift, chat/status or remote-host support is added.
+No registry, authentication, Deploy, chat/status or remote-host support is added.
 
 ```sh
-kmx eval --workspace ./sessions-workspace --development-host ./private/host.json \
+kmx test --workspace ./sessions-workspace --development-host ./private/host.json \
   --out ./private/passing.json --case-timeout 30s
 kmx push --workspace ./sessions-workspace --evaluation ./private/passing.json \
   --to-layout ./sessions-layout greeter:v1
@@ -860,7 +872,7 @@ observations, fresh Session/execution IDs and verified journal heads. Prompts,
 answers, config bytes, endpoint locators and journal bodies are excluded. Push
 consumes that explicit proof for exact S; evidence is not embedded in the suite
 or published as a referrer. Orka/kagent evidence cannot authorize this member,
-and Sessions evidence is refused by Lift and receipt diff. Read-only Replay can
+and Sessions evidence is refused by Deploy and receipt diff. Read-only Replay can
 support diagnosis with zero model calls but cannot become fresh candidate proof.
 
 The pinned daemon path has been demonstrated once with an instruction-sensitive,
@@ -881,15 +893,15 @@ member images remain `[]`.
 
 ```sh
 mkdir -m 700 ../private-evidence
-kmx eval --to-context kind-demo --inference provider:inference \
+kmx test --to-context kind-demo --inference provider:inference \
   --out ../private-evidence/passing.json
 kmx push --evaluation ../private-evidence/passing.json ghcr.io/me/my-agents:v1
 ```
 
-Root `eval` discovers the nearest workspace, or selects an exact root without
+Root `test` discovers the nearest workspace, or selects an exact root without
 fallback using `--workspace DIR`. It accepts no positional package reference.
 A destination context (explicit `--to-context`, named `--to`, or saved `evalTarget`)
-is required. Root eval stores completed passing metadata privately under KMX
+is required. Root test stores completed passing metadata privately under KMX
 state; `--out` optionally also writes a new standalone receipt. Orka requires
 `--inference provider:NAME`, directly or
 through the named destination;
@@ -945,9 +957,9 @@ summaries distinguish returned TaskUIDs from completed assertions: for example,
 `1 of 3 runs executed; 0 passed; aborted on execution error; 2 not executed`,
 followed by the cleanup outcome. `total` remains planned, `executed` counts
 nonempty TaskUIDs, `notExecuted` is the remainder, and `aborted` identifies an
-execution error rather than a threshold miss. Root eval JSON includes these
+execution error rather than a threshold miss. Root test JSON includes these
 counts plus `passed`, `total`, `status`, `detail`, `cleanup` and a fixed safe
-`error` on failure. Composed Lift adds the execution fields to its existing
+`error` on failure. Composed Deploy adds the execution fields to its existing
 `eval` stage; GET-only cached skips omit them rather than claiming fresh Tasks.
 A fully executed threshold miss retains `N/total runs passed`; an assertion fail
 followed by two passes completes a three-run, two-pass policy as `2/3`.
@@ -995,7 +1007,7 @@ attribution is checked again after judging; late drift/deadline
 prevents a case pass and export. Failure summaries include assertion IDs/types and
 both judge scores versus the threshold; unavailable or split outcomes have safe
 classes. Only `--show-content` prints sanitized bounded rationale and answer
-excerpts on stderr, including in composed Lift. `lift --verbose` alone does not
+excerpts on stderr, including in composed Deploy. `deploy --verbose` alone does not
 opt into content. The storage-only policy wording clarification leaves the
 historical v2 evidence fingerprint, scoring rules and existing receipts unchanged.
 Choose a judge model strong enough for the rubric: two agreeing scores do not
@@ -1022,7 +1034,7 @@ both scores and a configuration hash binding the canonical endpoint. Raw judge
 URLs are omitted from receipts and refusal recovery commands; supply the endpoint
 again when retrying. This is user-declared identity, not provider attestation.
 Changed authored identity invalidates exact-suite evidence; changed endpoint-bound
-identity makes receipt comparisons incompatible. Offline push/lift do not select
+identity makes receipt comparisons incompatible. Offline push/deploy do not select
 or contact a current judge endpoint. Text-only receipt encoding stays unchanged;
 upgrade receipt readers before exchanging judge receipts. AgentSessions
 `--development-host` uses this same explicit judge transport and per-run deadline. The assertion fields are unchanged
@@ -1050,7 +1062,7 @@ comes only from the packaged member. Explicit `--to-namespace` must agree with
 bindings; `--result-port` refuses. For example:
 
 ```sh
-kmx eval --workspace ./kagent-workspace --to-context kind-demo \
+kmx test --workspace ./kagent-workspace --to-context kind-demo \
   --bindings ./private/kagent-bindings.yaml --out ../private-evidence/kagent-pass.json
 ```
 
@@ -1067,17 +1079,19 @@ For Orka, the temporary result session uses the selected ServiceAccount's **full
 authority**. Discarding its bearer is not revocation; Task-read enforcement is
 unverified for v0.2.0. One pinned loopback connection is opened per run, without
 reconnect. Default summaries omit prompts, answers, assertion operands and
-reasoning. `eval --show-content` and executing workspace `lift --show-content`
+reasoning. `test --show-content` and executing workspace `deploy --show-content`
 opt into expected values/patterns, short judge rationale and answer excerpts on
 stderr. Orka outcome JSON stays one payload-free document with non-pass metadata.
-The flag is refused for deploy-only or plan-only Lift. Prompts are never printed
-by these diagnostics, and receipts still contain no content or references to it.
+The flag is refused for deploy-only or plan-only Deploy. Request inputs/rubrics are
+not copied into diagnostic fields, although answers can quote user text.
+Receipts still contain no content or references to diagnostics.
 Runtime/model storage and Kubernetes audit policy may retain inputs and answers.
 Published suites themselves contain authored inputs.
 
-Failure content is diagnostic-only and currently transient: no retained failure
-store, offline explain, signing or export path is implemented. Each answer is
-bounded to 64 KiB in memory; rationale is bounded to 512 UTF-8 bytes per sample,
+Failure content is diagnostic-only, never evidence, signed data or a portable
+export. Non-pass runs are retained locally under
+`KMX_HOME/eval-failures/<canonical-workspace-root-hash>/`, separately from passing
+proof and candidate state. Each answer is bounded to 64 KiB; rationale is bounded to 512 UTF-8 bytes per sample,
 expected values to 512 bytes, and displayed excerpts to 512 bytes per assertion
 and 2 KiB total per run. Forbidden-text failures show an excerpt around the match;
 a missing positive match or judge failure shows a labeled leading excerpt, not
@@ -1085,9 +1099,65 @@ an invented failure span. Failed individual runs are reported even if their grou
 later meets minPasses. Unknown outcomes with unverified attribution expose no
 answer or rationale.
 
+### Inspect or clear local evaluation failures
+
+```bash
+kmx test explain --workspace ./workspace
+kmx test explain f-<32-hex-digits> --workspace ./workspace
+kmx test explain f-<32-hex-digits> --workspace ./workspace --show-content
+kmx test explain f-<32-hex-digits> --workspace ./workspace --clear
+kmx test explain --workspace ./workspace --clear
+```
+
+Saved runs print an opaque `f-` diagnostic ID. Inspection is offline: it reads the
+workspace descriptor and local records, not members/cases, operational config,
+Kubernetes, a registry or a model. Without `--workspace`, discover the nearest
+workspace. Without an ID, list records; with an ID, show that record's assertions
+and provenance. `--show-content` explicitly adds the same bounded excerpts,
+expected values and rationale as live diagnostics, on stdout. Empty or withheld
+rationale is identified rather than presented as an empty explanation.
+
+Keep the last **10 individual non-pass runs per workspace across suite revisions**,
+including failures in groups that later meet minPasses. Each record retains its
+suite digest, runtime/member, operation, case/run and completion/attribution
+metadata. The maximum is **128 KiB of serialized JSON per record** (1.25 MiB of
+visible records per partition), plus one bounded staging file during a write.
+Overflow deterministically removes the answer, then trailing excerpts, then
+trailing rationale/operands, then trailing assertion entries, with explicit
+truncation and omitted-assertion metadata. This is not a global limit across
+unlimited distinct workspaces.
+
+Managed directories are created 0700; files and the persistent nonblocking OS lock
+are 0600 and owned by the current user. Insecure existing state, symlinks, hard
+links, special files and corrupt/oversized records refuse rather than being
+repaired or chmodded. A bounded owner-only `.pending` staging file is never read
+or displayed and does not hide healthy completed records. It blocks new saves
+without evicting history until explicit whole-workspace `--clear` removes it.
+Other corrupt or unsafe state still refuses.
+
+Retention is best effort and happens before diagnostic output, including on
+aborts. At capacity the oldest record is removed before staging the replacement,
+so a subsequent write failure can leave nine completed records; the hard space
+bound takes priority. A fixed warning reports unavailable or unconfirmed retention
+without changing the evaluation outcome or causing another send. If an error
+occurs after publication, the observable ID is still reported, but durability
+remains unconfirmed (`retentionUnavailable: true`); that flag does not prove the
+record is absent. Diagnostic output errors still stop subsequent effects.
+
+`--clear` with an ID removes only that validated record. Clearing all requires
+an explicitly supplied `--workspace`; it also removes a validated owner-only
+staging file, but never reaches another workspace, passing proof or candidate
+state. The completion message counts removed diagnostic files, including staging. `--clear` and `--show-content` are mutually
+exclusive. Clearing is ordinary local file deletion, not secure erasure of disk
+snapshots, backups or upstream runtime/model history. The private lock and empty
+directories may remain. These unsigned diagnostics cannot authorize publication
+or Deploy, and receipts contain no diagnostic references.
+
 Before truncation, diagnostics check full raw and terminal-normalized content for
 known credential shapes and the configured judge key. Credential-shaped,
-header-like and invalid-UTF-8 fields are withheld, not partially redacted.
+header-like and invalid-UTF-8 fields are withheld, not partially redacted. Clipped
+fields are checked again so a newly formed boundary cannot introduce a credential
+shape; an unsafe clipped field is withheld without dropping the whole record.
 Conservative header checks can withhold consecutive Markdown labels, bare URL
 lines, times and other colon-delimited text that also parses as header fields.
 Clean checks do not prove arbitrary secrets or personal data are absent; only opt
@@ -1117,10 +1187,10 @@ payloads or execution history. Runtime/model/audit retention may outlive cleanup
 ### Inspect and clean candidate leftovers
 
 ```sh
-kmx eval cleanup --to dev
-kmx eval cleanup <full-run-id> --to dev
+kmx test cleanup --to dev
+kmx test cleanup <full-run-id> --to dev
 # Explicit access also works without the original workspace or inference:
-kmx eval cleanup <full-run-id> --to-context kind-demo --to-namespace orka-system
+kmx test cleanup <full-run-id> --to-context kind-demo --to-namespace orka-system
 ```
 
 Without a run ID this is read-only: no prompt, deletion or passing receipt. A full
@@ -1145,7 +1215,7 @@ one 90-second budget. Large namespaces, unreadable pages or stuck finalizers
 fail closed; these limits are not proof that a selected run has no leftovers.
 Prefer a dedicated evaluation namespace. If a limit prevents recovery, have the
 cluster owner inspect retained resources and reduce unrelated inventory through
-their own verified-ownership process, then rerun read-only `kmx eval cleanup`.
+their own verified-ownership process, then rerun read-only `kmx test cleanup`.
 Missing anchors instead require independent operator-reviewed, UID-specific
 inspection/cleanup; do not infer ownership from labels, prefixes or age, or use
 a namespace-wide delete to work around a refusal. KMX never authorizes shared
@@ -1158,14 +1228,14 @@ allowed; a changed case/model/instruction artifact is refused. Unsigned receipts
 are observations, not authentication, policy gates or release authorization.
 Root push requires matching completed evidence by default; `--unevaluated`
 explicitly opts out. Extracted-directory `suite push` does not gain the
-`--evaluation` flag. `eval diff` reads strict passing suite receipts and
+`--evaluation` flag. `test diff` reads strict passing suite receipts and
 compares only compatible same-runtime subjects/case inventories; Orka/kagent
 comparison refuses as incompatible, never as equivalent behavior. Comparison
 also requires identical observed ownership. Fresh Orka candidate runs and separate
 kagent CLI runs have different identities, so their receipts are incompatible
-rather than a cross-run behavior comparison. Root Lift dispatches only matching runtime evidence;
+rather than a cross-run behavior comparison. Root Deploy dispatches only matching runtime evidence;
 cross-runtime evidence refuses. Old Orka/kagent/AgentSessions bundle receipts are
-unreadable. `eval from-sessions` remains private reference extraction/export only,
+unreadable. `test from-sessions` remains private reference extraction/export only,
 with no native manifest consumer. RecordedExecution/legacy replay/judges are removed.
 
 ### Qualification boundary
@@ -1176,7 +1246,7 @@ checks historical API identity/spec/input/terminal metadata, actual UID/RV delet
 preconditions and independent root/child absence after candidate evaluation.
 Source answers, assertion verdicts and judge scores are product-observed after
 cleanup, not independently re-fetched from deleted Tasks. Exact S transfers through
-a local layout and pinned registry; source-withheld Lift requires explicit
+a local layout and pinned registry; source-withheld Deploy requires explicit
 `--promote`, GET-only planning and an absent canonical destination. Fresh destination
 answers and no-effect refusal audits remain independent checks.
 
@@ -1190,7 +1260,7 @@ The same shard also prepares a second exclusively owned kind cluster with the
 same pinned Orka in `orka-system`. It shares the real AIKit model through a
 fixture-only NodePort on the private kind network, without a host port mapping;
 the destination has its own inference Provider and Secret. With source withheld,
-registry `lift --promote --plan` must be GET-only and apply must complete both
+registry `deploy --promote --plan` must be GET-only and apply must complete both
 server preflights before beginning creation of an absent Provider/Agent pair.
 Independent destination identity/spec/marker readbacks and one fresh Task with
 authored answer assertions qualify creation and execution. A separate Ready
@@ -1203,18 +1273,18 @@ or timeout increase is required. Partial CLI outcomes are not established by
 this fixed scenario.
 
 The dedicated kagent shard separately qualifies packaged evaluation and
-source-free digest Lift into a fresh prepared namespace, including GET-only
+source-free digest Deploy into a fresh prepared namespace, including GET-only
 planning, ordered creation and occupied repeat refusal without another native
 execution. Standalone package evaluation remains unavailable.
 
 ## Export portable evaluation evidence
 
 ```sh
-kmx eval --to dev
-kmx eval export --workspace ./workspace --member greeter --out ../evidence.json
+kmx test --to dev
+kmx test export --workspace ./workspace --member greeter --out ../evidence.json
 ```
 
-`eval export` is offline. It prepares the exact selected workspace snapshot,
+`test export` is offline. It prepares the exact selected workspace snapshot,
 requires its sole member to match `--member`, selects the latest completed
 managed record for that workspace and OCI manifest digest, and verifies the
 public projection with [suite v0.3.1's verifier](https://github.com/agent-primitives/suite/blob/v0.3.1/spec.md#824-portable-evaluation-evidence)
@@ -1291,7 +1361,7 @@ Consumers supply an independently resolved expected subject/policy to
 `evaluation: not verified` on refusal; a CI consumer should fail closed. This
 checks unsigned consistency, not who ran the evaluation, whether observations
 are true, model attestation, trusted time or deployment readiness. It does not
-replace private `--evaluation`/`--evidence` push/Lift gates. The offline CLI
+replace private `--evaluation`/`--evidence` push/Deploy gates. The offline CLI
 consumer is described below; signatures and registry-referrer transport are not
 implemented. Offline fixture tests are not live execution qualification.
 
@@ -1312,7 +1382,7 @@ setup, run the gate without network access or KMX configuration/state:
 
 ```sh
 set -eu
-kmx eval verify --suite ./verification/suite-layout \
+kmx test verify --suite ./verification/suite-layout \
   --evidence ./verification/evidence.json \
   --expect ./verification/expected.json -o json
 ```
@@ -1321,7 +1391,7 @@ The digest form pins the same local artifact explicitly. It **still needs the
 bytes**; it never fetches them or searches a private preparation cache:
 
 ```sh
-kmx eval verify --suite sha256:<reviewed-manifest-digest> \
+kmx test verify --suite sha256:<reviewed-manifest-digest> \
   --from-layout ./verification/suite-layout \
   --evidence ./verification/evidence.json \
   --expect ./verification/expected.json
@@ -1398,12 +1468,12 @@ failure never becomes a successful gate.
 
 This checks **unsigned consistency**, not who ran the evaluation, whether the
 observations are true, model/binary attestation, trusted time or deployment
-readiness. It does not authorize private evaluated push or Lift.
+readiness. It does not authorize private evaluated push or Deploy.
 
 ## Publish
 
 ```sh
-kmx eval                             # saved evalTarget, no --out needed
+kmx test                             # saved evalTarget, no --out needed
 kmx push ghcr.io/me/my-agents:v1       # supplied tag stays v1
 kmx push                             # saved publishRepository:s-<full-S-hex>
 ```
@@ -1422,6 +1492,54 @@ it requires `publishRepository` in workspace `kmx.yaml`. A local `--to-layout`
 target still needs an explicit reference. TLS, exact-host HTTP opt-in, credential
 and provenance defaults remain unchanged.
 
+### Portable directory modes and preparation-cache upgrade
+
+Loose-directory packaging follows AgentSuite v0.6.0: regular files default to
+non-executable `0644`, directories to `0755`, and supported symlinks to `0777`.
+ToolProvider payload inventories supply their exact declared modes, including
+executable, zero and directory/link modes; conflicting declarations refuse.
+Host execute bits do not select archive modes. Host access/security checks still
+apply independently. Git executable-mode checks for source provenance are not
+portable content metadata and remain separate.
+
+Existing OCI artifacts are different: their stored tar modes and exact manifest
+identity S remain authoritative. Transfer or verify the original OCI layout or
+registry artifact to retain that identity. Repacking a loose extraction can
+produce a different layer and S even when file bytes and the public graph match.
+Do not relabel old artifacts, edit receipts, or use graph equality instead of S.
+Recompute saved loose-directory diff/content identities with the selected reader.
+Changing an authored inventory also requires rebinding its variant, provider,
+composition/dependency pins and ancestor descriptors as applicable.
+
+Preparation entries carry a packing-policy marker. An entry without the current
+marker refuses before cache reuse, evaluation, publication or composed Lift,
+with a `packaging policy` remedy. This includes older entries with identical file
+bytes: byte equality alone does not establish the tar-mode policy. No entry,
+receipt or deployed resource is automatically repaired or removed.
+
+To recover, stop operations using that workspace and **move aside only the
+identified prepared-cache entry**, then rerun the command. Ordinary preparation
+errors name that entry under `KMX_HOME/suites/<source-fingerprint-hex>/` (or the
+platform KMX state location). Public evidence export and eval use payload-free
+errors; retry the workspace's ordinary preparation through `kmx push` to identify
+the entry if needed—the old entry refuses before transfer. Keep
+`KMX_HOME/passing/` and standalone receipts; do not clear all KMX state or add the
+marker to an old entry by hand. Avoid sharing preparation entries between kmx
+versions: an older binary refuses the new record with an `unknown field
+packaging` error. For downgrade or mixed-version use, keep version-specific KMX
+state or move aside only the selected entry with operations stopped; do not
+delete passing evidence.
+
+Normal generated native packages already used non-executable regular files, so
+this cache-format upgrade preserves their artifact S and authored fingerprint.
+Repreparation with the same S retains eligible exact-S managed, explicit and
+public proof. If S changes, previous proof cannot qualify the new artifact:
+rerun `kmx test` before evaluated `kmx push`, and obtain fresh approval/signing
+where required. An explicit mismatched `--evaluation` refuses without falling
+back; managed lookup considers only the new exact-S partition. Source-free digest
+Lift still consumes the original artifact and its matching receipt, without
+repreparing a workspace. This packaging change does not enable native Windows.
+
 ### Managed passing proof
 
 Managed state is outside workspace/preparation cache, under
@@ -1430,7 +1548,7 @@ location without `KMX_HOME`). Directories are 0700, records immutable 0600, boun
 closed and symlink-refusing. Each completion record embeds the existing canonical
 private receipt; no prompts, answers, credentials or binding bytes are added.
 Existing explicit receipt formats are unchanged and are not automatically imported.
-Use `--out` when a standalone file is needed for digest Lift or offline receipt diff;
+Use `--out` when a standalone file is needed for digest Deploy or offline receipt diff;
 managed completion records are not standalone `--evidence`/`--evaluation` files.
 
 A record is committed only after successful full evaluation, Orka candidate cleanup,
@@ -1447,7 +1565,7 @@ before eval effects. A full partition still supports push from existing proof;
 select a different private `KMX_HOME` for new evaluation registrations. No automatic
 evidence deletion, cleanup sweep, journal or durable cleanup blockade is added.
 
-One OS-held per-workspace lock excludes concurrent root eval/push; process exit
+One OS-held per-workspace lock excludes concurrent root test/push; process exit
 releases it without deleting its stable lock file. All root push modes, including
 --evaluation and --unevaluated, require safe symlink-free, lockable KMX state;
 --unevaluated opts out of proof, not exclusion or private-state validation. Never delete that file to bypass
@@ -1515,7 +1633,7 @@ and refuses public features KMX cannot execute (`critical: false`, extension
 assertion types, more than 100 runs) instead of ignoring them, and names that
 reason in its error. Suites packaged
 by v0.6.0 no longer validate; receipts recorded against them refuse with a
-remedy to rerun `kmx eval` and `kmx push`. There is no migration reader.
+remedy to rerun `kmx test` and `kmx push`. There is no migration reader.
 
 `native-orka.json` records the member, renderer version and required images.
 The alternative kagent declaration is
@@ -1586,7 +1704,7 @@ Internally, verified packaged native inputs can be loaded without consulting liv
 source or the preparation record, and publication can require an expected OCI
 manifest digest. This identity check alone is not evaluation evidence or release
 authorization. Workspace evaluation adds passing observations through the CLI;
-root digest lift consumes that explicit private file before deployment.
+root digest Deploy consumes that explicit private file before deployment.
 
 ### Sign the published suite digest in CI
 
@@ -1668,18 +1786,20 @@ signatures or signer policy**, and KMX has no signing flag. Evaluation/promotion
 policy is tracked in [#350](https://github.com/kaimahi-agents/kaimahi/issues/350);
 pre-Lift signature/attestation checks in [#374](https://github.com/kaimahi-agents/kaimahi/issues/374).
 
-## Digest lift
+<a id="digest-lift"></a>
+
+## Digest deploy
 
 ```sh
-kmx lift registry.example/suite@sha256:<digest> --to-context prod \
+kmx deploy registry.example/suite@sha256:<digest> --to-context prod \
   --inference provider:inference --evidence ../private/passing.json --promote --plan
-kmx lift suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
+kmx deploy suite@sha256:<digest> --from-layout ./oci --to-context kind-demo \
   --inference provider:inference --evidence ../private/passing.json --promote -o json
 ```
 
 Use a complete SHA256 digest, not a mutable tag. Destination runtime must already
 be installed. `--to NAME` may supply the destination selectors from the workspace;
-without it, explicit-reference Lift does not inspect workspace configuration. Orka uses `--inference provider:NAME`; packaged kagent instead uses
+without it, explicit-reference Deploy does not inspect workspace configuration. Orka uses `--inference provider:NAME`; packaged kagent instead uses
 an author-owned `--bindings FILE`. The selectors are mutually exclusive and the
 verified packaged runtime must match the evidence. Kagent derives its namespace
 from the bindings; an explicit `--to-namespace` must agree. The bindings' parent,
@@ -1721,8 +1841,10 @@ Apply consumes that opaque review and its digest once, refreshes artifact/eviden
 and destination observations, runs the normal target guard, then preflights both
 absent creates before the first persistent write. Orka Provider reaches current
 Ready, or kagent ModelConfig current-generation Accepted, before Agent creation.
-Kagent Agent must also be Ready. Only conditional CREATE or Orka exact receipt-bound reuse is
-allowed: no update, adoption, marker repair, execution retry, rollback or cleanup.
+Kagent Agent must also be Ready. Without `--update`, only conditional CREATE or
+Orka exact receipt-bound reuse is allowed: no update, adoption, marker repair,
+execution retry, rollback or cleanup. Explicit eligible retained Orka updates and
+rollback use the separate [update contract](#update-and-rollback); kagent refuses.
 Owned status-only resource-version churn is tolerated; selected inference Provider
 and Secret versions remain exact. Before each write and after each Ready wait,
 the pair and prerequisites are rechecked, including before each server dry-run.
@@ -1747,26 +1869,28 @@ acknowledged creation can be `created` with a UID but `ready: false` if the wait
 fails/cancels. Partial results exit nonzero and resources may remain. Ambiguous
 CREATE returns unknown, without a recovery read, resend or invented UID.
 Created/recreated UIDs require a fresh full evaluation before later receipt-bound
-lift reuse. Readiness does not prove a fresh answer or destination evaluation.
+deploy reuse. Readiness does not prove a fresh answer or destination evaluation.
 Opaque in-process success results support read-only invocation revalidation via
 `VerifyReleaseLiftPlacement`; serialized JSON does not confer placement authority.
 
 Unsigned private receipts establish supplied observations, not signer
 authentication or authenticated deployment approval. General promotion policy/
 signing remains separate. Orka uses native `openai` Providers; kagent uses explicit
-OpenAI ModelConfig bindings. Host Foundry/Copilot execution and image lift are not
+OpenAI ModelConfig bindings. Host Foundry/Copilot execution and image deployment are not
 covered. Legacy bundle lift is removed. Hermetic tests alone do not establish
-real cluster lift qualification.
+real cluster deployment qualification.
 
-### Kagent digest lift
+<a id="kagent-digest-lift"></a>
+
+### Kagent digest deploy
 
 ```sh
-kmx lift suite@sha256:<digest> --from-layout ./oci --to-context prod \
+kmx deploy suite@sha256:<digest> --from-layout ./oci --to-context prod \
   --bindings ./prod-bindings.yaml --evidence ../private/kagent-passing.json --promote --plan
 ```
 
 The supported profile is exact v0.10.3 Go/linux-amd64, tool-free and OpenAI-compatible,
-with no member images. Lift uses the same `PrepareReleaseLift`, `ApplyReleaseLift`
+with no member images. Deploy uses the same `PrepareReleaseLift`, `ApplyReleaseLift`
 and `VerifyReleaseLiftPlacement` seam as Orka, not the legacy bundle engine. It
 creates only ModelConfig and Agent; namespace, runtime and referenced Secret/key
 are operator prerequisites. It sends no A2A Tasks, model calls or tool calls.
@@ -1791,7 +1915,7 @@ policy remain unavailable; evidence never crosses runtimes.
 
 The existing pinned kind shard configures create, three-case evaluation (two text
 cases and an open-ended rubric case), exact local
-publication, source-free GET-only lift planning, explicit new-target promotion and
+publication, source-free GET-only deploy planning, explicit new-target promotion and
 occupied repeat refusal, with zero additional native execution traffic.
 
 Preparation state is outside authored source, under the KMX state directory

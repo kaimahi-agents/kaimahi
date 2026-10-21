@@ -17,8 +17,8 @@ kmx <noun> <verb> [object] [flags]
 ```
 
 - **Everyday workflows use root verbs:** `create`, `chat`, `run` and workspace
-  `push` and full-workspace `eval`. Root `eval` also retains helpers (`diff`,
-  `export`, `verify`, `from-sessions`, `cleanup`); root digest `lift` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
+  `push` and full-workspace `test`. Root `test` also retains helpers (`diff`,
+  `explain`, `export`, `verify`, `from-sessions`, `cleanup`); root digest `deploy` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
   `suite build/diff/push/pull/validate` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
@@ -48,24 +48,31 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
 | `run` | Execute once on a live Orka Agent, including a suite-owned Agent; not workspace-local execution or suite evaluation. | `kmx run --agent NAME` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
-| `eval` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx eval --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
-| `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx eval export --member greeter --out ../evidence.json` |
-| `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx eval verify --suite ./layout --evidence evidence.json --expect expected.json` |
-| `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx eval cleanup [run-id] --to dev` |
+| `test` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx test --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
+| `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx test export --member greeter --out ../evidence.json` |
+| `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace selection. | `kmx test explain [failure-id] [--workspace DIR] [--show-content\|--clear]` |
+| `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx test verify --suite ./layout --evidence evidence.json --expect expected.json` |
+| `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx test cleanup [run-id] --to dev` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `policy` | Resolve portable suite restrictions offline without granting authority or selecting an enforcement provider. | `kmx suite policy POLICY.json [--administrative-policy ADMIN.json]` |
-| `lift` | Lift an evaluated suite; no-reference workspace mode composes missing Orka eval/push/Lift. | `kmx lift --to NAME`; deploy-only: `kmx lift <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |
+| `deploy` | Deploy an evaluated suite; no-reference workspace mode composes missing Orka eval/push/Deploy. | `kmx deploy --to NAME`; deploy-only: `kmx deploy <ref>@<digest> --to-context <ctx> --evidence FILE` plus Orka `--inference` or kagent `--bindings` |
 | `result` | Retrieve the outcome of an existing execution. | `kmx task result <task>` |
 
 Keep these distinctions:
 
-- **Lift, not deploy.** The local-to-remote story is Create, Prove, Lift.
-  "Deployment" may describe the resources lift produces, but it is not a
-  command verb.
+- **Run / Test / Publish** is the developer vocabulary. Run is existing live
+  Orka invocation, Test is full-workspace `test`, and Publish is registry `push`.
+  Deploy remains real-target placement. `test` and `deploy` are unreleased;
+  v0.8.1 uses `eval` and `lift` with the same arguments. Keep both hidden
+  deprecated routes for at least one released version, preserving stdout,
+  arguments, flags, exit codes and state, with one stderr notice per legacy
+  invocation. See [Test compatibility](kmx.md#test-compatibility-unreleased) and
+  [Deploy compatibility](kmx.md#deploy-compatibility-unreleased). Data directory
+  names, fields, schemas, APIs and machine JSON are not renamed.
 - **Workload management is not `down`.** Destination status is read-only inspection;
   retirement remains unavailable. Environment teardown grants no workload-specific replacement contract.
 - **`result` is not retry.** Reading a result never resubmits work.
-- **`validate` is offline.** Root Lift `--plan` performs GET-only target checks, not admission.
+- **`validate` is offline.** Root Deploy `--plan` performs GET-only target checks, not admission.
 - **`show` is the only verb for detail.** Do not add `get`, `describe` or
   `info`.
 
@@ -82,7 +89,7 @@ Keep these distinctions:
 |---|---|
 | `--context` | Kubernetes context for this invocation. Global, accepted anywhere on the line. |
 | `--namespace` | Kubernetes namespace the command reads or writes. |
-| `--to` | Named destination from workspace `kmx.yaml` for eval, Lift or destination status. Never switches a saved/current context. |
+| `--to` | Named destination from workspace `kmx.yaml` for eval, Deploy or destination status. Never switches a saved/current context. |
 | `-o`, `--output` | Report format: `table` or `text`, `json`, `yaml`. Machine formats print exactly one document. |
 | `-i`, `--interactive` | Switch a command that has a scripted mode to its guided terminal mode. Not used on commands that are only interactive. |
 | `--out` | Path for written artifacts. Never reuse `--output` for a path. |
@@ -92,7 +99,7 @@ Keep these distinctions:
 | `--runtime-profile` | Exact public runtime profile ID for offline v3 workspace push or suite build planning, never an execution override. Profiled push requires --unevaluated; AgentKit refuses profiled builds. |
 | `--platform` | Exact OS/ARCH for offline profile/build selection; v3 push may infer it only for one candidate in the explicitly selected profile. Legacy workspace push rejects it. |
 | `--plan` | Read the target and print what would change. No writes. |
-| `--show-content` | Opt into sanitized bounded failure excerpts, expected values and judge rationale on stderr for eval or executing workspace Lift; not evidence, and never implied by --verbose. |
+| `--show-content` | Opt into sanitized bounded failure excerpts, expected values and rationale: stderr for test/executing workspace Deploy, stdout for offline test explain. Not evidence; never implied by --verbose; conflicts with explain --clear. |
 | `--no-apply` | Where supported by runtime setup, render without cluster writes; removed from workspace create. |
 | `--dry-run` | Where supported by runtime setup, check server admission without persistent writes; removed from workspace create. |
 | `--step` | Run one named phase of a multi-phase workflow. |
@@ -155,8 +162,8 @@ Keep these distinctions:
 - **A TUI requires a terminal.** Without one, refuse and name the
   non-interactive command, or provide one.
 - **Slash commands use the CLI vocabulary.** Prefer `/<noun> <verb>` where the
-  scope matches a CLI command. Retired `/lift` and console Lift only print
-  `Lift moved: kmx lift <ref>@<digest> --to-context … --evidence …`;
+  scope matches a CLI command. Retired `/lift` and console Deploy only print
+  `Deploy moved: kmx deploy <ref>@<digest> --to-context … --evidence …`;
   do not open a new release GUI or copy source-less live Agents.
 - **Modes are arguments, not separate commands.** On the CLI, use
   `kmx quickstart --interactive`, not a separate `quickstart-wizard`. In
@@ -179,6 +186,17 @@ Keep these distinctions:
 4. **After removal,** a hidden stub may remain that refuses and names the
    replacement.
 
+The `lift` → `deploy` transition must keep `lift` hidden but callable for at
+least one released version. Each legacy invocation adds exactly one stderr line:
+`kmx lift is deprecated; use kmx deploy (same arguments).` Keep legacy stdout,
+stderr stage labels, arguments, flags and exit codes unchanged. Canonical human
+help/output says Deploy; machine JSON keys/values (including `targets` operation
+`"lift"`), public Go/API/internal identifiers, evidence, storage and annotations
+remain unchanged. Help/completion stays inert. Preserve old guide fragments and
+historical release/design records. This transition requires a later announced
+breaking release for removal; the optional immediate-removal policy below does
+not apply. See [Deploy compatibility](kmx.md#deploy-compatibility-unreleased).
+
 While KMX has no external users, a rename may retire the old name in the
 same change instead of keeping it callable: remove the alias outright, leave
 an explicitly chosen hidden stub that refuses before loading configuration and
@@ -190,7 +208,8 @@ context-selection alias is also removed; use `context show/use` for access
 selection. New `ctx [--check]` has list-only named-destination semantics: no
 positional name, current/default marker, switching or persisted selection.
 `targets` remains the runtime-capability view, not this destination list.
-Root `lift <ref>@<digest>` now means deploy-only suite lift, not infrastructure setup.
+Root `deploy <ref>@<digest>` is packaged-suite deployment, not infrastructure setup.
+The deprecated packaged-suite `lift` route is distinct from those removed AKS aliases.
 User `agent.yaml` readers/writers/receipts, `bundle` commands, `create --live`
 including previews/wizard, run bundle mode and `--bundles` flags are removed
 outright. Old receipts are unreadable; no migration or file/resource deletion.
