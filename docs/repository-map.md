@@ -327,6 +327,25 @@ recorded in `brand/README.md`; the root README embeds the compact `ketu.svg` mar
 and intentionally has no hero image.
 `scripts/check-brand-assets.py` checks their dimensions/transparency/metadata.
 
+## `plugins/` — Copilot plugin development package
+
+`plugins/copilot/` contains Agent Plugins 1.0 manifest/MCP templates, one
+chat skill, the offline Python developer packager and native fake-process
+contract tests. The packager binds one explicitly selected root before fixture
+installation and copies only caller-pinned engine bytes; it never executes or
+downloads an engine. Source templates contain no executable and are not an
+installable release. Generated bundles include no Python runtime.
+
+`plugins/copilot/testdata/fake-kmx/main.go` is test-only protocol/result
+scaffolding, not an MCP server implementation or a runner. The tests consume the
+proposed file-preview v1 result shape; real tool schemas, root binding and
+installed-host parity still need engine integration. Both the hygiene job and
+`.github/workflows/copilot-plugin.yml` run the package tests; the latter executes
+natively on Linux, macOS and Windows. See
+[the package guide](../plugins/copilot/README.md) for the verification boundary,
+macOS/Windows trust gates and deferred file-scoped Explain. No Copilot host
+installation, signed release or model execution is implied by these fixtures.
+
 ## `.github/` and the root files
 
 | Path | Class | Evidence |
@@ -342,6 +361,7 @@ and intentionally has no hero image.
 | `embed_test.go` | **Scaffolding** | Verifies every embedded asset is readable. |
 | `Makefile` | **Scaffolding** | Native build/check targets, documentation preview/build targets, context guard and AKS-credential helper. |
 | `.github/workflows/ci.yml`, `release.yml`, `docs-pages.yml` | **Scaffolding** | Hygiene builds the credential-free Markdown documentation site; the main-only Pages workflow publishes it with job-scoped GitHub OIDC and no repository secret. The native four-shard fail-closed required aggregator and unchanged 315s quickstart ceiling remain kagent Deploy, Orka runtime, stock Orka Helm and quickstart. Raw upstream Task/Tool/model-answer fixtures are separate from packaged native eval/push/source-withheld digest Deploy and bounded Orka absent-pair registry promotion with source-only evidence. The same native qualifier independently evaluates/publishes v2 and exercises public update/original-evidence rollback/forward and RV-churn no-op with strict scoped JSONpatch/CAS audit; offline harness checks do not establish live qualification. Clone-free authors an exact-answer assertion, evaluates, checks cleanup/Task absence, publishes and explicitly promotes; no deleted-Task retrieval, resend or separate answer Task. Hermetic harness checks are separate from pinned live runtime qualification. |
+| `.github/workflows/copilot-plugin.yml` | **Scaffolding** | Native Linux/macOS/Windows offline plugin package and fake-process contract tests; no Copilot host or model execution. |
 | `.goreleaser.yaml` | **Scaffolding** | GoReleaser config the release workflow builds and renders the Homebrew formula with; publishing reuses that checked artifact set and never pushes the formula to the tap (`skip_upload: true`). |
 | `.github/actions/classify-change/` | **Scaffolding** | Classifies docs-only, scripts and kagent/shared qualification paths for CI. |
 | `.github/copilot-instructions.md` | **Documentation** | Review priorities for Copilot code review, pointing at the repository rules. |

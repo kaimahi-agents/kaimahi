@@ -24,6 +24,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Copilot app/CLI plugin development package: native Agent Plugins 1.0
+  manifest/MCP templates, a chat skill and an offline, explicitly root-bound
+  packager. Native fake-process tests cover digest/exclusive-output refusals,
+  package relocation and file-preview result fixtures. This is not a signed
+  installable plugin, real MCP/runner support or Copilot host qualification;
+  release integration and file-scoped Explain remain separate.
+
 - Experimental offline multi-agent flow authoring with `kmx create NAME
   --workspace DIR --members FILE --flow FILE`, deterministic preparation and
   explicit native/public layout/archive inventory readers. Strict JSON imports
