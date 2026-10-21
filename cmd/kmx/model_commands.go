@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"text/tabwriter"
 
@@ -21,8 +22,15 @@ func newModelCommand(state *commandState) *cobra.Command {
 			discover = modelaccess.Discover
 		}
 		reports := discover(cmd.Context())
+		var discoveryErr error
+		for _, r := range reports {
+			if r.State == modelaccess.Failure {
+				discoveryErr = errors.New("local model discovery incomplete; inspect provider failure reports")
+				break
+			}
+		}
 		if format == "json" {
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(reports)
+			return errors.Join(discoveryErr, json.NewEncoder(cmd.OutOrStdout()).Encode(reports))
 		}
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 		if _, err := fmt.Fprintln(w, "PROVIDER\tSTATE\tMODEL\tENDPOINT"); err != nil {
@@ -55,7 +63,7 @@ func newModelCommand(state *commandState) *cobra.Command {
 				}
 			}
 		}
-		return nil
+		return discoveryErr
 	}}
 	list.Flags().StringVarP(&format, "output", "o", "table", "report format: table or json")
 	_ = list.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table", "json"}))

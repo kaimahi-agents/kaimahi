@@ -22,7 +22,9 @@ configuration, prompts, runtime startup, installation or model downloads. Use
 `kmx model list -o json` for the same bounded reports and non-secret model routes.
 It distinguishes `absent`, `empty`, `installed` and `failure`; an installed but
 stopped runtime is not an empty inventory. A failure reports a safe reason, not
-raw runtime output. Discovery does not select a model or change a saved endpoint.
+raw runtime output. Both table and JSON output print the complete report before
+exiting nonzero if any provider reports `failure`; `absent` and `empty` remain
+successful. Discovery does not select a model or change a saved endpoint.
 
 Foundry Local CLI preview 0.11 supplies its dynamic endpoint through
 `foundry server status`; KMX then reads cached `/openai/models`. It never guesses
