@@ -24,6 +24,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- `kmx mcp --root DIRECTORY` serves exactly Create/Edit/Run/Test over stdio.
+  It confines canonical charter access to an explicit root, creates without
+  replacement, edits at an expected revision and delegates Run/Test to the shared
+  snapshot API and its temporary preview runner (no journal). No new runner,
+  network listener or native evidence authority.
+
 - Temporary direct file-preview runner with explicit no-journal output, deterministic
   fake and selected local OpenAI-compatible model transport. One completion
   per input/example and one judge sample per llmJudge, without retries or fallback;

@@ -412,6 +412,17 @@ unknown, and only an explicit caller override changes the judge route. Keep
 live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
 See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 
+## Agent-file MCP boundary
+
+`mcp --root DIRECTORY` is stdio-only and config-free at startup. Require an
+absolute existing root, never cwd/client-root fallback. Expose exactly
+Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
+never the path wrapper or shell CLI strings. Model routes are trusted startup
+configuration, not tool/charter fields. Keep complete safe App results on errors;
+fixture runners are not production execution. Edit preserves mode bits, not
+ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
+No new runner, Explain tool or network listener. See [MCP](docs/kmx.md#local-stdio-mcp).
+
 ## Single-file charter boundary
 
 `internal/kmx/agentfile` parses only the canonical shape in

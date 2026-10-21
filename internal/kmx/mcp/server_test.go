@@ -145,6 +145,19 @@ func TestProtocolRegistrationAndSafeErrors(t *testing.T) {
 		t.Fatalf("unsafe: %s", b)
 	}
 }
+func TestProtocolDeadlineClassification(t *testing.T) {
+	res := errorResult(context.DeadlineExceeded)
+	b, _ := json.Marshal(res.StructuredContent)
+	if !bytes.Contains(b, []byte(`"reasonCode":"deadline_exceeded"`)) {
+		t.Fatalf("deadline collapsed into cancellation: %s", b)
+	}
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	f, _ := filesFixture(t)
+	_, err := f.Create(ctx, "x.agent.md", []byte("valid:x"))
+	requireCode(t, err, "deadline_exceeded")
+}
+
 func TestProtocolCancellation(t *testing.T) {
 	started, stopped := make(chan struct{}), make(chan struct{})
 	ops := protocolFixture()

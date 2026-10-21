@@ -35,6 +35,7 @@ kmx
 ├── status
 ├── console
 ├── targets
+├── mcp --root <directory>
 ├── model
 │   └── list [-o table|json]
 ├── context

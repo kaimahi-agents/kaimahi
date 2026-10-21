@@ -44,6 +44,8 @@ func (e *Error) Error() string {
 		return "publication_failed: same-directory atomic rename failed; target was not published"
 	case "cancelled":
 		return "cancelled: operation stopped before publication"
+	case "deadline_exceeded":
+		return "deadline_exceeded: operation deadline elapsed"
 	default:
 		return e.Code + ": operation refused"
 	}
@@ -106,6 +108,9 @@ func safePath(p string) bool {
 	return len(parts) == 4 && parts[0] == ".squad" && parts[1] == "agents" && safeID(parts[2]) && parts[3] == "charter.md"
 }
 func cancelled(ctx context.Context) error {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return refusal("deadline_exceeded")
+	}
 	if ctx.Err() != nil {
 		return refusal("cancelled")
 	}

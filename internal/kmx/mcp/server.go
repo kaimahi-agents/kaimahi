@@ -106,12 +106,15 @@ func errorResult(err error) *sdk.CallToolResult {
 	var safe *Error
 	if errors.As(err, &safe) {
 		switch safe.Code {
-		case "invalid_root", "unsafe_path", "invalid_file", "already_exists", "stale_revision", "busy", "publication_failed", "cancelled", "invalid_options", "incompatible_version", "io_failed", "lock_unavailable", "not_found":
+		case "invalid_root", "unsafe_path", "invalid_file", "already_exists", "stale_revision", "busy", "publication_failed", "cancelled", "invalid_options", "incompatible_version", "io_failed", "lock_unavailable", "not_found", "deadline_exceeded":
 			code = safe.Code
 		}
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.Canceled) {
 		code = "cancelled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		code = "deadline_exceeded"
 	}
 	reason := (&Error{Code: code}).Error()
 	return &sdk.CallToolResult{IsError: true, StructuredContent: map[string]any{"schemaVersion": 1, "reasonCode": code, "reason": reason}, Content: []sdk.Content{&sdk.TextContent{Text: reason}}}
