@@ -17,8 +17,10 @@ request time.
 
 The independent unreleased `kmx model login`, `login --gh`, `logout` and
 `list --provider copilot [-o table|json]` commands manage an explicitly owned
-Copilot route, not this existing CLI-chat adapter. See
-[sign-in and storage](models.md#explicit-copilot-model-access). No credentials
+Copilot route, not this existing CLI-chat adapter. The
+[dated access decision](copilot-access.md) distinguishes the selected experimental
+compatibility route from official OAuth/SDK documentation and unimplemented
+runner modes. See [sign-in and storage](models.md#explicit-copilot-model-access). No credentials
 are imported implicitly, exported in argv/environment/files, or returned in
 routes. There are no token flags or plaintext-cache fallback.
 
@@ -60,9 +62,9 @@ Auth/header reference: [vekil authenticator](https://github.com/sozercan/vekil/b
 and [request headers](https://github.com/sozercan/vekil/blob/3e77a9d0739baf7740b141bd88b3fdf40caf7c16/proxy/handler.go).
 KMX does not reuse its disk cache, proxy, retry or failover behavior. Hermetic
 native package tests are not live GitHub/subscription or OS-keychain acceptance
-proof, nor full Windows CLI qualification. On Linux, first login may prompt to
-create the dedicated `kmx-model-copilot` keyring collection; later access may
-show OS unlock UI. Native keychain calls/prompts have no context-cancellation
+proof, nor full Windows CLI qualification. Explicit credential access may show
+OS unlock UI; Linux uses the existing login/default collection with kmx-specific service
+and account attributes. Native keychain calls/prompts have no context-cancellation
 guarantee. Unexpected native-dependency panics during credential access are
 mapped to the safe keychain error without exposing their value.
 

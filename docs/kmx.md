@@ -49,9 +49,14 @@ models as non-secret routes at `https://api.githubcopilot.com`; it never starts
 sign-in and fails clearly without auth. Local discovery remains the default.
 `kmx model logout` deletes only kmx's reusable credential and clears its memory;
 gh/editor sign-in is unchanged. Native OS keychain storage is required, with no
-plaintext fallback. Linux first login may prompt to create the dedicated
-`kmx-model-copilot` keyring collection; later access may show OS unlock UI, with
-no context-cancellation guarantee for native keychain calls. These commands are
+plaintext fallback. macOS release builds work without CGO; explicit access uses
+`/usr/bin/security`, with secrets on stdin only and a 2048-byte write limit.
+Linux uses an existing session bus and login/default keyring collection, never
+autolaunching a bus. Custom buses require an explicit `unix:` session address.
+The exact owned item is service `kmx-model-copilot`, account
+`github-reusable-token`, not a dedicated collection. Help, completion and default
+local listing perform no keychain or bus I/O. Explicit credential access may
+show OS unlock UI, with no context-cancellation guarantee. These commands are
 unreleased and do not enable local agent execution, a proxy, or change existing
 Copilot chat. See [storage and model routes](models.md#explicit-copilot-model-access)
 and [direct transport](copilot-inference.md#direct-model-access). Native package

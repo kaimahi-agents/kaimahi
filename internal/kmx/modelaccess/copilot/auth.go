@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/zalando/go-keyring"
 )
 
 const clientID = "Iv1.b507a08c87ecfe98"
@@ -46,7 +48,7 @@ type Provider struct {
 // A nil store selects the native OS keychain, opened lazily on explicit use.
 func New(store Store) *Provider {
 	if store == nil {
-		store = &keychainStore{open: keyringOpen}
+		store = &keychainStore{get: keyring.Get, set: keyring.Set, delete: keyring.Delete}
 	}
 	return &Provider{store: store, http: &http.Client{Timeout: 30 * time.Second}, api: "https://api.githubcopilot.com", deviceURL: "https://github.com/login/device/code", tokenURL: "https://github.com/login/oauth/access_token", exchangeURL: "https://api.github.com/copilot_internal/v2/token", now: time.Now, wait: wait, runGH: githubToken}
 }

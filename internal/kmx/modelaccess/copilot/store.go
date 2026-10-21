@@ -2,25 +2,46 @@ package copilot
 
 import (
 	"errors"
+	"os"
+	"runtime"
+	"strings"
 
-	"github.com/99designs/keyring"
+	"github.com/godbus/dbus/v5"
+	"github.com/zalando/go-keyring"
 )
 
-var keyringOpen = keyring.Open
-
+const credentialService = "kmx-model-copilot"
 const credentialKey = "github-reusable-token"
 
 type keychainStore struct {
-	open func(keyring.Config) (keyring.Keyring, error)
+	get    func(service, account string) (string, error)
+	set    func(service, account, token string) error
+	delete func(service, account string) error
 }
 
-func (s *keychainStore) ring() (keyring.Keyring, error) {
-	ring, err := s.open(keyring.Config{AllowedBackends: []keyring.BackendType{keyring.WinCredBackend, keyring.KeychainBackend, keyring.SecretServiceBackend}, ServiceName: "kmx-model-copilot", WinCredPrefix: "kmx-model-copilot:", KeychainAccessibleWhenUnlocked: true})
-	if err != nil {
-		return nil, ErrKeychain
+// Only explicit credential operations probe OS services. Refuse autolaunch and
+// alternative transports rather than starting a session bus in headless use.
+func nativeKeychainAvailable(goos string) error {
+	if goos != "linux" {
+		return nil
 	}
-	return ring, nil
+	if address := os.Getenv("DBUS_SESSION_BUS_ADDRESS"); address != "" &&
+		(!strings.HasPrefix(address, "unix:") || strings.Contains(address, ";")) {
+		return ErrKeychain
+	}
+	// Use godbus's actual discovery, not an XDG_RUNTIME_DIR approximation.
+	// Discovery retains the existing address in the environment for go-keyring;
+	// this private connection only validates availability and is always closed.
+	conn, err := dbus.SessionBusPrivateNoAutoStartup()
+	if err != nil {
+		return ErrKeychain
+	}
+	if err := conn.Close(); err != nil {
+		return ErrKeychain
+	}
+	return nil
 }
+
 func (s *keychainStore) Get() (token string, err error) {
 	// Native dependency calls can panic on unexpected OS service responses.
 	// Keep that external failure payload out of both results and diagnostics.
@@ -29,45 +50,53 @@ func (s *keychainStore) Get() (token string, err error) {
 			token, err = "", ErrKeychain
 		}
 	}()
-	ring, err := s.ring()
-	if err != nil {
+	if err := nativeKeychainAvailable(runtime.GOOS); err != nil {
 		return "", err
 	}
-	item, err := ring.Get(credentialKey)
-	if errors.Is(err, keyring.ErrKeyNotFound) {
+	token, err = s.get(credentialService, credentialKey)
+	if errors.Is(err, keyring.ErrNotFound) {
 		return "", ErrAuthRequired
 	}
 	if err != nil {
 		return "", ErrKeychain
 	}
-	return string(item.Data), nil
+	return token, nil
 }
+
 func (s *keychainStore) Set(token string) (err error) {
 	defer func() {
 		if recover() != nil {
 			err = ErrKeychain
 		}
 	}()
-	ring, err := s.ring()
-	if err != nil {
+	return s.setToken(runtime.GOOS, token)
+}
+
+func (s *keychainStore) setToken(goos, token string) error {
+	// v0.2.8 starts security -i before its 4096-byte encoded command check.
+	// Bound raw bytes first: base64 plus our fixed item metadata fits safely.
+	if goos == "darwin" && len(token) > 2048 {
+		return ErrKeychain
+	}
+	if err := nativeKeychainAvailable(goos); err != nil {
 		return err
 	}
-	if err := ring.Set(keyring.Item{Key: credentialKey, Data: []byte(token), Label: "kmx Copilot model access", KeychainNotSynchronizable: true}); err != nil {
+	if err := s.set(credentialService, credentialKey, token); err != nil {
 		return ErrKeychain
 	}
 	return nil
 }
+
 func (s *keychainStore) Delete() (err error) {
 	defer func() {
 		if recover() != nil {
 			err = ErrKeychain
 		}
 	}()
-	ring, err := s.ring()
-	if err != nil {
+	if err := nativeKeychainAvailable(runtime.GOOS); err != nil {
 		return err
 	}
-	if err := ring.Remove(credentialKey); err != nil && !errors.Is(err, keyring.ErrKeyNotFound) {
+	if err := s.delete(credentialService, credentialKey); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return ErrKeychain
 	}
 	return nil

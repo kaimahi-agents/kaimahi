@@ -67,12 +67,27 @@ These unreleased, config-free commands are independent of the installed-CLI
 chat adapter. Device flow uses VS Code's public OAuth client
 `Iv1.b507a08c87ecfe98` with `read:user`. The reusable GitHub credential is stored
 in kmx's OS keychain item, never workspace/config files or a plaintext cache.
-Only native Windows Credential Manager, macOS Keychain (cgo) and Linux Secret
-Service are allowed. A headless or unavailable keychain fails closed, with no
-file/pass fallback. On Linux, first login may prompt to create the dedicated
-`kmx-model-copilot` keyring collection; subsequent access may show OS unlock UI.
-Native OS keychain prompts have no context-cancellation guarantee. Listing
-never initiates OAuth, invokes gh, reads editor credentials or selects a model.
+Only native Windows Credential Manager, macOS Keychain and Linux Secret
+Service are allowed, via `github.com/zalando/go-keyring v0.2.8`, with no file/pass
+fallback. macOS works with the release's `CGO_ENABLED=0`: explicit credential
+operations invoke `/usr/bin/security`; writes send the secret only on stdin,
+never argv, environment or files. macOS credentials over 2048 bytes are refused
+before starting the utility. The macOS item uses the security utility's keychain
+access controls, not a kmx-binary-specific application ACL; other processes
+running as the same user may access it through that utility.
+
+Linux requires an existing session bus and login/default keyring collection. Explicit
+credential operations use no-autostart D-Bus discovery before native access;
+headless or unavailable keychains fail closed, without launching a bus. Custom
+sessions must supply a `unix:` `DBUS_SESSION_BUS_ADDRESS`; `XDG_RUNTIME_DIR`
+alone does not direct upstream discovery to a custom socket. Autolaunch,
+non-Unix and multi-address values are refused. The owned item uses service
+`kmx-model-copilot` and account `github-reusable-token`, not a dedicated
+collection. Logout deletes only that item. Access may show OS unlock UI;
+native keychain calls have no context-cancellation guarantee. Initialization,
+help, completion and default local model listing do not access the keychain or
+session bus. Copilot listing never initiates OAuth, invokes gh, reads editor
+credentials or selects a model.
 
 Copilot JSON output is an array of non-secret shared routes: provider `copilot`,
 exact available Chat model, endpoint `https://api.githubcopilot.com`, auth

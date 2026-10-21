@@ -25,6 +25,19 @@ jobs:
           go-version-file: go.mod
       - name: Native model-access tests
         run: go test -race -count=1 ./internal/kmx/modelaccess/...
+      - name: Native macOS release-configuration tests
+        if: runner.os == 'macOS'
+        env:
+          CGO_ENABLED: "0"
+        run: go test -count=1 ./internal/kmx/modelaccess/...
+      - name: Cross-compile both macOS release architectures
+        if: runner.os == 'Linux'
+        env:
+          CGO_ENABLED: "0"
+          GOOS: darwin
+        run: |
+          GOARCH=amd64 go build ./...
+          GOARCH=arm64 go build ./...
       - name: Linux CLI tests
         if: runner.os == 'Linux'
         run: go test -count=1 ./cmd/kmx

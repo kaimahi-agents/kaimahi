@@ -2,99 +2,217 @@ package copilot
 
 import (
 	"errors"
-	"reflect"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 
-	"github.com/99designs/keyring"
+	"github.com/zalando/go-keyring"
 )
 
-type ringFixture struct {
-	keyring.Keyring
-	items map[string]keyring.Item
-}
-
-func (r *ringFixture) Get(k string) (keyring.Item, error) {
-	v, ok := r.items[k]
-	if !ok {
-		return v, keyring.ErrKeyNotFound
+func fixtureStore(t *testing.T) *keychainStore {
+	t.Helper()
+	// Replace credential operations, but let the real Linux bus preflight
+	// connect only to this owned socket. No authentication or OS keychain.
+	if runtime.GOOS == "linux" {
+		dir, err := os.MkdirTemp("", "kmx-store-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		path := filepath.Join(dir, "bus")
+		listener, err := net.Listen("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				_ = conn.Close()
+			}
+		}()
+		t.Cleanup(func() { _ = listener.Close(); <-done })
+		t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+path)
 	}
-	return v, nil
+	return &keychainStore{}
 }
-func (r *ringFixture) Set(v keyring.Item) error { r.items[v.Key] = v; return nil }
-func (r *ringFixture) Remove(k string) error    { delete(r.items, k); return nil }
-
-type panicRing struct{ keyring.Keyring }
-
-func (*panicRing) Get(string) (keyring.Item, error) { panic(canary) }
-func (*panicRing) Set(keyring.Item) error           { panic(canary) }
-func (*panicRing) Remove(string) error              { panic(canary) }
 
 func TestNativeStorePanicsBecomeSafeErrors(t *testing.T) {
-	for _, opening := range []bool{false, true} {
-		for _, operation := range []string{"get", "set", "delete"} {
-			name := operation
-			if opening {
-				name += "-open"
-			}
-			t.Run(name, func(t *testing.T) {
-				defer func() {
-					if recover() != nil {
-						t.Error("native dependency panic escaped store boundary")
-					}
-				}()
-				s := &keychainStore{open: func(keyring.Config) (keyring.Keyring, error) {
-					if opening {
-						panic(canary)
-					}
-					return &panicRing{}, nil
-				}}
-				var token string
-				var err error
-				switch operation {
-				case "get":
-					token, err = s.Get()
-				case "set":
-					err = s.Set(canary)
-				case "delete":
-					err = s.Delete()
-				}
-				if !errors.Is(err, ErrKeychain) || token != "" {
-					t.Fatalf("native panic did not return safe empty result: err=%v", err)
-				}
-				safe(t, token, err)
-			})
-		}
+	s := fixtureStore(t)
+	s.get = func(string, string) (string, error) { panic(canary) }
+	s.set = func(string, string, string) error { panic(canary) }
+	s.delete = func(string, string) error { panic(canary) }
+	token, err := s.Get()
+	if token != "" || !errors.Is(err, ErrKeychain) {
+		t.Fatal("native panic escaped safe Get boundary")
 	}
+	for _, err := range []error{s.Set(canary), s.Delete()} {
+		if !errors.Is(err, ErrKeychain) {
+			t.Fatal("native panic escaped safe write boundary")
+		}
+		safe(t, err)
+	}
+	safe(t, token, err)
 }
 
 func TestNativeStoreOwnsOnlyItsCredential(t *testing.T) {
-	ring := &ringFixture{items: map[string]keyring.Item{"editor": {Key: "editor", Data: []byte("unrelated")}}}
-	s := &keychainStore{open: func(c keyring.Config) (keyring.Keyring, error) {
-		if !reflect.DeepEqual(c.AllowedBackends, []keyring.BackendType{keyring.WinCredBackend, keyring.KeychainBackend, keyring.SecretServiceBackend}) || c.ServiceName != "kmx-model-copilot" || c.WinCredPrefix != "kmx-model-copilot:" || c.FileDir != "" || c.PassCmd != "" {
-			t.Fatal("unsafe backend configuration")
+	s := fixtureStore(t)
+	items := map[[2]string]string{
+		{"other-service", "github-reusable-token"}: "unrelated",
+		{"kmx-model-copilot", "editor"}:            "unrelated",
+	}
+	check := func(service, account string) [2]string {
+		t.Helper()
+		if service != "kmx-model-copilot" || account != "github-reusable-token" {
+			t.Fatal("operation escaped kmx's exact owned item")
 		}
-		return ring, nil
-	}}
+		return [2]string{service, account}
+	}
+	s.get = func(service, account string) (string, error) {
+		v, ok := items[check(service, account)]
+		if !ok {
+			return "", keyring.ErrNotFound
+		}
+		return v, nil
+	}
+	s.set = func(service, account, token string) error {
+		items[check(service, account)] = token
+		return nil
+	}
+	s.delete = func(service, account string) error {
+		key := check(service, account)
+		if _, ok := items[key]; !ok {
+			return keyring.ErrNotFound
+		}
+		delete(items, key)
+		return nil
+	}
 	if _, err := s.Get(); !errors.Is(err, ErrAuthRequired) {
 		t.Fatalf("absent: %v", err)
 	}
 	if err := s.Set(canary); err != nil {
 		t.Fatal(err)
 	}
-	v, err := s.Get()
-	if err != nil || v != canary {
+	if token, err := s.Get(); token != canary || err != nil {
 		t.Fatal("credential not retained")
 	}
 	if err := s.Delete(); err != nil {
 		t.Fatal(err)
 	}
-	if len(ring.items) != 1 || string(ring.items["editor"].Data) != "unrelated" {
-		t.Fatal("deleted another owner's credential")
+	if err := s.Delete(); err != nil {
+		t.Fatalf("absent delete: %v", err)
 	}
-	s.open = func(keyring.Config) (keyring.Keyring, error) { return nil, errors.New(canary) }
-	_, err = s.Get()
-	if !errors.Is(err, ErrKeychain) {
-		t.Fatal("fallback or raw error")
+	if len(items) != 2 || items[[2]string{"other-service", "github-reusable-token"}] != "unrelated" ||
+		items[[2]string{"kmx-model-copilot", "editor"}] != "unrelated" {
+		t.Fatal("changed another owner's credential")
 	}
-	safe(t, err, s.Set(canary), s.Delete())
+}
+
+func TestNativeStoreErrorsDiscardPayloads(t *testing.T) {
+	s := fixtureStore(t)
+	s.get = func(string, string) (string, error) { return canary, errors.New(canary) }
+	s.set = func(string, string, string) error { return errors.New(canary) }
+	s.delete = func(string, string) error { return errors.New(canary) }
+	token, err := s.Get()
+	if token != "" || !errors.Is(err, ErrKeychain) {
+		t.Fatal("unsafe Get result")
+	}
+	for _, err := range []error{s.Set(canary), s.Delete()} {
+		if !errors.Is(err, ErrKeychain) {
+			t.Fatal("unsafe native error")
+		}
+		safe(t, err)
+	}
+	safe(t, token, err)
+}
+
+func TestDarwinStoreRejectsOversizedSecretBeforeNativeSet(t *testing.T) {
+	s := fixtureStore(t)
+	calls := 0
+	s.set = func(service, account, token string) error {
+		calls++
+		if len(token) != 2048 {
+			t.Fatal("unexpected token passed to native Set")
+		}
+		return nil
+	}
+	if err := s.setToken("darwin", strings.Repeat("x", 2048)); err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{strings.Repeat("x", 2049), strings.Repeat("é", 1025)} {
+		if err := s.setToken("darwin", token); !errors.Is(err, ErrKeychain) {
+			t.Fatal("oversized secret accepted")
+		}
+	}
+	if calls != 1 {
+		t.Fatal("oversized secret reached native Set")
+	}
+}
+
+func TestLinuxStoreRequiresExistingBusBeforeNativeOperations(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux preflight")
+	}
+	missing := "unix:path=" + filepath.Join(t.TempDir(), "missing")
+	for _, address := range []string{"", missing, "autolaunch:", "tcp:host=localhost", "unix:path=/missing;autolaunch:"} {
+		t.Run(address, func(t *testing.T) {
+			if address == "" {
+				// Never probe a developer's existing bus. Headless CI can
+				// exercise no-address refusal without a real daemon.
+				for _, name := range []string{"bus", "dbus-session"} {
+					if _, err := os.Stat(filepath.Join("/run/user", strconv.Itoa(os.Getuid()), name)); !os.IsNotExist(err) {
+						t.Skip("host has a discoverable session bus")
+					}
+				}
+			}
+			s := fixtureStore(t)
+			t.Setenv("DBUS_SESSION_BUS_ADDRESS", address)
+			dir := t.TempDir()
+			t.Setenv("XDG_RUNTIME_DIR", dir)
+			t.Setenv("PATH", dir)
+			marker := filepath.Join(dir, "launched")
+			t.Setenv("KMX_TEST_DBUS_MARKER", marker)
+			if err := os.WriteFile(filepath.Join(dir, "dbus-launch"), []byte("#!/bin/sh\nprintf called > \"$KMX_TEST_DBUS_MARKER\"\nexit 1\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			s.get = func(string, string) (string, error) { t.Fatal("native Get called without safe bus"); return "", nil }
+			s.set = func(string, string, string) error { t.Fatal("native Set called without safe bus"); return nil }
+			s.delete = func(string, string) error { t.Fatal("native Delete called without safe bus"); return nil }
+			token, err := s.Get()
+			if token != "" || !errors.Is(err, ErrKeychain) {
+				t.Fatal("unsafe Get result")
+			}
+			for _, err := range []error{s.Set(canary), s.Delete()} {
+				if !errors.Is(err, ErrKeychain) {
+					t.Fatal("missing-bus operation accepted")
+				}
+				safe(t, err)
+			}
+			if _, err := os.Stat(marker); !os.IsNotExist(err) {
+				t.Fatal("credential operation invoked dbus-launch")
+			}
+		})
+	}
+}
+
+func TestLinuxBusPreflightRejectsRegularFile(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux socket fixture")
+	}
+	path := filepath.Join(t.TempDir(), "bus")
+	if err := os.WriteFile(path, []byte("not a bus"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+path)
+	if err := nativeKeychainAvailable("linux"); !errors.Is(err, ErrKeychain) {
+		t.Fatal("regular file accepted")
+	}
 }
