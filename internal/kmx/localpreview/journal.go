@@ -15,17 +15,30 @@ import (
 )
 
 // MaxJournals bounds retained preview runs. Opening a new run first removes
-// the oldest runs beyond MaxJournals-1. Each run is one SQLite journal holding
-// the instructions, inputs, model identity, answers and terminal records of
-// that run's Sessions in cleartext; credentials are never written.
+// the oldest finished runs beyond MaxJournals-1; a run that is still executing
+// is never removed, so concurrent runs can briefly exceed the bound. Each run
+// is one SQLite journal holding the instructions, inputs, model identity,
+// answers and terminal records of that run's Sessions in cleartext;
+// credentials are never written.
 const MaxJournals = 20
 
 var errNoJournal = refuse(RefusedJournal, "no local preview journal exists", "run a local preview first")
 
-var runIDPattern = regexp.MustCompile(`^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$`)
+var errRunActive = refuse(RefusedJournal, "the local preview run is still executing", "wait for it to finish, then clear again")
+
+// Run IDs start with a fixed-width UTC timestamp in nanoseconds, so their
+// lexical order is creation order.
+var runIDPattern = regexp.MustCompile(`^[0-9]{8}T[0-9]{6}\.[0-9]{9}Z-[0-9a-f]{12}$`)
+
+const runIDTimeFormat = "20060102T150405.000000000Z"
 
 // journalSuffixes are the SQLite files that make up one run's journal.
 var journalSuffixes = []string{".db", ".db-wal", ".db-shm", ".db-journal"}
+
+// lockSuffix names a run's lock file. An executing run holds an exclusive OS
+// lock on it from before its journal exists until after the journal closes;
+// the OS releases it if the process exits.
+const lockSuffix = ".lock"
 
 // JournalPath returns the journal file for runID inside dir.
 func JournalPath(dir, runID string) (string, error) {
@@ -64,36 +77,66 @@ func privateDir(dir string, create bool) error {
 	return nil
 }
 
+// runLock is a held run lock. Release unlocks it and removes the lock file.
+type runLock struct {
+	file *os.File
+	path string
+}
+
+func (l *runLock) release() {
+	if l == nil {
+		return
+	}
+	unlock(l.file)
+	_ = l.file.Close()
+	_ = os.Remove(l.path)
+}
+
 // newJournal creates an empty owner-only journal file for a new run after
-// pruning older runs, and returns its run ID and path.
-func newJournal(dir string, now time.Time) (string, string, error) {
+// pruning older finished runs, and returns its run ID, path and held lock.
+func newJournal(dir string, now time.Time) (string, string, *runLock, error) {
+	unwritable := refuse(RefusedJournal, "the preview journal could not be created", "check the kmx state directory is writable")
 	if err := privateDir(dir, true); err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	runs, err := ListRuns(dir)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
-	for len(runs) >= MaxJournals {
-		// Oldest first. A journal still open in another process may fail to
-		// delete on Windows; leave it and continue rather than block this run.
-		_ = removeRun(dir, runs[0])
-		runs = runs[1:]
+	// Oldest first. Executing runs are skipped, and a journal still open in
+	// another process may fail to delete on Windows; leave either and
+	// continue rather than block this run.
+	for excess, i := len(runs)-(MaxJournals-1), 0; excess > 0 && i < len(runs); i++ {
+		if removeFinishedRun(dir, runs[i]) == nil {
+			excess--
+		}
 	}
 	var random [6]byte
 	if _, err := rand.Read(random[:]); err != nil {
-		return "", "", refuse(RefusedJournal, "a run ID could not be generated", "retry")
+		return "", "", nil, refuse(RefusedJournal, "a run ID could not be generated", "retry")
 	}
-	runID := now.UTC().Format("20060102T150405Z") + "-" + hex.EncodeToString(random[:])
+	runID := now.UTC().Format(runIDTimeFormat) + "-" + hex.EncodeToString(random[:])
+	// Lock before the journal exists, so every listed journal without a held
+	// lock is finished.
+	lock := &runLock{path: filepath.Join(dir, runID+lockSuffix)}
+	if lock.file, err = os.OpenFile(lock.path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600); err != nil {
+		return "", "", nil, unwritable
+	}
+	if !tryLock(lock.file) {
+		_ = lock.file.Close()
+		_ = os.Remove(lock.path)
+		return "", "", nil, unwritable
+	}
 	path := filepath.Join(dir, runID+".db")
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if err == nil {
+		err = file.Close()
+	}
 	if err != nil {
-		return "", "", refuse(RefusedJournal, "the preview journal could not be created", "check the kmx state directory is writable")
+		lock.release()
+		return "", "", nil, unwritable
 	}
-	if err := file.Close(); err != nil {
-		return "", "", refuse(RefusedJournal, "the preview journal could not be created", "check the kmx state directory is writable")
-	}
-	return runID, path, nil
+	return runID, path, lock, nil
 }
 
 // ListRuns returns retained run IDs in dir, oldest first. Unrelated entries
@@ -121,6 +164,7 @@ func ListRuns(dir string) ([]string, error) {
 
 // Clear deletes one retained run, or every retained run when runID is empty.
 // It removes only files named like preview journals and leaves the directory.
+// A run that is still executing is refused and kept.
 func Clear(dir, runID string) error {
 	if runID != "" {
 		if _, err := JournalPath(dir, runID); err != nil {
@@ -129,7 +173,7 @@ func Clear(dir, runID string) error {
 		if err := privateDir(dir, false); err != nil {
 			return err
 		}
-		return removeRun(dir, runID)
+		return removeFinishedRun(dir, runID)
 	}
 	runs, err := ListRuns(dir)
 	if err != nil {
@@ -137,12 +181,38 @@ func Clear(dir, runID string) error {
 	}
 	var errs []error
 	for _, id := range runs {
-		errs = append(errs, removeRun(dir, id))
+		errs = append(errs, removeFinishedRun(dir, id))
 	}
 	if errors.Join(errs...) != nil {
-		return refuse(RefusedJournal, "some local preview journals could not be removed", "close other kmx processes and clear again")
+		return refuse(RefusedJournal, "some local preview journals are executing or could not be removed", "wait for running previews, close other kmx processes and clear again")
 	}
 	return nil
+}
+
+// removeFinishedRun removes runID's journal unless its lock is held. A missing
+// lock file means the run finished: runs lock before creating the journal and
+// remove the lock file last. A stale lock file left by an exited process is
+// lockable and removed with the journal.
+func removeFinishedRun(dir, runID string) error {
+	lockPath := filepath.Join(dir, runID+lockSuffix)
+	lock, err := os.OpenFile(lockPath, os.O_RDWR, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		return removeRun(dir, runID)
+	}
+	if err != nil {
+		return errRunActive
+	}
+	if !tryLock(lock) {
+		_ = lock.Close()
+		return errRunActive
+	}
+	err = removeRun(dir, runID)
+	unlock(lock)
+	_ = lock.Close()
+	if removeErr := os.Remove(lockPath); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) && err == nil {
+		err = refuse(RefusedJournal, "the local preview journal could not be removed", "close other kmx processes and clear again")
+	}
+	return err
 }
 
 func removeRun(dir, runID string) error {

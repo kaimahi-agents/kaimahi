@@ -135,7 +135,17 @@ func (c *modelClient) send(ctx context.Context, body []byte) (string, error) {
 	if len(raw) > MaxReplyBytes {
 		return "", refuse(RefusedOversized, "the model response exceeds 1 MiB", "ask for a shorter answer or use a model that stops sooner")
 	}
-	return parseReply(raw)
+	content, err := parseReply(raw)
+	if err != nil {
+		return "", err
+	}
+	// The answer is journaled and returned; never let the endpoint copy the
+	// credential it received into either.
+	if c.route.key != "" && strings.Contains(content, c.route.key) {
+		return "", refuse(RefusedCredentialEcho, "the model reply contained the endpoint credential, so it was withheld and not journaled",
+			"fix the endpoint so its replies never include the Authorization header")
+	}
+	return content, nil
 }
 
 // parseReply accepts exactly one completed assistant text message. A tool or

@@ -87,12 +87,14 @@ func openHost(path, harnessModel string, model controller.ModelFunc) (*host, err
 // journalDSN builds an escaped SQLite file URI so paths with spaces, '#', '%'
 // or '?' (for example a Windows profile directory) open the intended file.
 // Windows drive paths become file:///C:/..., the documented SQLite form.
+// mode=rw opens only an existing journal: newJournal creates run files, and
+// inspection must never recreate a removed one.
 func journalDSN(path string) string {
 	slashed := filepath.ToSlash(path)
 	if !strings.HasPrefix(slashed, "/") {
 		slashed = "/" + slashed
 	}
-	return (&url.URL{Scheme: "file", Path: slashed}).String() + "?_txlock=immediate"
+	return (&url.URL{Scheme: "file", Path: slashed}).String() + "?mode=rw&_txlock=immediate"
 }
 
 // dialHarness is the placement Dialer: it reaches the harnesswire server over

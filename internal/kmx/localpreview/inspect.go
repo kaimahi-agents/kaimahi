@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/agent-primitives/sessions/api"
 
@@ -26,11 +27,21 @@ type Inspection struct {
 	ModelCalls int64
 }
 
+// DefaultInspectTimeout bounds Inspect when ctx has no deadline.
+const DefaultInspectTimeout = 2 * time.Minute
+
 // Inspect reopens a retained run's journal and reconstructs each preview
 // Session. Every live model call is refused and counted; complete turns are
 // replayed through the chat harness against their recorded completions.
+// Without a ctx deadline, Inspect applies DefaultInspectTimeout. It returns a
+// *Refusal or a context error.
 func Inspect(ctx context.Context, dir, runID string) (out Inspection, err error) {
 	out = Inspection{Label: ReplayLabel, RunID: runID}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultInspectTimeout)
+		defer cancel()
+	}
 	path, err := JournalPath(dir, runID)
 	if err != nil {
 		return out, err
@@ -38,7 +49,9 @@ func Inspect(ctx context.Context, dir, runID string) (out Inspection, err error)
 	if err := privateDir(dir, false); err != nil {
 		return out, err
 	}
-	// Never create a journal while inspecting.
+	// Never create a journal while inspecting: this check gives the
+	// specific refusal, and the read-write-only open below closes the race
+	// with a concurrent Clear or prune.
 	if info, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
 		return out, refuse(RefusedJournal, "the selected local preview run is not retained", "list runs and select a retained one")
 	} else if err != nil || !info.Mode().IsRegular() {
@@ -54,16 +67,23 @@ func Inspect(ctx context.Context, dir, runID string) (out Inspection, err error)
 		return out, err
 	}
 	defer func() { err = errors.Join(err, h.close()) }()
+	// Sessions client errors can quote journal content; report fixed text.
+	replayErr := func() error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return refuse(RefusedJournal, "the local preview journal could not be replayed", "run a new preview, or clear this run")
+	}
 	uids, err := h.client.ListPreviewSessions(ctx)
 	if err != nil {
-		return out, err
+		return out, replayErr()
 	}
 	// ListSessions is newest first; report in execution order.
 	for i := len(uids) - 1; i >= 0; i-- {
 		session, err := h.client.InspectPreviewSession(ctx, uids[i])
 		if err != nil {
 			out.ModelCalls = calls.Load()
-			return out, err
+			return out, replayErr()
 		}
 		out.Sessions = append(out.Sessions, session)
 	}

@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -163,7 +165,7 @@ func TestInspectReplaysWithoutModelCall(t *testing.T) {
 			t.Fatalf("session = %+v", s)
 		}
 	}
-	if _, err := Inspect(ctx, dir, "20990101T000000Z-000000000000"); err == nil {
+	if _, err := Inspect(ctx, dir, "20990101T000000.000000000Z-000000000000"); err == nil {
 		t.Fatal("missing run inspected")
 	}
 	if _, err := Inspect(ctx, dir, "../escape"); err == nil {
@@ -253,23 +255,8 @@ func TestCredentialAndPromptAbsentFromJournalAndErrors(t *testing.T) {
 	if err != nil || len(inspection.Sessions) != 2 || inspection.Sessions[0].Outcome != "incomplete" || inspection.Sessions[1].Outcome != "completed" {
 		t.Fatalf("inspection = %v %+v", err, inspection)
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) == 0 {
-		t.Fatal(err)
-	}
-	var journal []byte
-	for _, entry := range entries {
-		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		journal = append(journal, raw...)
-		if bytes.Contains(raw, []byte(canaryKey)) || bytes.Contains(raw, []byte("KMX_TEST_PREVIEW_KEY")) {
-			t.Fatalf("credential in journal file %s", entry.Name())
-		}
-	}
 	// Retention is disclosed: the journal does hold the answer content.
-	if !bytes.Contains(journal, []byte("Hello, Ada")) {
+	if journal := scanJournal(t, dir); !bytes.Contains(journal, []byte("Hello, Ada")) {
 		t.Fatal("journal bytes were not scanned")
 	}
 }
@@ -455,7 +442,7 @@ func TestJournalPathWithURISpecialCharacters(t *testing.T) {
 	if inspection, err := Inspect(ctx, dir, result.RunID); err != nil || len(inspection.Sessions) != 1 {
 		t.Fatal(err, inspection)
 	}
-	if got := journalDSN(`C:\Users\A B\kmx\r.db`); goruntime.GOOS == "windows" && got != "file:///C:/Users/A%20B/kmx/r.db?_txlock=immediate" {
+	if got := journalDSN(`C:\Users\A B\kmx\r.db`); goruntime.GOOS == "windows" && got != "file:///C:/Users/A%20B/kmx/r.db?mode=rw&_txlock=immediate" {
 		t.Fatalf("windows dsn = %q", got)
 	}
 }
@@ -481,5 +468,165 @@ func TestPermissiveJournalDirectoryRefused(t *testing.T) {
 	}
 	if _, err := Test(testContext(t), greeter(t), Options{JournalDir: "relative"}); err == nil {
 		t.Fatal("relative journal directory accepted")
+	}
+}
+
+// scanJournal returns every byte retained in dir, failing if any file holds
+// the credential or its variable name.
+func scanJournal(t *testing.T, dir string) []byte {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) == 0 {
+		t.Fatal("no journal files", err)
+	}
+	var journal []byte
+	for _, entry := range entries {
+		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(raw, []byte(canaryKey)) || bytes.Contains(raw, []byte("KMX_TEST_PREVIEW_KEY")) {
+			t.Fatalf("credential in journal file %s", entry.Name())
+		}
+		journal = append(journal, raw...)
+	}
+	return journal
+}
+
+func TestEchoedCredentialRefusedWithoutJournaling(t *testing.T) {
+	t.Setenv("KMX_TEST_PREVIEW_KEY", canaryKey)
+	dir := journalDir(t)
+	agent := greeter(t, "- **Preferred:** fake", "- **Preferred:** example/model-1", "examples:\n", "examples:\n  - id: escaped\n    input: Lin\n    assertions:\n      - id: escaped-text\n        type: contains\n        value: Hello\n")
+	server := newCompatible(t, true, func(w http.ResponseWriter, r *http.Request, body chatRequest) {
+		key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if body.Messages[1].Content == "Lin" {
+			// A JSON escape must not hide the credential from the check.
+			fmt.Fprintf(w, `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Hello, Lin. Your key is \u%04x%s"}}]}`, key[0], key[1:])
+			return
+		}
+		fmt.Fprint(w, reply("Hello, Ada. You sent "+r.Header.Get("Authorization")))
+	})
+	result, err := Test(testContext(t), agent, Options{JournalDir: dir, Endpoint: &Endpoint{BaseURL: server.URL, KeyEnv: "KMX_TEST_PREVIEW_KEY"}, Transport: server.Client().Transport})
+	if err != nil || result.Verdict != agentruntime.EvaluationUnknown || len(result.Examples) != 2 || server.hits.Load() != 2 {
+		t.Fatalf("result = %v %+v", err, result)
+	}
+	for _, row := range result.Examples {
+		if row.Execution != "refused" || row.Refusal == nil || row.Refusal.Kind != RefusedCredentialEcho || row.Answer != "" || row.Verdict == agentruntime.EvaluationPass {
+			t.Fatalf("row = %+v", row)
+		}
+	}
+	encoded, _ := json.Marshal(result)
+	if bytes.Contains(encoded, []byte(canaryKey)) {
+		t.Fatalf("result leaks the credential: %s", encoded)
+	}
+	inspection, err := Inspect(testContext(t), dir, result.RunID)
+	if err != nil || len(inspection.Sessions) != 2 {
+		t.Fatalf("inspection = %v %+v", err, inspection)
+	}
+	for _, s := range inspection.Sessions {
+		if s.Outcome != "incomplete" || s.Answer != "" {
+			t.Fatalf("session = %+v", s)
+		}
+	}
+	encoded, _ = json.Marshal(inspection)
+	if bytes.Contains(encoded, []byte(canaryKey)) {
+		t.Fatalf("inspection leaks the credential: %s", encoded)
+	}
+	// The journal is scanned, not empty: it records the inputs.
+	if journal := scanJournal(t, dir); !bytes.Contains(journal, []byte("Lin")) {
+		t.Fatal("journal bytes were not scanned")
+	}
+}
+
+func TestPruningKeepsExecutingRunsAndOrdersByCreation(t *testing.T) {
+	dir := journalDir(t)
+	ctx := testContext(t)
+	active, activeID, err := openJournalExecutor(dir, FakeModel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = active.Close() })
+	var created []string
+	for range MaxJournals + 2 {
+		result, err := Run(ctx, greeter(t), "Ada", Options{JournalDir: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		created = append(created, result.RunID)
+	}
+	runs, err := ListRuns(dir)
+	if err != nil || len(runs) != MaxJournals || runs[0] != activeID {
+		t.Fatalf("runs = %v %v", runs, err)
+	}
+	// Oldest finished runs were pruned in creation order.
+	if want := append([]string{activeID}, created[len(created)-(MaxJournals-1):]...); !slices.Equal(runs, want) {
+		t.Fatalf("runs = %v, want %v", runs, want)
+	}
+	if _, err := Inspect(ctx, dir, activeID); err != nil {
+		t.Fatalf("executing run not inspectable: %v", err)
+	}
+	var refusal *Refusal
+	if err := Clear(dir, activeID); !errors.As(err, &refusal) || refusal.Kind != RefusedJournal {
+		t.Fatalf("executing run cleared: %v", err)
+	}
+	if err := Clear(dir, ""); !errors.As(err, &refusal) {
+		t.Fatalf("clear all ignored an executing run: %v", err)
+	}
+	if runs, _ := ListRuns(dir); !slices.Equal(runs, []string{activeID}) {
+		t.Fatalf("after clear all: %v", runs)
+	}
+	if err := active.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Clear(dir, activeID); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("files left after clear: %v", entries)
+	}
+}
+
+func TestStaleRunLockIsCleared(t *testing.T) {
+	dir := journalDir(t)
+	result, err := Run(testContext(t), greeter(t), "Ada", Options{JournalDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An exited process leaves its lock file but holds no lock.
+	stale := filepath.Join(dir, result.RunID+lockSuffix)
+	if err := os.WriteFile(stale, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Clear(dir, result.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("files left after clear: %v", entries)
+	}
+}
+
+func TestInspectWithoutDeadlineAndNeverCreatesJournal(t *testing.T) {
+	dir := journalDir(t)
+	result, err := Test(testContext(t), greeter(t), Options{JournalDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := Inspect(context.Background(), dir, result.RunID)
+	if err != nil || len(inspection.Sessions) != 1 || inspection.Sessions[0].Answer != "Hello, Ada" {
+		t.Fatalf("inspection = %v %+v", err, inspection)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := Inspect(canceled, dir, result.RunID); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled inspection = %v", err)
+	}
+	// The journal open itself refuses a missing file, so a run removed after
+	// Inspect's existence check is not recreated empty.
+	missing := filepath.Join(dir, "20990101T000000.000000000Z-000000000000.db")
+	if _, err := openHost(missing, "", nil); err == nil {
+		t.Fatal("opened a missing journal")
+	}
+	if _, err := os.Lstat(missing); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("journal created: %v", err)
 	}
 }

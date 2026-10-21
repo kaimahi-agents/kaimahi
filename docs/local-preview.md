@@ -63,7 +63,10 @@ Compatible endpoints follow the existing judge URL rules: HTTPS, or keyless
 HTTP at literal `127.0.0.1` or `::1` (for example a local Ollama at
 `http://127.0.0.1:11434/v1`). Credentials need HTTPS. The credential is read
 from the named environment variable into memory. It is never written to the
-agent file, the journal, results or error text. Redirects are not followed.
+agent file, the journal, results or error text. A successful reply whose
+answer contains the credential (for example an endpoint that echoes the
+`Authorization` header) is refused before Sessions journals it; this catches
+the exact value only, not encoded or partial copies. Redirects are not followed.
 Request and response bodies are each limited to 1 MiB.
 
 ## Refusals
@@ -79,8 +82,14 @@ Each refusal says what to change:
 - `llmJudge` examples without the shared judge, or a judge override with no
   `llmJudge` examples.
 
+The [agent file parser](agent-file.md) already refuses credential-shaped
+instructions, including the title, identity and model, and example inputs.
+Ad-hoc `Run` input gets the same input check. Shape detection cannot catch
+arbitrary secrets.
+
 A model reply that contains a tool call (in any key spelling), a refusal, a
-truncated or malformed body, an oversized body or a non-200 status is refused.
+truncated or malformed body, an oversized body, an answer containing the
+endpoint credential or a non-200 status is refused.
 Nothing is executed. The example is `unknown`, never a pass. Default error
 text gives only the status code or the class of problem. It never includes
 response bodies, prompts, answers or credentials.
@@ -105,27 +114,39 @@ discarded.
   state directory. Without it, kmx uses `os.UserConfigDir()/kmx`: XDG config on
   Linux, `Library/Application Support` on macOS, `%AppData%` on Windows.
   The journal is never stored in a checkout.
-- Each preview run is one SQLite file named `<UTC time>-<random>.db`, with its
-  `-wal`/`-shm` companions. The directory is created owner-only (`0700`). A
+- **Windows:** `%AppData%` is the roaming profile. On a domain account with
+  roaming profiles, the cleartext journal can be copied to the profile server
+  at sign-out. Where all Windows kmx state lives is decided by the native
+  Windows stack that starts with
+  [#613](https://github.com/kaimahi-agents/kaimahi/pull/613); until then, set
+  `KMX_HOME` to a local directory or clear journals after use.
+- Each preview run is one SQLite file named `<UTC time>-<random>.db` (the time
+  has nanosecond precision, so names sort in creation order), with its
+  `-wal`/`-shm` companions. While the run executes it holds an OS lock on a
+  `<run>.lock` file, removed when the run finishes. The directory is created owner-only (`0700`). A
   directory with group or other permission bits is refused, not changed. On
   Windows, privacy relies on the user profile's access control lists.
 - **Retention:** the journal stores the instructions, each input, the
   model identity, each answer and the terminal or error records **in
   cleartext**. It never stores credentials. kmx keeps the newest 20 runs and
-  deletes older runs when a new run starts.
+  deletes the oldest finished runs when a new run starts. A run that is still
+  executing, in this or another process, is never deleted, so concurrent runs
+  can briefly exceed 20.
 - **Clearing:** `localpreview.Clear(dir, runID)` deletes one run, and
-  `Clear(dir, "")` deletes all runs. Only files named like preview journals
+  `Clear(dir, "")` deletes all finished runs. A run that is still executing
+  is kept and reported as a refusal. Only files named like preview journals
   are removed. Deleting the directory also clears everything.
 
 ## Replay and inspection
 
-`localpreview.Inspect(dir, runID)` reopens a retained journal and rebuilds each
-Session. Complete turns are replayed through the `chat` harness against their
+`localpreview.Inspect(ctx, dir, runID)` reopens a retained journal and rebuilds
+each Session. Without a `ctx` deadline it applies a 2-minute bound. Errors are
+fixed-text refusals or context errors. Complete turns are replayed through the `chat` harness against their
 recorded completions. Any live model call is refused and counted. An inspection
 is labeled "local preview journal replay; not a test result". It has no
 verdicts, and incomplete, failed or canceled turns stay `incomplete`.
 Inspection never sends to a model, never re-evaluates assertions and never
-creates a journal.
+creates a journal: the journal opens read-write only if it already exists.
 
 ## Executor seam
 

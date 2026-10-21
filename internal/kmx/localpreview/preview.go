@@ -311,6 +311,8 @@ type journalExecutor struct {
 	// server goroutine; a canceled turn's late error stays in its own slot.
 	slotMu  sync.Mutex
 	current *turnSlot
+	// lock marks the run as executing until Close.
+	lock *runLock
 }
 
 type turnSlot struct {
@@ -320,13 +322,14 @@ type turnSlot struct {
 }
 
 func openJournalExecutor(dir, model string) (*journalExecutor, string, error) {
-	runID, path, err := newJournal(dir, time.Now())
+	runID, path, lock, err := newJournal(dir, time.Now())
 	if err != nil {
 		return nil, "", err
 	}
-	e := &journalExecutor{sessions: map[string]bool{}}
+	e := &journalExecutor{sessions: map[string]bool{}, lock: lock}
 	e.host, err = openHost(path, model, e.model)
 	if err != nil {
+		lock.release()
 		return nil, runID, err
 	}
 	return e, runID, nil
@@ -386,4 +389,10 @@ func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (Execution, er
 	return execution, nil
 }
 
-func (e *journalExecutor) Close() error { return e.host.close() }
+// Close closes the journal, then releases the run lock so pruning and Clear
+// may remove the finished run.
+func (e *journalExecutor) Close() error {
+	err := e.host.close()
+	e.lock.release()
+	return err
+}

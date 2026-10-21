@@ -22,6 +22,7 @@ const (
 	RefusedToolCall          = "tool-call-reply"
 	RefusedJudge             = "judge-unconfigured"
 	RefusedHTTPStatus        = "http-status"
+	RefusedCredentialEcho    = "reply-credential"
 	RefusedUnreachable       = "endpoint-unreachable"
 	RefusedMalformed         = "reply-malformed"
 	RefusedOversized         = "reply-oversized"
