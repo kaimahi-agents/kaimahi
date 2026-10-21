@@ -66,8 +66,11 @@ from the named environment variable into memory. It is never written to the
 agent file, the journal, results or error text. A successful reply whose
 answer contains the credential (for example an endpoint that echoes the
 `Authorization` header) is refused before Sessions journals it; this catches
-the exact value only, not encoded or partial copies. Redirects are not followed.
-Request and response bodies are each limited to 1 MiB.
+the exact value only, not encoded or partial copies. The check applies at any
+length, so a placeholder key such as `EMPTY` refuses every answer containing
+that word; leave the key variable unset for an endpoint that needs no
+credential. Redirects are not followed. Request and response bodies are each
+limited to 1 MiB.
 
 ## Refusals
 
@@ -123,26 +126,30 @@ discarded.
 - Each preview run is one SQLite file named `<UTC time>-<random>.db` (the time
   has nanosecond precision, so names sort in creation order), with its
   `-wal`/`-shm` companions. While the run executes it holds an OS lock on a
-  `<run>.lock` file, removed when the run finishes. The directory is created owner-only (`0700`). A
-  directory with group or other permission bits is refused, not changed. On
-  Windows, privacy relies on the user profile's access control lists.
+  `<run>.lock` file, removed when the run finishes. The directory is created
+  owner-only (`0700`). A directory with group or other permission bits is
+  refused, not changed. On Windows, privacy relies on the user profile's
+  access control lists.
 - **Retention:** the journal stores the instructions, each input, the
   model identity, each answer and the terminal or error records **in
   cleartext**. It never stores credentials. kmx keeps the newest 20 runs and
   deletes the oldest finished runs when a new run starts. A run that is still
-  executing, in this or another process, is never deleted, so concurrent runs
-  can briefly exceed 20.
+  executing, in this or another process, is never deleted. Executing runs, and
+  overlapping starts that each count the same runs, can leave more than 20
+  runs until the next run starts or the journals are cleared.
 - **Clearing:** `localpreview.Clear(dir, runID)` deletes one run, and
-  `Clear(dir, "")` deletes all finished runs. A run that is still executing
-  is kept and reported as a refusal. Only files named like preview journals
+  `Clear(dir, "")` deletes all finished runs plus unlocked `<run>.lock` files
+  whose journal is missing. A run that is still executing is kept and
+  reported as a refusal. Only files named like preview journals and run locks
   are removed. Deleting the directory also clears everything.
 
 ## Replay and inspection
 
 `localpreview.Inspect(ctx, dir, runID)` reopens a retained journal and rebuilds
-each Session. Without a `ctx` deadline it applies a 2-minute bound. Errors are
-fixed-text refusals or context errors. Complete turns are replayed through the `chat` harness against their
-recorded completions. Any live model call is refused and counted. An inspection
+each Session. Without a `ctx` deadline it applies a 2-minute bound. Errors
+are fixed-text refusals or context errors. Complete turns are replayed through
+the `chat` harness against their recorded completions. Any live model call is
+refused and counted. An inspection
 is labeled "local preview journal replay; not a test result". It has no
 verdicts, and incomplete, failed or canceled turns stay `incomplete`.
 Inspection never sends to a model, never re-evaluates assertions and never

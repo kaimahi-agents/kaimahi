@@ -16,15 +16,22 @@ import (
 
 // MaxJournals bounds retained preview runs. Opening a new run first removes
 // the oldest finished runs beyond MaxJournals-1; a run that is still executing
-// is never removed, so concurrent runs can briefly exceed the bound. Each run
-// is one SQLite journal holding the instructions, inputs, model identity,
-// answers and terminal records of that run's Sessions in cleartext;
-// credentials are never written.
+// is never removed. Executing runs, and starts that overlap and count the same
+// runs, can leave more than MaxJournals runs until the next run starts or
+// Clear runs. Each run is one SQLite journal holding the instructions, inputs,
+// model identity, answers and terminal records of that run's Sessions in
+// cleartext; credentials are never written.
 const MaxJournals = 20
 
 var errNoJournal = refuse(RefusedJournal, "no local preview journal exists", "run a local preview first")
 
 var errRunActive = refuse(RefusedJournal, "the local preview run is still executing", "wait for it to finish, then clear again")
+
+var errLockCleared = refuse(RefusedJournal, "a concurrent clear removed the new run's lock before it was held", "run the preview again")
+
+// lockFileOpened runs between creating and locking a run lock file. Tests
+// replace it to interleave a concurrent Clear.
+var lockFileOpened = func(string) {}
 
 // Run IDs start with a fixed-width UTC timestamp in nanoseconds, so their
 // lexical order is creation order.
@@ -122,10 +129,18 @@ func newJournal(dir string, now time.Time) (string, string, *runLock, error) {
 	if lock.file, err = os.OpenFile(lock.path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600); err != nil {
 		return "", "", nil, unwritable
 	}
+	lockFileOpened(lock.path)
 	if !tryLock(lock.file) {
 		_ = lock.file.Close()
 		_ = os.Remove(lock.path)
 		return "", "", nil, unwritable
+	}
+	// Clear removes unlocked lock files without a journal. If it removed this
+	// one before the lock was taken, the held lock no longer protects the run.
+	if !lockStillLinked(lock) {
+		unlock(lock.file)
+		_ = lock.file.Close()
+		return "", "", nil, errLockCleared
 	}
 	path := filepath.Join(dir, runID+".db")
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
@@ -137,6 +152,16 @@ func newJournal(dir string, now time.Time) (string, string, *runLock, error) {
 		return "", "", nil, unwritable
 	}
 	return runID, path, lock, nil
+}
+
+// lockStillLinked reports whether lock's path still names its open file.
+func lockStillLinked(lock *runLock) bool {
+	held, err := lock.file.Stat()
+	if err != nil {
+		return false
+	}
+	linked, err := os.Lstat(lock.path)
+	return err == nil && os.SameFile(held, linked)
 }
 
 // ListRuns returns retained run IDs in dir, oldest first. Unrelated entries
@@ -163,8 +188,10 @@ func ListRuns(dir string) ([]string, error) {
 }
 
 // Clear deletes one retained run, or every retained run when runID is empty.
-// It removes only files named like preview journals and leaves the directory.
-// A run that is still executing is refused and kept.
+// Clearing every run also removes unlocked run lock files whose journal is
+// missing, left by a process that exited before creating its journal. It
+// removes only files named like preview journals and run locks and leaves the
+// directory. A run that is still executing is refused and kept.
 func Clear(dir, runID string) error {
 	if runID != "" {
 		if _, err := JournalPath(dir, runID); err != nil {
@@ -179,14 +206,38 @@ func Clear(dir, runID string) error {
 	if err != nil {
 		return err
 	}
+	orphans, err := orphanLocks(dir, runs)
+	if err != nil {
+		return err
+	}
 	var errs []error
-	for _, id := range runs {
+	for _, id := range append(runs, orphans...) {
 		errs = append(errs, removeFinishedRun(dir, id))
 	}
 	if errors.Join(errs...) != nil {
 		return refuse(RefusedJournal, "some local preview journals are executing or could not be removed", "wait for running previews, close other kmx processes and clear again")
 	}
 	return nil
+}
+
+// orphanLocks returns run IDs in dir that have a regular lock file but no
+// listed journal. Unrelated entries are ignored.
+func orphanLocks(dir string, runs []string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, refuse(RefusedJournal, "the local preview journal directory could not be read", "check its permissions")
+	}
+	var orphans []string
+	for _, entry := range entries {
+		id, ok := strings.CutSuffix(entry.Name(), lockSuffix)
+		if ok && runIDPattern.MatchString(id) && entry.Type().IsRegular() && !slices.Contains(runs, id) {
+			orphans = append(orphans, id)
+		}
+	}
+	return orphans, nil
 }
 
 // removeFinishedRun removes runID's journal unless its lock is held. A missing

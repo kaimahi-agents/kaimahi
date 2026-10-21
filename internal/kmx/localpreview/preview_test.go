@@ -605,6 +605,70 @@ func TestStaleRunLockIsCleared(t *testing.T) {
 	}
 }
 
+func TestClearAllRemovesOrphanRunLocks(t *testing.T) {
+	dir := journalDir(t)
+	if err := privateDir(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	// A process that exited between locking and creating its journal leaves
+	// only an unlocked lock file.
+	orphan := filepath.Join(dir, "20990101T000000.000000000Z-000000000001"+lockSuffix)
+	unrelated := filepath.Join(dir, "notes"+lockSuffix)
+	for _, path := range []string{orphan, unrelated} {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A run that has locked but not yet created its journal is executing.
+	starting := filepath.Join(dir, "20990101T000000.000000000Z-000000000002"+lockSuffix)
+	held, err := os.OpenFile(starting, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tryLock(held) {
+		t.Fatal("lock not taken")
+	}
+	var refusal *Refusal
+	if err := Clear(dir, ""); !errors.As(err, &refusal) || refusal.Kind != RefusedJournal {
+		t.Fatalf("clear all ignored a starting run: %v", err)
+	}
+	if _, err := os.Lstat(orphan); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("orphan lock kept: %v", err)
+	}
+	for _, path := range []string{unrelated, starting} {
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatalf("%s removed: %v", filepath.Base(path), err)
+		}
+	}
+	unlock(held)
+	if err := held.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Clear(dir, ""); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 || entries[0].Name() != filepath.Base(unrelated) {
+		t.Fatalf("entries after clear = %v", entries)
+	}
+}
+
+func TestRunRefusesWhenClearRemovesItsUnheldLock(t *testing.T) {
+	dir := journalDir(t)
+	t.Cleanup(func() { lockFileOpened = func(string) {} })
+	lockFileOpened = func(string) {
+		if err := Clear(dir, ""); err != nil {
+			t.Errorf("concurrent clear: %v", err)
+		}
+	}
+	_, err := Run(testContext(t), greeter(t), "Ada", Options{JournalDir: dir})
+	if !errors.Is(err, errLockCleared) {
+		t.Fatalf("run = %v, want %v", err, errLockCleared)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("files left after refused run: %v", entries)
+	}
+}
+
 func TestInspectWithoutDeadlineAndNeverCreatesJournal(t *testing.T) {
 	dir := journalDir(t)
 	result, err := Test(testContext(t), greeter(t), Options{JournalDir: dir})
