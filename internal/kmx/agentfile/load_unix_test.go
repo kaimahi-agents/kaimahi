@@ -19,8 +19,10 @@ func TestStandaloneParseWithoutCurrentDirectory(t *testing.T) {
 	if _, err := Parse("standalone.agent.md", source); err != nil {
 		t.Fatalf("standalone parsing needs cwd: %v", err)
 	}
-	if _, err := Parse("charter.md", source); err == nil {
-		t.Fatal("relative Squad placement must resolve cwd")
+	if _, cwdErr := os.Getwd(); cwdErr != nil {
+		if _, err := Parse("charter.md", source); err == nil {
+			t.Fatal("relative Squad placement must resolve cwd")
+		}
 	}
 }
 

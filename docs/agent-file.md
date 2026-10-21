@@ -148,8 +148,8 @@ The same bytes work as a standalone `<id>.agent.md` or
 `.squad/agents/<id>/charter.md`. At the latter path Identity.ID must equal the
 directory ID; relative names and dot segments are resolved against the current
 directory for this check, and placement components are recognized case-insensitively.
-Other standalone filenames do not depend on cwd; relative `charter.md` requires
-an accessible current directory. This is a spelling check, not filesystem
+Other standalone filenames do not depend on cwd; relative `charter.md` depends
+on successful current-directory resolution. This is a spelling check, not filesystem
 canonicalization: Windows 8.3 names and trailing-dot/space aliases are not expanded.
 Use canonical path spellings for this check; standalone filenames never supply identity.
 The parser does not discover or initialize Squad, register a member, or change
