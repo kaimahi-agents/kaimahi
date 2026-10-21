@@ -399,6 +399,17 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   state. Generated recovery commands must preserve the invoking executable,
   selectors and shell quoting.
 
+## Agent-file preview boundary
+
+Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
+interface without cluster/workspace configuration. The production dependency is
+currently unwired and refuses; test fakes are `_test.go` only, not model/Sessions
+qualification. `app.FilePreviewResult` v1 is the safe shared projection, not a
+native evidence receipt. Subset is always partial, execution/journal failure is
+unknown, and only an explicit caller override changes the judge route. Keep
+live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
+See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
+
 ## Single-file charter boundary
 
 `internal/kmx/agentfile` parses only the canonical shape in

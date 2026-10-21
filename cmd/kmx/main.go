@@ -18,6 +18,10 @@ func main() {
 }
 
 func exitCode(err error) int {
+	var preview *app.FilePreviewError
+	if errors.As(err, &preview) {
+		return preview.ExitCode()
+	}
 	if errors.Is(err, app.ErrTaskPending) || errors.Is(err, app.ErrDestinationStatusPending) {
 		return 2
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
@@ -21,6 +22,7 @@ import (
 )
 
 type dependencies struct {
+	fileRunner         agentpreview.Runner
 	stdin              *os.File
 	stdout             io.Writer
 	stderr             io.Writer

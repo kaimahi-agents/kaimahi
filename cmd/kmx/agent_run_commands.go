@@ -12,22 +12,42 @@ import (
 
 func newAgentRunCommand(state *commandState) *cobra.Command {
 	var opt app.RunAgentOptions
+	var file fileCommandOptions
 	cmd := &cobra.Command{
-		Use: "run", Short: "Run one Task against an existing Orka Agent",
-		Long: "Select a live Orka Agent with --agent.\n" +
+		Use: "run [FILE]", Short: "Preview an agent file or run an existing Orka Agent",
+		Long: "Run FILE checks saved examples as a local preview, with optional separate --prompt/--prompt-file input.\n" +
+			"File output is text/JSON; --case selects a partial preview. No native evidence or source edits.\n" +
+			"Embedded runner integration is required; an unwired runner refuses without inference.\n" +
+			"Select a live Orka Agent with --agent (without FILE).\n" +
 			"Task name, state and recovery instructions go to stderr; stdout contains only the answer.\n" +
 			"A Task is never retried or deleted; exit code 2 means the wait expired and\n" +
 			"the answer may not yet be readable. Use kmx task result to retrieve it later.",
 		Args: usageArgs(0, 0, "kmx run --agent <name> --prompt <text>"),
 	}
-	cmd.Flags().StringVar(&opt.Agent, "agent", "", "run this live Orka Agent (required)")
+	cmd.Flags().StringVar(&opt.Agent, "agent", "", "run this live Orka Agent (required without FILE)")
 	cmd.Flags().StringVar(&opt.Namespace, "namespace", "", "live Agent namespace (default: "+app.OrkaNamespace+")")
 	cmd.Flags().StringVar(&opt.Prompt, "prompt", "", "one-shot Task prompt")
 	cmd.Flags().StringVar(&opt.PromptFile, "prompt-file", "", "read Task prompt from file, or - for stdin")
 	cmd.Flags().DurationVar(&opt.Wait, "wait", 5*time.Minute, "time to wait for the answer (default 5m; 10s to 9m)")
 	cmd.Flags().StringVar(&opt.ResultPort, "result-port", "", "loopback result-forward port (omitted: choose automatically)")
+	registerFileCommandFlags(cmd, &file, true)
 	cmd.Args = func(cmd *cobra.Command, args []string) error {
-		if err := usageArgs(0, 0, "kmx run --agent <name> --prompt <text>")(cmd, args); err != nil {
+		if len(args) == 1 {
+			if err := validateFileCommand(cmd, state, file); err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("prompt") && cmd.Flags().Changed("prompt-file") {
+				return fmt.Errorf("only one of --prompt or --prompt-file is allowed")
+			}
+			return nil
+		}
+		if err := fileFlagsWithoutFile(cmd); err != nil {
+			return err
+		}
+		if cmd.Flags().Changed("output") || cmd.Flags().Changed("show-content") {
+			return fmt.Errorf("--output and --show-content require an explicit agent FILE")
+		}
+		if err := usageArgs(0, 0, "kmx run FILE or kmx run --agent <name> --prompt <text>")(cmd, args); err != nil {
 			return err
 		}
 		if cmd.Flags().Changed("wait") && opt.Wait == 0 {
@@ -44,9 +64,13 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 		}
 		return nil
 	}
-	cmd.RunE = appRun(state, func(a *app.App) error {
-		return a.RunAgent(opt)
-	})
+	liveRun := appRun(state, func(a *app.App) error { return a.RunAgent(opt) })
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if len(args) == 1 {
+			return runFileCommand(cmd, state, args[0], file, opt.Prompt, opt.PromptFile)
+		}
+		return liveRun(cmd, args)
+	}
 	return cmd
 }
 
