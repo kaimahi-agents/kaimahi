@@ -357,6 +357,13 @@ and intentionally has no hero image.
 | `.gitignore` | **Scaffolding** | Checkout exclusions, including generated documentation output and dependencies. |
 | `.dockerignore` | **Scaffolding** | Defensive exclusions for root Docker contexts, including sensitive operator data and documentation-only dependencies. |
 
+## `changes/` — per-PR release notes
+
+Release-note fragments inherit this directory's release-input responsibility.
+Each pull request owns its Markdown note; the README describes the format.
+Release preparation combines pending notes without discarding existing
+Unreleased entries or released history.
+
 ## Open questions — one
 
 1. **Wider cross-runtime lifecycle scope.** Native exact-v0.10.3 Go kagent
