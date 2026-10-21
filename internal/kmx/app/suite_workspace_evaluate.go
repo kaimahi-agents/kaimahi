@@ -96,8 +96,8 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 		return nil, errors.New("native evaluation requires private output and bounded case timeout")
 	}
 	if opt.DevelopmentHost != "" {
-		if opt.ToContext != "" || opt.ToNamespace != "" || opt.Inference != "" || opt.Bindings != "" || opt.ResultPort != "" {
-			return nil, errors.New("development host evaluation refuses cluster, inference, bindings and result selectors")
+		if opt.ToContext != "" || opt.ToNamespace != "" || opt.Inference != "" || opt.ResultPort != "" {
+			return nil, errors.New("development host evaluation refuses cluster, inference and result selectors")
 		}
 	} else if !verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil || (opt.Inference == "") == (opt.Bindings == "") {
 		return nil, errors.New("native evaluation requires explicit context, exactly one inference or bindings selector, or an explicit development host")
@@ -141,7 +141,15 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 		if opt.DevelopmentHost == "" {
 			return nil, errors.New("unsupported native suite runtime without explicit --development-host")
 		}
-		sessions, err = snapshotSuiteSessionsHost(opt.DevelopmentHost, suite)
+		if opt.Bindings == "" {
+			return nil, errSuiteSessionsBinding
+		}
+		// The suite pins the model; the binding must serve exactly that model.
+		binding, err := snapshotSuiteSessionsBinding(opt.Bindings, suite)
+		if err != nil {
+			return nil, err
+		}
+		sessions, err = snapshotSuiteSessionsHost(opt.DevelopmentHost, suite, binding)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +158,7 @@ func PrepareSuiteWorkspaceEvaluation(ctx context.Context, opt SuiteWorkspaceEval
 	}
 	var bindings *suiteKagentBindingSnapshot
 	if suite.Runtime.ID == "agentsessions" {
-		// The host is already explicitly snapshotted; no Kubernetes defaults apply.
+		// The host and binding are already explicitly snapshotted; no Kubernetes defaults apply.
 	} else if suite.Runtime.ID == "kagent" {
 		if opt.Bindings == "" || opt.ResultPort != "" {
 			return nil, errors.New("native kagent evaluation requires --bindings and refuses --result-port")
