@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 )
 
 type localModel struct {
@@ -42,32 +44,13 @@ type ollamaDetector struct {
 var localModelName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]*$`)
 
 func (d ollamaDetector) Detect(ctx context.Context) ([]localModel, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.endpoint+"/api/tags", nil)
+	found, err := modelaccess.DetectOllama(ctx, d.client, d.endpoint)
 	if err != nil {
-		return nil, err
+		return nil, nil // Legacy kind discovery remains best-effort.
 	}
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return nil, nil // A runtime not listening is the ordinary no-match case.
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, nil
-	}
-	var body struct {
-		Models []struct {
-			Name string `json:"name"`
-			Size int64  `json:"size"`
-		} `json:"models"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
-		return nil, nil
-	}
-	models := make([]localModel, 0, len(body.Models))
-	for _, found := range body.Models {
-		if name := strings.TrimSpace(found.Name); localModelName.MatchString(name) {
-			models = append(models, localModel{Provider: "ollama", Model: name, Size: found.Size})
-		}
+	models := make([]localModel, 0, len(found))
+	for _, m := range found {
+		models = append(models, localModel{Provider: m.Route.Provider, Model: m.Route.Model, Size: m.SizeBytes})
 	}
 	return models, nil
 }
