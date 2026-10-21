@@ -74,7 +74,10 @@ The trusted provider route, endpoint and credentials must come from outside
 this file; the parser neither checks availability nor chooses/falls back to a
 model. Prose cannot grant tools or hooks: downstream execution must remain
 tool-free regardless of what instructions request. Parsing is not a sandbox or
-a guarantee that arbitrary prose is safe or secret-free.
+a guarantee that arbitrary prose is safe or secret-free. The complete instruction
+prefix (title, identity, model and responsibilities) is checked with the existing
+credential-shape scanner and refuses known shapes with a fixed redacted error;
+arbitrary secrets can still evade shape detection.
 
 ## Examples and assertions
 

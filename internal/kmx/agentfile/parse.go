@@ -168,6 +168,12 @@ func Parse(filename string, data []byte) (*Agent, error) {
 		}
 		return nil, refuse(filename, len(lines), 1, field, "close the Markdown fence with matching markers")
 	}
+	if s, ok := sections["Examples"]; ok {
+		a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
+		if _, at := secretshapes.MatchIndex(a.Instructions); at >= 0 {
+			return nil, refuse(filename, strings.Count(a.Instructions[:at], "\n")+1, 1, "Instructions", "refusing invalid Unicode or credential-shaped content")
+		}
+	}
 	missing := []string{}
 	for _, name := range sectionNames {
 		if _, ok := sections[name]; !ok {
@@ -254,7 +260,6 @@ func Parse(filename string, data []byte) (*Agent, error) {
 		return nil, err
 	}
 	a.Examples = examples
-	a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
 	return a, nil
 }
 
