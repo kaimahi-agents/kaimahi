@@ -149,19 +149,19 @@ journal, with one completion per ad-hoc input/example and one extra call per
 `llmJudge` assertion. There are no retries, redirects or provider/model fallback.
 The runner and its constructor wiring are removed when the embedded Sessions
 runner is integrated. A nil dependency still refuses `runner_unavailable`.
-Hermetic tests do not qualify real models, Copilot access or native Windows.
+Hermetic tests do not qualify real local models or native Windows.
 
 The offline `fake` route is deliberately small: Accountable Responsibilities must
 be exactly ``Reply with exactly `Hello, ` followed by the input name.`` (the prefix
 can change), or ``Reply with exactly `literal response`.``. A fake judge supports
 only the rubric ``Answer contains `text`.``; unsupported rubrics are unknown, not
 an automatic pass. This is orientation, not a general model. Real compatible/local
-routes use the explicit keyless endpoint (HTTPS, or HTTP on literal loopback/localhost).
+routes use an explicit keyless local endpoint (HTTP or HTTPS on literal loopback/localhost).
 Compatible/local transport waits at most 30 seconds for response headers, within
 the five-minute overall budget; slow non-streaming generation can hit that limit.
 Agent completions require an exact model-ID echo, with no automatic aliasing.
-Copilot uses the model-access transport and its existing sign-in, never a second
-auth implementation or credential extraction.
+Copilot and remote endpoints refuse in this runner; Copilot wiring is separate
+work after model-access integration.
 
 Judging applies the authored threshold to one valid score; unavailable, malformed,
 refused or mismatched-model replies are unknown. These single-sample local rows

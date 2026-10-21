@@ -25,7 +25,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 ### Added
 
 - Temporary direct file-preview runner with explicit no-journal output, deterministic
-  fake and selected compatible/local/Copilot model-access transport. One completion
+  fake and selected local OpenAI-compatible model transport. One completion
   per input/example and one judge sample per llmJudge, without retries or fallback;
   no Sessions, native judge evidence or deployment qualification. Removed when the
   embedded Sessions runner is integrated.

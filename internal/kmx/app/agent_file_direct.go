@@ -18,7 +18,6 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -26,12 +25,10 @@ import (
 // implementation and constructor wiring when the embedded Sessions runner lands.
 // Its single-sample judgments are local preview only, never native evidence.
 func NewDirectFileRunner() agentpreview.Runner {
-	return &directFileRunner{copilotClient: copilot.New(nil).Client}
+	return &directFileRunner{}
 }
 
-type directFileRunner struct {
-	copilotClient func(context.Context, modelaccess.Route) (http.RoundTripper, error)
-}
+type directFileRunner struct{}
 
 var _ agentpreview.Runner = (*directFileRunner)(nil)
 var errDirectPreview = errors.New("direct preview execution unavailable")
@@ -72,7 +69,7 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 	if r.JudgeRoute != nil {
 		judge = *r.JudgeRoute
 	}
-	client, err := d.client(ctx, r.Route)
+	client, err := d.client(r.Route)
 	if err != nil {
 		return abort(err)
 	}
@@ -89,7 +86,7 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 		}
 	}
 	if hasJudge && judge != r.Route {
-		judgeClient, err = d.client(ctx, judge)
+		judgeClient, err = d.client(judge)
 		if err != nil {
 			return abort(err)
 		}
@@ -172,32 +169,26 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 	return out, nil
 }
 
-func (d *directFileRunner) client(ctx context.Context, r modelaccess.Route) (*http.Client, error) {
+func (d *directFileRunner) client(r modelaccess.Route) (*http.Client, error) {
 	if r.Validate() != nil || (r.Provider == "fake") != (r.Model == "fake") {
 		return nil, agentpreview.ErrModelUnavailable
 	}
 	if r.Provider == "fake" {
 		return nil, nil
 	}
-	var transport http.RoundTripper
-	if r.Provider == "copilot" {
-		var err error
-		transport, err = d.copilotClient(ctx, r)
-		if err != nil {
-			return nil, agentpreview.ErrModelUnavailable
-		}
-	} else {
-		u, err := url.Parse(r.Endpoint)
-		if err != nil || u.RawPath != "" || u.Opaque != "" {
-			return nil, agentpreview.ErrModelUnavailable
-		}
-		host := u.Hostname()
-		ip := net.ParseIP(host)
-		if u.Scheme != "https" && !(u.Scheme == "http" && (host == "localhost" || ip != nil && ip.IsLoopback())) {
-			return nil, agentpreview.ErrModelUnavailable
-		}
-		transport = &http.Transport{Proxy: nil, DisableKeepAlives: true, ResponseHeaderTimeout: 30 * time.Second, MaxResponseHeaderBytes: 16 * 1024, TLSHandshakeTimeout: 10 * time.Second}
+	if r.Provider != "compatible" && r.Provider != "ollama" && r.Provider != "foundry-local" {
+		return nil, agentpreview.ErrModelUnavailable
 	}
+	u, err := url.Parse(r.Endpoint)
+	if err != nil || u.RawPath != "" || u.Opaque != "" {
+		return nil, agentpreview.ErrModelUnavailable
+	}
+	host := u.Hostname()
+	ip := net.ParseIP(host)
+	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return nil, agentpreview.ErrModelUnavailable
+	}
+	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, ResponseHeaderTimeout: 30 * time.Second, MaxResponseHeaderBytes: 16 * 1024, TLSHandshakeTimeout: 10 * time.Second}
 	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, nil
 }
 func (d *directFileRunner) send(ctx context.Context, client *http.Client, r modelaccess.Route, system, input string, judge bool) ([]byte, error) {

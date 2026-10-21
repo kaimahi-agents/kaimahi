@@ -403,7 +403,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
 interface without cluster/workspace configuration. CLI uses a temporary direct
-`preview runner (no journal)` with one agent call per input/example and one judge
+`preview runner (no journal)` for fake/local routes, with one agent call per input/example and one judge
 call per llmJudge; no Sessions, journal, retries or fallback. Remove it when the
 embedded runner lands. Scripted test fakes remain `_test.go` only, not real-model
 qualification. `app.FilePreviewResult` v1 is the safe shared projection, not a

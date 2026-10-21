@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -188,6 +187,13 @@ func TestDirectPreviewCancellationStopsBeforeJudge(t *testing.T) {
 		t.Fatalf("%+v / %v / calls %d", r, err, calls.Load())
 	}
 }
+func TestDirectPreviewRejectsRemoteCompatibleRoute(t *testing.T) {
+	_, err := NewDirectFileRunner().(*directFileRunner).client(modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: "https://example.invalid", Auth: "none"})
+	if !errors.Is(err, agentpreview.ErrModelUnavailable) {
+		t.Fatalf("remote compatible route accepted: %v", err)
+	}
+}
+
 func TestDirectPreviewExplicitJudgeOverride(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,34 +213,16 @@ func TestDirectPreviewExplicitJudgeOverride(t *testing.T) {
 	}
 }
 
-type directTestTransport func(*http.Request) (*http.Response, error)
-
-func (f directTestTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
-func TestDirectPreviewUsesCopilotRouteTransport(t *testing.T) {
-	var prepared, calls int
-	direct := NewDirectFileRunner().(*directFileRunner)
-	direct.copilotClient = func(_ context.Context, route modelaccess.Route) (http.RoundTripper, error) {
-		prepared++
-		if route.Provider != "copilot" || route.Model != "unit" {
-			t.Fatal("wrong Copilot route")
-		}
-		return directTestTransport(func(r *http.Request) (*http.Response, error) {
-			calls++
-			if r.URL.String() != "https://api.githubcopilot.com/chat/completions" {
-				t.Fatal("Copilot request bypassed selected transport")
-			}
-			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"model":"unit","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Hello, PRIVATE INPUT"}}]}`)), Header: make(http.Header)}, nil
-		}), nil
-	}
+func TestDirectPreviewRefusesCopilotUntilSeparateWiring(t *testing.T) {
 	opt := directOptions(t, "unit", false)
 	opt.Route = &modelaccess.Route{Provider: "copilot", Model: "unit", Endpoint: "https://api.githubcopilot.com", Auth: "copilot"}
-	r, err := (&App{FileRunner: direct}).PreviewAgentFile(context.Background(), opt)
-	if err != nil || !r.FullPass || prepared != 1 || calls != 2 {
-		t.Fatalf("prepared %d calls %d / %+v / %v", prepared, calls, r, err)
+	r, err := (&App{FileRunner: NewDirectFileRunner()}).PreviewAgentFile(context.Background(), opt)
+	if err == nil || r.FullPass || r.ReasonCode != "model_unavailable" {
+		t.Fatalf("deferred route accepted: %+v / %v", r, err)
 	}
 }
 
-func TestDirectPreviewCancellationDuringRoutePreparation(t *testing.T) {
+func TestDirectPreviewCancelledBeforeSend(t *testing.T) {
 	opt := directOptions(t, "unit", false)
 	parsed, err := agentfile.Load(opt.File)
 	if err != nil {
@@ -242,12 +230,8 @@ func TestDirectPreviewCancellationDuringRoutePreparation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	direct := NewDirectFileRunner().(*directFileRunner)
-	direct.copilotClient = func(context.Context, modelaccess.Route) (http.RoundTripper, error) {
-		cancel()
-		return nil, errors.New("PRIVATE transport error")
-	}
-	out, err := direct.Run(ctx, agentpreview.Request{Agent: parsed, Examples: parsed.Examples, Route: modelaccess.Route{Provider: "copilot", Model: "unit", Endpoint: "https://api.githubcopilot.com", Auth: "copilot"}})
+	cancel()
+	out, err := NewDirectFileRunner().Run(ctx, agentpreview.Request{Agent: parsed, Examples: parsed.Examples, Route: modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: "http://127.0.0.1:1", Auth: "none"}})
 	if !errors.Is(err, context.Canceled) || out.State != agentpreview.Cancelled {
 		t.Fatalf("%+v / %v", out, err)
 	}
