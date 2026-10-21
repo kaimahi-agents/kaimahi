@@ -115,9 +115,9 @@ kmx eval is deprecated; use kmx test (same arguments).
 ```
 
 Existing workspace arguments, flags, stdout, exit codes, state and stderr labels
-remain unchanged apart from that notice. File preview is canonical `test FILE`
-only; it is not added to the legacy `eval` route. Help and completion remain inert;
-root help/completion advertises `test`, not `eval`. Removal requires a later
+remain unchanged apart from that notice. File preview uses canonical `run FILE`
+and `test FILE`; neither is added to the legacy `eval` route. Help and completion
+remain inert; root help/completion advertises `test`, not `eval`. Removal requires a later
 announced breaking release.
 
 This is a command rename, not a data migration. Authored `eval/` and packaged
@@ -134,10 +134,13 @@ without workspace discovery, cluster configuration, Docker or a daemon. Both
 check the file's saved examples in authored order. Run additionally accepts
 `--prompt TEXT` or `--prompt-file FILE|-` for a separately attributed ad-hoc
 answer; without either it checks examples only. Test accepts no ad-hoc input.
-Input is bounded to 16 KiB; the entire operation has a five-minute deadline.
-Prompt-file/stdin intake errors are pre-operation CLI errors on stderr, with no
-result document. Rooted API callers can pass an already-parsed snapshot without
-reopening its filename; the CLI path is a thin load-and-delegate wrapper.
+Input is bounded to 16 KiB. The five-minute preview execution deadline starts
+after prompt collection. Ctrl-C/SIGTERM retain their default behavior during
+intake, including when a pipe's writer stays open without EOF; no background
+reader is started. Prompt-file/stdin intake errors are pre-operation CLI errors
+on stderr, with no result document. Rooted API callers can pass an already-parsed
+snapshot without reopening its filename; the CLI path is a thin load-and-delegate
+wrapper.
 Neither operation changes source or produces native evaluation/deploy evidence.
 
 **Runner integration is not yet available.** The command/App adapter is exercised

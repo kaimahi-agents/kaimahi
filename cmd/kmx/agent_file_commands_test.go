@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
@@ -16,15 +19,17 @@ import (
 )
 
 type cliPreviewFake struct {
-	calls   int
-	request agentpreview.Request
-	verdict runtime.EvaluationVerdict
-	cause   error
+	calls    int
+	request  agentpreview.Request
+	verdict  runtime.EvaluationVerdict
+	cause    error
+	deadline time.Time
 }
 
 var _ agentpreview.Runner = (*cliPreviewFake)(nil)
 
-func (f *cliPreviewFake) Run(_ context.Context, r agentpreview.Request) (agentpreview.Outcome, error) {
+func (f *cliPreviewFake) Run(ctx context.Context, r agentpreview.Request) (agentpreview.Outcome, error) {
+	f.deadline, _ = ctx.Deadline()
 	f.calls++
 	f.request = r
 	complete := func(id string) agentpreview.Completion {
@@ -98,6 +103,7 @@ func TestFileCommandExitCodes(t *testing.T) {
 		{runtime.EvaluationUnknown, nil, 2, "judge_unknown"},
 		{runtime.EvaluationPass, agentpreview.ErrJournalFailed, 1, "journal_failed"},
 		{runtime.EvaluationPass, context.Canceled, 130, "cancelled"},
+		{runtime.EvaluationPass, context.DeadlineExceeded, 1, "deadline_exceeded"},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			var out, diag bytes.Buffer
@@ -167,6 +173,109 @@ func TestFilePreviewOutputWriteFailure(t *testing.T) {
 	deps.fileRunner = &cliPreviewFake{verdict: runtime.EvaluationPass}
 	if err := execute([]string{"test", cliPreviewFile(t), "-o", "json"}, deps); err == nil || exitCode(err) != 1 {
 		t.Fatalf("write failure: %v", err)
+	}
+}
+
+func TestFilePromptOpenPipeInterrupt(t *testing.T) {
+	const helper = "KMX_TEST_PROMPT_INTERRUPT"
+	if os.Getenv(helper) == "1" {
+		var out, diag bytes.Buffer
+		deps, _ := testDependencies(&out, &diag)
+		// Parent keeps this inherited (blocking) stdin pipe open without EOF.
+		cmd := newAgentRunCommand(&commandState{deps: deps})
+		cmd.SetContext(context.Background())
+		if err := cmd.Flags().Set("prompt-file", "-"); err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
+		}()
+		_ = runFileCommand(cmd, &commandState{deps: deps}, "unread.agent.md", fileCommandOptions{Output: "json"}, "", "-")
+		t.Fatal("open-pipe intake returned before interrupt")
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestFilePromptOpenPipeInterrupt$")
+	child.Env = append(os.Environ(), helper+"=1")
+	child.Stdin = reader
+	output, err := child.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.Sys().(syscall.WaitStatus).Signal() != syscall.SIGINT {
+		t.Fatalf("Ctrl-C swallowed during open-pipe intake: %v / %s", err, output)
+	}
+	if len(output) != 0 {
+		t.Fatalf("intake invoked preview or printed output: %s", output)
+	}
+}
+
+func TestFilePromptCollectionPrecedesPreviewBudget(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	var out, diag bytes.Buffer
+	deps, loads := testDependencies(&out, &diag)
+	fake := &cliPreviewFake{verdict: runtime.EvaluationPass}
+	deps.stdin, deps.fileRunner = reader, fake
+	collected := make(chan time.Time, 1)
+	go func() {
+		// Represent user think time, outside the execution budget.
+		time.Sleep(100 * time.Millisecond)
+		_, _ = writer.Write([]byte("Ada"))
+		collected <- time.Now()
+		_ = writer.Close()
+	}()
+	if err := execute([]string{"run", cliPreviewFile(t), "--prompt-file", "-", "-o", "json"}, deps); err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 1 || *loads != 0 || fake.request.Input == nil || *fake.request.Input != "Ada" {
+		t.Fatalf("prompt not attributed: %+v / config=%d", fake.request, *loads)
+	}
+	if fake.deadline.Before((<-collected).Add(5 * time.Minute)) {
+		t.Fatal("prompt collection consumed the five-minute preview execution budget")
+	}
+}
+
+func TestFileHelpIsCanonicalOnly(t *testing.T) {
+	for _, verb := range []string{"run", "test", "eval"} {
+		t.Run(verb, func(t *testing.T) {
+			var out, diag bytes.Buffer
+			deps, loads := testDependencies(&out, &diag)
+			fake := &cliPreviewFake{verdict: runtime.EvaluationPass}
+			deps.fileRunner = fake
+			if err := execute([]string{verb, "--help"}, deps); err != nil {
+				t.Fatal(err)
+			}
+			if verb == "eval" {
+				// Workspace flags legitimately use FILE as a metavariable; file-mode
+				// descriptions and selectors must remain canonical-only.
+				if strings.Contains(out.String(), "test FILE") || strings.Contains(out.String(), "FILE supports both") || strings.Contains(out.String(), "FILE: answer") || strings.Contains(out.String(), "--case ") || strings.Count(diag.String(), evalDeprecationNotice) != 1 {
+					t.Fatalf("legacy help advertises file preview or loses notice: %s / %s", out.String(), diag.String())
+				}
+				for _, help := range []string{
+					"output: text|json (JSON: Orka only)",
+					"print sanitized bounded failure excerpts, expected values and judge rationale on stderr (not evidence)",
+				} {
+					if !strings.Contains(out.String(), help) {
+						t.Errorf("legacy help changed: missing %q", help)
+					}
+				}
+			} else if !strings.Contains(strings.ToLower(out.String()), verb+" file") || !strings.Contains(out.String(), "--case") {
+				t.Fatalf("canonical file preview missing from %s help: %s", verb, out.String())
+			}
+			if *loads != 0 || fake.calls != 0 {
+				t.Fatal("help performed operations")
+			}
+		})
 	}
 }
 

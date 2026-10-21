@@ -65,11 +65,8 @@ func fileFlagsWithoutFile(cmd *cobra.Command) error {
 	}
 	return nil
 }
+
 func runFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string) error {
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
 	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID, ShowContent: f.ShowContent}
 	if f.Provider != "" || f.Endpoint != "" {
 		route := modelaccess.Route{Provider: f.Provider, Endpoint: f.Endpoint, Auth: "none"}
@@ -105,6 +102,12 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 		input := string(b)
 		opt.Input = &input
 	}
+	// Intake precedes signal interception: blocking stdin cannot observe cancellation.
+	// User think time must not consume the preview execution budget.
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
 	a := &app.App{FileRunner: state.deps.fileRunner}
 	result, err := a.PreviewAgentFile(ctx, opt)
 	if outputErr := app.WriteFilePreview(cmd.OutOrStdout(), result, f.Output); outputErr != nil {

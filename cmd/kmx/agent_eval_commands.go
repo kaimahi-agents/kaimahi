@@ -32,10 +32,17 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 	var destination string
 	var output string
 	var file fileCommandOptions
+	fileHelp := ""
+	outputHelp := "output: text|json (JSON: Orka only)"
+	showContentHelp := "print sanitized bounded failure excerpts, expected values and judge rationale on stderr (not evidence)"
+	if verb == "test" {
+		fileHelp = "Canonical test FILE checks a markdown agent's saved examples as a local preview (not native evidence). --case ID selects a partial preview. An unwired embedded runner refuses without inference.\n"
+		outputHelp = "output: text|json (workspace JSON: Orka only; FILE supports both)"
+		showContentHelp = "show sanitized bounded content (workspace: stderr; FILE: answer excerpts in result; not evidence)"
+	}
 	group := &cobra.Command{
 		Use: verb, Short: "Evaluate a native workspace or export, verify and compare saved evidence",
-		Long: "Canonical test FILE checks a markdown agent's saved examples as a local preview (not native evidence). --case ID selects a partial preview. An unwired embedded runner refuses without inference.\n" +
-			"Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
+		Long: fileHelp + "Evaluate every authored case in one packaged tool-free native Orka or exact v0.10.3 Go kagent workspace, discovered from the nearest ancestor workspace.yaml or selected exactly with --workspace.\n" +
 			"--to NAME resolves copied selectors from workspace-root kmx.yaml; explicit flags override. Without --to-context or --development-host, evalTarget may select a named destination. No remembered/current-context fallback.\n" +
 			"Orka requires --inference provider:NAME and result-access ServiceAccount/RBAC. Kagent requires author-owned --bindings FILE, binding namespace and unsecure auth; trusted-proxy and --result-port refuse. No runtime or model override or subset evaluation. llmJudge requires an explicit --judge-base-url and authored judgeModel/judgeVersion; --judge-key-env names an optional HTTPS credential variable. Input, answer and rubric transfer to that provider for two independent samples per assertion; disagreement/error is unknown. Failure summaries show assertion IDs/types and judge scores; --show-content additionally prints sanitized bounded answer excerpts, expected values and judge rationale on stderr. Non-pass runs are retained privately under KMX_HOME (last 10 per workspace across revisions); use test explain to inspect or clear them offline. Content is diagnostic-only, never evidence.\n" +
 			"Packaged AgentSessions requires --development-host FILE: an explicit private operator observation of a pinned built-in chat host on literal loopback, unauthenticated, and --bindings FILE: an AgentSessionsBinding whose model.name is exactly the packaged model. Evidence records the binding digest, which covers every judged or repeated run; the host's endpoint is not attested. It refuses all cluster/inference/result selectors and loads no cluster configuration. Authored llmJudge uses the same explicit judge transport options and transfers case inputs, attributed answers and rubrics.\n" +
@@ -156,7 +163,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 		registerFileCommandFlags(group, &file, false)
 	}
 	registerDestinationFlag(group, &destination)
-	group.Flags().StringVarP(&output, "output", "o", "text", "output: text|json (workspace JSON: Orka only; FILE supports both)")
+	group.Flags().StringVarP(&output, "output", "o", "text", outputHelp)
 	group.Flags().StringVar(&native.Workspace, "workspace", "", "select an exact workspace root instead of nearest-ancestor discovery")
 	group.Flags().StringVar(&native.ToContext, "to-context", "", "explicit native evaluation context")
 	group.Flags().StringVar(&native.ToNamespace, "to-namespace", app.OrkaNamespace, "native evaluation namespace")
@@ -172,7 +179,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		})
 	}
-	group.Flags().BoolVar(&native.ShowContent, "show-content", false, "show sanitized bounded content (workspace: stderr; FILE: answer excerpts in result; not evidence)")
+	group.Flags().BoolVar(&native.ShowContent, "show-content", false, showContentHelp)
 	group.Flags().StringVar(&native.Out, "out", "", "optional new standalone private receipt outside workspace/cache (managed proof is automatic)")
 	group.Flags().DurationVar(&native.CaseTimeout, "case-timeout", 5*time.Minute, "deadline per run, at most 9m")
 	group.Flags().StringVar(&native.ResultPort, "result-port", "", "loopback result-forward port (omitted: choose automatically)")
