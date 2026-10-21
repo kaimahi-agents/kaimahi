@@ -669,6 +669,57 @@ func TestRunRefusesWhenClearRemovesItsUnheldLock(t *testing.T) {
 	}
 }
 
+func TestClearKeepsLockOfRunThatLocksAsClearReleases(t *testing.T) {
+	dir := journalDir(t)
+	opened, proceed := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() {
+		lockFileOpened = func(string) {}
+		lockReleased = func(string) {}
+	})
+	lockFileOpened = func(string) {
+		close(opened)
+		<-proceed
+	}
+	type started struct {
+		runID string
+		lock  *runLock
+		err   error
+	}
+	result := make(chan started, 1)
+	go func() {
+		runID, _, lock, err := newJournal(dir, time.Now())
+		result <- started{runID, lock, err}
+	}()
+	<-opened
+	// Clear locks the new run's lock file before the run does. The run takes
+	// the lock as soon as Clear releases it, before Clear finishes.
+	var run started
+	lockReleased = func(string) {
+		lockReleased = func(string) {}
+		close(proceed)
+		run = <-result
+	}
+	_ = Clear(dir, "")
+	if run.err != nil {
+		if !errors.Is(run.err, errLockCleared) {
+			t.Fatalf("new run = %v, want %v", run.err, errLockCleared)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Fatalf("files left after refused run: %v", entries)
+		}
+		return
+	}
+	// A run that started must keep its lock file, so its journal is never
+	// pruned or cleared while it executes.
+	defer run.lock.release()
+	if _, err := os.Lstat(run.lock.path); err != nil {
+		t.Fatalf("executing run lost its lock file: %v", err)
+	}
+	if err := removeFinishedRun(dir, run.runID); !errors.Is(err, errRunActive) {
+		t.Fatalf("removing the executing run = %v, want %v", err, errRunActive)
+	}
+}
+
 func TestInspectWithoutDeadlineAndNeverCreatesJournal(t *testing.T) {
 	dir := journalDir(t)
 	result, err := Test(testContext(t), greeter(t), Options{JournalDir: dir})

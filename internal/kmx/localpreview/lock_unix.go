@@ -17,3 +17,14 @@ func tryLock(f *os.File) bool {
 func unlock(f *os.File) {
 	_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
 }
+
+// removeHeldLock removes the lock file at path while f still holds its lock,
+// then releases and closes f. A run that locks the same file afterwards finds
+// its path unlinked and refuses, rather than executing without a lock file.
+func removeHeldLock(f *os.File, path string) error {
+	err := os.Remove(path)
+	unlock(f)
+	lockReleased(path)
+	_ = f.Close()
+	return err
+}

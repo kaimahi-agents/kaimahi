@@ -33,6 +33,10 @@ var errLockCleared = refuse(RefusedJournal, "a concurrent clear removed the new 
 // replace it to interleave a concurrent Clear.
 var lockFileOpened = func(string) {}
 
+// lockReleased runs right after a held run lock is unlocked, before its file
+// is closed. Tests replace it to interleave a starting run.
+var lockReleased = func(string) {}
+
 // Run IDs start with a fixed-width UTC timestamp in nanoseconds, so their
 // lexical order is creation order.
 var runIDPattern = regexp.MustCompile(`^[0-9]{8}T[0-9]{6}\.[0-9]{9}Z-[0-9a-f]{12}$`)
@@ -94,9 +98,7 @@ func (l *runLock) release() {
 	if l == nil {
 		return
 	}
-	unlock(l.file)
-	_ = l.file.Close()
-	_ = os.Remove(l.path)
+	_ = removeHeldLock(l.file, l.path)
 }
 
 // newJournal creates an empty owner-only journal file for a new run after
@@ -135,8 +137,9 @@ func newJournal(dir string, now time.Time) (string, string, *runLock, error) {
 		_ = os.Remove(lock.path)
 		return "", "", nil, unwritable
 	}
-	// Clear removes unlocked lock files without a journal. If it removed this
-	// one before the lock was taken, the held lock no longer protects the run.
+	// Clear removes lock files without a journal that it could lock, and
+	// removes each before releasing it. If it removed this one before this run
+	// took the lock, the held lock no longer protects the run.
 	if !lockStillLinked(lock) {
 		unlock(lock.file)
 		_ = lock.file.Close()
@@ -258,9 +261,7 @@ func removeFinishedRun(dir, runID string) error {
 		return errRunActive
 	}
 	err = removeRun(dir, runID)
-	unlock(lock)
-	_ = lock.Close()
-	if removeErr := os.Remove(lockPath); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) && err == nil {
+	if removeErr := removeHeldLock(lock, lockPath); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) && err == nil {
 		err = refuse(RefusedJournal, "the local preview journal could not be removed", "close other kmx processes and clear again")
 	}
 	return err
