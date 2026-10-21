@@ -1,0 +1,33 @@
+name: model-access
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  native-model-access:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Native model-access tests
+        run: go test -race -count=1 ./internal/kmx/modelaccess/...
+      - name: Linux CLI tests
+        if: runner.os == 'Linux'
+        run: go test -count=1 ./cmd/kmx
+      - name: Linux CLI build
+        if: runner.os == 'Linux'
+        run: go build ./cmd/kmx

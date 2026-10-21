@@ -26,6 +26,17 @@ suite-owned resources remain reserved against legacy adoption, copying and
 retirement; direct live invocation is separate. Readiness is not an answer or
 evaluated execution.
 
+## Local model inventory
+
+`kmx model list [-o table|json]` reads installed Foundry Local/Ollama inventory
+without loading cluster configuration or prompting. It reports absent, empty,
+installed and failure separately, with explicit install guidance when needed.
+It never starts a runtime, downloads a model, changes a saved selection or runs
+an agent. Foundry Local supplies its own endpoint; Ollama defaults to loopback
+port 11434. See [model discovery](models.md#installed-local-model-discovery) for
+requirements, sizes and the non-secret route contract. These commands are
+unreleased; native Windows package tests do not yet qualify the Windows CLI.
+
 ## Install
 
 **On Windows, use WSL for now.** Install and run kmx inside your Linux
