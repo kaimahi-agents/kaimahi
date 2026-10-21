@@ -24,6 +24,11 @@ const suitePassingJudgeVersion = "kmx.llm-judge/v2"
 
 var errSuitePassingReceipt = errors.New("invalid native passing receipt")
 
+// errSuiteSessionsReceiptV1 classifies an AgentSessions passing receipt v1,
+// which does not record the AgentSessionsBinding digest. It is never eligible
+// proof; it only gets a clearer error.
+var errSuiteSessionsReceiptV1 = fmt.Errorf("%w: AgentSessions passing receipt v1 does not record an AgentSessionsBinding; evaluate again with --development-host FILE --bindings FILE", errSuitePassingReceipt)
+
 // errPreviousSuiteReceipt marks receipts for the old case layout.
 var errPreviousSuiteReceipt = fmt.Errorf("%w: recorded against cases under metadata/kmx/eval by an earlier kmx; rerun kmx eval and kmx push with this kmx", errSuitePassingReceipt)
 
@@ -231,6 +236,64 @@ func newSuitePassingReceiptRun(ctx context.Context, prepared *workspace.Prepared
 }
 
 func parseSuitePassingReceipt(raw []byte) (*suitePassingReceipt, error) {
+	r, sessionsV1, err := classifySuitePassingReceipt(raw)
+	if sessionsV1 {
+		return nil, errSuiteSessionsReceiptV1
+	}
+	return r, err
+}
+
+// classifySuitePassingReceipt parses raw strictly. When raw is an otherwise
+// complete AgentSessions passing receipt v1, it reports sessionsV1 with the
+// receipt parsed as v2 under a placeholder binding digest, so a caller can
+// check its identity before classifying the refusal. That receipt is never
+// eligible proof.
+func classifySuitePassingReceipt(raw []byte) (r *suitePassingReceipt, sessionsV1 bool, err error) {
+	r, err = parseSuitePassingReceiptStrict(raw)
+	if err == nil {
+		return r, false, nil
+	}
+	if old := suiteSessionsReceiptV1(raw); old != nil {
+		return old, true, err
+	}
+	return nil, false, err
+}
+
+// suiteSessionsReceiptV1 returns raw parsed as v2 with a placeholder
+// agentsessions.subject.bindingDigest when raw is an AgentSessions passing
+// receipt v1 that would otherwise parse, and nil otherwise. It accepts
+// nothing: the placeholder only classifies the refusal.
+func suiteSessionsReceiptV1(raw []byte) *suitePassingReceipt {
+	if len(raw) > maxSuitePassingReceiptBytes {
+		return nil
+	}
+	var document map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&document) != nil || document["executionMode"] != "native-agentsessions" || document["domain"] != suiteSessionsPassingDomainV1 {
+		return nil
+	}
+	sessions, _ := document["agentsessions"].(map[string]any)
+	subject, _ := sessions["subject"].(map[string]any)
+	if subject == nil {
+		return nil
+	}
+	document["domain"] = suiteSessionsPassingDomain
+	if _, ok := subject["bindingDigest"]; !ok {
+		subject["bindingDigest"] = "sha256:" + strings.Repeat("0", 64)
+	}
+	placeholder, err := agentsuite.Marshal(document)
+	if err != nil {
+		return nil
+	}
+	r, err := parseSuitePassingReceiptStrict(placeholder)
+	if err != nil {
+		return nil
+	}
+	return r
+}
+
+func parseSuitePassingReceiptStrict(raw []byte) (*suitePassingReceipt, error) {
 	r, parseErr := parseSuitePassingWire(raw)
 	if len(raw) > maxSuitePassingReceiptBytes || parseErr != nil {
 		return nil, errSuitePassingReceipt
