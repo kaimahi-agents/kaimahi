@@ -170,7 +170,7 @@ func TestSuitePublicUnsupportedModelRefusesWithoutNormalization(t *testing.T) {
 				t.Fatal(err)
 			}
 			host := suiteSessionsHostObservation{Mode: "operator-observed-development", HostID: "host", JournalID: "journal", RuntimeVersion: workspace.AgentSessionsVersion, RuntimeBinaryDigest: "sha256:" + strings.Repeat("a", 64), RuntimeConfigDigest: "sha256:" + strings.Repeat("b", 64), InferenceID: "inference", InferenceRevision: "sha256:" + strings.Repeat("c", 64), Model: model, Harness: "chat", HarnessVersion: "1", Retention: "operator-managed"}
-			subject, err := newSuiteSessionsSubject(suite, host)
+			subject, err := newSuiteSessionsSubject(suite, host, "sha256:"+strings.Repeat("e", 64))
 			if err != nil {
 				t.Fatal(err)
 			}

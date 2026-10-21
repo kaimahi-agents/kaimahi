@@ -41,6 +41,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   plus compact non-pass evaluation details, with verbose/JSON stage diagnostics. Exact-version private completion observations authorize
   GET-only skips, never Apply/reuse/adoption/repair. Keep kagent out of composed
   Deploy until its candidate-scoped placement and ownership-safe cleanup are qualified.
+  AgentSessions workspaces and --harness-image also refuse composed Deploy before
+  evaluation or publication; their Deploy is the explicit-reference plan-only render.
 - Create-only deployment stamps only newly created primaries with versioned non-secret
   `kaimahi.dev/lift-record` JSON: exact consumed canonical receipt identity,
   source/destination, actual gate, attempt time and expected specs. Actor is omitted
@@ -78,10 +80,30 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   sends exact config once per fresh Session, requires a complete five-record
   qualified journal and full ordered pass, then exports private runtime-specific
   proof. Exact-S --evaluation push accepts that proof offline. Cluster selectors,
-  mixed-runtime proof, tools, deploy/chat/status and live create refuse.
+  mixed-runtime proof, tools, chat/status and live create refuse.
+  AgentSessions eval also requires --bindings FILE: a closed AgentSessionsBinding
+  (runtime package; target, substrate placement, atespace, sandbox, snapshot,
+  required cpu/memory resources, workerSelector, model name/provider/baseURL and
+  a typed credential reference: secretRef or host-owned hostRef only). The
+  suite pins the model; the binding's model.name must equal it exactly (eval and
+  deploy refuse a mismatch; a new model is a new suite version and evaluation).
+  Evidence records the binding's JCS digest once for the whole run set, including
+  judged and repeated runs; the host endpoint is not attested.
+  AgentSessions passing receipts are v2 (kmx.agentsessions-suite.passing/v2),
+  which records bindingDigest. v1 receipts are unreadable and need fresh
+  evaluation; a managed v1 proof is ineligible (latest refuses, no fallback).
+  Root deploy with --harness-image IMAGE@sha256 --bindings FILE --evidence --plan
+  renders a substrate ActorTemplate for substrate main at the commit pinned in
+  render.go (SubstrateAPICommit; check with scripts/validate-agentsessions-render.sh)
+  (<suite>-<member>-<hash8> over renderer version, full image reference and
+  binding digest, harnessnode chat, no model credentials) and a substrate
+  HarnessRegistration offline. It loads no cluster settings and applies nothing;
+  apply and --update refuse. Substrate apply needs its own seam, not the kubectl
+  release loop.
   Operator declarations are not authenticated host/build attestation; cleartext
   journal retention is disclosed. Session replay cannot create candidate proof.
-  Optional --runtime-version must match that commit; --kagent-runtime refuses.
+  Optional create --runtime-version must match the AgentSessions pin above;
+  --kagent-runtime refuses.
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
   Root test supports the packaged kagent profile with author-owned --bindings;
   evaluated push consumes matching runtime-specific full-passing suite evidence.
@@ -240,10 +262,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   non-confidential and must never contain secrets; clean lint is not a guarantee.
   V3 policy is shared declaration only, never Sessions enforcement.
 - Root `test --development-host FILE` separately supports the packaged
-  AgentSessions chat inventory under the development boundary above; every
-  cluster/inference/bindings/result selector (including explicit defaults) refuses.
-  Missing development selection never falls back. Sessions proof is refused by
-  deploy and receipt diff; there is no registry or caller-auth integration.
+  AgentSessions chat inventory under the development boundary above with a
+  required AgentSessionsBinding (--bindings); every cluster/inference/result
+  selector (including explicit defaults) refuses. Missing development selection
+  never falls back. Sessions proof feeds only the plan-only deploy render and is
+  refused by receipt diff; there is no registry or caller-auth integration.
 - Root `test` evaluates the full packaged Orka/kagent workspace inventory with
   a destination context (explicit `--to-context`, named `--to` or saved evalTarget)
   and optional new private `--out`; Orka uses --inference

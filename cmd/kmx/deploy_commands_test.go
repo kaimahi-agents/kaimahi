@@ -56,7 +56,7 @@ func TestDeployLegacyNoticeAndRefusals(t *testing.T) {
 		typed error
 	}{
 		{nil, "workspace VERB requires explicit --to NAME", nil},
-		{[]string{"one", "two"}, "usage: kmx VERB --to NAME | kmx VERB <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--update] [--plan]", nil},
+		{[]string{"one", "two"}, "usage: kmx VERB --to NAME | kmx VERB <ref>@<digest> (--to NAME | --to-context <ctx>) (--inference provider:NAME | --bindings FILE) --evidence FILE [--from-layout DIR] [--promote] [--update] [--plan] | kmx VERB <ref>@<digest> --harness-image IMAGE --bindings FILE --evidence FILE --plan", nil},
 		{[]string{"--unknown"}, "unknown flag: --unknown", nil},
 		{[]string{"--to", "prod", "--output", "yaml"}, "VERB output must be text or json", nil},
 		{[]string{"--to", ""}, "VERB requires non-empty --to", nil},

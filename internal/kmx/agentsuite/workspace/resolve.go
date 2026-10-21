@@ -119,7 +119,7 @@ func parseSourceWorkspace(b []byte) (sourceWorkspace, error) {
 	if descriptor.BuildProfile != nil {
 		w.BuildProfile = *descriptor.BuildProfile
 	}
-	if !namePattern.MatchString(w.Name) || w.Name == "." || w.Name == ".." {
+	if !scaffold.ValidSuiteName(w.Name) || w.Name == "." || w.Name == ".." {
 		return w, errors.New("unsupported workspace schema/name/build profile")
 	}
 	if w.SchemaVersion != 3 && (w.BuildProfile != "build-profiles/default.json" || descriptor.Profiles != nil) {

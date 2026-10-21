@@ -213,6 +213,9 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			if errors.Is(err, errSuiteKagentOccupied) {
 				cause = errors.Join(cause, errSuiteKagentOccupied)
 			}
+			if errors.Is(err, ErrAgentSessionsLiftPlanOnly) {
+				cause = errors.Join(cause, ErrAgentSessionsLiftPlanOnly)
+			}
 			if errors.Is(err, errReleaseLiftProvenance) {
 				cause = errors.Join(cause, errReleaseLiftProvenance)
 			}
@@ -222,6 +225,9 @@ func (a *App) ApplyReleaseLift(ctx context.Context, p *PreparedReleaseLift, revi
 			err = errors.Join(ErrReleaseLiftApply, cause)
 		}
 	}()
+	if p != nil && p.sessions != nil {
+		return result, ErrAgentSessionsLiftPlanOnly
+	}
 	if a == nil || a.Cfg == nil || a.Run == nil || p == nil || (p.native == nil) == (p.kagent == nil) || reviewedDigest == "" || reviewedDigest != p.summary.PlanDigest {
 		return result, ErrReleaseLiftApply
 	}

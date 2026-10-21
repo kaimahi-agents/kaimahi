@@ -8,7 +8,12 @@ import (
 var (
 	upstreamNameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 	objectNameRE   = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+	suiteNameRE    = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 )
+
+// ValidSuiteName reports whether name is a valid workspace or suite name. It is
+// the single grammar for workspace authoring/loading and AgentSessions rendering.
+func ValidSuiteName(name string) bool { return suiteNameRE.MatchString(name) }
 
 // ValidateNamespace checks the Kubernetes RFC 1123 label shape.
 func ValidateNamespace(ns string) error {
