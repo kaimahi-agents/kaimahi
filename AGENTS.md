@@ -399,6 +399,17 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   state. Generated recovery commands must preserve the invoking executable,
   selectors and shell quoting.
 
+## Single-file charter boundary
+
+`internal/kmx/agentfile` parses only the canonical shape in
+[agent-file.md](docs/agent-file.md), offline, with Examples excluded from
+instructions and exact-byte revisions. Reuse runtime assertion semantics;
+refuse tools and unsupported declarations. Parse/Load grant no execution,
+trusted route, source-write, Squad registration or native suite-loader authority.
+Keep payload-bearing parsed values out of default logs/results. The loader
+refuses static special files and symlink/reparse path components; it is not a hostile
+concurrent filesystem sandbox.
+
 ## Offline multi-member workspace boundary
 
 - Provisional private `workspace.yaml` schemaVersion 2 uses `members` paths under
