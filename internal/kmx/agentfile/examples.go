@@ -137,6 +137,9 @@ func parseExamples(file string, lines []string, firstLine int) ([]Example, error
 				return nil, errAt(n, "example id and input must be nonblank strings")
 			}
 		}
+		if strings.IndexFunc(values["input"].Value, unsupportedControl) >= 0 {
+			return nil, errAt(values["input"], "remove control characters except newline/tab and use LF or CRLF line breaks")
+		}
 		id := values["id"].Value
 		if !exampleID.MatchString(id) || seen[id] {
 			return nil, errAt(values["id"], "use unique example IDs: 1–63 letters, digits, '.', '_' or '-', starting with a letter or digit")

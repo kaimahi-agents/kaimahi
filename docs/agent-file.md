@@ -60,8 +60,9 @@ examples:
 - Examples contains exactly one `yaml` fence and otherwise only blank lines.
   That fence contains exactly one YAML document, as below. Additional text,
   fences or sections refuse rather than entering instructions.
-- Files are UTF-8, LF or CRLF; controls other than newline/tab and Unicode
-  line/paragraph separators refuse. Instructions
+- Files are UTF-8, LF or CRLF; remove a leading byte-order mark. Controls other
+  than newline/tab and Unicode line/paragraph separators refuse, including in
+  decoded YAML inputs. Instructions
   preserve the complete prefix before Examples, including identity/model metadata,
   with CRLF normalized to LF. Examples are never part of those instructions.
   The revision is `sha256:<hex>` of the **original bytes**, including line endings.
@@ -147,7 +148,10 @@ The same bytes work as a standalone `<id>.agent.md` or
 `.squad/agents/<id>/charter.md`. At the latter path Identity.ID must equal the
 directory ID; relative names and dot segments are resolved against the current
 directory for this check, and placement components are recognized case-insensitively.
-A standalone filename does not supply or override identity.
+Other standalone filenames do not depend on cwd; relative `charter.md` requires
+an accessible current directory. This is a spelling check, not filesystem
+canonicalization: Windows 8.3 names and trailing-dot/space aliases are not expanded.
+Use canonical path spellings for this check; standalone filenames never supply identity.
 The parser does not discover or initialize Squad, register a member, or change
 rosters, history, routing or casting. Placement is not team onboarding.
 

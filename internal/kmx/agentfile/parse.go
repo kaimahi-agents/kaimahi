@@ -85,7 +85,8 @@ type fence struct {
 }
 
 // Parse validates one bounded charter. filename supplies diagnostics and, only
-// for the canonical Squad placement, an identity constraint. It performs no IO.
+// for the canonical Squad placement, an identity constraint. It reads no agent
+// files; relative charter.md names consult the current directory for placement.
 func Parse(filename string, data []byte) (*Agent, error) {
 	fail := func(field, problem string) (*Agent, error) { return nil, refuse(filename, 1, 1, field, problem) }
 	if len(data) > MaxFileBytes {
@@ -95,9 +96,10 @@ func Parse(filename string, data []byte) (*Agent, error) {
 		return fail("File", "use valid UTF-8")
 	}
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
-	if strings.IndexFunc(text, func(r rune) bool {
-		return (unicode.IsControl(r) && r != '\n' && r != '\t') || r == '\u2028' || r == '\u2029'
-	}) >= 0 {
+	if strings.HasPrefix(text, "\uFEFF") {
+		return fail("File", "remove the UTF-8 byte-order mark")
+	}
+	if strings.IndexFunc(text, unsupportedControl) >= 0 {
 		return fail("File", "remove control characters except newline/tab and use LF or CRLF line breaks")
 	}
 	lines := strings.Split(text, "\n")
@@ -144,7 +146,7 @@ func Parse(filename string, data []byte) (*Agent, error) {
 				return nil, refuse(filename, i+1, 1, "Examples", "keep exactly one Examples section last")
 			}
 			if !slices.Contains(sectionNames, name) || line != "## "+name {
-				return nil, refuse(filename, i+1, 1, "Sections", "use only the canonical unindented ## headings")
+				return nil, refuse(filename, i+1, 1, "Sections", "use only the canonical unindented ## headings, with no trailing spaces or tabs")
 			}
 			if _, exists := sections[name]; exists {
 				return nil, refuse(filename, i+1, 1, name, "keep exactly one section")
@@ -233,11 +235,15 @@ func Parse(filename string, data []byte) (*Agent, error) {
 		loc := a.Locations["Identity.ID"]
 		return nil, refuse(filename, loc.Line, loc.Column, "Identity.ID", "use 1–63 lowercase letters, digits or hyphens, starting with a letter")
 	}
-	absolute, err := filepath.Abs(filename)
-	if err != nil {
-		return fail("File", "select a valid agent filename")
+	slash := path.Clean(strings.ReplaceAll(filename, "\\", "/"))
+	if strings.EqualFold(path.Base(slash), "charter.md") {
+		absolute, err := filepath.Abs(filename)
+		if err != nil {
+			return fail("File", "resolve relative charter.md from an accessible current directory")
+		}
+		slash = path.Clean(strings.ReplaceAll(absolute, "\\", "/"))
 	}
-	parts := strings.Split(path.Clean(strings.ReplaceAll(absolute, "\\", "/")), "/")
+	parts := strings.Split(slash, "/")
 	// Recognize canonical placement even through dot segments, a relative
 	// basename, or case-insensitive filesystem spelling. Never infer an ID.
 	if len(parts) >= 4 && strings.EqualFold(parts[len(parts)-4], ".squad") && strings.EqualFold(parts[len(parts)-3], "agents") && strings.EqualFold(parts[len(parts)-1], "charter.md") && parts[len(parts)-2] != a.Identity.ID {
@@ -261,6 +267,10 @@ func Parse(filename string, data []byte) (*Agent, error) {
 	}
 	a.Examples = examples
 	return a, nil
+}
+
+func unsupportedControl(r rune) bool {
+	return (unicode.IsControl(r) && r != '\n' && r != '\t') || r == '\u2028' || r == '\u2029'
 }
 
 func openFence(line string) (fence, string, bool) {
