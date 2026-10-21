@@ -9,7 +9,6 @@ import (
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	oraslib "oras.land/oras-go/v2"
-	"oras.land/oras-go/v2/content/oci"
 )
 
 // LayoutValidator validates an AgentSuite artifact from content-addressed
@@ -41,7 +40,7 @@ func validateLayout(ctx context.Context, src kmxsuite.ReadOnlyStorage, root ocis
 		return nil, err
 	}
 	defer os.RemoveAll(stageRoot)
-	stage, err := oci.New(stageRoot)
+	stage, err := newOCIStore(stageRoot)
 	if err != nil {
 		return nil, fmt.Errorf("create AgentSuite validation layout: %w", err)
 	}

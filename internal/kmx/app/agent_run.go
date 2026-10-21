@@ -89,32 +89,6 @@ func (a *App) runTaskWaitError(ctx context.Context, err error, name, contextName
 	return err
 }
 
-// readRunPromptFile opens a regular file without following a substituted link.
-// The size check applies to bytes actually read, even if the file grows.
-func readRunPromptFile(path string) (string, error) {
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
-	if err != nil {
-		return "", fmt.Errorf("read prompt file (must be regular, not a link): %w", err)
-	}
-	file := os.NewFile(uintptr(fd), path)
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return "", fmt.Errorf("inspect prompt file: %w", err)
-	}
-	if !info.Mode().IsRegular() || info.Size() > 1<<20 {
-		return "", fmt.Errorf("prompt file must be regular and no larger than 1 MiB")
-	}
-	body, err := io.ReadAll(io.LimitReader(file, 1<<20+1))
-	if err != nil {
-		return "", fmt.Errorf("read prompt file: %w", err)
-	}
-	if len(body) > 1<<20 {
-		return "", fmt.Errorf("prompt file exceeds 1 MiB")
-	}
-	return string(body), nil
-}
-
 func (a *App) RunAgent(opt RunAgentOptions) error {
 	if a.Cfg == nil || a.Run == nil || a.Out == nil || a.Err == nil {
 		return fmt.Errorf("run requires configured kubectl and streams")
