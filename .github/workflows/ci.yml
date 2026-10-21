@@ -1855,7 +1855,7 @@ jobs:
       - uses: actions/setup-go@v5
         if: steps.changes.outputs.docs_only != 'true'
         with:
-          go-version: '1.26'
+          go-version: '1.26.10'
       - name: Install kind
         if: steps.changes.outputs.docs_only != 'true'
         run: |
