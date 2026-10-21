@@ -170,7 +170,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   standalone receipts. Rebuilding a different artifact requires fresh evaluation,
   never edited or relabeled proof. See the
   [cache upgrade](docs/suite-workspace.md#portable-directory-modes-and-preparation-cache-upgrade).
-- AgentSessions `kmx eval --development-host FILE` requires `--bindings FILE`
+- AgentSessions `kmx test --development-host FILE` requires `--bindings FILE`
   and records the binding digest in its evidence, including judged and repeated
   proof. AgentSessions passing receipts move to v2
   (`kmx.agentsessions-suite.passing/v2`); v1 receipts and managed v1 proof are

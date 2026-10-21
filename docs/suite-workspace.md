@@ -870,7 +870,7 @@ No incomplete receipt is accepted, and no published destination is automatically
 deleted. Every Session and execution identity must be unique; no retry, recovery
 or implicit old pass is selected.
 
-Only a full policy pass exports the `kmx.agentsessions-suite.passing/v1` private proof,
+Only a full policy pass exports the `kmx.agentsessions-suite.passing/v2` private proof,
 including exact S/G/member/profile/config/model/case identities, operator host
 observations, fresh Session/execution IDs and verified journal heads. Prompts,
 answers, config bytes, endpoint locators and journal bodies are excluded. Push
