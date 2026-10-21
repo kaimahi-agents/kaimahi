@@ -55,7 +55,7 @@ func (o *orkaSuiteOwnership) valid() bool {
 	return (o.EvaluationRun == "" || evaluationRunID(o.EvaluationRun)) && scaffold.ValidateObjectName(o.Suite) == nil && scaffold.ValidateObjectName(o.Member) == nil && o.Renderer == "kmx.native-orka/v2" && strings.HasPrefix(o.Digest, "sha256:") && validOrkaMarkerDigest(strings.TrimPrefix(o.Digest, "sha256:")) && validOrkaMarkerDigest(o.BindingDigest) && validOrkaMarkerDigest(o.RenderedDigest)
 }
 func (o *orkaSuiteOwnership) check(ann map[string]any) error {
-	for _, k := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {
+	for _, k := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker, kagentVersionMarker} {
 		if _, ok := ann[k]; ok {
 			return fmt.Errorf("legacy ownership blocks native placement")
 		}

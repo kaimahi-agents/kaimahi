@@ -211,7 +211,7 @@ func (a *App) suiteCandidateCleanupInventoryTarget(ctx context.Context, target s
 				meta, _ := doc["metadata"].(map[string]any)
 				ann, _ := meta["annotations"].(map[string]any)
 				row.Markers = suiteOnlyMarkers(ann)
-				for _, key := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {
+				for _, key := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker, kagentVersionMarker} {
 					if _, ok := ann[key]; ok {
 						row.Legacy = true
 					}

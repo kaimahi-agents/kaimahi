@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -75,5 +77,67 @@ func TestFlowCandidateOperatorCleanup(t *testing.T) {
 				t.Fatal("unverified flow cleanup deleted roots", err, f.deletes)
 			}
 		})
+	}
+}
+
+func TestFlowCandidateOperatorCleanupKagentMarker(t *testing.T) {
+	for _, stage := range []string{"discovery", "root-revalidation"} {
+		for _, value := range []struct {
+			name   string
+			marker any
+		}{{"populated", "v0.10.3"}, {"empty", ""}, {"null", nil}} {
+			t.Run(stage+"/"+value.name, func(t *testing.T) {
+				a, r, f, _ := candidateCleanupSetup(t)
+				projection := suiteFlowCandidateProjection{flowCandidateVersion, r.subject.SuiteDigest, r.subject.Member, "facts", 1, "draft", r.subject.EvaluationRun}
+				name, err := projection.physicalName()
+				if err != nil {
+					t.Fatal(err)
+				}
+				owner := *suiteNativeOwner(r.subject)
+				owner.FlowCandidate = &projection
+				for _, kind := range []string{"Provider", "Agent"} {
+					old := kind + "/" + r.subject.PhysicalMember
+					doc := f.objects[old]
+					delete(f.objects, old)
+					meta := nativeMetadata(doc)
+					meta["name"] = name
+					meta["annotations"] = owner.markers()
+					f.objects[kind+"/"+name] = doc
+				}
+				meta := nativeMetadata(f.objects["Agent/"+name])
+				rootReads := 0
+				if stage == "discovery" {
+					meta["annotations"].(map[string]any)[kagentVersionMarker] = value.marker
+				} else {
+					f.change = func(_ string, cmd *exec.Cmd) error {
+						if slices.Contains(cmd.Args, "agents.core.orka.ai") && slices.Contains(cmd.Args, name) && slices.Contains(cmd.Args, "json") {
+							rootReads++
+							if rootReads == 2 {
+								// Leave discovery and the initial root check clean; change
+								// ownership only at the fresh pre-DELETE root read.
+								meta["annotations"].(map[string]any)[kagentVersionMarker] = value.marker
+								meta["resourceVersion"] = "2"
+							}
+						}
+						return nil
+					}
+				}
+				a.Cfg.Confirm = a.Cfg.KubeContext
+				err = a.CleanupSuiteCandidates(t.Context(), SuiteCandidateCleanupOptions{Namespace: OrkaNamespace, RunID: projection.Operation})
+				if stage == "root-revalidation" && rootReads != 2 {
+					t.Fatalf("did not reach the fresh pre-DELETE root read: reads=%d err=%v", rootReads, err)
+				}
+				if err == nil || len(f.deletes) != 0 || len(f.objects) != 2 {
+					t.Fatalf("mixed kagent marker authorized cleanup: err=%v deletes=%v remaining=%d", err, f.deletes, len(f.objects))
+				}
+				wantReason := "uncertain candidate inventory"
+				if stage == "root-revalidation" {
+					wantReason = "root changed or read unknown"
+				}
+				if !strings.Contains(err.Error(), wantReason) {
+					t.Fatalf("wrong refusal path: %v; want %q", err, wantReason)
+				}
+			})
+		}
 	}
 }
