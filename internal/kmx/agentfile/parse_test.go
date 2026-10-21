@@ -178,13 +178,24 @@ func TestRefusalLocation(t *testing.T) {
 func FuzzParse(f *testing.F) {
 	f.Add([]byte(sample(f)))
 	f.Add([]byte("# Legacy\n"))
+	f.Add([]byte(strings.Replace(sample(f), "Reply with exactly `Hello, ` followed by the input name.", "Reply with a greeting.\n\n```text\n## Examples\n## Tools\n```", 1)))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		a, err := Parse("fuzz.agent.md", data)
 		if err != nil && a != nil {
 			t.Fatal("partial success")
 		}
-		if err == nil && (a == nil || len(a.Examples) == 0 || strings.Contains(a.Instructions, "\n## Examples\n")) {
-			t.Fatal("invalid success")
+		if err == nil {
+			if a == nil || len(a.Examples) == 0 {
+				t.Fatal("invalid success")
+			}
+			lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+			line := a.Locations["Examples"].Line
+			if line < 1 || line > len(lines) || lines[line-1] != "## Examples" {
+				t.Fatal("invalid Examples location")
+			}
+			if a.Instructions != strings.Join(lines[:line-1], "\n")+"\n" {
+				t.Fatal("instructions differ from the source prefix before Examples")
+			}
 		}
 	})
 }

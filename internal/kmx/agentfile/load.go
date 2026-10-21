@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Load reads one bounded regular file without writing state or source. Static
@@ -14,6 +15,14 @@ func Load(filename string) (*Agent, error) {
 	fail := func(problem string) (*Agent, error) { return nil, refuse(filename, 1, 1, "File", problem) }
 	if filename == "" {
 		return fail("select an explicit agent file")
+	}
+	// Abs cleans before we can inspect components. Refuse parent traversal
+	// rather than erase a symlink followed by ".." and read a different file.
+	path := filename[len(filepath.VolumeName(filename)):]
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == ".." {
+			return fail("select an agent file path without parent traversal")
+		}
 	}
 	absolute, err := filepath.Abs(filename)
 	if err != nil {

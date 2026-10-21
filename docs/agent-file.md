@@ -118,8 +118,9 @@ Existing stricter assertion limits still apply. These are parsing limits, not
 execution/output/token budgets. A runner must separately bound outputs and cost.
 
 `Parse(filename, bytes)` returns an Agent or a typed Error and nil Agent.
-`Load(filename)` first checks a bounded regular file, then calls Parse. It refuses
-static symlinks and irregular/reparse entries (including Windows junctions) in
+`Load(filename)` first checks a bounded regular file, then calls Parse. Paths
+containing a `..` component refuse before cleaning, so normalization cannot erase
+an unchecked symlink traversal or redirect the read. It also refuses static symlinks and irregular/reparse entries (including Windows junctions) in
 **any path component**, directories, devices, FIFOs, unreadable
 and oversized files, then rechecks opened identity/type/size and bounds the read.
 Resolve a trusted symlinked path explicitly before loading if appropriate (for

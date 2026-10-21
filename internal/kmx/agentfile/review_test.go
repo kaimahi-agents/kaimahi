@@ -85,6 +85,41 @@ func TestSpecificStructuralRefusals(t *testing.T) {
 	}
 }
 
+func TestBlockScalarAtEndOfExamples(t *testing.T) {
+	prefix := strings.Split(sample(t), "```yaml")[0] + "```yaml\nexamples:\n  - id: greeting\n"
+	inputLast := "    assertions: [{id: text, type: contains, value: Hello}]\n    input: |\n      Ada\n```\n"
+	valueLast := "    input: Ada\n    assertions:\n      - id: text\n        type: contains\n        value: |\n          Hello\n```\n"
+	for _, newline := range []string{"\n", "\r\n"} {
+		t.Run(newline, func(t *testing.T) {
+			a, err := Parse("a.md", []byte(strings.ReplaceAll(prefix+inputLast, "\n", newline)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if a.Examples[0].Input != "Ada\n" {
+				t.Errorf("lost authored block-scalar newline: %q", a.Examples[0].Input)
+			}
+			var refusal *Error
+			a, err = Parse("a.md", []byte(strings.ReplaceAll(prefix+valueLast, "\n", newline)))
+			if a != nil || !errors.As(err, &refusal) || refusal.Field != "Examples" || !strings.Contains(refusal.Problem, "valid assertion") {
+				t.Fatalf("multiline assertion bypassed shared validation: %v", err)
+			}
+			// Explicit strip chomping still authors a valid single-line value.
+			if _, err := Parse("a.md", []byte(strings.Replace(prefix+valueLast, "value: |", "value: |-", 1))); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestHTMLCommentInTitleRefuses(t *testing.T) {
+	source := strings.Replace(sample(t), "# Greeter — Greeting specialist", "# Greeter <!--", 1)
+	a, err := Parse("a.md", []byte(source))
+	var refusal *Error
+	if a != nil || !errors.As(err, &refusal) || refusal.Location.Line != 1 || !strings.Contains(refusal.Problem, "HTML comments") {
+		t.Fatalf("title comment bypassed guard: %v", err)
+	}
+}
+
 func TestHTMLCommentRefusalOutsideFences(t *testing.T) {
 	source := strings.Replace(sample(t), "Reply with exactly", "<!--\n```\n-->\n## Tools\n```\nReply with exactly", 1)
 	if a, err := Parse("a.md", []byte(source)); err == nil || a != nil {

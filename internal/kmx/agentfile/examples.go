@@ -35,7 +35,9 @@ func parseExamples(file string, lines []string, firstLine int) ([]Example, error
 			return nil, refuse(file, firstLine+end+1+i, 1, "Examples", "remove text or additional fences after the examples document")
 		}
 	}
-	data := []byte(strings.Join(lines[start+1:end], "\n"))
+	// The LF before the closing fence belongs to the YAML document: clipping
+	// block scalars must retain it, including for shared assertion validation.
+	data := []byte(strings.Join(lines[start+1:end], "\n") + "\n")
 	base := firstLine + start // YAML line 1 is the line after the opening fence.
 	var root yaml.Node
 	decoder := yaml.NewDecoder(bytes.NewReader(data))

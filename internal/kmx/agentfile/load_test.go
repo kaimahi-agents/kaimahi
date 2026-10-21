@@ -2,8 +2,10 @@ package agentfile
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,6 +75,41 @@ func TestLoadRefusesUnsafeFiles(t *testing.T) {
 		t.Fatal("accepted blank filename")
 	}
 }
+func TestLoadRefusesErasedSymlinkTraversal(t *testing.T) {
+	root := realTemp(t)
+	local, remote := filepath.Join(root, "local"), filepath.Join(root, "remote")
+	for _, dir := range []string{local, filepath.Join(remote, "deep")} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for dir, source := range map[string]string{local: sample(t), remote: strings.Replace(sample(t), "# Greeter", "# Remote", 1)} {
+		if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte(source), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Even without symlinks, parent-traversal spellings must refuse before cleaning.
+	traversal := filepath.Join(remote, "deep") + string(filepath.Separator) + ".." + string(filepath.Separator) + "a.md"
+	var refusal *Error
+	if a, err := Load(traversal); a != nil || !errors.As(err, &refusal) || refusal.Field != "File" || !strings.Contains(refusal.Problem, "parent traversal") {
+		t.Fatalf("parent traversal was not refused: %v", err)
+	}
+	if volume := filepath.VolumeName(root); volume != "" {
+		if a, err := Load(volume + ".." + string(filepath.Separator) + "a.md"); a != nil || !errors.As(err, &refusal) || !strings.Contains(refusal.Problem, "parent traversal") {
+			t.Fatalf("drive-relative parent traversal was not refused: %v", err)
+		}
+	}
+	link := filepath.Join(local, "link")
+	if err := os.Symlink(filepath.Join(remote, "deep"), link); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+	// filepath.Join would erase the component the regression needs to preserve.
+	traversal = link + string(filepath.Separator) + ".." + string(filepath.Separator) + "a.md"
+	if a, err := Load(traversal); a != nil || !errors.As(err, &refusal) || !strings.Contains(refusal.Problem, "parent traversal") {
+		t.Fatalf("erased symlink traversal was not refused: %v", err)
+	}
+}
+
 func TestLoadRefusesSymlinks(t *testing.T) {
 	root := realTemp(t)
 	source := filepath.Join(root, "source.md")

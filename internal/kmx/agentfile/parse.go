@@ -116,6 +116,9 @@ func Parse(filename string, data []byte) (*Agent, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+		if strings.Contains(line, "<!--") {
+			return nil, refuse(filename, i+1, 1, "Sections", "remove HTML comments outside fenced prose")
+		}
 		if first {
 			first = false
 			if !strings.HasPrefix(line, "# ") || strings.TrimSpace(line[2:]) == "" {
@@ -124,9 +127,6 @@ func Parse(filename string, data []byte) (*Agent, error) {
 			a.Title = strings.TrimSpace(line[2:])
 			a.Locations["Title"] = Location{filename, i + 1, 1}
 			continue
-		}
-		if strings.Contains(line, "<!--") {
-			return nil, refuse(filename, i+1, 1, "Sections", "remove HTML comments outside fenced prose")
 		}
 		if f, _, ok := openFence(line); ok {
 			open = f
