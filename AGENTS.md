@@ -444,6 +444,26 @@ Keep payload-bearing parsed values out of default logs/results. The loader
 refuses static special files and symlink/reparse path components; it is not a hostile
 concurrent filesystem sandbox.
 
+## Local preview boundary
+
+`internal/kmx/localpreview` runs one tool-free agent file on embedded Sessions
+(in-memory gRPC, upstream Service/Placer/`chat` harness, private SQLite journal
+under `config.LocalPreviewJournalDir()`), labeled **local preview**. See
+[local-preview.md](docs/local-preview.md). Keep it a library until [#598](https://github.com/kaimahi-agents/kaimahi/issues/598) wires
+`run/test FILE`. `Model.Preferred` is exact: `fake` is the in-memory
+deterministic route; other models need an explicit OpenAI-compatible endpoint
+and optional key environment variable name. No fallback, retries, tool
+execution, daemon, subprocess, cluster or config probing. Refuse missing
+routes, tool assertions and unwired judges before any file or network effect;
+refuse tool-call/malformed/oversized/non-200 replies with fixed text, because
+Sessions journals model errors verbatim. Credentials never reach files,
+journals, results or errors. `llmJudge` reuses the native judge through
+`app.LocalPreviewJudge`, defaults to the agent route (fake judge for fake), and
+only explicit `JudgeEndpoint` overrides it. Journals keep content in cleartext,
+bounded to 20 runs, owner-only, clearable by run or all. Inspection replays with
+zero model calls and has no verdicts. Preview and replay never produce suite
+evidence, receipts, publication or Deploy authority.
+
 ## Offline multi-member workspace boundary
 
 - Provisional private `workspace.yaml` schemaVersion 2 uses `members` paths under
