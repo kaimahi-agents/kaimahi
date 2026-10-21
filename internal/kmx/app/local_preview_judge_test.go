@@ -1,9 +1,12 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +19,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localpreview"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
 const localPreviewCanary = "kmx-judge-canary-51c0e9a2"
@@ -161,5 +165,92 @@ func TestLocalPreviewExplicitJudgeOverride(t *testing.T) {
 	})
 	if err != nil || result.Verdict != agentruntime.EvaluationPass || len(agentEndpoint.auth) != 1 || len(judgeEndpointServer.auth) != 2 || judgeEndpointServer.agent != 0 {
 		t.Fatalf("override = %v %+v agent=%d judge=%d", err, result, len(agentEndpoint.auth), len(judgeEndpointServer.auth))
+	}
+}
+
+// YAML comments in Examples are discarded by the agent file parser. Comment
+// content, including credential-shaped text the parser does not refuse there,
+// never reaches a model or judge request, the journal, a result or an
+// inspection.
+func TestLocalPreviewNeverForwardsExampleComments(t *testing.T) {
+	const canary = "kmx-comment-canary-3b8e0d71"
+	for _, secret := range []string{canary, secretshapes.All()[0].Example} {
+		examples := fmt.Sprintf(`examples:
+  # head %[1]s
+  - id: greeting # line %[1]s
+    input: Ada
+    # assertions %[1]s
+    assertions:
+      - id: greeting-text
+        type: contains
+        value: Hello, Ada # value %[1]s
+      - id: judge
+        type: llmJudge
+        rubric: "pass" # rubric %[1]s
+        minScore: 50
+        judgeModel: judge/model
+        judgeVersion: "1"
+  # foot %[1]s
+`, secret)
+		raw, err := os.ReadFile(filepath.Join("..", "agentfile", "testdata", "greeter.agent.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.ReplaceAll(string(raw), "\r\n", "\n")
+		text = strings.Replace(text, "- **Preferred:** fake", "- **Preferred:** agent/model", 1)
+		start, end := strings.Index(text, "examples:\n"), strings.LastIndex(text, "```")
+		agent, err := agentfile.Parse("greeter.agent.md", []byte(text[:start]+examples+text[end:]))
+		if err != nil {
+			// A parser that refuses the comment must not quote it.
+			if secret == canary || strings.Contains(err.Error(), secret) {
+				t.Fatalf("comment refusal = %v", err)
+			}
+			continue
+		}
+		var mu sync.Mutex
+		var bodies []byte
+		endpoint := &judgeEndpoint{judged: map[string]int{}}
+		inner := endpoint.handler(t, map[string][2]any{"pass": {90, 80}})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			bodies = append(bodies, body...)
+			mu.Unlock()
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			inner(w, r)
+		}))
+		dir := filepath.Join(t.TempDir(), "j")
+		ctx := localPreviewJudgeContext(t)
+		result, err := localpreview.Test(ctx, agent, localpreview.Options{
+			JournalDir: dir, Judge: LocalPreviewJudge, Endpoint: &localpreview.Endpoint{BaseURL: server.URL},
+		})
+		server.Close()
+		if err != nil || result.Verdict != agentruntime.EvaluationPass || endpoint.agent != 1 || len(endpoint.auth) != 3 {
+			t.Fatalf("preview = %v %+v sends=%d", err, result, len(endpoint.auth))
+		}
+		inspection, err := localpreview.Inspect(ctx, dir, result.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, _ := json.Marshal([]any{result, inspection})
+		journal := []byte{}
+		if err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return err
+			}
+			data, err := os.ReadFile(path)
+			journal = append(journal, data...)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for name, data := range map[string][]byte{"requests": bodies, "result": encoded, "journal": journal} {
+			if bytes.Contains(data, []byte(secret)) {
+				t.Fatalf("%s carries Examples comment content", name)
+			}
+		}
+		if !bytes.Contains(bodies, []byte("Ada")) || !bytes.Contains(journal, []byte("Hello, Ada")) {
+			t.Fatal("requests and journal were not captured")
+		}
 	}
 }

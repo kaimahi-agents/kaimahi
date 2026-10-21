@@ -87,8 +87,10 @@ Each refusal says what to change:
 
 The [agent file parser](agent-file.md) already refuses credential-shaped
 instructions, including the title, identity and model, and example inputs.
-Ad-hoc `Run` input gets the same input check. Shape detection cannot catch
-arbitrary secrets.
+Ad-hoc `Run` input gets the same credential-shape check. Shape detection cannot
+catch arbitrary secrets. YAML comments in Examples are discarded when parsed:
+local preview receives only example IDs, inputs and assertions, so comment text
+never reaches a model or judge request, the journal or a result.
 
 A model reply that contains a tool call (in any key spelling), a refusal, a
 truncated or malformed body, an oversized body, an answer containing the
