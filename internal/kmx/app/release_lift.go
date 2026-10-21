@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	agentsuite "github.com/agent-primitives/suite"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -25,6 +26,10 @@ type ReleaseLiftOptions struct {
 	PlainHTTP, Promote, Update                                                   bool
 	// ExpectedRuntime is checked offline against the loaded package before GETs.
 	ExpectedRuntime string
+	// HarnessImage selects the plan-only AgentSessions render: a digest-pinned
+	// harnessnode image. It requires an AgentSessionsBinding in Bindings and
+	// refuses cluster, inference and promotion selectors.
+	HarnessImage string
 	// EvaluationName is an optional frozen display alias, never target authority.
 	EvaluationName string
 }
@@ -64,7 +69,10 @@ type ReleaseLiftSummary struct {
 	EvidenceRunID  string                `json:"evidenceRunID"`
 	Gate           string                `json:"gate"`
 	Resources      []ReleaseLiftResource `json:"resources"`
-	PlanDigest     string                `json:"planDigest"`
+	// AgentSessions carries the rendered plan for the packaged AgentSessions
+	// runtime only; Orka and kagent summaries omit it.
+	AgentSessions *ReleaseLiftSessionsPlan `json:"agentsessions,omitempty"`
+	PlanDigest    string                   `json:"planDigest"`
 }
 
 // PreparedReleaseLift retains its verified subject/evidence and GET-only review.
@@ -74,6 +82,7 @@ type PreparedReleaseLift struct {
 	artifact *suiteoras.Artifact
 	native   *suiteNativePrepared
 	kagent   *releaseLiftKagent
+	sessions *releaseLiftSessions
 	update   *preparedReleaseUpdate
 	receipt  *suitePassingReceipt
 	summary  ReleaseLiftSummary
@@ -83,6 +92,7 @@ type PreparedReleaseLift struct {
 func (p *PreparedReleaseLift) Summary() ReleaseLiftSummary {
 	out := p.summary
 	out.Resources = slices.Clone(out.Resources)
+	out.AgentSessions = p.sessions.summary()
 	return out
 }
 
@@ -112,6 +122,12 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 			if errors.Is(err, errSuiteKagentOccupied) {
 				cause = errors.Join(cause, errSuiteKagentOccupied)
 			}
+			var refusal *releaseLiftSessionsRefusal
+			if errors.As(err, &refusal) {
+				cause = errors.Join(cause, refusal.err)
+			} else if errors.Is(err, errSuiteSessionsReceiptV1) {
+				cause = errors.Join(cause, errSuiteSessionsReceiptV1)
+			}
 			if errors.Is(err, workspace.ErrMultiMemberUnsupported) {
 				cause = errors.Join(cause, workspace.ErrMultiMemberUnsupported)
 			}
@@ -129,6 +145,10 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if opt.HarnessImage != "" {
+		// The AgentSessions render reads no cluster configuration.
+		return PrepareAgentSessionsReleaseLift(ctx, opt)
+	}
 	if a == nil || a.Cfg == nil || a.Run == nil || ValidateReleaseLiftOptions(opt) != nil {
 		return nil, ErrReleaseLift
 	}
@@ -140,6 +160,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 	artifact, suite, receipt, evidence := inputs.artifact, inputs.suite, inputs.receipt, inputs.evidence
 	if opt.ExpectedRuntime != "" && opt.ExpectedRuntime != suite.Runtime.ID {
 		return nil, ErrReleaseLift
+	}
+	if suite.Runtime.ID == "agentsessions" {
+		return nil, &releaseLiftSessionsRefusal{errAgentSessionsLiftSelectors}
 	}
 	// Closed packaged runtime and canonical E select the only allowed selector
 	// before any cluster observation. Evidence never supplies an Orka alias.
@@ -204,6 +227,16 @@ func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
 	provider := strings.TrimPrefix(opt.Inference, "provider:")
 	if opt.EvaluationName != "" && (len(opt.EvaluationName) > 63 || !verificationIdentity(opt.EvaluationName) || scaffold.RefuseKeyShapes(opt.EvaluationName) != nil) {
 		return ErrReleaseLift
+	}
+	if opt.HarnessImage != "" {
+		// AgentSessions plan: binding and image only; no cluster, inference,
+		// promotion, update or Lift provenance alias.
+		if _, err := agentsessions.HarnessImageDigest(opt.HarnessImage); err != nil || !pinned || !verificationIdentity(ref) || !agentsuite.IsValidDigest(digest) ||
+			strings.TrimSpace(opt.Bindings) == "" || opt.ToContext != "" || opt.ToNamespace != "" || opt.Inference != "" || opt.Promote || opt.Update || opt.EvaluationName != "" ||
+			strings.TrimSpace(opt.Evidence) == "" || opt.FromLayout != "" && opt.PlainHTTP {
+			return ErrReleaseLift
+		}
+		return nil
 	}
 	if !pinned || !verificationIdentity(ref) || !agentsuite.IsValidDigest(digest) ||
 		!verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil ||

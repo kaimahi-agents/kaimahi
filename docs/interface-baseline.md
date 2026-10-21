@@ -90,11 +90,11 @@ Workspace --create/test--> AgentSuite artifact --push--> OCI location
 | Command | Primary object | Current effect |
 |---|---|---|
 | `create` | Workspace | Author one offline member; no cluster or model call |
-| `test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE`; stop later cases after the first non-pass |
+| `test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE` and `--bindings FILE` (`AgentSessionsBinding`); stop later cases after the first non-pass |
 | `test export` | Latest completed exact-suite/member managed proof | Write new detached public evidence offline; captured tagged module/checksum or clean VCS provenance required, no evaluation or private-gate replacement |
 | `test verify` | Local single-manifest OCI layout + detached evidence + reviewed ExpectedEvaluation | State-free offline CI gate; digest input also requires explicit layout, text/JSON success exits0, coded refusal exits1; no private-gate authority |
 | `push` | Prepared AgentSuite | Transfer exact OCI graph with latest completed exact-S proof, explicit --evaluation override or --unevaluated opt-out; explicit tags unchanged, bare push uses saved `repository:s-<S>`; no deployment |
-| `deploy` | Workspace or exact supported packaged native AgentSuite | No-reference `--to NAME` composes missing Orka eval/push/Deploy with one frozen-plan confirmation and verified exact-version skips. Explicit reference stays deploy-only by digest with private evidence; Orka uses `--inference`, kagent uses `--bindings`; `--plan` has no execution/publication/admission |
+| `deploy` | Workspace or exact supported packaged native AgentSuite | No-reference `--to NAME` composes missing Orka eval/push/Deploy with one frozen-plan confirmation and verified exact-version skips. Explicit reference stays deploy-only by digest with private evidence; Orka uses `--inference`, kagent uses `--bindings`; `--plan` has no execution/publication/admission; AgentSessions is a plan-only offline render with `--harness-image` and `--bindings` (apply refuses) |
 | `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |
 | `status --to NAME` | Named destination namespace | GET-only table/JSON deployed-Agent provenance/readiness inventory; separate candidates, unknown is not absent |
 | `orka status` | Orka installation | Table-only runtime report, not destination placement inspection |
@@ -111,7 +111,8 @@ one-member limit.
 Live create/previews/wizard are removed; their flags are unknown before config.
 Root test runs full native authored cases only: Orka uses `--inference`, kagent
 uses `--bindings`; pinned AgentSessions chat instead requires a private
-`--development-host FILE`, with no cluster selectors or fallback. All export only
+`--development-host FILE` plus an `AgentSessionsBinding` (`--bindings`), with no
+cluster selectors or fallback. All export only
 runtime-specific full-passing evidence. Orka/kagent and development AgentSessions support authored `llmJudge`
 with explicit judge transport and identity, plus optional KMX case `runs`/`minPasses`
 (default one run/all passes; unknown vetoes). AgentSessions uses fresh Session/config/Exec per run. Repeat field names/defaults/validation follow
@@ -119,7 +120,7 @@ with explicit judge transport and identity, plus optional KMX case `runs`/`minPa
 `minPasses` requires `runs`, and both are positive integers. KMX's execution cap
 is 100 runs, within the spec's consumer resource-limit allowance.
 No subset, recorded Sessions input or runtime/model override. Offline diff reads only Orka/kagent native suite receipts;
-AgentSessions evidence is explicitly refused by diff and Deploy;
+AgentSessions evidence is refused by diff and feeds only the plan-only AgentSessions Deploy render (`--plan`; apply refuses);
 `test from-sessions` is reference extraction/export without a native consumer.
 Root `run --agent` and supported Orka chat select live Agents by
 context/namespace/name, including suite-owned Agents. They are not workspace-local
@@ -148,7 +149,7 @@ or deploy a runtime.
 |---|---|
 | Orka | Default runtime; setup, independent live run/chat, workspace evaluation/evaluated publication and exact-digest native Deploy; GET-only destination status, no retirement |
 | kagent v0.10.3 Go | Workspace authoring, packaged evaluation/evaluated publication and create-only root digest Deploy; GET-only destination status, no retirement |
-| agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case run, shared explicit judging and repeat policy, no tools, cluster settings, registry/auth or remote lifecycle; Deploy/chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. |
+| agentsessions | Pinned-chat native suite author/prepare/source-free load/ordinary push; explicit literal-loopback operator-observed development eval with full-passing private evidence and exact-S evaluated push. One fresh Session/config/Exec per ordered case run, shared explicit judging and repeat policy, no tools, cluster settings, registry/auth or remote lifecycle; eval requires an `AgentSessionsBinding` serving the packaged model; Deploy is a plan-only offline ActorTemplate/HarnessRegistration render; chat/status refuse. Independent read-only reference extraction/export and availability probing remain; removed legacy bundle replay/evaluation is not this native path. |
 
 Support is operation- and version-specific. See the [runtime support
 matrix](runtime-adapters.md#revision-pinned-support-and-qualification-matrix).

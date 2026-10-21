@@ -63,7 +63,7 @@ kmx quickstart
 A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.
 - **Orka** is the default runtime. Its packaged workspace path supports evaluation, evaluated publication and root digest Deploy with exact evaluated reuse; independent live Orka run and chat remain.
 - **kagent** support is exact-version and operation-specific: v0.10.3 Go/linux-amd64 packaged workspace authoring, `test --bindings`, evaluated publication and create-only root digest Deploy. Standalone run/chat, Python, RemoteMCP and retirement remain unavailable. Read-only destination status observes placement without enabling those execution/lifecycle capabilities.
-- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary push and explicit private `test --development-host FILE`: one fresh Session/config/Exec per declared run, full-pass private proof and exact-S evaluated push. This unauthenticated literal-loopback development path loads no cluster settings; explicit judging and repeated cases share Orka/kagent semantics. It supports no tools, Deploy/chat/status or remote lifecycle. Receipt diff refuses its proof.
+- **agentsessions** supports pinned-chat offline suite create/prepare/load/ordinary push and explicit private `test --development-host FILE`: one fresh Session/config/Exec per declared run, full-pass private proof and exact-S evaluated push. This unauthenticated literal-loopback development path loads no cluster settings; explicit judging and repeated cases share Orka/kagent semantics. It supports no tools, chat/status or remote lifecycle. Eval requires an `AgentSessionsBinding` (`--bindings FILE`) serving the packaged model and records its digest; Deploy is a plan-only offline render. Receipt diff refuses its proof.
 ## Safety And Status
 > [!IMPORTANT]
 > **Kaimahi is experimental and under active development.** Interfaces may change.
@@ -149,8 +149,10 @@ CASES += [
     ("kagent digest lift removed", GOOD.replace("create-only root digest Deploy.", ""), "kagent version boundary is missing"),
     ("kagent status grants execution", GOOD.replace("Read-only destination status observes placement without enabling those execution/lifecycle capabilities.", "Destination status evaluates and repairs agents."), "kagent version boundary is missing"),
     ("kagent retirement claimed", GOOD.replace("RemoteMCP and retirement remain unavailable.", "RemoteMCP and retirement are supported."), "kagent version boundary is missing"),
-    ("agentsessions deployment claimed", GOOD.replace("no tools, Deploy/chat/status or remote lifecycle", "a KMX deployment target"), "agentsessions boundary is missing"),
+    ("agentsessions deployment claimed", GOOD.replace("no tools, chat/status or remote lifecycle", "a KMX deployment target"), "agentsessions boundary is missing"),
     ("agentsessions run freshness missing", GOOD.replace("Session/config/Exec per declared run", "Session/config/Exec per case"), "agentsessions boundary is missing"),
+    ("agentsessions binding dropped", GOOD.replace("Eval requires an `AgentSessionsBinding` (`--bindings FILE`) serving the packaged model and records its digest; ", ""), "agentsessions boundary is missing"),
+    ("agentsessions deploy apply claimed", GOOD.replace("Deploy is a plan-only offline render", "Deploy applies to substrate"), "agentsessions boundary is missing"),
     ("agentsessions judge policy missing", GOOD.replace("explicit judging and repeated cases share Orka/kagent semantics", "judging remains unsupported"), "agentsessions boundary is missing"),
     ("runtime provider distinction removed", GOOD.replace("A **runtime** executes and governs the agent. An **inference provider** is the separate model-access binding; selecting one does not select the other.\n", ""), "runtime/inference distinction is missing"),
     ("wrong tap", GOOD.replace("kaimahi-agents/tap/kmx", "other/tap/kmx"), "Homebrew install is missing"),

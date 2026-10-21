@@ -37,7 +37,7 @@ func sessionsPassingFixture(t *testing.T) (*PreparedSuiteWorkspaceEvaluation, su
 		t.Fatal(err)
 	}
 	host := suiteSessionsHostObservation{Mode: "operator-observed-development", HostID: "host-1", JournalID: "journal-1", RuntimeVersion: workspace.AgentSessionsVersion, RuntimeBinaryDigest: "sha256:" + strings.Repeat("a", 64), RuntimeConfigDigest: "sha256:" + strings.Repeat("b", 64), InferenceID: "inference-1", InferenceRevision: "sha256:" + strings.Repeat("c", 64), Model: suite.Model, Harness: "chat", HarnessVersion: "1", Retention: "operator-managed"}
-	subject, err := newSuiteSessionsSubject(suite, host)
+	subject, err := newSuiteSessionsSubject(suite, host, "sha256:"+strings.Repeat("e", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func sessionsPassingFixture(t *testing.T) (*PreparedSuiteWorkspaceEvaluation, su
 	for i, frame := range inventory {
 		observations[i] = suiteSessionsObservation{Result: agentsessions.CaseResult{SessionUID: "session-" + frame.Case.ID, ExecutionID: "execution-" + frame.Case.ID, Harness: "chat", HarnessVersion: "1", Model: suite.Model, ConfigDigest: subject.ConfigDigest, Head: agentsessions.JournalHead{Seq: 5, Hash: strings.Repeat("d", 64)}, Output: "4"}, Assertions: agentruntime.EvaluateAssertions(frame.Case, agentruntime.EvaluationEvidence{Answer: "4", AnswerAvailable: true})}
 	}
-	return &PreparedSuiteWorkspaceEvaluation{prepared: prepared, suite: suite, inventory: inventory}, subject, observations
+	return &PreparedSuiteWorkspaceEvaluation{root: root, prepared: prepared, suite: suite, inventory: inventory}, subject, observations
 }
 
 func TestSuiteSessionsPassingRoundTripAndCoherence(t *testing.T) {
@@ -59,7 +59,7 @@ func TestSuiteSessionsPassingRoundTripAndCoherence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fmt.Sprintf("%x", sha256.Sum256(raw)); got != "526084bf67a36403c997b8cab76098ec1824ce12443013e8b101c883b6a9903d" {
+	if got := fmt.Sprintf("%x", sha256.Sum256(raw)); got != "9cb3f1a9cbc9049a72d081f3df0dad3781d4da174995b2764cd51a6a0361cdf4" {
 		t.Fatalf("single-run Sessions byte golden: %s", got)
 	}
 	if r.suiteDigest() != p.suite.Digest || bytes.Contains(raw, []byte(`"subject":null`)) || bytes.Contains(raw, []byte(`"provider"`)) || bytes.Contains(raw, []byte(`"output"`)) {
@@ -68,6 +68,9 @@ func TestSuiteSessionsPassingRoundTripAndCoherence(t *testing.T) {
 	var wire map[string]any
 	if json.Unmarshal(raw, &wire) != nil {
 		t.Fatal("invalid Sessions wire")
+	}
+	if wire["domain"] != "kmx.agentsessions-suite.passing/v2" || wire["agentsessions"].(map[string]any)["subject"].(map[string]any)["bindingDigest"] != subject.BindingDigest {
+		t.Fatalf("Sessions receipt is not v2 with a binding digest: %v", wire["domain"])
 	}
 	for _, c := range wire["cases"].([]any) {
 		for _, a := range c.(map[string]any)["assertions"].([]any) {
@@ -137,7 +140,14 @@ func TestSuiteSessionsPassingClosedWire(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"null", "dual", "unknown", "domain", "case-arm"} {
+	var recorded map[string]any
+	if err := json.Unmarshal(raw, &recorded); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorded["agentsessions"].(map[string]any)["subject"].(map[string]any)["bindingDigest"]; got != "sha256:"+strings.Repeat("e", 64) {
+		t.Fatalf("receipt did not record the binding digest: %v", got)
+	}
+	for _, name := range []string{"null", "dual", "unknown", "domain", "case-arm", "no-binding", "bad-binding"} {
 		t.Run(name, func(t *testing.T) {
 			var doc map[string]any
 			if err := json.Unmarshal(raw, &doc); err != nil {
@@ -154,6 +164,11 @@ func TestSuiteSessionsPassingClosedWire(t *testing.T) {
 				doc["domain"] = "kmx.native-suite.passing/v1"
 			case "case-arm":
 				doc["cases"].([]any)[0].(map[string]any)["taskUID"] = "invented"
+			case "no-binding":
+				// A receipt without bindingDigest is refused.
+				delete(doc["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
+			case "bad-binding":
+				doc["agentsessions"].(map[string]any)["subject"].(map[string]any)["bindingDigest"] = "binding"
 			}
 			changed, _ := json.Marshal(doc)
 			if _, err := parseSuitePassingReceipt(changed); err == nil {

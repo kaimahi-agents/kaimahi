@@ -12,6 +12,7 @@ import (
 
 	agentsuite "github.com/agent-primitives/suite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"github.com/kaimahi-agents/kaimahi/pkg/suiteview"
 )
 
@@ -78,7 +79,7 @@ func readSourceProfiles(rows []sourceProfile, read func(string) ([]byte, error))
 }
 
 func resolveProfiled(name string, m normalizedMember, profiles []resolvedProfile) (map[string][]byte, error) {
-	if !namePattern.MatchString(name) || name == "." || name == ".." || len(profiles) == 0 || len(profiles) > 16 || m.member.Runtime != nil {
+	if !scaffold.ValidSuiteName(name) || name == "." || name == ".." || len(profiles) == 0 || len(profiles) > 16 || m.member.Runtime != nil {
 		return nil, errors.New("unsupported profiled workspace")
 	}
 	if err := validateMember(m.member, m.instructions); err != nil {
