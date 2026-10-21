@@ -15,6 +15,45 @@ the selected provider and runtime.
 For the single-node AKS CPU test template and its explicit-context runbook, see
 [Azure CPU-model sample](azure/cpu-model/README.md#single-node-cpu-inference-test).
 
+## Installed local model discovery
+
+`kmx model list` reports Foundry Local and Ollama inventory without cluster
+configuration, prompts, runtime startup, installation or model downloads. Use
+`kmx model list -o json` for the same bounded reports and non-secret model routes.
+It distinguishes `absent`, `empty`, `installed` and `failure`; an installed but
+stopped runtime is not an empty inventory. A failure reports a safe reason, not
+raw runtime output. Both table and JSON output print the complete report before
+exiting nonzero if any provider reports `failure`; `absent` and `empty` remain
+successful. Discovery does not select a model or change a saved endpoint.
+
+Foundry Local CLI preview 0.11 supplies its dynamic endpoint through
+`foundry server status`; KMX then reads cached `/openai/models`. It never guesses
+a Foundry port or runs `model list`, which can download a catalog. Ollama uses
+loopback port 11434 and reads `/api/tags`. Local discovery is separate from the
+legacy kind-reuse checks below. The route includes provider, exact model,
+OpenAI-compatible endpoint and a non-secret authentication selector; it does not
+implement local agent execution or a runner.
+
+Missing/empty/unavailable runtimes show official install links, platform
+requirements and download estimates (unknown where not published). Foundry Local
+is suggested on supported Windows. CLI 0.11.0 download estimates are dated
+2026-10-07: Windows x64/ARM64 about 24 MB, macOS Apple Silicon about 48 MB, Linux
+x64/ARM64 about 55–58 MB. Models and execution providers need additional space;
+model memory requirements depend on the chosen model. Ollama on Windows needs
+at least 4 GB installed binary space, not a 4 GB download. Nothing is installed
+when listing or declining an install link.
+
+Sources: [Foundry CLI reference](https://learn.microsoft.com/en-us/azure/foundry-local/reference/reference-cli),
+[Foundry CLI downloads](https://github.com/microsoft/Foundry-Local/releases/tag/cli-preview-0.11.0),
+[Ollama downloads](https://ollama.com/download),
+[Windows requirements](https://docs.ollama.com/windows),
+[macOS requirements](https://docs.ollama.com/macos) and
+[Linux installation](https://docs.ollama.com/linux).
+
+The independent model-access package has native Windows/macOS/Linux tests.
+The installed Windows CLI remains blocked until native CLI support lands; these
+package tests do not qualify the full Windows executable.
+
 ## Storing an API key
 
 Native Orka Providers reference an existing namespaced Kubernetes Secret.

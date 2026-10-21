@@ -26,6 +26,14 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Internal experimental flow destination preflight and candidate projection: exact independent bindings, frozen observations, semantic/freshness separation and full-tuple ownership through cleanup/status. No CLI flow execution, evaluation, publication or Deploy is enabled.
 
+- Read-only `kmx model list [-o table|json]` discovers cached Foundry Local
+  models at the runtime-reported endpoint and installed Ollama models on loopback
+  port 11434. Absent, empty, installed and failure states include explicit install
+  guidance. Non-secret routes are independent of kind reuse; no runtime start,
+  model download, automatic selection or local agent execution is added. Native
+  package tests cover Windows/macOS/Linux; Windows CLI qualification follows
+  native CLI support.
+
 - Experimental offline multi-agent flow authoring with `kmx create NAME
   --workspace DIR --members FILE --flow FILE`, deterministic preparation and
   explicit native/public layout/archive inventory readers. Strict JSON imports
