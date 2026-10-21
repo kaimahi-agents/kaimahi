@@ -89,7 +89,7 @@ func TestInstructionCredentialRefusalLocationAndRepair(t *testing.T) {
 			for _, newline := range []string{"\n", "\r\n"} {
 				a, err := Parse("a.md", []byte(strings.ReplaceAll(source, "\n", newline)))
 				var refusal *Error
-				if a != nil || !errors.As(err, &refusal) || refusal.Field != "Instructions" || refusal.Location.Line != row.line || refusal.Location.Column != 1 {
+				if a != nil || !errors.As(err, &refusal) || refusal.Field != "File" || refusal.Location.Line != row.line || refusal.Location.Column != 1 {
 					t.Fatalf("expected credential refusal on line %d: %v", row.line, err)
 				}
 				if !strings.Contains(refusal.Problem, "remove credential-shaped content") || strings.Contains(refusal.Problem, "Unicode") || strings.Contains(err.Error(), credential) {
@@ -97,6 +97,58 @@ func TestInstructionCredentialRefusalLocationAndRepair(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestWholeCharterRefusesCredentialComments(t *testing.T) {
+	for _, shape := range secretshapes.All() {
+		for _, row := range []struct {
+			name, old, replacement string
+			line                   int
+		}{
+			{"input comment", "input: Ada", "input: Ada # ", 23},
+			{"assertion comment", "value: Hello, Ada", "value: Hello, Ada # ", 27},
+			{"standalone comment", "examples:", "# ", 21},
+		} {
+			t.Run(shape.Name+"/"+row.name, func(t *testing.T) {
+				replacement := row.replacement + shape.Example
+				if row.name == "standalone comment" {
+					replacement += "\nexamples:"
+				}
+				source := strings.Replace(sample(t), row.old, replacement, 1)
+				for _, newline := range []string{"\n", "\r\n"} {
+					a, err := Parse("a.md", []byte(strings.ReplaceAll(source, "\n", newline)))
+					var refusal *Error
+					if a != nil || !errors.As(err, &refusal) || refusal.Field != "File" || refusal.Location.Line != row.line || !strings.Contains(refusal.Problem, "remove credential-shaped content") {
+						t.Fatalf("expected redacted credential repair on line %d", row.line)
+					}
+					if strings.Contains(err.Error(), shape.Example) {
+						t.Fatal("credential echoed in refusal")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestPreludeFencesRefuse(t *testing.T) {
+	for _, fence := range []string{"```text", "~~~text", "   ````text"} {
+		source := strings.Replace(sample(t), "## Identity", fence+"\n## Tools\n"+strings.TrimSuffix(fence, "text")+"\n## Identity", 1)
+		a, err := Parse("a.md", []byte(source))
+		var refusal *Error
+		if a != nil || !errors.As(err, &refusal) || refusal.Field != "Sections" || refusal.Location.Line != 3 || !strings.Contains(refusal.Problem, "put instructions inside") {
+			t.Fatalf("expected located prelude refusal: %v", err)
+		}
+	}
+}
+
+func TestTitleRoleIsOptional(t *testing.T) {
+	for _, title := range []string{"Greeter", "Greeter —", "Greeter — Greeting specialist"} {
+		source := strings.Replace(sample(t), "# Greeter — Greeting specialist", "# "+title, 1)
+		a, err := Parse("a.md", []byte(source))
+		if err != nil || a.Title != title {
+			t.Fatalf("optional role refused or title changed: %v", err)
+		}
 	}
 }
 

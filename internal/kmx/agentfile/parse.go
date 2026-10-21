@@ -102,6 +102,9 @@ func Parse(filename string, data []byte) (*Agent, error) {
 	if strings.IndexFunc(text, unsupportedControl) >= 0 {
 		return fail("File", "remove control characters except newline/tab and use LF or CRLF line breaks")
 	}
+	if _, at := secretshapes.MatchIndex(text); at >= 0 {
+		return nil, refuse(filename, strings.Count(text[:at+1], "\n")+1, 1, "File", "remove credential-shaped content; agent files must not contain secrets")
+	}
 	lines := strings.Split(text, "\n")
 	a := &Agent{Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data)), Locations: map[string]Location{}}
 	sections := map[string]section{}
@@ -128,10 +131,6 @@ func Parse(filename string, data []byte) (*Agent, error) {
 			}
 			a.Title = strings.TrimSpace(line[2:])
 			a.Locations["Title"] = Location{filename, i + 1, 1}
-			continue
-		}
-		if f, _, ok := openFence(line); ok {
-			open = f
 			continue
 		}
 		if strings.HasPrefix(line, "# ") {
@@ -162,6 +161,9 @@ func Parse(filename string, data []byte) (*Agent, error) {
 		} else if current == "" {
 			return nil, refuse(filename, i+1, 1, "Sections", "put instructions inside the canonical responsibility sections")
 		}
+		if f, _, ok := openFence(line); ok {
+			open = f
+		}
 	}
 	if open.count > 0 {
 		field := "Sections"
@@ -172,9 +174,6 @@ func Parse(filename string, data []byte) (*Agent, error) {
 	}
 	if s, ok := sections["Examples"]; ok {
 		a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
-		if _, at := secretshapes.MatchIndex(a.Instructions); at >= 0 {
-			return nil, refuse(filename, strings.Count(a.Instructions[:at+1], "\n")+1, 1, "Instructions", "remove credential-shaped content; instructions must not contain secrets")
-		}
 	}
 	missing := []string{}
 	for _, name := range sectionNames {
