@@ -32,6 +32,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   package tests cover Windows/macOS/Linux; Windows CLI qualification follows
   native CLI support.
 
+- Offline canonical single-file charter parser with exact Model/Preferred,
+  separated inline Examples, existing assertion semantics, source locations,
+  bounded regular-file loading and a greeter sample. Standalone files and
+  matching `.squad/agents/<id>/charter.md` placements share one format. No
+  execution command, model access, Squad registration or native suite-loader
+  change is enabled; see [the format](docs/agent-file.md).
+
 - Experimental offline multi-agent flow authoring with `kmx create NAME
   --workspace DIR --members FILE --flow FILE`, deterministic preparation and
   explicit native/public layout/archive inventory readers. Strict JSON imports
