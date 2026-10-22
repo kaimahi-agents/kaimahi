@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"text/tabwriter"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
@@ -28,6 +30,11 @@ func addCopilotCommands(group *cobra.Command, state *commandState) {
 	useGH := false
 	login := &cobra.Command{Use: "login", Short: "Sign in for direct Copilot model access using GitHub device flow", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		access := state.copilot()
+		if _, set := os.LookupEnv("COPILOT_GITHUB_TOKEN"); set {
+			if _, err := fmt.Fprintln(cmd.ErrOrStderr(), "COPILOT_GITHUB_TOKEN takes precedence at runtime over stored credentials."); err != nil {
+				return err
+			}
+		}
 		var err error
 		if useGH {
 			err = access.LoginGH(cmd.Context())
@@ -36,6 +43,10 @@ func addCopilotCommands(group *cobra.Command, state *commandState) {
 				_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Open %s and enter code %s\n", prompt.VerificationURI, prompt.UserCode)
 				return err
 			})
+		}
+		if errors.Is(err, copilot.ErrKeychain) {
+			_, err = fmt.Fprintln(cmd.ErrOrStderr(), "OS keychain unavailable; sign-in was not saved to a token file. At runtime, kmx uses explicit COPILOT_GITHUB_TOKEN or an existing github.com gh login via gh auth token. No token files are written.")
+			return err
 		}
 		if err != nil {
 			return err

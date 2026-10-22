@@ -1,0 +1,8 @@
+### Fixed
+
+- Direct Copilot access can use explicit `COPILOT_GITHUB_TOKEN` or, when the OS
+  keychain is unavailable, an existing github.com `gh auth token` at runtime.
+  kmx never saves these runtime tokens to a keychain or token file. Invalid
+  explicit tokens, missing kmx credentials and service refusals do not silently
+  switch accounts. `kmx model login` explains these options instead of failing
+  when the keychain is unavailable, without claiming a credential was saved.

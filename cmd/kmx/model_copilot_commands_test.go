@@ -64,6 +64,29 @@ func TestCopilotLoginAndLogoutAreExplicitConfigFree(t *testing.T) {
 		})
 	}
 }
+func TestCopilotLoginExplainsRuntimeCredentialsWithoutKeychain(t *testing.T) {
+	t.Setenv("COPILOT_GITHUB_TOKEN", "login-private-test-value")
+	for _, args := range [][]string{{"model", "login"}, {"model", "login", "--gh"}} {
+		var out, diag bytes.Buffer
+		f := &cliCopilot{err: copilot.ErrKeychain}
+		if err := execute(args, copilotDeps(t, f, &out, &diag)); err != nil {
+			t.Fatalf("keychain guidance failed: %v", err)
+		}
+		for _, want := range []string{"gh auth token", "COPILOT_GITHUB_TOKEN", "runtime", "not saved"} {
+			if !strings.Contains(diag.String(), want) {
+				t.Fatalf("missing %q in guidance: %s", want, &diag)
+			}
+		}
+		if out.Len() != 0 || strings.Contains(diag.String(), "login-private-test-value") || strings.Contains(diag.String(), "credential saved") || strings.Contains(diag.String(), "ABCD-EFGH") {
+			t.Fatal("guidance claimed a saved credential or displayed device sign-in")
+		}
+	}
+	var out, diag bytes.Buffer
+	if err := execute([]string{"model", "login"}, copilotDeps(t, &cliCopilot{err: copilot.ErrPolicy}, &out, &diag)); !errors.Is(err, copilot.ErrPolicy) {
+		t.Fatalf("policy refusal hidden by guidance: %v", err)
+	}
+}
+
 func TestCopilotListFormatsNeverLogin(t *testing.T) {
 	for _, format := range []string{"table", "json"} {
 		t.Run(format, func(t *testing.T) {

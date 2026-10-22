@@ -42,14 +42,20 @@ unreleased; native Windows package tests do not yet qualify the Windows CLI.
 `kmx model login` starts GitHub device-code sign-in, printing the verification
 URI and user code on stderr. `kmx model login --gh` explicitly copies only the
 existing `gh auth token --hostname github.com` credential through private bounded
-stdout capture. Nothing implicitly reuses gh or editor sign-in.
+stdout capture. If the OS keychain is unavailable, login prints runtime options
+instead of starting device sign-in or failing. No editor credentials are read.
 
 `kmx model list --provider copilot [-o table|json]` lists enabled Chat-compatible
 models as non-secret routes at `https://api.githubcopilot.com`; it never starts
 sign-in and fails clearly without auth. Local discovery remains the default.
 `kmx model logout` deletes only kmx's reusable credential and clears its memory;
-gh/editor sign-in is unchanged. Native OS keychain storage is required, with no
-plaintext fallback. macOS release builds work without CGO; explicit access uses
+gh/editor sign-in and caller environment are unchanged. Runtime authentication
+prefers explicit `COPILOT_GITHUB_TOKEN`, otherwise kmx's native keychain item.
+Only if the keychain is unavailable does it read an existing github.com gh login
+through bounded private `gh auth token` capture. These runtime sources are never
+saved by kmx; an invalid explicit token or service refusal does not switch
+credentials. Remove the variable or end the gh session separately to disable
+external credentials. There is no plaintext token-file fallback. macOS release builds work without CGO; explicit access uses
 `/usr/bin/security`, with secrets on stdin only and a 2048-byte write limit.
 Linux uses an existing session bus and login/default keyring collection, never
 autolaunching a bus. Custom buses require an explicit `unix:` session address.

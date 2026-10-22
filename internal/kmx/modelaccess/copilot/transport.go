@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -115,7 +114,8 @@ func (p *Provider) exchange(ctx context.Context) error {
 }
 
 // List returns only available Chat-compatible routes. It never signs in,
-// reads editor credentials, runs gh, or selects a default model.
+// reads editor credentials, or selects a default model. When the keychain is
+// unavailable it may read an existing gh credential, without persisting it.
 func (p *Provider) List(ctx context.Context) ([]modelaccess.Route, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -125,13 +125,10 @@ func (p *Provider) list(ctx context.Context) ([]modelaccess.Route, error) {
 	if ctx.Err() != nil {
 		return nil, safeError(ctx.Err())
 	}
-	source, err := p.store.Get()
+	source, err := p.credential(ctx)
 	if err != nil {
 		p.clear()
-		if errors.Is(err, ErrAuthRequired) {
-			return nil, ErrAuthRequired
-		}
-		return nil, ErrKeychain
+		return nil, err
 	}
 	if !validCredential(source) {
 		p.clear()

@@ -8,10 +8,14 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 - `model list [-o table|json]` defaults to config-free bounded local discovery.
   Explicit `--provider copilot` lists available Chat-compatible routes without
-  starting sign-in. `model login` uses GitHub device flow; `--gh` alone opts into
-  bounded private `gh auth token --hostname github.com` capture. Reusable tokens
-  live only in kmx's native OS keychain item, with no file fallback; exchange
-  bearers stay in memory. Logout deletes only that item and clears memory.
+  starting sign-in. `model login` uses GitHub device flow; `--gh` explicitly
+  copies a bounded private gh token into kmx's OS keychain. Runtime credentials
+  prefer explicit `COPILOT_GITHUB_TOKEN`, then kmx's keychain item; only an
+  unavailable keychain permits bounded `gh auth token --hostname github.com`
+  capture without persistence. Invalid explicit tokens, missing owned items and
+  service refusals do not switch credentials. No token file fallback; exchange
+  bearers stay in memory. Login explains runtime options if the keychain is
+  unavailable. Logout clears only kmx's item/memory, not gh or environment auth.
   `internal/kmx/modelaccess/copilot` returns a selected-route RoundTripper for
   direct JSON/SSE Chat Completions, not a runner, proxy or CLI-chat replacement.
   Establish auth through the catalog; exchange only after credential refusal,
