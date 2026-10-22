@@ -168,8 +168,12 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 	if err := json.Unmarshal(b, &r); err != nil {
 		t.Fatal(err)
 	}
-	if !failed.IsError || r.ReasonCode != "assertion_failed" || r.FullPass || r.File.Revision != changed.File.Revision {
+	if failed.IsError || r.State != "complete" || r.ReasonCode != "assertion_failed" || r.FullPass || r.File.Revision != changed.File.Revision {
 		t.Fatalf("instruction regression hidden: %+v", r)
+	}
+	summary := failed.Content[0].(*sdk.TextContent).Text
+	if !strings.Contains(summary, "greeting") || !strings.Contains(summary, "no journal") || strings.Contains(summary, "PRIVATE OPERAND") || strings.Contains(summary, "different response") || strings.Contains(summary, "schemaVersion") {
+		t.Fatalf("failure summary lost or leaked content: %s", summary)
 	}
 	fixed := call("edit", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md", "expectedRevision": changed.File.Revision, "content": string(source)})
 	if fixed.IsError {
