@@ -374,7 +374,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   A renamed command must not silently change runtime, target, ownership or
   supported operations.
 - Update command registration, help, completion, relevant chat/console labels,
-  generated next/recovery commands, primary docs and CHANGELOG in the same slice.
+  generated next/recovery commands, primary docs and a `changes/` release-note
+  fragment in the same slice.
   Record changed defaults and compatibility/removal policy. Keep old routes
   callable until an announced transition unless an outright removal is explicitly
   approved; record that removal and its replacements. Notices belong on stderr.
@@ -559,6 +560,6 @@ custom-domain and versioned-site changes require a separate review.
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
 Command changes normally require `go test ./cmd/kmx`, affected operation-package
 tests, documentation links, repository-map and legacy-runtime checks. These
-inventory checkers use tracked files, so include intended additions in the index
+checkers use tracked files, so include intended additions in the index
 when checking the complete change. Update AGENTS.md when implemented conventions
 change so subsequent work follows the same rules.
