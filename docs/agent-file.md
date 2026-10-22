@@ -167,6 +167,49 @@ model requirement. Its raw-charter prompt may include Examples, and structured
 editing need not preserve extra sections. Do not claim hidden checks or identical
 prompts across hosts.
 
+## Native Squad profile — internal foundation
+
+`Parse`/`Load` and current file Run/Test/MCP remain canonical-only. Explicit
+`ParseSquad(filename, bytes, SquadProfile)` separately accepts the qualified
+**Squad 1.1.0** cast shapes; it does not auto-detect or import arbitrary charters.
+The [captured catalog and fallback fixtures](../internal/kmx/agentfile/testdata/squad-v1.1.0/README.md)
+come from real non-TTY init/cast, not a hand-written template approximation.
+
+The caller supplies release `1.1.0`, an approved lowercase `MemberID` and the
+approved native **display Role** (not its catalog lookup ID). The title and
+native Role must match this mapping; optional native Name must match when
+present. Catalog output has no Name field: none is invented. The filename must
+end in `.squad/agents/<approved-id>/charter.md`, checked lexically without cwd
+lookup and with slash/backslash support. Structural placement components ignore
+case; the approved ID matches exactly. Reserved built-ins and IDs changed by
+Squad's slug rules refuse. This is not confinement or proof that cast ran;
+the caller must establish actual release, provenance and reviewed role mapping.
+
+The distinct `SquadCharter` retains copied original source, exact-byte revision,
+ordered half-open **original-byte** section/body spans and a Preferred-value-only
+span. `Source()` returns a copy. CRLF, Unicode, native attribution, placeholders,
+Model Rationale/Fallback and a missing final newline are preserved, not rendered
+through the canonical format. Native section order/metadata and the qualified
+attribution preamble are checked; unknown/duplicate/conflicting structures and
+unqualified releases refuse with a repair hint. Present Fallback stays inert
+text: it never authorizes a fallback model or tool access.
+
+A bare starter is valid parser input but has `Enriched=false`; it is not an
+executable agent. Valid enrichment has nonblank `## Task Instructions`, concrete
+`Model.Preferred` and valid `## Examples`, with Task Instructions then Examples
+last. Existing native Model stays before Collaboration. If it was absent, a new
+Model can be appended after Voice immediately before Task Instructions; absent
+Rationale/Fallback is not synthesized. Partial or malformed additions refuse.
+Effective instructions retain all native text and task instructions before
+Examples (LF-normalized only in that projection), including any native Model
+prose. Task-only instructions are separate for the later fake-route integration.
+
+This slice supplies **no** cast/enrich writer, native execution adapter,
+preservation-aware Edit, team Create request, Squad installation or dispatch.
+The existing canonical loader does not accept these native documents. Exact
+package digest/results, per-member execution and real coordinator dispatch remain
+separate work; a source revision or `Enriched=true` is not a package-bound pass.
+
 ## Future AgentSuite mapping — not implemented
 
 Identity.ID could identify one member; the prefix instructions could become its
