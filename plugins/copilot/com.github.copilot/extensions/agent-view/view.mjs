@@ -166,10 +166,16 @@ export async function readView(session, rawPath) {
 // --- plain-text fallback ---------------------------------------------------
 export function formatView(view) {
   const one = (s, max) => clean(String(s).replace(/\s+/g, " "), max);
+  const { status, badge, result } = view.latest;
+  const summary = status === "none" ? "Latest: none (no current Run/Test result)"
+    : status === "stale" ? "Latest: STALE (from an earlier revision; not current)"
+    : `Latest: current, ${badge === "pass" ? "PASS" : "NOT PASSING"} (${one(result.state, 40)}, verdict ${one(result.verdict, 40)})`;
   const out = [
     `Agent view: ${one(view.file.path, 120)} (${one(view.file.revision, 19)})`,
     `Title: ${one(view.title, 120)}`,
     `Model: ${one(view.model.replace(/\n/g, "; "), 160)}`,
+    // Keep the bounded status ahead of authored details that may be truncated.
+    summary,
     "Instructions:",
     "  " + clean(view.instructions, 1200, true).replace(/\n/g, "\n  "),
     `Examples (${view.examples.length}):`,
@@ -180,11 +186,7 @@ export function formatView(view) {
       out.push(`      expect ${one(a.id, 60)} [${one(a.type, 40)}] ${one(a.fields.map(([k, v]) => `${k}=${v}`).join(" "), 160)}`.trimEnd());
     }
   }
-  const { status, badge, result } = view.latest;
-  if (status === "none") out.push("Latest: none (no current Run/Test result)");
-  else if (status === "stale") out.push("Latest: STALE (from an earlier revision; not current)");
-  else {
-    out.push(`Latest: current, ${badge === "pass" ? "PASS" : "NOT PASSING"} (${one(result.state, 40)}, verdict ${one(result.verdict, 40)})`);
+  if (status === "current") {
     for (const e of result.examples) {
       out.push(`  - ${one(e.id, 60)}: ${one(e.verdict, 20)} (${one(e.state, 30)})`);
       if (e.answerExcerpt !== undefined) out.push(`      untrusted model answer: ${one(e.answerExcerpt, 200)}`);

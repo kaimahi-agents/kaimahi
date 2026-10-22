@@ -241,6 +241,47 @@ test("formatView is compact, plain and visibly truncated", async () => {
   assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e]/.test(big));
 });
 
+test("text truncation never hides the latest-result summary", async () => {
+  const examples = Array.from({ length: 100 }, (_, i) => ({
+    id: `e${i}`, input: "Ada", assertions: [{id: "greeting", type: "contains", value: "Hello"}],
+  }));
+  for (const [latest, summary] of [
+    [{status: "none"}, "Latest: none (no current Run/Test result)"],
+    [{status: "stale"}, "Latest: STALE (from an earlier revision; not current)"],
+    [{status: "current", result: result()}, "Latest: current, PASS (complete, verdict pass)"],
+    [{status: "current", result: result({fullPass: false, verdict: "fail"})}, "Latest: current, NOT PASSING (complete, verdict fail)"],
+  ]) {
+    const view = await readView(stubSession(resource(MINIMAL, {examples, latest})), MINIMAL);
+    const text = formatView(view);
+    assert.ok(text.length <= 6000);
+    assert.ok(text.includes("[output truncated]"));
+    assert.ok(text.includes(summary), `missing ${summary}`);
+  }
+});
+
+test("status badges and errors meet AA text contrast in both themes", async () => {
+  const css = await readFile(new URL("./style.css", import.meta.url), "utf8");
+  const declarations = (block) => Object.fromEntries([...block.matchAll(/([\w-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
+  const roots = [...css.matchAll(/:root\s*\{([^}]+)\}/g)].map((m) => declarations(m[1]));
+  const luminance = (hex) => {
+    let digits = hex.replace(/^#/, "");
+    if (digits.length === 3) digits = [...digits].map((v) => v + v).join("");
+    assert.match(digits, /^[0-9a-f]{6}$/i);
+    const channels = digits.match(/../g).map((v) => parseInt(v, 16) / 255).map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  };
+  for (const [theme, variables] of [["light", roots[0]], ["dark", {...roots[0], ...roots[1]}]]) {
+    for (const selector of [".badge.pass", ".badge.fail", ".error"]) {
+      const block = css.slice(css.indexOf(selector)).match(/\{([^}]+)\}/)[1];
+      const color = declarations(block).color;
+      const foreground = color.startsWith("var(") ? variables[color.slice(4, -1)] : color;
+      const a = luminance(foreground), b = luminance(variables["--bg"]);
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      assert.ok(ratio >= 4.5, `${theme} ${selector} contrast ${ratio.toFixed(2)}:1 is below 4.5:1`);
+    }
+  }
+});
+
 test("bridge serves only token-protected same-host requests", async () => {
   const session = stubSession(resource(SQUAD));
   const bridge = await startViewBridge({ session, path: SQUAD });
