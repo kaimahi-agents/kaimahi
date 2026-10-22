@@ -347,9 +347,13 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   and Secret metadata bracketing. Hermetic tests are not live qualification.
   Runtime-core assertions and llmJudge remain retained with their test groups;
   native judge wiring does not enable recorded candidate execution.
-  The checkout-only native qualifier runs in the existing exclusively owned
-  Orka shard, after legacy model proof, with private captures and metadata-only
-  artifacts. Its second exclusively owned kind cluster has one pinned Orka in
+  The checkout-only native qualifier runs in the full read-only reusable Orka
+  worker after raw model proof, with private captures and metadata-only artifacts.
+  Relevant/unknown PRs, manual qualification, daily main nightly and every release
+  retain that proof. Only explicitly safe PRs and routine main pushes skip it.
+  Keep required `hygiene` and `e2e-hello-world` checks intact and fail closed on
+  unintended skips/failures. No path/docs shortcuts belong inside the full worker.
+  Its second exclusively owned kind cluster has one pinned Orka in
   orka-system and its own inference Provider/Secret; it shares the source AIKit
   endpoint through a fixture-only private-network NodePort, never a host mapping
   or another model workload. Registry --promote qualifies GET-only planning,
@@ -445,13 +449,23 @@ See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 ## Agent-file MCP boundary
 
 `mcp --root DIRECTORY` is stdio-only and config-free at startup. Require an
-absolute existing root, never cwd/client-root fallback. Expose exactly
+absolute existing root, never cwd/client-root fallback. Normalize native absolute
+tool paths through cleaning and symlink resolution to an allowed root-relative
+layout; outside targets, dangling links and changed root identity refuse. Keep
+relative-path restrictions and descriptor-bound file IO unchanged. Expose exactly
 Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
 never the path wrapper or shell CLI strings. Model routes are trusted startup
 configuration, not tool/charter fields. Keep complete safe App results on errors;
 fixture runners are not production execution. Edit preserves mode bits, not
 ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
-No new runner, Explain tool or network listener. See [MCP](docs/kmx.md#local-stdio-mcp).
+No new runner, Explain tool or MCP network listener. The read-only
+`kmx://agent/{path}` resource projects supported agent files within that root;
+it is not a fifth tool or generic file reader. Root confirmation suffices for
+charter content; safe model excerpts still require existing showContent opt-in.
+Latest preview state is process-local, revision-bound and never inferred on read.
+The separate native Copilot view uses the host SDK and a private loopback asset
+bridge, without mutations or direct agent-file reads.
+See [MCP](docs/kmx.md#local-stdio-mcp).
 
 ## Single-file charter boundary
 
@@ -465,6 +479,8 @@ Never auto-detect this profile, invent missing native identity fields or treat
 its release selector as cast-origin/registration proof. Reuse runtime assertion semantics;
 refuse tools and unsupported declarations. Parse/Load grant no execution,
 trusted route, source-write, Squad registration or native suite-loader authority.
+`Inspect` shares the scanner for read-only minimal titled-agent display while
+`Parse` remains the execution validator; inspection grants no Run/Test acceptance.
 Keep payload-bearing parsed values out of default logs/results. The loader
 refuses static special files and symlink/reparse path components; it is not a hostile
 concurrent filesystem sandbox.
@@ -583,9 +599,13 @@ Do not infer enforcement from authoring, transfer, readiness, labels or annotati
 - The portable format, validator and schemas are owned by
   [AgentSuite](https://github.com/agent-primitives/suite/blob/main/spec.md).
   Keep KMX details, migration notes, and design history in this repository's
-  implementation documentation, issues, or changelog. Import the public module
-  explicitly as `agentsuite "github.com/agent-primitives/suite"`; use `kmxsuite`
-  for the internal builder package and `suiteoras` for its ORAS adapter.
+  implementation documentation, issues, or changelog. Import focused public
+  packages as `suitecore` (`github.com/agent-primitives/suite/core`), `suiteoci`
+  (`github.com/agent-primitives/suite/oci`), `suiteevidence`
+  (`github.com/agent-primitives/suite/evidence`) and `suiteflow`
+  (`github.com/agent-primitives/suite/experimental/flow`). Do not import the
+  deprecated module root. Keep `kmxsuite` for the internal builder package and
+  `suiteoras` for its ORAS adapter.
   Keep byte-identical consumer fixtures under `testdata/agentsuite`; refresh
   their provenance manifest only with reviewed upstream changes and run
   `python3 scripts/check-agentsuite-fixtures.py`.

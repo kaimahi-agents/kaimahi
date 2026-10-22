@@ -12,7 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/localartifact"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
@@ -83,7 +84,7 @@ func TestFlowCreatePrepareRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(inv, fromArtifact) {
 		t.Fatal("source-free inventory differs")
 	}
-	if _, err := agentsuite.ValidatePath(p.Path); err == nil {
+	if _, err := suiteoci.ValidatePath(p.Path); err == nil {
 		t.Fatal("default suite reader accepted critical flow")
 	}
 	if _, err := localartifact.ReadLayout(ctx, p.Path, ""); err == nil {
@@ -101,7 +102,7 @@ func TestFlowCreatePrepareRoundTrip(t *testing.T) {
 	if _, err := workspace.LoadArtifactInventory(ctx, artifact); err == nil {
 		t.Fatal("ordinary artifact inventory accepted flow")
 	}
-	g, err := agentsuite.ValidatePathFlowV1Alpha1(p.Path)
+	g, err := suiteflow.ValidatePathFlowV1Alpha1(p.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestFlowLargeDocumentAndNonFlowLimit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(a.Files()[agentsuite.FlowPathV1Alpha1]) != size || len(inv.Flow.Cases[0].Input) != size-len(authoredFlow)+len("frozen sources") {
+			if len(a.Files()[suiteflow.FlowPathV1Alpha1]) != size || len(inv.Flow.Cases[0].Input) != size-len(authoredFlow)+len("frozen sources") {
 				t.Fatal("flow input truncated")
 			}
 			writeFile(t, filepath.Join(root, "agents/writer/instructions.md"), strings.Repeat("x", (1<<20)+1))
@@ -328,7 +329,7 @@ func TestFlowDecodedCredentialsRefuseBeforePersistence(t *testing.T) {
 	}
 	for _, field := range []string{"input", "regex"} {
 		t.Run(field, func(t *testing.T) {
-			var flow agentsuite.FlowV1Alpha1
+			var flow suiteflow.FlowV1Alpha1
 			if err := json.Unmarshal([]byte(authoredFlow), &flow); err != nil {
 				t.Fatal(err)
 			}

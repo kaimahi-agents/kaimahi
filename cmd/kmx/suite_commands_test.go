@@ -12,7 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	agentsuiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
@@ -49,7 +50,7 @@ func TestSuiteValidateMinimalLayout(t *testing.T) {
 				}
 				return
 			}
-			var report agentsuite.Report
+			var report suitecore.Report
 			if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 				t.Fatalf("decode JSON output: %v\n%s", err, out.String())
 			}
@@ -227,7 +228,7 @@ func TestSuiteDiffUnifiedSplitAndJSON(t *testing.T) {
 				t.Fatalf("offline suite diff loaded operational config %d time(s)", *loads)
 			}
 			if test.json {
-				var report agentsuite.DiffReport
+				var report suiteoci.DiffReport
 				if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 					t.Fatalf("decode JSON output: %v\n%s", err, out.String())
 				}
@@ -297,7 +298,7 @@ func TestSuitePushMinimalDirectory(t *testing.T) {
 	if *loads != 0 {
 		t.Fatalf("offline suite push loaded operational config %d time(s)", *loads)
 	}
-	firstReport, err := agentsuite.ValidatePath(firstOutput)
+	firstReport, err := suiteoci.ValidatePath(firstOutput)
 	if err != nil {
 		t.Fatalf("validate pushed layout: %v", err)
 	}
@@ -435,7 +436,7 @@ func TestSuitePullExtractsDirectory(t *testing.T) {
 		!strings.Contains(out.String(), output) {
 		t.Fatalf("pull output = %q", out.String())
 	}
-	report, err := agentsuite.ValidatePath(output)
+	report, err := suiteoci.ValidatePath(output)
 	if err != nil {
 		t.Fatalf("validate extracted suite: %v", err)
 	}

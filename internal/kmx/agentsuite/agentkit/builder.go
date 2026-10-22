@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"regexp"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/distribution/reference"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 )
@@ -164,7 +164,7 @@ func (b *Builder) validate(plan kmxsuite.SandboxPlan) error {
 }
 
 func validateDigestReference(name, value string) error {
-	if err := agentsuite.ValidateImageReference(value); err != nil {
+	if err := suitecore.ValidateImageReference(value); err != nil {
 		return fmt.Errorf("%s must be a registry-qualified, digest-addressed image reference: %w", name, err)
 	}
 	return nil

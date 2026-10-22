@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	godigest "github.com/opencontainers/go-digest"
 )
 
@@ -59,7 +59,7 @@ func (a *App) applyReleaseUpdate(ctx context.Context, p *preparedReleaseUpdate, 
 	if err != nil {
 		return result, err
 	}
-	original, err := agentsuite.Marshal(p.origin.Annotation)
+	original, err := suitecore.Marshal(p.origin.Annotation)
 	if err != nil {
 		return result, errReleaseUpdateUnsupported
 	}

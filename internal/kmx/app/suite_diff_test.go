@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
@@ -141,12 +141,12 @@ func TestRenderSuiteDiffSplitDoesNotGuessUnknownWidth(t *testing.T) {
 }
 
 func TestRenderSuiteDiffNoChanges(t *testing.T) {
-	report := agentsuite.DiffReport{
-		SchemaVersion:  agentsuite.DiffReportSchemaVersion,
-		Before:         agentsuite.DiffIdentity{Suite: "same"},
-		After:          agentsuite.DiffIdentity{Suite: "same"},
-		Changes:        []agentsuite.RecordChange{},
-		AffectedAgents: []agentsuite.AffectedAgent{},
+	report := suiteoci.DiffReport{
+		SchemaVersion:  suiteoci.DiffReportSchemaVersion,
+		Before:         suiteoci.DiffIdentity{Suite: "same"},
+		After:          suiteoci.DiffIdentity{Suite: "same"},
+		Changes:        []suiteoci.RecordChange{},
+		AffectedAgents: []suiteoci.AffectedAgent{},
 	}
 	var out bytes.Buffer
 	if err := renderSuiteDiff(&out, cliui.WithCapabilities(cliui.Capabilities{}), report, SuiteDiffUnified); err != nil {
@@ -169,29 +169,29 @@ func TestRenderSuiteDiffNoChanges(t *testing.T) {
 	}
 }
 
-func suiteDiffRenderFixture() agentsuite.DiffReport {
-	return agentsuite.DiffReport{
-		SchemaVersion: agentsuite.DiffReportSchemaVersion,
-		Before:        agentsuite.DiffIdentity{Suite: "before"},
-		After:         agentsuite.DiffIdentity{Suite: "after"},
-		Summary: agentsuite.DiffSummary{
+func suiteDiffRenderFixture() suiteoci.DiffReport {
+	return suiteoci.DiffReport{
+		SchemaVersion: suiteoci.DiffReportSchemaVersion,
+		Before:        suiteoci.DiffIdentity{Suite: "before"},
+		After:         suiteoci.DiffIdentity{Suite: "after"},
+		Summary: suiteoci.DiffSummary{
 			Modified:       1,
 			FieldsChanged:  1,
 			AgentsAffected: 1,
 		},
-		Changes: []agentsuite.RecordChange{{
-			Type:         agentsuite.DiffModified,
+		Changes: []suiteoci.RecordChange{{
+			Type:         suiteoci.DiffModified,
 			Kind:         "agent",
 			ID:           "writer",
 			BeforeDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			AfterDigest:  "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-			Fields: []agentsuite.FieldChange{{
+			Fields: []suiteoci.FieldChange{{
 				Path:   "description",
 				Before: []byte(`"Old description"`),
 				After:  []byte(`"New description"`),
 			}},
 		}},
-		AffectedAgents: []agentsuite.AffectedAgent{{
+		AffectedAgents: []suiteoci.AffectedAgent{{
 			ID:      "writer",
 			Reasons: []string{"agent definition modified"},
 		}},

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 )
 
 type imageArchiveFixture struct {
@@ -43,7 +43,7 @@ func makeImageArchive(t *testing.T, f imageArchiveFixture) ([]byte, string, stri
 		imageBody = f.manifestBody
 	}
 	image := add(ociManifestMediaType, imageBody)
-	image.Platform = &agentsuite.Platform{OS: "linux", Architecture: "amd64"}
+	image.Platform = &suitecore.Platform{OS: "linux", Architecture: "amd64"}
 	if f.badPlatform {
 		image.Platform.Architecture = "arm64"
 	}
@@ -87,7 +87,7 @@ func makeImageArchive(t *testing.T, f imageArchiveFixture) ([]byte, string, stri
 	}
 	if len(layers) > 0 {
 		att := add(ociManifestMediaType, ociManifest{SchemaVersion: 2, MediaType: ociManifestMediaType, Config: config, Layers: layers})
-		att.Platform = &agentsuite.Platform{OS: "unknown", Architecture: "unknown"}
+		att.Platform = &suitecore.Platform{OS: "unknown", Architecture: "unknown"}
 		binding := image.Digest
 		if f.binding != "" {
 			binding = f.binding
@@ -144,7 +144,7 @@ func makeImageArchive(t *testing.T, f imageArchiveFixture) ([]byte, string, stri
 
 func TestInspectImageArchiveNestedAttestations(t *testing.T) {
 	archive, image, index, sbom := makeImageArchive(t, imageArchiveFixture{nested: true, sbom: true, provenance: true})
-	result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), agentsuite.Platform{OS: "linux", Architecture: "amd64"}, true, true)
+	result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), suitecore.Platform{OS: "linux", Architecture: "amd64"}, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestInspectImageArchiveAttestationFailures(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			archive, _, _, _ := makeImageArchive(t, tc.fixture)
-			result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), agentsuite.Platform{OS: "linux", Architecture: "amd64"}, tc.requested, tc.required)
+			result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), suitecore.Platform{OS: "linux", Architecture: "amd64"}, tc.requested, tc.required)
 			if tc.warning {
 				if err != nil || len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], tc.want) {
 					t.Fatalf("result=%+v error=%v", result, err)
@@ -206,7 +206,7 @@ func TestInspectImageArchiveLargeSBOM(t *testing.T) {
 	}
 	predicate := map[string]any{"spdxVersion": "SPDX-2.3", "packages": packages, "files": files}
 	archive, image, _, sbom := makeImageArchive(t, imageArchiveFixture{nested: true, sbom: true, provenance: true, predicateBody: predicate})
-	result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), agentsuite.Platform{OS: "linux", Architecture: "amd64"}, true, true)
+	result, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), suitecore.Platform{OS: "linux", Architecture: "amd64"}, true, true)
 	if err != nil || result.Digest != image || result.SBOMDigest != sbom {
 		t.Fatalf("large SBOM: result=%+v error=%v", result, err)
 	}
@@ -215,7 +215,7 @@ func TestInspectImageArchiveLargeSBOM(t *testing.T) {
 		t.Fatal(err)
 	}
 	var suiteValue any
-	if err := agentsuite.Unmarshal(data, &suiteValue); err == nil || !strings.Contains(err.Error(), "member limit") {
+	if err := suitecore.Unmarshal(data, &suiteValue); err == nil || !strings.Contains(err.Error(), "member limit") {
 		t.Fatalf("Suite JSON limits were relaxed: %v", err)
 	}
 }
@@ -233,7 +233,7 @@ func TestArchiveJSONMemberLimitsAndProtections(t *testing.T) {
 	if err := decodeArchiveJSONWithLimits(data, &value, maxArchiveJSONBytes, maxArchiveObjectMembers, maxArchiveDocumentMembers); err != nil {
 		t.Fatalf("wide inventory object: %v", err)
 	}
-	if err := agentsuite.Unmarshal(data, &value); err == nil || !strings.Contains(err.Error(), "member limit") {
+	if err := suitecore.Unmarshal(data, &value); err == nil || !strings.Contains(err.Error(), "member limit") {
 		t.Fatalf("Suite JSON limits were relaxed: %v", err)
 	}
 	for _, tc := range []struct{ data, want string }{
@@ -261,7 +261,7 @@ func TestInspectImageArchiveRootArrayLimits(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			archive, _, _, _ := makeImageArchive(t, tc.fixture)
-			_, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), agentsuite.Platform{OS: "linux", Architecture: "amd64"}, false, false)
+			_, err := InspectImageArchive(t.Context(), bytes.NewReader(archive), int64(len(archive)), suitecore.Platform{OS: "linux", Architecture: "amd64"}, false, false)
 			if err == nil || !strings.Contains(err.Error(), "JSON array entry limit exceeded") {
 				t.Fatalf("count limit must precede descriptor validation: error=%v", err)
 			}
@@ -276,7 +276,7 @@ func TestArchiveJSONRootArrayLimitBeforeUnmarshal(t *testing.T) {
 				entries := "[" + strings.Repeat("{},", count-1) + "{}]"
 				data := []byte(`{"` + field + `":` + entries + `}`)
 				var suiteValue any
-				if err := agentsuite.Unmarshal(data, &suiteValue); err != nil {
+				if err := suitecore.Unmarshal(data, &suiteValue); err != nil {
 					t.Fatalf("Suite array counts must remain unrestricted: %v", err)
 				}
 				var value struct {
@@ -368,7 +368,7 @@ func TestInspectImageArchiveCanceled(t *testing.T) {
 	archive, _, _, _ := makeImageArchive(t, imageArchiveFixture{})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := InspectImageArchive(ctx, bytes.NewReader(archive), int64(len(archive)), agentsuite.Platform{OS: "linux", Architecture: "amd64"}, false, false)
+	_, err := InspectImageArchive(ctx, bytes.NewReader(archive), int64(len(archive)), suitecore.Platform{OS: "linux", Architecture: "amd64"}, false, false)
 	if err != context.Canceled {
 		t.Fatalf("error=%v", err)
 	}

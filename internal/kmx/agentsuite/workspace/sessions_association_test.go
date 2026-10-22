@@ -10,7 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteevidence "github.com/agent-primitives/suite/evidence"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
@@ -25,12 +26,12 @@ func associationFixture(t *testing.T, change func(string)) (*workspace.NativeSui
 	name := filepath.Join(root, "runtime-profiles/sessions.json")
 	writeFile(t, name, strings.ReplaceAll(string(readFile(t, name)), `"id":"sessions"`, `"id":"agentsessions"`))
 	// Keep the suite-local profile ID distinct from its runtime family.
-	var rp agentsuite.RuntimeProfile
-	if err := agentsuite.Unmarshal(readFile(t, name), &rp); err != nil {
+	var rp suitecore.RuntimeProfile
+	if err := suitecore.Unmarshal(readFile(t, name), &rp); err != nil {
 		t.Fatal(err)
 	}
 	rp.ID = "sessions"
-	raw, err := agentsuite.Marshal(rp)
+	raw, err := suitecore.Marshal(rp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,10 +71,10 @@ func TestSessionsAssociationDeclaredOnlyAndFrozen(t *testing.T) {
 		t.Fatal(err)
 	}
 	var record workspace.SessionsAssociationV1
-	if err := agentsuite.Unmarshal(raw, &record); err != nil {
+	if err := suitecore.Unmarshal(raw, &record); err != nil {
 		t.Fatal(err)
 	}
-	if record.SuiteDigest != s.Digest || record.MemberID != "greeter" || record.RuntimeProfile.ID != "sessions" || record.RuntimeProfile.Digest != s.ProfileDigest || record.CompositionDigest != s.CompositionDigest || record.BuildProfileDigest != s.BuildProfileDigest || record.Platform != (agentsuite.EvidencePlatform{OS: "linux", Architecture: "amd64"}) || record.HarnessImage != declaredHarness || record.ConfigDigest != "sha256:8da08f54e4d3d40f3bf9cf959998ee82e1f32eb3edc0ba0cc2f72037b57fb235" || record.ImageVerification != "declared-unverified" || record.ExecutionKind != "harnesswire-chat-v1" || record.Version != 1 || record.Kind != "kmx.sessions-association" {
+	if record.SuiteDigest != s.Digest || record.MemberID != "greeter" || record.RuntimeProfile.ID != "sessions" || record.RuntimeProfile.Digest != s.ProfileDigest || record.CompositionDigest != s.CompositionDigest || record.BuildProfileDigest != s.BuildProfileDigest || record.Platform != (suiteevidence.EvidencePlatform{OS: "linux", Architecture: "amd64"}) || record.HarnessImage != declaredHarness || record.ConfigDigest != "sha256:8da08f54e4d3d40f3bf9cf959998ee82e1f32eb3edc0ba0cc2f72037b57fb235" || record.ImageVerification != "declared-unverified" || record.ExecutionKind != "harnesswire-chat-v1" || record.Version != 1 || record.Kind != "kmx.sessions-association" {
 		t.Fatal("declaration identity/config changed")
 	}
 	if err := workspace.CheckSessionsAssociation(t.Context(), raw, s); err != nil {
@@ -132,7 +133,7 @@ func TestSessionsAssociationClosedCanonicalInput(t *testing.T) {
 				default:
 					target[key] = "verified"
 				}
-				bad, err := agentsuite.Marshal(record)
+				bad, err := suitecore.Marshal(record)
 				if err != nil {
 					t.Fatal(err)
 				}

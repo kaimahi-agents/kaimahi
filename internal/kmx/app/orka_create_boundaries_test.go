@@ -3,28 +3,9 @@ package app
 import (
 	"context"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
-	"syscall"
 	"testing"
 	"time"
 )
-
-func assertOrkaForwardExited(t *testing.T, dir string) {
-	t.Helper()
-	body, err := os.ReadFile(filepath.Join(dir, "forward-pid"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pid, err := strconv.Atoi(string(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
-		t.Fatalf("forward process %d still exists: %v", pid, err)
-	}
-}
 
 func TestOrkaForwardClosedOnCancellationAndBindTimeout(t *testing.T) {
 	for _, scenario := range []string{"", "forward-hang"} {

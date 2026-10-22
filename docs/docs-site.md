@@ -47,7 +47,7 @@ AgentSuite links and navigation use the standalone specification on `main`,
 including section fragments. There is no local specification page or issue-link
 fallback. The generated-site checks assert the external destination and a case-
 document fragment. These links follow the current format; the Go dependency is
-pinned separately to the published `v0.6.0` release. Frozen public schema assets
+pinned separately to the published `v0.7.0` release. Frozen public schema assets
 and consumer fixtures retain their separately recorded v0.1.0 provenance.
 
 ## Version boundary
@@ -76,12 +76,12 @@ on keeping that Pages domain configured.
 
 ## Current AgentSuite schema selection
 
-KMX consumes [AgentSuite v0.6.0](https://github.com/agent-primitives/suite/releases/tag/v0.6.0).
+KMX consumes [AgentSuite v0.7.0](https://github.com/agent-primitives/suite/releases/tag/v0.7.0).
 Configure editors and external validators with the complete
-[v0.6.0 schema directory](https://github.com/agent-primitives/suite/tree/v0.6.0/schema),
+[v0.7.0 schema directory](https://github.com/agent-primitives/suite/tree/v0.7.0/schema),
 not the historical assets below. Its 15 schemas include the experimental flow
 schema, and their IDs use
-`https://suite.agent-primitives.dev/schema/v0.6/<filename>.schema.json`;
+`https://suite.agent-primitives.dev/schema/v0.7/<filename>.schema.json`;
 the [upstream catalog](https://suite.agent-primitives.dev/schema/catalog.json)
 records the release bundle and hashes.
 

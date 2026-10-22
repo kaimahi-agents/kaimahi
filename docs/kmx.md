@@ -308,11 +308,19 @@ frames are bounded to 2 MiB and source files to 256 KiB.
 | `run` | `path`; optional `input`, `caseId`, `showContent` | Shared `kmx.agent-file-preview` v1 result |
 | `test` | `path`; optional `caseId`, `showContent` | Same shared result, no ad-hoc input |
 
-Paths are portable root-level `<name>.agent.md` or
-`.squad/agents/<id>/charter.md`; traversal, absolute paths, symlink escapes and
-special files refuse. Necessary Squad parent directories may be created, but no
-roster or other team metadata is touched. Create validates before publishing a
-same-directory staged file with no-replace rename. Edit validates old/new source,
+Relative paths are portable root-level `<name>.agent.md` or
+`.squad/agents/<id>/charter.md`, without traversal or symlink components. Native
+absolute paths are cleaned and symlink-resolved, then accepted only if their
+canonical target has one of those layouts beneath the configured root. Absolute
+aliases resolving inside the root are allowed; outside targets, dangling links,
+and changed root-directory identity refuse as `unsafe_path`. Special files refuse.
+Create may append missing file/parent components beneath an existing resolved
+directory; it never treats a dangling link as a missing component. Saved paths
+are canonical root-relative names. All file IO uses the pinned root;
+normalization is not a hostile concurrent-filesystem sandbox. Necessary Squad
+parent directories may be created, but no roster or other team metadata is
+touched. Create validates before publishing a same-directory staged file with
+no-replace rename. Edit validates old/new source,
 checks the expected `sha256:…` revision under an OS-held writer lock, then renames
 the staged replacement. Busy/unavailable locks and failed renames report safe
 errors; no lockfile, filesystem-type detection or direct-write fallback.
@@ -340,6 +348,22 @@ omitted rows. The full safe result remains in `structuredContent`.
 operands are not included by default. Opt-in answer excerpts are bounded and
 labeled untrusted data, never tool instructions. The result's display basename
 is not target authority.
+
+The read-only resource template `kmx://agent/{path}` returns a typed
+`kmx.agent-view` v1 projection: original revision, title, instructions, model,
+examples/expected checks and the process's latest safe preview observation.
+Encode the whole root-relative path as one component, including slashes.
+Only supported agent paths under the fixed root are readable; there is no
+fifth tool, generic file read or directory listing. After root confirmation,
+authored content is visible without an extra consent mechanism; answer excerpts
+still require the existing `showContent` opt-in. A restart has no current result;
+a revision change marks the old observation stale and withholds its details.
+Reads perform no inference, mutation or journal retrieval.
+
+The [Copilot plugin](../plugins/copilot/README.md#read-only-agent-view) adds a
+native read-only canvas and `/agent-view PATH` text fallback over this resource.
+Inspection can show a minimal titled agent as well as a canonical Squad charter;
+this display-only support does not change Run/Test parser acceptance.
 
 A real model route must be selected at process startup with trusted
 `--provider` and, for local routes, `--endpoint`; the exact model still comes from

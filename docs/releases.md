@@ -114,6 +114,14 @@ to publish a binary that does not report its own tag.
 Releases use the root `vX.Y.Z` tag for the repository and CLI. The root is the
 only Go module; no paired module release tag is needed.
 
+Every tag and manual dry run first requires the full read-only Orka worker.
+Its qualified commit must equal the release checkout, including an annotated
+tag's resolved commit. Passing nightly evidence at another SHA is not reused.
+A failed qualification blocks build, signing and publication, including native
+Copilot plugin assets. Inspect the failure and rerun the failed workflow jobs
+after addressing it; there is no automatic qualification retry or timeout increase.
+The live proof adds its ordinary runtime before release building begins.
+
 ## Install
 
 **On Windows, use WSL for now.** Install and run the Linux build inside your

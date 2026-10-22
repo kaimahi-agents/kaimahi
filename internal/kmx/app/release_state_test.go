@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 )
 
 func releaseStateFixture() releaseState {
@@ -42,7 +42,7 @@ func TestReleaseStateBoundsAndRollingHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got releaseState
-	if err := agentsuite.Unmarshal(raw, &got); err != nil {
+	if err := suitecore.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
 	if len(got.History) != 11 || got.History[0].LiftID != partial.LiftID || got.History[1].LiftID != s.History[4].LiftID ||
@@ -205,7 +205,7 @@ func TestReleaseStateCASBindsRecordAndOwner(t *testing.T) {
 			return errors.New("conflict")
 		}
 		var submitted releaseState
-		if err := agentsuite.Unmarshal([]byte(ops[3].Value.(string)), &submitted); err != nil || submitted.Operation != pending.LiftID {
+		if err := suitecore.Unmarshal([]byte(ops[3].Value.(string)), &submitted); err != nil || submitted.Operation != pending.LiftID {
 			t.Fatal("CAS did not reserve the requested operation")
 		}
 		wire := strings.Replace(string(releaseStateWire(t, submitted)), `"resourceVersion":"10"`, `"resourceVersion":"11"`, 1)

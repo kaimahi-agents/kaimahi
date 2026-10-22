@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -194,7 +194,7 @@ func suiteNativeOrkaInput(suite *workspace.NativeSuite) bool {
 }
 
 func suiteNativeDigest(domain string, value any) (string, error) {
-	raw, err := agentsuite.Marshal(value)
+	raw, err := suitecore.Marshal(value)
 	if err != nil {
 		return "", fmt.Errorf("cannot canonicalize native suite identity")
 	}
@@ -209,7 +209,7 @@ func suiteNativeDigest(domain string, value any) (string, error) {
 			p.Operation = "operation"
 			frame.Subject.FlowCandidate = &p
 		}
-		scanned, err = agentsuite.Marshal(frame)
+		scanned, err = suitecore.Marshal(frame)
 		if err != nil {
 			return "", fmt.Errorf("cannot canonicalize native suite identity")
 		}
@@ -226,7 +226,7 @@ func suiteNativeDigest(domain string, value any) (string, error) {
 			p.Operation = "operation"
 			s.FlowCandidate = &p
 		}
-		scanned, err = agentsuite.Marshal(s)
+		scanned, err = suitecore.Marshal(s)
 		if err != nil {
 			return "", fmt.Errorf("cannot canonicalize native suite identity")
 		}
@@ -324,7 +324,7 @@ func (a *App) readSuiteNativeSecretMetadata(ctx context.Context, namespace, name
 	if err != nil {
 		return out, err
 	}
-	if agentsuite.Unmarshal(raw, &out) != nil || out.Kind != "Secret" || out.Metadata.Name != name || out.Metadata.Namespace != namespace || out.Metadata.UID == "" || out.Metadata.ResourceVersion == "" || out.Terminating {
+	if suitecore.Unmarshal(raw, &out) != nil || out.Kind != "Secret" || out.Metadata.Name != name || out.Metadata.Namespace != namespace || out.Metadata.UID == "" || out.Metadata.ResourceVersion == "" || out.Terminating {
 		return out, fmt.Errorf("Provider Secret metadata has no valid live identity")
 	}
 	return out, nil
@@ -443,7 +443,7 @@ func (a *App) readSuiteNativeRuntime(ctx context.Context, namespace string) (sui
 		Worker, Trust string
 		Terminating   bool
 	}
-	if agentsuite.Unmarshal(raw, &account) != nil || account.Kind != "ServiceAccount" || account.Metadata.Name != worker || account.Metadata.Namespace != OrkaNamespace || account.Metadata.UID == "" || account.Terminating || account.Metadata.Helm != out.Helm || account.Worker != "true" || account.Trust != "ai" {
+	if suitecore.Unmarshal(raw, &account) != nil || account.Kind != "ServiceAccount" || account.Metadata.Name != worker || account.Metadata.Namespace != OrkaNamespace || account.Metadata.UID == "" || account.Terminating || account.Metadata.Helm != out.Helm || account.Worker != "true" || account.Trust != "ai" {
 		return out, fmt.Errorf("Orka worker has no valid matching runtime identity")
 	}
 	// The reused trust helper reselects the controller. Compare only consumed

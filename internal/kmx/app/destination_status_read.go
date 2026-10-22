@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -20,7 +20,7 @@ func statusDecode(raw []byte, out any) bool {
 	// Validate ambiguity, Unicode, numbers and nesting before projecting exact
 	// Kubernetes map keys. Unused payload fields never enter a report DTO.
 	var object map[string]any
-	return agentsuite.Unmarshal(raw, &object) == nil && object != nil && json.Unmarshal(raw, out) == nil
+	return suitecore.Unmarshal(raw, &object) == nil && object != nil && json.Unmarshal(raw, out) == nil
 }
 func (o *destinationStatusObserver) get(path string, out any) bool {
 	if o.ctx.Err() != nil || o.calls >= 2048 || o.bytes >= 64<<20 {

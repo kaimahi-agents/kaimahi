@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -98,7 +98,7 @@ func snapshotSuiteSessionsHost(path string, suite *workspace.NativeSuite, bindin
 		return nil, errSuiteSessionsHost
 	}
 	var host suiteSessionsHostFile
-	if agentsuite.Unmarshal(raw, &host) != nil || host.SchemaVersion != 1 || !suiteSessionsLoopback(host.Address) {
+	if suitecore.Unmarshal(raw, &host) != nil || host.SchemaVersion != 1 || !suiteSessionsLoopback(host.Address) {
 		return nil, errSuiteSessionsHost
 	}
 	if _, err := newSuiteSessionsSubject(suite, host.Observation, binding.digest); err != nil {

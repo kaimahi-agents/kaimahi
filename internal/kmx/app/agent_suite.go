@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
@@ -32,7 +32,7 @@ type SuiteBuildResult struct {
 // ValidateSuite validates an extracted AgentSuite or OCI image layout
 // entirely offline.
 func (a *App) ValidateSuite(path, output string) error {
-	report, err := agentsuite.ValidatePath(path)
+	report, err := suiteoci.ValidatePath(path)
 	if err != nil {
 		return fmt.Errorf("AgentSuite is not conformant: %w", err)
 	}

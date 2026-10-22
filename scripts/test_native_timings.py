@@ -15,6 +15,8 @@ from unittest import mock
 
 import yaml
 
+from test_workflow_helpers import runtime_job
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("native_timings_subject", ROOT / "scripts/ci/suite-native.py")
 Q = importlib.util.module_from_spec(SPEC)
@@ -252,13 +254,13 @@ class NativeTimingsTests(unittest.TestCase):
 
     def test_workflow_uploads_only_fixed_timing_file_even_when_qualification_fails(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-        steps = workflow["jobs"]["e2e-orka-runtime"]["steps"]
+        steps = runtime_job(ROOT)["steps"]
         uploads = [step for step in steps if step.get("with", {}).get("name") == "native-suite-timings"]
         self.assertEqual(len(uploads), 1, "independent timing artifact missing")
         upload = uploads[0]
         self.assertEqual(upload["uses"], "actions/upload-artifact@v4")
         self.assertEqual(upload["with"]["path"], "${{ runner.temp }}/native-suite-timings.json")
-        self.assertEqual(upload["if"], "always() && steps.changes.outputs.docs_only != 'true'")
+        self.assertEqual(upload["if"], "always()")
         self.assertEqual(upload["with"]["if-no-files-found"], "error")
         passing = next(step for step in steps if step.get("with", {}).get("name") == "native-suite-qualification")
         self.assertEqual(passing["with"]["path"].splitlines(), [

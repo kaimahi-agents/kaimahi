@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -27,7 +29,7 @@ type PushResult struct {
 	Reference  string
 	Updated    bool
 	Descriptor ocispec.Descriptor
-	Report     *agentsuite.Report
+	Report     *suitecore.Report
 	// Provenance is set for registry pushes only; a layout holds one manifest.
 	Provenance *Provenance
 	Warnings   []string
@@ -158,9 +160,9 @@ func packDirectoryMode(ctx context.Context, source string, flowMode bool) (strin
 	// path, so it cannot share pushDirectory's handle transactionally; the
 	// packed archive is validated again below.
 	if flowMode {
-		_, err = agentsuite.ValidateDirectoryFlowV1Alpha1(source)
+		_, err = suiteflow.ValidateDirectoryFlowV1Alpha1(source)
 	} else {
-		_, err = agentsuite.ValidateDirectory(source)
+		_, err = suiteoci.ValidateDirectory(source)
 	}
 	if err != nil {
 		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("validate AgentSuite directory: %w", err)
@@ -299,7 +301,7 @@ func pushDirectory(
 		return ocispec.Descriptor{}, err
 	}
 	descriptor := ocispec.Descriptor{
-		MediaType: agentsuite.MediaTypeContent,
+		MediaType: suitecore.MediaTypeContent,
 		Digest:    digest,
 		Size:      size,
 	}

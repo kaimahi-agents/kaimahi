@@ -18,7 +18,7 @@ import package
 TARGETS = ("linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64")
 PREFIX = "kmx-agent-builder/"
 FILES = {"plugin.json", "mcp.json", "selected-root.json", "engine.json",
-         "skills/kmx-agent-builder/SKILL.md", "bin/kmx", "SETUP.md"}
+         "skills/kmx-agent-builder/SKILL.md", "bin/kmx", "SETUP.md", *package.NATIVE_FILES}
 SETUP = """# Configure before installation
 
 Verify this archive against the trusted release digest before extraction/execution.
@@ -87,7 +87,8 @@ def verify_archive(path: Path, digest: str, target: str, version: str, revision:
                           "args": ["mcp", "--root", "__SELECTED_ROOT__"]}
             or json.loads(files["selected-root.json"]) != {"root": "__SELECTED_ROOT__"}
             or files["skills/kmx-agent-builder/SKILL.md"] != (package.HERE / "skills/kmx-agent-builder/SKILL.md").read_bytes()
-            or files["SETUP.md"] != SETUP.encode()):
+            or files["SETUP.md"] != SETUP.encode()
+            or any(files[name] != (package.HERE / name).read_bytes() for name in package.NATIVE_FILES)):
         raise ValueError("archive contract metadata mismatch")
 
 

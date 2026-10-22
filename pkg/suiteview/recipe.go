@@ -6,7 +6,7 @@ import (
 	"errors"
 	"io"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/localartifact"
 )
 
@@ -39,7 +39,7 @@ type SuiteIdentity struct {
 // MemberIdentity identifies the selected canonical Agent document.
 type MemberIdentity struct {
 	ID         string
-	Descriptor agentsuite.Descriptor
+	Descriptor suitecore.Descriptor
 }
 
 // MemberRecipe is a caller-owned read-only view of the member's portable
@@ -51,8 +51,8 @@ type MemberRecipe struct {
 	Member                 MemberIdentity
 	Description            string
 	Instructions           []byte
-	InstructionsDescriptor agentsuite.Descriptor
-	Model                  agentsuite.ModelRequirement
+	InstructionsDescriptor suitecore.Descriptor
+	Model                  suitecore.ModelRequirement
 }
 
 // RefusalCode is a stable, payload-free refusal category.
@@ -138,18 +138,18 @@ func ProjectMember(ctx context.Context, files map[string][]byte, memberID string
 	if len(rootBytes) > projectionFileBytes {
 		return MemberRecipe{}, &Refusal{Code: RefusalLimit}
 	}
-	var suite agentsuite.Suite
-	if agentsuite.Unmarshal(rootBytes, &suite) != nil {
+	var suite suitecore.Suite
+	if suitecore.Unmarshal(rootBytes, &suite) != nil {
 		return MemberRecipe{}, &Refusal{Code: RefusalMember}
 	}
 	if len(suite.Agents) > projectionMembers {
 		return MemberRecipe{}, &Refusal{Code: RefusalLimit}
 	}
-	graphDigest, err := agentsuite.Digest(rootBytes)
+	graphDigest, err := suitecore.Digest(rootBytes)
 	if err != nil {
 		return MemberRecipe{}, &Refusal{Code: RefusalMember}
 	}
-	var refs []agentsuite.ManifestRef
+	var refs []suitecore.ManifestRef
 	for _, ref := range suite.Agents {
 		if ref.ID == memberID {
 			refs = append(refs, ref)
@@ -166,18 +166,18 @@ func ProjectMember(ctx context.Context, files map[string][]byte, memberID string
 	if len(memberBytes) > projectionFileBytes {
 		return MemberRecipe{}, &Refusal{Code: RefusalLimit}
 	}
-	if !ok || ref.Descriptor.MediaType != agentsuite.MediaTypeAgent || !agentsuite.MatchesCanonicalDescriptor(memberBytes, ref.Descriptor) {
+	if !ok || ref.Descriptor.MediaType != suitecore.MediaTypeAgent || !suitecore.MatchesCanonicalDescriptor(memberBytes, ref.Descriptor) {
 		return MemberRecipe{}, &Refusal{Code: RefusalMember}
 	}
-	var member agentsuite.Agent
-	if agentsuite.Unmarshal(memberBytes, &member) != nil || member.ID != ref.ID || member.Instructions.Descriptor.MediaType != agentsuite.MediaTypeInstructions {
+	var member suitecore.Agent
+	if suitecore.Unmarshal(memberBytes, &member) != nil || member.ID != ref.ID || member.Instructions.Descriptor.MediaType != suitecore.MediaTypeInstructions {
 		return MemberRecipe{}, &Refusal{Code: RefusalMember}
 	}
 	instructions, ok := files[member.Instructions.Path]
 	if len(instructions) > projectionFileBytes {
 		return MemberRecipe{}, &Refusal{Code: RefusalLimit}
 	}
-	if !ok || !agentsuite.DescriptorSizeAndDigestMatch(instructions, member.Instructions.Descriptor) {
+	if !ok || !suitecore.DescriptorSizeAndDigestMatch(instructions, member.Instructions.Descriptor) {
 		return MemberRecipe{}, &Refusal{Code: RefusalMember}
 	}
 	recipe = MemberRecipe{
@@ -198,7 +198,7 @@ func validateSelection(ctx context.Context, selection Selection) error {
 	if err := ctx.Err(); err != nil {
 		return &Refusal{Code: RefusalCanceled, cause: err}
 	}
-	if selection.MemberID == "" || selection.ManifestDigest != "" && !agentsuite.IsValidDigest(selection.ManifestDigest) {
+	if selection.MemberID == "" || selection.ManifestDigest != "" && !suitecore.IsValidDigest(selection.ManifestDigest) {
 		return &Refusal{Code: RefusalSelection}
 	}
 	return nil
@@ -242,7 +242,7 @@ func refusalFor(ctx context.Context, err error) error {
 	}
 }
 
-func cloneDescriptor(value agentsuite.Descriptor) agentsuite.Descriptor {
+func cloneDescriptor(value suitecore.Descriptor) suitecore.Descriptor {
 	if value.Annotations != nil {
 		annotations := make(map[string]string, len(value.Annotations))
 		for key, item := range value.Annotations {
@@ -253,7 +253,7 @@ func cloneDescriptor(value agentsuite.Descriptor) agentsuite.Descriptor {
 	return value
 }
 
-func cloneModel(value agentsuite.ModelRequirement) agentsuite.ModelRequirement {
+func cloneModel(value suitecore.ModelRequirement) suitecore.ModelRequirement {
 	if value.Capabilities != nil {
 		capabilities := *value.Capabilities
 		value.Capabilities = &capabilities

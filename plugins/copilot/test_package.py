@@ -54,6 +54,16 @@ class PackageTests(unittest.TestCase):
             self.assertEqual((self.out / "bin/kmx").stat().st_mode & 0o777, 0o700)
         self.assertEqual(list(self.root.iterdir()), [])
 
+    def test_native_view_is_bundled_without_tests_or_dependencies(self):
+        self.build()
+        native = "com.github.copilot/extensions/agent-view"
+        names = {"extension.mjs", "view.mjs", "index.html", "app.js", "style.css"}
+        self.assertEqual({p.name for p in (self.out / native).iterdir()}, names)
+        for name in names:
+            self.assertEqual((self.out / native / name).read_bytes(),
+                             (HERE / native / name).read_bytes())
+        self.assertFalse((self.out / "node_modules").exists())
+
     def test_windows_command_is_explicit(self):
         self.build(target="windows/amd64")
         config = json.loads((self.out / "mcp.json").read_text())
@@ -206,8 +216,10 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Missing/unknown versions, states or verdicts are not passes.", prose)
         self.assertNotIn("kmx test explain --file", skill)
         self.assertNotIn("PLUGIN_ROOT", skill)
-        self.assertFalse(any(p.suffix in {".py", ".js", ".ps1", ".sh"}
-                             for p in self.out.rglob("*")))
+        scripts = {p.relative_to(self.out).as_posix() for p in self.out.rglob("*")
+                   if p.suffix in {".py", ".js", ".mjs", ".ps1", ".sh"}}
+        self.assertEqual(scripts, {name for name in package.NATIVE_FILES
+                                   if Path(name).suffix in {".js", ".mjs"}})
 
 
 @unittest.skipIf(os.name == "nt", "main still blocks native Windows CLI; packaging checks run above")

@@ -180,14 +180,13 @@ class ActionTests(unittest.TestCase):
         (self.root / "scripts/ci" / ROUTER.name).unlink()
         self.assertEqual(self.action(head=head).get("orka_required"), "true")
 
-    def test_output_is_exposed_but_not_consumed_for_scheduling(self):
+    def test_output_routes_only_the_independent_runtime_worker(self):
         action = yaml.safe_load((ROOT / ".github/actions/classify-change/action.yml").read_text())
         self.assertIn("orka_required", action["outputs"])
         jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
         self.assertIn("orka_required", jobs["classify-change"]["outputs"])
-        for name, job in jobs.items():
-            if name != "classify-change":
-                self.assertNotIn("orka_required", json.dumps(job))
+        self.assertIn("needs.classify-change.outputs.orka_required", jobs["e2e-orka-runtime"]["if"])
+        self.assertNotIn("orka_required", jobs["e2e-kagent-lift"]["if"])
 
 
 class BoundaryTests(unittest.TestCase):

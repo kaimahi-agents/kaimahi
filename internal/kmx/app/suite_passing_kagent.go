@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -73,7 +73,7 @@ func (r *suitePassingReceipt) suiteDigest() string {
 }
 func parseSuitePassingWire(raw []byte) (suitePassingReceipt, error) {
 	var w suitePassingWire
-	if agentsuite.Unmarshal(raw, &w) != nil {
+	if suitecore.Unmarshal(raw, &w) != nil {
 		return suitePassingReceipt{}, errSuitePassingReceipt
 	}
 	r := suitePassingReceipt{SchemaVersion: w.SchemaVersion, Domain: w.Domain, ExecutionMode: w.ExecutionMode, RunID: w.RunID, CandidateCleanup: w.CandidateCleanup, SourceFingerprint: w.SourceFingerprint, Kagent: w.Kagent, Sessions: w.Sessions, CasesDigest: w.CasesDigest, Result: w.Result, Cases: w.Cases}

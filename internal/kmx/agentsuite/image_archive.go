@@ -14,7 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 )
 
 const (
@@ -40,14 +40,14 @@ type ociLayout struct {
 // URLs cannot disappear during decoding. The platform is the portable contract,
 // not OCI's extended platform, preserving the exact selected-platform check.
 type ociDescriptor struct {
-	MediaType    string               `json:"mediaType"`
-	Digest       string               `json:"digest"`
-	Size         int64                `json:"size"`
-	Data         json.RawMessage      `json:"data,omitempty"`
-	URLs         json.RawMessage      `json:"urls,omitempty"`
-	ArtifactType string               `json:"artifactType,omitempty"`
-	Platform     *agentsuite.Platform `json:"platform,omitempty"`
-	Annotations  map[string]string    `json:"annotations,omitempty"`
+	MediaType    string              `json:"mediaType"`
+	Digest       string              `json:"digest"`
+	Size         int64               `json:"size"`
+	Data         json.RawMessage     `json:"data,omitempty"`
+	URLs         json.RawMessage     `json:"urls,omitempty"`
+	ArtifactType string              `json:"artifactType,omitempty"`
+	Platform     *suitecore.Platform `json:"platform,omitempty"`
+	Annotations  map[string]string   `json:"annotations,omitempty"`
 }
 
 type ociIndex struct {
@@ -81,7 +81,7 @@ type imageArchive struct {
 // or retaining image layers. Only bounded JSON metadata is read into memory.
 // Digest identifies the single runnable image; IndexDigest identifies its
 // enclosing index (or index.json for an unwrapped layout).
-func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, platform agentsuite.Platform, requested, required bool) (BuildResult, error) {
+func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, platform suitecore.Platform, requested, required bool) (BuildResult, error) {
 	result := BuildResult{MediaType: OCIArchiveMediaType, AttestationsRequested: requested, RequireAttestations: required}
 	archive, err := scanImageArchive(ctx, source, size)
 	if err != nil {
@@ -95,7 +95,7 @@ func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, pl
 	if err := decodeArchiveJSON(layoutBytes, &layout); err != nil {
 		return BuildResult{}, fmt.Errorf("oci-layout: %w", err)
 	}
-	if layout.ImageLayoutVersion != agentsuite.LayoutVersion {
+	if layout.ImageLayoutVersion != suitecore.LayoutVersion {
 		return BuildResult{}, errors.New("unsupported OCI layout version")
 	}
 	data, err := archive.readJSON("index.json")
@@ -176,7 +176,7 @@ func InspectImageArchive(ctx context.Context, source io.ReaderAt, size int64, pl
 	if err := decodeArchiveJSON(configBytes, &config); err != nil {
 		return BuildResult{}, fmt.Errorf("image config: %w", err)
 	}
-	configPlatform := agentsuite.Platform{OS: config.OS, Architecture: config.Architecture, Variant: config.Variant}
+	configPlatform := suitecore.Platform{OS: config.OS, Architecture: config.Architecture, Variant: config.Variant}
 	if configPlatform != platform || image.Platform != nil && *image.Platform != platform {
 		return BuildResult{}, fmt.Errorf("runnable image platform does not match selected platform %s", platform)
 	}
@@ -304,7 +304,7 @@ func scanImageArchive(ctx context.Context, source io.ReaderAt, size int64) (*ima
 		entry.digest = digest
 		if strings.HasPrefix(name, "blobs/") {
 			expected := "sha256:" + strings.TrimPrefix(name, "blobs/sha256/")
-			if !strings.HasPrefix(name, "blobs/sha256/") || !agentsuite.IsValidDigest(expected) || expected != digest {
+			if !strings.HasPrefix(name, "blobs/sha256/") || !suitecore.IsValidDigest(expected) || expected != digest {
 				return nil, fmt.Errorf("OCI blob path or digest mismatch: %s", name)
 			}
 		}
@@ -390,7 +390,7 @@ func validateArchivePath(value string) error {
 }
 
 func validateArchiveDescriptor(d ociDescriptor) error {
-	if !agentsuite.IsValidDigest(d.Digest) || d.Size < 0 {
+	if !suitecore.IsValidDigest(d.Digest) || d.Size < 0 {
 		return errors.New("descriptor digest or size is invalid")
 	}
 	if d.URLs != nil {
