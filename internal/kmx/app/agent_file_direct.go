@@ -116,7 +116,7 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 		if !ok {
 			reason := "invalid_completion"
 			var identity struct{ Model string }
-			if json.Unmarshal(body, &identity) == nil && identity.Model != r.Route.Model {
+			if json.Unmarshal(body, &identity) == nil && identity.Model != "" && identity.Model != r.Route.Model {
 				reason = "model_mismatch"
 			}
 			if err := r.Report("Completion %s refused: %s", label, reason); err != nil {
@@ -243,7 +243,11 @@ func (d *directFileRunner) send(ctx context.Context, client *http.Client, r mode
 				reason = "deadline_exceeded"
 			}
 		}
-		if traceErr := progress.Report("%s %s finished: %s HTTP=%d elapsed=%s", kind, id, reason, status, time.Since(start).Round(time.Millisecond)); traceErr != nil {
+		httpStatus := ""
+		if status != 0 {
+			httpStatus = fmt.Sprintf(" HTTP=%d", status)
+		}
+		if traceErr := progress.Report("%s %s finished: %s%s elapsed=%s", kind, id, reason, httpStatus, time.Since(start).Round(time.Millisecond)); traceErr != nil {
 			body, err = nil, traceErr
 		}
 	}()

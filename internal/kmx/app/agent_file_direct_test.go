@@ -155,7 +155,7 @@ func TestDirectPreviewCompatibleSingleJudgeSample(t *testing.T) {
 	}
 }
 func TestDirectPreviewHTTPRefusesNoRetryOrLaterSends(t *testing.T) {
-	for _, mode := range []string{"error", "forbidden", "redirect", "tool", "model", "oversized"} {
+	for _, mode := range []string{"error", "forbidden", "redirect", "tool", "model", "missing_model", "null_model", "empty_model", "null_response", "oversized"} {
 		t.Run(mode, func(t *testing.T) {
 			var calls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +171,14 @@ func TestDirectPreviewHTTPRefusesNoRetryOrLaterSends(t *testing.T) {
 					fmt.Fprint(w, `{"model":"unit","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"answer","tool_calls":[{}]}}]}`)
 				case "model":
 					previewEnvelope(w, "other", "answer")
+				case "missing_model":
+					fmt.Fprint(w, `{}`)
+				case "null_model":
+					fmt.Fprint(w, `{"model":null}`)
+				case "empty_model":
+					fmt.Fprint(w, `{"model":""}`)
+				case "null_response":
+					fmt.Fprint(w, `null`)
 				case "oversized":
 					fmt.Fprint(w, strings.Repeat("x", 2*1024*1024))
 				}
@@ -219,6 +227,9 @@ func TestDirectPreviewVerboseConnectionRefused(t *testing.T) {
 	result, err := (&App{FileRunner: NewDirectFileRunner()}).PreviewAgentFile(context.Background(), opt)
 	if err == nil || result.FullPass || !strings.Contains(diagnostics.String(), "connection_refused") {
 		t.Fatalf("missing connection failure: %v / %s", err, diagnostics.String())
+	}
+	if strings.Contains(diagnostics.String(), "HTTP=") {
+		t.Fatalf("HTTP status reported without a response: %s", diagnostics.String())
 	}
 }
 

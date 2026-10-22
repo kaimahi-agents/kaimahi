@@ -199,13 +199,16 @@ kmx test ./greeter.agent.md
 ```
 
 Add `--verbose` to file Run or Test for content-free diagnostics on stderr:
-completion/judge request start/end, selected endpoints, HTTP status,
+completion/judge request start/end, selected endpoints, received HTTP status,
 per-request timings and total elapsed time. Revision, model, runner label,
 assertion verdicts and final outcome remain in the normal report, not repeated
 in verbose diagnostics.
 Local endpoint origins and standard `/v1` paths are shown; custom paths are
 withheld. Connection refusal, response timeout, HTTP errors and malformed or
 mismatched completions have safe diagnostic categories, never raw provider errors.
+No HTTP status is printed for in-process execution or requests without a response.
+An absent, null or empty returned model is an invalid completion; only a
+different nonempty model is reported as a model mismatch.
 Verbose is off by default and does not imply `--show-content`: instructions,
 inputs, answers, assertion operands, judge rationale and response bodies stay
 private. JSON stdout and exit contracts are unchanged. A failed diagnostic

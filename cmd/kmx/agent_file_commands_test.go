@@ -244,7 +244,7 @@ func TestFilePreviewVerboseStderrOnly(t *testing.T) {
 							t.Fatalf("missing %q in diagnostics: %s", want, diag.String())
 						}
 					}
-					for _, duplicate := range []string{"Parsed agent", "revision=", "model=", "Runner:", "Assertion ", "Preview finished:", "checks_passed"} {
+					for _, duplicate := range []string{"Parsed agent", "revision=", "model=", "Runner:", "Assertion ", "Preview finished:", "checks_passed", "HTTP="} {
 						if strings.Contains(diag.String(), duplicate) {
 							t.Fatalf("duplicated summary %q in diagnostics: %s", duplicate, diag.String())
 						}
