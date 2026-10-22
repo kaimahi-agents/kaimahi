@@ -380,6 +380,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   the same operation vocabulary where their scopes match.
 - Reuse the existing operation handlers. Keep Cobra syntax, terminal rendering,
   runtime capabilities, target mechanics and infrastructure ownership separate.
+  Bind operational Apps through `operationApplication(cmd)`: it preserves the
+  invocation's App identity and copies its Runner before attaching `cmd.Context()`.
+  Never rebind a shared Runner in place; preserve explicit child and cleanup
+  contexts and signal ownership.
   A renamed command must not silently change runtime, target, ownership or
   supported operations.
 - Update command registration, help, completion, relevant chat/console labels,

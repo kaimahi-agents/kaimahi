@@ -93,13 +93,16 @@ func (s *commandState) application() (*app.App, error) {
 	return a, nil
 }
 
-// operationApplication adds invocation identity to a configured App. Keep it
-// separate from application(): help and completion need no operation.
+// operationApplication binds context and identity to this invocation's App.
+// Copy its Runner so shared runners retain their context.
 func (s *commandState) operationApplication(cmd *cobra.Command) (*app.App, error) {
 	a, err := s.application()
 	if err != nil {
 		return nil, err
 	}
+	runner := *a.Run
+	runner.Context = cmd.Context()
+	a.Run = &runner
 	// Chat slash commands are separate operations; replaying the outer chat
 	// command would not repeat the mutation they are asking to confirm.
 	if cmd.Name() != "chat" && cmd.Name() != "console" && len(s.argv) > 0 {

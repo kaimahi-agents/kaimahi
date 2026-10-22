@@ -385,6 +385,20 @@ Hub; reports do not call that a mirror success. Existing Postgres ECR pins stay
 unchanged. Model-weight downloads from `registry.ollama.ai` are separate from
 OCI pulls and do not use these mirrors.
 
+## Operation contexts
+
+Operational Cobra adapters use `operationApplication(cmd)` to bind
+`cmd.Context()` to a Runner copy on the invocation's App. Subprocesses,
+network requests and waits using `App.operationContext()` inherit the caller's
+cancellation, deadline and values without mutating the original shared Runner.
+The invocation's App identity and recovery metadata remain unchanged.
+`targets --detect` uses the same adapter; offline capability listing remains
+configuration-free. Help and completion do not construct an operational App.
+
+Keep narrower operation/case deadlines and explicitly scoped cleanup contexts.
+This binding does not add a global signal handler, change command-specific
+signal ownership, or detach work from cancellation.
+
 ## Invariants to preserve
 
 1. Use platform capabilities rather than rebuilding them. Inspect the relevant

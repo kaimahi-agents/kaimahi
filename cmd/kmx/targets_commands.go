@@ -48,13 +48,9 @@ func newTargetsCommand(state *commandState) *cobra.Command {
 		}
 		a := &app.App{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr(), Run: &run.Runner{Context: cmd.Context()}}
 		if opt.Detect {
-			configured, err := state.application()
+			configured, err := state.operationApplication(cmd)
 			if err == nil {
-				copyApp := *configured
-				runner := *configured.Run
-				runner.Context = cmd.Context()
-				copyApp.Run = &runner
-				a = &copyApp
+				a = configured
 			}
 			// Configuration failure becomes an unreadable Kubernetes observation,
 			// not an early return that hides the independent Sessions observation.
