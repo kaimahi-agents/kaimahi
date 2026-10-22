@@ -200,7 +200,10 @@ passive same-file pointer-to-nil type assertions, are permitted.
 The separate typed caller guard compares source references with the audited
 `scripts/ci/orka-callers.json` manifest. It catches a safe path calling a new
 runtime object, a new runtime caller of safe code, and new calling declarations
-or closures even in a file already on the boundary. Static graph walks also
+or closures even in a file already on the boundary. Multi-value initializer
+expressions get separate identities. Named imports in analyzed safe files are
+also pinned, including standard packages whose initialization runs even when a
+preview handler is never called. Static graph walks also
 catch safe-to-safe changes that extend an existing runtime dependency in either
 direction. Methods, function values, fields and same-package private references
 are resolved with Go types, not names guessed from source text.
@@ -209,7 +212,9 @@ The guard targets the qualifier's Linux/amd64 build without race/custom tags,
 includes App tests linked into that binary, and excludes other packages' tests.
 It compiles export metadata but never executes initializers or tests. Missing,
 stale or malformed manifests, unresolved definitions, unsupported owned CGO,
-source-file aliases and nested modules fail closed. Existing init checks still
+source-file aliases and nested modules fail closed. Owned source containing
+`//line` or `/*line` directives is rejected so adjusted positions cannot relabel
+callers or imported definitions as another routing path. Existing init checks still
 inspect all build tags. This is a conservative source-reference tripwire, not a
 proof of dynamic dispatch, value flow or arbitrary Go effects, and not a sandbox.
 

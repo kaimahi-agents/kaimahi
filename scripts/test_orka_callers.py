@@ -44,11 +44,11 @@ class CallerTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
 
-    def manifest(self, edges, *, from_run=None, to_run=None):
+    def manifest(self, edges, *, from_run=None, to_run=None, imports=None):
         # Hand-checked fixture declarations, not values derived from the checker.
         edges = [{"caller_object": MODULE + "/internal/kmx/app." +
                   ("Orka" if e["caller"].endswith("/core.go") else "Preview"), **e} for e in edges]
-        self.put("scripts/ci/orka-callers.json", json.dumps({"version": 1, "edges": edges,
+        self.put("scripts/ci/orka-callers.json", json.dumps({"version": 1, "imports": imports or [], "edges": edges,
                  "safe_from_run": from_run or [], "safe_to_run": to_run or []}))
 
     def invoke(self, *args, extra_env=None):
@@ -66,6 +66,7 @@ class CallerTests(unittest.TestCase):
 
     def test_new_unrelated_caller_of_relevant_code_fails_even_unimported_package(self):
         self.put("internal/kmx/unrelated/leaf.go", f'package unrelated\nimport alias "{MODULE}/internal/kmx/app"\nfunc Leaf() {{ alias.Orka() }}\n')
+        self.manifest([], imports=[{"file": "internal/kmx/unrelated/leaf.go", "path": MODULE + "/internal/kmx/app"}])
         self.assertEqual(self.invoke().returncode, 1)
 
     def test_new_runtime_caller_of_unrelated_code_fails(self):
@@ -83,6 +84,7 @@ class CallerTests(unittest.TestCase):
 
     def test_linked_app_test_caller_fails(self):
         self.put("internal/kmx/app/unrelated_test.go", 'package app\nimport "testing"\nfunc TestPreview(t *testing.T) { Orka() }\n')
+        self.manifest([], imports=[{"file": "internal/kmx/app/unrelated_test.go", "path": "testing"}])
         self.assertEqual(self.invoke().returncode, 1)
 
     def test_other_packages_test_only_callers_are_not_native_binary_callers(self):
@@ -104,7 +106,7 @@ class CallerTests(unittest.TestCase):
         before = path.read_bytes()
         result = self.invoke("--audit")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout), {"version": 1, "edges": [
+        self.assertEqual(json.loads(result.stdout), {"version": 1, "imports": [], "edges": [
             {"caller": "internal/kmx/app/unrelated.go", "caller_object": MODULE + "/internal/kmx/app.Preview",
              "callee": "internal/kmx/app/core.go", "object": MODULE + "/internal/kmx/app.Orka"}],
              "safe_from_run": [], "safe_to_run": ["internal/kmx/app/unrelated.go"]})
@@ -145,6 +147,10 @@ class CallerTests(unittest.TestCase):
         self.assertEqual(self.invoke().returncode, 0)
         self.put("internal/kmx/app/unrelated.go",
                  f'package app\nimport "{MODULE}/internal/kmx/unrelated"\nfunc Preview() {{ unrelated.Leaf() }}\n')
+        # Approve only the import; stale reachability must still fail.
+        data = json.loads((self.root / "scripts/ci/orka-callers.json").read_text())
+        data["imports"].append({"file": "internal/kmx/app/unrelated.go", "path": MODULE + "/internal/kmx/unrelated"})
+        self.put("scripts/ci/orka-callers.json", json.dumps(data))
         self.assertEqual(self.invoke().returncode, 1)
 
     def test_safe_to_safe_extension_of_core_caller_fails(self):
@@ -153,10 +159,15 @@ class CallerTests(unittest.TestCase):
         self.manifest([{"caller": "internal/kmx/unrelated/leaf.go",
                         "caller_object": MODULE + "/internal/kmx/unrelated.Leaf",
                         "callee": "internal/kmx/app/core.go", "object": MODULE + "/internal/kmx/app.Orka"}],
-                      to_run=["internal/kmx/unrelated/leaf.go"])
+                      to_run=["internal/kmx/unrelated/leaf.go"],
+                      imports=[{"file": "internal/kmx/unrelated/leaf.go", "path": MODULE + "/internal/kmx/app"}])
         self.assertEqual(self.invoke().returncode, 0)
         self.put("internal/kmx/app/unrelated.go",
                  f'package app\nimport "{MODULE}/internal/kmx/unrelated"\nfunc Preview() {{ unrelated.Leaf() }}\n')
+        # Approve only the import; stale reachability must still fail.
+        data = json.loads((self.root / "scripts/ci/orka-callers.json").read_text())
+        data["imports"].append({"file": "internal/kmx/app/unrelated.go", "path": MODULE + "/internal/kmx/unrelated"})
+        self.put("scripts/ci/orka-callers.json", json.dumps(data))
         self.assertEqual(self.invoke().returncode, 1)
 
     def test_named_struct_fields_have_distinct_stable_keys(self):
@@ -230,6 +241,40 @@ while data.strip():
                 else:
                     path.write_text(content)
                 self.assertEqual(self.invoke().returncode, 1)
+
+    def test_named_standard_import_with_startup_registration_fails(self):
+        self.assertEqual(self.invoke().returncode, 0)
+        self.put("internal/kmx/app/unrelated.go",
+                 'package app\nimport pprof "net/http/pprof"\nfunc Preview() { _ = pprof.Handler }\n')
+        self.assertEqual(self.invoke().returncode, 1)
+        self.manifest([], imports=[{"file": "internal/kmx/app/unrelated.go", "path": "net/http/pprof"}])
+        self.assertEqual(self.invoke().returncode, 0)
+        self.put("internal/kmx/app/unrelated.go", "package app\nfunc Preview() {}\n")
+        self.assertEqual(self.invoke().returncode, 1)
+
+    def test_line_directive_cannot_hide_caller_as_existing_core_file(self):
+        for directive in ("//line core.go:1", "/*line core.go:1*/"):
+            with self.subTest(directive=directive):
+                self.put("internal/kmx/app/unrelated.go",
+                         "package app\n" + directive + "\nfunc NewCaller() { _ = Core{} }\n")
+                self.assertEqual(self.invoke().returncode, 1)
+
+    def test_line_directive_cannot_relabel_imported_definition_as_safe(self):
+        self.put("internal/kmx/app/core.go", "package app\n//line unrelated.go:1\nfunc Orka() {}\n")
+        self.assertEqual(self.invoke("--audit").returncode, 1)
+
+    def test_second_multi_value_initializer_has_a_distinct_caller(self):
+        self.put("internal/kmx/unrelated/leaf.go", "package unrelated\nfunc Leaf() int { return 1 }\n")
+        self.put("internal/kmx/app/core.go",
+                 f'package app\nimport "{MODULE}/internal/kmx/unrelated"\nvar a, b = unrelated.Leaf(), 1\nfunc Orka() {{}}\n')
+        self.manifest([{"caller": "internal/kmx/app/core.go",
+                        "caller_object": MODULE + "/internal/kmx/app.a," + MODULE + "/internal/kmx/app.b/value0",
+                        "callee": "internal/kmx/unrelated/leaf.go", "object": MODULE + "/internal/kmx/unrelated.Leaf"}],
+                      from_run=["internal/kmx/unrelated/leaf.go"])
+        self.assertEqual(self.invoke().returncode, 0)
+        self.put("internal/kmx/app/core.go",
+                 f'package app\nimport "{MODULE}/internal/kmx/unrelated"\nvar a, b = unrelated.Leaf(), unrelated.Leaf()\nfunc Orka() {{}}\n')
+        self.assertEqual(self.invoke().returncode, 1)
 
     def test_type_errors_fail_without_source_or_initializer_execution(self):
         marker = self.root / "executed"

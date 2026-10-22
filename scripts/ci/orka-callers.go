@@ -39,11 +39,17 @@ type edge struct {
 	Object       string `json:"object"`
 }
 
+type sourceImport struct {
+	File string `json:"file"`
+	Path string `json:"path"`
+}
+
 type manifest struct {
-	Version int      `json:"version"`
-	Edges   []edge   `json:"edges"`
-	FromRun []string `json:"safe_from_run"`
-	ToRun   []string `json:"safe_to_run"`
+	Imports []sourceImport `json:"imports"`
+	Version int            `json:"version"`
+	Edges   []edge         `json:"edges"`
+	FromRun []string       `json:"safe_from_run"`
+	ToRun   []string       `json:"safe_to_run"`
 }
 
 type listedPackage struct {
@@ -163,8 +169,13 @@ func run(audit bool) error {
 	if err = readJSON("scripts/ci/orka-callers.json", &expected); err != nil {
 		return err
 	}
-	if expected.Version != 1 || expected.Edges == nil || expected.FromRun == nil || expected.ToRun == nil {
+	if expected.Version != 1 || expected.Edges == nil || expected.FromRun == nil || expected.ToRun == nil || expected.Imports == nil {
 		return fmt.Errorf("invalid manifest")
+	}
+	for _, i := range expected.Imports {
+		if !validPath(i.File) || !validPath(i.Path) {
+			return fmt.Errorf("invalid import")
+		}
 	}
 	seen := map[edge]bool{}
 	for _, e := range expected.Edges {
@@ -253,6 +264,7 @@ func references(root string, routing policy) (manifest, error) {
 	}
 	fset := token.NewFileSet()
 	boundary := map[edge]bool{}
+	imports := map[sourceImport]bool{}
 	graph := map[string]map[string]bool{}
 	checked := map[string]bool{}
 	importers := map[string]types.Importer{}
@@ -278,9 +290,27 @@ func references(root string, routing policy) (manifest, error) {
 			if strings.HasSuffix(path, "_test.go") && !strings.HasPrefix(path, "internal/kmx/app/") {
 				continue
 			}
-			file, err := parser.ParseFile(fset, filepath.Join(root, path), nil, parser.SkipObjectResolution)
+			file, err := parser.ParseFile(fset, filepath.Join(root, path), nil, parser.SkipObjectResolution|parser.ParseComments)
 			if err != nil {
 				return manifest{}, err
+			}
+			// Export data preserves adjusted //line names, not physical provenance.
+			// Refuse directives in owned source rather than trusting a relabelled file.
+			for _, group := range file.Comments {
+				for _, comment := range group.List {
+					if strings.HasPrefix(comment.Text, "//line ") || strings.HasPrefix(comment.Text, "/*line ") {
+						return manifest{}, fmt.Errorf("line directive")
+					}
+				}
+			}
+			if routing.safe(path) {
+				for _, spec := range file.Imports {
+					name, err := strconv.Unquote(spec.Path.Value)
+					if err != nil {
+						return manifest{}, err
+					}
+					imports[sourceImport{path, name}] = true
+				}
 			}
 			files = append(files, file)
 		}
@@ -342,11 +372,11 @@ func references(root string, routing policy) (manifest, error) {
 			if obj.Pkg() == nil || !(obj.Pkg().Path() == module || strings.HasPrefix(obj.Pkg().Path(), module+"/")) {
 				continue
 			}
-			caller, err := ownedPath(root, fset.Position(ident.Pos()).Filename, root)
+			caller, err := ownedPath(root, fset.PositionFor(ident.Pos(), false).Filename, root)
 			if err != nil || caller == "" {
 				return manifest{}, fmt.Errorf("unmapped caller")
 			}
-			callee, err := ownedPath(root, fset.Position(obj.Pos()).Filename, root)
+			callee, err := ownedPath(root, fset.PositionFor(obj.Pos(), false).Filename, root)
 			if err != nil || callee == "" || !sources[obj.Pkg().Path()][callee] {
 				return manifest{}, fmt.Errorf("unmapped definition")
 			}
@@ -366,7 +396,10 @@ func references(root string, routing policy) (manifest, error) {
 			}
 		}
 	}
-	result := manifest{Version: 1, Edges: []edge{}, FromRun: []string{}, ToRun: []string{}}
+	result := manifest{Version: 1, Imports: []sourceImport{}, Edges: []edge{}, FromRun: []string{}, ToRun: []string{}}
+	for i := range imports {
+		result.Imports = append(result.Imports, i)
+	}
 	for e := range boundary {
 		result.Edges = append(result.Edges, e)
 	}
@@ -458,7 +491,7 @@ func (v siteVisitor) Visit(node ast.Node) ast.Visitor {
 
 func callerSites(files []*ast.File, info *types.Info, fields map[*types.Var]string) map[*ast.Ident]string {
 	result := map[*ast.Ident]string{}
-	visit := func(node ast.Node, names []*ast.Ident) {
+	visit := func(node ast.Node, names []*ast.Ident, suffix string) {
 		keys := []string{}
 		for _, name := range names {
 			if obj := info.Defs[name]; obj != nil {
@@ -466,20 +499,25 @@ func callerSites(files []*ast.File, info *types.Info, fields map[*types.Var]stri
 			}
 		}
 		count := 0
-		ast.Walk(siteVisitor{strings.Join(keys, ","), &count, result}, node)
+		ast.Walk(siteVisitor{strings.Join(keys, ",") + suffix, &count, result}, node)
 	}
 	for _, file := range files {
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
 			case *ast.FuncDecl:
-				visit(d, []*ast.Ident{d.Name})
+				visit(d, []*ast.Ident{d.Name}, "")
 			case *ast.GenDecl:
 				for _, spec := range d.Specs {
 					switch s := spec.(type) {
 					case *ast.TypeSpec:
-						visit(s, []*ast.Ident{s.Name})
+						visit(s, []*ast.Ident{s.Name}, "")
 					case *ast.ValueSpec:
-						visit(s, s.Names)
+						visit(s, s.Names, "")
+						if len(s.Values) > 1 {
+							for i, value := range s.Values {
+								visit(value, s.Names, "/value"+strconv.Itoa(i))
+							}
+						}
 					}
 				}
 			}
@@ -523,6 +561,12 @@ func reachableSafe(graph map[string]map[string]bool, p policy) []string {
 }
 
 func sortManifest(m *manifest) {
+	sort.Slice(m.Imports, func(i, j int) bool {
+		if m.Imports[i].File != m.Imports[j].File {
+			return m.Imports[i].File < m.Imports[j].File
+		}
+		return m.Imports[i].Path < m.Imports[j].Path
+	})
 	sort.Slice(m.Edges, func(i, j int) bool {
 		a, b := m.Edges[i], m.Edges[j]
 		if a.Caller != b.Caller {
