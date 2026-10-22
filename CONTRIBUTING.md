@@ -239,7 +239,12 @@ exact registry/layout transfer, verified
 candidate root/child absence, source-withheld explicit promotion and no-effect
 refusal audits gate its metadata artifacts. Source answer/verdict/judge metadata
 is product-observed after cleanup, not re-fetched from deleted Tasks. Only passing
-metadata and scalar `qualification.json` are uploaded; raw captures are private.
+metadata and scalar `qualification.json` are uploaded as qualification evidence;
+raw captures are private. Separate `${RUNNER_TEMP}/native-suite-timings.json`
+records closed phase codes, monotonic elapsed seconds and scalar outcomes, and is
+uploaded even on qualification failure. Candidate-cleanup timing measures independent
+absence checks; deletion stays inside evaluation. Abrupt process termination may
+leave only the last closed phases with a `running` outcome, never passing evidence.
 Existing cluster deletion owns all runtime/model cleanup.
 The shard also runs `TestReleaseUpdatePinnedRV` and `TestReleaseStatePinnedCAS`
 against the pinned controller after native qualification. The native qualifier

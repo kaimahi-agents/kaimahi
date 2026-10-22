@@ -20,7 +20,7 @@ new deployment mode.
 | VS Code/editor-connected access | Not used. No editor credential extraction or implicit editor login reuse. |
 | Standalone local sign-in and model listing | Explicit `kmx model login`, opt-in `login --gh`, `logout` and `list --provider copilot`. |
 | Direct selected-model requests | An internal in-process JSON/SSE transport with a non-secret route and kmx-owned credential facility. No model substitution or automatic inference replay. |
-| Agent Run/Test integration | Not implemented here; [#597](https://github.com/kaimahi-agents/kaimahi/issues/597) consumes the route separately. |
+| Agent Run/Test integration | Markdown-file Run/Test and the shared MCP path accept explicit `--provider copilot` through the temporary tool-free, no-journal runner. See [file preview](kmx.md#agent-file-local-preview-unreleased-integration). Native workspace execution is separate. |
 | CI, unattended/headless and hosted runners | Runtime credentials can supply auth without an OS keychain, but no runner deployment is qualified here. Hermetic CI tests use fake credentials and endpoints, not a live Copilot account. |
 
 Listing does not initiate OAuth. Explicit sign-in is a user operation, not a CI
@@ -30,6 +30,9 @@ display their own unlock UI. Runtime authentication prefers an explicitly suppli
 unavailable, it may read an existing github.com gh login with bounded private
 `gh auth token` capture. Runtime tokens remain in memory; kmx does not persist
 them. This adds no hosted multi-user credential sharing or deployment qualification.
+Selecting Copilot for file Run/Test sends authored instructions and inputs to
+the hosted service; a judge also receives the answer and rubric. Explicit
+sign-in does not select a default provider or model.
 When a selected Copilot request fails, the caller receives an error; it does not
 silently switch to a local model. [Local model discovery](models.md#installed-local-model-discovery)
 is a separate explicit choice, and fake orientation remains offline.

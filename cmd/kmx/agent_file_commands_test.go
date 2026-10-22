@@ -15,6 +15,8 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -69,6 +71,7 @@ func TestFileCommandsAgainstRunnerInterface(t *testing.T) {
 			if op == "run" {
 				args = append(args, "--prompt", "ad-hoc")
 			}
+
 			if err := execute(args, deps); err != nil {
 				t.Fatal(err)
 			}
@@ -91,6 +94,79 @@ func TestFileCommandsAgainstRunnerInterface(t *testing.T) {
 		})
 	}
 }
+func TestFileCommandsCopilotRoute(t *testing.T) {
+	for _, operation := range []string{"run", "test"} {
+		for _, endpoint := range []string{"", modelaccess.CopilotEndpoint, "https://private.invalid"} {
+			t.Run(operation+"/"+endpoint, func(t *testing.T) {
+				path := cliPreviewFile(t)
+				source, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, bytes.ReplaceAll(source, []byte("**Preferred:** fake"), []byte("**Preferred:** gpt-test")), 0600); err != nil {
+					t.Fatal(err)
+				}
+				var out, diag bytes.Buffer
+				deps, loads := testDependencies(&out, &diag)
+				runner := &cliPreviewFake{verdict: runtime.EvaluationPass}
+				deps.fileRunner = runner
+				args := []string{operation, path, "--provider", "copilot", "-o", "json"}
+				if endpoint != "" {
+					args = append(args, "--endpoint", endpoint)
+				}
+				err = execute(args, deps)
+				if endpoint == "https://private.invalid" {
+					if err == nil || runner.calls != 0 || strings.Contains(out.String()+diag.String(), endpoint) {
+						t.Fatalf("unsafe endpoint: %v / %s", err, out.String())
+					}
+					return
+				}
+				want := modelaccess.Route{Provider: "copilot", Model: "gpt-test", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+				if err != nil || runner.calls != 1 || runner.request.Route != want || *loads != 0 {
+					t.Fatalf("route=%+v err=%v calls=%d config=%d", runner.request.Route, err, runner.calls, *loads)
+				}
+				var result app.FilePreviewResult
+				if err := json.Unmarshal(out.Bytes(), &result); err != nil || !result.FullPass {
+					t.Fatalf("invalid JSON result: %s / %v", out.String(), err)
+				}
+			})
+		}
+	}
+}
+
+func TestFileCommandsCopilotFailures(t *testing.T) {
+	for _, operation := range []string{"run", "test"} {
+		for _, output := range []string{"text", "json"} {
+			t.Run(operation+"/"+output, func(t *testing.T) {
+				path := cliPreviewFile(t)
+				source, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, bytes.ReplaceAll(source, []byte("**Preferred:** fake"), []byte("**Preferred:** gpt-test")), 0600); err != nil {
+					t.Fatal(err)
+				}
+				var out, diag bytes.Buffer
+				deps, _ := testDependencies(&out, &diag)
+				deps.fileRunner = &cliPreviewFake{cause: errors.Join(copilot.ErrAuthRequired, errors.New("PRIVATE AUTH CAUSE"))}
+				err = execute([]string{operation, path, "--provider", "copilot", "-o", output}, deps)
+				if err == nil {
+					t.Fatal("authentication failure succeeded")
+				}
+				if text := out.String() + diag.String() + err.Error(); !strings.Contains(text, "copilot_auth_required") || strings.Contains(text, "PRIVATE") {
+					t.Fatalf("unsafe or unclassified error: %s", text)
+				}
+				if output == "json" {
+					var result app.FilePreviewResult
+					if err := json.Unmarshal(out.Bytes(), &result); err != nil || result.ReasonCode != "copilot_auth_required" || result.FullPass {
+						t.Fatalf("invalid failure JSON: %s / %v", out.String(), err)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestFileCommandExitCodes(t *testing.T) {
 	for _, tc := range []struct {
 		verdict runtime.EvaluationVerdict

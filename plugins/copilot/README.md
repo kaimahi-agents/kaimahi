@@ -61,6 +61,11 @@ deterministic fake orientation in the skill. Arbitrary tasks need an explicitly
 configured supported route and exact Model.Preferred; no silent fallback.
 The temporary direct preview runner has no Sessions journal.
 Real-model route setup is not automated by this packager.
+For manually configured trusted startup, `kmx mcp --root ABSOLUTE_DIR --provider copilot`
+uses prior explicit `kmx model login` credentials and an exact listed
+`Model.Preferred`, with a fixed endpoint. This sends instructions/inputs and
+any judge answers/rubrics to Copilot. Startup does not sign in or access credentials;
+Run/Test use the same tool-free, no-journal runner as the file CLI, not an SDK harness.
 
 A public archive cannot contain a user's absolute root. End-user root setup,
 compatible Copilot versions, skill resource lookup and actual install/cache

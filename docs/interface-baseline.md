@@ -75,8 +75,11 @@ bounded private gh output to the OS keychain. Without a usable keychain, login
 explains runtime options instead. `model logout` clears only kmx's item/memory,
 not gh or environment credentials. There is no plaintext token-file fallback. Internal
 `modelaccess/copilot.New(Store).Client(ctx, Route)` returns an authenticated
-selected-route RoundTripper for direct Chat Completions JSON/SSE, not a runner
-or proxy. No inference replay, model substitution or persisted selection. See
+selected-route RoundTripper for direct Chat Completions JSON/SSE, not a proxy.
+Markdown-file Run/Test and shared MCP execution consume it only with explicit
+`--provider copilot`, prior sign-in and an exact authored model; the Copilot
+endpoint is fixed. This remains tool-free, no-journal preview, not a new harness.
+No inference replay, model substitution or persisted selection. See
 [direct model access](copilot-inference.md#direct-model-access). Native package
 tests do not qualify the full Windows CLI.
 
