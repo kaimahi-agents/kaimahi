@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"go.yaml.in/yaml/v3"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -232,7 +232,7 @@ func AgentSessionsBindingDigest(binding AgentSessionsBinding) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("encode AgentSessions binding: %w", err)
 	}
-	return agentsuite.Digest(raw)
+	return suitecore.Digest(raw)
 }
 
 var (

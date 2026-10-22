@@ -4,12 +4,12 @@ import (
 	"context"
 	"io"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
 )
 
 // FlowV1Alpha1 returns the immutable validated graph, or nil for strict reads.
 // Graph accessors return caller-owned copies of definitions and inventory.
-func (a *Artifact) FlowV1Alpha1() *agentsuite.FlowV1Alpha1Graph {
+func (a *Artifact) FlowV1Alpha1() *suiteflow.FlowV1Alpha1Graph {
 	if a.graph == nil {
 		return nil
 	}

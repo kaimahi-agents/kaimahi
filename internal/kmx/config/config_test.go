@@ -103,6 +103,14 @@ func TestStateDirUsesPortableOverrideAndNativeDefault(t *testing.T) {
 	}
 }
 
+func TestLocalPreviewJournalDirIsUnderStateDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("KMX_HOME", home)
+	if got, err := LocalPreviewJournalDir(); err != nil || got != filepath.Join(home, "local-preview", "journals") {
+		t.Fatalf("journal dir = %q, %v", got, err)
+	}
+}
+
 func TestModelRecordsWhetherTheOperatorSelectedIt(t *testing.T) {
 	t.Setenv("KMX_HOME", t.TempDir())
 	t.Setenv("MODEL", "")

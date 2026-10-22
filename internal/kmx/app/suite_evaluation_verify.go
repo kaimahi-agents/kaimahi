@@ -10,7 +10,8 @@ import (
 	"os"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteevidence "github.com/agent-primitives/suite/evidence"
 )
 
 // SuiteEvaluationVerifyOptions selects only local public verification inputs.
@@ -23,7 +24,9 @@ const maxSuiteEvaluationVerifyBytes = 4 * 1024 * 1024
 
 // suiteEvaluationVerifyRefusal keeps the shared typed refusal available without
 // including file paths, parser details, or untrusted claims in diagnostics.
-type suiteEvaluationVerifyRefusal struct{ refusal *agentsuite.EvidenceRefusal }
+type suiteEvaluationVerifyRefusal struct {
+	refusal *suiteevidence.EvidenceRefusal
+}
 
 func (e *suiteEvaluationVerifyRefusal) Unwrap() error { return e.refusal }
 func (e *suiteEvaluationVerifyRefusal) Error() string {
@@ -56,7 +59,7 @@ func (e *suiteEvaluationVerifyRefusal) Error() string {
 }
 
 func suiteEvaluationRefuse(code string) error {
-	return &suiteEvaluationVerifyRefusal{refusal: &agentsuite.EvidenceRefusal{Code: code}}
+	return &suiteEvaluationVerifyRefusal{refusal: &suiteevidence.EvidenceRefusal{Code: code}}
 }
 
 // VerifySuiteEvaluation checks unsigned consistency using only explicit local
@@ -76,7 +79,7 @@ func (a *App) VerifySuiteEvaluation(ctx context.Context, opt SuiteEvaluationVeri
 		return errors.New("evaluation: output must be text or json")
 	}
 	layout := opt.Suite
-	digest := agentsuite.IsValidDigest(opt.Suite)
+	digest := suitecore.IsValidDigest(opt.Suite)
 	if digest {
 		if strings.TrimSpace(opt.FromLayout) == "" {
 			return errors.New("evaluation: a digest requires from-layout")
@@ -96,8 +99,8 @@ func (a *App) VerifySuiteEvaluation(ctx context.Context, opt SuiteEvaluationVeri
 	if err != nil {
 		return err
 	}
-	var expected agentsuite.ExpectedEvaluation
-	if agentsuite.Unmarshal(raw, &expected) != nil || expected.Judges == nil {
+	var expected suiteevidence.ExpectedEvaluation
+	if suitecore.Unmarshal(raw, &expected) != nil || expected.Judges == nil {
 		return suiteEvaluationRefuse("malformed")
 	}
 	// Shared strict decoding rejects unknown/duplicate/null fields. Comparing
@@ -109,8 +112,8 @@ func (a *App) VerifySuiteEvaluation(ctx context.Context, opt SuiteEvaluationVeri
 	if decoder.Decode(&value) != nil {
 		return suiteEvaluationRefuse("malformed")
 	}
-	original, originalErr := agentsuite.Marshal(value)
-	typed, typedErr := agentsuite.Marshal(expected)
+	original, originalErr := suitecore.Marshal(value)
+	typed, typedErr := suitecore.Marshal(expected)
 	if originalErr != nil || typedErr != nil || !bytes.Equal(original, typed) {
 		return suiteEvaluationRefuse("malformed")
 	}
@@ -126,12 +129,12 @@ func (a *App) VerifySuiteEvaluation(ctx context.Context, opt SuiteEvaluationVeri
 	if ctx.Err() != nil {
 		return errors.New("evaluation: verification canceled")
 	}
-	verified, err := agentsuite.VerifyEvaluation(layout, expected, bytes.NewReader(evidence))
+	verified, err := suiteevidence.VerifyEvaluation(layout, expected, bytes.NewReader(evidence))
 	if ctx.Err() != nil {
 		return errors.New("evaluation: verification canceled")
 	}
 	if err != nil {
-		var refusal *agentsuite.EvidenceRefusal
+		var refusal *suiteevidence.EvidenceRefusal
 		if errors.As(err, &refusal) {
 			return &suiteEvaluationVerifyRefusal{refusal: refusal}
 		}
@@ -139,7 +142,7 @@ func (a *App) VerifySuiteEvaluation(ctx context.Context, opt SuiteEvaluationVeri
 	}
 	var output []byte
 	if opt.Output == "json" {
-		output, err = agentsuite.Marshal(verified)
+		output, err = suitecore.Marshal(verified)
 		if err != nil {
 			return errors.New("evaluation: could not encode verified summary")
 		}

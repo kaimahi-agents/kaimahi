@@ -4,7 +4,7 @@ import (
 	"context"
 	"reflect"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	godigest "github.com/opencontainers/go-digest"
 )
 
@@ -39,7 +39,7 @@ func (a *App) readReleaseTargetDependencies(ctx context.Context, s suiteNativeSu
 	if err := a.verifySuiteNativeInputs(ctx, s); err != nil {
 		return nil, errReleaseUpdateCompatibility
 	}
-	canonical, err := agentsuite.Marshal(observed.Spec)
+	canonical, err := suitecore.Marshal(observed.Spec)
 	if err != nil {
 		return nil, errReleaseUpdateCompatibility
 	}
@@ -51,14 +51,14 @@ func (a *App) readReleaseTargetDependencies(ctx context.Context, s suiteNativeSu
 }
 
 func validReleaseTargetDependencies(d *releaseTargetDependencies) bool {
-	if d == nil || d.Version != 1 || !statusTargetValid(d.Target) || !agentsuite.IsValidDigest(d.ProviderSpecDigest) ||
+	if d == nil || d.Version != 1 || !statusTargetValid(d.Target) || !suitecore.IsValidDigest(d.ProviderSpecDigest) ||
 		d.Binding.Provider.UID == "" || d.Binding.Provider.Generation < 1 || d.Binding.Provider.ResourceVersion == "" ||
 		d.Binding.Secret.UID == "" || d.Binding.Secret.ResourceVersion == "" || !d.Binding.Secret.KeyPresent {
 		return false
 	}
 	// Leave the existing immutable journal's receipt/summary/outcome headroom
 	// intact. Reject before reserving the shared record or sending an object.
-	raw, err := agentsuite.Marshal(d)
+	raw, err := suitecore.Marshal(d)
 	return err == nil && len(raw) <= 8<<10
 }
 

@@ -9,7 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteevidence "github.com/agent-primitives/suite/evidence"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
@@ -93,11 +94,11 @@ func (a *App) ExportSuiteEvaluation(ctx context.Context, opt SuiteEvaluationExpo
 	if e != nil {
 		return e
 	}
-	raw, e := agentsuite.Marshal(evidence)
+	raw, e := suitecore.Marshal(evidence)
 	if e != nil {
 		return errSuitePublicProjection
 	}
-	if _, e := agentsuite.VerifyEvaluation(prepared.Path, expected, bytes.NewReader(raw)); e != nil {
+	if _, e := suiteevidence.VerifyEvaluation(prepared.Path, expected, bytes.NewReader(raw)); e != nil {
 		return errSuitePublicProjection
 	}
 	// The publisher is not even opened until complete shared verification succeeds.
@@ -110,7 +111,7 @@ func (a *App) ExportSuiteEvaluation(ctx context.Context, opt SuiteEvaluationExpo
 			err = errSuitePublicPersistence
 		}
 	}()
-	captured, e := agentsuite.Marshal(metadata)
+	captured, e := suitecore.Marshal(metadata)
 	if e != nil {
 		return errSuitePublicProof
 	}
@@ -122,7 +123,7 @@ func (a *App) ExportSuiteEvaluation(ctx context.Context, opt SuiteEvaluationExpo
 		if e != nil {
 			return errSuitePublicProof
 		}
-		now, e := agentsuite.Marshal(current)
+		now, e := suitecore.Marshal(current)
 		if e != nil || !bytes.Equal(captured, now) {
 			return errSuitePublicProof
 		}
@@ -145,14 +146,14 @@ func (a *App) ExportSuiteEvaluation(ctx context.Context, opt SuiteEvaluationExpo
 	return nil
 }
 
-func suitePublicImplementation(label, digest string) (agentsuite.EvidenceImplementation, error) {
+func suitePublicImplementation(label, digest string) (suitecore.EvidenceImplementation, error) {
 	i := strings.LastIndex(label, "/")
 	if i < 1 || !suitePublicID(label[:i]) || !suitePublicID(label[i+1:]) || !suitePrefixedDigest(digest) {
-		return agentsuite.EvidenceImplementation{}, errSuitePublicProjection
+		return suitecore.EvidenceImplementation{}, errSuitePublicProjection
 	}
-	return agentsuite.EvidenceImplementation{ID: label[:i], Version: label[i+1:], Digest: digest}, nil
+	return suitecore.EvidenceImplementation{ID: label[:i], Version: label[i+1:], Digest: digest}, nil
 }
-func suitePublicRuntime(r *suitePassingReceipt) (runtime, harness agentsuite.EvidenceImplementation, err error) {
+func suitePublicRuntime(r *suitePassingReceipt) (runtime, harness suitecore.EvidenceImplementation, err error) {
 	if r == nil {
 		return runtime, harness, errSuitePublicProjection
 	}
@@ -162,8 +163,8 @@ func suitePublicRuntime(r *suitePassingReceipt) (runtime, harness agentsuite.Evi
 		if !suiteNativePinnedRuntime(s.Runtime, s.Target.Namespace) {
 			return runtime, harness, errSuitePublicProjection
 		}
-		runtime = agentsuite.EvidenceImplementation{ID: "orka", Version: "0.2.0", Digest: orkaControllerDigest}
-		harness = agentsuite.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: orkaAIWorkerDigest}
+		runtime = suitecore.EvidenceImplementation{ID: "orka", Version: "0.2.0", Digest: orkaControllerDigest}
+		harness = suitecore.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: orkaAIWorkerDigest}
 	case "native-kagent":
 		if !validSuiteKagentPassingProof(r.Kagent) {
 			return runtime, harness, errSuitePublicProjection
@@ -171,15 +172,15 @@ func suitePublicRuntime(r *suitePassingReceipt) (runtime, harness agentsuite.Evi
 		p := kagentLiftProfile()
 		// Equivalent qualified observed imageIDs select the canonical image-list pin,
 		// never an arbitrary pod/platform/config digest from the private inventory.
-		runtime = agentsuite.EvidenceImplementation{ID: "kagent", Version: p.Version, Digest: "sha256:" + p.ControllerDigests[0]}
-		harness = agentsuite.EvidenceImplementation{ID: "kagent-go", Version: p.Version, Digest: "sha256:" + p.GoDigests[0]}
+		runtime = suitecore.EvidenceImplementation{ID: "kagent", Version: p.Version, Digest: "sha256:" + p.ControllerDigests[0]}
+		harness = suitecore.EvidenceImplementation{ID: "kagent-go", Version: p.Version, Digest: "sha256:" + p.GoDigests[0]}
 	case "native-agentsessions":
 		if !validSuiteSessionsPassingProof(r.Sessions) {
 			return runtime, harness, errSuitePublicProjection
 		}
 		h := r.Sessions.Subject.Host
-		runtime = agentsuite.EvidenceImplementation{ID: "agentsessions", Version: h.RuntimeVersion, Digest: h.RuntimeBinaryDigest}
-		harness = agentsuite.EvidenceImplementation{ID: "chat", Version: "1", Digest: h.RuntimeBinaryDigest}
+		runtime = suitecore.EvidenceImplementation{ID: "agentsessions", Version: h.RuntimeVersion, Digest: h.RuntimeBinaryDigest}
+		harness = suitecore.EvidenceImplementation{ID: "chat", Version: "1", Digest: h.RuntimeBinaryDigest}
 	default:
 		return runtime, harness, errSuitePublicProjection
 	}
@@ -193,24 +194,24 @@ type suitePublicSourceProjection struct {
 	Producer suitePublicProducer `json:"producer"`
 }
 type suitePublicModelProjection struct {
-	Domain   string                            `json:"domain"`
-	Protocol string                            `json:"protocol"`
-	Model    string                            `json:"model"`
-	Profile  agentsuite.EvidenceImplementation `json:"profile"`
-	Harness  agentsuite.EvidenceImplementation `json:"harness"`
-	ToolFree bool                              `json:"toolFree"`
-	Sampling string                            `json:"sampling"`
+	Domain   string                           `json:"domain"`
+	Protocol string                           `json:"protocol"`
+	Model    string                           `json:"model"`
+	Profile  suitecore.EvidenceImplementation `json:"profile"`
+	Harness  suitecore.EvidenceImplementation `json:"harness"`
+	ToolFree bool                             `json:"toolFree"`
+	Sampling string                           `json:"sampling"`
 }
 type suitePublicExecutionProjection struct {
-	Domain       string                            `json:"domain"`
-	Suite        string                            `json:"suite"`
-	Member       string                            `json:"member"`
-	Instructions string                            `json:"instructions"`
-	Runtime      agentsuite.EvidenceImplementation `json:"runtime"`
-	Harness      agentsuite.EvidenceImplementation `json:"harness"`
-	Renderer     agentsuite.EvidenceImplementation `json:"renderer"`
-	Profile      agentsuite.EvidenceImplementation `json:"profile"`
-	Model        agentsuite.EvidenceModel          `json:"model"`
+	Domain       string                           `json:"domain"`
+	Suite        string                           `json:"suite"`
+	Member       string                           `json:"member"`
+	Instructions string                           `json:"instructions"`
+	Runtime      suitecore.EvidenceImplementation `json:"runtime"`
+	Harness      suitecore.EvidenceImplementation `json:"harness"`
+	Renderer     suitecore.EvidenceImplementation `json:"renderer"`
+	Profile      suitecore.EvidenceImplementation `json:"profile"`
+	Model        suiteevidence.EvidenceModel      `json:"model"`
 }
 type suitePublicEvaluatorProjection struct {
 	Domain      string `json:"domain"`
@@ -231,21 +232,21 @@ type suitePublicJudgeProjection struct {
 	MinScore            int    `json:"minScore"`
 }
 
-func suitePublicJudge(model, version string, threshold int) (agentsuite.EvidenceJudgeConfiguration, error) {
+func suitePublicJudge(model, version string, threshold int) (suiteevidence.EvidenceJudgeConfiguration, error) {
 	if !suitePublicID(model) || !suitePublicID(version) {
-		return agentsuite.EvidenceJudgeConfiguration{}, errSuitePublicProjection
+		return suiteevidence.EvidenceJudgeConfiguration{}, errSuitePublicProjection
 	}
 	digest, e := suitePublicDigest(suitePublicJudgeProjection{"kmx.public-judge-config/v1", model, version, agentruntime.EvaluationJudgeEvaluatorDigest(), agentruntime.EvaluationJudgeRequestStyle, 2, 1024, false, "no-override", threshold})
 	if e != nil {
-		return agentsuite.EvidenceJudgeConfiguration{}, e
+		return suiteevidence.EvidenceJudgeConfiguration{}, e
 	}
-	return agentsuite.EvidenceJudgeConfiguration{Model: model, Version: version, Policy: agentsuite.EvidencePolicy{ID: agentsuite.EvidenceJudgePolicyID, Version: agentsuite.EvidenceJudgePolicyVersion, ConfigurationDigest: digest}}, nil
+	return suiteevidence.EvidenceJudgeConfiguration{Model: model, Version: version, Policy: suiteevidence.EvidencePolicy{ID: suiteevidence.EvidenceJudgePolicyID, Version: suiteevidence.EvidenceJudgePolicyVersion, ConfigurationDigest: digest}}, nil
 }
 
 // Expectations are resolved from verified artifact bytes, captured provenance
 // and validated runtime observations, independently of the document/result rows.
-func suitePublicExpected(artifact *suiteoras.Artifact, suite *workspace.NativeSuite, r *suitePassingReceipt, m *suitePublicMetadata) (agentsuite.ExpectedEvaluation, error) {
-	var expected agentsuite.ExpectedEvaluation
+func suitePublicExpected(artifact *suiteoras.Artifact, suite *workspace.NativeSuite, r *suitePassingReceipt, m *suitePublicMetadata) (suiteevidence.ExpectedEvaluation, error) {
+	var expected suiteevidence.ExpectedEvaluation
 	if artifact == nil || suite == nil || m == nil {
 		return expected, errSuitePublicProjection
 	}
@@ -254,17 +255,17 @@ func suitePublicExpected(artifact *suiteoras.Artifact, suite *workspace.NativeSu
 		return expected, errSuitePublicMetadata
 	}
 	files := artifact.Files()
-	var graph agentsuite.Suite
-	if agentsuite.Unmarshal(files["agentsuite.json"], &graph) != nil || len(graph.Agents) != 1 || len(graph.Compositions) != 1 || len(graph.BuildProfiles) != 1 {
+	var graph suitecore.Suite
+	if suitecore.Unmarshal(files["agentsuite.json"], &graph) != nil || len(graph.Agents) != 1 || len(graph.Compositions) != 1 || len(graph.BuildProfiles) != 1 {
 		return expected, errSuitePublicSubject
 	}
-	var member agentsuite.Agent
-	var composition agentsuite.Composition
-	if agentsuite.Unmarshal(files[graph.Agents[0].Path], &member) != nil || agentsuite.Unmarshal(files[graph.Compositions[0].Path], &composition) != nil {
+	var member suitecore.Agent
+	var composition suitecore.Composition
+	if suitecore.Unmarshal(files[graph.Agents[0].Path], &member) != nil || suitecore.Unmarshal(files[graph.Compositions[0].Path], &composition) != nil {
 		return expected, errSuitePublicSubject
 	}
 	descriptor := artifact.Descriptor()
-	expected.Subject = agentsuite.EvidenceSubject{Manifest: agentsuite.EvidenceDescriptor{MediaType: descriptor.MediaType, Digest: descriptor.Digest.String(), Size: descriptor.Size}, MemberID: member.ID, MemberDigest: graph.Agents[0].Descriptor.Digest, CompositionDigest: graph.Compositions[0].Descriptor.Digest, BuildProfileDigest: graph.BuildProfiles[0].Descriptor.Digest, Platform: agentsuite.EvidencePlatform{OS: composition.Platform.OS, Architecture: composition.Platform.Architecture, Variant: composition.Platform.Variant}}
+	expected.Subject = suiteevidence.EvidenceSubject{Manifest: suiteevidence.EvidenceDescriptor{MediaType: descriptor.MediaType, Digest: descriptor.Digest.String(), Size: descriptor.Size}, MemberID: member.ID, MemberDigest: graph.Agents[0].Descriptor.Digest, CompositionDigest: graph.Compositions[0].Descriptor.Digest, BuildProfileDigest: graph.BuildProfiles[0].Descriptor.Digest, Platform: suiteevidence.EvidencePlatform{OS: composition.Platform.OS, Architecture: composition.Platform.Architecture, Variant: composition.Platform.Variant}}
 	runtime, harness, err := suitePublicRuntime(r)
 	if err != nil {
 		return expected, err
@@ -292,19 +293,19 @@ func suitePublicExpected(artifact *suiteoras.Artifact, suite *workspace.NativeSu
 	if err != nil {
 		return expected, err
 	}
-	model := agentsuite.EvidenceModel{Protocol: member.Model.Protocol, ID: member.Model.Model, ConfigurationDigest: modelDigest}
+	model := suiteevidence.EvidenceModel{Protocol: member.Model.Protocol, ID: member.Model.Model, ConfigurationDigest: modelDigest}
 	executionDigest, err := suitePublicDigest(suitePublicExecutionProjection{"kmx.public-execution-config/v1", descriptor.Digest.String(), member.ID, member.Instructions.Descriptor.Digest, runtime, harness, renderer, profile, model})
 	if err != nil {
 		return expected, err
 	}
-	expected.Execution = agentsuite.EvidenceExecution{Runtime: runtime, Harness: harness, Renderer: renderer, Profile: profile, Model: model, ConfigurationDigest: executionDigest}
+	expected.Execution = suiteevidence.EvidenceExecution{Runtime: runtime, Harness: harness, Renderer: renderer, Profile: profile, Model: model, ConfigurationDigest: executionDigest}
 	policyDigest, err := suitePublicDigest(suitePublicEvaluatorProjection{"kmx.public-evaluator-config/v1", source, suitePassingEvaluatorVersion, true})
 	if err != nil {
 		return expected, err
 	}
-	expected.Evaluator = agentsuite.EvidenceEvaluatorIdentity{ID: "kmx", Version: version, Policy: agentsuite.EvidencePolicy{ID: agentsuite.EvidencePolicyID, Version: agentsuite.EvidencePolicyVersion, ConfigurationDigest: policyDigest}}
-	expected.Judges = []agentsuite.EvidenceJudgeConfiguration{}
-	seenJudges := map[agentsuite.EvidenceJudgeConfiguration]bool{}
+	expected.Evaluator = suiteevidence.EvidenceEvaluatorIdentity{ID: "kmx", Version: version, Policy: suiteevidence.EvidencePolicy{ID: suiteevidence.EvidencePolicyID, Version: suiteevidence.EvidencePolicyVersion, ConfigurationDigest: policyDigest}}
+	expected.Judges = []suiteevidence.EvidenceJudgeConfiguration{}
+	seenJudges := map[suiteevidence.EvidenceJudgeConfiguration]bool{}
 	for _, file := range suite.Cases {
 		c, e := workspace.DecodePackagedCase(file.Bytes)
 		if e != nil {
@@ -330,12 +331,12 @@ func suitePublicExpected(artifact *suiteoras.Artifact, suite *workspace.NativeSu
 	return expected, nil
 }
 
-func suitePublicEvidence(ctx context.Context, artifact *suiteoras.Artifact, suite *workspace.NativeSuite, r *suitePassingReceipt, m *suitePublicMetadata) (agentsuite.EvaluationEvidence, agentsuite.ExpectedEvaluation, error) {
+func suitePublicEvidence(ctx context.Context, artifact *suiteoras.Artifact, suite *workspace.NativeSuite, r *suitePassingReceipt, m *suitePublicMetadata) (suiteevidence.EvaluationEvidence, suiteevidence.ExpectedEvaluation, error) {
 	if err := suite.RequireUnprofiled(); err != nil {
-		return agentsuite.EvaluationEvidence{}, agentsuite.ExpectedEvaluation{}, err
+		return suiteevidence.EvaluationEvidence{}, suiteevidence.ExpectedEvaluation{}, err
 	}
-	var evidence agentsuite.EvaluationEvidence
-	var empty agentsuite.ExpectedEvaluation
+	var evidence suiteevidence.EvaluationEvidence
+	var empty suiteevidence.ExpectedEvaluation
 	if _, err := canonicalSuitePassingReceipt(ctx, r, suite); err != nil {
 		return evidence, empty, errSuitePublicProof
 	}
@@ -345,18 +346,18 @@ func suitePublicEvidence(ctx context.Context, artifact *suiteoras.Artifact, suit
 	}
 	// Claims use independently resolved expectations, never the reverse. Result
 	// rows below cannot expand the accepted subject, identities or judge policy.
-	evidence = agentsuite.EvaluationEvidence{SchemaVersion: agentsuite.EvidenceSchemaVersion, MediaType: agentsuite.MediaTypeEvaluationEvidence, Subject: expected.Subject, Execution: expected.Execution, Evaluator: agentsuite.EvidenceEvaluator{Identity: expected.Evaluator, StartedAt: m.StartedAt, CompletedAt: m.CompletedAt}, Results: []agentsuite.EvidenceCaseResult{}}
+	evidence = suiteevidence.EvaluationEvidence{SchemaVersion: suiteevidence.EvidenceSchemaVersion, MediaType: suiteevidence.MediaTypeEvaluationEvidence, Subject: expected.Subject, Execution: expected.Execution, Evaluator: suiteevidence.EvidenceEvaluator{Identity: expected.Evaluator, StartedAt: m.StartedAt, CompletedAt: m.CompletedAt}, Results: []suiteevidence.EvidenceCaseResult{}}
 	files := artifact.Files()
-	var member agentsuite.Agent
-	if agentsuite.Unmarshal(files["agents/"+suite.MemberID+".json"], &member) != nil || len(member.Evals) != 1 {
+	var member suitecore.Agent
+	if suitecore.Unmarshal(files["agents/"+suite.MemberID+".json"], &member) != nil || len(member.Evals) != 1 {
 		return evidence, empty, errSuitePublicSubject
 	}
 	indexRef := member.Evals[0]
-	var index agentsuite.EvaluationIndex
-	if agentsuite.Unmarshal(files[indexRef.Path], &index) != nil {
+	var index suitecore.EvaluationIndex
+	if suitecore.Unmarshal(files[indexRef.Path], &index) != nil {
 		return evidence, empty, errSuitePublicSubject
 	}
-	evidence.Evaluation = agentsuite.EvidenceEvaluation{Index: agentsuite.EvidenceFileRef{Path: indexRef.Path, Descriptor: agentsuite.EvidenceDescriptor{MediaType: indexRef.Descriptor.MediaType, Digest: indexRef.Descriptor.Digest, Size: indexRef.Descriptor.Size}}, Cases: []agentsuite.EvidenceCaseRef{}}
+	evidence.Evaluation = suiteevidence.EvidenceEvaluation{Index: suiteevidence.EvidenceFileRef{Path: indexRef.Path, Descriptor: suiteevidence.EvidenceDescriptor{MediaType: indexRef.Descriptor.MediaType, Digest: indexRef.Descriptor.Digest, Size: indexRef.Descriptor.Size}}, Cases: []suiteevidence.EvidenceCaseRef{}}
 	row := 0
 	for _, ref := range index.Cases {
 		c, err := workspace.DecodePackagedCase(files[ref.Path])
@@ -364,17 +365,17 @@ func suitePublicEvidence(ctx context.Context, artifact *suiteoras.Artifact, suit
 			return evidence, empty, errSuitePublicProjection
 		}
 		runs, minPasses := c.RunPolicy()
-		evidence.Evaluation.Cases = append(evidence.Evaluation.Cases, agentsuite.EvidenceCaseRef{ID: c.ID, Path: ref.Path, Descriptor: agentsuite.EvidenceDescriptor{MediaType: ref.Descriptor.MediaType, Digest: ref.Descriptor.Digest, Size: ref.Descriptor.Size}, Runs: runs, MinPasses: minPasses})
-		result := agentsuite.EvidenceCaseResult{ID: c.ID, Outcome: "pass", Runs: []agentsuite.EvidenceRunResult{}}
+		evidence.Evaluation.Cases = append(evidence.Evaluation.Cases, suiteevidence.EvidenceCaseRef{ID: c.ID, Path: ref.Path, Descriptor: suiteevidence.EvidenceDescriptor{MediaType: ref.Descriptor.MediaType, Digest: ref.Descriptor.Digest, Size: ref.Descriptor.Size}, Runs: runs, MinPasses: minPasses})
+		result := suiteevidence.EvidenceCaseResult{ID: c.ID, Outcome: "pass", Runs: []suiteevidence.EvidenceRunResult{}}
 		for run := 1; run <= runs; run++ {
 			if row >= len(r.Cases) {
 				return evidence, empty, errSuitePublicProof
 			}
 			private := r.Cases[row]
 			row++
-			observed := agentsuite.EvidenceRunResult{Number: run, Status: "completed", Outcome: private.Verdict, Assertions: []agentsuite.EvidenceAssertionResult{}}
+			observed := suiteevidence.EvidenceRunResult{Number: run, Status: "completed", Outcome: private.Verdict, Assertions: []suiteevidence.EvidenceAssertionResult{}}
 			for _, a := range private.Assertions {
-				assertion := agentsuite.EvidenceAssertionResult{ID: a.ID, Type: a.Type, Outcome: a.Verdict}
+				assertion := suiteevidence.EvidenceAssertionResult{ID: a.ID, Type: a.Type, Outcome: a.Verdict}
 				if a.Judge != nil {
 					j := a.Judge
 					configuration, e := suitePublicJudge(j.Model, j.ModelVersion, j.MinScore)
@@ -392,7 +393,7 @@ func suitePublicEvidence(ctx context.Context, artifact *suiteoras.Artifact, suit
 							return evidence, empty, errSuitePublicProjection
 						}
 					}
-					assertion.Judge = &agentsuite.EvidenceJudgeResult{Configuration: configuration, ObservedModels: models, Scores: append([]int{}, j.Scores...), MinScore: j.MinScore}
+					assertion.Judge = &suiteevidence.EvidenceJudgeResult{Configuration: configuration, ObservedModels: models, Scores: append([]int{}, j.Scores...), MinScore: j.MinScore}
 				}
 				observed.Assertions = append(observed.Assertions, assertion)
 			}

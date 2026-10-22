@@ -7,7 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteevidence "github.com/agent-primitives/suite/evidence"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -64,11 +65,11 @@ func TestSuitePublicJudgeRepeatedProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := agentsuite.Marshal(e)
+	raw, err := suitecore.Marshal(e)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := agentsuite.VerifyEvaluation(prepared.Path, expected, bytes.NewReader(raw)); err != nil {
+	if _, err := suiteevidence.VerifyEvaluation(prepared.Path, expected, bytes.NewReader(raw)); err != nil {
 		t.Fatal(err)
 	}
 	if len(e.Results) != 2 || len(e.Results[0].Runs) != 3 || e.Evaluation.Cases[0].Runs != 3 || e.Evaluation.Cases[0].MinPasses != 2 || e.Results[0].Runs[0].Outcome != "fail" || e.Results[0].Outcome != "pass" {
@@ -93,14 +94,14 @@ func TestSuitePublicJudgeRepeatedProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, _ := agentsuite.Marshal(second)
+	again, _ := suitecore.Marshal(second)
 	if !bytes.Equal(raw, again) {
 		t.Fatal("optional PRIVATE binary digest affected public identity")
 	}
 	// Independent expectations must reject a changed claim, not bless it.
 	e.Execution.Runtime.Digest = "sha256:" + strings.Repeat("f", 64)
-	changed, _ := agentsuite.Marshal(e)
-	if _, err := agentsuite.VerifyEvaluation(prepared.Path, expected, bytes.NewReader(changed)); err == nil {
+	changed, _ := suitecore.Marshal(e)
+	if _, err := suiteevidence.VerifyEvaluation(prepared.Path, expected, bytes.NewReader(changed)); err == nil {
 		t.Fatal("substituted execution accepted")
 	}
 	receipt.Cases[0].Assertions[0].Judge.ModelMatches[0] = "prefix-match"
@@ -126,8 +127,8 @@ func TestSuitePublicKagentVerifiedProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := agentsuite.Marshal(e)
-	if _, err := agentsuite.VerifyEvaluation(p.prepared.Path, expected, bytes.NewReader(raw)); err != nil {
+	raw, _ := suitecore.Marshal(e)
+	if _, err := suiteevidence.VerifyEvaluation(p.prepared.Path, expected, bytes.NewReader(raw)); err != nil {
 		t.Fatal(err)
 	}
 	if e.Execution.Renderer.ID != "kmx.native-kagent" || e.Execution.Renderer.Version != "v2" || e.Execution.Profile.ID != "kmx.kagent-v0.10.3-go-linux-amd64-tool-free-openai" || e.Execution.Profile.Version != "v1" {

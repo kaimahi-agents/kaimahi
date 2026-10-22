@@ -15,7 +15,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -48,7 +50,7 @@ type Fetcher interface {
 type Artifact struct {
 	descriptor ocispec.Descriptor
 	files      map[string][]byte
-	graph      *agentsuite.FlowV1Alpha1Graph
+	graph      *suiteflow.FlowV1Alpha1Graph
 }
 
 func (a *Artifact) Descriptor() ocispec.Descriptor { return cloneOCIDescriptor(a.descriptor) }
@@ -76,7 +78,7 @@ func readLayout(ctx context.Context, layout, digest string, flowMode bool) (a *A
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if digest != "" && !agentsuite.IsValidDigest(digest) {
+	if digest != "" && !suitecore.IsValidDigest(digest) {
 		return nil, ErrArtifact
 	}
 	root, err := os.OpenRoot(layout)
@@ -93,7 +95,7 @@ func readSource(ctx context.Context, source source, digest string, flowMode bool
 		return nil, err
 	}
 	var layoutRecord ocispec.ImageLayout
-	if agentsuite.Unmarshal(layoutBytes, &layoutRecord) != nil || layoutRecord.Version != ocispec.ImageLayoutVersion {
+	if suitecore.Unmarshal(layoutBytes, &layoutRecord) != nil || layoutRecord.Version != ocispec.ImageLayoutVersion {
 		return nil, ErrArtifact
 	}
 	indexBytes, err := source.read(ctx, "index.json")
@@ -101,7 +103,7 @@ func readSource(ctx context.Context, source source, digest string, flowMode bool
 		return nil, err
 	}
 	var index indexEnvelope
-	if agentsuite.Unmarshal(indexBytes, &index) != nil || index.SchemaVersion != 2 || index.MediaType != "" && index.MediaType != ocispec.MediaTypeImageIndex {
+	if suitecore.Unmarshal(indexBytes, &index) != nil || index.SchemaVersion != 2 || index.MediaType != "" && index.MediaType != ocispec.MediaTypeImageIndex {
 		return nil, ErrArtifact
 	}
 	if len(index.Manifests) > 1000 {
@@ -128,13 +130,13 @@ func read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if source == nil || !agentsuite.IsValidDigest(expected) || root.Digest.String() != expected || root.Size > manifestBytes {
+	if source == nil || !suitecore.IsValidDigest(expected) || root.Digest.String() != expected || root.Size > manifestBytes {
 		if root.Size > manifestBytes {
 			return nil, ErrArtifactLimit
 		}
 		return nil, ErrArtifact
 	}
-	if root.ArtifactType != "" && root.ArtifactType != agentsuite.MediaTypeArtifact || !validDescriptor(root, ocispec.MediaTypeImageManifest, manifestBytes) {
+	if root.ArtifactType != "" && root.ArtifactType != suitecore.MediaTypeArtifact || !validDescriptor(root, ocispec.MediaTypeImageManifest, manifestBytes) {
 		return nil, ErrArtifact
 	}
 	manifestBytes, err := readDescriptor(ctx, source, root)
@@ -142,7 +144,7 @@ func read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected
 		return nil, err
 	}
 	var manifest manifestEnvelope
-	if agentsuite.Unmarshal(manifestBytes, &manifest) != nil || manifest.SchemaVersion != 2 || manifest.MediaType != "" && manifest.MediaType != ocispec.MediaTypeImageManifest || manifest.ArtifactType != agentsuite.MediaTypeArtifact || manifest.Subject != nil || len(manifest.Layers) != 1 {
+	if suitecore.Unmarshal(manifestBytes, &manifest) != nil || manifest.SchemaVersion != 2 || manifest.MediaType != "" && manifest.MediaType != ocispec.MediaTypeImageManifest || manifest.ArtifactType != suitecore.MediaTypeArtifact || manifest.Subject != nil || len(manifest.Layers) != 1 {
 		return nil, ErrArtifact
 	}
 	config, err := manifest.Config.descriptor(2)
@@ -153,7 +155,7 @@ func read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected
 	if err != nil {
 		return nil, err
 	}
-	if config.MediaType != agentsuite.MediaTypeEmptyConfig || config.Size != 2 || config.Digest != godigest.FromString("{}") || layer.MediaType != agentsuite.MediaTypeContent {
+	if config.MediaType != suitecore.MediaTypeEmptyConfig || config.Size != 2 || config.Digest != godigest.FromString("{}") || layer.MediaType != suitecore.MediaTypeContent {
 		return nil, ErrArtifact
 	}
 	configBytes, err := readDescriptor(ctx, source, config)
@@ -175,7 +177,7 @@ func read(ctx context.Context, source Fetcher, root ocispec.Descriptor, expected
 	return &Artifact{descriptor: cloneOCIDescriptor(root), files: files, graph: graph}, ctx.Err()
 }
 
-func validateSelectedGraph(ctx context.Context, root ocispec.Descriptor, manifestBytes []byte, config ocispec.Descriptor, configBytes []byte, layer ocispec.Descriptor, layerBytes []byte, flowMode bool) (graph *agentsuite.FlowV1Alpha1Graph, err error) {
+func validateSelectedGraph(ctx context.Context, root ocispec.Descriptor, manifestBytes []byte, config ocispec.Descriptor, configBytes []byte, layer ocispec.Descriptor, layerBytes []byte, flowMode bool) (graph *suiteflow.FlowV1Alpha1Graph, err error) {
 	stage, err := os.MkdirTemp("", "kmx-artifact-*")
 	if err != nil {
 		return nil, err
@@ -192,7 +194,7 @@ func validateSelectedGraph(ctx context.Context, root ocispec.Descriptor, manifes
 			return nil, err
 		}
 	}
-	layoutBytes, err := agentsuite.Marshal(ocispec.ImageLayout{Version: ocispec.ImageLayoutVersion})
+	layoutBytes, err := suitecore.Marshal(ocispec.ImageLayout{Version: ocispec.ImageLayoutVersion})
 	if err != nil {
 		return nil, err
 	}
@@ -211,9 +213,9 @@ func validateSelectedGraph(ctx context.Context, root ocispec.Descriptor, manifes
 		return nil, err
 	}
 	if flowMode {
-		graph, err = agentsuite.ValidatePathFlowV1Alpha1(stage)
+		graph, err = suiteflow.ValidatePathFlowV1Alpha1(stage)
 	} else {
-		_, err = agentsuite.ValidatePath(stage)
+		_, err = suiteoci.ValidatePath(stage)
 	}
 	if err != nil {
 		return nil, err
@@ -297,7 +299,7 @@ func contentFiles(ctx context.Context, compressed []byte, flowMode bool) (map[st
 			}
 		case tar.TypeReg, 0:
 			limit := int64(fileBytes)
-			if flowMode && name == agentsuite.FlowPathV1Alpha1 {
+			if flowMode && name == suiteflow.FlowPathV1Alpha1 {
 				limit = 4 << 20
 			}
 			if len(files) >= MaxFiles || header.Size > limit || header.Size > contentBytes-total {
@@ -392,7 +394,7 @@ func readDescriptor(ctx context.Context, source Fetcher, descriptor ocispec.Desc
 }
 
 func validDescriptor(descriptor ocispec.Descriptor, mediaType string, limit int64) bool {
-	return descriptor.MediaType == mediaType && agentsuite.IsValidDigest(descriptor.Digest.String()) && descriptor.Size >= 0 && descriptor.Size <= limit && descriptor.URLs == nil && (descriptor.Data == nil || int64(len(descriptor.Data)) == descriptor.Size && godigest.FromBytes(descriptor.Data) == descriptor.Digest)
+	return descriptor.MediaType == mediaType && suitecore.IsValidDigest(descriptor.Digest.String()) && descriptor.Size >= 0 && descriptor.Size <= limit && descriptor.URLs == nil && (descriptor.Data == nil || int64(len(descriptor.Data)) == descriptor.Size && godigest.FromBytes(descriptor.Data) == descriptor.Digest)
 }
 
 func selectRoot(roots []descriptorEnvelope, digest string) (descriptorEnvelope, error) {
@@ -478,7 +480,7 @@ func (d descriptorEnvelope) descriptor(limit int64) (ocispec.Descriptor, error) 
 	if d.Size > limit {
 		return ocispec.Descriptor{}, ErrArtifactLimit
 	}
-	if !agentsuite.IsValidDigest(d.Digest) || d.Size < 0 || d.URLs != nil {
+	if !suitecore.IsValidDigest(d.Digest) || d.Size < 0 || d.URLs != nil {
 		return ocispec.Descriptor{}, ErrArtifact
 	}
 	var embedded []byte
@@ -550,7 +552,7 @@ func (s layoutSource) Fetch(ctx context.Context, descriptor ocispec.Descriptor) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !agentsuite.IsValidDigest(descriptor.Digest.String()) {
+	if !suitecore.IsValidDigest(descriptor.Digest.String()) {
 		return nil, ErrArtifact
 	}
 	return s.open("blobs/sha256/" + descriptor.Digest.Encoded())

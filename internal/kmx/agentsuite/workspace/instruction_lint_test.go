@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
@@ -71,7 +71,7 @@ func TestInstructionCredentialLintPackaged(t *testing.T) {
 	writeFile(t, filepath.Join(out, "instructions/greeter.md"), secret)
 	// Rebind the public descriptors, so public-format integrity succeeds and
 	// the source-free native preflight must still refuse with a safe warning.
-	rebindAgent(t, out, func(agent *agentsuite.Agent) {
+	rebindAgent(t, out, func(agent *suitecore.Agent) {
 		agent.Instructions.Descriptor.Digest = godigest.FromString(secret).String()
 		agent.Instructions.Descriptor.Size = int64(len(secret))
 	})

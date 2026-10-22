@@ -12,7 +12,7 @@ import (
 
 	v1 "github.com/agent-primitives/sessions/api/genpb"
 	"github.com/agent-primitives/sessions/canon"
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/distribution/reference"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -203,7 +203,7 @@ func HarnessImageDigest(image string) (string, error) {
 		return "", errors.New(msg)
 	}
 	digested, ok := ref.(reference.Canonical)
-	if _, tagged := ref.(reference.Tagged); !ok || tagged || digested.Digest().Algorithm() != "sha256" || !agentsuite.IsValidDigest(digested.Digest().String()) {
+	if _, tagged := ref.(reference.Tagged); !ok || tagged || digested.Digest().Algorithm() != "sha256" || !suitecore.IsValidDigest(digested.Digest().String()) {
 		return "", errors.New(msg)
 	}
 	return digested.Digest().String(), nil
@@ -269,7 +269,7 @@ func Render(in RenderInput) (*Rendered, error) {
 	if err != nil {
 		return nil, err
 	}
-	templateDigest, err := agentsuite.Digest(rawTemplate)
+	templateDigest, err := suitecore.Digest(rawTemplate)
 	if err != nil {
 		return nil, err
 	}

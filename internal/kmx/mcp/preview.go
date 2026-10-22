@@ -118,6 +118,10 @@ func (f *Files) snapshot(ctx context.Context, p string) (*agentfile.Agent, error
 	if err := cancelled(ctx); err != nil {
 		return nil, err
 	}
+	p, err := f.rootRelative(p)
+	if err != nil {
+		return nil, err
+	}
 	if !safePath(p) {
 		return nil, refusal("unsafe_path")
 	}

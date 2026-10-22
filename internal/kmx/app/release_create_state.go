@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	godigest "github.com/opencontainers/go-digest"
 )
 
@@ -43,7 +43,7 @@ func releaseObjectFingerprint(doc map[string]any, uid string, generation int64) 
 	if err != nil {
 		return releaseStateObject{}, errReleaseState
 	}
-	owner, err := agentsuite.Marshal(struct {
+	owner, err := suitecore.Marshal(struct {
 		Domain                    string
 		Markers                   map[string]any
 		Description, CreateRecord any

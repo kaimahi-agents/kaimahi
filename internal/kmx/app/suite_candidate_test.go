@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 )
 
 const candidateRun = "0123456789abcdef" + "0123456789abcdef"
@@ -56,7 +56,7 @@ func TestSuiteCandidateReceiptWireProjection(t *testing.T) {
 	subject["EvaluationRun"] = candidateRun
 	subject["PhysicalMember"] = "kmx-eval-" + strings.TrimPrefix(r.Subject.SuiteDigest, "sha256:")[:16] + "-" + candidateRun
 	document["candidateCleanup"] = "complete"
-	raw, err = agentsuite.Marshal(document)
+	raw, err = suitecore.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestSuiteCandidateReceiptWireProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("candidate extension refused: %v", err)
 	}
-	roundtrip, err := agentsuite.Marshal(parsed)
+	roundtrip, err := suitecore.Marshal(parsed)
 	if err != nil || !bytes.Equal(raw, roundtrip) {
 		t.Fatalf("candidate extension lost: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestSuiteCandidateReceiptWireProjection(t *testing.T) {
 			case "credential metadata":
 				s["Model"] = "ghp_" + strings.Repeat("a", 36)
 			}
-			bad, err := agentsuite.Marshal(mutated)
+			bad, err := suitecore.Marshal(mutated)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -132,7 +132,7 @@ func TestSuiteCandidatePhysicalName(t *testing.T) {
 
 func TestSuiteCandidateRenderPreservesLogicalPackage(t *testing.T) {
 	a, suite, f := nativeFixture(t)
-	before, err := agentsuite.Marshal(suite)
+	before, err := suitecore.Marshal(suite)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestSuiteCandidateRenderPreservesLogicalPackage(t *testing.T) {
 	if err != nil || another.Subject.RenderedDigest == candidate.Subject.RenderedDigest || another.Subject.SuiteDigest != candidate.Subject.SuiteDigest {
 		t.Fatalf("run did not distinguish render while retaining full suite identity: %v", err)
 	}
-	after, err := agentsuite.Marshal(suite)
+	after, err := suitecore.Marshal(suite)
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("candidate mutated loaded source")
 	}
@@ -362,7 +362,7 @@ func TestReleaseLiftGateCandidateRequiresExplicitPromotion(t *testing.T) {
 			case "physical":
 				r.Subject.PhysicalMember = "external"
 			}
-			raw, err := agentsuite.Marshal(r)
+			raw, err := suitecore.Marshal(r)
 			if err != nil {
 				t.Fatal(err)
 			}

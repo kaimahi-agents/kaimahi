@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 )
 
 func TestLegacySuitePassingReceiptByteGoldens(t *testing.T) {
@@ -27,7 +27,7 @@ func TestLegacySuitePassingReceiptByteGoldens(t *testing.T) {
 				e.TaskID, e.ContextID = fmt.Sprintf("task-%d", i), fmt.Sprintf("context-%d", i)
 			}
 		}
-		raw, err := agentsuite.Marshal(r)
+		raw, err := suitecore.Marshal(r)
 		if err != nil {
 			t.Fatal(err)
 		}

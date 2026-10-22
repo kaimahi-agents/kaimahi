@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
@@ -103,7 +103,7 @@ func TestAgentSessionsBindingDigestIsJCSOfTheDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	direct, err := agentsuite.Digest(raw)
+	direct, err := suitecore.Digest(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -509,7 +509,7 @@ func TestAgentSessionsBindingHostCredentialRef(t *testing.T) {
 	if secretDigest, _ := AgentSessionsBindingDigest(secret); hostedDigest == secretDigest {
 		t.Fatal("credential source does not change the binding digest")
 	}
-	direct, err := agentsuite.Digest([]byte(`{"apiVersion":"kmx.kaimahi.dev/v1alpha1","kind":"AgentSessionsBinding","target":{"platform":"kubernetes","id":"agentsuite-demo"},"placement":{"backend":"substrate"},"atespace":"agentsuite-demo","sandbox":{"class":"microvm","configName":"microvm"},"snapshot":{"fidelity":"MEMORY","storageLocation":"gs://ate-snapshots/agentsuite-demo/"},"resources":{"cpu":"1","memory":"512Mi"},"workerSelector":{"matchLabels":{"workload":"agentsuite-demo-microvm"}},"model":{"name":"fixture-model","provider":"openai","baseURL":"http://fakemodel.agentsuite-demo.svc:8080/v1","credential":{"hostRef":{"type":"workload-identity","name":"chat-model"}}}}`))
+	direct, err := suitecore.Digest([]byte(`{"apiVersion":"kmx.kaimahi.dev/v1alpha1","kind":"AgentSessionsBinding","target":{"platform":"kubernetes","id":"agentsuite-demo"},"placement":{"backend":"substrate"},"atespace":"agentsuite-demo","sandbox":{"class":"microvm","configName":"microvm"},"snapshot":{"fidelity":"MEMORY","storageLocation":"gs://ate-snapshots/agentsuite-demo/"},"resources":{"cpu":"1","memory":"512Mi"},"workerSelector":{"matchLabels":{"workload":"agentsuite-demo-microvm"}},"model":{"name":"fixture-model","provider":"openai","baseURL":"http://fakemodel.agentsuite-demo.svc:8080/v1","credential":{"hostRef":{"type":"workload-identity","name":"chat-model"}}}}`))
 	if err != nil || hostedDigest != direct {
 		t.Fatalf("host credential digest = %q; want JCS digest %q (%v)", hostedDigest, direct, err)
 	}

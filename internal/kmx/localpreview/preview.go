@@ -1,0 +1,434 @@
+package localpreview
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/agent-primitives/sessions/api"
+	"github.com/agent-primitives/sessions/controller"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
+)
+
+// DefaultExampleTimeout bounds one example: its model send plus any judging.
+const DefaultExampleTimeout = 2 * time.Minute
+
+// JudgeFactory builds the shared llmJudge evaluator for one route. The kmx app
+// supplies its native judge (app.LocalPreviewJudge); baseURL and keyEnv are the
+// non-secret route selection and transport, when non-nil, replaces the network.
+type JudgeFactory func(baseURL, keyEnv string, transport http.RoundTripper, cases []agentruntime.EvaluationCase) (agentruntime.EvaluationJudge, error)
+
+// Turn is one tool-free agent turn handed to an Executor.
+type Turn struct {
+	AgentID, Revision string
+	// ExampleID is empty for ad-hoc input.
+	ExampleID           string
+	Instructions, Input string
+	// Model is the exact selected model; Call is its only route. Call sends at
+	// most once per invocation and returns fixed-text errors.
+	Model string
+	Call  controller.ModelFunc
+}
+
+// Execution is an attributable terminal result of one Turn.
+type Execution struct {
+	Answer string
+	// SessionUID identifies the journaled Session; empty for an Executor that
+	// does not journal.
+	SessionUID string
+	Journaled  bool
+}
+
+// Executor is the seam between the preview loop and execution. The default is
+// the embedded Sessions executor with a SQLite journal. An Executor must not
+// retry a send, execute tools, fall back to another model, or report success
+// for an incomplete or canceled turn.
+type Executor interface {
+	Execute(ctx context.Context, turn Turn) (Execution, error)
+	Close() error
+}
+
+// Options configures one preview. JournalDir must be an absolute owner-only
+// directory (normally config.LocalPreviewJournalDir()).
+type Options struct {
+	JournalDir string
+	// Endpoint is the agent model's OpenAI-compatible route. It must be nil
+	// when Model.Preferred is fake and is required otherwise.
+	Endpoint *Endpoint
+	// JudgeEndpoint deliberately overrides the judge route. By default llmJudge
+	// uses the agent's route, and the fake model uses the fake judge.
+	JudgeEndpoint *Endpoint
+	// Judge is required when any example uses llmJudge.
+	Judge JudgeFactory
+	// ExampleTimeout defaults to DefaultExampleTimeout.
+	ExampleTimeout time.Duration
+	// Transport replaces the network transport for compatible routes (tests,
+	// proxies). The fake route always uses its in-memory transport.
+	Transport http.RoundTripper
+	// Executor replaces the default journaled embedded Sessions executor.
+	Executor Executor
+}
+
+// ExampleResult is one example's outcome. Answer is retained content, not a
+// safe log projection; Reason and Refusal text never contain content.
+type ExampleResult struct {
+	ID         string
+	Verdict    agentruntime.EvaluationVerdict
+	Execution  string // completed, refused, failed, canceled or not-run
+	Reason     string
+	Refusal    *Refusal
+	SessionUID string
+	Answer     string
+	Assertions []agentruntime.EvaluationAssertionResult
+}
+
+// Result is a local preview result: never deployment qualification.
+type Result struct {
+	Label      string
+	RunID      string
+	Journaled  bool
+	AgentID    string
+	Revision   string
+	Model      string
+	ModelRoute string
+	JudgeRoute string
+	Verdict    agentruntime.EvaluationVerdict
+	Examples   []ExampleResult
+	ModelSends int64
+}
+
+// prepared holds every validated input before any effect.
+type prepared struct {
+	agent   *agentfile.Agent
+	route   route
+	judge   agentruntime.EvaluationJudge
+	judgeRt string
+	cases   []agentruntime.EvaluationCase
+	timeout time.Duration
+	options Options
+	// credentials are the nonempty agent and judge bearer values resolved
+	// once by prepare; journal-bound content is checked against them.
+	credentials []string
+}
+
+func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared, error) {
+	if agent == nil {
+		return nil, refuse(RefusedRequest, "no agent was supplied", "load an agent file")
+	}
+	if options.Executor == nil && options.JournalDir == "" {
+		return nil, refuse(RefusedJournal, "no journal directory was selected", "use the kmx local preview journal directory")
+	}
+	p := &prepared{agent: agent, options: options, timeout: options.ExampleTimeout}
+	if p.timeout <= 0 {
+		p.timeout = DefaultExampleTimeout
+	}
+	hasJudge := false
+	if examples {
+		if len(agent.Examples) == 0 {
+			return nil, refuse(RefusedRequest, "the agent has no examples to test", "add examples to the Examples section")
+		}
+		for _, example := range agent.Examples {
+			c := agentruntime.EvaluationCase{ID: example.ID, Input: example.Input, Assertions: example.Assertions}
+			for _, assertion := range example.Assertions {
+				switch assertion.Type {
+				case "contains", "notContains", "regex":
+				case "llmJudge":
+					hasJudge = true
+				case "toolCalled", "toolNotCalled":
+					return nil, refuse(RefusedTools, "an example asserts tool use", "local preview is tool-free; remove tool assertions")
+				default:
+					return nil, refuse(RefusedRequest, "an example uses an unsupported assertion type", "use contains, notContains, regex or llmJudge")
+				}
+			}
+			if agentruntime.ValidateEvaluationAssertions(c.Assertions) != nil {
+				return nil, refuse(RefusedRequest, "an example has invalid assertions", "fix the Examples section")
+			}
+			p.cases = append(p.cases, c)
+		}
+	}
+	var err error
+	if p.route, err = resolveRoute(agent.Model, options.Endpoint, options.Transport, "Model.Preferred"); err != nil {
+		return nil, err
+	}
+	p.addCredential(p.route.key)
+	if !hasJudge {
+		if options.JudgeEndpoint != nil {
+			return nil, refuse(RefusedJudge, "a judge endpoint was configured but no example uses llmJudge", "remove the judge endpoint")
+		}
+		return p, nil
+	}
+	if options.Judge == nil {
+		return nil, refuse(RefusedJudge, "llmJudge examples need the shared judge", "run the preview through kmx")
+	}
+	judgeRoute := p.route
+	if options.JudgeEndpoint != nil {
+		// An explicit override is a compatible endpoint; the judge model is
+		// each assertion's authored judgeModel, not Model.Preferred.
+		if judgeRoute, err = resolveRoute("", options.JudgeEndpoint, options.Transport, "the judge"); err != nil {
+			return nil, err
+		}
+	}
+	p.judgeRt = judgeRoute.kind()
+	p.addCredential(judgeRoute.key)
+	transport := judgeRoute.transport
+	if p.judge, err = options.Judge(judgeRoute.baseURL, judgeRoute.keyEnv, transport, p.cases); err != nil || p.judge == nil {
+		return nil, refuse(RefusedJudge, "the llmJudge configuration was refused", "check the judge endpoint and key environment variable")
+	}
+	return p, nil
+}
+
+func (p *prepared) addCredential(key string) {
+	if key != "" && !slices.Contains(p.credentials, key) {
+		p.credentials = append(p.credentials, key)
+	}
+}
+
+// refuseJournalCredentials refuses when any content the journal would retain
+// contains a resolved agent or judge credential (exact value, any length).
+// Sessions records the identities, instructions and input when a turn starts,
+// before any reply check runs, so this must precede the journal's creation.
+func (p *prepared) refuseJournalCredentials(examples []agentfile.Example) error {
+	fields := []string{p.agent.Identity.ID, p.agent.Revision, p.route.model, p.agent.Instructions}
+	for _, example := range examples {
+		fields = append(fields, example.ID, example.Input)
+	}
+	for _, key := range p.credentials {
+		for _, field := range fields {
+			if strings.Contains(field, key) {
+				return refuse(RefusedCredentialContent, "the instructions, an example, the input or the agent identity contains the endpoint or judge credential, so nothing was sent or journaled",
+					"remove the credential value; agent files and inputs must never contain secrets")
+			}
+		}
+	}
+	return nil
+}
+
+// Run sends one ad-hoc input to the agent. It evaluates no assertions.
+func Run(ctx context.Context, agent *agentfile.Agent, input string, options Options) (Result, error) {
+	p, err := prepare(agent, options, false)
+	if err != nil {
+		return Result{}, err
+	}
+	// Apply the authored-example bound and the same input validator (UTF-8 and
+	// credential shapes); the placeholder expectation only satisfies its shape.
+	if len(input) > agentfile.MaxInputBytes || agentruntime.ValidateEvaluationCase(agentruntime.EvaluationCase{ID: "input", Input: input, ExpectContains: []string{"input"}}) != nil {
+		return Result{}, refuse(RefusedRequest, "the input is empty, too large or credential-shaped", "use a nonblank input of at most 16 KiB")
+	}
+	return p.run(ctx, []agentfile.Example{{Input: input}}, false)
+}
+
+// Test runs every example in order, one fresh Session each, and evaluates its
+// assertions. Any fail, unknown, refusal, cancellation or incomplete turn
+// makes the result non-pass.
+func Test(ctx context.Context, agent *agentfile.Agent, options Options) (Result, error) {
+	p, err := prepare(agent, options, true)
+	if err != nil {
+		return Result{}, err
+	}
+	return p.run(ctx, agent.Examples, true)
+}
+
+func (p *prepared) run(ctx context.Context, examples []agentfile.Example, evaluate bool) (result Result, err error) {
+	if err := p.refuseJournalCredentials(examples); err != nil {
+		return Result{}, err
+	}
+	result = Result{Label: Label, AgentID: p.agent.Identity.ID, Revision: p.agent.Revision, Model: p.route.model,
+		ModelRoute: p.route.kind(), JudgeRoute: p.judgeRt, Verdict: agentruntime.EvaluationUnknown}
+	client := newModelClient(p.route)
+	defer func() { result.ModelSends = client.sends.Load() }()
+	executor := p.options.Executor
+	if executor == nil {
+		var journaled *journalExecutor
+		journaled, result.RunID, err = openJournalExecutor(p.options.JournalDir, p.route.model)
+		if err != nil {
+			return result, err
+		}
+		executor = journaled
+	}
+	defer func() { err = errors.Join(err, executor.Close()) }()
+
+	verdicts := make([]agentruntime.EvaluationVerdict, 0, len(examples))
+	for i, example := range examples {
+		row := ExampleResult{ID: example.ID, Verdict: agentruntime.EvaluationUnknown, Execution: "not-run", Reason: "not run"}
+		if ctx.Err() != nil {
+			result.Examples = append(result.Examples, row)
+			verdicts = append(verdicts, row.Verdict)
+			continue
+		}
+		exampleCtx, cancel := context.WithTimeout(ctx, p.timeout)
+		execution, execErr := executor.Execute(exampleCtx, Turn{
+			AgentID: p.agent.Identity.ID, Revision: p.agent.Revision, ExampleID: example.ID,
+			Instructions: p.agent.Instructions, Input: example.Input, Model: p.route.model, Call: client.Model,
+		})
+		result.Journaled = execution.Journaled
+		row.SessionUID = execution.SessionUID
+		switch {
+		case execErr == nil:
+			row.Execution, row.Reason, row.Answer = "completed", "completed", execution.Answer
+			if evaluate {
+				evidence := agentruntime.EvaluationEvidence{AnswerAvailable: true, Answer: execution.Answer}
+				if p.judge != nil {
+					row.Assertions = p.judge(exampleCtx, p.cases[i], evidence)
+				} else {
+					row.Assertions = agentruntime.EvaluateAssertions(p.cases[i], evidence)
+				}
+				row.Verdict = agentruntime.EvaluationAssertionsVerdict(row.Assertions)
+				row.Reason = string(row.Verdict)
+			} else {
+				row.Reason = "answered; no assertions evaluated"
+			}
+		case interrupted(execErr) || exampleCtx.Err() != nil:
+			row.Execution, row.Reason = "canceled", "canceled or timed out before a complete answer was journaled"
+		default:
+			var refusal *Refusal
+			if errors.As(execErr, &refusal) {
+				row.Execution, row.Reason, row.Refusal = "refused", refusal.Error(), refusal
+			} else {
+				row.Execution, row.Reason = "failed", "execution did not complete; the journal keeps the incomplete record"
+			}
+		}
+		cancel()
+		result.Examples = append(result.Examples, row)
+		verdicts = append(verdicts, row.Verdict)
+	}
+	if evaluate {
+		result.Verdict = combine(verdicts)
+	}
+	if err := ctx.Err(); err != nil {
+		result.Verdict = agentruntime.EvaluationUnknown
+		return result, err
+	}
+	return result, nil
+}
+
+// interrupted reports cancellation or a deadline, whether observed locally or
+// returned by the embedded Sessions server as a gRPC status.
+func interrupted(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	code := status.Code(err)
+	return code == codes.Canceled || code == codes.DeadlineExceeded
+}
+
+func combine(verdicts []agentruntime.EvaluationVerdict) agentruntime.EvaluationVerdict {
+	if len(verdicts) == 0 {
+		return agentruntime.EvaluationUnknown
+	}
+	out := agentruntime.EvaluationPass
+	for _, v := range verdicts {
+		switch {
+		case v == agentruntime.EvaluationFail:
+			out = agentruntime.EvaluationFail
+		case v != agentruntime.EvaluationPass && out == agentruntime.EvaluationPass:
+			out = agentruntime.EvaluationUnknown
+		}
+	}
+	return out
+}
+
+// journalExecutor runs each Turn as one fresh Session on an embedded Sessions
+// host whose journal is this run's SQLite file.
+type journalExecutor struct {
+	mu       sync.Mutex // serializes turns
+	host     *host
+	sessions map[string]bool
+	// Sessions' Placer binds one model function per host, so each Turn's route
+	// is dispatched through the current slot. The controller calls it on a
+	// server goroutine; a canceled turn's late error stays in its own slot.
+	slotMu  sync.Mutex
+	current *turnSlot
+	// lock marks the run as executing until Close.
+	lock *runLock
+}
+
+type turnSlot struct {
+	call controller.ModelFunc
+	mu   sync.Mutex
+	err  error
+}
+
+func openJournalExecutor(dir, model string) (*journalExecutor, string, error) {
+	runID, path, lock, err := newJournal(dir, time.Now())
+	if err != nil {
+		return nil, "", err
+	}
+	e := &journalExecutor{sessions: map[string]bool{}, lock: lock}
+	e.host, err = openHost(path, model, e.model)
+	if err != nil {
+		lock.release()
+		return nil, runID, err
+	}
+	return e, runID, nil
+}
+
+func (e *journalExecutor) model(ctx context.Context, request api.ModelRequest) (api.ModelResponse, error) {
+	e.slotMu.Lock()
+	slot := e.current
+	e.slotMu.Unlock()
+	if slot == nil {
+		return api.ModelResponse{}, refuse(RefusedRequest, "no model route is active", "start a preview turn")
+	}
+	response, err := slot.call(ctx, request)
+	if err != nil {
+		slot.mu.Lock()
+		slot.err = err
+		slot.mu.Unlock()
+	}
+	return response, err
+}
+
+func (e *journalExecutor) setSlot(slot *turnSlot) {
+	e.slotMu.Lock()
+	e.current = slot
+	e.slotMu.Unlock()
+}
+
+func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (Execution, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	slot := &turnSlot{call: turn.Call}
+	e.setSlot(slot)
+	defer e.setSlot(nil)
+	result, err := e.host.client.RunPreviewCase(ctx, agentsessions.PreviewCaseRequest{
+		Revision: turn.Revision, Agent: turn.AgentID, Example: turn.ExampleID,
+		Instructions: turn.Instructions, Model: turn.Model, Input: turn.Input, UsedSessionUIDs: e.sessions,
+	})
+	execution := Execution{SessionUID: result.SessionUID, Journaled: true}
+	if result.SessionUID != "" {
+		e.sessions[result.SessionUID] = true
+	}
+	if err != nil {
+		// The model route's own fixed-text error explains a refused reply
+		// better than the strict client's shape diagnostic.
+		slot.mu.Lock()
+		callErr := slot.err
+		slot.mu.Unlock()
+		if callErr != nil {
+			return execution, callErr
+		}
+		if ctx.Err() != nil {
+			return execution, ctx.Err()
+		}
+		return execution, err
+	}
+	execution.Answer = result.Output
+	return execution, nil
+}
+
+// Close closes the journal, then releases the run lock so pruning and Clear
+// may remove the finished run.
+func (e *journalExecutor) Close() error {
+	err := e.host.close()
+	e.lock.release()
+	return err
+}

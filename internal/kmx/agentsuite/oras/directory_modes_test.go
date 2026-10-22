@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
@@ -24,7 +24,7 @@ import (
 
 // payloadEntry is one authored inventory entry plus its loose host state.
 type payloadEntry struct {
-	agentsuite.InventoryEntry
+	suitecore.InventoryEntry
 	data string
 	host os.FileMode
 }
@@ -48,11 +48,11 @@ func TestPushDirectoryIgnoresHostExecuteBits(t *testing.T) {
 func TestPushDirectoryUsesDeclaredPayloadModes(t *testing.T) {
 	source := minimalSuiteCopy(t)
 	payloadRoot := addModeProvider(t, source, "modes", [][]payloadEntry{{
-		{InventoryEntry: agentsuite.InventoryEntry{Path: "bin/tool", Type: "file", Mode: 0o755}, data: "#!/bin/sh\n", host: 0o644},
-		{InventoryEntry: agentsuite.InventoryEntry{Path: "bin/alias", Type: "symlink", Mode: 0o700, LinkTarget: "tool"}},
-		{InventoryEntry: agentsuite.InventoryEntry{Path: "lib", Type: "directory", Mode: 0o700}, host: 0o755},
-		{InventoryEntry: agentsuite.InventoryEntry{Path: "lib/private", Type: "file", Mode: 0o600}, data: "private", host: 0o755},
-		{InventoryEntry: agentsuite.InventoryEntry{Path: "lib/zero", Type: "file", Mode: 0}, data: "zero", host: 0o644},
+		{InventoryEntry: suitecore.InventoryEntry{Path: "bin/tool", Type: "file", Mode: 0o755}, data: "#!/bin/sh\n", host: 0o644},
+		{InventoryEntry: suitecore.InventoryEntry{Path: "bin/alias", Type: "symlink", Mode: 0o700, LinkTarget: "tool"}},
+		{InventoryEntry: suitecore.InventoryEntry{Path: "lib", Type: "directory", Mode: 0o700}, host: 0o755},
+		{InventoryEntry: suitecore.InventoryEntry{Path: "lib/private", Type: "file", Mode: 0o600}, data: "private", host: 0o755},
+		{InventoryEntry: suitecore.InventoryEntry{Path: "lib/zero", Type: "file", Mode: 0}, data: "zero", host: 0o644},
 	}})
 	modes := directoryModesForTest(t, source)
 	for name, want := range map[string]uint32{"bin/tool": 0o755, "bin/alias": 0o700, "lib": 0o700, "lib/private": 0o600, "lib/zero": 0} {
@@ -83,9 +83,9 @@ func TestPushDirectoryUsesDeclaredPayloadModes(t *testing.T) {
 func TestDirectoryModesRefuseConflictsAndChangedDescriptors(t *testing.T) {
 	t.Run("conflict", func(t *testing.T) {
 		source := minimalSuiteCopy(t)
-		tool := payloadEntry{InventoryEntry: agentsuite.InventoryEntry{Path: "bin/tool", Type: "file", Mode: 0o755}, data: "#!/bin/sh\n", host: 0o644}
+		tool := payloadEntry{InventoryEntry: suitecore.InventoryEntry{Path: "bin/tool", Type: "file", Mode: 0o755}, data: "#!/bin/sh\n", host: 0o644}
 		data := func(mode uint32) payloadEntry {
-			return payloadEntry{InventoryEntry: agentsuite.InventoryEntry{Path: "data", Type: "file", Mode: mode}, data: "data", host: 0o644}
+			return payloadEntry{InventoryEntry: suitecore.InventoryEntry{Path: "data", Type: "file", Mode: mode}, data: "data", host: 0o644}
 		}
 		addModeProvider(t, source, "shared", [][]payloadEntry{{tool, data(0o644)}, {tool, data(0o600)}})
 		handle := openRootForTest(t, source)
@@ -100,7 +100,7 @@ func TestDirectoryModesRefuseConflictsAndChangedDescriptors(t *testing.T) {
 	t.Run("changed descriptor", func(t *testing.T) {
 		source := minimalSuiteCopy(t)
 		addModeProvider(t, source, "changed", [][]payloadEntry{{
-			{InventoryEntry: agentsuite.InventoryEntry{Path: "bin/tool", Type: "file", Mode: 0o755}, data: "#!/bin/sh\n", host: 0o644},
+			{InventoryEntry: suitecore.InventoryEntry{Path: "bin/tool", Type: "file", Mode: 0o755}, data: "#!/bin/sh\n", host: 0o644},
 		}})
 		providerPath := filepath.Join(source, "tool-providers", "changed", "1.0.0", "tool-provider.json")
 		data, err := os.ReadFile(providerPath)
@@ -143,7 +143,7 @@ func TestPublishedArchiveKeepsIdentityWhileRepackageUsesDefaults(t *testing.T) {
 	current := archiveBytes(t, source)
 	// Reproduce an artifact produced by the old host-execute-bit packager.
 	legacy := retarWithModes(t, current, map[string]int64{"bin/legacy": 0o755})
-	legacyDescriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, legacy)
+	legacyDescriptor := content.NewDescriptorFromBytes(suitecore.MediaTypeContent, legacy)
 	sourceStore := memory.New()
 	if err := sourceStore.Push(ctx, legacyDescriptor, bytes.NewReader(legacy)); err != nil {
 		t.Fatal(err)
@@ -189,22 +189,22 @@ func addModeProvider(t *testing.T, root, id string, variants [][]payloadEntry) s
 	mustWrite(t, root, schemaPath, schema, 0o644)
 	architectures := []string{"amd64", "arm64"}
 	retained := true
-	provider := agentsuite.ToolProvider{
+	provider := suitecore.ToolProvider{
 		Retained:      &retained,
-		SchemaVersion: agentsuite.SpecVersion,
-		MediaType:     agentsuite.MediaTypeToolProvider,
+		SchemaVersion: suitecore.SpecVersion,
+		MediaType:     suitecore.MediaTypeToolProvider,
 		ID:            id,
 		Version:       "1.0.0",
 		Protocol:      "mcp",
 		Revision:      "2025-06-18",
-		Tools: []agentsuite.Tool{{Name: id, InputSchema: agentsuite.FileRef{Path: schemaPath, Descriptor: agentsuite.Descriptor{
-			MediaType: agentsuite.MediaTypeJSONSchema, Digest: sha256Digest(schema), Size: int64(len(schema)),
+		Tools: []suitecore.Tool{{Name: id, InputSchema: suitecore.FileRef{Path: schemaPath, Descriptor: suitecore.Descriptor{
+			MediaType: suitecore.MediaTypeJSONSchema, Digest: sha256Digest(schema), Size: int64(len(schema)),
 		}}}},
-		Extensions: []agentsuite.Extension{},
+		Extensions: []suitecore.Extension{},
 	}
 	installRoot := "/opt/agentsuite/tool-providers/" + id
 	for i, entries := range variants {
-		var files []agentsuite.InventoryEntry
+		var files []suitecore.InventoryEntry
 		for _, entry := range entries {
 			name := filepath.Join(root, filepath.FromSlash(path.Join(payloadRoot, entry.Path)))
 			switch entry.Type {
@@ -231,51 +231,51 @@ func addModeProvider(t *testing.T, root, id string, variants [][]payloadEntry) s
 			}
 			files = append(files, entry.InventoryEntry)
 		}
-		variant := agentsuite.ToolProviderVariant{
-			Platform:    agentsuite.Platform{OS: "linux", Architecture: architectures[i]},
+		variant := suitecore.ToolProviderVariant{
+			Platform:    suitecore.Platform{OS: "linux", Architecture: architectures[i]},
 			InstallRoot: installRoot,
 			PayloadRoot: payloadRoot,
 			Entrypoint:  installRoot + "/" + entries[0].Path,
-			Runtime:     agentsuite.RuntimeRequirement{ABI: "static", CPUBaseline: "baseline"},
+			Runtime:     suitecore.RuntimeRequirement{ABI: "static", CPUBaseline: "baseline"},
 			Files:       files,
 		}
-		unsigned, err := agentsuite.Marshal(variant)
+		unsigned, err := suitecore.Marshal(variant)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if variant.VariantDigest, err = agentsuite.Digest(unsigned); err != nil {
+		if variant.VariantDigest, err = suitecore.Digest(unsigned); err != nil {
 			t.Fatal(err)
 		}
 		provider.Variants = append(provider.Variants, variant)
 	}
 	providerPath := "tool-providers/" + id + "/1.0.0/tool-provider.json"
-	providerDescriptor := writeSuiteJSON(t, root, providerPath, agentsuite.MediaTypeToolProvider, provider)
+	providerDescriptor := writeSuiteJSON(t, root, providerPath, suitecore.MediaTypeToolProvider, provider)
 
-	var suite agentsuite.Suite
+	var suite suitecore.Suite
 	readSuiteJSON(t, root, "agentsuite.json", &suite)
-	var catalog agentsuite.ToolProviderCatalog
+	var catalog suitecore.ToolProviderCatalog
 	readSuiteJSON(t, root, suite.ToolProviderCatalog.Path, &catalog)
-	catalog.ToolProviders = append(catalog.ToolProviders, agentsuite.ManifestRef{ID: id, Version: "1.0.0", Path: providerPath, Descriptor: providerDescriptor})
-	suite.ToolProviderCatalog.Descriptor = writeSuiteJSON(t, root, suite.ToolProviderCatalog.Path, agentsuite.MediaTypeToolProviderCatalog, catalog)
+	catalog.ToolProviders = append(catalog.ToolProviders, suitecore.ManifestRef{ID: id, Version: "1.0.0", Path: providerPath, Descriptor: providerDescriptor})
+	suite.ToolProviderCatalog.Descriptor = writeSuiteJSON(t, root, suite.ToolProviderCatalog.Path, suitecore.MediaTypeToolProviderCatalog, catalog)
 	if !slices.Contains(suite.Capabilities, "bundled-stdio-mcp") {
 		suite.Capabilities = append(suite.Capabilities, "bundled-stdio-mcp")
 	}
-	writeSuiteJSON(t, root, "agentsuite.json", agentsuite.MediaTypeSuite, suite)
+	writeSuiteJSON(t, root, "agentsuite.json", suitecore.MediaTypeSuite, suite)
 	return payloadRoot
 }
 
-func writeSuiteJSON(t *testing.T, root, name, mediaType string, value any) agentsuite.Descriptor {
+func writeSuiteJSON(t *testing.T, root, name, mediaType string, value any) suitecore.Descriptor {
 	t.Helper()
-	data, err := agentsuite.Marshal(value)
+	data, err := suitecore.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mustWrite(t, root, name, data, 0o644)
-	digest, err := agentsuite.Digest(data)
+	digest, err := suitecore.Digest(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return agentsuite.Descriptor{MediaType: mediaType, Digest: digest, Size: int64(len(data))}
+	return suitecore.Descriptor{MediaType: mediaType, Digest: digest, Size: int64(len(data))}
 }
 
 func readSuiteJSON(t *testing.T, root, name string, out any) {
@@ -284,7 +284,7 @@ func readSuiteJSON(t *testing.T, root, name string, out any) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := agentsuite.Unmarshal(data, out); err != nil {
+	if err := suitecore.Unmarshal(data, out); err != nil {
 		t.Fatal(err)
 	}
 }
