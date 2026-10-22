@@ -1,6 +1,13 @@
 // Package runtime defines the platform-neutral contract used by KMX chat.
 // Platform identity, execution engine and model provider are separate concepts.
 // No Kubernetes, terminal or vendor SDK types cross this boundary.
+//
+// The package covers runtime and session identity, capabilities, native typed
+// scaffolding and bindings, strict authored assertions and RE2, and private
+// references. It parses the closed AgentSessionsBinding and handles JCS
+// identity and model matching. Only Orka chat and discovery is registered;
+// assertion and judge primitives remain independent of removed bundle
+// consumers. Nested binding examples are test support.
 package runtime
 
 import "context"

@@ -1,4 +1,9 @@
 // Package modelaccess discovers model endpoints without selecting or running an agent.
+//
+// It handles non-secret exact model routing and bounded read-only Foundry Local
+// and Ollama discovery. Config-free model list does not start or install
+// runtimes, download catalogs or execute agents; legacy kind reuse adapts only
+// Ollama inventory.
 package modelaccess
 
 import (

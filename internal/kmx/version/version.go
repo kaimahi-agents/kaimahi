@@ -21,6 +21,8 @@
 // The rule the release depends on: a binary built from a tag must never
 // report "unknown", and must never report a bare sha as if it were a
 // version. TestReleaseBuildNeverReportsUnknownOrABareSha holds that line.
+//
+// It provides version and upgrade answers.
 package version
 
 import (

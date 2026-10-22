@@ -3,6 +3,13 @@
 // fake model or an explicit OpenAI-compatible endpoint. Results are labeled
 // local preview: they are not deployment qualification, suite evidence,
 // receipts or authority to publish or deploy.
+//
+// The private bounded SQLite journal never prunes OS-locked executing runs.
+// Model routes are the exact fake or OpenAI-compatible ones, with tool-call and
+// missing-route refusals, shared assertions plus an injected native judge, and
+// zero-model journal inspection and clearing. There is no CLI yet, and no
+// tools, retries, fallback, cluster or config probing, suite evidence,
+// publication or Deploy authority.
 package localpreview
 
 import "fmt"

@@ -26,6 +26,8 @@
 // from the same origin, so a compromised origin defeats both. It buys
 // integrity against a corrupted or truncated transfer and against a tampered
 // cache.
+//
+// The pinned, checksum-verified downloads are kind, kubectl and Helm.
 package toolchain
 
 import (

@@ -1,5 +1,7 @@
 // Package cliui renders human-facing terminal output without changing the
 // plain formats consumed by scripts, tests, and redirected logs.
+//
+// Presentation is destination-aware.
 package cliui
 
 import (

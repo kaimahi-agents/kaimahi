@@ -1,5 +1,9 @@
 // Package config resolves kmx settings from CLI overrides, environment variables
 // and the saved context, and locates state and toolchain directories.
+//
+// Settings, state and cache paths are native. Operational destination selectors
+// are strict, bounded and credential-free, independent of authored suite
+// identity.
 package config
 
 import (

@@ -1,4 +1,7 @@
 // Package portforward owns loopback kubectl port-forwards and their bind proof.
+//
+// Forwards have process lifetime and are shared by native Orka results and host
+// tools.
 package portforward
 
 import (

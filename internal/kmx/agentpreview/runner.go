@@ -1,4 +1,7 @@
 // Package agentpreview defines the embedded runner boundary, not an execution engine.
+//
+// It is the typed embedded-runner request and outcome contract. It has no
+// execution engine, model adapter or production fake.
 package agentpreview
 
 import (

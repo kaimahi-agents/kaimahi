@@ -1,5 +1,10 @@
 // Package agentfile parses kmx's tool-free canonical charter, without execution
 // or implicit integration with native suite loaders.
+//
+// It provides bounded canonical charter parsing and regular-file loading with
+// source locations, exact-byte revisions and ordered examples. There is no CLI,
+// model access, source writing or Squad registration. Nested charter fixtures
+// are test support.
 package agentfile
 
 import (

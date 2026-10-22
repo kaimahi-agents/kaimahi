@@ -97,8 +97,10 @@ Standalone packaged evaluation is unavailable.
 ## Repository layout
 
 Consult the [repository map](repository-map.md) for directory ownership and
-classification. Descendants inherit an owned directory's role; ordinary files
-and nested fixtures need no map entry, while new areas or ownership packages do.
+classification. Descendants inherit an owned directory's role; ordinary files,
+nested fixtures and new packages below `internal/kmx/` need no map entry. Only a
+new root area or immediate child of `cmd/`, `internal/` or `pkg/` does. Package
+behavior lives in the Go package doc comment.
 
 | Path | Responsibility |
 |---|---|

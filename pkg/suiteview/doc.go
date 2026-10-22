@@ -8,4 +8,9 @@
 // It does not select a runtime, composition, target, inference deployment, or
 // credential; execute cases; verify evaluation evidence; publish; or Lift.
 // Callers must not mutate a layout concurrently with LoadLayout.
+//
+// Loading accepts an explicit verified member, or an explicitly selected
+// experimental flow with copied member recipes and flow identity. The package
+// is a concrete read-only library with no runtime, evidence, registry,
+// execution, publication or mutation authority.
 package suiteview

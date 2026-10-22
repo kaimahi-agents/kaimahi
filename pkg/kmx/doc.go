@@ -11,4 +11,16 @@
 //
 // This package is alpha design evidence. It is not yet wired to the kmx CLI and
 // makes no compatibility commitment.
+//
+// The package is standard-library only and has no concrete implementation. The
+// contracts describe setup-only logical environments, neutral revisions, suite
+// validate, build and push values, image identities, targets and deployment and
+// retirement receipts and workflows. Runtime ports and build artifacts remain
+// internal.
+//
+// Architecture tests keep the production dependency closure in the standard
+// library and reject concrete runtime, cloud, Kubernetes, subprocess and
+// terminal leakage in exported names or serialized fields. Public format
+// ownership remains in the external suite module; native loaders apply stricter
+// private checks after public projection.
 package kmx

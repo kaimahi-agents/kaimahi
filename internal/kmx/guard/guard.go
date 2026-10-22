@@ -33,6 +33,9 @@
 // second implementation of them would be a second set of bugs deciding
 // whose cluster gets written to. `config view` never contacts a cluster, so
 // it stays cheap and offline.
+//
+// The package also provides context-bound pipeline confirmation and read-only
+// target resolution.
 package guard
 
 import (

@@ -16,6 +16,8 @@
 //     shapes.json like every other file.
 //   - Every consumer reads the whole list; no separate consumer-specific
 //     rule list needs updating.
+//
+// It carries shared credential-shape checks and data.
 package secretshapes
 
 import (

@@ -1,6 +1,10 @@
 // Package scaffold generates reviewable Kubernetes YAML and provides shared
 // name, reference and credential-shape checks. Orka authoring is in orka.go;
 // the helpers here are shared by every scaffolder.
+//
+// It covers native Orka authoring, explicit review-only kagent scaffolding,
+// YAML helpers and file writing. Model-overlay and migration generators are
+// removed.
 package scaffold
 
 import (

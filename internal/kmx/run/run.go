@@ -1,5 +1,7 @@
 // Package run executes external cluster, container and cloud tools for kmx.
 // It manages command arguments, environment overrides, output and cancellation.
+//
+// It is the shell-out execution boundary.
 package run
 
 import (

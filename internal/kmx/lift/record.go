@@ -7,6 +7,8 @@
 // them, and decides removal from an answer someone else obtained. Nothing in
 // this package talks to Azure, so its teardown rules are tested without a
 // subscription instead of relying on infrequent live-cluster exercises.
+//
+// Its rules and persisted ownership records are cloud-independent.
 package lift
 
 import (
