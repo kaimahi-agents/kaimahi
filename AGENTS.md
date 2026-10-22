@@ -420,6 +420,10 @@ qualification. `app.FilePreviewResult` v1 is the safe shared projection, not a
 native evidence receipt. Subset is always partial, execution/journal failure is
 unknown, and only an explicit caller override changes the judge route. Keep
 live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
+File Run/Test `--verbose` is content-free stderr diagnostics only, never implicit
+`--show-content`. Keep transport errors classified without raw URLs/bodies;
+only validated local origins and standard endpoint paths may be shown. Failed
+diagnostic writes stop later sends and refuse a full pass.
 See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 
 ## Agent-file MCP boundary

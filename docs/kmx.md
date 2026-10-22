@@ -198,6 +198,26 @@ kmx test ./greeter.agent.md --case greeting -o json
 kmx test ./greeter.agent.md
 ```
 
+Add `--verbose` to file Run or Test for content-free diagnostics on stderr:
+completion/judge request start/end, selected endpoints, HTTP status,
+per-request timings and total elapsed time. Revision, model, runner label,
+assertion verdicts and final outcome remain in the normal report, not repeated
+in verbose diagnostics.
+Local endpoint origins and standard `/v1` paths are shown; custom paths are
+withheld. Connection refusal, response timeout, HTTP errors and malformed or
+mismatched completions have safe diagnostic categories, never raw provider errors.
+Verbose is off by default and does not imply `--show-content`: instructions,
+inputs, answers, assertion operands, judge rationale and response bodies stay
+private. JSON stdout and exit contracts are unchanged. A failed diagnostic
+write stops later sends and cannot report a full pass.
+
+```text
+kmx run ./greeter.agent.md --provider ollama --endpoint http://127.0.0.1:11434/v1 --prompt Ada --verbose --show-content
+```
+
+For this Ollama example, first set `Model.Preferred` in your own copy of the
+charter to an exact installed Ollama model, rather than the sample's `fake`.
+
 `--case ID` selects one stable saved example and always reports **partial**, even
 if the file contains only that example. Unknown/blank IDs refuse before inference.
 Missing/empty examples cannot pass. The exact model comes from `Model.Preferred`;

@@ -4,6 +4,7 @@ package agentpreview
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
@@ -21,6 +22,18 @@ type Request struct {
 	// Nil uses Route. Only the caller may choose an override.
 	JudgeRoute *modelaccess.Route
 	Input      *string
+	Progress   func(string) error
+}
+
+// Report carries content-free diagnostics; a failed sink stops later execution.
+func (r Request) Report(format string, args ...any) error {
+	if r.Progress == nil {
+		return nil
+	}
+	if err := r.Progress(fmt.Sprintf(format, args...)); err != nil {
+		return fmt.Errorf("%w: %w", ErrDiagnosticsFailed, err)
+	}
+	return nil
 }
 
 type State string
@@ -33,8 +46,9 @@ const (
 )
 
 var (
-	ErrJournalFailed    = errors.New("preview journal finalization failed")
-	ErrModelUnavailable = errors.New("preview model unavailable")
+	ErrJournalFailed     = errors.New("preview journal finalization failed")
+	ErrModelUnavailable  = errors.New("preview model unavailable")
+	ErrDiagnosticsFailed = errors.New("preview diagnostic output failed")
 )
 
 // Completion contains private bounded execution data, never a JSON projection.
