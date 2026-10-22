@@ -41,7 +41,9 @@ examples:
 
 ## Markdown contract
 
-- Start with one nonblank H1 (`# `). It is the display title, not identity.
+- Start with one nonblank H1 name (`# Name`). The ` — Role` suffix is optional;
+  `# Name`, `# Name —` and `# Name — Role` are accepted display titles, not identity.
+  Put all prose and fenced blocks after the first canonical H2 section.
 - Include exactly one of each H2 shown above, with those exact unindented
   spellings. Examples must be last; the other sections can be reordered.
   Unknown or duplicate H2 sections refuse, including Tools or Hooks. No
@@ -75,9 +77,10 @@ The trusted provider route, endpoint and credentials must come from outside
 this file; the parser neither checks availability nor chooses/falls back to a
 model. Prose cannot grant tools or hooks: downstream execution must remain
 tool-free regardless of what instructions request. Parsing is not a sandbox or
-a guarantee that arbitrary prose is safe or secret-free. The complete instruction
-prefix (title, identity, model and responsibilities) is checked with the existing
-credential-shape scanner and refuses known shapes with a fixed redacted error;
+a guarantee that arbitrary prose is safe or secret-free. The complete charter,
+including raw YAML comments, is checked with the existing credential-shape scanner
+and refuses known shapes with a fixed redacted error. Decoded example inputs and
+assertion operands are checked too, so YAML escapes cannot hide known shapes;
 arbitrary secrets can still evade shape detection.
 
 ## Examples and assertions

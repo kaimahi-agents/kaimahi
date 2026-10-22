@@ -254,30 +254,6 @@ func EnsureReporting(spec Spec, opt Options) (string, Source, error) {
 	return path, FromDownload, nil
 }
 
-// install writes the binary atomically: a killed download must not leave a
-// truncated file behind under the real name.
-func install(path string, binary []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".partial-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(binary); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
-}
-
 // memberOf pulls one file out of a verified .tar.gz.
 func memberOf(archive []byte, member string) ([]byte, error) {
 	zr, err := gzip.NewReader(bytes.NewReader(archive))

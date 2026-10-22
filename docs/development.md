@@ -7,8 +7,8 @@ For work **on** Kaimahi; contribution/PR expectations are in
 New contributors should read the [codebase overview](codebase-overview.md) for
 package boundaries and data flows, then the [interface baseline](interface-baseline.md)
 before changing commands or public contracts. The [repository map](repository-map.md)
-is the mechanical inventory of what is installed, embedded, historical or test
-scaffolding.
+describes directory responsibilities and boundaries between installed tooling,
+checkout support, historical records and test scaffolding.
 
 ## Direction and current implementation
 
@@ -96,8 +96,9 @@ Standalone packaged evaluation is unavailable.
 
 ## Repository layout
 
-Consult the [repository map](repository-map.md) for tracked membership and caller
-classification.
+Consult the [repository map](repository-map.md) for directory ownership and
+classification. Descendants inherit an owned directory's role; ordinary files
+and nested fixtures need no map entry, while new areas or ownership packages do.
 
 | Path | Responsibility |
 |---|---|

@@ -68,7 +68,7 @@ func PushLayout(ctx context.Context, source, destination, reference string, expe
 		}
 		updated = true
 	}
-	target, err := oci.New(targetPath)
+	target, err := newOCIStore(targetPath)
 	if err != nil {
 		return PushResult{}, err
 	}
@@ -121,7 +121,7 @@ func preparedLayout(source string, expected ocispec.Descriptor) (*oci.Store, oci
 	if !content.Equal(index.Manifests[0], expected) {
 		return nil, ocispec.Descriptor{}, nil, errors.New("prepared AgentSuite descriptor differs from the selected suite")
 	}
-	store, err := oci.New(source)
+	store, err := newOCIStore(source)
 	if err != nil {
 		return nil, ocispec.Descriptor{}, nil, err
 	}

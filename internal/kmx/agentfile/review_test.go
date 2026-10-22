@@ -12,11 +12,13 @@ import (
 
 func TestRefuseCredentialShapedExampleInput(t *testing.T) {
 	value := secretshapes.All()[0].Example
-	source := strings.Replace(sample(t), "input: Ada", "input: '"+value+"'", 1)
-	_, err := Parse("a.md", []byte(source))
-	var e *Error
-	if !errors.As(err, &e) || e.Location.Line != 23 || strings.Contains(err.Error(), value) {
-		t.Fatal("credential input was accepted or disclosed")
+	for _, operand := range []string{value, strings.ReplaceAll(value, "s", `\u0073`)} {
+		source := strings.Replace(sample(t), "input: Ada", `input: "`+operand+`"`, 1)
+		_, err := Parse("a.md", []byte(source))
+		var e *Error
+		if !errors.As(err, &e) || e.Location.Line != 23 || strings.Contains(err.Error(), value) {
+			t.Fatal("credential input was accepted or disclosed")
+		}
 	}
 }
 func TestSquadPathNormalization(t *testing.T) {

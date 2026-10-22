@@ -145,6 +145,7 @@ export default defineConfig({
   srcExclude: [
     'AGENTS.md',
     'CHANGELOG.md',
+    'changes/**',
     'CODE_OF_CONDUCT.md',
     'CONTRIBUTING.md',
     'LOCAL-TEST-PLAN.md',

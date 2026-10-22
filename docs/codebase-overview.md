@@ -6,7 +6,7 @@ evidence; it is not itself an agent runtime or a second control plane. Runtimes
 and harnesses own execution, enforcement, model access and retention.
 
 This guide explains how current source fits together. Use the
-[repository map](repository-map.md) for exact tracked-file inventory, the
+[repository map](repository-map.md) for directory ownership and inherited roles, the
 [`kmx` reference](kmx.md) for command behavior, and the
 [runtime support matrix](runtime-adapters.md#revision-pinned-support-and-qualification-matrix)
 for qualified scope.

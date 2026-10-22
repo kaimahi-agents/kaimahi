@@ -1,0 +1,54 @@
+{
+  "checker": "check-changelog-fragments.py",
+  "why": "Independent filesystem and Git fixtures protect fragment validity, newly added note requirements, existing-note ownership, CLI failure propagation and byte-preserving release rendering. The self-test never validates the mutation mirror's symlinked changes directory.",
+  "verify": [
+    "python3",
+    "scripts/check-changelog-fragments.py",
+    "--selftest"
+  ],
+  "signature": "changelog-fragments self-test:",
+  "mutations": [
+    {
+      "name": "unknown categories pass validation",
+      "breaks": "An unknown heading can be accepted as a pending release note.",
+      "find": "            if current not in CATEGORIES or current in sections:",
+      "replace": "            if current in sections:"
+    },
+    {
+      "name": "product changes become exempt",
+      "breaks": "CI, tooling and production changes can land without their own new note.",
+      "find": "    if not product:\n        return",
+      "replace": "    if True:\n        return"
+    },
+    {
+      "name": "old pending notes satisfy the requirement",
+      "breaks": "An existing pending note substitutes for the current PR's newly added fragment.",
+      "find": "    if not added.intersection(fragments):",
+      "replace": "    if not fragments:"
+    },
+    {
+      "name": "existing fragments can be stolen",
+      "breaks": "A product PR can modify, delete or rename another pending PR's note.",
+      "find": "        if path.startswith(\"changes/\") and path != \"changes/README.md\" and status != b\"A\":",
+      "replace": "        if False:"
+    },
+    {
+      "name": "the CLI ignores the comparison verdict",
+      "breaks": "The command reports success even when its explicit Git diff requires a new fragment.",
+      "find": "            check_diff(root, args.base, args.head)",
+      "replace": "            pass"
+    },
+    {
+      "name": "rendering drops historical bytes under optimized Python",
+      "breaks": "Release preparation loses the original changelog history; tests must still detect this with assertions optimized out.",
+      "find": "+ release.encode(\"utf-8\").replace(b\"\\n\", newline) + changelog[history_start:])",
+      "replace": "+ release.encode(\"utf-8\").replace(b\"\\n\", newline) + b\"\")",
+      "verify": [
+        "python3",
+        "-O",
+        "scripts/check-changelog-fragments.py",
+        "--selftest"
+      ]
+    }
+  ]
+}

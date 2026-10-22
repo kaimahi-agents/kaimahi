@@ -8,6 +8,6 @@
 4. **Mutations name their target.** Cluster or registry writes use explicit, pinned contexts and destinations; remote targets need confirmation; nothing adopts, updates or deletes resources kmx doesn't provably own.
 5. **Command surface.** Changes follow `docs/command-conventions.md` and `docs/kmx.md`; removed commands stay removed (no aliases or stubs); help and completion stay inert.
 6. **Scope and size.** One change per PR. Point out unrelated edits, hand-edited generated files, timeout increases used to make tests pass, and tests that greatly outweigh the product change without covering distinct behavior.
-7. **Docs and compatibility.** User-visible behavior changes update the docs and `CHANGELOG.md`; breaking changes say what to do instead.
+7. **Docs and compatibility.** User-visible behavior changes update the docs and a release-note fragment under `changes/`; breaking changes say what to do instead.
 
 Skip pure style nits that `gofmt`, linters or the repository checkers already enforce. Prefer one concrete comment with a failing scenario over several speculative ones.

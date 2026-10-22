@@ -1,36 +1,32 @@
 {
   "checker": "check-repository-map.py",
-  "why": "This checker must fail when the map and the tree disagree without freezing product classifications or historical prose. Each mutation breaks a mechanical guarantee; the self-test uses an independent miniature map and tree, so live documentation may evolve without breaking test setup. The real repository is checked separately.",
-  "verify": [
-    "python3",
-    "scripts/check-repository-map.py",
-    "--selftest"
-  ],
+  "why": "The map checks named paths, inherited directory responsibilities and the retired-module boundary, not volatile inventories. Independent miniature fixtures break every registered claim; the real tracked tree is checked separately.",
+  "verify": ["python3", "scripts/check-repository-map.py", "--selftest"],
   "signature": "check-repository-map self-test:",
   "mutations": [
     {
-      "name": "a count that disagrees with the tree is not a problem",
-      "breaks": "Every number in the map. The file counts, the package counts, the bucket totals and the arithmetic between them all stop being compared, and the map reads clean whatever it says.",
-      "find": "    if doc_value == tree_value:\n        return []",
-      "replace": "    if True:\n        return []"
+      "name": "a broken named path is accepted",
+      "breaks": "The broken named path and explicit wrong-root fixtures must fail even when ownership coverage remains valid.",
+      "find": "            if not resolve(token, base, tree):",
+      "replace": "            if False:"
     },
     {
-      "name": "a list that does not match the tree is not a problem",
-      "breaks": "Every membership claim: the embedded manifests, the script buckets, the doc lists, the root table. A file could be in the tree and in no list, or in a list and not in the tree, and nothing would say so.",
-      "find": "def compare_sets(named: set[str], actual: set[str], what: str) -> list[str]:\n    problems = []",
-      "replace": "def compare_sets(named: set[str], actual: set[str], what: str) -> list[str]:\n    return []\n    problems = []"
+      "name": "a new ownership package inherits the area heading",
+      "breaks": "The unowned cmd, internal/kmx, other internal and public package fixtures must fail; top-level sections cannot act as universal package coverage.",
+      "find": "            if len(parts) <= depth or owner not in named:",
+      "replace": "            if False:"
     },
     {
       "name": "no claim is registered and the run reports the map checked",
-      "breaks": "The registry. Every claim below the decorator stops existing, the loop has nothing to run, and the checker prints its own success line having compared nothing.",
+      "breaks": "An empty registry must not pass either a valid miniature map or its negative fixtures.",
       "find": "def claim(fn):\n    CLAIMS.append(fn)\n    return fn",
       "replace": "def claim(fn):\n    return fn"
     },
     {
       "name": "the findings are collected and the exit code ignores them",
-      "breaks": "A checker that does all its work, prints every disagreement, and exits 0 \u2014 the failure an exit code alone cannot see, and the reason this file's mutations are verified by a self-test rather than by a return value.",
-      "find": "def exit_code(problems: list[str]) -> int:\n    \"\"\"The verdict.",
-      "replace": "def exit_code(problems: list[str]) -> int:\n    return 0\n    \"\"\"The verdict."
+      "breaks": "A fixture disagreement must produce a failing verdict, independently of the comparison code producing the finding.",
+      "find": "    return 1 if problems else 0",
+      "replace": "    return 0"
     }
   ]
 }

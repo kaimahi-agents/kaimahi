@@ -271,7 +271,7 @@ Harness tests alone are not evidence of real execution.
 Comments describe what the code does and why, as it works now. Keep them tied
 to behavior or constraints that remain true. Put what changed, which effort
 made the change, and what it replaced in the commit message, pull request
-description or CHANGELOG instead.
+description or release-note fragment instead.
 
 ## Pull requests
 
@@ -284,3 +284,53 @@ description or CHANGELOG instead.
   registry names, cluster addresses, or unsanitized user data.
 
 Every change lands through a pull request with required checks green.
+
+### Release-note fragments
+
+Add one `changes/<PR>.md` fragment rather than editing `CHANGELOG.md`'s shared
+Unreleased section. Until the PR number is known, use a unique flat lowercase
+slug, replacing branch-name `/` separators with `-` or choosing another valid name. See [the fragment format](changes/README.md). Keep existing Unreleased
+entries and released history intact; maintainers combine notes at release time.
+
+Documentation/test-only changes are automatically exempt. This means `docs/**`,
+Markdown files, Go `_test.go` files, `testdata/` trees, and the test scripts named
+`scripts/test_*.py` or `scripts/*-test.py` / `scripts/*-test.sh`. Other changes,
+including CI, tooling, dependency and shipped-asset changes, need a new valid
+fragment. Do not rename, edit or delete another pending fragment in a product
+PR; the docs-only release-preparation PR removes the notes it includes.
+
+Validate pending notes locally:
+
+```bash
+python3 scripts/check-changelog-fragments.py
+python3 scripts/check-changelog-fragments.py --selftest
+python3 scripts/test_changelog_ci.py
+```
+
+After committing, check the complete authored branch range, not just its last
+commit:
+
+```bash
+base=$(git merge-base origin/main HEAD)
+python3 scripts/check-changelog-fragments.py --base "$base" --head HEAD
+```
+
+CI uses the synthetic PR merge's actual first parent instead of a stale event
+base. Exemption skips only the requirement for a new note, not validation of
+pending notes. Rendering and release preparation are described in
+[Cutting a release](docs/releases.md#cutting-a-release).
+
+### Repository-map changes
+
+Files inherit the responsibility and classification of their documented
+directory. Adding a file below an existing responsibility does not require a
+map edit. Update [the map](docs/repository-map.md) for a new top-level area,
+package responsibility, or changed capability boundary. Do not add file totals
+or exhaustive file/caller inventories. The checker enforces named paths,
+directory coverage and the retired-module boundary; editorial classifications
+remain reviewable.
+
+```bash
+python3 scripts/check-repository-map.py --selftest
+python3 scripts/check-repository-map.py
+```
