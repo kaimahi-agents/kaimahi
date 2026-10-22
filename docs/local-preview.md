@@ -85,7 +85,11 @@ Each refusal says what to change:
   credential variable;
 - tool assertions or other unsupported assertion types;
 - `llmJudge` examples without the shared judge, or a judge override with no
-  `llmJudge` examples.
+  `llmJudge` examples;
+- instructions, example IDs or inputs, ad-hoc `Run` input, or the agent ID,
+  revision or model name containing the resolved agent or judge credential
+  (exact value, any length). Sessions records this content when a turn starts,
+  before any reply check, so it is checked before the journal is created.
 
 The [agent file parser](agent-file.md) already refuses credential-shaped
 content anywhere in the file, including YAML comments, and in decoded example

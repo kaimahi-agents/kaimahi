@@ -23,6 +23,7 @@ const (
 	RefusedJudge             = "judge-unconfigured"
 	RefusedHTTPStatus        = "http-status"
 	RefusedCredentialEcho    = "reply-credential"
+	RefusedCredentialContent = "content-credential"
 	RefusedUnreachable       = "endpoint-unreachable"
 	RefusedMalformed         = "reply-malformed"
 	RefusedOversized         = "reply-oversized"

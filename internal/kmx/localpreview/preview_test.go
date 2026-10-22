@@ -752,6 +752,80 @@ func TestInspectWithoutDeadlineAndNeverCreatesJournal(t *testing.T) {
 	}
 }
 
+// stubJudge satisfies JudgeFactory without any network effect.
+func stubJudge(string, string, http.RoundTripper, []agentruntime.EvaluationCase) (agentruntime.EvaluationJudge, error) {
+	return func(context.Context, agentruntime.EvaluationCase, agentruntime.EvaluationEvidence) []agentruntime.EvaluationAssertionResult {
+		return nil
+	}, nil
+}
+
+func TestJournalBoundCredentialRefusedBeforeJournal(t *testing.T) {
+	// Opaque values that match no known credential shape, so only the
+	// resolved-value check can stop them.
+	const judgeKey = "kmx-judge-canary-0c4e8a1f5b9d"
+	t.Setenv("KMX_TEST_PREVIEW_KEY", canaryKey)
+	t.Setenv("KMX_TEST_JUDGE_KEY", judgeKey)
+	server := newCompatible(t, true, func(w http.ResponseWriter, _ *http.Request, _ chatRequest) { fmt.Fprint(w, reply("Hello, Ada")) })
+	agentRoute := &Endpoint{BaseURL: server.URL, KeyEnv: "KMX_TEST_PREVIEW_KEY"}
+	keylessRoute := &Endpoint{BaseURL: server.URL}
+	judgeRoute := &Endpoint{BaseURL: server.URL, KeyEnv: "KMX_TEST_JUDGE_KEY"}
+	instructions := func(key string) *agentfile.Agent {
+		return greeter(t, "- **Preferred:** fake", "- **Preferred:** m", "followed by the input name.", "followed by the input name. Token "+key+".")
+	}
+	exampleInput := func(key string) *agentfile.Agent {
+		return greeter(t, "- **Preferred:** fake", "- **Preferred:** m", "input: Ada", "input: Ada "+key)
+	}
+	withJudge := func(agent *agentfile.Agent) *agentfile.Agent {
+		minScore := 50
+		agent.Examples[0].Assertions = append(agent.Examples[0].Assertions, agentruntime.EvaluationAssertion{ID: "j", Type: "llmJudge", Rubric: "greets", MinScore: &minScore, JudgeModel: "judge", JudgeVersion: "1"})
+		return agent
+	}
+	for name, tc := range map[string]struct {
+		agent  *agentfile.Agent
+		input  *string
+		agentE *Endpoint
+		judgeE *Endpoint
+	}{
+		"test instructions":           {agent: instructions(canaryKey), agentE: agentRoute},
+		"test example input":          {agent: exampleInput(canaryKey), agentE: agentRoute},
+		"run instructions":            {agent: instructions(canaryKey), input: new("Ada"), agentE: agentRoute},
+		"run input":                   {agent: instructions(""), input: new("Ada " + canaryKey), agentE: agentRoute},
+		"judge key in instructions":   {agent: withJudge(instructions(judgeKey)), agentE: keylessRoute, judgeE: judgeRoute},
+		"judge key in example input":  {agent: withJudge(exampleInput(judgeKey)), agentE: keylessRoute, judgeE: judgeRoute},
+		"agent key with judge routed": {agent: withJudge(exampleInput(canaryKey)), agentE: agentRoute, judgeE: judgeRoute},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := journalDir(t)
+			options := Options{JournalDir: dir, Endpoint: tc.agentE, JudgeEndpoint: tc.judgeE, Judge: stubJudge, Transport: server.Client().Transport}
+			var result Result
+			var err error
+			if tc.input != nil {
+				result, err = Run(testContext(t), tc.agent, *tc.input, options)
+			} else {
+				result, err = Test(testContext(t), tc.agent, options)
+			}
+			var refusal *Refusal
+			if !errors.As(err, &refusal) || refusal.Kind != RefusedCredentialContent || result.RunID != "" || len(result.Examples) != 0 {
+				t.Fatalf("result = %v %+v", err, result)
+			}
+			if strings.Contains(err.Error(), canaryKey) || strings.Contains(err.Error(), judgeKey) {
+				t.Fatalf("refusal quotes the credential: %v", err)
+			}
+			if _, statErr := os.Lstat(dir); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("journal directory created before refusal: %v", statErr)
+			}
+		})
+	}
+	if server.hits.Load() != 0 {
+		t.Fatalf("refusals sent %d requests", server.hits.Load())
+	}
+	// The same content runs when no credential is resolved for it.
+	result, err := Run(testContext(t), instructions(canaryKey), "Ada", Options{JournalDir: journalDir(t), Endpoint: keylessRoute, Transport: server.Client().Transport})
+	if err != nil || result.Examples[0].Answer != "Hello, Ada" {
+		t.Fatalf("keyless run = %v %+v", err, result)
+	}
+}
+
 func TestRunInputSizeBound(t *testing.T) {
 	ctx := testContext(t)
 	dir := journalDir(t)

@@ -456,20 +456,23 @@ runner. `Model.Preferred` is exact: `fake` is the in-memory deterministic
 route; other models need an explicit OpenAI-compatible endpoint and optional
 key environment variable name. No fallback, retries, tool execution, daemon,
 subprocess, cluster or config probing. Refuse missing routes, tool assertions
-and unwired judges before any file or network effect; refuse
-tool-call/malformed/oversized/non-200 replies and answers containing the
-endpoint credential (exact value, any length) with fixed text, because Sessions
-journals model errors verbatim. Credentials never reach files, journals,
-results or errors. Consume only parsed agent-file fields; Examples YAML
-comments never reach model or judge requests, journals or results. `llmJudge`
-reuses the native judge through `app.LocalPreviewJudge`, defaults to the agent
-route (fake judge for fake), and only explicit `JudgeEndpoint` overrides it.
-Journals keep content in cleartext, bounded to 20 runs at each start,
-owner-only, clearable by run or all; executing runs hold an OS lock and are
-never pruned or cleared (on Windows this rests on unverified share-mode
-behavior), and overlapping starts can leave extra finished runs until the next
-start or clear. Journals stay under `config.StateDir` on every OS (`%AppData%`
-on Windows, disclosed as roaming) until native Windows support
+and unwired judges before any file or network effect; refuse journal-bound
+instructions, examples, ad-hoc input and identities containing a resolved agent
+or judge credential before the journal opens; refuse
+tool-call/malformed/duplicate-key/oversized/non-200 replies and answers
+containing the endpoint credential (exact value, any length) with fixed text,
+because Sessions journals content at turn start and model errors verbatim.
+Credentials never reach files, journals, results or errors. Consume only parsed
+agent-file fields; Examples YAML comments never reach model or judge requests,
+journals or results. `llmJudge` reuses the native judge through
+`app.LocalPreviewJudge`, defaults to the agent route (fake judge for fake), and
+only explicit `JudgeEndpoint` overrides it. Journals keep content in cleartext,
+bounded to 20 runs at each start, owner-only, clearable by run or all;
+executing runs hold an OS lock and are never pruned or cleared (on Windows this
+rests on unverified share-mode behavior), and overlapping starts can leave
+extra finished runs until the next start or clear. Journals stay under
+`config.StateDir` on every OS (`%AppData%` on Windows, disclosed as roaming)
+until native Windows support
 ([#578](https://github.com/kaimahi-agents/kaimahi/issues/578)) decides Windows
 state. Inspection replays with zero model calls and has no verdicts. Preview
 and replay never produce suite evidence, receipts, publication or Deploy

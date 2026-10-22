@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -113,6 +115,9 @@ type prepared struct {
 	cases   []agentruntime.EvaluationCase
 	timeout time.Duration
 	options Options
+	// credentials are the nonempty agent and judge bearer values resolved
+	// once by prepare; journal-bound content is checked against them.
+	credentials []string
 }
 
 func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared, error) {
@@ -154,6 +159,7 @@ func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared,
 	if p.route, err = resolveRoute(agent.Model, options.Endpoint, options.Transport, "Model.Preferred"); err != nil {
 		return nil, err
 	}
+	p.addCredential(p.route.key)
 	if !hasJudge {
 		if options.JudgeEndpoint != nil {
 			return nil, refuse(RefusedJudge, "a judge endpoint was configured but no example uses llmJudge", "remove the judge endpoint")
@@ -172,11 +178,38 @@ func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared,
 		}
 	}
 	p.judgeRt = judgeRoute.kind()
+	p.addCredential(judgeRoute.key)
 	transport := judgeRoute.transport
 	if p.judge, err = options.Judge(judgeRoute.baseURL, judgeRoute.keyEnv, transport, p.cases); err != nil || p.judge == nil {
 		return nil, refuse(RefusedJudge, "the llmJudge configuration was refused", "check the judge endpoint and key environment variable")
 	}
 	return p, nil
+}
+
+func (p *prepared) addCredential(key string) {
+	if key != "" && !slices.Contains(p.credentials, key) {
+		p.credentials = append(p.credentials, key)
+	}
+}
+
+// refuseJournalCredentials refuses when any content the journal would retain
+// contains a resolved agent or judge credential (exact value, any length).
+// Sessions records the identities, instructions and input when a turn starts,
+// before any reply check runs, so this must precede the journal's creation.
+func (p *prepared) refuseJournalCredentials(examples []agentfile.Example) error {
+	fields := []string{p.agent.Identity.ID, p.agent.Revision, p.route.model, p.agent.Instructions}
+	for _, example := range examples {
+		fields = append(fields, example.ID, example.Input)
+	}
+	for _, key := range p.credentials {
+		for _, field := range fields {
+			if strings.Contains(field, key) {
+				return refuse(RefusedCredentialContent, "the instructions, an example, the input or the agent identity contains the endpoint or judge credential, so nothing was sent or journaled",
+					"remove the credential value; agent files and inputs must never contain secrets")
+			}
+		}
+	}
+	return nil
 }
 
 // Run sends one ad-hoc input to the agent. It evaluates no assertions.
@@ -205,6 +238,9 @@ func Test(ctx context.Context, agent *agentfile.Agent, options Options) (Result,
 }
 
 func (p *prepared) run(ctx context.Context, examples []agentfile.Example, evaluate bool) (result Result, err error) {
+	if err := p.refuseJournalCredentials(examples); err != nil {
+		return Result{}, err
+	}
 	result = Result{Label: Label, AgentID: p.agent.Identity.ID, Revision: p.agent.Revision, Model: p.route.model,
 		ModelRoute: p.route.kind(), JudgeRoute: p.judgeRt, Verdict: agentruntime.EvaluationUnknown}
 	client := newModelClient(p.route)
