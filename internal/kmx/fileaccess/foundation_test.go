@@ -9,6 +9,16 @@ import (
 	"testing"
 )
 
+// Normal fixtures need physical roots; deliberate symlink inputs stay unresolved.
+func faTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func faOpenDir(t *testing.T, path string) *os.File {
 	t.Helper()
 	dir, err := OpenDirectory(path)
@@ -35,7 +45,7 @@ func faSameFile(t *testing.T, file *os.File, path string) {
 }
 
 func TestOpenDirectoryOpensExistingDirectory(t *testing.T) {
-	dir := t.TempDir()
+	dir := faTempDir(t)
 	if err := faWriteFile(filepath.Join(dir, "entry"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +58,7 @@ func TestOpenDirectoryOpensExistingDirectory(t *testing.T) {
 }
 
 func TestOpenDirectoryRelativePath(t *testing.T) {
-	dir := t.TempDir()
+	dir := faTempDir(t)
 	// The checkout and temporary directory may be on different Windows
 	// volumes. Relative-path coverage needs a same-volume working directory.
 	t.Chdir(filepath.Dir(dir))
@@ -65,7 +75,7 @@ func TestOpenDirectoryRelativePath(t *testing.T) {
 }
 
 func TestOpenDirectoryMissingIsNotExist(t *testing.T) {
-	dir := t.TempDir()
+	dir := faTempDir(t)
 	for _, path := range []string{filepath.Join(dir, "missing"), filepath.Join(dir, "missing", "child")} {
 		if _, err := OpenDirectory(path); !errors.Is(err, fs.ErrNotExist) {
 			t.Fatalf("OpenDirectory(%s) = %v, want not-exist", path, err)
@@ -74,7 +84,7 @@ func TestOpenDirectoryMissingIsNotExist(t *testing.T) {
 }
 
 func TestOpenDirectoryRefusesRegularFile(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "file")
+	file := filepath.Join(faTempDir(t), "file")
 	if err := faWriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +101,7 @@ func TestOpenDirectoryRefusesRegularFile(t *testing.T) {
 }
 
 func TestOpenDirectoryAtOpensSingleComponent(t *testing.T) {
-	dir := t.TempDir()
+	dir := faTempDir(t)
 	child := filepath.Join(dir, "child")
 	if err := fixtureMkdir(child, 0o700); err != nil {
 		t.Fatal(err)
@@ -105,7 +115,7 @@ func TestOpenDirectoryAtOpensSingleComponent(t *testing.T) {
 }
 
 func TestOpenAtRefusesMultiComponentNames(t *testing.T) {
-	dir := t.TempDir()
+	dir := faTempDir(t)
 	if err := fixtureMkdir(filepath.Join(dir, "a"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +143,7 @@ func TestOpenAtRefusesMultiComponentNames(t *testing.T) {
 }
 
 func TestOpenRegularAt(t *testing.T) {
-	dir := t.TempDir()
+	dir := faTempDir(t)
 	if err := faWriteFile(filepath.Join(dir, "file"), []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +187,7 @@ func TestOpenRegularAt(t *testing.T) {
 	if _, err := OpenRegularAt(parent, "missing", os.O_RDONLY); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("OpenRegularAt missing = %v, want not-exist", err)
 	}
-	for _, flags := range []int{os.O_CREATE, os.O_EXCL, os.O_TRUNC, os.O_APPEND, os.O_RDWR | os.O_CREATE, os.O_RDWR | os.O_TRUNC, os.O_WRONLY | os.O_APPEND} {
+	for _, flags := range []int{os.O_WRONLY | os.O_RDWR, os.O_CREATE, os.O_EXCL, os.O_TRUNC, os.O_APPEND, os.O_RDWR | os.O_CREATE, os.O_RDWR | os.O_TRUNC, os.O_WRONLY | os.O_APPEND} {
 		if f, err := OpenRegularAt(parent, "file", flags); err == nil {
 			f.Close()
 			t.Errorf("OpenRegularAt flags %#x succeeded", flags)
@@ -198,7 +208,7 @@ func TestOpenRegularAt(t *testing.T) {
 }
 
 func TestPhysicalIdentity(t *testing.T) {
-	dir := t.TempDir()
+	dir := faTempDir(t)
 	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
 	for _, path := range []string{a, b} {
 		if err := faWriteFile(path, []byte(path), 0o600); err != nil {
@@ -266,7 +276,7 @@ func TestCheckFunctionsRefuseClosedAndNonDiskFiles(t *testing.T) {
 	if err := CheckSafeDirectory(read, false); err == nil {
 		t.Error("CheckSafeDirectory accepted a pipe")
 	}
-	closed, err := OpenDirectory(t.TempDir())
+	closed, err := OpenDirectory(faTempDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

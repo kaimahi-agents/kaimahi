@@ -61,7 +61,7 @@ func OpenDirectoryAt(parent *os.File, name string) (*os.File, error) {
 // an access mode (os.O_RDONLY, os.O_WRONLY or os.O_RDWR); creation and
 // truncation are not supported by this operation.
 func OpenRegularAt(parent *os.File, name string, flags int) (*os.File, error) {
-	if flags&^unix.O_ACCMODE != 0 {
+	if flags != os.O_RDONLY && flags != os.O_WRONLY && flags != os.O_RDWR {
 		return nil, &os.PathError{Op: "openat", Path: name, Err: unix.EINVAL}
 	}
 	file, err := openAt(parent, name, flags|fileFlags, 0)

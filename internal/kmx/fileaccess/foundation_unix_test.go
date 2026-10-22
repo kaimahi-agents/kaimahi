@@ -12,7 +12,7 @@ import (
 )
 
 func TestOpenRefusesSymlinksAndSpecialFiles(t *testing.T) {
-	dir := t.TempDir()
+	dir := faTempDir(t)
 	target := filepath.Join(dir, "target")
 	if err := os.Mkdir(target, 0o700); err != nil {
 		t.Fatal(err)
@@ -52,8 +52,33 @@ func TestOpenRefusesSymlinksAndSpecialFiles(t *testing.T) {
 	}
 }
 
+func TestTempDirCanonicalizesSymlinkParent(t *testing.T) {
+	base := faTempDir(t)
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "alias")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", alias)
+	t.Run("NormalFixture", func(t *testing.T) {
+		dir := faTempDir(t)
+		physical, err := filepath.EvalSymlinks(dir)
+		if err != nil || dir != physical {
+			t.Fatalf("fixture root %q is not physical %q: %v", dir, physical, err)
+		}
+		faSameFile(t, faOpenDir(t, dir), dir)
+	})
+	if dir, err := OpenDirectory(alias); err == nil {
+		dir.Close()
+		t.Fatal("production walk accepted the unresolved symlink")
+	}
+}
+
 func TestUnixCheckPrivateModes(t *testing.T) {
-	dir := t.TempDir()
+	dir := faTempDir(t)
 	for _, tc := range []struct {
 		mode os.FileMode
 		dir  bool
@@ -87,7 +112,7 @@ func TestUnixCheckPrivateModes(t *testing.T) {
 }
 
 func TestUnixCheckSafeDirectoryModes(t *testing.T) {
-	dir := t.TempDir()
+	dir := faTempDir(t)
 	for _, tc := range []struct {
 		mode                os.FileMode
 		ancestor, immediate bool
