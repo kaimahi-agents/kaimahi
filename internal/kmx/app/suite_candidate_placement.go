@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"reflect"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -153,7 +153,7 @@ func suiteCandidateSpecDigest(raw []byte) (string, error) {
 	if _, ok := doc["spec"].(map[string]any); !ok {
 		return "", errSuiteNativeEvaluation
 	}
-	canonical, err := agentsuite.Marshal(doc["spec"])
+	canonical, err := suitecore.Marshal(doc["spec"])
 	if err != nil {
 		return "", errSuiteNativeEvaluation
 	}

@@ -153,9 +153,23 @@ python3 scripts/test_model_fixtures.py -v
 
 ### AgentSuite dependency and consumer fixtures
 
-Import the separate module as `agentsuite "github.com/agent-primitives/suite"`.
-The internal builder uses `kmxsuite` and the ORAS adapter uses `suiteoras`.
-`go.mod` pins the published release `v0.6.0`, with its sums in `go.sum`.
+Import only the focused packages a file needs from the separate module:
+
+```go
+import (
+    suitecore "github.com/agent-primitives/suite/core"
+    suiteevidence "github.com/agent-primitives/suite/evidence"
+    suiteflow "github.com/agent-primitives/suite/experimental/flow"
+    suiteoci "github.com/agent-primitives/suite/oci"
+)
+```
+
+Use `suitecore` for portable models and JSON/identity helpers, `suiteoci` for
+artifact validation and diff, `suiteevidence` for claims and both verifiers,
+and `suiteflow` for explicit stored-flow types and validation. The standalone
+`policy` import is unchanged. Do not import the deprecated module root.
+The internal builder keeps `kmxsuite` and its ORAS adapter keeps `suiteoras`.
+`go.mod` pins the published release `v0.7.0`, with its sums in `go.sum`.
 Use the [complete release-pinned schema bundle](docs-site.md#current-agentsuite-schema-selection)
 for editors and external validators; the historical hosted schemas are not the
 current consumer contract.

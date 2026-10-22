@@ -15,7 +15,8 @@ import (
 
 	"github.com/gowebpki/jcs"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteoci "github.com/agent-primitives/suite/oci"
 )
 
 func TestSuiteDiffArtifactsEndToEnd(t *testing.T) {
@@ -75,11 +76,11 @@ func TestSuiteDiffArtifactsEndToEnd(t *testing.T) {
 	}
 
 	rawReport := runKMX(t, binary, "suite", "diff", beforeLayout, afterLayout, "--output", "json")
-	var report agentsuite.DiffReport
+	var report suiteoci.DiffReport
 	if err := json.Unmarshal([]byte(rawReport), &report); err != nil {
 		t.Fatalf("decode JSON artifact diff: %v\n%s", err, rawReport)
 	}
-	if report.SchemaVersion != agentsuite.DiffReportSchemaVersion {
+	if report.SchemaVersion != suiteoci.DiffReportSchemaVersion {
 		t.Fatalf("schema version = %q", report.SchemaVersion)
 	}
 	if report.Before.Suite != "incident-response" || report.After.Suite != "incident-response" {
@@ -98,16 +99,16 @@ func TestSuiteDiffArtifactsEndToEnd(t *testing.T) {
 		kind       string
 		id         string
 	}{
-		{agentsuite.DiffModified, "agent", "incident-analyst"},
-		{agentsuite.DiffModified, "buildProfile", "agentkit-v0.1.0"},
-		{agentsuite.DiffModified, "composition", "incident-analyst@linux/amd64"},
-		{agentsuite.DiffAdded, "toolProvider", "incident-evidence@1.0.0"},
-		{agentsuite.DiffAdded, "toolProviderComposition", "incident-evidence@1.0.0@linux/amd64"},
-		{agentsuite.DiffAdded, "content", "schemas/incident-evidence/query-input.json"},
-		{agentsuite.DiffAdded, "content", "tool-providers/incident-evidence/1.0.0/linux-amd64/bin/incident-evidence"},
-		{agentsuite.DiffModified, "content", "instructions/incident-analyst.md"},
-		{agentsuite.DiffModified, "toolProviderCatalog", "catalog"},
-		{agentsuite.DiffModified, "suite", "metadata"},
+		{suiteoci.DiffModified, "agent", "incident-analyst"},
+		{suiteoci.DiffModified, "buildProfile", "agentkit-v0.1.0"},
+		{suiteoci.DiffModified, "composition", "incident-analyst@linux/amd64"},
+		{suiteoci.DiffAdded, "toolProvider", "incident-evidence@1.0.0"},
+		{suiteoci.DiffAdded, "toolProviderComposition", "incident-evidence@1.0.0@linux/amd64"},
+		{suiteoci.DiffAdded, "content", "schemas/incident-evidence/query-input.json"},
+		{suiteoci.DiffAdded, "content", "tool-providers/incident-evidence/1.0.0/linux-amd64/bin/incident-evidence"},
+		{suiteoci.DiffModified, "content", "instructions/incident-analyst.md"},
+		{suiteoci.DiffModified, "toolProviderCatalog", "catalog"},
+		{suiteoci.DiffModified, "suite", "metadata"},
 	} {
 		if !reportHasRecordChange(report, expected.changeType, expected.kind, expected.id) {
 			t.Errorf("JSON artifact diff is missing %s %s %s", expected.changeType, expected.kind, expected.id)
@@ -120,25 +121,25 @@ func TestSuiteDiffArtifactsEndToEnd(t *testing.T) {
 	readJSON(t, afterSuite, providerPath, &provider)
 	provider["extensions"] = []any{map[string]any{"name": "future-feature"}}
 	providerDigest, providerSize := writeJSON(t, afterSuite, providerPath, provider)
-	var catalog agentsuite.ToolProviderCatalog
+	var catalog suitecore.ToolProviderCatalog
 	readJSON(t, afterSuite, "tool-providers/catalog.json", &catalog)
-	catalog.ToolProviders[0].Descriptor = descriptorFor(agentsuite.MediaTypeToolProvider, providerDigest, providerSize)
+	catalog.ToolProviders[0].Descriptor = descriptorFor(suitecore.MediaTypeToolProvider, providerDigest, providerSize)
 	catalogDigest, catalogSize := writeJSON(t, afterSuite, "tool-providers/catalog.json", catalog)
-	var composition agentsuite.Composition
+	var composition suitecore.Composition
 	compositionPath := "compositions/incident-analyst-linux-amd64.json"
 	readJSON(t, afterSuite, compositionPath, &composition)
 	composition.ToolProviders[0].ManifestDigest = providerDigest
 	compositionDigest, compositionSize := writeJSON(t, afterSuite, compositionPath, composition)
-	var providerComposition agentsuite.ToolProviderComposition
+	var providerComposition suitecore.ToolProviderComposition
 	providerCompositionPath := "tool-provider-compositions/incident-evidence-linux-amd64.json"
 	readJSON(t, afterSuite, providerCompositionPath, &providerComposition)
 	providerComposition.ManifestDigest = providerDigest
 	providerCompositionDigest, providerCompositionSize := writeJSON(t, afterSuite, providerCompositionPath, providerComposition)
-	var suite agentsuite.Suite
+	var suite suitecore.Suite
 	readJSON(t, afterSuite, "agentsuite.json", &suite)
-	suite.ToolProviderCatalog.Descriptor = descriptorFor(agentsuite.MediaTypeToolProviderCatalog, catalogDigest, catalogSize)
-	suite.Compositions[0].Descriptor = descriptorFor(agentsuite.MediaTypeComposition, compositionDigest, compositionSize)
-	suite.ToolProviderCompositions[0].Descriptor = descriptorFor(agentsuite.MediaTypeToolProviderComposition, providerCompositionDigest, providerCompositionSize)
+	suite.ToolProviderCatalog.Descriptor = descriptorFor(suitecore.MediaTypeToolProviderCatalog, catalogDigest, catalogSize)
+	suite.Compositions[0].Descriptor = descriptorFor(suitecore.MediaTypeComposition, compositionDigest, compositionSize)
+	suite.ToolProviderCompositions[0].Descriptor = descriptorFor(suitecore.MediaTypeToolProviderComposition, providerCompositionDigest, providerCompositionSize)
 	writeJSON(t, afterSuite, "agentsuite.json", suite)
 	command = exec.CommandContext(t.Context(), binary, "suite", "validate", afterSuite)
 	if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "non-null critical") {
@@ -152,7 +153,7 @@ func mutateIncidentAnalystSuite(t *testing.T, root string) {
 		providerID      = "incident-evidence"
 		providerVersion = "1.0.0"
 	)
-	platform := agentsuite.Platform{OS: "linux", Architecture: "amd64"}
+	platform := suitecore.Platform{OS: "linux", Architecture: "amd64"}
 
 	instructionsPath := "instructions/incident-analyst.md"
 	instructions := readFile(t, root, instructionsPath)
@@ -167,76 +168,76 @@ func mutateIncidentAnalystSuite(t *testing.T, root string) {
 	payload := []byte("#!/bin/sh\nprintf '%s\\n' incident-evidence\n")
 	writeFile(t, root, payloadPath, payload, 0o755)
 
-	variant := agentsuite.ToolProviderVariant{
+	variant := suitecore.ToolProviderVariant{
 		Platform:    platform,
 		InstallRoot: "/opt/agentsuite/tool-providers/incident-evidence/1.0.0",
 		PayloadRoot: "tool-providers/incident-evidence/1.0.0/linux-amd64",
 		Entrypoint:  "/opt/agentsuite/tool-providers/incident-evidence/1.0.0/bin/incident-evidence",
-		Runtime:     agentsuite.RuntimeRequirement{ABI: "static", CPUBaseline: "x86-64-v1"},
-		Files: []agentsuite.InventoryEntry{{
+		Runtime:     suitecore.RuntimeRequirement{ABI: "static", CPUBaseline: "x86-64-v1"},
+		Files: []suitecore.InventoryEntry{{
 			Path: "bin/incident-evidence", Type: "file", Mode: 0o755, UID: 0, GID: 0,
 			Size: int64(len(payload)), Digest: rawDigest(payload), Component: providerID,
 		}},
 	}
 	variant.VariantDigest = variantDigest(t, variant)
-	provider := agentsuite.ToolProvider{
-		SchemaVersion: agentsuite.SpecVersion,
-		MediaType:     agentsuite.MediaTypeToolProvider,
+	provider := suitecore.ToolProvider{
+		SchemaVersion: suitecore.SpecVersion,
+		MediaType:     suitecore.MediaTypeToolProvider,
 		ID:            providerID,
 		Version:       providerVersion,
 		Protocol:      "mcp",
 		Revision:      "2025-06-18",
-		Tools: []agentsuite.Tool{{
+		Tools: []suitecore.Tool{{
 			Name:        "query_incident_evidence",
 			Description: "Query evidence supplied for the current incident.",
-			InputSchema: agentsuite.FileRef{
+			InputSchema: suitecore.FileRef{
 				Path:       schemaPath,
-				Descriptor: descriptorFor(agentsuite.MediaTypeJSONSchema, rawDigest(schema), int64(len(schema))),
+				Descriptor: descriptorFor(suitecore.MediaTypeJSONSchema, rawDigest(schema), int64(len(schema))),
 			},
 			Effects: []string{"incident-observation"},
 		}},
-		Variants:   []agentsuite.ToolProviderVariant{variant},
-		Extensions: []agentsuite.Extension{},
+		Variants:   []suitecore.ToolProviderVariant{variant},
+		Extensions: []suitecore.Extension{},
 	}
 	providerPath := "tool-providers/incident-evidence/1.0.0/tool-provider.json"
 	providerDigest, providerSize := writeJSON(t, root, providerPath, provider)
 
-	catalog := agentsuite.ToolProviderCatalog{
-		SchemaVersion: agentsuite.SpecVersion,
-		MediaType:     agentsuite.MediaTypeToolProviderCatalog,
-		ToolProviders: []agentsuite.ManifestRef{{
+	catalog := suitecore.ToolProviderCatalog{
+		SchemaVersion: suitecore.SpecVersion,
+		MediaType:     suitecore.MediaTypeToolProviderCatalog,
+		ToolProviders: []suitecore.ManifestRef{{
 			ID: providerID, Version: providerVersion, Path: providerPath,
-			Descriptor: descriptorFor(agentsuite.MediaTypeToolProvider, providerDigest, providerSize),
+			Descriptor: descriptorFor(suitecore.MediaTypeToolProvider, providerDigest, providerSize),
 		}},
 	}
 	catalogDigest, catalogSize := writeJSON(t, root, "tool-providers/catalog.json", catalog)
 
-	var profile agentsuite.BuildProfile
+	var profile suitecore.BuildProfile
 	readJSON(t, root, "build-profiles/agentkit-v0.1.0.json", &profile)
 	profile.SourceEpoch += 60
 	profileDigest, profileSize := writeJSON(t, root, "build-profiles/agentkit-v0.1.0.json", profile)
 
-	var agent agentsuite.Agent
+	var agent suitecore.Agent
 	readJSON(t, root, "agents/incident-analyst.json", &agent)
 	agent.Description = "Turns incident evidence into an actionable triage and escalation report."
-	agent.Instructions.Descriptor = descriptorFor(agentsuite.MediaTypeInstructions, rawDigest(instructions), int64(len(instructions)))
+	agent.Instructions.Descriptor = descriptorFor(suitecore.MediaTypeInstructions, rawDigest(instructions), int64(len(instructions)))
 	agent.Model.Model = "gpt-5"
-	agent.ToolProviders = []agentsuite.ToolProviderRequirement{{
-		ID: providerID, Version: providerVersion, ExecutionMode: agentsuite.ExecutionSharedSandbox,
+	agent.ToolProviders = []suitecore.ToolProviderRequirement{{
+		ID: providerID, Version: providerVersion, ExecutionMode: suitecore.ExecutionSharedSandbox,
 	}}
 	agentDigest, agentSize := writeJSON(t, root, "agents/incident-analyst.json", agent)
 
-	var composition agentsuite.Composition
+	var composition suitecore.Composition
 	readJSON(t, root, "compositions/incident-analyst-linux-amd64.json", &composition)
-	composition.ToolProviders = []agentsuite.ResolvedToolProvider{{
+	composition.ToolProviders = []suitecore.ResolvedToolProvider{{
 		ID: providerID, Version: providerVersion, ManifestDigest: providerDigest,
-		VariantDigest: variant.VariantDigest, ExecutionMode: agentsuite.ExecutionSharedSandbox,
+		VariantDigest: variant.VariantDigest, ExecutionMode: suitecore.ExecutionSharedSandbox,
 	}}
 	compositionDigest, compositionSize := writeJSON(t, root, "compositions/incident-analyst-linux-amd64.json", composition)
 
-	providerComposition := agentsuite.ToolProviderComposition{
-		SchemaVersion:  agentsuite.SpecVersion,
-		MediaType:      agentsuite.MediaTypeToolProviderComposition,
+	providerComposition := suitecore.ToolProviderComposition{
+		SchemaVersion:  suitecore.SpecVersion,
+		MediaType:      suitecore.MediaTypeToolProviderComposition,
 		ID:             providerID,
 		Version:        providerVersion,
 		ManifestDigest: providerDigest,
@@ -247,16 +248,16 @@ func mutateIncidentAnalystSuite(t *testing.T, root string) {
 	providerCompositionPath := "tool-provider-compositions/incident-evidence-linux-amd64.json"
 	providerCompositionDigest, providerCompositionSize := writeJSON(t, root, providerCompositionPath, providerComposition)
 
-	var suite agentsuite.Suite
+	var suite suitecore.Suite
 	readJSON(t, root, "agentsuite.json", &suite)
-	suite.Agents[0].Descriptor = descriptorFor(agentsuite.MediaTypeAgent, agentDigest, agentSize)
-	suite.ToolProviderCatalog.Descriptor = descriptorFor(agentsuite.MediaTypeToolProviderCatalog, catalogDigest, catalogSize)
-	suite.Compositions[0].Descriptor = descriptorFor(agentsuite.MediaTypeComposition, compositionDigest, compositionSize)
-	suite.BuildProfiles[0].Descriptor = descriptorFor(agentsuite.MediaTypeBuildProfile, profileDigest, profileSize)
-	suite.ToolProviderCompositions = []agentsuite.ToolProviderCompositionRef{{
+	suite.Agents[0].Descriptor = descriptorFor(suitecore.MediaTypeAgent, agentDigest, agentSize)
+	suite.ToolProviderCatalog.Descriptor = descriptorFor(suitecore.MediaTypeToolProviderCatalog, catalogDigest, catalogSize)
+	suite.Compositions[0].Descriptor = descriptorFor(suitecore.MediaTypeComposition, compositionDigest, compositionSize)
+	suite.BuildProfiles[0].Descriptor = descriptorFor(suitecore.MediaTypeBuildProfile, profileDigest, profileSize)
+	suite.ToolProviderCompositions = []suitecore.ToolProviderCompositionRef{{
 		ID: providerID, Version: providerVersion, Platform: platform,
 		Path:       providerCompositionPath,
-		Descriptor: descriptorFor(agentsuite.MediaTypeToolProviderComposition, providerCompositionDigest, providerCompositionSize),
+		Descriptor: descriptorFor(suitecore.MediaTypeToolProviderComposition, providerCompositionDigest, providerCompositionSize),
 	}}
 	suite.Capabilities = []string{"bundled-stdio-mcp"}
 	writeJSON(t, root, "agentsuite.json", suite)
@@ -265,8 +266,8 @@ func mutateIncidentAnalystSuite(t *testing.T, root string) {
 // descriptorFor builds the nested Descriptor carried by content-addressable
 // suite references (ManifestRef, CompositionRef, ToolProviderCompositionRef,
 // FileRef).
-func descriptorFor(mediaType, digest string, size int64) agentsuite.Descriptor {
-	return agentsuite.Descriptor{MediaType: mediaType, Digest: digest, Size: size}
+func descriptorFor(mediaType, digest string, size int64) suitecore.Descriptor {
+	return suitecore.Descriptor{MediaType: mediaType, Digest: digest, Size: size}
 }
 
 func repositoryRoot(t *testing.T) string {
@@ -365,7 +366,7 @@ func rawDigest(data []byte) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func variantDigest(t *testing.T, variant agentsuite.ToolProviderVariant) string {
+func variantDigest(t *testing.T, variant suitecore.ToolProviderVariant) string {
 	t.Helper()
 	variant.VariantDigest = ""
 	data, err := json.Marshal(variant)
@@ -375,7 +376,7 @@ func variantDigest(t *testing.T, variant agentsuite.ToolProviderVariant) string 
 	return canonicalDigest(t, data)
 }
 
-func reportHasRecordChange(report agentsuite.DiffReport, changeType, kind, id string) bool {
+func reportHasRecordChange(report suiteoci.DiffReport, changeType, kind, id string) bool {
 	for _, change := range report.Changes {
 		if change.Type == changeType && change.Kind == kind && change.ID == id {
 			return true

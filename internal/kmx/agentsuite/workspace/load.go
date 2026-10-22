@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/pkg/suiteview"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -39,9 +39,9 @@ type NativeSuite struct {
 	Cases              []PackagedCase
 	RequiredImages     []string
 	Policy             *NativePolicy
-	Profile            *agentsuite.RuntimeProfile
+	Profile            *suitecore.RuntimeProfile
 	ProfileDigest      string
-	Platform           agentsuite.Platform
+	Platform           suitecore.Platform
 	profiled           *profiledGraph
 }
 
@@ -101,22 +101,22 @@ func recipeArtifactIdentity(descriptor ocispec.Descriptor) suiteview.ArtifactIde
 }
 
 func loadNativeFiles(ctx context.Context, files map[string][]byte, artifact suiteview.ArtifactIdentity) (*NativeSuite, error) {
-	var suite agentsuite.Suite
-	if err := agentsuite.Unmarshal(files["agentsuite.json"], &suite); err != nil {
+	var suite suitecore.Suite
+	if err := suitecore.Unmarshal(files["agentsuite.json"], &suite); err != nil {
 		return nil, errors.New("invalid packaged suite manifest")
 	}
 	native, profile, err := nativeProfile(files)
 	if err != nil {
 		return nil, errors.New("invalid packaged native metadata")
 	}
-	graphDigest, err := agentsuite.Digest(files["agentsuite.json"])
+	graphDigest, err := suitecore.Digest(files["agentsuite.json"])
 	if err != nil {
 		return nil, errors.New("invalid packaged graph identity")
 	}
 	return loadNativeMember(ctx, files, suite, native, profile, artifact, graphDigest, 0)
 }
 
-func loadNativeMember(ctx context.Context, files map[string][]byte, suite agentsuite.Suite, native nativeRecord, profile RuntimeProfile, artifact suiteview.ArtifactIdentity, graphDigest string, index int) (*NativeSuite, error) {
+func loadNativeMember(ctx context.Context, files map[string][]byte, suite suitecore.Suite, native nativeRecord, profile RuntimeProfile, artifact suiteview.ArtifactIdentity, graphDigest string, index int) (*NativeSuite, error) {
 	if index < 0 || index >= len(suite.Agents) {
 		return nil, errors.New("invalid packaged native member")
 	}
@@ -130,8 +130,8 @@ func loadNativeMember(ctx context.Context, files map[string][]byte, suite agents
 	if recipe.Suite.GraphDigest != graphDigest {
 		return nil, errors.New("invalid packaged native member")
 	}
-	var agent agentsuite.Agent
-	if err := agentsuite.Unmarshal(files[suite.Agents[index].Path], &agent); err != nil {
+	var agent suitecore.Agent
+	if err := suitecore.Unmarshal(files[suite.Agents[index].Path], &agent); err != nil {
 		return nil, errors.New("invalid packaged native member")
 	}
 	cases, _, err := packagedCases(files, agent)

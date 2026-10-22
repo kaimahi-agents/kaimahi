@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
@@ -37,14 +37,14 @@ func profiledPassFixtureRuntime(t *testing.T, runtimeID string) (*suitePassStore
 	if err != nil {
 		t.Fatal(err)
 	}
-	var bp agentsuite.BuildProfile
-	if err := agentsuite.Unmarshal(data, &bp); err != nil {
+	var bp suitecore.BuildProfile
+	if err := suitecore.Unmarshal(data, &bp); err != nil {
 		t.Fatal(err)
 	}
 	rows := ""
 	for _, id := range []string{"a", "b"} {
-		rp := agentsuite.RuntimeProfile{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeRuntimeProfile, ID: id, Runtime: agentsuite.EvidenceImplementation{ID: runtimeID, Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: agentsuite.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: agentsuite.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "kmx-native-orka-v2", ImageRequired: false}
-		raw, err := agentsuite.Marshal(rp)
+		rp := suitecore.RuntimeProfile{SchemaVersion: suitecore.SpecVersion, MediaType: suitecore.MediaTypeRuntimeProfile, ID: id, Runtime: suitecore.EvidenceImplementation{ID: runtimeID, Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: suitecore.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: suitecore.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "kmx-native-orka-v2", ImageRequired: false}
+		raw, err := suitecore.Marshal(rp)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,11 +94,11 @@ func profiledPassFixtureRuntime(t *testing.T, runtimeID string) (*suitePassStore
 }
 func writeSyntheticProfileRecord(t *testing.T, s *suitePassStore, seq uint64, r *suitePassingReceipt) {
 	t.Helper()
-	raw, err := agentsuite.Marshal(r)
+	raw, err := suitecore.Marshal(r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := agentsuite.Marshal(suitePassRecord{1, s.identity, s.suiteDigest, seq, raw})
+	record, err := suitecore.Marshal(suitePassRecord{1, s.identity, s.suiteDigest, seq, raw})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func writeSyntheticProfileRecord(t *testing.T, s *suitePassStore, seq uint64, r 
 	}
 	m := publicMetadataFixture()
 	m.Workspace, m.SuiteDigest, m.Sequence, m.ReceiptDigest = s.identity, s.suiteDigest, seq, suitePublicHash(raw)
-	metadata, err := agentsuite.Marshal(m)
+	metadata, err := suitecore.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestProfiledProofLookupOfflineConsistency(t *testing.T) {
 }
 func mustProfileReceiptBytes(t *testing.T, r *suitePassingReceipt) []byte {
 	t.Helper()
-	raw, err := agentsuite.Marshal(r)
+	raw, err := suitecore.Marshal(r)
 	if err != nil {
 		t.Fatal(err)
 	}

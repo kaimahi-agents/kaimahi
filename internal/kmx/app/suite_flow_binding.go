@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
@@ -44,7 +44,7 @@ type suiteFlowMember struct {
 }
 type suiteFlowSelection struct {
 	suite, flowDigest, bindingDigest, operation string
-	flow                                        agentsuite.FlowV1Alpha1
+	flow                                        suiteflow.FlowV1Alpha1
 	members                                     []suiteFlowMember
 	target                                      suiteNativeTarget
 	candidates                                  []suiteFlowCandidateProjection

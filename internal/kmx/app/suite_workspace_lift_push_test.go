@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 )
 
 func TestManagedPublicationCompletionRequiresSuccessfulFinalization(t *testing.T) {
@@ -133,7 +133,7 @@ func TestManagedPublicationAgentSessionsRequiresReceiptV2(t *testing.T) {
 	}
 	document["domain"] = suiteSessionsPassingDomainV1
 	delete(document["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
-	old, err := agentsuite.Marshal(document)
+	old, err := suitecore.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestManagedPublicationAgentSessionsRequiresReceiptV2(t *testing.T) {
 		t.Fatal(err)
 	}
 	partition := store.partition
-	b, err := agentsuite.Marshal(suitePassRecord{1, store.identity, p.suite.Digest, 1, old})
+	b, err := suitecore.Marshal(suitePassRecord{1, store.identity, p.suite.Digest, 1, old})
 	if err != nil {
 		t.Fatal(err)
 	}

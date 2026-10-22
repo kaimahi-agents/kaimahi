@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -53,7 +53,7 @@ func (a *App) prepareReleaseLiftProvenance(ctx context.Context, p *PreparedRelea
 	for _, resource := range p.summary.Resources {
 		r.ResourceSpecs[resource.Kind] = resource.SpecDigest
 	}
-	raw, err := agentsuite.Marshal(r)
+	raw, err := suitecore.Marshal(r)
 	if err != nil || len(raw) > 8<<10 {
 		return nil, "", errReleaseLiftProvenance
 	}
@@ -61,13 +61,13 @@ func (a *App) prepareReleaseLiftProvenance(ctx context.Context, p *PreparedRelea
 	// scanning the remaining public metadata for credential-shaped values.
 	masked := r
 	masked.LiftID, masked.ReceiptRunID = "lift", "run"
-	checked, err := agentsuite.Marshal(masked)
+	checked, err := suitecore.Marshal(masked)
 	if err != nil || scaffold.RefuseKeyShapes(string(checked)) != nil {
 		return nil, "", errReleaseLiftProvenance
 	}
 	// Canonical bytes were already validated against the package and are rechecked
 	// by Apply. The store verifies their exact consumed EvidenceDigest again.
-	receipt, err := agentsuite.Marshal(p.receipt)
+	receipt, err := suitecore.Marshal(p.receipt)
 	if err != nil {
 		return nil, "", errReleaseLiftProvenance
 	}

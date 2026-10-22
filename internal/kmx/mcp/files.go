@@ -85,6 +85,54 @@ func OpenFiles(root string, validate func(string, []byte) error) (*Files, error)
 func (f *Files) Close() error  { return f.root.Close() }
 func revision(b []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(b)) }
 
+// rootRelative resolves absolute aliases before applying the portable path policy.
+// Missing suffixes support Create; an existing dangling link never becomes one.
+// File IO still uses the pinned root, not the resolved absolute pathname.
+func (f *Files) rootRelative(p string) (string, error) {
+	if !filepath.IsAbs(p) {
+		return p, nil
+	}
+	candidate, suffix := filepath.Clean(p), ""
+	for {
+		_, err := os.Lstat(candidate)
+		if err == nil {
+			break
+		}
+		parent := filepath.Dir(candidate)
+		if !os.IsNotExist(err) || parent == candidate {
+			return "", refusal("unsafe_path")
+		}
+		suffix = filepath.Join(filepath.Base(candidate), suffix)
+		candidate = parent
+	}
+	resolved, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return "", refusal("unsafe_path")
+	}
+	if suffix != "" {
+		info, err := os.Stat(resolved)
+		if err != nil || !info.IsDir() {
+			return "", refusal("unsafe_path")
+		}
+		resolved = filepath.Join(resolved, suffix)
+	}
+	// A replaced root pathname must not authorize a different directory from
+	// the one retained by the descriptor. This is not a concurrent FS sandbox.
+	current, err := os.Stat(f.root.Name())
+	if err != nil {
+		return "", refusal("unsafe_path")
+	}
+	opened, err := f.root.Stat(".")
+	if err != nil || !os.SameFile(current, opened) {
+		return "", refusal("unsafe_path")
+	}
+	relative, err := filepath.Rel(f.root.Name(), resolved)
+	if err != nil || !filepath.IsLocal(relative) {
+		return "", refusal("unsafe_path")
+	}
+	return filepath.ToSlash(relative), nil
+}
+
 var portableID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 func safeID(s string) bool {
@@ -211,6 +259,10 @@ func (f *Files) Create(ctx context.Context, p string, b []byte) (File, error) {
 	if err := cancelled(ctx); err != nil {
 		return File{}, err
 	}
+	p, err := f.rootRelative(p)
+	if err != nil {
+		return File{}, err
+	}
 	if err := f.valid(p, b); err != nil {
 		return File{}, err
 	}
@@ -240,6 +292,10 @@ func (f *Files) Create(ctx context.Context, p string, b []byte) (File, error) {
 }
 func (f *Files) Edit(ctx context.Context, p, expected string, b []byte) (File, error) {
 	if err := cancelled(ctx); err != nil {
+		return File{}, err
+	}
+	p, err := f.rootRelative(p)
+	if err != nil {
 		return File{}, err
 	}
 	if err := f.valid(p, b); err != nil {

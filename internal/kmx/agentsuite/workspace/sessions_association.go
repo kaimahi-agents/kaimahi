@@ -6,7 +6,8 @@ import (
 	"errors"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteevidence "github.com/agent-primitives/suite/evidence"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -19,18 +20,18 @@ var errSessionsAssociation = errors.New("Sessions association refused (image dec
 // image verification, supported-implementation qualification or execution proof.
 // ImageVerification must remain declared-unverified even when declarations agree.
 type SessionsAssociationV1 struct {
-	Version            int                         `json:"version"`
-	Kind               string                      `json:"kind"`
-	SuiteDigest        string                      `json:"suiteDigest"`
-	MemberID           string                      `json:"memberID"`
-	RuntimeProfile     SessionsAssociationProfile  `json:"runtimeProfile"`
-	CompositionDigest  string                      `json:"compositionDigest"`
-	BuildProfileDigest string                      `json:"buildProfileDigest"`
-	Platform           agentsuite.EvidencePlatform `json:"platform"`
-	HarnessImage       string                      `json:"harnessImage"`
-	ExecutionKind      string                      `json:"executionKind"`
-	ConfigDigest       string                      `json:"configDigest"`
-	ImageVerification  string                      `json:"imageVerification"`
+	Version            int                            `json:"version"`
+	Kind               string                         `json:"kind"`
+	SuiteDigest        string                         `json:"suiteDigest"`
+	MemberID           string                         `json:"memberID"`
+	RuntimeProfile     SessionsAssociationProfile     `json:"runtimeProfile"`
+	CompositionDigest  string                         `json:"compositionDigest"`
+	BuildProfileDigest string                         `json:"buildProfileDigest"`
+	Platform           suiteevidence.EvidencePlatform `json:"platform"`
+	HarnessImage       string                         `json:"harnessImage"`
+	ExecutionKind      string                         `json:"executionKind"`
+	ConfigDigest       string                         `json:"configDigest"`
+	ImageVerification  string                         `json:"imageVerification"`
 }
 
 type SessionsAssociationProfile struct {
@@ -46,7 +47,7 @@ func NewSessionsAssociation(ctx context.Context, selected *NativeSuite, harnessI
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if selected == nil || selected.profiled == nil || agentsuite.ValidateImageReference(harnessImage) != nil {
+	if selected == nil || selected.profiled == nil || suitecore.ValidateImageReference(harnessImage) != nil {
 		return nil, errSessionsAssociation
 	}
 	// Public fields are mutable views. Only this privately retained selection
@@ -56,15 +57,15 @@ func NewSessionsAssociation(ctx context.Context, selected *NativeSuite, harnessI
 	if err != nil || s.Profile == nil || s.Profile.Runtime.ID != "agentsessions" || s.Policy != nil {
 		return nil, errSessionsAssociation
 	}
-	var root agentsuite.Suite
-	if agentsuite.Unmarshal(graph.files["agentsuite.json"], &root) != nil {
+	var root suitecore.Suite
+	if suitecore.Unmarshal(graph.files["agentsuite.json"], &root) != nil {
 		return nil, errSessionsAssociation
 	}
-	var build agentsuite.BuildProfile
+	var build suitecore.BuildProfile
 	found := false
 	for _, ref := range root.BuildProfiles {
 		if ref.Descriptor.Digest == s.BuildProfileDigest {
-			if found || agentsuite.Unmarshal(graph.files[ref.Path], &build) != nil {
+			if found || suitecore.Unmarshal(graph.files[ref.Path], &build) != nil {
 				return nil, errSessionsAssociation
 			}
 			found = true
@@ -91,11 +92,11 @@ func NewSessionsAssociation(ctx context.Context, selected *NativeSuite, harnessI
 	if err != nil {
 		return nil, errSessionsAssociation
 	}
-	raw, err := agentsuite.Marshal(SessionsAssociationV1{
+	raw, err := suitecore.Marshal(SessionsAssociationV1{
 		Version: 1, Kind: "kmx.sessions-association", SuiteDigest: s.Digest, MemberID: s.MemberID,
 		RuntimeProfile:    SessionsAssociationProfile{ID: s.Profile.ID, Digest: s.ProfileDigest},
 		CompositionDigest: s.CompositionDigest, BuildProfileDigest: s.BuildProfileDigest,
-		Platform:     agentsuite.EvidencePlatform{OS: s.Platform.OS, Architecture: s.Platform.Architecture, Variant: s.Platform.Variant},
+		Platform:     suiteevidence.EvidencePlatform{OS: s.Platform.OS, Architecture: s.Platform.Architecture, Variant: s.Platform.Variant},
 		HarnessImage: harnessImage, ExecutionKind: "harnesswire-chat-v1", ConfigDigest: config,
 		ImageVerification: "declared-unverified",
 	})
@@ -115,7 +116,7 @@ func CheckSessionsAssociation(ctx context.Context, raw []byte, selected *NativeS
 		return errSessionsAssociation
 	}
 	var record SessionsAssociationV1
-	if agentsuite.Unmarshal(raw, &record) != nil {
+	if suitecore.Unmarshal(raw, &record) != nil {
 		return errSessionsAssociation
 	}
 	expected, err := NewSessionsAssociation(ctx, selected, record.HarnessImage)

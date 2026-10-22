@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -71,14 +71,14 @@ func TestMultiInventoryNamesUnsupportedPublicCases(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, tc := range map[string]struct {
-		mutate func(*agentsuite.EvaluationIndex, map[string]any)
+		mutate func(*suitecore.EvaluationIndex, map[string]any)
 		want   string
 	}{
-		"non-critical": {func(_ *agentsuite.EvaluationIndex, c map[string]any) {
+		"non-critical": {func(_ *suitecore.EvaluationIndex, c map[string]any) {
 			c["assertions"].([]any)[0].(map[string]any)["critical"] = false
 		}, "packaged evaluation assertion is non-critical; KMX evaluates every assertion as critical"},
-		"runs over limit": {func(_ *agentsuite.EvaluationIndex, c map[string]any) { c["runs"] = 101 }, "evaluation policy requires 1 <= minPasses <= runs <= 100"},
-		"extension": {func(_ *agentsuite.EvaluationIndex, c map[string]any) {
+		"runs over limit": {func(_ *suitecore.EvaluationIndex, c map[string]any) { c["runs"] = 101 }, "evaluation policy requires 1 <= minPasses <= runs <= 100"},
+		"extension": {func(_ *suitecore.EvaluationIndex, c map[string]any) {
 			a := c["assertions"].([]any)[0].(map[string]any)
 			a["id"], a["type"], a["critical"] = "extension", "example.custom", false
 		}, "packaged evaluation assertion is non-critical; KMX evaluates every assertion as critical"},
@@ -98,7 +98,7 @@ func TestMultiPublicValidationRefusesCrossMemberCases(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := extract(t, p)
-	rebindMemberEvals(t, out, "member-01", func(index *agentsuite.EvaluationIndex, _ map[string]any) {
+	rebindMemberEvals(t, out, "member-01", func(index *suitecore.EvaluationIndex, _ map[string]any) {
 		index.Cases[0].Path = "evals/member-00/cases/case-000.json"
 	})
 	if _, err := suiteoras.Push(t.Context(), out, filepath.Join(t.TempDir(), "layout"), "cross-member"); err == nil || !strings.Contains(err.Error(), "owning agent") {
@@ -151,7 +151,7 @@ func packagedTarEntries(t *testing.T, p *workspace.Prepared) int {
 		return readFile(t, filepath.Join(p.Path, "blobs/sha256", strings.TrimPrefix(d, "sha256:")))
 	}
 	var manifest ocispec.Manifest
-	if err := agentsuite.Unmarshal(blob(p.Descriptor.Digest.String()), &manifest); err != nil || len(manifest.Layers) != 1 {
+	if err := suitecore.Unmarshal(blob(p.Descriptor.Digest.String()), &manifest); err != nil || len(manifest.Layers) != 1 {
 		t.Fatal("invalid test manifest", err)
 	}
 	gz, err := gzip.NewReader(bytes.NewReader(blob(manifest.Layers[0].Digest.String())))

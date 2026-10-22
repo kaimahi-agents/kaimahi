@@ -449,7 +449,10 @@ See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 ## Agent-file MCP boundary
 
 `mcp --root DIRECTORY` is stdio-only and config-free at startup. Require an
-absolute existing root, never cwd/client-root fallback. Expose exactly
+absolute existing root, never cwd/client-root fallback. Normalize native absolute
+tool paths through cleaning and symlink resolution to an allowed root-relative
+layout; outside targets, dangling links and changed root identity refuse. Keep
+relative-path restrictions and descriptor-bound file IO unchanged. Expose exactly
 Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
 never the path wrapper or shell CLI strings. Model routes are trusted startup
 configuration, not tool/charter fields. Keep complete safe App results on errors;
@@ -583,9 +586,13 @@ Do not infer enforcement from authoring, transfer, readiness, labels or annotati
 - The portable format, validator and schemas are owned by
   [AgentSuite](https://github.com/agent-primitives/suite/blob/main/spec.md).
   Keep KMX details, migration notes, and design history in this repository's
-  implementation documentation, issues, or changelog. Import the public module
-  explicitly as `agentsuite "github.com/agent-primitives/suite"`; use `kmxsuite`
-  for the internal builder package and `suiteoras` for its ORAS adapter.
+  implementation documentation, issues, or changelog. Import focused public
+  packages as `suitecore` (`github.com/agent-primitives/suite/core`), `suiteoci`
+  (`github.com/agent-primitives/suite/oci`), `suiteevidence`
+  (`github.com/agent-primitives/suite/evidence`) and `suiteflow`
+  (`github.com/agent-primitives/suite/experimental/flow`). Do not import the
+  deprecated module root. Keep `kmxsuite` for the internal builder package and
+  `suiteoras` for its ORAS adapter.
   Keep byte-identical consumer fixtures under `testdata/agentsuite`; refresh
   their provenance manifest only with reviewed upstream changes and run
   `python3 scripts/check-agentsuite-fixtures.py`.

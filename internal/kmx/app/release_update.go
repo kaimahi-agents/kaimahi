@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	godigest "github.com/opencontainers/go-digest"
 )
@@ -98,7 +98,7 @@ func (a *App) prepareReleaseUpdate(ctx context.Context, opt ReleaseLiftOptions) 
 			s.Resources[i].Action = "verify"
 		}
 	}
-	review, err := agentsuite.Marshal(struct {
+	review, err := suitecore.Marshal(struct {
 		Domain                string
 		Plan                  ReleaseLiftSummary
 		RecordUID, RecordData string
@@ -268,7 +268,7 @@ func (a *App) checkReleaseUpdateDependents(ctx context.Context, s suiteNativeSub
 		Metadata   map[string]any   `json:"metadata"`
 		Items      []map[string]any `json:"items"`
 	}
-	if err != nil || agentsuite.Unmarshal(raw, &list) != nil || list.Kind != "AgentList" || list.APIVersion != "core.orka.ai/v1alpha1" || len(list.Items) > 256 {
+	if err != nil || suitecore.Unmarshal(raw, &list) != nil || list.Kind != "AgentList" || list.APIVersion != "core.orka.ai/v1alpha1" || len(list.Items) > 256 {
 		return errors.Join(errReleaseUpdateDependents, ctx.Err())
 	}
 	if more, present := list.Metadata["continue"]; present && more != "" {

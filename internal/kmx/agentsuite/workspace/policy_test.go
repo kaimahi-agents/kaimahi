@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/agent-primitives/suite/policy"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
@@ -29,15 +29,15 @@ func declarePolicy(t *testing.T, root, id, document string) {
 	writeFile(t, member, string(readFile(t, member))+"policy: policy.json\n")
 	writeFile(t, filepath.Join(root, "agents", id, "policy.json"), document)
 }
-func preparedPolicy(t *testing.T, root, cache, id string) (*workspace.Prepared, string, agentsuite.Agent) {
+func preparedPolicy(t *testing.T, root, cache, id string) (*workspace.Prepared, string, suitecore.Agent) {
 	t.Helper()
 	p, err := workspace.Prepare(t.Context(), root, cache)
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := extract(t, p)
-	var a agentsuite.Agent
-	if err := agentsuite.Unmarshal(readFile(t, filepath.Join(out, "agents", id+".json")), &a); err != nil {
+	var a suitecore.Agent
+	if err := suitecore.Unmarshal(readFile(t, filepath.Join(out, "agents", id+".json")), &a); err != nil {
 		t.Fatal(err)
 	}
 	return p, out, a
@@ -53,7 +53,7 @@ func TestWorkspacePolicyBindingPreservesAuthoredArrays(t *testing.T) {
 		t.Fatal("policy binding missing")
 	}
 	ref := *agent.Policy
-	if ref.Path != "policies/greeter.json" || ref.Descriptor.MediaType != agentsuite.MediaTypePolicyV2 || ref.Descriptor.Digest != digest.FromString(original).String() || ref.Descriptor.Size != int64(len(original)) {
+	if ref.Path != "policies/greeter.json" || ref.Descriptor.MediaType != suitecore.MediaTypePolicyV2 || ref.Descriptor.Digest != digest.FromString(original).String() || ref.Descriptor.Size != int64(len(original)) {
 		t.Fatalf("wrong authored descriptor: %+v", ref)
 	}
 	if got := readFile(t, filepath.Join(out, ref.Path)); !bytes.Equal(got, []byte(original)) {
@@ -250,12 +250,12 @@ func TestWorkspacePolicyRejectsGraphDrift(t *testing.T) {
 			case "orphan":
 				writeFile(t, filepath.Join(out, "policies/orphan.json"), networkPolicy(""))
 			default:
-				rebindAgent(t, out, func(a *agentsuite.Agent) {
+				rebindAgent(t, out, func(a *suitecore.Agent) {
 					switch change {
 					case "wrong path":
 						a.Policy.Path = "instructions/greeter.md"
 					case "wrong media":
-						a.Policy.Descriptor.MediaType = agentsuite.MediaTypePolicyV1
+						a.Policy.Descriptor.MediaType = suitecore.MediaTypePolicyV1
 					case "foreign member":
 						a.Policy.Path = "policies/other.json"
 					}

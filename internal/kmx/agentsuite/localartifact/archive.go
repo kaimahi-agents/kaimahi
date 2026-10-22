@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -31,7 +31,7 @@ func readArchive(ctx context.Context, source io.ReaderAt, size int64, digest str
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if source == nil || size < 0 || digest != "" && !agentsuite.IsValidDigest(digest) {
+	if source == nil || size < 0 || digest != "" && !suitecore.IsValidDigest(digest) {
 		return nil, ErrArtifact
 	}
 	if size > outerArchiveBytes {
@@ -72,7 +72,7 @@ func (s archiveSource) Fetch(ctx context.Context, descriptor ocispec.Descriptor)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !agentsuite.IsValidDigest(descriptor.Digest.String()) {
+	if !suitecore.IsValidDigest(descriptor.Digest.String()) {
 		return nil, ErrArtifact
 	}
 	raw, ok := s.files["blobs/sha256/"+descriptor.Digest.Encoded()]
