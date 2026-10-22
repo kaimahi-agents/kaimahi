@@ -8,10 +8,14 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 - `model list [-o table|json]` defaults to config-free bounded local discovery.
   Explicit `--provider copilot` lists available Chat-compatible routes without
-  starting sign-in. `model login` uses GitHub device flow; `--gh` alone opts into
-  bounded private `gh auth token --hostname github.com` capture. Reusable tokens
-  live only in kmx's native OS keychain item, with no file fallback; exchange
-  bearers stay in memory. Logout deletes only that item and clears memory.
+  starting sign-in. `model login` uses GitHub device flow; `--gh` explicitly
+  copies a bounded private gh token into kmx's OS keychain. Runtime credentials
+  prefer explicit `COPILOT_GITHUB_TOKEN`, then kmx's keychain item; only an
+  unavailable keychain permits bounded `gh auth token --hostname github.com`
+  capture without persistence. Invalid explicit tokens, missing owned items and
+  service refusals do not switch credentials. No token file fallback; exchange
+  bearers stay in memory. Login explains runtime options if the keychain is
+  unavailable. Logout clears only kmx's item/memory, not gh or environment auth.
   `internal/kmx/modelaccess/copilot` returns a selected-route RoundTripper for
   direct JSON/SSE Chat Completions, not a proxy or CLI-chat replacement.
   File Run/Test and shared MCP execution consume it only with explicit
@@ -385,6 +389,10 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   the same operation vocabulary where their scopes match.
 - Reuse the existing operation handlers. Keep Cobra syntax, terminal rendering,
   runtime capabilities, target mechanics and infrastructure ownership separate.
+  Bind operational Apps through `operationApplication(cmd)`: it preserves the
+  invocation's App identity and copies its Runner before attaching `cmd.Context()`.
+  Never rebind a shared Runner in place; preserve explicit child and cleanup
+  contexts and signal ownership.
   A renamed command must not silently change runtime, target, ownership or
   supported operations.
 - Update command registration, help, completion, relevant chat/console labels,
@@ -428,6 +436,10 @@ answer/rubric to the hosted service; never imply SDK or Sessions execution.
 native evidence receipt. Subset is always partial, execution/journal failure is
 unknown, and only an explicit caller override changes the judge route. Keep
 live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
+File Run/Test `--verbose` is content-free stderr diagnostics only, never implicit
+`--show-content`. Keep transport errors classified without raw URLs/bodies;
+only validated local origins and standard endpoint paths may be shown. Failed
+diagnostic writes stop later sends and refuse a full pass.
 See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 
 ## Agent-file MCP boundary

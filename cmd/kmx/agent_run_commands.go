@@ -18,6 +18,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 		Long: "Run FILE checks saved examples as a local preview, with optional separate --prompt/--prompt-file input.\n" +
 			"File output is text/JSON; --case selects a partial preview. No native evidence or source edits.\n" +
 			"File mode uses a preview runner (no journal), not native execution evidence.\n" +
+			"--verbose prints content-free file execution diagnostics and timings on stderr.\n" +
 			"Select a live Orka Agent with --agent (without FILE).\n" +
 			"Task name, state and recovery instructions go to stderr; stdout contains only the answer.\n" +
 			"A Task is never retried or deleted; exit code 2 means the wait expired and\n" +

@@ -68,10 +68,12 @@ kmx
 read-only reference extraction/export helpers. Cobra also supplies `help`.
 
 Unreleased `model list` defaults to local discovery; explicit Copilot listing
-requires existing kmx-owned auth and never starts sign-in. `model login` uses
-GitHub device flow; `--gh` explicitly opts into private bounded gh token capture.
-`model logout` deletes only kmx's OS keychain item and clears memory. Native
-keychain storage has no plaintext fallback. Internal
+uses explicit `COPILOT_GITHUB_TOKEN`, otherwise kmx's keychain item or an existing
+gh login when the keychain is unavailable. It never starts sign-in or saves
+runtime tokens. `model login` uses GitHub device flow; `--gh` explicitly copies
+bounded private gh output to the OS keychain. Without a usable keychain, login
+explains runtime options instead. `model logout` clears only kmx's item/memory,
+not gh or environment credentials. There is no plaintext token-file fallback. Internal
 `modelaccess/copilot.New(Store).Client(ctx, Route)` returns an authenticated
 selected-route RoundTripper for direct Chat Completions JSON/SSE, not a proxy.
 Markdown-file Run/Test and shared MCP execution consume it only with explicit

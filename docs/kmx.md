@@ -42,14 +42,20 @@ unreleased; native Windows package tests do not yet qualify the Windows CLI.
 `kmx model login` starts GitHub device-code sign-in, printing the verification
 URI and user code on stderr. `kmx model login --gh` explicitly copies only the
 existing `gh auth token --hostname github.com` credential through private bounded
-stdout capture. Nothing implicitly reuses gh or editor sign-in.
+stdout capture. If the OS keychain is unavailable, login prints runtime options
+instead of starting device sign-in or failing. No editor credentials are read.
 
 `kmx model list --provider copilot [-o table|json]` lists enabled Chat-compatible
 models as non-secret routes at `https://api.githubcopilot.com`; it never starts
 sign-in and fails clearly without auth. Local discovery remains the default.
 `kmx model logout` deletes only kmx's reusable credential and clears its memory;
-gh/editor sign-in is unchanged. Native OS keychain storage is required, with no
-plaintext fallback. macOS release builds work without CGO; explicit access uses
+gh/editor sign-in and caller environment are unchanged. Runtime authentication
+prefers explicit `COPILOT_GITHUB_TOKEN`, otherwise kmx's native keychain item.
+Only if the keychain is unavailable does it read an existing github.com gh login
+through bounded private `gh auth token` capture. These runtime sources are never
+saved by kmx; an invalid explicit token or service refusal does not switch
+credentials. Remove the variable or end the gh session separately to disable
+external credentials. There is no plaintext token-file fallback. macOS release builds work without CGO; explicit access uses
 `/usr/bin/security`, with secrets on stdin only and a 2048-byte write limit.
 Linux uses an existing session bus and login/default keyring collection, never
 autolaunching a bus. Custom buses require an explicit `unix:` session address.
@@ -202,6 +208,29 @@ kmx run ./greeter.agent.md --prompt Ada
 kmx test ./greeter.agent.md --case greeting -o json
 kmx test ./greeter.agent.md
 ```
+
+Add `--verbose` to file Run or Test for content-free diagnostics on stderr:
+completion/judge request start/end, selected endpoints, received HTTP status,
+per-request timings and total elapsed time. Revision, model, runner label,
+assertion verdicts and final outcome remain in the normal report, not repeated
+in verbose diagnostics.
+Local endpoint origins and standard `/v1` paths are shown; custom paths are
+withheld. Connection refusal, response timeout, HTTP errors and malformed or
+mismatched completions have safe diagnostic categories, never raw provider errors.
+No HTTP status is printed for in-process execution or requests without a response.
+An absent, null or empty returned model is an invalid completion; only a
+different nonempty model is reported as a model mismatch.
+Verbose is off by default and does not imply `--show-content`: instructions,
+inputs, answers, assertion operands, judge rationale and response bodies stay
+private. JSON stdout and exit contracts are unchanged. A failed diagnostic
+write stops later sends and cannot report a full pass.
+
+```text
+kmx run ./greeter.agent.md --provider ollama --endpoint http://127.0.0.1:11434/v1 --prompt Ada --verbose --show-content
+```
+
+For this Ollama example, first set `Model.Preferred` in your own copy of the
+charter to an exact installed Ollama model, rather than the sample's `fake`.
 
 To use Copilot, sign in explicitly, list available models, then set the file's
 `Model.Preferred` to an exact listed model ID:

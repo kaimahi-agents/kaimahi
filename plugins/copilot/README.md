@@ -1,8 +1,8 @@
 # Copilot agent-builder plugin
 
-**Development package, not an installable or signed release.** This Copilot
-app/CLI plugin source contains a skill and declarative MCP config, with results
-in chat. No editor extension, UI, downloader or second runner.
+This Copilot app/CLI plugin contains a skill and declarative MCP config, with
+results in chat. The source tree is not an installable package; native bundles
+are generated and signed by the release workflow, not committed here. No editor extension, UI, downloader or second runner.
 The source directory deliberately has no `bin/kmx`; do not install it directly.
 
 ## Package contract
@@ -67,10 +67,9 @@ uses prior explicit `kmx model login` credentials and an exact listed
 any judge answers/rubrics to Copilot. Startup does not sign in or access credentials;
 Run/Test use the same tool-free, no-journal runner as the file CLI, not an SDK harness.
 
-A public archive cannot contain a user's absolute root. End-user root setup,
-compatible Copilot versions, skill resource lookup and actual install/cache
-behavior remain release integration gates. Users are not told to run this
-Python builder as a newcomer installation step.
+A public archive cannot contain a user's absolute root. Release archives start
+unconfigured and refuse MCP startup until an operator chooses a root as below.
+Users do not need Python or this developer builder to install an archive.
 
 ## Results and verification
 
@@ -108,8 +107,37 @@ notarization or codesign verdict. Record actual native archive/cache behavior,
 permissions and OS approval separately. On Windows, record signing identity and
 SmartScreen/OS refusal. Signed checksums are not Authenticode or notarization.
 
-Release integration must generate signed platform archives from the exact
-approved engine and verify the expected digest before execution. Then qualify:
+## Release archives and explicit setup
+
+The release job packages the already-built, signature-verified engines into
+`kmx-agent-builder-{linux,darwin}-{amd64,arm64}.tar.gz`. It validates each engine's
+Go command path, GOOS/GOARCH and clean source revision without executing foreign
+binaries; native version stamping is checked by the existing release gate.
+Go omits ldflags under trimpath, so cross-platform version identity also relies
+on the reviewed release job and signed checksum inventory, not a fabricated
+metadata field. No Windows archive is published while native CLI is guarded.
+
+`plugin-checksums.txt` and its Sigstore bundle are separate from the unchanged
+four-binary `checksums.txt` consumed by the installer/Homebrew. Both use the
+existing keyless release workflow identity and OIDC issuer; checks performed
+by the same job are not independent publisher authentication. Dry runs sign and
+upload artifacts but publish no release. Archives have an exact seven-file
+inventory, fixed tar ownership/timestamps/modes and the pinned engine digest.
+
+1. Obtain the archive through the trusted GitHub release. Compare its SHA256
+   with the expected digest in the trusted release guidance before extraction
+   or execution, not an unverified adjacent checksum download. Linux uses
+   `sha256sum FILE`; macOS uses `shasum -a 256 FILE`. Operators verifying Sigstore
+   must pin the exact `release.yml@refs/tags/VERSION` certificate identity and
+   issuer `https://token.actions.githubusercontent.com`, not a wildcard.
+2. Extract into a new directory using the OS archive tool. Review `SETUP.md`.
+3. Edit **only** `mcp.json` and `selected-root.json`: replace `__SELECTED_ROOT__`
+   with the identical, existing absolute repository root in both. Keep valid
+   JSON; no filesystem root, control characters or literal `${PLUGIN_ROOT}` /
+   `${PLUGIN_DATA}` tokens. Do not infer a root from the extraction/cache cwd.
+   Do not change the engine or skill. These local config edits are not covered
+   by the pristine archive signature; review them separately.
+4. Install the configured directory and confirm the root again in chat:
 
 ```sh
 copilot plugin install ./extracted-plugin
@@ -121,6 +149,38 @@ The [Copilot creating guide](https://docs.github.com/en/copilot/how-tos/copilot-
 documents local-directory installation and cached components: reinstall to
 refresh local changes. Archive URLs are not direct install sources.
 App marketplace installation needs separate evidence; CLI tests are not app
-support. No host installation or release publication is performed here.
+support. The packager performs no host installation or release publication.
+Reconfigure/reinstall and restart to change roots. For updates, verify the new
+archive and reapply the intended root deliberately; do not mutate cached bytes.
 Real-model integration, native OS trust qualification and the newcomer pilot
 remain separate acceptance activities.
+
+## Installed-host check and chat qualification
+
+With qualified Copilot CLI **1.0.86-2** (`--no-auto-update`), the opt-in developer check uses a **new
+private profile** through COPILOT_HOME, not the operator's normal configuration.
+It refuses other host versions before installation; requalify isolation first.
+This relies on the trusted host honoring its documented configuration boundary,
+not OS-level containment. Supply the pinned engine
+digest from the verified bundle:
+
+```sh
+python3 plugins/copilot/check_install.py --plugin /configured/kmx-agent-builder \
+  --engine-sha256 <64-lowercase-hex> --home /new/private/copilot-check-profile
+```
+
+It refuses unconfigured/mismatched roots or engine hashes; exercises real local
+install/list/skill discovery, cache byte/execute checks, exactly four real MCP
+tools, uninstall and reinstall. Python is needed only for this checkout check,
+not for end-user installation. No authentication, inference or trust bypass is
+performed by this check.
+
+Then qualify chat separately with the installed skill: create its fake greeter,
+Run/Test, edit only Hello to Goodbye, observe greeting/greeting-text fail,
+restore only the instruction, partial Test then full Test. Confirm source bytes,
+unchanged assertion and structured results; tool-call success alone is not pass.
+Deny shell/direct writes and enable only the kmx server; reading packaged skill
+resources uses the host read tool. Record host version and denied attempts too.
+The qualified CLI warns that local-directory installation is deprecated but
+still works; this does not authorize creating/publishing a marketplace. A future host
+removing that route is a compatibility blocker, not a reason to bypass approval.

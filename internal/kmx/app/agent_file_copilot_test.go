@@ -78,6 +78,11 @@ func TestDirectPreviewCopilotRunTestAndJudge(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/judge=%v", operation, judge), func(t *testing.T) {
 				provider := &previewCopilotAccess{t: t}
 				opt := directOptions(t, "gpt-test", judge)
+				var diagnostics strings.Builder
+				opt.Progress = func(message string) error {
+					diagnostics.WriteString(message + "\n")
+					return nil
+				}
 				route := copilotPreviewRoute()
 				opt.Route, opt.Operation = &route, operation
 				if operation == "run" {
@@ -98,8 +103,14 @@ func TestDirectPreviewCopilotRunTestAndJudge(t *testing.T) {
 					t.Fatalf("result=%+v err=%v clients=%d sends=%d", result, err, provider.clients, provider.sends)
 				}
 				b, err := json.Marshal(result)
-				if err != nil || strings.Contains(string(b), "PRIVATE") {
+				if err != nil || strings.Contains(string(b)+diagnostics.String(), "PRIVATE") {
 					t.Fatalf("private content in result: %s / %v", b, err)
+				}
+				if strings.Count(diagnostics.String(), " started:") != sends ||
+					strings.Count(diagnostics.String(), " finished:") != sends ||
+					strings.Count(diagnostics.String(), "HTTP=200") != sends ||
+					!strings.Contains(diagnostics.String(), "endpoint="+modelaccess.CopilotEndpoint) {
+					t.Fatalf("missing Copilot diagnostics: %s", diagnostics.String())
 				}
 			})
 		}
@@ -134,6 +145,11 @@ func TestDirectPreviewCopilotFailuresStaySafeAndStopSends(t *testing.T) {
 					}
 				}
 				opt := directOptions(t, "gpt-test", phase == "judge")
+				var diagnostics strings.Builder
+				opt.Progress = func(message string) error {
+					diagnostics.WriteString(message + "\n")
+					return nil
+				}
 				route := copilotPreviewRoute()
 				opt.Route = &route
 				result, err := (&App{FileRunner: &directFileRunner{copilot: provider}}).PreviewAgentFile(t.Context(), opt)
@@ -143,11 +159,31 @@ func TestDirectPreviewCopilotFailuresStaySafeAndStopSends(t *testing.T) {
 					t.Fatalf("result=%+v err=%v clients=%d sends=%d", result, err, provider.clients, provider.sends)
 				}
 				b, _ := json.Marshal(result)
-				if strings.Contains(string(b)+err.Error(), "PRIVATE") {
+				if strings.Contains(string(b)+err.Error()+diagnostics.String(), "PRIVATE") {
 					t.Fatal("raw transport error disclosed")
+				}
+				if phase != "catalog" && !strings.Contains(diagnostics.String(), "finished: "+failure.code) {
+					t.Fatalf("missing safe Copilot failure category: %s", diagnostics.String())
 				}
 			})
 		}
+	}
+}
+
+func TestDirectPreviewCopilotJudgeDiagnosticFailureStopsSends(t *testing.T) {
+	provider := &previewCopilotAccess{t: t}
+	opt := directOptions(t, "gpt-test", true)
+	route := copilotPreviewRoute()
+	opt.Route = &route
+	opt.Progress = func(message string) error {
+		if strings.HasPrefix(message, "Judge ") && strings.Contains(message, " finished:") {
+			return errors.New("PRIVATE DIAGNOSTIC ERROR")
+		}
+		return nil
+	}
+	result, err := (&App{FileRunner: &directFileRunner{copilot: provider}}).PreviewAgentFile(t.Context(), opt)
+	if err == nil || result.FullPass || result.ReasonCode != "diagnostics_failed" || provider.sends != 2 {
+		t.Fatalf("judge diagnostic failure continued: %+v / %v sends=%d", result, err, provider.sends)
 	}
 }
 

@@ -22,9 +22,12 @@ type memoryStore struct {
 	token   string
 	fail    error
 	deleted int
+	reads   int
+	writes  int
 }
 
 func (s *memoryStore) Get() (string, error) {
+	s.reads++
 	if s.fail != nil {
 		return "", s.fail
 	}
@@ -34,6 +37,7 @@ func (s *memoryStore) Get() (string, error) {
 	return s.token, nil
 }
 func (s *memoryStore) Set(v string) error {
+	s.writes++
 	if s.fail != nil {
 		return s.fail
 	}
@@ -43,10 +47,16 @@ func (s *memoryStore) Set(v string) error {
 func (s *memoryStore) Delete() error { s.deleted++; s.token = ""; return s.fail }
 func fixture(t *testing.T, handler http.HandlerFunc) (*Provider, *memoryStore) {
 	t.Helper()
+	t.Setenv("COPILOT_GITHUB_TOKEN", "")
+	if err := os.Unsetenv("COPILOT_GITHUB_TOKEN"); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	store := &memoryStore{}
 	p := New(store)
+	p.runGH = func(context.Context) ([]byte, error) { return nil, ErrAuthRequired }
+	p.runStoredGH = p.runGH
 	p.http = server.Client()
 	p.api = server.URL
 	p.deviceURL = server.URL + "/device"

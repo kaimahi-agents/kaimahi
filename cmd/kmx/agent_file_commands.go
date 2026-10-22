@@ -21,6 +21,7 @@ import (
 type fileCommandOptions struct {
 	CaseID, Provider, Endpoint, Output string
 	ShowContent                        bool
+	Verbose                            bool
 }
 
 func fileModelRoute(provider, endpoint string) modelaccess.Route {
@@ -35,6 +36,7 @@ func fileModelRoute(provider, endpoint string) modelaccess.Route {
 }
 
 func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output bool) {
+	cmd.Flags().BoolVar(&f.Verbose, "verbose", false, "show content-free file preview diagnostics and timings on stderr (requires FILE)")
 	cmd.Flags().StringVar(&f.CaseID, "case", "", "run only this saved example ID (partial local preview)")
 	cmd.Flags().StringVar(&f.Provider, "provider", "", "explicit file-model provider: ollama, foundry-local, compatible or copilot; no fallback")
 	cmd.Flags().StringVar(&f.Endpoint, "endpoint", "", "trusted model endpoint (required for local models; fixed for Copilot; never from the charter)")
@@ -50,7 +52,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "case", "output", "show-content", "provider", "endpoint", "prompt", "prompt-file":
+		case "case", "output", "show-content", "provider", "endpoint", "prompt", "prompt-file", "verbose":
 		default:
 			invalid = flag.Name
 		}
@@ -69,7 +71,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	return nil
 }
 func fileFlagsWithoutFile(cmd *cobra.Command) error {
-	for _, name := range []string{"case", "provider", "endpoint"} {
+	for _, name := range []string{"case", "provider", "endpoint", "verbose"} {
 		if flag := cmd.Flag(name); flag != nil && flag.Changed {
 			return fmt.Errorf("--%s requires an explicit agent FILE", name)
 		}
@@ -79,6 +81,12 @@ func fileFlagsWithoutFile(cmd *cobra.Command) error {
 
 func runFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string) error {
 	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID, ShowContent: f.ShowContent}
+	if f.Verbose {
+		opt.Progress = func(message string) error {
+			_, err := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] %s\n", message)
+			return err
+		}
+	}
 	if f.Provider != "" || f.Endpoint != "" {
 		route := fileModelRoute(f.Provider, f.Endpoint)
 		opt.Route = &route
@@ -117,7 +125,14 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	a := &app.App{FileRunner: state.deps.fileRunner}
+	start := time.Now()
 	result, err := a.PreviewAgentFile(ctx, opt)
+	if f.Verbose {
+		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Total elapsed=%s\n",
+			time.Since(start).Round(time.Millisecond)); writeErr != nil {
+			return fmt.Errorf("cannot write local preview diagnostics")
+		}
+	}
 	if outputErr := app.WriteFilePreview(cmd.OutOrStdout(), result, f.Output); outputErr != nil {
 		return fmt.Errorf("cannot write local preview output")
 	}

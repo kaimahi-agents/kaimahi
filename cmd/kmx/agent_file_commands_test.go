@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -213,6 +214,8 @@ func TestFileCommandsRefuseMixedModesBeforeConfig(t *testing.T) {
 		{"eval", "FILE"},
 		{"test", "--case", "greeting"},
 		{"run", "--agent", "live", "--prompt", "x", "--case", "greeting"},
+		{"run", "--agent", "live", "--prompt", "x", "--verbose"},
+		{"test", "--verbose"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			path := cliPreviewFile(t)
@@ -280,6 +283,67 @@ func TestFilePreviewOutputWriteFailure(t *testing.T) {
 	deps.fileRunner = &cliPreviewFake{verdict: runtime.EvaluationPass}
 	if err := execute([]string{"test", cliPreviewFile(t), "-o", "json"}, deps); err == nil || exitCode(err) != 1 {
 		t.Fatalf("write failure: %v", err)
+	}
+}
+
+func TestFilePreviewVerboseStderrOnly(t *testing.T) {
+	for _, op := range []string{"run", "test"} {
+		for _, verbose := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%v", op, verbose), func(t *testing.T) {
+				path := cliPreviewFile(t)
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, bytes.ReplaceAll(data, []byte("Greet the input."), []byte("Reply with exactly `PRIVATE OPERAND`.")), 0600); err != nil {
+					t.Fatal(err)
+				}
+				var out, diag bytes.Buffer
+				deps, loads := testDependencies(&out, &diag)
+				args := []string{op, path, "-o", "json"}
+				if verbose {
+					args = append(args, "--verbose")
+				}
+				if op == "run" {
+					args = append(args, "--prompt", "PRIVATE PROMPT")
+				}
+				if err := execute(args, deps); err != nil {
+					t.Fatal(err)
+				}
+				var result app.FilePreviewResult
+				if err := json.Unmarshal(out.Bytes(), &result); err != nil || !result.FullPass || *loads != 0 {
+					t.Fatalf("invalid result: %v / %s; config=%d", err, out.String(), *loads)
+				}
+				if verbose {
+					for _, want := range []string{"Completion greeting started", "Completion greeting finished", "elapsed=", "Total elapsed="} {
+						if !strings.Contains(diag.String(), want) {
+							t.Fatalf("missing %q in diagnostics: %s", want, diag.String())
+						}
+					}
+					for _, duplicate := range []string{"Parsed agent", "revision=", "model=", "Runner:", "Assertion ", "Preview finished:", "checks_passed", "HTTP="} {
+						if strings.Contains(diag.String(), duplicate) {
+							t.Fatalf("duplicated summary %q in diagnostics: %s", duplicate, diag.String())
+						}
+					}
+				} else if strings.Contains(diag.String(), "[verbose]") {
+					t.Fatalf("unexpected diagnostics: %s", diag.String())
+				}
+				if strings.Contains(out.String()+diag.String(), "PRIVATE") || strings.Contains(diag.String(), path) {
+					t.Fatal("verbose disclosed source content or full path")
+				}
+			})
+		}
+	}
+}
+
+func TestFilePreviewVerboseWriteFailure(t *testing.T) {
+	var out, diag bytes.Buffer
+	deps, _ := testDependencies(&out, &diag)
+	deps.stderr = previewBrokenWriter{}
+	deps.fileRunner = app.NewDirectFileRunner()
+	err := execute([]string{"test", cliPreviewFile(t), "--verbose"}, deps)
+	if err == nil || !strings.Contains(err.Error(), "cannot write local preview diagnostics") || out.Len() != 0 {
+		t.Fatalf("diagnostic failure did not refuse: %v, stdout=%s", err, out.String())
 	}
 }
 

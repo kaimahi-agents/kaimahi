@@ -78,7 +78,7 @@ running as the same user may access it through that utility.
 
 Linux requires an existing session bus and login/default keyring collection. Explicit
 credential operations use no-autostart D-Bus discovery before native access;
-headless or unavailable keychains fail closed, without launching a bus. Custom
+unavailable keychains do not launch a bus or create a token file. Custom
 sessions must supply a `unix:` `DBUS_SESSION_BUS_ADDRESS`; `XDG_RUNTIME_DIR`
 alone does not direct upstream discovery to a custom socket. Autolaunch,
 non-Unix and multi-address values are refused. The owned item uses service
@@ -86,8 +86,30 @@ non-Unix and multi-address values are refused. The owned item uses service
 collection. Logout deletes only that item. Access may show OS unlock UI;
 native keychain calls have no context-cancellation guarantee. Initialization,
 help, completion and default local model listing do not access the keychain or
-session bus. Copilot listing never initiates OAuth, invokes gh, reads editor
-credentials or selects a model.
+session bus. Copilot listing never initiates OAuth, reads editor credentials
+or selects a model.
+
+At runtime, an explicit `COPILOT_GITHUB_TOKEN` takes precedence without opening
+kmx's keychain. An empty or malformed value is an error, not a reason to switch
+accounts. Otherwise kmx reads its owned keychain item. Only when that facility
+is unavailable does it try an existing github.com GitHub CLI login through
+`gh auth token --hostname github.com`, bounded to five seconds and 16 KiB of
+private stdout. This runtime child excludes `GH_TOKEN` and `GITHUB_TOKEN`, so
+those variables cannot override the stored login; explicit `login --gh` retains
+normal gh environment precedence. Missing owned credentials and authentication, subscription,
+policy or quota refusals never trigger another credential source. Neither
+runtime source is copied into kmx storage or a token file.
+
+With an unavailable keychain, `kmx model login` (including `--gh`) prints these
+options instead of starting device sign-in or failing. It does not sign in gh,
+claim a credential was saved, or verify the runtime credential. When a token
+variable is set, login warns that it takes precedence over stored credentials.
+Logout cannot disable external credentials: unset the variable or end the gh
+session separately to stop runtime access. To recover a revoked runtime gh
+credential without a usable OS keychain, supply a fresh environment token.
+`gh auth login --hostname github.com` can renew gh auth with secure storage,
+but gh may write a plaintext token file when its credential store is unavailable;
+kmx never invokes that login command automatically.
 
 Copilot JSON output is an array of non-secret shared routes: provider `copilot`,
 exact available Chat model, endpoint `https://api.githubcopilot.com`, auth

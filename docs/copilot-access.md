@@ -21,12 +21,15 @@ new deployment mode.
 | Standalone local sign-in and model listing | Explicit `kmx model login`, opt-in `login --gh`, `logout` and `list --provider copilot`. |
 | Direct selected-model requests | An internal in-process JSON/SSE transport with a non-secret route and kmx-owned credential facility. No model substitution or automatic inference replay. |
 | Agent Run/Test integration | Markdown-file Run/Test and the shared MCP path accept explicit `--provider copilot` through the temporary tool-free, no-journal runner. See [file preview](kmx.md#agent-file-local-preview-unreleased-integration). Native workspace execution is separate. |
-| CI, unattended/headless and hosted runners | No automatic sign-in/credential-import or hosted runner mode is added or qualified here. Hermetic CI tests use fake credentials and endpoints, not a live Copilot account. |
+| CI, unattended/headless and hosted runners | Runtime credentials can supply auth without an OS keychain, but no runner deployment is qualified here. Hermetic CI tests use fake credentials and endpoints, not a live Copilot account. |
 
-Listing does not initiate OAuth or invoke `gh`. Explicit sign-in is a user
-operation, not a CI consent prompt hidden inside discovery. Native OS credential
-facilities may display their own unlock UI. No hosted multi-user credential
-sharing, environment-token fallback or deployment qualification is implied.
+Listing does not initiate OAuth. Explicit sign-in is a user operation, not a CI
+consent prompt hidden inside discovery. Native OS credential facilities may
+display their own unlock UI. Runtime authentication prefers an explicitly supplied
+`COPILOT_GITHUB_TOKEN`, otherwise kmx's own keychain item. When that keychain is
+unavailable, it may read an existing github.com gh login with bounded private
+`gh auth token` capture. Runtime tokens remain in memory; kmx does not persist
+them. This adds no hosted multi-user credential sharing or deployment qualification.
 Selecting Copilot for file Run/Test sends authored instructions and inputs to
 the hosted service; a judge also receives the answer and rubric. Explicit
 sign-in does not select a default provider or model.
@@ -36,19 +39,26 @@ is a separate explicit choice, and fake orientation remains offline.
 
 ## Consent, ownership and lifecycle
 
+The 22 October 2026 (UTC) follow-up permits these memory-only runtime sources when
+native credential storage is unavailable, with an explicit environment token
+taking precedence. It does not expand the upstream permission or runner claims.
+
 Device sign-in displays GitHub's verification URI and user code, never the device
-secret or reusable token. `login --gh` alone authorizes capturing the existing
-GitHub CLI token privately; no editor credentials are read. The reusable token
-belongs to kmx's named OS credential item, not a workspace, journal, receipt,
-plaintext cache, command argument or environment export.
+secret or reusable token. `login --gh` explicitly copies a GitHub CLI token to
+kmx's named OS credential item when available; runtime fallback never copies it.
+No editor credentials are read. kmx does not write tokens to a workspace, journal,
+receipt, plaintext cache or command argument, or export them into the environment.
+An explicit environment token is caller-supplied. Login explains the runtime
+options instead of failing when the keychain is unavailable.
 
 The direct GitHub bearer is tried first through the model catalog. Only a
 credential refusal permits the legacy exchange; subscription, organization-policy
 and quota refusals do not. Exchanged bearers remain in memory and refresh before
 their reported expiry. Revoked or unusable reusable credentials require explicit
-sign-in again; no OAuth refresh-token machinery or implicit credential-source
-switch is added. Logout deletes kmx's item and clears its memory. It does not
-revoke the account's upstream authorization, log out gh/editor sessions or
+sign-in again; an empty or invalid explicit environment token fails closed.
+Missing owned credentials, revocation and service refusals never select another
+credential source. Logout deletes kmx's item and clears its memory. It does not
+unset caller environment tokens, revoke upstream authorization, log out gh/editor sessions or
 retract in-flight requests. Upstream revocation remains controlled through the
 user's GitHub account. See [transport and safe errors](copilot-inference.md#direct-model-access).
 

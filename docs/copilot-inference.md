@@ -20,9 +20,12 @@ The independent unreleased `kmx model login`, `login --gh`, `logout` and
 Copilot route, not this existing CLI-chat adapter. The
 [dated access decision](copilot-access.md) distinguishes the selected experimental
 compatibility route from official OAuth/SDK documentation and unqualified
-hosted modes. See [sign-in and storage](models.md#explicit-copilot-model-access). No credentials
-are imported implicitly, exported in argv/environment/files, or returned in
-routes. There are no token flags or plaintext-cache fallback.
+hosted modes. See [sign-in and storage](models.md#explicit-copilot-model-access).
+Runtime auth prefers explicit `COPILOT_GITHUB_TOKEN`, otherwise the owned OS
+keychain item. Only an unavailable keychain permits reading an existing gh login;
+a missing item or service refusal does not. Runtime tokens are never copied to
+storage, exported in argv/environment, or returned in routes. There are no token
+flags or plaintext-cache fallback.
 
 Markdown-file Run/Test and their shared MCP path consume this transport with
 explicit `--provider copilot`, an exact authored model and the pinned endpoint.
@@ -56,7 +59,7 @@ another model or credential source. Catalog checks can be repeated; inference
 is never automatically resent, including after a Chat credential refusal or
 connection failure. The next explicit request resolves auth independently.
 Logout clears memory and deletes only kmx's item, not upstream account tokens;
-it cannot retract requests already in flight.
+it cannot retract requests already in flight or disable gh/environment credentials.
 
 Safe static error prefixes distinguish `copilot_auth_required`,
 `copilot_auth_revoked`, `copilot_no_subscription`, `copilot_policy_denied`,

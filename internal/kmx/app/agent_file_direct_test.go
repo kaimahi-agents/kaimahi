@@ -134,15 +134,28 @@ func TestDirectPreviewCompatibleSingleJudgeSample(t *testing.T) {
 			defer server.Close()
 			opt := directOptions(t, "unit", true)
 			opt.Route = &modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: server.URL + "/v1", Auth: "none"}
+			var diagnostics strings.Builder
+			opt.Progress = func(message string) error {
+				diagnostics.WriteString(message + "\n")
+				return nil
+			}
 			result, err := (&App{FileRunner: NewDirectFileRunner()}).PreviewAgentFile(context.Background(), opt)
 			if result.Verdict != sample.verdict || (err == nil) != (sample.verdict == runtime.EvaluationPass) || calls.Load() != 4 {
 				t.Fatalf("calls %d / %+v / %v", calls.Load(), result, err)
+			}
+			for _, want := range []string{"endpoint=" + server.URL + "/v1", "HTTP=200", "elapsed=", "Judge first/"} {
+				if !strings.Contains(diagnostics.String(), want) {
+					t.Fatalf("missing %q: %s", want, diagnostics.String())
+				}
+			}
+			if strings.Contains(diagnostics.String(), "PRIVATE") || strings.Contains(diagnostics.String(), "satisfied") {
+				t.Fatal("diagnostics disclosed content or rationale")
 			}
 		})
 	}
 }
 func TestDirectPreviewHTTPRefusesNoRetryOrLaterSends(t *testing.T) {
-	for _, mode := range []string{"error", "redirect", "tool", "model", "oversized"} {
+	for _, mode := range []string{"error", "forbidden", "redirect", "tool", "model", "missing_model", "null_model", "empty_model", "null_response", "oversized"} {
 		t.Run(mode, func(t *testing.T) {
 			var calls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,24 +163,94 @@ func TestDirectPreviewHTTPRefusesNoRetryOrLaterSends(t *testing.T) {
 				switch mode {
 				case "error":
 					http.Error(w, "PRIVATE PROVIDER ERROR", 500)
+				case "forbidden":
+					http.Error(w, "PRIVATE PROVIDER ERROR", http.StatusForbidden)
 				case "redirect":
 					http.Redirect(w, r, "/other", http.StatusTemporaryRedirect)
 				case "tool":
 					fmt.Fprint(w, `{"model":"unit","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"answer","tool_calls":[{}]}}]}`)
 				case "model":
 					previewEnvelope(w, "other", "answer")
+				case "missing_model":
+					fmt.Fprint(w, `{}`)
+				case "null_model":
+					fmt.Fprint(w, `{"model":null}`)
+				case "empty_model":
+					fmt.Fprint(w, `{"model":""}`)
+				case "null_response":
+					fmt.Fprint(w, `null`)
 				case "oversized":
 					fmt.Fprint(w, strings.Repeat("x", 2*1024*1024))
 				}
 			}))
 			defer server.Close()
 			opt := directOptions(t, "unit", false)
-			opt.Route = &modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: server.URL, Auth: "none"}
+			opt.Route = &modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: server.URL + "/PRIVATE_PATH", Auth: "none"}
+			var diagnostics strings.Builder
+			opt.Progress = func(message string) error {
+				diagnostics.WriteString(message + "\n")
+				return nil
+			}
 			result, err := (&App{FileRunner: NewDirectFileRunner()}).PreviewAgentFile(context.Background(), opt)
 			if err == nil || result.FullPass || result.Verdict != runtime.EvaluationUnknown || calls.Load() != 1 || strings.Contains(err.Error(), "PRIVATE") {
 				t.Fatalf("calls %d / %+v / %v", calls.Load(), result, err)
 			}
+			want := "invalid_completion"
+			switch mode {
+			case "error", "forbidden", "redirect":
+				want = "http_error"
+			case "model":
+				want = "model_mismatch"
+			case "oversized":
+				want = "unreadable_or_oversized_response"
+			}
+			if !strings.Contains(diagnostics.String(), want) || strings.Contains(diagnostics.String(), "PRIVATE") {
+				t.Fatalf("unsafe or missing failure diagnostics: %s", diagnostics.String())
+			}
+			if mode == "forbidden" && !strings.Contains(diagnostics.String(), "HTTP=403") {
+				t.Fatalf("missing forbidden HTTP status: %s", diagnostics.String())
+			}
 		})
+	}
+}
+
+func TestDirectPreviewVerboseConnectionRefused(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	server.Close()
+	opt := directOptions(t, "unit", false)
+	opt.Route = &modelaccess.Route{Provider: "ollama", Model: "unit", Endpoint: server.URL + "/v1", Auth: "none"}
+	var diagnostics strings.Builder
+	opt.Progress = func(message string) error {
+		diagnostics.WriteString(message + "\n")
+		return nil
+	}
+	result, err := (&App{FileRunner: NewDirectFileRunner()}).PreviewAgentFile(context.Background(), opt)
+	if err == nil || result.FullPass || !strings.Contains(diagnostics.String(), "connection_refused") {
+		t.Fatalf("missing connection failure: %v / %s", err, diagnostics.String())
+	}
+	if strings.Contains(diagnostics.String(), "HTTP=") {
+		t.Fatalf("HTTP status reported without a response: %s", diagnostics.String())
+	}
+}
+
+func TestDirectPreviewProgressFailureStopsLaterSends(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		previewEnvelope(w, "unit", "Hello, PRIVATE INPUT")
+	}))
+	defer server.Close()
+	opt := directOptions(t, "unit", true)
+	opt.Route = &modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: server.URL, Auth: "none"}
+	opt.Progress = func(message string) error {
+		if strings.Contains(message, "finished:") {
+			return errors.New("PRIVATE DIAGNOSTIC ERROR")
+		}
+		return nil
+	}
+	result, err := (&App{FileRunner: NewDirectFileRunner()}).PreviewAgentFile(context.Background(), opt)
+	if err == nil || result.ReasonCode != "diagnostics_failed" || calls.Load() != 1 || strings.Contains(err.Error(), "PRIVATE") {
+		t.Fatalf("diagnostic failure: %+v / %v / calls=%d", result, err, calls.Load())
 	}
 }
 func TestDirectPreviewCancellationStopsBeforeJudge(t *testing.T) {
