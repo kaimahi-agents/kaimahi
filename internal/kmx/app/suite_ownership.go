@@ -3,25 +3,34 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
+	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
 const suiteCandidateRunMarker = "kaimahi.dev/suite-evaluation-run"
 
-type orkaSuiteOwnership struct{ Suite, Digest, Member, Renderer, BindingDigest, RenderedDigest, EvaluationRun string }
+type orkaSuiteOwnership struct {
+	Suite, Digest, Member, Renderer, BindingDigest, RenderedDigest, EvaluationRun string
+	FlowCandidate                                                                 *suiteFlowCandidateProjection
+}
 type orkaPlacementIdentity struct {
 	suite *orkaSuiteOwnership
 }
 
 func suiteNativeOwner(s suiteNativeSubject) *orkaSuiteOwnership {
-	return &orkaSuiteOwnership{s.Suite, s.SuiteDigest, s.Member, s.Renderer, s.BindingDigest, s.RenderedDigest, s.EvaluationRun}
+	return &orkaSuiteOwnership{s.Suite, s.SuiteDigest, s.Member, s.Renderer, s.BindingDigest, s.RenderedDigest, s.EvaluationRun, s.FlowCandidate}
 }
 func (o *orkaSuiteOwnership) markers() map[string]any {
 	markers := map[string]any{orkaSuiteMarkers[0]: o.Suite, orkaSuiteMarkers[1]: o.Digest, orkaSuiteMarkers[2]: o.Member, orkaSuiteMarkers[3]: o.Renderer, orkaSuiteMarkers[4]: o.BindingDigest, orkaSuiteMarkers[5]: o.RenderedDigest}
 	if o.EvaluationRun != "" {
 		markers[suiteCandidateRunMarker] = o.EvaluationRun
+	}
+	if o.FlowCandidate != nil {
+		raw, _ := agentsuite.Marshal(o.FlowCandidate)
+		markers[flowCandidateMarker] = string(raw)
 	}
 	return markers
 }
@@ -32,13 +41,21 @@ func suiteOnlyMarkers(ann map[string]any) map[string]any {
 			out[k] = v
 		}
 	}
+	if v, present := ann[flowCandidateMarker]; present {
+		out[flowCandidateMarker] = v
+	}
 	return out
 }
 func (o *orkaSuiteOwnership) valid() bool {
+	if p := o.FlowCandidate; p != nil {
+		if _, err := p.physicalName(); err != nil || p.Suite != o.Digest || p.Member != o.Member || p.Operation != o.EvaluationRun {
+			return false
+		}
+	}
 	return (o.EvaluationRun == "" || evaluationRunID(o.EvaluationRun)) && scaffold.ValidateObjectName(o.Suite) == nil && scaffold.ValidateObjectName(o.Member) == nil && o.Renderer == "kmx.native-orka/v2" && strings.HasPrefix(o.Digest, "sha256:") && validOrkaMarkerDigest(strings.TrimPrefix(o.Digest, "sha256:")) && validOrkaMarkerDigest(o.BindingDigest) && validOrkaMarkerDigest(o.RenderedDigest)
 }
 func (o *orkaSuiteOwnership) check(ann map[string]any) error {
-	for _, k := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker} {
+	for _, k := range []string{orkaBundleMarker, orkaPortableMarker, orkaRenderedMarker, kagentVersionMarker} {
 		if _, ok := ann[k]; ok {
 			return fmt.Errorf("legacy ownership blocks native placement")
 		}
@@ -62,7 +79,12 @@ func (o *orkaSuiteOwnership) check(ann map[string]any) error {
 	if run != o.EvaluationRun {
 		return fmt.Errorf("foreign native candidate ownership")
 	}
-	old := orkaSuiteOwnership{values[0], values[1], values[2], values[3], values[4], values[5], run}
+	old := orkaSuiteOwnership{values[0], values[1], values[2], values[3], values[4], values[5], run, nil}
+	var err error
+	old.FlowCandidate, err = flowCandidateOwner(ann)
+	if err != nil || (o.FlowCandidate != nil || old.FlowCandidate != nil) && !reflect.DeepEqual(old, *o) {
+		return fmt.Errorf("foreign flow candidate ownership")
+	}
 	if !old.valid() || old.Suite != o.Suite || old.Member != o.Member || old.Renderer != o.Renderer {
 		return fmt.Errorf("foreign or invalid native ownership")
 	}
@@ -76,7 +98,7 @@ var orkaSuiteReservedMarkers = append(append([]string(nil), orkaSuiteMarkers...)
 // Even malformed or null annotations reserve a resource. Never strip them
 // before deciding whether a legacy caller may adopt, copy or retire it.
 func hasOrkaSuiteReservation(annotations any) bool {
-	for _, key := range orkaSuiteReservedMarkers {
+	for _, key := range append(append([]string(nil), orkaSuiteReservedMarkers...), flowCandidateMarker) {
 		switch ann := annotations.(type) {
 		case map[string]any:
 			if _, ok := ann[key]; ok {

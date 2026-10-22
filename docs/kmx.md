@@ -272,11 +272,21 @@ must be repaired manually. Crash leftovers may include this operation's non-agen
 temp file or empty parent directories; no stale-file sweeping is performed.
 
 Run/Test parse a bounded rooted snapshot once and never reopen the source through
-its display path. Results preserve revision, route, full/subset, state, verdict,
-diagnostics and retention status even when the App returns an error. Such errors
-also set MCP `isError`; a successful subset still has `fullPass: false`.
-`showContent` is explicit and defaults false; bounded returned text is untrusted
-data, never tool instructions. The result's display basename is not target authority.
+its display path. Structured results preserve revision, route, full/subset, state,
+verdict, diagnostics and retention status even when the App returns an error.
+Completed assertion failures and inconclusive assertions are normal MCP results
+(`isError: false`), not tool errors. Parse, model, execution, cancellation and
+journal-finalization errors still set `isError: true`. A successful subset still
+has `fullPass: false`; App results and CLI exit codes are unchanged.
+
+Run/Test text is a compact summary rather than a second copy of the result JSON.
+It identifies non-passing examples/assertions with safe reasons, preserves scope
+and any no-journal qualifier, and limits details to 10 rows within 8 KiB, reporting
+omitted rows. The full safe result remains in `structuredContent`.
+`showContent` is explicit and defaults false; answers and authored assertion
+operands are not included by default. Opt-in answer excerpts are bounded and
+labeled untrusted data, never tool instructions. The result's display basename
+is not target authority.
 
 A real model route must be selected at process startup with trusted
 `--provider` and `--endpoint`; the exact model still comes from the parsed file.
