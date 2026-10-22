@@ -35,8 +35,8 @@ approvals/grants, tool workflows and connector demonstrations remain retired;
 native runtime tools and host credential handling are distinct.
 
 **What is checked.** `scripts/check-repository-map.py` checks named paths,
-nonempty area sections, directory ownership coverage and the retired-module
-boundary. It uses `git ls-files`: stage additions/deletions before checking the
+local Markdown links, nonempty area sections, directory ownership coverage and
+the retired-module boundary. It uses `git ls-files`: stage additions/deletions before checking the
 intended tree. Descendants, including nested fixtures, inherit their nearest
 owned directory's responsibility. Ordinary additions below an owned directory
 need no map edit. New top-level areas and new ownership packages need a section

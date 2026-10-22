@@ -1,7 +1,8 @@
 # Per-PR release notes
 
 Add one Markdown fragment named after the pull request, for example `changes/627.md`.
-Use a unique lowercase branch name while the PR number is unknown, then rename
+Use a unique flat lowercase slug while the PR number is unknown: replace branch
+name separators such as `/` with `-`, or choose another valid name. Then rename
 it to the actual PR number. Each PR owns its fragment instead of editing a
 shared Unreleased entry. Names are flat lowercase letters, digits, dots, hyphens
 or underscores, start with a letter/digit and end in `.md`; no `..`, whitespace,
@@ -56,10 +57,11 @@ calendar date; release-candidate versions are not render targets.
 included=$(mktemp)
 notes=$(mktemp)
 python3 scripts/check-changelog-fragments.py --list > "$included"
-python3 scripts/check-changelog-fragments.py --render v0.9.0 --date 2026-06-11 > "$notes"
+python3 scripts/check-changelog-fragments.py --render vX.Y.Z --date YYYY-MM-DD > "$notes"
 ```
 
-Review **both** outputs against the same frozen inputs before copying the
+Substitute the intended stable version and calendar date. Stop if either command
+fails. Review **both** outputs against the same frozen inputs before copying the
 candidate to `CHANGELOG.md`. Listing prints only the included fragment paths,
 one per line; failures go to stderr. Rendering validates all inputs before any
 output, rejects an already-present target version, preserves the preamble,

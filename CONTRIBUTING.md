@@ -288,8 +288,8 @@ Every change lands through a pull request with required checks green.
 ### Release-note fragments
 
 Add one `changes/<PR>.md` fragment rather than editing `CHANGELOG.md`'s shared
-Unreleased section. Use a unique lowercase branch name until the PR number is
-known. See [the fragment format](changes/README.md). Keep existing Unreleased
+Unreleased section. Until the PR number is known, use a unique flat lowercase
+slug, replacing branch-name `/` separators with `-` or choosing another valid name. See [the fragment format](changes/README.md). Keep existing Unreleased
 entries and released history intact; maintainers combine notes at release time.
 
 Documentation/test-only changes are automatically exempt. This means `docs/**`,
