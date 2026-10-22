@@ -1,0 +1,3 @@
+# Preserve the exact captured upstream bytes on every checkout platform.
+catalog.md -text
+fallback.md -text
