@@ -278,7 +278,10 @@ class ProcessTests(unittest.TestCase):
                     result = reply["result"]
                     payload = result["structuredContent"]
                     text = result["content"][0]["text"]
-                    if set(payload) == {"schemaVersion", "reasonCode", "reason"}:
+                    if payload.get("kind") == "kmx.agent-file-preview":
+                        self.assertIsInstance(text, str)
+                        self.assertTrue(text.strip())
+                    elif set(payload) == {"schemaVersion", "reasonCode", "reason"}:
                         self.assertEqual(text, payload["reason"])
                     else:
                         self.assertEqual(json.loads(text), payload)
@@ -297,7 +300,9 @@ class ProcessTests(unittest.TestCase):
                 self.assertEqual((root / path).read_bytes(), wrong.encode())
 
                 result, failed = call("run", path=path, input="Grace")
-                self.assertTrue(result["isError"])
+                self.assertFalse(result.get("isError", False))
+                self.assertIn("verdict=fail", result["content"][0]["text"])
+                self.assertNotIn("Hello, Ada", result["content"][0]["text"])
                 self.assertEqual((failed["state"], failed["verdict"], failed["fullPass"]),
                                  ("complete", "fail", False))
                 self.assertEqual(failed["file"]["revision"], revision)
