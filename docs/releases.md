@@ -107,6 +107,13 @@ to publish a binary that does not report its own tag.
 Releases use the root `vX.Y.Z` tag for the repository and CLI. The root is the
 only Go module; no paired module release tag is needed.
 
+Every tag release and manual dry run first runs the full read-only Orka runtime
+qualification. The release job starts only after that proof succeeds, and checks
+that the qualified commit is its actual checkout, including an annotated tag's
+resolved commit. A previous nightly result is not reused. Expect the live proof
+to add its normal runtime before the build and publication checks; a failure
+publishes no release assets.
+
 ## Install
 
 **On Windows, use WSL for now.** Install and run the Linux build inside your

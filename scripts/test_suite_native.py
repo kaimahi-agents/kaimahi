@@ -13,6 +13,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+from test_workflow_helpers import runtime_job
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
@@ -53,8 +55,7 @@ class PromotionWorkflowTests(unittest.TestCase):
 
     def setUp(self):
         import yaml
-        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-        self.job = workflow["jobs"]["e2e-orka-runtime"]
+        self.job = runtime_job(ROOT)
         self.steps = self.job["steps"]
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -190,9 +191,9 @@ if name == "python3" and "nodes" in args:
         self.assertLess(order.index("Orka — Agent and Task return an exact local-model answer"), order.index(setup))
         self.assertLess(order.index(setup), order.index(install))
         self.assertLess(order.index(install), order.index(name))
-        for guarded in (setup, install, name):
-            self.assertEqual(self.step(guarded)["if"], "steps.changes.outputs.docs_only != 'true'")
-        self.assertEqual(self.step("down")["if"], "always() && steps.changes.outputs.docs_only != 'true'")
+        for full_proof in (setup, install, name):
+            self.assertNotIn("if", self.step(full_proof), "an invoked full worker must not skip proof")
+        self.assertEqual(self.step("down")["if"], "always()")
         self.assertEqual(self.job["timeout-minutes"], 45)
         self.assertEqual(self.step("Upload only passing native metadata")["with"]["path"].splitlines(), [
             "${{ runner.temp }}/kmx-suite-native/artifacts/passing.json",

@@ -126,8 +126,9 @@ command tree plus `pkg/kmx` method sets, use the
 Run from the repository root. Portable AgentSuite is a separate pinned Go module;
 KMX's public packages are part of this root module and the commands below include
 them without a nested workspace.
-CI's Go hygiene checks remain unguarded, including on documentation-only changes;
-only the live and clone-free operation steps use documentation-only guards.
+CI's Go hygiene checks remain unguarded, including on documentation-only changes.
+The Orka runtime proof uses conservative PR path routing; the other live and
+clone-free operation steps retain their documentation-only guards.
 Formatting checks must test `gofmt` output because
 `gofmt -l` alone exits successfully even when it lists files.
 
@@ -286,9 +287,38 @@ Cloud cleanup has different [ownership rules](aks.md#teardown).
 The workflow emits `hygiene` and `e2e-hello-world` merge gates. The latter
 fail-closed aggregates four retained shards: `e2e-kagent-lift`,
 `e2e-orka-runtime`, `e2e-orka-helm` and `e2e-quickstart`, plus successful
-classification. Its existing #315 skip/failure policy remains: only intentional
-skips are accepted, never failed/cancelled shards. Required-check rules are
-managed separately on GitHub; deleting a workflow job does not update a ruleset.
+classification. Only intentional skips are accepted, never failed/cancelled
+shards. Orka may skip a PR only when every changed path is in the reviewed
+safe list in `scripts/ci/orka-routing.json`. Shared command builders, module
+files, runtime/deploy/chart code and unknown paths still require full proof.
+The gate reports an intentional skip, not a claim that live qualification ran.
+Required-check rules remain `hygiene` and `e2e-hello-world`; no raw Orka context
+needs to be added or removed.
+
+The read-only [Orka worker](../.github/workflows/orka-runtime.yml) always runs
+its complete proof when called. There is no internal docs-only shortcut;
+Markdown under live fixtures still requires qualification. Quickstart, stock
+Helm and kagent routing remain separate and unchanged. Main pushes and manual
+CI retain full Orka qualification during rollout, including docs-only main pushes.
+
+[Orka nightly](../.github/workflows/orka-nightly.yml) runs the full main proof
+at 03:23 UTC and supports manual qualification. Its always-running summary is
+red for failed, cancelled or missing qualification. Scheduled main failures
+open or update one workflow-owned issue, assigned to `gambtho`, with the run
+link, commit and safe status only. A successful current main nightly closes
+that issue; an older run cannot close a newer failure. Manual branch runs do
+not modify main health. Issue subscriptions control notification delivery.
+Check Actions if the latest completed main nightly is over 30 hours old: the
+reporter cannot report a schedule that never started.
+
+Every release and release dry run also requires a fresh worker success at the
+exact release checkout commit; a passing nightly at another SHA is insufficient.
+Only the nightly issue reporter has issue-write permission; workers remain
+read-only. A failed reporter remains visible as a failed workflow.
+
+Use `gh pr checks --required` to distinguish a stale raw-job display from the
+actual merge gates. A green required aggregate is not proof that review threads
+or approval requirements have been satisfied.
 
 The v0.10.2 live-create shard `e2e-kagent-create` and clusterless bundle recorded
 Sessions/judge/reference-verify shard `e2e-eval-loop` are removed, along with the

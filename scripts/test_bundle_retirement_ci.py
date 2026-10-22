@@ -10,12 +10,15 @@ import tempfile
 import unittest
 import yaml
 
+from test_workflow_helpers import runtime_job
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class RetirementCITests(unittest.TestCase):
     def setUp(self):
         self.jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
+        self.jobs["e2e-orka-runtime"] = runtime_job(ROOT)
 
     def test_required_aggregator_retains_native_shards_not_removed_products(self):
         expected = {"classify-change", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}

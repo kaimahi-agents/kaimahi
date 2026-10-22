@@ -170,6 +170,29 @@ change classification is uncertain. It runs the harness in full on main pushes
 and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
 
+The classifier also exposes an independent `orka_required` decision. It controls
+only Orka runtime PR routing; Quickstart, stock Helm and kagent policies remain
+unchanged. The checkout helper accepts
+full commit IDs as `python3 scripts/ci/orka-routing.py --base SHA --head SHA`.
+It prints only `true` or `false`; unknown, empty, malformed or failed diffs mean
+`true`. PR classification uses the synthetic merge commit's actual first parent,
+not the event's possibly stale base. NUL-delimited, no-renames Git output keeps
+deletions and both sides of moves visible.
+
+The exact exceptions live in `scripts/ci/orka-routing.json`: directory prefixes,
+exact leaves and direct `changes/*.md` notes. Shared runtime/build/module/script
+paths and unknown paths require Orka, including shared fixture Markdown; there
+is no blanket Markdown exception. Production command builders, file-flag helpers
+and the direct file-runner constructor remain outside the exceptions.
+Hygiene checks safe production Go files and safe App test files for `init()`
+functions and active global initializers, across build tags. App test initializers
+also run in the live-test binary, even when `-run` selects another test. Only
+literal `errors.New` and `regexp.MustCompile` setup with verified imports, and
+passive same-file pointer-to-nil type assertions, are permitted. This is an initialization tripwire, not a reachability
+proof or sandbox. Review new shared callers, imports and constructor behavior;
+move a path to required coverage when its independence no longer holds. Expanding
+the safe policy requires reviewed evidence and routing tests.
+
 One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), concrete
 read-only suite member recipe view (`pkg/suiteview`) and alpha application
 interfaces (`pkg/kmx`). Portable AgentSuite validation is a separate dependency:
@@ -228,9 +251,16 @@ The `e2e-kagent-lift` shard runs for relevant or unknown PR changes and always
 on main pushes, nightly and manual runs. Its required aggregator accepts only
 intentional skipped outcomes, never failed or cancelled shards.
 
-The existing `e2e-orka-runtime` shard also runs
-`python3 scripts/ci/suite-native.py kind-kmx-orka "$RUNNER_TEMP/kmx-suite-native"`
-after its raw upstream Orka Tool/Task and model-answer proof. The checkout-only qualifier requires the
+The full read-only `orka-runtime.yml` worker runs the native suite qualifier
+after its raw upstream Orka Tool/Task and model-answer proof. PR CI invokes
+it for relevant or unknown changes; only the explicit safe-path decision may
+skip it. Main pushes and manual CI retain full qualification. The separate main
+nightly and every release/dry run also invoke the full worker, without a docs
+shortcut. A release requires the same qualified and built commit. See
+[CI qualification and nightly failure reporting](docs/development.md#what-ci-proves).
+
+To run the qualifier inside its two exclusively owned CI contexts, use
+`python3 scripts/ci/suite-native.py kind-kmx-orka kind-kmx-orka-promote "$RUNNER_TEMP/kmx-suite-native"`. The checkout-only qualifier requires the
 shard's exclusive cluster-creation flag and a matching `KIND_CLUSTER`, refuses
 existing work/model fixtures, and uses a fresh private KMX home. It adds the pinned
 CPU AIKit model inside that owned cluster, warms it, then attempts two independent
@@ -239,7 +269,12 @@ exact registry/layout transfer, verified
 candidate root/child absence, source-withheld explicit promotion and no-effect
 refusal audits gate its metadata artifacts. Source answer/verdict/judge metadata
 is product-observed after cleanup, not re-fetched from deleted Tasks. Only passing
-metadata and scalar `qualification.json` are uploaded; raw captures are private.
+metadata and scalar `qualification.json` are uploaded as qualification evidence;
+raw captures are private. Separate `${RUNNER_TEMP}/native-suite-timings.json`
+records closed phase codes, monotonic elapsed seconds and scalar outcomes, and is
+uploaded even on qualification failure. Candidate-cleanup timing measures independent
+absence checks; deletion stays inside evaluation. Abrupt process termination may
+leave only the last closed phases with a `running` outcome, never passing evidence.
 Existing cluster deletion owns all runtime/model cleanup.
 The shard also runs `TestReleaseUpdatePinnedRV` and `TestReleaseStatePinnedCAS`
 against the pinned controller after native qualification. The native qualifier
