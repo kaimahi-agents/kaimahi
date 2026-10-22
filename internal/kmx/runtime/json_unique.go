@@ -80,7 +80,7 @@ func JSONKeysUnique(data []byte) bool {
 
 // foldJSONKey maps each rune to the smallest rune in its unicode.SimpleFold
 // orbit. Two keys fold to the same string exactly when strings.EqualFold
-// reports them equal, so a set lookup replaces pairwise comparison.
+// reports them equal, so case-insensitive duplicates share one set key.
 func foldJSONKey(key string) string {
 	var folded strings.Builder
 	folded.Grow(len(key))

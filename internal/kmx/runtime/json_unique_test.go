@@ -48,20 +48,37 @@ func TestFoldJSONKeyMatchesEqualFold(t *testing.T) {
 	}
 }
 
-func TestJSONKeysUniqueManyKeysIsLinear(t *testing.T) {
+func manyDistinctKeys(n int) []byte {
 	var data strings.Builder
 	data.WriteString("{")
-	for i := range 120000 {
+	for i := range n {
 		fmt.Fprintf(&data, "%q:0,", fmt.Sprintf("k%d", i))
 	}
 	data.WriteString(`"end":0}`)
+	return []byte(data.String())
+}
+
+func TestJSONKeysUniqueManyKeysIsLinear(t *testing.T) {
+	data := manyDistinctKeys(120000)
 	start := time.Now()
-	if !JSONKeysUnique([]byte(data.String())) {
+	if !JSONKeysUnique(data) {
 		t.Fatal("distinct keys refused")
 	}
-	// Pairwise comparison of 120000 keys takes minutes; a set lookup takes
-	// well under a second even under -race.
+	// Each key costs one set lookup, so 120000 keys finish well under a
+	// second even under -race; the generous bound only catches a regression
+	// to per-key work proportional to the object size.
 	if elapsed := time.Since(start); elapsed > 30*time.Second {
-		t.Fatalf("checking %d bytes took %s", data.Len(), elapsed)
+		t.Fatalf("checking %d bytes took %s", len(data), elapsed)
+	}
+}
+
+func BenchmarkJSONKeysUnique(b *testing.B) {
+	data := manyDistinctKeys(10000)
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	for b.Loop() {
+		if !JSONKeysUnique(data) {
+			b.Fatal("distinct keys refused")
+		}
 	}
 }
