@@ -3,8 +3,10 @@
 `internal/kmx/localpreview` runs one tool-free [single-file agent](agent-file.md)
 in the kmx process. Every result is labeled **local preview**. It is not
 deployment qualification, suite evidence, a passing receipt, or authority to
-publish or deploy. There is no CLI command yet; `kmx run FILE` and
-`kmx test FILE` are tracked separately in
+publish or deploy. It is not wired into the CLI yet: `kmx run FILE` and
+`kmx test FILE` use a temporary
+[preview runner (no journal)](kmx.md#agent-file-local-preview-unreleased-integration)
+until this runner replaces it under
 [#598](https://github.com/kaimahi-agents/kaimahi/issues/598).
 
 Status: the hermetic tests (fake model, an in-process HTTP endpoint and the
