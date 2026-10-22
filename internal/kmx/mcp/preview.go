@@ -49,7 +49,11 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			defer cancel()
 			sequence := files.beginPreview(input.Path)
-			parsed, parseErr := files.snapshot(ctx, input.Path)
+			path, pathErr := files.rootRelative(input.Path)
+			if pathErr != nil {
+				return nil, pathErr
+			}
+			parsed, parseErr := files.snapshot(ctx, path)
 			var detail *agentfile.Error
 			if parseErr != nil && !errors.As(parseErr, &detail) {
 				return nil, parseErr
@@ -58,7 +62,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 			}
-			files.finishPreview(sequence, result)
+			files.finishPreview(sequence, path, result)
 			// Keep the complete safe result even when the application returns an error.
 			// Returning that error to the generic protocol wrapper would discard it.
 			var previewErr *app.FilePreviewError

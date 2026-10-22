@@ -95,7 +95,8 @@ func TestAgentResourceLatestResult(t *testing.T) {
 	}
 	fake := &previewFixture{verdict: runtime.EvaluationPass, noJournal: true}
 	cs := resourceClient(t, f, &app.App{FileRunner: fake})
-	previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": saved.Path})
+	// Absolute tool paths and relative resource URIs must identify the same file.
+	previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": filepath.Join(root, saved.Path)})
 	current := readView(t, cs, saved.Path)
 	if current.Latest.Status != "current" || current.Latest.Result == nil || !current.Latest.Result.FullPass {
 		t.Fatal("latest outcome absent")
@@ -157,11 +158,11 @@ func TestAgentResourceLateObservation(t *testing.T) {
 	first := f.beginPreview("greeter.agent.md")
 	second := f.beginPreview("greeter.agent.md")
 	newer := app.FilePreviewResult{State: "error", ReasonCode: "execution_failed"}
-	f.finishPreview(second, newer)
-	f.finishPreview(first, app.FilePreviewResult{State: "complete", FullPass: true})
+	f.finishPreview(second, "newer.agent.md", newer)
+	f.finishPreview(first, "older.agent.md", app.FilePreviewResult{State: "complete", FullPass: true})
 	f.viewMu.Lock()
 	defer f.viewMu.Unlock()
-	if f.latest.result == nil || f.latest.result.ReasonCode != "execution_failed" {
+	if f.latest.path != "newer.agent.md" || f.latest.result == nil || f.latest.result.ReasonCode != "execution_failed" {
 		t.Fatal("late completion overwrote newer operation")
 	}
 }

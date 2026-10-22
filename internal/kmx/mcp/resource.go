@@ -96,7 +96,7 @@ func (f *Files) beginPreview(p string) uint64 {
 	f.latest = previewObservation{sequence: f.latest.sequence + 1, path: p}
 	return f.latest.sequence
 }
-func (f *Files) finishPreview(sequence uint64, result app.FilePreviewResult) {
+func (f *Files) finishPreview(sequence uint64, path string, result app.FilePreviewResult) {
 	// Copy only the existing safe projection, never runner payloads or journals.
 	b, err := json.Marshal(result)
 	if err != nil || len(b) > 1<<20 {
@@ -109,6 +109,7 @@ func (f *Files) finishPreview(sequence uint64, result app.FilePreviewResult) {
 	f.viewMu.Lock()
 	defer f.viewMu.Unlock()
 	if f.latest.sequence == sequence {
+		f.latest.path = path
 		f.latest.result = &frozen
 	}
 }
