@@ -42,7 +42,7 @@ type Provider struct {
 	legacy                                bool
 	now                                   func() time.Time
 	wait                                  func(context.Context, time.Duration) error
-	runGH                                 func(context.Context) ([]byte, error)
+	runGH, runStoredGH                    func(context.Context) ([]byte, error)
 }
 
 // New does not open a keychain, start a subprocess, or make a network request.
@@ -51,7 +51,7 @@ func New(store Store) *Provider {
 	if store == nil {
 		store = &keychainStore{get: keyring.Get, set: keyring.Set, delete: keyring.Delete}
 	}
-	return &Provider{store: store, http: &http.Client{Timeout: 30 * time.Second}, api: "https://api.githubcopilot.com", deviceURL: "https://github.com/login/device/code", tokenURL: "https://github.com/login/oauth/access_token", exchangeURL: "https://api.github.com/copilot_internal/v2/token", now: time.Now, wait: wait, runGH: githubToken}
+	return &Provider{store: store, http: &http.Client{Timeout: 30 * time.Second}, api: "https://api.githubcopilot.com", deviceURL: "https://github.com/login/device/code", tokenURL: "https://github.com/login/oauth/access_token", exchangeURL: "https://api.github.com/copilot_internal/v2/token", now: time.Now, wait: wait, runGH: githubToken, runStoredGH: storedGithubToken}
 }
 
 // DevicePrompt contains only values safe to display, never the device secret.
@@ -131,7 +131,7 @@ func (p *Provider) LoginGH(ctx context.Context) error {
 	if err := p.checkKeychain(ctx); err != nil {
 		return err
 	}
-	token, err := p.ghCredential(ctx)
+	token, err := p.ghCredential(ctx, p.runGH)
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func (p *Provider) credential(ctx context.Context) (string, error) {
 		return "", ErrAuthRequired
 	}
 	if errors.Is(err, ErrKeychain) {
-		token, err = p.ghCredential(ctx)
+		token, err = p.ghCredential(ctx, p.runStoredGH)
 		if errors.Is(err, ErrUnavailable) {
 			return "", ErrKeychain
 		}
@@ -172,10 +172,10 @@ func (p *Provider) credential(ctx context.Context) (string, error) {
 	return token, nil
 }
 
-func (p *Provider) ghCredential(ctx context.Context) (string, error) {
+func (p *Provider) ghCredential(ctx context.Context, capture func(context.Context) ([]byte, error)) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	b, err := p.runGH(ctx)
+	b, err := capture(ctx)
 	if errors.Is(err, ErrMalformed) {
 		return "", ErrMalformed
 	}
@@ -291,7 +291,25 @@ func (b *limitedOutput) Write(v []byte) (int, error) {
 	return b.buffer.Write(v)
 }
 func githubToken(ctx context.Context) ([]byte, error) {
+	return githubTokenWithEnv(ctx, nil)
+}
+
+// Runtime fallback targets a stored sign-in, not unrelated CI token variables.
+func storedGithubToken(ctx context.Context) ([]byte, error) {
+	inherited := os.Environ()
+	environment := make([]string, 0, len(inherited))
+	for _, entry := range inherited {
+		name, _, _ := strings.Cut(entry, "=")
+		if !strings.EqualFold(name, "GH_TOKEN") && !strings.EqualFold(name, "GITHUB_TOKEN") {
+			environment = append(environment, entry)
+		}
+	}
+	return githubTokenWithEnv(ctx, environment)
+}
+
+func githubTokenWithEnv(ctx context.Context, environment []string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "gh", "auth", "token", "--hostname", "github.com")
+	cmd.Env = environment
 	cmd.WaitDelay = 100 * time.Millisecond
 	var out limitedOutput
 	cmd.Stdout = &out

@@ -40,7 +40,7 @@ func TestRuntimeCredentialsAuthenticateWithoutPersistence(t *testing.T) {
 				t.Setenv("COPILOT_GITHUB_TOKEN", "")
 				os.Unsetenv("COPILOT_GITHUB_TOKEN")
 			}
-			p.runGH = func(ctx context.Context) ([]byte, error) {
+			p.runStoredGH = func(ctx context.Context) ([]byte, error) {
 				calls++
 				if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 5*time.Second {
 					t.Error("runtime gh capture has no bounded deadline")
@@ -82,7 +82,7 @@ func TestRuntimeCredentialsFailClosed(t *testing.T) {
 		p, store := fixture(t, func(http.ResponseWriter, *http.Request) { t.Error("invalid environment reached network") })
 		store.token = canary
 		t.Setenv("COPILOT_GITHUB_TOKEN", token)
-		p.runGH = func(context.Context) ([]byte, error) { t.Fatal("invalid environment switched to gh"); return nil, nil }
+		p.runStoredGH = func(context.Context) ([]byte, error) { t.Fatal("invalid environment switched to gh"); return nil, nil }
 		_, err := p.List(t.Context())
 		if !errors.Is(err, ErrAuthRevoked) || store.reads != 0 {
 			t.Fatalf("invalid explicit environment did not fail closed: %v", err)
@@ -95,7 +95,7 @@ func TestRuntimeCredentialsFailClosed(t *testing.T) {
 	})
 	t.Setenv("COPILOT_GITHUB_TOKEN", "")
 	os.Unsetenv("COPILOT_GITHUB_TOKEN")
-	p.runGH = func(context.Context) ([]byte, error) {
+	p.runStoredGH = func(context.Context) ([]byte, error) {
 		t.Fatal("missing credential or refusal switched to gh")
 		return nil, nil
 	}
@@ -117,7 +117,7 @@ func TestRuntimeGHFailureClearsCachedCredentials(t *testing.T) {
 		p, store := fixture(t, func(http.ResponseWriter, *http.Request) { t.Error("failed credential capture reached network") })
 		store.fail = ErrKeychain
 		p.source, p.bearer = canary, canary
-		p.runGH = func(context.Context) ([]byte, error) { return []byte(canary), failure.cause }
+		p.runStoredGH = func(context.Context) ([]byte, error) { return []byte(canary), failure.cause }
 		_, err := p.List(t.Context())
 		if !errors.Is(err, failure.want) || p.source != "" || p.bearer != "" || store.writes != 0 {
 			t.Fatalf("runtime capture failure retained a credential or lost error identity: %v", err)
@@ -156,7 +156,7 @@ func TestWrappedMissingCredentialNeverLeaksBackendDetails(t *testing.T) {
 func TestRevokedRuntimeGHCredentialExplainsSafeRecovery(t *testing.T) {
 	p, store := fixture(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
 	store.fail = ErrKeychain
-	p.runGH = func(context.Context) ([]byte, error) { return []byte(canary), nil }
+	p.runStoredGH = func(context.Context) ([]byte, error) { return []byte(canary), nil }
 	_, err := p.List(t.Context())
 	if !errors.Is(err, ErrAuthRevoked) {
 		t.Fatalf("revocation: %v", err)

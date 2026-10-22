@@ -94,7 +94,9 @@ kmx's keychain. An empty or malformed value is an error, not a reason to switch
 accounts. Otherwise kmx reads its owned keychain item. Only when that facility
 is unavailable does it try an existing github.com GitHub CLI login through
 `gh auth token --hostname github.com`, bounded to five seconds and 16 KiB of
-private stdout. Missing owned credentials and authentication, subscription,
+private stdout. This runtime child excludes `GH_TOKEN` and `GITHUB_TOKEN`, so
+those variables cannot override the stored login; explicit `login --gh` retains
+normal gh environment precedence. Missing owned credentials and authentication, subscription,
 policy or quota refusals never trigger another credential source. Neither
 runtime source is copied into kmx storage or a token file.
 

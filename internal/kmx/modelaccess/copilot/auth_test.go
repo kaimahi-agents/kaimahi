@@ -56,6 +56,7 @@ func fixture(t *testing.T, handler http.HandlerFunc) (*Provider, *memoryStore) {
 	store := &memoryStore{}
 	p := New(store)
 	p.runGH = func(context.Context) ([]byte, error) { return nil, ErrAuthRequired }
+	p.runStoredGH = p.runGH
 	p.http = server.Client()
 	p.api = server.URL
 	p.deviceURL = server.URL + "/device"
