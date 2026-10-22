@@ -192,7 +192,8 @@ def go_package_documented(text: str) -> bool:
         comments, end = [], token.start()
         for previous in reversed(tokens[:index]):
             gap = text[previous.end():end]
-            if not previous[0].startswith(('//', '/*')) or gap.count('\n') > 1:
+            if (not previous[0].startswith(('//', '/*')) or gap.count('\n') > 1
+                    or (end == token.start() and '\n' not in gap)):
                 break
             comments.append(previous[0])
             end = previous.start()
@@ -426,6 +427,7 @@ def selftest() -> int:
         ('missing', 'package app\n'),
         ('empty line', '//\npackage app\n'),
         ('empty block', '/* */\npackage app\n'),
+        ('same-line block', '/* Package app does work. */ package app\n'),
         ('detached line', '// Package app does work.\n\npackage app\n'),
         ('detached block', '/* Package app does work. */\n\npackage app\n'),
         ('build directive', '//go:build linux\npackage app\n'),

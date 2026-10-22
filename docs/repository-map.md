@@ -77,7 +77,7 @@ Repository and organization identity assets.
 
 ## `plugins/` — integration packages
 
-Host plugin templates, packaging and integration-test support.
+Host plugin templates, packaging and integration-test support; see [the package guide](../plugins/copilot/README.md).
 
 ## `.github/` — repository automation
 
