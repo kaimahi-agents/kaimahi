@@ -1,4 +1,4 @@
-"""Offline package contracts; fake-engine tests are not Copilot qualification."""
+"""Offline packaging and real bundled MCP; not installed Copilot qualification."""
 from __future__ import annotations
 
 import hashlib
@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -198,101 +199,145 @@ class PackageTests(unittest.TestCase):
                              for p in self.out.rglob("*")))
 
 
+@unittest.skipIf(os.name == "nt", "main still blocks native Windows CLI; packaging checks run above")
 class ProcessTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory(prefix="native fake kmx ")
+        cls.temp = tempfile.TemporaryDirectory(prefix="native kmx ")
         cls.addClassCleanup(cls.temp.cleanup)
-        cls.engine = Path(cls.temp.name) / ("fake-kmx.exe" if os.name == "nt" else "fake-kmx")
-        subprocess.run(["go", "build", "-o", str(cls.engine),
-                        str(HERE / "testdata/fake-kmx/main.go")], check=True,
+        cls.engine = Path(cls.temp.name) / "kmx"
+        subprocess.run(["go", "build", "-o", str(cls.engine), "./cmd/kmx"],
+                       cwd=HERE.parents[1], check=True,
                        env={**os.environ, "CGO_ENABLED": "0", "GOWORK": "off"},
                        capture_output=True, timeout=120)
         cls.digest = hashlib.sha256(cls.engine.read_bytes()).hexdigest()
         cls.target = subprocess.check_output(["go", "env", "GOOS", "GOARCH"],
                                              text=True).strip().replace("\n", "/")
 
-    def fixture(self, scenario="pass", relocate=False, tool="test"):
-        with tempfile.TemporaryDirectory(prefix="plugin fixture ") as temp:
+    def test_relocated_bundle_runs_real_rooted_fail_fix_loop(self):
+        # A wrong bundled command/root/schema or fixture-only result breaks this loop.
+        with tempfile.TemporaryDirectory(prefix="plugin integration ") as temp:
             base = Path(temp)
             root = base / "selected repository"
             root.mkdir()
             output = base / "built plugin"
             package.build(binary=self.engine, sha256=self.digest, target=self.target,
                           root=root, output=output, version="0.1.0")
-            if relocate:
-                moved = base / "copilot installed cache"
-                output.rename(moved)
-                output = moved
-            config = json.loads((output / "mcp.json").read_text())
-            server = config["mcpServers"]["kmx-agent-builder"]
-            # Agent Plugins resolves ./ commands against PLUGIN_ROOT, not cwd.
-            command = [str(output / server["command"]), *server["args"]]
-            requests = [
-                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
-                {"jsonrpc": "2.0", "method": "notifications/initialized"},
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-                {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": tool, "arguments": {"schemaVersion": 1}}},
-            ]
-            process = subprocess.run(command, cwd=base, input="".join(json.dumps(r) + "\n" for r in requests),
-                                     capture_output=True, text=True, timeout=15,
-                                     env={**os.environ, "EXPECTED_ROOT": str(root.resolve()),
-                                          "KMX_FIXTURE_CASE": scenario, "UNRELATED_SECRET": "fixture-canary"})
-            self.assertEqual(process.returncode, 0, process.stderr)
-            self.assertEqual(process.stderr, "")
-            self.assertNotIn("fixture-canary", process.stdout)
-            replies = [json.loads(line) for line in process.stdout.splitlines()]
-            self.assertEqual([r["id"] for r in replies], [1, 2, 3])
-            self.assertEqual(replies[0]["result"]["serverInfo"]["name"], "fake-kmx-fixture")
-            # Authoring mirrors the proposed MCP schemas; preview inputs are not yet frozen.
-            tools = replies[1]["result"]["tools"]
-            self.assertEqual([t["name"] for t in tools], ["create", "edit", "run", "test"])
-            for author in tools[:2]:
-                schema = author["inputSchema"]
-                expected = ["path", "content"] + (["expectedRevision"] if author["name"] == "edit" else []) + ["schemaVersion"]
-                self.assertEqual(schema["required"], expected)
-                self.assertEqual(schema["properties"]["schemaVersion"], {"type": "integer", "enum": [1]})
-                self.assertEqual(schema["properties"]["path"]["maxLength"], 256)
-                self.assertEqual(schema["properties"]["content"]["maxLength"], 256 << 10)
-                self.assertEqual(schema["additionalProperties"], {"not": {}})
-            return replies[2]
+            cache = base / "copilot installed cache"
+            output.rename(cache)
+            server = json.loads((cache / "mcp.json").read_text())["mcpServers"]["kmx-agent-builder"]
+            command = [str(cache / server["command"]), *server["args"]]
+            home = base / "private kmx home"
+            process = subprocess.Popen(command, cwd=base, stdin=subprocess.PIPE,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                       text=True, encoding="utf-8",
+                                       env={**os.environ, "KMX_HOME": str(home),
+                                            "UNRELATED_SECRET": "fixture-canary"})
+            timer = threading.Timer(30, process.kill)
+            timer.start()
+            try:
+                def send(message):
+                    process.stdin.write(json.dumps(message) + "\n")
+                    process.stdin.flush()
 
-    def test_native_packaged_process_can_relocate_to_plugin_cache(self):
-        result = self.fixture(relocate=True)["result"]
-        self.assertEqual(json.loads(result["content"][0]["text"]), result["structuredContent"])
-        self.assertTrue(result["structuredContent"]["fullPass"])
+                def request(number, method, params):
+                    send({"jsonrpc": "2.0", "id": number, "method": method, "params": params})
+                    reply = json.loads(process.stdout.readline())
+                    self.assertEqual(reply["id"], number)
+                    self.assertNotIn("fixture-canary", json.dumps(reply))
+                    return reply
 
-    def test_result_contract_v1_scenarios(self):
-        required = {"schemaVersion", "kind", "operation", "file", "modelRoute", "selection",
-                    "state", "verdict", "fullPass", "reasonCode", "reason", "examples", "retention"}
-        for scenario, state, verdict, full, scope in [
-            ("pass", "complete", "pass", True, "full"),
-            ("fail", "complete", "fail", False, "full"),
-            ("unknown", "complete", "unknown", False, "full"),
-            ("subset", "complete", "pass", False, "subset"),
-            ("cancelled", "cancelled", "unknown", False, "full"),
-        ]:
-            with self.subTest(scenario=scenario):
-                r = self.fixture(scenario)["result"]["structuredContent"]
-                self.assertEqual(set(r), required)
-                self.assertEqual((r["state"], r["verdict"], r["fullPass"], r["selection"]["scope"]),
-                                 (state, verdict, full, scope))
-                self.assertEqual(r["schemaVersion"], 1)
-                self.assertEqual(r["kind"], "kmx.agent-file-preview")
-                self.assertRegex(r["file"]["revision"], r"^sha256:[a-f0-9]{64}$")
-                self.assertEqual(r["modelRoute"], {"provider": "fake", "model": "fake"})
-                self.assertEqual(r["examples"][0]["id"], "greeting")
-                assertion = r["examples"][0]["assertions"][0]
-                self.assertEqual(assertion["id"], "greeting-text")
-                expected_reason = {"pass": "assertion_satisfied", "fail": "assertion_failed",
-                                   "unknown": "judge_unknown", "subset": "assertion_satisfied",
-                                   "cancelled": "not_run"}[scenario]
-                self.assertEqual(assertion["reasonCode"], expected_reason)
-                self.assertEqual(r["retention"], {"status": "not_requested"})
-                self.assertNotIn("answerExcerpt", json.dumps(r))
+                initialized = request(1, "initialize", {
+                    "protocolVersion": "2025-06-18", "capabilities": {},
+                    "clientInfo": {"name": "plugin-integration", "version": "1.0.0"}})
+                self.assertEqual(initialized["result"]["serverInfo"]["name"], "kmx")
+                send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+                tools = request(2, "tools/list", {})["result"]["tools"]
+                self.assertEqual({t["name"] for t in tools}, {"create", "edit", "run", "test"})
+                for tool in tools:
+                    self.assertIn("path", tool["inputSchema"]["required"])
+                    self.assertIn("schemaVersion", tool["inputSchema"]["required"])
 
-    def test_fixture_has_no_explain_tool(self):
-        self.assertEqual(self.fixture(tool="explain")["error"]["code"], -32601)
+                counter = 2
+                def call(name, **arguments):
+                    nonlocal counter
+                    counter += 1
+                    reply = request(counter, "tools/call", {
+                        "name": name, "arguments": {"schemaVersion": 1, **arguments}})
+                    result = reply["result"]
+                    payload = result["structuredContent"]
+                    text = result["content"][0]["text"]
+                    if set(payload) == {"schemaVersion", "reasonCode", "reason"}:
+                        self.assertEqual(text, payload["reason"])
+                    else:
+                        self.assertEqual(json.loads(text), payload)
+                    return result, payload
+
+                skill = (cache / "skills/kmx-agent-builder/SKILL.md").read_text()
+                self.assertIn("````markdown\n", skill, "orientation needs a runnable canonical charter")
+                source = skill.split("````markdown\n", 1)[1].split("\n````", 1)[0] + "\n"
+                wrong = source.replace("Hello, ", "Goodbye, ", 1)
+                self.assertNotEqual(source, wrong)
+                path = ".squad/agents/greeter/charter.md"
+                result, created = call("create", path=path, content=wrong)
+                self.assertFalse(result.get("isError", False))
+                revision = created["file"]["revision"]
+                self.assertEqual(revision, "sha256:" + hashlib.sha256(wrong.encode()).hexdigest())
+                self.assertEqual((root / path).read_bytes(), wrong.encode())
+
+                result, failed = call("run", path=path, input="Grace")
+                self.assertTrue(result["isError"])
+                self.assertEqual((failed["state"], failed["verdict"], failed["fullPass"]),
+                                 ("complete", "fail", False))
+                self.assertEqual(failed["file"]["revision"], revision)
+                self.assertEqual(failed["examples"][0]["assertions"][0]["id"], "greeting-text")
+                self.assertNotIn("answerExcerpt", json.dumps(failed))
+
+                result, fixed = call("edit", path=path, content=source, expectedRevision=revision)
+                self.assertFalse(result.get("isError", False))
+                new_revision = fixed["file"]["revision"]
+                self.assertNotEqual(new_revision, revision)
+                result, partial = call("test", path=path, caseId="greeting")
+                self.assertFalse(result.get("isError", False))
+                self.assertEqual((partial["verdict"], partial["fullPass"], partial["selection"]["scope"]),
+                                 ("pass", False, "subset"))
+                result, passed = call("test", path=path)
+                self.assertFalse(result.get("isError", False))
+                self.assertEqual((passed["state"], passed["verdict"], passed["fullPass"]),
+                                 ("complete", "pass", True))
+                self.assertEqual(passed["file"]["revision"], new_revision)
+                self.assertEqual(passed["modelRoute"], {"provider": "fake", "model": "fake"})
+                self.assertEqual(passed["runner"], "preview runner (no journal)")
+                self.assertEqual(passed["retention"], {"status": "not_requested"})
+
+                # Mutation refusal must not change the bound charter or escape into the cache/cwd.
+                for name, args, reason in [
+                    ("edit", dict(path=path, content=wrong, expectedRevision=revision), "stale_revision"),
+                    ("create", dict(path=path, content=source), "already_exists"),
+                    ("create", dict(path="../escape.agent.md", content=source), "unsafe_path"),
+                ]:
+                    result, refused = call(name, **args)
+                    self.assertTrue(result["isError"])
+                    self.assertEqual(refused["reasonCode"], reason)
+                self.assertEqual((root / path).read_bytes(), source.encode())
+                self.assertFalse((base / "escape.agent.md").exists())
+                self.assertFalse((cache / ".squad").exists())
+                self.assertFalse((root / ".squad/team.md").exists())
+                self.assertFalse((base / ".squad").exists())
+                unknown = request(counter + 1, "tools/call", {"name": "explain", "arguments": {}})
+                self.assertEqual(unknown["error"]["code"], -32602)
+                process.stdin.close()
+                process.wait(timeout=5)
+                self.assertEqual(process.returncode, 0)
+                self.assertEqual(process.stdout.read(), "")
+                self.assertEqual(process.stderr.read(), "")
+            finally:
+                timer.cancel()
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=5)
+                for stream in (process.stdin, process.stdout, process.stderr):
+                    stream.close()
 
 
 if __name__ == "__main__":

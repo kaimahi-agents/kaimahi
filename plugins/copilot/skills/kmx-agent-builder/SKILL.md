@@ -37,8 +37,9 @@ explain the contract/version problem and stop.
 4. Use Run to try the agent and its saved examples. Distinguish any ad-hoc answer
    from example results. Use Test for saved examples; a selected case is partial.
 5. Show failures next to the example/assertion ID. Apply requested instruction
-   edits with the exact revision from the last successful read/mutation. On a
-   stale-revision refusal, stop and ask the user to reconcile the visible file;
+   edits with the exact revision from the last successful read/mutation. Keep the
+   original root-relative request path: Run/Test file.path is a display basename,
+   not an Edit target (especially for Squad charters). On a stale-revision refusal, stop and ask the user to reconcile the visible file;
    do not retry blindly or replace somebody else's changes.
 6. Do not weaken or replace an expected check silently to make it pass. Tell the
    user which instruction/check would change and preserve reviewable file edits.
@@ -46,6 +47,47 @@ explain the contract/version problem and stop.
 7. For a real task, use the user's explicitly configured provider route and exact
    model, updating Model.Preferred through Edit. Do not infer endpoints, extract
    host credentials, log in, install a model or switch providers after an error.
+
+## Deterministic orientation
+
+Use this complete canonical charter for fake orientation. The fake accepts only
+an Accountable Responsibilities section matching `Reply with exactly ` followed
+by a backtick-quoted literal and either a period or ` followed by the input name.`
+(or ` followed by the input.`). It cannot execute arbitrary task instructions.
+For the fail/fix check, change only `Hello, ` to `Goodbye, ` in the instruction,
+keep the saved assertion unchanged, show its failure, then restore the instruction.
+Use `caseId: greeting` for a partial retest and omit caseId for the full Test.
+
+````markdown
+# Greeter — Greeting specialist
+
+## Identity
+- **ID:** greeter
+- **Purpose:** Return a short greeting for the supplied name.
+
+## Accountable Responsibilities
+Reply with exactly `Hello, ` followed by the input name.
+
+## Non-Responsibilities
+Do not call tools, read files or contact other agents.
+
+## Collaboration and Review Authority
+Return the greeting to the caller. No delegated work.
+
+## Model
+- **Preferred:** fake
+
+## Examples
+```yaml
+examples:
+  - id: greeting
+    input: Ada
+    assertions:
+      - id: greeting-text
+        type: contains
+        value: Hello, Ada
+```
+````
 
 ## Report the actual result
 
@@ -58,6 +100,10 @@ verdicts are not passes. Present, in chat:
 - full or **partial**, from selection.scope, and complete/cancelled/error/refused;
 - each example and assertion ID with pass/fail/unknown and its safe reasonCode;
 - full pass only when fullPass is true, state is complete and verdict is pass.
+
+A tool result with isError true may still carry a complete preview with failed
+or unknown assertion rows: report those rows rather than discarding the result.
+Boundary refusals instead carry schemaVersion/reasonCode/reason without a preview.
 
 A subset may have verdict pass but fullPass false. Unknown, cancellation,
 refusal, missing checks or unavailable runner/model cannot become a passing
