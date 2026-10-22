@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
@@ -207,7 +207,7 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 	// Receipt validation already classifies its random run ID. The native
 	// subject has no run ID and its generic key-shape hash guard cannot be used
 	// for this typed plan without misclassifying valid evidence identities.
-	review, err := agentsuite.Marshal(struct {
+	review, err := suitecore.Marshal(struct {
 		Domain string
 		Plan   ReleaseLiftSummary
 	}{"kmx.release-lift.plan/v1", s})
@@ -231,14 +231,14 @@ func ValidateReleaseLiftOptions(opt ReleaseLiftOptions) error {
 	if opt.HarnessImage != "" {
 		// AgentSessions plan: binding and image only; no cluster, inference,
 		// promotion, update or Lift provenance alias.
-		if _, err := agentsessions.HarnessImageDigest(opt.HarnessImage); err != nil || !pinned || !verificationIdentity(ref) || !agentsuite.IsValidDigest(digest) ||
+		if _, err := agentsessions.HarnessImageDigest(opt.HarnessImage); err != nil || !pinned || !verificationIdentity(ref) || !suitecore.IsValidDigest(digest) ||
 			strings.TrimSpace(opt.Bindings) == "" || opt.ToContext != "" || opt.ToNamespace != "" || opt.Inference != "" || opt.Promote || opt.Update || opt.EvaluationName != "" ||
 			strings.TrimSpace(opt.Evidence) == "" || opt.FromLayout != "" && opt.PlainHTTP {
 			return ErrReleaseLift
 		}
 		return nil
 	}
-	if !pinned || !verificationIdentity(ref) || !agentsuite.IsValidDigest(digest) ||
+	if !pinned || !verificationIdentity(ref) || !suitecore.IsValidDigest(digest) ||
 		!verificationIdentity(opt.ToContext) || scaffold.RefuseKeyShapes(opt.ToContext) != nil ||
 		(opt.Inference == "") == (opt.Bindings == "") ||
 		opt.Inference != "" && (!strings.HasPrefix(opt.Inference, "provider:") || scaffold.ValidateObjectName(provider) != nil) ||

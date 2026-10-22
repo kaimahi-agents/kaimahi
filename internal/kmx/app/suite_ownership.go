@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -29,7 +29,7 @@ func (o *orkaSuiteOwnership) markers() map[string]any {
 		markers[suiteCandidateRunMarker] = o.EvaluationRun
 	}
 	if o.FlowCandidate != nil {
-		raw, _ := agentsuite.Marshal(o.FlowCandidate)
+		raw, _ := suitecore.Marshal(o.FlowCandidate)
 		markers[flowCandidateMarker] = string(raw)
 	}
 	return markers

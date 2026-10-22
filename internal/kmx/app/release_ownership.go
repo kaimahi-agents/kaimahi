@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	godigest "github.com/opencontainers/go-digest"
 )
@@ -68,14 +68,14 @@ func readReleaseOwnership(ctx context.Context, id string) (*releaseOwnershipReco
 			UpdateProof       *releaseOwnershipProof `json:"updateProof"`
 			ReleaseDataDigest string                 `json:"releaseDataDigest"`
 		}
-		if agentsuite.Unmarshal(raw, &wire) != nil {
+		if suitecore.Unmarshal(raw, &wire) != nil {
 			return nil, errReleaseState
 		}
 		if wire.SchemaVersion != 1 || wire.ID != id || (wire.State != "ready" && wire.State != "partial" && wire.State != "not-applied") || wire.UpdateProof == nil || wire.UpdateProof.Version != 2 || !validReleaseTargetDependencies(wire.UpdateProof.Dependencies) ||
 			!statusOpaque(wire.UpdateProof.RecordUID) || !validReleaseStateObjects(wire.UpdateProof.Objects, true) || len(wire.Resources) != 2 || godigest.FromBytes(wire.Receipt).String() != wire.Summary.EvidenceDigest {
 			return nil, errReleaseUpdateUnsupported
 		}
-		if name != releaseCommitMarker || !agentsuite.IsValidDigest(wire.ReleaseDataDigest) {
+		if name != releaseCommitMarker || !suitecore.IsValidDigest(wire.ReleaseDataDigest) {
 			return nil, errReleaseState
 		}
 		candidate, err := readReleaseOwnershipSnapshot(root, "4.json")

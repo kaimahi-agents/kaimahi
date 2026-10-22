@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteevidence "github.com/agent-primitives/suite/evidence"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
@@ -46,14 +47,14 @@ func TestSuitePublicExportOfflineAndPrivacy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var e agentsuite.EvaluationEvidence
-	if err := agentsuite.Unmarshal(data, &e); err != nil {
+	var e suiteevidence.EvaluationEvidence
+	if err := suitecore.Unmarshal(data, &e); err != nil {
 		t.Fatal(err)
 	}
-	if e.Execution.Runtime != (agentsuite.EvidenceImplementation{ID: "orka", Version: "0.2.0", Digest: "sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370"}) {
+	if e.Execution.Runtime != (suitecore.EvidenceImplementation{ID: "orka", Version: "0.2.0", Digest: "sha256:7c1727f92d5c0cf05d464c6eb9e70b8342cb5a7a87c2e35338f051d7b85aa370"}) {
 		t.Fatalf("runtime: %#v", e.Execution.Runtime)
 	}
-	if e.Execution.Harness != (agentsuite.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: "sha256:814d7149308e62730df59759c5137667cad04520c94cc50ff56e5028fdc8bcd4"}) {
+	if e.Execution.Harness != (suitecore.EvidenceImplementation{ID: "orka", Version: "harness-v2", Digest: "sha256:814d7149308e62730df59759c5137667cad04520c94cc50ff56e5028fdc8bcd4"}) {
 		t.Fatalf("harness: %#v", e.Execution.Harness)
 	}
 	if e.Execution.Renderer.ID != "kmx.native-orka" || e.Execution.Renderer.Version != "v2" || e.Execution.Profile.ID != "kmx.orka-harness-v2-tool-free-openai" {
@@ -187,11 +188,11 @@ func TestSuitePublicSessionsRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := agentsuite.Marshal(e)
+	raw, err := suitecore.Marshal(e)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := agentsuite.VerifyEvaluation(p.prepared.Path, expected, bytes.NewReader(raw)); err != nil {
+	if _, err := suiteevidence.VerifyEvaluation(p.prepared.Path, expected, bytes.NewReader(raw)); err != nil {
 		t.Fatal(err)
 	}
 }

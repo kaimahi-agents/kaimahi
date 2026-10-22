@@ -331,7 +331,7 @@ func (d *directFileRunner) send(ctx context.Context, client *http.Client, r mode
 	return body, nil
 }
 func parseDirectCompletion(body []byte, model string) (string, bool) {
-	if !evaluationJudgeJSONUnique(body) {
+	if !runtime.JSONKeysUnique(body) {
 		return "", false
 	}
 	var envelope struct {

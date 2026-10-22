@@ -5,14 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -33,6 +32,9 @@ type evaluationJudgeConfig struct {
 	// Snapshot the already validated credential for diagnostic redaction before
 	// any run starts; callers must never serialize this transient value.
 	diagnosticKey *string
+	// transport replaces the default network transport; local preview uses it
+	// for the offline fake route and callers' test transports.
+	transport http.RoundTripper
 }
 
 type evaluationJudgeClient struct {
@@ -100,7 +102,10 @@ func newEvaluationCaseJudge(config evaluationJudgeConfig, selectedCases []agentr
 	}
 	// Clone standard defaults: ProxyFromEnvironment and normal TLS verification
 	// remain active. Redirects are forbidden even to the same host.
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	var transport http.RoundTripper = http.DefaultTransport.(*http.Transport).Clone()
+	if config.transport != nil {
+		transport = config.transport
+	}
 	client := &evaluationJudgeClient{baseURL: baseURL, key: key, out: out, httpClient: &http.Client{
 		Transport:     transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -109,50 +114,14 @@ func newEvaluationCaseJudge(config evaluationJudgeConfig, selectedCases []agentr
 }
 
 func canonicalEvaluationJudgeURL(raw string) (string, error) {
-	invalid := func() (string, error) {
+	canonical, err := agentruntime.CanonicalOpenAIBaseURL(raw)
+	switch {
+	case errors.Is(err, agentruntime.ErrOpenAIEndpointInsecure):
+		return "", fmt.Errorf("judge URL requires HTTPS except keyless HTTP at literal 127.0.0.1 or ::1")
+	case err != nil:
 		return "", fmt.Errorf("judge URL must be an absolute HTTP(S) base without credentials, query, or fragment")
 	}
-	if len(raw) > 4096 || !utf8.ValidString(raw) || secretshapes.Match(raw) != nil || strings.ContainsAny(raw, "?#") {
-		return invalid()
-	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Opaque != "" || u.User != nil || u.Host == "" || u.Hostname() == "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-		return invalid()
-	}
-	u.Scheme = strings.ToLower(u.Scheme)
-	host := strings.ToLower(u.Hostname())
-	if u.Scheme != "https" && !(u.Scheme == "http" && (host == "127.0.0.1" || host == "::1")) {
-		return "", fmt.Errorf("judge URL requires HTTPS except keyless HTTP at literal 127.0.0.1 or ::1")
-	}
-	if strings.HasSuffix(u.Host, ":") {
-		return invalid()
-	}
-	port := u.Port()
-	if port != "" {
-		number, err := strconv.Atoi(port)
-		if err != nil || number < 1 || number > 65535 {
-			return invalid()
-		}
-	}
-	if (u.Scheme == "https" && port == "443") || (u.Scheme == "http" && port == "80") {
-		port = ""
-	}
-	u.Host = host
-	if strings.Contains(host, ":") {
-		u.Host = "[" + host + "]"
-	}
-	if port != "" {
-		u.Host = net.JoinHostPort(host, port)
-	}
-	u.Path = strings.TrimRight(u.Path, "/")
-	u.RawPath = strings.TrimRight(u.RawPath, "/")
-	if !strings.HasSuffix(u.Path, "/v1") {
-		u.Path += "/v1"
-		if u.RawPath != "" {
-			u.RawPath += "/v1"
-		}
-	}
-	return u.String(), nil
+	return canonical, nil
 }
 
 // evaluate preserves ordinary assertion rows and fills only judge rows while the
@@ -302,7 +271,7 @@ func (c *evaluationJudgeClient) sample(ctx context.Context, payload []byte, mode
 }
 
 func parseEvaluationJudgeResponse(body []byte, model, version, key string) (int, string, string, bool) {
-	if !evaluationJudgeJSONUnique(body) {
+	if !agentruntime.JSONKeysUnique(body) {
 		return 0, "", "", false
 	}
 	var envelope struct {
@@ -337,7 +306,7 @@ func parseEvaluationJudgeResponse(body []byte, model, version, key string) (int,
 		return 0, "", "", false
 	}
 	var content string
-	if json.Unmarshal(msg.Content, &content) != nil || !evaluationJudgeJSONUnique([]byte(content)) {
+	if json.Unmarshal(msg.Content, &content) != nil || !agentruntime.JSONKeysUnique([]byte(content)) {
 		return 0, "", "", false
 	}
 	var result map[string]json.RawMessage
@@ -368,68 +337,4 @@ func parseEvaluationJudgeResponse(body []byte, model, version, key string) (int,
 		safe = ""
 	}
 	return score, safe, match, true
-}
-
-// evaluationJudgeJSONUnique rejects duplicate keys at every object depth and
-// trailing data, without restricting normal OpenAI envelope extensions.
-func evaluationJudgeJSONUnique(data []byte) bool {
-	if !utf8.Valid(data) {
-		return false
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var walk func(int) bool
-	walk = func(depth int) bool {
-		if depth > 32 {
-			return false
-		}
-		token, err := decoder.Token()
-		if err != nil {
-			return false
-		}
-		delimiter, ok := token.(json.Delim)
-		if !ok {
-			return true
-		}
-		switch delimiter {
-		case '{':
-			var keys []string
-			for decoder.More() {
-				token, err := decoder.Token()
-				if err != nil {
-					return false
-				}
-				key, ok := token.(string)
-				if !ok {
-					return false
-				}
-				// Match encoding/json's Unicode case folding so aliases cannot
-				// shadow identity, choices, or other evidence-bearing fields.
-				for _, seen := range keys {
-					if strings.EqualFold(key, seen) {
-						return false
-					}
-				}
-				keys = append(keys, key)
-				if !walk(depth + 1) {
-					return false
-				}
-			}
-		case '[':
-			for decoder.More() {
-				if !walk(depth + 1) {
-					return false
-				}
-			}
-		default:
-			return false
-		}
-		end, err := decoder.Token()
-		return err == nil && ((delimiter == '{' && end == json.Delim('}')) || (delimiter == '[' && end == json.Delim(']')))
-	}
-	if !walk(0) {
-		return false
-	}
-	_, err := decoder.Token()
-	return err == io.EOF
 }

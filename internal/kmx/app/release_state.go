@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
@@ -77,8 +77,8 @@ func validReleaseStateObjects(objects []releaseStateObject, acknowledged bool) b
 		return false
 	}
 	for i, object := range objects {
-		if object.Kind != []string{"Provider", "Agent"}[i] || !agentsuite.IsValidDigest(object.SpecDigest) ||
-			!agentsuite.IsValidDigest(object.OwnershipDigest) || !agentsuite.IsValidDigest(object.LiftRecordDigest) ||
+		if object.Kind != []string{"Provider", "Agent"}[i] || !suitecore.IsValidDigest(object.SpecDigest) ||
+			!suitecore.IsValidDigest(object.OwnershipDigest) || !suitecore.IsValidDigest(object.LiftRecordDigest) ||
 			object.Generation < 0 || (object.UID == "") != (object.Generation == 0) {
 			return false
 		}
@@ -90,7 +90,7 @@ func validReleaseStateObjects(objects []releaseStateObject, acknowledged bool) b
 }
 
 func validReleaseStateRevision(r releaseStateRevision, pending bool) bool {
-	if !evaluationRunID(r.LiftID) || !agentsuite.IsValidDigest(r.SuiteDigest) || !agentsuite.IsValidDigest(r.EvidenceDigest) ||
+	if !evaluationRunID(r.LiftID) || !suitecore.IsValidDigest(r.SuiteDigest) || !suitecore.IsValidDigest(r.EvidenceDigest) ||
 		pending && r.State != "pending" || !pending && r.State != "completed" && r.State != "partial" {
 		return false
 	}
@@ -144,7 +144,7 @@ func releaseStateBytes(s releaseState) ([]byte, error) {
 		history = append(history, r)
 	}
 	s.History = history
-	raw, err := agentsuite.Marshal(s)
+	raw, err := suitecore.Marshal(s)
 	if err != nil || len(raw) > maxReleaseStateBytes {
 		return nil, errReleaseState
 	}
@@ -181,7 +181,7 @@ func decodeReleaseState(raw []byte, expected releaseState) (*releaseStateSnapsho
 	}
 	data := []byte(statusString(payload, "release.json"))
 	var state releaseState
-	if len(data) > maxReleaseStateBytes || agentsuite.Unmarshal(data, &state) != nil || !validReleaseState(state) || !sameReleaseStateIdentity(state, expected) {
+	if len(data) > maxReleaseStateBytes || suitecore.Unmarshal(data, &state) != nil || !validReleaseState(state) || !sameReleaseStateIdentity(state, expected) {
 		return nil, errReleaseState
 	}
 	completed := 0

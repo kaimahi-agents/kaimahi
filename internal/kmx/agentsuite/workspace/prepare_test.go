@@ -13,7 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/opencontainers/go-digest"
@@ -29,14 +30,14 @@ func TestPrepareExactNativeArtifactAndReuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Name != "greeter" || !agentsuite.IsValidDigest(p.Fingerprint) {
+	if p.Name != "greeter" || !suitecore.IsValidDigest(p.Fingerprint) {
 		t.Fatalf("invalid prepared identity: %+v", p)
 	}
 	if err := workspace.Verify(context.Background(), p); err != nil {
 		t.Fatal(err)
 	}
 	out := extract(t, p)
-	if _, err := agentsuite.ValidatePath(out); err != nil {
+	if _, err := suiteoci.ValidatePath(out); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{".git", "receipts", "unrelated.key", "workspace.yaml", "agent.yaml"} {
@@ -55,29 +56,29 @@ func TestPrepareExactNativeArtifactAndReuse(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(packaged, authored) {
 		t.Fatalf("packaged case does not round-trip the authored case: %+v %v", packaged, err)
 	}
-	var member agentsuite.Agent
-	if err := agentsuite.Unmarshal(readFile(t, filepath.Join(out, "agents/greeter.json")), &member); err != nil {
+	var member suitecore.Agent
+	if err := suitecore.Unmarshal(readFile(t, filepath.Join(out, "agents/greeter.json")), &member); err != nil {
 		t.Fatal(err)
 	}
 	if member.Model.Protocol != "openai-compatible" || member.Model.Model != "qwen-3.5-2b" {
 		t.Fatalf("member model changed: %+v", member.Model)
 	}
-	var index agentsuite.EvaluationIndex
-	if err := agentsuite.Unmarshal(readFile(t, filepath.Join(out, "evals/greeter/index.json")), &index); err != nil {
+	var index suitecore.EvaluationIndex
+	if err := suitecore.Unmarshal(readFile(t, filepath.Join(out, "evals/greeter/index.json")), &index); err != nil {
 		t.Fatal(err)
 	}
 	indexBytes := readFile(t, filepath.Join(out, "evals/greeter/index.json"))
-	indexDigest, err := agentsuite.Digest(indexBytes)
+	indexDigest, err := suitecore.Digest(indexBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantIndex := agentsuite.FileRef{Path: "evals/greeter/index.json", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeEvaluationIndex, Digest: indexDigest, Size: int64(len(indexBytes))}}
+	wantIndex := suitecore.FileRef{Path: "evals/greeter/index.json", Descriptor: suitecore.Descriptor{MediaType: suitecore.MediaTypeEvaluationIndex, Digest: indexDigest, Size: int64(len(indexBytes))}}
 	if len(member.Evals) != 1 || !reflect.DeepEqual(member.Evals[0], wantIndex) {
 		t.Fatalf("member does not bind its evaluation index: %+v", member.Evals)
 	}
 	caseBytes := readFile(t, filepath.Join(out, "evals/greeter/cases/example.json"))
-	wantCase := agentsuite.FileRef{Path: "evals/greeter/cases/example.json", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypeEvaluationCase, Digest: digest.FromBytes(caseBytes).String(), Size: int64(len(caseBytes))}}
-	if index.Agent != "greeter" || len(index.Cases) != 1 || !reflect.DeepEqual(index.Cases[0], wantCase) || index.Limits != (agentsuite.EvaluationLimits{MaxCases: 128, MaxCaseBytes: 1 << 20}) {
+	wantCase := suitecore.FileRef{Path: "evals/greeter/cases/example.json", Descriptor: suitecore.Descriptor{MediaType: suitecore.MediaTypeEvaluationCase, Digest: digest.FromBytes(caseBytes).String(), Size: int64(len(caseBytes))}}
+	if index.Agent != "greeter" || len(index.Cases) != 1 || !reflect.DeepEqual(index.Cases[0], wantCase) || index.Limits != (suitecore.EvaluationLimits{MaxCases: 128, MaxCaseBytes: 1 << 20}) {
 		t.Fatalf("evaluation index mismatch: %+v", index)
 	}
 	if _, err := os.Lstat(filepath.Join(out, "metadata/kmx/eval")); !os.IsNotExist(err) {

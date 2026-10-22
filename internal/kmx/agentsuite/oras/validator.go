@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	oraslib "oras.land/oras-go/v2"
@@ -21,17 +23,17 @@ func (LayoutValidator) Validate(
 	ctx context.Context,
 	src kmxsuite.ReadOnlyStorage,
 	root ocispec.Descriptor,
-) (*agentsuite.Report, error) {
+) (*suitecore.Report, error) {
 	return validateLayout(ctx, src, root, false)
 }
 
 type flowV1Alpha1LayoutValidator struct{}
 
-func (flowV1Alpha1LayoutValidator) Validate(ctx context.Context, src kmxsuite.ReadOnlyStorage, root ocispec.Descriptor) (*agentsuite.Report, error) {
+func (flowV1Alpha1LayoutValidator) Validate(ctx context.Context, src kmxsuite.ReadOnlyStorage, root ocispec.Descriptor) (*suitecore.Report, error) {
 	return validateLayout(ctx, src, root, true)
 }
 
-func validateLayout(ctx context.Context, src kmxsuite.ReadOnlyStorage, root ocispec.Descriptor, flowMode bool) (*agentsuite.Report, error) {
+func validateLayout(ctx context.Context, src kmxsuite.ReadOnlyStorage, root ocispec.Descriptor, flowMode bool) (*suitecore.Report, error) {
 	if src == nil {
 		return nil, fmt.Errorf("AgentSuite validation source is required")
 	}
@@ -51,12 +53,12 @@ func validateLayout(ctx context.Context, src kmxsuite.ReadOnlyStorage, root ocis
 		return nil, fmt.Errorf("index AgentSuite validation root: %w", err)
 	}
 	if flowMode {
-		graph, err := agentsuite.ValidatePathFlowV1Alpha1(stageRoot)
+		graph, err := suiteflow.ValidatePathFlowV1Alpha1(stageRoot)
 		if err != nil {
 			return nil, err
 		}
 		report := graph.Report()
 		return &report, nil
 	}
-	return agentsuite.ValidatePath(stageRoot)
+	return suiteoci.ValidatePath(stageRoot)
 }

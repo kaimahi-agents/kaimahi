@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 )
 
 var errWorkspaceLiftState = errors.New("workspace Lift completion unavailable, changed or unsafe; refusing replay, adoption or recovery")
@@ -105,7 +105,7 @@ func (p *PreparedWorkspaceLift) liftRecord(ctx context.Context, kind, scope stri
 		return nil, errWorkspaceLiftState
 	}
 	var r workspaceLiftRecord
-	if agentsuite.Unmarshal(raw, &r) != nil || r.Version != 1 || r.Workspace != c.expected.Workspace || r.Suite != c.expected.Suite || r.Repository != c.expected.Repository || r.Scope != c.expected.Scope || kind == "publication" && r.Placement != nil || kind == "placement" && r.Placement == nil {
+	if suitecore.Unmarshal(raw, &r) != nil || r.Version != 1 || r.Workspace != c.expected.Workspace || r.Suite != c.expected.Suite || r.Repository != c.expected.Repository || r.Scope != c.expected.Scope || kind == "publication" && r.Placement != nil || kind == "placement" && r.Placement == nil {
 		return nil, errWorkspaceLiftState
 	}
 	c.record = &r
@@ -117,7 +117,7 @@ func (c *workspaceLiftCompletion) commit(ctx context.Context, placement *suiteNa
 	}
 	record := c.expected
 	record.Placement = placement
-	raw, err := agentsuite.Marshal(record)
+	raw, err := suitecore.Marshal(record)
 	if err != nil || len(raw) > 64<<10 {
 		return errWorkspaceLiftState
 	}

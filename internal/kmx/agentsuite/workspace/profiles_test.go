@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
@@ -21,14 +21,14 @@ func profiledWorkspace(t *testing.T) (string, string) {
 	t.Helper()
 	root, cache := createWorkspace(t)
 	setMemberRuntime(t, root, "")
-	var bp agentsuite.BuildProfile
-	if err := agentsuite.Unmarshal(readFile(t, filepath.Join(root, "build-profiles/default.json")), &bp); err != nil {
+	var bp suitecore.BuildProfile
+	if err := suitecore.Unmarshal(readFile(t, filepath.Join(root, "build-profiles/default.json")), &bp); err != nil {
 		t.Fatal(err)
 	}
 	rows := ""
 	for _, id := range []string{"orka", "sessions"} {
-		p := agentsuite.RuntimeProfile{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeRuntimeProfile, ID: id, Runtime: agentsuite.EvidenceImplementation{ID: id, Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: agentsuite.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: agentsuite.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "test-only", ImageRequired: true}
-		raw, err := agentsuite.Marshal(p)
+		p := suitecore.RuntimeProfile{SchemaVersion: suitecore.SpecVersion, MediaType: suitecore.MediaTypeRuntimeProfile, ID: id, Runtime: suitecore.EvidenceImplementation{ID: id, Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: suitecore.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: suitecore.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "test-only", ImageRequired: true}
+		raw, err := suitecore.Marshal(p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -209,8 +209,8 @@ func TestProfiledSingleProfileStillRequiresSelection(t *testing.T) {
 func TestProfiledPlatformAmbiguity(t *testing.T) {
 	root, cache := profiledWorkspace(t)
 	file := filepath.Join(root, "build-profiles/default.json")
-	var bp agentsuite.BuildProfile
-	if err := agentsuite.Unmarshal(readFile(t, file), &bp); err != nil {
+	var bp suitecore.BuildProfile
+	if err := suitecore.Unmarshal(readFile(t, file), &bp); err != nil {
 		t.Fatal(err)
 	}
 	base, harness := bp.RuntimeBase[0], bp.Harness[0]
@@ -218,7 +218,7 @@ func TestProfiledPlatformAmbiguity(t *testing.T) {
 	harness.Platform = base.Platform
 	bp.RuntimeBase = append(bp.RuntimeBase, base)
 	bp.Harness = append(bp.Harness, harness)
-	b, err := agentsuite.Marshal(bp)
+	b, err := suitecore.Marshal(bp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,12 +249,12 @@ func TestProfiledRuntimeIDCannotEscapePreparationStage(t *testing.T) {
 	sentinel := filepath.Join(cache, "sentinel.json")
 	writeFile(t, sentinel, "unchanged\n")
 	file := filepath.Join(root, "runtime-profiles/orka.json")
-	var rp agentsuite.RuntimeProfile
-	if err := agentsuite.Unmarshal(readFile(t, file), &rp); err != nil {
+	var rp suitecore.RuntimeProfile
+	if err := suitecore.Unmarshal(readFile(t, file), &rp); err != nil {
 		t.Fatal(err)
 	}
 	rp.ID = "../../../sentinel"
-	raw, err := agentsuite.Marshal(rp)
+	raw, err := suitecore.Marshal(rp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,8 +283,8 @@ func TestProfiledEscapedCredentialsRefusedBeforeCache(t *testing.T) {
 			want := "invalid build profile JSON"
 			if strings.HasPrefix(name, "runtime") {
 				file = filepath.Join(root, "runtime-profiles/orka.json")
-				var rp agentsuite.RuntimeProfile
-				if err := agentsuite.Unmarshal(readFile(t, file), &rp); err != nil {
+				var rp suitecore.RuntimeProfile
+				if err := suitecore.Unmarshal(readFile(t, file), &rp); err != nil {
 					t.Fatal(err)
 				}
 				if name == "runtime ID" {
@@ -292,21 +292,21 @@ func TestProfiledEscapedCredentialsRefusedBeforeCache(t *testing.T) {
 				} else {
 					rp.ConfigurationABI = canary
 				}
-				raw, err = agentsuite.Marshal(rp)
+				raw, err = suitecore.Marshal(rp)
 				want = "invalid runtime profile JSON"
 			} else {
-				var bp agentsuite.BuildProfile
-				if err := agentsuite.Unmarshal(readFile(t, file), &bp); err != nil {
+				var bp suitecore.BuildProfile
+				if err := suitecore.Unmarshal(readFile(t, file), &bp); err != nil {
 					t.Fatal(err)
 				}
 				if name == "build ID" {
 					bp.ID = canary
 					// Public validation previously echoed the decoded ID on this error.
-					bp.Harness = []agentsuite.PlatformImage{}
+					bp.Harness = []suitecore.PlatformImage{}
 				} else {
 					bp.RuntimeBase[0].ImageRef = canary
 				}
-				raw, err = agentsuite.Marshal(bp)
+				raw, err = suitecore.Marshal(bp)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -441,12 +441,12 @@ func TestProfiledSourceRefusals(t *testing.T) {
 		},
 		"harness mismatch": func(t *testing.T, r string) {
 			p := filepath.Join(r, "runtime-profiles/orka.json")
-			var v agentsuite.RuntimeProfile
-			if err := agentsuite.Unmarshal(readFile(t, p), &v); err != nil {
+			var v suitecore.RuntimeProfile
+			if err := suitecore.Unmarshal(readFile(t, p), &v); err != nil {
 				t.Fatal(err)
 			}
 			v.Harness.Digest = "sha256:" + strings.Repeat("0", 64)
-			b, err := agentsuite.Marshal(v)
+			b, err := suitecore.Marshal(v)
 			if err != nil {
 				t.Fatal(err)
 			}

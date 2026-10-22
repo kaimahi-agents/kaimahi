@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	godigest "github.com/opencontainers/go-digest"
 )
@@ -97,7 +97,7 @@ func PrepareAgentSessionsReleaseLift(ctx context.Context, opt ReleaseLiftOptions
 		return nil, ErrReleaseLift
 	}
 	sessions := &ReleaseLiftSessionsPlan{Rendered: *rendered, EvidenceBindingDigest: receipt.Sessions.Subject.BindingDigest, ConfigDigest: config}
-	renderedBytes, err := agentsuite.Marshal(struct {
+	renderedBytes, err := suitecore.Marshal(struct {
 		Domain   string
 		Rendered agentsessions.Rendered
 	}{"kmx.agentsessions.release-lift.render/v1", *rendered})
@@ -114,7 +114,7 @@ func PrepareAgentSessionsReleaseLift(ctx context.Context, opt ReleaseLiftOptions
 		},
 		AgentSessions: sessions,
 	}
-	review, err := agentsuite.Marshal(struct {
+	review, err := suitecore.Marshal(struct {
 		Domain string
 		Plan   ReleaseLiftSummary
 	}{"kmx.release-lift.plan/v1", s})

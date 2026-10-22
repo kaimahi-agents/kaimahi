@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -159,7 +159,7 @@ func writeSessionsEvidenceV1(t *testing.T, evidence string) string {
 	}
 	document["domain"] = suiteSessionsPassingDomainV1
 	delete(document["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
-	old, err := agentsuite.Marshal(document)
+	old, err := suitecore.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}

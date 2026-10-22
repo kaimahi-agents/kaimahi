@@ -85,7 +85,7 @@ selection for a bounded uncompressed OCI image-layout tar. It freezes at most
 - the suite name and canonical `agentsuite.json` graph digest;
 - the member ID and complete Agent descriptor;
 - copied instruction bytes and their descriptor;
-- the complete `agentsuite.ModelRequirement`, including capability-based forms.
+- the complete `core.ModelRequirement`, including capability-based forms.
 
 `ProjectMember` is the lower-level projection KMX itself uses after it has
 already verified and frozen an artifact snapshot. It rechecks the selected
@@ -108,7 +108,7 @@ never reads KMX configuration or registry credentials,
 contacts a runtime/model/cluster, verifies evaluation evidence, publishes, or
 Lifts. Temporary private validation storage may be used and removed before
 return; caller input is never mutated. Evidence remains owned by
-`agentsuite.VerifyEvaluation`. `MemberRecipe` is the portable behavioral core
+`evidence.VerifyEvaluation`. `MemberRecipe` is the portable behavioral core
 shown above, not a complete runtime/build/tool/policy/evaluation recipe and not a
 serialized persistence or receipt format. Callers must not mutate a layout
 concurrently with `LoadLayout`.

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -334,24 +334,24 @@ func TestSuitePassingInventoryPreflight(t *testing.T) {
 	for _, kind := range []string{"toolCalled", "budget"} {
 		t.Run(kind, func(t *testing.T) {
 			modified := *suite
-			packaged := func(id string, assertions []agentsuite.EvaluationAssertion) workspace.PackagedCase {
-				data, err := agentsuite.Marshal(agentsuite.EvaluationCase{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeEvaluationCase, ID: id, Input: "public", Assertions: assertions})
+			packaged := func(id string, assertions []suitecore.EvaluationAssertion) workspace.PackagedCase {
+				data, err := suitecore.Marshal(suitecore.EvaluationCase{SchemaVersion: suitecore.SpecVersion, MediaType: suitecore.MediaTypeEvaluationCase, ID: id, Input: "public", Assertions: assertions})
 				if err != nil {
 					t.Fatal(err)
 				}
 				return workspace.PackagedCase{Path: "evals/" + suite.MemberID + "/cases/" + id + ".json", Digest: "sha256:" + agentruntime.EvaluationCaseDigest(data), Bytes: data}
 			}
 			if kind == "budget" {
-				assertions := make([]agentsuite.EvaluationAssertion, 0, 1000)
+				assertions := make([]suitecore.EvaluationAssertion, 0, 1000)
 				for i := 0; i < 1000; i++ {
-					assertions = append(assertions, agentsuite.EvaluationAssertion{ID: fmt.Sprintf("a%d", i), Type: "contains", Value: "public"})
+					assertions = append(assertions, suitecore.EvaluationAssertion{ID: fmt.Sprintf("a%d", i), Type: "contains", Value: "public"})
 				}
 				modified.Cases = nil
 				for i := 0; i < 6; i++ {
 					modified.Cases = append(modified.Cases, packaged(fmt.Sprintf("huge%d", i), assertions))
 				}
 			} else {
-				modified.Cases = []workspace.PackagedCase{packaged("unsupported", []agentsuite.EvaluationAssertion{{ID: "a", Type: "toolCalled", Tool: "public"}})}
+				modified.Cases = []workspace.PackagedCase{packaged("unsupported", []suitecore.EvaluationAssertion{{ID: "a", Type: "toolCalled", Tool: "public"}})}
 			}
 			if _, _, err := suitePassingInventory(&modified); err == nil || !strings.Contains(err.Error(), map[bool]string{true: "budget", false: "unsupported"}[kind == "budget"]) {
 				t.Fatalf("missing targeted preflight refusal: %v", err)
@@ -428,7 +428,7 @@ func TestSuitePassingReceiptRefusesPreviousCaseLayoutWithRemedy(t *testing.T) {
 		t.Fatal(err)
 	}
 	receipt.Cases[0].Path = "metadata/kmx/eval/example.yaml"
-	raw, err := agentsuite.Marshal(receipt)
+	raw, err := suitecore.Marshal(receipt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,7 +452,7 @@ func TestSuitePassingReceiptRefusesPreviousRuntimeReceiptWithRemedy(t *testing.T
 	for mode, receipt := range map[string]*suitePassingReceipt{"native-kagent": kagent, "native-agentsessions": sessions} {
 		t.Run(mode, func(t *testing.T) {
 			receipt.Cases[0].Path = "metadata/kmx/eval/example.yaml"
-			raw, err := agentsuite.Marshal(receipt)
+			raw, err := suitecore.Marshal(receipt)
 			if err != nil {
 				t.Fatal(err)
 			}

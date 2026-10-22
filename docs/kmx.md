@@ -308,11 +308,19 @@ frames are bounded to 2 MiB and source files to 256 KiB.
 | `run` | `path`; optional `input`, `caseId`, `showContent` | Shared `kmx.agent-file-preview` v1 result |
 | `test` | `path`; optional `caseId`, `showContent` | Same shared result, no ad-hoc input |
 
-Paths are portable root-level `<name>.agent.md` or
-`.squad/agents/<id>/charter.md`; traversal, absolute paths, symlink escapes and
-special files refuse. Necessary Squad parent directories may be created, but no
-roster or other team metadata is touched. Create validates before publishing a
-same-directory staged file with no-replace rename. Edit validates old/new source,
+Relative paths are portable root-level `<name>.agent.md` or
+`.squad/agents/<id>/charter.md`, without traversal or symlink components. Native
+absolute paths are cleaned and symlink-resolved, then accepted only if their
+canonical target has one of those layouts beneath the configured root. Absolute
+aliases resolving inside the root are allowed; outside targets, dangling links,
+and changed root-directory identity refuse as `unsafe_path`. Special files refuse.
+Create may append missing file/parent components beneath an existing resolved
+directory; it never treats a dangling link as a missing component. Saved paths
+are canonical root-relative names. All file IO uses the pinned root;
+normalization is not a hostile concurrent-filesystem sandbox. Necessary Squad
+parent directories may be created, but no roster or other team metadata is
+touched. Create validates before publishing a same-directory staged file with
+no-replace rename. Edit validates old/new source,
 checks the expected `sha256:…` revision under an OS-held writer lock, then renames
 the staged replacement. Busy/unavailable locks and failed renames report safe
 errors; no lockfile, filesystem-type detection or direct-write fallback.

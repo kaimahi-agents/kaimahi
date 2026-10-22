@@ -14,7 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/localartifact"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/pkg/suiteview"
@@ -30,25 +31,25 @@ func flowSource(t *testing.T, large bool) string {
 		input = strings.Repeat("x", (1<<20)+1)
 	}
 	runs, min, critical := 3, 2, true
-	flow := agentsuite.FlowV1Alpha1{SchemaVersion: agentsuite.FlowVersionV1Alpha1, ID: "release", Mode: "pipeline", Entry: "writer", EdgeRequirements: []agentsuite.FlowEdgeRequirementV1Alpha1{}, Steps: []agentsuite.FlowStepV1Alpha1{{ID: "draft", Member: "writer", Input: agentsuite.FlowInputV1Alpha1{Source: "run.input"}}, {ID: "review", Member: "reviewer", Input: agentsuite.FlowInputV1Alpha1{Source: "draft.output", Context: "run.input"}, Approval: "policy-controlled"}}, Cases: []agentsuite.FlowCaseV1Alpha1{{ID: "facts", Input: input, Runs: &runs, MinPasses: &min, Assertions: []agentsuite.FlowAssertionV1Alpha1{{Step: "review", Check: agentsuite.EvaluationAssertion{ID: "verdict", Type: "contains", Value: "PASS", Critical: &critical}}}}}}
-	raw, err := agentsuite.Marshal(flow)
+	flow := suiteflow.FlowV1Alpha1{SchemaVersion: suiteflow.FlowVersionV1Alpha1, ID: "release", Mode: "pipeline", Entry: "writer", EdgeRequirements: []suiteflow.FlowEdgeRequirementV1Alpha1{}, Steps: []suiteflow.FlowStepV1Alpha1{{ID: "draft", Member: "writer", Input: suiteflow.FlowInputV1Alpha1{Source: "run.input"}}, {ID: "review", Member: "reviewer", Input: suiteflow.FlowInputV1Alpha1{Source: "draft.output", Context: "run.input"}, Approval: "policy-controlled"}}, Cases: []suiteflow.FlowCaseV1Alpha1{{ID: "facts", Input: input, Runs: &runs, MinPasses: &min, Assertions: []suiteflow.FlowAssertionV1Alpha1{{Step: "review", Check: suitecore.EvaluationAssertion{ID: "verdict", Type: "contains", Value: "PASS", Critical: &critical}}}}}}
+	raw, err := suitecore.Marshal(flow)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(source, "coordination"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(source, agentsuite.FlowPathV1Alpha1), raw, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(source, suiteflow.FlowPathV1Alpha1), raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 	mutateJSONFile(t, filepath.Join(source, "agentsuite.json"), func(doc map[string]any) {
-		doc["extensions"] = []any{map[string]any{"name": agentsuite.FlowExtensionV1Alpha1, "critical": true, "digest": stringDigest(raw)}}
+		doc["extensions"] = []any{map[string]any{"name": suiteflow.FlowExtensionV1Alpha1, "critical": true, "digest": stringDigest(raw)}}
 	})
 	return source
 }
 
 func stringDigest(raw []byte) string {
-	d, err := agentsuite.Digest(raw)
+	d, err := suitecore.Digest(raw)
 	if err != nil {
 		panic(err)
 	}
@@ -75,7 +76,7 @@ func TestFlowViewOriginalGraphAllOwnedRecipes(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(got, archived) {
 				t.Fatal("archive changed view", err)
 			}
-			if got.Artifact.Digest != digest || got.Artifact.MediaType != pushed.Descriptor.MediaType || got.Artifact.Size != pushed.Descriptor.Size || got.Suite.GraphDigest != stringDigest(original["agentsuite.json"]) || got.FlowDigest != stringDigest(original[agentsuite.FlowPathV1Alpha1]) || len(got.Members) != 3 {
+			if got.Artifact.Digest != digest || got.Artifact.MediaType != pushed.Descriptor.MediaType || got.Artifact.Size != pushed.Descriptor.Size || got.Suite.GraphDigest != stringDigest(original["agentsuite.json"]) || got.FlowDigest != stringDigest(original[suiteflow.FlowPathV1Alpha1]) || len(got.Members) != 3 {
 				t.Fatal("original identity/inventory lost", got)
 			}
 			for i, id := range []string{"coordinator", "writer", "reviewer"} {
@@ -96,7 +97,7 @@ func TestFlowViewOriginalGraphAllOwnedRecipes(t *testing.T) {
 				t.Fatal("original artifact bytes lost")
 			}
 			retainedGraph := a.FlowV1Alpha1()
-			*retainedGraph = agentsuite.FlowV1Alpha1Graph{}
+			*retainedGraph = suiteflow.FlowV1Alpha1Graph{}
 			if a.FlowV1Alpha1().FlowDigest() != got.FlowDigest {
 				t.Fatal("graph pointer aliases retained authority")
 			}
@@ -192,13 +193,13 @@ func TestFlowViewValidatesOriginalSelectedGraph(t *testing.T) {
 						t.Fatal(err)
 					}
 					doc["extensions"] = append(doc["extensions"].([]any), map[string]any{"name": "unknown.required", "critical": true})
-					raw, err := agentsuite.Marshal(doc)
+					raw, err := suitecore.Marshal(doc)
 					if err != nil {
 						t.Fatal(err)
 					}
 					files["agentsuite.json"] = raw
 				case "wrong-flow-digest":
-					files[agentsuite.FlowPathV1Alpha1] = bytes.Replace(files[agentsuite.FlowPathV1Alpha1], []byte("frozen input"), []byte("changed input"), 1)
+					files[suiteflow.FlowPathV1Alpha1] = bytes.Replace(files[suiteflow.FlowPathV1Alpha1], []byte("frozen input"), []byte("changed input"), 1)
 				case "oversized-nonflow":
 					files["supplement.bin"] = bytes.Repeat([]byte("x"), (1<<20)+1)
 				case "unsafe-content":

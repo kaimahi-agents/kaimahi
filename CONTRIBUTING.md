@@ -229,9 +229,12 @@ discovery. Expanding the safe policy requires reviewed evidence and routing test
 
 One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), concrete
 read-only suite member recipe view (`pkg/suiteview`) and alpha application
-interfaces (`pkg/kmx`). Portable AgentSuite validation is a separate dependency:
-`agentsuite "github.com/agent-primitives/suite"`, pinned to the published minor release
-`v0.6.0` in `go.mod` with verified module sums.
+interfaces (`pkg/kmx`). Portable AgentSuite validation is a separate dependency,
+`github.com/agent-primitives/suite`, pinned to published `v0.7.0` in `go.mod`
+with verified module sums. Import its focused `core`, `oci`, `evidence` and
+`experimental/flow` packages, not the deprecated root. Use the `suitecore`,
+`suiteoci`, `suiteevidence` and `suiteflow` aliases described in the
+[development guide](docs/development.md#agentsuite-dependency-and-consumer-fixtures).
 Public runtime-profile format acceptance enables offline packaging/selection, not
 qualified image execution; see [runtime profiles](docs/suite-workspace.md#explicit-runtime-profiles-offline-only).
 Root `go test ./...` covers kmx consumers, including first-class Orka paths and

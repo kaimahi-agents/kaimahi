@@ -445,7 +445,10 @@ See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 ## Agent-file MCP boundary
 
 `mcp --root DIRECTORY` is stdio-only and config-free at startup. Require an
-absolute existing root, never cwd/client-root fallback. Expose exactly
+absolute existing root, never cwd/client-root fallback. Normalize native absolute
+tool paths through cleaning and symlink resolution to an allowed root-relative
+layout; outside targets, dangling links and changed root identity refuse. Keep
+relative-path restrictions and descriptor-bound file IO unchanged. Expose exactly
 Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
 never the path wrapper or shell CLI strings. Model routes are trusted startup
 configuration, not tool/charter fields. Keep complete safe App results on errors;
@@ -472,6 +475,40 @@ trusted route, source-write, Squad registration or native suite-loader authority
 Keep payload-bearing parsed values out of default logs/results. The loader
 refuses static special files and symlink/reparse path components; it is not a hostile
 concurrent filesystem sandbox.
+
+## Local preview boundary
+
+`internal/kmx/localpreview` runs one tool-free agent file on embedded Sessions
+(in-memory gRPC, upstream Service/Placer/`chat` harness, private SQLite journal
+under `config.LocalPreviewJournalDir()`), labeled **local preview**. See
+[local-preview.md](docs/local-preview.md). Keep it a library until
+[#598](https://github.com/kaimahi-agents/kaimahi/issues/598) wires it behind
+`agentpreview.Runner` for `run/test FILE`, replacing the temporary direct
+runner. `Model.Preferred` is exact: `fake` is the in-memory deterministic
+route; other models need an explicit OpenAI-compatible endpoint and optional
+key environment variable name. No fallback, retries, tool execution, daemon,
+subprocess, cluster or config probing. Refuse missing routes, tool assertions
+and unwired judges before any file or network effect; refuse journal-bound
+instructions, examples, ad-hoc input and identities containing a resolved agent
+or judge credential before the journal opens; refuse
+tool-call/malformed/duplicate-key/oversized/non-200 replies and answers
+containing the endpoint credential (exact value, any length) with fixed text,
+because Sessions journals content at turn start and model errors verbatim.
+Credentials never reach files, journals, results or errors. Consume only parsed
+agent-file fields; Examples YAML comments never reach model or judge requests,
+journals or results. `llmJudge` reuses the native judge through
+`app.LocalPreviewJudge`, defaults to the agent route (fake judge for fake), and
+only explicit `JudgeEndpoint` overrides it. Journals keep content in cleartext,
+bounded to 20 runs at each start, owner-only, clearable by run or all;
+executing runs hold an OS lock and are never pruned or cleared (on Windows this
+rests on unverified share-mode behavior), and overlapping starts can leave
+extra finished runs until the next start or clear. Journals stay under
+`config.StateDir` on every OS (`%AppData%` on Windows, disclosed as roaming)
+until native Windows support
+([#578](https://github.com/kaimahi-agents/kaimahi/issues/578)) decides Windows
+state. Inspection replays with zero model calls and has no verdicts. Preview
+and replay never produce suite evidence, receipts, publication or Deploy
+authority.
 
 ## Offline multi-member workspace boundary
 
@@ -553,9 +590,13 @@ Do not infer enforcement from authoring, transfer, readiness, labels or annotati
 - The portable format, validator and schemas are owned by
   [AgentSuite](https://github.com/agent-primitives/suite/blob/main/spec.md).
   Keep KMX details, migration notes, and design history in this repository's
-  implementation documentation, issues, or changelog. Import the public module
-  explicitly as `agentsuite "github.com/agent-primitives/suite"`; use `kmxsuite`
-  for the internal builder package and `suiteoras` for its ORAS adapter.
+  implementation documentation, issues, or changelog. Import focused public
+  packages as `suitecore` (`github.com/agent-primitives/suite/core`), `suiteoci`
+  (`github.com/agent-primitives/suite/oci`), `suiteevidence`
+  (`github.com/agent-primitives/suite/evidence`) and `suiteflow`
+  (`github.com/agent-primitives/suite/experimental/flow`). Do not import the
+  deprecated module root. Keep `kmxsuite` for the internal builder package and
+  `suiteoras` for its ORAS adapter.
   Keep byte-identical consumer fixtures under `testdata/agentsuite`; refresh
   their provenance manifest only with reviewed upstream changes and run
   `python3 scripts/check-agentsuite-fixtures.py`.

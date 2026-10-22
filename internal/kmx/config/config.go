@@ -238,6 +238,17 @@ func LiftRecordDir() (string, error) {
 	return filepath.Join(dir, "lift"), nil
 }
 
+// LocalPreviewJournalDir is where local preview keeps its private, bounded
+// Sessions journals. They hold instructions, inputs and answers in cleartext,
+// so they live in kmx's own state directory, never in a checkout.
+func LocalPreviewJournalDir() (string, error) {
+	dir, err := StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "local-preview", "journals"), nil
+}
+
 // ReadSelectedContext returns the context chosen by `kmx context use`, or "".
 func ReadSelectedContext() (string, error) {
 	path, err := contextFile()

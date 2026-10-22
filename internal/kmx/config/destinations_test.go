@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
-	"golang.org/x/sys/unix"
 )
 
 func TestDestinationsStrictClosedDocument(t *testing.T) {
@@ -75,9 +74,7 @@ func TestDestinationsRejectLinksFIFOAndRootLinksWithoutBlocking(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "fifo":
-				if err := unix.Mkfifo(path, 0600); err != nil {
-					t.Fatal(err)
-				}
+				testFIFO(t, path)
 			case "directory":
 				if err := os.Mkdir(path, 0700); err != nil {
 					t.Fatal(err)
