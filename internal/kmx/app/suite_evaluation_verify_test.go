@@ -18,7 +18,6 @@ import (
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"golang.org/x/sys/unix"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/content/oci"
@@ -514,9 +513,7 @@ func TestSuiteEvaluationVerifyFileBoundaries(t *testing.T) {
 					path = filepath.Join(path, verifyCanary)
 				case "parent-fifo":
 					parent := filepath.Join(t.TempDir(), verifyCanary)
-					if err := unix.Mkfifo(parent, 0644); err != nil {
-						t.Fatal(err)
-					}
+					testFIFO(t, parent, 0644)
 					path = filepath.Join(parent, "input")
 				case "directory":
 					path = t.TempDir()
@@ -528,9 +525,7 @@ func TestSuiteEvaluationVerifyFileBoundaries(t *testing.T) {
 					}
 				case "fifo":
 					path = filepath.Join(t.TempDir(), verifyCanary)
-					if err := unix.Mkfifo(path, 0644); err != nil {
-						t.Fatal(err)
-					}
+					testFIFO(t, path, 0644)
 				}
 				if input == "expect" {
 					opt.Expect = path
@@ -563,9 +558,7 @@ func TestSuiteEvaluationVerifySelectors(t *testing.T) {
 				opt.Suite = "sha256:" + strings.Repeat("b", 64)
 				opt.FromLayout = f.layout
 				opt.Evidence = filepath.Join(t.TempDir(), verifyCanary)
-				if err := unix.Mkfifo(opt.Evidence, 0644); err != nil {
-					t.Fatal(err)
-				}
+				testFIFO(t, opt.Evidence, 0644)
 				code = "subject"
 			case "missing-layout":
 				opt.Suite = f.expected.Subject.Manifest.Digest
