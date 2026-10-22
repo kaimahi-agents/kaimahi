@@ -64,13 +64,20 @@ No fifth bind/Explain/model/install tool is introduced.
 The default package starts without provider overrides and supports the
 deterministic fake orientation in the skill. Arbitrary tasks need an explicitly
 configured supported route and exact Model.Preferred; no silent fallback.
-The temporary direct preview runner has no Sessions journal.
+Fake/local previews retain instructions, inputs and answers in cleartext SQLite
+journals under `<kmx state>/local-preview/journals` (`KMX_HOME` when set).
+Each invocation owns one journal. New starts prune to the newest 20 runs,
+keeping active runs; concurrent starts can leave more. Stop previews before
+removing journal files there to clear retained content. See
+[journal retention](../../docs/local-preview.md#journal-retention-and-clearing).
 Real-model route setup is not automated by this packager.
 For manually configured trusted startup, `kmx mcp --root ABSOLUTE_DIR --provider copilot`
 uses prior explicit `kmx model login` credentials and an exact listed
 `Model.Preferred`, with a fixed endpoint. This sends instructions/inputs and
 any judge answers/rubrics to Copilot. Startup does not sign in or access credentials;
-Run/Test use the same tool-free, no-journal runner as the file CLI, not an SDK harness.
+If either agent or judge uses Copilot, the whole invocation uses the same direct,
+unjournaled runner as the file CLI and reports `NoJournal`, not an SDK harness.
+Fully journaled Copilot remains follow-up work.
 
 A public archive cannot contain a user's absolute root. Release archives start
 unconfigured and refuse MCP startup until an operator chooses a root as below.

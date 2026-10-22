@@ -351,7 +351,14 @@ class ProcessTests(unittest.TestCase):
                                  ("complete", "pass", True))
                 self.assertEqual(passed["file"]["revision"], new_revision)
                 self.assertEqual(passed["modelRoute"], {"provider": "fake", "model": "fake"})
-                self.assertEqual(passed["runner"], "preview runner (no journal)")
+                self.assertNotIn("runner", passed)
+                journals = list((home / "local-preview" / "journals").glob("*.db"))
+                # Run, subset Test and full Test each own one journal. The
+                # packaged fake route must retain content without leaking handles.
+                self.assertEqual(len(journals), 3)
+                self.assertTrue(all(path.stat().st_size > 0 for path in journals))
+                for journal in journals:
+                    self.assertNotIn(journal.name, json.dumps(passed))
                 self.assertEqual(passed["retention"], {"status": "not_requested"})
 
                 # Mutation refusal must not change the bound charter or escape into the cache/cwd.

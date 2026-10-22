@@ -176,19 +176,29 @@ snapshot without reopening its filename; the CLI path is a thin load-and-delegat
 wrapper.
 Neither operation changes source or produces native evaluation/deploy evidence.
 
-File mode uses an interim **preview runner (no journal)** behind the shared
-runner interface. It calls the selected route directly without Sessions or a
-journal, with one completion per ad-hoc input/example and one extra call per
-`llmJudge` assertion. There are no retries, redirects or provider/model fallback.
-The runner and its constructor wiring are removed when the embedded Sessions
-runner is integrated. A nil dependency still refuses `runner_unavailable`.
-Hermetic tests do not qualify real local models or native Windows.
+File mode uses embedded Sessions for fake/local routes, with one fresh Session
+per ad-hoc input/example and one private SQLite journal for the invocation.
+Optional ad-hoc input runs first, followed by only the selected examples in order.
+Each turn has a two-minute deadline, including judging, within the five-minute
+overall budget. Execution errors stop later sends. Journal close failure prevents
+a full pass. [Journal content, retention and clearing](local-preview.md#journal-retention-and-clearing)
+are disclosed separately: instructions, inputs and answers are retained in cleartext.
 
-The offline `fake` route is deliberately small: Accountable Responsibilities must
-be exactly ``Reply with exactly `Hello, ` followed by the input name.`` (the prefix
-can change), or ``Reply with exactly `literal response`.``. A fake judge supports
-only the rubric ``Answer contains `text`.``; unsupported rubrics are unknown, not
-an automatic pass. This is orientation, not a general model. Real compatible/local
+**Copilot exception:** when either the agent or judge uses Copilot, the whole
+invocation keeps the direct **preview runner (no journal)** and reports `NoJournal`
+at the runner boundary. It creates no Sessions journal. Fully journaled Copilot
+is follow-up work: its credential-owning transport does not yet provide the
+pre-journal content check. No tokens are exposed to the runner.
+There are no retries, redirects or provider/model fallback. A nil dependency
+still refuses `runner_unavailable`. Hermetic tests do not qualify real local
+models or native Windows.
+
+The offline `fake` route is deliberately small: it recognizes
+``Reply with exactly `Hello, ` followed by the input`` (the prefix can change),
+or ``Reply with exactly `literal response`.`` in the instructions. A fake judge
+checks every backtick-quoted rubric phrase against the answer; a rubric without
+quoted phrases is unknown, not an automatic pass. This is orientation, not a
+general model. Real compatible/local
 routes use an explicit keyless local endpoint (HTTP or HTTPS on literal loopback/localhost).
 Compatible/local transport waits at most 30 seconds for response headers, within
 the five-minute overall budget; slow non-streaming generation can hit that limit.
@@ -199,9 +209,12 @@ endpoints still refuse. Copilot requires prior explicit sign-in and an exact
 enabled Chat model from `kmx model list --provider copilot`; it never falls back
 to another model or starts login during execution.
 
-Judging applies the authored threshold to one valid score; unavailable, malformed,
-refused or mismatched-model replies are unknown. These single-sample local rows
-are not the two-sample native judge policy and never carry native judge evidence.
+Journaled fake/local judging uses the shared native two-sample evaluator: both
+scores must agree on the threshold side. Split, unavailable, malformed, refused
+or mismatched-model replies are unknown. This makes two judge calls per authored
+`llmJudge` assertion, within the same deadlines. The Copilot direct exception
+retains one judge call and applies the authored threshold to one valid score.
+Neither path produces native evaluation evidence.
 
 ```text
 kmx run ./greeter.agent.md --prompt Ada
@@ -209,17 +222,20 @@ kmx test ./greeter.agent.md --case greeting -o json
 kmx test ./greeter.agent.md
 ```
 
-Add `--verbose` to file Run or Test for content-free diagnostics on stderr:
-completion/judge request start/end, selected endpoints, received HTTP status,
+Add `--verbose` to file Run or Test for content-free diagnostics on stderr.
+Journaled fake/local execution reports completion and judge start/end. The direct
+Copilot exception also reports selected endpoints, received HTTP status,
 per-request timings and total elapsed time. Revision, model, runner label,
 assertion verdicts and final outcome remain in the normal report, not repeated
 in verbose diagnostics.
 Local endpoint origins and standard `/v1` paths are shown; custom paths are
-withheld. Connection refusal, response timeout, HTTP errors and malformed or
-mismatched completions have safe diagnostic categories, never raw provider errors.
-No HTTP status is printed for in-process execution or requests without a response.
-An absent, null or empty returned model is an invalid completion; only a
-different nonempty model is reported as a model mismatch.
+withheld. The direct exception distinguishes connection refusal, response timeout,
+HTTP errors and malformed or mismatched completions with safe diagnostic
+categories, never raw provider errors. Journaled execution uses fixed-text
+refusals without HTTP-status or network-subclass diagnostics; neither path
+invents a status for requests without a response.
+Both paths refuse absent, null, empty or different returned model identities.
+The direct exception distinguishes a different nonempty model as a model mismatch.
 Verbose is off by default and does not imply `--show-content`: instructions,
 inputs, answers, assertion operands, judge rationale and response bodies stay
 private. JSON stdout and exit contracts are unchanged. A failed diagnostic
@@ -265,10 +281,11 @@ Output defaults to text; `-o json` returns one versioned `schemaVersion: 1`,
 `kind: kmx.agent-file-preview` document. Both preserve operation, exact source-byte
 SHA-256 revision, provider/model, full/subset selection, terminal state and
 example/assertion IDs with pass/fail/unknown and safe reasons. JSON includes
-`fullPass`, which is false for every subset, incomplete or unknown result. Direct
-execution additionally includes `runner: "preview runner (no journal)"`; the
-underlying journal handle is empty and no journal is retained. A full local pass
-in this mode is not journaled execution or deploy evidence. Paths
+`fullPass`, which is false for every subset, incomplete or unknown result. The Copilot direct
+exception additionally includes `runner: "preview runner (no journal)"`; its
+underlying journal handle is empty and no journal is retained. Fake/local
+execution retains a private journal handle internally, never in this safe result.
+Neither a journaled local pass nor the direct exception is deploy evidence. Paths
 are sanitized display basenames, not a file-targeting API. The optional structured
 `diagnostic` names safe parser fields, source line/column and repair advice.
 Default output contains no instructions, inputs, answers, operands, provider error
@@ -371,11 +388,12 @@ the parsed file. For Copilot, use `kmx mcp --root /absolute/root --provider copi
 after explicit sign-in. The same fixed endpoint and hosted-content disclosure
 apply; startup itself performs no sign-in, credential access or model request.
 Tools accept no endpoint, credential or arbitrary-command fields. With no route,
-only exact `fake` is selectable. Run/Test use the same temporary
-[preview runner (no journal)](#agent-file-local-preview-unreleased-integration)
-as the file CLI, preserving its runner label and restrictions. A nil runner
-still returns `runner_unavailable`, never a fallback. Hermetic checks do not
-qualify real models, embedded Sessions, journaling or native Windows.
+only exact `fake` is selectable. Run/Test use the same
+[file preview runner](#agent-file-local-preview-unreleased-integration) as the
+CLI: fake/local routes use embedded Sessions and one private journal; an agent
+or judge using Copilot keeps direct execution with `NoJournal` and the explicit
+no-journal runner label. A nil runner still returns `runner_unavailable`, never
+a fallback. Hermetic checks do not qualify real models or native Windows.
 There is no fifth Explain/model/install tool; offline Explain stays a CLI action.
 
 ### Deploy compatibility (unreleased)

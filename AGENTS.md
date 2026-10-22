@@ -432,11 +432,15 @@ changes in the package's Go doc comment.
 ## Agent-file preview boundary
 
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
-interface without cluster/workspace configuration. CLI uses a temporary direct
-`preview runner (no journal)` for fake/local and explicit authenticated Copilot
-routes, with one agent call per input/example and one judge
-call per llmJudge; no Sessions, journal, retries or fallback. Remove it when the
-embedded runner lands. Scripted test fakes remain `_test.go` only, not real-model
+interface without cluster/workspace configuration. CLI/MCP fake/local routes
+use embedded Sessions: optional ad-hoc input first, selected ordered examples,
+one invocation-owned private journal, one fresh Session per turn, and the shared
+two-sample judge. Execution/deadline errors abort later sends; journal close
+failure vetoes completion. When the agent OR judge uses Copilot, retain the direct
+`preview runner (no journal)` and report NoJournal for the whole invocation,
+with one judge call per llmJudge. Fully journaled Copilot is follow-up work until
+provider-owned content preflight is available; never expose tokens to the runner.
+No retries or fallback. Scripted test fakes remain `_test.go` only, not real-model
 qualification. Copilot selection sends instructions/inputs and any judging
 answer/rubric to the hosted service; never imply SDK or Sessions execution.
 `app.FilePreviewResult` v1 is the safe shared projection, not a
@@ -493,17 +497,18 @@ concurrent filesystem sandbox.
 `internal/kmx/localpreview` runs one tool-free agent file on embedded Sessions
 (in-memory gRPC, upstream Service/Placer/`chat` harness, private SQLite journal
 under `config.LocalPreviewJournalDir()`), labeled **local preview**. See
-[local-preview.md](docs/local-preview.md). Keep it a library until
-[#598](https://github.com/kaimahi-agents/kaimahi/issues/598) wires it behind
-`agentpreview.Runner` for `run/test FILE`, replacing the temporary direct
-runner. `Model.Preferred` is exact: `fake` is the in-memory deterministic
+[local-preview.md](docs/local-preview.md). Its `agentpreview.Runner` adapter
+backs `run/test FILE` and MCP for fake/local routes; the direct Copilot exception
+above remains explicitly unjournaled. `Model.Preferred` is exact: `fake` is the in-memory deterministic
 route; other models need an explicit OpenAI-compatible endpoint and optional
 key environment variable name. No fallback, retries, tool execution, daemon,
 subprocess, cluster or config probing. Refuse missing routes, tool assertions
 and unwired judges before any file or network effect; refuse journal-bound
 instructions, examples, ad-hoc input and identities containing a resolved agent
-or judge credential before the journal opens; refuse
-tool-call/malformed/duplicate-key/oversized/non-200 replies and answers
+or judge credential before the journal opens, including returned assertion IDs,
+types and authored judge model/version metadata; refuse
+tool-call/malformed/duplicate-key/oversized/non-200 replies, missing or mismatched
+response model identities, and answers
 containing the endpoint credential (exact value, any length) with fixed text,
 because Sessions journals content at turn start and model errors verbatim.
 Credentials never reach files, journals, results or errors. Consume only parsed
