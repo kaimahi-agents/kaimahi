@@ -11,11 +11,17 @@ import (
 )
 
 func newModelCommand(state *commandState) *cobra.Command {
-	group := &cobra.Command{Use: "model", Short: "Inspect local model access without starting a runtime", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
-	format := "table"
-	list := &cobra.Command{Use: "list", Short: "List installed local models and explicit install guidance", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	group := &cobra.Command{Use: "model", Short: "Inspect model access and manage explicit Copilot sign-in", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	format, provider := "table", "local"
+	list := &cobra.Command{Use: "list", Short: "List local models or available Copilot Chat models", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if format != "table" && format != "json" {
 			return fmt.Errorf("unsupported output format; use table or json")
+		}
+		if provider == "copilot" {
+			return listCopilotModels(cmd, state, format)
+		}
+		if provider != "local" {
+			return fmt.Errorf("unsupported provider; use local or copilot")
 		}
 		discover := state.deps.discoverModels
 		if discover == nil {
@@ -67,6 +73,9 @@ func newModelCommand(state *commandState) *cobra.Command {
 	}}
 	list.Flags().StringVarP(&format, "output", "o", "table", "report format: table or json")
 	_ = list.RegisterFlagCompletionFunc("output", staticCompletion([]string{"table", "json"}))
+	list.Flags().StringVar(&provider, "provider", "local", "model source: local or copilot (requires explicit model login)")
+	_ = list.RegisterFlagCompletionFunc("provider", staticCompletion([]string{"local", "copilot"}))
 	group.AddCommand(list)
+	addCopilotCommands(group, state)
 	return group
 }
