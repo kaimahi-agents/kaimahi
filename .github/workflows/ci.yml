@@ -657,6 +657,7 @@ jobs:
           fast_body = "\n".join(s.get("run", "") for s in fast_steps)
           needed = {"python3 -m unittest discover -s scripts -p 'test_kagent_lift*.py'",
                     "python3 scripts/test_suite_kagent.py",
+                    "python3 scripts/test_kagent_workflows.py",
                     "go test ./internal/kmx/app -run '^(TestKagent|TestSuiteKagent|TestSuiteFailureKagent|TestReleaseLiftKagent|TestDestinationStatusKagent)' -skip '^TestLive' -count=1 -timeout=300s"}
           if (fast.get("if") != "${" + "{ !cancelled() }" + "}" or "needs" in fast or
                   fast.get("permissions") != {"contents": "read"} or
@@ -1406,6 +1407,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p 'test_kagent_lift*.py'
           python3 scripts/test_suite_kagent.py
+          python3 scripts/test_kagent_workflows.py
       - name: Offline kagent Go contracts — not live qualification
         run: go test ./internal/kmx/app -run '^(TestKagent|TestSuiteKagent|TestSuiteFailureKagent|TestReleaseLiftKagent|TestDestinationStatusKagent)' -skip '^TestLive' -count=1 -timeout=300s
       - name: State the coverage boundary

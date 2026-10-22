@@ -41,6 +41,7 @@ class KagentWorkflows(unittest.TestCase):
         body = '\n'.join(s.get('run', '') for s in steps)
         self.assertIn("python3 -m unittest discover -s scripts -p 'test_kagent_lift*.py'", body)
         self.assertIn('python3 scripts/test_suite_kagent.py', body)
+        self.assertIn('python3 scripts/test_kagent_workflows.py', body)
         self.assertIn(FAST_GO, body)
         for forbidden in ('bash scripts/ci/kagent-lift.sh', 'kind create', 'KMX_SUITE_KAGENT_LIVE=1', 'continue-on-error'):
             self.assertNotIn(forbidden, json.dumps(fast))

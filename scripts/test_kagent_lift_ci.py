@@ -160,7 +160,7 @@ class WorkflowTests(unittest.TestCase):
             full_path = ROOT / ".github/workflows/orka-runtime.yml"
             full_workflow = yaml.safe_load(full_path.read_text())
             kagent_workflow = yaml.safe_load((ROOT / ".github/workflows/kagent-runtime.yml").read_text())
-            for mutation in ("none", "new-docs-guard", "missing-dependency", "old-missing-guard", "nightly-aggregator-skip", "foreign-delegation", "missing-proof", "missing-fast-dependency", "kagent-foreign", "missing-kagent-proof", "fast-docs-guard"):
+            for mutation in ("none", "new-docs-guard", "missing-dependency", "old-missing-guard", "nightly-aggregator-skip", "foreign-delegation", "missing-proof", "missing-fast-dependency", "kagent-foreign", "missing-kagent-proof", "fast-docs-guard", "missing-routing-selftests"):
                 jobs = json.loads(json.dumps(self.jobs))
                 full = copy.deepcopy(full_workflow)
                 kagent = copy.deepcopy(kagent_workflow)
@@ -185,6 +185,8 @@ class WorkflowTests(unittest.TestCase):
                     kagent["jobs"]["qualify"]["steps"] = [s for s in kagent["jobs"]["qualify"]["steps"] if s.get("run") != "bash scripts/ci/kagent-lift.sh"]
                 elif mutation == "fast-docs-guard":
                     jobs["kagent-contract"]["steps"][2]["if"] = "steps.changes.outputs.docs_only != 'true'"
+                elif mutation == "missing-routing-selftests":
+                    jobs["kagent-contract"]["steps"][2]["run"] = jobs["kagent-contract"]["steps"][2]["run"].replace("python3 scripts/test_kagent_workflows.py", "")
                 (root / ".github/workflows/kagent-runtime.yml").write_text(yaml.safe_dump(kagent))
                 (root / ".github/workflows/orka-runtime.yml").write_text(yaml.safe_dump(full))
                 workflow.write_text(yaml.safe_dump({"jobs": jobs}))
