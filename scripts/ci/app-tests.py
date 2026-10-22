@@ -59,6 +59,23 @@ def summarize(path, selected):
     return {"package_seconds": package["Elapsed"], "tests": sorted(tests.values(), key=lambda t: t["name"])}
 
 
+def print_failure_output(path):
+    events = []
+    for line in path.read_text().splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            # Compiler and tool failures can appear outside the JSON stream.
+            event = {"Output": line + "\n"}
+        events.append(event)
+    failed = {event.get("Test") for event in events if event.get("Action") == "fail"}
+    for event in events:
+        if event.get("Package", PACKAGE) != PACKAGE:
+            continue
+        if not event.get("Test") or event["Test"] in failed:
+            sys.stderr.write(event.get("Output", ""))
+
+
 def run(shard, shards, output):
     names = test_names(subprocess.check_output(
         ["go", "test", PACKAGE, "-list", "^(Test|Example|Fuzz)"], text=True))
@@ -71,6 +88,7 @@ def run(shard, shards, output):
     try:
         result = summarize(output, selected)
     except ValueError as error:
+        print_failure_output(output)
         print(error, file=sys.stderr)
         return process.returncode or 1
     result.update(shard=shard, shards=shards, inventory_count=len(names))

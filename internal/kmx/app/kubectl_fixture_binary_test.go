@@ -12,6 +12,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/run"
+	"github.com/zalando/go-keyring"
 )
 
 // appWithKubectl puts a kubectl on PATH that does whatever the script says,
@@ -48,6 +49,8 @@ var kubectlFixtureBuild struct {
 }
 
 func TestMain(m *testing.M) {
+	// An accidentally un-injected credential path must never reach an OS store.
+	keyring.MockInitWithError(errAppTestKeyring)
 	status := m.Run()
 	if kubectlFixtureBuild.dir != "" {
 		if err := os.RemoveAll(kubectlFixtureBuild.dir); err != nil {

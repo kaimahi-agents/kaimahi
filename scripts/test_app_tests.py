@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Coverage and failure contracts for the app-test CI shards."""
+import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -84,6 +86,45 @@ class AppShardTests(unittest.TestCase):
         for events in cases:
             with self.subTest(events=events), self.assertRaises(ValueError):
                 self.summarize(events)
+
+    def test_run_prints_all_failed_test_output_and_package_diagnostics(self):
+        events = [
+            {**self.event("output", "TestOne"), "Output": "parent context\n"},
+            {**self.event("output", "TestOne/sub"), "Output": "expected two sends, got zero\n"},
+            {**self.event("output", "TestOther"), "Output": "other assertion failed\n"},
+            {**self.event("output", "TestPass"), "Output": "passing noise\n"},
+            self.event("fail", "TestOne/sub"), self.event("fail", "TestOne"),
+            self.event("fail", "TestOther"), self.event("pass", "TestPass"),
+            {**self.event("output"), "Output": "package diagnostic\n"}, self.event("fail"),
+        ]
+        status, stderr = self.run_events(events, 7)
+        self.assertEqual(status, 7)
+        for message in ("parent context", "expected two sends, got zero", "other assertion failed", "package diagnostic"):
+            self.assertIn(message, stderr)
+        self.assertNotIn("passing noise", stderr)
+
+    def test_run_prints_non_json_build_errors_and_keeps_success_quiet(self):
+        status, stderr = self.run_events(["compiler: missing symbol"], 1)
+        self.assertEqual(status, 1)
+        self.assertIn("compiler: missing symbol", stderr)
+        status, stderr = self.run_events([
+            {**self.event("output", "TestOne"), "Output": "passing noise\n"},
+            self.event("pass", "TestOne"), self.event("pass")], 0, names=("TestOne",))
+        self.assertEqual(status, 0)
+        self.assertEqual(stderr, "")
+
+    def run_events(self, events, status, names=("TestOne", "TestOther", "TestPass")):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "app.json"
+            def execute(command, **kwargs):
+                kwargs["stdout"].write("\n".join(json.dumps(e) if isinstance(e, dict) else e for e in events))
+                return subprocess.CompletedProcess(command, status)
+            stderr = io.StringIO()
+            with patch.object(self.runner.subprocess, "check_output", return_value="\n".join(names) + "\n"), \
+                 patch.object(self.runner.subprocess, "run", side_effect=execute), \
+                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                result = self.runner.run(0, 1, output)
+            return result, stderr.getvalue()
 
     def test_discovery_failure_and_go_test_exit_are_preserved(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -19,4 +19,6 @@ jobs:
         with:
           go-version: "1.26.10"
       - name: Native macOS preview tests
-        run: go test ./internal/kmx/app -count=1 -v -run 'TestDirectPreview(Copilot|LocalRoutesNeverAccessCopilot)'
+        run: |
+          go version
+          go test ./internal/kmx/app -count=1 -v -run 'TestDirectPreview(Copilot|LocalRoutesNeverAccessCopilot)|TestAppTestCredentialStoreIsIsolated'

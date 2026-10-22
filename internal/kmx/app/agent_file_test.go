@@ -56,7 +56,7 @@ func (f *scriptedPreview) Run(ctx context.Context, req agentpreview.Request) (ag
 
 func previewFile(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "greeter.agent.md")
+	path := filepath.Join(diffTempDir(t), "greeter.agent.md")
 	text := "# Greeter\n\n## Identity\n- **ID:** greeter\n- **Purpose:** Greet.\n\n## Accountable Responsibilities\nPRIVATE INSTRUCTIONS\n\n## Non-Responsibilities\nNo tools.\n\n## Collaboration and Review Authority\nNone.\n\n## Model\n- **Preferred:** fake\n\n## Examples\n```yaml\nexamples:\n"
 	for _, id := range []string{"first", "second"} {
 		text += fmt.Sprintf("  - id: %s\n    input: PRIVATE INPUT\n    assertions:\n      - id: text\n        type: contains\n        value: PRIVATE OPERAND\n", id)
