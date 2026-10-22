@@ -108,11 +108,11 @@ enable it.
 
 | Directory | Class | Responsibility |
 |---|---|---|
-| `internal/kmx/mcp` | Installed | Stdio-only Create/Edit/Run/Test over canonical parsing and App snapshots, with exclusive atomic publication, revision checks and OS-held writer locks. Edit preserves mode bits, not ownership, ACLs or extended attributes; normal ownership and directory inheritance apply to replacement files. Intended for the user's own files. Runner availability comes from App, with no substitute runner or native Windows CLI qualification. |
+| `internal/kmx/mcp` | Installed | Stdio-only Create/Edit/Run/Test and a root-confined read-only agent resource over shared parsing and App snapshots, with exclusive atomic publication, revision checks and OS-held writer locks. Edit preserves mode bits, not ownership, ACLs or extended attributes; normal ownership and directory inheritance apply to replacement files. Intended for the user's own files. Runner availability comes from App, with no substitute runner or native Windows CLI qualification. |
 | `internal/kmx/agentpreview` | Installed | Typed embedded-runner request/outcome contract; no execution engine, model adapter or production fake. |
 | `internal/kmx/app` | Installed | Cluster-independent markdown-file preview orchestration and versioned safe projection, with temporary direct no-journal execution via selected model-access transport and one-sample preview judging until embedded runner integration. Native operation orchestration, frozen workspace eval→push→Deploy coordination, consent, private exact-S passing proof and completion observations, bounded release state/CAS, provenance and ownership-safe update/rollback. Public evidence export/verification stays separate from private execution and publication gates. Independent live Task/results, Orka chat/host routes and cloud ownership teardown remain. No legacy bundle persistence, replay/status/retirement, live create or live-copy GUI. |
 | `internal/kmx/agentsessions` | Installed | Strict packaged chat invocation/config, read-only availability and bounded journal/reference extraction; offline ActorTemplate/HarnessRegistration rendering from bindings. Fresh Session/config/Exec per case run, bounded semantic journal proof; diagnostic replay cannot authorize candidate proof. No daemon startup, tool enablement, host/model attestation, registration discovery or legacy receipt reader. Golden renders are test support, not deployed assets. |
-| `internal/kmx/agentfile` | Checkout | Bounded canonical charter parsing and regular-file loading with source locations, exact-byte revisions and ordered examples. No CLI, execution, model access, source writes, Squad registration or implicit suite loading. Nested charter fixtures are test support. |
+| `internal/kmx/agentfile` | Checkout | Bounded canonical charter parsing, read-only minimal-agent inspection and regular-file loading with source locations, exact-byte revisions and ordered examples. No CLI, execution, model access, source writes, Squad registration or implicit suite loading. Nested charter fixtures are test support. |
 | `internal/kmx/agentsuite` | Installed | Builder-owned sandbox binding and image metadata/attestation inspection, provider-neutral build/packing/CAS/transfer contracts. Nested AgentKit adapter, bounded local artifact ingestion, registry transport and workspace authoring own distinct seams, described below. Schemas are checkout assets; incident-analyst data is builder test support. |
 | `internal/kmx/runview` | Installed | Runtime-neutral run, Task, agent, hand-off and missing-evidence presentation types; nested Orka readers provide bounded lineage/events/traces with caller-scoped projection. |
 | `internal/kmx/runtime` | Installed | Runtime/session identity, capabilities, native typed scaffolding/bindings, strict authored assertions/RE2 and private references. Closed AgentSessionsBinding parsing, JCS identity and model matching. Only Orka chat/discovery is registered; assertion/judge primitives remain independent of removed bundle consumers. Nested binding examples are test support. |
@@ -253,13 +253,14 @@ dimensions, transparency and metadata.
 ## `plugins/` — Copilot plugin development package
 
 `plugins/copilot/` contains Agent Plugins 1.0 manifest/MCP templates, one
-chat skill, the offline Python developer packager and bundled-engine
-integration tests. Developer packages bind an explicit root; `release.py`
+chat skill, a read-only native Copilot canvas/text command, the offline Python
+developer packager and bundled-engine integration tests. Developer packages bind an explicit root; `release.py`
 creates unconfigured native archives from signature-verified release engines.
 The release job signs a separate plugin checksum inventory, preserving
 bare-binary installer/Homebrew contracts. Both builders copy pinned bytes and
 never download or execute the supplied engine. Source templates contain no
-executable and are not installable. Generated bundles need no Python runtime.
+engine binary and are not installable. Generated bundles need no Python runtime;
+the native view uses Copilot's bundled JavaScript SDK/runtime.
 
 Tests build the real CLI, relocate the generated bundle and exercise rooted
 Create/Edit/Run/Test with its deterministic fake route on Linux/macOS. Windows
@@ -269,7 +270,12 @@ hygiene and `.github/workflows/copilot-plugin.yml` run the package tests. See
 macOS/Windows trust gates and deferred file-scoped Explain. The opt-in
 `check_install.py` qualifies install/skill/four-tool discovery and cache bytes
 in a new private profile on a pinned Copilot host. Actual chat, signed dry runs,
-OS trust and real-model evidence remain distinct qualification results.
+OS trust and real-model evidence remain distinct qualification results. The
+native view consumes the root-confined MCP agent resource on the same session
+server, not a filesystem proxy or second runner. Its private loopback bridge
+serves bundled UI assets and read-only view data. Node tests cover the bridge
+and renderer; CLI resource/command integration and real desktop rendering are
+separate qualification surfaces.
 
 ## `.github/` — CI and repository automation
 

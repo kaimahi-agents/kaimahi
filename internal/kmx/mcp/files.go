@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 const maxFileBytes = 256 << 10
@@ -63,6 +64,8 @@ type File struct {
 type Files struct {
 	root     *os.Root
 	validate func(string, []byte) error
+	viewMu   sync.Mutex
+	latest   previewObservation
 }
 
 func OpenFiles(root string, validate func(string, []byte) error) (*Files, error) {
