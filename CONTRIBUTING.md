@@ -109,6 +109,8 @@ python3 scripts/check-comment-history.py --selftest && python3 scripts/check-com
 python3 scripts/test_check_mutations.py
 python3 scripts/test_orka_routing.py
 go run scripts/ci/orka-boundary.go
+python3 scripts/test_orka_callers.py
+go run scripts/ci/orka-callers.go
 python3 scripts/test_app_tests.py
 python3 scripts/check-mutations.py
 python3 scripts/check-readme-front-door.py
@@ -190,10 +192,32 @@ Hygiene checks safe production Go files and safe App test files for `init()`
 functions and active global initializers, across build tags. App test initializers
 also run in the live-test binary, even when `-run` selects another test. Only
 literal `errors.New` and `regexp.MustCompile` setup with verified imports, and
-passive same-file pointer-to-nil type assertions, are permitted. This is an initialization tripwire, not a reachability
-proof or sandbox. Review new shared callers, imports and constructor behavior;
-move a path to required coverage when its independence no longer holds. Expanding
-the safe policy requires reviewed evidence and routing tests.
+passive same-file pointer-to-nil type assertions, are permitted.
+
+The separate typed caller guard compares source references with the audited
+`scripts/ci/orka-callers.json` manifest. It catches a safe path calling a new
+runtime object, a new runtime caller of safe code, and new calling declarations
+or closures even in a file already on the boundary. Static graph walks also
+catch safe-to-safe changes that extend an existing runtime dependency in either
+direction. Methods, function values, fields and same-package private references
+are resolved with Go types, not names guessed from source text.
+
+The guard targets the qualifier's Linux/amd64 build without race/custom tags,
+includes App tests linked into that binary, and excludes other packages' tests.
+It compiles export metadata but never executes initializers or tests. Missing,
+stale or malformed manifests, unresolved definitions, unsupported owned CGO,
+source-file aliases and nested modules fail closed. Existing init checks still
+inspect all build tags. This is a conservative source-reference tripwire, not a
+proof of dynamic dispatch, value flow or arbitrary Go effects, and not a sandbox.
+
+For an intentional boundary change, inspect the output of
+`go run scripts/ci/orka-callers.go --audit` and review the affected callers before
+updating the manifest;
+hygiene never refreshes it automatically. Remove obsolete entries too. Narrow
+the routing exceptions when a path is no longer independent. Changes to either
+manifest or helper require full qualification themselves. Both boundary helpers
+have dedicated negative/positive fixtures rather than top-level checker mutation
+discovery. Expanding the safe policy requires reviewed evidence and routing tests.
 
 One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), concrete
 read-only suite member recipe view (`pkg/suiteview`) and alpha application

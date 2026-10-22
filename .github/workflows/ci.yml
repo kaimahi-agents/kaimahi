@@ -199,10 +199,12 @@ jobs:
           python3 scripts/test_suite_native_lift.py
           python3 scripts/test_orka_native_reference.py
           python3 scripts/test_suite_kagent.py
-      - name: Orka routing and initialization boundary
+      - name: Orka routing and dependency boundaries
         run: |
           python3 scripts/test_orka_routing.py
+          python3 scripts/test_orka_callers.py
           go run scripts/ci/orka-boundary.go
+          go run scripts/ci/orka-callers.go
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken
