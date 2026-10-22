@@ -188,7 +188,7 @@ func TestDirectPreviewCancellationStopsBeforeJudge(t *testing.T) {
 	}
 }
 func TestDirectPreviewRejectsRemoteCompatibleRoute(t *testing.T) {
-	_, err := NewDirectFileRunner().(*directFileRunner).client(modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: "https://example.invalid", Auth: "none"})
+	_, err := NewDirectFileRunner().(*directFileRunner).client(context.Background(), modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: "https://example.invalid", Auth: "none"})
 	if !errors.Is(err, agentpreview.ErrModelUnavailable) {
 		t.Fatalf("remote compatible route accepted: %v", err)
 	}
@@ -213,12 +213,12 @@ func TestDirectPreviewExplicitJudgeOverride(t *testing.T) {
 	}
 }
 
-func TestDirectPreviewRefusesCopilotUntilSeparateWiring(t *testing.T) {
+func TestDirectPreviewRefusesCopilotWithoutAccessDependency(t *testing.T) {
 	opt := directOptions(t, "unit", false)
 	opt.Route = &modelaccess.Route{Provider: "copilot", Model: "unit", Endpoint: "https://api.githubcopilot.com", Auth: "copilot"}
-	r, err := (&App{FileRunner: NewDirectFileRunner()}).PreviewAgentFile(context.Background(), opt)
+	r, err := (&App{FileRunner: &directFileRunner{}}).PreviewAgentFile(context.Background(), opt)
 	if err == nil || r.FullPass || r.ReasonCode != "model_unavailable" {
-		t.Fatalf("deferred route accepted: %+v / %v", r, err)
+		t.Fatalf("missing dependency accepted: %+v / %v", r, err)
 	}
 }
 
