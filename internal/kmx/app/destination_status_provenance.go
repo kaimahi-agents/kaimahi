@@ -50,11 +50,16 @@ func statusOwnership(runtime string, meta map[string]any) (*destinationStatusOwn
 		}
 	}
 	if runtime == "orka" {
-		owner := &orkaSuiteOwnership{v[0], v[1], v[2], v[3], v[4], v[5], run}
-		if !owner.valid() || owner.check(ann) != nil {
+		owner := &orkaSuiteOwnership{v[0], v[1], v[2], v[3], v[4], v[5], run, nil}
+		var err error
+		owner.FlowCandidate, err = flowCandidateOwner(ann)
+		if err != nil || !owner.valid() || owner.check(ann) != nil {
 			return nil, "unknown"
 		}
 	} else {
+		if _, flow := ann[flowCandidateMarker]; flow {
+			return nil, "unknown"
+		}
 		owner := &suiteKagentOwnership{v[0], v[1], v[2], v[3], v[4], v[5], workspace.RuntimeProfile{ID: "kagent", Version: "v0.10.3", Engine: "go"}}
 		labels, _ := meta["labels"].(map[string]any)
 		if !owner.valid() || labels["app.kubernetes.io/managed-by"] != "kmx" {

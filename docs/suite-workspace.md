@@ -327,6 +327,16 @@ they do not retry or discard a required extension. Root test/push/Deploy remain
 unsupported for these suites, including unevaluated push. No member receipt or
 storage validation is a whole-suite execution proof.
 
+## Internal experimental flow preflight
+
+The internal foundation freezes original S/F and an independently resolved non-secret destination binding B. Its separate `kmx.suite-binding/v1alpha1` file covers every member: `placementRef` names an existing `kmx.yaml` target, and `modelServingRef` is `provider:NAME`. Each placement must explicitly match the selected context and namespace. Aliases, namespace defaults, cross-destination evaluation selectors, model substitutions and required approval gates refuse; no new operational configuration collections are added.
+
+B binds concrete cluster/namespace incarnations, reference identities, exact model and semantic runtime/serving configuration. Resource-version and controller scale/restart churn remain private freshness checks. Credential values and candidate physical names are excluded. Referenced inference Providers may be shared only for the same declared model; each rendered member still owns a distinct Provider.
+
+Candidate names hash S/member/case/run/step/fresh-operation tuples. Versioned ownership retains the existing run marker so older readers fail closed. Explicit cleanup preserves operation-wide suite consistency and UID/RV deletion preconditions; malformed or foreign projections remain uncertain. Legacy passing receipts cannot consume flow candidates.
+
+These are internal GET-only preparation/rendering seams, not new commands or authority to execute, qualify, publish or Deploy a flow. Existing CLI routes and default readers stay strict. No runtime/model or whole-suite flow qualification is claimed.
+
 ## Named destinations
 
 Keep operational selectors in optional workspace-root `kmx.yaml`, separate from

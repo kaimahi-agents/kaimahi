@@ -372,6 +372,8 @@ jobs:
       # deployment identity and refusal responses without a cluster.
       - name: Native Orka Tool HTTP fixture health responses
         run: python3 scripts/test_model_fixtures.py
+      - name: Copilot plugin offline package and bundled MCP integration
+        run: python3 -m unittest discover -s plugins/copilot -p 'test_*.py' -v
       - name: AX preview activity projection tests
         run: PYTHONDONTWRITEBYTECODE=1 PYTHONWARNINGS=error python3 -m unittest discover -s ax-harness -p 'test_activity.py' -v
       # The native Orka HTTP Tool's own allow/deny pair, proved keyless and
