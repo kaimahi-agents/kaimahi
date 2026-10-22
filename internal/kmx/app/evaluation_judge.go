@@ -271,7 +271,7 @@ func (c *evaluationJudgeClient) sample(ctx context.Context, payload []byte, mode
 }
 
 func parseEvaluationJudgeResponse(body []byte, model, version, key string) (int, string, string, bool) {
-	if !evaluationJudgeJSONUnique(body) {
+	if !agentruntime.JSONKeysUnique(body) {
 		return 0, "", "", false
 	}
 	var envelope struct {
@@ -306,7 +306,7 @@ func parseEvaluationJudgeResponse(body []byte, model, version, key string) (int,
 		return 0, "", "", false
 	}
 	var content string
-	if json.Unmarshal(msg.Content, &content) != nil || !evaluationJudgeJSONUnique([]byte(content)) {
+	if json.Unmarshal(msg.Content, &content) != nil || !agentruntime.JSONKeysUnique([]byte(content)) {
 		return 0, "", "", false
 	}
 	var result map[string]json.RawMessage
@@ -337,68 +337,4 @@ func parseEvaluationJudgeResponse(body []byte, model, version, key string) (int,
 		safe = ""
 	}
 	return score, safe, match, true
-}
-
-// evaluationJudgeJSONUnique rejects duplicate keys at every object depth and
-// trailing data, without restricting normal OpenAI envelope extensions.
-func evaluationJudgeJSONUnique(data []byte) bool {
-	if !utf8.Valid(data) {
-		return false
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var walk func(int) bool
-	walk = func(depth int) bool {
-		if depth > 32 {
-			return false
-		}
-		token, err := decoder.Token()
-		if err != nil {
-			return false
-		}
-		delimiter, ok := token.(json.Delim)
-		if !ok {
-			return true
-		}
-		switch delimiter {
-		case '{':
-			var keys []string
-			for decoder.More() {
-				token, err := decoder.Token()
-				if err != nil {
-					return false
-				}
-				key, ok := token.(string)
-				if !ok {
-					return false
-				}
-				// Match encoding/json's Unicode case folding so aliases cannot
-				// shadow identity, choices, or other evidence-bearing fields.
-				for _, seen := range keys {
-					if strings.EqualFold(key, seen) {
-						return false
-					}
-				}
-				keys = append(keys, key)
-				if !walk(depth + 1) {
-					return false
-				}
-			}
-		case '[':
-			for decoder.More() {
-				if !walk(depth + 1) {
-					return false
-				}
-			}
-		default:
-			return false
-		}
-		end, err := decoder.Token()
-		return err == nil && ((delimiter == '{' && end == json.Delim('}')) || (delimiter == '[' && end == json.Delim(']')))
-	}
-	if !walk(0) {
-		return false
-	}
-	_, err := decoder.Token()
-	return err == io.EOF
 }

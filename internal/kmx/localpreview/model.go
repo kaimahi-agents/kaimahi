@@ -9,9 +9,10 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
-	"unicode/utf8"
 
 	"github.com/agent-primitives/sessions/api"
+
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 const (
@@ -149,10 +150,13 @@ func (c *modelClient) send(ctx context.Context, body []byte) (string, error) {
 }
 
 // parseReply accepts exactly one completed assistant text message. A tool or
-// function call in any case spelling is refused and never executed.
+// function call in any case spelling is refused and never executed. A reply
+// that repeats a key at any depth, including a case-insensitive alias, is
+// malformed: encoding/json keeps the last occurrence, which would let a later
+// null tool_calls or "stop" finish_reason shadow an earlier one.
 func parseReply(raw []byte) (string, error) {
 	malformed := refuse(RefusedMalformed, "the model reply is not one completed chat-completions text message", "use an OpenAI-compatible chat-completions endpoint")
-	if !utf8.Valid(raw) {
+	if !agentruntime.JSONKeysUnique(raw) {
 		return "", malformed
 	}
 	var envelope struct {

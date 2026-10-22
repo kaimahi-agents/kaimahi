@@ -279,6 +279,12 @@ func TestCompatibleRepliesRefusedWithoutExecution(t *testing.T) {
 		"legacy fn":    {http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Hello, Ada","function_call":{"name":"rm"}}}]}`, RefusedToolCall},
 		"model refuse": {http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":null,"refusal":"SECRET-BODY"}}]}`, RefusedMalformed},
 		"redirect":     {http.StatusTemporaryRedirect, ``, RefusedHTTPStatus},
+		// encoding/json keeps the last duplicate; a duplicate key at any depth,
+		// including a case-insensitive alias, is malformed, never text.
+		"shadowed tool call":  {http.StatusOK, `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Hello, Ada","tool_calls":[{"id":"c"}],"tool_calls":null}}]}`, RefusedMalformed},
+		"shadowed truncation": {http.StatusOK, `{"choices":[{"finish_reason":"length","finish_reason":"stop","message":{"role":"assistant","content":"Hello, Ada"}}]}`, RefusedMalformed},
+		"aliased finish":      {http.StatusOK, `{"choices":[{"finish_reason":"length","Finish_Reason":"stop","message":{"role":"assistant","content":"Hello, Ada"}}]}`, RefusedMalformed},
+		"nested duplicate":    {http.StatusOK, `{"usage":{"total_tokens":1,"TOTAL_TOKENS":2},"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Hello, Ada"}}]}`, RefusedMalformed},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := journalDir(t)

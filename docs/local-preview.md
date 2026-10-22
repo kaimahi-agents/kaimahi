@@ -96,8 +96,9 @@ assertions, so comment text never reaches a model or judge request, the journal
 or a result.
 
 A model reply that contains a tool call (in any key spelling), a refusal, a
-truncated or malformed body, an oversized body, an answer containing the
-endpoint credential or a non-200 status is refused.
+truncated or malformed body, a key repeated at any depth (including a
+case-insensitive alias), an oversized body, an answer containing the endpoint
+credential or a non-200 status is refused.
 Nothing is executed. The example is `unknown`, never a pass. Default error
 text gives only the status code or the class of problem. It never includes
 response bodies, prompts, answers or credentials.

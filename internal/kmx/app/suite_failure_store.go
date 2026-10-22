@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
 
@@ -165,7 +166,7 @@ func (s *suiteFailureStore) scan() ([]suiteFailureEntry, error) {
 		}
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		decoder.DisallowUnknownFields()
-		if !evaluationJudgeJSONUnique(raw) || decoder.Decode(&record) != nil || json.Unmarshal(raw, &presence) != nil || presence.Detail.Complete == nil || presence.Detail.Attributed == nil || validateSuiteFailureRecord(record, nil) != nil {
+		if !agentruntime.JSONKeysUnique(raw) || decoder.Decode(&record) != nil || json.Unmarshal(raw, &presence) != nil || presence.Detail.Complete == nil || presence.Detail.Attributed == nil || validateSuiteFailureRecord(record, nil) != nil {
 			return nil, errSuiteFailureStore
 		}
 		sequence, e := strconv.ParseUint(match[1], 10, 64)
