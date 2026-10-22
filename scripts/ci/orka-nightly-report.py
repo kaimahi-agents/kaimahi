@@ -84,6 +84,9 @@ def report(api, repository, run_id, sha, result):
     if result == "success" and (issue is None or issue["state"] == "closed"):
         return "unchanged"
     state = stored_state(issue["body"]) if issue else {}
+    # Preserve an already-published newer failure even if the run list lags.
+    if state and state["run_id"] != run_id and state["latest_failed_at"] >= when:
+        return "ignored"
     if result != "success":
         # Repeated attempts deduplicate; a newer failure still updates this issue.
         if issue and issue["state"] == "open" and state and state["run_id"] == run_id:

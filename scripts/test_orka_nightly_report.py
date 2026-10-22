@@ -247,6 +247,15 @@ class ReporterTests(unittest.TestCase):
         self.assertEqual(self.execute(api)[1], "Orka nightly reporter: unchanged.\n")
         self.assertEqual(api.writes, [])
 
+    def test_recorded_newer_failure_survives_stale_latest_run_response(self):
+        for result in ("success", "failure"):
+            for latest in ("2026-10-22T02:03:04Z", "2026-10-21T02:03:04Z"):
+                with self.subTest(result=result, latest=latest):
+                    # The run-list API can lag already-published issue metadata.
+                    api = FakeAPI([[issue(body=stored_body(latest=latest, run_id="124"))]])
+                    self.assertEqual(self.execute(api, QUALIFICATION_RESULT=result)[1], "Orka nightly reporter: ignored.\n")
+                    self.assertEqual(api.writes, [])
+
     def test_newest_failure_same_day_updates_existing_issue_without_new_issue(self):
         api = FakeAPI([[issue(body=stored_body(latest="2026-10-21T01:00:00Z", run_id="122"))]])
         self.assertEqual(self.execute(api)[1], "Orka nightly reporter: updated.\n")
