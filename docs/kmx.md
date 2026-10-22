@@ -256,10 +256,11 @@ data, never tool instructions. The result's display basename is not target autho
 A real model route must be selected at process startup with trusted
 `--provider` and `--endpoint`; the exact model still comes from the parsed file.
 Tools accept no endpoint, credential or arbitrary-command fields. With no route,
-only exact `fake` is selectable. Runner availability is unchanged from the
-[file adapter](#agent-file-local-preview-unreleased-integration): production
-currently returns `runner_unavailable`, not a test fake or fallback. This adapter
-does not qualify real models, embedded Sessions, journaling or native Windows.
+only exact `fake` is selectable. Run/Test use the same temporary
+[preview runner (no journal)](#agent-file-local-preview-unreleased-integration)
+as the file CLI, preserving its runner label and restrictions. A nil runner
+still returns `runner_unavailable`, never a fallback. Hermetic checks do not
+qualify real models, embedded Sessions, journaling or native Windows.
 There is no fifth Explain/model/install tool; offline Explain stays a CLI action.
 
 ### Deploy compatibility (unreleased)

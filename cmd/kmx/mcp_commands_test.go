@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -95,8 +94,6 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 	deps, loads := testDependencies(&ignored, &diag)
 	deps.stdin = sr
 	deps.stdout = sw
-	fake := &cliPreviewFake{verdict: runtime.EvaluationPass}
-	deps.fileRunner = fake
 	root := t.TempDir()
 	done := make(chan error, 1)
 	go func() { done <- execute([]string{"mcp", "--root", root}, deps) }()
@@ -112,6 +109,9 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Exercise the production dependency, including the fake route's instruction
+	// interpreter, rather than substituting a scripted passing runner.
+	source = bytes.Replace(source, []byte("Greet the input."), []byte("Reply with exactly `PRIVATE OPERAND`."), 1)
 	call := func(name string, args map[string]any) *sdk.CallToolResult {
 		t.Helper()
 		r, err := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: name, Arguments: args})
@@ -131,7 +131,6 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 		}
 		var out, cliDiag bytes.Buffer
 		cliDeps, _ := testDependencies(&out, &cliDiag)
-		cliDeps.fileRunner = &cliPreviewFake{verdict: runtime.EvaluationPass}
 		if err := execute([]string{op, filepath.Join(root, "greeter.agent.md"), "--case", "greeting", "-o", "json"}, cliDeps); err != nil {
 			t.Fatal(err)
 		}
@@ -147,30 +146,42 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 			t.Fatalf("CLI/MCP differ: %s vs %s", out.String(), b)
 		}
 	}
-	// Scripted fail/edit/pass contract loop; no model-execution claim.
-	fake.verdict = runtime.EvaluationFail
-	failed := call("test", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md"})
-	if !failed.IsError {
-		t.Fatal("assertion failure hidden")
-	}
+	// Real instruction edit/fail/fix/pass loop over the offline fake model route;
+	// this is not real-model or Sessions execution qualification.
 	var previous struct{ File struct{ Revision string } }
 	b, _ := json.Marshal(created.StructuredContent)
 	if err := json.Unmarshal(b, &previous); err != nil {
 		t.Fatal(err)
 	}
-	edited := call("edit", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md", "expectedRevision": previous.File.Revision, "content": strings.Replace(string(source), "Greet the input.", "Greet briefly.", 1)})
-	if edited.IsError {
+	broken := call("edit", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md", "expectedRevision": previous.File.Revision, "content": strings.Replace(string(source), "`PRIVATE OPERAND`", "`different response`", 1)})
+	if broken.IsError {
 		t.Fatal("edit refused")
 	}
-	fake.verdict = runtime.EvaluationPass
-	passed := call("test", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md"})
-	b, _ = json.Marshal(passed.StructuredContent)
+	var changed struct{ File struct{ Revision string } }
+	b, _ = json.Marshal(broken.StructuredContent)
+	if err := json.Unmarshal(b, &changed); err != nil {
+		t.Fatal(err)
+	}
+	failed := call("test", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md"})
+	b, _ = json.Marshal(failed.StructuredContent)
 	var r app.FilePreviewResult
 	if err := json.Unmarshal(b, &r); err != nil {
 		t.Fatal(err)
 	}
-	if !r.FullPass || r.File.Revision == previous.File.Revision {
-		t.Fatal("full pass/revision lost")
+	if !failed.IsError || r.ReasonCode != "assertion_failed" || r.FullPass || r.File.Revision != changed.File.Revision {
+		t.Fatalf("instruction regression hidden: %+v", r)
+	}
+	fixed := call("edit", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md", "expectedRevision": changed.File.Revision, "content": string(source)})
+	if fixed.IsError {
+		t.Fatal("fix refused")
+	}
+	passed := call("test", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md"})
+	b, _ = json.Marshal(passed.StructuredContent)
+	if err := json.Unmarshal(b, &r); err != nil {
+		t.Fatal(err)
+	}
+	if passed.IsError || !r.FullPass || r.File.Revision != previous.File.Revision || r.File.Revision == changed.File.Revision || r.Runner != "preview runner (no journal)" {
+		t.Fatalf("full pass/revision/runner label lost: %+v", r)
 	}
 	if *loads != 0 || diag.Len() != 0 {
 		t.Fatalf("protocol config/logs: %d %s", *loads, diag.String())
