@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Behavioral change classification, shard routing and required-check tests."""
+import copy
 import json
 import os
 import pathlib
@@ -80,8 +81,10 @@ class WorkflowTests(unittest.TestCase):
         expression = str(expression).strip().removeprefix("${{").removesuffix("}}")
         expression = expression.replace("github.event_name", repr(event))
         expression = expression.replace("needs.classify-change.outputs.kagent_changed", repr(changed))
+        expression = expression.replace("needs.classify-change.outputs.orka_required", repr("true"))
+        expression = expression.replace("!cancelled()", "True")
         expression = expression.replace("github.ref", repr("refs/heads/main"))
-        expression = expression.replace("always()", "True").replace("&&", " and ").replace("||", " or ")
+        expression = expression.replace("always()", "True").replace("!(", "not (").replace("&&", " and ").replace("||", " or ")
         return bool(eval(expression, {"__builtins__": {}}, {}))
 
     def test_relevant_prs_unknown_main_and_nightly_run_new_shard(self):
@@ -108,7 +111,7 @@ class WorkflowTests(unittest.TestCase):
                 if name.startswith("e2e-") and name != "e2e-kagent-lift":
                     needs[name]["result"] = "skipped"
         needs.update(overrides or {})
-        env = dict(os.environ, SHARDS=json.dumps(needs), EVENT=event)
+        env = dict(os.environ, SHARDS=json.dumps(needs), EVENT=event, REF="refs/heads/main")
         return subprocess.run(["bash", "-e", "-c", agg["steps"][0]["run"]], env=env,
                               cwd=ROOT, text=True, capture_output=True, timeout=10)
 
@@ -145,21 +148,30 @@ class WorkflowTests(unittest.TestCase):
 
     def test_inline_guards_execute_and_reject_missing_or_docs_only_new_routing(self):
         step = next(s for s in self.jobs["hygiene"]["steps"]
-                    if s.get("name", "").startswith("Every cluster step carries"))
+                    if s.get("name", "").startswith("Cluster routing, reusable Orka"))
         with tempfile.TemporaryDirectory(prefix="kmx-ci-guards-") as directory:
             root = pathlib.Path(directory)
             workflow = root / ".github/workflows/ci.yml"
             workflow.parent.mkdir(parents=True)
-            for mutation in ("none", "new-docs-guard", "missing-dependency", "old-missing-guard", "nightly-aggregator-skip"):
+            full_path = ROOT / ".github/workflows/orka-runtime.yml"
+            full_workflow = yaml.safe_load(full_path.read_text())
+            for mutation in ("none", "new-docs-guard", "missing-dependency", "old-missing-guard", "nightly-aggregator-skip", "foreign-delegation", "missing-proof"):
                 jobs = json.loads(json.dumps(self.jobs))
+                full = copy.deepcopy(full_workflow)
                 if mutation == "new-docs-guard":
                     jobs["e2e-kagent-lift"]["steps"][2]["if"] = "steps.changes.outputs.docs_only != 'true'"
                 elif mutation == "missing-dependency":
                     jobs["e2e-hello-world"]["needs"].remove("classify-change")
                 elif mutation == "old-missing-guard":
-                    jobs["e2e-orka-runtime"]["steps"][2].pop("if")
+                    full["jobs"]["qualify"]["steps"][2]["if"] = "steps.changes.outputs.docs_only != 'true'"
                 elif mutation == "nightly-aggregator-skip":
                     jobs["e2e-hello-world"]["if"] = "always() && github.event_name != 'schedule'"
+                elif mutation == "foreign-delegation":
+                    jobs["e2e-orka-runtime"]["uses"] = "other/repo/.github/workflows/proof.yml@main"
+                elif mutation == "missing-proof":
+                    full["jobs"]["qualify"]["steps"] = [s for s in full["jobs"]["qualify"]["steps"]
+                        if s.get("name") != "Native suite — qualify evaluation, exact transfer and CLI lift"]
+                (root / ".github/workflows/orka-runtime.yml").write_text(yaml.safe_dump(full))
                 workflow.write_text(yaml.safe_dump({"jobs": jobs}))
                 result = subprocess.run(["bash", "-e", "-c", step["run"]], cwd=root, text=True,
                                         capture_output=True, timeout=10)

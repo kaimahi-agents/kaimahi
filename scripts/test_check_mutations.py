@@ -389,6 +389,8 @@ class WorkflowRoutingTests(unittest.TestCase):
         expression = str(expression).strip().removeprefix("${{").removesuffix("}}")
         expression = expression.replace("github.event_name", repr(event))
         expression = expression.replace("steps.mutation_changes.outputs.scripts_changed", repr(scripts_changed))
+        expression = expression.replace("needs.classify-change.outputs.orka_required", repr("true"))
+        expression = expression.replace("!(", "not (")
         expression = expression.replace("github.ref", repr("refs/heads/main"))
         expression = expression.replace("!cancelled()", "True").replace("always()", "True").replace("&&", " and ").replace("||", " or ")
         return bool(eval(expression, {"__builtins__": {}}, {}))

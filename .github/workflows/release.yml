@@ -25,7 +25,13 @@ permissions:
   contents: read
 
 jobs:
+  orka-qualification:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/orka-runtime.yml
+
   release:
+    needs: [orka-qualification]
     runs-on: ubuntu-latest
     permissions:
       # Creating the release. Nothing else is written.
@@ -41,6 +47,19 @@ jobs:
           # GoReleaser needs tags and clean VCS stamping.
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Release commit has fresh Orka qualification
+        env:
+          QUALIFIED_SHA: ${{ needs.orka-qualification.outputs.qualified_sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$QUALIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EVENT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          actual=$(git rev-parse HEAD)
+          expected=$(git rev-parse "$EVENT_SHA^{commit}")
+          test "$actual" = "$expected"
+          test "$actual" = "$QUALIFIED_SHA"
 
       - name: Decide what is being built
         id: what
