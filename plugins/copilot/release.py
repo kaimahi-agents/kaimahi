@@ -105,7 +105,7 @@ def archive(*, binary: Path, sha256: str, target: str, version: str,
             "schemaVersion": 1, "sha256": sha256, "platform": target,
             "version": version, "revision": revision, "previewSchemaVersion": 1,
             "purpose": "release-bundle; configure root before installation"})
-        (root / "SETUP.md").write_text(SETUP, encoding="utf-8")
+        (root / "SETUP.md").write_bytes(SETUP.encode("utf-8"))
         # Exclusive publication: failed new outputs are ours, existing files are not.
         sink = output.open("xb")
         try:
