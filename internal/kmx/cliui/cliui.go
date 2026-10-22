@@ -1,5 +1,5 @@
-// Package cliui renders human-facing terminal output without changing the
-// plain formats consumed by scripts, tests, and redirected logs.
+// Package cliui renders human-facing terminal output for a destination stream.
+// Default stream detection keeps redirected output plain.
 package cliui
 
 import (

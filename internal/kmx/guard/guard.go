@@ -1,38 +1,6 @@
-// Package guard is scripts/kube-guard.sh in Go: the context-safety net in
-// front of every mutating kmx command.
-//
-// The four rules below are the shell script's and both implementations
-// have to agree on them. This one adds a rule the script does not have:
-// every caller must record who chose the context, and a context nobody
-// chose is refused rather than acted on.
-//
-//   - ALWAYS print where the action is about to land (context, API-server
-//     host, namespaces) on stderr, so the answer is on screen even when
-//     nothing is asked.
-//   - A LOCAL kind cluster proceeds with a banner and no question. That
-//     keeps the kind path's behaviour unchanged for existing users and for
-//     CI. A kind-NAMED context the kubeconfig does not hold counts as local
-//     too, because that is bring-up naming the cluster it is about to
-//     create — but only for callers that create. A caller setting
-//     MustBeKnown is told the kubeconfig does not describe it and has to
-//     confirm, which is what stops a delete-by-container-name running under
-//     a banner saying nothing is there.
-//   - ANY other context requires explicit confirmation naming the context.
-//   - FAIL CLOSED: no confirmation, no action. An unknown context, an
-//     unreadable kubeconfig, or a non-interactive shell without
-//     KAIMAHI_CONFIRM all refuse rather than guess.
-//
-// "Local kind" is deliberately TWO independent checks, because a context
-// NAME is cosmetic — anyone can name an AKS context `kind-prod`. The
-// substantive check is the API-server address: kind publishes its API
-// server on loopback. Both must agree.
-//
-// The kubeconfig itself is read by shelling out to `kubectl config view
-// -o json` rather than parsing files here. That is not laziness: KUBECONFIG
-// can name several files, kubectl's merge rules are load-bearing, and a
-// second implementation of them would be a second set of bugs deciding
-// whose cluster gets written to. `config view` never contacts a cluster, so
-// it stays cheap and offline.
+// Package guard checks Kubernetes context safety and obtains scoped confirmation.
+// It classifies the named context using kubeconfig, not the name alone.
+// Unreadable configuration and missing required confirmation refuse action.
 package guard
 
 import (

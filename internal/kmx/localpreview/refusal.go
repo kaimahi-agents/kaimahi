@@ -1,8 +1,6 @@
-// Package localpreview runs one tool-free single-file agent in process on
-// embedded Sessions with a private SQLite journal, against kmx's deterministic
-// fake model or an explicit OpenAI-compatible endpoint. Results are labeled
-// local preview: they are not deployment qualification, suite evidence,
-// receipts or authority to publish or deploy.
+// Package localpreview runs tool-free agent-file previews on embedded Sessions
+// with a private SQLite journal. Preview results and journal replay are not
+// suite evidence or authority to publish or deploy.
 package localpreview
 
 import "fmt"

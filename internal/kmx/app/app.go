@@ -1,5 +1,9 @@
-// Package app orchestrates kmx commands using resolved configuration,
+// Package app orchestrates kmx operations using resolved configuration,
 // context guards, runtime adapters and external tools.
+//
+// App coordinates consent, side effects and runtime-specific evidence.
+// Placement observations are distinct from evaluation proof; successful
+// placement alone must not be treated as proof of agent behavior.
 package app
 
 import (

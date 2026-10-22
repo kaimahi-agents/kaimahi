@@ -1,4 +1,6 @@
-// Package agentsessions owns the transport and journal evidence for a single chat evaluation.
+// Package agentsessions adapts Sessions chat execution and verifies its journals.
+// Suite evaluation and local preview use distinct session labels; preview
+// reconstruction must not be treated as suite evaluation proof.
 package agentsessions
 
 import (

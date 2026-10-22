@@ -1,21 +1,6 @@
-// Package secretshapes is the one list of credential shapes this
-// repository refuses to carry.
-//
-// Go consumers and scripts/check-secret-shapes.py read the same shapes.json
-// so credential detection rules stay consistent across generated documents
-// and repository scans.
-//
-// Adding a shape:
-//
-//   - Put it in shapes.json with a `what` (the phrase a refusal prints),
-//     a `why` (who issues this and how it reaches a file), an `example`
-//     that must match and a `counterexample` that must not.
-//   - Write both of those as PARTS, joined at load. A whole example would
-//     be a literal credential shape committed to the tree, which is the
-//     one thing this list exists to forbid — and the tree scan reads
-//     shapes.json like every other file.
-//   - Every consumer reads the whole list; no separate consumer-specific
-//     rule list needs updating.
+// Package secretshapes provides shared credential-pattern checks from embedded rules.
+// Go code and repository checks use the same rules in shapes.json.
+// These checks recognize known shapes; they do not prove that text is secret-free.
 package secretshapes
 
 import (

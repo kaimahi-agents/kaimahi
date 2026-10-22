@@ -1,6 +1,6 @@
-// Package scaffold generates reviewable Kubernetes YAML and provides shared
-// name, reference and credential-shape checks. Orka authoring is in orka.go;
-// the helpers here are shared by every scaffolder.
+// Package scaffold generates reviewable Kubernetes manifests and validates inputs.
+// Generated Secret documents are value-free prerequisites, not resources to
+// apply. File writing must preserve existing user-owned manifests.
 package scaffold
 
 import (

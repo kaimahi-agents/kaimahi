@@ -1,26 +1,5 @@
-// Package version answers one question an adopter has to be able to ask:
-// which build of kmx is this?
-//
-// Until the first tag, the only answer available was a commit sha — the
-// same sha the install instruction made you type. A binary that can only
-// identify itself by the thing you had to know already is not a version.
-//
-// Three sources, in the order they are trusted:
-//
-//  1. Tag, stamped at link time by the release job from the git tag it is
-//     building. This is the only source that can name a RELEASE, because a
-//     CI build from a checkout looks exactly like any other checkout build
-//     to the toolchain: Main.Version is "(devel)" and the tag is nowhere in
-//     the build info.
-//  2. Main.Version, which the module proxy fills in for `go install
-//     …/cmd/kmx@v0.1.0` (the tag) and for `@main` or `@<sha>` (a
-//     pseudo-version). This is the path the README's one-line install takes.
-//  3. vcs.revision, which a `go build` from a checkout records. A developer
-//     build, and it says so rather than pretending to be a version.
-//
-// The rule the release depends on: a binary built from a tag must never
-// report "unknown", and must never report a bare sha as if it were a
-// version. TestReleaseBuildNeverReportsUnknownOrABareSha holds that line.
+// Package version identifies the kmx build from release stamps and Go build metadata.
+// Development builds remain distinct from stamped releases.
 package version
 
 import (

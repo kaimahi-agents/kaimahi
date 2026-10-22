@@ -1,6 +1,6 @@
-// Package orkaschema validates whole Orka custom resources against installed
-// CRDs or immutable embedded CRDs. It performs no network or cluster I/O and
-// does not evaluate Kubernetes CEL, defaulting, admission or reconciliation.
+// Package orkaschema validates Orka resources against supplied or embedded
+// custom-resource schemas without network or cluster access. Schema validation
+// does not perform admission or prove runtime readiness.
 package orkaschema
 
 import (

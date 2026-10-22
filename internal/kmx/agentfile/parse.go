@@ -1,5 +1,6 @@
-// Package agentfile parses canonical charters and explicitly selected native
-// Squad documents, without execution or implicit native suite integration.
+// Package agentfile parses and loads single-file agent charters.
+// Explicit Squad parsing returns a distinct charter type, not a runnable Agent.
+// Parsing and inspection do not execute agents or register them with Squad.
 package agentfile
 
 import (

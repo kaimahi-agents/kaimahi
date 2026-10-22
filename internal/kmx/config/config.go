@@ -1,5 +1,6 @@
-// Package config resolves kmx settings from CLI overrides, environment variables
-// and the saved context, and locates state and toolchain directories.
+// Package config resolves kmx settings and locates state and toolchain directories.
+// Operational destination selectors are separate from authored suite source.
+// Resolve selectors once and pass copied values through an operation.
 package config
 
 import (

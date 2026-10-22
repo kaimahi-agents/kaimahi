@@ -1,4 +1,9 @@
-// Package mcp adapts local agent-file operations to the stdio MCP boundary.
+// Package mcp adapts local agent-file operations to stdio MCP.
+// File access requires an explicit root; execution uses shared App snapshots.
+// Tool requests must not choose model endpoints or substitute a runner.
+// Separate unwired Squad cast/enrich primitives use a trusted installed program,
+// operation-owned starter observations, byte-preserving owned-field edits and
+// partial-effect reporting. They add no tools, native preview or dispatch.
 package mcp
 
 import (

@@ -1,31 +1,6 @@
-// Package toolchain fetches the external binaries kmx shells out to, pinned
-// and checksum-verified, so that a machine with a container engine and
-// nothing else can still run the journey.
-//
-// This began as the fetcher for one pinned CLI, generalised. That package
-// already had to solve the whole problem for a single tool — a kmx installed with
-// `go install` or downloaded from a release has no checkout to put a binary
-// in, so the binary is cached, keyed by version and platform, and re-verified
-// on every use rather than only when it was downloaded. The same reasoning
-// applies to kind and kubectl, which is why the prerequisite list could be
-// several items long: kmx knew how to fetch exactly one of the things it
-// needs.
-//
-// Two rules that path established, kept here because they are the whole
-// value of the mechanism:
-//
-//   - A CACHE HIT IS RE-VERIFIED. "Checksum-verified" has to mean the bytes
-//     about to be executed, not the bytes that were fetched some other day.
-//     Anything with write access to the cache could otherwise substitute a
-//     binary that then runs with the operator's kubeconfig.
-//   - A MISMATCH LEAVES NOTHING BEHIND. A rejected download must not be
-//     sitting in the cache when the next run looks.
-//
-// What is deliberately NOT claimed: this is TLS trust in the publisher's own
-// download host, not an independent signature. The digest and the bytes come
-// from the same origin, so a compromised origin defeats both. It buys
-// integrity against a corrupted or truncated transfer and against a tampered
-// cache.
+// Package toolchain downloads and caches pinned external tools for kmx.
+// Cached binaries are rechecked against their recorded checksums before reuse.
+// Publisher checksums provide integrity checks, not independent signatures.
 package toolchain
 
 import (

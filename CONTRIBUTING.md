@@ -416,11 +416,14 @@ pending notes. Rendering and release preparation are described in
 
 Files inherit the responsibility and classification of their documented
 directory. Adding a file below an existing responsibility does not require a
-map edit. Update [the map](docs/repository-map.md) for a new top-level area,
-package responsibility, or changed capability boundary. Do not add file totals
-or exhaustive file/caller inventories. The checker enforces named paths,
-directory coverage and the retired-module boundary; editorial classifications
-remain reviewable.
+map edit. Update [the map](docs/repository-map.md) only when adding, removing or
+moving a top-level responsibility directory: a root area or an immediate child
+of `cmd/`, `internal/` or `pkg/`. Behavior changes go in the package's Go doc
+comment (`doc.go` or the existing package comment), and every `internal/kmx/*`
+package needs one. Do not add file totals or exhaustive file/caller inventories.
+The checker enforces named paths, top-level directory coverage, package doc
+comments and the retired-module boundary; editorial classifications remain
+reviewable.
 
 ```bash
 python3 scripts/check-repository-map.py --selftest

@@ -1,6 +1,6 @@
-// Package runtime defines the platform-neutral contract used by KMX chat.
-// Platform identity, execution engine and model provider are separate concepts.
-// No Kubernetes, terminal or vendor SDK types cross this boundary.
+// Package runtime defines shared runtime contracts and evaluation primitives.
+// Runtime discovery must distinguish absence from errors; callers must not
+// turn a discovery error into fallback to another runtime.
 package runtime
 
 import "context"

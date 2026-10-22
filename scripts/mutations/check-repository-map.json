@@ -11,10 +11,16 @@
       "replace": "            if False:"
     },
     {
-      "name": "a new ownership package inherits the area heading",
-      "breaks": "The unowned cmd, internal/kmx, other internal and public package fixtures must fail; top-level sections cannot act as universal package coverage.",
+      "name": "a new top-level ownership directory inherits the area heading",
+      "breaks": "Unowned cmd, internal and public roots must fail; ordinary internal/kmx packages inherit their root and keep documentation locally.",
       "find": "            if len(parts) <= depth or owner not in named:",
       "replace": "            if False:"
+    },
+    {
+      "name": "missing kmx package documentation is accepted",
+      "breaks": "Missing, empty, detached, directive-only and test-only documentation must not satisfy the package-doc claim.",
+      "find": "            if not any(go_package_documented(tree.read(path)) for path in files)]",
+      "replace": "            if False]"
     },
     {
       "name": "no claim is registered and the run reports the map checked",

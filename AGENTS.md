@@ -3,6 +3,9 @@
 Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 [development invariants](docs/development.md#invariants-to-preserve), and the
 [repository map](docs/repository-map.md) before changing command behavior.
+Edit the map only when adding, removing or moving a top-level directory (a root
+area or an immediate child of `cmd/`, `internal/` or `pkg/`); put behavior
+changes in the package's Go doc comment.
 
 ## Command consistency
 

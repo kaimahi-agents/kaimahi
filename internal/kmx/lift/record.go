@@ -1,12 +1,6 @@
-// Package lift holds the parts of the managed-cluster path that must be
-// right whether or not a cloud is reachable: what the lift is about to do,
-// what it actually created, and — the one that can cost somebody else money
-// — what it is allowed to delete afterwards.
-//
-// The split matters. Everything here is pure: it names resources, records
-// them, and decides removal from an answer someone else obtained. Nothing in
-// this package talks to Azure, so its teardown rules are tested without a
-// subscription instead of relying on infrequent live-cluster exercises.
+// Package lift defines managed-cluster plans, ownership records and teardown rules.
+// Callers supply cloud observations; this package makes no Azure calls.
+// PlanRemoval permits deletion only when a present resource matches its recorded ID.
 package lift
 
 import (

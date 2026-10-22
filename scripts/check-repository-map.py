@@ -2,8 +2,9 @@
 """Check directory responsibilities, named paths and the retired-module boundary.
 
 Classifications are editorial. Descendants inherit their directory's role; only
-new top-level areas or ownership packages need map changes. This is not a file,
-caller or embed inventory: embed.go and the Go compiler own build membership.
+top-level areas or direct children of cmd/, internal/ and pkg/ need map changes.
+Immediate internal/kmx/* packages keep behavior in Go package doc comments.
+This is not a file, caller or embed inventory: Go owns build membership.
 The tracked path set comes from git ls-files; contents come from the worktree.
 Run with no arguments to check the map, or --selftest for independent fixtures.
 """
@@ -159,7 +160,7 @@ def directory_responsibilities_cover_packages(doc: Doc, tree: Tree) -> list[str]
         named = set()
         for path, classification, responsibility in rows:
             path = path.rstrip('/')
-            shape = r'internal/(?:kmx/[^/]+|(?!kmx$)[^/]+)' if area == 'internal' else area + r'/[^/]+'
+            shape = area + r'/[^/]+'
             if not re.fullmatch(shape, path) or not classification.strip() or not responsibility.strip():
                 problems.append(f'invalid or empty {area}/ ownership row: {path}')
                 continue
@@ -170,11 +171,56 @@ def directory_responsibilities_cover_packages(doc: Doc, tree: Tree) -> list[str]
                 problems.append(f'ownership directory is absent: {path}')
         for path in sorted(tree.under(area)):
             parts = path.split('/')
-            depth = 3 if parts[:2] == ['internal', 'kmx'] else 2
+            depth = 2
             owner = '/'.join(parts[:depth])
             if len(parts) <= depth or owner not in named:
                 problems.append(f'{path} has no directory responsibility for {owner}')
     return problems
+
+
+def go_package_documented(text: str) -> bool:
+    """Recognize a nonempty comment group attached to the real package clause.
+
+    Tokenize literals as units so quoted examples cannot supply a declaration
+    or documentation. Like Go's parser, a blank line detaches a comment group.
+    """
+    tokens = list(re.finditer(r'//[^\n]*|/\*.*?\*/|`[^`]*`|"(?:\\.|[^"\\])*"|'
+                              r"'(?:\\.|[^'\\])*'|[A-Za-z_]\w*|\S", text, re.S))
+    for index, token in enumerate(tokens):
+        if token[0] != 'package':
+            continue
+        comments, end = [], token.start()
+        for previous in reversed(tokens[:index]):
+            gap = text[previous.end():end]
+            if (not previous[0].startswith(('//', '/*')) or gap.count('\n') > 1
+                    or (end == token.start() and '\n' not in gap)):
+                break
+            comments.append(previous[0])
+            end = previous.start()
+        for comment in comments:
+            body = comment[2:-2] if comment.startswith('/*') else comment[2:]
+            lines = [line.strip().lstrip('*').strip() for line in body.splitlines()]
+            if any(line and not line.startswith(('go:', '+build ')) for line in lines):
+                return True
+        return False
+    return False
+
+
+@claim
+def kmx_packages_have_package_documentation(doc: Doc, tree: Tree) -> list[str]:
+    # Immediate kmx packages own the descriptions formerly in the map. Nested
+    # adapters and fixtures inherit responsibility, without invented new prose.
+    packages: dict[str, list[str]] = {}
+    for path in sorted(tree.under('internal/kmx')):
+        parts = path.split('/')
+        if (len(parts) == 4 and path.endswith('.go') and not path.endswith('_test.go')
+                and not parts[-1].startswith(('.', '_'))):
+            packages.setdefault('/'.join(parts[:3]), []).append(path)
+    if not packages:
+        raise Anchor('no internal/kmx packages inspected for package documentation')
+    return [f'{package} needs a nonempty Go package doc comment'
+            for package, files in packages.items()
+            if not any(go_package_documented(tree.read(path)) for path in files)]
 
 
 def without_go_comments(text: str) -> str:
@@ -262,7 +308,7 @@ def main(argv) -> int:
 SELFTEST_FILES = {
     'go.mod': 'module example.invalid/fixture\n',
     'cmd/tool/main.go': 'package main\n',
-    'internal/kmx/app/app.go': 'package app\n',
+    'internal/kmx/app/app.go': '// Package app orchestrates operations.\npackage app\n',
     'internal/support/util.go': 'package support\n',
     'pkg/view/view.go': 'package view\n',
     'scripts/check.py': 'pass\n',
@@ -281,7 +327,7 @@ See `go.mod` and [the guide](guide.md).
 The plane module and image-build helper are absent.
 | Directory | Class | Responsibility |
 |---|---|---|
-| `internal/kmx/app` | Installed | Operations and nested fixtures. |
+| `internal/kmx` | Installed | CLI implementation. |
 | `internal/support` | Scaffolding | Shared support. |
 ## `pkg/` — libraries
 | Directory | Class | Responsibility |
@@ -333,6 +379,7 @@ def selftest() -> int:
     paths = 'every_path_the_map_names_is_in_the_tree'
     ownership = 'directory_responsibilities_cover_packages'
     retired = 'the_root_module_does_not_import_the_plane'
+    package_docs = 'kmx_packages_have_package_documentation'
     exercise('valid miniature map')
     for path in ('internal/kmx/app/ordinary.go', 'scripts/ordinary.py',
                  'docs/reviews/ordinary.md', 'testdata/agentsuite/minimal/nested/input.json',
@@ -362,9 +409,56 @@ def selftest() -> int:
     exercise('no suffix fallback for explicit paths', text=SELFTEST_MAP + '\n`wrong/docs/guide.md`', want=paths)
     exercise('valid relative names', text=SELFTEST_MAP.replace(
         'Maintained guides', '`guide.md` and maintained guides'))
-    for path in ('cmd/other/main.go', 'internal/kmx/new/data.json',
-                 'internal/other/utility.go', 'pkg/other/doc.go'):
-        exercise(f'unowned package: {path}', additions={path: 'package other\n'}, want=ownership)
+    for path in ('cmd/other/main.go', 'internal/other/utility.go', 'pkg/other/doc.go'):
+        exercise(f'unowned top-level directory: {path}', additions={path: 'package other\n'}, want=ownership)
+    exercise('new kmx package needs docs, not a map row', additions={
+        'internal/kmx/new/new.go': '// Package new provides operations.\npackage new\n'})
+    exercise('non-Go kmx descendants inherit responsibility', additions={
+        'internal/kmx/new/data.json': '{}\n'})
+    exercise('nested packages need no new prose', additions={
+        'internal/kmx/app/nested/nested.go': 'package nested\n'})
+    exercise('removed ownership directory', missing=('internal/support/util.go',), want=ownership)
+    exercise('moved ownership directory', missing=('internal/support/util.go',), additions={
+        'internal/renamed/util.go': 'package renamed\n'}, want=ownership)
+    exercise('old per-package rows are invalid', text=SELFTEST_MAP.replace(
+        '| `internal/kmx` | Installed | CLI implementation. |',
+        '| `internal/kmx/app` | Installed | Operations. |'), want=ownership)
+    for label, source in (
+        ('missing', 'package app\n'),
+        ('empty line', '//\npackage app\n'),
+        ('empty block', '/* */\npackage app\n'),
+        ('same-line block', '/* Package app does work. */ package app\n'),
+        ('detached line', '// Package app does work.\n\npackage app\n'),
+        ('detached block', '/* Package app does work. */\n\npackage app\n'),
+        ('build directive', '//go:build linux\npackage app\n'),
+        ('compiler directive', '//go:generate echo docs\npackage app\n'),
+        ('quoted comment', 'package app\nvar s = `// Package app does work.\npackage app`\n'),
+    ):
+        exercise('package doc refuses ' + label,
+                 additions={'internal/kmx/app/app.go': source}, want=package_docs)
+    for label, source in (
+        ('line', '// Package app does work.\npackage app\n'),
+        ('block', '/* Package app does work. */\npackage app\n'),
+        ('multiline block', '/*\nPackage app does work.\n*/\npackage app\n'),
+        ('build tags and docs', '//go:build linux\n\n// Package app does work.\npackage app\n'),
+        ('quoted package before real clause', '// historical package fake\n// Package app does work.\npackage app\n'),
+    ):
+        exercise('package doc accepts ' + label, additions={'internal/kmx/app/app.go': source})
+    exercise('test comments do not document the production package', additions={
+        'internal/kmx/app/app.go': 'package app\n',
+        'internal/kmx/app/app_test.go': '// Package app tests operations.\npackage app\n'}, want=package_docs)
+    exercise('external-test package clause cannot supply docs', additions={
+        'internal/kmx/app/app.go': 'package app\n',
+        'internal/kmx/app/ignored_test.go': '// Package app_test tests operations.\npackage app_test\n'}, want=package_docs)
+    exercise('platform-specific package documentation counts', additions={
+        'internal/kmx/app/app.go': 'package app\n',
+        'internal/kmx/app/doc_windows.go': '// Package app does work.\npackage app\n'})
+    exercise('test-only directories need no new package prose', additions={
+        'internal/kmx/testonly/only_test.go': 'package testonly\n'})
+    exercise('separate doc.go documents package', additions={
+        'internal/kmx/app/app.go': 'package app\n',
+        'internal/kmx/app/doc.go': '// Package app does work.\npackage app\n'})
+    exercise('empty kmx package extraction', missing=('internal/kmx/app/app.go',), want=package_docs)
     exercise('top heading cannot cover packages', text=SELFTEST_MAP.replace(
         '| `cmd/tool` | Installed | Command adapter. |', '| `cmd/` | Installed | All commands. |'), want=ownership)
     exercise('empty ownership table', text=SELFTEST_MAP.replace(

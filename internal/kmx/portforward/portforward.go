@@ -1,4 +1,6 @@
-// Package portforward owns loopback kubectl port-forwards and their bind proof.
+// Package portforward manages owned loopback kubectl port-forwards.
+// Callers must wait for the forward's bind announcement before sending data;
+// ownership does not authenticate later connections to a reused port.
 package portforward
 
 import (

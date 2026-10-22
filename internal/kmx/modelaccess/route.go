@@ -1,4 +1,6 @@
-// Package modelaccess discovers model endpoints without selecting or running an agent.
+// Package modelaccess discovers model endpoints and resolves explicit model routes.
+// Route selection requires exact provider and model matches; it does not
+// authorize agent execution.
 package modelaccess
 
 import (
