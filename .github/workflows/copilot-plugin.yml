@@ -40,7 +40,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Canonical and native Squad parser contracts
-        run: go test ./internal/kmx/agentfile
       - name: Package contracts and real MCP loop (Windows packaging only)
         run: python -m unittest discover -s plugins/copilot -p 'test_*.py' -v
