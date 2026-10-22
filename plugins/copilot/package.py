@@ -64,6 +64,9 @@ def build(*, binary: Path, sha256: str, target: str, root: Path,
         raise ValueError("refusing filesystem root as operation root")
     if any(ord(c) < 32 for c in str(root)):
         raise ValueError("root cannot contain control characters")
+    # Hosts expand these exact tokens in args; a literal root must stay literal.
+    if any(token in str(root) for token in ("${PLUGIN_ROOT}", "${PLUGIN_DATA}")):
+        raise ValueError("root cannot contain plugin placeholders")
     output = parent / output.name
     if os.path.lexists(output):
         raise ValueError("output already exists; refusing replacement")

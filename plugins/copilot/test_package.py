@@ -86,6 +86,17 @@ class PackageTests(unittest.TestCase):
                     self.build(**changes)
                 self.assertFalse(self.out.exists())
 
+    def test_refuses_host_placeholders_in_resolved_root(self):
+        for index, token in enumerate(("${PLUGIN_ROOT}", "${PLUGIN_DATA}")):
+            with self.subTest(token=token):
+                selected = self.base / ("repository-" + token)
+                selected.mkdir()
+                output = self.base / f"plugin-{index}"
+                with self.assertRaisesRegex(ValueError, "root cannot contain plugin placeholders"):
+                    self.build(root=selected, output=output)
+                self.assertFalse(output.exists())
+                self.assertEqual(list(selected.iterdir()), [])
+
     def test_refuses_source_symlink(self):
         link = self.base / "engine-link"
         try:

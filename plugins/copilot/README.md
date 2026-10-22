@@ -43,6 +43,8 @@ It is encoded in startup argv as `kmx mcp --root ABSOLUTE_DIR`, not an
 assistant-controlled tool argument. [selected-root.json](selected-root.json)
 contains the same root for user confirmation. Never infer root from cwd,
 plugin-cache location, MCP client roots or an invented host variable.
+Resolved roots containing literal `${PLUGIN_ROOT}` or `${PLUGIN_DATA}` tokens
+refuse: a plugin host would expand them in startup arguments.
 Changing repositories requires deliberate reconfiguration/reinstallation and
 a server restart, not an implicit rebind during a tool call.
 
