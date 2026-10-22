@@ -57,8 +57,10 @@ The exact owned item is service `kmx-model-copilot`, account
 `github-reusable-token`, not a dedicated collection. Help, completion and default
 local listing perform no keychain or bus I/O. Explicit credential access may
 show OS unlock UI, with no context-cancellation guarantee. These commands are
-unreleased and do not enable local agent execution, a proxy, or change existing
-Copilot chat. See [storage and model routes](models.md#explicit-copilot-model-access)
+unreleased. File Run/Test can explicitly consume the saved credential with
+`--provider copilot`; listing alone selects nothing. No proxy or change to
+existing Copilot chat is introduced. See
+[storage and model routes](models.md#explicit-copilot-model-access)
 and [direct transport](copilot-inference.md#direct-model-access). Native package
 tests are not full Windows CLI qualification.
 
@@ -185,8 +187,11 @@ routes use an explicit keyless local endpoint (HTTP or HTTPS on literal loopback
 Compatible/local transport waits at most 30 seconds for response headers, within
 the five-minute overall budget; slow non-streaming generation can hit that limit.
 Agent completions require an exact model-ID echo, with no automatic aliasing.
-Copilot and remote endpoints refuse in this runner; Copilot wiring is separate
-work after model-access integration.
+Explicit `--provider copilot` uses the existing authenticated model-access
+transport at the fixed `https://api.githubcopilot.com` endpoint. Other remote
+endpoints still refuse. Copilot requires prior explicit sign-in and an exact
+enabled Chat model from `kmx model list --provider copilot`; it never falls back
+to another model or starts login during execution.
 
 Judging applies the authored threshold to one valid score; unavailable, malformed,
 refused or mismatched-model replies are unknown. These single-sample local rows
@@ -198,11 +203,30 @@ kmx test ./greeter.agent.md --case greeting -o json
 kmx test ./greeter.agent.md
 ```
 
+To use Copilot, sign in explicitly, list available models, then set the file's
+`Model.Preferred` to an exact listed model ID:
+
+```bash
+kmx model login
+kmx model list --provider copilot
+kmx run ./greeter.agent.md --provider copilot --prompt Ada --show-content
+kmx test ./greeter.agent.md --provider copilot
+```
+
+Selecting Copilot sends the authored instructions and each input/example to the
+hosted service; judging also sends the answer and rubric. Review the file before
+running it and account for subscription, policy and quota limits. The endpoint
+is pinned: omit `--endpoint` or supply exactly `https://api.githubcopilot.com`.
+Known authentication, entitlement, policy, quota and service failures produce
+safe `copilot_*` reasons and stop later sends, including after a judge failure.
+This remains tool-free preview, not a Copilot SDK harness, Sessions execution or
+native deployment evidence. See [Copilot access](copilot-access.md).
+
 `--case ID` selects one stable saved example and always reports **partial**, even
 if the file contains only that example. Unknown/blank IDs refuse before inference.
 Missing/empty examples cannot pass. The exact model comes from `Model.Preferred`;
 `fake` selects only the built-in fake route. A real model additionally requires
-an explicit trusted `--provider` and `--endpoint`, validated by model access;
+an explicit trusted `--provider` and, for local routes, `--endpoint`, validated by model access;
 there is no discovery, installation, sign-in or fallback inside Run/Test. The
 caller supplies any judge-route override through the App API; otherwise the
 judge uses the exact agent route, never an independently chosen route. Conflicting
@@ -289,7 +313,10 @@ labeled untrusted data, never tool instructions. The result's display basename
 is not target authority.
 
 A real model route must be selected at process startup with trusted
-`--provider` and `--endpoint`; the exact model still comes from the parsed file.
+`--provider` and, for local routes, `--endpoint`; the exact model still comes from
+the parsed file. For Copilot, use `kmx mcp --root /absolute/root --provider copilot`
+after explicit sign-in. The same fixed endpoint and hosted-content disclosure
+apply; startup itself performs no sign-in, credential access or model request.
 Tools accept no endpoint, credential or arbitrary-command fields. With no route,
 only exact `fake` is selectable. Run/Test use the same temporary
 [preview runner (no journal)](#agent-file-local-preview-unreleased-integration)

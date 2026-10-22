@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,9 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -40,6 +44,7 @@ func TestMCPCommandGracefulCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	cr, sw, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +78,71 @@ func TestMCPCommandGracefulCancellation(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not stop")
+	}
+}
+
+func TestMCPCommandCopilotRoute(t *testing.T) {
+	sr, cw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cr, sw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sr.Close()
+	defer cw.Close()
+	defer cr.Close()
+	defer sw.Close()
+	var ignored, diag bytes.Buffer
+	deps, loads := testDependencies(&ignored, &diag)
+	runner := &cliPreviewFake{verdict: runtime.EvaluationPass}
+	deps.stdin, deps.stdout, deps.fileRunner = sr, sw, runner
+	root := t.TempDir()
+	source, err := os.ReadFile(cliPreviewFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source = bytes.ReplaceAll(source, []byte("**Preferred:** fake"), []byte("**Preferred:** gpt-test"))
+	if err := os.WriteFile(filepath.Join(root, "copilot.agent.md"), source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	cmd := newRootCommand(&commandState{deps: deps})
+	cmd.SetArgs([]string{"mcp", "--root", root, "--provider", "copilot"})
+	done := make(chan error, 1)
+	go func() { done <- cmd.ExecuteContext(ctx) }()
+	client := sdk.NewClient(&sdk.Implementation{Name: "copilot-route-test", Version: "1"}, nil)
+	cs, err := client.Connect(ctx, &sdk.IOTransport{Reader: cr, Writer: cw}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	if runner.calls != 0 {
+		t.Fatal("MCP startup executed a model")
+	}
+	for _, operation := range []string{"run", "test"} {
+		result, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: operation, Arguments: map[string]any{"schemaVersion": 1, "path": "copilot.agent.md"}})
+		want := modelaccess.Route{Provider: "copilot", Model: "gpt-test", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+		if err != nil || result.IsError || runner.request.Route != want || *loads != 0 {
+			t.Fatalf("MCP route=%+v err=%v config=%d", runner.request.Route, err, *loads)
+		}
+	}
+	runner.cause = errors.Join(copilot.ErrAuthRequired, errors.New("PRIVATE AUTH CAUSE"))
+	for _, operation := range []string{"run", "test"} {
+		result, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: operation, Arguments: map[string]any{"schemaVersion": 1, "path": "copilot.agent.md"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(result)
+		if err != nil || !result.IsError || !strings.Contains(string(data), "copilot_auth_required") || strings.Contains(string(data), "PRIVATE") {
+			t.Fatalf("unsafe MCP auth failure: %s / %v", data, err)
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

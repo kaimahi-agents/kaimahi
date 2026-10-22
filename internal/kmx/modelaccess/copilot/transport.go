@@ -15,7 +15,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 )
 
-const endpoint = "https://api.githubcopilot.com"
+const endpoint = modelaccess.CopilotEndpoint
 
 func headers(req *http.Request, token string) {
 	req.Header.Set("Authorization", "Bearer "+token)

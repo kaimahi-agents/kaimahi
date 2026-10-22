@@ -194,6 +194,7 @@ jobs:
           python3 scripts/test_kagent_lift_qualify.py
           python3 scripts/test_kagent_lift_ci.py
           python3 scripts/test_suite_native.py
+          python3 scripts/test_native_timings.py
           python3 scripts/test_suite_native_lift.py
           python3 scripts/test_orka_native_reference.py
           python3 scripts/test_suite_kagent.py
@@ -1581,6 +1582,13 @@ jobs:
           path: |
             ${{ runner.temp }}/kmx-suite-native/artifacts/passing.json
             ${{ runner.temp }}/kmx-suite-native/artifacts/qualification.json
+          if-no-files-found: error
+      - name: Upload payload-free native phase timings
+        if: always() && steps.changes.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-suite-timings
+          path: ${{ runner.temp }}/native-suite-timings.json
           if-no-files-found: error
       - name: Native qualification failure — payload-free status
         if: failure() && steps.changes.outputs.docs_only != 'true'

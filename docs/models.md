@@ -93,9 +93,17 @@ Copilot JSON output is an array of non-secret shared routes: provider `copilot`,
 exact available Chat model, endpoint `https://api.githubcopilot.com`, auth
 selector `copilot`. Only enabled Chat models supporting `/chat/completions` are
 listed. The default local list and its report shape are unchanged. There is no
-persisted/global selection, automatic model substitution, runner, proxy or
-request command. See [direct Copilot transport](copilot-inference.md#direct-model-access)
-for the internal caller seam, refusal codes and authentication behavior.
+persisted/global selection, automatic model substitution or proxy.
+Markdown-file `kmx run FILE --provider copilot` and
+`kmx test FILE --provider copilot` consume this route through the temporary
+tool-free preview runner; set the file's `Model.Preferred` to an exact listed
+model first. The endpoint defaults to the fixed Copilot endpoint, and execution
+never initiates login. Instructions and inputs are sent to the hosted service.
+The same route can be selected at trusted MCP startup. This is not a new
+harness or native workspace/deployment integration. See
+[file preview](kmx.md#agent-file-local-preview-unreleased-integration) and
+[direct Copilot transport](copilot-inference.md#direct-model-access)
+for usage, refusal codes and authentication behavior.
 
 ## Storing an API key
 
