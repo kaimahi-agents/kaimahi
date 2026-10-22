@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -126,6 +127,101 @@ func TestSquadCrossMemberRoleCollisionPrecedesEffects(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".squad/agents")); !os.IsNotExist(err) {
 		t.Fatal("native cast ran before cross-member refusal")
+	}
+}
+
+func TestSquadCanonicalizesExcludedRoots(t *testing.T) {
+	for _, kind := range []string{"home", "state", "personal", "config"} {
+		t.Run(kind, func(t *testing.T) {
+			root, p := squadTestRoot(t)
+			alias := filepath.Join(t.TempDir(), "alias")
+			target := root
+			if kind == "config" {
+				target = filepath.Dir(root)
+			}
+			if err := os.Symlink(target, alias); err != nil {
+				t.Skip("host does not permit symlinks")
+			}
+			switch kind {
+			case "home":
+				t.Setenv("HOME", alias)
+				t.Setenv("USERPROFILE", alias)
+			case "state":
+				t.Setenv("SQUAD_HOME", alias)
+			case "personal":
+				t.Setenv("SQUAD_PERSONAL_DIR", alias)
+			case "config":
+				// The selected project must be inside the physical squad state root.
+				os.Mkdir(filepath.Join(target, "squad"), 0755)
+				moved := filepath.Join(target, "squad", "project")
+				if err := os.Rename(root, moved); err != nil {
+					t.Fatal(err)
+				}
+				root = moved
+				t.Setenv("XDG_CONFIG_HOME", alias)
+				t.Setenv("APPDATA", alias)
+				if runtime.GOOS == "darwin" {
+					t.Skip("macOS config path is fixed beneath home")
+				}
+			}
+			if c, err := OpenSquad(root, p); err == nil {
+				c.Close()
+				t.Fatal("aliased excluded root accepted")
+			}
+		})
+	}
+}
+
+func TestSquadRefusesUnestablishedNativeStateBeforeCast(t *testing.T) {
+	for _, kind := range []string{"typescript", "history", "registry", "manifest"} {
+		t.Run(kind, func(t *testing.T) {
+			root, p := squadTestRoot(t)
+			if kind == "typescript" {
+				os.WriteFile(filepath.Join(root, "squad.config.ts"), []byte("export default { agents: [{ name: `leader` }] };"), 0644)
+			} else {
+				os.MkdirAll(filepath.Join(root, ".squad/casting"), 0755)
+				name := map[string]string{"history": "history.json", "registry": "registry.json", "manifest": "registry-history.commit.json"}[kind]
+				body := `{}`
+				if kind == "registry" {
+					body = `{"agents":{}}`
+				}
+				os.WriteFile(filepath.Join(root, ".squad/casting", name), []byte(body), 0644)
+			}
+			c, err := OpenSquad(root, p)
+			if err == nil {
+				defer c.Close()
+				_, err = c.Create(context.Background(), SquadPlan{Lead: squadLead()})
+			}
+			if err == nil {
+				t.Fatal("unsupported native state accepted")
+			}
+			if _, err := os.Stat(filepath.Join(root, ".squad/agents/leader")); !os.IsNotExist(err) {
+				t.Fatal("native cast ran before state validation")
+			}
+		})
+	}
+}
+
+func TestSquadCastingCommitTamperPrecedesFurtherNativeEffects(t *testing.T) {
+	for _, name := range []string{"registry.json", "history.json", "registry-history.commit.json"} {
+		t.Run(name, func(t *testing.T) {
+			root, p := squadTestRoot(t)
+			c, err := OpenSquad(root, p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			if _, err := c.Create(context.Background(), SquadPlan{Lead: squadLead()}); err != nil {
+				t.Fatal(err)
+			}
+			os.WriteFile(filepath.Join(root, ".squad/casting", name), []byte(`{}`), 0644)
+			if _, err := c.Create(context.Background(), SquadPlan{Lead: enrichMember()}); err == nil {
+				t.Fatal("inconsistent native commit accepted")
+			}
+			if _, err := os.Stat(filepath.Join(root, ".squad/agents/greeter")); !os.IsNotExist(err) {
+				t.Fatal("native cast ran after commit mismatch")
+			}
+		})
 	}
 }
 

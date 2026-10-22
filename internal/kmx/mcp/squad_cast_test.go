@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -83,7 +84,11 @@ func squadTestChild() int {
 	fmt.Fprintf(f, "| %s | %s | — |\n", display, id)
 	f.Close()
 	var reg struct {
-		Agents map[string]map[string]string `json:"agents"`
+		Schema      string                       `json:"schema"`
+		Version     int                          `json:"schema_version"`
+		Revision    int                          `json:"revision"`
+		Transaction string                       `json:"transaction_id"`
+		Agents      map[string]map[string]string `json:"agents"`
 	}
 	b, _ := os.ReadFile(".squad/casting/registry.json")
 	json.Unmarshal(b, &reg)
@@ -91,9 +96,17 @@ func squadTestChild() int {
 		reg.Agents = map[string]map[string]string{}
 	}
 	reg.Agents[id] = map[string]string{"display_name": id, "role": display, "status": "active"}
+	reg.Schema = "squad-agent-provenance/v1"
+	reg.Version = 1
+	reg.Revision++
+	reg.Transaction = fmt.Sprintf("test-transaction-%d", reg.Revision)
 	b, _ = json.Marshal(reg)
 	os.MkdirAll(".squad/casting", 0755)
 	os.WriteFile(".squad/casting/registry.json", b, 0644)
+	history, _ := json.Marshal(map[string]any{"assignment_cast_snapshots": map[string]any{}, "universe_usage_history": []any{}, "transaction_id": reg.Transaction, "registry_revision": reg.Revision})
+	os.WriteFile(".squad/casting/history.json", history, 0644)
+	manifest, _ := json.Marshal(map[string]any{"version": 1, "transaction_id": reg.Transaction, "registry_revision": reg.Revision, "registry_sha256": fmt.Sprintf("%x", sha256.Sum256(b)), "history_sha256": fmt.Sprintf("%x", sha256.Sum256(history))})
+	os.WriteFile(".squad/casting/registry-history.commit.json", manifest, 0644)
 	if string(mode) == "effects-unknown" {
 		os.WriteFile(".squad/unknown-output", bytes.Repeat([]byte("x"), squadTreeBudget+1), 0644)
 	}

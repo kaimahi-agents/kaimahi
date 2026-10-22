@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,7 +55,9 @@ func (c *SquadCreator) checkRoot() error {
 	if err != nil || resolved != c.root.Name() {
 		return bad()
 	}
-	for _, p := range []string{".ai-team"} {
+	// The qualified default init has no executable TS configuration. Do not
+	// guess identities from arbitrary TS expressions/template literals.
+	for _, p := range []string{".ai-team", "squad.config.ts"} {
 		if _, err := c.root.Lstat(p); !os.IsNotExist(err) {
 			return bad()
 		}
@@ -198,17 +201,68 @@ type squadRegistration struct {
 	Status string `json:"status"`
 }
 
+// castingState accepts the qualified managed pair or entirely absent state.
+// Legacy/orphan state requires native human review, never implicit migration
+// after cast has already written the charter, roster and routing.
+func (c *SquadCreator) castingState() (map[string]json.RawMessage, error) {
+	bad := func() (map[string]json.RawMessage, error) { return nil, refusal("squad_recovery_required") }
+	names := []string{"registry.json", "history.json", "registry-history.commit.json"}
+	raw := make([][]byte, len(names))
+	objects := make([]map[string]json.RawMessage, len(names))
+	present := 0
+	for i, name := range names {
+		b, err := c.readLocal(".squad/casting/" + name)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil || !kmruntime.JSONKeysUnique(b) || json.Unmarshal(b, &objects[i]) != nil || objects[i] == nil {
+			return bad()
+		}
+		raw[i] = b
+		present++
+	}
+	if present == 0 {
+		return nil, nil
+	}
+	if present != len(names) {
+		return bad()
+	}
+	text := func(o map[string]json.RawMessage, key string) string {
+		var s string
+		_ = json.Unmarshal(o[key], &s)
+		return s
+	}
+	number := func(o map[string]json.RawMessage, key string) int64 {
+		var n int64
+		_ = json.Unmarshal(o[key], &n)
+		return n
+	}
+	r, h, m := objects[0], objects[1], objects[2]
+	tx, rev := text(m, "transaction_id"), number(m, "registry_revision")
+	if number(m, "version") != 1 || tx == "" || rev < 1 || rev > 1<<53-1 || text(r, "schema") != "squad-agent-provenance/v1" || number(r, "schema_version") != 1 || number(r, "revision") != rev || number(h, "registry_revision") != rev || text(r, "transaction_id") != tx || text(h, "transaction_id") != tx {
+		return bad()
+	}
+	if text(m, "registry_sha256") != fmt.Sprintf("%x", sha256.Sum256(raw[0])) || text(m, "history_sha256") != fmt.Sprintf("%x", sha256.Sum256(raw[1])) {
+		return bad()
+	}
+	var snapshots map[string]json.RawMessage
+	var usage []json.RawMessage
+	if json.Unmarshal(h["assignment_cast_snapshots"], &snapshots) != nil || snapshots == nil || json.Unmarshal(h["universe_usage_history"], &usage) != nil || usage == nil {
+		return bad()
+	}
+	return r, nil
+}
+
 func (c *SquadCreator) registry() (map[string]squadRegistration, error) {
-	b, err := c.readLocal(".squad/casting/registry.json")
-	if os.IsNotExist(err) {
+	outer, err := c.castingState()
+	if err != nil {
+		return nil, err
+	}
+	if outer == nil {
 		return map[string]squadRegistration{}, nil
 	}
-	if err != nil {
-		return nil, refusal("unsafe_squad_root")
-	}
-	var outer map[string]json.RawMessage
 	var agents map[string]map[string]json.RawMessage
-	if !kmruntime.JSONKeysUnique(b) || json.Unmarshal(b, &outer) != nil || json.Unmarshal(outer["agents"], &agents) != nil || agents == nil {
+	if json.Unmarshal(outer["agents"], &agents) != nil || agents == nil {
 		return nil, refusal("unsafe_squad_root")
 	}
 	out := make(map[string]squadRegistration, len(agents))

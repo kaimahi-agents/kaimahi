@@ -84,8 +84,14 @@ func OpenSquad(root string, program SquadProgram) (*SquadCreator, error) {
 func (c *SquadCreator) Close() error { return c.root.Close() }
 
 func personalSquadRoot(root string) bool {
+	physical := func(p string) string {
+		if resolved, err := filepath.EvalSymlinks(p); err == nil {
+			return resolved
+		}
+		return filepath.Clean(p)
+	}
 	home, _ := os.UserHomeDir()
-	if home != "" && filepath.Clean(root) == filepath.Clean(home) {
+	if home != "" && filepath.Clean(root) == physical(home) {
 		return true
 	}
 	config, _ := os.UserConfigDir()
@@ -93,7 +99,7 @@ func personalSquadRoot(root string) bool {
 		if base == "" || !filepath.IsAbs(base) {
 			continue
 		}
-		rel, err := filepath.Rel(base, root)
+		rel, err := filepath.Rel(physical(base), root)
 		if err == nil && (rel == "." || filepath.IsLocal(rel)) {
 			return true
 		}

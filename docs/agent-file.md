@@ -243,10 +243,16 @@ can leave a registered-but-unenriched member requiring human inspection.
 Only explicit canonical local roots with `.squad/{config.json,team.md,routing.md}`
 are accepted. Config is exactly `version: 1`, optionally `teamRoot: "."`;
 unknown keys, redirect/external state and `.ai-team` refuse rather than being
-rewritten. The bounded observed footprint is `.squad/`, optional
-`squad.config.ts` and `.github/agents/squad.agent.md`: 4096 entries/8 MiB,
-regular singly-linked files, no static links or special-file aliases. Native
-registry locks/unfinished transaction artifacts require human review. Existing
+rewritten. Existing personal/home/global exclusions are resolved before comparison,
+including aliases. Root TypeScript configuration is unsupported: identities in
+arbitrary expressions/template literals are not guessed or rewritten.
+The bounded observed footprint is `.squad/` and the native capability file
+`.github/agents/squad.agent.md`: 4096 entries/8 MiB, regular singly-linked files,
+no static links or special-file aliases. Native registry locks/unfinished
+transaction artifacts require human review. Casting registry/history/commit
+state must be entirely absent or a managed pair with matching version, revision,
+transaction and raw-byte SHA-256 commit hashes. Orphan/mismatched/legacy state
+refuses before cast rather than triggering implicit native recovery/migration. Existing
 member directories (including history-only ones), roster/routing references and
 registry identities refuse; no prior member is adopted or silently re-cast.
 
