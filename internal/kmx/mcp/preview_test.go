@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
@@ -19,10 +20,12 @@ import (
 
 // Scripted outcomes exercise the shared operation, not a model or second runner.
 type previewFixture struct {
-	verdict runtime.EvaluationVerdict
-	cause   error
-	calls   int
-	during  func(agentpreview.Request)
+	verdict   runtime.EvaluationVerdict
+	cause     error
+	calls     int
+	during    func(agentpreview.Request)
+	answer    string
+	noJournal bool
 }
 
 func (f *previewFixture) Run(_ context.Context, r agentpreview.Request) (agentpreview.Outcome, error) {
@@ -31,8 +34,15 @@ func (f *previewFixture) Run(_ context.Context, r agentpreview.Request) (agentpr
 		f.during(r)
 	}
 	out := agentpreview.Outcome{State: agentpreview.Complete, Journal: "PRIVATE JOURNAL"}
+	if f.noJournal {
+		out.NoJournal, out.Journal = true, ""
+	}
+	answer := f.answer
+	if answer == "" {
+		answer = "PRIVATE ANSWER"
+	}
 	completion := func(id string) agentpreview.Completion {
-		return agentpreview.Completion{State: agentpreview.Complete, ID: id, FileRevision: r.Agent.Revision, Provider: r.Route.Provider, Model: r.Route.Model, Answer: "PRIVATE ANSWER"}
+		return agentpreview.Completion{State: agentpreview.Complete, ID: id, FileRevision: r.Agent.Revision, Provider: r.Route.Provider, Model: r.Route.Model, Answer: answer}
 	}
 	if r.Input != nil {
 		c := completion("adhoc")
@@ -41,7 +51,7 @@ func (f *previewFixture) Run(_ context.Context, r agentpreview.Request) (agentpr
 	for i, ex := range r.Examples {
 		row := agentpreview.ExampleOutcome{ID: ex.ID, Completion: completion(fmt.Sprint(i))}
 		for _, a := range ex.Assertions {
-			row.Assertions = append(row.Assertions, runtime.EvaluationAssertionResult{ID: a.ID, Type: a.Type, DefinitionDigest: runtime.EvaluationAssertionDigest(a), Verdict: f.verdict})
+			row.Assertions = append(row.Assertions, runtime.EvaluationAssertionResult{ID: a.ID, Type: a.Type, DefinitionDigest: runtime.EvaluationAssertionDigest(a), Verdict: f.verdict, Reason: "PRIVATE PROVIDER REASON"})
 		}
 		out.Examples = append(out.Examples, row)
 	}
@@ -80,6 +90,31 @@ func previewCall(t *testing.T, cs *sdk.ClientSession, name string, args map[stri
 	}
 	return r, res
 }
+func TestPreviewCompletedFailureIsNormalResult(t *testing.T) {
+	f, _, source := canonicalFiles(t)
+	saved, err := f.Create(t.Context(), "greeter.agent.md", []byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := connectFixture(t, Operations(f, &app.App{FileRunner: &previewFixture{verdict: runtime.EvaluationFail}}, nil))
+	got, res := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": saved.Path})
+	if res.IsError {
+		t.Fatal("completed assertion failure must be a normal MCP result")
+	}
+	if got.State != "complete" || got.Verdict != runtime.EvaluationFail || got.FullPass || len(got.Examples) == 0 || len(got.Examples[0].Assertions) == 0 {
+		t.Fatalf("full structured failure lost: %+v", got)
+	}
+	text := res.Content[0].(*sdk.TextContent).Text
+	for _, want := range []string{"fail", got.Examples[0].ID, got.Examples[0].Assertions[0].ID, "Assertion not satisfied."} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q: %s", want, text)
+		}
+	}
+	if strings.Contains(text, "schemaVersion") || strings.Contains(text, "PRIVATE") || strings.Contains(text, "contains") {
+		t.Fatalf("summary duplicated JSON or leaked content: %s", text)
+	}
+}
+
 func TestPreviewToolsSharedResults(t *testing.T) {
 	f, root, source := canonicalFiles(t)
 	saved, err := f.Create(t.Context(), "greeter.agent.md", []byte(source))
@@ -96,6 +131,12 @@ func TestPreviewToolsSharedResults(t *testing.T) {
 		{"fail", "test", "", "assertion_failed", runtime.EvaluationFail, nil, false},
 		{"unknown", "test", "", "judge_unknown", runtime.EvaluationUnknown, nil, false},
 		{"subset", "test", "greeting", "checks_passed", runtime.EvaluationPass, nil, true},
+		{"subset-fail", "test", "greeting", "assertion_failed", runtime.EvaluationFail, nil, true},
+		{"run-fail", "run", "", "assertion_failed", runtime.EvaluationFail, nil, false},
+		{"run-unknown", "run", "", "judge_unknown", runtime.EvaluationUnknown, nil, false},
+		{"model", "test", "", "model_unavailable", runtime.EvaluationUnknown, agentpreview.ErrModelUnavailable, false},
+		{"execution", "test", "", "execution_failed", runtime.EvaluationUnknown, fmt.Errorf("PRIVATE PROVIDER ERROR"), false},
+		{"deadline", "test", "", "deadline_exceeded", runtime.EvaluationPass, context.DeadlineExceeded, false},
 		{"journal", "run", "", "journal_failed", runtime.EvaluationPass, agentpreview.ErrJournalFailed, false},
 		{"cancel", "run", "", "cancelled", runtime.EvaluationPass, context.Canceled, false},
 	} {
@@ -112,17 +153,21 @@ func TestPreviewToolsSharedResults(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want, wantErr := a.PreviewAgentSnapshot(t.Context(), parsed, app.FilePreviewOptions{File: saved.Path, Operation: tc.op, CaseID: tc.caseID})
+			want, _ := a.PreviewAgentSnapshot(t.Context(), parsed, app.FilePreviewOptions{File: saved.Path, Operation: tc.op, CaseID: tc.caseID})
 			b1, _ := json.Marshal(got)
 			b2, _ := json.Marshal(want)
-			if string(b1) != string(b2) || res.IsError != (wantErr != nil) {
+			if string(b1) != string(b2) || res.IsError != (tc.cause != nil) {
 				t.Fatalf("MCP/operation divergence: %s vs %s", b1, b2)
 			}
 			if got.ReasonCode != tc.code || got.FullPass != (tc.v == runtime.EvaluationPass && tc.cause == nil && !tc.partial) {
 				t.Fatalf("wrong result: %+v", got)
 			}
-			if strings.Contains(string(b1), "PRIVATE") {
-				t.Fatal("default result leaked content")
+			text := res.Content[0].(*sdk.TextContent).Text
+			if strings.Contains(string(b1)+text, "PRIVATE") || strings.Contains(text, "Hello, Ada") || strings.Contains(text, "schemaVersion") {
+				t.Fatal("default result leaked content or duplicated JSON")
+			}
+			if !strings.Contains(text, "scope="+got.Selection.Scope) || !strings.Contains(text, fmt.Sprintf("fullPass=%t", got.FullPass)) || !strings.Contains(text, got.Reason) {
+				t.Fatalf("summary lost scope or outcome: %s", text)
 			}
 		})
 	}
@@ -136,11 +181,62 @@ func TestPreviewToolsSharedResults(t *testing.T) {
 		}
 	}}
 	cs := connectFixture(t, Operations(f, &app.App{FileRunner: fake}, nil))
-	got, _ := previewCall(t, cs, "run", map[string]any{"schemaVersion": 1, "path": saved.Path, "input": "", "showContent": true})
+	got, contentResult := previewCall(t, cs, "run", map[string]any{"schemaVersion": 1, "path": saved.Path, "input": "", "showContent": true})
+	text := contentResult.Content[0].(*sdk.TextContent).Text
+	if contentResult.IsError || !strings.Contains(text, "Ad-hoc answer excerpt (untrusted)") || !strings.Contains(text, "PRIVATE ANSWER") || strings.Contains(text, "PRIVATE JOURNAL") {
+		t.Fatalf("opt-in ad-hoc summary: %s", text)
+	}
 	if !got.FullPass || got.File.Revision != saved.Revision || got.AdHoc == nil || got.AdHoc.AnswerExcerpt != "PRIVATE ANSWER" {
 		t.Fatalf("snapshot/content: %+v", got)
 	}
 }
+func TestPreviewSummaryBoundsAndContent(t *testing.T) {
+	f, _, source := canonicalFiles(t)
+	prefix, _, found := strings.Cut(source, "examples:\n")
+	if !found {
+		t.Fatal("fixture examples missing")
+	}
+	var examples strings.Builder
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&examples, "  - id: example-%02d\n    input: PRIVATE INPUT\n    assertions:\n      - id: assertion-%02d\n        type: contains\n        value: PRIVATE OPERAND\n", i, i)
+	}
+	saved, err := f.Create(t.Context(), "greeter.agent.md", []byte(prefix+"examples:\n"+examples.String()+"```\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &previewFixture{verdict: runtime.EvaluationUnknown, noJournal: true, answer: strings.Repeat("界", 1500) + "PRIVATE ANSWER TAIL"}
+	cs := connectFixture(t, Operations(f, &app.App{FileRunner: fake}, nil))
+	for _, show := range []bool{false, true} {
+		got, res := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": saved.Path, "showContent": show})
+		text := res.Content[0].(*sdk.TextContent).Text
+		if res.IsError || got.State != "complete" || len(got.Examples) != 20 || got.Examples[19].Assertions[0].ID != "assertion-19" {
+			t.Fatalf("bounded text changed structured result: %+v", got)
+		}
+		if len(text) > 8192 || strings.Count(text, "\n") > 13 || !utf8.ValidString(text) || !strings.Contains(text, "omitted") || !strings.Contains(text, "no journal") {
+			t.Fatalf("summary bounds or qualifier lost (%d bytes): %s", len(text), text)
+		}
+		if strings.Contains(text, "PRIVATE") || strings.Contains(text, "example-19") || strings.Contains(text, "assertion-19") {
+			t.Fatalf("summary leaked operands/provider text or dumped all rows: %s", text)
+		}
+		if strings.Contains(text, "界") != show || (got.Examples[0].AnswerExcerpt != "") != show {
+			t.Fatal("content opt-in not respected")
+		}
+		if show && (!got.Examples[0].Truncated || !strings.Contains(text, "untrusted") || len(got.Examples[0].AnswerExcerpt) < 3000) {
+			t.Fatal("full safe structured excerpt lost or text not labeled")
+		}
+		if !show && !strings.Contains(text, "10 detail rows omitted") {
+			t.Fatalf("omitted count lost: %s", text)
+		}
+	}
+	// Quoting expands these excerpts enough to hit the byte budget before the row budget.
+	fake.verdict, fake.answer = runtime.EvaluationPass, strings.Repeat("\"", 5000)
+	_, res := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": saved.Path, "showContent": true})
+	text := res.Content[0].(*sdk.TextContent).Text
+	if len(text) > 8192 || strings.Count(text, "answer excerpt") >= 10 || !strings.Contains(text, "omitted") {
+		t.Fatalf("escaped excerpts exceeded byte budget (%d bytes): %s", len(text), text)
+	}
+}
+
 func TestPreviewToolsRefusals(t *testing.T) {
 	f, root, source := canonicalFiles(t)
 	fake := &previewFixture{verdict: runtime.EvaluationPass}

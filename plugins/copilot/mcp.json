@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "kmx-agent-builder": {
+      "type": "stdio",
+      "command": "./bin/kmx",
+      "args": [
+        "mcp",
+        "--root",
+        "__SELECTED_ROOT__"
+      ]
+    }
+  }
+}

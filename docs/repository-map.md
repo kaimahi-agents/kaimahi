@@ -250,6 +250,23 @@ in `brand/README.md`; the root README embeds the compact mark and intentionally
 has no hero image. `scripts/check-brand-assets.py` independently checks asset
 dimensions, transparency and metadata.
 
+## `plugins/` — Copilot plugin development package
+
+`plugins/copilot/` contains Agent Plugins 1.0 manifest/MCP templates, one
+chat skill, the offline Python developer packager and bundled-engine
+integration tests. The packager binds one explicitly selected root before
+installation and copies only caller-pinned engine bytes; it never executes or
+downloads an engine. Source templates contain no executable and are not an
+installable release. Generated bundles include no Python runtime.
+
+Tests build the real CLI, relocate the generated bundle and exercise rooted
+Create/Edit/Run/Test with its deterministic fake route on Linux/macOS. Windows
+runs mechanical package tests only while main blocks native CLI builds. Both
+hygiene and `.github/workflows/copilot-plugin.yml` run the package tests. See
+[the package guide](../plugins/copilot/README.md) for the verification boundary,
+macOS/Windows trust gates and deferred file-scoped Explain. No installed Copilot
+chat, signed release or real-model qualification is implied.
+
 ## `.github/` — CI and repository automation
 
 Workflows, reusable actions and review guidance inherit automation responsibility.

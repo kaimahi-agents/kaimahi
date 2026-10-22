@@ -156,6 +156,7 @@ export default defineConfig({
     'aks-greeter-demo/**',
     'brand/**',
     'internal/**',
+    'plugins/**',
     'node_modules/**'
   ],
   head: [

@@ -8,6 +8,7 @@ import (
 
 	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -15,8 +16,9 @@ import (
 // Private observation inputs, not a receipt: retain identities and consumed
 // references, never instructions, cases, credential values or arbitrary metadata.
 type suiteNativeSubject struct {
-	PhysicalMember                                            string `json:"PhysicalMember,omitempty"`
-	EvaluationRun                                             string `json:"EvaluationRun,omitempty"`
+	FlowCandidate                                             *suiteFlowCandidateProjection `json:"FlowCandidate,omitempty"`
+	PhysicalMember                                            string                        `json:"PhysicalMember,omitempty"`
+	EvaluationRun                                             string                        `json:"EvaluationRun,omitempty"`
 	Suite, SuiteDigest, GraphDigest, Member, MemberDigest     string
 	InstructionsDigest, CompositionDigest, BuildProfileDigest string
 	Model, Renderer                                           string
@@ -75,6 +77,10 @@ func (s suiteNativeSubject) physicalMember() string {
 }
 
 func (s suiteNativeSubject) validPhysicalMember() bool {
+	if p := s.FlowCandidate; p != nil {
+		name, err := p.physicalName()
+		return err == nil && p.Suite == s.SuiteDigest && p.Member == s.Member && p.Operation == s.EvaluationRun && name == s.PhysicalMember
+	}
 	if s.PhysicalMember == "" && s.EvaluationRun == "" {
 		return true
 	}
@@ -140,6 +146,10 @@ func (a *App) prepareSuiteNativeProjection(ctx context.Context, suite *workspace
 	if err != nil {
 		return nil, err
 	}
+	return renderSuiteNativeProjection(suite, namespace, name, physical, runID, target, binding, runtime, validator, nil, "")
+}
+
+func renderSuiteNativeProjection(suite *workspace.NativeSuite, namespace, name, physical, runID string, target suiteNativeTarget, binding suiteNativeBinding, runtime suiteNativeRuntime, validator *orkaschema.Validator, flow *suiteFlowCandidateProjection, b string) (*suiteNativePrepared, error) {
 	bundle, err := scaffold.GenerateOrka(scaffold.OrkaSpec{Name: name, Namespace: namespace, Description: suite.Description, Model: suite.Model, Instructions: string(suite.Instructions), ProviderType: binding.Provider.Type, BaseURL: binding.Provider.BaseURL, SecretName: binding.Provider.SecretName, SecretKey: binding.Provider.SecretKey})
 	if err != nil {
 		return nil, err
@@ -165,6 +175,11 @@ func (a *App) prepareSuiteNativeProjection(ctx context.Context, suite *workspace
 	if err != nil {
 		return nil, err
 	}
+	if flow != nil {
+		copy := *flow
+		subject.FlowCandidate = &copy
+		subject.BindingDigest = b
+	}
 	subject.PayloadDigest = agentruntime.RenderedBundleDigest(documents)
 	// D is unset during hashing; S/G are loader identities, not portable digests.
 	subject.RenderedDigest, err = suiteNativeDigest("kmx.native-orka.revision/v1", subject)
@@ -189,6 +204,11 @@ func suiteNativeDigest(domain string, value any) (string, error) {
 			return "", fmt.Errorf("invalid native candidate projection")
 		}
 		frame.Subject.EvaluationRun = "run"
+		if frame.Subject.FlowCandidate != nil {
+			p := *frame.Subject.FlowCandidate
+			p.Operation = "operation"
+			frame.Subject.FlowCandidate = &p
+		}
 		scanned, err = agentsuite.Marshal(frame)
 		if err != nil {
 			return "", fmt.Errorf("cannot canonicalize native suite identity")
@@ -201,6 +221,11 @@ func suiteNativeDigest(domain string, value any) (string, error) {
 		// Only the validated typed run field is exempt from credential-shape
 		// scanning. Hash the original bytes, including the full run identity.
 		s.EvaluationRun = "run"
+		if s.FlowCandidate != nil {
+			p := *s.FlowCandidate
+			p.Operation = "operation"
+			s.FlowCandidate = &p
+		}
 		scanned, err = agentsuite.Marshal(s)
 		if err != nil {
 			return "", fmt.Errorf("cannot canonicalize native suite identity")

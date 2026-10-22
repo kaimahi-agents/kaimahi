@@ -131,7 +131,7 @@ func publicNativeEvaluationFixture(t *testing.T) (*App, *nativeReadFixture, *eva
 			}
 			kind := map[string]string{"providers.core.orka.ai": "Provider", "agents.core.orka.ai": "Agent", "tasks.core.orka.ai": "Task"}[args[i+1]]
 			name := args[i+2]
-			if kind != "" && strings.HasPrefix(name, "kmx-eval-") {
+			if kind != "" && (strings.HasPrefix(name, "kmx-eval-") || strings.HasPrefix(name, "kmx-flow-")) {
 				state.gets = append(state.gets, kind+"/"+name)
 				doc := state.objects[kind+"/"+name]
 				if doc == nil {
