@@ -7,15 +7,31 @@ work=
 created=false
 phase=arguments
 mode=${1:-qualify}
+span=
+# Closed timing markers: fixed span names, numeric UTC epoch seconds and
+# integer status only; never commands, paths, environment or payloads.
+timing() {
+  case "$1:$2" in
+    bootstrap:start | qualify:start | suite-evaluation:start | suite-helpers:start | cleanup:start) span=$1 ;;
+    bootstrap:end | qualify:end | suite-evaluation:end | suite-helpers:end | cleanup:end) span= ;;
+    *) return 0 ;;
+  esac
+  printf 'kagent timing: span=%s boundary=%s utc_epoch=%s%s\n' "$1" "$2" "${EPOCHREALTIME/[!0-9]/.}" \
+    "${3:+ status=$(($3))}" >&4
+}
 cleanup() {
   result=$?
   trap - EXIT
+  # A span still open here failed; end it with the primary status.
+  if [ -n "$span" ]; then timing "$span" end "$result"; fi
   if [ "$result" -ne 0 ]; then
     printf 'kagent bootstrap failed: phase=%s exitstatus=%s; runtime MCP/native A2A NOT qualified\n' "$phase" "$result" >&4
     if [ "$phase" = kind-create ]; then
       printf 'failed kind create is ambiguous; unowned cluster left for inspection\n' >&4
     fi
   fi
+  cleanup_status=0
+  if [ "$phase" != arguments ]; then timing cleanup start; fi
   if [ "$created" = true ]; then
     phase=cluster-cleanup
     if kind delete cluster --name kmx-kagent-lift > "$work/cleanup.log" 2>&1; then
@@ -36,6 +52,7 @@ cleanup() {
       if [ "$result" -eq 0 ]; then result=$cleanup_status; fi
     fi
   fi
+  if [ "$span" = cleanup ]; then timing cleanup end "$cleanup_status"; fi
   if [ "$result" -eq 0 ]; then
     if [ "$mode" = bootstrap ]; then
       printf 'external bootstrap and deterministic fixture characterized; runtime MCP/native A2A NOT qualified\n' >&3
@@ -53,6 +70,7 @@ if [ "$#" -gt 1 ] || { [ "$mode" != bootstrap ] && [ "$mode" != qualify ]; }; th
   printf 'usage: kagent-lift.sh [qualify|bootstrap]\n' >&4
   exit 2
 fi
+timing bootstrap start
 phase=root
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd) 2>/dev/null
 phase='work-create'
@@ -140,6 +158,7 @@ phase=provision
 python3 "$root/scripts/ci/kagent-lift.py" provision "$work"
 phase=bootstrap
 python3 "$root/scripts/ci/kagent-lift.py" bootstrap
+timing bootstrap end 0
 if [ "$mode" = bootstrap ]; then exit 0; fi
 # Install traps only after external bootstrap; record swallowed tool attempts.
 phase=installer-traps
@@ -150,14 +169,20 @@ for tool in helm kagent; do
 done
 ln -s "$work/bin/kubectl" "$work/fail-bin/kubectl"
 phase=qualify
+timing qualify start
 KMX_QUALIFICATION_DIAGNOSTIC_FD=4 PATH="$work/fail-bin:$PATH" python3 "$root/scripts/ci/kagent-lift.py" qualify "$root/bin/kmx" "$work"
+timing qualify end 0
 phase=suite-evaluation
+timing suite-evaluation start
 PATH="$work/fail-bin:$PATH" python3 "$root/scripts/ci/suite-kagent.py" "$root/bin/kmx" "$work"
+timing suite-evaluation end 0
 # Qualify runtime-specific private helpers without taking over release lift.
 # The existing fixture, cluster and private logs remain the only infrastructure.
 phase=suite-helpers
+timing suite-helpers start
 (cd "$root" && KMX_SUITE_KAGENT_LIVE=1 KMX_LIVE_KIND_CONTEXT=kind-kmx-kagent-lift \
   PATH="$work/fail-bin:$PATH" go test ./internal/kmx/app -run '^TestLiveSuiteKagentPlacement$' -count=1 -timeout=8m)
+timing suite-helpers end 0
 phase=installer-audit
 test ! -e "$work/installer-attempt"
 phase=artifact
