@@ -101,10 +101,10 @@ area under `internal/`. Nested implementation packages, schemas and fixtures
 inherit their owning root; they do not need individual rows.
 
 Platform-specific Unix operations live under these ownership roots. Matching
-Windows adapters are compile-only unsupported stubs, not native implementations.
-The adapters are installed-library source; host-side tests check their inert
-contract. The Windows CLI guard remains in place: library cross-builds do not
-enable it.
+Windows app and storage adapters remain compile-only unsupported stubs.
+The isolated file-access component provides native read, security and identity
+primitives without app integration or qualified writers. The Windows CLI guard
+remains in place: library cross-builds do not enable it.
 
 | Directory | Class | Responsibility |
 |---|---|---|
@@ -124,6 +124,7 @@ enable it.
 | `internal/kmx/toolchain` | Installed | Pinned, checksum-verified kind, kubectl and Helm downloads. |
 | `internal/kmx/portforward` | Installed | Owned loopback kubectl forwards with bind proof and process lifetime, shared by native Orka results and host tools. |
 | `internal/kmx/lift` | Installed | Cloud-independent lift rules and persisted ownership records. |
+| `internal/kmx/fileaccess` | Checkout | No-follow existing-object opens, private/public directory security checks, physical identity and default-owner preflight. No creators, locks, flush or app integration. |
 | `internal/kmx/config` | Installed | Native settings/state/cache paths and strict bounded credential-free operational destination selectors, independent of authored suite identity. |
 | `internal/kmx/cliui` | Installed | Destination-aware CLI presentation. |
 | `internal/kmx/run` | Installed | Shell-out execution boundary. |
