@@ -71,8 +71,9 @@ Python builder as a newcomer installation step.
 
 Run/Test return `schemaVersion: 1`, `kind: kmx.agent-file-preview`,
 file revision, selected model, full/subset and pass/fail/unknown results.
-A passing subset still has `fullPass: false`. A failed preview can have
-`isError: true` and complete assertion rows; preserve those rows.
+A passing subset still has `fullPass: false`. Complete preview data is in
+`structuredContent`; text is a compact human summary, not JSON. Completed
+assertion failures are normal tool results: `isError: false` does not mean pass.
 Preview file.path is a display basename, **not the original Edit target**.
 Boundary refusals have a safe reason code instead of a preview.
 Default output omits answers/operands. Explicit `showContent` opts into bounded
