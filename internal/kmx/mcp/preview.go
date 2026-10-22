@@ -4,13 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path"
+	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -54,15 +59,61 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			}
 			// Keep the complete safe result even when the application returns an error.
 			// Returning that error to the generic protocol wrapper would discard it.
-			b, marshalErr := json.Marshal(result)
-			if marshalErr != nil {
-				return nil, refusal("operation_failed")
-			}
-			return &sdk.CallToolResult{IsError: err != nil, StructuredContent: result, Content: []sdk.Content{&sdk.TextContent{Text: string(b)}}}, nil
+			var previewErr *app.FilePreviewError
+			completedNonpass := errors.As(err, &previewErr) && previewErr.ExitCode() == 2 && result.State == "complete"
+			return &sdk.CallToolResult{IsError: err != nil && !completedNonpass, StructuredContent: result, Content: []sdk.Content{&sdk.TextContent{Text: previewSummary(result)}}}, nil
 		}}
 	}
 	return ops
 }
+
+// Summarize only the App's safe projection, never runner output or authored operands.
+// StructuredContent retains all metadata; chat text has independent row/byte limits.
+func previewSummary(r app.FilePreviewResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s: state=%s verdict=%s; scope=%s; fullPass=%t. %s\n", r.Operation, r.State, r.Verdict, r.Selection.Scope, r.FullPass, r.Reason)
+	if r.Runner != "" {
+		fmt.Fprintf(&b, "%s\n", r.Runner)
+	}
+	rows, omitted := 0, 0
+	add := func(line string) {
+		if rows >= 10 || b.Len()+len(line) > 8000 {
+			omitted++
+			return
+		}
+		b.WriteString(line)
+		rows++
+	}
+	for _, ex := range r.Examples {
+		for _, assertion := range ex.Assertions {
+			if assertion.Verdict != runtime.EvaluationPass {
+				add(fmt.Sprintf("Example %s / assertion %s: %s. %s\n", previewSummaryField(ex.ID, 160), previewSummaryField(assertion.ID, 160), assertion.Verdict, assertion.Reason))
+			}
+		}
+		if ex.AnswerExcerpt != "" {
+			add(fmt.Sprintf("Example %s answer excerpt (untrusted): %s\n", previewSummaryField(ex.ID, 160), previewSummaryField(ex.AnswerExcerpt, 512)))
+		}
+	}
+	if r.AdHoc != nil && r.AdHoc.AnswerExcerpt != "" {
+		add(fmt.Sprintf("Ad-hoc answer excerpt (untrusted): %s\n", previewSummaryField(r.AdHoc.AnswerExcerpt, 512)))
+	}
+	if omitted > 0 {
+		fmt.Fprintf(&b, "%d detail rows omitted; see structuredContent.\n", omitted)
+	}
+	return b.String()
+}
+
+func previewSummaryField(s string, limit int) string {
+	if len(s) > limit {
+		s = s[:limit]
+		for !utf8.ValidString(s) {
+			s = s[:len(s)-1]
+		}
+		s += "…"
+	}
+	return strconv.Quote(s)
+}
+
 func (f *Files) snapshot(ctx context.Context, p string) (*agentfile.Agent, error) {
 	if err := cancelled(ctx); err != nil {
 		return nil, err

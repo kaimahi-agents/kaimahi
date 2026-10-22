@@ -1,0 +1,44 @@
+name: copilot-plugin
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/copilot/**'
+      - 'cmd/kmx/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/copilot-plugin.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/copilot/**'
+      - 'cmd/kmx/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/copilot-plugin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Package contracts and real MCP loop (Windows packaging only)
+        run: python -m unittest discover -s plugins/copilot -p 'test_*.py' -v
