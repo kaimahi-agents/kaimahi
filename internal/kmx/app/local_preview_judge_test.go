@@ -169,9 +169,8 @@ func TestLocalPreviewExplicitJudgeOverride(t *testing.T) {
 }
 
 // YAML comments in Examples are discarded by the agent file parser. Comment
-// content, including credential-shaped text the parser does not refuse there,
-// never reaches a model or judge request, the journal, a result or an
-// inspection.
+// content never reaches a model or judge request, the journal, a result or an
+// inspection, and a credential-shaped comment is refused without being quoted.
 func TestLocalPreviewNeverForwardsExampleComments(t *testing.T) {
 	const canary = "kmx-comment-canary-3b8e0d71"
 	for _, secret := range []string{canary, secretshapes.All()[0].Example} {
@@ -200,12 +199,14 @@ func TestLocalPreviewNeverForwardsExampleComments(t *testing.T) {
 		text = strings.Replace(text, "- **Preferred:** fake", "- **Preferred:** agent/model", 1)
 		start, end := strings.Index(text, "examples:\n"), strings.LastIndex(text, "```")
 		agent, err := agentfile.Parse("greeter.agent.md", []byte(text[:start]+examples+text[end:]))
-		if err != nil {
-			// A parser that refuses the comment must not quote it.
-			if secret == canary || strings.Contains(err.Error(), secret) {
-				t.Fatalf("comment refusal = %v", err)
+		if secret != canary {
+			if err == nil || strings.Contains(err.Error(), secret) {
+				t.Fatalf("credential comment refusal = %v", err)
 			}
 			continue
+		}
+		if err != nil {
+			t.Fatal(err)
 		}
 		var mu sync.Mutex
 		var bodies []byte
