@@ -339,6 +339,47 @@ jobs:
             --bundle "$artifact_dir/checksums.txt.sigstore.json" \
             "$artifact_dir/checksums.txt"
 
+      # The binary inventory has just been signature-verified. Package those
+      # exact staged bytes, never another build or a path in dist/.
+      - name: Package and validate Copilot plugin archives
+        env:
+          VERSION: ${{ steps.what.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 plugins/copilot/release.py \
+            --assets "$RUNNER_TEMP/release-assets" \
+            --version "$VERSION" --revision "$GITHUB_SHA"
+
+      - name: Sign the checked plugin checksum manifest
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/release-assets"
+          cosign sign-blob --yes \
+            --bundle "$artifact_dir/plugin-checksums.txt.sigstore.json" \
+            "$artifact_dir/plugin-checksums.txt"
+
+      - name: Verify the plugin checksum signature
+        env:
+          CERTIFICATE_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/release-assets"
+          cosign verify-blob \
+            --certificate-identity "$CERTIFICATE_IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --bundle "$artifact_dir/plugin-checksums.txt.sigstore.json" \
+            "$artifact_dir/plugin-checksums.txt"
+
+      - name: Include checked plugin digests in release guidance
+        run: |
+          set -euo pipefail
+          {
+            printf '\n### Copilot plugin archives\n\n'
+            printf 'Verify the archive SHA256 below before extraction or execution. Configure the selected root in both mcp.json and selected-root.json before installing; see plugins/copilot/README.md in the tagged source.\n\n```text\n'
+            cat "$RUNNER_TEMP/release-assets/plugin-checksums.txt"
+            printf '```\n'
+          } >> "$RUNNER_TEMP/release-notes.md"
+
       # Only now, with every check above green, does anything get published.
       # Create the GitHub release with the exact files just checked rather
       # than asking GoReleaser to rebuild them. `gh release create` keeps the
@@ -361,6 +402,12 @@ jobs:
             "$artifact_dir/checksums.txt"
             "$artifact_dir/checksums.txt.sigstore.json"
             "$artifact_dir/kmx.rb"
+            "$artifact_dir/kmx-agent-builder-linux-amd64.tar.gz"
+            "$artifact_dir/kmx-agent-builder-linux-arm64.tar.gz"
+            "$artifact_dir/kmx-agent-builder-darwin-amd64.tar.gz"
+            "$artifact_dir/kmx-agent-builder-darwin-arm64.tar.gz"
+            "$artifact_dir/plugin-checksums.txt"
+            "$artifact_dir/plugin-checksums.txt.sigstore.json"
           )
           for asset in "${assets[@]}"; do test -f "$asset"; done
           flags=(--title "$VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag)

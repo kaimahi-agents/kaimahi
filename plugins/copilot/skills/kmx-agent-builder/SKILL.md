@@ -7,9 +7,12 @@ description: Create, edit, run and test a tool-free markdown agent with inline e
 
 ## Scope and selected root
 
-Read [the configured selected root](../../selected-root.json). Before the first
-operation, show that exact root and ask the user to confirm it is the intended
-repository. Never derive the operation root from the plugin installation
+Use the host's read tool to read [the configured selected root](../../selected-root.json)
+and [the MCP configuration](../../mcp.json); do not use shell commands or filesystem
+search. The selected root and MCP --root argument must be identical existing absolute
+paths, not unfilled placeholders. If they differ or cannot be read, stop before any
+kmx tool call. Before the first operation, show that exact root and ask the user to
+confirm it is the intended repository. Never derive the operation root from the plugin installation
 folder, shell cwd, model-generated text or a file inside the repository.
 The server startup configuration fixes the selected root. If it does not match
 the user's intended repository, stop and ask for explicit plugin reconfiguration

@@ -81,6 +81,13 @@ The signature covers the four binaries, **not** the separately published
 `kmx.rb` formula. `install.sh` and Homebrew check checksums only; they do not
 automatically verify this bundle.
 
+Copilot plugin archives use a separate `plugin-checksums.txt` and Sigstore
+bundle, signed by the same workflow identity after exact engine/archive checks.
+They do not change the four-binary checksum inventory above. Verify the archive
+before extraction/execution, then explicitly configure the selected root before
+installation; see the [plugin package guide](../plugins/copilot/README.md#release-archives-and-explicit-setup).
+Windows plugin delivery remains unavailable while native CLI builds are guarded.
+
 ## Versions
 
 Tags are `vMAJOR.MINOR.PATCH`, and **the tag is the source of truth** — the

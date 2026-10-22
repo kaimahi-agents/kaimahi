@@ -225,6 +225,22 @@ class ProcessTests(unittest.TestCase):
         cls.target = subprocess.check_output(["go", "env", "GOOS", "GOARCH"],
                                              text=True).strip().replace("\n", "/")
 
+    def test_unconfigured_bundle_refuses_before_protocol_or_file_writes(self):
+        with tempfile.TemporaryDirectory(prefix="unbound plugin ") as temp:
+            base = Path(temp)
+            output = base / "plugin"
+            package.build(binary=self.engine, sha256=self.digest, target=self.target,
+                          root=None, output=output, version="0.1.0")
+            config = json.loads((output / "mcp.json").read_text())
+            server = config["mcpServers"]["kmx-agent-builder"]
+            process = subprocess.run([str(output / server["command"]), *server["args"]],
+                                     cwd=base, capture_output=True, text=True, timeout=10,
+                                     env={**os.environ, "KMX_HOME": str(base / "home")})
+            self.assertNotEqual(process.returncode, 0)
+            self.assertEqual(process.stdout, "")
+            self.assertIn("root", process.stderr.lower())
+            self.assertEqual(set(base.iterdir()), {output})
+
     def test_relocated_bundle_runs_real_rooted_fail_fix_loop(self):
         # A wrong bundled command/root/schema or fixture-only result breaks this loop.
         with tempfile.TemporaryDirectory(prefix="plugin integration ") as temp:
