@@ -1547,7 +1547,7 @@ class Qualification:
 
 
 def main():
-    qualification, timings, status = None, None, "failure"
+    qualification, timings, status, result = None, None, "failure", 1
     try:
         os.umask(0o077)
         path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "native-suite-timings.json" if os.environ.get("RUNNER_TEMP") else None
@@ -1559,20 +1559,21 @@ def main():
         qualification = Qualification(sys.argv[1], sys.argv[3], promotion_context=sys.argv[2], timings=timings)
         qualification.qualify()
         status = "success"
-        return 0
+        result = 0
     except BaseException as error:
         status = "timeout" if isinstance(error, (subprocess.TimeoutExpired, TimeoutError)) else "failure"
         phase = qualification.phase if qualification else "preflight"
         print("native qualification: phase=" + phase + " reason=failed", file=sys.stderr)
-        return 1
     finally:
         if timings is not None:
             try:
                 timings.finish(status)
             except OSError:
-                # A missing/unwritable timing artifact is detected by its upload;
-                # never replace the qualification result with path-bearing diagnostics.
-                pass
+                # An earlier running snapshot can exist, so file upload alone
+                # cannot establish successful timing finalization.
+                print("native qualification: timing-finalization=failed", file=sys.stderr)
+                result = 1
+    return result
 
 
 if __name__ == "__main__":

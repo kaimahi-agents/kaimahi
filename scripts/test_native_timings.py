@@ -206,6 +206,20 @@ class NativeTimingsTests(unittest.TestCase):
                 self.assertEqual(doc["phases"][-1]["status"], status)
                 self.assertTrue(all(row["status"] == "success" for row in doc["phases"][:-1]))
 
+    def test_failed_final_write_cannot_leave_running_snapshot_as_success(self):
+        write = Q.NativeTimings.write
+
+        def fail_final(timer):
+            if timer.status != "running":
+                raise OSError(CANARY)
+            return write(timer)
+
+        with mock.patch.object(Q.NativeTimings, "write", fail_final):
+            result, stderr, doc = self.run_main()
+        self.assertEqual(result, 1)
+        self.assertEqual(stderr, "native qualification: timing-finalization=failed\n")
+        self.assertEqual(doc["status"], "running")
+
     def test_constructor_failure_still_closes_preflight_privately(self):
         result, stderr, doc = self.run_main(constructor_error=True)
         self.assertEqual((result, stderr, doc["status"]),
