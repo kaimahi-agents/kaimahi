@@ -185,9 +185,9 @@ func Run(ctx context.Context, agent *agentfile.Agent, input string, options Opti
 	if err != nil {
 		return Result{}, err
 	}
-	// Apply the same input validator as authored examples (bounds, UTF-8 and
+	// Apply the authored-example bound and the same input validator (UTF-8 and
 	// credential shapes); the placeholder expectation only satisfies its shape.
-	if agentruntime.ValidateEvaluationCase(agentruntime.EvaluationCase{ID: "input", Input: input, ExpectContains: []string{"input"}}) != nil {
+	if len(input) > agentfile.MaxInputBytes || agentruntime.ValidateEvaluationCase(agentruntime.EvaluationCase{ID: "input", Input: input, ExpectContains: []string{"input"}}) != nil {
 		return Result{}, refuse(RefusedRequest, "the input is empty, too large or credential-shaped", "use a nonblank input of at most 16 KiB")
 	}
 	return p.run(ctx, []agentfile.Example{{Input: input}}, false)

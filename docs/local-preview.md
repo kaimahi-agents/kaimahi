@@ -89,11 +89,11 @@ Each refusal says what to change:
 
 The [agent file parser](agent-file.md) already refuses credential-shaped
 content anywhere in the file, including YAML comments, and in decoded example
-inputs and assertion operands. Ad-hoc `Run` input gets the same credential-shape
-check. Shape detection cannot catch arbitrary secrets. YAML comments in Examples
-are discarded when parsed: local preview receives only example IDs, inputs and
-assertions, so comment text never reaches a model or judge request, the journal
-or a result.
+inputs and assertion operands. Ad-hoc `Run` input gets the same 16 KiB bound and
+credential-shape check. Shape detection cannot catch arbitrary secrets. YAML
+comments in Examples are discarded when parsed: local preview receives only
+example IDs, inputs and assertions, so comment text never reaches a model or
+judge request, the journal or a result.
 
 A model reply that contains a tool call (in any key spelling), a refusal, a
 truncated or malformed body, a key repeated at any depth (including a

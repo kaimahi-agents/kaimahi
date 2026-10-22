@@ -751,3 +751,21 @@ func TestInspectWithoutDeadlineAndNeverCreatesJournal(t *testing.T) {
 		t.Fatalf("journal created: %v", err)
 	}
 }
+
+func TestRunInputSizeBound(t *testing.T) {
+	ctx := testContext(t)
+	dir := journalDir(t)
+	_, err := Run(ctx, greeter(t), strings.Repeat("a", agentfile.MaxInputBytes+1), Options{JournalDir: dir})
+	var refusal *Refusal
+	if !errors.As(err, &refusal) || refusal.Kind != RefusedRequest {
+		t.Fatalf("oversized input = %v", err)
+	}
+	if _, statErr := os.Lstat(dir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("journal directory created before refusal: %v", statErr)
+	}
+	input := strings.Repeat("a", agentfile.MaxInputBytes)
+	result, err := Run(ctx, greeter(t), input, Options{JournalDir: dir})
+	if err != nil || result.Examples[0].Answer != "Hello, "+input {
+		t.Fatalf("bounded input = %v %+v", err, result.Examples)
+	}
+}
