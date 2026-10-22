@@ -420,7 +420,7 @@ class WorkflowRoutingTests(unittest.TestCase):
         for name, job in self.workflow["jobs"].items():
             with self.subTest(job=name):
                 expression = job.get("if", "True")
-                self.assertEqual(self.enabled(expression, "schedule"), name in {"hygiene", "app-tests", "classify-change", "e2e-kagent-lift", "e2e-hello-world"})
+                self.assertEqual(self.enabled(expression, "schedule"), name in {"hygiene", "app-tests", "classify-change", "kagent-contract", "e2e-kagent-lift", "e2e-hello-world"})
                 if name not in {"kmx-clone-free", "e2e-kagent-lift"}:
                     self.assertTrue(self.enabled(expression, "pull_request"))
         triggers = self.workflow.get("on", self.workflow.get(True))

@@ -87,20 +87,22 @@ class WorkflowTests(unittest.TestCase):
         expression = expression.replace("always()", "True").replace("!(", "not (").replace("&&", " and ").replace("||", " or ")
         return bool(eval(expression, {"__builtins__": {}}, {}))
 
-    def test_relevant_prs_unknown_main_and_nightly_run_new_shard(self):
+    def test_live_proof_moves_to_nightly_and_manual_without_path_shortcuts(self):
         job = self.jobs.get("e2e-kagent-lift", {})
         self.assertTrue(job, "new proof shard is missing")
         for event, changed, wanted in (
-                ("pull_request", "false", False), ("pull_request", "true", True),
-                ("pull_request", "", True), ("pull_request", "unknown", True),
-                ("push", "false", True), ("schedule", "false", True),
+                ("pull_request", "false", False), ("pull_request", "true", False),
+                ("pull_request", "", False), ("pull_request", "unknown", False),
+                ("push", "false", False), ("schedule", "false", True),
                 ("workflow_dispatch", "false", True)):
             with self.subTest(event=event, changed=changed):
                 self.assertEqual(self.enabled(job.get("if", "True"), event, changed), wanted)
         self.assertIn("kagent_changed", self.jobs.get("classify-change", {}).get("outputs", {}))
         self.assertIn("classify-change", job.get("needs", []))
-        for step in job["steps"]:
-            self.assertNotIn("docs_only", step.get("if", ""), "main/nightly must bypass docs guards")
+        self.assertEqual(job["uses"], "./.github/workflows/kagent-runtime.yml")
+        full = yaml.safe_load((ROOT / ".github/workflows/kagent-runtime.yml").read_text())["jobs"]["qualify"]
+        for step in full["steps"]:
+            self.assertNotIn("docs_only", step.get("if", ""), "nightly must bypass docs guards")
 
     def aggregate(self, event, changed="false", overrides=None):
         agg = self.jobs["e2e-hello-world"]
@@ -118,8 +120,10 @@ class WorkflowTests(unittest.TestCase):
     def test_only_intentional_new_shard_skip_is_accepted(self):
         skipped = {"e2e-kagent-lift": {"result": "skipped"}}
         self.assertEqual(self.aggregate("pull_request", overrides=skipped).returncode, 0)
-        for event, changed in (("pull_request", "true"), ("pull_request", ""),
-                               ("push", "false"), ("schedule", "false")):
+        for changed in ("true", "", "unknown"):
+            self.assertEqual(self.aggregate("pull_request", changed, skipped).returncode, 0)
+        self.assertEqual(self.aggregate("push", overrides=skipped).returncode, 0)
+        for event, changed in (("workflow_dispatch", "false"), ("unknown", "false"), ("schedule", "false")):
             with self.subTest(event=event, changed=changed):
                 self.assertNotEqual(self.aggregate(event, changed, skipped).returncode, 0)
         for result in ("failure", "cancelled"):
@@ -155,11 +159,13 @@ class WorkflowTests(unittest.TestCase):
             workflow.parent.mkdir(parents=True)
             full_path = ROOT / ".github/workflows/orka-runtime.yml"
             full_workflow = yaml.safe_load(full_path.read_text())
-            for mutation in ("none", "new-docs-guard", "missing-dependency", "old-missing-guard", "nightly-aggregator-skip", "foreign-delegation", "missing-proof"):
+            kagent_workflow = yaml.safe_load((ROOT / ".github/workflows/kagent-runtime.yml").read_text())
+            for mutation in ("none", "new-docs-guard", "missing-dependency", "old-missing-guard", "nightly-aggregator-skip", "foreign-delegation", "missing-proof", "missing-fast-dependency", "kagent-foreign", "missing-kagent-proof", "fast-docs-guard", "missing-routing-selftests"):
                 jobs = json.loads(json.dumps(self.jobs))
                 full = copy.deepcopy(full_workflow)
+                kagent = copy.deepcopy(kagent_workflow)
                 if mutation == "new-docs-guard":
-                    jobs["e2e-kagent-lift"]["steps"][2]["if"] = "steps.changes.outputs.docs_only != 'true'"
+                    kagent["jobs"]["qualify"]["steps"][2]["if"] = "steps.changes.outputs.docs_only != 'true'"
                 elif mutation == "missing-dependency":
                     jobs["e2e-hello-world"]["needs"].remove("classify-change")
                 elif mutation == "old-missing-guard":
@@ -171,6 +177,17 @@ class WorkflowTests(unittest.TestCase):
                 elif mutation == "missing-proof":
                     full["jobs"]["qualify"]["steps"] = [s for s in full["jobs"]["qualify"]["steps"]
                         if s.get("name") != "Native suite — qualify evaluation, exact transfer and CLI lift"]
+                elif mutation == "missing-fast-dependency":
+                    jobs["e2e-hello-world"]["needs"].remove("kagent-contract")
+                elif mutation == "kagent-foreign":
+                    jobs["e2e-kagent-lift"]["uses"] = "other/repo/.github/workflows/proof.yml@main"
+                elif mutation == "missing-kagent-proof":
+                    kagent["jobs"]["qualify"]["steps"] = [s for s in kagent["jobs"]["qualify"]["steps"] if s.get("run") != "bash scripts/ci/kagent-lift.sh"]
+                elif mutation == "fast-docs-guard":
+                    jobs["kagent-contract"]["steps"][2]["if"] = "steps.changes.outputs.docs_only != 'true'"
+                elif mutation == "missing-routing-selftests":
+                    jobs["kagent-contract"]["steps"][2]["run"] = jobs["kagent-contract"]["steps"][2]["run"].replace("python3 scripts/test_kagent_workflows.py", "")
+                (root / ".github/workflows/kagent-runtime.yml").write_text(yaml.safe_dump(kagent))
                 (root / ".github/workflows/orka-runtime.yml").write_text(yaml.safe_dump(full))
                 workflow.write_text(yaml.safe_dump({"jobs": jobs}))
                 result = subprocess.run(["bash", "-e", "-c", step["run"]], cwd=root, text=True,
@@ -226,7 +243,7 @@ class WorkflowTests(unittest.TestCase):
         for event in ("pull_request", "push", "schedule"):
             self.assertTrue(self.enabled(agg["if"], event))
         expected = {name for name in self.jobs if name.startswith("e2e-") and name != "e2e-hello-world"}
-        self.assertEqual(set(agg["needs"]), expected | {"classify-change"})
+        self.assertEqual(set(agg["needs"]), expected | {"classify-change", "kagent-contract"})
 
 
 if __name__ == "__main__":

@@ -52,7 +52,7 @@ class RequiredGate(unittest.TestCase):
         self.assertNotEqual(self.gate(event='push', ref='').returncode, 0)
         for result in ('failure', 'cancelled', 'unknown', ''):
             self.assertNotEqual(self.gate(event='push', result=result).returncode, 0)
-        for other in ('e2e-kagent-lift', 'e2e-orka-helm', 'e2e-quickstart'):
+        for other in ('kagent-contract', 'e2e-orka-helm', 'e2e-quickstart'):
             self.assertNotEqual(self.gate(event='push', overrides={other: {'result': 'skipped'}}).returncode, 0)
         for event in ('workflow_dispatch', 'unknown'):
             self.assertNotEqual(self.gate(event=event).returncode, 0)
@@ -135,7 +135,7 @@ class QualificationCallers(unittest.TestCase):
         self.assertEqual(qualification['permissions'], {'contents': 'read'})
         self.assertNotIn('if', qualification)
         release = wf['jobs']['release']
-        self.assertEqual(release['needs'], ['orka-qualification'])
+        self.assertEqual(release['needs'], ['orka-qualification', 'kagent-qualification'])
         check = next(s for s in release['steps'] if s.get('name') == 'Release commit has fresh Orka qualification')
         self.assertEqual(check['env']['QUALIFIED_SHA'], '${{ needs.orka-qualification.outputs.qualified_sha }}')
         self.check_sha_script(check['run'])

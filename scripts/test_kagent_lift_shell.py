@@ -3,13 +3,21 @@
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 SOURCE = pathlib.Path(__file__).resolve().parent / "ci/kagent-lift.sh"
 PAYLOAD = "private-bootstrap-payload"
+TIMING = re.compile(r"kagent timing: span=(bootstrap|qualify|suite-evaluation|suite-helpers|cleanup) "
+                    r"boundary=(start|end) utc_epoch=([0-9]+\.[0-9]{6})(?: status=([0-9]+))?")
+QUALIFY_SPANS = [("bootstrap", "start", None), ("bootstrap", "end", "0"),
+                 ("qualify", "start", None), ("qualify", "end", "0"),
+                 ("suite-evaluation", "start", None), ("suite-evaluation", "end", "0"),
+                 ("suite-helpers", "start", None), ("suite-helpers", "end", "0")]
 
 # Downloads and tool calls are external boundaries. The shell itself, its
 # traps, file permissions, environment and cleanup are real in every case.
@@ -129,6 +137,53 @@ class ShellTests(unittest.TestCase):
         self.assertEqual([p.name for p in self.runner.iterdir()], ["kmx-kagent-lift"] if result.returncode == 0 and args != ("bootstrap",) else [], "owned work was not removed")
         records = [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
         return result, records
+
+    def timings(self, result, started):
+        """Return closed timing markers; only stderr may carry them."""
+        self.assertNotIn("kagent timing", result.stdout)
+        lines = [line for line in result.stderr.splitlines() if "kagent timing" in line]
+        marks, epochs = [], []
+        for line in lines:
+            match = TIMING.fullmatch(line)
+            self.assertIsNotNone(match, line)
+            span, boundary, epoch, status = match.groups()
+            self.assertEqual(status is None, boundary == "start", line)
+            marks.append((span, boundary, status))
+            epochs.append(float(epoch))
+        self.assertEqual(epochs, sorted(epochs))
+        for epoch in epochs:
+            self.assertTrue(started - 1 <= epoch <= time.time() + 1, epoch)
+        return marks
+
+    def test_timing_markers_split_bootstrap_qualification_and_cleanup(self):
+        for args, expected in ((("bootstrap",), QUALIFY_SPANS[:2]), ((), QUALIFY_SPANS)):
+            with self.subTest(args=args):
+                self.calls.unlink(missing_ok=True)
+                started = time.time()
+                result, records = self.run_shell(args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.timings(result, started),
+                                 expected + [("cleanup", "start", None), ("cleanup", "end", "0")])
+                self.assertEqual([line for line in result.stderr.splitlines() if "kagent timing" not in line], [])
+                shutil.rmtree(self.runner / "kmx-kagent-lift", ignore_errors=True)
+
+    def test_failed_span_ends_with_its_status_before_cleanup_status(self):
+        cases = (("kind-create", ("bootstrap",), 0, "23", "0", 23),
+                 ("qualify", (), 2, "23", "0", 23),
+                 ("suite-evaluation", (), 4, "23", "0", 23),
+                 ("suite-helpers", (), 6, "23", "0", 23),
+                 ("cluster-cleanup", ("bootstrap",), 0, "0", "31", 31),
+                 ("bootstrap,cluster-cleanup", ("bootstrap",), 0, "23", "31", 23))
+        for fail, args, index, status, cleanup, code in cases:
+            with self.subTest(fail=fail):
+                self.calls.unlink(missing_ok=True)
+                started = time.time()
+                result, records = self.run_shell(args, fail)
+                self.assertEqual(result.returncode, code)
+                span = QUALIFY_SPANS[index][0]
+                self.assertEqual(self.timings(result, started), QUALIFY_SPANS[:index] + [
+                    (span, "start", None), (span, "end", status),
+                    ("cleanup", "start", None), ("cleanup", "end", cleanup)])
 
     def assert_owned_cleanup(self, records, expected):
         deletes = [r for r in records if r["tool"] == "kind" and r["args"][:2] == ["delete", "cluster"]]
@@ -317,7 +372,9 @@ def qualify(binary, work):
                 expected = [] if phase == PAYLOAD else ["kagent qualification: phase=" + phase]
                 expected += ["kagent qualification failed: phase=" + safe_phase + " reason=" + reason,
                              "kagent bootstrap failed: phase=qualify exitstatus=1; runtime MCP/native A2A NOT qualified"]
-                self.assertEqual(result.stderr.splitlines(), expected)
+                self.assertEqual([line for line in result.stderr.splitlines() if "kagent timing" not in line], expected)
+                self.assertEqual(self.timings(result, 0)[-4:], [("qualify", "start", None), ("qualify", "end", "1"),
+                                 ("cleanup", "start", None), ("cleanup", "end", "0")])
                 self.assertEqual(result.stdout, "")
                 self.assert_owned_cleanup(records, 1)
 
@@ -327,6 +384,7 @@ def qualify(binary, work):
                 result, records = self.run_shell(args)
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(records, [])
+                self.assertNotIn("kagent timing", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

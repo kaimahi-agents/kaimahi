@@ -217,7 +217,7 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 		}
 	}
 	// Real instruction edit/fail/fix/pass loop over the offline fake model route;
-	// this is not real-model or Sessions execution qualification.
+	// this exercises embedded Sessions, not real-model execution qualification.
 	var previous struct{ File struct{ Revision string } }
 	b, _ := json.Marshal(created.StructuredContent)
 	if err := json.Unmarshal(b, &previous); err != nil {
@@ -242,7 +242,7 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 		t.Fatalf("instruction regression hidden: %+v", r)
 	}
 	summary := failed.Content[0].(*sdk.TextContent).Text
-	if !strings.Contains(summary, "greeting") || !strings.Contains(summary, "no journal") || strings.Contains(summary, "PRIVATE OPERAND") || strings.Contains(summary, "different response") || strings.Contains(summary, "schemaVersion") {
+	if !strings.Contains(summary, "greeting") || strings.Contains(summary, "no journal") || strings.Contains(summary, "PRIVATE OPERAND") || strings.Contains(summary, "different response") || strings.Contains(summary, "schemaVersion") {
 		t.Fatalf("failure summary lost or leaked content: %s", summary)
 	}
 	fixed := call("edit", map[string]any{"schemaVersion": 1, "path": "greeter.agent.md", "expectedRevision": changed.File.Revision, "content": string(source)})
@@ -254,7 +254,7 @@ func TestMCPCommandSharedOperationParity(t *testing.T) {
 	if err := json.Unmarshal(b, &r); err != nil {
 		t.Fatal(err)
 	}
-	if passed.IsError || !r.FullPass || r.File.Revision != previous.File.Revision || r.File.Revision == changed.File.Revision || r.Runner != "preview runner (no journal)" {
+	if passed.IsError || !r.FullPass || r.File.Revision != previous.File.Revision || r.File.Revision == changed.File.Revision || r.Runner != "" {
 		t.Fatalf("full pass/revision/runner label lost: %+v", r)
 	}
 	if *loads != 0 || diag.Len() != 0 {

@@ -3,11 +3,18 @@
 `internal/kmx/localpreview` runs one tool-free [single-file agent](agent-file.md)
 in the kmx process. Every result is labeled **local preview**. It is not
 deployment qualification, suite evidence, a passing receipt, or authority to
-publish or deploy. It is not wired into the CLI yet: `kmx run FILE` and
-`kmx test FILE` use a temporary
+publish or deploy. `kmx run FILE`, `kmx test FILE` and MCP Run/Test use it for
+fake/local routes through the unchanged `agentpreview.Runner` interface.
+Selected examples and optional ad-hoc input share one invocation-owned journal;
+each gets a fresh Session. The adapter aborts later sends on execution or deadline
+failure, and only exposes a private journal handle after successful finalization.
+
+**Copilot remains direct and unjournaled.** If either the agent or judge uses
+Copilot, the whole invocation uses the existing
 [preview runner (no journal)](kmx.md#agent-file-local-preview-unreleased-integration)
-until this runner replaces it under
-[#598](https://github.com/kaimahi-agents/kaimahi/issues/598).
+and reports `NoJournal`. This preserves Copilot's credential-owning transport:
+it does not yet offer the content preflight needed before Sessions retains a
+turn. Fully journaled Copilot is follow-up work, not an implemented capability.
 
 Status: the hermetic tests (fake model, an in-process HTTP endpoint and the
 judge) run with the root Go tests. Native Windows execution has not been run:
@@ -61,8 +68,8 @@ check:
 | ``Call the tool `NAME` `` | a tool-call reply, which is refused |
 | no directive | fixed guidance text naming the directive |
 
-Compatible endpoints follow the existing judge URL rules: HTTPS, or keyless
-HTTP at literal `127.0.0.1` or `::1` (for example a local Ollama at
+The standalone library's compatible endpoints follow the existing judge URL
+rules: HTTPS, or keyless HTTP at literal `127.0.0.1` or `::1` (for example a local Ollama at
 `http://127.0.0.1:11434/v1`). Credentials need HTTPS. The credential is read
 from the named environment variable into memory. It is never written to the
 agent file, the journal, results or error text. A successful reply whose
@@ -72,7 +79,14 @@ the exact value only, not encoded or partial copies. The check applies at any
 length, so a placeholder key such as `EMPTY` refuses every answer containing
 that word; leave the key variable unset for an endpoint that needs no
 credential. Redirects are not followed. Request and response bodies are each
-limited to 1 MiB.
+limited to 1 MiB. Replies must name the exact requested model: missing, empty
+or different model identities refuse rather than being attributed to the request.
+
+CLI/MCP routes retain the existing model-access policy: fake, or an explicit
+keyless local compatible/Ollama/Foundry endpoint. Validated `localhost` and
+loopback addresses and the selected base path are preserved; the adapter does
+not discover runtimes or silently rewrite the route. Copilot uses the direct
+exception described above.
 
 ## Refusals
 
@@ -86,8 +100,9 @@ Each refusal says what to change:
 - tool assertions or other unsupported assertion types;
 - `llmJudge` examples without the shared judge, or a judge override with no
   `llmJudge` examples;
-- instructions, example IDs or inputs, ad-hoc `Run` input, or the agent ID,
-  revision or model name containing the resolved agent or judge credential
+- instructions, example IDs or inputs, ad-hoc `Run` input, the agent ID,
+  revision or model name, or assertion IDs/types and authored judge model/version
+  metadata containing the resolved agent or judge credential
   (exact value, any length). Sessions records this content when a turn starts,
   before any reply check, so it is checked before the journal is created.
 
@@ -118,7 +133,10 @@ the fake model, the fake judge answers in memory. It scores 100 when every
 backtick-quoted phrase in the rubric appears in the answer and 0 when one is
 missing. A rubric with no quoted phrase gets `unknown`. A different judge
 endpoint must be set explicitly (`JudgeEndpoint`). Judge reasoning is
-discarded.
+discarded. For CLI/MCP fake/local execution this replaces the direct runner's
+single sample with two samples per judge assertion, within unchanged deadlines.
+The Copilot direct exception retains its single-sample policy, including when
+only the judge uses Copilot; it creates no journal.
 
 ## Journal retention and clearing
 

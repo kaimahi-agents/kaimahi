@@ -10,7 +10,7 @@ import tempfile
 import unittest
 import yaml
 
-from test_workflow_helpers import runtime_job
+from test_workflow_helpers import runtime_job, kagent_runtime_job
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -19,14 +19,15 @@ class RetirementCITests(unittest.TestCase):
     def setUp(self):
         self.jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
         self.jobs["e2e-orka-runtime"] = runtime_job(ROOT)
+        self.jobs["e2e-kagent-lift"] = kagent_runtime_job(ROOT)
 
     def test_required_aggregator_retains_native_shards_not_removed_products(self):
-        expected = {"classify-change", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}
+        expected = {"classify-change", "kagent-contract", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}
         self.assertEqual(set(self.jobs["e2e-hello-world"]["needs"]), expected)
         self.assertNotIn("e2e-kagent-create", self.jobs)
         self.assertNotIn("e2e-eval-loop", self.jobs)
         check = "\n".join(s.get("run", "") for s in self.jobs["e2e-hello-world"]["steps"])
-        self.assertIn('expected = {"e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}', check)
+        self.assertIn('expected = {"kagent-contract", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}', check)
         self.assertIn('if result != "success" and not (result == "skipped"', check)
 
     def test_aggregator_executes_fail_closed(self):

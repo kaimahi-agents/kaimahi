@@ -205,8 +205,13 @@ func newCompatible(t *testing.T, tls bool, handler func(http.ResponseWriter, *ht
 }
 
 func reply(content string) string {
+	return replyForModel(content, "m")
+}
+
+func replyForModel(content, model string) string {
 	encoded, _ := json.Marshal(content)
-	return `{"id":"x","object":"chat.completion","model":"m","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":` + string(encoded) + `}}]}`
+	identity, _ := json.Marshal(model)
+	return `{"id":"x","object":"chat.completion","model":` + string(identity) + `,"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":` + string(encoded) + `}}]}`
 }
 
 func modelAgent(t *testing.T, model string) *agentfile.Agent {
@@ -223,7 +228,7 @@ func TestCompatibleEndpointExactRequestAuthAndOneSend(t *testing.T) {
 		if body.Model != "example/model-1" || body.Stream || len(body.Messages) != 2 || body.Messages[0] != (chatMessage{"system", agent.Instructions}) || body.Messages[1] != (chatMessage{"user", "Ada"}) {
 			t.Errorf("body = %+v", body)
 		}
-		fmt.Fprint(w, reply("Hello, Ada"))
+		fmt.Fprint(w, replyForModel("Hello, Ada", body.Model))
 	})
 	result, err := Test(testContext(t), agent, Options{JournalDir: journalDir(t), Endpoint: &Endpoint{BaseURL: server.URL, KeyEnv: "KMX_TEST_PREVIEW_KEY"}, Transport: server.Client().Transport})
 	if err != nil || result.Verdict != agentruntime.EvaluationPass || result.ModelRoute != "compatible" || result.Model != "example/model-1" || server.hits.Load() != 1 || result.ModelSends != 1 {
@@ -241,7 +246,7 @@ func TestCredentialAndPromptAbsentFromJournalAndErrors(t *testing.T) {
 			fmt.Fprintf(w, `{"error":{"message":"bad key %s for prompt %s"}}`, r.Header.Get("Authorization"), body.Messages[1].Content)
 			return
 		}
-		fmt.Fprint(w, reply("Hello, Ada"))
+		fmt.Fprint(w, replyForModel("Hello, Ada", body.Model))
 	})
 	result, err := Test(testContext(t), agent, Options{JournalDir: dir, Endpoint: &Endpoint{BaseURL: server.URL, KeyEnv: "KMX_TEST_PREVIEW_KEY"}, Transport: server.Client().Transport})
 	if err != nil || result.Verdict != agentruntime.EvaluationUnknown || result.Examples[0].Execution != "refused" || result.Examples[0].Refusal.Kind != RefusedHTTPStatus || result.Examples[1].Verdict != agentruntime.EvaluationPass {
@@ -436,7 +441,15 @@ func TestJournalRetentionAndClear(t *testing.T) {
 }
 
 func TestJournalPathWithURISpecialCharacters(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "a dir #1 %20 ?x", "journals")
+	testJournalPath(t, "a dir #1 %20")
+	if got := journalDSN(`C:\Users\A B\kmx\r.db`); goruntime.GOOS == "windows" && got != "file:///C:/Users/A%20B/kmx/r.db?mode=rw&_txlock=immediate" {
+		t.Fatalf("windows dsn = %q", got)
+	}
+}
+
+func testJournalPath(t *testing.T, component string) {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), component, "journals")
 	ctx := testContext(t)
 	result, err := Test(ctx, greeter(t), Options{JournalDir: dir})
 	if err != nil || result.Verdict != agentruntime.EvaluationPass {
@@ -447,9 +460,6 @@ func TestJournalPathWithURISpecialCharacters(t *testing.T) {
 	}
 	if inspection, err := Inspect(ctx, dir, result.RunID); err != nil || len(inspection.Sessions) != 1 {
 		t.Fatal(err, inspection)
-	}
-	if got := journalDSN(`C:\Users\A B\kmx\r.db`); goruntime.GOOS == "windows" && got != "file:///C:/Users/A%20B/kmx/r.db?mode=rw&_txlock=immediate" {
-		t.Fatalf("windows dsn = %q", got)
 	}
 }
 
@@ -507,10 +517,10 @@ func TestEchoedCredentialRefusedWithoutJournaling(t *testing.T) {
 		key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if body.Messages[1].Content == "Lin" {
 			// A JSON escape must not hide the credential from the check.
-			fmt.Fprintf(w, `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Hello, Lin. Your key is \u%04x%s"}}]}`, key[0], key[1:])
+			fmt.Fprintf(w, `{"model":"example/model-1","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Hello, Lin. Your key is \u%04x%s"}}]}`, key[0], key[1:])
 			return
 		}
-		fmt.Fprint(w, reply("Hello, Ada. You sent "+r.Header.Get("Authorization")))
+		fmt.Fprint(w, replyForModel("Hello, Ada. You sent "+r.Header.Get("Authorization"), body.Model))
 	})
 	result, err := Test(testContext(t), agent, Options{JournalDir: dir, Endpoint: &Endpoint{BaseURL: server.URL, KeyEnv: "KMX_TEST_PREVIEW_KEY"}, Transport: server.Client().Transport})
 	if err != nil || result.Verdict != agentruntime.EvaluationUnknown || len(result.Examples) != 2 || server.hits.Load() != 2 {

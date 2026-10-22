@@ -136,7 +136,7 @@ func (c *modelClient) send(ctx context.Context, body []byte) (string, error) {
 	if len(raw) > MaxReplyBytes {
 		return "", refuse(RefusedOversized, "the model response exceeds 1 MiB", "ask for a shorter answer or use a model that stops sooner")
 	}
-	content, err := parseReply(raw)
+	content, err := parseReply(raw, c.route.model)
 	if err != nil {
 		return "", err
 	}
@@ -154,12 +154,13 @@ func (c *modelClient) send(ctx context.Context, body []byte) (string, error) {
 // that repeats a key at any depth, including a case-insensitive alias, is
 // malformed: encoding/json keeps the last occurrence, which would let a later
 // null tool_calls or "stop" finish_reason shadow an earlier one.
-func parseReply(raw []byte) (string, error) {
+func parseReply(raw []byte, model string) (string, error) {
 	malformed := refuse(RefusedMalformed, "the model reply is not one completed chat-completions text message", "use an OpenAI-compatible chat-completions endpoint")
 	if !agentruntime.JSONKeysUnique(raw) {
 		return "", malformed
 	}
 	var envelope struct {
+		Model   string                       `json:"model"`
 		Choices []map[string]json.RawMessage `json:"choices"`
 	}
 	if json.Unmarshal(raw, &envelope) != nil || len(envelope.Choices) != 1 {
@@ -210,7 +211,7 @@ func parseReply(raw []byte) (string, error) {
 	if finish == "length" {
 		return "", refuse(RefusedTruncated, "the model reply was truncated", "ask for a shorter answer")
 	}
-	if message == nil || role != "assistant" || !contentSet || finish != "stop" {
+	if message == nil || role != "assistant" || !contentSet || finish != "stop" || envelope.Model == "" || envelope.Model != model {
 		return "", malformed
 	}
 	return content, nil

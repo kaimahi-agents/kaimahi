@@ -60,7 +60,10 @@ type Executor interface {
 // Options configures one preview. JournalDir must be an absolute owner-only
 // directory (normally config.LocalPreviewJournalDir()).
 type Options struct {
-	JournalDir string
+	// resolveRoute is private to the runner adapter's validated modelaccess routes.
+	// Standalone Run/Test retain the shared endpoint validation and canonicalization.
+	resolveRoute func(string, *Endpoint, http.RoundTripper, string) (route, error)
+	JournalDir   string
 	// Endpoint is the agent model's OpenAI-compatible route. It must be nil
 	// when Model.Preferred is fake and is required otherwise.
 	Endpoint *Endpoint
@@ -155,8 +158,12 @@ func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared,
 			p.cases = append(p.cases, c)
 		}
 	}
+	resolver := options.resolveRoute
+	if resolver == nil {
+		resolver = resolveRoute
+	}
 	var err error
-	if p.route, err = resolveRoute(agent.Model, options.Endpoint, options.Transport, "Model.Preferred"); err != nil {
+	if p.route, err = resolver(agent.Model, options.Endpoint, options.Transport, "Model.Preferred"); err != nil {
 		return nil, err
 	}
 	p.addCredential(p.route.key)
@@ -173,7 +180,7 @@ func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared,
 	if options.JudgeEndpoint != nil {
 		// An explicit override is a compatible endpoint; the judge model is
 		// each assertion's authored judgeModel, not Model.Preferred.
-		if judgeRoute, err = resolveRoute("", options.JudgeEndpoint, options.Transport, "the judge"); err != nil {
+		if judgeRoute, err = resolver("", options.JudgeEndpoint, options.Transport, "the judge"); err != nil {
 			return nil, err
 		}
 	}
@@ -192,19 +199,22 @@ func (p *prepared) addCredential(key string) {
 	}
 }
 
-// refuseJournalCredentials refuses when any content the journal would retain
-// contains a resolved agent or judge credential (exact value, any length).
+// refuseJournalCredentials refuses when journal content or returned assertion
+// metadata contains a resolved agent or judge credential (exact value, any length).
 // Sessions records the identities, instructions and input when a turn starts,
 // before any reply check runs, so this must precede the journal's creation.
 func (p *prepared) refuseJournalCredentials(examples []agentfile.Example) error {
 	fields := []string{p.agent.Identity.ID, p.agent.Revision, p.route.model, p.agent.Instructions}
 	for _, example := range examples {
 		fields = append(fields, example.ID, example.Input)
+		for _, assertion := range example.Assertions {
+			fields = append(fields, assertion.ID, assertion.Type, assertion.JudgeModel, assertion.JudgeVersion)
+		}
 	}
 	for _, key := range p.credentials {
 		for _, field := range fields {
 			if strings.Contains(field, key) {
-				return refuse(RefusedCredentialContent, "the instructions, an example, the input or the agent identity contains the endpoint or judge credential, so nothing was sent or journaled",
+				return refuse(RefusedCredentialContent, "the instructions, an example, assertion metadata, the input or the agent identity contains the endpoint or judge credential, so nothing was sent or journaled",
 					"remove the credential value; agent files and inputs must never contain secrets")
 			}
 		}
