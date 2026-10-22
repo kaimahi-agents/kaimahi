@@ -1,0 +1,61 @@
+name: Orka nightly
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/orka-runtime.yml
+
+  qualification:
+    name: Orka nightly qualification
+    needs: [qualify]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Report full qualification outcome
+        env:
+          RESULT: ${{ needs.qualify.result }}
+          SHA: ${{ needs.qualify.outputs.qualified_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          case "$RESULT" in success|failure|cancelled|skipped) ;; *) RESULT=unknown ;; esac
+          {
+            printf '## Orka qualification: %s\n\nCommit: %s\n\n' "$RESULT" "$SHA"
+            printf '[Run and payload-free phase artifacts](%s/%s/actions/runs/%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$RESULT" = success
+
+  report:
+    needs: [qualify, qualification]
+    if: ${{ always() && github.event_name == 'schedule' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    # Serialize issue mutations, not workers. A late result also checks the
+    # newest scheduled run before it can close a newer failure's issue.
+    concurrency:
+      group: orka-nightly-issue-report
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Maintain the main nightly failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFICATION_RESULT: ${{ needs.qualify.result }}
+        run: python3 scripts/ci/orka-nightly-report.py

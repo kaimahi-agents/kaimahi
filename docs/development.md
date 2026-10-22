@@ -300,9 +300,39 @@ Cloud cleanup has different [ownership rules](aks.md#teardown).
 The workflow emits `hygiene` and `e2e-hello-world` merge gates. The latter
 fail-closed aggregates four retained shards: `e2e-kagent-lift`,
 `e2e-orka-runtime`, `e2e-orka-helm` and `e2e-quickstart`, plus successful
-classification. Its existing #315 skip/failure policy remains: only intentional
-skips are accepted, never failed/cancelled shards. Required-check rules are
-managed separately on GitHub; deleting a workflow job does not update a ruleset.
+classification. Only intentional skips are accepted, never failed/cancelled
+shards. Orka runtime proof may skip only an explicitly safe PR or a main push;
+unknown changes and events default to full proof. Required contexts remain
+`hygiene` and `e2e-hello-world`, without a ruleset change.
+
+The read-only [Orka worker](../.github/workflows/orka-runtime.yml) runs the same
+complete proof when invoked, including native evaluation, transfer, promotion,
+and pinned-update checks. It has no internal Markdown shortcut. Unrecognized
+Markdown and live instruction fixtures require qualification; root policy docs
+not explicitly listed also run. Its raw check is `e2e-orka-runtime / qualify`.
+Quickstart, stock Helm, kagent and clone-free qualification keep their existing
+routing; this change does not move every Orka-bearing job out of PR CI.
+
+[Orka nightly](../.github/workflows/orka-nightly.yml) runs the full main proof
+at 03:23 UTC and supports manual qualification after the workflow lands. That
+schedule shares the existing CI cron but owns a separate full worker. Its summary
+is red for failure, cancellation or missing qualification. Scheduled main failures
+maintain one workflow-owned issue assigned to `gambtho`, containing only run link,
+commit and safe status. Current success closes it; older success cannot close a
+newer failure. Manual branch qualification does not alter main health.
+
+Moving main-push runtime proof to nightly trades immediate post-merge detection
+for detection on the next nightly (normally within 24 hours) or before release.
+Individually passing PRs can still interact after merging. Check Actions when the
+last completed main nightly is older than 30 hours: an issue reporter cannot
+report a schedule that never started. The first scheduled run remains an
+operational check after merge, not evidence supplied by local fixtures.
+
+Every release/dry run requires a fresh full worker success at the exact built
+commit; no earlier nightly success is reused. The worker is read-only; only the
+scheduled-main issue reporter has issue-write permission. Reporter errors remain
+visible as workflow failures. Use `gh pr checks --required` for required contexts;
+a green gate does not establish human approval or resolved review threads.
 
 The v0.10.2 live-create shard `e2e-kagent-create` and clusterless bundle recorded
 Sessions/judge/reference-verify shard `e2e-eval-loop` are removed, along with the

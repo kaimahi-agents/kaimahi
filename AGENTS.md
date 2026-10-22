@@ -347,9 +347,13 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   and Secret metadata bracketing. Hermetic tests are not live qualification.
   Runtime-core assertions and llmJudge remain retained with their test groups;
   native judge wiring does not enable recorded candidate execution.
-  The checkout-only native qualifier runs in the existing exclusively owned
-  Orka shard, after legacy model proof, with private captures and metadata-only
-  artifacts. Its second exclusively owned kind cluster has one pinned Orka in
+  The checkout-only native qualifier runs in the full read-only reusable Orka
+  worker after raw model proof, with private captures and metadata-only artifacts.
+  Relevant/unknown PRs, manual qualification, daily main nightly and every release
+  retain that proof. Only explicitly safe PRs and routine main pushes skip it.
+  Keep required `hygiene` and `e2e-hello-world` checks intact and fail closed on
+  unintended skips/failures. No path/docs shortcuts belong inside the full worker.
+  Its second exclusively owned kind cluster has one pinned Orka in
   orka-system and its own inference Provider/Secret; it shares the source AIKit
   endpoint through a fixture-only private-network NodePort, never a host mapping
   or another model workload. Registry --promote qualifies GET-only planning,
