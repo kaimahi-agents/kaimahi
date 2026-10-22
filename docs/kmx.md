@@ -114,17 +114,78 @@ Each legacy invocation adds exactly one stderr line:
 kmx eval is deprecated; use kmx test (same arguments).
 ```
 
-Accepted arguments, flags, stdout, exit codes, state and existing stderr labels
-remain unchanged apart from that notice. Help and completion remain inert;
-root help/completion advertises `test`, not `eval`. Removal requires a later
+Existing workspace arguments, flags, stdout, exit codes, state and stderr labels
+remain unchanged apart from that notice. File preview uses canonical `run FILE`
+and `test FILE`; neither is added to the legacy `eval` route. Help and completion
+remain inert; root help/completion advertises `test`, not `eval`. Removal requires a later
 announced breaking release.
 
 This is a command rename, not a data migration. Authored `eval/` and packaged
 `evals/` directories, `evalTarget`/`evaluationTarget`, schemas, APIs, receipt and
 storage names, and machine JSON keys/values (including the `eval` stage) remain
-unchanged. Run still targets an existing live Orka Agent, not local workspace
-execution. Publish still uses `kmx push` to transfer an OCI graph; no local
+unchanged. `run --agent` still targets an existing live Orka Agent, not local
+workspace execution. Publish still uses `kmx push` to transfer an OCI graph; no local
 numbered versions or new publication command are introduced.
+
+### Agent-file local preview (unreleased integration)
+
+`kmx run FILE` and `kmx test FILE` select one canonical markdown agent file,
+without workspace discovery, cluster configuration, Docker or a daemon. Both
+check the file's saved examples in authored order. Run additionally accepts
+`--prompt TEXT` or `--prompt-file FILE|-` for a separately attributed ad-hoc
+answer; without either it checks examples only. Test accepts no ad-hoc input.
+Input is bounded to 16 KiB. The five-minute preview execution deadline starts
+after prompt collection. Ctrl-C/SIGTERM retain their default behavior during
+intake, including when a pipe's writer stays open without EOF; no background
+reader is started. Prompt-file/stdin intake errors are pre-operation CLI errors
+on stderr, with no result document. Rooted API callers can pass an already-parsed
+snapshot without reopening its filename; the CLI path is a thin load-and-delegate
+wrapper.
+Neither operation changes source or produces native evaluation/deploy evidence.
+
+**Runner integration is not yet available.** The command/App adapter is exercised
+against a test-only implementation of the embedded-runner interface. Production
+refuses with `runner_unavailable`; it never falls back to that test fake. These
+checks do not qualify Sessions execution, real models, journaling or Windows.
+
+```text
+kmx run ./greeter.agent.md --prompt Ada
+kmx test ./greeter.agent.md --case greeting -o json
+kmx test ./greeter.agent.md
+```
+
+`--case ID` selects one stable saved example and always reports **partial**, even
+if the file contains only that example. Unknown/blank IDs refuse before inference.
+Missing/empty examples cannot pass. The exact model comes from `Model.Preferred`;
+`fake` selects only the built-in fake route. A real model additionally requires
+an explicit trusted `--provider` and `--endpoint`, validated by model access;
+there is no discovery, installation, sign-in or fallback inside Run/Test. The
+caller supplies any judge-route override through the App API; otherwise the
+judge uses the exact agent route, never an independently chosen route. Conflicting
+authored judge models refuse rather than silently switching.
+
+Output defaults to text; `-o json` returns one versioned `schemaVersion: 1`,
+`kind: kmx.agent-file-preview` document. Both preserve operation, exact source-byte
+SHA-256 revision, provider/model, full/subset selection, terminal state and
+example/assertion IDs with pass/fail/unknown and safe reasons. JSON includes
+`fullPass`, which is false for every subset, incomplete or unknown result. Paths
+are sanitized display basenames, not a file-targeting API. The optional structured
+`diagnostic` names safe parser fields, source line/column and repair advice.
+Default output contains no instructions, inputs, answers, operands, provider error
+text, endpoint or journal handle. `--show-content` explicitly adds sanitized answer
+excerpts, at most 4096 UTF-8 bytes each; treat them as untrusted content.
+
+File-mode exits: 0 means the selected checks completed and passed (a partial
+selection is **not** a full pass); 2 means completed assertion fail/unknown;
+1 means refusal, execution/deadline/journal/output failure; 130 means cancellation.
+Journal-finalization failure preserves available rows but makes the overall
+verdict unknown and returns an error, never a pass. Source edits do not rebind
+an in-flight result to a new revision. No file failure retention or file-scoped
+Explain is available here; workspace Explain remains unchanged.
+
+Do not mix FILE with `--agent`, workspace, destination, evidence, native judge or
+cluster flags, including explicitly supplied defaults. Existing live
+`run --agent` and full-workspace Test contracts remain separate and unchanged.
 
 ### Deploy compatibility (unreleased)
 

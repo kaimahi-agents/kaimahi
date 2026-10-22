@@ -24,6 +24,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Canonical `run FILE` / `test FILE` adapters for markdown-agent local preview:
+  stable `--case` selection, versioned payload-free text/JSON outcomes, separate
+  ad-hoc input and distinct non-pass/cancel exits. Tests inject the embedded-runner
+  interface; production refuses until that runner is integrated. No native
+  evidence, file-scoped Explain or change to deployed Run/workspace Test/Eval.
+
 - Read-only `kmx model list [-o table|json]` discovers cached Foundry Local
   models at the runtime-reported endpoint and installed Ollama models on loopback
   port 11434. Absent, empty, installed and failure states include explicit install

@@ -78,6 +78,17 @@ in v0.7.0; historical v0.5.1 retains the `agent` routes. The canonical `test` an
 `deploy` spellings are unreleased; v0.8.1 uses `eval` and `lift`. Existing operation handlers, arguments, applicable flags,
 stdout and exit contracts are preserved; this is not a receipt or bundle migration.
 
+## Agent-file preview integration (unreleased)
+
+Canonical `run FILE` / `test FILE` dispatch to a cluster-independent App adapter
+and the embedded-runner interface. Run optionally adds a separate ad-hoc input;
+both check saved ordered examples. `--case ID` is always partial. Versioned
+payload-free text/JSON results are local preview, never native evidence. The
+adapter is interface-tested only; production refuses `runner_unavailable` until
+the embedded runner is wired. Existing live `run --agent`, full-workspace Test,
+workspace Explain and hidden legacy Eval remain unchanged. See
+[agent-file preview](kmx.md#agent-file-local-preview-unreleased-integration).
+
 ## Independent evaluation helpers
 
 `test export [--workspace DIR] --member ID --out FILE` writes detached public

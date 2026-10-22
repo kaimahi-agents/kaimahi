@@ -51,6 +51,10 @@ remain build authority; this map does not mirror their inventory.
 |---|---|---|
 | `cmd/kmx` | Installed | Command adapters, argument validation, help/completion and presentation. Native workspace create/test/push/Deploy, Orka operations, live run/chat and Task results, quickstart/console, context/local and hidden AKS setup/teardown, read-only targets, suite transfer and offline policy resolution. |
 
+Markdown-file Run and Test use detached snapshots and bounded safe preview
+projection. Their embedded runner remains unwired and refuses; this is not a
+model/runtime execution engine or Squad registration.
+
 Create prompts for missing exact model/file inputs only at a terminal; scripts
 must supply both. Composed Orka workspace Deploy has stage/verbose/JSON
 presentation alongside explicit digest Deploy. Named destinations resolve once;
@@ -100,7 +104,8 @@ enable it.
 
 | Directory | Class | Responsibility |
 |---|---|---|
-| `internal/kmx/app` | Installed | Native operation orchestration, frozen workspace eval→push→Deploy coordination, consent, private exact-S passing proof and completion observations, bounded release state/CAS, provenance and ownership-safe update/rollback. Public evidence export/verification stays separate from private execution and publication gates. Independent live Task/results, Orka chat/host routes and cloud ownership teardown remain. No legacy bundle persistence, replay/status/retirement, live create or live-copy GUI. |
+| `internal/kmx/agentpreview` | Installed | Typed embedded-runner request/outcome contract; no execution engine, model adapter or production fake. |
+| `internal/kmx/app` | Installed | Cluster-independent markdown-file preview orchestration and versioned safe projection with an unwired runner that refuses. Native operation orchestration, frozen workspace eval→push→Deploy coordination, consent, private exact-S passing proof and completion observations, bounded release state/CAS, provenance and ownership-safe update/rollback. Public evidence export/verification stays separate from private execution and publication gates. Independent live Task/results, Orka chat/host routes and cloud ownership teardown remain. No legacy bundle persistence, replay/status/retirement, live create or live-copy GUI. |
 | `internal/kmx/agentsessions` | Installed | Strict packaged chat invocation/config, read-only availability and bounded journal/reference extraction; offline ActorTemplate/HarnessRegistration rendering from bindings. Fresh Session/config/Exec per case run, bounded semantic journal proof; diagnostic replay cannot authorize candidate proof. No daemon startup, tool enablement, host/model attestation, registration discovery or legacy receipt reader. Golden renders are test support, not deployed assets. |
 | `internal/kmx/agentfile` | Checkout | Bounded canonical charter parsing and regular-file loading with source locations, exact-byte revisions and ordered examples. No CLI, execution, model access, source writes, Squad registration or implicit suite loading. Nested charter fixtures are test support. |
 | `internal/kmx/agentsuite` | Installed | Builder-owned sandbox binding and image metadata/attestation inspection, provider-neutral build/packing/CAS/transfer contracts. Nested AgentKit adapter, bounded local artifact ingestion, registry transport and workspace authoring own distinct seams, described below. Schemas are checkout assets; incident-analyst data is builder test support. |
