@@ -6,11 +6,20 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 ## Command consistency
 
-- `model list [-o table|json]` is config-free bounded local model discovery,
-  not cluster setup or inference. Keep `internal/kmx/modelaccess` independent of
-  App and Unix-only helpers. Foundry endpoint comes only from runtime status;
-  no fixed port, catalog download, service start or silent model selection.
-  Native model-access package tests are separate from Windows CLI qualification.
+- `model list [-o table|json]` defaults to config-free bounded local discovery.
+  Explicit `--provider copilot` lists available Chat-compatible routes without
+  starting sign-in. `model login` uses GitHub device flow; `--gh` alone opts into
+  bounded private `gh auth token --hostname github.com` capture. Reusable tokens
+  live only in kmx's native OS keychain item, with no file fallback; exchange
+  bearers stay in memory. Logout deletes only that item and clears memory.
+  `internal/kmx/modelaccess/copilot` returns a selected-route RoundTripper for
+  direct JSON/SSE Chat Completions, not a runner, proxy or CLI-chat replacement.
+  Establish auth through the catalog; exchange only after credential refusal,
+  never subscription/policy/quota refusal. Never replay inference or substitute
+  a model. Keep modelaccess independent of App and Unix-only helpers. Foundry
+  endpoint comes only from runtime status; no fixed port, catalog download,
+  service start or silent model selection. Native model-access package tests
+  remain separate from Windows CLI qualification.
 
 - Follow the [command conventions](docs/command-conventions.md), the implemented
   interface in [docs/kmx.md](docs/kmx.md) and the

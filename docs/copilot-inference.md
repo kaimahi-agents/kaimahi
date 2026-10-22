@@ -13,6 +13,61 @@ there instead. `/inference-local` returns to the Agent's Orka Provider; `/retry`
 repeats the previous prompt using the chosen route. Each reply shows total elapsed
 request time.
 
+## Direct model access
+
+The independent unreleased `kmx model login`, `login --gh`, `logout` and
+`list --provider copilot [-o table|json]` commands manage an explicitly owned
+Copilot route, not this existing CLI-chat adapter. The
+[dated access decision](copilot-access.md) distinguishes the selected experimental
+compatibility route from official OAuth/SDK documentation and unimplemented
+runner modes. See [sign-in and storage](models.md#explicit-copilot-model-access). No credentials
+are imported implicitly, exported in argv/environment/files, or returned in
+routes. There are no token flags or plaintext-cache fallback.
+
+Internal callers use `copilot.New(store)` (`nil` selects the native keychain),
+then `Client(ctx, route)` to obtain an `http.RoundTripper` for a validated exact
+`modelaccess.Route`. Use a standard request with POST
+`https://api.githubcopilot.com/chat/completions`, a JSON body naming that same
+model, and a caller-owned context/deadline. The transport preserves the caller's
+Chat `Accept` header and successful JSON/SSE bytes; callers own closing the
+response body. Non-2xx Chat responses return a classified error, not a raw
+upstream response or error body. Request bodies are
+bounded to 4 MiB, auth/catalog/error responses to 1 MiB, and credential/process
+output to 16 KiB. Ambiguous top-level JSON keys and changed models or destinations
+refuse before inference. No Responses API, agent loop, tool execution, listener
+or OpenAI proxy is added.
+
+Auth is established through GET `/models` before inference. The original GitHub
+credential is tried directly as a bearer. Only 401 credential refusal or a 403
+with explicit `unsupported_token` code authorizes the legacy GitHub
+`copilot_internal/v2/token` exchange. Known subscription/policy/quota codes do
+not authorize exchange, even with 401. Exchanged bearers remain in memory,
+honor `expires_at` and refresh 30 seconds before expiry; the reusable keychain
+credential is not replaced. Subscription, policy and quota refusals never select
+another model or credential source. Catalog checks can be repeated; inference
+is never automatically resent, including after a Chat credential refusal or
+connection failure. The next explicit request resolves auth independently.
+Logout clears memory and deletes only kmx's item, not upstream account tokens;
+it cannot retract requests already in flight.
+
+Safe static error prefixes distinguish `copilot_auth_required`,
+`copilot_auth_revoked`, `copilot_no_subscription`, `copilot_policy_denied`,
+`copilot_quota`, `copilot_model_unavailable`, `copilot_cancelled`,
+`copilot_timeout`, `copilot_malformed`, `copilot_keychain_unavailable` and
+`copilot_unavailable`. Unknown 403s are policy refusals. Raw upstream errors,
+bodies, URLs and credential-bearing causes are not included in diagnostics.
+Caller-owned successful model content is not redacted by this transport.
+
+Auth/header reference: [vekil authenticator](https://github.com/sozercan/vekil/blob/3e77a9d0739baf7740b141bd88b3fdf40caf7c16/auth/authenticator.go)
+and [request headers](https://github.com/sozercan/vekil/blob/3e77a9d0739baf7740b141bd88b3fdf40caf7c16/proxy/handler.go).
+KMX does not reuse its disk cache, proxy, retry or failover behavior. Hermetic
+native package tests are not live GitHub/subscription or OS-keychain acceptance
+proof, nor full Windows CLI qualification. Explicit credential access may show
+OS unlock UI; Linux uses the existing login/default collection with kmx-specific service
+and account attributes. Native keychain calls/prompts have no context-cancellation
+guarantee. Unexpected native-dependency panics during credential access are
+mapped to the safe keychain error without exposing their value.
+
 ## Tool translation
 
 KMX supplies enabled registered HTTP Tool descriptions and parameter schemas to
@@ -38,5 +93,6 @@ Copilot native tools are restricted to an adapter-only allowlist; the registered
 Orka tools execute in KMX. Copilot output is decoded from JSON events to avoid
 terminal wrapping corrupting tool arguments. Instructions come from the selected
 Agent; each turn runs in an empty temporary directory with no repository custom
-instructions and no inherited conversation. Credentials remain managed by the
-installed CLI, including GitHub CLI login. No credential files are read by KMX.
+instructions and no inherited conversation. This adapter's credentials remain
+managed by the installed CLI, including GitHub CLI login. It does not read
+credential files or consume the independent direct model-access keychain item.
