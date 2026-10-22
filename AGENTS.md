@@ -458,7 +458,14 @@ never the path wrapper or shell CLI strings. Model routes are trusted startup
 configuration, not tool/charter fields. Keep complete safe App results on errors;
 fixture runners are not production execution. Edit preserves mode bits, not
 ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
-No new runner, Explain tool or network listener. See [MCP](docs/kmx.md#local-stdio-mcp).
+No new runner, Explain tool or MCP network listener. The read-only
+`kmx://agent/{path}` resource projects supported agent files within that root;
+it is not a fifth tool or generic file reader. Root confirmation suffices for
+charter content; safe model excerpts still require existing showContent opt-in.
+Latest preview state is process-local, revision-bound and never inferred on read.
+The separate native Copilot view uses the host SDK and a private loopback asset
+bridge, without mutations or direct agent-file reads.
+See [MCP](docs/kmx.md#local-stdio-mcp).
 
 ## Single-file charter boundary
 
@@ -467,6 +474,8 @@ No new runner, Explain tool or network listener. See [MCP](docs/kmx.md#local-std
 instructions and exact-byte revisions. Reuse runtime assertion semantics;
 refuse tools and unsupported declarations. Parse/Load grant no execution,
 trusted route, source-write, Squad registration or native suite-loader authority.
+`Inspect` shares the scanner for read-only minimal titled-agent display while
+`Parse` remains the execution validator; inspection grants no Run/Test acceptance.
 Keep payload-bearing parsed values out of default logs/results. The loader
 refuses static special files and symlink/reparse path components; it is not a hostile
 concurrent filesystem sandbox.

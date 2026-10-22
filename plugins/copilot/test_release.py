@@ -37,7 +37,8 @@ class ReleaseTests(unittest.TestCase):
         release.verify_archive(self.archive, self.digest, "linux/amd64", "v0.1.0", self.revision)
         with tarfile.open(self.archive) as archive:
             members = archive.getmembers()
-            self.assertEqual(len(members), 7)
+            self.assertEqual({m.name.removeprefix(release.PREFIX) for m in members}, release.FILES)
+            self.assertEqual(len(members), 7 + len(release.package.NATIVE_FILES))
             self.assertTrue(all(m.isfile() and m.uid == m.gid == m.mtime == 0 for m in members))
             files = {m.name: archive.extractfile(m).read() for m in members}
             config = json.loads(files["kmx-agent-builder/mcp.json"])

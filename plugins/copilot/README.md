@@ -1,8 +1,10 @@
 # Copilot agent-builder plugin
 
-This Copilot app/CLI plugin contains a skill and declarative MCP config, with
-results in chat. The source tree is not an installable package; native bundles
-are generated and signed by the release workflow, not committed here. No editor extension, UI, downloader or second runner.
+This Copilot app/CLI plugin contains a skill, declarative MCP config and a
+native Copilot read-only agent canvas with a text fallback. It is not a VS Code
+extension. The source tree is not an installable package; native bundles are
+generated and signed by the release workflow, not committed here. No downloader,
+mutation controls or second runner.
 The source directory deliberately has no `bin/kmx`; do not install it directly.
 
 ## Package contract
@@ -16,8 +18,11 @@ resolves `./bin/kmx` against the plugin root; Windows templates use
 Default cwd is the plugin root, **not the user's repository**.
 
 The offline [package.py](package.py) helper is **developer tooling** requiring
-Python 3.9+. Generated packages contain a native executable and data only;
-they do not require Python, Node, Go or shell bootstrap scripts at runtime.
+Python 3.9+. Generated packages contain a native executable, data and the
+`com.github.copilot/extensions/agent-view` JavaScript/assets. The native component
+uses Copilot's bundled SDK/runtime, not a separately installed Node, Python, Go
+or shell bootstrap script. Extension APIs are experimental; loading the plugin
+also loads trusted local code.
 Supply a binary, expected SHA256, declared platform, plugin version and an
 explicit selected operation root:
 
@@ -70,6 +75,46 @@ Run/Test use the same tool-free, no-journal runner as the file CLI, not an SDK h
 A public archive cannot contain a user's absolute root. Release archives start
 unconfigured and refuse MCP startup until an operator chooses a root as below.
 Users do not need Python or this developer builder to install an archive.
+
+## Read-only agent view
+
+After confirming the selected root, ask Copilot to open the installed **kmx agent
+view** canvas with the root-relative agent path. The native command
+`/agent-view greeter.agent.md` displays the same projection as text; use
+`/agent-view .squad/agents/greeter/charter.md` for a canonical Squad charter.
+Neither path runs the agent or changes a file. The canvas has no mutation actions.
+
+The MCP resource template is `kmx://agent/{path}`. Encode the entire path as one
+URI component, for example
+`kmx://agent/.squad%2Fagents%2Fgreeter%2Fcharter.md`. It is a typed authored-agent
+projection, not a generic file read or directory listing. It contains title,
+instructions, model, saved examples and expected checks. Root confirmation is
+sufficient for this authored content; there is no separate consent mechanism.
+Model answers appear only when the existing Run/Test `showContent` option
+(CLI `--show-content`) opted into bounded excerpts.
+
+A minimal `.agent.md` view accepts `# Title`, freeform instructions,
+`## Model` with `- **Preferred:** exact-model`, and `## Examples` using the
+existing fenced YAML schema. Canonical Squad charters keep their sections.
+This inspection support does **not** change Run/Test parser acceptance: minimal
+agent execution remains a separate parser capability.
+
+The latest safe Run/Test observation belongs only to the current MCP process.
+Opening a second process or restarting does not recover history. Changed
+revisions show a stale status, not an old passing result next to new checks.
+No observation shows **No current result**. The canvas and fallback read the
+configured session MCP server, rather than launching another engine.
+
+The native provider and text command were manually checked against Linux and
+Windows Copilot CLI 1.0.102 without model sends; the Windows check used a WSL
+MCP engine. CI covers the bridge/renderer and package contracts. Real Windows
+desktop rendering of both initial, no-result file views was demonstrated once
+in Copilot app 1.1.30 with a WSL MCP engine. This does not qualify clean-machine
+installation, live result refresh, current/stale result rendering or every error
+state. The view has no execution controls.
+Installation/discovery, a loopback URL or a browser mock alone is not desktop
+rendering evidence. The panel binds a private loopback listener
+for its own assets/view only and closes it when the instance closes.
 
 ## Results and verification
 

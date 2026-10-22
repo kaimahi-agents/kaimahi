@@ -1,0 +1,16 @@
+:root { color-scheme: light dark; --fg: #1f2328; --bg: #fff; --muted: #656d76; --line: #d0d7de; --success: #1a7f37; --error: #cf222e; }
+@media (prefers-color-scheme: dark) { :root { --fg: #e6edf3; --bg: #0d1117; --muted: #8d96a0; --line: #30363d; --success: #3fb950; --error: #f85149; } }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
+main { max-width: 52rem; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
+h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+h2 { font-size: 1rem; margin: 1.5rem 0 .5rem; border-bottom: 1px solid var(--line); padding-bottom: .25rem; }
+h3 { font-size: .95rem; margin: .5rem 0 .25rem; overflow-wrap: anywhere; }
+pre { margin: 0; padding: .5rem .75rem; border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.45 ui-monospace, monospace; }
+ul { margin: .25rem 0; padding-left: 1.25rem; overflow-wrap: anywhere; }
+.meta, .label { color: var(--muted); margin: .25rem 0; overflow-wrap: anywhere; }
+.example, .result { margin: .75rem 0; }
+.error { color: var(--error); font-weight: 600; }
+.badge { display: inline-block; margin: 0; padding: .125rem .5rem; border: 1px solid var(--line); border-radius: 1rem; }
+.badge.pass { border-color: var(--success); color: var(--success); }
+.badge.fail { border-color: var(--error); color: var(--error); }
+.badge.stale { border-style: dashed; color: var(--muted); }

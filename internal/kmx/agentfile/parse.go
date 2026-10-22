@@ -88,6 +88,16 @@ type fence struct {
 // for the canonical Squad placement, an identity constraint. It reads no agent
 // files; relative charter.md names consult the current directory for placement.
 func Parse(filename string, data []byte) (*Agent, error) {
+	return parse(filename, data, false)
+}
+
+// Inspect reads either a canonical charter or a minimal titled agent for display.
+// It grants no execution acceptance: Parse remains the Run/Test validator.
+func Inspect(filename string, data []byte) (*Agent, error) {
+	return parse(filename, data, true)
+}
+
+func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 	fail := func(field, problem string) (*Agent, error) { return nil, refuse(filename, 1, 1, field, problem) }
 	if len(data) > MaxFileBytes {
 		return fail("File", "use a file of at most 256 KiB")
@@ -111,6 +121,7 @@ func Parse(filename string, data []byte) (*Agent, error) {
 	current := ""
 	var open fence
 	first := true
+	prelude := false
 	for i, line := range lines {
 		if open.count > 0 {
 			if closeFence(line, open) {
@@ -159,7 +170,10 @@ func Parse(filename string, data []byte) (*Agent, error) {
 			sections[name] = section{i, len(lines)}
 			a.Locations[name] = Location{filename, i + 1, 1}
 		} else if current == "" {
-			return nil, refuse(filename, i+1, 1, "Sections", "put instructions inside the canonical responsibility sections")
+			if !inspection {
+				return nil, refuse(filename, i+1, 1, "Sections", "put instructions inside the canonical responsibility sections")
+			}
+			prelude = true
 		}
 		if f, _, ok := openFence(line); ok {
 			open = f
@@ -175,8 +189,23 @@ func Parse(filename string, data []byte) (*Agent, error) {
 	if s, ok := sections["Examples"]; ok {
 		a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
 	}
+	_, hasIdentity := sections["Identity"]
+	minimal := inspection && !hasIdentity
+	if inspection && hasIdentity && prelude {
+		return fail("Sections", "put instructions inside the canonical responsibility sections")
+	}
+	if minimal {
+		id := strings.TrimSuffix(path.Base(filename), ".agent.md")
+		if !strings.HasSuffix(filename, ".agent.md") || !agentID.MatchString(id) || !prelude {
+			return fail("Instructions", "use a named .agent.md file with nonblank instructions after the title")
+		}
+		a.Identity.ID = id
+	}
 	missing := []string{}
 	for _, name := range sectionNames {
+		if minimal && name != "Model" && name != "Examples" {
+			continue
+		}
 		if _, ok := sections[name]; !ok {
 			switch name {
 			case "Identity":
@@ -254,6 +283,11 @@ func Parse(filename string, data []byte) (*Agent, error) {
 		return nil, refuse(filename, loc.Line, loc.Column, "Model.Preferred", "set one concrete exact model ID, not auto, a URL or a wildcard")
 	}
 	for _, name := range sectionNames[1:4] {
+		if minimal {
+			if _, present := sections[name]; !present {
+				continue
+			}
+		}
 		s := sections[name]
 		if strings.TrimSpace(strings.Join(lines[s.start+1:s.end], "\n")) == "" {
 			return nil, refuse(filename, s.start+1, 1, name, "add nonblank instructions")
