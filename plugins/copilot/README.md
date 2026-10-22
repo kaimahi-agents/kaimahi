@@ -91,6 +91,23 @@ view** canvas with the root-relative agent path. The native command
 `/agent-view .squad/agents/greeter/charter.md` for a canonical Squad charter.
 Neither path runs the agent or changes a file. The canvas has no mutation actions.
 
+The canvas leads with agent identity and readable instructions, followed by saved
+examples. Normal status stays in a compact header pill; confirmed failures expand
+to a result band after the instructions. Checks use plain-language labels;
+matching failed `contains` checks identify the expected text as missing. Partial, incomplete and out-of-date observations never
+look like a full passing test. Inputs and check operands remain literal text.
+The friendly file label names the agent file or Squad member. Its complete
+root-relative path appears only under **Source details**. **Copy path** writes it only on
+an explicit click; clipboard refusal or unavailability leaves it selectable for
+manual copying. No clipboard permission changes or filesystem reads are added.
+Instructions stay visible, with readable section headings rather than template
+markup. Unique matching ID and Purpose fields already represented by the header or its
+source path are hidden from the main area; ambiguous or non-redundant content stays visible.
+The complete normalized original instructions remain inert text in Source details.
+Included answer excerpts remain labelled untrusted and bounded; the view never
+enables content disclosure itself. It reads the observation when opened, with no
+live refresh or execution controls.
+
 The MCP resource template is `kmx://agent/{path}`. Encode the entire path as one
 URI component, for example
 `kmx://agent/.squad%2Fagents%2Fgreeter%2Fcharter.md`. It is a typed authored-agent

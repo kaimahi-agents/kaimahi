@@ -286,7 +286,7 @@ export function createViewController({ getSession }) {
     try {
       const bridge = await entry.ready;
       if (instances.get(id) !== entry) throw new ViewError("unavailable");
-      return { url: bridge.url, title: `Agent: ${path}`, status: "Read-only" };
+      return { url: bridge.url, title: "Agent view", status: "Read-only" };
     } catch (e) {
       throw safeError(e);
     }
