@@ -107,6 +107,10 @@ python3 scripts/check-agentsuite-fixtures.py --selftest && python3 scripts/check
 python3 scripts/check-legacy-runtime.py --selftest && python3 scripts/check-legacy-runtime.py
 python3 scripts/check-comment-history.py --selftest && python3 scripts/check-comment-history.py
 python3 scripts/test_check_mutations.py
+python3 scripts/test_orka_routing.py
+go run scripts/ci/orka-boundary.go
+python3 scripts/test_orka_callers.py
+go run scripts/ci/orka-callers.go
 python3 scripts/test_app_tests.py
 python3 scripts/check-mutations.py
 python3 scripts/check-readme-front-door.py
@@ -169,6 +173,59 @@ On pull requests, CI runs the mutation harness when `scripts/` changes or
 change classification is uncertain. It runs the harness in full on main pushes
 and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
+
+The classifier also exposes an independent `orka_required` decision. It is not
+consumed to reduce runtime qualification yet; existing Orka, Quickstart, stock
+Helm and kagent schedules and guards are unchanged. The checkout helper accepts
+full commit IDs as `python3 scripts/ci/orka-routing.py --base SHA --head SHA`.
+It prints only `true` or `false`; unknown, empty, malformed or failed diffs mean
+`true`. PR classification uses the synthetic merge commit's actual first parent,
+not the event's possibly stale base. NUL-delimited, no-renames Git output keeps
+deletions and both sides of moves visible.
+
+The exact exceptions live in `scripts/ci/orka-routing.json`: directory prefixes,
+exact leaves and direct `changes/*.md` notes. Shared runtime/build/module/script
+paths and unknown paths require Orka, including shared fixture Markdown; there
+is no blanket Markdown exception. Production command builders, file-flag helpers
+and the direct file-runner constructor remain outside the exceptions. The
+Copilot subtree also requires full proof: its provider constructor now runs at
+CLI startup. Model-access exceptions are limited to the four audited root files,
+not new files or subpackages.
+Hygiene checks safe production Go files and safe App test files for `init()`
+functions and active global initializers, across build tags. App test initializers
+also run in the live-test binary, even when `-run` selects another test. Only
+literal `errors.New` and `regexp.MustCompile` setup with verified imports, and
+passive same-file pointer-to-nil type assertions, are permitted.
+
+The separate typed caller guard compares source references with the audited
+`scripts/ci/orka-callers.json` manifest. It catches a safe path calling a new
+runtime object, a new runtime caller of safe code, and new calling declarations
+or closures even in a file already on the boundary. Multi-value initializer
+expressions get separate identities. Named imports in analyzed safe files are
+also pinned, including standard packages whose initialization runs even when a
+preview handler is never called. Static graph walks also
+catch safe-to-safe changes that extend an existing runtime dependency in either
+direction. Methods, function values, fields and same-package private references
+are resolved with Go types, not names guessed from source text.
+
+The guard targets the qualifier's Linux/amd64 build without race/custom tags,
+includes App tests linked into that binary, and excludes other packages' tests.
+It compiles export metadata but never executes initializers or tests. Missing,
+stale or malformed manifests, unresolved definitions, unsupported owned CGO,
+source-file aliases and nested modules fail closed. Owned source containing
+`//line` or `/*line` directives is rejected so adjusted positions cannot relabel
+callers or imported definitions as another routing path. Existing init checks still
+inspect all build tags. This is a conservative source-reference tripwire, not a
+proof of dynamic dispatch, value flow or arbitrary Go effects, and not a sandbox.
+
+For an intentional boundary change, inspect the output of
+`go run scripts/ci/orka-callers.go --audit` and review the affected callers before
+updating the manifest;
+hygiene never refreshes it automatically. Remove obsolete entries too. Narrow
+the routing exceptions when a path is no longer independent. Changes to either
+manifest or helper require full qualification themselves. Both boundary helpers
+have dedicated negative/positive fixtures rather than top-level checker mutation
+discovery. Expanding the safe policy requires reviewed evidence and routing tests.
 
 One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), concrete
 read-only suite member recipe view (`pkg/suiteview`) and alpha application

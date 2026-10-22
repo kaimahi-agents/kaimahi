@@ -1,0 +1,35 @@
+{
+  "safe_prefixes": [
+    "internal/kmx/agentfile/",
+    "internal/kmx/agentpreview/",
+    "internal/kmx/mcp/",
+    "docs/",
+    "brand/"
+  ],
+  "safe_files": [
+    "internal/kmx/modelaccess/install.go",
+    "internal/kmx/modelaccess/local.go",
+    "internal/kmx/modelaccess/local_test.go",
+    "internal/kmx/modelaccess/route.go",
+    "README.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE",
+    "cmd/kmx/model_commands_test.go",
+    "cmd/kmx/mcp_commands_test.go",
+    "cmd/kmx/agent_file_commands_test.go",
+    "internal/kmx/app/agent_file.go",
+    "internal/kmx/app/agent_file_output.go",
+    "internal/kmx/app/agent_file_test.go",
+    "internal/kmx/app/agent_file_safety_test.go",
+    "internal/kmx/app/agent_file_direct_test.go",
+    ".github/copilot-instructions.md",
+    ".github/workflows/agent-file.yml",
+    ".github/workflows/model-access.yml",
+    ".github/workflows/docs-pages.yml",
+    ".github/workflows/copilot-plugin.yml"
+  ],
+  "safe_direct_markdown": ["changes/"]
+}
