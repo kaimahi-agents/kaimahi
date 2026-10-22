@@ -468,8 +468,8 @@ owner-only, clearable by run or all; executing runs hold an OS lock and are
 never pruned or cleared (on Windows this rests on unverified share-mode
 behavior), and overlapping starts can leave extra finished runs until the next
 start or clear. Journals stay under `config.StateDir` on every OS (`%AppData%`
-on Windows, disclosed as roaming) until the native Windows stack
-([#613](https://github.com/kaimahi-agents/kaimahi/pull/613)) decides Windows
+on Windows, disclosed as roaming) until native Windows support
+([#578](https://github.com/kaimahi-agents/kaimahi/issues/578)) decides Windows
 state. Inspection replays with zero model calls and has no verdicts. Preview
 and replay never produce suite evidence, receipts, publication or Deploy
 authority.

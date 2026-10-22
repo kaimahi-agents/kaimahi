@@ -122,10 +122,9 @@ discarded.
   The journal is never stored in a checkout.
 - **Windows:** `%AppData%` is the roaming profile. On a domain account with
   roaming profiles, the cleartext journal can be copied to the profile server
-  at sign-out. Where all Windows kmx state lives is decided by the native
-  Windows stack that starts with
-  [#613](https://github.com/kaimahi-agents/kaimahi/pull/613); until then, set
-  `KMX_HOME` to a local directory or clear journals after use.
+  at sign-out. Where all Windows kmx state lives is decided by native Windows
+  support, tracked in [#578](https://github.com/kaimahi-agents/kaimahi/issues/578);
+  until then, set `KMX_HOME` to a local directory or clear journals after use.
 - Each preview run is one SQLite file named `<UTC time>-<random>.db` (the time
   has nanosecond precision, so names sort in creation order), with its
   `-wal`/`-shm` companions. While the run executes it holds an OS lock on a
