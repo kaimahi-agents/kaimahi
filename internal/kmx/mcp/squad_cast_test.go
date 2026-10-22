@@ -60,7 +60,10 @@ func squadTestChild() int {
 	if string(mode) == "partial" {
 		return 3
 	}
-	if string(mode) == "unregistered-success" {
+	if string(mode) == "unregistered-success" || string(mode) == "unregistered-overflow" {
+		if string(mode) == "unregistered-overflow" {
+			fmt.Print(strings.Repeat("unverified native output", 5000))
+		}
 		return 0
 	}
 	if string(mode) == "cancel" {

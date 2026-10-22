@@ -171,16 +171,20 @@ func TestSquadUnknownEffectsDoNotUndoAcknowledgedPublication(t *testing.T) {
 }
 
 func TestSquadSuccessfulChildWithoutRegistrationIsUnknown(t *testing.T) {
-	root, p := squadTestRoot(t)
-	os.WriteFile(filepath.Join(root, ".squad/.fixture-mode"), []byte("unregistered-success"), 0644)
-	c, err := OpenSquad(root, p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-	result, err := c.Create(context.Background(), SquadPlan{Lead: squadLead()})
-	if err == nil || result.Members[0].State != "cast_unknown" || !result.EffectsUnknown {
-		t.Fatalf("incorrect native completion state: %+v %v", result, err)
+	for _, mode := range []string{"unregistered-success", "unregistered-overflow"} {
+		t.Run(mode, func(t *testing.T) {
+			root, p := squadTestRoot(t)
+			os.WriteFile(filepath.Join(root, ".squad/.fixture-mode"), []byte(mode), 0644)
+			c, err := OpenSquad(root, p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			result, err := c.Create(context.Background(), SquadPlan{Lead: squadLead()})
+			if err == nil || result.Members[0].State != "cast_unknown" || !result.EffectsUnknown {
+				t.Fatalf("incorrect native completion state: %+v %v", result, err)
+			}
+		})
 	}
 }
 

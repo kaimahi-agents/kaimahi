@@ -191,6 +191,9 @@ func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result Squad
 		succeeded, castErr := c.cast(ctx, m)
 		if castErr != nil {
 			result.EffectsUnknown = true
+			if succeeded {
+				row.State = "cast_unknown"
+			}
 			if succeeded && c.checkRoot() == nil && c.registered(m) {
 				row.State = "registered_unenriched"
 				if e, ok := castErr.(*Error); ok && e.Code == "squad_output_limit" {
