@@ -210,7 +210,7 @@ func TestOrkaProviderSemanticNoop(t *testing.T) {
 				live["spec"] = "invalid"
 			}
 			gets, dryruns := 0, 0
-			a.captureCommand = func(_ context.Context, cmd *exec.Cmd) error {
+			a.captureCommand = func(callCtx context.Context, cmd *exec.Cmd) error {
 				if slices.Contains(cmd.Args, "get") && slices.Contains(cmd.Args, orkaProviderKind) {
 					gets++
 					if mode == "get cancelled" {
@@ -218,8 +218,9 @@ func TestOrkaProviderSemanticNoop(t *testing.T) {
 						return ctx.Err()
 					}
 					if mode == "get deadline" {
-						<-ctx.Done()
-						return ctx.Err()
+						// A command observes its request context, not its parent before propagation.
+						<-callCtx.Done()
+						return callCtx.Err()
 					}
 					if mode == "read failure" {
 						return fmt.Errorf("fixture-sensitive-token")
@@ -240,8 +241,8 @@ func TestOrkaProviderSemanticNoop(t *testing.T) {
 						return ctx.Err()
 					}
 					if mode == "normalize deadline" {
-						<-ctx.Done()
-						return ctx.Err()
+						<-callCtx.Done()
+						return callCtx.Err()
 					}
 					if !slices.Contains(cmd.Args, "--dry-run=server") || !slices.Contains(cmd.Args, "--validate=strict") {
 						t.Fatal("unsafe normalization")
