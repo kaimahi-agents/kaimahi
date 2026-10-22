@@ -469,9 +469,14 @@ See [MCP](docs/kmx.md#local-stdio-mcp).
 
 ## Single-file charter boundary
 
-`internal/kmx/agentfile` parses only the canonical shape in
+`internal/kmx/agentfile` keeps `Parse`/`Load` canonical as described in
 [agent-file.md](docs/agent-file.md), offline, with Examples excluded from
-instructions and exact-byte revisions. Reuse runtime assertion semantics;
+instructions and exact-byte revisions. Separate explicit `ParseSquad` accepts
+qualified Squad 1.1.0 native starters/enrichment with an approved cast mapping,
+original bytes and source spans. It returns a distinct `SquadCharter`, not a
+runnable `Agent`; current CLI/MCP preview and authoring remain canonical-only.
+Never auto-detect this profile, invent missing native identity fields or treat
+its release selector as cast-origin/registration proof. Reuse runtime assertion semantics;
 refuse tools and unsupported declarations. Parse/Load grant no execution,
 trusted route, source-write, Squad registration or native suite-loader authority.
 `Inspect` shares the scanner for read-only minimal titled-agent display while
