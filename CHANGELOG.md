@@ -24,10 +24,16 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
+- Temporary direct file-preview runner with explicit no-journal output, deterministic
+  fake and selected local OpenAI-compatible model transport. One completion
+  per input/example and one judge sample per llmJudge, without retries or fallback;
+  no Sessions, native judge evidence or deployment qualification. Removed when the
+  embedded Sessions runner is integrated.
+
 - Canonical `run FILE` / `test FILE` adapters for markdown-agent local preview:
   stable `--case` selection, versioned payload-free text/JSON outcomes, separate
   ad-hoc input and distinct non-pass/cancel exits. Tests inject the embedded-runner
-  interface; production refuses until that runner is integrated. No native
+  interface; a temporary direct no-journal adapter is available for preview. No native
   evidence, file-scoped Explain or change to deployed Run/workspace Test/Eval.
 
 - Read-only `kmx model list [-o table|json]` discovers cached Foundry Local

@@ -143,10 +143,29 @@ snapshot without reopening its filename; the CLI path is a thin load-and-delegat
 wrapper.
 Neither operation changes source or produces native evaluation/deploy evidence.
 
-**Runner integration is not yet available.** The command/App adapter is exercised
-against a test-only implementation of the embedded-runner interface. Production
-refuses with `runner_unavailable`; it never falls back to that test fake. These
-checks do not qualify Sessions execution, real models, journaling or Windows.
+File mode uses an interim **preview runner (no journal)** behind the shared
+runner interface. It calls the selected route directly without Sessions or a
+journal, with one completion per ad-hoc input/example and one extra call per
+`llmJudge` assertion. There are no retries, redirects or provider/model fallback.
+The runner and its constructor wiring are removed when the embedded Sessions
+runner is integrated. A nil dependency still refuses `runner_unavailable`.
+Hermetic tests do not qualify real local models or native Windows.
+
+The offline `fake` route is deliberately small: Accountable Responsibilities must
+be exactly ``Reply with exactly `Hello, ` followed by the input name.`` (the prefix
+can change), or ``Reply with exactly `literal response`.``. A fake judge supports
+only the rubric ``Answer contains `text`.``; unsupported rubrics are unknown, not
+an automatic pass. This is orientation, not a general model. Real compatible/local
+routes use an explicit keyless local endpoint (HTTP or HTTPS on literal loopback/localhost).
+Compatible/local transport waits at most 30 seconds for response headers, within
+the five-minute overall budget; slow non-streaming generation can hit that limit.
+Agent completions require an exact model-ID echo, with no automatic aliasing.
+Copilot and remote endpoints refuse in this runner; Copilot wiring is separate
+work after model-access integration.
+
+Judging applies the authored threshold to one valid score; unavailable, malformed,
+refused or mismatched-model replies are unknown. These single-sample local rows
+are not the two-sample native judge policy and never carry native judge evidence.
 
 ```text
 kmx run ./greeter.agent.md --prompt Ada
@@ -168,7 +187,10 @@ Output defaults to text; `-o json` returns one versioned `schemaVersion: 1`,
 `kind: kmx.agent-file-preview` document. Both preserve operation, exact source-byte
 SHA-256 revision, provider/model, full/subset selection, terminal state and
 example/assertion IDs with pass/fail/unknown and safe reasons. JSON includes
-`fullPass`, which is false for every subset, incomplete or unknown result. Paths
+`fullPass`, which is false for every subset, incomplete or unknown result. Direct
+execution additionally includes `runner: "preview runner (no journal)"`; the
+underlying journal handle is empty and no journal is retained. A full local pass
+in this mode is not journaled execution or deploy evidence. Paths
 are sanitized display basenames, not a file-targeting API. The optional structured
 `diagnostic` names safe parser fields, source line/column and repair advice.
 Default output contains no instructions, inputs, answers, operands, provider error

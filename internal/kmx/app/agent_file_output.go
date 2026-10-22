@@ -16,6 +16,9 @@ func WriteFilePreview(w io.Writer, r FilePreviewResult, format string) error {
 		return &FilePreviewError{"invalid_options", 1}
 	}
 	var b strings.Builder
+	if r.Runner != "" {
+		fmt.Fprintln(&b, r.Runner)
+	}
 	scope := "full"
 	if r.Selection.Scope == "subset" {
 		scope = "partial"

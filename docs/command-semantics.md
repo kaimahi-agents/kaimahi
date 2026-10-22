@@ -84,8 +84,9 @@ Canonical `run FILE` / `test FILE` dispatch to a cluster-independent App adapter
 and the embedded-runner interface. Run optionally adds a separate ad-hoc input;
 both check saved ordered examples. `--case ID` is always partial. Versioned
 payload-free text/JSON results are local preview, never native evidence. The
-adapter is interface-tested only; production refuses `runner_unavailable` until
-the embedded runner is wired. Existing live `run --agent`, full-workspace Test,
+CLI uses a temporary direct `preview runner (no journal)` until the embedded
+runner is wired. It makes one completion per input/example plus one call per
+llmJudge assertion, without retries, fallback, Sessions or native judge evidence. Existing live `run --agent`, full-workspace Test,
 workspace Explain and hidden legacy Eval remain unchanged. See
 [agent-file preview](kmx.md#agent-file-local-preview-unreleased-integration).
 

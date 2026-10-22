@@ -36,7 +36,7 @@ func newAgentEvaluationCommand(state *commandState, verb string) *cobra.Command 
 	outputHelp := "output: text|json (JSON: Orka only)"
 	showContentHelp := "print sanitized bounded failure excerpts, expected values and judge rationale on stderr (not evidence)"
 	if verb == "test" {
-		fileHelp = "Canonical test FILE checks a markdown agent's saved examples as a local preview (not native evidence). --case ID selects a partial preview. An unwired embedded runner refuses without inference.\n"
+		fileHelp = "Canonical test FILE checks a markdown agent's saved examples as a local preview (not native evidence). --case ID selects a partial preview. File mode uses a preview runner (no journal).\n"
 		outputHelp = "output: text|json (workspace JSON: Orka only; FILE supports both)"
 		showContentHelp = "show sanitized bounded content (workspace: stderr; FILE: answer excerpts in result; not evidence)"
 	}

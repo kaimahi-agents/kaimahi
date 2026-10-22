@@ -52,8 +52,10 @@ type ExampleOutcome struct {
 	Assertions []runtime.EvaluationAssertionResult
 }
 type Outcome struct {
-	State    State
-	AdHoc    *Completion
-	Examples []ExampleOutcome
-	Journal  string
+	// NoJournal explicitly identifies the temporary direct preview, never evidence.
+	NoJournal bool
+	State     State
+	AdHoc     *Completion
+	Examples  []ExampleOutcome
+	Journal   string
 }

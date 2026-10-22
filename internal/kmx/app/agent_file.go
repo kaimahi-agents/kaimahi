@@ -23,6 +23,7 @@ type FilePreviewOptions struct {
 type FilePreviewResult struct {
 	SchemaVersion int                       `json:"schemaVersion"`
 	Kind          string                    `json:"kind"`
+	Runner        string                    `json:"runner,omitempty"`
 	Operation     string                    `json:"operation"`
 	File          FilePreviewIdentity       `json:"file"`
 	ModelRoute    FilePreviewRoute          `json:"modelRoute"`
@@ -226,6 +227,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input}
 	outcome, cause := a.FileRunner.Run(ctx, request)
+	if outcome.NoJournal {
+		r.Runner = "preview runner (no journal)"
+	}
 	// Whitelist result fields; never marshal runtime assertion rows (which include
 	// judge evidence and raw reasons), answers or journal handles directly.
 	seen := map[string]bool{}
@@ -294,7 +298,8 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if cause != nil {
 		return fail("execution_failed", 1)
 	}
-	if malformed || outcome.State != agentpreview.Complete || outcome.Journal == "" || len(outcome.Examples) != len(selected) {
+	journalOK := outcome.NoJournal && outcome.Journal == "" || !outcome.NoJournal && outcome.Journal != ""
+	if malformed || outcome.State != agentpreview.Complete || !journalOK || len(outcome.Examples) != len(selected) {
 		return fail("invalid_completion", 1)
 	}
 	for _, row := range r.Examples {
