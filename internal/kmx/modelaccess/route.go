@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const CopilotEndpoint = "https://api.githubcopilot.com"
+
 // Route is the non-secret selection consumed by model callers. Auth names a
 // credential facility, never a credential value. Selection grants no execution.
 type Route struct {
@@ -36,7 +38,7 @@ func (r Route) Validate() error {
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return errors.New("model endpoint must be an HTTP URL without credentials, query or fragment")
 	}
-	if r.Provider == "copilot" && (r.Auth != "copilot" || r.Endpoint != "https://api.githubcopilot.com") {
+	if r.Provider == "copilot" && (r.Auth != "copilot" || r.Endpoint != CopilotEndpoint) {
 		return errors.New("invalid Copilot route")
 	}
 	if r.Provider != "copilot" && r.Auth != "none" {

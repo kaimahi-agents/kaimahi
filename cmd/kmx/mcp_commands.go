@@ -36,10 +36,8 @@ func newMCPCommand(state *commandState) *cobra.Command {
 			}
 			var route *modelaccess.Route
 			if provider != "" || endpoint != "" {
-				selected := modelaccess.Route{Provider: provider, Endpoint: endpoint, Auth: "none", Model: "validation"}
-				if provider == "copilot" {
-					selected.Auth = "copilot"
-				}
+				selected := fileModelRoute(provider, endpoint)
+				selected.Model = "validation"
 				if selected.Validate() != nil {
 					return fmt.Errorf("invalid trusted MCP provider/endpoint; no automatic selection")
 				}
@@ -70,8 +68,8 @@ func newMCPCommand(state *commandState) *cobra.Command {
 			return nil
 		}}
 	cmd.Flags().StringVar(&root, "root", "", "absolute existing operation root; required, never defaults to cwd")
-	cmd.Flags().StringVar(&provider, "provider", "", "trusted startup model provider (not selectable through tools)")
-	cmd.Flags().StringVar(&endpoint, "endpoint", "", "trusted startup model endpoint (never read from charter text)")
+	cmd.Flags().StringVar(&provider, "provider", "", "trusted startup model provider, including copilot (not selectable through tools)")
+	cmd.Flags().StringVar(&endpoint, "endpoint", "", "trusted startup model endpoint (fixed for Copilot; never read from charter text)")
 	_ = cmd.MarkFlagRequired("root")
 	return cmd
 }

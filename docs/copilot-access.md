@@ -20,13 +20,16 @@ new deployment mode.
 | VS Code/editor-connected access | Not used. No editor credential extraction or implicit editor login reuse. |
 | Standalone local sign-in and model listing | Explicit `kmx model login`, opt-in `login --gh`, `logout` and `list --provider copilot`. |
 | Direct selected-model requests | An internal in-process JSON/SSE transport with a non-secret route and kmx-owned credential facility. No model substitution or automatic inference replay. |
-| Agent Run/Test integration | Not implemented here; [#597](https://github.com/kaimahi-agents/kaimahi/issues/597) consumes the route separately. |
-| CI, unattended/headless and hosted runners | No runner or automatic sign-in/credential-import mode is added or qualified here. Hermetic CI tests use fake credentials and endpoints, not a live Copilot account. |
+| Agent Run/Test integration | Markdown-file Run/Test and the shared MCP path accept explicit `--provider copilot` through the temporary tool-free, no-journal runner. See [file preview](kmx.md#agent-file-local-preview-unreleased-integration). Native workspace execution is separate. |
+| CI, unattended/headless and hosted runners | No automatic sign-in/credential-import or hosted runner mode is added or qualified here. Hermetic CI tests use fake credentials and endpoints, not a live Copilot account. |
 
 Listing does not initiate OAuth or invoke `gh`. Explicit sign-in is a user
 operation, not a CI consent prompt hidden inside discovery. Native OS credential
 facilities may display their own unlock UI. No hosted multi-user credential
 sharing, environment-token fallback or deployment qualification is implied.
+Selecting Copilot for file Run/Test sends authored instructions and inputs to
+the hosted service; a judge also receives the answer and rubric. Explicit
+sign-in does not select a default provider or model.
 When a selected Copilot request fails, the caller receives an error; it does not
 silently switch to a local model. [Local model discovery](models.md#installed-local-model-discovery)
 is a separate explicit choice, and fake orientation remains offline.

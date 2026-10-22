@@ -13,7 +13,12 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   live only in kmx's native OS keychain item, with no file fallback; exchange
   bearers stay in memory. Logout deletes only that item and clears memory.
   `internal/kmx/modelaccess/copilot` returns a selected-route RoundTripper for
-  direct JSON/SSE Chat Completions, not a runner, proxy or CLI-chat replacement.
+  direct JSON/SSE Chat Completions, not a proxy or CLI-chat replacement.
+  File Run/Test and shared MCP execution consume it only with explicit
+  `--provider copilot`, exact authored model and prior sign-in. Default only
+  the pinned Copilot endpoint; refuse other endpoints before credential access.
+  Never inject tokens in the runner. Keep known Copilot errors static and safe,
+  stop later sends on them (including judging), and preserve cancellation.
   Establish auth through the catalog; exchange only after credential refusal,
   never subscription/policy/quota refusal. Never replay inference or substitute
   a model. Keep modelaccess independent of App and Unix-only helpers. Foundry
@@ -413,10 +418,13 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
 interface without cluster/workspace configuration. CLI uses a temporary direct
-`preview runner (no journal)` for fake/local routes, with one agent call per input/example and one judge
+`preview runner (no journal)` for fake/local and explicit authenticated Copilot
+routes, with one agent call per input/example and one judge
 call per llmJudge; no Sessions, journal, retries or fallback. Remove it when the
 embedded runner lands. Scripted test fakes remain `_test.go` only, not real-model
-qualification. `app.FilePreviewResult` v1 is the safe shared projection, not a
+qualification. Copilot selection sends instructions/inputs and any judging
+answer/rubric to the hosted service; never imply SDK or Sessions execution.
+`app.FilePreviewResult` v1 is the safe shared projection, not a
 native evidence receipt. Subset is always partial, execution/journal failure is
 unknown, and only an explicit caller override changes the judge route. Keep
 live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
