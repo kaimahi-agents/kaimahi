@@ -271,6 +271,10 @@ Deploy or native A2A execution qualification; it is not an installed CLI install
 Hygiene runs hermetic bootstrap, qualification, audit, shell, CI-routing and
 loopback fixture tests without creating a cluster.
 
+Full runs emit closed `kagent timing:` markers on saved stderr, with a fixed span
+(`bootstrap`, `qualify`, `suite-evaluation`, `suite-helpers` or `cleanup`),
+start/end boundary, numeric UTC epoch seconds and integer end status.
+
 With no argument (or explicit `qualify`), the shell runs the full qualification.
 Build the final Go state first with `go build -o bin/kmx ./cmd/kmx`, then run
 `bash scripts/ci/kagent-lift.sh`. It performs raw upstream Tool smoke/direct single A2A MCP proof,
@@ -285,9 +289,6 @@ native execution. Only payload-free `qualification.json` and
 raw logs, manifests, credentials, prompts and answers are not artifacts.
 Qualifier diagnostics expose only whitelisted subphase and reason codes through
 saved shell stderr; bootstrap and tool output remain private.
-Saved stderr also carries closed `kagent timing:` markers with a fixed span
-(`bootstrap`, `qualify`, `suite-evaluation`, `suite-helpers` or `cleanup`),
-start/end boundary, numeric UTC epoch seconds and integer end status.
 The `e2e-kagent-lift` shard runs for relevant or unknown PR changes and always
 on main pushes, nightly and manual runs. Its required aggregator accepts only
 intentional skipped outcomes, never failed or cancelled shards.
