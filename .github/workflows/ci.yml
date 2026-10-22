@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       kagent_changed: ${{ steps.changes.outputs.kagent_changed }}
+      orka_required: ${{ steps.changes.outputs.orka_required }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -198,6 +199,11 @@ jobs:
           python3 scripts/test_suite_native_lift.py
           python3 scripts/test_orka_native_reference.py
           python3 scripts/test_suite_kagent.py
+      - name: Orka routing and dependency boundaries
+        run: |
+          python3 scripts/test_orka_routing.py
+          python3 scripts/test_orka_callers.py
+          go run scripts/ci/orka-boundary.go
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken
@@ -653,6 +659,9 @@ jobs:
           test -z "$formatted"
       - name: kmx — vet
         run: go vet ./...
+      # Reuse the export cache warmed by vet instead of adding a cold compile.
+      - name: Orka typed caller boundary
+        run: go run scripts/ci/orka-callers.go
       # staticcheck, pinned to an exact release tag.
       #
       # The version matters and is easy to get wrong. staticcheck 2025.1.1
