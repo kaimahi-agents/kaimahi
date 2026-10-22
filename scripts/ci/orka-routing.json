@@ -3,11 +3,14 @@
     "internal/kmx/agentfile/",
     "internal/kmx/agentpreview/",
     "internal/kmx/mcp/",
-    "internal/kmx/modelaccess/",
     "docs/",
     "brand/"
   ],
   "safe_files": [
+    "internal/kmx/modelaccess/install.go",
+    "internal/kmx/modelaccess/local.go",
+    "internal/kmx/modelaccess/local_test.go",
+    "internal/kmx/modelaccess/route.go",
     "README.md",
     "AGENTS.md",
     "CONTRIBUTING.md",

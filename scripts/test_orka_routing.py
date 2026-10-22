@@ -40,7 +40,9 @@ class RoutingTests(unittest.TestCase):
     def test_exact_safe_paths_and_default_run(self):
         safe = [
             "internal/kmx/agentfile/new.go", "internal/kmx/agentpreview/new.go",
-            "internal/kmx/mcp/new.go", "internal/kmx/modelaccess/new.go",
+            "internal/kmx/mcp/new.go", "internal/kmx/modelaccess/local.go",
+            "internal/kmx/modelaccess/local_test.go", "internal/kmx/modelaccess/install.go",
+            "internal/kmx/modelaccess/route.go",
             "docs/new.md", "brand/logo.svg", "README.md", "AGENTS.md", "CONTRIBUTING.md",
             "CHANGELOG.md", "LICENSE", "NOTICE", "changes/ci-note.md",
             "cmd/kmx/model_commands_test.go", "cmd/kmx/mcp_commands_test.go",
@@ -52,6 +54,9 @@ class RoutingTests(unittest.TestCase):
             ".github/workflows/copilot-plugin.yml",
         ]
         unsafe = [
+            "internal/kmx/modelaccess/copilot/auth.go", "internal/kmx/modelaccess/copilot/errors.go",
+            "internal/kmx/modelaccess/copilot/store.go", "internal/kmx/modelaccess/copilot/transport.go",
+            "internal/kmx/modelaccess/new.go",
             "cmd/kmx/model_commands.go", "cmd/kmx/mcp_commands.go", "cmd/kmx/agent_file_commands.go",
             "internal/kmx/app/agent_file_direct.go", "cmd/kmx/root.go", "cmd/kmx/main.go",
             "cmd/kmx/commands.go", "cmd/kmx/agent_run_commands.go", "cmd/kmx/agent_eval_commands.go",

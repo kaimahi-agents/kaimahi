@@ -187,7 +187,10 @@ The exact exceptions live in `scripts/ci/orka-routing.json`: directory prefixes,
 exact leaves and direct `changes/*.md` notes. Shared runtime/build/module/script
 paths and unknown paths require Orka, including shared fixture Markdown; there
 is no blanket Markdown exception. Production command builders, file-flag helpers
-and the direct file-runner constructor remain outside the exceptions.
+and the direct file-runner constructor remain outside the exceptions. The
+Copilot subtree also requires full proof: its provider constructor now runs at
+CLI startup. Model-access exceptions are limited to the four audited root files,
+not new files or subpackages.
 Hygiene checks safe production Go files and safe App test files for `init()`
 functions and active global initializers, across build tags. App test initializers
 also run in the live-test binary, even when `-run` selects another test. Only

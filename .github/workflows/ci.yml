@@ -204,7 +204,6 @@ jobs:
           python3 scripts/test_orka_routing.py
           python3 scripts/test_orka_callers.py
           go run scripts/ci/orka-boundary.go
-          go run scripts/ci/orka-callers.go
       - name: Mutation runner and CI routing self-tests
         run: python3 scripts/test_check_mutations.py
       - name: Every checker notices being broken
@@ -660,6 +659,9 @@ jobs:
           test -z "$formatted"
       - name: kmx — vet
         run: go vet ./...
+      # Reuse the export cache warmed by vet instead of adding a cold compile.
+      - name: Orka typed caller boundary
+        run: go run scripts/ci/orka-callers.go
       # staticcheck, pinned to an exact release tag.
       #
       # The version matters and is easy to get wrong. staticcheck 2025.1.1
