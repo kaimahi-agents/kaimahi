@@ -14,7 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteevidence "github.com/agent-primitives/suite/evidence"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -27,13 +28,13 @@ const verifyCanary = "PRIVATE_VERIFY_CANARY"
 
 type evaluationVerifyFixture struct {
 	layout, source, evidencePath, expectPath string
-	expected                                 agentsuite.ExpectedEvaluation
-	evidence                                 agentsuite.EvaluationEvidence
+	expected                                 suiteevidence.ExpectedEvaluation
+	evidence                                 suiteevidence.EvaluationEvidence
 }
 
 func verifyJSON(t *testing.T, v any) []byte {
 	t.Helper()
-	raw, err := agentsuite.Marshal(v)
+	raw, err := suitecore.Marshal(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,28 +64,28 @@ func newEvaluationVerifyFixture(t *testing.T, judge, repeated bool) evaluationVe
 	if err := os.CopyFS(f.source, os.DirFS(minimalSuitePath())); err != nil {
 		t.Fatal(err)
 	}
-	var graph agentsuite.Suite
-	var member agentsuite.Agent
+	var graph suitecore.Suite
+	var member suitecore.Agent
 	read := func(path string, out any) {
 		raw, err := os.ReadFile(filepath.Join(f.source, path))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := agentsuite.Unmarshal(raw, out); err != nil {
+		if err := suitecore.Unmarshal(raw, out); err != nil {
 			t.Fatal(err)
 		}
 	}
 	read("agentsuite.json", &graph)
 	read("agents/writer.json", &member)
-	writeDoc := func(path, media string, v any) agentsuite.FileRef {
+	writeDoc := func(path, media string, v any) suitecore.FileRef {
 		raw := verifyJSON(t, v)
 		verifyWrite(t, filepath.Join(f.source, path), raw)
-		return agentsuite.FileRef{Path: path, Descriptor: agentsuite.Descriptor{MediaType: media, Digest: digest.FromBytes(raw).String(), Size: int64(len(raw))}}
+		return suitecore.FileRef{Path: path, Descriptor: suitecore.Descriptor{MediaType: media, Digest: digest.FromBytes(raw).String(), Size: int64(len(raw))}}
 	}
-	c := agentsuite.EvaluationCase{SchemaVersion: graph.SchemaVersion, MediaType: agentsuite.MediaTypeEvaluationCase, ID: "example", Input: verifyCanary, Assertions: []agentsuite.EvaluationAssertion{{ID: "contains", Type: "contains", Value: verifyCanary}}}
+	c := suitecore.EvaluationCase{SchemaVersion: graph.SchemaVersion, MediaType: suitecore.MediaTypeEvaluationCase, ID: "example", Input: verifyCanary, Assertions: []suitecore.EvaluationAssertion{{ID: "contains", Type: "contains", Value: verifyCanary}}}
 	if judge {
 		threshold := 70
-		c.Assertions = []agentsuite.EvaluationAssertion{{ID: "quality", Type: "llmJudge", Rubric: verifyCanary, MinScore: &threshold, JudgeModel: "review-judge", JudgeVersion: "v1"}}
+		c.Assertions = []suitecore.EvaluationAssertion{{ID: "quality", Type: "llmJudge", Rubric: verifyCanary, MinScore: &threshold, JudgeModel: "review-judge", JudgeVersion: "v1"}}
 	}
 	runs, minPasses := 1, 1
 	if repeated {
@@ -92,12 +93,12 @@ func newEvaluationVerifyFixture(t *testing.T, judge, repeated bool) evaluationVe
 		c.Runs = &runs
 		c.MinPasses = &minPasses
 	}
-	caseRef := writeDoc("evals/writer/cases/example.json", agentsuite.MediaTypeEvaluationCase, c)
-	indexRef := writeDoc("evals/writer/index.json", agentsuite.MediaTypeEvaluationIndex, agentsuite.EvaluationIndex{SchemaVersion: graph.SchemaVersion, MediaType: agentsuite.MediaTypeEvaluationIndex, Agent: "writer", Cases: []agentsuite.FileRef{caseRef}, Limits: agentsuite.EvaluationLimits{MaxCases: 10, MaxCaseBytes: 65536}})
-	member.Evals = []agentsuite.FileRef{indexRef}
-	memberRef := writeDoc("agents/writer.json", agentsuite.MediaTypeAgent, member)
+	caseRef := writeDoc("evals/writer/cases/example.json", suitecore.MediaTypeEvaluationCase, c)
+	indexRef := writeDoc("evals/writer/index.json", suitecore.MediaTypeEvaluationIndex, suitecore.EvaluationIndex{SchemaVersion: graph.SchemaVersion, MediaType: suitecore.MediaTypeEvaluationIndex, Agent: "writer", Cases: []suitecore.FileRef{caseRef}, Limits: suitecore.EvaluationLimits{MaxCases: 10, MaxCaseBytes: 65536}})
+	member.Evals = []suitecore.FileRef{indexRef}
+	memberRef := writeDoc("agents/writer.json", suitecore.MediaTypeAgent, member)
 	graph.Agents[0].Descriptor = memberRef.Descriptor
-	writeDoc("agentsuite.json", agentsuite.MediaTypeSuite, graph)
+	writeDoc("agentsuite.json", suitecore.MediaTypeSuite, graph)
 	var layer bytes.Buffer
 	gz := gzip.NewWriter(&layer)
 	tw := tar.NewWriter(gz)
@@ -131,7 +132,7 @@ func newEvaluationVerifyFixture(t *testing.T, judge, repeated bool) evaluationVe
 		t.Fatal(err)
 	}
 	src := memory.New()
-	layerDesc := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, layer.Bytes())
+	layerDesc := content.NewDescriptorFromBytes(suitecore.MediaTypeContent, layer.Bytes())
 	if err := src.Push(t.Context(), layerDesc, bytes.NewReader(layer.Bytes())); err != nil {
 		t.Fatal(err)
 	}
@@ -144,25 +145,25 @@ func newEvaluationVerifyFixture(t *testing.T, judge, repeated bool) evaluationVe
 		t.Fatal(err)
 	}
 	d := "sha256:" + strings.Repeat("a", 64)
-	impl := agentsuite.EvidenceImplementation{ID: "reviewed-runtime", Version: "1.0.0", Digest: d}
-	f.expected = agentsuite.ExpectedEvaluation{
-		Subject:   agentsuite.EvidenceSubject{Manifest: agentsuite.EvidenceDescriptor{MediaType: packed.Descriptor.MediaType, Digest: packed.Descriptor.Digest.String(), Size: packed.Descriptor.Size}, MemberID: "writer", MemberDigest: memberRef.Descriptor.Digest, CompositionDigest: graph.Compositions[0].Descriptor.Digest, BuildProfileDigest: graph.BuildProfiles[0].Descriptor.Digest, Platform: agentsuite.EvidencePlatform{OS: "linux", Architecture: "amd64", Variant: ""}},
-		Execution: agentsuite.EvidenceExecution{Runtime: impl, Harness: impl, Renderer: impl, Profile: impl, Model: agentsuite.EvidenceModel{Protocol: "openai-compatible", ID: "example-model", ConfigurationDigest: d}, ConfigurationDigest: d},
-		Evaluator: agentsuite.EvidenceEvaluatorIdentity{ID: "reviewed-evaluator", Version: "1.0.0", Policy: agentsuite.EvidencePolicy{ID: agentsuite.EvidencePolicyID, Version: agentsuite.EvidencePolicyVersion, ConfigurationDigest: d}}, Judges: []agentsuite.EvidenceJudgeConfiguration{},
+	impl := suitecore.EvidenceImplementation{ID: "reviewed-runtime", Version: "1.0.0", Digest: d}
+	f.expected = suiteevidence.ExpectedEvaluation{
+		Subject:   suiteevidence.EvidenceSubject{Manifest: suiteevidence.EvidenceDescriptor{MediaType: packed.Descriptor.MediaType, Digest: packed.Descriptor.Digest.String(), Size: packed.Descriptor.Size}, MemberID: "writer", MemberDigest: memberRef.Descriptor.Digest, CompositionDigest: graph.Compositions[0].Descriptor.Digest, BuildProfileDigest: graph.BuildProfiles[0].Descriptor.Digest, Platform: suiteevidence.EvidencePlatform{OS: "linux", Architecture: "amd64", Variant: ""}},
+		Execution: suiteevidence.EvidenceExecution{Runtime: impl, Harness: impl, Renderer: impl, Profile: impl, Model: suiteevidence.EvidenceModel{Protocol: "openai-compatible", ID: "example-model", ConfigurationDigest: d}, ConfigurationDigest: d},
+		Evaluator: suiteevidence.EvidenceEvaluatorIdentity{ID: "reviewed-evaluator", Version: "1.0.0", Policy: suiteevidence.EvidencePolicy{ID: suiteevidence.EvidencePolicyID, Version: suiteevidence.EvidencePolicyVersion, ConfigurationDigest: d}}, Judges: []suiteevidence.EvidenceJudgeConfiguration{},
 	}
 	if judge {
-		f.expected.Judges = []agentsuite.EvidenceJudgeConfiguration{{Model: "review-judge", Version: "v1", Policy: agentsuite.EvidencePolicy{ID: agentsuite.EvidenceJudgePolicyID, Version: agentsuite.EvidenceJudgePolicyVersion, ConfigurationDigest: d}}}
+		f.expected.Judges = []suiteevidence.EvidenceJudgeConfiguration{{Model: "review-judge", Version: "v1", Policy: suiteevidence.EvidencePolicy{ID: suiteevidence.EvidenceJudgePolicyID, Version: suiteevidence.EvidenceJudgePolicyVersion, ConfigurationDigest: d}}}
 	}
-	toDesc := func(r agentsuite.FileRef) agentsuite.EvidenceDescriptor {
-		return agentsuite.EvidenceDescriptor{MediaType: r.Descriptor.MediaType, Digest: r.Descriptor.Digest, Size: r.Descriptor.Size}
+	toDesc := func(r suitecore.FileRef) suiteevidence.EvidenceDescriptor {
+		return suiteevidence.EvidenceDescriptor{MediaType: r.Descriptor.MediaType, Digest: r.Descriptor.Digest, Size: r.Descriptor.Size}
 	}
-	f.evidence = agentsuite.EvaluationEvidence{SchemaVersion: agentsuite.EvidenceSchemaVersion, MediaType: agentsuite.MediaTypeEvaluationEvidence, Subject: f.expected.Subject, Execution: f.expected.Execution, Evaluator: agentsuite.EvidenceEvaluator{Identity: f.expected.Evaluator, StartedAt: "2026-01-01T00:00:00Z", CompletedAt: "2026-01-01T00:01:00Z"}, Evaluation: agentsuite.EvidenceEvaluation{Index: agentsuite.EvidenceFileRef{Path: indexRef.Path, Descriptor: toDesc(indexRef)}, Cases: []agentsuite.EvidenceCaseRef{{ID: "example", Path: caseRef.Path, Descriptor: toDesc(caseRef), Runs: runs, MinPasses: minPasses}}}, Results: []agentsuite.EvidenceCaseResult{{ID: "example", Outcome: "pass", Runs: []agentsuite.EvidenceRunResult{}}}}
+	f.evidence = suiteevidence.EvaluationEvidence{SchemaVersion: suiteevidence.EvidenceSchemaVersion, MediaType: suiteevidence.MediaTypeEvaluationEvidence, Subject: f.expected.Subject, Execution: f.expected.Execution, Evaluator: suiteevidence.EvidenceEvaluator{Identity: f.expected.Evaluator, StartedAt: "2026-01-01T00:00:00Z", CompletedAt: "2026-01-01T00:01:00Z"}, Evaluation: suiteevidence.EvidenceEvaluation{Index: suiteevidence.EvidenceFileRef{Path: indexRef.Path, Descriptor: toDesc(indexRef)}, Cases: []suiteevidence.EvidenceCaseRef{{ID: "example", Path: caseRef.Path, Descriptor: toDesc(caseRef), Runs: runs, MinPasses: minPasses}}}, Results: []suiteevidence.EvidenceCaseResult{{ID: "example", Outcome: "pass", Runs: []suiteevidence.EvidenceRunResult{}}}}
 	for n := 1; n <= runs; n++ {
-		a := agentsuite.EvidenceAssertionResult{ID: c.Assertions[0].ID, Type: c.Assertions[0].Type, Outcome: "pass"}
+		a := suiteevidence.EvidenceAssertionResult{ID: c.Assertions[0].ID, Type: c.Assertions[0].Type, Outcome: "pass"}
 		if judge {
-			a.Judge = &agentsuite.EvidenceJudgeResult{Configuration: f.expected.Judges[0], ObservedModels: []string{"review-judge", "review-judge-v1"}, Scores: []int{80, 90}, MinScore: 70}
+			a.Judge = &suiteevidence.EvidenceJudgeResult{Configuration: f.expected.Judges[0], ObservedModels: []string{"review-judge", "review-judge-v1"}, Scores: []int{80, 90}, MinScore: 70}
 		}
-		f.evidence.Results[0].Runs = append(f.evidence.Results[0].Runs, agentsuite.EvidenceRunResult{Number: n, Status: "completed", Outcome: "pass", Assertions: []agentsuite.EvidenceAssertionResult{a}})
+		f.evidence.Results[0].Runs = append(f.evidence.Results[0].Runs, suiteevidence.EvidenceRunResult{Number: n, Status: "completed", Outcome: "pass", Assertions: []suiteevidence.EvidenceAssertionResult{a}})
 	}
 	f.save(t)
 	return f
@@ -180,7 +181,7 @@ func verifyRefusal(t *testing.T, opt SuiteEvaluationVerifyOptions, code string) 
 	t.Helper()
 	var out, diagnostics bytes.Buffer
 	err := (&App{Out: &out, Err: &diagnostics}).VerifySuiteEvaluation(t.Context(), opt)
-	var refusal *agentsuite.EvidenceRefusal
+	var refusal *suiteevidence.EvidenceRefusal
 	if !errors.As(err, &refusal) || refusal.Code != code {
 		t.Fatalf("refusal=%v, want %s", err, code)
 	}
@@ -214,8 +215,8 @@ func TestSuiteEvaluationVerifySuccess(t *testing.T) {
 				t.Fatal(err)
 			}
 			if opt.Output == "json" {
-				var got agentsuite.VerifiedEvaluation
-				if err := agentsuite.Unmarshal(out.Bytes(), &got); err != nil {
+				var got suiteevidence.VerifiedEvaluation
+				if err := suitecore.Unmarshal(out.Bytes(), &got); err != nil {
 					t.Fatal(err)
 				}
 				wantRuns := 1
@@ -279,7 +280,7 @@ func TestSuiteEvaluationVerifyRefusalCodes(t *testing.T) {
 			case "subject":
 				f.expected.Execution.Runtime.Version = "2.0.0"
 			case "coverage":
-				f.evidence.Results = []agentsuite.EvidenceCaseResult{}
+				f.evidence.Results = []suiteevidence.EvidenceCaseResult{}
 			case "policy":
 				f.evidence.Evaluator.Identity.Version = "2.0.0"
 			case "unknown":
@@ -337,7 +338,7 @@ func TestSuiteEvaluationVerifyIndependentIdentities(t *testing.T) {
 				f.expected.Judges[0].Version = "v2"
 				code = "policy"
 			case "judge-empty":
-				f.expected.Judges = []agentsuite.EvidenceJudgeConfiguration{}
+				f.expected.Judges = []suiteevidence.EvidenceJudgeConfiguration{}
 				code = "policy"
 			case "judge-config":
 				f.evidence.Results[0].Runs[0].Assertions[0].Judge.Configuration.Policy.ConfigurationDigest = "sha256:" + strings.Repeat("b", 64)
@@ -590,7 +591,7 @@ func TestSuiteEvaluationVerifySelectors(t *testing.T) {
 			if kind == "missing-layout" || kind == "path-from-layout" || strings.HasPrefix(kind, "blank-") || kind == "bad-output" {
 				var out bytes.Buffer
 				err := (&App{Out: &out}).VerifySuiteEvaluation(t.Context(), opt)
-				var r *agentsuite.EvidenceRefusal
+				var r *suiteevidence.EvidenceRefusal
 				if err == nil || errors.As(err, &r) || out.Len() != 0 || strings.Contains(err.Error(), verifyCanary) {
 					t.Fatalf("unsafe usage failure: %v %q", err, out.String())
 				}
@@ -617,7 +618,7 @@ func TestSuiteEvaluationVerifyOutputFailureAndCancellation(t *testing.T) {
 				opt := f.options()
 				opt.Output = format
 				err := (&App{Out: verifyFailWriter{short: short}}).VerifySuiteEvaluation(t.Context(), opt)
-				var r *agentsuite.EvidenceRefusal
+				var r *suiteevidence.EvidenceRefusal
 				if err == nil || errors.As(err, &r) || strings.Contains(err.Error(), verifyCanary) {
 					t.Fatalf("unsafe output error: %v", err)
 				}
@@ -628,7 +629,7 @@ func TestSuiteEvaluationVerifyOutputFailureAndCancellation(t *testing.T) {
 	cancel()
 	var out bytes.Buffer
 	err := (&App{Out: &out}).VerifySuiteEvaluation(ctx, f.options())
-	var r *agentsuite.EvidenceRefusal
+	var r *suiteevidence.EvidenceRefusal
 	if err == nil || errors.As(err, &r) || out.Len() != 0 {
 		t.Fatalf("cancellation=%v output=%q", err, out.String())
 	}

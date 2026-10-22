@@ -1469,7 +1469,7 @@ parents remain private (0700). Results belong beside the suite, never inside its
 content layer: embedding them would change the suite digest they claim to cover.
 
 Consumers supply an independently resolved expected subject/policy to
-`agentsuite.VerifyEvaluation(layoutPath, expected, reader)`. A UI should show
+`evidence.VerifyEvaluation(layoutPath, expected, reader)`. A UI should show
 `evaluation: not verified` on refusal; a CI consumer should fail closed. This
 checks unsigned consistency, not who ran the evaluation, whether observations
 are true, model attestation, trusted time or deployment readiness. It does not
@@ -1512,7 +1512,7 @@ kmx test verify --suite sha256:<reviewed-manifest-digest> \
 The explicit digest must match `expected.subject.manifest.digest`, and shared
 verification binds that descriptor to the actual raw manifest bytes and complete
 content graph. Only a single-manifest OCI layout is accepted; an extracted suite
-directory or multi-reference layout refuses. The pinned suite v0.3.1 loader
+directory or multi-reference layout refuses. The suite loader (since v0.3.1)
 refuses FIFOs, devices, sockets and symlinks in OCI metadata/referenced blobs,
 and symlinked blob directories; these are `artifact` refusals, not blocking reads.
 Path-form `--suite` selectors cannot
@@ -1524,7 +1524,7 @@ state, or call a runtime, model, cluster, registry or checksum database.
 ### The reviewed expectation file
 
 `--expect` requires the complete shared
-[`agentsuite.ExpectedEvaluation`](https://github.com/agent-primitives/suite/blob/v0.3.1/evidence_types.go),
+[`evidence.ExpectedEvaluation`](https://github.com/agent-primitives/suite/blob/v0.7.0/evidence/evidence.go),
 not a subject-only JSON object and not an evidence document:
 
 | Required section | What reviewers pin independently |

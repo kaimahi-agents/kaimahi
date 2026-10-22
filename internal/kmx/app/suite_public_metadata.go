@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
@@ -55,7 +55,7 @@ type suitePublicMetadata struct {
 
 func suitePublicHash(raw []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(raw)) }
 func suitePublicDigest(v any) (string, error) {
-	raw, err := agentsuite.Marshal(v)
+	raw, err := suitecore.Marshal(v)
 	if err != nil {
 		return "", errSuitePublicMetadata
 	}
@@ -220,7 +220,7 @@ func (s *suitePassStore) publishPublicMetadata(ctx context.Context, raw []byte, 
 	if !m.valid() {
 		return errSuitePublicMetadata
 	}
-	raw, err = agentsuite.Marshal(m)
+	raw, err = suitecore.Marshal(m)
 	if err != nil || len(raw) > maxSuitePublicMetadataBytes {
 		return errSuitePublicMetadata
 	}
@@ -316,7 +316,7 @@ func (s *suitePassStore) readPublicMetadata(ctx context.Context, suite *workspac
 		return nil, errSuitePublicMetadata
 	}
 	var m suitePublicMetadata
-	if agentsuite.Unmarshal(raw, &m) != nil || !m.valid() {
+	if suitecore.Unmarshal(raw, &m) != nil || !m.valid() {
 		return nil, errSuitePublicMetadata
 	}
 	var value any
@@ -325,8 +325,8 @@ func (s *suitePassStore) readPublicMetadata(ctx context.Context, suite *workspac
 	if d.Decode(&value) != nil {
 		return nil, errSuitePublicMetadata
 	}
-	original, e := agentsuite.Marshal(value)
-	typed, a := agentsuite.Marshal(m)
+	original, e := suitecore.Marshal(value)
+	typed, a := suitecore.Marshal(m)
 	if e != nil || a != nil || !bytes.Equal(original, typed) || m.Workspace != expected.Workspace || m.SuiteDigest != expected.SuiteDigest || m.Sequence != expected.Sequence || m.ReceiptDigest != expected.ReceiptDigest || s.unchanged() != nil {
 		return nil, errSuitePublicMetadata
 	}

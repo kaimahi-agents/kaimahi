@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteoci "github.com/agent-primitives/suite/oci"
 )
 
 func specFixture(name string) string {
@@ -75,29 +76,29 @@ func TestResolveSandboxPlanRequiresPlatformAndSelectsExactImages(t *testing.T) {
 	if err := os.CopyFS(root, os.DirFS(specFixture("minimal"))); err != nil {
 		t.Fatal(err)
 	}
-	var suite agentsuite.Suite
-	if err := agentsuite.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
+	var suite suitecore.Suite
+	if err := suitecore.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
 		t.Fatal(err)
 	}
-	var profile agentsuite.BuildProfile
-	if err := agentsuite.Unmarshal(readBuilderTestFile(t, root, suite.BuildProfiles[0].Path), &profile); err != nil {
+	var profile suitecore.BuildProfile
+	if err := suitecore.Unmarshal(readBuilderTestFile(t, root, suite.BuildProfiles[0].Path), &profile); err != nil {
 		t.Fatal(err)
 	}
-	arm64 := agentsuite.Platform{OS: "linux", Architecture: "arm64"}
+	arm64 := suitecore.Platform{OS: "linux", Architecture: "arm64"}
 	base, harness := profile.RuntimeBase[0], profile.Harness[0]
 	base.Platform, harness.Platform = arm64, arm64
 	profile.RuntimeBase = append(profile.RuntimeBase, base)
 	profile.Harness = append(profile.Harness, harness)
-	suite.BuildProfiles[0].Descriptor = writeBuilderTestDescriptor(t, root, suite.BuildProfiles[0].Path, agentsuite.MediaTypeBuildProfile, profile)
-	var composition agentsuite.Composition
-	if err := agentsuite.Unmarshal(readBuilderTestFile(t, root, suite.Compositions[0].Path), &composition); err != nil {
+	suite.BuildProfiles[0].Descriptor = writeBuilderTestDescriptor(t, root, suite.BuildProfiles[0].Path, suitecore.MediaTypeBuildProfile, profile)
+	var composition suitecore.Composition
+	if err := suitecore.Unmarshal(readBuilderTestFile(t, root, suite.Compositions[0].Path), &composition); err != nil {
 		t.Fatal(err)
 	}
 	composition.Platform = arm64
 	compositionPath := "compositions/writer-linux-arm64.json"
-	suite.Compositions = append(suite.Compositions, agentsuite.CompositionRef{
+	suite.Compositions = append(suite.Compositions, suitecore.CompositionRef{
 		Agent: "writer", Platform: arm64, Path: compositionPath,
-		Descriptor: writeBuilderTestDescriptor(t, root, compositionPath, agentsuite.MediaTypeComposition, composition),
+		Descriptor: writeBuilderTestDescriptor(t, root, compositionPath, suitecore.MediaTypeComposition, composition),
 	})
 	writeBuilderTestJSON(t, root, "agentsuite.json", suite)
 	if _, err := ResolveSandboxPlan(root, BuildSelection{}); err == nil || !strings.Contains(err.Error(), "--platform is required (available: linux/amd64, linux/arm64)") {
@@ -153,11 +154,11 @@ func TestResolveSandboxPlanAcceptsNoncriticalSuiteExtension(t *testing.T) {
 	if err := os.CopyFS(root, os.DirFS(specFixture("minimal"))); err != nil {
 		t.Fatal(err)
 	}
-	var suite agentsuite.Suite
-	if err := agentsuite.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
+	var suite suitecore.Suite
+	if err := suitecore.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
 		t.Fatal(err)
 	}
-	suite.Extensions = []agentsuite.Extension{{Name: "future-feature", Critical: false}}
+	suite.Extensions = []suitecore.Extension{{Name: "future-feature", Critical: false}}
 	writeBuilderTestJSON(t, root, "agentsuite.json", suite)
 	plan, err := ResolveSandboxPlan(root, BuildSelection{})
 	if err != nil || plan == nil || plan.Agent.ID != "writer" {
@@ -165,28 +166,28 @@ func TestResolveSandboxPlanAcceptsNoncriticalSuiteExtension(t *testing.T) {
 	}
 }
 
-func selectionMetadata() (*buildMetadata, agentsuite.Composition) {
-	platform := agentsuite.Platform{OS: "linux", Architecture: "amd64"}
-	dependencyVariant := agentsuite.ToolProviderVariant{
+func selectionMetadata() (*buildMetadata, suitecore.Composition) {
+	platform := suitecore.Platform{OS: "linux", Architecture: "amd64"}
+	dependencyVariant := suitecore.ToolProviderVariant{
 		Platform: platform, VariantDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	}
-	rootVariant := agentsuite.ToolProviderVariant{
+	rootVariant := suitecore.ToolProviderVariant{
 		Platform: platform, VariantDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Dependencies: []agentsuite.ToolProviderDependency{{ID: "shared", Version: "1.0.0", VariantDigest: dependencyVariant.VariantDigest}},
+		Dependencies: []suitecore.ToolProviderDependency{{ID: "shared", Version: "1.0.0", VariantDigest: dependencyVariant.VariantDigest}},
 	}
 	v := &buildMetadata{
-		toolProviders: map[string]agentsuite.ToolProvider{
-			"root@1.0.0":   {ID: "root", Version: "1.0.0", Variants: []agentsuite.ToolProviderVariant{rootVariant}},
-			"shared@1.0.0": {ID: "shared", Version: "1.0.0", Variants: []agentsuite.ToolProviderVariant{dependencyVariant}},
+		toolProviders: map[string]suitecore.ToolProvider{
+			"root@1.0.0":   {ID: "root", Version: "1.0.0", Variants: []suitecore.ToolProviderVariant{rootVariant}},
+			"shared@1.0.0": {ID: "shared", Version: "1.0.0", Variants: []suitecore.ToolProviderVariant{dependencyVariant}},
 		},
 		toolProviderDigests: map[string]string{
 			"root@1.0.0":   "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 			"shared@1.0.0": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
 		},
 	}
-	return v, agentsuite.Composition{
+	return v, suitecore.Composition{
 		Platform: platform,
-		ToolProviders: []agentsuite.ResolvedToolProvider{{
+		ToolProviders: []suitecore.ResolvedToolProvider{{
 			ID: "root", Version: "1.0.0", ManifestDigest: v.toolProviderDigests["root@1.0.0"], VariantDigest: rootVariant.VariantDigest,
 		}},
 	}
@@ -194,7 +195,7 @@ func selectionMetadata() (*buildMetadata, agentsuite.Composition) {
 
 func TestResolveSelectedToolProvidersMarksEveryDeclaredRoot(t *testing.T) {
 	v, composition := selectionMetadata()
-	composition.ToolProviders = append(composition.ToolProviders, agentsuite.ResolvedToolProvider{
+	composition.ToolProviders = append(composition.ToolProviders, suitecore.ResolvedToolProvider{
 		ID: "shared", Version: "1.0.0", ManifestDigest: v.toolProviderDigests["shared@1.0.0"],
 		VariantDigest: v.toolProviders["shared@1.0.0"].Variants[0].VariantDigest,
 	})
@@ -227,12 +228,12 @@ func TestResolveSelectedToolProvidersDeduplicatesTransitiveDependencies(t *testi
 	v, composition := selectionMetadata()
 	bridge := v.toolProviders["root@1.0.0"]
 	bridge.ID = "bridge"
-	bridge.Variants = append([]agentsuite.ToolProviderVariant(nil), bridge.Variants...)
+	bridge.Variants = append([]suitecore.ToolProviderVariant(nil), bridge.Variants...)
 	bridge.Variants[0].VariantDigest = "sha256:" + strings.Repeat("e", 64)
 	v.toolProviders["bridge@1.0.0"] = bridge
 	v.toolProviderDigests["bridge@1.0.0"] = "sha256:" + strings.Repeat("f", 64)
 	root := v.toolProviders["root@1.0.0"]
-	root.Variants[0].Dependencies = append(root.Variants[0].Dependencies, agentsuite.ToolProviderDependency{
+	root.Variants[0].Dependencies = append(root.Variants[0].Dependencies, suitecore.ToolProviderDependency{
 		ID: "bridge", Version: "1.0.0", VariantDigest: bridge.Variants[0].VariantDigest,
 	})
 	v.toolProviders["root@1.0.0"] = root
@@ -248,39 +249,39 @@ func TestResolveSelectedToolProvidersDeduplicatesTransitiveDependencies(t *testi
 func TestResolveSelectedToolProvidersRefusesMissingMismatchedAndCyclicSelections(t *testing.T) {
 	for _, test := range []struct {
 		name   string
-		mutate func(*buildMetadata, *agentsuite.Composition)
+		mutate func(*buildMetadata, *suitecore.Composition)
 		want   string
 	}{
-		{"missing root", func(v *buildMetadata, _ *agentsuite.Composition) { delete(v.toolProviders, "root@1.0.0") }, "missing tool provider"},
-		{"stale root manifest", func(_ *buildMetadata, c *agentsuite.Composition) {
+		{"missing root", func(v *buildMetadata, _ *suitecore.Composition) { delete(v.toolProviders, "root@1.0.0") }, "missing tool provider"},
+		{"stale root manifest", func(_ *buildMetadata, c *suitecore.Composition) {
 			c.ToolProviders[0].ManifestDigest = "sha256:" + strings.Repeat("e", 64)
 		}, "manifest digest"},
-		{"unpinned root manifest", func(_ *buildMetadata, c *agentsuite.Composition) { c.ToolProviders[0].ManifestDigest = "" }, "manifest digest"},
-		{"stale root variant", func(_ *buildMetadata, c *agentsuite.Composition) {
+		{"unpinned root manifest", func(_ *buildMetadata, c *suitecore.Composition) { c.ToolProviders[0].ManifestDigest = "" }, "manifest digest"},
+		{"stale root variant", func(_ *buildMetadata, c *suitecore.Composition) {
 			c.ToolProviders[0].VariantDigest = "sha256:" + strings.Repeat("e", 64)
 		}, "matching variant"},
-		{"wrong root platform", func(_ *buildMetadata, c *agentsuite.Composition) { c.Platform.Architecture = "arm64" }, "matching variant"},
-		{"OCI variant is not interchangeable", func(_ *buildMetadata, c *agentsuite.Composition) { c.Platform.Variant = "v8" }, "matching variant"},
-		{"ambiguous root variant", func(v *buildMetadata, _ *agentsuite.Composition) {
+		{"wrong root platform", func(_ *buildMetadata, c *suitecore.Composition) { c.Platform.Architecture = "arm64" }, "matching variant"},
+		{"OCI variant is not interchangeable", func(_ *buildMetadata, c *suitecore.Composition) { c.Platform.Variant = "v8" }, "matching variant"},
+		{"ambiguous root variant", func(v *buildMetadata, _ *suitecore.Composition) {
 			p := v.toolProviders["root@1.0.0"]
 			p.Variants = append(p.Variants, p.Variants[0])
 			v.toolProviders["root@1.0.0"] = p
 		}, "matching variant"},
-		{"missing dependency", func(v *buildMetadata, _ *agentsuite.Composition) { delete(v.toolProviders, "shared@1.0.0") }, "missing tool provider"},
-		{"unpinned dependency manifest", func(v *buildMetadata, _ *agentsuite.Composition) { delete(v.toolProviderDigests, "shared@1.0.0") }, "pinned manifest digest"},
-		{"stale dependency variant", func(v *buildMetadata, _ *agentsuite.Composition) {
+		{"missing dependency", func(v *buildMetadata, _ *suitecore.Composition) { delete(v.toolProviders, "shared@1.0.0") }, "missing tool provider"},
+		{"unpinned dependency manifest", func(v *buildMetadata, _ *suitecore.Composition) { delete(v.toolProviderDigests, "shared@1.0.0") }, "pinned manifest digest"},
+		{"stale dependency variant", func(v *buildMetadata, _ *suitecore.Composition) {
 			p := v.toolProviders["shared@1.0.0"]
 			p.Variants[0].VariantDigest = "sha256:" + strings.Repeat("e", 64)
 			v.toolProviders["shared@1.0.0"] = p
 		}, "matching variant"},
-		{"wrong dependency platform", func(v *buildMetadata, _ *agentsuite.Composition) {
+		{"wrong dependency platform", func(v *buildMetadata, _ *suitecore.Composition) {
 			p := v.toolProviders["shared@1.0.0"]
 			p.Variants[0].Platform.Architecture = "arm64"
 			v.toolProviders["shared@1.0.0"] = p
 		}, "matching variant"},
-		{"dependency cycle", func(v *buildMetadata, _ *agentsuite.Composition) {
+		{"dependency cycle", func(v *buildMetadata, _ *suitecore.Composition) {
 			p := v.toolProviders["shared@1.0.0"]
-			p.Variants[0].Dependencies = []agentsuite.ToolProviderDependency{{ID: "root", Version: "1.0.0", VariantDigest: v.toolProviders["root@1.0.0"].Variants[0].VariantDigest}}
+			p.Variants[0].Dependencies = []suitecore.ToolProviderDependency{{ID: "root", Version: "1.0.0", VariantDigest: v.toolProviders["root@1.0.0"].Variants[0].VariantDigest}}
 			v.toolProviders["shared@1.0.0"] = p
 		}, "dependency cycle"},
 	} {
@@ -305,7 +306,7 @@ func TestLoadBuildMetadataRefusesChangedPinnedChildren(t *testing.T) {
 				t.Fatal(err)
 			}
 			suiteBytes := readBuilderTestFile(t, root, "agentsuite.json")
-			if _, err := agentsuite.ValidatePath(root); err != nil {
+			if _, err := suiteoci.ValidatePath(root); err != nil {
 				t.Fatal(err)
 			}
 			data := readBuilderTestFile(t, root, child)
@@ -336,7 +337,7 @@ func TestLoadBuildMetadataRefusesNonCanonicalPinnedChildBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	suiteBytes := readBuilderTestFile(t, root, "agentsuite.json")
-	if _, err := agentsuite.ValidatePath(root); err != nil {
+	if _, err := suiteoci.ValidatePath(root); err != nil {
 		t.Fatal(err)
 	}
 	child := "agents/writer.json"
@@ -360,19 +361,19 @@ func TestLoadBuildMetadataVerifiesProviderAndProviderCompositionPins(t *testing.
 			if err := os.CopyFS(root, os.DirFS(specFixture("minimal"))); err != nil {
 				t.Fatal(err)
 			}
-			var suite agentsuite.Suite
-			if err := agentsuite.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
+			var suite suitecore.Suite
+			if err := suitecore.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
 				t.Fatal(err)
 			}
 			providerPath := "tool-providers/provider.json"
-			provider := agentsuite.ToolProvider{ID: "provider", Version: "1.0.0"}
-			providerDescriptor := writeBuilderTestDescriptor(t, root, providerPath, agentsuite.MediaTypeToolProvider, provider)
-			catalog := agentsuite.ToolProviderCatalog{ToolProviders: []agentsuite.ManifestRef{{ID: provider.ID, Version: provider.Version, Path: providerPath, Descriptor: providerDescriptor}}}
-			suite.ToolProviderCatalog.Descriptor = writeBuilderTestDescriptor(t, root, suite.ToolProviderCatalog.Path, agentsuite.MediaTypeToolProviderCatalog, catalog)
+			provider := suitecore.ToolProvider{ID: "provider", Version: "1.0.0"}
+			providerDescriptor := writeBuilderTestDescriptor(t, root, providerPath, suitecore.MediaTypeToolProvider, provider)
+			catalog := suitecore.ToolProviderCatalog{ToolProviders: []suitecore.ManifestRef{{ID: provider.ID, Version: provider.Version, Path: providerPath, Descriptor: providerDescriptor}}}
+			suite.ToolProviderCatalog.Descriptor = writeBuilderTestDescriptor(t, root, suite.ToolProviderCatalog.Path, suitecore.MediaTypeToolProviderCatalog, catalog)
 			compositionPath := "tool-provider-compositions/provider.json"
-			composition := agentsuite.ToolProviderComposition{ID: "provider", Version: "1.0.0"}
-			suite.ToolProviderCompositions = []agentsuite.ToolProviderCompositionRef{{ID: composition.ID, Version: composition.Version, Path: compositionPath,
-				Descriptor: writeBuilderTestDescriptor(t, root, compositionPath, agentsuite.MediaTypeToolProviderComposition, composition)}}
+			composition := suitecore.ToolProviderComposition{ID: "provider", Version: "1.0.0"}
+			suite.ToolProviderCompositions = []suitecore.ToolProviderCompositionRef{{ID: composition.ID, Version: composition.Version, Path: compositionPath,
+				Descriptor: writeBuilderTestDescriptor(t, root, compositionPath, suitecore.MediaTypeToolProviderComposition, composition)}}
 			writeBuilderTestJSON(t, root, "agentsuite.json", suite)
 			suiteBytes := readBuilderTestFile(t, root, "agentsuite.json")
 			handle, err := os.OpenRoot(root)
@@ -409,8 +410,8 @@ func TestLoadBuildMetadataRejectsStrictJSONAndOversizedChildren(t *testing.T) {
 			if err := os.CopyFS(root, os.DirFS(specFixture("minimal"))); err != nil {
 				t.Fatal(err)
 			}
-			var suite agentsuite.Suite
-			if err := agentsuite.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
+			var suite suitecore.Suite
+			if err := suitecore.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
 				t.Fatal(err)
 			}
 			// Pin the descriptor to these exact bytes' own raw digest, so the
@@ -421,7 +422,7 @@ func TestLoadBuildMetadataRejectsStrictJSONAndOversizedChildren(t *testing.T) {
 			sum := sha256.Sum256(test.data)
 			suite.Agents[0].Descriptor.Digest = "sha256:" + hex.EncodeToString(sum[:])
 			suite.Agents[0].Descriptor.Size = int64(len(test.data))
-			suiteBytes, err := agentsuite.Marshal(suite)
+			suiteBytes, err := suitecore.Marshal(suite)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -443,8 +444,8 @@ func TestReadBuildInstructionsRechecksRawDigestAndSize(t *testing.T) {
 	data := []byte("Write clearly.\n")
 	writeBuilderTestFile(t, root, "instructions.md", data)
 	sum := sha256.Sum256(data)
-	ref := agentsuite.FileRef{Path: "instructions.md", Descriptor: agentsuite.Descriptor{
-		MediaType: agentsuite.MediaTypeInstructions, Digest: "sha256:" + hex.EncodeToString(sum[:]), Size: int64(len(data)),
+	ref := suitecore.FileRef{Path: "instructions.md", Descriptor: suitecore.Descriptor{
+		MediaType: suitecore.MediaTypeInstructions, Digest: "sha256:" + hex.EncodeToString(sum[:]), Size: int64(len(data)),
 	}}
 	handle, err := os.OpenRoot(root)
 	if err != nil {
@@ -499,30 +500,30 @@ func TestReadBuildFileRejectsUnsafeAndNonRegularPaths(t *testing.T) {
 
 func writeBuilderTestJSON(t *testing.T, root, name string, value any) string {
 	t.Helper()
-	data, err := agentsuite.Marshal(value)
+	data, err := suitecore.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeBuilderTestFile(t, root, name, data)
-	digest, err := agentsuite.Digest(data)
+	digest, err := suitecore.Digest(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return digest
 }
 
-func writeBuilderTestDescriptor(t *testing.T, root, name, mediaType string, value any) agentsuite.Descriptor {
+func writeBuilderTestDescriptor(t *testing.T, root, name, mediaType string, value any) suitecore.Descriptor {
 	t.Helper()
-	data, err := agentsuite.Marshal(value)
+	data, err := suitecore.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeBuilderTestFile(t, root, name, data)
-	digest, err := agentsuite.Digest(data)
+	digest, err := suitecore.Digest(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return agentsuite.Descriptor{MediaType: mediaType, Digest: digest, Size: int64(len(data))}
+	return suitecore.Descriptor{MediaType: mediaType, Digest: digest, Size: int64(len(data))}
 }
 
 func readBuilderTestFile(t *testing.T, root, name string) []byte {

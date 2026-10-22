@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkit "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
@@ -39,14 +39,14 @@ func profileCommandSource(t *testing.T) (string, *workspace.Prepared) {
 		return b
 	}
 	write("agents/greeter/member.yaml", []byte(strings.Split(string(read("agents/greeter/member.yaml")), "\nruntime:")[0]+"\n"))
-	var bp agentsuite.BuildProfile
-	if err := agentsuite.Unmarshal(read("build-profiles/default.json"), &bp); err != nil {
+	var bp suitecore.BuildProfile
+	if err := suitecore.Unmarshal(read("build-profiles/default.json"), &bp); err != nil {
 		t.Fatal(err)
 	}
 	rows := ""
 	for _, id := range []string{"orka", "sessions"} {
-		rp := agentsuite.RuntimeProfile{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeRuntimeProfile, ID: id, Runtime: agentsuite.EvidenceImplementation{ID: id, Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: agentsuite.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: agentsuite.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "test-only", ImageRequired: true}
-		b, err := agentsuite.Marshal(rp)
+		rp := suitecore.RuntimeProfile{SchemaVersion: suitecore.SpecVersion, MediaType: suitecore.MediaTypeRuntimeProfile, ID: id, Runtime: suitecore.EvidenceImplementation{ID: id, Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: suitecore.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: suitecore.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "test-only", ImageRequired: true}
+		b, err := suitecore.Marshal(rp)
 		if err != nil {
 			t.Fatal(err)
 		}

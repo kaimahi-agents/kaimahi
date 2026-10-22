@@ -16,7 +16,8 @@ import (
 	"testing"
 	"time"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/pkg/suiteview"
 	godigest "github.com/opencontainers/go-digest"
@@ -63,7 +64,7 @@ func TestLoadLayoutAndArchiveReturnOwnedExactRecipe(t *testing.T) {
 	if fromLayout.Artifact.Digest != pushed.Descriptor.Digest.String() || fromLayout.Artifact.MediaType != pushed.Descriptor.MediaType || fromLayout.Artifact.Size != pushed.Descriptor.Size {
 		t.Fatal("artifact identity changed", fromLayout.Artifact)
 	}
-	if fromLayout.Suite.Name != "minimal" || !agentsuite.IsValidDigest(fromLayout.Suite.GraphDigest) || fromLayout.Member.ID != "writer" || fromLayout.Member.Descriptor.Digest != "sha256:2fe4605b0a28a5cebebb3e351c7288cb9a1dee03205a5f380afbad2d735cc274" || fromLayout.Member.Descriptor.MediaType != agentsuite.MediaTypeAgent {
+	if fromLayout.Suite.Name != "minimal" || !suitecore.IsValidDigest(fromLayout.Suite.GraphDigest) || fromLayout.Member.ID != "writer" || fromLayout.Member.Descriptor.Digest != "sha256:2fe4605b0a28a5cebebb3e351c7288cb9a1dee03205a5f380afbad2d735cc274" || fromLayout.Member.Descriptor.MediaType != suitecore.MediaTypeAgent {
 		t.Fatal("suite/member identity changed", fromLayout)
 	}
 	if string(fromLayout.Instructions) != "Write clearly.\n" || fromLayout.InstructionsDescriptor.Digest != "sha256:516ff360a8ebb5e36e87f0d401a3cc7436ad2ad1059aae64670aff1078171df8" || fromLayout.Model.Model != "example-model" {
@@ -87,7 +88,7 @@ func TestProjectMemberReturnsOwnedExactRecipe(t *testing.T) {
 	annotateDescriptors(t, source)
 	files := readFiles(t, source)
 	rootBytes := files["agentsuite.json"]
-	graphDigest, err := agentsuite.Digest(rootBytes)
+	graphDigest, err := suitecore.Digest(rootBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,10 +163,10 @@ func TestLoadLayoutRequiresUnambiguousRootAndExactMember(t *testing.T) {
 func TestLoadPreservesCompleteModelRequirement(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		model agentsuite.ModelRequirement
+		model suitecore.ModelRequirement
 	}{
-		{"exact", agentsuite.ModelRequirement{Protocol: "openai-compatible", Model: "example-model", EndpointEnv: "MODEL_BASE_URL", SecretRefs: []string{"model-api-key"}}},
-		{"capabilities", agentsuite.ModelRequirement{Protocol: "openai-compatible", Capabilities: &agentsuite.InferenceRequirements{API: "openai-chat-completions-v1", ContextTokens: 4096, OutputTokens: 1024, Streaming: true, ToolCalling: false}}},
+		{"exact", suitecore.ModelRequirement{Protocol: "openai-compatible", Model: "example-model", EndpointEnv: "MODEL_BASE_URL", SecretRefs: []string{"model-api-key"}}},
+		{"capabilities", suitecore.ModelRequirement{Protocol: "openai-compatible", Capabilities: &suitecore.InferenceRequirements{API: "openai-chat-completions-v1", ContextTokens: 4096, OutputTokens: 1024, Streaming: true, ToolCalling: false}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source := filepath.Join(t.TempDir(), "source")
@@ -328,7 +329,7 @@ func TestLoadRejectsOCIEnvelopeParserDifferentials(t *testing.T) {
 	}{
 		{"unknown index field", func(t *testing.T, layout string) {
 			mutateJSONFile(t, filepath.Join(layout, "index.json"), func(document map[string]any) {
-				document["artifactType"] = agentsuite.MediaTypeArtifact
+				document["artifactType"] = suitecore.MediaTypeArtifact
 			})
 		}},
 		{"null root urls", func(t *testing.T, layout string) {
@@ -361,7 +362,7 @@ func TestLoadRejectsOCIEnvelopeParserDifferentials(t *testing.T) {
 			layout := filepath.Join(t.TempDir(), "layout")
 			pushFixture(t, "minimal", layout, "minimal:v1")
 			tc.mutate(t, layout)
-			if _, err := agentsuite.ValidatePath(layout); err == nil {
+			if _, err := suiteoci.ValidatePath(layout); err == nil {
 				t.Fatal("fixture does not demonstrate an upstream validation refusal")
 			}
 			if _, err := suiteview.LoadLayout(t.Context(), layout, suiteview.Selection{MemberID: "writer"}); refusalCode(t, err) != suiteview.RefusalArtifact {
@@ -629,19 +630,19 @@ func readFiles(t *testing.T, root string) map[string][]byte {
 	return files
 }
 
-func rewriteModel(t *testing.T, source string, model agentsuite.ModelRequirement) {
+func rewriteModel(t *testing.T, source string, model suitecore.ModelRequirement) {
 	t.Helper()
 	memberPath := filepath.Join(source, "agents", "writer.json")
 	memberBytes, err := os.ReadFile(memberPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var member agentsuite.Agent
-	if agentsuite.Unmarshal(memberBytes, &member) != nil {
+	var member suitecore.Agent
+	if suitecore.Unmarshal(memberBytes, &member) != nil {
 		t.Fatal("decode member")
 	}
 	member.Model = model
-	memberBytes, err = agentsuite.Marshal(member)
+	memberBytes, err = suitecore.Marshal(member)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -653,16 +654,16 @@ func rewriteModel(t *testing.T, source string, model agentsuite.ModelRequirement
 	if err != nil {
 		t.Fatal(err)
 	}
-	var root agentsuite.Suite
-	if agentsuite.Unmarshal(rootBytes, &root) != nil {
+	var root suitecore.Suite
+	if suitecore.Unmarshal(rootBytes, &root) != nil {
 		t.Fatal("decode root")
 	}
 	root.Agents[0].Descriptor.Size = int64(len(memberBytes))
-	root.Agents[0].Descriptor.Digest, err = agentsuite.Digest(memberBytes)
+	root.Agents[0].Descriptor.Digest, err = suitecore.Digest(memberBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootBytes, err = agentsuite.Marshal(root)
+	rootBytes, err = suitecore.Marshal(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -678,12 +679,12 @@ func annotateDescriptors(t *testing.T, source string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var member agentsuite.Agent
-	if agentsuite.Unmarshal(memberBytes, &member) != nil {
+	var member suitecore.Agent
+	if suitecore.Unmarshal(memberBytes, &member) != nil {
 		t.Fatal("decode member")
 	}
 	member.Instructions.Descriptor.Annotations = map[string]string{"instruction-note": "retained"}
-	memberBytes, err = agentsuite.Marshal(member)
+	memberBytes, err = suitecore.Marshal(member)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -695,17 +696,17 @@ func annotateDescriptors(t *testing.T, source string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var root agentsuite.Suite
-	if agentsuite.Unmarshal(rootBytes, &root) != nil {
+	var root suitecore.Suite
+	if suitecore.Unmarshal(rootBytes, &root) != nil {
 		t.Fatal("decode root")
 	}
 	root.Agents[0].Descriptor.Size = int64(len(memberBytes))
-	root.Agents[0].Descriptor.Digest, err = agentsuite.Digest(memberBytes)
+	root.Agents[0].Descriptor.Digest, err = suitecore.Digest(memberBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	root.Agents[0].Descriptor.Annotations = map[string]string{"member-note": "retained"}
-	rootBytes, err = agentsuite.Marshal(root)
+	rootBytes, err = suitecore.Marshal(root)
 	if err != nil {
 		t.Fatal(err)
 	}

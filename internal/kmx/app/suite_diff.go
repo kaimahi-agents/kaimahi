@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/cliui"
 )
 
@@ -29,7 +29,7 @@ func (a *App) DiffSuites(beforePath, afterPath, output, view string) error {
 	default:
 		return fmt.Errorf("unsupported output %q; use text or json", output)
 	}
-	report, err := agentsuite.DiffPaths(beforePath, afterPath)
+	report, err := suiteoci.DiffPaths(beforePath, afterPath)
 	if err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func (a *App) DiffSuites(beforePath, afterPath, output, view string) error {
 	return nil
 }
 
-func renderSuiteDiff(out io.Writer, ui cliui.Output, report agentsuite.DiffReport, view string) error {
+func renderSuiteDiff(out io.Writer, ui cliui.Output, report suiteoci.DiffReport, view string) error {
 	if view != SuiteDiffUnified && view != SuiteDiffSplit {
 		return fmt.Errorf("unsupported diff view %q; use unified or split", view)
 	}
@@ -116,7 +116,7 @@ func renderSuiteDiff(out io.Writer, ui cliui.Output, report agentsuite.DiffRepor
 	return nil
 }
 
-func renderUnifiedRecord(out io.Writer, ui cliui.Output, change agentsuite.RecordChange) error {
+func renderUnifiedRecord(out io.Writer, ui cliui.Output, change suiteoci.RecordChange) error {
 	for _, field := range change.Fields {
 		if field.Before != nil {
 			if _, err := fmt.Fprintln(out, ui.Failure(safeSuiteDiffTerminal("- "+field.Path+": "+string(field.Before)))); err != nil {
@@ -132,7 +132,7 @@ func renderUnifiedRecord(out io.Writer, ui cliui.Output, change agentsuite.Recor
 	return nil
 }
 
-func renderSplitRecord(out io.Writer, ui cliui.Output, change agentsuite.RecordChange) error {
+func renderSplitRecord(out io.Writer, ui cliui.Output, change suiteoci.RecordChange) error {
 	width := ui.Width()
 	if width == 0 {
 		return renderUnboundedSplitRecord(out, ui, change)
@@ -182,7 +182,7 @@ func renderSplitRecord(out io.Writer, ui cliui.Output, change agentsuite.RecordC
 	return nil
 }
 
-func renderUnboundedSplitRecord(out io.Writer, ui cliui.Output, change agentsuite.RecordChange) error {
+func renderUnboundedSplitRecord(out io.Writer, ui cliui.Output, change suiteoci.RecordChange) error {
 	if _, err := fmt.Fprintln(out, "--- BEFORE | +++ AFTER"); err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func renderUnboundedSplitRecord(out io.Writer, ui cliui.Output, change agentsuit
 	return nil
 }
 
-func renderNarrowDiffRecord(out io.Writer, ui cliui.Output, change agentsuite.RecordChange, width int) error {
+func renderNarrowDiffRecord(out io.Writer, ui cliui.Output, change suiteoci.RecordChange, width int) error {
 	width = max(width, 1)
 	for _, field := range change.Fields {
 		if field.Before != nil {
@@ -280,12 +280,12 @@ func padDiffCell(value string, width int) string {
 	return value + strings.Repeat(" ", max(0, width-ansi.StringWidth(value)))
 }
 
-func diffRecordHeader(change agentsuite.RecordChange) string {
+func diffRecordHeader(change suiteoci.RecordChange) string {
 	marker := "~"
 	switch change.Type {
-	case agentsuite.DiffAdded:
+	case suiteoci.DiffAdded:
 		marker = "+"
-	case agentsuite.DiffRemoved:
+	case suiteoci.DiffRemoved:
 		marker = "-"
 	}
 	header := fmt.Sprintf("@@ %s %s %s @@", marker, change.Kind, change.ID)

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suiteevidence "github.com/agent-primitives/suite/evidence"
 )
 
 func TestSuiteEvalVerifyArgumentsBeforeConfiguration(t *testing.T) {
@@ -92,7 +92,7 @@ func TestSuiteEvalVerifyMissingInputsTypedAndOffline(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	deps, loads := testDependencies(&out, &diagnostics)
 	err := execute([]string{"eval", "verify", "--suite", filepath.Join(root, "layout"), "--evidence", filepath.Join(root, "PRIVATE_VERIFY_CANARY"), "--expect", filepath.Join(root, "PRIVATE_VERIFY_CANARY")}, deps)
-	var refusal *agentsuite.EvidenceRefusal
+	var refusal *suiteevidence.EvidenceRefusal
 	if !errors.As(err, &refusal) || refusal.Code != "missing" || !strings.Contains(err.Error(), "evaluation: not verified [missing]") || *loads != 0 || out.Len() != 0 {
 		t.Fatalf("error=%v loads=%d stdout=%q", err, *loads, out.String())
 	}

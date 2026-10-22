@@ -4,7 +4,7 @@ import (
 	"errors"
 	"regexp"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 )
 
 const MediaTypeSandboxBinding = "application/vnd.agentsuite.sandbox.binding.v1+json"
@@ -15,14 +15,14 @@ var builderIdentifierPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`
 // the kmx sandbox-image builder. It is implementation metadata, not part of
 // the portable AgentSuite specification.
 type SandboxBinding struct {
-	SchemaVersion string                `json:"schemaVersion"`
-	MediaType     string                `json:"mediaType"`
-	SuiteDigest   string                `json:"suiteDigest"`
-	Agent         string                `json:"agent"`
-	Platform      agentsuite.Platform   `json:"platform"`
-	BuildProfile  string                `json:"buildProfile"`
-	Composition   agentsuite.Descriptor `json:"composition"`
-	Inventory     agentsuite.Descriptor `json:"inventory"`
+	SchemaVersion string               `json:"schemaVersion"`
+	MediaType     string               `json:"mediaType"`
+	SuiteDigest   string               `json:"suiteDigest"`
+	Agent         string               `json:"agent"`
+	Platform      suitecore.Platform   `json:"platform"`
+	BuildProfile  string               `json:"buildProfile"`
+	Composition   suitecore.Descriptor `json:"composition"`
+	Inventory     suitecore.Descriptor `json:"inventory"`
 }
 
 // ValidateSandboxBinding validates the fixed binding record embedded by the
@@ -30,15 +30,15 @@ type SandboxBinding struct {
 // conformance operations.
 func ValidateSandboxBinding(data []byte) (*SandboxBinding, error) {
 	var binding SandboxBinding
-	if err := agentsuite.Unmarshal(data, &binding); err != nil {
+	if err := suitecore.Unmarshal(data, &binding); err != nil {
 		return nil, err
 	}
-	if binding.SchemaVersion != agentsuite.SpecVersion || binding.MediaType != MediaTypeSandboxBinding {
+	if binding.SchemaVersion != suitecore.SpecVersion || binding.MediaType != MediaTypeSandboxBinding {
 		return nil, errors.New("sandbox binding has unsupported schemaVersion or mediaType")
 	}
-	if !agentsuite.IsValidDigest(binding.SuiteDigest) || !builderIdentifierPattern.MatchString(binding.Agent) ||
+	if !suitecore.IsValidDigest(binding.SuiteDigest) || !builderIdentifierPattern.MatchString(binding.Agent) ||
 		binding.BuildProfile == "" || !validBindingDescriptor(binding.Composition) ||
-		binding.Composition.MediaType != agentsuite.MediaTypeComposition || !validBindingDescriptor(binding.Inventory) {
+		binding.Composition.MediaType != suitecore.MediaTypeComposition || !validBindingDescriptor(binding.Inventory) {
 		return nil, errors.New("sandbox binding identity or descriptors are invalid")
 	}
 	if err := validateBindingPlatform(binding.Platform); err != nil {
@@ -47,11 +47,11 @@ func ValidateSandboxBinding(data []byte) (*SandboxBinding, error) {
 	return &binding, nil
 }
 
-func validBindingDescriptor(descriptor agentsuite.Descriptor) bool {
-	return descriptor.MediaType != "" && agentsuite.IsValidDigest(descriptor.Digest) && descriptor.Size >= 0
+func validBindingDescriptor(descriptor suitecore.Descriptor) bool {
+	return descriptor.MediaType != "" && suitecore.IsValidDigest(descriptor.Digest) && descriptor.Size >= 0
 }
 
-func validateBindingPlatform(platform agentsuite.Platform) error {
+func validateBindingPlatform(platform suitecore.Platform) error {
 	if platform.OS != "linux" ||
 		platform.Architecture != "amd64" && platform.Architecture != "arm64" ||
 		platform.Variant != "" {

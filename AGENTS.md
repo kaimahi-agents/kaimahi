@@ -584,9 +584,13 @@ Do not infer enforcement from authoring, transfer, readiness, labels or annotati
 - The portable format, validator and schemas are owned by
   [AgentSuite](https://github.com/agent-primitives/suite/blob/main/spec.md).
   Keep KMX details, migration notes, and design history in this repository's
-  implementation documentation, issues, or changelog. Import the public module
-  explicitly as `agentsuite "github.com/agent-primitives/suite"`; use `kmxsuite`
-  for the internal builder package and `suiteoras` for its ORAS adapter.
+  implementation documentation, issues, or changelog. Import focused public
+  packages as `suitecore` (`github.com/agent-primitives/suite/core`), `suiteoci`
+  (`github.com/agent-primitives/suite/oci`), `suiteevidence`
+  (`github.com/agent-primitives/suite/evidence`) and `suiteflow`
+  (`github.com/agent-primitives/suite/experimental/flow`). Do not import the
+  deprecated module root. Keep `kmxsuite` for the internal builder package and
+  `suiteoras` for its ORAS adapter.
   Keep byte-identical consumer fixtures under `testdata/agentsuite`; refresh
   their provenance manifest only with reviewed upstream changes and run
   `python3 scripts/check-agentsuite-fixtures.py`.

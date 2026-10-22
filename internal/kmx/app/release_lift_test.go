@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	godigest "github.com/opencontainers/go-digest"
 )
@@ -117,7 +117,7 @@ func TestReleaseLiftOrkaLegacySummaryGolden(t *testing.T) {
 		false, "", opt.Inference, s.BindingDigest, s.RenderedDigest, s.EvidenceDigest,
 		s.EvidenceRunID, "same-subject", s.Resources, ""}
 	// Reviewed bytes include the empty planDigest and capitalized envelope keys.
-	review, err := agentsuite.Marshal(struct {
+	review, err := suitecore.Marshal(struct {
 		Domain string
 		Plan   any
 	}{"kmx.release-lift.plan/v1", legacy})
@@ -126,7 +126,7 @@ func TestReleaseLiftOrkaLegacySummaryGolden(t *testing.T) {
 	}
 	current := s
 	current.PlanDigest = ""
-	currentReview, err := agentsuite.Marshal(struct {
+	currentReview, err := suitecore.Marshal(struct {
 		Domain string
 		Plan   ReleaseLiftSummary
 	}{"kmx.release-lift.plan/v1", current})

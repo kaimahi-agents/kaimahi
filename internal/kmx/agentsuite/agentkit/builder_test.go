@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 )
 
@@ -57,7 +57,7 @@ func TestBuildEmitsArchiveThroughBuildxExporter(t *testing.T) {
 func TestBuildRefusesProfiledPlanBeforeExport(t *testing.T) {
 	plan := minimalPlan()
 	plan.Composition.RuntimeProfile = "orka"
-	plan.RuntimeProfile = &agentsuite.RuntimeProfile{ID: "orka"}
+	plan.RuntimeProfile = &suitecore.RuntimeProfile{ID: "orka"}
 	builder := New(Options{ModelBaseURL: "https://model.example.test/v1", exporter: ociExporterFunc(func(context.Context, agentImage, io.Writer) error { t.Fatal("profile reached exporter"); return nil })})
 	if err := buildError(builder, plan); !strings.Contains(err, "profiled") {
 		t.Fatal(err)
@@ -66,7 +66,7 @@ func TestBuildRefusesProfiledPlanBeforeExport(t *testing.T) {
 
 func TestBuildRefusesDeclaredPolicyBeforeExport(t *testing.T) {
 	plan := minimalPlan()
-	plan.Agent.Policy = &agentsuite.FileRef{Path: "policies/writer.json", Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypePolicyV2, Digest: testDigest, Size: 1}}
+	plan.Agent.Policy = &suitecore.FileRef{Path: "policies/writer.json", Descriptor: suitecore.Descriptor{MediaType: suitecore.MediaTypePolicyV2, Digest: testDigest, Size: 1}}
 	calls := 0
 	builder := New(Options{ModelBaseURL: "https://models.example/v1", ModelAPIKeyEnv: "MODEL_API_KEY", exporter: ociExporterFunc(func(_ context.Context, _ agentImage, dst io.Writer) error {
 		calls++
@@ -209,7 +209,7 @@ func TestBuildValidatesModelAPIKeyEnvironmentName(t *testing.T) {
 
 func TestBuildRejectsUnsupportedAgentSuiteFeatures(t *testing.T) {
 	plan := minimalPlan()
-	plan.Agent.Invokes = []agentsuite.AgentInvoke{{Agent: "reviewer", MaxConcurrent: 1, MaxDepth: 1}}
+	plan.Agent.Invokes = []suitecore.AgentInvoke{{Agent: "reviewer", MaxConcurrent: 1, MaxDepth: 1}}
 	plan.ToolProviders = []kmxsuite.SelectedToolProvider{{ID: "search"}}
 	err := buildError(New(Options{ModelBaseURL: "https://models.example/v1"}), plan)
 	for _, want := range []string{"invocation edges", "ToolProviders"} {
@@ -422,24 +422,24 @@ func buildError(builder *Builder, plan kmxsuite.SandboxPlan) string {
 }
 
 func minimalPlan() kmxsuite.SandboxPlan {
-	platform := agentsuite.Platform{OS: "linux", Architecture: "amd64"}
+	platform := suitecore.Platform{OS: "linux", Architecture: "amd64"}
 	return kmxsuite.SandboxPlan{
-		Agent: agentsuite.Agent{
+		Agent: suitecore.Agent{
 			ID: "writer",
-			Model: agentsuite.ModelRequirement{
+			Model: suitecore.ModelRequirement{
 				Protocol: "openai-compatible",
 				Model:    "example-model",
 			},
 		},
 		Instructions: []byte("Write clearly.\n"),
-		Composition: agentsuite.Composition{
+		Composition: suitecore.Composition{
 			Agent: "writer", Platform: platform, BuildProfile: "default",
 		},
-		BuildProfile: agentsuite.BuildProfile{SourceEpoch: 1},
-		RuntimeBase: agentsuite.PlatformImage{
+		BuildProfile: suitecore.BuildProfile{SourceEpoch: 1},
+		RuntimeBase: suitecore.PlatformImage{
 			Platform: platform, ImageRef: "registry.example/runtime@" + testDigest,
 		},
-		Harness: agentsuite.PlatformImage{
+		Harness: suitecore.PlatformImage{
 			Platform: platform, ImageRef: "ghcr.io/orka-agents/agentkit/serve-pydantic-ai@" + testDigest,
 		},
 	}

@@ -8,18 +8,18 @@ import (
 	"fmt"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
 )
 
 func TestFlowContentLimitIsOnlyForFixedFlowPath(t *testing.T) {
-	for _, name := range []string{agentsuite.FlowPathV1Alpha1, "coordination/other.json", "instructions/writer.md"} {
+	for _, name := range []string{suiteflow.FlowPathV1Alpha1, "coordination/other.json", "instructions/writer.md"} {
 		body := bytes.Repeat([]byte("x"), fileBytes+1)
 		raw := contentArchive(t, []tarRecord{{header: tar.Header{Name: name, Mode: 0600, Typeflag: tar.TypeReg, Size: int64(len(body))}, body: body}})
 		if _, err := Files(t.Context(), raw); !errors.Is(err, ErrArtifactLimit) {
 			t.Fatalf("strict parser accepted %s: %v", name, err)
 		}
 		got, err := contentFiles(t.Context(), raw, true)
-		if name == agentsuite.FlowPathV1Alpha1 {
+		if name == suiteflow.FlowPathV1Alpha1 {
 			if err != nil || !bytes.Equal(got[name], body) {
 				t.Fatalf("flow exception lost: %v", err)
 			}
@@ -28,7 +28,7 @@ func TestFlowContentLimitIsOnlyForFixedFlowPath(t *testing.T) {
 		}
 	}
 	body := bytes.Repeat([]byte("x"), (4<<20)+1)
-	raw := contentArchive(t, []tarRecord{{header: tar.Header{Name: agentsuite.FlowPathV1Alpha1, Mode: 0600, Typeflag: tar.TypeReg, Size: int64(len(body))}, body: body}})
+	raw := contentArchive(t, []tarRecord{{header: tar.Header{Name: suiteflow.FlowPathV1Alpha1, Mode: 0600, Typeflag: tar.TypeReg, Size: int64(len(body))}, body: body}})
 	if _, err := contentFiles(t.Context(), raw, true); !errors.Is(err, ErrArtifactLimit) {
 		t.Fatalf("flow limit widened: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestFlowContentKeepsAggregateAndInventoryLimits(t *testing.T) {
 					records = append(records, tarRecord{header: tar.Header{Name: fmt.Sprintf("dir-%d/", i), Typeflag: tar.TypeDir, Mode: 0700}})
 				}
 			case "total":
-				records = append(records, regular(agentsuite.FlowPathV1Alpha1, 4<<20))
+				records = append(records, regular(suiteflow.FlowPathV1Alpha1, 4<<20))
 				for i := 0; i < 4; i++ {
 					records = append(records, regular(fmt.Sprintf("file-%d", i), 1<<20))
 				}

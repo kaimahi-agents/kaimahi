@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
@@ -110,12 +110,12 @@ func TestSuitePassStoreCapacityPreservesExistingProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	var record suitePassRecord
-	if err := agentsuite.Unmarshal(data, &record); err != nil {
+	if err := suitecore.Unmarshal(data, &record); err != nil {
 		t.Fatal(err)
 	}
 	for i := 2; i <= maxSuitePassRecords; i++ {
 		record.Sequence = uint64(i)
-		b, err := agentsuite.Marshal(record)
+		b, err := suitecore.Marshal(record)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -326,7 +326,7 @@ func TestSuitePassStoreAgentSessionsReceiptV1(t *testing.T) {
 	}
 	document["domain"] = suiteSessionsPassingDomainV1
 	delete(document["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
-	old, err := agentsuite.Marshal(document)
+	old, err := suitecore.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestSuitePassStoreAgentSessionsReceiptV1(t *testing.T) {
 			t.Fatal(err)
 		}
 		edit(v)
-		raw, err := agentsuite.Marshal(v)
+		raw, err := suitecore.Marshal(v)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -361,7 +361,7 @@ func TestSuitePassStoreAgentSessionsReceiptV1(t *testing.T) {
 	}
 	// Only a receipt that is otherwise complete gets the classified error.
 	document["result"] = "fail"
-	broken, err := agentsuite.Marshal(document)
+	broken, err := suitecore.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +381,7 @@ func TestSuitePassStoreAgentSessionsReceiptV1(t *testing.T) {
 	}
 	writeRecord := func(store *suitePassStore, seq uint64, receipt []byte) {
 		t.Helper()
-		b, err := agentsuite.Marshal(suitePassRecord{1, store.identity, p.suite.Digest, seq, receipt})
+		b, err := suitecore.Marshal(suitePassRecord{1, store.identity, p.suite.Digest, seq, receipt})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -426,7 +426,7 @@ func TestSuitePassStoreAgentSessionsReceiptV1(t *testing.T) {
 	// corruption, not a classified receipt v1.
 	document["result"] = "pass"
 	document["agentsessions"].(map[string]any)["subject"].(map[string]any)["suiteDigest"] = "sha256:" + strings.Repeat("1", 64)
-	otherSuite, err := agentsuite.Marshal(document)
+	otherSuite, err := suitecore.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +441,7 @@ func TestSuitePassStoreAgentSessionsReceiptV1(t *testing.T) {
 	subjectDocument := document["agentsessions"].(map[string]any)["subject"].(map[string]any)
 	subjectDocument["suiteDigest"] = p.suite.Digest
 	subjectDocument["compositionDigest"] = "sha256:" + strings.Repeat("2", 64)
-	otherComposition, err := agentsuite.Marshal(document)
+	otherComposition, err := suitecore.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +477,7 @@ func TestSuitePassStoreRefusesIncoherentReceiptV1Record(t *testing.T) {
 			document["domain"] = suiteSessionsPassingDomainV1
 			delete(subjectDocument, "bindingDigest")
 			subjectDocument[field] = "sha256:" + strings.Repeat("3", 64)
-			old, err := agentsuite.Marshal(document)
+			old, err := suitecore.Marshal(document)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -491,7 +491,7 @@ func TestSuitePassStoreRefusesIncoherentReceiptV1Record(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer store.Close()
-			b, err := agentsuite.Marshal(suitePassRecord{1, store.identity, p.suite.Digest, 1, old})
+			b, err := suitecore.Marshal(suitePassRecord{1, store.identity, p.suite.Digest, 1, old})
 			if err != nil {
 				t.Fatal(err)
 			}

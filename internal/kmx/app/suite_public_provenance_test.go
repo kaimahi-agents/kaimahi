@@ -10,7 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteevidence "github.com/agent-primitives/suite/evidence"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
@@ -79,7 +80,7 @@ func TestSuitePublicProducerIdentityRoutes(t *testing.T) {
 				t.Fatalf("invented private version: %q; want %q", p.Version, tc.version)
 			}
 			if tc.name == "module-install" {
-				raw, err := agentsuite.Marshal(p)
+				raw, err := suitecore.Marshal(p)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -163,7 +164,7 @@ func TestSuitePublicTaggedCompanionStrict(t *testing.T) {
 }
 
 func TestSuitePublicTaggedExportAndChecksumBinding(t *testing.T) {
-	var previous agentsuite.EvaluationEvidence
+	var previous suiteevidence.EvaluationEvidence
 	for i, sum := range []string{publicModuleSum, "h1:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="} {
 		t.Run([]string{"original", "changed"}[i], func(t *testing.T) {
 			store, suite, raw := passStoreFixture(t)
@@ -193,8 +194,8 @@ func TestSuitePublicTaggedExportAndChecksumBinding(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var evidence agentsuite.EvaluationEvidence
-			if err := agentsuite.Unmarshal(data, &evidence); err != nil {
+			var evidence suiteevidence.EvaluationEvidence
+			if err := suitecore.Unmarshal(data, &evidence); err != nil {
 				t.Fatal(err)
 			}
 			source := []byte(`{"domain":"kmx.go-build-source/v1","producer":{"module":"github.com/kaimahi-agents/kaimahi","sum":"` + sum + `","version":"v1.2.3"}}`)
@@ -224,7 +225,7 @@ func TestSuitePublicTaggedExportAndChecksumBinding(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := agentsuite.VerifyEvaluation(prepared.Path, expected, bytes.NewReader(data)); err != nil {
+			if _, err := suiteevidence.VerifyEvaluation(prepared.Path, expected, bytes.NewReader(data)); err != nil {
 				t.Fatal("shared verification", err)
 			}
 		})

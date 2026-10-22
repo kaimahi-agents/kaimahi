@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
@@ -31,7 +31,7 @@ func TestResolveSandboxPlanValidatesLooseContentEvenWithOCILayout(t *testing.T) 
 		t.Fatal(err)
 	}
 	// Auto-detection validates the embedded artifact, not the loose manifests.
-	if _, err := agentsuite.ValidatePath(root); err != nil {
+	if _, err := suiteoci.ValidatePath(root); err != nil {
 		t.Fatal(err)
 	}
 	plan, err := kmxsuite.ResolveSandboxPlan(root, kmxsuite.BuildSelection{Agent: "not-declared"})

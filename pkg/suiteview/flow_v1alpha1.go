@@ -4,7 +4,8 @@ import (
 	"context"
 	"io"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/localartifact"
 )
 
@@ -14,7 +15,7 @@ type FlowV1Alpha1View struct {
 	Artifact   ArtifactIdentity
 	Suite      SuiteIdentity
 	FlowDigest string
-	Flow       agentsuite.FlowV1Alpha1
+	Flow       suiteflow.FlowV1Alpha1
 	Members    []MemberRecipe
 }
 
@@ -48,7 +49,7 @@ func validateFlowSelection(ctx context.Context, digest string) error {
 	if err := ctx.Err(); err != nil {
 		return &Refusal{Code: RefusalCanceled, cause: err}
 	}
-	if digest != "" && !agentsuite.IsValidDigest(digest) {
+	if digest != "" && !suitecore.IsValidDigest(digest) {
 		return &Refusal{Code: RefusalSelection}
 	}
 	return nil
@@ -60,8 +61,8 @@ func projectFlowV1Alpha1(ctx context.Context, artifact *localartifact.Artifact) 
 		return FlowV1Alpha1View{}, &Refusal{Code: RefusalArtifact}
 	}
 	files := artifact.Files()
-	var coreSuite agentsuite.Suite
-	if agentsuite.Unmarshal(files["agentsuite.json"], &coreSuite) != nil {
+	var coreSuite suitecore.Suite
+	if suitecore.Unmarshal(files["agentsuite.json"], &coreSuite) != nil {
 		return FlowV1Alpha1View{}, &Refusal{Code: RefusalArtifact}
 	}
 	descriptor := artifact.Descriptor()

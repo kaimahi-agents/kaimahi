@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/agent-primitives/suite/policy"
 	"github.com/gowebpki/jcs"
 	godigest "github.com/opencontainers/go-digest"
@@ -14,7 +14,7 @@ import (
 // Each loaded inventory owns its bytes and descriptor.
 type NativePolicy struct {
 	Path       string
-	Descriptor agentsuite.Descriptor
+	Descriptor suitecore.Descriptor
 	Bytes      []byte
 }
 
@@ -46,7 +46,7 @@ func canonicalMemberPolicy(raw []byte) ([]byte, error) {
 	return canonical, nil
 }
 
-func bindMemberPolicy(files map[string][]byte, id string, raw []byte) (*agentsuite.FileRef, error) {
+func bindMemberPolicy(files map[string][]byte, id string, raw []byte) (*suitecore.FileRef, error) {
 	if raw == nil {
 		return nil, nil
 	}
@@ -56,10 +56,10 @@ func bindMemberPolicy(files map[string][]byte, id string, raw []byte) (*agentsui
 	}
 	name := "policies/" + id + ".json"
 	files[name] = canonical
-	return &agentsuite.FileRef{Path: name, Descriptor: agentsuite.Descriptor{MediaType: agentsuite.MediaTypePolicyV2, Digest: godigest.FromBytes(canonical).String(), Size: int64(len(canonical))}}, nil
+	return &suitecore.FileRef{Path: name, Descriptor: suitecore.Descriptor{MediaType: suitecore.MediaTypePolicyV2, Digest: godigest.FromBytes(canonical).String(), Size: int64(len(canonical))}}, nil
 }
 
-func readMemberPolicy(files map[string][]byte, agent agentsuite.Agent, profile RuntimeProfile) ([]byte, error) {
+func readMemberPolicy(files map[string][]byte, agent suitecore.Agent, profile RuntimeProfile) ([]byte, error) {
 	if agent.Policy == nil {
 		return nil, nil
 	}
@@ -69,13 +69,13 @@ func readMemberPolicy(files map[string][]byte, agent agentsuite.Agent, profile R
 	return readDeclaredMemberPolicy(files, agent)
 }
 
-func readDeclaredMemberPolicy(files map[string][]byte, agent agentsuite.Agent) ([]byte, error) {
+func readDeclaredMemberPolicy(files map[string][]byte, agent suitecore.Agent) ([]byte, error) {
 	if agent.Policy == nil {
 		return nil, nil
 	}
 	ref := *agent.Policy
 	raw, exists := files[ref.Path]
-	if ref.Path != "policies/"+agent.ID+".json" || ref.Descriptor.MediaType != agentsuite.MediaTypePolicyV2 || !exists || !agentsuite.MatchesCanonicalDescriptor(raw, ref.Descriptor) {
+	if ref.Path != "policies/"+agent.ID+".json" || ref.Descriptor.MediaType != suitecore.MediaTypePolicyV2 || !exists || !suitecore.MatchesCanonicalDescriptor(raw, ref.Descriptor) {
 		return nil, errors.New("unsupported native member policy binding")
 	}
 	canonical, err := canonicalMemberPolicy(raw)
