@@ -12,6 +12,7 @@ import (
 	"time"
 
 	kaimahi "github.com/kaimahi-agents/kaimahi"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/guard"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/orkaschema"
@@ -40,6 +41,8 @@ func (a *App) testCommandVerb() string {
 // App carries the resolved configuration and the streams every command
 // writes to.
 type App struct {
+	// FileRunner is the embedded preview dependency; nil refuses file execution.
+	FileRunner      agentpreview.Runner
 	chatClusterName string
 	// kagentProfile is invocation-local; nil keeps the exact create profile.
 	kagentProfile *kagentProfile

@@ -383,7 +383,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   A renamed command must not silently change runtime, target, ownership or
   supported operations.
 - Update command registration, help, completion, relevant chat/console labels,
-  generated next/recovery commands, primary docs and CHANGELOG in the same slice.
+  generated next/recovery commands, primary docs and a `changes/` release-note
+  fragment in the same slice.
   Record changed defaults and compatibility/removal policy. Keep old routes
   callable until an announced transition unless an outright removal is explicitly
   approved; record that removal and its replacements. Notices belong on stderr.
@@ -407,6 +408,30 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   updating current examples. Do not bulk-rename historical text or serialized
   state. Generated recovery commands must preserve the invoking executable,
   selectors and shell quoting.
+
+## Agent-file preview boundary
+
+Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
+interface without cluster/workspace configuration. CLI uses a temporary direct
+`preview runner (no journal)` for fake/local routes, with one agent call per input/example and one judge
+call per llmJudge; no Sessions, journal, retries or fallback. Remove it when the
+embedded runner lands. Scripted test fakes remain `_test.go` only, not real-model
+qualification. `app.FilePreviewResult` v1 is the safe shared projection, not a
+native evidence receipt. Subset is always partial, execution/journal failure is
+unknown, and only an explicit caller override changes the judge route. Keep
+live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
+See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
+
+## Agent-file MCP boundary
+
+`mcp --root DIRECTORY` is stdio-only and config-free at startup. Require an
+absolute existing root, never cwd/client-root fallback. Expose exactly
+Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
+never the path wrapper or shell CLI strings. Model routes are trusted startup
+configuration, not tool/charter fields. Keep complete safe App results on errors;
+fixture runners are not production execution. Edit preserves mode bits, not
+ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
+No new runner, Explain tool or network listener. See [MCP](docs/kmx.md#local-stdio-mcp).
 
 ## Single-file charter boundary
 
@@ -568,6 +593,6 @@ custom-domain and versioned-site changes require a separate review.
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
 Command changes normally require `go test ./cmd/kmx`, affected operation-package
 tests, documentation links, repository-map and legacy-runtime checks. These
-inventory checkers use tracked files, so include intended additions in the index
+checkers use tracked files, so include intended additions in the index
 when checking the complete change. Update AGENTS.md when implemented conventions
 change so subsequent work follows the same rules.

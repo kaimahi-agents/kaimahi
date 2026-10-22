@@ -49,7 +49,8 @@ func TestTestCommandTreesAndDiscovery(t *testing.T) {
 				t.Fatalf("missing legacy helper %s: %v", child, err)
 			}
 		}
-		if left == right || left.Flags().FlagUsages() != right.Flags().FlagUsages() {
+		// Canonical Test additionally owns file preview; workspace helpers stay identical.
+		if left == right || child != "" && left.Flags().FlagUsages() != right.Flags().FlagUsages() {
 			t.Fatalf("helper %q shares commands or has different flags", child)
 		}
 		for _, flag := range []string{"workspace", "out", "output", "to-context", "sessions", "suite"} {
@@ -63,6 +64,11 @@ func TestTestCommandTreesAndDiscovery(t *testing.T) {
 			if right.Flags().Lookup(flag).Changed || right.Flags().Lookup(flag).Value.String() != before {
 				t.Fatalf("%s --%s shares mutable flag storage", child, flag)
 			}
+		}
+	}
+	for _, name := range []string{"case", "provider", "endpoint"} {
+		if canonical.Flag(name) == nil || legacy.Flag(name) != nil {
+			t.Fatalf("file flag %s leaked into legacy workspace eval", name)
 		}
 	}
 	for _, args := range [][]string{{"--help"}, {"__complete", ""}, {"__complete", "help", ""}} {
@@ -153,8 +159,8 @@ func TestTestLegacyNoticeRequiredFlagsAndOfflineHelpers(t *testing.T) {
 		{"verify", "--suite", "missing", "--evidence", "missing", "--expect", "missing", "-o", "json"},
 		{"from-sessions", "uid", "--sessions", "127.0.0.1:8080", "--assertions", "missing.yaml", "--out", output},
 		{"cleanup", "--to-context", "kind-eval"},
-		{"frob"},
-		{"--", "eval"},
+		{"frob", "extra"},
+		{"--", "eval", "extra"},
 	} {
 		var legacyError, legacyOut, legacyDiag string
 		for _, verb := range []string{"eval", "test"} {

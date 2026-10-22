@@ -405,11 +405,40 @@ requires an operator-owned runtime; v0.10.2 live create is removed.
 For maintainers. The point of this list is that the second release is cheaper
 than the first.
 
-1. Write the section. Move what is under `## Unreleased` in
-   [CHANGELOG.md](../CHANGELOG.md) into a `## vX.Y.Z — <date>` heading, and
-   leave `## Unreleased` empty behind it. Anything breaking goes under
-   **Breaking** with what to do about it; anything that changes an operator's
-   day goes under **Upgrading**.
+1. Prepare the notes from a clean, up-to-date `main` checkout. Render the
+   existing Unreleased entries plus pending [per-PR fragments](../changes/README.md)
+   into a candidate [CHANGELOG.md](../CHANGELOG.md):
+
+   ```bash
+   notes=$(mktemp)
+   python3 scripts/check-changelog-fragments.py --render vX.Y.Z --date YYYY-MM-DD > "$notes"
+   python3 scripts/check-changelog-fragments.py --list
+   git diff --no-index -- CHANGELOG.md "$notes"
+   ```
+
+   Substitute the real stable version and calendar date. Stop if rendering or
+   listing fails; the helper itself never writes or removes a note. Inspect the
+   candidate and the included-path list before changing tracked files. The diff
+   command exits 1 when it shows differences, which is expected.
+
+   The candidate keeps the root preamble, leaves `## Unreleased` empty, preserves
+   released history byte-for-byte, and combines old Unreleased entries followed
+   by filename-sorted fragments under one heading per category. Anything breaking
+   goes under **Breaking** with what to do about it; anything that changes an
+   operator's day goes under **Upgrading**. RC tags continue to use their base
+   version's section; prepare that stable section rather than a separate RC one.
+
+   After review, copy the candidate over `CHANGELOG.md` and use `git rm --` with
+   exactly the fragment paths printed by `--list` in the same release-preparation
+   PR. Keep `changes/README.md`; never remove notes with a wildcard. Delete the
+   temporary candidate after copying it. Re-render and review again after any
+   intervening merge or note edit, so newly arrived fragments are not lost or
+   removed without inclusion. Leaving an included fragment behind would repeat
+   it in the next release, so check the deletion list in the PR diff.
+
+   Release dry runs still read `Unreleased` only, not pending fragments. An empty
+   section is the existing tolerated no-section result; this does not change tag
+   publication or the release-notes extractor's exit codes.
 2. Merge that to `main`. Releases are cut from `main`.
 3. Tag the root CLI release and push:
 

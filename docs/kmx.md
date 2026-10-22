@@ -139,17 +139,154 @@ Each legacy invocation adds exactly one stderr line:
 kmx eval is deprecated; use kmx test (same arguments).
 ```
 
-Accepted arguments, flags, stdout, exit codes, state and existing stderr labels
-remain unchanged apart from that notice. Help and completion remain inert;
-root help/completion advertises `test`, not `eval`. Removal requires a later
+Existing workspace arguments, flags, stdout, exit codes, state and stderr labels
+remain unchanged apart from that notice. File preview uses canonical `run FILE`
+and `test FILE`; neither is added to the legacy `eval` route. Help and completion
+remain inert; root help/completion advertises `test`, not `eval`. Removal requires a later
 announced breaking release.
 
 This is a command rename, not a data migration. Authored `eval/` and packaged
 `evals/` directories, `evalTarget`/`evaluationTarget`, schemas, APIs, receipt and
 storage names, and machine JSON keys/values (including the `eval` stage) remain
-unchanged. Run still targets an existing live Orka Agent, not local workspace
-execution. Publish still uses `kmx push` to transfer an OCI graph; no local
+unchanged. `run --agent` still targets an existing live Orka Agent, not local
+workspace execution. Publish still uses `kmx push` to transfer an OCI graph; no local
 numbered versions or new publication command are introduced.
+
+### Agent-file local preview (unreleased integration)
+
+`kmx run FILE` and `kmx test FILE` select one canonical markdown agent file,
+without workspace discovery, cluster configuration, Docker or a daemon. Both
+check the file's saved examples in authored order. Run additionally accepts
+`--prompt TEXT` or `--prompt-file FILE|-` for a separately attributed ad-hoc
+answer; without either it checks examples only. Test accepts no ad-hoc input.
+Input is bounded to 16 KiB. The five-minute preview execution deadline starts
+after prompt collection. Ctrl-C/SIGTERM retain their default behavior during
+intake, including when a pipe's writer stays open without EOF; no background
+reader is started. Prompt-file/stdin intake errors are pre-operation CLI errors
+on stderr, with no result document. Rooted API callers can pass an already-parsed
+snapshot without reopening its filename; the CLI path is a thin load-and-delegate
+wrapper.
+Neither operation changes source or produces native evaluation/deploy evidence.
+
+File mode uses an interim **preview runner (no journal)** behind the shared
+runner interface. It calls the selected route directly without Sessions or a
+journal, with one completion per ad-hoc input/example and one extra call per
+`llmJudge` assertion. There are no retries, redirects or provider/model fallback.
+The runner and its constructor wiring are removed when the embedded Sessions
+runner is integrated. A nil dependency still refuses `runner_unavailable`.
+Hermetic tests do not qualify real local models or native Windows.
+
+The offline `fake` route is deliberately small: Accountable Responsibilities must
+be exactly ``Reply with exactly `Hello, ` followed by the input name.`` (the prefix
+can change), or ``Reply with exactly `literal response`.``. A fake judge supports
+only the rubric ``Answer contains `text`.``; unsupported rubrics are unknown, not
+an automatic pass. This is orientation, not a general model. Real compatible/local
+routes use an explicit keyless local endpoint (HTTP or HTTPS on literal loopback/localhost).
+Compatible/local transport waits at most 30 seconds for response headers, within
+the five-minute overall budget; slow non-streaming generation can hit that limit.
+Agent completions require an exact model-ID echo, with no automatic aliasing.
+Copilot and remote endpoints refuse in this runner; Copilot wiring is separate
+work after model-access integration.
+
+Judging applies the authored threshold to one valid score; unavailable, malformed,
+refused or mismatched-model replies are unknown. These single-sample local rows
+are not the two-sample native judge policy and never carry native judge evidence.
+
+```text
+kmx run ./greeter.agent.md --prompt Ada
+kmx test ./greeter.agent.md --case greeting -o json
+kmx test ./greeter.agent.md
+```
+
+`--case ID` selects one stable saved example and always reports **partial**, even
+if the file contains only that example. Unknown/blank IDs refuse before inference.
+Missing/empty examples cannot pass. The exact model comes from `Model.Preferred`;
+`fake` selects only the built-in fake route. A real model additionally requires
+an explicit trusted `--provider` and `--endpoint`, validated by model access;
+there is no discovery, installation, sign-in or fallback inside Run/Test. The
+caller supplies any judge-route override through the App API; otherwise the
+judge uses the exact agent route, never an independently chosen route. Conflicting
+authored judge models refuse rather than silently switching.
+
+Output defaults to text; `-o json` returns one versioned `schemaVersion: 1`,
+`kind: kmx.agent-file-preview` document. Both preserve operation, exact source-byte
+SHA-256 revision, provider/model, full/subset selection, terminal state and
+example/assertion IDs with pass/fail/unknown and safe reasons. JSON includes
+`fullPass`, which is false for every subset, incomplete or unknown result. Direct
+execution additionally includes `runner: "preview runner (no journal)"`; the
+underlying journal handle is empty and no journal is retained. A full local pass
+in this mode is not journaled execution or deploy evidence. Paths
+are sanitized display basenames, not a file-targeting API. The optional structured
+`diagnostic` names safe parser fields, source line/column and repair advice.
+Default output contains no instructions, inputs, answers, operands, provider error
+text, endpoint or journal handle. `--show-content` explicitly adds sanitized answer
+excerpts, at most 4096 UTF-8 bytes each; treat them as untrusted content.
+
+File-mode exits: 0 means the selected checks completed and passed (a partial
+selection is **not** a full pass); 2 means completed assertion fail/unknown;
+1 means refusal, execution/deadline/journal/output failure; 130 means cancellation.
+Journal-finalization failure preserves available rows but makes the overall
+verdict unknown and returns an error, never a pass. Source edits do not rebind
+an in-flight result to a new revision. No file failure retention or file-scoped
+Explain is available here; workspace Explain remains unchanged.
+
+Do not mix FILE with `--agent`, workspace, destination, evidence, native judge or
+cluster flags, including explicitly supplied defaults. Existing live
+`run --agent` and full-workspace Test contracts remain separate and unchanged.
+
+### Local stdio MCP
+
+`kmx mcp --root /absolute/project` serves exactly `create`, `edit`, `run` and
+`test`, using the canonical parser and the same App snapshot operation as file
+Run/Test. It does not listen on a network socket or load cluster/workspace
+configuration. The root must already exist; missing, relative or invalid roots
+refuse startup. There is no cwd, plugin-cache or client-roots fallback, and no
+tool can change the root. Host shell authority remains outside this boundary.
+
+Every tool input requires integer `schemaVersion: 1`. MCP initialization also
+negotiates its protocol version and advertises the engine build version.
+Stdout carries protocol only; no request/result logging or banners. Inbound
+frames are bounded to 2 MiB and source files to 256 KiB.
+
+| Tool | Input in addition to schemaVersion | Result |
+|---|---|---|
+| `create` | `path`, `content` | Saved root-relative path and exact-byte revision |
+| `edit` | `path`, `content`, `expectedRevision` | Saved path and new revision |
+| `run` | `path`; optional `input`, `caseId`, `showContent` | Shared `kmx.agent-file-preview` v1 result |
+| `test` | `path`; optional `caseId`, `showContent` | Same shared result, no ad-hoc input |
+
+Paths are portable root-level `<name>.agent.md` or
+`.squad/agents/<id>/charter.md`; traversal, absolute paths, symlink escapes and
+special files refuse. Necessary Squad parent directories may be created, but no
+roster or other team metadata is touched. Create validates before publishing a
+same-directory staged file with no-replace rename. Edit validates old/new source,
+checks the expected `sha256:…` revision under an OS-held writer lock, then renames
+the staged replacement. Busy/unavailable locks and failed renames report safe
+errors; no lockfile, filesystem-type detection or direct-write fallback.
+Locks exclude cooperating writers, not outside editors that ignore them.
+
+Create respects umask. Edit preserves mode bits but does not copy ownership,
+ACLs or extended attributes; replacement follows normal ownership/directory
+inheritance. This is intended for the user's own files. Invalid existing charters
+must be repaired manually. Crash leftovers may include this operation's non-agent
+temp file or empty parent directories; no stale-file sweeping is performed.
+
+Run/Test parse a bounded rooted snapshot once and never reopen the source through
+its display path. Results preserve revision, route, full/subset, state, verdict,
+diagnostics and retention status even when the App returns an error. Such errors
+also set MCP `isError`; a successful subset still has `fullPass: false`.
+`showContent` is explicit and defaults false; bounded returned text is untrusted
+data, never tool instructions. The result's display basename is not target authority.
+
+A real model route must be selected at process startup with trusted
+`--provider` and `--endpoint`; the exact model still comes from the parsed file.
+Tools accept no endpoint, credential or arbitrary-command fields. With no route,
+only exact `fake` is selectable. Run/Test use the same temporary
+[preview runner (no journal)](#agent-file-local-preview-unreleased-integration)
+as the file CLI, preserving its runner label and restrictions. A nil runner
+still returns `runner_unavailable`, never a fallback. Hermetic checks do not
+qualify real models, embedded Sessions, journaling or native Windows.
+There is no fifth Explain/model/install tool; offline Explain stays a CLI action.
 
 ### Deploy compatibility (unreleased)
 

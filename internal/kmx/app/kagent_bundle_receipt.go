@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-
-	"golang.org/x/sys/unix"
 )
 
 const kagentVersionMarker = "kaimahi.dev/runtime-version"
@@ -16,17 +13,6 @@ const maxKagentFileBytes = 1 << 20
 // Root.OpenFile follows even in-root symlinks. Use single-component openat
 // calls instead, retaining each checked directory descriptor for the next step.
 // O_DIRECTORY and O_NONBLOCK prevent a substituted FIFO from blocking an open.
-
-func openKagentFile(dir *os.File, name string) (*os.File, error) {
-	if name == "." || name == ".." || filepath.Base(name) != name {
-		return nil, fmt.Errorf("Kagent file name must be a single path component")
-	}
-	fd, err := unix.Openat(int(dir.Fd()), name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return nil, fmt.Errorf("open Kagent bounded regular file, not a link: %w", err)
-	}
-	return os.NewFile(uintptr(fd), name), nil
-}
 
 // The size limit applies to bytes actually read, not just a pre-read stat.
 // Revalidate the same descriptor to refuse growth, truncation or permission

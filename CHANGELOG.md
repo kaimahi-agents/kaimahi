@@ -24,18 +24,23 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
-- Explicit direct Copilot model access: `kmx model login` uses GitHub device
-  flow; `login --gh` alone opts into bounded private gh token capture. Reusable
-  credentials live only in kmx's native OS keychain item, never a plaintext
-  cache; `model logout` removes only that item and clears memory. Explicit
-  `model list --provider copilot [-o table|json]` returns enabled Chat-compatible
-  non-secret routes without prompting for sign-in; default local discovery is
-  unchanged. The internal selected-route transport sends direct JSON/SSE Chat
-  Completions, establishing auth through the catalog and using legacy exchange
-  only after credential refusal. No inference replay, model substitution,
-  runner, proxy or change to the existing Copilot CLI-chat adapter. Hermetic
-  package tests are separate from live auth/keychain acceptance and full native
-  Windows CLI qualification, which follows native CLI support.
+- `kmx mcp --root DIRECTORY` serves exactly Create/Edit/Run/Test over stdio.
+  It confines canonical charter access to an explicit root, creates without
+  replacement, edits at an expected revision and delegates Run/Test to the shared
+  snapshot API and its temporary preview runner (no journal). No new runner,
+  network listener or native evidence authority.
+
+- Temporary direct file-preview runner with explicit no-journal output, deterministic
+  fake and selected local OpenAI-compatible model transport. One completion
+  per input/example and one judge sample per llmJudge, without retries or fallback;
+  no Sessions, native judge evidence or deployment qualification. Removed when the
+  embedded Sessions runner is integrated.
+
+- Canonical `run FILE` / `test FILE` adapters for markdown-agent local preview:
+  stable `--case` selection, versioned payload-free text/JSON outcomes, separate
+  ad-hoc input and distinct non-pass/cancel exits. Tests inject the embedded-runner
+  interface; a temporary direct no-journal adapter is available for preview. No native
+  evidence, file-scoped Explain or change to deployed Run/workspace Test/Eval.
 
 - Read-only `kmx model list [-o table|json]` discovers cached Foundry Local
   models at the runtime-reported endpoint and installed Ollama models on loopback

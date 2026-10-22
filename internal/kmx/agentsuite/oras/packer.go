@@ -16,7 +16,6 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	oraslib "oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
-	"oras.land/oras-go/v2/content/oci"
 	"oras.land/oras-go/v2/errdef"
 )
 
@@ -62,7 +61,7 @@ func (p *Packer) Pack(
 		return kmxsuite.PackResult{}, err
 	}
 	defer os.RemoveAll(stageRoot)
-	stage, err := oci.New(stageRoot)
+	stage, err := newOCIStore(stageRoot)
 	if err != nil {
 		return kmxsuite.PackResult{}, fmt.Errorf("create staged AgentSuite OCI layout: %w", err)
 	}
