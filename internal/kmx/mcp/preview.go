@@ -48,7 +48,12 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			}
 			ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			defer cancel()
-			parsed, parseErr := files.snapshot(ctx, input.Path)
+			sequence := files.beginPreview(input.Path)
+			path, pathErr := files.rootRelative(input.Path)
+			if pathErr != nil {
+				return nil, pathErr
+			}
+			parsed, parseErr := files.snapshot(ctx, path)
 			var detail *agentfile.Error
 			if parseErr != nil && !errors.As(parseErr, &detail) {
 				return nil, parseErr
@@ -57,6 +62,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 			}
+			files.finishPreview(sequence, path, result)
 			// Keep the complete safe result even when the application returns an error.
 			// Returning that error to the generic protocol wrapper would discard it.
 			var previewErr *app.FilePreviewError
@@ -115,6 +121,14 @@ func previewSummaryField(s string, limit int) string {
 }
 
 func (f *Files) snapshot(ctx context.Context, p string) (*agentfile.Agent, error) {
+	return f.readSnapshot(ctx, p, false)
+}
+
+func (f *Files) inspect(ctx context.Context, p string) (*agentfile.Agent, error) {
+	return f.readSnapshot(ctx, p, true)
+}
+
+func (f *Files) readSnapshot(ctx context.Context, p string, inspection bool) (*agentfile.Agent, error) {
 	if err := cancelled(ctx); err != nil {
 		return nil, err
 	}
@@ -135,5 +149,8 @@ func (f *Files) snapshot(ctx context.Context, p string) (*agentfile.Agent, error
 		return nil, err
 	}
 	defer file.Close()
+	if inspection {
+		return agentfile.Inspect(p, b)
+	}
 	return agentfile.Parse(p, b)
 }

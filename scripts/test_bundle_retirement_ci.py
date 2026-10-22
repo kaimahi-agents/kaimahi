@@ -10,12 +10,15 @@ import tempfile
 import unittest
 import yaml
 
+from test_workflow_helpers import runtime_job
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class RetirementCITests(unittest.TestCase):
     def setUp(self):
         self.jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
+        self.jobs["e2e-orka-runtime"] = runtime_job(ROOT)
 
     def test_required_aggregator_retains_native_shards_not_removed_products(self):
         expected = {"classify-change", "e2e-kagent-lift", "e2e-orka-runtime", "e2e-orka-helm", "e2e-quickstart"}
@@ -36,7 +39,7 @@ class RetirementCITests(unittest.TestCase):
             if failure:
                 sample["e2e-orka-runtime"]["result"] = failure
             result = subprocess.run([sys.executable, "-c", program], capture_output=True,
-                                    env={**os.environ, "SHARDS": json.dumps(sample), "EVENT": "pull_request"})
+                                    env={**os.environ, "SHARDS": json.dumps(sample), "EVENT": "pull_request", "REF": "refs/heads/main"})
             self.assertEqual(result.returncode, 0 if failure is None else 1)
 
     def test_live_shards_do_not_invoke_removed_lifecycle(self):

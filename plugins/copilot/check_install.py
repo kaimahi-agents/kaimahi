@@ -11,6 +11,8 @@ import stat
 import subprocess
 import threading
 
+from package import NATIVE_FILES
+
 
 def read_file(path: Path, maximum: int = 512 << 20) -> bytes:
     if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= maximum:
@@ -98,7 +100,7 @@ def check(copilot: str, plugin: Path, digest: str, home: Path) -> None:
             if home.resolve() not in cache.parents or validate_package(cache, digest) != root:
                 raise ValueError("unexpected installed cache/root")
             names = ["plugin.json", "mcp.json", "selected-root.json", "engine.json", "bin/kmx",
-                     "skills/kmx-agent-builder/SKILL.md"]
+                     "skills/kmx-agent-builder/SKILL.md", *NATIVE_FILES]
             if (plugin / "SETUP.md").exists():
                 names.append("SETUP.md")
             for name in names:

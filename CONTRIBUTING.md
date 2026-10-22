@@ -174,9 +174,10 @@ change classification is uncertain. It runs the harness in full on main pushes
 and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
 
-The classifier also exposes an independent `orka_required` decision. It is not
-consumed to reduce runtime qualification yet; existing Orka, Quickstart, stock
-Helm and kagent schedules and guards are unchanged. The checkout helper accepts
+The classifier exposes an independent `orka_required` decision for the Orka
+runtime worker. Only explicitly safe PRs and ordinary main pushes skip it;
+full nightly, relevant/unknown PR, manual and release qualification remain.
+Quickstart, stock Helm and kagent schedules and guards are unchanged. The checkout helper accepts
 full commit IDs as `python3 scripts/ci/orka-routing.py --base SHA --head SHA`.
 It prints only `true` or `false`; unknown, empty, malformed or failed diffs mean
 `true`. PR classification uses the synthetic merge commit's actual first parent,
@@ -288,9 +289,17 @@ The `e2e-kagent-lift` shard runs for relevant or unknown PR changes and always
 on main pushes, nightly and manual runs. Its required aggregator accepts only
 intentional skipped outcomes, never failed or cancelled shards.
 
-The existing `e2e-orka-runtime` shard also runs
-`python3 scripts/ci/suite-native.py kind-kmx-orka "$RUNNER_TEMP/kmx-suite-native"`
-after its raw upstream Orka Tool/Task and model-answer proof. The checkout-only qualifier requires the
+The read-only `orka-runtime.yml` worker runs the complete raw Orka Tool/Task,
+model-answer and native suite proof. Its CI check appears as
+`e2e-orka-runtime / qualify`; required contexts stay `hygiene` and
+`e2e-hello-world`. Routine main-push proof moves to the daily main nightly;
+manual CI and every release/dry run still require fresh full qualification.
+There is no blanket Markdown shortcut inside the worker: unknown Markdown,
+including live instructions, requires proof. See [CI qualification](docs/development.md#what-ci-proves).
+
+Inside its two owned contexts the command is
+`python3 scripts/ci/suite-native.py kind-kmx-orka kind-kmx-orka-promote "$RUNNER_TEMP/kmx-suite-native"`.
+The checkout-only qualifier requires the
 shard's exclusive cluster-creation flag and a matching `KIND_CLUSTER`, refuses
 existing work/model fixtures, and uses a fresh private KMX home. It adds the pinned
 CPU AIKit model inside that owned cluster, warms it, then attempts two independent

@@ -1,9 +1,10 @@
 // Package mcp adapts local agent-file operations to the stdio MCP boundary.
 //
-// It provides stdio-only Create, Edit, Run and Test over canonical parsing and
-// App snapshots, with exclusive atomic publication, revision checks and OS-held
-// writer locks. Edit preserves mode bits, not ownership, ACLs or extended
-// attributes; normal ownership and directory inheritance apply to replacement
+// It provides stdio-only Create, Edit, Run and Test and a root-confined read-only
+// agent resource over shared parsing and App snapshots, with exclusive atomic
+// publication, revision checks and OS-held writer locks. Edit preserves mode
+// bits, not ownership, ACLs or extended attributes; normal ownership and
+// directory inheritance apply to replacement
 // files. It is intended for the user's own files. Runner availability comes
 // from App, with no substitute runner or native Windows CLI qualification.
 package mcp
@@ -20,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 const maxFileBytes = 256 << 10
@@ -70,6 +72,8 @@ type File struct {
 type Files struct {
 	root     *os.Root
 	validate func(string, []byte) error
+	viewMu   sync.Mutex
+	latest   previewObservation
 }
 
 func OpenFiles(root string, validate func(string, []byte) error) (*Files, error) {

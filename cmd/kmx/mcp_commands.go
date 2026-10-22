@@ -57,6 +57,7 @@ func newMCPCommand(state *commandState) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			kmxmcp.AddAgentResource(server, files)
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			if err := kmxmcp.Serve(ctx, server, state.deps.stdin, mcpOutput{cmd.OutOrStdout()}); err != nil {

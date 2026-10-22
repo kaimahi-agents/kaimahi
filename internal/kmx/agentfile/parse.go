@@ -1,10 +1,13 @@
-// Package agentfile parses kmx's tool-free canonical charter, without execution
-// or implicit integration with native suite loaders.
+// Package agentfile parses canonical charters and explicitly selected native
+// Squad documents, without execution or implicit native suite integration.
 //
-// It provides bounded canonical charter parsing and regular-file loading with
-// source locations, exact-byte revisions and ordered examples. There is no CLI,
-// model access, source writing or Squad registration. Nested charter fixtures
-// are test support.
+// It provides bounded canonical parsing, read-only minimal-agent inspection and
+// regular-file loading with source locations, exact-byte revisions and ordered
+// examples. Explicit qualified native Squad parsing uses approved cast mapping
+// and copies original bytes and spans. Native documents remain distinct from
+// runnable agents. There is no CLI, execution, model access, source writing,
+// Squad registration or implicit suite loading. Nested native and canonical
+// charter fixtures are test support.
 package agentfile
 
 import (
@@ -93,22 +96,20 @@ type fence struct {
 // for the canonical Squad placement, an identity constraint. It reads no agent
 // files; relative charter.md names consult the current directory for placement.
 func Parse(filename string, data []byte) (*Agent, error) {
+	return parse(filename, data, false)
+}
+
+// Inspect reads either a canonical charter or a minimal titled agent for display.
+// It grants no execution acceptance: Parse remains the Run/Test validator.
+func Inspect(filename string, data []byte) (*Agent, error) {
+	return parse(filename, data, true)
+}
+
+func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 	fail := func(field, problem string) (*Agent, error) { return nil, refuse(filename, 1, 1, field, problem) }
-	if len(data) > MaxFileBytes {
-		return fail("File", "use a file of at most 256 KiB")
-	}
-	if !utf8.Valid(data) {
-		return fail("File", "use valid UTF-8")
-	}
-	text := strings.ReplaceAll(string(data), "\r\n", "\n")
-	if strings.HasPrefix(text, "\uFEFF") {
-		return fail("File", "remove the UTF-8 byte-order mark")
-	}
-	if strings.IndexFunc(text, unsupportedControl) >= 0 {
-		return fail("File", "remove control characters except newline/tab and use LF or CRLF line breaks")
-	}
-	if _, at := secretshapes.MatchIndex(text); at >= 0 {
-		return nil, refuse(filename, strings.Count(text[:at+1], "\n")+1, 1, "File", "remove credential-shaped content; agent files must not contain secrets")
+	text, err := checkedSourceText(filename, data)
+	if err != nil {
+		return nil, err
 	}
 	lines := strings.Split(text, "\n")
 	a := &Agent{Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data)), Locations: map[string]Location{}}
@@ -116,6 +117,7 @@ func Parse(filename string, data []byte) (*Agent, error) {
 	current := ""
 	var open fence
 	first := true
+	prelude := false
 	for i, line := range lines {
 		if open.count > 0 {
 			if closeFence(line, open) {
@@ -164,7 +166,10 @@ func Parse(filename string, data []byte) (*Agent, error) {
 			sections[name] = section{i, len(lines)}
 			a.Locations[name] = Location{filename, i + 1, 1}
 		} else if current == "" {
-			return nil, refuse(filename, i+1, 1, "Sections", "put instructions inside the canonical responsibility sections")
+			if !inspection {
+				return nil, refuse(filename, i+1, 1, "Sections", "put instructions inside the canonical responsibility sections")
+			}
+			prelude = true
 		}
 		if f, _, ok := openFence(line); ok {
 			open = f
@@ -180,8 +185,23 @@ func Parse(filename string, data []byte) (*Agent, error) {
 	if s, ok := sections["Examples"]; ok {
 		a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
 	}
+	_, hasIdentity := sections["Identity"]
+	minimal := inspection && !hasIdentity
+	if inspection && hasIdentity && prelude {
+		return fail("Sections", "put instructions inside the canonical responsibility sections")
+	}
+	if minimal {
+		id := strings.TrimSuffix(path.Base(filename), ".agent.md")
+		if !strings.HasSuffix(filename, ".agent.md") || !agentID.MatchString(id) || !prelude {
+			return fail("Instructions", "use a named .agent.md file with nonblank instructions after the title")
+		}
+		a.Identity.ID = id
+	}
 	missing := []string{}
 	for _, name := range sectionNames {
+		if minimal && name != "Model" && name != "Examples" {
+			continue
+		}
 		if _, ok := sections[name]; !ok {
 			switch name {
 			case "Identity":
@@ -259,6 +279,11 @@ func Parse(filename string, data []byte) (*Agent, error) {
 		return nil, refuse(filename, loc.Line, loc.Column, "Model.Preferred", "set one concrete exact model ID, not auto, a URL or a wildcard")
 	}
 	for _, name := range sectionNames[1:4] {
+		if minimal {
+			if _, present := sections[name]; !present {
+				continue
+			}
+		}
 		s := sections[name]
 		if strings.TrimSpace(strings.Join(lines[s.start+1:s.end], "\n")) == "" {
 			return nil, refuse(filename, s.start+1, 1, name, "add nonblank instructions")
@@ -271,6 +296,27 @@ func Parse(filename string, data []byte) (*Agent, error) {
 	}
 	a.Examples = examples
 	return a, nil
+}
+
+func checkedSourceText(filename string, data []byte) (string, error) {
+	fail := func(problem string) (string, error) { return "", refuse(filename, 1, 1, "File", problem) }
+	if len(data) > MaxFileBytes {
+		return fail("use a file of at most 256 KiB")
+	}
+	if !utf8.Valid(data) {
+		return fail("use valid UTF-8")
+	}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if strings.HasPrefix(text, "\uFEFF") {
+		return fail("remove the UTF-8 byte-order mark")
+	}
+	if strings.IndexFunc(text, unsupportedControl) >= 0 {
+		return fail("remove control characters except newline/tab and use LF or CRLF line breaks")
+	}
+	if _, at := secretshapes.MatchIndex(text); at >= 0 {
+		return "", refuse(filename, strings.Count(text[:at+1], "\n")+1, 1, "File", "remove credential-shaped content; agent files must not contain secrets")
+	}
+	return text, nil
 }
 
 func unsupportedControl(r rune) bool {

@@ -349,6 +349,22 @@ operands are not included by default. Opt-in answer excerpts are bounded and
 labeled untrusted data, never tool instructions. The result's display basename
 is not target authority.
 
+The read-only resource template `kmx://agent/{path}` returns a typed
+`kmx.agent-view` v1 projection: original revision, title, instructions, model,
+examples/expected checks and the process's latest safe preview observation.
+Encode the whole root-relative path as one component, including slashes.
+Only supported agent paths under the fixed root are readable; there is no
+fifth tool, generic file read or directory listing. After root confirmation,
+authored content is visible without an extra consent mechanism; answer excerpts
+still require the existing `showContent` opt-in. A restart has no current result;
+a revision change marks the old observation stale and withholds its details.
+Reads perform no inference, mutation or journal retrieval.
+
+The [Copilot plugin](../plugins/copilot/README.md#read-only-agent-view) adds a
+native read-only canvas and `/agent-view PATH` text fallback over this resource.
+Inspection can show a minimal titled agent as well as a canonical Squad charter;
+this display-only support does not change Run/Test parser acceptance.
+
 A real model route must be selected at process startup with trusted
 `--provider` and, for local routes, `--endpoint`; the exact model still comes from
 the parsed file. For Copilot, use `kmx mcp --root /absolute/root --provider copilot`

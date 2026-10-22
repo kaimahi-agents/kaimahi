@@ -17,6 +17,9 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 TARGETS = {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"}
 MAX_BINARY = 512 << 20
+NATIVE_DIRECTORY = "com.github.copilot/extensions/agent-view"
+NATIVE_FILES = tuple(f"{NATIVE_DIRECTORY}/{name}" for name in
+                     ("extension.mjs", "view.mjs", "index.html", "app.js", "style.css"))
 
 
 def _quarantine(path: Path) -> None:
@@ -133,6 +136,14 @@ def build(*, binary: Path, sha256: str, target: str, root: Path | None,
             skill.mkdir(parents=True, mode=0o700)
             shutil.copyfile(HERE / "skills/kmx-agent-builder/SKILL.md", skill / "SKILL.md")
             (skill / "SKILL.md").chmod(0o600)
+            for name in NATIVE_FILES:
+                source = HERE / name
+                if source.is_symlink() or not source.is_file() or not 0 < source.stat().st_size <= 65536:
+                    raise ValueError("native canvas assets must be bounded regular files")
+                destination = output / name
+                destination.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+                shutil.copyfile(source, destination)
+                destination.chmod(0o600)
         except Exception:
             shutil.rmtree(output)
             raise

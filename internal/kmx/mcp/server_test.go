@@ -25,11 +25,14 @@ func protocolFixture() map[string]Operation {
 	}
 	return ops
 }
-func connectFixture(t *testing.T, ops map[string]Operation) *sdk.ClientSession {
+func connectFixture(t *testing.T, ops map[string]Operation, setup ...func(*sdk.Server)) *sdk.ClientSession {
 	t.Helper()
 	s, err := NewServer("test-engine", ops)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, configure := range setup {
+		configure(s)
 	}
 	a, b := sdk.NewInMemoryTransports()
 	ss, err := s.Connect(t.Context(), a, nil)

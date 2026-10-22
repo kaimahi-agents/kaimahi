@@ -350,9 +350,13 @@ changes in the package's Go doc comment.
   and Secret metadata bracketing. Hermetic tests are not live qualification.
   Runtime-core assertions and llmJudge remain retained with their test groups;
   native judge wiring does not enable recorded candidate execution.
-  The checkout-only native qualifier runs in the existing exclusively owned
-  Orka shard, after legacy model proof, with private captures and metadata-only
-  artifacts. Its second exclusively owned kind cluster has one pinned Orka in
+  The checkout-only native qualifier runs in the full read-only reusable Orka
+  worker after raw model proof, with private captures and metadata-only artifacts.
+  Relevant/unknown PRs, manual qualification, daily main nightly and every release
+  retain that proof. Only explicitly safe PRs and routine main pushes skip it.
+  Keep required `hygiene` and `e2e-hello-world` checks intact and fail closed on
+  unintended skips/failures. No path/docs shortcuts belong inside the full worker.
+  Its second exclusively owned kind cluster has one pinned Orka in
   orka-system and its own inference Provider/Secret; it shares the source AIKit
   endpoint through a fixture-only private-network NodePort, never a host mapping
   or another model workload. Registry --promote qualifies GET-only planning,
@@ -457,15 +461,29 @@ never the path wrapper or shell CLI strings. Model routes are trusted startup
 configuration, not tool/charter fields. Keep complete safe App results on errors;
 fixture runners are not production execution. Edit preserves mode bits, not
 ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
-No new runner, Explain tool or network listener. See [MCP](docs/kmx.md#local-stdio-mcp).
+No new runner, Explain tool or MCP network listener. The read-only
+`kmx://agent/{path}` resource projects supported agent files within that root;
+it is not a fifth tool or generic file reader. Root confirmation suffices for
+charter content; safe model excerpts still require existing showContent opt-in.
+Latest preview state is process-local, revision-bound and never inferred on read.
+The separate native Copilot view uses the host SDK and a private loopback asset
+bridge, without mutations or direct agent-file reads.
+See [MCP](docs/kmx.md#local-stdio-mcp).
 
 ## Single-file charter boundary
 
-`internal/kmx/agentfile` parses only the canonical shape in
+`internal/kmx/agentfile` keeps `Parse`/`Load` canonical as described in
 [agent-file.md](docs/agent-file.md), offline, with Examples excluded from
-instructions and exact-byte revisions. Reuse runtime assertion semantics;
+instructions and exact-byte revisions. Separate explicit `ParseSquad` accepts
+qualified Squad 1.1.0 native starters/enrichment with an approved cast mapping,
+original bytes and source spans. It returns a distinct `SquadCharter`, not a
+runnable `Agent`; current CLI/MCP preview and authoring remain canonical-only.
+Never auto-detect this profile, invent missing native identity fields or treat
+its release selector as cast-origin/registration proof. Reuse runtime assertion semantics;
 refuse tools and unsupported declarations. Parse/Load grant no execution,
 trusted route, source-write, Squad registration or native suite-loader authority.
+`Inspect` shares the scanner for read-only minimal titled-agent display while
+`Parse` remains the execution validator; inspection grants no Run/Test acceptance.
 Keep payload-bearing parsed values out of default logs/results. The loader
 refuses static special files and symlink/reparse path components; it is not a hostile
 concurrent filesystem sandbox.
