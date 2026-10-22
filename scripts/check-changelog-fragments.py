@@ -43,8 +43,8 @@ def parse_note(data: bytes, source: str, *, allow_empty: bool = False) -> dict[s
             sections[current].append(line)
         elif line.strip():
             raise ValueError(f"{source}: content must follow a category heading")
-    bodies = {category: "\n".join(lines).strip() for category, lines in sections.items()}
-    if (not bodies and not allow_empty) or any(not body for body in bodies.values()):
+    bodies = {category: "\n".join(lines).strip("\n") for category, lines in sections.items()}
+    if (not bodies and not allow_empty) or any(not body.strip() for body in bodies.values()):
         raise ValueError(f"{source}: empty fragment or category")
     return bodies
 

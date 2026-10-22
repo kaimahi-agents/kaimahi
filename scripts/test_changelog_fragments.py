@@ -233,6 +233,19 @@ class FragmentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             helper.render(self.root, "v0.2.0", "2026-06-11")
 
+    def test_render_preserves_indented_blocks_and_horizontal_whitespace(self):
+        self.put("CHANGELOG.md", PREAMBLE + b"## Unreleased\r\n\r\n### Fixed\r\n\r\n"
+                 b"    old first\r\n    old second  \r\n\r\n" + HISTORY)
+        self.note(text="### Fixed\n\n    new first\n    new second  \n")
+        got = helper.render(self.root, "v0.2.0", "2026-06-11")
+        for block in (b"    old first\r\n    old second  \r\n",
+                      b"    new first\r\n    new second  \r\n"):
+            with self.subTest(block=block):
+                self.assertIn(block, got)
+        self.note(text="### Fixed\n \t \n")
+        with self.assertRaisesRegex(ValueError, "empty"):
+            helper.read_fragments(self.root)
+
     def test_empty_release_refused_but_old_unreleased_alone_can_render(self):
         self.assertIn(b"- old fix", helper.render(self.root, "v0.2.0", "2026-06-11"))
         self.put("CHANGELOG.md", "# Changelog\n\n## Unreleased\n\n")
