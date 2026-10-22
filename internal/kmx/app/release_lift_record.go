@@ -10,9 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -132,59 +129,6 @@ func (w *releaseLiftRecordWriter) probePersistence(ctx context.Context) (err err
 		return releaseLiftRecordError("storage directory sync probe failed")
 	}
 	return ctx.Err()
-}
-
-func openReleaseLiftStorage(ctx context.Context) (_ *releaseLiftRecordWriter, err error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	state, err := config.StateDir()
-	if err != nil {
-		return nil, releaseLiftRecordError("unsafe storage location")
-	}
-	base := filepath.Join(state, "release-lifts")
-	for i, path := range []string{state, base} {
-		if ensureSuitePassDirectory(path, i > 0) != nil {
-			return nil, releaseLiftRecordError("unsafe storage directory")
-		}
-	}
-	root, _, _, err := openSessionReferenceDirectory(filepath.Join(base, "lock"))
-	if err != nil {
-		return nil, releaseLiftRecordError("unsafe storage directory")
-	}
-	w := &releaseLiftRecordWriter{root: root, path: base}
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, w.Close())
-		}
-	}()
-	dir, err := root.Open(".")
-	if err != nil {
-		return nil, releaseLiftRecordError("unsafe storage directory")
-	}
-	fd, openErr := unix.Openat(int(dir.Fd()), "lock", unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0600)
-	closeErr := dir.Close()
-	if openErr != nil {
-		return nil, releaseLiftRecordError("unsafe storage lock")
-	}
-	w.lock = os.NewFile(uintptr(fd), "lock")
-	if closeErr != nil {
-		return nil, releaseLiftRecordError("unsafe storage directory")
-	}
-	w.lockInfo, err = w.lock.Stat()
-	if err != nil || !w.lockInfo.Mode().IsRegular() || w.lockInfo.Mode().Perm()&0077 != 0 {
-		return nil, releaseLiftRecordError("unsafe storage lock")
-	}
-	if unix.Flock(int(w.lock.Fd()), unix.LOCK_EX|unix.LOCK_NB) != nil {
-		return nil, releaseLiftRecordError("another Lift record reservation is active")
-	}
-	if err := w.unchanged(); err != nil {
-		return nil, err
-	}
-	if err := w.capacity(ctx); err != nil {
-		return nil, err
-	}
-	return w, nil
 }
 
 func (w *releaseLiftRecordWriter) unchanged() error {

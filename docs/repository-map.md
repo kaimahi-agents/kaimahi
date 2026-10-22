@@ -92,6 +92,12 @@ Ownership roots are `internal/kmx/`'s immediate packages, or another immediate
 area under `internal/`. Nested implementation packages, schemas and fixtures
 inherit their owning root; they do not need individual rows.
 
+Platform-specific Unix operations live under these ownership roots. Matching
+Windows adapters are compile-only unsupported stubs, not native implementations.
+The adapters are installed-library source; host-side tests check their inert
+contract. The Windows CLI guard remains in place: library cross-builds do not
+enable it.
+
 | Directory | Class | Responsibility |
 |---|---|---|
 | `internal/kmx/app` | Installed | Native operation orchestration, frozen workspace eval→push→Deploy coordination, consent, private exact-S passing proof and completion observations, bounded release state/CAS, provenance and ownership-safe update/rollback. Public evidence export/verification stays separate from private execution and publication gates. Independent live Task/results, Orka chat/host routes and cloud ownership teardown remain. No legacy bundle persistence, replay/status/retirement, live create or live-copy GUI. |

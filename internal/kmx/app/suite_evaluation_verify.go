@@ -8,11 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	agentsuite "github.com/agent-primitives/suite"
-	"golang.org/x/sys/unix"
 )
 
 // SuiteEvaluationVerifyOptions selects only local public verification inputs.
@@ -157,33 +155,6 @@ func (a *App) VerifySuiteEvaluation(ctx context.Context, opt SuiteEvaluationVeri
 		return errors.New("evaluation: could not write verified summary")
 	}
 	return nil
-}
-
-// Public inputs need not have private permissions. Open the parent as a
-// directory, then use the existing nofollow/nonblocking final-component seam;
-// neither a final FIFO nor a FIFO masquerading as a parent can block open.
-func readSuiteEvaluationVerifyFile(path string) ([]byte, error) {
-	dir, err := os.OpenFile(filepath.Dir(path), os.O_RDONLY|unix.O_DIRECTORY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, suiteEvaluationRefuse("missing")
-		}
-		return nil, suiteEvaluationRefuse("malformed")
-	}
-	file, openErr := openKagentFile(dir, filepath.Base(path))
-	closeErr := dir.Close()
-	if openErr != nil {
-		if closeErr == nil && errors.Is(openErr, os.ErrNotExist) {
-			return nil, suiteEvaluationRefuse("missing")
-		}
-		return nil, suiteEvaluationRefuse("malformed")
-	}
-	raw, readErr := readSuiteEvaluationVerifyOpened(file)
-	fileCloseErr := file.Close()
-	if closeErr != nil || fileCloseErr != nil {
-		return nil, suiteEvaluationRefuse("malformed")
-	}
-	return raw, readErr
 }
 
 func readSuiteEvaluationVerifyOpened(file *os.File) ([]byte, error) {

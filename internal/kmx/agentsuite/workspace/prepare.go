@@ -73,32 +73,6 @@ func within(parent, child string) bool {
 	rel, err := filepath.Rel(parent, child)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
-func privateTree(root string, setMode bool) error {
-	return filepath.WalkDir(root, func(name string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.Type()&os.ModeSymlink != 0 {
-			return errors.New("cache symlinks are not supported")
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && !info.Mode().IsRegular() {
-			return errors.New("cache contains nonregular file")
-		}
-		if d.IsDir() {
-			if setMode {
-				return os.Chmod(name, 0o700)
-			}
-			if info.Mode().Perm() != 0o700 {
-				return errors.New("cache directories must be private (0700)")
-			}
-		}
-		return nil
-	})
-}
 func cached(ctx context.Context, key string, s *snapshot, flowMode bool) (*Prepared, error) {
 	if err := privateTree(key, false); err != nil {
 		return nil, err

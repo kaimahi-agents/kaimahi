@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,9 +14,6 @@ import (
 
 	agentsuite "github.com/agent-primitives/suite"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
-	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -52,138 +48,6 @@ type suitePassStore struct {
 	lockInfo                                                 os.FileInfo
 	root                                                     *os.Root
 	completion                                               *suitePassingExport
-}
-
-// Creation walks anchored directories without following links or changing
-// existing permissions. Only managed children must be private; existing KMX
-// settings directories can retain their normal, non-writable-to-others modes.
-func ensureSuitePassDirectory(path string, private bool) error {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return errSuitePassStore
-	}
-	volume := filepath.VolumeName(absolute) + string(filepath.Separator)
-	root, err := os.OpenRoot(volume)
-	if err != nil {
-		return errSuitePassStore
-	}
-	for _, part := range strings.Split(strings.TrimPrefix(absolute, volume), string(filepath.Separator)) {
-		if part == "" {
-			continue
-		}
-		info, err := root.Lstat(part)
-		if os.IsNotExist(err) {
-			if err := root.Mkdir(part, 0700); err != nil && !os.IsExist(err) {
-				root.Close()
-				return errSuitePassStore
-			}
-			info, err = root.Lstat(part)
-		}
-		if err != nil || !safeSessionReferenceDirectory(info, false) {
-			root.Close()
-			return errSuitePassStore
-		}
-		next, err := root.OpenRoot(part)
-		if err != nil {
-			root.Close()
-			return errSuitePassStore
-		}
-		opened, openErr := next.Stat(".")
-		current, currentErr := root.Lstat(part)
-		closeErr := root.Close()
-		if openErr != nil || currentErr != nil || closeErr != nil || !os.SameFile(info, opened) || !os.SameFile(info, current) {
-			next.Close()
-			return errSuitePassStore
-		}
-		root = next
-	}
-	info, err := root.Stat(".")
-	closeErr := root.Close()
-	if err != nil || closeErr != nil || !safeSessionReferenceDirectory(info, true) || private && info.Mode().Perm()&0077 != 0 {
-		return errSuitePassStore
-	}
-	return nil
-}
-
-func openSuitePassStore(ctx context.Context, workspaceRoot, cache, suiteDigest string) (_ *suitePassStore, err error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if !suitePrefixedDigest(suiteDigest) {
-		return nil, errSuitePassStore
-	}
-	workspaceRoot, err = filepath.EvalSymlinks(workspaceRoot)
-	if err != nil {
-		return nil, errSuitePassStore
-	}
-	workspaceRoot, err = filepath.Abs(workspaceRoot)
-	if err != nil {
-		return nil, errSuitePassStore
-	}
-	state, err := config.StateDir()
-	if err != nil {
-		return nil, err
-	}
-	state, err = filepath.Abs(state)
-	if err != nil {
-		return nil, errSuitePassStore
-	}
-	identity := fmt.Sprintf("%x", sha256.Sum256([]byte(workspaceRoot)))
-	base := filepath.Join(state, "passing")
-	path := filepath.Join(base, identity)
-	if scaffold.RefuseKeyShapes(path) != nil || suiteReceiptInside(path, workspaceRoot) || suiteReceiptInside(path, cache) {
-		return nil, errSuitePassStore
-	}
-	for i, p := range []string{state, base, path} {
-		if err := ensureSuitePassDirectory(p, i > 0); err != nil {
-			return nil, err
-		}
-	}
-	root, _, _, err := openSessionReferenceDirectory(filepath.Join(path, "lock"))
-	if err != nil {
-		return nil, errSuitePassStore
-	}
-	s := &suitePassStore{workspace: workspaceRoot, cache: cache, path: path, partition: filepath.Join(path, strings.TrimPrefix(suiteDigest, "sha256:")), identity: identity, suiteDigest: suiteDigest, root: root}
-	defer func() {
-		if err != nil {
-			s.Close()
-		}
-	}()
-	lock, err := root.OpenFile("lock", os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
-	if os.IsExist(err) {
-		directory, e := root.Open(".")
-		if e != nil {
-			return nil, errSuitePassStore
-		}
-		fd, e := unix.Openat(int(directory.Fd()), "lock", unix.O_RDWR|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
-		closeErr := directory.Close()
-		if e != nil || closeErr != nil {
-			if e == nil {
-				unix.Close(fd)
-			}
-			return nil, errSuitePassStore
-		}
-		lock = os.NewFile(uintptr(fd), "lock")
-		err = nil
-	}
-	if err != nil {
-		return nil, errSuitePassStore
-	}
-	s.lock = lock
-	s.lockInfo, err = lock.Stat()
-	if err != nil || !s.lockInfo.Mode().IsRegular() || s.lockInfo.Mode().Perm()&0077 != 0 {
-		return nil, errSuitePassStore
-	}
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		return nil, errors.New("another workspace eval or push is active; retry after it exits (no stale lock deletion is needed)")
-	}
-	if err := ensureSuitePassDirectory(s.partition, true); err != nil {
-		return nil, err
-	}
-	if err := s.unchanged(); err != nil {
-		return nil, err
-	}
-	return s, nil
 }
 
 func (s *suitePassStore) unchanged() error {
