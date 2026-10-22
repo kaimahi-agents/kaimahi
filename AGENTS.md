@@ -445,7 +445,10 @@ See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 ## Agent-file MCP boundary
 
 `mcp --root DIRECTORY` is stdio-only and config-free at startup. Require an
-absolute existing root, never cwd/client-root fallback. Expose exactly
+absolute existing root, never cwd/client-root fallback. Normalize native absolute
+tool paths through cleaning and symlink resolution to an allowed root-relative
+layout; outside targets, dangling links and changed root identity refuse. Keep
+relative-path restrictions and descriptor-bound file IO unchanged. Expose exactly
 Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
 never the path wrapper or shell CLI strings. Model routes are trusted startup
 configuration, not tool/charter fields. Keep complete safe App results on errors;
