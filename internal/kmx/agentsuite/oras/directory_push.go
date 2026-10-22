@@ -119,7 +119,7 @@ func pushDirectoryLayout(ctx context.Context, source, destination, reference str
 	} else {
 		updatedTarget = true
 	}
-	target, err := oci.New(targetPath)
+	target, err := newOCIStore(targetPath)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("open AgentSuite OCI target: %w", err)
 	}
@@ -165,7 +165,7 @@ func packDirectoryMode(ctx context.Context, source string, flowMode bool) (strin
 	if err != nil {
 		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("validate AgentSuite directory: %w", err)
 	}
-	sourceStore, err := oci.New(sourceRoot)
+	sourceStore, err := newOCIStore(sourceRoot)
 	if err != nil {
 		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("create AgentSuite source CAS: %w", err)
 	}
@@ -178,7 +178,7 @@ func packDirectoryMode(ctx context.Context, source string, flowMode bool) (strin
 	if err != nil {
 		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)
 	}
-	packedStore, err := oci.New(packedRoot)
+	packedStore, err := newOCIStore(packedRoot)
 	if err != nil {
 		_ = os.RemoveAll(packedRoot)
 		return "", nil, kmxsuite.PackResult{}, fmt.Errorf("create staged AgentSuite artifact: %w", err)

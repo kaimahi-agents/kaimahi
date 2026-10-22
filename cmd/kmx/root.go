@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,14 +12,17 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	kmxsuite "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite"
 	agentkitbuilder "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/agentkit"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/version"
 )
 
 type dependencies struct {
+	fileRunner         agentpreview.Runner
 	stdin              *os.File
 	stdout             io.Writer
 	stderr             io.Writer
@@ -27,11 +31,13 @@ type dependencies struct {
 	newApp             func(*config.Config) *app.App
 	buildInfo          func() (*debug.BuildInfo, bool)
 	newAgentKitBuilder func(agentkitbuilder.Options) kmxsuite.SandboxBuilder
+	discoverModels     func(context.Context) []modelaccess.Report
 }
 
 func productionDependencies() dependencies {
 	return dependencies{
-		stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
+		fileRunner: app.NewDirectFileRunner(),
+		stdin:      os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
 		executable: invocationExecutable(os.Args[0]),
 		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
 		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {
@@ -204,7 +210,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
 	root.AddCommand(
-		newVersionCommand(state), newCompletionCommand(root), newContextCommand(state), newLocalCommand(state), newDestinationsCommand(state),
+		newVersionCommand(state), newMCPCommand(state), newCompletionCommand(root), newModelCommand(state), newContextCommand(state), newLocalCommand(state), newDestinationsCommand(state),
 		newQuickstartCommand(state), newAKSCommand(state),
 		newConsoleCommand(state), newOrkaCommand(state),
 		newStatusCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),

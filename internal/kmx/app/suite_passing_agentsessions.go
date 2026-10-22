@@ -10,7 +10,13 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
 
-const suiteSessionsPassingDomain = "kmx.agentsessions-suite.passing/v1"
+// suiteSessionsPassingDomain versions AgentSessions passing receipts. v2
+// receipts record the AgentSessionsBinding digest; v1 receipts did not and are
+// never eligible proof.
+const (
+	suiteSessionsPassingDomain   = "kmx.agentsessions-suite.passing/v2"
+	suiteSessionsPassingDomainV1 = "kmx.agentsessions-suite.passing/v1"
+)
 
 // These are explicit operator declarations, not authenticated host attestations.
 // Access locators and payloads deliberately stay outside the exported subject.
@@ -30,20 +36,23 @@ type suiteSessionsHostObservation struct {
 }
 
 type suiteSessionsSubject struct {
-	Suite              string                       `json:"suite"`
-	SuiteDigest        string                       `json:"suiteDigest"`
-	GraphDigest        string                       `json:"graphDigest"`
-	Member             string                       `json:"member"`
-	MemberDigest       string                       `json:"memberDigest"`
-	InstructionsDigest string                       `json:"instructionsDigest"`
-	CompositionDigest  string                       `json:"compositionDigest"`
-	BuildProfileDigest string                       `json:"buildProfileDigest"`
-	Model              string                       `json:"model"`
-	Renderer           string                       `json:"renderer"`
-	ExecutionProfile   string                       `json:"executionProfile"`
-	ConfigDigest       string                       `json:"configDigest"`
-	Profile            workspace.RuntimeProfile     `json:"profile"`
-	Host               suiteSessionsHostObservation `json:"host"`
+	Suite              string `json:"suite"`
+	SuiteDigest        string `json:"suiteDigest"`
+	GraphDigest        string `json:"graphDigest"`
+	Member             string `json:"member"`
+	MemberDigest       string `json:"memberDigest"`
+	InstructionsDigest string `json:"instructionsDigest"`
+	CompositionDigest  string `json:"compositionDigest"`
+	BuildProfileDigest string `json:"buildProfileDigest"`
+	Model              string `json:"model"`
+	Renderer           string `json:"renderer"`
+	ExecutionProfile   string `json:"executionProfile"`
+	ConfigDigest       string `json:"configDigest"`
+	// BindingDigest is the AgentSessionsBinding (JCS) digest the evaluation
+	// used. Its served model equals Model; its endpoint is not attested.
+	BindingDigest string                       `json:"bindingDigest"`
+	Profile       workspace.RuntimeProfile     `json:"profile"`
+	Host          suiteSessionsHostObservation `json:"host"`
 }
 
 type suiteSessionsPassingProof struct {
@@ -65,7 +74,7 @@ type suiteSessionsObservation struct {
 	Assertions []agentruntime.EvaluationAssertionResult
 }
 
-func newSuiteSessionsSubject(suite *workspace.NativeSuite, host suiteSessionsHostObservation) (suiteSessionsSubject, error) {
+func newSuiteSessionsSubject(suite *workspace.NativeSuite, host suiteSessionsHostObservation, bindingDigest string) (suiteSessionsSubject, error) {
 	var s suiteSessionsSubject
 	if suite == nil || suite.Runtime != (workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}) || suite.RendererVersion != "kmx.native-agentsessions/v2" || suite.ExecutionProfile != "kmx.agentsessions-chat-system-prompt-tool-free-openai/v1" || suite.RequiredImages == nil || len(suite.RequiredImages) != 0 {
 		return s, errSuitePassingReceipt
@@ -74,7 +83,7 @@ func newSuiteSessionsSubject(suite *workspace.NativeSuite, host suiteSessionsHos
 	if err != nil {
 		return s, errSuitePassingReceipt
 	}
-	s = suiteSessionsSubject{Suite: suite.Name, SuiteDigest: suite.Digest, GraphDigest: suite.GraphDigest, Member: suite.MemberID, MemberDigest: suite.MemberDigest, InstructionsDigest: suite.InstructionsDigest, CompositionDigest: suite.CompositionDigest, BuildProfileDigest: suite.BuildProfileDigest, Model: suite.Model, Renderer: suite.RendererVersion, ExecutionProfile: suite.ExecutionProfile, ConfigDigest: config, Profile: suite.Runtime, Host: host}
+	s = suiteSessionsSubject{Suite: suite.Name, SuiteDigest: suite.Digest, GraphDigest: suite.GraphDigest, Member: suite.MemberID, MemberDigest: suite.MemberDigest, InstructionsDigest: suite.InstructionsDigest, CompositionDigest: suite.CompositionDigest, BuildProfileDigest: suite.BuildProfileDigest, Model: suite.Model, Renderer: suite.RendererVersion, ExecutionProfile: suite.ExecutionProfile, ConfigDigest: config, BindingDigest: bindingDigest, Profile: suite.Runtime, Host: host}
 	if !validSuiteSessionsPassingProof(&suiteSessionsPassingProof{Subject: s, RequiredImages: []string{}}) {
 		return suiteSessionsSubject{}, errSuitePassingReceipt
 	}
@@ -89,7 +98,7 @@ func validSuiteSessionsPassingProof(p *suiteSessionsPassingProof) bool {
 	if s.Profile != (workspace.RuntimeProfile{ID: "agentsessions", Version: workspace.AgentSessionsVersion, Engine: "chat"}) || s.Renderer != "kmx.native-agentsessions/v2" || s.ExecutionProfile != "kmx.agentsessions-chat-system-prompt-tool-free-openai/v1" || h.Mode != "operator-observed-development" || h.RuntimeVersion != workspace.AgentSessionsVersion || h.Harness != "chat" || h.HarnessVersion != "1" || h.Retention != "operator-managed" || h.Model != s.Model {
 		return false
 	}
-	for _, d := range []string{s.SuiteDigest, s.GraphDigest, s.MemberDigest, s.InstructionsDigest, s.CompositionDigest, s.BuildProfileDigest, s.ConfigDigest, h.RuntimeBinaryDigest, h.RuntimeConfigDigest, h.InferenceRevision} {
+	for _, d := range []string{s.SuiteDigest, s.GraphDigest, s.MemberDigest, s.InstructionsDigest, s.CompositionDigest, s.BuildProfileDigest, s.ConfigDigest, s.BindingDigest, h.RuntimeBinaryDigest, h.RuntimeConfigDigest, h.InferenceRevision} {
 		if !suitePrefixedDigest(d) {
 			return false
 		}
@@ -106,7 +115,7 @@ func coherentSuiteSessionsPassingProof(p *suiteSessionsPassingProof, suite *work
 	if !validSuiteSessionsPassingProof(p) {
 		return errSuitePassingReceipt
 	}
-	expected, err := newSuiteSessionsSubject(suite, p.Subject.Host)
+	expected, err := newSuiteSessionsSubject(suite, p.Subject.Host, p.Subject.BindingDigest)
 	if err != nil || !reflect.DeepEqual(expected, p.Subject) {
 		return errSuitePassingReceipt
 	}

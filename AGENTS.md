@@ -6,6 +6,12 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 ## Command consistency
 
+- `model list [-o table|json]` is config-free bounded local model discovery,
+  not cluster setup or inference. Keep `internal/kmx/modelaccess` independent of
+  App and Unix-only helpers. Foundry endpoint comes only from runtime status;
+  no fixed port, catalog download, service start or silent model selection.
+  Native model-access package tests are separate from Windows CLI qualification.
+
 - Follow the [command conventions](docs/command-conventions.md), the implemented
   interface in [docs/kmx.md](docs/kmx.md) and the
   [command alignment record](docs/command-semantics.md). Track outstanding
@@ -41,6 +47,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   plus compact non-pass evaluation details, with verbose/JSON stage diagnostics. Exact-version private completion observations authorize
   GET-only skips, never Apply/reuse/adoption/repair. Keep kagent out of composed
   Deploy until its candidate-scoped placement and ownership-safe cleanup are qualified.
+  AgentSessions workspaces and --harness-image also refuse composed Deploy before
+  evaluation or publication; their Deploy is the explicit-reference plan-only render.
 - Create-only deployment stamps only newly created primaries with versioned non-secret
   `kaimahi.dev/lift-record` JSON: exact consumed canonical receipt identity,
   source/destination, actual gate, attempt time and expected specs. Actor is omitted
@@ -78,10 +86,30 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   sends exact config once per fresh Session, requires a complete five-record
   qualified journal and full ordered pass, then exports private runtime-specific
   proof. Exact-S --evaluation push accepts that proof offline. Cluster selectors,
-  mixed-runtime proof, tools, deploy/chat/status and live create refuse.
+  mixed-runtime proof, tools, chat/status and live create refuse.
+  AgentSessions eval also requires --bindings FILE: a closed AgentSessionsBinding
+  (runtime package; target, substrate placement, atespace, sandbox, snapshot,
+  required cpu/memory resources, workerSelector, model name/provider/baseURL and
+  a typed credential reference: secretRef or host-owned hostRef only). The
+  suite pins the model; the binding's model.name must equal it exactly (eval and
+  deploy refuse a mismatch; a new model is a new suite version and evaluation).
+  Evidence records the binding's JCS digest once for the whole run set, including
+  judged and repeated runs; the host endpoint is not attested.
+  AgentSessions passing receipts are v2 (kmx.agentsessions-suite.passing/v2),
+  which records bindingDigest. v1 receipts are unreadable and need fresh
+  evaluation; a managed v1 proof is ineligible (latest refuses, no fallback).
+  Root deploy with --harness-image IMAGE@sha256 --bindings FILE --evidence --plan
+  renders a substrate ActorTemplate for substrate main at the commit pinned in
+  render.go (SubstrateAPICommit; check with scripts/validate-agentsessions-render.sh)
+  (<suite>-<member>-<hash8> over renderer version, full image reference and
+  binding digest, harnessnode chat, no model credentials) and a substrate
+  HarnessRegistration offline. It loads no cluster settings and applies nothing;
+  apply and --update refuse. Substrate apply needs its own seam, not the kubectl
+  release loop.
   Operator declarations are not authenticated host/build attestation; cleartext
   journal retention is disclosed. Session replay cannot create candidate proof.
-  Optional --runtime-version must match that commit; --kagent-runtime refuses.
+  Optional create --runtime-version must match the AgentSessions pin above;
+  --kagent-runtime refuses.
   Runtime is member-owned KMX-private metadata, not a public AgentSuite field.
   Root test supports the packaged kagent profile with author-owned --bindings;
   evaluated push consumes matching runtime-specific full-passing suite evidence.
@@ -240,10 +268,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   non-confidential and must never contain secrets; clean lint is not a guarantee.
   V3 policy is shared declaration only, never Sessions enforcement.
 - Root `test --development-host FILE` separately supports the packaged
-  AgentSessions chat inventory under the development boundary above; every
-  cluster/inference/bindings/result selector (including explicit defaults) refuses.
-  Missing development selection never falls back. Sessions proof is refused by
-  deploy and receipt diff; there is no registry or caller-auth integration.
+  AgentSessions chat inventory under the development boundary above with a
+  required AgentSessionsBinding (--bindings); every cluster/inference/result
+  selector (including explicit defaults) refuses. Missing development selection
+  never falls back. Sessions proof feeds only the plan-only deploy render and is
+  refused by receipt diff; there is no registry or caller-auth integration.
 - Root `test` evaluates the full packaged Orka/kagent workspace inventory with
   a destination context (explicit `--to-context`, named `--to` or saved evalTarget)
   and optional new private `--out`; Orka uses --inference
@@ -345,7 +374,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   A renamed command must not silently change runtime, target, ownership or
   supported operations.
 - Update command registration, help, completion, relevant chat/console labels,
-  generated next/recovery commands, primary docs and CHANGELOG in the same slice.
+  generated next/recovery commands, primary docs and a `changes/` release-note
+  fragment in the same slice.
   Record changed defaults and compatibility/removal policy. Keep old routes
   callable until an announced transition unless an outright removal is explicitly
   approved; record that removal and its replacements. Notices belong on stderr.
@@ -369,6 +399,41 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), the
   updating current examples. Do not bulk-rename historical text or serialized
   state. Generated recovery commands must preserve the invoking executable,
   selectors and shell quoting.
+
+## Agent-file preview boundary
+
+Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
+interface without cluster/workspace configuration. CLI uses a temporary direct
+`preview runner (no journal)` for fake/local routes, with one agent call per input/example and one judge
+call per llmJudge; no Sessions, journal, retries or fallback. Remove it when the
+embedded runner lands. Scripted test fakes remain `_test.go` only, not real-model
+qualification. `app.FilePreviewResult` v1 is the safe shared projection, not a
+native evidence receipt. Subset is always partial, execution/journal failure is
+unknown, and only an explicit caller override changes the judge route. Keep
+live `run --agent`, native workspace Test/Explain and legacy Eval unchanged.
+See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
+
+## Agent-file MCP boundary
+
+`mcp --root DIRECTORY` is stdio-only and config-free at startup. Require an
+absolute existing root, never cwd/client-root fallback. Expose exactly
+Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
+never the path wrapper or shell CLI strings. Model routes are trusted startup
+configuration, not tool/charter fields. Keep complete safe App results on errors;
+fixture runners are not production execution. Edit preserves mode bits, not
+ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
+No new runner, Explain tool or network listener. See [MCP](docs/kmx.md#local-stdio-mcp).
+
+## Single-file charter boundary
+
+`internal/kmx/agentfile` parses only the canonical shape in
+[agent-file.md](docs/agent-file.md), offline, with Examples excluded from
+instructions and exact-byte revisions. Reuse runtime assertion semantics;
+refuse tools and unsupported declarations. Parse/Load grant no execution,
+trusted route, source-write, Squad registration or native suite-loader authority.
+Keep payload-bearing parsed values out of default logs/results. The loader
+refuses static special files and symlink/reparse path components; it is not a hostile
+concurrent filesystem sandbox.
 
 ## Offline multi-member workspace boundary
 
@@ -519,6 +584,6 @@ custom-domain and versioned-site changes require a separate review.
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
 Command changes normally require `go test ./cmd/kmx`, affected operation-package
 tests, documentation links, repository-map and legacy-runtime checks. These
-inventory checkers use tracked files, so include intended additions in the index
+checkers use tracked files, so include intended additions in the index
 when checking the complete change. Update AGENTS.md when implemented conventions
 change so subsequent work follows the same rules.

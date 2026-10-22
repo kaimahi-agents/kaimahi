@@ -53,9 +53,9 @@ it does not prove every promotion, creation or partial-outcome path.
 | Stage | Current checkout |
 |---|---|
 | **Create** | `kmx create NAME --workspace DIR --model MODEL --instructions FILE` authors one tool-free workspace member offline: Orka by default, exact Go kagent with `--runtime kagent`, or pinned chat with `--runtime agentsessions`. No Kubernetes, image build or model call. |
-| **Test** | Orka uses `kmx test --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, with no cluster selectors. Each evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes private evidence only when the full policy passes. |
+| **Test** | Orka uses `kmx test --workspace DIR --to-context CTX --inference provider:NAME --out RECEIPT`; kagent uses `--bindings FILE` instead of `--inference`. Native AgentSessions instead requires `--development-host FILE`, a private literal-loopback host JSON, plus `--bindings FILE`, an `AgentSessionsBinding` whose model must equal the packaged model, with no cluster selectors. Each evaluates ordered cases with optional `runs`/`minPasses` (default once), stops after a case misses its threshold or any unknown/error, and writes private evidence only when the full policy passes. |
 | **Publish** | `kmx push --workspace DIR --evaluation RECEIPT REF` checks that evidence against the exact OCI manifest and publishes that graph. Plain `kmx push REF` requires passing evidence; `--unevaluated` explicitly opts out. Neither form deploys. |
-| **Deploy** | `kmx deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets. Orka candidate evidence requires `--promote`, even in the same environment. Inspect placement with `kmx status --to NAME`; retirement remains unavailable. |
+| **Deploy** | `kmx deploy REF@sha256:DIGEST --to-context CTX --evidence RECEIPT` plus Orka `--inference provider:NAME --promote` for candidate evidence or kagent `--bindings FILE` deploys the matching packaged runtime without building, repacking, or publishing. `--plan` is GET-only; kagent refuses occupied targets. Orka candidate evidence requires `--promote`, even in the same environment. Inspect placement with `kmx status --to NAME`; retirement remains unavailable. AgentSessions is plan-only and takes no destination selectors: `kmx deploy REF@sha256:DIGEST --harness-image IMAGE@sha256:DIGEST --bindings FILE --evidence RECEIPT --plan` renders a substrate ActorTemplate and harness registration offline and applies nothing. |
 
 Root test also keeps completed passing metadata in private KMX state, so `--out`
 is optional. With named `evalTarget`, `kmx test` needs no selectors; then
@@ -126,7 +126,9 @@ separate model-access binding; selecting one does not select the other.
   push and explicit private `test --development-host FILE`: one fresh
   Session/config/Exec per declared run, full-pass private proof and exact-S evaluated
   push. This unauthenticated literal-loopback development path loads no cluster
-  settings; explicit judging and repeated cases share Orka/kagent semantics. It supports no tools, Deploy/chat/status or remote lifecycle.
+  settings; explicit judging and repeated cases share Orka/kagent semantics. It supports no tools, chat/status or remote lifecycle. Eval
+  requires an `AgentSessionsBinding` (`--bindings FILE`) serving the packaged
+  model and records its digest; Deploy is a plan-only offline render.
   Receipt diff refuses its proof. Read-only reference extraction/export and
   availability probing remain separate; legacy bundle evaluation/replay is removed.
 

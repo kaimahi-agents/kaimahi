@@ -24,12 +24,38 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ### Added
 
-- Copilot app/CLI plugin development package: native Agent Plugins 1.0
-  manifest/MCP templates, a chat skill and an offline, explicitly root-bound
-  packager. Native fake-process tests cover digest/exclusive-output refusals,
-  package relocation and file-preview result fixtures. This is not a signed
-  installable plugin, real MCP/runner support or Copilot host qualification;
-  release integration and file-scoped Explain remain separate.
+- `kmx mcp --root DIRECTORY` serves exactly Create/Edit/Run/Test over stdio.
+  It confines canonical charter access to an explicit root, creates without
+  replacement, edits at an expected revision and delegates Run/Test to the shared
+  snapshot API and its temporary preview runner (no journal). No new runner,
+  network listener or native evidence authority.
+
+- Temporary direct file-preview runner with explicit no-journal output, deterministic
+  fake and selected local OpenAI-compatible model transport. One completion
+  per input/example and one judge sample per llmJudge, without retries or fallback;
+  no Sessions, native judge evidence or deployment qualification. Removed when the
+  embedded Sessions runner is integrated.
+
+- Canonical `run FILE` / `test FILE` adapters for markdown-agent local preview:
+  stable `--case` selection, versioned payload-free text/JSON outcomes, separate
+  ad-hoc input and distinct non-pass/cancel exits. Tests inject the embedded-runner
+  interface; a temporary direct no-journal adapter is available for preview. No native
+  evidence, file-scoped Explain or change to deployed Run/workspace Test/Eval.
+
+- Read-only `kmx model list [-o table|json]` discovers cached Foundry Local
+  models at the runtime-reported endpoint and installed Ollama models on loopback
+  port 11434. Absent, empty, installed and failure states include explicit install
+  guidance. Non-secret routes are independent of kind reuse; no runtime start,
+  model download, automatic selection or local agent execution is added. Native
+  package tests cover Windows/macOS/Linux; Windows CLI qualification follows
+  native CLI support.
+
+- Offline canonical single-file charter parser with exact Model/Preferred,
+  separated inline Examples, existing assertion semantics, source locations,
+  bounded regular-file loading and a greeter sample. Standalone files and
+  matching `.squad/agents/<id>/charter.md` placements share one format. No
+  execution command, model access, Squad registration or native suite-loader
+  change is enabled; see [the format](docs/agent-file.md).
 
 - Experimental offline multi-agent flow authoring with `kmx create NAME
   --workspace DIR --members FILE --flow FILE`, deterministic preparation and
@@ -38,6 +64,30 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   execution and transfer/registry paths remain strict. No pipeline execution,
   approval enforcement, publication or whole-suite evaluation is enabled.
 
+- `AgentSessionsBinding` (`kmx.kaimahi.dev/v1alpha1`) is a closed per-environment
+  binding document for AgentSessions: target, substrate placement, atespace,
+  sandbox, snapshot, required cpu/memory resources, worker selector and model
+  name/provider/baseURL plus a typed credential reference: a Kubernetes Secret
+  key (`secretRef`) or a host-owned source such as keyless workload identity
+  (`hostRef: {type, name}`). It has strict parsing, a JCS digest and an
+  exact check against the suite's pinned model; AgentSessions eval refuses a
+  binding that serves another model.
+  Resource quantities refuse a decimal exponent of more than two digits before
+  parsing.
+  `snapshot.storageLocation` refuses `\`, empty path segments and segments of
+  only `.` and spaces; an empty `workerSelector.matchLabels` has the same digest
+  as an omitted selector.
+- Plan-only AgentSessions deploy: `kmx deploy REF@DIGEST --harness-image IMAGE@sha256:…
+  --bindings FILE --evidence FILE --plan` renders a substrate ActorTemplate and
+  HarnessRegistration offline from full-passing AgentSessions evidence, for
+  agent-substrate/substrate main at `f4f7b806255ffdc824391b857dbbf329a2556402`.
+  It reads no cluster configuration, calls no substrate or host and applies
+  nothing; Apply and `--update` refuse.
+  `scripts/validate-agentsessions-render.sh` checks the golden renders against
+  that commit. The template name hash covers the renderer version, the full
+  image reference (a mirrored image is another template) and the binding
+  digest. Composed `kmx deploy --to NAME` refuses `--harness-image` and
+  AgentSessions workspaces before evaluation or publication.
 - Eval and composed workspace Lift show non-pass case/run, assertion IDs/types,
   both judge scores against the threshold and safe unknown-outcome classes.
   `--show-content` opts into sanitized bounded expected values, judge rationale
@@ -153,6 +203,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   standalone receipts. Rebuilding a different artifact requires fresh evaluation,
   never edited or relabeled proof. See the
   [cache upgrade](docs/suite-workspace.md#portable-directory-modes-and-preparation-cache-upgrade).
+- AgentSessions `kmx test --development-host FILE` requires `--bindings FILE`
+  and records the binding digest in its evidence, including judged and repeated
+  proof. AgentSessions passing receipts move to v2
+  (`kmx.agentsessions-suite.passing/v2`); v1 receipts and managed v1 proof are
+  refused, with no fallback to an older record; Orka/kagent receipts are unchanged.
+  **Instead:** evaluate again with `--development-host FILE --bindings FILE`.
 - Suite loading now refuses Suite/ToolProvider extensions without an explicit
   `critical` boolean, present empty/null ToolProvider `variants`, and explicitly
   null tool `outputSchema` properties. ToolProvider JSON decoding also rejects

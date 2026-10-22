@@ -1,15 +1,12 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -171,65 +168,6 @@ func safeSessionReferenceUID(uid string) bool {
 	return true
 }
 
-// openSessionReferenceDirectory walks from the volume root one component at a
-// time. Each handle is anchored before descending; symlinks are never accepted,
-// even if they point inside the same tree. Sticky shared ancestors such as /tmp
-// are allowed, but the immediate parent must not be group/other-writable.
-func openSessionReferenceDirectory(path string) (*os.Root, string, os.FileInfo, error) {
-	if path == "" || strings.IndexByte(path, 0) >= 0 {
-		return nil, "", nil, errSessionReferenceDirectory
-	}
-	absolute, err := filepath.Abs(path)
-	if err != nil || filepath.Base(absolute) == "." || filepath.Base(absolute) == string(filepath.Separator) {
-		return nil, "", nil, errSessionReferenceDirectory
-	}
-	parent := filepath.Dir(absolute)
-	volume := filepath.VolumeName(parent) + string(filepath.Separator)
-	root, err := os.OpenRoot(volume)
-	if err != nil {
-		return nil, "", nil, errSessionReferenceDirectory
-	}
-	parts := strings.Split(strings.TrimPrefix(parent, volume), string(filepath.Separator))
-	for _, part := range parts {
-		if part == "" {
-			continue
-		}
-		info, err := root.Lstat(part)
-		if err != nil || !safeSessionReferenceDirectory(info, false) {
-			root.Close()
-			return nil, "", nil, errSessionReferenceDirectory
-		}
-		next, err := root.OpenRoot(part)
-		if err != nil {
-			root.Close()
-			return nil, "", nil, errSessionReferenceDirectory
-		}
-		opened, err := next.Stat(".")
-		current, currentErr := root.Lstat(part)
-		root.Close()
-		if err != nil || currentErr != nil || !safeSessionReferenceDirectory(current, false) || !os.SameFile(info, opened) || !os.SameFile(info, current) {
-			next.Close()
-			return nil, "", nil, errSessionReferenceDirectory
-		}
-		root = next
-	}
-	info, err := root.Stat(".")
-	if err != nil || !safeSessionReferenceDirectory(info, true) {
-		root.Close()
-		return nil, "", nil, errSessionReferenceDirectory
-	}
-	return root, filepath.Base(absolute), info, nil
-}
-
-func safeSessionReferenceDirectory(info os.FileInfo, immediate bool) bool {
-	return info != nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 &&
-		(info.Mode().Perm()&0022 == 0 || !immediate && info.Mode()&os.ModeSticky != 0)
-}
-
-func safeSessionReferenceFile(info os.FileInfo) bool {
-	return info != nil && info.Mode().IsRegular() && info.Mode().Perm()&0077 == 0 && info.Size() <= maxSessionReferenceManifestBytes
-}
-
 func readSessionReferenceFile(root *os.Root, name string) ([]byte, os.FileInfo, error) {
 	return readSessionReferenceFileMode(root, name, true)
 }
@@ -371,72 +309,6 @@ func checkSessionReferenceDuplicates(cases []agentruntime.SessionReferenceCase) 
 			return errSessionReferenceStore
 		}
 		ids[c.ID], sources[source] = true, true
-	}
-	return nil
-}
-
-// The lock is deliberately exclusive-create rather than advisory inode locking:
-// cooperative writers never race a removed/recreated lock inode. A stale lock
-// causes bounded refusal; it is never automatically broken by another writer.
-func lockSessionReferenceManifest(ctx context.Context, root *os.Root, name string) (func(), error) {
-	ctx, cancel := context.WithTimeout(ctx, sessionReferenceAppendTimeout)
-	defer cancel()
-	for {
-		if ctx.Err() != nil {
-			return nil, errSessionReferenceAppend
-		}
-		file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-		if err == nil {
-			info, statErr := file.Stat()
-			closeErr := file.Close()
-			if statErr != nil || closeErr != nil {
-				_ = root.Remove(name)
-				return nil, errSessionReferenceAppend
-			}
-			return func() {
-				if current, err := root.Lstat(name); err == nil && os.SameFile(info, current) && safeSessionReferenceFile(current) {
-					_ = root.Remove(name)
-				}
-			}, nil
-		}
-		if !os.IsExist(err) {
-			return nil, errSessionReferenceAppend
-		}
-		info, err := root.Lstat(name)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil || !safeSessionReferenceFile(info) {
-			return nil, errSessionReferenceAppend
-		}
-		timer := time.NewTimer(10 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
-			return nil, errSessionReferenceAppend
-		case <-timer.C:
-		}
-	}
-}
-
-// Recheck original identity and exact bytes immediately before atomic rename.
-// This protects cooperative writers and detects intervening replacement or
-// in-place edits; it does not claim exclusion against a malicious same-user writer.
-func replaceSessionReferenceManifest(root *os.Root, name, stage string, original os.FileInfo, originalRaw []byte) error {
-	if original == nil {
-		if _, err := root.Lstat(name); !os.IsNotExist(err) {
-			return errSessionReferenceChanged
-		}
-	} else {
-		raw, current, err := readSessionReferenceFile(root, name)
-		if err != nil || !os.SameFile(original, current) || !bytes.Equal(raw, originalRaw) {
-			return errSessionReferenceChanged
-		}
-	}
-	if err := root.Rename(stage, name); err != nil {
-		return errSessionReferenceAppend
 	}
 	return nil
 }
