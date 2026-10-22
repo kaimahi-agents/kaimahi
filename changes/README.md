@@ -26,7 +26,8 @@ empty fragments and empty category bodies are errors.
 
 ```bash
 python3 scripts/check-changelog-fragments.py
-python3 scripts/check-changelog-fragments.py --base origin/main --head HEAD
+base=$(git merge-base origin/main HEAD)
+python3 scripts/check-changelog-fragments.py --base "$base" --head HEAD
 python3 scripts/check-changelog-fragments.py --selftest
 ```
 
@@ -52,8 +53,10 @@ edits the changelog or deletes notes. Use a stable `vX.Y.Z` and an explicit vali
 calendar date; release-candidate versions are not render targets.
 
 ```bash
-python3 scripts/check-changelog-fragments.py --list > /tmp/kmx-release-fragments.txt
-python3 scripts/check-changelog-fragments.py --render v0.9.0 --date 2026-06-11 > /tmp/kmx-CHANGELOG.md
+included=$(mktemp)
+notes=$(mktemp)
+python3 scripts/check-changelog-fragments.py --list > "$included"
+python3 scripts/check-changelog-fragments.py --render v0.9.0 --date 2026-06-11 > "$notes"
 ```
 
 Review **both** outputs against the same frozen inputs before copying the
@@ -71,7 +74,7 @@ the reviewed listing, for example:
 ```bash
 while IFS= read -r path; do
   git rm -- "$path"
-done < /tmp/kmx-release-fragments.txt
+done < "$included"
 ```
 
 Never wildcard-delete `changes/*.md`: that would also remove this README or
