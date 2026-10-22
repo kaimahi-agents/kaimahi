@@ -30,8 +30,13 @@ jobs:
       contents: read
     uses: ./.github/workflows/orka-runtime.yml
 
+  kagent-qualification:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/kagent-runtime.yml
+
   release:
-    needs: [orka-qualification]
+    needs: [orka-qualification, kagent-qualification]
     runs-on: ubuntu-latest
     permissions:
       # Creating the release. Nothing else is written.
@@ -51,6 +56,19 @@ jobs:
       - name: Release commit has fresh Orka qualification
         env:
           QUALIFIED_SHA: ${{ needs.orka-qualification.outputs.qualified_sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$QUALIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EVENT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          actual=$(git rev-parse HEAD)
+          expected=$(git rev-parse "$EVENT_SHA^{commit}")
+          test "$actual" = "$expected"
+          test "$actual" = "$QUALIFIED_SHA"
+
+      - name: Release commit has fresh kagent qualification
+        env:
+          QUALIFIED_SHA: ${{ needs.kagent-qualification.outputs.qualified_sha }}
           EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail

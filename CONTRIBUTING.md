@@ -177,7 +177,7 @@ hygiene checks run regardless of that mutation gate.
 The classifier exposes an independent `orka_required` decision for the Orka
 runtime worker. Only explicitly safe PRs and ordinary main pushes skip it;
 full nightly, relevant/unknown PR, manual and release qualification remain.
-Quickstart, stock Helm and kagent schedules and guards are unchanged. The checkout helper accepts
+Quickstart and stock Helm schedules and guards are unchanged; kagent uses the separate hermetic/live policy below. The checkout helper accepts
 full commit IDs as `python3 scripts/ci/orka-routing.py --base SHA --head SHA`.
 It prints only `true` or `false`; unknown, empty, malformed or failed diffs mean
 `true`. PR classification uses the synthetic merge commit's actual first parent,
@@ -285,9 +285,23 @@ native execution. Only payload-free `qualification.json` and
 raw logs, manifests, credentials, prompts and answers are not artifacts.
 Qualifier diagnostics expose only whitelisted subphase and reason codes through
 saved shell stderr; bootstrap and tool output remain private.
-The `e2e-kagent-lift` shard runs for relevant or unknown PR changes and always
-on main pushes, nightly and manual runs. Its required aggregator accepts only
-intentional skipped outcomes, never failed or cancelled shards.
+Every PR and routine main push instead runs `kagent contract — not live qualification`:
+hermetic Python bootstrap/qualifier/audit/fixture contracts, suite-lift contracts,
+and focused offline Go kagent profile, evaluation, placement, provenance and
+ownership/refusal tests. It creates no live cluster and proves no live A2A, image
+pull, controller rollout or real suite execution. Existing hygiene and all App
+shards remain; their overlapping tests are not removed.
+
+Full `e2e-kagent-lift / qualify` moves to the existing 03:23 UTC scheduled CI,
+manual CI and fresh exact-commit pre-release/dry-run qualification. Its unchanged
+worker retains live one-shot A2A, packaged two-case evaluation, evaluated push,
+source-free digest lift and private helper proof. `e2e-hello-world` always
+evaluates the fast check and full-worker outcome; it permits full-proof skips
+only on PRs or ordinary main pushes, never a failed, cancelled or missing proof.
+The legacy classifier `kagent_changed` output no longer controls qualification.
+Tom monitors scheduled CI failures; no kagent issue reporter is added. Integration
+failures not caught by hermetic PR coverage may wait until nightly (normally up
+to 24 hours), or block the next release. Use manual CI for immediate live proof.
 
 The read-only `orka-runtime.yml` worker runs the complete raw Orka Tool/Task,
 model-answer and native suite proof. Its CI check appears as

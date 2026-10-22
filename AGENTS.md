@@ -627,6 +627,13 @@ Do not infer enforcement from authoring, transfer, readiness, labels or annotati
   MCP proof, separately tool-free packaged two-case eval/evaluated push and
   source-withheld digest Deploy with occupied-repeat refusal. No legacy receipt,
   status or judge claim. Final build/live execution are needed for qualification.
+- Every PR/main push gets hermetic kagent contract/fixture and focused offline Go
+  checks, labelled not live qualification. Full live A2A, packaged evaluation,
+  evaluated push, digest lift and helpers run nightly/manual and on the exact
+  release commit. Preserve the full worker's pins, commands, retries and budget.
+  `e2e-hello-world` must always evaluate fast success and intentional full skips;
+  failed/cancelled/missing proof is never an intentional skip. Tom monitors nightly
+  CI; no new issue-reporting authority is implied.
 
 ## Candidate evaluation and explicit cleanup
 

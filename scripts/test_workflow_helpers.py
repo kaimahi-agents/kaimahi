@@ -1,4 +1,4 @@
-"""Resolve only the repository's fixed, read-only reusable Orka proof in tests."""
+"""Resolve only the repository's fixed, read-only reusable runtime proofs in tests."""
 from pathlib import Path
 import yaml
 
@@ -13,3 +13,12 @@ def runtime_job(root=ROOT):
     if caller['uses'] != './.github/workflows/orka-runtime.yml':
         raise ValueError('unexpected Orka delegation')
     return yaml.safe_load((root / '.github/workflows/orka-runtime.yml').read_text())['jobs']['qualify']
+
+
+def kagent_runtime_job(root=ROOT):
+    caller = yaml.safe_load((root / '.github/workflows/ci.yml').read_text())['jobs']['e2e-kagent-lift']
+    if 'uses' not in caller:
+        return caller
+    if caller['uses'] != './.github/workflows/kagent-runtime.yml':
+        raise ValueError('unexpected kagent delegation')
+    return yaml.safe_load((root / '.github/workflows/kagent-runtime.yml').read_text())['jobs']['qualify']
