@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	orasbinding "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
@@ -216,20 +216,20 @@ func TestPushAddsMultipleAgentSuiteRepositoriesToOneLayout(t *testing.T) {
 func newAgentSuiteSource(
 	t *testing.T,
 	name string,
-) (agentsuite.Suite, *memory.Store, ocispec.Descriptor) {
+) (suitecore.Suite, *memory.Store, ocispec.Descriptor) {
 	t.Helper()
 	fixtureRoot := filepath.Join("..", "..", "..", "..", "testdata", "agentsuite", "minimal")
 	rawSuite, err := os.ReadFile(filepath.Join(fixtureRoot, "agentsuite.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var fixture agentsuite.Suite
+	var fixture suitecore.Suite
 	if err := json.Unmarshal(rawSuite, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	suite := agentsuite.Suite{
-		SchemaVersion:            agentsuite.SpecVersion,
-		MediaType:                agentsuite.MediaTypeSuite,
+	suite := suitecore.Suite{
+		SchemaVersion:            suitecore.SpecVersion,
+		MediaType:                suitecore.MediaTypeSuite,
 		Name:                     name,
 		Agents:                   fixture.Agents,
 		ToolProviderCatalog:      fixture.ToolProviderCatalog,
@@ -253,7 +253,7 @@ func newAgentSuiteSource(
 	}
 
 	data := buildContentLayer(t, contentRoot)
-	descriptor := content.NewDescriptorFromBytes(agentsuite.MediaTypeContent, data)
+	descriptor := content.NewDescriptorFromBytes(suitecore.MediaTypeContent, data)
 	store := memory.New()
 	if err := store.Push(context.Background(), descriptor, bytes.NewReader(data)); err != nil {
 		t.Fatal(err)

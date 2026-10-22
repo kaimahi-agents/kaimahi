@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 )
 
@@ -164,7 +164,7 @@ func (s *suitePassStore) scan(ctx context.Context, suite *workspace.NativeSuite)
 				return result, errSuitePassStore
 			}
 			var record suitePassRecord
-			if agentsuite.Unmarshal(raw, &record) != nil || record.SchemaVersion != 1 || record.Workspace != s.identity || record.SuiteDigest != s.suiteDigest || record.Sequence != seq {
+			if suitecore.Unmarshal(raw, &record) != nil || record.SchemaVersion != 1 || record.Workspace != s.identity || record.SuiteDigest != s.suiteDigest || record.Sequence != seq {
 				return result, errSuitePassStore
 			}
 			receipt, sessionsV1, e := classifySuitePassingReceipt(record.Receipt)
@@ -311,7 +311,7 @@ func (s *suitePassStore) commit(ctx context.Context, raw []byte, suite *workspac
 		return "", errSuitePassStore
 	}
 	record := suitePassRecord{1, s.identity, s.suiteDigest, seq, canonical}
-	encoded, err := agentsuite.Marshal(record)
+	encoded, err := suitecore.Marshal(record)
 	if err == nil && len(encoded) > maxSuitePassRecordBytes {
 		err = errSuitePassStore
 	}

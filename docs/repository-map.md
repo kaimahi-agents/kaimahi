@@ -76,7 +76,9 @@ The portable Go model, canonical JSON, schemas, safety checks, offline graph
 validator and conformance tests live in the separate
 [agent-primitives/suite](https://github.com/agent-primitives/suite) module and its
 [normative specification](https://github.com/agent-primitives/suite/blob/main/spec.md).
-KMX imports that module explicitly as agentsuite.
+KMX imports its focused `core`, `oci`, `evidence` and experimental flow
+packages with the `suitecore`, `suiteoci`, `suiteevidence` and `suiteflow` aliases.
+The standalone `policy` package remains independent.
 
 `testdata/agentsuite/` owns byte-identical consumer-test snapshots and their
 provenance without depending on a module-cache path. Its descendants inherit

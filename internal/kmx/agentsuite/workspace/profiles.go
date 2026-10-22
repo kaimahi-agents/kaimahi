@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 	"github.com/kaimahi-agents/kaimahi/pkg/suiteview"
@@ -28,17 +28,17 @@ var (
 type Selection struct{ Member, Platform, RuntimeProfile string }
 
 type resolvedProfile struct {
-	runtime  agentsuite.RuntimeProfile
-	build    agentsuite.BuildProfile
-	platform agentsuite.Platform
+	runtime  suitecore.RuntimeProfile
+	build    suitecore.BuildProfile
+	platform suitecore.Platform
 }
 
-func parseProfilePlatform(value string) (agentsuite.Platform, error) {
+func parseProfilePlatform(value string) (suitecore.Platform, error) {
 	parts := strings.Split(value, "/")
 	if len(parts) != 2 || !profileID.MatchString(parts[0]) || !profileID.MatchString(parts[1]) {
-		return agentsuite.Platform{}, errors.New("profile platform requires OS/ARCH")
+		return suitecore.Platform{}, errors.New("profile platform requires OS/ARCH")
 	}
-	return agentsuite.Platform{OS: parts[0], Architecture: parts[1]}, nil
+	return suitecore.Platform{OS: parts[0], Architecture: parts[1]}, nil
 }
 
 func readSourceProfiles(rows []sourceProfile, read func(string) ([]byte, error)) ([]resolvedProfile, error) {
@@ -48,12 +48,12 @@ func readSourceProfiles(rows []sourceProfile, read func(string) ([]byte, error))
 		if err != nil {
 			return nil, fmt.Errorf("runtime profile source: %w", err)
 		}
-		var rp agentsuite.RuntimeProfile
-		if agentsuite.Unmarshal(raw, &rp) != nil || !profileID.MatchString(rp.ID) || safeText(string(raw)) != nil {
+		var rp suitecore.RuntimeProfile
+		if suitecore.Unmarshal(raw, &rp) != nil || !profileID.MatchString(rp.ID) || safeText(string(raw)) != nil {
 			return nil, errors.New("invalid runtime profile JSON")
 		}
 		// Scan decoded values too: JSON escapes can conceal credential shapes.
-		semantic, err := agentsuite.Marshal(rp)
+		semantic, err := suitecore.Marshal(rp)
 		if err != nil || safeText(string(semantic)) != nil {
 			return nil, errors.New("invalid runtime profile JSON")
 		}
@@ -61,11 +61,11 @@ func readSourceProfiles(rows []sourceProfile, read func(string) ([]byte, error))
 		if err != nil {
 			return nil, fmt.Errorf("build profile source: %w", err)
 		}
-		var bp agentsuite.BuildProfile
-		if agentsuite.Unmarshal(raw, &bp) != nil || !profileID.MatchString(bp.ID) || safeText(string(raw)) != nil {
+		var bp suitecore.BuildProfile
+		if suitecore.Unmarshal(raw, &bp) != nil || !profileID.MatchString(bp.ID) || safeText(string(raw)) != nil {
 			return nil, errors.New("invalid build profile JSON")
 		}
-		semantic, err = agentsuite.Marshal(bp)
+		semantic, err = suitecore.Marshal(bp)
 		if err != nil || safeText(string(semantic)) != nil {
 			return nil, errors.New("invalid build profile JSON")
 		}
@@ -89,18 +89,18 @@ func resolveProfiled(name string, m normalizedMember, profiles []resolvedProfile
 	if err != nil {
 		return nil, err
 	}
-	suite := agentsuite.Suite{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeSuite, Name: name, Agents: []agentsuite.ManifestRef{agent}, ToolProviderCatalog: catalog, BuildProfiles: []agentsuite.ManifestRef{}, RuntimeProfiles: []agentsuite.ManifestRef{}, Compositions: []agentsuite.CompositionRef{}}
-	put := func(p, media, id string, value any) (agentsuite.ManifestRef, error) {
-		raw, err := agentsuite.Marshal(value)
+	suite := suitecore.Suite{SchemaVersion: suitecore.SpecVersion, MediaType: suitecore.MediaTypeSuite, Name: name, Agents: []suitecore.ManifestRef{agent}, ToolProviderCatalog: catalog, BuildProfiles: []suitecore.ManifestRef{}, RuntimeProfiles: []suitecore.ManifestRef{}, Compositions: []suitecore.CompositionRef{}}
+	put := func(p, media, id string, value any) (suitecore.ManifestRef, error) {
+		raw, err := suitecore.Marshal(value)
 		if err != nil {
-			return agentsuite.ManifestRef{}, err
+			return suitecore.ManifestRef{}, err
 		}
 		if prior, ok := files[p]; ok && !bytes.Equal(prior, raw) {
-			return agentsuite.ManifestRef{}, errors.New("conflicting same-ID profile documents")
+			return suitecore.ManifestRef{}, errors.New("conflicting same-ID profile documents")
 		}
 		files[p] = raw
-		digest, err := agentsuite.Digest(raw)
-		return agentsuite.ManifestRef{ID: id, Path: p, Descriptor: agentsuite.Descriptor{MediaType: media, Digest: digest, Size: int64(len(raw))}}, err
+		digest, err := suitecore.Digest(raw)
+		return suitecore.ManifestRef{ID: id, Path: p, Descriptor: suitecore.Descriptor{MediaType: media, Digest: digest, Size: int64(len(raw))}}, err
 	}
 	profiles = slices.Clone(profiles)
 	slices.SortFunc(profiles, func(a, b resolvedProfile) int {
@@ -108,11 +108,11 @@ func resolveProfiled(name string, m normalizedMember, profiles []resolvedProfile
 	})
 	runtimes, builds, tuples := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, p := range profiles {
-		rp, err := put("runtime-profiles/"+p.runtime.ID+".json", agentsuite.MediaTypeRuntimeProfile, p.runtime.ID, p.runtime)
+		rp, err := put("runtime-profiles/"+p.runtime.ID+".json", suitecore.MediaTypeRuntimeProfile, p.runtime.ID, p.runtime)
 		if err != nil {
 			return nil, err
 		}
-		bp, err := put("build-profiles/"+p.build.ID+".json", agentsuite.MediaTypeBuildProfile, p.build.ID, p.build)
+		bp, err := put("build-profiles/"+p.build.ID+".json", suitecore.MediaTypeBuildProfile, p.build.ID, p.build)
 		if err != nil {
 			return nil, err
 		}
@@ -129,15 +129,15 @@ func resolveProfiled(name string, m normalizedMember, profiles []resolvedProfile
 			return nil, errors.New("duplicate profile/platform tuple")
 		}
 		tuples[key] = true
-		composition := agentsuite.Composition{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeComposition, Agent: m.member.ID, Platform: p.platform, RuntimeProfile: rp.ID, BuildProfile: bp.ID, ToolProviders: []agentsuite.ResolvedToolProvider{}}
-		ref, err := put("compositions/"+m.member.ID+"/"+key+".json", agentsuite.MediaTypeComposition, "", composition)
+		composition := suitecore.Composition{SchemaVersion: suitecore.SpecVersion, MediaType: suitecore.MediaTypeComposition, Agent: m.member.ID, Platform: p.platform, RuntimeProfile: rp.ID, BuildProfile: bp.ID, ToolProviders: []suitecore.ResolvedToolProvider{}}
+		ref, err := put("compositions/"+m.member.ID+"/"+key+".json", suitecore.MediaTypeComposition, "", composition)
 		if err != nil {
 			return nil, err
 		}
-		suite.Compositions = append(suite.Compositions, agentsuite.CompositionRef{Agent: m.member.ID, Platform: p.platform, RuntimeProfile: rp.ID, Path: ref.Path, Descriptor: ref.Descriptor})
+		suite.Compositions = append(suite.Compositions, suitecore.CompositionRef{Agent: m.member.ID, Platform: p.platform, RuntimeProfile: rp.ID, Path: ref.Path, Descriptor: ref.Descriptor})
 	}
-	slices.SortFunc(suite.BuildProfiles, func(a, b agentsuite.ManifestRef) int { return strings.Compare(a.ID, b.ID) })
-	raw, err := agentsuite.Marshal(suite)
+	slices.SortFunc(suite.BuildProfiles, func(a, b suitecore.ManifestRef) int { return strings.Compare(a.ID, b.ID) })
+	raw, err := suitecore.Marshal(suite)
 	if err != nil {
 		return nil, err
 	}
@@ -156,12 +156,12 @@ func hasRuntimeProfiles(files map[string][]byte) bool {
 
 // This path is closed independently; legacy regeneration remains exact.
 func validateProfiled(files map[string][]byte) (string, error) {
-	var suite agentsuite.Suite
-	if agentsuite.Unmarshal(files["agentsuite.json"], &suite) != nil || len(suite.Agents) != 1 || len(suite.Compositions) == 0 || len(suite.Compositions) > 16 {
+	var suite suitecore.Suite
+	if suitecore.Unmarshal(files["agentsuite.json"], &suite) != nil || len(suite.Agents) != 1 || len(suite.Compositions) == 0 || len(suite.Compositions) > 16 {
 		return "", errors.New("unsupported profiled graph")
 	}
-	var agent agentsuite.Agent
-	if agentsuite.Unmarshal(files[suite.Agents[0].Path], &agent) != nil {
+	var agent suitecore.Agent
+	if suitecore.Unmarshal(files[suite.Agents[0].Path], &agent) != nil {
 		return "", errors.New("invalid profiled member")
 	}
 	m := sourceMember{ID: agent.ID, Description: agent.Description}
@@ -177,8 +177,8 @@ func validateProfiled(files map[string][]byte) (string, error) {
 	}
 	var rows []sourceProfile
 	for _, ref := range suite.Compositions {
-		var comp agentsuite.Composition
-		if agentsuite.Unmarshal(files[ref.Path], &comp) != nil {
+		var comp suitecore.Composition
+		if suitecore.Unmarshal(files[ref.Path], &comp) != nil {
 			return "", errors.New("invalid profiled composition")
 		}
 		row := sourceProfile{Platform: ref.Platform.String()}
@@ -274,11 +274,11 @@ func loadSelectedFiles(ctx context.Context, files map[string][]byte, artifact su
 	if selection.RuntimeProfile == "" {
 		return nil, ErrProfileSelectionRequired
 	}
-	var root agentsuite.Suite
-	if err := agentsuite.Unmarshal(files["agentsuite.json"], &root); err != nil {
+	var root suitecore.Suite
+	if err := suitecore.Unmarshal(files["agentsuite.json"], &root); err != nil {
 		return nil, err
 	}
-	var matches []agentsuite.CompositionRef
+	var matches []suitecore.CompositionRef
 	for _, ref := range root.Compositions {
 		if ref.RuntimeProfile == selection.RuntimeProfile && (selection.Member == "" || ref.Agent == selection.Member) && (selection.Platform == "" || ref.Platform.String() == selection.Platform) {
 			matches = append(matches, ref)
@@ -298,19 +298,19 @@ func loadSelectedFiles(ctx context.Context, files map[string][]byte, artifact su
 	if len(root.Agents) != 1 || root.Agents[0].ID != ref.Agent {
 		return nil, errors.New("profiled member does not match composition")
 	}
-	var agent agentsuite.Agent
-	if err := agentsuite.Unmarshal(files[root.Agents[0].Path], &agent); err != nil {
+	var agent suitecore.Agent
+	if err := suitecore.Unmarshal(files[root.Agents[0].Path], &agent); err != nil {
 		return nil, err
 	}
-	var composition agentsuite.Composition
-	if err := agentsuite.Unmarshal(files[ref.Path], &composition); err != nil {
+	var composition suitecore.Composition
+	if err := suitecore.Unmarshal(files[ref.Path], &composition); err != nil {
 		return nil, err
 	}
-	var rp agentsuite.RuntimeProfile
+	var rp suitecore.RuntimeProfile
 	var profileDigest, buildDigest string
 	for _, p := range root.RuntimeProfiles {
 		if p.ID == ref.RuntimeProfile {
-			if err := agentsuite.Unmarshal(files[p.Path], &rp); err != nil {
+			if err := suitecore.Unmarshal(files[p.Path], &rp); err != nil {
 				return nil, err
 			}
 			profileDigest = p.Descriptor.Digest
@@ -366,11 +366,11 @@ func (s *NativeSuite) ForCompositionDigest(ctx context.Context, digest string) (
 		}
 		return s, nil
 	}
-	var root agentsuite.Suite
-	if err := agentsuite.Unmarshal(s.profiled.files["agentsuite.json"], &root); err != nil {
+	var root suitecore.Suite
+	if err := suitecore.Unmarshal(s.profiled.files["agentsuite.json"], &root); err != nil {
 		return nil, err
 	}
-	var matches []agentsuite.CompositionRef
+	var matches []suitecore.CompositionRef
 	for _, ref := range root.Compositions {
 		if ref.Descriptor.Digest == digest {
 			matches = append(matches, ref)

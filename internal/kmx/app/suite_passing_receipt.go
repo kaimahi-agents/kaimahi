@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -98,7 +98,7 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 	files := make([]agentruntime.EvaluationCaseFile, 0, len(suite.Cases))
 	// Identity fields accept at most 256 printable ASCII bytes. Reserve their
 	// escaped representation plus the bounded endpoint; model size is known.
-	modelJSON, err := agentsuite.Marshal(suite.Model)
+	modelJSON, err := suitecore.Marshal(suite.Model)
 	if err != nil {
 		return nil, "", errSuitePassingReceipt
 	}
@@ -137,7 +137,7 @@ func suitePassingInventory(suite *workspace.NativeSuite) ([]suitePassingInventor
 			projected.TaskName, projected.TaskUID = "", ""
 			projected.SessionsExecution = &suiteSessionsCaseExecution{SessionUID: strings.Repeat("x", 256), ExecutionID: strings.Repeat("x", 256), Harness: "chat", HarnessVersion: "1", HeadHash: strings.Repeat("0", 64), HeadSeq: 5}
 		}
-		wire, err := agentsuite.Marshal(projected)
+		wire, err := suitecore.Marshal(projected)
 		if err != nil {
 			return nil, "", errSuitePassingReceipt
 		}
@@ -282,7 +282,7 @@ func suiteSessionsReceiptV1(raw []byte) *suitePassingReceipt {
 	if _, ok := subject["bindingDigest"]; !ok {
 		subject["bindingDigest"] = "sha256:" + strings.Repeat("0", 64)
 	}
-	placeholder, err := agentsuite.Marshal(document)
+	placeholder, err := suitecore.Marshal(document)
 	if err != nil {
 		return nil
 	}
@@ -306,11 +306,11 @@ func parseSuitePassingReceiptStrict(raw []byte) (*suitePassingReceipt, error) {
 	if decoder.Decode(&document) != nil {
 		return nil, errSuitePassingReceipt
 	}
-	original, err := agentsuite.Marshal(document)
+	original, err := suitecore.Marshal(document)
 	if err != nil {
 		return nil, errSuitePassingReceipt
 	}
-	typed, err := agentsuite.Marshal(r)
+	typed, err := suitecore.Marshal(r)
 	if err != nil || !bytes.Equal(original, typed) {
 		return nil, errSuitePassingReceipt
 	}
@@ -426,7 +426,7 @@ func basicSuitePassingReceipt(r *suitePassingReceipt) error {
 		// basic validation above proved the exact projection and receipt run.
 		masked.Subject.EvaluationRun = "run"
 	}
-	raw, err := agentsuite.Marshal(masked)
+	raw, err := suitecore.Marshal(masked)
 	if err != nil || scaffold.RefuseKeyShapes(string(raw)) != nil {
 		return errors.New("refusing credential-shaped native receipt metadata")
 	}
@@ -473,7 +473,7 @@ func canonicalSuitePassingInventory(ctx context.Context, r *suitePassingReceipt,
 			return nil, errSuitePassingReceipt
 		}
 	}
-	raw, err := agentsuite.Marshal(r)
+	raw, err := suitecore.Marshal(r)
 	if err != nil || len(raw) > maxSuitePassingReceiptBytes {
 		return nil, errSuitePassingReceipt
 	}

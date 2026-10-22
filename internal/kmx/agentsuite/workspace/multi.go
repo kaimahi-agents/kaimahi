@@ -6,7 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 )
 
@@ -37,7 +38,7 @@ func nativeBoundsMode(files map[string][]byte, flowMode bool) error {
 	total := 0
 	for name, b := range files {
 		limit := maxFile
-		if flowMode && name == agentsuite.FlowPathV1Alpha1 {
+		if flowMode && name == suiteflow.FlowPathV1Alpha1 {
 			limit = maxFlowFile
 		}
 		total += len(b)
@@ -58,7 +59,7 @@ func resolveMulti(name string, members []normalizedMember, profile []byte) (map[
 	slices.SortFunc(members, func(a, b normalizedMember) int { return strings.Compare(a.member.ID, b.member.ID) })
 	files := map[string][]byte{}
 	metadata := multiRecord{SchemaVersion: multiRecordVersion, RendererVersion: multiRendererVersion, Members: []nativeRecord{}}
-	var suite agentsuite.Suite
+	var suite suitecore.Suite
 	caseCount := 0
 	for i, m := range members {
 		if i > 0 && members[i-1].member.ID == m.member.ID {
@@ -76,8 +77,8 @@ func resolveMulti(name string, members []normalizedMember, profile []byte) (map[
 		if err != nil {
 			return nil, err
 		}
-		var root agentsuite.Suite
-		if err := agentsuite.Unmarshal(single["agentsuite.json"], &root); err != nil {
+		var root suitecore.Suite
+		if err := suitecore.Unmarshal(single["agentsuite.json"], &root); err != nil {
 			return nil, err
 		}
 		if i == 0 {
@@ -98,12 +99,12 @@ func resolveMulti(name string, members []normalizedMember, profile []byte) (map[
 		}
 		metadata.Members = append(metadata.Members, record)
 	}
-	root, err := agentsuite.Marshal(suite)
+	root, err := suitecore.Marshal(suite)
 	if err != nil {
 		return nil, err
 	}
 	files["agentsuite.json"] = root
-	b, err := agentsuite.Marshal(metadata)
+	b, err := suitecore.Marshal(metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -122,12 +123,12 @@ func validateMultiMode(files map[string][]byte, flowMode bool) (string, error) {
 	if err := nativeBoundsMode(files, flowMode); err != nil {
 		return "", err
 	}
-	var suite agentsuite.Suite
-	if err := agentsuite.Unmarshal(files["agentsuite.json"], &suite); err != nil {
+	var suite suitecore.Suite
+	if err := suitecore.Unmarshal(files["agentsuite.json"], &suite); err != nil {
 		return "", err
 	}
 	var metadata multiRecord
-	if err := agentsuite.Unmarshal(files[multiNativePath], &metadata); err != nil {
+	if err := suitecore.Unmarshal(files[multiNativePath], &metadata); err != nil {
 		return "", err
 	}
 	if metadata.SchemaVersion != multiRecordVersion || metadata.RendererVersion != multiRendererVersion || len(metadata.Members) < 2 || len(metadata.Members) > maxMembers {
@@ -135,8 +136,8 @@ func validateMultiMode(files map[string][]byte, flowMode bool) (string, error) {
 	}
 	members := make([]normalizedMember, 0, len(metadata.Members))
 	for _, record := range metadata.Members {
-		var agent agentsuite.Agent
-		if err := agentsuite.Unmarshal(files["agents/"+record.Member+".json"], &agent); err != nil {
+		var agent suitecore.Agent
+		if err := suitecore.Unmarshal(files["agents/"+record.Member+".json"], &agent); err != nil {
 			return "", err
 		}
 		m := sourceMember{ID: agent.ID, Description: agent.Description}
@@ -164,7 +165,7 @@ func validateMultiMode(files map[string][]byte, flowMode bool) (string, error) {
 		return "", err
 	}
 	if flowMode {
-		if err := attachFlow(expected, files[agentsuite.FlowPathV1Alpha1]); err != nil {
+		if err := attachFlow(expected, files[suiteflow.FlowPathV1Alpha1]); err != nil {
 			return "", err
 		}
 	}

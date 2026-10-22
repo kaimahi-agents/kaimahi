@@ -10,7 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteoci "github.com/agent-primitives/suite/oci"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
@@ -87,7 +88,7 @@ func cached(ctx context.Context, key string, s *snapshot, flowMode bool) (*Prepa
 		return nil, fmt.Errorf("incomplete/corrupt prepared cache: %w", err)
 	}
 	var rec cacheRecord
-	if err := agentsuite.Unmarshal(b, &rec); err != nil {
+	if err := suitecore.Unmarshal(b, &rec); err != nil {
 		return nil, err
 	}
 	if rec.Packaging != cachePackaging {
@@ -182,7 +183,7 @@ func prepare(ctx context.Context, root, cacheDir string, flowMode bool) (*Prepar
 	if _, err := verifyMode(ctx, p, flowMode); err != nil {
 		return nil, err
 	}
-	record, err := agentsuite.Marshal(cacheRecord{Packaging: cachePackaging, Fingerprint: p.Fingerprint, Descriptor: p.Descriptor, Name: p.Name})
+	record, err := suitecore.Marshal(cacheRecord{Packaging: cachePackaging, Fingerprint: p.Fingerprint, Descriptor: p.Descriptor, Name: p.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +247,7 @@ func verify(ctx context.Context, p *Prepared) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if p == nil || !agentsuite.IsValidDigest(p.Fingerprint) {
+	if p == nil || !suitecore.IsValidDigest(p.Fingerprint) {
 		return nil, errors.New("valid prepared artifact identity is required")
 	}
 	root, err := safeAbsolute(p.Path)
@@ -256,7 +257,7 @@ func verify(ctx context.Context, p *Prepared) (map[string][]byte, error) {
 	if err := privateTree(root, false); err != nil {
 		return nil, err
 	}
-	if _, err := agentsuite.ValidatePath(root); err != nil {
+	if _, err := suiteoci.ValidatePath(root); err != nil {
 		return nil, err
 	}
 	r, err := os.OpenRoot(root)
@@ -269,7 +270,7 @@ func verify(ctx context.Context, p *Prepared) (map[string][]byte, error) {
 		return nil, err
 	}
 	var index ocispec.Index
-	if err := agentsuite.Unmarshal(b, &index); err != nil {
+	if err := suitecore.Unmarshal(b, &index); err != nil {
 		return nil, err
 	}
 	if len(index.Manifests) != 1 || !content.Equal(index.Manifests[0], p.Descriptor) || index.Manifests[0].ArtifactType != p.Descriptor.ArtifactType {

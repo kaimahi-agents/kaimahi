@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"regexp"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
 )
@@ -31,7 +31,7 @@ func suiteFlowCandidateName(suite, member, caseID string, run int, step, operati
 	if !suitePrefixedDigest(suite) || scaffold.ValidateObjectName(member) != nil || !flowCandidateID.MatchString(caseID) || run < 1 || run > 1000 || step != "" && !flowCandidateID.MatchString(step) || !evaluationRunID(operation) {
 		return "", errSuiteFlow
 	}
-	raw, err := agentsuite.Marshal(p)
+	raw, err := suitecore.Marshal(p)
 	if err != nil {
 		return "", errSuiteFlow
 	}
@@ -54,10 +54,10 @@ func flowCandidateOwner(markers map[string]any) (*suiteFlowCandidateProjection, 
 		return nil, errSuiteFlow
 	}
 	var p suiteFlowCandidateProjection
-	if agentsuite.Unmarshal([]byte(text), &p) != nil {
+	if suitecore.Unmarshal([]byte(text), &p) != nil {
 		return nil, errSuiteFlow
 	}
-	canonical, err := agentsuite.Marshal(p)
+	canonical, err := suitecore.Marshal(p)
 	if err != nil || string(canonical) != text {
 		return nil, errSuiteFlow
 	}

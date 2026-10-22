@@ -21,7 +21,7 @@ import (
 	"github.com/agent-primitives/sessions/runtime/local"
 	"github.com/agent-primitives/sessions/session"
 	"github.com/agent-primitives/sessions/sqlitelog"
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/workspace"
 	"google.golang.org/grpc"
 )
@@ -303,7 +303,7 @@ func writeSessionsEvidenceV1(t *testing.T, evidence string) string {
 	}
 	document["domain"] = "kmx.agentsessions-suite.passing/v1"
 	delete(document["agentsessions"].(map[string]any)["subject"].(map[string]any), "bindingDigest")
-	old, err := agentsuite.Marshal(document)
+	old, err := suitecore.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}

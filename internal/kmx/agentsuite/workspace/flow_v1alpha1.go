@@ -9,7 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
+	suiteflow "github.com/agent-primitives/suite/experimental/flow"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/localartifact"
 	suiteoras "github.com/kaimahi-agents/kaimahi/internal/kmx/agentsuite/oras"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/scaffold"
@@ -24,7 +25,7 @@ const maxFlowFile = 4 << 20
 // inventory. Neither storage validation nor these copies authorize execution.
 type FlowInventory struct {
 	NativeInventory
-	Flow       agentsuite.FlowV1Alpha1
+	Flow       suiteflow.FlowV1Alpha1
 	FlowDigest string
 }
 
@@ -37,8 +38,8 @@ func canonicalFlow(raw []byte) ([]byte, error) {
 	if len(raw) > maxFlowFile {
 		return nil, errors.New("flow exceeds 4 MiB")
 	}
-	var flow agentsuite.FlowV1Alpha1
-	if agentsuite.Unmarshal(raw, &flow) != nil {
+	var flow suiteflow.FlowV1Alpha1
+	if suitecore.Unmarshal(raw, &flow) != nil {
 		return nil, errors.New("invalid flow JSON")
 	}
 	// JSON escaping can hide a detector boundary (for example newline becomes
@@ -55,7 +56,7 @@ func canonicalFlow(raw []byte) ([]byte, error) {
 	}
 	// Canonicalize original structure, not typed values: required/null/omitted
 	// fields must reach the shared contract validator without reinterpretation.
-	canonical, err := agentsuite.Marshal(json.RawMessage(raw))
+	canonical, err := suitecore.Marshal(json.RawMessage(raw))
 	if err != nil {
 		return nil, errors.New("invalid flow JSON")
 	}
@@ -70,24 +71,24 @@ func attachFlow(files map[string][]byte, raw []byte) error {
 	if err != nil {
 		return err
 	}
-	f, err := agentsuite.Digest(canonical)
+	f, err := suitecore.Digest(canonical)
 	if err != nil {
 		return err
 	}
-	var root agentsuite.Suite
-	if err := agentsuite.Unmarshal(files["agentsuite.json"], &root); err != nil {
+	var root suitecore.Suite
+	if err := suitecore.Unmarshal(files["agentsuite.json"], &root); err != nil {
 		return err
 	}
-	root.Extensions = []agentsuite.Extension{{Name: agentsuite.FlowExtensionV1Alpha1, Critical: true, Digest: f}}
-	files["agentsuite.json"], err = agentsuite.Marshal(root)
+	root.Extensions = []suitecore.Extension{{Name: suiteflow.FlowExtensionV1Alpha1, Critical: true, Digest: f}}
+	files["agentsuite.json"], err = suitecore.Marshal(root)
 	if err != nil {
 		return err
 	}
-	files[agentsuite.FlowPathV1Alpha1] = canonical
+	files[suiteflow.FlowPathV1Alpha1] = canonical
 	return nativeBoundsMode(files, true)
 }
 
-func validateFlowFiles(ctx context.Context, files map[string][]byte) (*agentsuite.FlowV1Alpha1Graph, error) {
+func validateFlowFiles(ctx context.Context, files map[string][]byte) (*suiteflow.FlowV1Alpha1Graph, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -102,7 +103,7 @@ func validateFlowFiles(ctx context.Context, files map[string][]byte) (*agentsuit
 	if err := writeFiles(stage, files); err != nil {
 		return nil, err
 	}
-	graph, err := agentsuite.ValidateDirectoryFlowV1Alpha1(stage)
+	graph, err := suiteflow.ValidateDirectoryFlowV1Alpha1(stage)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -113,7 +114,7 @@ func readPreparedFlow(ctx context.Context, p *Prepared) (*localartifact.Artifact
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if p == nil || !agentsuite.IsValidDigest(p.Fingerprint) {
+	if p == nil || !suitecore.IsValidDigest(p.Fingerprint) {
 		return nil, errors.New("valid prepared artifact identity is required")
 	}
 	root, err := safeAbsolute(p.Path)
@@ -133,7 +134,7 @@ func readPreparedFlow(ctx context.Context, p *Prepared) (*localartifact.Artifact
 		return nil, err
 	}
 	var index ocispec.Index
-	if err := agentsuite.Unmarshal(raw, &index); err != nil {
+	if err := suitecore.Unmarshal(raw, &index); err != nil {
 		return nil, err
 	}
 	// General readers coalesce identical root descriptors; private prepared
@@ -234,7 +235,7 @@ func CreateFlow(ctx context.Context, root string, opt FlowCreateOptions) error {
 		SchemaVersion string            `json:"schemaVersion"`
 		Members       []flowMemberInput `json:"members"`
 	}
-	if safeText(string(raw)) != nil || agentsuite.Unmarshal(raw, &document) != nil {
+	if safeText(string(raw)) != nil || suitecore.Unmarshal(raw, &document) != nil {
 		return errors.New("invalid members JSON")
 	}
 	if document.SchemaVersion != "kmx.members/v1alpha1" || len(document.Members) < 2 || len(document.Members) > maxMembers {
@@ -256,7 +257,7 @@ func CreateFlow(ctx context.Context, root string, opt FlowCreateOptions) error {
 	if _, err := canonicalFlow(flow); err != nil {
 		return err
 	}
-	w := sourceWorkspace{SchemaVersion: 2, Name: opt.Name, BuildProfile: "build-profiles/default.json", Flow: agentsuite.FlowPathV1Alpha1}
+	w := sourceWorkspace{SchemaVersion: 2, Name: opt.Name, BuildProfile: "build-profiles/default.json", Flow: suiteflow.FlowPathV1Alpha1}
 	files := map[string][]byte{w.BuildProfile: defaultProfile, w.Flow: flow}
 	seen := map[string]bool{}
 	caseCount := 0

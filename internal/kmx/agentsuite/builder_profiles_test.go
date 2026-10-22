@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	agentsuite "github.com/agent-primitives/suite"
+	suitecore "github.com/agent-primitives/suite/core"
 )
 
 func TestResolveSandboxPlanProfiledExactTuple(t *testing.T) {
@@ -13,34 +13,34 @@ func TestResolveSandboxPlanProfiledExactTuple(t *testing.T) {
 	if err := os.CopyFS(root, os.DirFS(specFixture("minimal"))); err != nil {
 		t.Fatal(err)
 	}
-	var suite agentsuite.Suite
-	if err := agentsuite.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
+	var suite suitecore.Suite
+	if err := suitecore.Unmarshal(readBuilderTestFile(t, root, "agentsuite.json"), &suite); err != nil {
 		t.Fatal(err)
 	}
-	var bp agentsuite.BuildProfile
-	if err := agentsuite.Unmarshal(readBuilderTestFile(t, root, suite.BuildProfiles[0].Path), &bp); err != nil {
+	var bp suitecore.BuildProfile
+	if err := suitecore.Unmarshal(readBuilderTestFile(t, root, suite.BuildProfiles[0].Path), &bp); err != nil {
 		t.Fatal(err)
 	}
 	base := suite.Compositions[0]
-	var composition agentsuite.Composition
-	if err := agentsuite.Unmarshal(readBuilderTestFile(t, root, base.Path), &composition); err != nil {
+	var composition suitecore.Composition
+	if err := suitecore.Unmarshal(readBuilderTestFile(t, root, base.Path), &composition); err != nil {
 		t.Fatal(err)
 	}
 	suite.Compositions = nil
 	suite.BuildProfiles = nil
 	for _, id := range []string{"b", "a"} {
-		rp := agentsuite.RuntimeProfile{SchemaVersion: agentsuite.SpecVersion, MediaType: agentsuite.MediaTypeRuntimeProfile, ID: id, Runtime: agentsuite.EvidenceImplementation{ID: "test-runtime", Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: agentsuite.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: agentsuite.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "test-only", ImageRequired: true}
+		rp := suitecore.RuntimeProfile{SchemaVersion: suitecore.SpecVersion, MediaType: suitecore.MediaTypeRuntimeProfile, ID: id, Runtime: suitecore.EvidenceImplementation{ID: "test-runtime", Version: "test-only", Digest: bp.RuntimeBase[0].Image.Digest}, Harness: suitecore.EvidenceImplementation{ID: "test-harness", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, Renderer: suitecore.EvidenceImplementation{ID: "test-renderer", Version: "test-only", Digest: bp.Harness[0].Image.Digest}, ConfigurationABI: "test-only", ImageRequired: true}
 		path := "runtime-profiles/" + id + ".json"
-		suite.RuntimeProfiles = append(suite.RuntimeProfiles, agentsuite.ManifestRef{ID: id, Path: path, Descriptor: writeBuilderTestDescriptor(t, root, path, agentsuite.MediaTypeRuntimeProfile, rp)})
+		suite.RuntimeProfiles = append(suite.RuntimeProfiles, suitecore.ManifestRef{ID: id, Path: path, Descriptor: writeBuilderTestDescriptor(t, root, path, suitecore.MediaTypeRuntimeProfile, rp)})
 		bp.ID = "build-" + id
 		path = "build-profiles/" + id + ".json"
-		suite.BuildProfiles = append(suite.BuildProfiles, agentsuite.ManifestRef{ID: bp.ID, Path: path, Descriptor: writeBuilderTestDescriptor(t, root, path, agentsuite.MediaTypeBuildProfile, bp)})
+		suite.BuildProfiles = append(suite.BuildProfiles, suitecore.ManifestRef{ID: bp.ID, Path: path, Descriptor: writeBuilderTestDescriptor(t, root, path, suitecore.MediaTypeBuildProfile, bp)})
 		composition.RuntimeProfile = id
 		composition.BuildProfile = bp.ID
 		ref := base
 		ref.RuntimeProfile = id
 		ref.Path = "compositions/" + id + ".json"
-		ref.Descriptor = writeBuilderTestDescriptor(t, root, ref.Path, agentsuite.MediaTypeComposition, composition)
+		ref.Descriptor = writeBuilderTestDescriptor(t, root, ref.Path, suitecore.MediaTypeComposition, composition)
 		suite.Compositions = append(suite.Compositions, ref)
 	}
 	writeBuilderTestJSON(t, root, "agentsuite.json", suite)
