@@ -192,7 +192,8 @@ func TestPreviewToolsSharedResults(t *testing.T) {
 }
 func TestPreviewSummaryBoundsAndContent(t *testing.T) {
 	f, _, source := canonicalFiles(t)
-	prefix, _, found := strings.Cut(source, "examples:\n")
+	// This test constructs a new fixture; native checkout bytes may use CRLF.
+	prefix, _, found := strings.Cut(strings.ReplaceAll(source, "\r\n", "\n"), "examples:\n")
 	if !found {
 		t.Fatal("fixture examples missing")
 	}
