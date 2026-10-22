@@ -37,7 +37,9 @@ kmx
 ├── targets
 ├── mcp --root <directory>
 ├── model
-│   └── list [-o table|json]
+│   ├── list [--provider local|copilot] [-o table|json]
+│   ├── login [--gh]
+│   └── logout
 ├── context
 │   ├── show
 │   └── use <context>
@@ -64,6 +66,17 @@ kmx
 
 `test` is an operational workspace command with offline diff and independent
 read-only reference extraction/export helpers. Cobra also supplies `help`.
+
+Unreleased `model list` defaults to local discovery; explicit Copilot listing
+requires existing kmx-owned auth and never starts sign-in. `model login` uses
+GitHub device flow; `--gh` explicitly opts into private bounded gh token capture.
+`model logout` deletes only kmx's OS keychain item and clears memory. Native
+keychain storage has no plaintext fallback. Internal
+`modelaccess/copilot.New(Store).Client(ctx, Route)` returns an authenticated
+selected-route RoundTripper for direct Chat Completions JSON/SSE, not a runner
+or proxy. No inference replay, model substitution or persisted selection. See
+[direct model access](copilot-inference.md#direct-model-access). Native package
+tests do not qualify the full Windows CLI.
 
 Hidden but callable:
 

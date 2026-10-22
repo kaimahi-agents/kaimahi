@@ -32,6 +32,7 @@ type dependencies struct {
 	buildInfo          func() (*debug.BuildInfo, bool)
 	newAgentKitBuilder func(agentkitbuilder.Options) kmxsuite.SandboxBuilder
 	discoverModels     func(context.Context) []modelaccess.Report
+	newCopilot         func() copilotAccess
 }
 
 func productionDependencies() dependencies {
