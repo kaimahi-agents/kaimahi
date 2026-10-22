@@ -209,7 +209,9 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			}
 			return completion, nil, execErr
 		}
-		if !execution.Journaled || execution.SessionUID == "" || used[execution.SessionUID] {
+		// Match App's completion bound before judging or sending later turns;
+		// the standalone library permits larger answers than the file API.
+		if !execution.Journaled || execution.SessionUID == "" || used[execution.SessionUID] || len(execution.Answer) > 256*1024 {
 			return completion, nil, errRunnerExecution
 		}
 		used[execution.SessionUID] = true

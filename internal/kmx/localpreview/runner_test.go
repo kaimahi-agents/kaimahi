@@ -127,6 +127,33 @@ func TestRunnerAbortKeepsSelectedRowsAndDigests(t *testing.T) {
 	}
 }
 
+func TestRunnerOversizedAnswerStopsJudgingAndLaterSends(t *testing.T) {
+	req := runnerRequest(t)
+	req.Agent.Model = "m"
+	minScore := 50
+	req.Examples[0].Assertions = append(req.Examples[0].Assertions, agentruntime.EvaluationAssertion{ID: "judge", Type: "llmJudge", Rubric: "greets", MinScore: &minScore, JudgeModel: "m", JudgeVersion: "1"})
+	server := newCompatible(t, false, func(w http.ResponseWriter, _ *http.Request, _ chatRequest) {
+		fmt.Fprint(w, reply(strings.Repeat("a", 256*1024+1)))
+	})
+	req.Route = modelaccess.Route{Provider: "compatible", Model: "m", Endpoint: server.URL, Auth: "none"}
+	judged := 0
+	judge := func(string, string, http.RoundTripper, []agentruntime.EvaluationCase) (agentruntime.EvaluationJudge, error) {
+		return func(_ context.Context, c agentruntime.EvaluationCase, e agentruntime.EvaluationEvidence) []agentruntime.EvaluationAssertionResult {
+			judged++
+			return agentruntime.EvaluateAssertions(c, e)
+		}, nil
+	}
+	out, err := NewRunner(RunnerOptions{JournalDir: func() (string, error) { return journalDir(t), nil }, Judge: judge}).Run(testContext(t), req)
+	if err == nil || out.State != agentpreview.Failed || out.Journal != "" || server.hits.Load() != 1 || judged != 0 {
+		t.Fatalf("oversized completion did not abort before later work: state=%s err=%v sends=%d judged=%d", out.State, err, server.hits.Load(), judged)
+	}
+	for _, row := range out.Examples {
+		if row.Completion.State != agentpreview.NotRun || row.Completion.Answer != "" {
+			t.Fatal("oversized answer or later completion escaped")
+		}
+	}
+}
+
 func TestRunnerPerTurnDeadlineStopsLaterTurns(t *testing.T) {
 	e := &runnerExecutor{execute: func(ctx context.Context, _ Turn) (Execution, error) { <-ctx.Done(); return Execution{}, ctx.Err() }}
 	out, err := injectedRunner(e, time.Millisecond).Run(t.Context(), runnerRequest(t))

@@ -44,9 +44,9 @@ func TestLocalFileRunnerJournaledAppSnapshot(t *testing.T) {
 	if err != nil || result.State != "complete" || result.FullPass || result.Verdict != runtime.EvaluationPass || result.AdHoc == nil || result.AdHoc.AnswerExcerpt != "Hello, Ada" || strings.Contains(result.Runner, "no journal") {
 		t.Fatalf("snapshot adapter: %+v / %v", result, err)
 	}
-	paths, err := filepath.Glob(filepath.Join(home, "state", "local-preview", "journals", "*.sqlite"))
-	if err != nil {
-		t.Fatal(err)
+	paths, err := filepath.Glob(filepath.Join(home, "local-preview", "journals", "*.db"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("snapshot did not retain one invocation journal: %v / %v", paths, err)
 	}
 	// Use the private outcome to verify retention without exposing its handle in JSON.
 	out, err := runner.Run(t.Context(), agentpreview.Request{Agent: a, Examples: a.Examples[:1], Route: modelaccess.Route{Provider: "fake", Model: "fake", Auth: "none"}})

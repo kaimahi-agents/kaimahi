@@ -63,7 +63,7 @@ type Options struct {
 	// resolveRoute is private to the runner adapter's validated modelaccess routes.
 	// Standalone Run/Test retain the shared endpoint validation and canonicalization.
 	resolveRoute func(string, *Endpoint, http.RoundTripper, string) (route, error)
-	JournalDir string
+	JournalDir   string
 	// Endpoint is the agent model's OpenAI-compatible route. It must be nil
 	// when Model.Preferred is fake and is required otherwise.
 	Endpoint *Endpoint

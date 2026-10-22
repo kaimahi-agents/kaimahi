@@ -229,12 +229,13 @@ per-request timings and total elapsed time. Revision, model, runner label,
 assertion verdicts and final outcome remain in the normal report, not repeated
 in verbose diagnostics.
 Local endpoint origins and standard `/v1` paths are shown; custom paths are
-withheld. Connection refusal, response timeout, HTTP errors and malformed or
-mismatched completions have safe diagnostic categories, never raw provider errors.
-Journaled execution does not print HTTP status; neither path invents one for
-requests without a response.
-An absent, null or empty returned model is an invalid completion; only a
-different nonempty model is reported as a model mismatch.
+withheld. The direct exception distinguishes connection refusal, response timeout,
+HTTP errors and malformed or mismatched completions with safe diagnostic
+categories, never raw provider errors. Journaled execution uses fixed-text
+refusals without HTTP-status or network-subclass diagnostics; neither path
+invents a status for requests without a response.
+Both paths refuse absent, null, empty or different returned model identities.
+The direct exception distinguishes a different nonempty model as a model mismatch.
 Verbose is off by default and does not imply `--show-content`: instructions,
 inputs, answers, assertion operands, judge rationale and response bodies stay
 private. JSON stdout and exit contracts are unchanged. A failed diagnostic
