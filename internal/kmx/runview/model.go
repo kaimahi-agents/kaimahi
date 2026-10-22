@@ -1,9 +1,6 @@
-// Package runview contains an in-memory, runtime-neutral projection of one run.
-// It does not attest to execution history or persist runtime records.
-//
-// It carries run, Task, agent, hand-off and missing-evidence presentation
-// types. Nested Orka readers provide bounded lineage, events and traces with
-// caller-scoped projection.
+// Package runview defines an in-memory, runtime-neutral view of one run.
+// It represents observations and missing evidence, not an attested history
+// or a persistent runtime record.
 package runview
 
 import "time"

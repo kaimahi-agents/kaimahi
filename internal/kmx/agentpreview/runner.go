@@ -1,7 +1,5 @@
-// Package agentpreview defines the embedded runner boundary, not an execution engine.
-//
-// It is the typed embedded-runner request and outcome contract. It has no
-// execution engine, model adapter or production fake.
+// Package agentpreview defines the request and outcome contract for agent-file
+// preview runners. It supplies the runner interface, not an execution engine.
 package agentpreview
 
 import (

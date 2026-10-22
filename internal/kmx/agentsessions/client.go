@@ -1,16 +1,6 @@
-// Package agentsessions owns the transport and journal evidence for a single chat evaluation.
-//
-// It provides strict packaged chat invocation and config, read-only
-// availability, and bounded journal and reference extraction. It renders
-// offline ActorTemplate and HarnessRegistration documents from bindings, and
-// offers an in-process dial, strict preview turns and read-only preview Session
-// reconstruction for local preview.
-//
-// Each case run uses a fresh Session, config and Exec, with bounded semantic
-// journal proof; diagnostic replay cannot authorize candidate proof. The
-// package does not start a daemon, enable tools, attest host or model, discover
-// registrations or read legacy receipts. Golden renders are test support, not
-// deployed assets.
+// Package agentsessions adapts Sessions chat execution and verifies its journals.
+// Suite evaluation and local preview use distinct session labels; preview
+// reconstruction must not be treated as suite evaluation proof.
 package agentsessions
 
 import (

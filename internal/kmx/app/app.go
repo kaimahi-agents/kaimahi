@@ -1,44 +1,9 @@
-// Package app orchestrates kmx commands using resolved configuration,
+// Package app orchestrates kmx operations using resolved configuration,
 // context guards, runtime adapters and external tools.
 //
-// The package is cluster-independent for markdown-file preview orchestration
-// and versioned safe projection. A temporary direct no-journal runner uses the
-// selected model-access transport and one-sample preview judging until embedded
-// runner integration. Cluster-independent decisions live in packages; shell-out
-// orchestration lives in App. Cloud-independent lift rules and ownership
-// records live in package lift, separate from App's cloud orchestration,
-// preferences and reuse checks; interactive Deploy panes are presentation only.
-//
-// App coordinates native operations: frozen workspace eval, push and Deploy,
-// consent, private exact-S passing proof and completion observations, bounded
-// release state and CAS, provenance, and ownership-safe update and rollback.
-// Public evidence export and verification stay separate from private execution
-// and publication gates. Independent live Task results, Orka chat and host
-// routes and cloud ownership teardown remain. There is no legacy bundle
-// persistence, replay, status or retirement, live create or live-copy GUI.
-//
-// App retains fresh candidate placement and verified cleanup for public Orka
-// eval; operator cleanup is a separately confirmed deletion-only UID snapshot,
-// not execution authority. Startup reports, never sweeps or blocks publication.
-// Managed passing proof is immutable and private, completion-finalized with
-// workspace exclusion; older placement observations and reuse or skips never
-// enroll or repair ownership. Public update is opt-in, Orka-only, with exact
-// prepared inputs and bounded recorded proof; rollback uses original retained
-// evidence. Only inference-Provider RV drift may pass between revisions.
-// Non-secret release provenance and acknowledged intent and outcomes remain
-// distinct from evaluation and GET-only skip authority. Failed evaluation
-// details have bounded owner-only retention and explicit content opt-in, never
-// receipts or outcome JSON.
-//
-// Native eval preserves full ordered runtime-specific proof, explicit judge
-// identity and configuration, threshold-side samples and unknown-veto repeat
-// policy. AgentSessions development eval loads no cluster config and shares
-// judge and repeat policy; its Deploy render applies nothing. Orka exact
-// evaluated reuse and kagent absent-only placement retain current-identity, RV
-// and Secret bracketing and partial outcomes. Quickstart sends a separate fresh
-// answer after verified placement; console Ready is placement only. App's
-// nested kubectl executable and shared fake handlers are test-only, with no
-// installed App or UI dependency.
+// App coordinates consent, side effects and runtime-specific evidence.
+// Placement observations are distinct from evaluation proof; successful
+// placement alone must not be treated as proof of agent behavior.
 package app
 
 import (
