@@ -1,5 +1,5 @@
-// Package agentfile parses kmx's tool-free canonical charter, without execution
-// or implicit integration with native suite loaders.
+// Package agentfile parses canonical charters and explicitly selected native
+// Squad documents, without execution or implicit native suite integration.
 package agentfile
 
 import (
@@ -99,21 +99,9 @@ func Inspect(filename string, data []byte) (*Agent, error) {
 
 func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 	fail := func(field, problem string) (*Agent, error) { return nil, refuse(filename, 1, 1, field, problem) }
-	if len(data) > MaxFileBytes {
-		return fail("File", "use a file of at most 256 KiB")
-	}
-	if !utf8.Valid(data) {
-		return fail("File", "use valid UTF-8")
-	}
-	text := strings.ReplaceAll(string(data), "\r\n", "\n")
-	if strings.HasPrefix(text, "\uFEFF") {
-		return fail("File", "remove the UTF-8 byte-order mark")
-	}
-	if strings.IndexFunc(text, unsupportedControl) >= 0 {
-		return fail("File", "remove control characters except newline/tab and use LF or CRLF line breaks")
-	}
-	if _, at := secretshapes.MatchIndex(text); at >= 0 {
-		return nil, refuse(filename, strings.Count(text[:at+1], "\n")+1, 1, "File", "remove credential-shaped content; agent files must not contain secrets")
+	text, err := checkedSourceText(filename, data)
+	if err != nil {
+		return nil, err
 	}
 	lines := strings.Split(text, "\n")
 	a := &Agent{Revision: fmt.Sprintf("sha256:%x", sha256.Sum256(data)), Locations: map[string]Location{}}
@@ -300,6 +288,27 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 	}
 	a.Examples = examples
 	return a, nil
+}
+
+func checkedSourceText(filename string, data []byte) (string, error) {
+	fail := func(problem string) (string, error) { return "", refuse(filename, 1, 1, "File", problem) }
+	if len(data) > MaxFileBytes {
+		return fail("use a file of at most 256 KiB")
+	}
+	if !utf8.Valid(data) {
+		return fail("use valid UTF-8")
+	}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if strings.HasPrefix(text, "\uFEFF") {
+		return fail("remove the UTF-8 byte-order mark")
+	}
+	if strings.IndexFunc(text, unsupportedControl) >= 0 {
+		return fail("remove control characters except newline/tab and use LF or CRLF line breaks")
+	}
+	if _, at := secretshapes.MatchIndex(text); at >= 0 {
+		return "", refuse(filename, strings.Count(text[:at+1], "\n")+1, 1, "File", "remove credential-shaped content; agent files must not contain secrets")
+	}
+	return text, nil
 }
 
 func unsupportedControl(r rune) bool {
