@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'internal/kmx/agentfile/**'
+      - 'internal/kmx/mcp/**'
       - 'internal/kmx/runtime/**'
       - 'internal/kmx/secretshapes/**'
       - 'go.mod'
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - 'internal/kmx/agentfile/**'
+      - 'internal/kmx/mcp/**'
       - 'internal/kmx/runtime/**'
       - 'internal/kmx/secretshapes/**'
       - 'go.mod'
@@ -37,5 +39,5 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
-      - name: Offline parser and file loading (not Windows CLI qualification)
-        run: go test -race ./internal/kmx/agentfile -count=1
+      - name: Parser and rooted authoring (not Windows CLI qualification)
+        run: go test -race ./internal/kmx/agentfile ./internal/kmx/mcp -count=1

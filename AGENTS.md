@@ -467,6 +467,26 @@ The separate native Copilot view uses the host SDK and a private loopback asset
 bridge, without mutations or direct agent-file reads.
 See [MCP](docs/kmx.md#local-stdio-mcp).
 
+## Internal native Squad authoring boundary
+
+`mcp.OpenSquad`/`SquadCreator.Create` are internal, unwired cast/enrich primitives,
+not additional MCP tools or v2 bindings. Require a separately operator-qualified
+Squad 1.1.0 program/runtime and approved local initialized root; release/platform
+strings are declarations, not authentication. The sole child action is fixed
+`cast --name ID --role ROLE`, stdin closed, bounded drained output and a small
+OS environment allowlist with personal lookup disabled. No init, downloader,
+force, shell string, adoption or automatic retry/recovery. Refuse redirected,
+legacy/personal/global roots and existing identities/partial member directories.
+Native setup owns metadata; kmx changes only the observed new charter via
+Preferred-value splice and appended task/examples, with source revision and
+file/parent identity checks under existing cooperative OS locks. Serialize this
+creator's calls and arrange a quiet project: external native casts/editors remain
+outside the lock contract, and cwd is not child-process containment. Preserve
+registered-unenriched/unknown partial effects and acknowledged publication even
+on cancellation; never roll back metadata. Retained-file observations are not an
+exhaustive child event log, registration is not dispatch, and enrichment is not
+execution/package-digest evidence. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
+
 ## Single-file charter boundary
 
 `internal/kmx/agentfile` keeps `Parse`/`Load` canonical as described in

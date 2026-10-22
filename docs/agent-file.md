@@ -204,11 +204,80 @@ Effective instructions retain all native text and task instructions before
 Examples (LF-normalized only in that projection), including any native Model
 prose. Task-only instructions are separate for the later fake-route integration.
 
-This slice supplies **no** cast/enrich writer, native execution adapter,
-preservation-aware Edit, team Create request, Squad installation or dispatch.
-The existing canonical loader does not accept these native documents. Exact
-package digest/results, per-member execution and real coordinator dispatch remain
-separate work; a source revision or `Enriched=true` is not a package-bound pass.
+The existing canonical loader does not accept these native documents. Native
+preview/execution, preservation-aware public Edit, versioned team Create guidance,
+exact package digest/results and real coordinator dispatch remain separate work;
+a source revision or `Enriched=true` is not a package-bound pass.
+
+### Internal native cast and enrich
+
+`mcp.OpenSquad` and `SquadCreator.Create` add a separate internal authoring core,
+not new CLI flags or MCP bindings. Current four-tool/v1 behavior is unchanged.
+The host must approve composition, native side effects and the owned charter
+changes before invoking it. The operator separately initializes and reviews the
+local project with Squad; this core never runs init, downloads a dependency or
+selects/upgrades a runtime.
+
+Trusted startup supplies the installed absolute executable, declared qualified
+release `1.1.0` and matching platform. Those labels and file identity checks do
+not authenticate the program or its runtime bundle. There is no version-probe
+child or shell fallback: the only action is `cast --name ID --role ROLE` at the
+selected root. Batch/PowerShell-associated launcher extensions refuse, and
+Windows requires a qualified `.exe` rather than implicitly introducing `cmd.exe`. Its installed launcher may itself use its native interpreter.
+Stdin is closed, stdout/stderr are drained with 32 KiB retention each, private
+native output never enters results/errors/MCP stdout, and child execution is
+bounded to 30 seconds plus bounded pipe cleanup. Child environment permits only
+basic OS/home/temp/PATH/locale settings and disables personal lookup; root
+redirects, Node/shell injection variables and unrelated credentials are omitted.
+
+The approved request has a Lead and up to seven specialists, at most 1 MiB of
+logical authored fields. Each member must fit the existing 256 KiB charter
+budget after enrichment. CLI role and expected native display Role are separate.
+Stable IDs must be portable, nonreserved and unchanged by native slugification.
+Role text excludes option prefixes, control characters and known Markdown/TS
+interpolation delimiters. Authored-field syntax and known cross-member identity
+collisions validate before the first native effect. The combined charter size
+is checked after observing the native starter: an unexpectedly large starter
+can leave a registered-but-unenriched member requiring human inspection.
+
+Only explicit canonical local roots with `.squad/{config.json,team.md,routing.md}`
+are accepted. Config is exactly `version: 1`, optionally `teamRoot: "."`;
+unknown keys, redirect/external state and `.ai-team` refuse rather than being
+rewritten. The bounded observed footprint is `.squad/`, optional
+`squad.config.ts` and `.github/agents/squad.agent.md`: 4096 entries/8 MiB,
+regular singly-linked files, no static links or special-file aliases. Native
+registry locks/unfinished transaction artifacts require human review. Existing
+member directories (including history-only ones), roster/routing references and
+registry identities refuse; no prior member is adopted or silently re-cast.
+
+After successful native cast, matching active roster/registry and a new regular
+bare charter establish an operation-owned observation. The full native profile
+must match. Enrichment retains original bytes, replaces only Model.Preferred,
+and appends Model if absent, Task Instructions and fenced plain Examples last.
+The full candidate is reparsed, then published through same-directory staging
+and existing OS locks with exact revision, inode and parent/root identity checks.
+Mode bits are preserved, not ownership/ACLs/xattrs. Native source is never
+regenerated through a canonical renderer; no other native metadata is patched.
+
+Calls through one creator are serialized. Arrange a quiet project: native cast
+is not a transaction, other processes do not share this creator's gate, outside
+editors can ignore publication locks, and a working directory is not a sandbox.
+A trusted child still has ambient authority. These are cooperative filesystem
+checks, not hostile-tree confinement or crash-durable completion.
+
+Results distinguish not-attempted, failed cast, successful-but-unverified cast,
+registered-but-unenriched and enriched members. Changed paths describe retained differences in the observed
+footprint, not every transient write. Failure/cancellation stops later members;
+unknown observations remain explicit errors. An acknowledged publication is not
+relabelled unenriched by later cancellation. Nothing is rolled back or deleted,
+and no operation recovery/adoption API is exposed: interrupted members need human
+inspection. Registration, valid enrichment, member execution, exact package-bound
+results and actual coordinator dispatch are separate observations.
+
+Native Go tests cover parser/file/process contracts on Linux/macOS/Windows.
+Windows test-child execution is not Windows Squad/CLI qualification. An opt-in
+installed-Squad test separately performs native init and actual catalog/fallback
+cast/enrich in an isolated project/HOME; it runs no model or coordinator dispatch.
 
 ## Future AgentSuite mapping — not implemented
 
