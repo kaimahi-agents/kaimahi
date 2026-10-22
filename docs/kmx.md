@@ -209,6 +209,60 @@ Do not mix FILE with `--agent`, workspace, destination, evidence, native judge o
 cluster flags, including explicitly supplied defaults. Existing live
 `run --agent` and full-workspace Test contracts remain separate and unchanged.
 
+### Local stdio MCP
+
+`kmx mcp --root /absolute/project` serves exactly `create`, `edit`, `run` and
+`test`, using the canonical parser and the same App snapshot operation as file
+Run/Test. It does not listen on a network socket or load cluster/workspace
+configuration. The root must already exist; missing, relative or invalid roots
+refuse startup. There is no cwd, plugin-cache or client-roots fallback, and no
+tool can change the root. Host shell authority remains outside this boundary.
+
+Every tool input requires integer `schemaVersion: 1`. MCP initialization also
+negotiates its protocol version and advertises the engine build version.
+Stdout carries protocol only; no request/result logging or banners. Inbound
+frames are bounded to 2 MiB and source files to 256 KiB.
+
+| Tool | Input in addition to schemaVersion | Result |
+|---|---|---|
+| `create` | `path`, `content` | Saved root-relative path and exact-byte revision |
+| `edit` | `path`, `content`, `expectedRevision` | Saved path and new revision |
+| `run` | `path`; optional `input`, `caseId`, `showContent` | Shared `kmx.agent-file-preview` v1 result |
+| `test` | `path`; optional `caseId`, `showContent` | Same shared result, no ad-hoc input |
+
+Paths are portable root-level `<name>.agent.md` or
+`.squad/agents/<id>/charter.md`; traversal, absolute paths, symlink escapes and
+special files refuse. Necessary Squad parent directories may be created, but no
+roster or other team metadata is touched. Create validates before publishing a
+same-directory staged file with no-replace rename. Edit validates old/new source,
+checks the expected `sha256:…` revision under an OS-held writer lock, then renames
+the staged replacement. Busy/unavailable locks and failed renames report safe
+errors; no lockfile, filesystem-type detection or direct-write fallback.
+Locks exclude cooperating writers, not outside editors that ignore them.
+
+Create respects umask. Edit preserves mode bits but does not copy ownership,
+ACLs or extended attributes; replacement follows normal ownership/directory
+inheritance. This is intended for the user's own files. Invalid existing charters
+must be repaired manually. Crash leftovers may include this operation's non-agent
+temp file or empty parent directories; no stale-file sweeping is performed.
+
+Run/Test parse a bounded rooted snapshot once and never reopen the source through
+its display path. Results preserve revision, route, full/subset, state, verdict,
+diagnostics and retention status even when the App returns an error. Such errors
+also set MCP `isError`; a successful subset still has `fullPass: false`.
+`showContent` is explicit and defaults false; bounded returned text is untrusted
+data, never tool instructions. The result's display basename is not target authority.
+
+A real model route must be selected at process startup with trusted
+`--provider` and `--endpoint`; the exact model still comes from the parsed file.
+Tools accept no endpoint, credential or arbitrary-command fields. With no route,
+only exact `fake` is selectable. Run/Test use the same temporary
+[preview runner (no journal)](#agent-file-local-preview-unreleased-integration)
+as the file CLI, preserving its runner label and restrictions. A nil runner
+still returns `runner_unavailable`, never a fallback. Hermetic checks do not
+qualify real models, embedded Sessions, journaling or native Windows.
+There is no fifth Explain/model/install tool; offline Explain stays a CLI action.
+
 ### Deploy compatibility (unreleased)
 
 **Deploy is unreleased.** v0.8.1 uses `kmx lift` with the same arguments.

@@ -210,7 +210,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
 	root.AddCommand(
-		newVersionCommand(state), newCompletionCommand(root), newModelCommand(state), newContextCommand(state), newLocalCommand(state), newDestinationsCommand(state),
+		newVersionCommand(state), newMCPCommand(state), newCompletionCommand(root), newModelCommand(state), newContextCommand(state), newLocalCommand(state), newDestinationsCommand(state),
 		newQuickstartCommand(state), newAKSCommand(state),
 		newConsoleCommand(state), newOrkaCommand(state),
 		newStatusCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),

@@ -52,6 +52,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx test export --member greeter --out ../evidence.json` |
 | `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace selection. | `kmx test explain [failure-id] [--workspace DIR] [--show-content\|--clear]` |
 | `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx test verify --suite ./layout --evidence evidence.json --expect expected.json` |
+| `mcp` | Serve exactly four local agent-file tools over stdio, bound to one explicit root; no network listener | `kmx mcp --root DIRECTORY` |
 | `cleanup` | Inspect candidate runs; delete one explicitly selected run after confirmation. | `kmx test cleanup [run-id] --to dev` |
 | `validate` | Check an artifact offline, without a cluster. | `kmx suite validate <path>` |
 | `policy` | Resolve portable suite restrictions offline without granting authority or selecting an enforcement provider. | `kmx suite policy POLICY.json [--administrative-policy ADMIN.json]` |
