@@ -17,7 +17,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 		Use: "run [FILE]", Short: "Preview an agent file or run an existing Orka Agent",
 		Long: "Run FILE checks saved examples as a local preview, with optional separate --prompt/--prompt-file input.\n" +
 			"File output is text/JSON; --case selects a partial preview. No native evidence or source edits.\n" +
-			"File mode uses a preview runner (no journal), not native execution evidence.\n" +
+			"Fake/local file previews retain instructions, inputs and answers in cleartext SQLite journals under the kmx state directory (KMX_HOME when set), in local-preview/journals. Retention keeps the newest 20 runs at each start; active runs are kept and concurrent starts can leave more. Stop previews before removing journal files there to clear retained content. If either agent or judge uses Copilot, the whole invocation is direct with NoJournal and retains no journal. This is not native execution evidence.\n" +
 			"--verbose prints content-free file execution diagnostics and timings on stderr.\n" +
 			"Select a live Orka Agent with --agent (without FILE).\n" +
 			"Task name, state and recovery instructions go to stderr; stdout contains only the answer.\n" +

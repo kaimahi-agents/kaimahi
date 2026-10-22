@@ -445,6 +445,13 @@ func TestFileHelpIsCanonicalOnly(t *testing.T) {
 			} else if !strings.Contains(strings.ToLower(out.String()), verb+" file") || !strings.Contains(out.String(), "--case") {
 				t.Fatalf("canonical file preview missing from %s help: %s", verb, out.String())
 			}
+			if verb != "eval" {
+				for _, disclosure := range []string{"cleartext SQLite journals", "local-preview/journals", "newest 20 runs", "active runs", "Stop previews", "agent or judge uses Copilot", "NoJournal"} {
+					if !strings.Contains(out.String(), disclosure) {
+						t.Errorf("%s help omits retention disclosure %q", verb, disclosure)
+					}
+				}
+			}
 			if *loads != 0 || fake.calls != 0 {
 				t.Fatal("help performed operations")
 			}
