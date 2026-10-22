@@ -90,9 +90,13 @@ def exempt(path: str) -> bool:
 
 def git(root: Path, *args: str) -> bytes:
     try:
-        result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, check=True)
+        # Do not let user configuration silently choose between ambiguous refs.
+        result = subprocess.run(["git", "-C", str(root), "-c", "core.warnAmbiguousRefs=true", *args],
+                                capture_output=True, check=True)
     except (OSError, ValueError, subprocess.CalledProcessError) as problem:
         raise ValueError(f"Git comparison unavailable: {problem}") from problem
+    if result.stderr.strip():
+        raise ValueError("Git comparison emitted diagnostics; use unambiguous commit refs")
     return result.stdout
 
 

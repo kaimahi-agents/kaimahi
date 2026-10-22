@@ -178,6 +178,21 @@ class FragmentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             helper.check_diff(self.root, base, self.commit())
 
+    def test_ambiguous_refs_refuse_even_when_git_warnings_are_disabled(self):
+        base = self.init()
+        self.put("app.go", "package app\n")
+        self.note()
+        head = self.commit()
+        self.git("tag", "shared", base)
+        self.git("branch", "shared", head)
+        self.git("config", "core.warnAmbiguousRefs", "false")
+        for left, right in (("shared", head), (base, "shared")):
+            with self.subTest(base=left, head=right):
+                with self.assertRaisesRegex(ValueError, "ambiguous"):
+                    helper.check_diff(self.root, left, right)
+        helper.check_diff(self.root, "refs/tags/shared", head)
+        helper.check_diff(self.root, base, "refs/heads/shared")
+
     def test_unavailable_or_option_refs_fail_closed(self):
         head = self.init()
         for ref in ("missing", "--all", "--output=stolen", "HEAD:CHANGELOG.md", "HEAD\x00bad"):

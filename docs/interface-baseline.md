@@ -216,6 +216,6 @@ Important limits:
 - Effectful sends are not retried after an ambiguous outcome.
 
 Before changing an interface, update command registration/help/completion,
-generated recovery instructions, primary docs, CHANGELOG and meaningful refusal
+generated recovery instructions, primary docs, a `changes/` release-note fragment and meaningful refusal
 tests in the same slice. Follow [command conventions](command-conventions.md),
 [command alignment](command-semantics.md), and [AGENTS.md](../AGENTS.md).

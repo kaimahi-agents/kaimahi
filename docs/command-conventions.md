@@ -223,7 +223,7 @@ Update these in the same change:
 - generated next-step and recovery commands
 - [kmx.md](kmx.md) and the guides that use the command
 - command-tree and compatibility tests
-- CHANGELOG
+- a `changes/` release-note fragment
 
 ## 8. Current exceptions
 

@@ -369,7 +369,7 @@ preserve raw and answer-only stdout.
 [command conventions](command-conventions.md). For each implemented
 slice, update command registration, help, completion, interactive labels where
 applicable, generated next/recovery commands, primary docs, compatibility tests
-and CHANGELOG together. Use existing operation handlers. Keep historical records
+and a `changes/` release-note fragment together. Use existing operation handlers. Keep historical records
 and deliberate compatibility fixtures distinct from current examples.
 
 Tests must cover more than names: read-only behavior, saved selection and refusal,
