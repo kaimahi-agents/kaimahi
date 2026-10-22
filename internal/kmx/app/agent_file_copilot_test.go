@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -106,7 +107,20 @@ func TestDirectPreviewCopilotRunTestAndJudge(t *testing.T) {
 }
 
 func TestDirectPreviewCopilotFailuresStaySafeAndStopSends(t *testing.T) {
-	for _, failure := range previewCopilotFailures {
+	for _, failure := range []struct {
+		err  error
+		code string
+	}{
+		{copilot.ErrAuthRequired, "copilot_auth_required"},
+		{copilot.ErrAuthRevoked, "copilot_auth_revoked"},
+		{copilot.ErrSubscription, "copilot_no_subscription"},
+		{copilot.ErrPolicy, "copilot_policy_denied"},
+		{copilot.ErrQuota, "copilot_quota"},
+		{copilot.ErrModelUnavailable, "copilot_model_unavailable"},
+		{copilot.ErrMalformed, "copilot_malformed"},
+		{copilot.ErrKeychain, "copilot_keychain_unavailable"},
+		{copilot.ErrUnavailable, "copilot_unavailable"},
+	} {
 		for _, phase := range []string{"catalog", "completion", "judge"} {
 			t.Run(failure.code+"/"+phase, func(t *testing.T) {
 				wrapped := fmt.Errorf("PRIVATE CREDENTIAL AND PROVIDER BODY: %w", failure.err)
