@@ -3,6 +3,7 @@ package copilot
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -123,6 +124,49 @@ func TestRuntimeGHFailureClearsCachedCredentials(t *testing.T) {
 		}
 		safe(t, err)
 	}
+}
+
+func TestWrappedMissingCredentialNeverLeaksBackendDetails(t *testing.T) {
+	p, store := fixture(t, func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, catalog) })
+	store.token = canary
+	transport, err := p.Client(t.Context(), selected())
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := fmt.Errorf("%s: %w", canary, ErrAuthRequired)
+	for _, failure := range []error{missing, errors.Join(missing, ErrKeychain)} {
+		store.fail = failure
+		for _, lookup := range []func() error{
+			func() error { _, err := p.List(t.Context()); return err },
+			func() error { _, err := p.Client(t.Context(), selected()); return err },
+			func() error {
+				_, err := transport.RoundTrip(chatRequest(t, `{"model":"gpt-test","messages":[]}`))
+				return err
+			},
+		} {
+			err := lookup()
+			safe(t, err)
+			if err != ErrAuthRequired {
+				t.Fatalf("missing credential was not normalized: %v", err)
+			}
+		}
+	}
+}
+
+func TestRevokedRuntimeGHCredentialExplainsSafeRecovery(t *testing.T) {
+	p, store := fixture(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
+	store.fail = ErrKeychain
+	p.runGH = func(context.Context) ([]byte, error) { return []byte(canary), nil }
+	_, err := p.List(t.Context())
+	if !errors.Is(err, ErrAuthRevoked) {
+		t.Fatalf("revocation: %v", err)
+	}
+	for _, action := range []string{"COPILOT_GITHUB_TOKEN", "gh auth login --hostname github.com", "kmx model login", "usable OS keychain"} {
+		if !strings.Contains(err.Error(), action) {
+			t.Errorf("revocation has no recovery guidance for %s", action)
+		}
+	}
+	safe(t, err)
 }
 
 func TestUnavailableKeychainDoesNotStartLogin(t *testing.T) {

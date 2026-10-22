@@ -156,6 +156,9 @@ func (p *Provider) credential(ctx context.Context) (string, error) {
 		return token, nil
 	}
 	token, err := p.store.Get()
+	if errors.Is(err, ErrAuthRequired) {
+		return "", ErrAuthRequired
+	}
 	if errors.Is(err, ErrKeychain) {
 		token, err = p.ghCredential(ctx)
 		if errors.Is(err, ErrUnavailable) {
@@ -163,10 +166,10 @@ func (p *Provider) credential(ctx context.Context) (string, error) {
 		}
 		return token, err
 	}
-	if err != nil && !errors.Is(err, ErrAuthRequired) {
+	if err != nil {
 		return "", ErrKeychain
 	}
-	return token, err
+	return token, nil
 }
 
 func (p *Provider) ghCredential(ctx context.Context) (string, error) {

@@ -103,7 +103,11 @@ options instead of starting device sign-in or failing. It does not sign in gh,
 claim a credential was saved, or verify the runtime credential. When a token
 variable is set, login warns that it takes precedence over stored credentials.
 Logout cannot disable external credentials: unset the variable or end the gh
-session separately to stop runtime access.
+session separately to stop runtime access. To recover a revoked runtime gh
+credential without a usable OS keychain, supply a fresh environment token.
+`gh auth login --hostname github.com` can renew gh auth with secure storage,
+but gh may write a plaintext token file when its credential store is unavailable;
+kmx never invokes that login command automatically.
 
 Copilot JSON output is an array of non-secret shared routes: provider `copilot`,
 exact available Chat model, endpoint `https://api.githubcopilot.com`, auth

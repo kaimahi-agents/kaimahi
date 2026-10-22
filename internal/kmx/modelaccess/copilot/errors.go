@@ -11,7 +11,7 @@ import (
 
 var (
 	ErrAuthRequired     = errors.New("copilot_auth_required: run kmx model login")
-	ErrAuthRevoked      = errors.New("copilot_auth_revoked: check COPILOT_GITHUB_TOKEN if set; otherwise sign in again with kmx model login")
+	ErrAuthRevoked      = errors.New("copilot_auth_revoked: set a fresh COPILOT_GITHUB_TOKEN; with a usable OS keychain, renew gh using gh auth login --hostname github.com or renew kmx using kmx model login")
 	ErrSubscription     = errors.New("copilot_no_subscription: an active Copilot subscription is required")
 	ErrPolicy           = errors.New("copilot_policy_denied: access refused by policy")
 	ErrQuota            = errors.New("copilot_quota: quota or rate limit reached")
