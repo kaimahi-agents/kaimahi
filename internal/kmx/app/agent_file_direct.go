@@ -19,6 +19,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -26,10 +27,14 @@ import (
 // implementation and constructor wiring when the embedded Sessions runner lands.
 // Its single-sample judgments are local preview only, never native evidence.
 func NewDirectFileRunner() agentpreview.Runner {
-	return &directFileRunner{}
+	return &directFileRunner{copilot: copilot.New(nil)}
 }
 
-type directFileRunner struct{}
+type directFileRunner struct {
+	copilot interface {
+		Client(context.Context, modelaccess.Route) (http.RoundTripper, error)
+	}
+}
 
 var _ agentpreview.Runner = (*directFileRunner)(nil)
 var errDirectPreview = errors.New("direct preview execution unavailable")
@@ -70,9 +75,9 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 	if r.JudgeRoute != nil {
 		judge = *r.JudgeRoute
 	}
-	client, err := d.client(r.Route)
+	client, err := d.client(ctx, r.Route)
 	if err != nil {
-		if traceErr := r.Report("Route refused: unsupported or non-local model endpoint"); traceErr != nil {
+		if traceErr := r.Report("Route unavailable: model access could not be established"); traceErr != nil {
 			return abort(traceErr)
 		}
 		return abort(err)
@@ -90,7 +95,7 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 		}
 	}
 	if hasJudge && judge != r.Route {
-		judgeClient, err = d.client(judge)
+		judgeClient, err = d.client(ctx, judge)
 		if err != nil {
 			return abort(err)
 		}
@@ -158,10 +163,10 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 			if ctx.Err() != nil {
 				return abort(ctx.Err())
 			}
-			// A judge error/malformed response is an unknown check, never a retry or a
-			// native EvaluationJudgeEvidence with a fabricated second score.
+			// Copilot transport failures stop later sends. Local judge failures and
+			// malformed replies remain unknown, never retries or native evidence.
 			if err != nil {
-				if errors.Is(err, agentpreview.ErrDiagnosticsFailed) {
+				if judge.Provider == "copilot" || errors.Is(err, agentpreview.ErrDiagnosticsFailed) {
 					return abort(err)
 				}
 				continue
@@ -187,12 +192,25 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 	return out, nil
 }
 
-func (d *directFileRunner) client(r modelaccess.Route) (*http.Client, error) {
+func (d *directFileRunner) client(ctx context.Context, r modelaccess.Route) (*http.Client, error) {
 	if r.Validate() != nil || (r.Provider == "fake") != (r.Model == "fake") {
 		return nil, agentpreview.ErrModelUnavailable
 	}
 	if r.Provider == "fake" {
 		return nil, nil
+	}
+	if r.Provider == "copilot" {
+		if d.copilot == nil {
+			return nil, agentpreview.ErrModelUnavailable
+		}
+		transport, err := d.copilot.Client(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		if transport == nil {
+			return nil, copilot.ErrUnavailable
+		}
+		return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, nil
 	}
 	if r.Provider != "compatible" && r.Provider != "ollama" && r.Provider != "foundry-local" {
 		return nil, agentpreview.ErrModelUnavailable
@@ -270,10 +288,17 @@ func (d *directFileRunner) send(ctx context.Context, client *http.Client, r mode
 		return nil, errDirectPreview
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 	response, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		if r.Provider == "copilot" {
+			if code := previewCopilotFailure(err); code != "" {
+				reason = code
+			}
+			return nil, err
 		}
 		var networkErr net.Error
 		switch {
@@ -298,6 +323,9 @@ func (d *directFileRunner) send(ctx context.Context, client *http.Client, r mode
 			return nil, ctx.Err()
 		}
 		reason = "unreadable_or_oversized_response"
+		if r.Provider == "copilot" && err != nil {
+			return nil, err
+		}
 		return nil, errDirectPreview
 	}
 	return body, nil

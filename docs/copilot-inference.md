@@ -19,10 +19,18 @@ The independent unreleased `kmx model login`, `login --gh`, `logout` and
 `list --provider copilot [-o table|json]` commands manage an explicitly owned
 Copilot route, not this existing CLI-chat adapter. The
 [dated access decision](copilot-access.md) distinguishes the selected experimental
-compatibility route from official OAuth/SDK documentation and unimplemented
-runner modes. See [sign-in and storage](models.md#explicit-copilot-model-access). No credentials
+compatibility route from official OAuth/SDK documentation and unqualified
+hosted modes. See [sign-in and storage](models.md#explicit-copilot-model-access). No credentials
 are imported implicitly, exported in argv/environment/files, or returned in
 routes. There are no token flags or plaintext-cache fallback.
+
+Markdown-file Run/Test and their shared MCP path consume this transport with
+explicit `--provider copilot`, an exact authored model and the pinned endpoint.
+They remain temporary tool-free, no-journal preview execution, not the CLI-chat
+tool adapter below or an embedded Sessions harness. Selecting this route sends
+instructions and inputs to Copilot; judging also sends answers and rubrics.
+Known Copilot refusals stop later sends and expose only static safe reasons.
+See [file preview usage](kmx.md#agent-file-local-preview-unreleased-integration).
 
 Internal callers use `copilot.New(store)` (`nil` selects the native keychain),
 then `Client(ctx, route)` to obtain an `http.RoundTripper` for a validated exact

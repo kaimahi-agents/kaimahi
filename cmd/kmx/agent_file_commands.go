@@ -24,11 +24,22 @@ type fileCommandOptions struct {
 	Verbose                            bool
 }
 
+func fileModelRoute(provider, endpoint string) modelaccess.Route {
+	route := modelaccess.Route{Provider: provider, Endpoint: endpoint, Auth: "none"}
+	if provider == "copilot" {
+		route.Auth = "copilot"
+		if endpoint == "" {
+			route.Endpoint = modelaccess.CopilotEndpoint
+		}
+	}
+	return route
+}
+
 func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output bool) {
 	cmd.Flags().BoolVar(&f.Verbose, "verbose", false, "show content-free file preview diagnostics and timings on stderr (requires FILE)")
 	cmd.Flags().StringVar(&f.CaseID, "case", "", "run only this saved example ID (partial local preview)")
-	cmd.Flags().StringVar(&f.Provider, "provider", "", "explicit file-model provider; no automatic fallback")
-	cmd.Flags().StringVar(&f.Endpoint, "endpoint", "", "explicit trusted file-model endpoint (never taken from the charter)")
+	cmd.Flags().StringVar(&f.Provider, "provider", "", "explicit file-model provider: ollama, foundry-local, compatible or copilot; no fallback")
+	cmd.Flags().StringVar(&f.Endpoint, "endpoint", "", "trusted model endpoint (required for local models; fixed for Copilot; never from the charter)")
 	if output {
 		cmd.Flags().StringVarP(&f.Output, "output", "o", "text", "file preview output: text|json")
 		cmd.Flags().BoolVar(&f.ShowContent, "show-content", false, "include sanitized bounded answer excerpts in file preview output")
@@ -77,10 +88,7 @@ func runFileCommand(cmd *cobra.Command, state *commandState, file string, f file
 		}
 	}
 	if f.Provider != "" || f.Endpoint != "" {
-		route := modelaccess.Route{Provider: f.Provider, Endpoint: f.Endpoint, Auth: "none"}
-		if route.Provider == "copilot" {
-			route.Auth = "copilot"
-		}
+		route := fileModelRoute(f.Provider, f.Endpoint)
 		opt.Route = &route
 	}
 	if flag := cmd.Flag("prompt"); flag != nil && flag.Changed {

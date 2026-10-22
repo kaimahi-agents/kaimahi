@@ -685,8 +685,71 @@ def verify_lift_commit(home, result, shared):
             proof.get("releaseDataDigest") == "sha256:" + sha(shared["data"]["release.json"].encode()), "commit-shared-binding")
 
 
+class NativeTimings:
+    """Closed-phase durations only; no command data or absolute clock readings."""
+    PHASES = frozenset({
+        "preflight", "model", "model-warmup", "model-ready", "author", "evaluate", "evaluate-v2",
+        "historical-proof", "candidate-cleanup", "transfer", "registry", "lift-denials",
+        "lift-local-plan", "lift-registry-plan", "lift-local-create", "lift-local-answer",
+        "lift-registry-answer", "lift-promotion-answer", "destination-status", "promote-setup",
+        "promote-plan", "promote-model-mismatch", "promote-create", "promote-answer",
+        "public-update-v2", "public-update-original-v1", "public-update-v2-registry",
+        "public-update-rv-noop", "refusals", "artifacts",
+    })
+    STATUSES = frozenset({"success", "failure", "timeout"})
+
+    def __init__(self, path=None):
+        self.path = path
+        self.phase, self.started = "preflight", time.monotonic()
+        self.rows, self.status = [], "running"
+        self.write()
+
+    def write(self):
+        if self.path is not None:
+            # Replace snapshots atomically so interruption retains closed rows.
+            pending = self.path.with_suffix(".tmp")
+            pending.write_bytes(canonical({"schemaVersion": 1, "status": self.status, "phases": self.rows}))
+            pending.replace(self.path)
+
+    def close(self, now, status):
+        self.rows.append({"phase": self.phase, "elapsedSeconds": float(now - self.started), "status": status})
+
+    def enter(self, phase):
+        require(type(phase) is str and phase in self.PHASES, "timing-phase")
+        if self.status != "running" or phase == self.phase:
+            return
+        # Reserve one row for failure finalization; overflow must not look green.
+        require(len(self.rows) < 127, "timing-limit")
+        now = time.monotonic()
+        self.close(now, "success")
+        self.phase, self.started = phase, now
+        self.write()
+
+    def finish(self, status):
+        require(type(status) is str and status in self.STATUSES, "timing-status")
+        if self.status == "running":
+            self.close(time.monotonic(), status)
+            self.status = status
+            self.write()
+
+
 class Qualification:
-    def __init__(self, context, work, promotion_context=None):
+    @property
+    def phase(self):
+        return self._phase
+
+    @phase.setter
+    def phase(self, phase):
+        require(type(phase) is str and phase in NativeTimings.PHASES, "timing-phase")
+        # __new__-constructed hermetic fixtures and destination helpers need no writer.
+        timings = getattr(self, "_timings", None)
+        if timings is not None:
+            timings.enter(phase)
+        self._phase = phase
+
+    def __init__(self, context, work, promotion_context=None, timings=None):
+        self._timings = timings
+        self.phase = "preflight"
         # The owned CI fixture uses one kubeconfig file. Capture its selection
         # before private HOME/cwd would redirect kubectl and client-go defaults.
         kubeconfig = pathlib.Path(os.environ.get("KUBECONFIG") or pathlib.Path.home() / ".kube/config").absolute()
@@ -712,7 +775,6 @@ class Qualification:
         self.product_env = dict(self.env, PATH=str(self.work / "wrappers") + ":" + self.env["PATH"],
                                 KMX_NATIVE_KUBECTL=self.kubectl, KMX_NATIVE_CONTEXT=context,
                                 KMX_NATIVE_AUDIT=str(self.work / "audit.jsonl"))
-        self.phase = "preflight"
 
     def command(self, args, raw=None, timeout=60, product=False, success=True, env=None):
         with subprocess.Popen([str(a) for a in args], cwd=self.work, env=env if env is not None else self.product_env if product else self.env,
@@ -760,11 +822,13 @@ class Qualification:
                   "--from-file=config.yaml=" + str(self.repo / "scripts/ci/eval-loop-model.yaml"))
         self.kube("create", "-f", self.repo / "scripts/ci/native-suite-model.yaml")
         self.kube("-n", "orka-system", "rollout", "status", "deployment/native-suite-aikit", "--timeout=480s", timeout=480)
+        self.phase = "model-warmup"
         with self.model_forward():
             warmup = (self.repo / "scripts/ci/eval-loop-warmup.json").read_bytes()
             request = urllib.request.Request(JUDGE_BASE_URL + "/chat/completions", data=warmup, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(request, timeout=180) as response:
                 require(response.status == 200 and json.load(response)["choices"], "model-warmup")
+        self.phase = "model-ready"
         provider = {"apiVersion": "core.orka.ai/v1alpha1", "kind": "Provider",
                     "metadata": {"name": "native-suite-inference", "namespace": "orka-system"},
                     "spec": {"type": "openai", "defaultModel": "qwen-3.5-2b", "secretRef": self.secret_ref,
@@ -874,9 +938,13 @@ class Qualification:
         return {**task, "inputDigest": sha(case["input"].encode()), "answerDigest": result_digest(output)}
 
     def status(self, placement, receipt, evidence, name="destination-status"):
+        previous = getattr(self, "_phase", "preflight")
         self.phase = "destination-status"
-        return qualify_status(self.work, placement, evidence, receipt["runID"],
-                              lambda args, env: self.cli(*args, env=env), self.product_env, self.kubectl, name=name)
+        result = qualify_status(self.work, placement, evidence, receipt["runID"],
+                                lambda args, env: self.cli(*args, env=env), self.product_env, self.kubectl, name=name)
+        # Keep a failed nested probe active; only successful probes resume their caller.
+        self.phase = previous
+        return result
 
     def lift_qualification(self, workspace, layout, changed_layout, changed_s, receipt_path, receipt, cases, revision=None):
         evidence, original = receipt_path.read_bytes(), snapshot(workspace)
@@ -982,8 +1050,10 @@ class Qualification:
             require(second["subject"]["PayloadDigest"] == payload, "v2-candidate-payload")
             frames = self.frames()[start:]
             verify_candidate(second, frames, cases, specs)
+            self.phase = "candidate-cleanup"
             self.audit.verify_cleanup_order(self.raw_frames())
             self.cleanup_proof(second["subject"], frames)
+            self.phase = "transfer"
             self.cli("push", "--workspace", workspace, "--evaluation", path, "--to-layout", layout, "native-suite:v2")
             extracted = self.work / "v2-pulled"
             self.cli("suite", "pull", "--from-layout", layout, "--output", extracted, "native-suite:v2")
@@ -1411,6 +1481,8 @@ class Qualification:
         specs, payload = self.candidate_specs(subject)
         require(subject["PayloadDigest"] == payload, "candidate-payload")
         tasks = verify_candidate(receipt, frames, cases, specs)
+        # Deletion is inside evaluation; this phase measures independent absence checks.
+        self.phase = "candidate-cleanup"
         children = self.cleanup_proof(subject, frames)
         self.phase = "transfer"
         layout, extracted, reference = self.work / "layout", self.work / "pulled", "native-suite:v1"
@@ -1475,20 +1547,33 @@ class Qualification:
 
 
 def main():
-    qualification = None
+    qualification, timings, status, result = None, None, "failure", 1
     try:
         os.umask(0o077)
+        path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "native-suite-timings.json" if os.environ.get("RUNNER_TEMP") else None
+        timings = NativeTimings(path)
         require(len(sys.argv) == 4 and re.fullmatch(r"kind-[a-z0-9-]+", sys.argv[1]) and
                 sys.argv[1] == "kind-" + os.environ.get("KIND_CLUSTER", "") and os.environ.get("KMX_ORKA_RUNTIME_CREATED") == "1" and
                 sys.argv[2] == "kind-kmx-orka-promote" and sys.argv[1] != sys.argv[2] and
                 os.environ.get("KMX_ORKA_PROMOTION_CREATED") == "1", "owned-context")
-        qualification = Qualification(sys.argv[1], sys.argv[3], promotion_context=sys.argv[2])
+        qualification = Qualification(sys.argv[1], sys.argv[3], promotion_context=sys.argv[2], timings=timings)
         qualification.qualify()
-        return 0
-    except BaseException:
+        status = "success"
+        result = 0
+    except BaseException as error:
+        status = "timeout" if isinstance(error, (subprocess.TimeoutExpired, TimeoutError)) else "failure"
         phase = qualification.phase if qualification else "preflight"
         print("native qualification: phase=" + phase + " reason=failed", file=sys.stderr)
-        return 1
+    finally:
+        if timings is not None:
+            try:
+                timings.finish(status)
+            except OSError:
+                # An earlier running snapshot can exist, so file upload alone
+                # cannot establish successful timing finalization.
+                print("native qualification: timing-finalization=failed", file=sys.stderr)
+                result = 1
+    return result
 
 
 if __name__ == "__main__":
