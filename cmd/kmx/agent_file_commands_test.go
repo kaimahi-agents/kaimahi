@@ -246,7 +246,8 @@ func TestFileCommandRequiresWiredRunner(t *testing.T) {
 		t.Fatalf("%v / %s", err, out.String())
 	}
 }
-func TestFileCommandDirectPreviewDemo(t *testing.T) {
+func TestFileCommandJournaledPreviewDemo(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
 	path := cliPreviewFile(t)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -269,7 +270,7 @@ func TestFileCommandDirectPreviewDemo(t *testing.T) {
 			if decodeErr := json.Unmarshal(out.Bytes(), &r); decodeErr != nil {
 				t.Fatal(decodeErr)
 			}
-			if (err != nil) != broken || r.FullPass == broken || r.Runner != "preview runner (no journal)" || *loads != 0 {
+			if (err != nil) != broken || r.FullPass == broken || strings.Contains(r.Runner, "no journal") || *loads != 0 {
 				t.Fatalf("broken=%v: %+v / %v", broken, r, err)
 			}
 		}
@@ -287,6 +288,7 @@ func TestFilePreviewOutputWriteFailure(t *testing.T) {
 }
 
 func TestFilePreviewVerboseStderrOnly(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
 	for _, op := range []string{"run", "test"} {
 		for _, verbose := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/%v", op, verbose), func(t *testing.T) {

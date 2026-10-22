@@ -37,7 +37,7 @@ type dependencies struct {
 
 func productionDependencies() dependencies {
 	return dependencies{
-		fileRunner: app.NewDirectFileRunner(),
+		fileRunner: app.NewLocalFileRunner(),
 		stdin:      os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
 		executable: invocationExecutable(os.Args[0]),
 		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,

@@ -23,9 +23,9 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
-// NewDirectFileRunner is the temporary, unjournaled demo adapter. Remove this
-// implementation and constructor wiring when the embedded Sessions runner lands.
-// Its single-sample judgments are local preview only, never native evidence.
+// NewDirectFileRunner is the unjournaled adapter used when the agent or judge
+// selects Copilot. Its credential-owning transport has no pre-journal content
+// check. Single-sample judgments are local preview only, never native evidence.
 func NewDirectFileRunner() agentpreview.Runner {
 	return &directFileRunner{copilot: copilot.New(nil)}
 }
