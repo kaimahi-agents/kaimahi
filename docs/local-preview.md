@@ -146,8 +146,10 @@ same retention and clear operations below. Native Squad parsing stays tool-free.
 
 ## Model routes
 
-`Model.Preferred` selects the model exactly. The route comes from outside the
-agent file:
+Preview chooses the exact runtime picker/tool override, then authored
+`Model.Preferred`, then `gpt-5.6-terra`. An omitted Model remains omitted in the
+source and revision; both runners receive a per-invocation execution copy. The
+route still comes from outside the agent file:
 
 | Preferred | Route | Network |
 |---|---|---|
@@ -183,8 +185,10 @@ CLI/MCP routes retain the existing model-access policy: fake, or an explicit
 keyless local compatible/Ollama/Foundry endpoint. Validated `localhost` and
 loopback addresses and the selected base path are preserved; the adapter does
 not discover runtimes or silently rewrite the route. Copilot uses the direct
-exception described above; unbound MCP selects that route for non-fake authored
-models when no startup provider is configured. This does not change the local
+exception described above; unbound MCP selects that route for the effective
+non-fake model when no startup provider is configured. Selecting `fake` there
+remains offline. Runtime model choice does not change a trusted startup provider,
+endpoint or credential source. This does not change the local
 adapter's endpoint policy.
 
 ## Refusals

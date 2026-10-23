@@ -21,6 +21,9 @@ button:disabled{cursor:default}
 
 /* Header: title, quiet file and model, purpose */
 .agent-header{display:flex;flex-direction:column;gap:2px}
+.runtime-model{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;max-width:100%}
+.model-picker{width:auto;max-width:100%}
+.model-status:empty{display:none}
 .title-line{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;column-gap:16px;position:relative}
 h1{font-size:18px;line-height:1.3;font-weight:600;overflow-wrap:anywhere;min-width:0}
 .purpose{color:var(--muted);overflow-wrap:anywhere}

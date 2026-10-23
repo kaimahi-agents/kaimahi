@@ -79,8 +79,11 @@ not gh or environment credentials. There is no plaintext token-file fallback. In
 `modelaccess/copilot.New(Store).Client(ctx, Route)` returns an authenticated
 selected-route Chat-shaped RoundTripper with catalog-selected Chat/Responses
 JSON/SSE upstream access, not a proxy. Markdown-file Run/Test uses explicit
-`--provider copilot`; unbound MCP defaults authored real models to Copilot. Both
-use the exact authored model and existing runtime credentials, with no login
+`--provider copilot`; unbound MCP defaults the effective real model to Copilot.
+File preview model precedence is runtime picker/tool override, authored model,
+then `gpt-5.6-terra`; the source is never rewritten. Run/Test v1 accept optional
+`model`; read-only `kmx://models` discovers choices without a fifth tool. Both
+use the exact selected model and existing runtime credentials, with no login
 step for a working gh sign-in. The Copilot endpoint is fixed. This remains tool-free, no-journal preview, not a new harness.
 No inference replay, model substitution or persisted selection. See
 [direct model access](copilot-inference.md#direct-model-access). Native package

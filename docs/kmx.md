@@ -283,7 +283,8 @@ if the file contains only that example. Unknown/blank IDs refuse before inferenc
 An explicit `examples: []` can be saved and loaded while authoring. Ad-hoc Run
 with an input still works; Test refuses with “No tests yet — add or suggest one”.
 Missing/empty examples cannot pass, export a run profile or supply the evidence
-required for packaging/deployment. The exact model comes from `Model.Preferred`;
+required for packaging/deployment. The exact CLI model comes from `Model.Preferred`
+or `gpt-5.6-terra` when the Model section is omitted;
 `fake` selects only the built-in fake route. A real model additionally requires
 an explicit trusted `--provider` and, for local routes, `--endpoint`, validated by model access;
 there is no discovery, installation, sign-in or fallback inside Run/Test. The
@@ -364,8 +365,8 @@ frames are bounded to 2 MiB and source files to 256 KiB.
 |---|---|---|
 | `create` | `path`, `content` | Saved path and exact-byte revision |
 | `edit` | `path`, `content`, `expectedRevision` | Saved path and new revision |
-| `run` | `path`; optional `input`, `caseId`, `showContent`, `showFailedContent` | Shared `kmx.agent-file-preview` v1 result |
-| `test` | `path`; optional `caseId`, `showContent`, `showFailedContent` | Same shared result, no ad-hoc input |
+| `run` | `path`; optional `model`, `input`, `caseId`, `showContent`, `showFailedContent` | Shared `kmx.agent-file-preview` v1 result |
+| `test` | `path`; optional `model`, `caseId`, `showContent`, `showFailedContent` | Same shared result, no ad-hoc input |
 
 #### Optional native Squad chat flow
 
@@ -524,10 +525,24 @@ revisions are labelled stale rather than silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
 
-Unbound `kmx mcp` uses Copilot for non-fake authored models when no startup route
-is selected. Authored `fake` remains offline. Explicit trusted `--provider` and,
-for local routes, `--endpoint` override that default; the exact model still comes
-from the parsed file. Legacy `--root` mode retains its existing fake-only behavior
+The canvas Model picker is session-only: override → authored Model.Preferred →
+`gpt-5.6-terra`. Selecting a model never edits the file or its saved-source history.
+Changing the effective model makes old results stale; another run must confirm the
+selected model, including after an A → B → A switch. Missing Model is valid for
+canonical authoring; a present blank/invalid Model remains invalid. Run/Test v1
+accept the same optional exact `model` override, not a provider or endpoint.
+An unknown catalog model fails in one line listing the available choices.
+
+Unbound/default-Copilot servers expose read-only `kmx://models` with
+`schemaVersion: 1`, `kind: "kmx.models"`, `defaultModel` and `models` (exact IDs).
+Discovery is lazy, adds no tool and starts neither sign-in nor inference. The
+picker loads it on focus; discovery failure leaves editing and fake/offline
+execution available. Explicit non-Copilot and legacy bound routes stay unchanged.
+
+Unbound `kmx mcp` uses Copilot for the effective non-fake model when no startup
+route is selected. Effective `fake` remains offline. Explicit trusted `--provider`
+and, for local routes, `--endpoint` override that provider default, not the runtime
+model choice. Legacy `--root` mode retains its existing fake-only behavior
 without an explicit route. Copilot uses the fixed endpoint and existing runtime
 credentials, without an installation-time model or login step. Hosted-content
 disclosure still applies; startup itself performs no sign-in, credential access

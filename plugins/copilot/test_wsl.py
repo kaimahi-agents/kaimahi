@@ -50,6 +50,12 @@ class WSLPluginTests(unittest.TestCase):
         for name in SKILLS:
             self.assertIn('plugin:kmx-agent-builder:agent-view', (ROOT / name).read_text(encoding="utf-8"))
 
+    def test_assets_fit_existing_native_bound_with_windows_line_endings(self):
+        for name in ASSETS:
+            source = (ROOT / name).read_bytes().replace(b"\r\n", b"\n")
+            self.assertLessEqual(len(source), 65536, name)
+            self.assertLessEqual(len(source.replace(b"\n", b"\r\n")), 65536, name)
+
     def test_install_instructions_are_the_two_plain_steps(self):
         self.assertTrue((ROOT / "README.md").is_file(), "WSL install instructions are missing")
         text = (ROOT / "README.md").read_text(encoding="utf-8")

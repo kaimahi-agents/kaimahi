@@ -28,8 +28,12 @@ In Copilot, ask it to create an agent through kmx and open the agent canvas. Giv
 it a full WSL path when the file is outside the current directory. The same
 server handles files in unrelated repositories.
 
-The authored `Model.Preferred` chooses the model. Unbound real-model runs use
-Copilot by default; an authored `fake` model remains deterministic and offline.
+Choose a runtime model in the canvas: picker override → authored `Model.Preferred`
+→ `gpt-5.6-terra`. Model may be omitted; a picker choice never rewrites the agent
+file. Changing the model makes prior results stale until another run. Choices
+load on picker focus; catalog failure does not block editing or offline tests.
+Unbound real-model runs use Copilot by default; effective `fake` is deterministic
+and offline.
 `kmx model list --provider copilot` lists the available model names.
 
 Edit prompts and tests in the canvas. Enter saves and tests; saved agent files

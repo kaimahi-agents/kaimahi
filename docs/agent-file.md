@@ -44,8 +44,8 @@ examples:
 - Start with one nonblank H1 name (`# Name`). The ` — Role` suffix is optional;
   `# Name`, `# Name —` and `# Name — Role` are accepted display titles, not identity.
   Put all prose and fenced blocks after the first canonical H2 section.
-- Include exactly one of each H2 shown above, with those exact unindented
-  spellings. Examples must be last; the other sections can be reordered.
+- Include exactly one of each H2 shown above except Model, which may be omitted,
+  with those exact unindented spellings. Examples must be last; the other sections can be reordered.
   An optional `## Tools` section may appear directly before Examples, containing
   exactly `- github_list_merged_prs` and otherwise only blank lines. No endpoints,
   schemas, credentials or other names are accepted. Unknown or duplicate H2 sections
@@ -55,7 +55,7 @@ examples:
   avoid host-dependent heading/fence scanning.
 - Identity contains only the two shown bullet fields. ID is 1–63 lowercase
   ASCII letters, digits or hyphens, starting with a letter. Purpose is nonblank
-  single-line text. Model contains only the Preferred bullet. Empty lines are
+  single-line text. When present, Model contains only a nonblank Preferred bullet. Empty lines are
   allowed; duplicate fields and extra metadata refuse.
 - Each responsibility section contains nonblank Markdown. Fenced code is prose,
   not executable configuration. Headings inside backtick or tilde fences do not
@@ -79,6 +79,10 @@ history is unavailable, with an explicit warning in its result. Restore reads
 old source and uses the same revision-checked Edit; it never rewrites history or
 restores test evidence. See [saved source versions and clear](kmx.md#saved-source-versions-and-restore)
 for the resource API, bounds, privacy and operator cleanup command.
+
+An omitted Model stays absent in the parsed source and revision. Preview execution
+uses the canvas/tool runtime override, then authored Preferred, then `gpt-5.6-terra`;
+no default or picker choice is written into the file. A present blank Model is invalid.
 
 Preferred is one exact printable ASCII model identifier (1–256 bytes; letters,
 digits, `.`, `_`, `:`, `/`, `-`, starting with a letter or digit). `auto`, URLs,
@@ -162,7 +166,7 @@ YAML/OS errors are not echoed; control characters in filenames are quoted and
 known credential-shaped filenames are withheld. Parsed structures themselves
 contain source content and must not be used as default logs or result JSON.
 For example, `# Legacy` refuses with `Identity.ID`, `Identity.Purpose`,
-`Model.Preferred` and the missing responsibility/Examples sections, without
+and the missing responsibility/Examples sections, without
 inferring identity from its folder or rewriting the file.
 
 ## Frozen run-profile export (unreleased)
@@ -175,7 +179,9 @@ This export does not implement that deployment path or define a host-side API.
 `Load`/`Parse` once, without configuration, state, provider selection, credentials
 or execution. It accepts canonical runnable charters only, not `Inspect`'s minimal
 display files or the distinct native Squad profile. Existing tools/settings and
-safe parser refusals apply unchanged. Zero-test authoring charters refuse export
+safe parser refusals apply unchanged. Export still requires an explicit authored
+Model.Preferred; preview defaults and picker overrides are not export provenance.
+Zero-test authoring charters refuse export
 before any profile bytes are written. Packaging and deployment still require test
 evidence; saving a prompt or passing an ad-hoc Run grants neither. The original
 source is not modified.

@@ -6,6 +6,32 @@ const INSTRUCTIONS = [
   "Collaboration and Review Authority",
 ];
 const HEADINGS = ["Identity", ...INSTRUCTIONS, "Model", "Examples"];
+export const DEFAULT_MODEL = "gpt-5.6-terra";
+export const effectiveModel = (authored, override) => override || authored.match(/^model: (.+)$/m)?.[1] || authored || DEFAULT_MODEL;
+// Runtime state is separate from authored source and survives only this canvas.
+export function runtimeModelSelection() {
+  let override = "", needsRun = false;
+  const selected = (view) => effectiveModel(view.model, override);
+  const actual = (view) => {
+    const route = view.latest.result?.modelRoute ?? "";
+    return route.slice(route.indexOf("/") + 1);
+  };
+  return {
+    get override() { return override; },
+    get needsRun() { return needsRun; },
+    choose(value, view) {
+      const previous = selected(view); override = value;
+      const changed = previous !== selected(view);
+      if (changed) needsRun = true;
+      return changed;
+    },
+    confirm(view) { if (actual(view) === selected(view)) needsRun = false; },
+    view(view) {
+      return view.latest.status === "current" && (needsRun || actual(view) !== selected(view))
+        ? { ...view, latest: { status: "stale", badge: "stale" } } : view;
+    },
+  };
+}
 const MAX_BYTES = 256 * 1024;
 const encoder = new TextEncoder();
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
@@ -69,7 +95,7 @@ function locate(source) {
     if (marker) open = marker;
     offset = next;
   }
-  require(!open && HEADINGS.every((key) => sections.has(key)), "Incomplete canonical source.");
+  require(!open && HEADINGS.every((key) => key === "Model" || sections.has(key)), "Incomplete canonical source.");
   for (const key of INSTRUCTIONS) {
     const section = sections.get(key);
     const raw = source.slice(section.start, section.end);

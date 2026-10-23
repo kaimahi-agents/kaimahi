@@ -54,6 +54,14 @@ The independent model-access package has native Windows/macOS/Linux tests.
 The installed Windows CLI remains blocked until native CLI support lands; these
 package tests do not qualify the full Windows executable.
 
+## Canvas model choice
+
+The canvas uses a session-only picker override, then the authored model, then
+`gpt-5.6-terra`. Omitting Model does not rewrite the agent file. The picker reads
+`kmx://models` on focus; a catalog failure does not block editing or offline tests.
+Unknown models report the available choices without falling back. Trusted startup
+provider/endpoint/auth selection is unchanged. See [MCP](kmx.md#local-stdio-mcp).
+
 ## Explicit Copilot model access
 
 ```bash

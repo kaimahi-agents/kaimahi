@@ -1,7 +1,7 @@
 // Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import { instructionSections, replaceInstructions, replaceExamples } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, effectiveModel } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 
@@ -17,6 +17,7 @@ const MESSAGES = {
   "invalid-path": "Choose an .agent.md file or a .squad/agents/<member>/charter.md file.",
   unavailable: "The kmx agent builder could not be read. Check that its MCP server is running.",
   "invalid-resource": "The kmx agent view was not in the supported format.",
+  "models-unavailable": "Model choices are unavailable. The file/default model can still be run.",
   "too-large": "The kmx agent view was too large to show.",
   "invalid-action": "This canvas action is not supported.",
   "read-only": "This file is available for inspection only. Editing and testing require a complete canonical charter.",
@@ -84,7 +85,7 @@ function cleanResult(r, status, revision) {
   if (!isObj(r) || typeof r.state !== "string" || typeof r.verdict !== "string" || typeof r.fullPass !== "boolean") invalid();
   if (r.schemaVersion !== 1 || r.kind !== "kmx.agent-file-preview" || !isObj(r.file) || r.file.revision !== revision) invalid();
   const completion = (c) => ({
-    state: text(c.state), verdict: text(c.verdict), reasonCode: text(c.reasonCode), reason: text(c.reason, 500),
+    state: text(c.state), verdict: text(c.verdict), reasonCode: text(c.reasonCode), reason: text(c.reason, c.reasonCode === "copilot_model_unavailable" ? MAX_RESOURCE_BYTES : 500),
     ...(typeof c.answerExcerpt === "string" ? { answerExcerpt: clean(c.answerExcerpt, 2000, true) } : {}),
     truncated: c.truncated === true,
   });
@@ -94,7 +95,7 @@ function cleanResult(r, status, revision) {
     ...completion(r),
     fullPass: r.fullPass,
     operation: text(r.operation),
-    modelRoute: `${text(route.provider, 80)}/${text(route.model, 120)}`,
+    modelRoute: `${text(route.provider, 80)}/${text(route.model, 256)}`,
     selection: { scope: text(sel.scope, 40), totalCases: Number.isInteger(sel.totalCases) ? sel.totalCases : 0, caseIds: list(sel.caseIds).map((i) => text(i, 80)) },
     examples: list(r.examples).map((e) => {
       if (!isObj(e)) invalid();
@@ -185,12 +186,26 @@ export async function readView(session, rawPath) {
   return parseView(body, path);
 }
 
+const validModel = (model) => typeof model === "string" && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/.test(model) && model.toLowerCase() !== "auto" && !model.includes("://");
+async function readModels(session) {
+  try {
+    const response = await session.rpc.mcp.resources.read({ serverName: SERVER_NAME, uri: "kmx://models" });
+    if (!Array.isArray(response?.contents) || response.contents.length !== 1 || typeof response.contents[0]?.text !== "string") invalid();
+    const body = response.contents[0].text;
+    if (Buffer.byteLength(body, "utf8") > MAX_RESOURCE_BYTES) invalid();
+    const raw = JSON.parse(body);
+    if (raw?.schemaVersion !== 1 || raw.kind !== "kmx.models" || !validModel(raw.defaultModel) || !Array.isArray(raw.models) || !raw.models.every(validModel)) invalid();
+    return { defaultModel: raw.defaultModel, models: [...new Set(raw.models)] };
+  } catch { throw new ViewError("models-unavailable"); }
+}
+
 // The resource keeps only the latest preview and clears it when one starts. Still
 // attribute it only for the requested operation and exact full/single-case scope.
-function observed(view, operation, ids, caseId, complete) {
+function observed(view, operation, ids, caseId, complete, model) {
   const r = view.latest.status === "current" ? view.latest.result : undefined;
   const want = caseId === undefined ? ids : [caseId], got = r?.selection.caseIds ?? [], rows = r?.examples.map((e) => e.id) ?? [];
-  return r?.operation === operation && r.selection.scope === (caseId === undefined ? "full" : "subset") && r.selection.totalCases === ids.length &&
+  const noTests = !ids.length && r?.state === "refused" && r.reasonCode === "no_tests" && r.modelRoute === "/";
+  return r?.operation === operation && (noTests || r.modelRoute.slice(r.modelRoute.indexOf("/") + 1) === model) && r.selection.scope === (caseId === undefined ? "full" : "subset") && r.selection.totalCases === ids.length &&
     new Set(got).size === got.length && got.every((id) => want.includes(id)) && (!complete || got.length === want.length) &&
     new Set(rows).size === rows.length && rows.every((id) => got.includes(id));
 }
@@ -200,10 +215,10 @@ export function createActionHandler({ session, path }) {
   path = normalizePath(path);
   let busy = false, uncertain = false;
   const allowed = {
-    "save-and-test": ["expectedRevision", "sections", "examples", "showContent", "caseId"],
+    "save-and-test": ["expectedRevision", "sections", "examples", "showContent", "caseId", "model"],
     "save-examples": ["expectedRevision", "examples"],
-    test: ["expectedRevision", "showContent", "caseId"], run: ["expectedRevision", "input", "showContent"],
-    suggest: [], reload: [],
+    test: ["expectedRevision", "showContent", "caseId", "model"], run: ["expectedRevision", "input", "showContent", "model"],
+    suggest: [], reload: [], models: [],
   };
   async function invoke(operation, args) {
     let metadata;
@@ -227,11 +242,16 @@ export function createActionHandler({ session, path }) {
     return result;
   }
   return async (input) => {
-    if (busy) return { error: "busy", message: MESSAGES.busy };
     if (!isObj(input) || !Object.hasOwn(allowed, input.operation) || Object.keys(input).some((k) => k !== "operation" && !allowed[input.operation].includes(k))) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if (input.showContent !== undefined && typeof input.showContent !== "boolean") return { error: "invalid-action", message: MESSAGES["invalid-action"] };
+    if (input.model !== undefined && input.model !== "" && !validModel(input.model)) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
+    // Read-only discovery must not block or unlock an execution action.
+    if (input.operation === "models") {
+      try { return await readModels(session); } catch (e) { const error = safeError(e); return { error: error.code, message: error.message }; }
+    }
+    if (busy) return { error: "busy", message: MESSAGES.busy };
     busy = true;
-    let saved = false, tested = false, targetRevision, ids, operation;
+    let saved = false, tested = false, targetRevision, ids, operation, model;
     try {
       if (uncertain && input.operation !== "reload") throw new ViewError("outcome-unknown");
       let view = await readView(session, path);
@@ -246,6 +266,7 @@ export function createActionHandler({ session, path }) {
       if (typeof input.expectedRevision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) throw new ViewError("invalid-action");
       if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");
       targetRevision = input.expectedRevision;
+      model = effectiveModel(view.model, input.model);
       const saving = input.operation === "save-and-test" || input.operation === "save-examples";
       // Intended drafts apply to the exact current source; an absent draft is a no-op.
       let content = view.authoring.source, examples = view.authoring.examples;
@@ -277,11 +298,11 @@ export function createActionHandler({ session, path }) {
       // Test/Run have no revision parameter. Check the actual result afterward,
       // not a fabricated precondition or a refreshed draft revision.
       tested = true;
-      await invoke(operation, { ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true });
+      await invoke(operation, { ...(input.model ? { model: input.model } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true });
       try { view = await readView(session, path); }
       catch { uncertain = true; throw new ViewError("outcome-unknown"); }
       if (view.file.revision !== targetRevision) throw new ViewError("revision_mismatch");
-      if (!observed(view, operation, ids, input.caseId, true)) { uncertain = true; throw new ViewError("outcome-unknown"); }
+      if (!observed(view, operation, ids, input.caseId, true, model)) { uncertain = true; throw new ViewError("outcome-unknown"); }
       return { view, saved };
     } catch (e) {
       const err = safeError(e);
@@ -293,10 +314,11 @@ export function createActionHandler({ session, path }) {
           // Project the invocation payload through the same bounded parser as
           // the resource, then require exact agreement before attaching a view.
           const proof = err.preview?.file?.path === path ? cleanResult(err.preview, "current", targetRevision) : undefined;
-          const fresh = failedPreview && proof && observed(view, operation, ids, input.caseId, false)
+          const fresh = failedPreview && proof && observed(view, operation, ids, input.caseId, false, model)
             && JSON.stringify(proof) === JSON.stringify(view.latest.result)
             && view.latest.result.verdict !== "pass" && !view.latest.result.fullPass;
           if (view.file.revision === targetRevision && (fresh || saved && !failedPreview && view.latest.status !== "current")) response.view = view;
+          if (response.view && fresh && proof.reasonCode === "copilot_model_unavailable") response.message = proof.reason;
           if (response.view && fresh && !ids.length && view.latest.result.reasonCode === "no_tests") Object.assign(response, { error: "no-tests", message: MESSAGES["no-tests"] });
         } catch { /* Preserve the draft when refresh cannot be confirmed. */ }
       }

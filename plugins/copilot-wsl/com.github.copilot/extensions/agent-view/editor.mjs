@@ -1,10 +1,66 @@
-// Inert DOM editing and exact source serialization. No I/O or action authority.
+// Inert DOM editing and exact source serialization. Loaders and actions are caller-owned.
+import { DEFAULT_MODEL } from "./authoring.mjs";
 export const el = (doc, tag, className, text) => {
   const node = doc.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
 };
+// Runtime selection only emits values to its owner; it cannot read or write an agent.
+export function runtimeModelControl(doc, settings, load, change) {
+  const node = el(doc, "label", "runtime-model"), select = el(doc, "select", "model-picker"), status = el(doc, "span", "quiet model-status");
+  select.setAttribute("aria-label", "Runtime model"); status.setAttribute("role", "status");
+  let models = [], state = "idle";
+  select.addEventListener("focus", async () => {
+    if (state === "ready" || state === "loading") return;
+    state = "loading"; update();
+    try {
+      const response = await load();
+      if (response?.error || !Array.isArray(response?.models)) throw new Error("unavailable");
+      models = response.models; state = "ready";
+    } catch { state = "failed"; }
+    update();
+  });
+  select.addEventListener("change", () => change(select.value));
+  node.append(el(doc, "span", "meta", "Model"), select, status);
+  const update = () => {
+    const { authored, selected, needsRun } = settings();
+    const first = el(doc, "option", "", authored ? `Agent file (${authored})` : `Default (${DEFAULT_MODEL})`); first.value = "";
+    const ids = selected && !models.includes(selected) ? [selected, ...models] : models;
+    select.replaceChildren(first, ...ids.map((id) => { const option = el(doc, "option", "", id); option.value = id; return option; }));
+    select.value = selected;
+    status.textContent = state === "loading" ? "Loading models…" : state === "failed" ? "Choices unavailable; file/default still works." : needsRun ? "Run to refresh results." : "";
+  };
+  update(); return { node, select, update };
+}
+
+export function pathControls(doc, path) {
+  const box = el(doc, "div", "source-path");
+  const button = el(doc, "button", "copy-path", "Copy path");
+  button.setAttribute("type", "button");
+  button.setAttribute("aria-label", "Copy agent path");
+  button.setAttribute("data-action", "copy-path");
+  const feedback = el(doc, "span", "copy-status");
+  feedback.setAttribute("role", "status");
+  feedback.setAttribute("aria-live", "polite");
+  button.addEventListener("click", async () => {
+    const unavailable = "Copy unavailable. Select the path and copy it manually.";
+    try {
+      const clipboard = doc.defaultView?.navigator?.clipboard;
+      if (typeof clipboard?.writeText !== "function") {
+        feedback.textContent = unavailable;
+        return;
+      }
+      await clipboard.writeText(path);
+      feedback.textContent = "Path copied.";
+    } catch {
+      feedback.textContent = unavailable;
+    }
+  });
+  box.append(el(doc, "p", "path-label", "Agent file path"), el(doc, "code", "path-value", path), button, feedback);
+  return box;
+}
+
 // The resource already bounds instructions. Keep fences opaque before looking
 // for duplicate metadata, so quoted headings never hide authored content.
 export function instructionBlocks(source) {

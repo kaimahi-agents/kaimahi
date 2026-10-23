@@ -1,6 +1,6 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
-import { instructionSections } from "./authoring.mjs";
-import { el, inlineText, editorValue, insertPlainText, fillEditor, purposeText, instructionsContent } from "./editor.mjs";
+import { instructionSections, runtimeModelSelection } from "./authoring.mjs";
+import { el, inlineText, editorValue, insertPlainText, fillEditor, purposeText, instructionsContent, runtimeModelControl, pathControls } from "./editor.mjs";
 const checkKey = (a) => JSON.stringify([a.id, a.type]);
 function uniqueIndex(items, key) {
   const map = new Map();
@@ -33,33 +33,6 @@ function inspectCases(payload) {
     if (!ambiguous && complete && row.verdict === "pass" && covered && matched) state = "pass";
     return { ...unknown, state, label: state === "pass" ? "Passed" : state === "fail" ? "Failed" : "Incomplete", checks, expected };
   });
-}
-
-function pathControls(doc, path) {
-  const box = el(doc, "div", "source-path");
-  const button = el(doc, "button", "copy-path", "Copy path");
-  button.setAttribute("type", "button");
-  button.setAttribute("aria-label", "Copy agent path");
-  button.setAttribute("data-action", "copy-path");
-  const feedback = el(doc, "span", "copy-status");
-  feedback.setAttribute("role", "status");
-  feedback.setAttribute("aria-live", "polite");
-  button.addEventListener("click", async () => {
-    const unavailable = "Copy unavailable. Select the path and copy it manually.";
-    try {
-      const clipboard = doc.defaultView?.navigator?.clipboard;
-      if (typeof clipboard?.writeText !== "function") {
-        feedback.textContent = unavailable;
-        return;
-      }
-      await clipboard.writeText(path);
-      feedback.textContent = "Path copied.";
-    } catch {
-      feedback.textContent = unavailable;
-    }
-  });
-  box.append(el(doc, "p", "path-label", "Agent file path"), el(doc, "code", "path-value", path), button, feedback);
-  return box;
 }
 
 const friendlyName = (id) => {
@@ -228,6 +201,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   let refresh = () => {};
   // A revision does not distinguish successive runs of unchanged source.
   let observationGeneration = 0;
+  const modelChoice = runtimeModelSelection();
+  base = modelChoice.view(base);
   const observation = () => ({ generation: observationGeneration, revision: base.file.revision });
 
   const editable = () => !!snap;
@@ -286,7 +261,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   function adopt(view, submitted) {
     observationGeneration++;
     const renamed = route.name === "detail" && submitted.tests.includes(route.key) ? testDrafts.get(route.key)?.raw?.id : undefined;
-    base = view; snap = readSnapshot(view); candidate = undefined; compareOpen = false;
+    base = modelChoice.view(view); snap = readSnapshot(base); candidate = undefined; compareOpen = false;
     for (const key of submitted.sections) sectionDrafts.delete(key);
     for (const key of submitted.tests) testDrafts.delete(key);
     if (renamed) route = { name: "detail", key: `id:${renamed}` };
@@ -300,7 +275,11 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const action = { operation, ...values };
     if (!["reload", "suggest"].includes(operation)) action.expectedRevision = base.file.revision;
     if (includeNode) showContent = includeNode.checked === true;
-    if (["save-and-test", "test", "run"].includes(operation)) action.showContent = showContent;
+    const executing = ["save-and-test", "test", "run"].includes(operation);
+    if (executing) {
+      action.showContent = showContent;
+      if (modelChoice.override) action.model = modelChoice.override;
+    }
     let response;
     try { response = await execute(action); } catch {
       busy = false; pending = undefined; blocked = true;
@@ -308,6 +287,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       render(); return;
     }
     busy = false; pending = undefined; message = "";
+    if (executing && matches(response?.view)) modelChoice.confirm(response.view);
     const tested = ["test", "save-and-test"].includes(operation);
     if (operation === "reload") {
       if (matches(response?.view)) {
@@ -384,6 +364,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   function observe(view, started = observation()) {
     if (started.generation !== observationGeneration || started.revision !== base.file.revision
       || !matches(view) || busy || blocked || invalidEditors.size) return false;
+    view = modelChoice.view(view);
     if (same(view, base) || (candidate && same(view, candidate))) return false;
     observationGeneration++;
     lastRun = undefined;
@@ -530,6 +511,9 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     info.append(el(doc, "p", "source-title", base.title), pathControls(doc, base.file.path), el(doc, "code", "revision", base.file.revision));
     const head = el(doc, "header", "agent-header"), titleLine = el(doc, "div", "title-line");
     titleLine.append(el(doc, "h1", "", displayName), source);
+    if (snap) {
+      modelControl.update(); controls.push({ node: modelControl.select, guard: "idle" }); titleLine.append(modelControl.node);
+    }
     const purpose = purposeText(base), summary = el(doc, "p", "purpose");
     const chars = Array.from(purpose); summary.textContent = chars.length > 160 ? chars.slice(0, 159).join("") + "…" : purpose;
     head.append(titleLine, summary);
@@ -1039,6 +1023,16 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     return box;
   }
 
+  const modelControl = runtimeModelControl(doc,
+    () => ({ authored: base.model, selected: modelChoice.override, needsRun: modelChoice.needsRun }),
+    options.fetchModels ?? (() => execute({ operation: "models" })), (value) => {
+      if (busy || blocked) return;
+      observationGeneration++;
+      if (modelChoice.choose(value, base)) {
+        base = modelChoice.view(base); lastRun = undefined; runAlert = undefined;
+      }
+      render(); modelControl.select.focus();
+    });
   render();
   return {
     observe,
