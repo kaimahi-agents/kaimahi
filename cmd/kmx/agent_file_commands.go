@@ -20,6 +20,7 @@ import (
 
 type fileCommandOptions struct {
 	CaseID, Provider, Endpoint, Output string
+	ToolBindings                       string
 	ShowContent                        bool
 	Verbose                            bool
 }
@@ -40,6 +41,7 @@ func registerFileCommandFlags(cmd *cobra.Command, f *fileCommandOptions, output 
 	cmd.Flags().StringVar(&f.CaseID, "case", "", "run only this saved example ID (partial local preview)")
 	cmd.Flags().StringVar(&f.Provider, "provider", "", "explicit file-model provider: ollama, foundry-local, compatible or copilot; no fallback")
 	cmd.Flags().StringVar(&f.Endpoint, "endpoint", "", "trusted model endpoint (required for local models; fixed for Copilot; never from the charter)")
+	cmd.Flags().StringVar(&f.ToolBindings, "tool-bindings", "", "explicit host-owned local tool binding file (requires FILE; remote provider execution not yet available)")
 	if output {
 		cmd.Flags().StringVarP(&f.Output, "output", "o", "text", "file preview output: text|json")
 		cmd.Flags().BoolVar(&f.ShowContent, "show-content", false, "include sanitized bounded answer excerpts in file preview output")
@@ -52,7 +54,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "case", "output", "show-content", "provider", "endpoint", "prompt", "prompt-file", "verbose":
+		case "case", "output", "show-content", "provider", "endpoint", "prompt", "prompt-file", "verbose", "tool-bindings":
 		default:
 			invalid = flag.Name
 		}
@@ -60,7 +62,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	if invalid != "" {
 		return fmt.Errorf("file preview refuses --%s", invalid)
 	}
-	for _, name := range []string{"case", "provider", "endpoint", "prompt-file"} {
+	for _, name := range []string{"case", "provider", "endpoint", "prompt-file", "tool-bindings"} {
 		if flag := cmd.Flag(name); flag != nil && flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 			return fmt.Errorf("file preview requires nonempty --%s", name)
 		}
@@ -71,7 +73,7 @@ func validateFileCommand(cmd *cobra.Command, state *commandState, f fileCommandO
 	return nil
 }
 func fileFlagsWithoutFile(cmd *cobra.Command) error {
-	for _, name := range []string{"case", "provider", "endpoint", "verbose"} {
+	for _, name := range []string{"case", "provider", "endpoint", "verbose", "tool-bindings"} {
 		if flag := cmd.Flag(name); flag != nil && flag.Changed {
 			return fmt.Errorf("--%s requires an explicit agent FILE", name)
 		}
@@ -80,7 +82,7 @@ func fileFlagsWithoutFile(cmd *cobra.Command) error {
 }
 
 func runFileCommand(cmd *cobra.Command, state *commandState, file string, f fileCommandOptions, prompt, promptFile string) error {
-	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID, ShowContent: f.ShowContent}
+	opt := app.FilePreviewOptions{File: file, Operation: cmd.Name(), CaseID: f.CaseID, ShowContent: f.ShowContent, ToolBindings: f.ToolBindings}
 	if f.Verbose {
 		opt.Progress = func(message string) error {
 			_, err := fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] %s\n", message)

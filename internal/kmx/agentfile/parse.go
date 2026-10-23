@@ -33,12 +33,13 @@ type Location struct {
 type Identity struct{ ID, Purpose string }
 
 // Agent contains authored content, not a safe log or result projection.
-// Revision binds exact bytes; Instructions normalizes CRLF and excludes Examples.
+// Revision binds exact bytes; Instructions normalizes CRLF and excludes Tools and Examples.
 type Agent struct {
 	Identity     Identity
 	Title        string
 	Instructions string
 	Model        string
+	Tools        []string
 	Examples     []Example
 	Revision     string
 	Locations    map[string]Location
@@ -144,7 +145,7 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 			if current == "Examples" {
 				return nil, refuse(filename, i+1, 1, "Examples", "keep exactly one Examples section last")
 			}
-			if !slices.Contains(sectionNames, name) || line != "## "+name {
+			if (!slices.Contains(sectionNames, name) && name != "Tools") || line != "## "+name || (current == "Tools" && name != "Examples") {
 				return nil, refuse(filename, i+1, 1, "Sections", "use only the canonical unindented ## headings, with no trailing spaces or tabs")
 			}
 			if _, exists := sections[name]; exists {
@@ -176,6 +177,21 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 		return nil, refuse(filename, len(lines), 1, field, "close the Markdown fence with matching markers")
 	}
 	if s, ok := sections["Examples"]; ok {
+		a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
+	}
+	if s, ok := sections["Tools"]; ok {
+		for i := s.start + 1; i < s.end; i++ {
+			if strings.TrimSpace(lines[i]) == "" {
+				continue
+			}
+			if lines[i] != "- github_list_merged_prs" || len(a.Tools) != 0 {
+				return nil, refuse(filename, i+1, 1, "Tools", "declare exactly one supported tool name as a canonical bullet")
+			}
+			a.Tools = append(a.Tools, "github_list_merged_prs")
+		}
+		if len(a.Tools) != 1 {
+			return fail("Tools", "declare exactly one supported tool name")
+		}
 		a.Instructions = strings.Join(lines[:s.start], "\n") + "\n"
 	}
 	_, hasIdentity := sections["Identity"]

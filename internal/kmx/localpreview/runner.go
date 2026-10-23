@@ -17,6 +17,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -29,6 +30,9 @@ type RunnerOptions struct {
 	JournalDir     func() (string, error)
 	Judge          JudgeFactory
 	ExampleTimeout time.Duration
+	// Tools resolves a trusted host from a frozen binding. Nil refuses tools;
+	// it never selects an implicit credential or a production fixture provider.
+	Tools func(context.Context, localtools.Binding) (*localtools.Host, error)
 }
 
 type runner struct {
@@ -85,6 +89,25 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	judgeRoute, routeErr := runnerRoute(judgeSelection)
 	if routeErr != nil {
 		return abort(routeErr)
+	}
+	var toolHost *localtools.Host
+	if len(agent.Tools) > 0 {
+		binding, err := localtools.Load(request.ToolBindings)
+		if err != nil || !binding.Matches(agent.Tools) || r.options.Tools == nil {
+			return abort(agentpreview.ErrToolsUnavailable)
+		}
+		toolHost, err = r.options.Tools(ctx, binding)
+		if err != nil || toolHost == nil {
+			return abort(agentpreview.ErrToolsUnavailable)
+		}
+		if checkToolContent(toolHost, request) != nil {
+			return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrUnsafeToolContent
+		}
+		// Only this explicitly bound path may use the tool harness. Standalone
+		// prepare/Run/Test remain tool-free; all other validation is shared.
+		agent.Tools = nil
+	} else if request.ToolBindings != "" {
+		return abort(agentpreview.ErrToolsUnavailable)
 	}
 	seenExamples := map[string]bool{}
 	hasJudge := false
@@ -152,7 +175,14 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if dirErr != nil {
 		return abort(fmt.Errorf("%w: %w", agentpreview.ErrJournalFailed, dirErr))
 	}
-	executor, journal, openErr := r.open(dir, p.route.model)
+	var executor Executor
+	var journal string
+	var openErr error
+	if toolHost != nil {
+		executor, journal, openErr = openToolJournalExecutor(dir, p.route.model, toolHost.Execute)
+	} else {
+		executor, journal, openErr = r.open(dir, p.route.model)
+	}
 	if openErr != nil {
 		return abort(fmt.Errorf("%w: %w", agentpreview.ErrJournalFailed, openErr))
 	}
@@ -177,6 +207,11 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 	}()
 	client := newModelClient(p.route)
+	call := client.Model
+	if toolHost != nil {
+		client.check = toolHost.Check
+		call = client.ToolModel
+	}
 	used := map[string]bool{}
 	execute := func(ex agentfile.Example, index int) (completion agentpreview.Completion, assertions []agentruntime.EvaluationAssertionResult, cause error) {
 		turnCtx, turnCancel := context.WithTimeout(ctx, p.timeout)
@@ -192,7 +227,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			return completion, nil, reportErr
 		}
 		started := time.Now()
-		execution, execErr := executor.Execute(turnCtx, Turn{AgentID: agent.Identity.ID, Revision: agent.Revision, ExampleID: ex.ID, Instructions: agent.Instructions, Input: ex.Input, Model: p.route.model, Call: client.Model})
+		execution, execErr := executor.Execute(turnCtx, Turn{AgentID: agent.Identity.ID, Revision: agent.Revision, ExampleID: ex.ID, Instructions: agent.Instructions, Input: ex.Input, Model: p.route.model, Call: call})
 		reason := "complete"
 		if execErr != nil || turnCtx.Err() != nil {
 			reason = "execution_failed"
@@ -240,7 +275,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 				}
 			}
 		}
-		completion = agentpreview.Completion{State: agentpreview.Complete, ID: execution.SessionUID, FileRevision: agent.Revision, Provider: request.Route.Provider, Model: request.Route.Model, Answer: execution.Answer}
+		completion = agentpreview.Completion{State: agentpreview.Complete, ID: execution.SessionUID, FileRevision: agent.Revision, Provider: request.Route.Provider, Model: request.Route.Model, Answer: execution.Answer, ToolCalls: execution.ToolCalls}
 		return completion, assertions, nil
 	}
 	if request.Input != nil {

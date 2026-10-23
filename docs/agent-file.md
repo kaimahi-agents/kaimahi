@@ -1,6 +1,6 @@
 # Single-file agent charter
 
-`internal/kmx/agentfile` parses a small, tool-free Markdown charter offline.
+`internal/kmx/agentfile` parses a small Markdown charter offline, with an optional host-tool name declaration.
 This is a **format and parser**, not an execution command. Existing native suite
 loaders, `create`, `run --agent`, and workspace `test` are unchanged. There is no
 model call, workspace discovery, source write or implicit conversion.
@@ -46,7 +46,10 @@ examples:
   Put all prose and fenced blocks after the first canonical H2 section.
 - Include exactly one of each H2 shown above, with those exact unindented
   spellings. Examples must be last; the other sections can be reordered.
-  Unknown or duplicate H2 sections refuse, including Tools or Hooks. No
+  An optional `## Tools` section may appear directly before Examples, containing
+  exactly `- github_list_merged_prs` and otherwise only blank lines. No endpoints,
+  schemas, credentials or other names are accepted. Unknown or duplicate H2 sections
+  refuse, including Hooks. No
   frontmatter, legacy aliases, inferred fields or arbitrary charter importer.
   Any `<!--` marker outside code fences refuses, even inside inline code, to
   avoid host-dependent heading/fence scanning.
@@ -65,8 +68,9 @@ examples:
 - Files are UTF-8, LF or CRLF; remove a leading byte-order mark. Controls other
   than newline/tab and Unicode line/paragraph separators refuse, including in
   decoded YAML strings. Instructions
-  preserve the complete prefix before Examples, including identity/model metadata,
-  with CRLF normalized to LF. Examples are never part of those instructions.
+  preserve the complete prefix before Tools (or Examples when Tools is absent),
+  including identity/model metadata, with CRLF normalized to LF. Tools and Examples
+  are never part of those instructions. Tool-free instruction bytes are unchanged.
   The revision is `sha256:<hex>` of the **original bytes**, including line endings.
 
 Preferred is one exact printable ASCII model identifier (1–256 bytes; letters,
@@ -75,8 +79,10 @@ spaces and wildcards refuse. `fake` names only kmx's deterministic orientation
 route, not a general-purpose model or a claim that Squad runs that model.
 The trusted provider route, endpoint and credentials must come from outside
 this file; the parser neither checks availability nor chooses/falls back to a
-model. Prose cannot grant tools or hooks: downstream execution must remain
-tool-free regardless of what instructions request. Parsing is not a sandbox or
+model. Prose cannot grant tools or hooks. Tool names declare a requirement,
+not authority: execution needs an explicit host binding and a qualified provider.
+The current CLI refuses declared tools until that provider is available; the
+[host-tool foundation](local-preview.md#host-tool-foundation) is hermetically tested. Parsing is not a sandbox or
 a guarantee that arbitrary prose is safe or secret-free. The complete charter,
 including raw YAML comments, is checked with the existing credential-shape scanner
 and refuses known shapes with a fixed redacted error. Decoded example inputs and

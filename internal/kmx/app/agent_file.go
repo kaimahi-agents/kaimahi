@@ -16,6 +16,7 @@ import (
 
 type FilePreviewOptions struct {
 	File, Operation, CaseID string
+	ToolBindings            string
 	Route, JudgeRoute       *modelaccess.Route
 	Input                   *string
 	ShowContent             bool
@@ -69,6 +70,7 @@ type FilePreviewCompletion struct {
 	Reason        string `json:"reason"`
 	AnswerExcerpt string `json:"answerExcerpt,omitempty"`
 	Truncated     bool   `json:"truncated,omitempty"`
+	ToolCalls     int    `json:"toolCalls,omitempty"`
 }
 type FilePreviewExample struct {
 	ID string `json:"id"`
@@ -130,9 +132,11 @@ func previewReason(code string) string {
 		"not_run": "Execution is not complete.", "cancelled": "Local preview cancelled.", "deadline_exceeded": "Local preview deadline exceeded.",
 		"invalid_file":      "Invalid agent file; use the canonical charter format with required fields and nonempty examples.",
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
-		"model_unavailable":  "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
-		"runner_unavailable": "Embedded preview runner is not available; no inference was performed.",
-		"execution_failed":   "Local preview execution failed.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
+		"model_unavailable":   "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
+		"tools_unavailable":   "Host-bound local tools are unavailable; Copilot tool support depends on #662.",
+		"unsafe_tool_content": "Unsafe tool preview content was withheld; nothing was journaled.",
+		"runner_unavailable":  "Embedded preview runner is not available; no inference was performed.",
+		"execution_failed":    "Local preview execution failed.", "invalid_completion": "Runner returned incomplete or mismatched execution metadata.",
 		"diagnostics_failed": "Cannot write local preview diagnostics.",
 		"journal_failed":     "Preview journal finalization failed; the result is unknown.",
 	}
@@ -229,6 +233,12 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if opt.JudgeRoute != nil {
 		r.JudgeRoute = &FilePreviewRoute{judge.Provider, judge.Model}
 	}
+	if len(parsed.Tools) > 0 && (route.Provider == "copilot" || judge.Provider == "copilot") {
+		return fail("tools_unavailable", 1)
+	}
+	if len(parsed.Tools) == 0 && opt.ToolBindings != "" {
+		return fail("invalid_options", 1)
+	}
 	for _, ex := range selected {
 		r.Selection.CaseIDs = append(r.Selection.CaseIDs, ex.ID)
 		row := FilePreviewExample{ID: ex.ID, FilePreviewCompletion: previewCompletion("not_run", "not_run"), Verdict: runtime.EvaluationUnknown, Assertions: []FilePreviewAssertion{}}
@@ -257,8 +267,20 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if a.FileRunner == nil {
 		return fail("runner_unavailable", 1)
 	}
-	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress}
+	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path}
 	outcome, cause := a.FileRunner.Run(ctx, request)
+	if errors.Is(cause, agentpreview.ErrUnsafeToolContent) {
+		r.File = FilePreviewIdentity{Path: "[agent file]"}
+		r.ModelRoute = FilePreviewRoute{}
+		r.JudgeRoute = nil
+		r.Selection = FilePreviewSelection{CaseIDs: []string{}}
+		r.Examples = []FilePreviewExample{}
+		r.AdHoc = nil
+		return fail("unsafe_tool_content", 1)
+	}
+	if errors.Is(cause, agentpreview.ErrToolsUnavailable) {
+		return fail("tools_unavailable", 1)
+	}
 	if outcome.NoJournal {
 		r.Runner = "preview runner (no journal)"
 	}
@@ -266,7 +288,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	// judge evidence and raw reasons), answers or journal handles directly.
 	seen := map[string]bool{}
 	validCompletion := func(c agentpreview.Completion) bool {
-		if c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
+		if c.ToolCalls < 0 || c.ToolCalls > 1 || len(parsed.Tools) == 0 && c.ToolCalls != 0 || c.State != agentpreview.Complete || c.ID == "" || seen[c.ID] || c.FileRevision != parsed.Revision || c.Provider != route.Provider || c.Model != route.Model || len(c.Answer) > 256*1024 || !utf8.ValidString(c.Answer) {
 			return false
 		}
 		seen[c.ID] = true
@@ -369,6 +391,7 @@ func previewCompletion(state, code string) FilePreviewCompletion {
 }
 func previewCompleted(c agentpreview.Completion, show bool) FilePreviewCompletion {
 	row := previewCompletion("complete", "completion_ready")
+	row.ToolCalls = c.ToolCalls
 	if show {
 		row.AnswerExcerpt, _ = suiteDiagnosticText(c.Answer, 4096, nil)
 		full, _ := suiteDiagnosticText(c.Answer, len(c.Answer), nil)

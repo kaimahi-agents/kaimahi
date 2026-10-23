@@ -16,6 +16,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -41,7 +42,8 @@ type Turn struct {
 
 // Execution is an attributable terminal result of one Turn.
 type Execution struct {
-	Answer string
+	Answer    string
+	ToolCalls int
 	// SessionUID identifies the journaled Session; empty for an Executor that
 	// does not journal.
 	SessionUID string
@@ -129,6 +131,9 @@ func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared,
 	}
 	if options.Executor == nil && options.JournalDir == "" {
 		return nil, refuse(RefusedJournal, "no journal directory was selected", "use the kmx local preview journal directory")
+	}
+	if len(agent.Tools) > 0 {
+		return nil, refuse(RefusedTools, "tool declarations require a host-bound file runner", "use file Run/Test with explicit tool bindings")
 	}
 	p := &prepared{agent: agent, options: options, timeout: options.ExampleTimeout}
 	if p.timeout <= 0 {
@@ -358,7 +363,8 @@ type journalExecutor struct {
 	slotMu  sync.Mutex
 	current *turnSlot
 	// lock marks the run as executing until Close.
-	lock *runLock
+	lock  *runLock
+	tools bool
 }
 
 type turnSlot struct {
@@ -374,6 +380,20 @@ func openJournalExecutor(dir, model string) (*journalExecutor, string, error) {
 	}
 	e := &journalExecutor{sessions: map[string]bool{}, lock: lock}
 	e.host, err = openHost(path, model, e.model)
+	if err != nil {
+		lock.release()
+		return nil, runID, err
+	}
+	return e, runID, nil
+}
+
+func openToolJournalExecutor(dir, model string, tool controller.ToolFunc) (*journalExecutor, string, error) {
+	runID, path, lock, err := newJournal(dir, time.Now())
+	if err != nil {
+		return nil, "", err
+	}
+	e := &journalExecutor{sessions: map[string]bool{}, lock: lock, tools: true}
+	e.host, err = openPreviewHost(path, localtools.HarnessName, localtools.Harness{Model: model}, e.model, tool)
 	if err != nil {
 		lock.release()
 		return nil, runID, err
@@ -409,10 +429,15 @@ func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (Execution, er
 	slot := &turnSlot{call: turn.Call}
 	e.setSlot(slot)
 	defer e.setSlot(nil)
-	result, err := e.host.client.RunPreviewCase(ctx, agentsessions.PreviewCaseRequest{
+	request := agentsessions.PreviewCaseRequest{
 		Revision: turn.Revision, Agent: turn.AgentID, Example: turn.ExampleID,
 		Instructions: turn.Instructions, Model: turn.Model, Input: turn.Input, UsedSessionUIDs: e.sessions,
-	})
+	}
+	run := e.host.client.RunPreviewCase
+	if e.tools {
+		run = e.host.client.RunToolPreviewCase
+	}
+	result, err := run(ctx, request)
 	execution := Execution{SessionUID: result.SessionUID, Journaled: true}
 	if result.SessionUID != "" {
 		e.sessions[result.SessionUID] = true
@@ -432,6 +457,7 @@ func (e *journalExecutor) Execute(ctx context.Context, turn Turn) (Execution, er
 		return execution, err
 	}
 	execution.Answer = result.Output
+	execution.ToolCalls = result.ToolCalls[localtools.Operation]
 	return execution, nil
 }
 

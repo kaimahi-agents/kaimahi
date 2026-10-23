@@ -71,6 +71,9 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 	if r.Agent == nil || len(r.Examples) == 0 || r.Route.Model != r.Agent.Model {
 		return out, errDirectPreview
 	}
+	if len(r.Agent.Tools) > 0 || r.ToolBindings != "" {
+		return out, agentpreview.ErrToolsUnavailable
+	}
 	judge := r.Route
 	if r.JudgeRoute != nil {
 		judge = *r.JudgeRoute

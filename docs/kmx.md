@@ -175,6 +175,10 @@ on stderr, with no result document. Rooted API callers can pass an already-parse
 snapshot without reopening its filename; the CLI path is a thin load-and-delegate
 wrapper.
 Neither operation changes source or produces native evaluation/deploy evidence.
+An optional canonical Tools declaration and explicit `--tool-bindings FILE` select
+only the [host-tool foundation](local-preview.md#host-tool-foundation). The real
+MCP provider is not yet available, so CLI tool execution refuses safely. Hermetic
+embedding tests qualify the bounded host executor/journal path, not live MCP.
 
 File mode uses embedded Sessions for fake/local routes, with one fresh Session
 per ad-hoc input/example and one private SQLite journal for the invocation.
@@ -184,11 +188,13 @@ overall budget. Execution errors stop later sends. Journal close failure prevent
 a full pass. [Journal content, retention and clearing](local-preview.md#journal-retention-and-clearing)
 are disclosed separately: instructions, inputs and answers are retained in cleartext.
 
-**Copilot exception:** when either the agent or judge uses Copilot, the whole
+**Tool-free Copilot exception:** when either the agent or judge uses Copilot, the whole
 invocation keeps the direct **preview runner (no journal)** and reports `NoJournal`
 at the runner boundary. It creates no Sessions journal. Fully journaled Copilot
 is follow-up work: its credential-owning transport does not yet provide the
-pre-journal content check. No tokens are exposed to the runner.
+pre-journal content check. No tokens are exposed to the runner. Declared tools
+with a Copilot agent or judge refuse; Copilot tool support depends on
+[#662](https://github.com/kaimahi-agents/kaimahi/issues/662).
 There are no retries, redirects or provider/model fallback. A nil dependency
 still refuses `runner_unavailable`. Hermetic tests do not qualify real local
 models or native Windows.

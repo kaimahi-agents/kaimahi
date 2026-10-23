@@ -7,6 +7,7 @@ import (
 
 	"github.com/agent-primitives/sessions/api"
 	sdk "github.com/agent-primitives/sessions/client"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -79,6 +80,7 @@ type PreviewSession struct {
 	// ModelCalls counts live model invocations during reconstruction. A
 	// verified reconstruction always reports zero.
 	ModelCalls int
+	ToolCalls  int
 	Records    int
 }
 
@@ -124,6 +126,14 @@ func (c *Client) InspectPreviewSession(ctx context.Context, uid string) (Preview
 		case event.Kind == api.EventModelCall && event.ModelCall != nil && safeIdentity(event.ModelCall.Model):
 			out.Model = event.ModelCall.Model
 		}
+	}
+	if session.GetHarness() == localtools.HarnessName {
+		trace, proofErr := localtools.VerifyTrace(ctx, records, out.Model)
+		if proofErr != nil {
+			return out, nil
+		}
+		out.Outcome, out.Answer, out.ToolCalls = "completed", trace.Answer, trace.ToolCalls
+		return out, nil
 	}
 	if !referenceChatInvocation(records) {
 		return out, nil

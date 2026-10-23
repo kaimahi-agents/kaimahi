@@ -438,6 +438,14 @@ changes in the package's Go doc comment.
 
 ## Agent-file preview boundary
 
+Canonical `run FILE` / `test FILE` accept explicit `--tool-bindings FILE` as
+host-only input; no discovery or inbound-MCP binding selection. The current
+production runner has no MCP provider factory and refuses tool execution.
+Trusted embedding can supply a frozen binding/host executor; fixture qualification
+is not real MCP proof. Declared tools with either a Copilot agent or judge refuse
+before credentials or journaling; tool-free Copilot is unchanged and future
+Copilot tools depend on #662. No silent tool dropping.
+
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
 interface without cluster/workspace configuration. CLI/MCP fake/local routes
 use embedded Sessions: optional ad-hoc input first, selected ordered examples,
@@ -504,8 +512,10 @@ execution/package-digest evidence. See [native authoring](docs/agent-file.md#int
 ## Single-file charter boundary
 
 `internal/kmx/agentfile` keeps `Parse`/`Load` canonical as described in
-[agent-file.md](docs/agent-file.md), offline, with Examples excluded from
-instructions and exact-byte revisions. Separate explicit `ParseSquad` accepts
+[agent-file.md](docs/agent-file.md), offline, with optional `## Tools` directly before required final Examples. Both are
+excluded from instructions; absent Tools preserves instruction bytes and all
+revisions bind exact original source. Only `- github_list_merged_prs` is accepted;
+parsing a name grants no execution or endpoint/credential authority. Separate explicit `ParseSquad` accepts
 qualified Squad 1.1.0 native starters/enrichment with an approved cast mapping,
 original bytes and source spans. It returns a distinct `SquadCharter`, not a
 runnable `Agent`; current CLI/MCP preview and authoring remain canonical-only.
@@ -550,7 +560,16 @@ extra finished runs until the next start or clear. Journals stay under
 `config.StateDir` on every OS (`%AppData%` on Windows, disclosed as roaming)
 until native Windows support
 ([#578](https://github.com/kaimahi-agents/kaimahi/issues/578)) decides Windows
-state. Inspection replays with zero model calls and has no verdicts. Preview
+state. The additive `kmx-local-tools-v1` host-bound harness has a separate bounded
+converter and complete-invocation replay proof, never a relaxed suite/chat check.
+Its optional single no-args read is host-enforced; at most two agent model calls,
+with unchanged separate tool-free judging inside the case deadline. Safe call
+counts do not make tool assertions or native proof; actual-call qualification
+must independently show a correlated read. Bindings and credentials never enter
+harness config. Host content checks cover decoded model IDs/text before journal
+append as well as authored inputs and bounded projected results. Incomplete
+traces cannot pass. Inspection replays with zero model/executor/judge calls,
+without bindings or credentials, and has no verdicts. Preview
 and replay never produce suite evidence, receipts, publication or Deploy
 authority.
 

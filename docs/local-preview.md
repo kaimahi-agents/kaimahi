@@ -1,20 +1,23 @@
 # Local preview
 
-`internal/kmx/localpreview` runs one tool-free [single-file agent](agent-file.md)
+`internal/kmx/localpreview` runs one [single-file agent](agent-file.md), tool-free
+by default,
 in the kmx process. Every result is labeled **local preview**. It is not
 deployment qualification, suite evidence, a passing receipt, or authority to
 publish or deploy. `kmx run FILE`, `kmx test FILE` and MCP Run/Test use it for
-fake/local routes through the unchanged `agentpreview.Runner` interface.
+fake/local routes through the `agentpreview.Runner` interface.
 Selected examples and optional ad-hoc input share one invocation-owned journal;
 each gets a fresh Session. The adapter aborts later sends on execution or deadline
 failure, and only exposes a private journal handle after successful finalization.
 
-**Copilot remains direct and unjournaled.** If either the agent or judge uses
+**Tool-free Copilot remains direct and unjournaled.** If either the agent or judge uses
 Copilot, the whole invocation uses the existing
 [preview runner (no journal)](kmx.md#agent-file-local-preview-unreleased-integration)
 and reports `NoJournal`. This preserves Copilot's credential-owning transport:
 it does not yet offer the content preflight needed before Sessions retains a
-turn. Fully journaled Copilot is follow-up work, not an implemented capability.
+turn. A declared tool with either a Copilot agent or a Copilot judge refuses
+before authentication or journal creation. Copilot tool support depends on
+[#662](https://github.com/kaimahi-agents/kaimahi/issues/662), not this slice.
 
 Status: the hermetic tests (fake model, an in-process HTTP endpoint and the
 judge) run with the root Go tests. Native Windows execution has not been run:
@@ -46,6 +49,65 @@ Name the variable; never put the credential value on the command line.
   model request. There are no retries, no fallback model and no tool execution.
   Cancellation and the per-example deadline (default 2 minutes, which also
   covers judging) stop the request in flight.
+
+## Host-tool foundation
+
+**Hermetically tested; real MCP provider execution is not yet available.**
+The optional [Tools declaration](agent-file.md#markdown-contract) names
+`github_list_merged_prs`. File Run/Test accepts explicit `--tool-bindings FILE`,
+without discovery or workspace configuration. Until the real provider is
+qualified and installed, declared tools refuse `tools_unavailable`; neither
+CLI nor inbound MCP silently executes them as tool-free agents.
+
+The strict local JSON binding is at most 16 KiB and contains references, never
+credential values:
+
+```json
+{
+  "schemaVersion": "kmx.local-tools/v1",
+  "bindings": [{"name": "github_list_merged_prs", "endpointRef": "github-mcp", "repository": "owner/repository"}],
+  "endpoints": {"github-mcp": {
+    "url": "https://api.githubcopilot.com/mcp/readonly",
+    "credentialEnv": "GITHUB_MCP_TOKEN"
+  }}
+}
+```
+
+Only that fixed HTTPS endpoint, one repository and one environment-variable
+reference are accepted. Select a clean path (for example `tools.json`, not
+`./tools.json`) with no parent traversal or symlink/reparse components. The
+bounded regular-file read checks opened-file identity; it is not a hostile
+concurrent filesystem sandbox. No token flags, implicit gh/Copilot credential reuse,
+keychain login, arbitrary origin, command, headers or dynamic tool schema.
+The format is kmx-local, not portable AgentSuite remote execution. AgentSuite's
+remote-MCP catalog uses unresolved endpoint/credential references; it does not
+currently select a remote declaration for agent execution.
+
+Trusted embedding code may supply `RunnerOptions.Tools` to resolve an immutable
+binding into a host executor. Construction and parsing access no credentials;
+this slice supplies no production MCP transport or fake data source. The host
+owns credentials and validates the fixed no-argument read, exact repository,
+merged attribution, at most 20 results and bounded number/title projection.
+Inputs, decoded model responses and projected tool results are checked before
+journaling. Exact credentials and known credential shapes refuse; encoded or
+partial secret copies are not a general data-loss-prevention guarantee.
+
+A distinct `kmx-local-tools-v1` harness permits zero or one model-selected read
+and at most two agent-model calls. No forced call, parallel calls, pagination,
+fanout, writes, automatic resend or fallback. A text Test can pass without a
+tool call; actual-call qualification must separately prove one correlated read
+from journal/count metadata. `toolCalls` is a safe completion count (zero is
+omitted in JSON), not a tool assertion or suite receipt. The unchanged tool-free
+judge sees only the final answer; its two samples are separate from the agent's
+call limit but share the existing case deadline.
+
+The tool trace has its own complete-invocation validator. The existing five-record
+chat and suite proof stay strict. Offline inspection replays recorded calls and
+results with live model and executor dispatch forbidden; it needs no binding or
+credential and never reruns assertions or judges. Incomplete traces stay incomplete.
+Reads are repeat-safe, not an exactly-once network guarantee after a crash.
+Projected PR titles and drafts are cleartext journal content, subject to the
+same retention and clear operations below. Native Squad parsing stays tool-free.
 
 ## Model routes
 
@@ -114,7 +176,7 @@ comments in Examples are discarded when parsed: local preview receives only
 example IDs, inputs and assertions, so comment text never reaches a model or
 judge request, the journal or a result.
 
-A model reply that contains a tool call (in any key spelling), a refusal, a
+On the tool-free path, a model reply that contains a tool call (in any key spelling), a refusal, a
 truncated or malformed body, a key repeated at any depth (including a
 case-insensitive alias), an oversized body, an answer containing the endpoint
 credential or a non-200 status is refused.

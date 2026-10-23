@@ -30,6 +30,8 @@ type modelClient struct {
 	route route
 	http  *http.Client
 	sends atomic.Int64
+	// check is a host-owned content preflight, never a serialized credential.
+	check func(...string) error
 }
 
 func newModelClient(r route) *modelClient {

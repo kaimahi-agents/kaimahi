@@ -47,23 +47,27 @@ type host struct {
 // chat harness. model is the only model route; there is no tool executor, so
 // controller-mediated tool calls fail closed.
 func openHost(path, harnessModel string, model controller.ModelFunc) (*host, error) {
+	return openPreviewHost(path, harnessName, chatagent.Harness{Model: harnessModel}, model, nil)
+}
+
+func openPreviewHost(path, name string, harness api.Harness, model controller.ModelFunc, tool controller.ToolFunc) (*host, error) {
 	store, err := sqlitelog.Open(journalDSN(path))
 	if err != nil {
 		return nil, refuse(RefusedJournal, "the preview journal could not be opened", "check the kmx state directory is writable and private")
 	}
 	h := &host{store: store, sessLis: bufconn.Listen(bufferBytes), harnessLn: bufconn.Listen(bufferBytes)}
-	chat := chatagent.Harness{Model: harnessModel}
 	h.harness = grpc.NewServer()
-	v1.RegisterHarnessServer(h.harness, harnesswire.NewServer(chat))
+	v1.RegisterHarnessServer(h.harness, harnesswire.NewServer(harness))
 	go func() { _ = h.harness.Serve(h.harnessLn) }()
 
 	discard := slog.New(slog.DiscardHandler)
-	backend := inProcessBackend{harness: chat}
+	backend := inProcessBackend{harness: harness}
 	placer := placement.New(backend, model,
 		placement.WithDialer(h.dialHarness),
-		placement.WithDescriptorID(harnessName),
+		placement.WithDescriptorID(name),
+		placement.WithToolExecutor(tool),
 		placement.WithLogger(discard))
-	registry, err := placement.NewRegistry(harnessName, map[string]*placement.Placer{harnessName: placer})
+	registry, err := placement.NewRegistry(name, map[string]*placement.Placer{name: placer})
 	if err == nil {
 		err = session.ReserveStaticHarnessNames(store, registry)
 	}

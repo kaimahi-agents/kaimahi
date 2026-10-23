@@ -26,6 +26,9 @@ type localFileRunner struct{ journaled, direct agentpreview.Runner }
 
 func (r *localFileRunner) Run(ctx context.Context, request agentpreview.Request) (agentpreview.Outcome, error) {
 	if request.Route.Provider == "copilot" || request.JudgeRoute != nil && request.JudgeRoute.Provider == "copilot" {
+		if request.Agent != nil && len(request.Agent.Tools) > 0 || request.ToolBindings != "" {
+			return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrToolsUnavailable
+		}
 		return r.direct.Run(ctx, request)
 	}
 	return r.journaled.Run(ctx, request)
