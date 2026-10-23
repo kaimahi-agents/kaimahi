@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -103,14 +104,15 @@ func TestExportRunProfileCRLFOnlyChangesRawRevision(t *testing.T) {
 }
 
 func TestExportRunProfileCanonicalRefusals(t *testing.T) {
-	for _, source := range []string{
-		"# Display-only\n\nNot a runnable canonical charter.\n",
-		strings.Replace(sample(t), "## Model", "## Tools\nPRIVATE_EXPORT_CANARY\n\n## Model", 1),
-		strings.Replace(sample(t), "**Preferred:** fake", "**Preferred:** fake\n- **Fallback:** PRIVATE_EXPORT_CANARY", 1),
-		strings.Replace(sample(t), "input: Ada", "input: Ada\n    PRIVATE_EXPORT_CANARY: value", 1),
+	for _, row := range []struct{ source, field string }{
+		{"# Display-only\n\nNot a runnable canonical charter.\n", "Sections"},
+		{strings.Replace(sample(t), "## Model", "## Tools\nPRIVATE_EXPORT_CANARY\n\n## Model", 1), "Sections"},
+		{strings.Replace(sample(t), "**Preferred:** fake", "**Preferred:** fake\n- **Fallback:** PRIVATE_EXPORT_CANARY", 1), "Model"},
+		{strings.Replace(sample(t), "input: Ada", "input: Ada\n    PRIVATE_EXPORT_CANARY: value", 1), "Examples"},
 	} {
-		data, err := ExportRunProfile(exportSource(t, source))
-		if err == nil || len(data) != 0 || strings.Contains(err.Error(), "PRIVATE_EXPORT_CANARY") {
+		data, err := ExportRunProfile(exportSource(t, row.source))
+		var refusal *Error
+		if !errors.As(err, &refusal) || !strings.Contains(refusal.Field, row.field) || len(data) != 0 || strings.Contains(err.Error(), "PRIVATE_EXPORT_CANARY") {
 			t.Fatal("canonical refusal lost or authored data disclosed", err)
 		}
 	}
@@ -189,7 +191,7 @@ func TestExportRunProfileRetainsHighlyEscapedBoundedSource(t *testing.T) {
 
 func exportSource(t *testing.T, source string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "greeter.agent.md")
+	path := filepath.Join(realTemp(t), "greeter.agent.md")
 	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
 		t.Fatal(err)
 	}
