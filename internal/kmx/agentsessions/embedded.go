@@ -128,12 +128,7 @@ func (c *Client) InspectPreviewSession(ctx context.Context, uid string) (Preview
 		}
 	}
 	if session.GetHarness() == localtools.HarnessName {
-		trace, proofErr := localtools.VerifyTrace(ctx, records, out.Model)
-		if proofErr != nil {
-			return out, nil
-		}
-		out.Outcome, out.Answer, out.ToolCalls = "completed", trace.Answer, trace.ToolCalls
-		return out, nil
+		return inspectToolPreview(ctx, out, records)
 	}
 	if !referenceChatInvocation(records) {
 		return out, nil

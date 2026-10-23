@@ -1,6 +1,7 @@
 package agentsessions
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -80,13 +81,39 @@ func (c *Client) RunToolPreviewCase(ctx context.Context, r PreviewCaseRequest) (
 		out.Head = JournalHead{Seq: record.Seq, Hash: hash}
 		records = append(records, record)
 	}
-	trace, err := localtools.VerifyTrace(ctx, records, r.Model)
+	trace, err := verifyToolPreviewRequest(ctx, records, r.Model, config, r.Input)
 	if err != nil {
 		return out, status.Error(codes.DataLoss, "agentsessions: tool preview reconstruction failed")
 	}
 	out.Output = trace.Answer
 	out.ToolCalls = map[string]int{localtools.Operation: trace.ToolCalls}
 	out.ToolEvidenceComplete = true
+	return out, nil
+}
+
+// verifyToolPreviewRequest binds reconstruction to the invocation we submitted,
+// not merely to an internally consistent transcript supplied by the host.
+func verifyToolPreviewRequest(ctx context.Context, records []eventlog.Record, model string, config []byte, input string) (localtools.Trace, error) {
+	trace, err := localtools.VerifyTrace(ctx, records, model)
+	if err != nil {
+		return localtools.Trace{}, err
+	}
+	if !bytes.Equal(records[0].Event.ExecutionStart.Config, config) || records[1].Event.Message.Text() != input {
+		return localtools.Trace{}, status.Error(codes.DataLoss, "agentsessions: tool preview invocation mismatch")
+	}
+	return trace, nil
+}
+
+// inspectToolPreview distinguishes invalid/incomplete retained content from an
+// interrupted read. Inspection never retries or evaluates assertions.
+func inspectToolPreview(ctx context.Context, out PreviewSession, records []eventlog.Record) (PreviewSession, error) {
+	trace, err := localtools.VerifyTrace(ctx, records, out.Model)
+	if ctx.Err() != nil {
+		return out, ctx.Err()
+	}
+	if err == nil {
+		out.Outcome, out.Answer, out.ToolCalls = "completed", trace.Answer, trace.ToolCalls
+	}
 	return out, nil
 }
 

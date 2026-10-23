@@ -9,6 +9,9 @@ func checkToolContent(host *localtools.Host, r agentpreview.Request) error {
 	a := r.Agent
 	fields := []string{r.FileLabel, a.Title, a.Identity.ID, a.Identity.Purpose, a.Revision, a.Model, a.Instructions, r.Route.Provider, r.Route.Model}
 	fields = append(fields, a.Tools...)
+	if r.JudgeRoute != nil {
+		fields = append(fields, r.JudgeRoute.Provider, r.JudgeRoute.Model)
+	}
 	if r.Input != nil {
 		fields = append(fields, *r.Input)
 	}

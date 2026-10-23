@@ -86,6 +86,17 @@ func TestFileToolsJudgeBudgetAndActualCallProof(t *testing.T) {
 	if err != nil || len(replay.Sessions) != 2 || models != 4 || reads != 2 || judges != 4 {
 		t.Fatal("inspection dispatched model/tool/judge", err)
 	}
+	// Even an unused override is public metadata, so it must receive the host's
+	// credential preflight before either returning it or opening another journal.
+	for i := range a.Examples {
+		a.Examples[i].Assertions = []runtime.EvaluationAssertion{{ID: "text", Type: "contains", Value: "Hello"}}
+	}
+	opt.JudgeRoute = &modelaccess.Route{Provider: "compatible", Model: "tool-secret-canary", Endpoint: server.URL, Auth: "none"}
+	refused, err := (&App{FileRunner: runner}).PreviewAgentSnapshot(t.Context(), a, opt)
+	encoded, _ := json.Marshal(refused)
+	if err == nil || refused.ReasonCode != "unsafe_tool_content" || refused.JudgeRoute != nil || strings.Contains(string(encoded), "tool-secret-canary") || models != 4 || reads != 2 || judges != 4 {
+		t.Fatalf("unused judge override leaked: %s %v", encoded, err)
+	}
 }
 
 func TestFileToolsCopilotRefusesBeforeRunner(t *testing.T) {
