@@ -92,7 +92,7 @@ func (t *mcpHTTP) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, errReadFailed
 	}
 	raw, err := io.ReadAll(io.LimitReader(response.Body, maxMCPBytes+1))
-	if err != nil || len(raw) > maxMCPBytes {
+	if err != nil || len(raw) > maxMCPBytes || strings.Contains(string(raw), t.host.credential) {
 		return nil, errReadFailed
 	}
 	if len(raw) > 0 {
@@ -115,9 +115,10 @@ func (t *mcpHTTP) RoundTrip(req *http.Request) (*http.Response, error) {
 						lines = append(lines, strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
 					}
 				}
-				if len(lines) > 0 {
+				if data := strings.Join(lines, "\n"); data != "" {
+					// Legacy MCP SSE may prime the cursor with an empty data event.
 					messages++
-					if !safeMCPJSON([]byte(strings.Join(lines, "\n")), t.host) {
+					if !safeMCPJSON([]byte(data), t.host) {
 						return nil, errReadFailed
 					}
 				}

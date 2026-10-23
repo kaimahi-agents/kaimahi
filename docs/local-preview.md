@@ -74,7 +74,8 @@ credential values:
 ```
 
 Only that fixed HTTPS endpoint, one repository and one environment-variable
-reference are accepted. Select a clean path (for example `tools.json`, not
+reference are accepted. Use the repository's canonical GitHub letter case: its
+returned repository URL must match the binding exactly. Select a clean path (for example `tools.json`, not
 `./tools.json`) with no parent traversal or symlink/reparse components. The
 bounded regular-file read checks opened-file identity; it is not a hostile
 concurrent filesystem sandbox. No token flags, implicit gh/Copilot credential reuse,
@@ -95,7 +96,8 @@ repository/merged query and page-one limit of 20, and closes the session before
 returning. No PR-by-PR requests or hidden data prefetch. Exact `repository_url`
 and explicit `pull_request.merged_at` timestamps establish attribution;
 `state: closed` or the search query alone does not. Incomplete searches refuse.
-This bounded first page is not an exhaustive PR inventory. Only PR numbers and
+This bounded first page is not an exhaustive PR inventory; `total_count` does
+not force a full page or authorize fetching additional items. Only PR numbers and
 titles reach the model under fixed repository/merged metadata; no bodies,
 authors, comments, arbitrary links or remote descriptions are forwarded.
 

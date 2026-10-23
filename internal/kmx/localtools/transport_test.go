@@ -39,7 +39,7 @@ func (f *mcpFixture) Methods() []string {
 	return append([]string(nil), f.methods...)
 }
 
-func newMCPFixture(t *testing.T, text string) *mcpFixture {
+func newMCPFixture(t *testing.T, text string, sse ...bool) *mcpFixture {
 	t.Helper()
 	f := &mcpFixture{}
 	server := mcp.NewServer(&mcp.Implementation{Name: "fixture", Version: "1"}, nil)
@@ -59,7 +59,7 @@ func newMCPFixture(t *testing.T, text string) *mcpFixture {
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 	})
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{JSONResponse: true})
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{JSONResponse: len(sse) == 0 || !sse[0]})
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer "+testMCPCredential {
 			t.Error("credential missing or changed")
@@ -126,6 +126,17 @@ func TestMCPHostReadLifecycle(t *testing.T) {
 	}
 	if host.Check(testMCPCredential) == nil {
 		t.Fatal("host checker lost credential")
+	}
+}
+
+func TestMCPHostSDKServerSSE(t *testing.T) {
+	f := newMCPFixture(t, mergedSearch, true)
+	h, err := newMCPHost(Binding{"owner/repo", endpointURL, "TEST_MCP_TOKEN"}, testMCPCredential, f.Transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = executeMCP(t.Context(), h); err != nil || f.Calls.Load() != 1 {
+		t.Fatal("SDK SSE response refused", err)
 	}
 }
 

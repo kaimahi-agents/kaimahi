@@ -92,7 +92,8 @@ func TestMCPSSECredentialAndEventBounds(t *testing.T) {
 	}
 	for name, body := range map[string]string{
 		"valid":              "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n",
-		"too many":           strings.Repeat(": heartbeat\n\n", 33),
+		"too many":           strings.Repeat(": heartbeat\n\n", 33) + "data: {\"id\":1,\"result\":{}}\n\n",
+		"priming":            "event: prime\nid: cursor\ndata: \n\nevent: message\ndata: {\"id\":1,\"result\":{}}\n\n",
 		"callback":           "data: {\"method\":\"roots/list\",\"id\":1}\n\n",
 		"encoded credential": `data: {"id":1,"result":{"value":"\u006dcp-credential-canary"}}` + "\n\n",
 	} {
@@ -103,7 +104,7 @@ func TestMCPSSECredentialAndEventBounds(t *testing.T) {
 			guard := &mcpHTTP{base: base, host: h, ctx: t.Context(), used: map[string]bool{}}
 			req, _ := http.NewRequest("POST", endpointURL, strings.NewReader(`{"method":"initialize"}`))
 			_, err := guard.RoundTrip(req)
-			if (err == nil) != (name == "valid") {
+			if (err == nil) != (name == "valid" || name == "priming") {
 				t.Fatal("wrong SSE acceptance")
 			}
 		})
