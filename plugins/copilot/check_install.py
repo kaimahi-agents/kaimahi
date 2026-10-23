@@ -6,12 +6,12 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import stat
 import subprocess
 import threading
+from pathlib import Path
 
-from package import NATIVE_FILES
+from package import NATIVE_FILES, SAMPLE_FILES
 
 
 def read_file(path: Path, maximum: int = 512 << 20) -> bytes:
@@ -28,8 +28,10 @@ def validate_package(plugin: Path, digest: str) -> Path:
             or str(root.resolve()) != selected or any(ord(c) < 32 for c in selected)
             or any(token in selected for token in ("${PLUGIN_ROOT}", "${PLUGIN_DATA}"))):
         raise ValueError("configure a safe absolute existing root before installing")
-    if config["mcpServers"] != {"kmx-agent-builder": {
-            "type": "stdio", "command": "./bin/kmx", "args": ["mcp", "--root", selected]}}:
+    allowed = [{"kmx-agent-builder": {"type": "stdio", "command": "./bin/kmx",
+                "args": ["mcp", "--root", selected, *extra]}}
+               for extra in ([], ["--provider", "copilot"])]
+    if config["mcpServers"] not in allowed:
         raise ValueError("selected root and MCP root/configuration differ")
     if hashlib.sha256(read_file(plugin / "bin/kmx")).hexdigest() != digest:
         raise ValueError("engine digest mismatch")
@@ -84,13 +86,20 @@ def check(copilot: str, plugin: Path, digest: str, home: Path) -> None:
                                        cwd=root, text=True, encoding="utf-8", timeout=60)
     installed = False
     try:
-        if cli("--version").splitlines()[0] != "GitHub Copilot CLI 1.0.86-2.":
-            raise ValueError("use qualified Copilot CLI 1.0.86-2; requalify other hosts first")
-        if json.loads(cli("plugin", "list", "--json")):
+        if cli("--version").splitlines()[0] not in (
+                "GitHub Copilot CLI 1.0.86-2.", "GitHub Copilot CLI 1.0.102."):
+            raise ValueError("use qualified Copilot CLI 1.0.86-2 or 1.0.102; requalify other hosts first")
+        existing = json.loads(cli("plugin", "list", "--json"))
+        # 1.0.102 advertises disabled built-ins even in a new COPILOT_HOME.
+        # They are not user-installed packages; any other entry still refuses.
+        if any(p.get("source") != "builtin" or p.get("enabled") is not False for p in existing):
             raise ValueError("check profile is not empty; refusing installation")
         for _ in range(2):  # A real uninstall/reinstall, not a simulated cache copy.
             cli("plugin", "install", str(plugin.resolve()))
             installed = True
+            # Reinstall over the same name, as an explicitly confirmed rebind
+            # does in try-it.sh; then inspect the resulting real host cache.
+            cli("plugin", "install", str(plugin.resolve()))
             plugins = json.loads(cli("plugin", "list", "--json"))
             if not any(p["name"] == "kmx-agent-builder" and p["enabled"] for p in plugins):
                 raise ValueError("plugin discovery failed")
@@ -100,7 +109,7 @@ def check(copilot: str, plugin: Path, digest: str, home: Path) -> None:
             if home.resolve() not in cache.parents or validate_package(cache, digest) != root:
                 raise ValueError("unexpected installed cache/root")
             names = ["plugin.json", "mcp.json", "selected-root.json", "engine.json", "bin/kmx",
-                     "skills/kmx-agent-builder/SKILL.md", *NATIVE_FILES]
+                     "skills/kmx-agent-builder/SKILL.md", *NATIVE_FILES, *SAMPLE_FILES]
             if (plugin / "SETUP.md").exists():
                 names.append("SETUP.md")
             for name in names:

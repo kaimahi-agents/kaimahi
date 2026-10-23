@@ -64,6 +64,15 @@ class PackageTests(unittest.TestCase):
                              (HERE / native / name).read_bytes())
         self.assertFalse((self.out / "node_modules").exists())
 
+    def test_sample_and_try_it_marker_are_copied_exactly(self):
+        self.build()
+        self.assertEqual((self.out / "samples/release-writer.agent.md").read_bytes(),
+                         (HERE / "samples/release-writer.agent.md").read_bytes())
+        self.assertEqual((self.out / "try-it.json").read_bytes(),
+                         (HERE / "try-it.json").read_bytes())
+        self.assertEqual(json.loads((self.out / "try-it.json").read_text()), {"schemaVersion": 1})
+        self.assertEqual(list(self.root.iterdir()), [])
+
     def test_windows_command_is_explicit(self):
         self.build(target="windows/amd64")
         config = json.loads((self.out / "mcp.json").read_text())

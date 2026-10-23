@@ -20,6 +20,7 @@ MAX_BINARY = 512 << 20
 NATIVE_DIRECTORY = "com.github.copilot/extensions/agent-view"
 NATIVE_FILES = tuple(f"{NATIVE_DIRECTORY}/{name}" for name in
                      ("extension.mjs", "view.mjs", "index.html", "app.js", "style.css"))
+SAMPLE_FILES = ("samples/release-writer.agent.md", "try-it.json")
 
 
 def _quarantine(path: Path) -> None:
@@ -136,10 +137,11 @@ def build(*, binary: Path, sha256: str, target: str, root: Path | None,
             skill.mkdir(parents=True, mode=0o700)
             shutil.copyfile(HERE / "skills/kmx-agent-builder/SKILL.md", skill / "SKILL.md")
             (skill / "SKILL.md").chmod(0o600)
-            for name in NATIVE_FILES:
+            for name in (*NATIVE_FILES, *SAMPLE_FILES):
                 source = HERE / name
-                if source.is_symlink() or not source.is_file() or not 0 < source.stat().st_size <= 65536:
-                    raise ValueError("native canvas assets must be bounded regular files")
+                maximum = 256 << 10 if name in SAMPLE_FILES else 65536
+                if source.is_symlink() or not source.is_file() or not 0 < source.stat().st_size <= maximum:
+                    raise ValueError("bundled assets must be bounded regular files")
                 destination = output / name
                 destination.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
                 shutil.copyfile(source, destination)

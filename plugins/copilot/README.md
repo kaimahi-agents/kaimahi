@@ -3,8 +3,19 @@
 This Copilot app/CLI plugin contains a skill, declarative MCP config and a
 native Copilot read-only agent canvas with a text fallback. It is not a VS Code
 extension. The source tree is not an installable package; native bundles are
-generated and signed by the release workflow, not committed here. No downloader,
+generated and signed by the release workflow, not committed here. No in-plugin downloader,
 mutation controls or second runner.
+
+For the Copilot-default Release writer setup, see [TRY-IT.md](../../TRY-IT.md).
+The external [try-it.sh](try-it.sh) helper downloads a complete platform archive,
+checks its release checksum over HTTPS, asks the user to confirm a root, copies
+one bundled sample without overwrite, configures the Copilot route and installs
+from a fresh local directory. This is checksum verification, not independent
+signature verification. It needs no extra macOS packages. `--dry-run` stages and
+configures only; it does not sign in, install, invoke models or open the app.
+Older archives without the exact try-it schema/inventory refuse. The sample
+uses real Copilot with judge checks; fake remains an offline/CI route, not a
+release-writing simulation.
 The source directory deliberately has no `bin/kmx`; do not install it directly.
 
 ## Package contract
@@ -190,12 +201,14 @@ metadata field. No Windows archive is published while native CLI is guarded.
 four-binary `checksums.txt` consumed by the installer/Homebrew. Both use the
 existing keyless release workflow identity and OIDC issuer; checks performed
 by the same job are not independent publisher authentication. Dry runs sign and
-upload artifacts but publish no release. Archives have an exact seven-file
-inventory, fixed tar ownership/timestamps/modes and the pinned engine digest.
+upload artifacts but publish no release. Archives have an exact file
+inventory including the Release writer sample and try-it schema marker, fixed
+tar ownership/timestamps/modes and the pinned engine digest.
 
 1. Obtain the archive through the trusted GitHub release. Compare its SHA256
-   with the expected digest in the trusted release guidance before extraction
-   or execution, not an unverified adjacent checksum download. Linux uses
+   with the expected digest from that release's `plugin-checksums.txt` or release
+   guidance before extraction or execution. Both rely on the same GitHub account
+   and HTTPS trust, not independent publisher authentication. Linux uses
    `sha256sum FILE`; macOS uses `shasum -a 256 FILE`. Operators verifying Sigstore
    must pin the exact `release.yml@refs/tags/VERSION` certificate identity and
    issuer `https://token.actions.githubusercontent.com`, not a wildcard.
@@ -238,7 +251,8 @@ python3 plugins/copilot/check_install.py --plugin /configured/kmx-agent-builder 
   --engine-sha256 <64-lowercase-hex> --home /new/private/copilot-check-profile
 ```
 
-It refuses unconfigured/mismatched roots or engine hashes; exercises real local
+It accepts qualified CLI 1.0.86-2 or 1.0.102 and refuses unconfigured/mismatched
+roots or engine hashes; exercises real local
 install/list/skill discovery, cache byte/execute checks, exactly four real MCP
 tools, uninstall and reinstall. Python is needed only for this checkout check,
 not for end-user installation. No authentication, inference or trust bypass is
@@ -253,3 +267,43 @@ resources uses the host read tool. Record host version and denied attempts too.
 The qualified CLI warns that local-directory installation is deprecated but
 still works; this does not authorize creating/publishing a marketplace. A future host
 removing that route is a compatibility blocker, not a reason to bypass approval.
+
+## Try-it model routes
+
+The helper checks the Copilot catalog before installing, after explicit device
+sign-in if necessary. The chosen exact model is written to Preferred and every
+judgeModel. An unavailable suggested model stops until the user chooses a
+listed ID; there is no automatic model or credential fallback in setup.
+`judgeVersion: default` is a declaration, not a pinned hosted model revision.
+The exact echoed model ID remains checked by kmx.
+
+For a local model you already operate, choose its exact model ID for Preferred
+and each judgeModel, and its declared version for judgeVersion. In the **staged**
+plugin's mcp.json, preserve the confirmed root and replace the startup suffix
+`["--provider", "copilot"]` with, for example,
+`["--provider", "ollama", "--endpoint", "http://127.0.0.1:11434/v1"]`.
+The endpoint must support kmx's OpenAI-compatible request contract, including
+judging; local fake/compatible runs retain cleartext private journals as described
+above. Do not install a model, guess its identity or configure secrets through
+charter instructions. Reinstall the staged directory and start a new session.
+On Windows, keep the `wsl.exe -d DISTRO -e ENGINE mcp --root ROOT` prefix;
+localhost is inside that WSL distro.
+
+The Windows try-it route is a separate operator-reviewed startup configuration:
+Windows plugin assets are copied to a fresh Windows-profile staging directory,
+but `wsl.exe` invokes the checksum-verified ELF at its printed private WSL path.
+Keep that WSL directory while installed. The cached Windows ELF copy is not
+executed. Root/distro/engine are argv elements, never a shell command. Setup
+checks the model catalog through that same non-login WSL invocation to catch
+unavailable credentials before installation. No Windows native binary claim is
+made. Reconfiguration changes local startup files, not the pristine archive
+signature; neither this helper nor checksum verification grants OS trust.
+
+CI runs script refusal/dry-run contracts on macOS and Linux, then installs,
+uninstalls and reinstalls the configured bundle with pinned Copilot CLI 1.0.102
+in a fresh COPILOT_HOME. Disabled host built-ins are permitted; pre-existing user
+plugins refuse. The release workflow repeats this against the exact cross-built
+Linux/macOS archives before publication. Offline checks exercise real MCP
+Create and discovery without model sends; they do not prove hosted model quality
+or interactive Mac desktop rendering. No separate human Mac acceptance gate is
+required for this preview.

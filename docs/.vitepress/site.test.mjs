@@ -36,7 +36,7 @@ test('every maintained Markdown page is rendered exactly once', async () => {
   }
   const docs = (await markdownFiles(path.join(root, 'docs')))
     .map((file) => file.replace(/\/README\.md$/, '/index.md').replace(/\.md$/, '.html'))
-  const expected = ['404.html', 'index.html', ...docs].sort()
+  const expected = ['404.html', 'index.html', 'TRY-IT.html', ...docs].sort()
   assert.deepEqual(await htmlFiles(dist), expected)
 })
 

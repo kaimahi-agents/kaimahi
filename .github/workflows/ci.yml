@@ -338,9 +338,16 @@ jobs:
           if "gh release create" not in release_text:
               print("release.yml must publish the already-checked artifact set in one draft-to-public release operation")
               sys.exit(1)
-          dry_run_artifact_path = "path: $" + "{{ runner.temp }}/release-assets/"
-          if "Stage the checked release artifacts" not in release_text or dry_run_artifact_path not in release_text:
-              print("release.yml must give dry runs the same flat checked assets used for publication")
+          uploads = [step["with"] for step in wf["jobs"]["release"]["steps"]
+                     if step.get("uses", "").startswith("actions/upload-artifact@")]
+          asset_path = "$" + "{{ runner.temp }}/release-assets/"
+          if len(uploads) != 1 or asset_path not in uploads[0].get("path", "").splitlines():
+              print("release.yml must upload the same checked assets for dry runs and native qualification")
+              sys.exit(1)
+          publish = wf["jobs"].get("publish", {})
+          if (set(publish.get("needs", [])) != {"release", "plugin-install"}
+                  or publish.get("if") != "needs.release.outputs.dry_run == 'false'"):
+              print("release.yml must wait for native install checks and publish only outside dry runs")
               sys.exit(1)
           if 'scripts/homebrew-formula.py "$VERSION" dist/checksums.txt' not in release_text:
               print("release.yml must reject an incomplete or unexpected checksum manifest before publication")
@@ -387,7 +394,11 @@ jobs:
                   print(f"release decision mismatch for {env_add}: got {got}, want {expected}")
                   sys.exit(1)
           for name, job in wf["jobs"].items():
-              allowed = {"contents": "write", "id-token": "write"} if name == "release" else {"contents": "read"}
+              allowed = {"contents": "read"}
+              if name == "release":
+                  allowed["id-token"] = "write"
+              elif name == "publish":
+                  allowed["contents"] = "write"
               if job.get("permissions", {}) != allowed:
                   print(f"release job {name} permissions must be {allowed}, got {job.get('permissions', {})}")
                   sys.exit(1)

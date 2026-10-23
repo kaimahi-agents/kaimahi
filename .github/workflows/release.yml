@@ -38,9 +38,12 @@ jobs:
   release:
     needs: [orka-qualification, kagent-qualification]
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.what.outputs.version }}
+      dry_run: ${{ steps.what.outputs.dry_run }}
+      prerelease: ${{ steps.what.outputs.prerelease }}
     permissions:
-      # Creating the release. Nothing else is written.
-      contents: write
+      contents: read
       # Obtain a GitHub OIDC certificate for keyless checksum signing.
       id-token: write
     defaults:
@@ -417,20 +420,78 @@ jobs:
             printf '```\n'
           } >> "$RUNNER_TEMP/release-notes.md"
 
-      # Only now, with every check above green, does anything get published.
-      # Create the GitHub release with the exact files just checked rather
-      # than asking GoReleaser to rebuild them. `gh release create` keeps the
-      # release as a draft while it uploads every named asset, then publishes
-      # it, so a failed formula upload cannot expose a partial public release.
-      - name: Publish the checked release artifacts
-        if: steps.what.outputs.dry_run == 'false'
+      # Native install checks consume these exact cross-built bytes before any
+      # release can publish. Dry runs retain the same complete artifact layout.
+      - name: Upload checked artifacts for native qualification
+        uses: actions/upload-artifact@v4
+        with:
+          name: kmx-${{ steps.what.outputs.version }}
+          path: |
+            ${{ runner.temp }}/release-assets/
+            ${{ runner.temp }}/release-notes.md
+          if-no-files-found: error
+          overwrite: true
+
+  plugin-install:
+    needs: release
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: kmx-${{ needs.release.outputs.version }}
+          path: ${{ runner.temp }}/checked-release
+      - name: Install pinned Copilot CLI without dependency scripts
+        run: npm install --prefix "$RUNNER_TEMP/copilot" --ignore-scripts --no-save @github/copilot@1.0.102
+      - name: Native archive dry run and real isolated install cycle
+        shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.what.outputs.version }}
-          PRERELEASE: ${{ steps.what.outputs.prerelease }}
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
           set -euo pipefail
-          artifact_dir="$RUNNER_TEMP/release-assets"
+          case "$(uname -s)" in Darwin) os=darwin;; Linux) os=linux;; *) exit 1;; esac
+          case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64) arch=amd64;; *) exit 1;; esac
+          export KMX_TRY_IT_ARCHIVE="$RUNNER_TEMP/checked-release/release-assets/kmx-agent-builder-$os-$arch.tar.gz"
+          export KMX_TRY_IT_COPILOT="$RUNNER_TEMP/copilot/node_modules/.bin/copilot"
+          export KMX_TRY_IT_VERSION="$VERSION"
+          python3 -m unittest discover -s plugins/copilot -p test_try_it.py -v
+
+  publish:
+    needs: [release, plugin-install]
+    if: needs.release.outputs.dry_run == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: kmx-${{ needs.release.outputs.version }}
+          path: ${{ runner.temp }}/checked-release
+      # Publish only after Linux AND macOS executed the exact staged engine and
+      # checked an install/uninstall/reinstall in a fresh host profile.
+      - name: Publish the checked release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.release.outputs.version }}
+          PRERELEASE: ${{ needs.release.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/checked-release/release-assets"
           assets=(
             "$artifact_dir/kmx-linux-amd64"
             "$artifact_dir/kmx-linux-arm64"
@@ -447,17 +508,6 @@ jobs:
             "$artifact_dir/plugin-checksums.txt.sigstore.json"
           )
           for asset in "${assets[@]}"; do test -f "$asset"; done
-          flags=(--title "$VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag)
+          flags=(--title "$VERSION" --notes-file "$RUNNER_TEMP/checked-release/release-notes.md" --verify-tag)
           if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
           gh release create "$VERSION" "${flags[@]}" "${assets[@]}"
-
-      # A dry run publishes nothing; the artifacts are how its output is
-      # inspected (and how a clean machine can be handed the exact bytes a
-      # release would have contained).
-      - name: Upload the dry-run artifacts
-        if: steps.what.outputs.dry_run == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: kmx-${{ steps.what.outputs.version }}
-          path: ${{ runner.temp }}/release-assets/
-          if-no-files-found: error
