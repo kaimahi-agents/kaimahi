@@ -267,3 +267,49 @@ func TestFilePreviewAdHocAndJudgeRoute(t *testing.T) {
 		t.Fatalf("%+v", result)
 	}
 }
+
+func zeroPreviewFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.SplitAfter(string(data), "```yaml\n")[0] + "examples: []\n```\n"
+	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// Zero-test charters are runnable ad hoc but never evaluated or fully green.
+func TestFilePreviewZeroExamples(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opt  func(*FilePreviewOptions)
+		code string
+	}{
+		{"test", func(*FilePreviewOptions) {}, "no_tests"},
+		{"run without input", func(o *FilePreviewOptions) { o.Operation = "run" }, "no_tests"},
+		{"run case", func(o *FilePreviewOptions) { o.Operation = "run"; s := "Ada"; o.Input = &s; o.CaseID = "first" }, "invalid_selection"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &scriptedPreview{verdict: runtime.EvaluationPass}
+			opt := FilePreviewOptions{File: zeroPreviewFile(t, previewFile(t)), Operation: "test"}
+			tc.opt(&opt)
+			result, err := (&App{FileRunner: f}).PreviewAgentFile(context.Background(), opt)
+			var refusal *FilePreviewError
+			if !errors.As(err, &refusal) || refusal.ExitCode() != 1 || result.ReasonCode != tc.code || f.calls != 0 || result.FullPass || result.State != "refused" || result.Verdict != runtime.EvaluationUnknown {
+				t.Fatalf("%+v / %v / calls %d", result, err, f.calls)
+			}
+			if tc.code == "no_tests" && (result.Reason != "No tests yet — add or suggest one" || err.Error() != result.Reason || result.Selection.Scope != "full" || result.Selection.TotalCases != 0 || len(result.Selection.CaseIDs) != 0 || result.File.Revision == "" || len(result.Examples) != 0) {
+				t.Fatalf("no_tests projection: %+v", result)
+			}
+		})
+	}
+	f := &scriptedPreview{verdict: runtime.EvaluationPass}
+	input := "Ada"
+	result, err := (&App{FileRunner: f}).PreviewAgentFile(context.Background(), FilePreviewOptions{File: zeroPreviewFile(t, previewFile(t)), Operation: "run", Input: &input})
+	if err != nil || f.calls != 1 || len(f.request.Examples) != 0 || result.State != "complete" || result.Verdict != runtime.EvaluationUnknown || result.FullPass || result.ReasonCode != "completion_ready" || result.AdHoc == nil || result.AdHoc.State != "complete" || len(result.Examples) != 0 {
+		t.Fatalf("zero-example ad-hoc run: %+v / %v", result, err)
+	}
+}

@@ -40,7 +40,12 @@ func FuzzParseSquadSourceSpans(f *testing.F) {
 				t.Fatal("Preferred span does not address exact model value")
 			}
 		}
-		if doc.Enriched && (doc.Model == "auto" || len(doc.Examples) == 0 || doc.TaskInstructions == "") {
+		examples := false
+		for _, section := range doc.Sections {
+			examples = examples || section.Name == "Examples"
+		}
+		// Zero authored examples are valid; the Examples section is not optional.
+		if doc.Enriched && (doc.Model == "auto" || !examples || doc.TaskInstructions == "") {
 			t.Fatal("partial additions accepted as enriched")
 		}
 	})

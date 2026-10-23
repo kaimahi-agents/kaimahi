@@ -19,7 +19,7 @@ TARGETS = {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "window
 MAX_BINARY = 512 << 20
 NATIVE_DIRECTORY = "com.github.copilot/extensions/agent-view"
 NATIVE_FILES = tuple(f"{NATIVE_DIRECTORY}/{name}" for name in
-                     ("extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs"))
+                     ("extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs"))
 SKILL_FILES = ("skills/kmx-agent-builder/SKILL.md", "skills/kmx/SKILL.md")
 SAMPLE_FILES = ("samples/release-writer.agent.md", "try-it.json")
 

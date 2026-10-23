@@ -353,3 +353,41 @@ func TestPreviewToolsRefusals(t *testing.T) {
 		t.Fatalf("explicit trusted route: %+v", r)
 	}
 }
+
+// MCP create saves a zero-test charter; strict snapshots and the resource read the
+// same bytes, Test refuses safely before execution and ad-hoc Run still completes.
+func TestPreviewZeroExamplesCreateLoadTestRun(t *testing.T) {
+	for name, sep := range map[string]string{"LF": "\n", "CRLF": "\r\n"} {
+		t.Run(name, func(t *testing.T) {
+			f, _, source := canonicalFiles(t)
+			source = strings.ReplaceAll(strings.ReplaceAll(source, "\r\n", "\n"), "\n", sep)
+			zero := strings.SplitAfter(strings.ReplaceAll(source, "\r\n", "\n"), "```yaml\n")[0] + "examples: []\n```\n"
+			zero = strings.ReplaceAll(zero, "\n", sep)
+			saved, err := f.Create(t.Context(), "zero.agent.md", []byte(zero))
+			if err != nil {
+				t.Fatal(err)
+			}
+			strict, err := f.snapshot(t.Context(), saved.Path)
+			if err != nil || len(strict.Examples) != 0 || strict.Revision != saved.Revision {
+				t.Fatalf("zero-example snapshot: %+v / %v", strict, err)
+			}
+			fake := &previewFixture{verdict: runtime.EvaluationPass}
+			cs := resourceClient(t, f, &app.App{FileRunner: fake})
+			view := readView(t, cs, saved.Path)
+			if view.File.Revision != saved.Revision || len(view.Examples) != 0 || view.Authoring == nil || !view.Authoring.Editable || view.Authoring.Source != zero {
+				t.Fatalf("zero-example resource: %+v", view)
+			}
+			got, res := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": saved.Path})
+			if !res.IsError || got.ReasonCode != "no_tests" || got.Reason != "No tests yet — add or suggest one" || got.FullPass || got.Selection.Scope != "full" || got.Selection.TotalCases != 0 || len(got.Selection.CaseIDs) != 0 || got.File.Revision != saved.Revision || fake.calls != 0 {
+				t.Fatalf("zero-example MCP test: %+v", got)
+			}
+			if latest := readView(t, cs, saved.Path).Latest; latest.Status != "current" || latest.Result == nil || latest.Result.ReasonCode != "no_tests" {
+				t.Fatalf("zero-example latest result: %+v", latest)
+			}
+			got, res = previewCall(t, cs, "run", map[string]any{"schemaVersion": 1, "path": saved.Path, "input": "Ada"})
+			if res.IsError || got.State != "complete" || got.FullPass || got.Verdict != runtime.EvaluationUnknown || got.AdHoc == nil || fake.calls != 1 {
+				t.Fatalf("zero-example MCP run: %+v", got)
+			}
+		})
+	}
+}

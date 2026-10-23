@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {createActionHandler,readView,startViewBridge} from './view.mjs';
-import {instructionSections} from './authoring.mjs';
+import {instructionSections,replaceInstructions,replaceExamples} from './authoring.mjs';
 const original=await readFile(new URL('../../../../../internal/kmx/agentfile/testdata/greeter.agent.md',import.meta.url),'utf8');
 const revision=s=>'sha256:'+createHash('sha256').update(s).digest('hex');
 function harness(){
  let source=original,latest={status:'none'};
- const calls=[];let race=false,denied=false,unavailable=false,release;
- const examples=[{id:'greeting',input:'Ada',assertions:[{id:'greeting-text',type:'contains',value:'Hello, Ada'}]}];
+ const calls=[],o={};let race=false,denied=false,unavailable=false,release;
+ let examples=[{id:'greeting',input:'Ada',assertions:[{id:'greeting-text',type:'contains',value:'Hello, Ada'}]}];
  const raw=()=>({schemaVersion:1,kind:'kmx.agent-view',file:{path:'greeter.agent.md',revision:revision(source)},title:'Greeter',instructions:source,model:'fake',examples,authoring:{source,editable:true},latest});
  const session={rpc:{mcp:{resources:{read:async({uri})=>({contents:[{uri,text:JSON.stringify(raw())}]})}},tools:{getCurrentMetadata:async()=>({tools:['edit','test','run'].map(op=>({name:'owned-'+op,mcpServerName:'kmx-agent-builder',mcpToolName:op}))}),execute:async request=>{
   calls.push(request);assert.equal(request.arguments.schemaVersion,1);assert.equal(request.arguments.path,'greeter.agent.md');
@@ -17,13 +17,18 @@ function harness(){
   if(release)await new Promise(resolve=>{release.resolve=resolve});
   if(denied)return{resultType:'rejected',error:'Permission rejected private secret'};
   const op=request.name.slice(6),a=request.arguments;
-  if(op==='edit'){assert.equal(a.expectedRevision,revision(source));source=a.content;latest={status:'stale'};return{resultType:'success'}}
+  if(op==='edit'){if(o.beforeEdit)source=o.beforeEdit(source);if(a.expectedRevision!==revision(source))return{resultType:'failure',error:'stale_revision'};source=a.content;if('nextExamples' in o)examples=o.nextExamples;latest={status:'stale'};return{resultType:'success'}}
   assert.equal(Object.hasOwn(a,'expectedRevision'),false,'MCP previews have no revision argument');
   if(race)source=source.replace('## Non-Responsibilities','\n## Non-Responsibilities');
-  latest={status:'current',result:{schemaVersion:1,kind:'kmx.agent-file-preview',file:{path:'greeter.agent.md',revision:revision(source)},operation:op,state:'complete',verdict:'pass',fullPass:true,modelRoute:{provider:'fake',model:'fake'},selection:{scope:'full',totalCases:1,caseIds:['greeting']},examples:[{id:'greeting',state:'complete',verdict:'pass',assertions:[{id:'greeting-text',type:'contains',verdict:'pass'}]}]}};
-  return{resultType:'success'};
+  const all=examples??[],ids=all.map(e=>e.id).filter(id=>a.caseId===undefined||id===a.caseId);
+  const result={schemaVersion:1,kind:'kmx.agent-file-preview',file:{path:'greeter.agent.md',revision:revision(source)},operation:op,state:'complete',verdict:'pass',fullPass:a.caseId===undefined,modelRoute:{provider:'fake',model:'fake'},selection:{scope:a.caseId===undefined?'full':'subset',totalCases:all.length,caseIds:ids},examples:ids.map(id=>({id,state:'complete',verdict:'pass',assertions:all.find(e=>e.id===id).assertions.map(c=>({id:c.id,type:c.type,verdict:'pass'}))}))};
+  const none=op==='test'&&!all.length;
+  if(none)Object.assign(result,{state:'refused',verdict:'unknown',fullPass:false,reasonCode:'no_tests',reason:'No tests yet — add or suggest one'});
+  if(o.failTest)Object.assign(result,{state:'error',verdict:'unknown',fullPass:false,reasonCode:'model_unavailable'});
+  latest={status:'current',result:o.shape?o.shape(result):result};
+  return o.failTest||none?{resultType:'failure',error:'model unavailable private detail',structuredContent:latest.result}:{resultType:'success'};
  }}},send:async prompt=>{calls.push({chat:prompt})}};
- return{session,calls,raw,source:()=>source,setRace:()=>{race=true},setDenied:()=>{denied=true},setUnavailable:()=>{unavailable=true},hold:()=>{release={};return()=>release.resolve()},act:createActionHandler({session,path:'greeter.agent.md'})};
+ return{o,session,calls,raw,source:()=>source,setRace:()=>{race=true},setDenied:()=>{denied=true},setUnavailable:()=>{unavailable=true},hold:()=>{release={};return()=>release.resolve()},act:createActionHandler({session,path:'greeter.agent.md'})};
 }
 test('full authoring snapshot is hash-bound while display values remain bounded',async()=>{const h=harness();const view=await readView(h.session,'greeter.agent.md');assert.equal(view.authoring.source,original);assert.equal(view.authoring.editable,true);assert.equal(view.authoring.examples[0].assertions[0].value,'Hello, Ada')});
 test('save-and-test uses original Edit revision, schemaVersion and explicit answer opt-in',async()=>{const h=harness();const sections=instructionSections(original);sections[0].text+='\nKeep it short.';const r=await h.act({operation:'save-and-test',expectedRevision:revision(original),sections});assert.equal(r.error,undefined);assert.equal(r.saved,true);assert.deepEqual(h.calls.map(c=>c.name),['owned-edit','owned-test']);assert.equal(h.calls[0].arguments.expectedRevision,revision(original));assert.deepEqual(h.calls[1].arguments,{schemaVersion:1,path:'greeter.agent.md',showContent:false,showFailedContent:true});assert.equal(h.calls.some(c=>c.chat),false);assert.equal(r.view.file.revision,revision(h.source()))});
@@ -55,13 +60,106 @@ test('successful tool without a matching observation is unknown, not a false fil
  const r=await h.act(input);assert.equal(r.error,'outcome-unknown');assert.doesNotMatch(r.message,/file changed/);
  assert.equal((await h.act(input)).error,'outcome-unknown');assert.equal(h.calls.length,1);
 });
-for(const [resultType,code]of[['failure','action-failed'],['rejected','permission_required'],['denied','permission_required'],['timeout','outcome-unknown']])test('SDK '+resultType+' uses execution classification, not model error wording',async()=>{
+for(const [resultType,code]of[['failure','outcome-unknown'],['rejected','permission_required'],['denied','permission_required'],['timeout','outcome-unknown']])test('SDK '+resultType+' uses execution classification, not model error wording',async()=>{
  const h=harness();let calls=0;
  h.session.rpc.tools.execute=async()=>{calls++;return{resultType,error:'model denied or rejected this answer'}};
  const input={operation:'test',expectedRevision:revision(original)};
  assert.equal((await h.act(input)).error,code);
- if(resultType==='timeout'){assert.equal((await h.act(input)).error,'outcome-unknown');assert.equal(calls,1)}
+ if(resultType==='timeout'||resultType==='failure'){assert.equal((await h.act(input)).error,'outcome-unknown');assert.equal(calls,1)}
 });
 test('page cannot supply paths, servers, generic tools or implicit answer disclosure',async()=>{const h=harness();for(const input of [{operation:'test',path:'else.agent.md'},{operation:'execute',name:'shell'},{operation:'test',showContent:'true'},{operation:'test',showFailedContent:false},{operation:'toString'}])assert.equal((await h.act(input)).error,'invalid-action');assert.equal(h.calls.length,0)});
 test('only explicit Suggest starts chat and ad-hoc Run retains opt-in',async()=>{const h=harness();assert.match((await h.act({operation:'suggest'})).message,/chat/);assert.equal(h.calls.filter(c=>c.chat).length,1);assert.equal(h.calls.some(c=>c.name),false);const r=await h.act({operation:'run',expectedRevision:revision(original),input:'Ada',showContent:true});assert.equal(r.error,undefined);assert.deepEqual(h.calls.at(-1).arguments,{schemaVersion:1,path:'greeter.agent.md',input:'Ada',showContent:true,showFailedContent:true})});
 test('action POST requires exact same origin and cannot be a form submission',async()=>{const h=harness();const b=await startViewBridge({session:h.session,path:'greeter.agent.md'});try{assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{Origin:'https://untrusted.test','Content-Type':'application/json'},body:'{}'})).status,403);assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{Origin:new URL(b.url).origin,'Content-Type':'application/json'},body:JSON.stringify({operation:'reload'})})).status,200);assert.equal(h.calls.length,0)}finally{await b.close()}});
+const farewell={id:'farewell',input:'Bo',assertions:[{id:'farewell-text',type:'contains',value:'Bye, Bo'}]};
+const greeting={id:'greeting',input:'Ada',assertions:[{id:'greeting-text',type:'contains',value:'Hello, Ada'}]};
+const edited=()=>{const s=instructionSections(original);s[0].text+='\nKeep it short.';return s};
+test('combined sections and examples are one original-revision Edit, then a single-case Test of a draft-added case',async()=>{
+ const h=harness(),sections=edited(),examples=[greeting,farewell];h.o.nextExamples=examples;
+ const r=await h.act({operation:'save-and-test',expectedRevision:revision(original),sections,examples,caseId:'farewell'});
+ assert.equal(r.error,undefined);assert.equal(r.saved,true);
+ assert.deepEqual(h.calls.map(c=>c.name),['owned-edit','owned-test']);
+ assert.deepEqual(h.calls[0].arguments,{schemaVersion:1,path:'greeter.agent.md',expectedRevision:revision(original),content:replaceExamples(replaceInstructions(original,sections),examples)});
+ assert.deepEqual(h.calls[1].arguments,{schemaVersion:1,path:'greeter.agent.md',caseId:'farewell',showContent:false,showFailedContent:true});
+ assert.equal(r.view.file.revision,revision(h.source()));assert.deepEqual(r.view.latest.result.selection,{scope:'subset',totalCases:2,caseIds:['farewell']});
+});
+test('absent optional drafts are no-ops: unchanged save-and-test runs the full suite and examples-only keeps prompt bytes',async()=>{
+ let h=harness();let r=await h.act({operation:'save-and-test',expectedRevision:revision(original)});
+ assert.equal(r.error,undefined);assert.equal(r.saved,false);assert.deepEqual(h.calls.map(c=>c.arguments),[{schemaVersion:1,path:'greeter.agent.md',showContent:false,showFailedContent:true}]);
+ assert.deepEqual(r.view.latest.result.selection,{scope:'full',totalCases:1,caseIds:['greeting']});
+ h=harness();const examples=[greeting,farewell];h.o.nextExamples=examples;r=await h.act({operation:'save-and-test',expectedRevision:revision(original),examples});
+ assert.equal(r.error,undefined);assert.equal(h.calls[0].arguments.content,replaceExamples(original,examples));assert.equal(Object.hasOwn(h.calls[1].arguments,'caseId'),false);
+ h=harness();r=await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'});
+ assert.equal(r.error,undefined);assert.deepEqual(h.calls[0].arguments,{schemaVersion:1,path:'greeter.agent.md',caseId:'greeting',showContent:false,showFailedContent:true});
+});
+test('missing, arbitrary, removed or duplicate case IDs are refused before any Edit or Test',async()=>{
+ for(const input of [
+  {operation:'test',caseId:'missing'},{operation:'test',caseId:''},{operation:'test',caseId:5},{operation:'test',caseId:null},
+  {operation:'save-and-test',sections:edited(),caseId:'farewell'},
+  {operation:'save-and-test',sections:edited(),examples:[farewell],caseId:'greeting'},
+  {operation:'save-and-test',examples:[greeting,{...farewell,id:'greeting'}],caseId:'greeting'},
+  {operation:'save-and-test',sections:null},
+  {operation:'run',input:'Ada',caseId:'greeting'},{operation:'save-examples',examples:[greeting],caseId:'greeting'},
+ ]){const h=harness();const r=await h.act({expectedRevision:revision(original),...input});assert.equal(r.error,'invalid-action',JSON.stringify(input));assert.equal(h.calls.length,0)}
+});
+test('the original expected revision is never upgraded when the file changes before Edit',async()=>{
+ let h=harness();let r=await h.act({operation:'save-and-test',expectedRevision:'sha256:'+'1'.repeat(64),sections:edited(),examples:[greeting,farewell],caseId:'farewell'});
+ assert.equal(r.error,'stale_revision');assert.equal(h.calls.length,0);
+ h=harness();h.o.beforeEdit=s=>s.replace('## Non-Responsibilities','\n## Non-Responsibilities');
+ r=await h.act({operation:'save-and-test',expectedRevision:revision(original),sections:edited(),examples:[greeting,farewell],caseId:'farewell'});
+ assert.equal(r.error,'stale_revision');assert.equal(r.saved,false);assert.equal(r.view,undefined);
+ assert.deepEqual(h.calls.map(c=>[c.name,c.arguments.expectedRevision]),[['owned-edit',revision(original)]]);
+});
+for(const [name,input,shape]of[
+ ['subset reported as full',{caseId:'greeting'},r=>({...r,selection:{...r.selection,scope:'full'},fullPass:true})],
+ ['full reported as subset',{},r=>({...r,selection:{...r.selection,scope:'subset'},fullPass:false})],
+ ['duplicate selected IDs',{},r=>({...r,selection:{...r.selection,caseIds:['greeting','greeting']}})],
+ ['missing selected IDs',{},r=>({...r,selection:{...r.selection,caseIds:[]},examples:[]})],
+ ['extra selected IDs',{},r=>({...r,selection:{...r.selection,caseIds:['greeting','other']}})],
+ ['different single case',{caseId:'greeting'},r=>({...r,selection:{...r.selection,caseIds:['other']}})],
+ ['wrong total',{},r=>({...r,selection:{...r.selection,totalCases:2}})],
+ ['unselected result row',{caseId:'greeting'},r=>({...r,examples:[...r.examples,{...r.examples[0],id:'other'}]})],
+])test('actual Test selection mismatch is unknown, never a result: '+name,async()=>{
+ const h=harness();h.o.shape=shape;const r=await h.act({operation:'test',expectedRevision:revision(original),...input});
+ assert.equal(r.error,'outcome-unknown');assert.equal(r.view,undefined);
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(original)})).error,'outcome-unknown');assert.equal(h.calls.length,1);
+});
+test('failed Test returns only a fresh, matching, non-passing observation at the known revision',async()=>{
+ let h=harness();h.o.failTest=true;let r=await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'});
+ assert.equal(r.error,'action-failed');assert.equal(r.view.latest.result.state,'error');assert.equal(r.view.latest.badge,'not-passing');assert.doesNotMatch(JSON.stringify(r),/private detail/);
+ h=harness();h.o.failTest=true;h.o.shape=x=>({...x,state:'complete',verdict:'pass',fullPass:true,selection:{...x.selection,scope:'full'}});
+ r=await h.act({operation:'test',expectedRevision:revision(original)});assert.equal(r.error,'outcome-unknown');assert.equal(r.view,undefined);
+ h=harness();h.o.failTest=true;h.o.shape=x=>({...x,selection:{...x.selection,scope:'full'}});
+ r=await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'});assert.equal(r.error,'outcome-unknown');assert.equal(r.view,undefined);
+ h=harness();h.o.failTest=true;h.o.nextExamples=[greeting,farewell];
+ r=await h.act({operation:'save-and-test',expectedRevision:revision(original),examples:[greeting,farewell],caseId:'farewell'});
+ assert.equal(r.error,'action-failed');assert.equal(r.saved,true);assert.equal(r.view.file.revision,revision(h.source()));assert.deepEqual(r.view.latest.result.selection.caseIds,['farewell']);
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(h.source())})).error,'action-failed','action failure is not an uncertainty lock');
+});
+test('failed dispatch without an invocation payload cannot reuse an unchanged prior non-passing Test',async()=>{
+ const h=harness();h.o.failTest=true;
+ const first=await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'});
+ assert.equal(first.view.latest.result.state,'error');
+ let attempts=0;h.session.rpc.tools.execute=async()=>{attempts++;return{resultType:'failure',error:'dispatch failed before MCP'}};
+ const failed=await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'});
+ assert.equal(failed.error,'outcome-unknown');assert.equal(failed.view,undefined);
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(original)})).error,'outcome-unknown');assert.equal(attempts,1);
+ await h.act({operation:'reload'});
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'})).error,'outcome-unknown');assert.equal(attempts,2);
+});
+test('zero tests: save, combined save, ad-hoc Run and a known no-tests Test refusal',async()=>{
+ let h=harness();h.o.nextExamples=null;
+ let r=await h.act({operation:'save-examples',expectedRevision:revision(original),examples:[]});
+ assert.equal(r.error,undefined);assert.equal(r.saved,true);assert.equal(h.calls[0].arguments.content,replaceExamples(original,[]));
+ assert.deepEqual(r.view.examples,[]);assert.deepEqual(r.view.authoring.examples,[]);assert.equal(r.view.authoring.editable,true);
+ const zero=revision(h.source());
+ r=await h.act({operation:'run',expectedRevision:zero,input:'Ada'});assert.equal(r.error,undefined);assert.deepEqual(r.view.latest.result.selection,{scope:'full',totalCases:0,caseIds:[]});
+ r=await h.act({operation:'test',expectedRevision:zero});
+ assert.deepEqual([r.error,r.message,r.saved],['no-tests','No tests yet — add or suggest one',false]);assert.equal(r.view.latest.result.reasonCode,'no_tests');assert.equal(r.view.latest.badge,'not-passing');
+ assert.equal((await h.act({operation:'test',expectedRevision:zero,caseId:'greeting'})).error,'invalid-action','a selected case still refuses without tests');
+ assert.equal((await h.act({operation:'test',expectedRevision:zero})).error,'no-tests','a known refusal is not an uncertainty lock');
+ h=harness();h.o.nextExamples=null;
+ assert.equal((await h.act({operation:'save-and-test',expectedRevision:revision(original),examples:[],caseId:'greeting'})).error,'invalid-action');assert.equal(h.calls.length,0);
+ r=await h.act({operation:'save-and-test',expectedRevision:revision(original),sections:edited(),examples:[]});
+ assert.deepEqual([r.error,r.message,r.saved],['no-tests','No tests yet — add or suggest one',true]);
+ assert.deepEqual(h.calls.map(c=>c.name),['owned-edit','owned-test']);assert.equal(r.view.file.revision,revision(h.source()));assert.equal(r.view.latest.result.reasonCode,'no_tests');
+});

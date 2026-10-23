@@ -26,6 +26,7 @@ const MESSAGES = {
   permission_required: "Copilot did not permit this action. No permission settings were changed.",
   "action-failed": "The action did not complete. Check the agent and try again only after reviewing its state.",
   "outcome-unknown": "The action outcome could not be confirmed. Do not retry; reload the source first.",
+  "no-tests": "No tests yet — add or suggest one",
 };
 
 export class ViewError extends Error {
@@ -162,7 +163,8 @@ function authoringSnapshot(snapshot, examples, revision) {
   try {
     if (snapshot.editable) {
       instructionSections(snapshot.source);
-      replaceExamples(snapshot.source, examples);
+      // A hash-verified canonical source may hold zero tests, which Go emits as null.
+      replaceExamples(snapshot.source, examples ?? []);
     }
     return { source: snapshot.source, editable: snapshot.editable, examples: structuredClone(examples ?? []) };
   } catch { return; } // A malformed authoring snapshot cannot enable writes.
@@ -186,14 +188,24 @@ export async function readView(session, rawPath) {
   return parseView(body, path);
 }
 
+// The resource keeps only the latest preview and clears it when one starts. Still
+// attribute it only for the requested operation and exact full/single-case scope.
+function observed(view, operation, ids, caseId, complete) {
+  const r = view.latest.status === "current" ? view.latest.result : undefined;
+  const want = caseId === undefined ? ids : [caseId], got = r?.selection.caseIds ?? [], rows = r?.examples.map((e) => e.id) ?? [];
+  return r?.operation === operation && r.selection.scope === (caseId === undefined ? "full" : "subset") && r.selection.totalCases === ids.length &&
+    new Set(got).size === got.length && got.every((id) => want.includes(id)) && (!complete || got.length === want.length) &&
+    new Set(rows).size === rows.length && rows.every((id) => got.includes(id));
+}
+
 // The page can choose a declared interaction, never a tool, path or server.
 export function createActionHandler({ session, path }) {
   path = normalizePath(path);
   let busy = false, uncertain = false;
   const allowed = {
-    "save-and-test": ["expectedRevision", "sections", "showContent"],
+    "save-and-test": ["expectedRevision", "sections", "examples", "showContent", "caseId"],
     "save-examples": ["expectedRevision", "examples"],
-    test: ["expectedRevision", "showContent"], run: ["expectedRevision", "input", "showContent"],
+    test: ["expectedRevision", "showContent", "caseId"], run: ["expectedRevision", "input", "showContent"],
     suggest: [], reload: [],
   };
   async function invoke(operation, args) {
@@ -209,7 +221,11 @@ export function createActionHandler({ session, path }) {
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
       const code = ["rejected", "denied"].includes(result?.resultType) ? "permission_required" : /stale_revision/.test(detail) ? "stale_revision" : "action-failed";
-      throw new ViewError(code);
+      const error = new ViewError(code);
+      // Only the structured payload returned by this execute call can attest a
+      // failed invocation. A matching older resource is not execution evidence.
+      if (operation === "test" || operation === "run") error.preview = result?.structuredContent;
+      throw error;
     }
     return result;
   }
@@ -218,7 +234,7 @@ export function createActionHandler({ session, path }) {
     if (!isObj(input) || !Object.hasOwn(allowed, input.operation) || Object.keys(input).some((k) => k !== "operation" && !allowed[input.operation].includes(k))) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     if (input.showContent !== undefined && typeof input.showContent !== "boolean") return { error: "invalid-action", message: MESSAGES["invalid-action"] };
     busy = true;
-    let saved = false, targetRevision;
+    let saved = false, tested = false, targetRevision, ids, operation;
     try {
       if (uncertain && input.operation !== "reload") throw new ViewError("outcome-unknown");
       let view = await readView(session, path);
@@ -233,11 +249,21 @@ export function createActionHandler({ session, path }) {
       if (typeof input.expectedRevision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) throw new ViewError("invalid-action");
       if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");
       targetRevision = input.expectedRevision;
-      const saveInstructions = input.operation === "save-and-test";
-      if (saveInstructions || input.operation === "save-examples") {
-        let content;
-        try { content = saveInstructions ? replaceInstructions(view.authoring.source, input.sections) : replaceExamples(view.authoring.source, input.examples); }
-        catch { throw new ViewError("invalid-action"); }
+      const saving = input.operation === "save-and-test" || input.operation === "save-examples";
+      // Intended drafts apply to the exact current source; an absent draft is a no-op.
+      let content = view.authoring.source, examples = view.authoring.examples;
+      try {
+        if (input.sections !== undefined) content = replaceInstructions(content, input.sections);
+        if (input.examples !== undefined || input.operation === "save-examples") {
+          content = replaceExamples(content, input.examples);
+          examples = input.examples;
+        }
+        instructionSections(content);
+      } catch { throw new ViewError("invalid-action"); }
+      ids = examples.map((e) => e.id);
+      // A selected case must exist once in the intended examples before any write.
+      if (input.caseId !== undefined && (typeof input.caseId !== "string" || ids.filter((id) => id === input.caseId).length !== 1)) throw new ViewError("invalid-action");
+      if (saving) {
         if (Buffer.byteLength(content, "utf8") > 256 * 1024) throw new ViewError("too-large");
         if (content !== view.authoring.source) {
           await invoke("edit", { expectedRevision: input.expectedRevision, content });
@@ -247,24 +273,39 @@ export function createActionHandler({ session, path }) {
           if (view.file.revision !== targetRevision) { uncertain = true; throw new ViewError("outcome-unknown"); }
           saved = true;
         }
-        if (!saveInstructions) return { view, saved };
+        if (input.operation === "save-examples") return { view, saved };
       }
-      const operation = input.operation === "run" ? "run" : "test";
+      operation = input.operation === "run" ? "run" : "test";
       if (operation === "run" && (typeof input.input !== "string" || Buffer.byteLength(input.input, "utf8") > 16384)) throw new ViewError("invalid-action");
       // Test/Run have no revision parameter. Check the actual result afterward,
       // not a fabricated precondition or a refreshed draft revision.
-      await invoke(operation, { ...(operation === "run" ? { input: input.input } : {}), showContent: input.showContent === true, showFailedContent: true });
+      tested = true;
+      await invoke(operation, { ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true });
       try { view = await readView(session, path); }
       catch { uncertain = true; throw new ViewError("outcome-unknown"); }
       if (view.file.revision !== targetRevision) throw new ViewError("revision_mismatch");
-      if (view.latest.status !== "current" || view.latest.result?.operation !== operation) { uncertain = true; throw new ViewError("outcome-unknown"); }
+      if (!observed(view, operation, ids, input.caseId, true)) { uncertain = true; throw new ViewError("outcome-unknown"); }
       return { view, saved };
     } catch (e) {
       const err = safeError(e);
       const response = { error: err.code, message: err.message, saved };
-      if (saved && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
-        try { const view = await readView(session, path); if (view.file.revision === targetRevision) response.view = view; }
-        catch { /* Preserve the draft when refresh cannot be confirmed. */ }
+      const failedPreview = tested && err.code === "action-failed";
+      if ((saved || failedPreview) && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
+        try {
+          const view = await readView(session, path);
+          // Project the invocation payload through the same bounded parser as
+          // the resource, then require exact agreement before attaching a view.
+          const proof = err.preview?.file?.path === path ? cleanResult(err.preview, "current", targetRevision) : undefined;
+          const fresh = failedPreview && proof && observed(view, operation, ids, input.caseId, false)
+            && JSON.stringify(proof) === JSON.stringify(view.latest.result)
+            && view.latest.result.verdict !== "pass" && !view.latest.result.fullPass;
+          if (view.file.revision === targetRevision && (fresh || saved && !failedPreview && view.latest.status !== "current")) response.view = view;
+          if (response.view && fresh && !ids.length && view.latest.result.reasonCode === "no_tests") Object.assign(response, { error: "no-tests", message: MESSAGES["no-tests"] });
+        } catch { /* Preserve the draft when refresh cannot be confirmed. */ }
+      }
+      if (failedPreview && !response.view) {
+        uncertain = true;
+        Object.assign(response, { error: "outcome-unknown", message: MESSAGES["outcome-unknown"] });
       }
       return response;
     } finally { busy = false; }
@@ -311,6 +352,7 @@ const ASSETS = {
   "app.js": ["app.js", "text/javascript; charset=utf-8"],
   "style.css": ["style.css", "text/css; charset=utf-8"],
   "authoring.mjs": ["authoring.mjs", "text/javascript; charset=utf-8"],
+  "editor.mjs": ["editor.mjs", "text/javascript; charset=utf-8"],
 };
 const SECURITY_HEADERS = {
   "Cache-Control": "no-store",
