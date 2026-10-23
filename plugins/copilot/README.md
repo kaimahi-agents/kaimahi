@@ -175,6 +175,8 @@ no refusal is force-overwritten or automatically retried. Unknown execution
 outcomes retain drafts and require deliberate reload, never an automatic unlock.
 Failed saves stop Test. Test/Run have no atomic revision precondition; actual
 returned revisions and selected case IDs must match before results are attributed.
+A failed call also needs its own structured result to match the resource;
+without that evidence, an older result cannot unlock a retry.
 Stop, versions/restore, a new Model validated type, Ask Copilot and All versions
 are not part of this canvas release; no inactive versions clock is shown.
 
@@ -212,9 +214,9 @@ milestone. The native captures precede the final wording and paragraph-spacing
 fixes. The detail pair shows the latest real-MCP **browser** check, not a native
 or hosted-model run. Clock/history, stop and the new model-check type are deferred.
 
-![Edited board beside the native visual checkpoint](../../docs/images/copilot-canvas-native-edited.webp)
-![Saved board beside the native visual checkpoint](../../docs/images/copilot-canvas-native-saved.webp)
-![Narrow detail board beside the latest real-MCP browser](../../docs/images/copilot-canvas-detail-browser.webp)
+![Edited board beside the native visual checkpoint](../../docs/images/copilot-canvas-native-edited.png)
+![Saved board beside the native visual checkpoint](../../docs/images/copilot-canvas-native-saved.png)
+![Narrow detail board beside the latest real-MCP browser](../../docs/images/copilot-canvas-detail-browser.png)
 
 ## Results and verification
 

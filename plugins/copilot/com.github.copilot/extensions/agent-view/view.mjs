@@ -221,7 +221,11 @@ export function createActionHandler({ session, path }) {
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
       const code = ["rejected", "denied"].includes(result?.resultType) ? "permission_required" : /stale_revision/.test(detail) ? "stale_revision" : "action-failed";
-      throw new ViewError(code);
+      const error = new ViewError(code);
+      // Only the structured payload returned by this execute call can attest a
+      // failed invocation. A matching older resource is not execution evidence.
+      if (operation === "test" || operation === "run") error.preview = result?.structuredContent;
+      throw error;
     }
     return result;
   }
@@ -289,11 +293,19 @@ export function createActionHandler({ session, path }) {
       if ((saved || failedPreview) && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
         try {
           const view = await readView(session, path);
-          // A failed preview may show only its own fresh, non-passing observation.
-          const fresh = failedPreview && observed(view, operation, ids, input.caseId, false) && view.latest.result.verdict !== "pass" && !view.latest.result.fullPass;
-          if (view.file.revision === targetRevision && (fresh || saved && view.latest.status !== "current")) response.view = view;
+          // Project the invocation payload through the same bounded parser as
+          // the resource, then require exact agreement before attaching a view.
+          const proof = err.preview?.file?.path === path ? cleanResult(err.preview, "current", targetRevision) : undefined;
+          const fresh = failedPreview && proof && observed(view, operation, ids, input.caseId, false)
+            && JSON.stringify(proof) === JSON.stringify(view.latest.result)
+            && view.latest.result.verdict !== "pass" && !view.latest.result.fullPass;
+          if (view.file.revision === targetRevision && (fresh || saved && !failedPreview && view.latest.status !== "current")) response.view = view;
           if (response.view && fresh && !ids.length && view.latest.result.reasonCode === "no_tests") Object.assign(response, { error: "no-tests", message: MESSAGES["no-tests"] });
         } catch { /* Preserve the draft when refresh cannot be confirmed. */ }
+      }
+      if (failedPreview && !response.view) {
+        uncertain = true;
+        Object.assign(response, { error: "outcome-unknown", message: MESSAGES["outcome-unknown"] });
       }
       return response;
     } finally { busy = false; }

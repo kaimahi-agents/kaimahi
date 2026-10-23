@@ -26,7 +26,7 @@ function harness(){
   if(none)Object.assign(result,{state:'refused',verdict:'unknown',fullPass:false,reasonCode:'no_tests',reason:'No tests yet — add or suggest one'});
   if(o.failTest)Object.assign(result,{state:'error',verdict:'unknown',fullPass:false,reasonCode:'model_unavailable'});
   latest={status:'current',result:o.shape?o.shape(result):result};
-  return o.failTest||none?{resultType:'failure',error:'model unavailable private detail'}:{resultType:'success'};
+  return o.failTest||none?{resultType:'failure',error:'model unavailable private detail',structuredContent:latest.result}:{resultType:'success'};
  }}},send:async prompt=>{calls.push({chat:prompt})}};
  return{o,session,calls,raw,source:()=>source,setRace:()=>{race=true},setDenied:()=>{denied=true},setUnavailable:()=>{unavailable=true},hold:()=>{release={};return()=>release.resolve()},act:createActionHandler({session,path:'greeter.agent.md'})};
 }
@@ -60,12 +60,12 @@ test('successful tool without a matching observation is unknown, not a false fil
  const r=await h.act(input);assert.equal(r.error,'outcome-unknown');assert.doesNotMatch(r.message,/file changed/);
  assert.equal((await h.act(input)).error,'outcome-unknown');assert.equal(h.calls.length,1);
 });
-for(const [resultType,code]of[['failure','action-failed'],['rejected','permission_required'],['denied','permission_required'],['timeout','outcome-unknown']])test('SDK '+resultType+' uses execution classification, not model error wording',async()=>{
+for(const [resultType,code]of[['failure','outcome-unknown'],['rejected','permission_required'],['denied','permission_required'],['timeout','outcome-unknown']])test('SDK '+resultType+' uses execution classification, not model error wording',async()=>{
  const h=harness();let calls=0;
  h.session.rpc.tools.execute=async()=>{calls++;return{resultType,error:'model denied or rejected this answer'}};
  const input={operation:'test',expectedRevision:revision(original)};
  assert.equal((await h.act(input)).error,code);
- if(resultType==='timeout'){assert.equal((await h.act(input)).error,'outcome-unknown');assert.equal(calls,1)}
+ if(resultType==='timeout'||resultType==='failure'){assert.equal((await h.act(input)).error,'outcome-unknown');assert.equal(calls,1)}
 });
 test('page cannot supply paths, servers, generic tools or implicit answer disclosure',async()=>{const h=harness();for(const input of [{operation:'test',path:'else.agent.md'},{operation:'execute',name:'shell'},{operation:'test',showContent:'true'},{operation:'test',showFailedContent:false},{operation:'toString'}])assert.equal((await h.act(input)).error,'invalid-action');assert.equal(h.calls.length,0)});
 test('only explicit Suggest starts chat and ad-hoc Run retains opt-in',async()=>{const h=harness();assert.match((await h.act({operation:'suggest'})).message,/chat/);assert.equal(h.calls.filter(c=>c.chat).length,1);assert.equal(h.calls.some(c=>c.name),false);const r=await h.act({operation:'run',expectedRevision:revision(original),input:'Ada',showContent:true});assert.equal(r.error,undefined);assert.deepEqual(h.calls.at(-1).arguments,{schemaVersion:1,path:'greeter.agent.md',input:'Ada',showContent:true,showFailedContent:true})});
@@ -127,13 +127,24 @@ test('failed Test returns only a fresh, matching, non-passing observation at the
  let h=harness();h.o.failTest=true;let r=await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'});
  assert.equal(r.error,'action-failed');assert.equal(r.view.latest.result.state,'error');assert.equal(r.view.latest.badge,'not-passing');assert.doesNotMatch(JSON.stringify(r),/private detail/);
  h=harness();h.o.failTest=true;h.o.shape=x=>({...x,state:'complete',verdict:'pass',fullPass:true,selection:{...x.selection,scope:'full'}});
- r=await h.act({operation:'test',expectedRevision:revision(original)});assert.equal(r.error,'action-failed');assert.equal(r.view,undefined);
+ r=await h.act({operation:'test',expectedRevision:revision(original)});assert.equal(r.error,'outcome-unknown');assert.equal(r.view,undefined);
  h=harness();h.o.failTest=true;h.o.shape=x=>({...x,selection:{...x.selection,scope:'full'}});
- r=await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'});assert.equal(r.error,'action-failed');assert.equal(r.view,undefined);
+ r=await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'});assert.equal(r.error,'outcome-unknown');assert.equal(r.view,undefined);
  h=harness();h.o.failTest=true;h.o.nextExamples=[greeting,farewell];
  r=await h.act({operation:'save-and-test',expectedRevision:revision(original),examples:[greeting,farewell],caseId:'farewell'});
  assert.equal(r.error,'action-failed');assert.equal(r.saved,true);assert.equal(r.view.file.revision,revision(h.source()));assert.deepEqual(r.view.latest.result.selection.caseIds,['farewell']);
  assert.equal((await h.act({operation:'test',expectedRevision:revision(h.source())})).error,'action-failed','action failure is not an uncertainty lock');
+});
+test('failed dispatch without an invocation payload cannot reuse an unchanged prior non-passing Test',async()=>{
+ const h=harness();h.o.failTest=true;
+ const first=await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'});
+ assert.equal(first.view.latest.result.state,'error');
+ let attempts=0;h.session.rpc.tools.execute=async()=>{attempts++;return{resultType:'failure',error:'dispatch failed before MCP'}};
+ const failed=await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'});
+ assert.equal(failed.error,'outcome-unknown');assert.equal(failed.view,undefined);
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(original)})).error,'outcome-unknown');assert.equal(attempts,1);
+ await h.act({operation:'reload'});
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(original),caseId:'greeting'})).error,'outcome-unknown');assert.equal(attempts,2);
 });
 test('zero tests: save, combined save, ad-hoc Run and a known no-tests Test refusal',async()=>{
  let h=harness();h.o.nextExamples=null;

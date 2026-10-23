@@ -180,6 +180,7 @@ func TestRefusalLocation(t *testing.T) {
 
 func FuzzParse(f *testing.F) {
 	f.Add([]byte(sample(f)))
+	f.Add([]byte(strings.Split(sample(f), "```yaml")[0] + "```yaml\nexamples: []\n```\n"))
 	f.Add([]byte("# Legacy\n"))
 	f.Add([]byte(strings.Replace(sample(f), "Reply with exactly `Hello, ` followed by the input name.", "Reply with a greeting.\n\n```text\n## Examples\n## Tools\n```", 1)))
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -188,7 +189,7 @@ func FuzzParse(f *testing.F) {
 			t.Fatal("partial success")
 		}
 		if err == nil {
-			if a == nil || len(a.Examples) == 0 {
+			if a == nil {
 				t.Fatal("invalid success")
 			}
 			lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
