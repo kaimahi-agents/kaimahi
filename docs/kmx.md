@@ -346,12 +346,13 @@ See the [wire format and hash rules](agent-file.md#frozen-run-profile-export-unr
 
 ### Local stdio MCP
 
-`kmx mcp --root /absolute/project` serves exactly `create`, `edit`, `run` and
-`test`, using the canonical parser and the same App snapshot operation as file
-Run/Test. It does not listen on a network socket or load cluster/workspace
-configuration. The root must already exist; missing, relative or invalid roots
-refuse startup. There is no cwd, plugin-cache or client-roots fallback, and no
-tool can change the root. Host shell authority remains outside this boundary.
+`kmx mcp` serves exactly `create`, `edit`, `run` and `test`, using the canonical
+parser and the same App snapshot operation as file Run/Test. One server accepts
+agent files in any directory. Prefer an absolute WSL path when calling it from
+Windows; relative paths resolve against the server's working directory. It does
+not listen on a network socket or load cluster/workspace configuration.
+Optional `--root /absolute/project` retains the old bound mode for existing
+plugins and separately configured native Squad operations; the default is unbound.
 
 Canonical tool input requires integer `schemaVersion: 1`. MCP initialization also
 negotiates its protocol version and advertises the engine build version.
@@ -360,7 +361,7 @@ frames are bounded to 2 MiB and source files to 256 KiB.
 
 | Tool | Input in addition to schemaVersion | Result |
 |---|---|---|
-| `create` | `path`, `content` | Saved root-relative path and exact-byte revision |
+| `create` | `path`, `content` | Saved path and exact-byte revision |
 | `edit` | `path`, `content`, `expectedRevision` | Saved path and new revision |
 | `run` | `path`; optional `input`, `caseId`, `showContent`, `showFailedContent` | Shared `kmx.agent-file-preview` v1 result |
 | `test` | `path`; optional `caseId`, `showContent`, `showFailedContent` | Same shared result, no ad-hoc input |
@@ -413,18 +414,18 @@ exact source revision, not a package digest, team dispatch or deployment.
 
 #### Canonical v1 file paths and publication
 
-Relative paths are portable root-level `<name>.agent.md` or
-`.squad/agents/<id>/charter.md`, without traversal or symlink components. Native
-absolute paths are cleaned and symlink-resolved, then accepted only if their
-canonical target has one of those layouts beneath the configured root. Absolute
-aliases resolving inside the root are allowed; outside targets, dangling links,
-and changed root-directory identity refuse as `unsafe_path`. Special files refuse.
-Create may append missing file/parent components beneath an existing resolved
-directory; it never treats a dangling link as a missing component. Saved paths
-are canonical root-relative names. All file IO uses the pinned root;
-normalization is not a hostile concurrent-filesystem sandbox. Necessary Squad
-parent directories may be created, but no roster or other team metadata is
-touched. Create validates before publishing a same-directory staged file with
+Without `--root`, paths can name `*.agent.md` files or
+`.squad/agents/<member>/charter.md` files anywhere, including nested directories
+with spaces or Unicode names. Both the requested and resolved target must be
+agent files. Links to agent files and symlinked parent directories work; an
+agent-looking link to a non-agent target does not. Saved paths retain the
+requested spelling, while latest-preview matching uses the resolved target.
+The resource and canvas can use the same full path as Create/Edit.
+
+Create makes missing parent directories. No roster or other team metadata is
+touched. Existing explicit-root installations retain their relative-path and
+confinement behavior during the plugin transition. Filesystem resolution is not
+a hostile concurrent-filesystem sandbox. Create validates before publishing a same-directory staged file with
 no-replace rename. Edit validates old/new source,
 checks the expected `sha256:…` revision under an OS-held writer lock, then renames
 the staged replacement. Busy/unavailable locks and failed renames report safe
@@ -437,7 +438,7 @@ inheritance. This is intended for the user's own files. Invalid existing charter
 must be repaired manually. Crash leftovers may include this operation's non-agent
 temp file or empty parent directories; no stale-file sweeping is performed.
 
-Run/Test parse a bounded rooted snapshot once and never reopen the source through
+Run/Test parse the selected snapshot once and never reopen the source through
 its display path. Structured results preserve revision, route, full/subset, state,
 verdict, diagnostics and retention status even when the App returns an error.
 Completed assertion failures and inconclusive assertions are normal MCP results
@@ -471,8 +472,9 @@ remains exit 130. Deadline and non-cancellation error behavior is unchanged.
 
 The SDK's cancelled call returns before server finalization and does not deliver
 the partial result. Read the existing `kmx://agent/{path}` resource with a fresh,
-uncancelled context to recover `latest.result`. Encode the whole root-relative
-path as one URI component: `kmx://agent/greeter.agent.md`, or
+uncancelled context to recover `latest.result`. Encode the whole requested
+path as one URI component, including an absolute path's leading slash:
+`kmx://agent/%2Fhome%2Fme%2Fproject%2Fgreeter.agent.md`, or
 `kmx://agent/.squad%2Fagents%2Fgreeter%2Fcharter.md` for a nested charter. Until the
 handler finishes, the resource may show `latest.status: none`. A UI can perform
 bounded repeat reads while waiting for a cancelled result for the expected
@@ -496,16 +498,16 @@ false and includes only validated failing saved-example answers, not passing,
 unknown or ad-hoc answers. Existing clients keep their current behavior. The
 canvas requests failure-only excerpts and keeps passing answers opt-in. These
 controls do not change existing runner journal retention. Excerpts are bounded and
-labeled untrusted data, never tool instructions. The result's display basename
-is not target authority.
+labeled untrusted data, never tool instructions. Use Create's returned path to
+open the agent; legacy preview results can carry only a display basename.
 
 The read-only resource template `kmx://agent/{path}` returns a typed
 `kmx.agent-view` v1 projection: original revision, title, instructions, model,
 examples/expected checks and the process's latest safe preview observation.
-Encode the whole root-relative path as one component, including slashes.
-Only supported agent paths under the fixed root are readable; there is no
-fifth tool, generic file read or directory listing. After root confirmation,
-authored content is visible without an extra consent mechanism; answer excerpts
+Encode the whole requested path as one component, including slashes.
+Only supported agent files are readable; there is no fifth tool, generic file
+read or directory listing. Authored content is visible without folder
+confirmation; answer excerpts
 require an explicit Run/Test disclosure option: `showContent` or failure-only
 `showFailedContent`. The optional authoring snapshot carries exact source from
 the same descriptor read as its revision; strict canonical parsing controls
@@ -523,7 +525,7 @@ this display-only support does not change Run/Test parser acceptance.
 
 A real model route must be selected at process startup with trusted
 `--provider` and, for local routes, `--endpoint`; the exact model still comes from
-the parsed file. For Copilot, use `kmx mcp --root /absolute/root --provider copilot`
+the parsed file. For Copilot, use `kmx mcp --provider copilot`
 after explicit sign-in. The same fixed endpoint and hosted-content disclosure
 apply; startup itself performs no sign-in, credential access or model request.
 Tools accept no endpoint, credential or arbitrary-command fields. With no route,

@@ -24,7 +24,7 @@ func (mcpOutput) Close() error { return nil }
 
 func newMCPCommand(state *commandState) *cobra.Command {
 	var root, provider, endpoint, squadProgram, squadRelease string
-	cmd := &cobra.Command{Use: "mcp --root DIRECTORY", Short: "Serve Create/Edit/Run/Test over local stdio MCP", Args: cobra.NoArgs,
+	cmd := &cobra.Command{Use: "mcp [--root DIRECTORY]", Short: "Serve Create/Edit/Run/Test over local stdio MCP", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if state.contextFlag != "" || cmd.Flag("container-engine").Changed {
 				return fmt.Errorf("MCP refuses cluster/container selectors")
@@ -34,6 +34,9 @@ func newMCPCommand(state *commandState) *cobra.Command {
 				if flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 					return fmt.Errorf("MCP requires nonempty --%s", name)
 				}
+			}
+			if root == "" && (squadProgram != "" || squadRelease != "") {
+				return fmt.Errorf("required flag(s) \"root\" not set")
 			}
 			var route *modelaccess.Route
 			if provider != "" || endpoint != "" {
@@ -86,11 +89,10 @@ func newMCPCommand(state *commandState) *cobra.Command {
 			}
 			return nil
 		}}
-	cmd.Flags().StringVar(&root, "root", "", "absolute existing operation root; required, never defaults to cwd")
+	cmd.Flags().StringVar(&root, "root", "", "optional absolute existing operation root for legacy clients; otherwise agent paths resolve against cwd")
 	cmd.Flags().StringVar(&provider, "provider", "", "trusted startup model provider, including copilot (not selectable through tools)")
 	cmd.Flags().StringVar(&endpoint, "endpoint", "", "trusted startup model endpoint (fixed for Copilot; never read from charter text)")
 	cmd.Flags().StringVar(&squadProgram, "squad-program", "", "trusted absolute qualified standalone Squad launcher; enables native targets, never installs")
 	cmd.Flags().StringVar(&squadRelease, "squad-release", "", "explicit qualified native Squad release (1.1.0); requires --squad-program")
-	_ = cmd.MarkFlagRequired("root")
 	return cmd
 }

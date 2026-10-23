@@ -58,7 +58,7 @@ function pathControls(doc, path) {
       feedback.textContent = unavailable;
     }
   });
-  box.append(el(doc, "p", "path-label", "Path from selected root"), el(doc, "code", "path-value", path), button, feedback);
+  box.append(el(doc, "p", "path-label", "Agent file path"), el(doc, "code", "path-value", path), button, feedback);
   return box;
 }
 

@@ -14,9 +14,12 @@ func AuthoringOperations(files *Files) map[string]Operation {
 	ops := map[string]Operation{}
 	for _, name := range []string{"create", "edit"} {
 		schema := &jsonschema.Schema{Type: "object", Required: []string{"path", "content"}, Properties: map[string]*jsonschema.Schema{
-			"path": {Type: "string", MaxLength: new(256)}, "content": {Type: "string", MaxLength: new(maxFileBytes)},
+			"path": {Type: "string"}, "content": {Type: "string", MaxLength: new(maxFileBytes)},
 		}, AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}}}
-		description := "Create a validated charter beneath the operator-selected root; never overwrite an existing target."
+		if files != nil && files.root != nil {
+			schema.Properties["path"].MaxLength = new(256)
+		}
+		description := "Create a validated agent file at an absolute path or a path relative to the server cwd (or explicit --root); never overwrite an existing target."
 		if name == "edit" {
 			schema.Properties["expectedRevision"] = &jsonschema.Schema{Type: "string", Pattern: `^sha256:[a-f0-9]{64}$`}
 			schema.Required = append(schema.Required, "expectedRevision")

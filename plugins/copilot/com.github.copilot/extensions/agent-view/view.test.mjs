@@ -114,16 +114,14 @@ function get(url, { headers = {}, method = "GET", host } = {}) {
   });
 }
 
-test("path grammar accepts only portable agent files and Squad charters", () => {
-  assert.equal(normalizePath(MINIMAL), MINIMAL);
-  assert.equal(normalizePath(SQUAD), SQUAD);
-  for (const bad of [
-    "", "Greeter.agent.md", "../x.agent.md", "/x.agent.md", "a/b.agent.md", "x.agent.md?q=1", "x.agent.md#f",
-    "x\\y.agent.md", "C:x.agent.md", "con.agent.md", "nul.agent.md", "com1.agent.md", "1x.agent.md", "x.agent.md ",
-    "x\n.agent.md", "x\0.agent.md", "x%2e.agent.md", "x.md", ".squad/agents/con/charter.md", ".squad/agents/x/Charter.md",
-    ".squad/agents/x/../y/charter.md", ".squad/agents/x/y/charter.md", ".squad/agent/x/charter.md", "x".repeat(64) + ".agent.md",
-    null, 4, {}, ["x.agent.md"],
-  ]) {
+test("agent paths preserve ordinary names in any directory", () => {
+  for (const path of [MINIMAL, SQUAD, "/repo one/agents/Release Notes.agent.md", "/repo Māori/.squad/agents/greeter/charter.md",
+    "../other/greeter.agent.md", "/Bob's (agents) + notes/@release=2026/report.agent.md", "a/b.agent.md", "con.agent.md", "x%2e.agent.md", "x#draft.agent.md", "x".repeat(64) + ".agent.md"]) {
+    assert.equal(normalizePath(path), path);
+    assert.equal(resourceUri(path), `kmx://agent/${encodeURIComponent(path)}`);
+  }
+  for (const bad of ["", ".agent.md", "x.agent.md?q=1", "x.agent.md#f", "x.agent.md ", "x\0.agent.md", "x.md",
+    ".squad/agents/x/Charter.md", ".squad/agents/x/y/charter.md", ".squad/agent/x/charter.md", null, 4, {}, ["x.agent.md"]]) {
     assert.throws(() => normalizePath(bad), (e) => e instanceof ViewError && e.code === "invalid-path", JSON.stringify(bad));
   }
 });
@@ -134,7 +132,7 @@ test("resource URI encodes the whole path as one component", () => {
   assert.equal(CANVAS_ID, "kmx-agent-view");
 });
 
-for (const path of [MINIMAL, SQUAD]) {
+for (const path of [MINIMAL, SQUAD, "/repo one/greeter.agent.md", "/repo Māori/.squad/agents/greeter/charter.md"]) {
   test(`readView reads the current kmx server resource for ${path}`, async () => {
     const session = stubSession(resource(path));
     const view = await readView(session, path);
@@ -152,7 +150,7 @@ for (const path of [MINIMAL, SQUAD]) {
 
 test("readView refuses invalid paths before any resource read", async () => {
   const session = stubSession(resource(MINIMAL));
-  await assert.rejects(readView(session, "../x.agent.md"), { code: "invalid-path" });
+  await assert.rejects(readView(session, "../README.md"), { code: "invalid-path" });
   assert.equal(session.calls.length, 0);
 });
 
@@ -398,7 +396,7 @@ test("superseded concurrent opens cannot return an obsolete view", async () => {
 
 test("controller refuses invalid canvas input and opens no listener", async () => {
   const ctl = createViewController({ getSession: () => stubSession(resource(MINIMAL)) });
-  for (const input of [undefined, null, "x", [], {}, { path: "../x.agent.md" }, { path: MINIMAL, extra: 1 }, { path: MINIMAL, url: "http://x" }]) {
+  for (const input of [undefined, null, "x", [], {}, { path: "../README.md" }, { path: MINIMAL, extra: 1 }, { path: MINIMAL, url: "http://x" }]) {
     await assert.rejects(ctl.open({ instanceId: "bad", canvasId: CANVAS_ID, input }), (e) => e instanceof ViewError);
   }
   assert.equal(ctl.size, 0);
@@ -412,7 +410,7 @@ test("agent-view command logs the same view and never sends a prompt", async () 
   assert.match(session.logs[0].message, /Greeter/);
   assert.deepEqual(session.calls, [{ serverName: "kmx-agent-builder", uri: resourceUri(MINIMAL) }]);
 
-  for (const args of ["", "a b", "../x.agent.md", `${MINIMAL} extra`]) {
+  for (const args of ["", "a b", "../README.md", `${MINIMAL} extra`]) {
     await ctl.command({ args });
   }
   assert.equal(session.calls.length, 1);
@@ -1049,7 +1047,7 @@ test("UI labels root and Squad files friendly while keeping raw paths only in So
     assert.equal(byClass(details, "path-value")[0].tag, "code");
     assert.equal(byClass(details, "path-value")[0].textContent, path);
     assert.ok(details.textContent.includes(REV));
-    assert.match(details.textContent, /Path from selected root/); assertTrustedControls(root);
+    assert.match(details.textContent, /Agent file path/); assertTrustedControls(root);
   }
 });
 

@@ -31,8 +31,11 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 	}
 	for _, name := range []string{"run", "test"} {
 		schema := &jsonschema.Schema{Type: "object", Required: []string{"path"}, Properties: map[string]*jsonschema.Schema{
-			"path": {Type: "string", MaxLength: new(256)}, "caseId": {Type: "string", MinLength: new(1), MaxLength: new(agentfile.MaxInputBytes)}, "showContent": {Type: "boolean"}, "showFailedContent": {Type: "boolean"},
+			"path": {Type: "string"}, "caseId": {Type: "string", MinLength: new(1), MaxLength: new(agentfile.MaxInputBytes)}, "showContent": {Type: "boolean"}, "showFailedContent": {Type: "boolean"},
 		}, AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}}}
+		if files != nil && files.root != nil {
+			schema.Properties["path"].MaxLength = new(256)
+		}
 		if name == "run" {
 			schema.Properties["input"] = &jsonschema.Schema{Type: "string", MaxLength: new(agentfile.MaxInputBytes)}
 		}
@@ -62,6 +65,9 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Route: selected})
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
+			}
+			if files.root == nil && result.File.Path != "[agent file]" {
+				result.File.Path = input.Path
 			}
 			files.finishPreview(sequence, path, result)
 			// Keep the complete safe result even when the application returns an error.
@@ -140,7 +146,7 @@ func (f *Files) readSnapshot(ctx context.Context, p string, inspection bool) (*a
 	if err != nil {
 		return nil, nil, err
 	}
-	if !safePath(p) {
+	if !f.allowedPath(p) {
 		return nil, nil, refusal("unsafe_path")
 	}
 	parent, err := f.parent(p, false)

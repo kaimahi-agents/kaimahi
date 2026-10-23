@@ -255,7 +255,7 @@ class PackageTests(unittest.TestCase):
         skill = (self.out / "skills/kmx-agent-builder/SKILL.md").read_text()
         for required in ["schemaVersion", "fullPass", "selection.scope", "reasonCode",
                          "not_requested", "assertion", "unknown", "untrusted", "Explain",
-                         "Model", "Examples", "selected root", "Do not"]:
+                         "Model", "Examples", "agent files", "Do not"]:
             self.assertIn(required, skill)
         prose = " ".join(skill.split())
         self.assertIn("full pass only when fullPass is true, state is complete and verdict is pass", prose)

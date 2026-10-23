@@ -53,20 +53,22 @@ readable engine digest metadata. Existing output, source links/special files,
 missing root, filesystem-root selection, invalid metadata and digest mismatch
 refuse. The helper does not fetch, archive, install or write host settings.
 
-## Repository binding and real tools
+## Agent paths and real tools
 
-The developer binds an absolute, filesystem-resolved root before installation.
-It is encoded in startup argv as `kmx mcp --root ABSOLUTE_DIR`, not an
-assistant-controlled tool argument. [selected-root.json](selected-root.json)
-contains the same root for user confirmation. Never infer root from cwd,
-plugin-cache location, MCP client roots or an invented host variable.
-Resolved roots containing literal `${PLUGIN_ROOT}` or `${PLUGIN_DATA}` tokens
-refuse: a plugin host would expand them in startup arguments.
-Changing repositories requires deliberate reconfiguration/reinstallation and
-a server restart, not an implicit rebind during a tool call.
+`kmx mcp` accepts agent files in any directory without a bound folder. Use full
+WSL filesystem paths when calling it from Windows; relative paths resolve against
+the MCP server's working directory. Agent files are `*.agent.md` and
+`.squad/agents/<member>/charter.md`. Ordinary folder names and symlinks to agent
+files work; a link to a non-agent file does not.
+
+The existing native bundle builder below still produces the legacy
+`kmx mcp --root ABSOLUTE_DIR` configuration and matching
+[selected-root.json](selected-root.json). That compatibility mode remains bound
+to its configured directory; the new unbound server needs neither file nor a
+folder confirmation. Plugin installation is replaced separately.
 
 The bundled engine exposes exactly lowercase `create`, `edit`, `run` and
-`test`. Canonical branches require `schemaVersion: 1` and root-relative `path`; Create
+`test`. Canonical branches require `schemaVersion: 1` and an agent `path`; Create
 also needs canonical `content`, Edit needs `content` and `expectedRevision`.
 Run/Test accept `caseId`, `showContent` and `showFailedContent`; Run also accepts `input`.
 Use discovered schemas as authority. See the
@@ -132,20 +134,19 @@ or cross-compilation do not qualify Squad on Windows/macOS.
 
 ## Agent authoring canvas
 
-After setup confirms the selected root, select the **kmx** skill in the app's slash
-menu and enter `/kmx open greeter.agent.md`. Canonical Squad paths such as
-`/kmx open .squad/agents/greeter/charter.md` work too. `/kmx` or `/kmx help` shows
-usage without opening anything.
+Ask Copilot to make an agent. The builder skill creates it through kmx and then
+opens the successful Create result's exact path in the canvas. To open an
+existing agent, select **kmx** in the app's slash menu and enter
+`/kmx open /home/me/project/greeter.agent.md`. Nested agent and canonical Squad
+paths work too. `/kmx` or `/kmx help` shows usage without opening anything.
 
 This is a host-model skill turn, not a model-free native slash command. The skill
 asks for one built-in `open_canvas` call with the installed provider and a stable
-instance ID. The provider checks the path and reads the existing root-confined
-resource before every open, including reopening an existing instance. An
-unreadable resource refuses that open; it does not close an already-running
-view. It never infers a root from the app folder, changes the
-binding, or asks for another root confirmation. Opening does not create, edit,
-run or test an agent; the existing authoring controls and their checks remain
-unchanged.
+instance ID. The provider checks the agent resource before every open, including
+reopening an existing instance. Full paths distinguish same-named agents in
+different repositories. An unreadable resource does not close an already-running
+view. Opening does not edit, run or test the agent; the existing authoring
+controls and their checks remain unchanged. No folder confirmation is required.
 
 Without the built-in canvas opener, the skill uses the native opener's text
 fallback. The manual native command `/agent-view greeter.agent.md` also displays

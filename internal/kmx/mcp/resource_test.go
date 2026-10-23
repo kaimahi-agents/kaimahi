@@ -64,7 +64,7 @@ func TestAgentResourceShapesAndConfinement(t *testing.T) {
 			t.Fatal("incoherent source view")
 		}
 	}
-	for _, uri := range []string{"file:///etc/passwd", "kmx://other/minimal.agent.md", "kmx://agent/..%2Fminimal.agent.md", "kmx://agent/minimal.agent.md?showContent=true", "kmx://agent/%6Dinimal.agent.md", "kmx://agent/.squad/agents/greeter/charter.md", "kmx://agent/no.txt", "kmx://agent/minimal.agent.md#anything", "kmx://agent/%252E%252E%252Fminimal.agent.md"} {
+	for _, uri := range []string{"file:///etc/passwd", "kmx://other/minimal.agent.md", "kmx://agent/..%2Fminimal.agent.md", "kmx://agent/minimal.agent.md?showContent=true", "kmx://agent/no.txt", "kmx://agent/minimal.agent.md#anything", "kmx://agent/%252E%252E%252Fminimal.agent.md"} {
 		_, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: uri})
 		if err == nil {
 			t.Fatalf("unsafe URI accepted: %s", uri)
