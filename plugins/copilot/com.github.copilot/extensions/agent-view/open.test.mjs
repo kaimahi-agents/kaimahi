@@ -138,7 +138,9 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
       await canvas.onClose(ctx);
     }
     const skill = await readFile(new URL("../../../skills/kmx/SKILL.md", import.meta.url), "utf8");
-    assert.match(skill, /^---\nname: kmx\n/);
+    for (const eol of ["\n", "\r\n"]) {
+      assert.match(skill.replace(/\r?\n/g, eol), /^---\r?\nname: kmx\r?\n/);
+    }
     assert.match(skill, /built-in `open_canvas` exactly once/);
     const payload = JSON.parse(skill.match(/```json\s*([\s\S]*?)```/)[1]);
     assert.deepEqual(payload, { extensionId: PROVIDER, canvasId: "kmx-agent-view", instanceId: "<INSTANCE>", input: { path: "<PATH>" } });
