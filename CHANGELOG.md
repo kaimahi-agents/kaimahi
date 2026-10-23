@@ -29,20 +29,22 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - `kmx mcp --root DIRECTORY` serves exactly Create/Edit/Run/Test over stdio.
   It confines canonical charter access to an explicit root, creates without
   replacement, edits at an expected revision and delegates Run/Test to the shared
-  snapshot API and its temporary preview runner (no journal). No new runner,
-  network listener or native evidence authority.
+  snapshot API. Fake/local previews use embedded Sessions and retain cleartext
+  journals; invocations with a Copilot agent or judge remain direct and explicitly
+  unjournaled. No extra MCP network listener or native evidence authority.
 
-- Temporary direct file-preview runner with explicit no-journal output, deterministic
-  fake and selected local OpenAI-compatible model transport. One completion
-  per input/example and one judge sample per llmJudge, without retries or fallback;
-  no Sessions, native judge evidence or deployment qualification. Removed when the
-  embedded Sessions runner is integrated.
+- Direct, explicitly unjournaled file-preview execution when the agent or judge
+  uses Copilot, with one completion per input/example and one judge sample per
+  llmJudge, without retries or fallback. Other fake/local invocations use embedded
+  Sessions and two-sample judging. Neither route grants native judge evidence or
+  deployment qualification.
 
 - Canonical `run FILE` / `test FILE` adapters for markdown-agent local preview:
   stable `--case` selection, versioned payload-free text/JSON outcomes, separate
-  ad-hoc input and distinct non-pass/cancel exits. Tests inject the embedded-runner
-  interface; a temporary direct no-journal adapter is available for preview. No native
-  evidence, file-scoped Explain or change to deployed Run/workspace Test/Eval.
+  ad-hoc input and distinct non-pass/cancel exits. The adapters share the runner
+  interface, with journaled fake/local execution and the direct Copilot exception
+  described above. No native evidence, file-scoped Explain or change to deployed
+  Run/workspace Test/Eval.
 
 - Read-only `kmx model list [-o table|json]` discovers cached Foundry Local
   models at the runtime-reported endpoint and installed Ollama models on loopback
@@ -171,8 +173,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   journals can be cleared per run or all at once. On Windows the journal is
   under `%AppData%` (roaming profile). Journal inspection replays a run with no
   model call and gives no verdict. Results are labeled local preview, not
-  deployment qualification. `run FILE` and `test FILE` do not use it yet; they
-  keep the temporary no-journal runner until it is wired in. See
+  deployment qualification. File Run/Test and MCP use it for fake/local routes;
+  if either the agent or judge uses Copilot, the whole invocation instead remains
+  direct and explicitly unjournaled. See
   [local preview](https://github.com/kaimahi-agents/kaimahi/blob/main/docs/local-preview.md).
 
 - Native CI qualification uploads separate payload-free phase timings on success or failure, without changing runtime proofs, cases or time budgets.
@@ -196,7 +199,13 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   structures. Canonical parsing and current CLI/MCP routes are unchanged; team
   casting/enrichment, member execution and package-bound results are not enabled.
 
-- Add a root-confined read-only MCP agent resource and native Copilot canvas with `/agent-view` text fallback. Display minimal agent files and canonical Squad charters without adding a tool or changing Run/Test acceptance. Latest preview state is process-local; model answers still require the existing content opt-in. Initial read-only views were demonstrated in the Windows Copilot app through a WSL MCP engine; execution controls and live result refresh are not included.
+- Root-confined read-only MCP agent resource and `/agent-view` text fallback,
+  plus a native Copilot agent canvas. Display minimal agent files and canonical
+  Squad charters without adding a tool or changing Run/Test acceptance. Latest
+  preview state is process-local. The resource and text fallback do not edit or
+  execute; canvas editing, testing and failed-answer disclosure are described
+  below. Initial views were demonstrated in the Windows Copilot app through a
+  WSL MCP engine.
 
 - Internal Squad 1.1.0 cast/enrich primitives validate a local initialized project,
   preserve native charter bytes outside approved task/model/examples additions,
