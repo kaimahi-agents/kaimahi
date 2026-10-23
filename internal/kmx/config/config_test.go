@@ -74,8 +74,10 @@ func TestProductDefaultsAreUsable(t *testing.T) {
 func TestStateDirUsesPortableOverrideAndNativeDefault(t *testing.T) {
 	home := t.TempDir()
 	xdg := filepath.Join(t.TempDir(), "xdg")
+	local := filepath.Join(t.TempDir(), "local")
 	t.Setenv("KMX_HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("LOCALAPPDATA", local)
 	if got, err := StateDir(); err != nil || got != home {
 		t.Fatalf("KMX_HOME state dir = %q, %v; want %q", got, err, home)
 	}
@@ -91,6 +93,8 @@ func TestStateDirUsesPortableOverrideAndNativeDefault(t *testing.T) {
 			t.Fatal(err)
 		}
 		want = filepath.Join(userHome, "Library", "Application Support", "kmx")
+	case "windows":
+		want = filepath.Join(local, "kmx")
 	default:
 		native, err := os.UserConfigDir()
 		if err != nil {

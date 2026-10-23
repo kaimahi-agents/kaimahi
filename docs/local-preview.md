@@ -204,14 +204,15 @@ only the judge uses Copilot; it creates no journal.
 
 - Location: `config.LocalPreviewJournalDir()`, which is
   `<kmx state>/local-preview/journals`. Set `KMX_HOME` to override the kmx
-  state directory. Without it, kmx uses `os.UserConfigDir()/kmx`: XDG config on
-  Linux, `Library/Application Support` on macOS, `%AppData%` on Windows.
+  state directory. Without it, kmx uses XDG config on Linux,
+  `Library/Application Support` on macOS, and machine-local
+  `%LOCALAPPDATA%\kmx` on Windows.
   The journal is never stored in a checkout.
-- **Windows:** `%AppData%` is the roaming profile. On a domain account with
-  roaming profiles, the cleartext journal can be copied to the profile server
-  at sign-out. Where all Windows kmx state lives is decided by native Windows
-  support, tracked in [#578](https://github.com/kaimahi-agents/kaimahi/issues/578);
-  until then, set `KMX_HOME` to a local directory or clear journals after use.
+- **Windows:** `%LOCALAPPDATA%` is machine-local and does not roam with a domain
+  profile. Only private state-root creation and lookup are qualified in the
+  current Windows foundation; local-preview storage remains behind the guarded
+  CLI until its later integration phase under
+  [#578](https://github.com/kaimahi-agents/kaimahi/issues/578).
 - Each preview run is one SQLite file named `<UTC time>-<random>.db` (the time
   has nanosecond precision, so names sort in creation order), with its
   `-wal`/`-shm` companions. While the run executes it holds an OS lock on a

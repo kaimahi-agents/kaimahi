@@ -139,11 +139,15 @@ config location, while macOS uses `~/Library/Application Support`. `KMX_HOME`
 is the repository's explicit cross-platform isolation contract.
 
 `internal/kmx/fileaccess` has native Linux and Windows amd64 package tests for
-checked read-only opens, security inspection and physical identity. Windows
-arm64 is compiled and vetted, not executed. The package is deliberately unwired
-from operation adapters and has no writer, lock, flush, state or publication
-API. These tests do not build or qualify the guarded Windows CLI; use WSL for
-the installed command until the later enablement phase lands.
+checked reads, security/identity inspection, protected private first creation,
+process-held locks and no-replace file/directory-flush publication. The package
+keeps opaque handles, repairs/adopts nothing and is unwired from operation
+adapters. `internal/kmx/config` separately exposes explicit creating and
+non-creating private state-root resolution; `StateDir` itself remains a pure
+locator. Windows defaults to machine-local `%LOCALAPPDATA%\kmx`. Windows arm64
+is compiled and vetted, not executed. These tests qualify only low-level local
+NTFS primitives, not the guarded Windows CLI; use WSL for the installed command
+until the later enablement phase lands.
 
 The hosted Windows test context is established by the test-only
 [`windows-tests` launcher](../scripts/ci/windows-tests/main_windows.go), whose

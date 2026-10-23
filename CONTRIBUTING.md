@@ -145,14 +145,17 @@ job runs each checker, each checker's self-test, and a set of inline
 meta-checks over CI's own guards; it is the authority on what gates a
 merge, not this list.
 
-The Linux app tests run in four process-isolated CI shards, assigned by SHA-256
-of each compiled top-level test name. Subtests stay with their parent. The
+The Linux and macOS app tests each run in four process-isolated CI shards,
+assigned by SHA-256 of each compiled top-level test name. Subtests stay with their parent. The
 required `hygiene` check requires every shard to succeed and still runs the other
 packages and focused app regressions. Each shard retains the 600-second package
 limit and publishes payload-free per-test timings. To run one shard locally,
 use `python3 scripts/ci/app-tests.py --shard 0 --shards 4`; ordinary
 `go test ./...` still runs the complete suite without sharding.
 Use `make test-app` locally to run all four CI shards; an unsharded local run can reach the 600s limit.
+The App test harness resolves macOS's temporary root before creating fixtures,
+so `/var` aliases do not trip the source loaders' symlink-ancestor refusals.
+Each CI timing/failure artifact names its operating system and shard.
 
 The retired-command scanner checks concrete removed commands and assets, not
 kagent API/image identifiers or runtime-version support. Its small exact

@@ -39,7 +39,7 @@ test:
 
 test-app:
 	@set -eu; \
-	work=$$(mktemp -d); \
+	work=$$(mktemp -d "$${TMPDIR:-/tmp}/kmx-app-tests.XXXXXX"); \
 	printf 'App test artifacts: %s\n' "$$work"; \
 	status=0; \
 	for shard in 0 1 2 3; do \

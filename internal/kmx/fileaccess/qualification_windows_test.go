@@ -30,17 +30,16 @@ type filesystemQueryCalls struct {
 	name  int
 }
 
-func overrideVolumeInformation(t *testing.T, object Object, flags uint32, filesystem string) *filesystemQueryCalls {
+func overrideFilesystemQueries(t *testing.T, query func(windows.Handle) (uint32, string)) *filesystemQueryCalls {
 	t.Helper()
-	file := rawObject(object)
-	wantHandle := windows.Handle(file.Fd())
 	previous := volumeInformationByHandle
 	calls := filesystemQueryCalls{}
 	t.Cleanup(func() { volumeInformationByHandle = previous })
 	volumeInformationByHandle = func(handle windows.Handle, label *uint16, labelLen uint32, serial, maxComponent, outFlags *uint32, name *uint16, nameLen uint32) error {
-		if handle != wantHandle || label != nil || labelLen != 0 || serial != nil || maxComponent != nil {
+		if label != nil || labelLen != 0 || serial != nil || maxComponent != nil {
 			t.Fatalf("unexpected volume query arguments")
 		}
+		flags, filesystem := query(handle)
 		if outFlags == nil && name == nil {
 			t.Fatal("filesystem query requested no qualification output")
 		}
@@ -63,6 +62,18 @@ func overrideVolumeInformation(t *testing.T, object Object, flags uint32, filesy
 		return nil
 	}
 	return &calls
+}
+
+func overrideVolumeInformation(t *testing.T, object Object, flags uint32, filesystem string) *filesystemQueryCalls {
+	t.Helper()
+	file := rawObject(object)
+	wantHandle := windows.Handle(file.Fd())
+	return overrideFilesystemQueries(t, func(handle windows.Handle) (uint32, string) {
+		if handle != wantHandle {
+			t.Fatalf("unexpected volume query handle %v", handle)
+		}
+		return flags, filesystem
+	})
 }
 
 func requireFilesystemQuery(t *testing.T, calls *filesystemQueryCalls, wantFlags, wantName int) {
@@ -115,6 +126,64 @@ func TestWindowsSecurityChecksExecuteFilesystemQualification(t *testing.T) {
 			}
 			requireFilesystemQuery(t, missingACLCalls, 1, 1)
 		})
+	}
+}
+
+func TestWindowsOpenAPIsRefuseUnsupportedFilesystem(t *testing.T) {
+	base := foundationTempDir(t)
+	child := filepath.Join(base, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "file"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	parent := openTestDirectory(t, base)
+	parentHandle := windows.Handle(rawObject(parent).Fd())
+	calls := overrideFilesystemQueries(t, func(handle windows.Handle) (uint32, string) {
+		if handle == parentHandle {
+			return windows.FILE_PERSISTENT_ACLS, "NTFS"
+		}
+		return windows.FILE_PERSISTENT_ACLS, "ReFS"
+	})
+
+	for _, tc := range []struct {
+		operation string
+		open      func() (Object, error)
+	}{
+		{"open directory", func() (Object, error) {
+			object, err := OpenDirectory(t.Context(), currentVolumeRoot(t))
+			if object == nil {
+				return nil, err
+			}
+			return object, err
+		}},
+		{"open directory entry", func() (Object, error) {
+			object, err := OpenDirectoryAt(t.Context(), parent, "child")
+			if object == nil {
+				return nil, err
+			}
+			return object, err
+		}},
+		{"open regular file", func() (Object, error) {
+			object, err := OpenRegularAt(t.Context(), parent, "file")
+			if object == nil {
+				return nil, err
+			}
+			return object, err
+		}},
+	} {
+		object, err := tc.open()
+		if object != nil || !errors.Is(err, ErrUnsupported) || errors.Is(err, ErrMissing) || errors.Is(err, ErrUnsafe) || errors.Is(err, ErrUnreadable) {
+			t.Fatalf("%s unsupported filesystem = %T, %v", tc.operation, object, err)
+		}
+		var access *AccessError
+		if !errors.As(err, &access) || access.Operation != tc.operation || access.Class != ClassUnsupported || err.Error() != tc.operation+": unsupported filesystem" {
+			t.Fatalf("%s refusal = %#v, %v", tc.operation, access, err)
+		}
+	}
+	if calls.flags != 5 || calls.name != 5 {
+		t.Fatalf("open filesystem queries = flags:%d name:%d, want 5 each", calls.flags, calls.name)
 	}
 }
 

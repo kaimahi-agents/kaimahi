@@ -33,12 +33,16 @@ changes in the package's Go doc comment.
   service start or silent model selection. Native model-access package tests
   remain separate from Windows CLI qualification.
 
-- `internal/kmx/fileaccess` is a package-independent checked-read foundation:
-  existing-file/directory opens, security inspection and physical identity only.
-  It grants no create/write/lock/rename/link/delete/sync/state/publication or
-  repair authority and remains unwired from phase-1 operation adapters. Native
-  Windows package tests qualify local-NTFS reads only, not the guarded Windows
-  CLI, native arm64 execution, an operation, release artifact or user support.
+- `internal/kmx/fileaccess` is a package-independent checked filesystem
+  foundation: existing-object reads, security/identity inspection, private first
+  creation, process-held locks and no-replace file/directory-flush publication.
+  Its handles stay opaque; it repairs/adopts nothing, retries no ambiguous effect
+  and remains unwired from operation adapters. `internal/kmx/config` alone uses
+  it for explicit creating/non-creating state-root resolution; ordinary
+  `StateDir` remains location-only. Native Windows package tests qualify these
+  local-NTFS primitives only, not the guarded CLI, native arm64 execution, an
+  operation, release artifact or user support. App/OCI/workspace adapters remain
+  inert until later phases.
 
 - Follow the [command conventions](docs/command-conventions.md), the implemented
   interface in [docs/kmx.md](docs/kmx.md) and the
@@ -578,10 +582,11 @@ bounded to 20 runs at each start, owner-only, clearable by run or all;
 executing runs hold an OS lock and are never pruned or cleared (on Windows this
 rests on unverified share-mode behavior), and overlapping starts can leave
 extra finished runs until the next start or clear. Journals stay under
-`config.StateDir` on every OS (`%AppData%` on Windows, disclosed as roaming)
-until native Windows support
-([#578](https://github.com/kaimahi-agents/kaimahi/issues/578)) decides Windows
-state. The additive `kmx-local-tools-v1` host-bound harness has a separate bounded
+`config.StateDir` on every OS (`%LOCALAPPDATA%` on Windows). Phase-3 state-root
+qualification does not wire local preview on Windows; that remains later
+integration work under
+[#578](https://github.com/kaimahi-agents/kaimahi/issues/578). The additive
+`kmx-local-tools-v1` host-bound harness has a separate bounded
 converter and complete-invocation replay proof, never a relaxed suite/chat check.
 Its optional single no-args read is host-enforced; at most two agent model calls,
 with unchanged separate tool-free judging inside the case deadline. Safe call
@@ -754,6 +759,9 @@ current exact alpha framework pin is a draft choice, not approval to publish;
 custom-domain and versioned-site changes require a separate review.
 
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
+App CI runs all four process-isolated shards on Linux and macOS; both platforms
+gate hygiene and artifact names include OS/shard. The App test harness resolves
+the macOS temporary root before fixtures; retain production symlink refusals.
 Command changes normally require `go test ./cmd/kmx`, affected operation-package
 tests, documentation links, repository-map and legacy-runtime checks. These
 checkers use tracked files, so include intended additions in the index

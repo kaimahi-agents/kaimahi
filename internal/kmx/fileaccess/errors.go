@@ -22,6 +22,7 @@ var (
 	ErrUnsafe      = errors.New("unsafe filesystem state")
 	ErrUnsupported = errors.New("unsupported filesystem")
 	ErrUnreadable  = errors.New("filesystem state unreadable")
+	errEntryExists = errors.New("filesystem entry already exists")
 )
 
 // AccessError exposes a fixed operation and exclusive category, never a caller
@@ -41,6 +42,9 @@ func (e *AccessError) Is(target error) bool {
 		return true
 	}
 	if e.Class == ClassMissing && target == fs.ErrNotExist {
+		return true
+	}
+	if target == errEntryExists && errors.Is(e.cause, target) {
 		return true
 	}
 	return e.Class == ClassUnreadable && target == fs.ErrPermission && errors.Is(e.cause, fs.ErrPermission)
@@ -69,7 +73,8 @@ func wrapAccess(operation string, err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return context.DeadlineExceeded
 	}
-	if access, ok := err.(*AccessError); ok {
+	var access *AccessError
+	if errors.As(err, &access) {
 		return &AccessError{Operation: operation, Class: access.Class, cause: access.cause}
 	}
 	var classified *classifiedCause
@@ -101,6 +106,13 @@ func (e *classifiedCause) Is(target error) bool { return target == classError(e.
 func unsafeCause(reason string) error { return &classifiedCause{class: ClassUnsafe, reason: reason} }
 func unreadableCause(reason string) error {
 	return &classifiedCause{class: ClassUnreadable, reason: reason}
+}
+
+func creationFailure(primary error, cleanup ...error) error {
+	if errors.Join(cleanup...) != nil {
+		return unreadableCause("private creation cleanup is uncertain")
+	}
+	return primary
 }
 
 func checkContext(ctx context.Context) error {
