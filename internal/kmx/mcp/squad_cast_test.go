@@ -16,6 +16,9 @@ import (
 
 // The fixed cast argv is handled only in this test binary, never production.
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "init" {
+		os.Exit(squadInitTestChild())
+	}
 	if len(os.Args) > 1 && os.Args[1] == "cast" {
 		os.Exit(squadTestChild())
 	}

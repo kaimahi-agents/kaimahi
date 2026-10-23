@@ -36,6 +36,7 @@ type SquadResult struct {
 	Members        []SquadMemberResult `json:"members"`
 	ChangedPaths   []string            `json:"changedPaths"`
 	EffectsUnknown bool                `json:"effectsUnknown"`
+	Setup          string              `json:"setup,omitempty"`
 }
 
 // SquadCreator serializes its own calls. Other native processes/editors must
@@ -45,9 +46,14 @@ type SquadCreator struct {
 	program     string
 	programInfo os.FileInfo
 	gate        chan struct{}
+	allowSetup  bool
 }
 
 func OpenSquad(root string, program SquadProgram) (*SquadCreator, error) {
+	return openSquad(root, program, false)
+}
+
+func openSquad(root string, program SquadProgram, allowSetup bool) (*SquadCreator, error) {
 	if program.Release != "1.1.0" || program.GOOS != runtime.GOOS || program.GOARCH != runtime.GOARCH || !filepath.IsAbs(program.Path) {
 		return nil, refusal("unsupported_squad_program")
 	}
@@ -74,8 +80,14 @@ func OpenSquad(root string, program SquadProgram) (*SquadCreator, error) {
 	if err != nil {
 		return nil, refusal("unsafe_squad_root")
 	}
-	c := &SquadCreator{root: r, program: executable, programInfo: info, gate: make(chan struct{}, 1)}
-	if err := c.checkRoot(); err != nil {
+	c := &SquadCreator{root: r, program: executable, programInfo: info, gate: make(chan struct{}, 1), allowSetup: allowSetup}
+	// Native state is validated per operation. An inconsistent member must be
+	// inspectable as not set up, not prevent the canonical MCP server starting.
+	check := c.checkRoot
+	if allowSetup {
+		check = func() error { return nil }
+	}
+	if err := check(); err != nil {
 		r.Close()
 		return nil, err
 	}
@@ -146,16 +158,23 @@ func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result Squad
 	if err := cancelled(ctx); err != nil {
 		return result, err
 	}
-	if err := c.checkRoot(); err != nil {
+	missing := c.allowSetup && c.setupMissing()
+	check := c.checkRoot
+	if missing {
+		check = c.checkSetupRoot
+	}
+	if err := check(); err != nil {
 		return result, err
 	}
 	before, err := c.snapshot()
 	if err != nil {
 		return result, err
 	}
-	for _, m := range members {
-		if err := c.preflightMember(m, before); err != nil {
-			return result, err
+	if !missing {
+		for _, m := range members {
+			if err := c.preflightMember(m, before); err != nil {
+				return result, err
+			}
 		}
 	}
 	started := false
@@ -173,6 +192,43 @@ func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result Squad
 		}
 		result.ChangedPaths = changedSquadPaths(before, after)
 	}()
+	if c.allowSetup {
+		result.Setup = "reused"
+	}
+	if missing {
+		if err := cancelled(ctx); err != nil {
+			return result, err
+		}
+		started = true
+		result.Setup = "failed"
+		succeeded, initErr := c.invoke(ctx, []string{"init", "--no-workflows", "--no-vscode-default"})
+		if initErr != nil {
+			if succeeded {
+				result.Setup = "unknown"
+			}
+			result.EffectsUnknown = true
+			return result, initErr
+		}
+		if err := c.checkRoot(); err != nil {
+			result.EffectsUnknown = true
+			return result, err
+		}
+		if err := c.checkSetupMCP(); err != nil {
+			result.EffectsUnknown = true
+			return result, err
+		}
+		result.Setup = "initialized"
+		current, err := c.snapshot()
+		if err != nil {
+			result.EffectsUnknown = true
+			return result, err
+		}
+		for _, m := range members {
+			if err := c.preflightMember(m, current); err != nil {
+				return result, err
+			}
+		}
+	}
 	for i, m := range members {
 		if err := cancelled(ctx); err != nil {
 			return result, err
