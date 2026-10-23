@@ -44,6 +44,9 @@ def orka_required(base, head):
             values = triggers[name]
             if not isinstance(values, list) or not all(isinstance(value, str) and value for value in values):
                 return True
+        # Only the generated manifest is exempt; policy edits cannot exempt themselves.
+        if any(path != "scripts/ci/orka-callers.json" for path in triggers["exclude_files"]):
+            return True
         if not any(triggers[name] for name in ("prefixes", "files", "globs")):
             return True
         return any(trigger_path(path, triggers) for path in paths)

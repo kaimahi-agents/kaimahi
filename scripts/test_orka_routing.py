@@ -108,6 +108,21 @@ class RoutingTests(unittest.TestCase):
         self.commit()
         self.assertEqual(self.route(), "true")
 
+    def test_policy_edit_cannot_exempt_its_own_qualification(self):
+        target = self.root / "scripts/ci"
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROUTER, target / ROUTER.name)
+        policy = {"triggers": {"prefixes": ["scripts/ci/orka"], "files": [], "globs": [],
+                               "exclude_files": ["scripts/ci/orka-callers.json"]}}
+        (target / POLICY.name).write_text(json.dumps(policy))
+        base = self.commit()
+        policy["triggers"]["exclude_files"].append("scripts/ci/orka-routing.json")
+        (target / POLICY.name).write_text(json.dumps(policy))
+        head = self.commit()
+        result = subprocess.run([sys.executable, str(target / ROUTER.name), "--base", base,
+                                 "--head", head], cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "true\n", ""))
+
     def test_missing_or_malformed_trigger_policy_defaults_run(self):
         self.change("plugins/copilot/view.mjs", "unrelated")
         self.commit()
@@ -119,7 +134,9 @@ class RoutingTests(unittest.TestCase):
                     ({"triggers": None}, "true"), ({"triggers": {}}, "true"),
                     ({"triggers": dict(valid, prefixes=[])}, "true"),
                     ({"triggers": dict(valid, files="go.mod")}, "true"),
-                    ({"triggers": dict(valid, exclude_files=[None])}, "true")]
+                    ({"triggers": dict(valid, exclude_files=[None])}, "true"),
+                    ({"triggers": dict(valid, exclude_files=["go.mod"])}, "true"),
+                    ({"triggers": dict(valid, exclude_files=["scripts/ci/orka-routing.py"])}, "true")]
         for policy, expected in policies:
             with self.subTest(policy=policy):
                 (target / POLICY.name).write_text(json.dumps(policy))
