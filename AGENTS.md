@@ -468,7 +468,9 @@ tool paths through cleaning and symlink resolution to an allowed root-relative
 layout; outside targets, dangling links and changed root identity refuse. Keep
 relative-path restrictions and descriptor-bound file IO unchanged. Expose exactly
 Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
-never the path wrapper or shell CLI strings. Model routes are trusted startup
+never the path wrapper or shell CLI strings. Optional native v2 targets use
+explicit `App.PreviewSquadSnapshot` and revalidated native state, not auto-detection.
+Model routes are trusted startup
 configuration, not tool/charter fields. Keep complete safe App results on errors;
 fixture runners are not production execution. Edit preserves mode bits, not
 ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
@@ -483,12 +485,17 @@ See [MCP](docs/kmx.md#local-stdio-mcp).
 
 ## Internal native Squad authoring boundary
 
-`mcp.OpenSquad`/`SquadCreator.Create` are internal, unwired cast/enrich primitives,
-not additional MCP tools or v2 bindings. Require a separately operator-qualified
-Squad 1.1.0 program/runtime and approved local initialized root; release/platform
-strings are declarations, not authentication. The sole child action is fixed
-`cast --name ID --role ROLE`, stdin closed, bounded drained output and a small
-OS environment allowlist with personal lookup disabled. No init, downloader,
+`mcp.OpenSquad` remains initialized-only cast/enrich. Optional trusted startup
+`--squad-program ABS --squad-release 1.1.0` binds `OpenSquadSetup` to closed native
+v2 branches of the existing four tools; absent configuration retains v1 discovery
+and behavior. Startup never initializes. Approved native Create validates the
+whole proposal before conditional fixed `init --no-workflows --no-vscode-default`,
+then `cast --name ID --role ROLE`. Require a separately operator-qualified
+standalone program/runtime; release/platform strings are declarations, not
+authentication. Closed stdin, bounded drained output, personal lookup disabled,
+selected launcher-derived SQUAD_STANDALONE_HOME and fixed root-bound Git overrides;
+this is not a sandbox. New setup refuses prior MCP/skill config, aliases and
+worktree pointers; initialized roots validate/reuse without re-init. No downloader,
 force, shell string, adoption or automatic retry/recovery. Refuse redirected,
 legacy/personal/global roots and existing identities/partial member directories.
 Native setup owns metadata; kmx changes only the observed new charter via
@@ -499,7 +506,15 @@ outside the lock contract, and cwd is not child-process containment. Preserve
 registered-unenriched/unknown partial effects and acknowledged publication even
 on cancellation; never roll back metadata. Retained-file observations are not an
 exhaustive child event log, registration is not dispatch, and enrichment is not
-execution/package-digest evidence. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
+execution/package-digest evidence. Native member Edit/resource/Run/Test reconstruct
+mapping from managed casting registry/history/commit plus active exact ID/name/role,
+roster and enriched charter on each operation/restart; never persist kmx mapping.
+Failed validation shows **not set up by kmx**, never origin guessing or canonical
+fallback. Valid mapping is not authenticated origin, restored draft or prior pass.
+Edit replaces only Preferred/Task Instructions/Examples with source/parent CAS.
+Native preview is revision-bound and tool-free; fake consumes task-only directives,
+real routes retain native+task instructions excluding Examples. No package digest,
+team runtime or native Squad canvas actions. See [native authoring](docs/agent-file.md#internal-native-cast-and-enrich).
 
 ## Single-file charter boundary
 
@@ -508,7 +523,8 @@ execution/package-digest evidence. See [native authoring](docs/agent-file.md#int
 instructions and exact-byte revisions. Separate explicit `ParseSquad` accepts
 qualified Squad 1.1.0 native starters/enrichment with an approved cast mapping,
 original bytes and source spans. It returns a distinct `SquadCharter`, not a
-runnable `Agent`; current CLI/MCP preview and authoring remain canonical-only.
+runnable `Agent`; ordinary file CLI/v1 MCP remain canonical-only. Explicit native
+v2 preview projects a revalidated charter into the shared runner in memory only.
 Never auto-detect this profile, invent missing native identity fields or treat
 its release selector as cast-origin/registration proof. Reuse runtime assertion semantics;
 refuse tools and unsupported declarations. Parse/Load grant no execution,

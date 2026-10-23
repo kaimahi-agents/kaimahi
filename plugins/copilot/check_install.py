@@ -11,7 +11,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from package import NATIVE_FILES, SAMPLE_FILES
+from package import NATIVE_FILES, SAMPLE_FILES, squad_arguments
 
 
 def read_file(path: Path, maximum: int = 512 << 20) -> bytes:
@@ -28,9 +28,19 @@ def validate_package(plugin: Path, digest: str) -> Path:
             or str(root.resolve()) != selected or any(ord(c) < 32 for c in selected)
             or any(token in selected for token in ("${PLUGIN_ROOT}", "${PLUGIN_DATA}"))):
         raise ValueError("configure a safe absolute existing root before installing")
+    args = config["mcpServers"]["kmx-agent-builder"]["args"]
+    extra = args[3:]
+    provider = ["--provider", "copilot"]
+    if extra[:2] == provider:
+        extra = extra[2:]
+    elif extra[-2:] == provider:
+        extra = extra[:-2]
+    native = []
+    if len(extra) == 4 and extra[0] == "--squad-program" and extra[2] == "--squad-release":
+        native = squad_arguments(Path(extra[1]), extra[3])
     allowed = [{"kmx-agent-builder": {"type": "stdio", "command": "./bin/kmx",
-                "args": ["mcp", "--root", selected, *extra]}}
-               for extra in ([], ["--provider", "copilot"])]
+                "args": ["mcp", "--root", selected, *tail]}}
+               for tail in (native, [*provider, *native], [*native, *provider])]
     if config["mcpServers"] not in allowed:
         raise ValueError("selected root and MCP root/configuration differ")
     if hashlib.sha256(read_file(plugin / "bin/kmx")).hexdigest() != digest:
@@ -38,8 +48,9 @@ def validate_package(plugin: Path, digest: str) -> Path:
     return root
 
 
-def discovery(binary: Path, root: Path, env: dict) -> None:
-    process = subprocess.Popen([str(binary), "mcp", "--root", str(root)], stdin=subprocess.PIPE,
+def discovery(binary: Path, root: Path, env: dict, arguments: list[str] | None = None) -> None:
+    args = arguments if arguments is not None else ["mcp", "--root", str(root)]
+    process = subprocess.Popen([str(binary), *args], stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                encoding="utf-8", env=env)
     timer = threading.Timer(20, process.kill)
@@ -117,7 +128,8 @@ def check(copilot: str, plugin: Path, digest: str, home: Path) -> None:
                     raise ValueError("installed cache differs from configured package")
             if not stat.S_IMODE((cache / "bin/kmx").stat().st_mode) & 0o111:
                 raise ValueError("installed engine is not executable")
-            discovery(cache / "bin/kmx", root, env)
+            arguments = json.loads(read_file(cache / "mcp.json", 65536))["mcpServers"]["kmx-agent-builder"]["args"]
+            discovery(cache / "bin/kmx", root, env, arguments)
             cli("plugin", "uninstall", "kmx-agent-builder")
             installed = False
         print("PASS: installed plugin/skill, four real tools, pinned cache bytes, uninstall/reinstall")

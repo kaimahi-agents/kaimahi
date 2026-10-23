@@ -1,9 +1,11 @@
 // Package mcp adapts local agent-file operations to stdio MCP.
 // File access requires an explicit root; execution uses shared App snapshots.
 // Tool requests must not choose model endpoints or substitute a runner.
-// Separate unwired Squad cast/enrich primitives use a trusted installed program,
-// operation-owned starter observations, byte-preserving owned-field edits and
-// partial-effect reporting. They add no tools, native preview or dispatch.
+// Optional native v2 branches use a trusted installed Squad program for guarded
+// init/cast, operation-owned starter observations and byte-preserving enrichment.
+// Reopened member operations revalidate native casting state, never infer origin
+// or persist kmx mapping. Preview shares App snapshots, not native dispatch.
+// Partial effects remain explicit; no extra tool, downloader or canvas actions.
 package mcp
 
 import (
@@ -52,6 +54,10 @@ func (e *Error) Error() string {
 		return "cancelled: operation stopped before publication"
 	case "deadline_exceeded":
 		return "deadline_exceeded: operation deadline elapsed"
+	case "squad_setup_failed":
+		return "squad_setup_failed: native setup failed; inspect retained files before reconciliation; no automatic retry or rollback"
+	case "squad_not_setup":
+		return "squad_not_setup: not set up by kmx; native member state could not be validated; no origin is inferred"
 	case "squad_starter_changed":
 		return "squad_starter_changed: inspect the native member and partial effects manually; no automatic retry or adoption"
 	case "squad_enrichment_failed":

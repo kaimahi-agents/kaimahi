@@ -65,7 +65,7 @@ Changing repositories requires deliberate reconfiguration/reinstallation and
 a server restart, not an implicit rebind during a tool call.
 
 The bundled engine exposes exactly lowercase `create`, `edit`, `run` and
-`test`. All require `schemaVersion: 1` and root-relative `path`; Create
+`test`. Canonical branches require `schemaVersion: 1` and root-relative `path`; Create
 also needs canonical `content`, Edit needs `content` and `expectedRevision`.
 Run/Test accept `caseId` and `showContent`; Run also accepts `input`.
 Use discovered schemas as authority. See the
@@ -93,6 +93,39 @@ Fully journaled Copilot remains follow-up work.
 A public archive cannot contain a user's absolute root. Release archives start
 unconfigured and refuse MCP startup until an operator chooses a root as below.
 Users do not need Python or this developer builder to install an archive.
+
+## Native Squad through chat (optional)
+
+With a separately qualified **standalone Squad 1.1.0** dependency, the same four
+MCP tools can expose native v2 Create/Edit/Run/Test. Operators may supply
+`--squad-program /absolute/qualified/squad --squad-release 1.1.0` to the developer
+packager, or explicitly add that pair to the configured engine's MCP startup argv
+and restart. This is local dependency configuration, not a bundled runtime,
+authentication, downloader or upgrade. The default/release package does not infer
+or install Squad. Installed-check discovery uses the configured startup flags;
+it never initializes or casts during discovery.
+
+Ask chat to **create a squad**. It proposes one Lead and up to seven specialists,
+with generated task instructions, concrete models and reviewable examples; adjust
+that proposal in chat before approval. Approved native Create conditionally runs
+init → cast → enrich under the hood. Users never type Squad commands. Native
+setup creates built-ins/state/templates/skills and local MCP configuration, and
+may append `.gitignore`/`.gitattributes`. Prior local MCP/skill configuration,
+linked targets, worktree pointers and partial/unsupported state refuse rather
+than being adopted or overwritten. Existing supported setup is validated/reused.
+These are native dependency side effects, not new kmx filesystem/shell tools.
+
+Reopened `kmx://squad-member/{memberId}` views and member operations validate
+native casting state, roster and enriched charter on each call. Invalid state
+shows **not set up by kmx**, never guesses origin, and disables native Edit/Run/Test.
+No kmx-owned durable mapping or historical pass is restored. Valid state does not
+authenticate origin. Edit touches only Preferred/Task Instructions/Examples;
+Run/Test report revision-bound local member previews, not a package or team pass.
+Partial/unknown results need inspection, not automatic re-cast or rollback.
+The native flow is **chat-only**; the existing read-only canonical canvas below
+is unchanged. There is no new Squad canvas, queue, posting, Ralph or dispatch.
+Actual native installation/runtime qualification is platform-specific; Go tests
+or cross-compilation do not qualify Squad on Windows/macOS.
 
 ## Read-only agent view
 
