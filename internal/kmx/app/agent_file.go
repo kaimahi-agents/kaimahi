@@ -199,7 +199,10 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return fail("invalid_file", 1)
 	}
 	// Metadata is printable but can still be shaped like a credential. Do not echo it.
-	metadata := []string{r.File.Path, parsed.Model, opt.Model}
+	if opt.Model != "" && (!agentfile.ValidModel(opt.Model) || secretshapes.Match(opt.Model) != nil) {
+		return fail("invalid_options", 1)
+	}
+	metadata := []string{r.File.Path, parsed.Model}
 	for _, ex := range parsed.Examples {
 		metadata = append(metadata, ex.ID)
 		for _, as := range ex.Assertions {
@@ -211,9 +214,6 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			r.File.Path = "[agent file]"
 			return fail("invalid_file", 1)
 		}
-	}
-	if opt.Model != "" && !agentfile.ValidModel(opt.Model) {
-		return fail("invalid_options", 1)
 	}
 	missingModel := parsed.Model == ""
 	execution := *parsed

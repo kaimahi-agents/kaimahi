@@ -59,6 +59,12 @@ test('pre-route no-tests refusal remains known without fabricating a model ident
  const r=await h.act({operation:'save-and-test',expectedRevision:revision(original),examples:[]});
  assert.equal(r.error,'no-tests');assert.ok(r.view);assert.equal(r.saved,true);
 });
+test('known pre-route model refusal does not invent identity or lock the next action',async()=>{
+ const h=harness();h.o.failTest=true;h.o.shape=r=>({...r,state:'refused',modelRoute:{}});
+ const input={operation:'test',expectedRevision:revision(original)};
+ const first=await h.act(input);assert.equal(first.error,'action-failed');assert.ok(first.view);
+ assert.equal((await h.act(input)).error,'action-failed');assert.equal(h.calls.length,2);
+});
 test('malformed catalog data stays nonblocking and never exposes provider text',async()=>{
  for(const id of ['https://private.invalid','auto','bad\nmodel']){
   const h=harness(),read=h.session.rpc.mcp.resources.read;

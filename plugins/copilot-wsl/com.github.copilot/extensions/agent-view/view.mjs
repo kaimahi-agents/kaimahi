@@ -1,7 +1,7 @@
 // Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import { instructionSections, replaceInstructions, replaceExamples, effectiveModel } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, preRouteRefusal } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 
@@ -204,8 +204,7 @@ async function readModels(session) {
 function observed(view, operation, ids, caseId, complete, model) {
   const r = view.latest.status === "current" ? view.latest.result : undefined;
   const want = caseId === undefined ? ids : [caseId], got = r?.selection.caseIds ?? [], rows = r?.examples.map((e) => e.id) ?? [];
-  const noTests = !ids.length && r?.state === "refused" && r.reasonCode === "no_tests" && r.modelRoute === "/";
-  return r?.operation === operation && (noTests || r.modelRoute.slice(r.modelRoute.indexOf("/") + 1) === model) && r.selection.scope === (caseId === undefined ? "full" : "subset") && r.selection.totalCases === ids.length &&
+  return r?.operation === operation && (preRouteRefusal(r) || r.modelRoute.slice(r.modelRoute.indexOf("/") + 1) === model) && r.selection.scope === (caseId === undefined ? "full" : "subset") && r.selection.totalCases === ids.length &&
     new Set(got).size === got.length && got.every((id) => want.includes(id)) && (!complete || got.length === want.length) &&
     new Set(rows).size === rows.length && rows.every((id) => got.includes(id));
 }

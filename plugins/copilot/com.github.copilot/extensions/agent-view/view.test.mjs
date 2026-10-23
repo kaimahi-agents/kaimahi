@@ -1653,7 +1653,7 @@ test("zero tests: first-run teaching, local refusal, delete-all saves zero and a
   const zeroSource = replaceExamples(h.source, []);
   const noTests = (extra = {}) => (revision) => ({ status: "current", result: result({
     file: { path: MINIMAL, revision }, selection: { scope: "full", totalCases: 0, caseIds: [] }, examples: [],
-    state: "refused", verdict: "fail", fullPass: false, reasonCode: "no_tests", reason: "No tests yet — add or suggest one", ...extra,
+    state: "refused", verdict: "unknown", fullPass: false, modelRoute: {}, reasonCode: "no_tests", reason: "No tests yet — add or suggest one", ...extra,
   }) });
   reply = { error: "no-tests", message: "No tests yet — add or suggest one", saved: true, view: await viewFor(zeroSource, [], noTests()) };
   openTest(h.root, "a"); click(byClass(h.root, "more")[0]); click(btn(h.root, "Delete test"));
@@ -1665,8 +1665,9 @@ test("zero tests: first-run teaching, local refusal, delete-all saves zero and a
   assert.equal(c18Text(h.root, "prompt-status"), "Saved · add a test to run it");
   assert.equal(reloadButton(h.root).hidden, true, "a known no-tests refusal is not an unknown outcome");
   assert.equal(byClass(h.root, "empty-tests")[0].hidden, false);
+  assert.doesNotMatch(h.root.textContent, /Result out of date/);
   assert.equal(byClass(h.root, "pass").length, 0, "no green for zero tests");
-  reply = { view: await viewFor(zeroSource, [], noTests({ operation: "run", adHoc: { state: "complete", verdict: "pass", answerExcerpt: "Hi there" } })), saved: false };
+  reply = { view: await viewFor(zeroSource, [], noTests({ operation: "run", state: "complete", reasonCode: "completion_ready", modelRoute: { provider: "fake", model: "fake" }, adHoc: { state: "complete", verdict: "pass", answerExcerpt: "Hi there" } })), saved: false };
   click(btn(h.root, "Run")); await tick(); await tick();
   assert.equal(h.calls[1].operation, "run");
   assert.match(byClass(h.root, "ad-hoc-result")[0].textContent, /Hi there/);

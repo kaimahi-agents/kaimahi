@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { instructionSections, replaceInstructions, replaceExamples, effectiveModel } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, runtimeModelSelection } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 
 const KEYS = ["Accountable Responsibilities", "Non-Responsibilities", "Collaboration and Review Authority"];
 const SOURCE = `# Greeter — Greeting 🌱
@@ -36,6 +36,15 @@ test("effective runtime model preserves legacy display metadata and fixed preced
   assert.equal(effectiveModel("authored", "picked"), "picked");
   assert.equal(effectiveModel("authored", ""), "authored");
   assert.equal(effectiveModel("", ""), "gpt-5.6-terra");
+});
+
+test("an attested pre-route refusal is current but never restores an old model pass", () => {
+  const selection = runtimeModelSelection();
+  const view = { model: "fake", latest: { status: "current", result: { state: "refused", verdict: "unknown", fullPass: false, reasonCode: "no_tests", modelRoute: "/" } } };
+  assert.equal(selection.view(view).latest.status, "current");
+  selection.choose("other", view); assert.equal(selection.view(view).latest.status, "stale");
+  selection.confirm(view); assert.equal(selection.view(view).latest.status, "current");
+  selection.choose("", view); assert.equal(selection.view(view).latest.status, "stale");
 });
 
 const BODY = "Reply with exactly Hello.";

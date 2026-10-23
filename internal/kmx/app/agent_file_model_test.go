@@ -88,6 +88,21 @@ func TestRuntimeModelReachesBothPreviewRunners(t *testing.T) {
 	}
 }
 
+func TestFilePreviewRejectsInvalidRuntimeModelBeforeRunner(t *testing.T) {
+	for _, model := range []string{"auto", "https://private.invalid", "gpt-*", "ghp_" + strings.Repeat("a", 36)} {
+		t.Run(fmt.Sprintf("length-%d", len(model)), func(t *testing.T) {
+			runner := &scriptedPreview{verdict: runtime.EvaluationPass}
+			path := previewFile(t)
+			route := modelaccess.Route{Provider: "copilot", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+			result, err := (&App{FileRunner: runner}).PreviewAgentFile(t.Context(), FilePreviewOptions{File: path, Operation: "test", Model: model, Route: &route})
+			encoded, _ := json.Marshal(result)
+			if err == nil || result.ReasonCode != "invalid_options" || runner.calls != 0 || result.File.Path != "greeter.agent.md" || strings.Contains(string(encoded), model) {
+				t.Fatalf("runtime option was executed, echoed, or blamed on source: code=%s calls=%d", result.ReasonCode, runner.calls)
+			}
+		})
+	}
+}
+
 func TestFilePreviewRuntimeModelPrecedence(t *testing.T) {
 	for _, tc := range []struct{ name, authored, override, want string }{
 		{"override", "authored-model", "picked-model", "picked-model"},

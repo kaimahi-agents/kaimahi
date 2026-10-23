@@ -67,6 +67,25 @@ func TestMCPRuntimeModelChoice(t *testing.T) {
 	}
 }
 
+func TestMCPInvalidRuntimeModelNeverReachesRunner(t *testing.T) {
+	for _, model := range []string{"auto", "https://private.invalid", "gpt-*", "ghp_" + strings.Repeat("a", 36)} {
+		f, _ := unboundFiles(t)
+		_, _, source := canonicalFiles(t)
+		path := filepath.Join(t.TempDir(), "greeter.agent.md")
+		if _, err := f.Create(t.Context(), path, []byte(source)); err != nil {
+			t.Fatal(err)
+		}
+		runner := &previewFixture{verdict: runtime.EvaluationPass}
+		cs := connectFixture(t, Operations(f, &app.App{FileRunner: runner}, nil))
+		for _, op := range []string{"run", "test"} {
+			result, reply := previewCall(t, cs, op, map[string]any{"schemaVersion": 1, "path": path, "model": model})
+			if !reply.IsError || result.ReasonCode != "invalid_options" || runner.calls != 0 || strings.Contains(result.Reason, model) {
+				t.Fatalf("invalid runtime model: code=%s calls=%d", result.ReasonCode, runner.calls)
+			}
+		}
+	}
+}
+
 func TestMCPModelOverrideKeepsStartupRoute(t *testing.T) {
 	f, _, source := canonicalFiles(t)
 	if _, err := f.Create(t.Context(), "greeter.agent.md", []byte(source)); err != nil {

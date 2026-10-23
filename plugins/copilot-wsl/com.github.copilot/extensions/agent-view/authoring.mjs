@@ -8,6 +8,10 @@ const INSTRUCTIONS = [
 const HEADINGS = ["Identity", ...INSTRUCTIONS, "Model", "Examples"];
 export const DEFAULT_MODEL = "gpt-5.6-terra";
 export const effectiveModel = (authored, override) => override || authored.match(/^model: (.+)$/m)?.[1] || authored || DEFAULT_MODEL;
+// These owned refusals happen before route selection and contain no completion.
+export const preRouteRefusal = (result) => result?.state === "refused" && result.verdict === "unknown" && result.fullPass === false
+  && result.modelRoute === "/" && ["no_tests", "model_unavailable", "invalid_selection"].includes(result.reasonCode);
+
 // Runtime state is separate from authored source and survives only this canvas.
 export function runtimeModelSelection() {
   let override = "", needsRun = false;
@@ -25,9 +29,9 @@ export function runtimeModelSelection() {
       if (changed) needsRun = true;
       return changed;
     },
-    confirm(view) { if (actual(view) === selected(view)) needsRun = false; },
+    confirm(view) { if (actual(view) === selected(view) || preRouteRefusal(view.latest.result)) needsRun = false; },
     view(view) {
-      return view.latest.status === "current" && (needsRun || actual(view) !== selected(view))
+      return view.latest.status === "current" && (needsRun || !preRouteRefusal(view.latest.result) && actual(view) !== selected(view))
         ? { ...view, latest: { status: "stale", badge: "stale" } } : view;
     },
   };
