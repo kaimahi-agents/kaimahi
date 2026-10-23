@@ -122,6 +122,7 @@ kmx-agent-builder/com.github.copilot/extensions/agent-view/app.js
 kmx-agent-builder/com.github.copilot/extensions/agent-view/authoring.mjs
 kmx-agent-builder/com.github.copilot/extensions/agent-view/extension.mjs
 kmx-agent-builder/com.github.copilot/extensions/agent-view/index.html
+kmx-agent-builder/com.github.copilot/extensions/agent-view/open.mjs
 kmx-agent-builder/com.github.copilot/extensions/agent-view/style.css
 kmx-agent-builder/com.github.copilot/extensions/agent-view/view.mjs
 kmx-agent-builder/engine.json
@@ -130,6 +131,7 @@ kmx-agent-builder/plugin.json
 kmx-agent-builder/samples/release-writer.agent.md
 kmx-agent-builder/selected-root.json
 kmx-agent-builder/skills/kmx-agent-builder/SKILL.md
+kmx-agent-builder/skills/kmx/SKILL.md
 kmx-agent-builder/try-it.json
 FILES
 tar -tzf "$run_dir/$asset" > "$run_dir/inventory" 2>/dev/null || die 'Invalid archive.'

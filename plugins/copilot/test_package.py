@@ -89,12 +89,18 @@ class PackageTests(unittest.TestCase):
     def test_native_view_is_bundled_without_tests_or_dependencies(self):
         self.build()
         native = "com.github.copilot/extensions/agent-view"
-        names = {"extension.mjs", "view.mjs", "index.html", "app.js", "style.css", "authoring.mjs"}
+        names = {"extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs"}
         self.assertEqual({p.name for p in (self.out / native).iterdir()}, names)
         for name in names:
             self.assertEqual((self.out / native / name).read_bytes(),
                              (HERE / native / name).read_bytes())
         self.assertFalse((self.out / "node_modules").exists())
+
+    def test_both_skills_are_copied_exactly(self):
+        self.build()
+        for name in ("kmx-agent-builder", "kmx"):
+            path = Path("skills") / name / "SKILL.md"
+            self.assertEqual((self.out / path).read_bytes(), (HERE / path).read_bytes())
 
     def test_sample_and_try_it_marker_are_copied_exactly(self):
         self.build()
