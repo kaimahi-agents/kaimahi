@@ -91,8 +91,13 @@ arbitrary secrets can still evade shape detection.
 
 ## Examples and assertions
 
-The outer mapping has only `examples`. Each example has exactly `id`, `input`
-and `assertions`. Order is preserved. Example IDs are unique across the file,
+The outer mapping has only `examples`. An explicit empty sequence, `examples: []`,
+is valid while authoring; a missing sequence, YAML null or a mapping still refuses.
+Create, Edit and Load preserve the same canonical source/revision at zero tests.
+Ad-hoc Run with an input remains available. Test refuses with
+“No tests yet — add or suggest one”; an empty test set never passes or supplies
+shipping evidence. Each nonempty example has exactly `id`, `input` and
+`assertions`. Order is preserved. Example IDs are unique across the file,
 1–63 ASCII letters, digits, `.`, `_` or `-`, starting with a letter or digit.
 Input is a nonblank string, validated with the existing runtime case validator
 (including known credential-shape refusal). Assertions are nonempty and reuse existing
@@ -161,7 +166,10 @@ This export does not implement that deployment path or define a host-side API.
 `Load`/`Parse` once, without configuration, state, provider selection, credentials
 or execution. It accepts canonical runnable charters only, not `Inspect`'s minimal
 display files or the distinct native Squad profile. Existing tools/settings and
-safe parser refusals apply unchanged. The original source is not modified.
+safe parser refusals apply unchanged. Zero-test authoring charters refuse export
+before any profile bytes are written. Packaging and deployment still require test
+evidence; saving a prompt or passing an ad-hoc Run grants neither. The original
+source is not modified.
 
 The explicit export emits one deterministic, pretty-printed JSON document with
 a final LF, at most 2 MiB. It includes authored content, not the payload-free

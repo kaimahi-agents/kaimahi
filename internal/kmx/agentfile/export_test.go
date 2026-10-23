@@ -199,3 +199,16 @@ func exportSource(t *testing.T, source string) string {
 }
 
 func exportedDigest(data []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(data)) }
+
+// Run profiles are the only agent-file shipping bridge; zero tests never ship.
+func TestExportRunProfileRefusesZeroExamples(t *testing.T) {
+	path := exportSource(t, strings.Split(sample(t), "```yaml")[0]+"```yaml\nexamples: []\n```\n")
+	if _, err := Load(path); err != nil {
+		t.Fatalf("zero-example charter must remain loadable: %v", err)
+	}
+	data, err := ExportRunProfile(path)
+	var refusal *Error
+	if data != nil || !errors.As(err, &refusal) || refusal.Field != "Examples" {
+		t.Fatalf("zero-example export: %q / %v", data, err)
+	}
+}

@@ -72,7 +72,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if ctx.Err() != nil {
 		return abort(ctx.Err())
 	}
-	if request.Agent == nil || len(examples) == 0 || request.Route.Model != request.Agent.Model {
+	if request.Agent == nil || len(examples) == 0 && request.Input == nil || request.Route.Model != request.Agent.Model {
 		return abort(agentpreview.ErrModelUnavailable)
 	}
 	agent := *request.Agent
@@ -156,7 +156,8 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 			}
 		}
 	}
-	p, prepareErr := prepare(&agent, options, true)
+	// A zero-example ad-hoc Run prepares no evaluation cases or judge.
+	p, prepareErr := prepare(&agent, options, len(examples) > 0)
 	if prepareErr != nil {
 		return abort(prepareErr)
 	}

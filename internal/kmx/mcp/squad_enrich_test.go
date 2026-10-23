@@ -117,7 +117,7 @@ func TestValidateSquadMemberRefusals(t *testing.T) {
 		{"task bound", func(m *SquadMember) { m.TaskInstructions = strings.Repeat("x", maxFileBytes) }},
 		{"invalid UTF8", func(m *SquadMember) { m.TaskInstructions = "bad\xff" }},
 		{"examples list", func(m *SquadMember) { m.Examples = "```yaml\n- id: nope\n```" }},
-		{"examples empty", func(m *SquadMember) { m.Examples = "```yaml\nexamples: []\n```" }},
+		{"examples null", func(m *SquadMember) { m.Examples = "```yaml\nexamples:\n```" }},
 		{"examples raw", func(m *SquadMember) { m.Examples = "examples: []" }},
 		{"examples extra", func(m *SquadMember) { m.Examples += "\n```yaml\nexamples: []\n```" }},
 		{"examples credential", func(m *SquadMember) {
@@ -195,5 +195,19 @@ func TestEnrichSquadStarterRefusals(t *testing.T) {
 	enrichRefusal(t, err, "invalid_squad_enrichment")
 	if got != nil {
 		t.Fatal("returned oversized candidate")
+	}
+}
+
+// Zero authored examples are a saved native enrichment, not a Test pass.
+func TestEnrichSquadZeroExamples(t *testing.T) {
+	m := enrichMember()
+	m.Examples = "```yaml\nexamples: []\n```"
+	got, err := enrichSquad(m, enrichFixture(t, "fallback"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := agentfile.ParseSquad(squadPath(m), got, squadProfile(m))
+	if err != nil || !d.Enriched || len(d.Examples) != 0 || !strings.HasSuffix(string(got), "## Examples\n\n"+m.Examples+"\n") {
+		t.Fatalf("zero-example enrichment: %v", err)
 	}
 }

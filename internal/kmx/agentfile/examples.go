@@ -121,8 +121,10 @@ func parseExamples(file string, lines []string, firstLine int) ([]Example, error
 		return nil, err
 	}
 	sequence := doc["examples"]
-	if sequence.Kind != yaml.SequenceNode || len(sequence.Content) == 0 || len(sequence.Content) > MaxExamples {
-		return nil, errAt(sequence, "provide 1–128 ordered examples")
+	// An explicit empty sequence is a saved zero-test charter. Missing/null values
+	// remain refusals; Test, export and evidence callers refuse zero examples.
+	if sequence.Kind != yaml.SequenceNode || len(sequence.Content) > MaxExamples {
+		return nil, errAt(sequence, "provide a list of 0–128 ordered examples")
 	}
 	examples := make([]Example, 0, len(sequence.Content))
 	seen := map[string]bool{}

@@ -341,3 +341,12 @@ func TestSquadFencesDoNotCreateStructuralSections(t *testing.T) {
 		t.Fatalf("fenced literal interpreted as structure: %v", err)
 	}
 }
+
+func TestSquadEnrichedZeroExamples(t *testing.T) {
+	data, profile, name := squadFixture(t, false)
+	zero := strings.Replace(string(enrichedSquad(data)), squadExamples[strings.Index(squadExamples, "```yaml"):], "```yaml\nexamples: []\n```\n", 1)
+	doc, err := ParseSquad(name, []byte(zero), profile)
+	if err != nil || !doc.Enriched || len(doc.Examples) != 0 || doc.TaskInstructions == "" || strings.Contains(doc.Instructions, "## Examples") {
+		t.Fatalf("zero-example enrichment: %+v / %v", doc, err)
+	}
+}
