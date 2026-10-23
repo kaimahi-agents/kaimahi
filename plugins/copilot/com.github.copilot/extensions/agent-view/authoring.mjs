@@ -129,7 +129,7 @@ function uniqueID(id, seen) {
 }
 
 function validateExamples(examples) {
-  require(Array.isArray(examples) && examples.length >= 1 && examples.length <= 128, "Provide 1–128 examples.");
+  require(Array.isArray(examples) && examples.length <= 128, "Provide 0–128 examples.");
   const seen = new Set();
   for (const example of examples) {
     objectFields(example, ["id", "input", "assertions"]);
@@ -161,7 +161,8 @@ function validateExamples(examples) {
 export function replaceExamples(source, examples) {
   const { sections, eol } = locate(source);
   validateExamples(examples);
-  const lines = ["## Examples", "```yaml", "examples:"];
+  // Zero tests stay an explicit empty sequence, never YAML null.
+  const lines = ["## Examples", "```yaml", examples.length ? "examples:" : "examples: []"];
   for (const example of examples) {
     lines.push(`  - id: ${JSON.stringify(example.id)}`, `    input: ${JSON.stringify(example.input)}`, "    assertions:");
     for (const check of example.assertions) {

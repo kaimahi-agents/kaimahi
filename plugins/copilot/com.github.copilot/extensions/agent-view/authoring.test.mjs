@@ -126,7 +126,7 @@ test("example and assertion count/ID bounds accept maxima and reject overflow or
   const checks = Array.from({ length: 64 }, (_, i) => ({ id: `check.${i}`, type: "contains", value: "yes" }));
   const rows = Array.from({ length: 128 }, (_, i) => ({ id: `case_${i}`, input: "Ada", assertions: i === 0 ? checks : examples()[0].assertions }));
   assert.ok(replaceExamples(SOURCE, rows).includes('id: "case_127"'));
-  for (const invalid of [[], rows.concat({ ...rows[0], id: "extra" }),
+  for (const invalid of [rows.concat({ ...rows[0], id: "extra" }),
     [{ ...rows[0], assertions: checks.concat({ ...checks[0], id: "extra" }) }],
     [rows[0], rows[0]], [{ ...rows[0], id: "-bad" }], [{ ...rows[0], id: "a".repeat(64) }],
     [{ ...rows[0], assertions: [] }], [{ ...rows[0], assertions: [checks[0], checks[0]] }],
@@ -144,4 +144,11 @@ test("unknown fields/types, tool assertions, wrong scalar types and incomplete j
   }
   const judge = { id: "judge", type: "llmJudge", rubric: "Judge", minScore: 0, judgeModel: "exact", judgeVersion: "v1" };
   for (const minScore of [null, "0", -1, 101, 1.5, NaN]) assert.throws(() => replaceExamples(SOURCE, [{ ...examples()[0], assertions: [{ ...judge, minScore }] }]));
+});
+
+test("zero examples serialize as an explicit empty sequence", () => {
+  const source = SOURCE.replaceAll("\n", "\r\n");
+  const prefix = source.slice(0, source.indexOf("## Examples"));
+  assert.equal(replaceExamples(source, []), prefix + "## Examples\r\n```yaml\r\nexamples: []\r\n```\r\n");
+  assert.deepEqual(instructionSections(replaceExamples(SOURCE, [])), instructionSections(SOURCE));
 });

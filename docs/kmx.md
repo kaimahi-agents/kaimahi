@@ -275,7 +275,10 @@ native deployment evidence. See [Copilot access](copilot-access.md).
 
 `--case ID` selects one stable saved example and always reports **partial**, even
 if the file contains only that example. Unknown/blank IDs refuse before inference.
-Missing/empty examples cannot pass. The exact model comes from `Model.Preferred`;
+An explicit `examples: []` can be saved and loaded while authoring. Ad-hoc Run
+with an input still works; Test refuses with “No tests yet — add or suggest one”.
+Missing/empty examples cannot pass, export a run profile or supply the evidence
+required for packaging/deployment. The exact model comes from `Model.Preferred`;
 `fake` selects only the built-in fake route. A real model additionally requires
 an explicit trusted `--provider` and, for local routes, `--endpoint`, validated by model access;
 there is no discovery, installation, sign-in or fallback inside Run/Test. The

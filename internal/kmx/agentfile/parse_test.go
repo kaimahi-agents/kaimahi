@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -93,7 +94,9 @@ func TestParseRefusals(t *testing.T) {
 		{"unclosed fence", strings.TrimSuffix(original, "```\n"), "Examples"},
 		{"mismatched fence", strings.TrimSuffix(original, "```\n") + "~~~\n", "Examples"},
 		{"no yaml fence", replace("```yaml", "```json"), "Examples"},
-		{"empty list", strings.Split(original, "```yaml")[0] + "```yaml\nexamples: []\n```\n", "Examples"},
+		{"null examples", strings.Split(original, "```yaml")[0] + "```yaml\nexamples:\n```\n", "Examples"},
+		{"mapping examples", strings.Split(original, "```yaml")[0] + "```yaml\nexamples: {}\n```\n", "Examples"},
+		{"empty list with text", strings.Split(original, "```yaml")[0] + "```yaml\nexamples: []\n```\nextra\n", "Examples"},
 		{"bad yaml", replace("examples:", "examples: ["), "Examples"},
 		{"second document", replace("examples:", "---\n---\nexamples:"), "Examples"},
 		{"unknown field", replace("input: Ada", "input: Ada\n    private-canary: no"), "Examples"},
@@ -177,6 +180,7 @@ func TestRefusalLocation(t *testing.T) {
 
 func FuzzParse(f *testing.F) {
 	f.Add([]byte(sample(f)))
+	f.Add([]byte(strings.Split(sample(f), "```yaml")[0] + "```yaml\nexamples: []\n```\n"))
 	f.Add([]byte("# Legacy\n"))
 	f.Add([]byte(strings.Replace(sample(f), "Reply with exactly `Hello, ` followed by the input name.", "Reply with a greeting.\n\n```text\n## Examples\n## Tools\n```", 1)))
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -185,7 +189,7 @@ func FuzzParse(f *testing.F) {
 			t.Fatal("partial success")
 		}
 		if err == nil {
-			if a == nil || len(a.Examples) == 0 {
+			if a == nil {
 				t.Fatal("invalid success")
 			}
 			lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
@@ -198,4 +202,25 @@ func FuzzParse(f *testing.F) {
 			}
 		}
 	})
+}
+
+// An explicit empty sequence is a saved zero-test charter: Parse/Load/Inspect
+// accept the same bytes and revision without inventing examples.
+func TestParseZeroExamplesRoundTrip(t *testing.T) {
+	source := strings.Split(sample(t), "```yaml")[0] + "```yaml\nexamples: []\n```\n"
+	a, err := Parse("greeter.agent.md", []byte(source))
+	if err != nil || a == nil || len(a.Examples) != 0 || a.Revision != fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(source))) {
+		t.Fatalf("zero examples refused or changed: %+v / %v", a, err)
+	}
+	path := filepath.Join(realTemp(t), "greeter.agent.md")
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil || len(loaded.Examples) != 0 || loaded.Revision != a.Revision || loaded.Instructions != a.Instructions {
+		t.Fatalf("zero-example load round trip: %+v / %v", loaded, err)
+	}
+	if inspected, err := Inspect("greeter.agent.md", []byte(source)); err != nil || len(inspected.Examples) != 0 {
+		t.Fatalf("inspection refused zero examples: %v", err)
+	}
 }

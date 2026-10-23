@@ -153,3 +153,23 @@ func TestLocalFileRunnerJudgeProgressFailureStopsSamples(t *testing.T) {
 		t.Fatalf("judge progress failure: %+v / %v sends=%d", result, err, sends)
 	}
 }
+
+func TestLocalFileRunnerZeroExamplesAdHoc(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
+	opt := directOptions(t, "fake", false)
+	zeroPreviewFile(t, opt.File)
+	opt.Operation, opt.ShowContent = "run", true
+	input := "Ada"
+	opt.Input = &input
+	result, err := (&App{FileRunner: NewLocalFileRunner()}).PreviewAgentFile(t.Context(), opt)
+	if err != nil || result.State != "complete" || result.FullPass || result.Verdict != runtime.EvaluationUnknown || result.AdHoc == nil || result.AdHoc.AnswerExcerpt != "Hello, Ada" || strings.Contains(result.Runner, "no journal") {
+		t.Fatalf("journaled zero-example ad hoc: %+v / %v", result, err)
+	}
+	opt.Operation, opt.Input = "test", nil
+	if result, err = (&App{FileRunner: NewLocalFileRunner()}).PreviewAgentFile(t.Context(), opt); err == nil || result.ReasonCode != "no_tests" {
+		t.Fatalf("zero-example test: %+v / %v", result, err)
+	}
+	if _, err := NewLocalFileRunner().Run(t.Context(), agentpreview.Request{Agent: &agentfile.Agent{Model: "fake"}, Route: modelaccess.Route{Provider: "fake", Model: "fake", Auth: "none"}}); err == nil {
+		t.Fatal("journaled runner accepted no examples and no input")
+	}
+}
