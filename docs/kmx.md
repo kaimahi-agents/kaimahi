@@ -534,7 +534,8 @@ Canonical MCP Edit keeps best-effort, source-only history on Linux and macOS.
 It captures the valid saved content being replaced, not drafts or the proposed
 new content. The first Edit captures the file's initial contents; Create needs
 no redundant history copy. A snapshot's `capturedAt` is when its content was
-replaced, not its original save time. External-editor saves are captured only
+captured for replacement, not its original save time or proof that replacement
+succeeded. External-editor saves are captured only
 when a later MCP Edit replaces them. Native Squad v2 edits are not captured;
 canonical v1 charters at `.squad/agents/ID/charter.md` are eligible.
 
