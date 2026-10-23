@@ -107,7 +107,7 @@ func (s *historyStore) unchanged() bool {
 	return err == nil && os.SameFile(current, s.lockInfo) && historyOwned(current, false) && current.Size() == 0
 }
 
-func (s *historyStore) scan(content bool) ([]historyEntry, error) {
+func (s *historyStore) scan(bounded bool) ([]historyEntry, error) {
 	if !s.unchanged() {
 		return nil, refusal("history_unavailable")
 	}
@@ -136,15 +136,10 @@ func (s *historyStore) scan(content bool) ([]historyEntry, error) {
 			return nil, refusal("history_unavailable")
 		}
 		e := historyEntry{name: name, info: info}
-		if content {
+		if bounded {
 			total += info.Size()
 			if info.Size() > maxHistoryRecordBytes || total > (32<<20)+maxHistoryRecordBytes {
 				return nil, refusal("history_unavailable")
-			}
-			if name != ".pending" {
-				if err := s.readRecord(&e); err != nil {
-					return nil, err
-				}
 			}
 		}
 		entries = append(entries, e)
@@ -153,28 +148,47 @@ func (s *historyStore) scan(content bool) ([]historyEntry, error) {
 	return entries, nil
 }
 
-func (s *historyStore) readRecord(e *historyEntry) error {
+func (s *historyStore) load() ([]historyEntry, error) {
+	entries, err := s.scan(true)
+	if err != nil {
+		return nil, err
+	}
+	for i := range entries {
+		if entries[i].name != ".pending" {
+			if _, err := s.readRecord(&entries[i]); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return entries, nil
+}
+
+// Damaged payloads leave an empty record, but their inventory entry and bytes
+// still consume root capacity. Filesystem and identity failures remain errors.
+func (s *historyStore) readRecord(e *historyEntry) (bool, error) {
 	f, err := openTarget(s.root, e.name)
 	if err != nil {
-		return refusal("history_unavailable")
+		return false, refusal("history_unavailable")
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil || !os.SameFile(info, e.info) || !historyOwned(info, false) {
-		return refusal("history_unavailable")
+		return false, refusal("history_unavailable")
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxHistoryRecordBytes+1))
 	after, statErr := f.Stat()
 	if err != nil || statErr != nil || len(b) > maxHistoryRecordBytes || int64(len(b)) != e.info.Size() || !sameHistoryEntry(after, e.info) {
-		return refusal("history_unavailable")
+		return false, refusal("history_unavailable")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(b))
 	decoder.DisallowUnknownFields()
-	r := &e.record
-	if decoder.Decode(r) != nil || decoder.Decode(new(any)) != io.EOF || r.SchemaVersion != 1 || r.VersionID+".json" != e.name || !historyKey.MatchString(r.FileKey) || r.CapturedAt.IsZero() || len(r.Source) == 0 || len(r.Source) > maxFileBytes || !utf8.Valid(r.Source) || r.Revision != revision(r.Source) {
-		return refusal("history_unavailable")
+	e.record = historyRecord{}
+	var r historyRecord
+	if decoder.Decode(&r) != nil || decoder.Decode(new(any)) != io.EOF || r.SchemaVersion != 1 || r.VersionID+".json" != e.name || !historyKey.MatchString(r.FileKey) || r.CapturedAt.IsZero() || len(r.Source) == 0 || len(r.Source) > maxFileBytes || !utf8.Valid(r.Source) || r.Revision != revision(r.Source) {
+		return false, nil
 	}
-	return nil
+	e.record = r
+	return true, nil
 }
 
 func sameHistoryEntry(a, b os.FileInfo) bool {
@@ -205,7 +219,7 @@ func (s *historyStore) retain(ctx context.Context, p string, source []byte) erro
 	if !safePath(p) || len(source) == 0 || len(source) > maxFileBytes || !utf8.Valid(source) {
 		return refusal("history_unavailable")
 	}
-	entries, err := s.scan(true)
+	entries, err := s.load()
 	if err != nil {
 		return err
 	}
@@ -291,7 +305,7 @@ func (s *historyStore) retain(ctx context.Context, p string, source []byte) erro
 }
 
 func (s *historyStore) list(p string) ([]AgentVersion, error) {
-	entries, err := s.scan(true)
+	entries, err := s.load()
 	if err != nil {
 		return nil, err
 	}
@@ -314,8 +328,15 @@ func (s *historyStore) get(p, id string) (historyRecord, error) {
 		return historyRecord{}, err
 	}
 	for _, e := range entries {
-		if e.name != ".pending" && e.record.FileKey == historyHash(p) && e.record.VersionID == id && s.unchanged() {
-			return e.record, nil
+		if e.name == id+".json" {
+			valid, err := s.readRecord(&e)
+			if err != nil {
+				return historyRecord{}, err
+			}
+			if valid && e.record.FileKey == historyHash(p) && s.unchanged() {
+				return e.record, nil
+			}
+			break
 		}
 	}
 	return historyRecord{}, refusal("not_found")

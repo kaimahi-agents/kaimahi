@@ -554,14 +554,17 @@ show an unavailable warning separately from save success, for example:
 infer successful retention from `isError: false`. Source validation, stale
 revision, cancellation and publication failures still fail normally; they never
 return a Saved confirmation. Normal history growth evicts oldest snapshots,
-not saves. Busy, damaged or inaccessible history produces the explicit warning.
+not saves. Busy, unsafe or inaccessible history produces the explicit warning.
 
 The existing `kmx://agent/{path}` view adds optional `history`, containing
 `status: available|unavailable` and `versions`, newest first. Each metadata entry
 has `versionId`, exact source `revision`, `capturedAt`, `sourceBytes` and `uri`;
 old source is not included in this list. Missing history is an empty available
-list. A history error does not prevent reading the current authored view.
-History-free library embeddings omit this optional field.
+list. Damaged snapshot payloads are omitted from lists and refuse individual
+reads; they still count toward root entry/byte bounds and can be evicted normally.
+Unsafe filesystem objects and oversized state still refuse history access. A
+history error does not prevent reading the current authored view. History-free
+library embeddings omit this optional field.
 
 To restore, without a new tool or alternate filesystem writer:
 

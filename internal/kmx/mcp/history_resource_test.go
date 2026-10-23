@@ -46,6 +46,17 @@ func historyEdit(t *testing.T, cs *sdk.ClientSession, p, expected, source string
 	return result.File, r
 }
 
+func requireHistoryToolReason(t *testing.T, result *sdk.CallToolResult, code string) {
+	t.Helper()
+	b, _ := json.Marshal(result.StructuredContent)
+	var body struct {
+		ReasonCode string `json:"reasonCode"`
+	}
+	if json.Unmarshal(b, &body) != nil || !result.IsError || body.ReasonCode != code {
+		t.Fatalf("tool refusal = %+v; want %s", result, code)
+	}
+}
+
 func TestHistoryMCPRestoreUndoAndRestart(t *testing.T) {
 	_, root, source := canonicalFiles(t)
 	base, _ := historyPaths(t)
@@ -114,9 +125,7 @@ func TestHistoryMCPRestoreUndoAndRestart(t *testing.T) {
 		t.Fatal("history added a tool", err)
 	}
 	_, stale := historyEdit(t, fresh, saved.Path, saved.Revision, source)
-	if !stale.IsError {
-		t.Fatal("restore bypassed expected revision")
-	}
+	requireHistoryToolReason(t, stale, "stale_revision")
 	if err := reopened.ClearHistory(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +175,7 @@ func TestHistoryZeroExampleSourceRestoresThroughEdit(t *testing.T) {
 }
 
 func TestHistoryFailureStillSavesAndWarnsThroughMCP(t *testing.T) {
-	for _, mode := range []string{"busy", "permissions", "corrupt", "resolver"} {
+	for _, mode := range []string{"busy", "permissions", "oversize", "resolver"} {
 		t.Run(mode, func(t *testing.T) {
 			_, root, source := canonicalFiles(t)
 			base, _ := historyPaths(t)
@@ -181,8 +190,8 @@ func TestHistoryFailureStillSavesAndWarnsThroughMCP(t *testing.T) {
 			}
 			if mode != "busy" {
 				rows, _ := store.list(saved.Path)
-				if mode == "corrupt" {
-					if err := os.WriteFile(filepath.Join(store.root.Name(), rows[0].VersionID+".json"), []byte("{"), 0600); err != nil {
+				if mode == "oversize" {
+					if err := os.Truncate(filepath.Join(store.root.Name(), rows[0].VersionID+".json"), maxHistoryRecordBytes+1); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -212,6 +221,63 @@ func TestHistoryFailureStillSavesAndWarnsThroughMCP(t *testing.T) {
 				t.Fatal("history failure blocked ordinary current view")
 			}
 		})
+	}
+}
+
+func TestHistoryDamagedSnapshotDoesNotHideHealthyVersionsOrBlockEdit(t *testing.T) {
+	_, root, source := canonicalFiles(t)
+	base, _ := historyPaths(t)
+	f := historyFiles(t, root, base)
+	var damagedURI, damagedPath string
+	var currentB File
+	for _, p := range []string{"a.agent.md", "b.agent.md"} {
+		file, err := f.Create(t.Context(), p, []byte(source))
+		if err != nil {
+			t.Fatal(err)
+		}
+		file, err = f.Edit(t.Context(), p, file.Revision, []byte(strings.ReplaceAll(source, "Hello", "Welcome")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p == "b.agent.md" {
+			currentB = file
+		}
+	}
+	store := historyStoreForTest(t, base, f.root.Name(), false)
+	rows, err := store.list("a.agent.md")
+	if err != nil || len(rows) != 1 {
+		t.Fatal("missing original snapshot", err)
+	}
+	damagedURI = agentVersionURI("a.agent.md", rows[0].VersionID)
+	damagedPath = filepath.Join(store.root.Name(), rows[0].VersionID+".json")
+	store.close()
+	if err := os.WriteFile(damagedPath, []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cs := historyClient(t, f)
+	view := readView(t, cs, currentB.Path)
+	if view.History.Status != "available" || len(view.History.Versions) != 1 {
+		t.Fatalf("damaged A hid B's healthy history: %+v", view.History)
+	}
+	healthyURI := view.History.Versions[0].URI
+	old, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: healthyURI})
+	if err != nil {
+		t.Fatal("damaged A blocked B read", err)
+	}
+	var document struct{ Source string }
+	if json.Unmarshal([]byte(old.Contents[0].Text), &document) != nil || document.Source != source {
+		t.Fatal("healthy source changed")
+	}
+	next, result := historyEdit(t, cs, currentB.Path, currentB.Revision, strings.ReplaceAll(source, "Hello", "Howdy"))
+	if result.IsError || next.History == nil || next.History.Status != "retained" {
+		t.Fatalf("damaged A prevented later Edit retention: %+v / %+v", next, result)
+	}
+	view = readView(t, cs, currentB.Path)
+	if view.History.Status != "available" || len(view.History.Versions) != 2 || view.History.Versions[0].Revision != currentB.Revision {
+		t.Fatal("later Edit did not retain B's displaced source")
+	}
+	if _, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: damagedURI}); err == nil {
+		t.Fatal("damaged A version readable")
 	}
 }
 
@@ -316,9 +382,7 @@ func TestHistoryReadAuthorizationAndStrictRestore(t *testing.T) {
 		return err
 	}
 	_, result := historyEdit(t, cs, file.Path, file.Revision, source)
-	if !result.IsError {
-		t.Fatal("restore bypassed current validator")
-	}
+	requireHistoryToolReason(t, result, "invalid_file")
 	// Inspect can show a minimal source that strict Edit must not overwrite.
 	minimal := "# Greeter\n\nGreet the supplied name.\n\n## Model\n- **Preferred:** fake\n\n## Examples" + strings.Split(source, "## Examples")[1]
 	if err := os.WriteFile(filepath.Join(root, file.Path), []byte(minimal), 0600); err != nil {
@@ -329,9 +393,7 @@ func TestHistoryReadAuthorizationAndStrictRestore(t *testing.T) {
 		t.Fatal("strict-invalid current source hid readable history")
 	}
 	_, result = historyEdit(t, cs, file.Path, revision([]byte(minimal)), second)
-	if !result.IsError {
-		t.Fatal("history restore bypassed strict current-file validation")
-	}
+	requireHistoryToolReason(t, result, "invalid_file")
 	if err := os.Remove(filepath.Join(root, file.Path)); err != nil {
 		t.Fatal(err)
 	}

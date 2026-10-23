@@ -142,7 +142,11 @@ func TestHistoryRejectsUnsafeRecordsAndClearRepairsCorruption(t *testing.T) {
 			if err := s.retain(t.Context(), "a.agent.md", []byte("A")); err != nil {
 				t.Fatal(err)
 			}
+			if err := s.retain(t.Context(), "b.agent.md", []byte("B")); err != nil {
+				t.Fatal(err)
+			}
 			rows, _ := s.list("a.agent.md")
+			healthy, _ := s.list("b.agent.md")
 			p := filepath.Join(s.root.Name(), rows[0].VersionID+".json")
 			switch mode {
 			case "corrupt":
@@ -200,11 +204,33 @@ func TestHistoryRejectsUnsafeRecordsAndClearRepairsCorruption(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := s.list("a.agent.md"); err == nil {
-				t.Fatal("unsafe record accepted")
+			damagedPayload := mode == "corrupt" || mode == "hash" || mode == "invalid-utf8"
+			if _, err := s.get("a.agent.md", rows[0].VersionID); err == nil {
+				t.Fatal("damaged or unsafe version readable")
 			}
-			if err := s.retain(t.Context(), "a.agent.md", []byte("B")); err == nil {
-				t.Fatal("unsafe store accepted another record")
+			if damagedPayload {
+				if rows, err := s.list("a.agent.md"); err != nil || len(rows) != 0 {
+					t.Fatalf("damaged payload was not skipped: %+v / %v", rows, err)
+				}
+				if rows, err := s.list("b.agent.md"); err != nil || len(rows) != 1 {
+					t.Fatalf("damaged payload hid healthy history: %+v / %v", rows, err)
+				}
+				if r, err := s.get("b.agent.md", healthy[0].VersionID); err != nil || string(r.Source) != "B" {
+					t.Fatal("damaged payload blocked healthy read", err)
+				}
+				if err := s.retain(t.Context(), "a.agent.md", []byte("C")); err != nil {
+					t.Fatal("damaged payload blocked new retention", err)
+				}
+			} else {
+				if _, err := s.list("b.agent.md"); err == nil {
+					t.Fatal("unsafe object or size violation accepted")
+				}
+				if _, err := s.get("b.agent.md", healthy[0].VersionID); err == nil {
+					t.Fatal("healthy read bypassed unsafe inventory or size bound")
+				}
+				if err := s.retain(t.Context(), "a.agent.md", []byte("C")); err == nil {
+					t.Fatal("unsafe store accepted another record")
+				}
 			}
 			clearErr := s.clear()
 			if mode == "corrupt" || mode == "hash" || mode == "invalid-utf8" || mode == "oversize" {
@@ -213,6 +239,45 @@ func TestHistoryRejectsUnsafeRecordsAndClearRepairsCorruption(t *testing.T) {
 				}
 			} else if clearErr == nil {
 				t.Fatal("clear accepted unsafe filesystem objects")
+			}
+		})
+	}
+}
+
+func TestHistoryDamagedPayloadStillConsumesRetentionBudget(t *testing.T) {
+	for _, limit := range []string{"records", "bytes"} {
+		t.Run(limit, func(t *testing.T) {
+			base, root := historyPaths(t)
+			s := historyStoreForTest(t, base, root, true)
+			if limit == "records" {
+				s.limits.records = 2
+			} else {
+				s.limits.bytes = 800 // Two small records fit, three do not.
+			}
+			for _, p := range []string{"a.agent.md", "b.agent.md"} {
+				if err := s.retain(t.Context(), p, []byte("A")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			rows, _ := s.list("a.agent.md")
+			p := filepath.Join(s.root.Name(), rows[0].VersionID+".json")
+			b, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte(strings.Repeat("!", len(b))), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.retain(t.Context(), "c.agent.md", []byte("C")); err != nil {
+				t.Fatal("damaged payload blocked eviction", err)
+			}
+			if _, err := os.Stat(p); !os.IsNotExist(err) {
+				t.Fatal("damaged entry was not counted and evicted", err)
+			}
+			for _, p := range []string{"b.agent.md", "c.agent.md"} {
+				if rows, err := s.list(p); err != nil || len(rows) != 1 {
+					t.Fatalf("eviction lost healthy %s: %+v / %v", p, rows, err)
+				}
 			}
 		})
 	}
