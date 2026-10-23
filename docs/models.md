@@ -134,8 +134,9 @@ Markdown-file `kmx run FILE --provider copilot` and
 tool-free preview runner; set the file's `Model.Preferred` to an exact listed
 model first. The endpoint defaults to the fixed Copilot endpoint, and execution
 never initiates login. Instructions and inputs are sent to the hosted service.
-Unbound MCP uses the same route by default for the authored non-fake model;
-trusted startup provider overrides still take precedence. Legacy root-bound MCP
+Unbound MCP uses the same route by default for the effective non-fake model,
+resolved from the runtime override, then the authored model, then the
+`gpt-5.6-terra` fallback. Trusted startup provider overrides still take precedence. Legacy root-bound MCP
 requires an explicit route for real models. This is not a new harness or native
 workspace/deployment integration. See
 [file preview](kmx.md#agent-file-local-preview-unreleased-integration) and
