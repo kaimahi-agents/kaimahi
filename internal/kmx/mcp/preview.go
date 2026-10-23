@@ -62,12 +62,9 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if parseErr != nil && !errors.As(parseErr, &detail) {
 				return nil, parseErr
 			}
-			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Route: selected})
+			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Route: selected})
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
-			}
-			if files.root == nil && result.File.Path != "[agent file]" {
-				result.File.Path = input.Path
 			}
 			files.finishPreview(sequence, path, result)
 			// Keep the complete safe result even when the application returns an error.

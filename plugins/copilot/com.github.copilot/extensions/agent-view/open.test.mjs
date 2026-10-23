@@ -167,5 +167,11 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
     assert.match(builder, /open_canvas/);
     assert.match(builder, /open_kmx_canvas/);
     assert.doesNotMatch(builder, /ask the user to\s+confirm|read \[the configured selected root\]/);
+    const native = builder.split("## Native Squad\n")[1].split("## Deterministic orientation")[0];
+    assert.match(native, /Before native Create/);
+    assert.match(native, /approval/);
+    for (const effect of ["proposal", "MCP", "skills", ".gitignore", ".gitattributes"]) assert.ok(native.includes(effect));
+    const ordinary = builder.split("## Create, then open\n")[1].split("## Native Squad")[0];
+    assert.doesNotMatch(ordinary, /ask.*(?:approval|confirmation)|obtain.*approval/i);
   } finally { hooks.deregister(); delete globalThis.__kmxJoin; }
 });

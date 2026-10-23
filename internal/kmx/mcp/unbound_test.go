@@ -180,6 +180,40 @@ func TestUnboundPreviewRetainsWithheldIdentity(t *testing.T) {
 	}
 }
 
+// Full paths are operational identities, but preview results must retain the
+// App's credential withholding for both basenames and parent directories.
+func TestUnboundPreviewWithholdsSensitivePaths(t *testing.T) {
+	canary := "ghp_" + strings.Repeat("a", 36)
+	for _, placement := range []string{"basename", "parent"} {
+		t.Run(placement, func(t *testing.T) {
+			f, source := unboundFiles(t)
+			requested := filepath.Join(t.TempDir(), canary+".agent.md")
+			if placement == "parent" {
+				requested = filepath.Join(t.TempDir(), canary, "greeter.agent.md")
+			}
+			cs := resourceClient(t, f, &app.App{FileRunner: &previewFixture{verdict: runtime.EvaluationPass}})
+			authoringCall(t, cs, "create", requested, source, "")
+			got, result := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": requested})
+			if result.IsError || !got.FullPass || got.File.Path != "withheld" {
+				t.Fatal("preview did not preserve credential withholding")
+			}
+			view := readView(t, cs, requested)
+			if view.Latest.Status != "current" || view.Latest.Result == nil || view.Latest.Result.File.Path != "withheld" {
+				t.Fatal("latest preview did not retain credential withholding")
+			}
+			for _, projection := range []any{result.StructuredContent, result.Content, view.Latest, f.latest.result} {
+				encoded, err := json.Marshal(projection)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(encoded), canary) {
+					t.Fatal("credential-shaped path reached a preview projection")
+				}
+			}
+		})
+	}
+}
+
 // Identical basenames and bytes in unrelated repos must not attribute one
 // preview to the other file. Relative resource layouts remain usable too.
 func TestUnboundMCPUnrelatedRepositories(t *testing.T) {

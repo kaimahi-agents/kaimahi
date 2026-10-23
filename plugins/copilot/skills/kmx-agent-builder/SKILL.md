@@ -63,8 +63,12 @@ Explain is not an MCP tool.
 When the server advertises native `schemaVersion: 2` targets, use `squad-members`
 for Create and `squad-member` for Edit/Run/Test. Propose a Lead and specialists
 with stable IDs, matching native role/display role, Task Instructions, Model and
-Examples. Let native Create perform init/cast/enrichment; don't write Squad
-metadata with host tools or treat canonical charter placement as registration.
+Examples. Before native Create, show the complete frozen proposal and setup
+effects, then obtain approval for that proposal, initialization and cast/enrichment,
+including changes to MCP configuration, skills, `.gitignore` and `.gitattributes`.
+This existing native setup approval is separate from ordinary agent-file creation,
+which needs no folder confirmation. Let native Create perform init/cast/enrichment;
+don't write Squad metadata with host tools or treat canonical charter placement as registration.
 Read the returned member/setup states and changedPaths. Report partial/unknown
 setup rather than claiming registration or enrichment succeeded. A reopened
 `kmx://squad-member/{memberId}` with `state: not_setup` means **not set up by kmx**.

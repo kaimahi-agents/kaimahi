@@ -21,7 +21,9 @@ type FilePreviewOptions struct {
 	Input                   *string
 	ShowContent             bool
 	ShowFailedContent       bool
-	Progress                func(string) error
+	// FullPath keeps MCP's requested identity inside the shared redaction boundary.
+	FullPath bool
+	Progress func(string) error
 }
 
 type FilePreviewResult struct {
@@ -152,7 +154,7 @@ func (a *App) PreviewAgentFile(ctx context.Context, opt FilePreviewOptions) (Fil
 }
 
 // PreviewAgentSnapshot executes a caller-owned parsed snapshot without reopening
-// source files. File is a display label only; rooted callers retain target authority.
+// source files. File is a display label only; callers retain target authority.
 // The caller must obtain parsed from agentfile.Parse/Load and not mutate it while
 // the operation runs. Preview results grant no native evidence/deploy authority.
 func (a *App) PreviewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent, opt FilePreviewOptions) (FilePreviewResult, error) {
@@ -160,8 +162,16 @@ func (a *App) PreviewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 }
 
 func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent, opt FilePreviewOptions, parseErr error) (FilePreviewResult, error) {
+	filePath := suiteDiagnosticIdentity(filepath.Base(opt.File), nil)
+	if opt.FullPath {
+		var safe bool
+		filePath, safe = suiteDiagnosticText(opt.File, len(opt.File), nil)
+		if !safe {
+			filePath = "withheld"
+		}
+	}
 	r := FilePreviewResult{SchemaVersion: 1, Kind: "kmx.agent-file-preview", Operation: opt.Operation,
-		File: FilePreviewIdentity{Path: suiteDiagnosticIdentity(filepath.Base(opt.File), nil)}, Selection: FilePreviewSelection{Scope: "full", CaseIDs: []string{}},
+		File: FilePreviewIdentity{Path: filePath}, Selection: FilePreviewSelection{Scope: "full", CaseIDs: []string{}},
 		State: "refused", Verdict: runtime.EvaluationUnknown, Examples: []FilePreviewExample{}, Retention: FilePreviewRetention{Status: "not_requested"}}
 	fail := func(code string, exit int) (FilePreviewResult, error) {
 		r.FullPass = false
