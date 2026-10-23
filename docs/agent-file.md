@@ -73,6 +73,13 @@ examples:
   are never part of those instructions. Tool-free instruction bytes are unchanged.
   The revision is `sha256:<hex>` of the **original bytes**, including line endings.
 
+Canonical MCP edits retain bounded, private cleartext copies of the saved source
+being replaced. Retention is best-effort: a valid save still succeeds when
+history is unavailable, with an explicit warning in its result. Restore reads
+old source and uses the same revision-checked Edit; it never rewrites history or
+restores test evidence. See [saved source versions and clear](kmx.md#saved-source-versions-and-restore)
+for the resource API, bounds, privacy and operator cleanup command.
+
 Preferred is one exact printable ASCII model identifier (1–256 bytes; letters,
 digits, `.`, `_`, `:`, `/`, `-`, starting with a letter or digit). `auto`, URLs,
 spaces and wildcards refuse. `fake` names only kmx's deterministic orientation

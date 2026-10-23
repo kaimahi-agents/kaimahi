@@ -9,6 +9,9 @@
 // Reopened member operations revalidate native casting state, never infer origin
 // or persist kmx mapping. Preview shares App snapshots, not native dispatch.
 // Native partial effects remain explicit; no extra tool, downloader or canvas actions.
+// Canonical Edit optionally retains bounded private source preimages. Retention
+// failure never blocks a valid save and is explicit in its successful result.
+// Source-only versions are read-only resources; restore uses the same Edit CAS.
 package mcp
 
 import (
@@ -57,6 +60,8 @@ func (e *Error) Error() string {
 		return "cancelled: operation stopped before publication"
 	case "deadline_exceeded":
 		return "deadline_exceeded: operation deadline elapsed"
+	case "history_unavailable":
+		return "history_unavailable: history is busy or unsafe; stop MCP for this root and retry, or remove its private versions directory manually; no current files were changed"
 	case "squad_setup_failed":
 		return "squad_setup_failed: native setup failed; inspect retained files before reconciliation; no automatic retry or rollback"
 	case "squad_not_setup":
@@ -73,17 +78,20 @@ func refusal(code string) error { return &Error{Code: code} }
 
 // File identifies exact saved bytes without returning their content.
 type File struct {
-	Path     string `json:"path"`
-	Revision string `json:"revision"`
+	Path     string             `json:"path"`
+	Revision string             `json:"revision"`
+	History  *FileHistoryStatus `json:"history,omitempty"`
 }
 
 // Files holds one explicitly selected root with a caller-selected validator.
 // v1 uses canonical parsing; native cast operations bind their explicit profile.
 type Files struct {
-	root     *os.Root
-	validate func(string, []byte) error
-	viewMu   sync.Mutex
-	latest   previewObservation
+	root        *os.Root
+	validate    func(string, []byte) error
+	viewMu      sync.Mutex
+	latest      previewObservation
+	historyDir  func() (string, error)
+	historyGate chan struct{}
 }
 
 func OpenFiles(root string, validate func(string, []byte) error) (*Files, error) {
@@ -103,6 +111,21 @@ func OpenFiles(root string, validate func(string, []byte) error) (*Files, error)
 	}
 	return &Files{root: r, validate: validate}, nil
 }
+
+// OpenFilesWithHistory enables best-effort canonical Edit retention. The trusted
+// directory resolver is lazy: startup and help never create history or read config.
+func OpenFilesWithHistory(root string, validate func(string, []byte) error, directory func() (string, error)) (*Files, error) {
+	if directory == nil {
+		return nil, refusal("invalid_options")
+	}
+	f, err := OpenFiles(root, validate)
+	if err != nil {
+		return nil, err
+	}
+	f.historyDir, f.historyGate = directory, make(chan struct{}, 1)
+	return f, nil
+}
+
 func (f *Files) Close() error  { return f.root.Close() }
 func revision(b []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(b)) }
 
@@ -363,20 +386,39 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 	defer unlock()
 	// Locks follow inodes across replacement. A waiter on the replaced inode
 	// must refuse rather than treating that obsolete lock as current authority.
-	current, err := parent.Lstat(path.Base(p))
-	if err != nil || !os.SameFile(info, current) || current.Mode() != info.Mode() || !singleLink(target) ||
-		(observed != nil && !f.observedParent(p, parent, observed)) {
-		return File{}, refusal("stale_revision")
+	check := func() ([]byte, error) {
+		current, err := parent.Lstat(path.Base(p))
+		if err != nil || !os.SameFile(info, current) || current.Mode() != info.Mode() || !singleLink(target) ||
+			(observed != nil && !f.observedParent(p, parent, observed)) {
+			return nil, refusal("stale_revision")
+		}
+		if _, err := target.Seek(0, io.SeekStart); err != nil {
+			return nil, refusal("io_failed")
+		}
+		now, err := io.ReadAll(io.LimitReader(target, maxFileBytes+1))
+		if err != nil {
+			return nil, refusal("io_failed")
+		}
+		if revision(now) != expected {
+			return nil, refusal("stale_revision")
+		}
+		return now, nil
 	}
-	if _, err := target.Seek(0, io.SeekStart); err != nil {
-		return File{}, refusal("io_failed")
-	}
-	now, err := io.ReadAll(io.LimitReader(target, maxFileBytes+1))
+	now, err := check()
 	if err != nil {
-		return File{}, refusal("io_failed")
+		return File{}, err
 	}
-	if revision(now) != expected {
-		return File{}, refusal("stale_revision")
+	var history *FileHistoryStatus
+	if f.historyDir != nil {
+		store, status := f.retainHistory(ctx, p, now)
+		if store != nil {
+			defer store.close()
+		}
+		history = status
+		// History IO grants no authority to overwrite a newly changed source.
+		if _, err := check(); err != nil {
+			return File{}, err
+		}
 	}
 	if err := cancelled(ctx); err != nil {
 		return File{}, err
@@ -384,5 +426,5 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 	if err := parent.Rename(name, path.Base(p)); err != nil {
 		return File{}, refusal("publication_failed")
 	}
-	return File{Path: p, Revision: revision(b)}, nil
+	return File{Path: p, Revision: revision(b), History: history}, nil
 }
