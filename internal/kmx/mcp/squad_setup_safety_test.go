@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -73,6 +74,32 @@ func TestSquadSetupRequiresNativeStandaloneLauncherBasename(t *testing.T) {
 				t.Fatal("native SDK launcher discovery could fall back to npx")
 			}
 		})
+	}
+}
+func TestSquadSetupGitCannotDiscoverAncestorRepository(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not installed")
+	}
+	parent := t.TempDir()
+	if err := exec.Command(git, "init", "--quiet", parent).Run(); err != nil {
+		t.Fatal(err)
+	}
+	_, p := squadSetupRoot(t)
+	root := filepath.Join(parent, "nested")
+	if err := os.Mkdir(root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	c, err := OpenSquadSetup(root, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	cmd := exec.Command(git, "rev-parse", "--absolute-git-dir")
+	cmd.Dir = root
+	cmd.Env = append(squadEnvironment(), c.setupEnvironment()...)
+	if output, err := cmd.Output(); err == nil {
+		t.Fatalf("native Git still discovered ancestor repository: %s", output)
 	}
 }
 func TestSquadSetupCancellationBeforeEffects(t *testing.T) {

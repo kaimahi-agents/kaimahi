@@ -78,7 +78,7 @@ func (c *SquadCreator) checkSetupRoot() error {
 func (c *SquadCreator) setupEnvironment() []string {
 	return []string{
 		"SQUAD_STANDALONE_HOME=" + filepath.Dir(c.program),
-		"GIT_CEILING_DIRECTORIES=" + c.root.Name(), "GIT_WORK_TREE=" + c.root.Name(),
+		"GIT_CEILING_DIRECTORIES=" + filepath.Dir(c.root.Name()), "GIT_WORK_TREE=" + c.root.Name(),
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull,
 		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=remote.origin.url", "GIT_CONFIG_VALUE_0=",
 	}

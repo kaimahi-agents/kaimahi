@@ -201,8 +201,11 @@ func (c *SquadCreator) Create(ctx context.Context, plan SquadPlan) (result Squad
 		}
 		started = true
 		result.Setup = "failed"
-		_, initErr := c.invoke(ctx, []string{"init", "--no-workflows", "--no-vscode-default"})
+		succeeded, initErr := c.invoke(ctx, []string{"init", "--no-workflows", "--no-vscode-default"})
 		if initErr != nil {
+			if succeeded {
+				result.Setup = "unknown"
+			}
 			result.EffectsUnknown = true
 			return result, initErr
 		}

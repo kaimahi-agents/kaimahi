@@ -42,6 +42,9 @@ type Agent struct {
 	Examples     []Example
 	Revision     string
 	Locations    map[string]Location
+	// NativeTaskInstructions is set only by the explicit native preview adapter.
+	// Real routes retain Instructions; fake orientation uses this task-only text.
+	NativeTaskInstructions string
 }
 type Example struct {
 	ID, Input          string

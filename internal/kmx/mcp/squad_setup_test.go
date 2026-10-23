@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,7 +19,7 @@ func squadInitTestChild() int {
 	}
 	root, _ := os.Getwd()
 	exe, _ := os.Executable()
-	if os.Getenv("SQUAD_NO_PERSONAL") != "1" || os.Getenv("SQUAD_STANDALONE_HOME") != filepath.Dir(exe) || os.Getenv("GIT_WORK_TREE") != root || os.Getenv("GIT_CEILING_DIRECTORIES") != root || os.Getenv("GIT_CONFIG_KEY_0") != "remote.origin.url" || os.Getenv("GIT_CONFIG_VALUE_0") != "" {
+	if os.Getenv("SQUAD_NO_PERSONAL") != "1" || os.Getenv("SQUAD_STANDALONE_HOME") != filepath.Dir(exe) || os.Getenv("GIT_WORK_TREE") != root || os.Getenv("GIT_CEILING_DIRECTORIES") != filepath.Dir(root) || os.Getenv("GIT_CONFIG_KEY_0") != "remote.origin.url" || os.Getenv("GIT_CONFIG_VALUE_0") != "" {
 		return 8
 	}
 	os.WriteFile(".init-called", []byte("once"), 0600)
@@ -42,6 +43,9 @@ func squadInitTestChild() int {
 		mcp = `{"mcpServers":{"squad_state":{"command":"npx","args":["state-mcp"]}}}`
 	}
 	os.WriteFile(".mcp.json", []byte(mcp), 0644)
+	if string(mode) == "output-init" {
+		fmt.Print(strings.Repeat("x", 33<<10))
+	}
 	return 0
 }
 func squadSetupRoot(t *testing.T) (string, SquadProgram) {
@@ -105,7 +109,7 @@ func TestSquadSetupCreateInitializesOnlyOnApprovedOperation(t *testing.T) {
 	}
 }
 func TestSquadSetupPreflightAndPartialFailure(t *testing.T) {
-	for _, kind := range []string{"bad-member", "duplicate", "prior-mcp", "partial-init", "zero-init", "npx-init"} {
+	for _, kind := range []string{"bad-member", "duplicate", "prior-mcp", "partial-init", "zero-init", "npx-init", "output-init"} {
 		t.Run(kind, func(t *testing.T) {
 			root, p := squadSetupRoot(t)
 			if kind == "prior-mcp" {
@@ -136,6 +140,9 @@ func TestSquadSetupPreflightAndPartialFailure(t *testing.T) {
 				t.Fatal("cast ran after setup refusal/failure")
 			}
 			_, called := os.Stat(filepath.Join(root, ".init-called"))
+			if kind == "output-init" && result.Setup != "unknown" {
+				t.Fatalf("zero-exit uncertain init mislabeled: %s", result.Setup)
+			}
 			if kind == "partial-init" {
 				if e, ok := err.(*Error); !ok || e.Code != "squad_setup_failed" {
 					t.Fatalf("setup failure mislabeled as cast failure: %v", err)

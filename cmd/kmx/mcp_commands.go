@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	goruntime "runtime"
 	"strings"
 	"syscall"
 
@@ -22,13 +23,13 @@ type mcpOutput struct{ io.Writer }
 func (mcpOutput) Close() error { return nil }
 
 func newMCPCommand(state *commandState) *cobra.Command {
-	var root, provider, endpoint string
+	var root, provider, endpoint, squadProgram, squadRelease string
 	cmd := &cobra.Command{Use: "mcp --root DIRECTORY", Short: "Serve Create/Edit/Run/Test over local stdio MCP", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if state.contextFlag != "" || cmd.Flag("container-engine").Changed {
 				return fmt.Errorf("MCP refuses cluster/container selectors")
 			}
-			for _, name := range []string{"root", "provider", "endpoint"} {
+			for _, name := range []string{"root", "provider", "endpoint", "squad-program", "squad-release"} {
 				flag := cmd.Flag(name)
 				if flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 					return fmt.Errorf("MCP requires nonempty --%s", name)
@@ -52,12 +53,29 @@ func newMCPCommand(state *commandState) *cobra.Command {
 			if state.deps.stdin == nil {
 				return fmt.Errorf("MCP requires protocol stdin")
 			}
+			application := &app.App{FileRunner: state.deps.fileRunner}
+			operations := kmxmcp.Operations(files, application, route)
+			var squad *kmxmcp.SquadCreator
+			if squadProgram != "" || squadRelease != "" {
+				if squadProgram == "" || squadRelease == "" {
+					return fmt.Errorf("MCP native Squad requires explicit program and qualified release")
+				}
+				squad, err = kmxmcp.OpenSquadSetup(root, kmxmcp.SquadProgram{Path: squadProgram, Release: squadRelease, GOOS: goruntime.GOOS, GOARCH: goruntime.GOARCH})
+				if err != nil {
+					return err
+				}
+				defer squad.Close()
+				operations = kmxmcp.WithSquadOperations(operations, squad, application, route)
+			}
 			info, ok := state.deps.buildInfo()
-			server, err := kmxmcp.NewServer(version.Resolve(info, ok).Version, kmxmcp.Operations(files, &app.App{FileRunner: state.deps.fileRunner}, route))
+			server, err := kmxmcp.NewServer(version.Resolve(info, ok).Version, operations)
 			if err != nil {
 				return err
 			}
 			kmxmcp.AddAgentResource(server, files)
+			if squad != nil {
+				kmxmcp.AddSquadResource(server, squad)
+			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			if err := kmxmcp.Serve(ctx, server, state.deps.stdin, mcpOutput{cmd.OutOrStdout()}); err != nil {
@@ -71,6 +89,8 @@ func newMCPCommand(state *commandState) *cobra.Command {
 	cmd.Flags().StringVar(&root, "root", "", "absolute existing operation root; required, never defaults to cwd")
 	cmd.Flags().StringVar(&provider, "provider", "", "trusted startup model provider, including copilot (not selectable through tools)")
 	cmd.Flags().StringVar(&endpoint, "endpoint", "", "trusted startup model endpoint (fixed for Copilot; never read from charter text)")
+	cmd.Flags().StringVar(&squadProgram, "squad-program", "", "trusted absolute qualified standalone Squad launcher; enables native targets, never installs")
+	cmd.Flags().StringVar(&squadRelease, "squad-release", "", "explicit qualified native Squad release (1.1.0); requires --squad-program")
 	_ = cmd.MarkFlagRequired("root")
 	return cmd
 }

@@ -112,5 +112,13 @@ func TestSquadMemberEditPreservesNativeBytesAndRefusesStale(t *testing.T) {
 	}
 	if _, err := c.EditMember(context.Background(), "leader", d.Revision, m); err == nil {
 		t.Fatal("stale native overwrite accepted")
+	} else if e, ok := err.(*Error); !ok || e.Code != "stale_revision" {
+		t.Fatalf("stale edit received setup/enrichment recovery: %v", err)
+	}
+	m.TaskInstructions += "\n\n## Voice\nDo not replace native voice."
+	if _, err := c.EditMember(context.Background(), "leader", next.Revision, m); err == nil {
+		t.Fatal("invalid owned candidate accepted")
+	} else if e, ok := err.(*Error); !ok || e.Code != "invalid_squad_member" {
+		t.Fatalf("invalid edit mislabeled as partial native effects: %v", err)
 	}
 }

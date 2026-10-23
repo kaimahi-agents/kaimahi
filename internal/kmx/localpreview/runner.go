@@ -72,6 +72,9 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		return abort(agentpreview.ErrModelUnavailable)
 	}
 	agent := *request.Agent
+	if request.Route.Provider == "fake" && agent.NativeTaskInstructions != "" {
+		agent.Instructions = agent.NativeTaskInstructions
+	}
 	agent.Examples = examples
 	agentRoute, routeErr := runnerRoute(request.Route)
 	if routeErr != nil {

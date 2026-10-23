@@ -117,7 +117,7 @@ func (c *SquadCreator) EditMember(ctx context.Context, id, expected string, m Sq
 		return File{}, err
 	}
 	if d.Revision != expected {
-		return File{}, refusal("squad_starter_changed")
+		return File{}, refusal("stale_revision")
 	}
 	m.ID = id
 	m.Role = d.Profile.Role
@@ -145,10 +145,13 @@ func (c *SquadCreator) EditMember(ctx context.Context, id, expected string, m Sq
 		b = append(b, change.body...)
 		raw = append(b, raw[change.span.End:]...)
 	}
+	if _, err := agentfile.ParseSquad(squadPath(m), raw, d.Profile); err != nil {
+		return File{}, refusal("invalid_squad_member")
+	}
 	f := &Files{root: c.root, validate: func(p string, b []byte) error { _, err := agentfile.ParseSquad(p, b, d.Profile); return err }}
 	file, err := f.editObserved(ctx, squadPath(m), expected, raw, observed)
 	if err != nil {
-		return File{}, squadEnrichmentError(err)
+		return File{}, err
 	}
 	return file, nil
 }
