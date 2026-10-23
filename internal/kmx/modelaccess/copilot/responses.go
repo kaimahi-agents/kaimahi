@@ -68,7 +68,7 @@ type responsesReply struct {
 
 func (r responsesReply) completion() map[string]any {
 	var answer, refusal strings.Builder
-	refused := false
+	refused, hasText := false, false
 	var tools []any
 	for _, item := range r.Output {
 		if item.Type == "function_call" {
@@ -80,6 +80,7 @@ func (r responsesReply) completion() map[string]any {
 		for _, part := range item.Content {
 			switch part.Type {
 			case "output_text":
+				hasText = true
 				answer.WriteString(part.Text)
 			case "refusal":
 				refused = true
@@ -96,7 +97,10 @@ func (r responsesReply) completion() map[string]any {
 	} else if r.Status == "incomplete" {
 		finish = "length"
 	}
-	message := map[string]any{"role": "assistant", "content": answer.String()}
+	message := map[string]any{"role": "assistant"}
+	if hasText {
+		message["content"] = answer.String()
+	}
 	if refused {
 		message["refusal"] = refusal.String()
 	}

@@ -45,14 +45,15 @@ existing `gh auth token --hostname github.com` credential through private bounde
 stdout capture. If the OS keychain is unavailable, login prints runtime options
 instead of starting device sign-in or failing. No editor credentials are read.
 
-`kmx model list --provider copilot [-o table|json]` lists enabled Chat-compatible
+`kmx model list --provider copilot [-o table|json]` lists enabled Chat/Responses
 models as non-secret routes at `https://api.githubcopilot.com`; it never starts
 sign-in and fails clearly without auth. Local discovery remains the default.
 `kmx model logout` deletes only kmx's reusable credential and clears its memory;
 gh/editor sign-in and caller environment are unchanged. Runtime authentication
-prefers explicit `COPILOT_GITHUB_TOKEN`, otherwise kmx's native keychain item.
-Only if the keychain is unavailable does it read an existing github.com gh login
-through bounded private `gh auth token` capture. These runtime sources are never
+prefers explicit `COPILOT_GITHUB_TOKEN`, then an existing github.com gh sign-in
+through bounded private `gh auth token` capture. A working gh sign-in does not
+require kmx login or keychain setup; the owned keychain remains a fallback when
+gh is unavailable. These runtime sources are never
 saved by kmx; an invalid explicit token or service refusal does not switch
 credentials. Remove the variable or end the gh session separately to disable
 external credentials. There is no plaintext token-file fallback. macOS release builds work without CGO; explicit access uses
@@ -258,11 +259,11 @@ kmx run ./greeter.agent.md --provider ollama --endpoint http://127.0.0.1:11434/v
 For this Ollama example, first set `Model.Preferred` in your own copy of the
 charter to an exact installed Ollama model, rather than the sample's `fake`.
 
-To use Copilot, sign in explicitly, list available models, then set the file's
-`Model.Preferred` to an exact listed model ID:
+To use Copilot with an existing gh sign-in, list available models and set the
+file's `Model.Preferred` to an exact listed model ID. `kmx model login` is optional
+for users without gh:
 
 ```bash
-kmx model login
 kmx model list --provider copilot
 kmx run ./greeter.agent.md --provider copilot --prompt Ada --show-content
 kmx test ./greeter.agent.md --provider copilot

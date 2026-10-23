@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
-	"sync"
 )
 
 // Read drives upstream consumption, so downstream backpressure and Close do not

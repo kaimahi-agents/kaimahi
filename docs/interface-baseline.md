@@ -70,17 +70,18 @@ kmx
 read-only reference extraction/export helpers. Cobra also supplies `help`.
 
 Unreleased `model list` defaults to local discovery; explicit Copilot listing
-uses explicit `COPILOT_GITHUB_TOKEN`, otherwise kmx's keychain item or an existing
-gh login when the keychain is unavailable. It never starts sign-in or saves
+uses explicit `COPILOT_GITHUB_TOKEN`, then an existing gh sign-in without keychain
+setup, then kmx's existing keychain item if gh is unavailable. It never starts sign-in or saves
 runtime tokens. `model login` uses GitHub device flow; `--gh` explicitly copies
 bounded private gh output to the OS keychain. Without a usable keychain, login
 explains runtime options instead. `model logout` clears only kmx's item/memory,
 not gh or environment credentials. There is no plaintext token-file fallback. Internal
 `modelaccess/copilot.New(Store).Client(ctx, Route)` returns an authenticated
-selected-route RoundTripper for direct Chat Completions JSON/SSE, not a proxy.
-Markdown-file Run/Test and shared MCP execution consume it only with explicit
-`--provider copilot`, prior sign-in and an exact authored model; the Copilot
-endpoint is fixed. This remains tool-free, no-journal preview, not a new harness.
+selected-route Chat-shaped RoundTripper with catalog-selected Chat/Responses
+JSON/SSE upstream access, not a proxy. Markdown-file Run/Test uses explicit
+`--provider copilot`; unbound MCP defaults authored real models to Copilot. Both
+use the exact authored model and existing runtime credentials, with no login
+step for a working gh sign-in. The Copilot endpoint is fixed. This remains tool-free, no-journal preview, not a new harness.
 No inference replay, model substitution or persisted selection. See
 [direct model access](copilot-inference.md#direct-model-access). Native package
 tests do not qualify the full Windows CLI.
