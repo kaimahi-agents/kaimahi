@@ -216,7 +216,7 @@ func (s *historyStore) sync() error {
 }
 
 func (s *historyStore) retain(ctx context.Context, p string, source []byte) error {
-	if !safePath(p) || len(source) == 0 || len(source) > maxFileBytes || !utf8.Valid(source) {
+	if !agentPath(p) || len(source) == 0 || len(source) > maxFileBytes || !utf8.Valid(source) {
 		return refusal("history_unavailable")
 	}
 	entries, err := s.load()

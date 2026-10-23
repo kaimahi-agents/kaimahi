@@ -57,6 +57,79 @@ func requireHistoryToolReason(t *testing.T, result *sdk.CallToolResult, code str
 	}
 }
 
+func TestHistoryUnboundCanonicalTargetsAndRestore(t *testing.T) {
+	for _, suffix := range []string{"greeter.agent.md", ".squad/agents/greeter/charter.md"} {
+		t.Run(suffix, func(t *testing.T) {
+			_, _, source := canonicalFiles(t)
+			base, _ := historyPaths(t)
+			workspace := t.TempDir()
+			t.Chdir(workspace)
+			repo := filepath.Join(workspace, "Repo One")
+			if err := os.Mkdir(repo, 0700); err != nil {
+				t.Fatal(err)
+			}
+			legacy := historyFiles(t, repo, base)
+			original, err := legacy.Create(t.Context(), suffix, []byte(source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			second := strings.ReplaceAll(source, "Hello", "Welcome")
+			current, err := legacy.Edit(t.Context(), suffix, original.Revision, []byte(second))
+			if err != nil {
+				t.Fatal(err)
+			}
+			prior := legacy.historyView(t.Context(), suffix).Versions[0]
+			target := filepath.Join(repo, filepath.FromSlash(suffix))
+			alias := "Agent alias.agent.md"
+			if err := os.Symlink(target, alias); err != nil {
+				t.Fatal(err)
+			}
+			f := historyFiles(t, "", base)
+			cs := historyClient(t, f)
+			view := readView(t, cs, alias)
+			if view.File.Path != alias || view.History.Status != "available" || len(view.History.Versions) != 1 || view.History.Versions[0].VersionID != prior.VersionID {
+				t.Fatalf("canonical target did not share legacy history: %+v", view)
+			}
+			saved, result := historyEdit(t, cs, alias, current.Revision, strings.ReplaceAll(source, "Hello", "Howdy"))
+			if result.IsError || saved.Path != alias || saved.History == nil || saved.History.Status != "retained" {
+				t.Fatalf("unbound alias save: %+v / %+v", saved, result)
+			}
+			view = readView(t, cs, target)
+			if view.File.Path != target || len(view.History.Versions) != 2 {
+				t.Fatal("absolute target did not share alias history")
+			}
+			old, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: view.History.Versions[1].URI})
+			if err != nil {
+				t.Fatal("absolute version read failed", err)
+			}
+			var document struct{ Source string }
+			if json.Unmarshal([]byte(old.Contents[0].Text), &document) != nil || document.Source != source {
+				t.Fatal("old source bytes changed")
+			}
+			restored, result := historyEdit(t, cs, alias, saved.Revision, document.Source)
+			if result.IsError || restored.Path != alias || restored.Revision != original.Revision || restored.History.Status != "retained" {
+				t.Fatal("unbound restore did not use ordinary Edit")
+			}
+			if rows := legacy.historyView(t.Context(), suffix).Versions; len(rows) != 3 {
+				t.Fatal("legacy view lost unbound restore/undo history")
+			}
+			other := filepath.Join(workspace, "Repo Two", "greeter.agent.md")
+			if _, err := f.Create(t.Context(), other, []byte(source)); err != nil {
+				t.Fatal(err)
+			}
+			if h := f.historyView(t.Context(), other); h.Status != "available" || len(h.Versions) != 0 {
+				t.Fatal("history crossed repository targets")
+			}
+			if err := legacy.ClearHistory(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if h := f.historyView(t.Context(), target); len(h.Versions) != 0 {
+				t.Fatal("legacy root clear did not clear canonical target history")
+			}
+		})
+	}
+}
+
 func TestHistoryMCPRestoreUndoAndRestart(t *testing.T) {
 	_, root, source := canonicalFiles(t)
 	base, _ := historyPaths(t)

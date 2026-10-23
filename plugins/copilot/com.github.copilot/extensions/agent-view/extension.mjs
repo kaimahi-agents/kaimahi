@@ -14,10 +14,10 @@ const asCanvasError = (e) => {
 const canvas = createCanvas({
   id: CANVAS_ID,
   displayName: "kmx agent view",
-  description: "Author one rooted agent's instructions and examples, then test it in the canvas.",
+  description: "Author an agent's instructions and examples, then test it in the canvas.",
   inputSchema: {
     type: "object",
-    properties: { path: { type: "string", description: "Root-relative <id>.agent.md or .squad/agents/<id>/charter.md" } },
+    properties: { path: { type: "string", description: ".agent.md or .squad/agents/<member>/charter.md path, including an absolute WSL path" } },
     required: ["path"],
     additionalProperties: false,
   },
@@ -43,7 +43,7 @@ session = await joinSession({
   commands: [
     {
       name: "agent-view",
-      description: "Show a kmx agent charter as text: /agent-view <root-relative path>",
+      description: "Show a kmx agent charter as text: /agent-view <path>",
       handler: (ctx) => controller.command(ctx),
     },
   ],

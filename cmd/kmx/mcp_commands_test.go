@@ -20,7 +20,7 @@ import (
 )
 
 func TestMCPStartupRefusalsAndHelp(t *testing.T) {
-	for _, args := range [][]string{{"mcp"}, {"mcp", "--root", "."}, {"mcp", "--root", t.TempDir(), "--context", "private-context"}, {"mcp", "--root", t.TempDir(), "--container-engine", "docker"}, {"mcp", "--root", t.TempDir(), "--provider", "compatible"}, {"mcp", "--root", t.TempDir(), "--endpoint", "http://private.invalid"}} {
+	for _, args := range [][]string{{"mcp", "--root", ""}, {"mcp", "--root", "."}, {"mcp", "--root", t.TempDir(), "--context", "private-context"}, {"mcp", "--root", t.TempDir(), "--container-engine", "docker"}, {"mcp", "--root", t.TempDir(), "--provider", "compatible"}, {"mcp", "--root", t.TempDir(), "--endpoint", "http://private.invalid"}} {
 		var out, diag bytes.Buffer
 		deps, loads := testDependencies(&out, &diag)
 		if err := execute(args, deps); err == nil {
@@ -39,6 +39,17 @@ func TestMCPStartupRefusalsAndHelp(t *testing.T) {
 		t.Fatal("help is not inert/root explicit")
 	}
 }
+func TestMCPNativeSquadStillRequiresRoot(t *testing.T) {
+	for _, flags := range [][]string{{"--squad-program", "/missing/squad"}, {"--squad-release", "1.1.0"}, {"--squad-program", "/missing/squad", "--squad-release", "1.1.0"}} {
+		var out, diag bytes.Buffer
+		deps, loads := testDependencies(&out, &diag)
+		err := execute(append([]string{"mcp"}, flags...), deps)
+		if err == nil || err.Error() != `required flag(s) "root" not set` || *loads != 0 || out.Len() != 0 {
+			t.Fatalf("native root requirement changed: %v, loads=%d, out=%s", err, *loads, out.String())
+		}
+	}
+}
+
 func TestMCPCommandGracefulCancellation(t *testing.T) {
 	sr, cw, err := os.Pipe()
 	if err != nil {
@@ -78,6 +89,69 @@ func TestMCPCommandGracefulCancellation(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not stop")
+	}
+}
+
+// Initialization and discovery without --root must not execute a model or load
+// cluster settings. One server can then author files in unrelated directories.
+func TestMCPCommandUnboundStartup(t *testing.T) {
+	sr, cw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cr, sw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sr.Close()
+	defer cw.Close()
+	defer cr.Close()
+	defer sw.Close()
+	var ignored, diag bytes.Buffer
+	deps, loads := testDependencies(&ignored, &diag)
+	runner := &cliPreviewFake{verdict: runtime.EvaluationPass}
+	deps.stdin, deps.stdout, deps.fileRunner = sr, sw, runner
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	cmd := newRootCommand(&commandState{deps: deps})
+	cmd.SetArgs([]string{"mcp"})
+	done := make(chan error, 1)
+	go func() { done <- cmd.ExecuteContext(ctx) }()
+	client := sdk.NewClient(&sdk.Implementation{Name: "unbound-startup-test", Version: "1"}, nil)
+	cs, err := client.Connect(ctx, &sdk.IOTransport{Reader: cr, Writer: cw}, nil)
+	if err != nil {
+		select {
+		case startupErr := <-done:
+			t.Fatalf("unbound startup: %v; connect: %v", startupErr, err)
+		default:
+			t.Fatal(err)
+		}
+	}
+	defer cs.Close()
+	tools, err := cs.ListTools(ctx, nil)
+	if err != nil || len(tools.Tools) != 4 || runner.calls != 0 || *loads != 0 {
+		t.Fatalf("startup effects: tools=%+v, err=%v, calls=%d, loads=%d", tools, err, runner.calls, *loads)
+	}
+	source, err := os.ReadFile(cliPreviewFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(t.TempDir(), "one folder", "Agent café.agent.md"), filepath.Join(t.TempDir(), "greeter.agent.md")} {
+		result, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: "create", Arguments: map[string]any{"schemaVersion": 1, "path": p, "content": string(source)}})
+		if err != nil || result.IsError {
+			t.Fatalf("create: %+v, %v", result, err)
+		}
+		content, err := os.ReadFile(p)
+		if err != nil || !bytes.Equal(content, source) {
+			t.Fatal("unbound create did not save the requested file", err)
+		}
+	}
+	if runner.calls != 0 || *loads != 0 || diag.Len() != 0 {
+		t.Fatalf("authoring effects: calls=%d, loads=%d, diag=%s", runner.calls, *loads, diag.String())
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

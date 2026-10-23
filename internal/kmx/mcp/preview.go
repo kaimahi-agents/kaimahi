@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -31,8 +31,11 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 	}
 	for _, name := range []string{"run", "test"} {
 		schema := &jsonschema.Schema{Type: "object", Required: []string{"path"}, Properties: map[string]*jsonschema.Schema{
-			"path": {Type: "string", MaxLength: new(256)}, "caseId": {Type: "string", MinLength: new(1), MaxLength: new(agentfile.MaxInputBytes)}, "showContent": {Type: "boolean"}, "showFailedContent": {Type: "boolean"},
+			"path": {Type: "string"}, "caseId": {Type: "string", MinLength: new(1), MaxLength: new(agentfile.MaxInputBytes)}, "showContent": {Type: "boolean"}, "showFailedContent": {Type: "boolean"},
 		}, AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}}}
+		if files != nil && files.root != nil {
+			schema.Properties["path"].MaxLength = new(256)
+		}
 		if name == "run" {
 			schema.Properties["input"] = &jsonschema.Schema{Type: "string", MaxLength: new(agentfile.MaxInputBytes)}
 		}
@@ -59,7 +62,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if parseErr != nil && !errors.As(parseErr, &detail) {
 				return nil, parseErr
 			}
-			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Route: selected})
+			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Route: selected})
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 			}
@@ -140,7 +143,7 @@ func (f *Files) readSnapshot(ctx context.Context, p string, inspection bool) (*a
 	if err != nil {
 		return nil, nil, err
 	}
-	if !safePath(p) {
+	if !f.allowedPath(p) {
 		return nil, nil, refusal("unsafe_path")
 	}
 	parent, err := f.parent(p, false)
@@ -148,7 +151,7 @@ func (f *Files) readSnapshot(ctx context.Context, p string, inspection bool) (*a
 		return nil, nil, err
 	}
 	defer parent.Close()
-	file, b, _, err := readTarget(parent, path.Base(p))
+	file, b, _, err := readTarget(parent, filepath.Base(p))
 	if err != nil {
 		return nil, nil, err
 	}

@@ -481,22 +481,30 @@ See [file preview](docs/kmx.md#agent-file-local-preview-unreleased-integration).
 
 ## Agent-file MCP boundary
 
-`mcp --root DIRECTORY` is stdio-only and config-free at startup. Require an
-absolute existing root, never cwd/client-root fallback. Normalize native absolute
-tool paths through cleaning and symlink resolution to an allowed root-relative
-layout; outside targets, dangling links and changed root identity refuse. Keep
-relative-path restrictions and descriptor-bound file IO unchanged. Expose exactly
+`kmx mcp` is stdio-only and config-free at startup. It accepts agent paths in any
+directory; relative paths resolve against the server's working directory. Prefer
+absolute WSL paths from a Windows host. Read/write only `*.agent.md` and
+`.squad/agents/<member>/charter.md`, checking both the requested and resolved
+path. Ordinary folder names and links to agent files are supported; never use an
+agent-looking link to access a non-agent file. Keep descriptor-bound file IO and
+revision-checked edits. Optional `--root DIRECTORY` remains only for legacy
+plugins and the separately configured native Squad flow. Expose exactly
 Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
 never the path wrapper or shell CLI strings. Optional native v2 targets use
 explicit `App.PreviewSquadSnapshot` and revalidated native state, not auto-detection.
 Model routes are trusted startup
 configuration, not tool/charter fields. Keep complete safe App results on errors;
-fixture runners are not production execution. Edit preserves mode bits, not
+App owns full-path projection and credential redaction; MCP must not restore raw
+paths after it returns. Fixture runners are not production execution. Edit preserves mode bits, not
 ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
 No new runner, Explain tool or MCP network listener. The read-only
-`kmx://agent/{path}` resource projects supported agent files within that root;
-it is not a fifth tool or generic file reader. Root confirmation suffices for
-charter content; safe model excerpts still require existing showContent opt-in.
+`kmx://agent/{path}` resource projects the requested supported agent file;
+it is not a fifth tool or generic file reader. No folder confirmation is needed
+for charter content. After successful Create, open its returned file.path in the
+existing canvas. Give one plain notice before the first hosted-model send;
+ordinary agent-file creation stays confirmation-free, without path-character
+restrictions. Native Squad retains its existing proposal/setup-effects approval.
+Safe model excerpts retain the existing showContent opt-in.
 Latest preview state is process-local, revision-bound and never inferred on read.
 The separate native Copilot view uses the host SDK and a private loopback asset
 bridge, without mutations or direct agent-file reads.
@@ -557,9 +565,9 @@ Keep payload-bearing parsed values out of default logs/results. Explicit offline
 stdout, preserving authored models and ordered examples/hashes with every target
 status `not_run`. It is not evaluation evidence, a package, an AgentSuite runtime
 profile or deployment authority; never resolve routes or credentials for export.
-The loader
-refuses static special files and symlink/reparse path components; it is not a hostile
-concurrent filesystem sandbox.
+Agent-file access is not a hostile concurrent filesystem sandbox; preserve
+credentials and restrict MCP access to agent files rather than adding folder or
+symlink refusals.
 
 ## Local preview boundary
 

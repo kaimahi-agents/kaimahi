@@ -91,7 +91,7 @@ func TestFilesBoundaries(t *testing.T) {
 	if len(entries) != 0 {
 		t.Fatalf("unexpected effects: %v", entries)
 	}
-	for _, p := range []string{"", ".", filepath.Join(root, "absent")} {
+	for _, p := range []string{".", filepath.Join(root, "absent")} {
 		_, err := OpenFiles(p, fixtureValidator)
 		requireCode(t, err, "invalid_root")
 	}

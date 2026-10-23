@@ -26,7 +26,7 @@ func (mcpOutput) Close() error { return nil }
 func newMCPCommand(state *commandState) *cobra.Command {
 	var root, provider, endpoint, squadProgram, squadRelease string
 	var clearHistory bool
-	cmd := &cobra.Command{Use: "mcp --root DIRECTORY", Short: "Serve Create/Edit/Run/Test over local stdio MCP", Args: cobra.NoArgs,
+	cmd := &cobra.Command{Use: "mcp [--root DIRECTORY]", Short: "Serve Create/Edit/Run/Test over local stdio MCP", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if state.contextFlag != "" || cmd.Flag("container-engine").Changed {
 				return fmt.Errorf("MCP refuses cluster/container selectors")
@@ -36,6 +36,9 @@ func newMCPCommand(state *commandState) *cobra.Command {
 				if flag.Changed && strings.TrimSpace(flag.Value.String()) == "" {
 					return fmt.Errorf("MCP requires nonempty --%s", name)
 				}
+			}
+			if root == "" && (clearHistory || squadProgram != "" || squadRelease != "") {
+				return fmt.Errorf("required flag(s) \"root\" not set")
 			}
 			if clearHistory {
 				// Maintenance only: no route, Squad setup, stdin or server.
@@ -93,7 +96,7 @@ func newMCPCommand(state *commandState) *cobra.Command {
 			}
 			return nil
 		}}
-	cmd.Flags().StringVar(&root, "root", "", "absolute existing operation root; required, never defaults to cwd")
+	cmd.Flags().StringVar(&root, "root", "", "optional absolute existing operation root for legacy clients; otherwise agent paths resolve against cwd")
 	cmd.Flags().StringVar(&provider, "provider", "", "trusted startup model provider, including copilot (not selectable through tools)")
 	cmd.Flags().StringVar(&endpoint, "endpoint", "", "trusted startup model endpoint (fixed for Copilot; never read from charter text)")
 	cmd.Flags().StringVar(&squadProgram, "squad-program", "", "trusted absolute qualified standalone Squad launcher; enables native targets, never installs")
@@ -102,7 +105,6 @@ func newMCPCommand(state *commandState) *cobra.Command {
 	for _, name := range []string{"provider", "endpoint", "squad-program", "squad-release"} {
 		cmd.MarkFlagsMutuallyExclusive("clear-history", name)
 	}
-	_ = cmd.MarkFlagRequired("root")
 	return cmd
 }
 

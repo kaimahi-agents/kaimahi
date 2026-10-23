@@ -1,4 +1,4 @@
-// Root-bound agent canvas. Files and previews are accessed only through the
+// Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
 import { instructionSections, replaceInstructions, replaceExamples } from "./authoring.mjs";
@@ -14,7 +14,7 @@ const MAX_TEXT = 6000;
 const TRUNCATED = "… [truncated]";
 
 const MESSAGES = {
-  "invalid-path": "Path must be <id>.agent.md or .squad/agents/<id>/charter.md under the confirmed root.",
+  "invalid-path": "Choose an .agent.md file or a .squad/agents/<member>/charter.md file.",
   unavailable: "The kmx agent builder could not be read. Check that its MCP server is running.",
   "invalid-resource": "The kmx agent view was not in the supported format.",
   "too-large": "The kmx agent view was too large to show.",
@@ -41,17 +41,14 @@ const invalid = () => {
 };
 const safeError = (e) => (e instanceof ViewError ? e : new ViewError("unavailable"));
 
-// Mirrors the server's portable-path rule; the server stays the authority.
-const AGENT_ID = /^[a-z][a-z0-9-]{0,62}$/;
-const RESERVED = new Set(["con", "prn", "aux", "nul", ..."123456789".split("").flatMap((n) => [`com${n}`, `lpt${n}`])]);
-const safeId = (s) => AGENT_ID.test(s) && !RESERVED.has(s);
-
+// Preserve the requested path. The MCP server resolves it and checks the target;
+// a Windows-hosted extension must not resolve WSL paths on the Windows filesystem.
 export function normalizePath(path) {
-  if (typeof path === "string") {
-    const parts = path.split("/");
-    const flat = parts.length === 1 && path.endsWith(".agent.md") && safeId(path.slice(0, -".agent.md".length));
-    const squad = parts.length === 4 && parts[0] === ".squad" && parts[1] === "agents" && safeId(parts[2]) && parts[3] === "charter.md";
-    if (flat || squad) return path;
+  if (typeof path === "string" && !path.includes("\0")) {
+    const name = path.split("/").at(-1);
+    const agent = name.length > ".agent.md".length && name.endsWith(".agent.md");
+    const squad = /(?:^|\/)\.squad\/agents\/[^/]+\/charter\.md$/.test(path);
+    if (agent || squad) return path;
   }
   throw new ViewError("invalid-path");
 }

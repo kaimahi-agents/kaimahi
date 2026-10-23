@@ -1,20 +1,22 @@
 // Read-only native UI tool; independent of skill text and slash registration.
+import { createHash } from "node:crypto";
 import { CANVAS_ID, ViewError, normalizePath, readView, formatView } from "./view.mjs";
 
 export const OPEN_TOOL_NAME = "open_kmx_canvas";
 export const OPEN_TOOL_PARAMETERS = {
   type: "object",
-  properties: { path: { type: "string", description: "Existing root-relative <id>.agent.md or .squad/agents/<id>/charter.md under the already-bound root." } },
+  properties: { path: { type: "string", description: "Existing .agent.md or .squad/agents/<member>/charter.md path, including an absolute WSL path." } },
   required: ["path"],
   additionalProperties: false,
 };
-// Instance IDs are identifiers, not file paths. Separate layout prefixes keep
-// flat agents and Squad charters distinct without punctuation rejected by host.
+// Preserve legacy IDs; full paths need distinct portable IDs across repos.
 export function viewInstanceId(rawPath) {
   const path = normalizePath(rawPath);
-  return path.startsWith(".squad/")
-    ? "kmx-squad-" + path.split("/")[2]
-    : "kmx-agent-" + path.slice(0, -".agent.md".length);
+  const flat = /^([a-z][a-z0-9-]{0,62})\.agent\.md$/.exec(path);
+  if (flat) return "kmx-agent-" + flat[1];
+  const squad = /^\.squad\/agents\/([a-z][a-z0-9-]{0,62})\/charter\.md$/.exec(path);
+  if (squad) return "kmx-squad-" + squad[1];
+  return "kmx-agent-" + createHash("sha256").update(path).digest("hex").slice(0, 24);
 }
 
 const refused = (error) => ({
@@ -23,7 +25,7 @@ const refused = (error) => ({
   message: error instanceof ViewError ? error.message : "The kmx agent view could not be opened. Use /agent-view PATH for a text view.",
 });
 
-// Both entry points use the same confinement check. In particular, built-in
+// Both entry points validate the same agent resource. In particular, built-in
 // open_canvas reaches the provider directly rather than the native UI tool.
 export async function readOpenView(session, input) {
   if (!input || typeof input !== "object" || Array.isArray(input)

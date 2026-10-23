@@ -127,6 +127,7 @@ func TestMCPClearHistoryRefusals(t *testing.T) {
 	before := historyFileSet(t, home)
 	missing := filepath.Join(root, "missing")
 	for _, args := range [][]string{
+		{"mcp", "--clear-history"},
 		{"mcp", "--root", root, "--clear-history", "--provider", "copilot"},
 		{"mcp", "--root", root, "--clear-history", "--endpoint", "http://private.invalid"},
 		{"mcp", "--root", root, "--clear-history", "--squad-program", "/private/squad"},
@@ -231,7 +232,7 @@ func TestMCPStartupRetainsHistoryAndDiscoversVersionResource(t *testing.T) {
 	var ignored, diag bytes.Buffer
 	deps, loads := testDependencies(&ignored, &diag)
 	deps.stdin, deps.stdout = sr, sw
-	root := t.TempDir()
+	p := filepath.Join(t.TempDir(), "Repo One", "Agent café.agent.md")
 	source, err := os.ReadFile(cliPreviewFile(t))
 	if err != nil {
 		t.Fatal(err)
@@ -239,7 +240,7 @@ func TestMCPStartupRetainsHistoryAndDiscoversVersionResource(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	cmd := newRootCommand(&commandState{deps: deps})
-	cmd.SetArgs([]string{"mcp", "--root", root})
+	cmd.SetArgs([]string{"mcp"})
 	done := make(chan error, 1)
 	go func() { done <- cmd.ExecuteContext(ctx) }()
 	client := sdk.NewClient(&sdk.Implementation{Name: "history-test", Version: "1"}, nil)
@@ -272,9 +273,9 @@ func TestMCPStartupRetainsHistoryAndDiscoversVersionResource(t *testing.T) {
 		_ = json.Unmarshal(b, &v)
 		return v["file"].(map[string]any)
 	}
-	created := call(map[string]any{"schemaVersion": 1, "path": "a.agent.md", "content": string(source)}, "create")
-	edited := call(map[string]any{"schemaVersion": 1, "path": "a.agent.md", "expectedRevision": created["revision"], "content": strings.Replace(string(source), "Greet the input.", "Greet warmly.", 1)}, "edit")
-	if h, _ := edited["history"].(map[string]any); h["status"] != "retained" || *loads != 0 {
+	created := call(map[string]any{"schemaVersion": 1, "path": p, "content": string(source)}, "create")
+	edited := call(map[string]any{"schemaVersion": 1, "path": p, "expectedRevision": created["revision"], "content": strings.Replace(string(source), "Greet the input.", "Greet warmly.", 1)}, "edit")
+	if h, _ := edited["history"].(map[string]any); h["status"] != "retained" || edited["path"] != p || *loads != 0 {
 		t.Fatalf("edit history = %v loads=%d", edited["history"], *loads)
 	}
 	cancel()

@@ -6,12 +6,12 @@ import { createOpenHandler, readOpenView, viewInstanceId, OPEN_TOOL_NAME, OPEN_T
 
 const PATH = "greeter.agent.md";
 const PROVIDER = "plugin:kmx-agent-builder:agent-view";
-function setup({ renderer = true, readError, badResource = false, openError } = {}) {
+function setup({ renderer = true, readError, badResource = false, openError, path = PATH } = {}) {
   const calls = [];
   const session = { capabilities: { ui: { canvases: renderer } }, rpc: {
     mcp: { resources: { read: async (input) => {
       calls.push(["read", input]); if (readError) throw readError;
-      return { contents: [{ text: JSON.stringify({ schemaVersion: 1, kind: "kmx.agent-view", file: { path: badResource ? "other.agent.md" : PATH, revision: "sha256:" + "a".repeat(64) }, title: "Greeter", instructions: "Reply hello.", model: "fake", examples: [], latest: { status: "none" } }) }] };
+      return { contents: [{ text: JSON.stringify({ schemaVersion: 1, kind: "kmx.agent-view", file: { path: badResource ? "other.agent.md" : path, revision: "sha256:" + "a".repeat(64) }, title: "Greeter", instructions: "Reply hello.", model: "fake", examples: [], latest: { status: "none" } }) }] };
     } } },
     canvas: { open: async (input) => {
       calls.push(["open", input]); if (openError) throw openError;
@@ -28,7 +28,21 @@ test("instance IDs are stable portable identifiers, not paths, and distinguish l
     assert.match(viewInstanceId(path), /^[a-z][a-z0-9-]{0,72}$/);
     assert.doesNotMatch(viewInstanceId(path), /[:./]/);
   }
-  assert.throws(() => viewInstanceId("../greeter.agent.md"), { code: "invalid-path" });
+  assert.throws(() => viewInstanceId("../README.md"), { code: "invalid-path" });
+});
+
+test("same-named agents in different repos have stable distinct canvas IDs", async () => {
+  const paths = ["/repo one/greeter.agent.md", "/repo two/greeter.agent.md", "/repo Māori/.squad/agents/greeter/charter.md", "nested/Release Notes.agent.md"];
+  const ids = paths.map(viewInstanceId);
+  assert.equal(new Set(ids).size, paths.length);
+  for (const [i, path] of paths.entries()) {
+    assert.equal(viewInstanceId(path), ids[i]);
+    assert.match(ids[i], /^[a-z][a-z0-9-]{0,72}$/);
+    const f = setup({ path });
+    assert.equal((await f.run({ path })).opened, true);
+    assert.deepEqual(f.calls[0], ["read", { serverName: "kmx-agent-builder", uri: `kmx://agent/${encodeURIComponent(path)}` }]);
+    assert.deepEqual(f.calls[1][1], { extensionId: PROVIDER, canvasId: "kmx-agent-view", instanceId: ids[i], input: { path } });
+  }
 });
 
 test("shared preflight validates the bound resource without opening a canvas", async () => {
@@ -55,9 +69,9 @@ test("one authoritative read precedes one stable canvas open and response omits 
   assert.equal((await f.run({ path: PATH })).opened, true);
   assert.deepEqual(f.calls[1][1], f.calls[3][1]);
 });
-test("invalid or absolute paths and extra arguments have zero effects", async () => {
+test("non-agent paths and extra arguments have zero effects", async () => {
   const f = setup();
-  for (const input of [null, [], {}, { path: PATH, root: "/other" }, { path: "../greeter.agent.md" }, { path: "/some/greeter.agent.md" }, { path: "C:\\agents\\greeter.agent.md" }, { path: "%2e%2e%2fgreeter.agent.md" }, { path: "greeter.agent.md ignored" }]) {
+  for (const input of [null, [], {}, { path: PATH, root: "/other" }, { path: "../README.md" }, { path: "/some/README.md" }, { path: "greeter.agent.md ignored" }]) {
     const result = await f.run(input);
     assert.equal(result.opened, false);
     assert.equal(result.reasonCode, "invalid-path");
@@ -147,5 +161,20 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
     assert.match(skill, /`<id>\.agent\.md`[^\n]*`kmx-agent-<id>`/);
     assert.match(skill, /`\.squad\/agents\/<id>\/charter\.md`[^\n]*`kmx-squad-<id>`/);
     assert.doesNotMatch(skill, /\"root\"\s*:/);
+    const builder = await readFile(new URL("../../../skills/kmx-agent-builder/SKILL.md", import.meta.url), "utf8");
+    assert.match(builder, /After (?:a )?successful Create/);
+    assert.match(builder, /structuredContent\.file\.path/);
+    assert.match(builder, /open_canvas/);
+    assert.match(builder, /open_kmx_canvas/);
+    assert.doesNotMatch(builder, /ask the user to\s+confirm|read \[the configured selected root\]/);
+    for (const eol of ["\n", "\r\n"]) {
+      const text = builder.replace(/\r?\n/g, eol);
+      const native = text.split(/## Native Squad\r?\n/)[1].split("## Deterministic orientation")[0];
+      assert.match(native, /Before native Create/);
+      assert.match(native, /approval/);
+      for (const effect of ["proposal", "MCP", "skills", ".gitignore", ".gitattributes"]) assert.ok(native.includes(effect));
+      const ordinary = text.split(/## Create, then open\r?\n/)[1].split("## Native Squad")[0];
+      assert.doesNotMatch(ordinary, /ask.*(?:approval|confirmation)|obtain.*approval/i);
+    }
   } finally { hooks.deregister(); delete globalThis.__kmxJoin; }
 });
