@@ -154,8 +154,9 @@ not discover runtimes or silently rewrite the route. Explicit Copilot selection
 uses its fixed endpoint and provider-owned preflight described above. Before
 journaling, it checks identities, instructions, inputs, assertion operands and
 judge metadata against both the source credential and exchanged bearer. Checked
-responses include decoded JSON strings, so JSON escaping cannot hide an exact
-credential. This is not detection of every encoded, partial or unrelated secret.
+responses include decoded JSON strings and the exact terminal-sanitized and
+control-compacted display views, so JSON escaping or display normalization
+cannot assemble an unchecked exact credential. This is not detection of every encoded, partial or unrelated secret.
 
 ## Refusals
 

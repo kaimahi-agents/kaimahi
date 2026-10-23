@@ -21,7 +21,7 @@ type previewProviderWire func(*http.Request) (*http.Response, error)
 func (f previewProviderWire) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestSessionsProviderCredentialsNeverEnterJournalLogsOrResults(t *testing.T) {
-	for _, echo := range []string{"", "source", "bearer", "judge-bearer"} {
+	for _, echo := range []string{"", "source", "bearer", "judge-bearer", "source-control", "bearer-control", "source-ansi", "bearer-ansi", "judge-bearer-control"} {
 		t.Run(echo, func(t *testing.T) {
 			t.Setenv("KMX_HOME", t.TempDir())
 			t.Setenv("COPILOT_GITHUB_TOKEN", "opaque-source-token")
@@ -73,6 +73,21 @@ func TestSessionsProviderCredentialsNeverEnterJournalLogsOrResults(t *testing.T)
 					if echo == "judge-bearer" && judge {
 						answer = `{"score":95,"reasoning":"` + bearer + `"}`
 					}
+					switch echo {
+					case "source-control":
+						answer = strings.Replace(source, "-", "-\x00", 1)
+					case "bearer-control":
+						answer = strings.Replace(bearer, "-", "-\x01", 1)
+					case "source-ansi":
+						answer = strings.Replace(source, "-", "-\x1b[31m", 1)
+					case "bearer-ansi":
+						answer = strings.Replace(bearer, "-", "-\x1b]0;title\x07", 1)
+					case "judge-bearer-control":
+						if judge {
+							b, _ := json.Marshal(map[string]any{"score": 95, "reasoning": strings.Replace(bearer, "-", "-\x00", 1)})
+							answer = string(b)
+						}
+					}
 					b, _ := json.Marshal(map[string]any{"model": payload.Model, "choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]string{"role": "assistant", "content": answer}}}})
 					body = string(b)
 				default:
@@ -80,7 +95,8 @@ func TestSessionsProviderCredentialsNeverEnterJournalLogsOrResults(t *testing.T)
 				}
 				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 			})
-			opt := directOptions(t, "gpt-test", true)
+			useJudge := !strings.Contains(echo, "-control") && !strings.Contains(echo, "-ansi") || strings.HasPrefix(echo, "judge-")
+			opt := directOptions(t, "gpt-test", useJudge)
 			route := copilotPreviewRoute()
 			opt.Route = &route
 			opt.ShowContent = true
@@ -95,7 +111,7 @@ func TestSessionsProviderCredentialsNeverEnterJournalLogsOrResults(t *testing.T)
 				}
 			} else {
 				want := 1
-				if echo == "judge-bearer" {
+				if strings.HasPrefix(echo, "judge-") {
 					want = 2
 				}
 				if err == nil || result.FullPass || chats != want {

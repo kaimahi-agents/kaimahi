@@ -22,7 +22,32 @@ func NewLocalFileRunner() agentpreview.Runner {
 }
 
 func newLocalFileRunner(access func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error)) agentpreview.Runner {
-	return localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.LocalPreviewJournalDir, Judge: localFilePreviewJudge, JudgeReply: localFileJudgeReply, Access: access})
+	checkedAccess := func(ctx context.Context, routes []modelaccess.Route) (modelaccess.PreviewAccess, error) {
+		capability, err := access(ctx, routes)
+		if capability != nil {
+			capability = previewDisplayAccess{capability}
+		}
+		return capability, err
+	}
+	return localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.LocalPreviewJournalDir, Judge: localFilePreviewJudge, JudgeReply: localFileJudgeReply, Access: checkedAccess})
+}
+
+// The App owns display normalization, while the provider alone knows the keys.
+// Check those same views before Sessions retains any authored or returned text.
+// This also covers local-agent replies when only the judge uses Copilot.
+type previewDisplayAccess struct{ modelaccess.PreviewAccess }
+
+func (a previewDisplayAccess) CheckContent(fields ...string) error {
+	for _, field := range fields {
+		views, _, ok := suiteDiagnosticViews(field, len(field))
+		if !ok {
+			return agentpreview.ErrCredentialContent
+		}
+		if err := a.PreviewAccess.CheckContent(views...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // This private factory consumes only the adapter's prevalidated model routes
