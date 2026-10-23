@@ -341,3 +341,22 @@ func TestDirectPreviewNoJournalModeIsExplicit(t *testing.T) {
 		t.Fatal("journal error bypassed with no-journal mode")
 	}
 }
+
+func TestDirectPreviewZeroExamplesAdHoc(t *testing.T) {
+	opt := directOptions(t, "fake", false)
+	zeroPreviewFile(t, opt.File)
+	opt.Operation, opt.ShowContent = "run", true
+	input := "Ada"
+	opt.Input = &input
+	result, err := (&App{FileRunner: NewDirectFileRunner()}).PreviewAgentFile(context.Background(), opt)
+	if err != nil || result.State != "complete" || result.FullPass || result.Verdict != runtime.EvaluationUnknown || result.AdHoc == nil || result.AdHoc.AnswerExcerpt == "" || result.Runner != "preview runner (no journal)" {
+		t.Fatalf("direct zero-example ad hoc: %+v / %v", result, err)
+	}
+	a, err := agentfile.Load(opt.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewDirectFileRunner().Run(context.Background(), agentpreview.Request{Agent: a, Route: modelaccess.Route{Provider: "fake", Model: "fake", Auth: "none"}}); err == nil {
+		t.Fatal("direct runner accepted no examples and no input")
+	}
+}

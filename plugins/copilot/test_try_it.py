@@ -60,7 +60,7 @@ case "$*" in 'model list --provider copilot -o json') printf '[{"model":"claude-
                  "samples/release-writer.agent.md": b'# Release writer\n- **Preferred:** claude-haiku-5.5\njudgeModel: claude-haiku-5.5\n',
                  "skills/kmx-agent-builder/SKILL.md": b'fixture skill',
                  "skills/kmx/SKILL.md": b'fixture opener skill', "SETUP.md": b'fixture setup'}
-        for name in ("extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs"):
+        for name in ("extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs", "editor.mjs"):
             files["com.github.copilot/extensions/agent-view/" + name] = b'fixture asset'
         files.update(changes)
         with tarfile.open(self.assets / self.name, "w:gz") as archive:
@@ -105,6 +105,13 @@ case "$*" in 'model list --provider copilot -o json') printf '[{"model":"claude-
 
     def test_missing_authoring_asset_refuses_incomplete_bundle(self):
         self.bundle(**{"com.github.copilot/extensions/agent-view/authoring.mjs": None})
+        result = self.run_setup("--dry-run")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no compatible try-it bundle", result.stdout)
+        self.assertFalse(self.root.exists())
+
+    def test_missing_editor_asset_refuses_incomplete_bundle(self):
+        self.bundle(**{"com.github.copilot/extensions/agent-view/editor.mjs": None})
         result = self.run_setup("--dry-run")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("no compatible try-it bundle", result.stdout)

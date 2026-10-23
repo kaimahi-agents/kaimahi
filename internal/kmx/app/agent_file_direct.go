@@ -75,7 +75,7 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 	if ctx.Err() != nil {
 		return abort(ctx.Err())
 	}
-	if r.Agent == nil || len(r.Examples) == 0 || r.Route.Model != r.Agent.Model {
+	if r.Agent == nil || len(r.Examples) == 0 && r.Input == nil || r.Route.Model != r.Agent.Model {
 		return out, errDirectPreview
 	}
 	if len(r.Agent.Tools) > 0 || r.ToolBindings != "" {

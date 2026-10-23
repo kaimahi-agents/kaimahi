@@ -131,7 +131,8 @@ func previewReason(code string) string {
 		"completion_ready": "Attributable completion available.",
 		"assertion_failed": "Assertion not satisfied.", "judge_unknown": "Assertion outcome is inconclusive.",
 		"not_run": "Execution is not complete.", "cancelled": "Local preview cancelled.", "deadline_exceeded": "Local preview deadline exceeded.",
-		"invalid_file":      "Invalid agent file; use the canonical charter format with required fields and nonempty examples.",
+		"invalid_file":      "Invalid agent file; use the canonical charter format with required fields and an Examples section.",
+		"no_tests":          "No tests yet — add or suggest one",
 		"invalid_selection": "Unknown example ID; select an authored example ID.", "invalid_options": "Invalid file preview options.",
 		"model_unavailable":   "Selected model route is unavailable or does not match the file model; select an exact trusted route.",
 		"tools_unavailable":   "Host-bound local tools are unavailable; Copilot tool support depends on #662.",
@@ -195,8 +196,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	r.File.Revision = parsed.Revision
 	r.Selection.TotalCases = len(parsed.Examples)
-	if len(parsed.Examples) == 0 {
-		return fail("invalid_file", 1)
+	// Zero authored examples permit only an explicit ad-hoc Run, never a Test.
+	if len(parsed.Examples) == 0 && opt.Input == nil {
+		return fail("no_tests", 1)
 	}
 	selected := parsed.Examples
 	if opt.CaseID != "" {
@@ -373,6 +375,12 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return fail("invalid_completion", 1)
 	}
 	r.State = "complete"
+	if len(selected) == 0 {
+		// An ad-hoc answer is not evidence: no verdict and never a vacuous full pass.
+		r.Verdict, r.FullPass, r.ReasonCode = runtime.EvaluationUnknown, false, "completion_ready"
+		r.Reason = previewReason(r.ReasonCode)
+		return r, nil
+	}
 	r.Verdict = runtime.EvaluationAssertionsVerdict(all)
 	r.ReasonCode = "checks_passed"
 	if r.Verdict == runtime.EvaluationFail {

@@ -53,6 +53,11 @@ func ExportRunProfile(filename string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A profile hands examples to a separate runtime; zero tests is no evidence.
+	if len(agent.Examples) == 0 {
+		loc := agent.Locations["Examples"]
+		return nil, refuse(filename, loc.Line, loc.Column, "Examples", "add at least one example before exporting a run profile")
+	}
 	profile := runProfile{
 		SchemaVersion: 1, Kind: "kmx.agent-run-profile",
 		SourceRevision: agent.Revision, AgentID: agent.Identity.ID,

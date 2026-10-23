@@ -74,3 +74,19 @@ func TestNativeSquadPreviewTaskOnlyFakeAndRevision(t *testing.T) {
 		t.Fatal("native subset became full pass")
 	}
 }
+
+func TestNativeSquadPreviewZeroExamplesRefusesTest(t *testing.T) {
+	raw, err := os.ReadFile("../agentfile/testdata/squad-v1.1.0/catalog.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := strings.Replace(string(raw), "- **Preferred:** auto", "- **Preferred:** fake", 1) + "\n\n## Task Instructions\n\nReply.\n\n## Examples\n\n```yaml\nexamples: []\n```\n"
+	d, err := agentfile.ParseSquad(".squad/agents/leader/charter.md", []byte(source), agentfile.SquadProfile{Release: "1.1.0", MemberID: "leader", Role: "Lead / Architect"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := (&App{FileRunner: NewLocalFileRunner()}).PreviewSquadSnapshot(context.Background(), d, FilePreviewOptions{File: ".squad/agents/leader/charter.md", Operation: "test"})
+	if err == nil || got.ReasonCode != "no_tests" || got.FullPass {
+		t.Fatalf("zero-example Squad test: %+v / %v", got, err)
+	}
+}

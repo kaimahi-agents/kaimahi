@@ -151,30 +151,49 @@ Without the built-in canvas opener, the skill uses the native opener's text
 fallback. The manual native command `/agent-view greeter.agent.md` also displays
 the projection as read-only text; canonical Squad paths work there too.
 
-Instructions are directly editable: **Enter** saves through revision-checked MCP
-Edit and then tests; **Shift+Enter** adds a line. Additional instructions retain
-the other canonical responsibility sections. Inline code and emphasis are inert
-formatting, with source markers retained when saving. Title, identity, model,
-untouched instructions and Examples are not rewritten by an instruction edit.
-Typing alone never saves or runs anything.
+The main view shows the **Prompt** and an ordered list of **Tests**. Open a test
+for **The agent gets**, **Passes if** and the actual **The agent answered** excerpt.
+Going back or opening another test keeps its draft marked **Unsaved**; it never
+silently saves or requires Cancel before editing something else.
 
-Add, edit or delete examples inline, retaining at least one example and check.
-Example saves reformat only the Examples YAML, including comments, and preserve
-all check fields, including judge metadata. Judge labels come from authored IDs;
-full rubrics remain in Check details. No check is inferred from an answer.
-Inputs, exact operands and model answers remain literal. Failing examples expand;
-passing examples stay compact. Partial, unknown, ambiguous, stale and unsaved
-states never imply a full pass.
+On main, **Enter** saves pending edits through one revision-checked MCP Edit and
+runs every test, including when nothing changed. In test detail, the save/run
+control runs that test only through the existing case selection. **Shift+Enter**
+adds a line. Typing or navigation alone never saves or runs. Additional canonical
+instruction sections remain available in source details. Paragraph spacing and
+inert inline formatting preserve source markers and untouched bytes when saving.
+Title, identity, model and unrelated tests are not rewritten by a prompt edit.
+
+Tests can be added, edited or removed; each nonempty test retains at least one
+check. An explicit `examples: []` is a valid zero-test authoring state. Ad-hoc Run
+with an input still works; Test refuses with “No tests yet — add or suggest one”.
+Saving zero tests supplies no passing evidence, and run-profile export,
+packaging and deployment still refuse an agent without test evidence.
+Test saves reformat only the Examples YAML, including comments, and retain all
+known check fields, including existing judge metadata. No judge or check is
+inferred from an answer. Inputs, exact operands, code and answers stay literal.
+Only current results have status colours. Editing locally retains known icon
+shapes and counts in grey. Results already stale on the server stay neutral;
+the panel does not invent or recover observations that the engine withholds. Unknown, incomplete, ambiguous and subset results never imply a
+full pass. The sticky Tests header filters All / Not passing without reordering.
+Dark/light tokens and the same layout support a 600px panel.
 
 Test and ad-hoc Run use existing same-session MCP tools directly, not chat.
-**Suggest more** alone asks Copilot for proposals in chat; it does not save them.
-The host still enforces its permissions. The private asset bridge permits only
-declared interactions for its fixed path, with token, Host, exact Origin and
-size checks. It is not a generic executor. Acknowledged actions refresh the
-resource; there is no background watcher. Conflicts and uncertain outcomes retain
-the draft and require deliberate reload. Failed saves stop Test. Test/Run have
-no atomic revision precondition; changed result revisions are labelled stale,
-never claimed as tests of the draft.
+**Suggest tests** alone asks Copilot for proposals in chat; it does not save them
+or invent canvas suggestions. The host still enforces permissions. The private
+asset bridge accepts only declared interactions for its fixed path, with token,
+Host, exact Origin and size checks; it is not a generic executor.
+The visible idle panel observes the same resource for outside changes. With a
+draft, **Compare**, **Keep my edits** and **Use the new version** require a choice
+before saving. Keeping edits explicitly chooses the observed new baseline;
+no refusal is force-overwritten or automatically retried. Unknown execution
+outcomes retain drafts and require deliberate reload, never an automatic unlock.
+Failed saves stop Test. Test/Run have no atomic revision precondition; actual
+returned revisions and selected case IDs must match before results are attributed.
+A failed call also needs its own structured result to match the resource;
+without that evidence, an older result cannot unlock a retry.
+Stop, versions/restore, a new Model validated type, Ask Copilot and All versions
+are not part of this canvas release; no inactive versions clock is shown.
 
 Failed saved-example answers are shown by default as bounded **untrusted
 excerpts**. **Include passing answers** explicitly adds other excerpts.
@@ -206,6 +225,17 @@ The `/kmx` skill → built-in opener → WSL resource → visible panel path was
 demonstrated once on that Windows app, with one opener call and no agent
 execution. Other platforms, marketplace-qualified provider IDs and every path
 layout/instance-ID length have not been app-qualified by that check.
+
+### Visual checks
+
+These pairs show the Final boards beside the accepted native saved/edited
+milestone. The native captures precede the final wording and paragraph-spacing
+fixes. The detail pair shows the latest real-MCP **browser** check, not a native
+or hosted-model run. Clock/history, stop and the new model-check type are deferred.
+
+![Edited board beside the native visual checkpoint](../../docs/images/copilot-canvas-native-edited.png)
+![Saved board beside the native visual checkpoint](../../docs/images/copilot-canvas-native-saved.png)
+![Narrow detail board beside the latest real-MCP browser](../../docs/images/copilot-canvas-detail-browser.png)
 
 ## Results and verification
 

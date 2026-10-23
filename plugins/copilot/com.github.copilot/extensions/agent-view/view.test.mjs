@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { instructionSections, replaceInstructions } from "./authoring.mjs";
+import { instructionSections, replaceExamples, replaceInstructions } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import test from "node:test";
@@ -261,19 +261,30 @@ test("text truncation never hides the latest-result summary", async () => {
   }
 });
 
-test("status badges and errors meet AA text contrast in both themes", async () => {
+test("status, error and quiet text tokens meet AA contrast in both themes", async () => {
   const css = await readFile(new URL("./style.css", import.meta.url), "utf8");
-  const luminance = (color) => color.match(/../g).map((v) => parseInt(v, 16) / 255).map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
-  // The approved frame has one dark palette. Test the actual status/error
-  // colors on both the page and panel, including composited status tints.
-  for (const [selector, foreground, tint] of [[".status-pill.pass", "3fb950", "3fb95015"], [".status-pill.fail", "ffa198", "f851491f"], [".error", "ffa198", null]]) {
-    assert.ok(css.includes(selector)); assert.ok(css.includes("#" + foreground));
-    for (const background of ["0d1117", "161b22"]) {
-      const blend = tint ? background.match(/../g).map((v, i) => Math.round(parseInt(v, 16) * (1 - parseInt(tint.slice(6), 16) / 255) + parseInt(tint.slice(i * 2, i * 2 + 2), 16) * parseInt(tint.slice(6), 16) / 255).toString(16).padStart(2, "0")).join("") : background;
-      const a = luminance(foreground), b = luminance(blend);
-      assert.ok((Math.max(a, b) + .05) / (Math.min(a, b) + .05) >= 4.5, selector + "/" + background);
+  // oklch -> linear sRGB luminance (CSS Color 4), so the check follows the actual tokens.
+  const lum = (value) => {
+    const [L, C, H] = value.match(/oklch\(([\d.]+) ([\d.]+) ([\d.]+)/).slice(1).map(Number);
+    const a = C * Math.cos(H * Math.PI / 180), b = C * Math.sin(H * Math.PI / 180);
+    const l = (L + .3963377774 * a + .2158037573 * b) ** 3, m = (L - .1055613458 * a - .0638541728 * b) ** 3, s = (L - .0894841775 * a - 1.291485548 * b) ** 3;
+    const rgb = [4.0767416621 * l - 3.3077115913 * m + .2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - .3413193965 * s, -.0041960863 * l - .7034186147 * m + 1.707614701 * s];
+    return rgb.map((v) => Math.min(1, Math.max(0, v))).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+  };
+  const themes = [css.match(/^:root\{([^}]*)\}/m)[1], css.match(/prefers-color-scheme: light\)\{:root\{([^}]*)\}/)[1]];
+  for (const block of themes) {
+    const token = (name) => block.match(new RegExp(`--${name}:(oklch\\([^)]*\\))`))[1];
+    for (const [fg, bgs, min] of [["text", ["bg", "surface"], 4.5], ["text-2", ["bg", "surface"], 4.5], ["muted", ["bg", "surface"], 4.5],
+      ["accent", ["bg", "surface"], 4.5], ["danger", ["bg", "surface"], 4.5], ["success", ["bg", "surface"], 3], ["warn", ["bg"], 3],
+      ["warn-text", ["warn-tint"], 4.5], ["text", ["info-tint"], 4.5], ["control-border", ["surface"], 3]]) {
+      for (const bg of bgs) {
+        const x = lum(token(fg)), y = lum(token(bg));
+        assert.ok((Math.max(x, y) + .05) / (Math.min(x, y) + .05) >= min, `${fg} on ${bg}`);
+      }
     }
   }
+  assert.match(css, /\.error\{[^}]*var\(--warn-text\)/, "errors are amber text, not the old red");
+  assert.match(css, /prefers-reduced-motion:\s*reduce\)\s*\{\s*\.spin\s*\{\s*animation:\s*none/);
 });
 
 test("bridge serves only token-protected same-host requests", async () => {
@@ -426,6 +437,8 @@ function fakeDoc(defaultView) {
       querySelector(selector) { return all(this).find((e) => selector.startsWith(".") ? e.className.split(/\s+/).includes(selector.slice(1)) : e.tag === selector); },
       querySelectorAll(selector) { return all(this).filter((e) => selector.split(",").includes(e.tag)); },
       focus() {},
+      // Minimal layout: a list is 41px per visible row; everything else is one 32px line.
+      getBoundingClientRect() { const h = tag === "ul" ? this.children.filter((c) => !c.hidden).length * 41 : 32; return { top: 0, bottom: h, height: h }; },
       contains(node) { return all(this).includes(node); },
       set textContent(v) { this._text = String(v); this.children = []; },
       get textContent() { return this._text + this.children.map((c) => c.textContent).join(""); },
@@ -441,7 +454,8 @@ function fakeDoc(defaultView) {
     el.insertAdjacentHTML = () => { throw new Error("insertAdjacentHTML used"); };
     return el;
   };
-  return { createElement: mk, createTextNode: (text) => Object.assign(mk("#text"), { _text: text }), defaultView };
+  const mkNS = (ns, tag) => Object.assign(mk(tag), { namespaceURI: ns });
+  return { createElement: mk, createElementNS: mkNS, createTextNode: (text) => Object.assign(mk("#text"), { _text: text }), defaultView };
 }
 const all = (el) => [el, ...el.children.flatMap(all)];
 const byClass = (root, name) => all(root).filter((e) => e.className.split(/\s+/).includes(name));
@@ -453,64 +467,90 @@ async function rendered(over = {}, path = MINIMAL, defaultView) {
   return root;
 }
 
+// Read-only views expose the fixed copy command plus fixed navigation only: a
+// row button per openable test, Back inside a test, and the list filter.
 function assertTrustedControls(root) {
   const nodes = all(root), buttons = nodes.filter((e) => e.tag === "button");
-  assert.equal(buttons.length, 1);
-  const button = buttons[0];
-  assert.equal(button.textContent, "Copy path");
-  assert.deepEqual(button.attrs, { type: "button", "aria-label": "Copy agent path", "data-action": "copy-path" });
-  assert.equal(byClass(byClass(root, "source-details")[0], "copy-path")[0], button);
-  assert.deepEqual(Object.keys(button.listeners), ["click"]);
-  assert.equal(button.listeners.click.length, 1);
+  const copy = byClass(root, "copy-path"), inTest = byClass(root, "back").length > 0;
+  // Main keeps exactly one copy command in Source details; an open test has none.
+  assert.equal(copy.length, inTest ? 0 : 1);
+  if (!inTest) {
+    assert.equal(copy[0].textContent, "Copy path");
+    assert.deepEqual(copy[0].attrs, { type: "button", "aria-label": "Copy agent path", "data-action": "copy-path" });
+    assert.equal(byClass(byClass(root, "source-details")[0], "copy-path")[0], copy[0]);
+  }
+  for (const button of buttons) {
+    assert.ok(["copy-path", "test-row", "back", "filter-button"].some((name) => button.className.split(/\s+/).includes(name)), button.className);
+    assert.deepEqual(Object.keys(button.listeners), ["click"]);
+    assert.equal(button.listeners.click.length, 1);
+  }
   assert.equal(nodes.filter((e) => ["a", "img", "script", "input", "form", "textarea", "iframe", "object", "embed"].includes(e.tag)).length, 0);
   assert.ok(nodes.every((e) => !Object.keys(e.attrs).some((k) => /^(?:on|href$|src$|style$)/i.test(k))));
-  assert.ok(nodes.filter((e) => e !== button).every((e) => Object.keys(e.listeners).length === 0));
+  assert.ok(nodes.filter((e) => e.tag !== "button").every((e) => Object.keys(e.listeners).length === 0));
+  // Every SVG is a fixed decorative icon, never authored markup.
+  assert.ok(nodes.filter((e) => e.tag === "svg").every((e) => e.attrs["aria-hidden"] === "true" && e.namespaceURI === "http://www.w3.org/2000/svg"));
 }
+// Main shows one line per test; a test's details live behind its row.
+const summaryOf = (root) => byClass(root, "tests-summary")[0].textContent;
+const items = (root) => byClass(root, "test-item");
+const rowLabels = (root) => items(root).map((i) => byClass(i, "status-icon")[0].attrs["aria-label"]);
+const noteOf = (item) => byClass(item, "test-note")[0].textContent;
+function openTest(root, id) {
+  const item = items(root).find((i) => i.attrs["data-test-id"] === id);
+  assert.ok(item, `row ${id}`);
+  byClass(item, "test-row")[0].listeners.click[0]();
+  assert.equal(byClass(root, "test-item").length, 0, "the test opens in place of the list");
+  return root;
+}
+const goBack = (root) => { byClass(root, "back")[0].listeners.click[0](); return root; };
+const checkLabels = (root) => byClass(root, "check").map((c) => byClass(c, "status-icon")[0].attrs["aria-label"]);
 
 test("UI gives identity and purpose priority while keeping source and full revision in details", async () => {
   const title = "Greeter — Greeting specialist";
   const root = await rendered({ title, instructions: "# " + title + "\n## Identity\n- **ID:** greeter\n- **Purpose:** Return a greeting.\n## Model\n- **Preferred:** fake" }, SQUAD);
   const header = byClass(root, "agent-header")[0], source = byClass(root, "source-details")[0];
-  assert.equal(root.children[0].className, "toolbar");
+  assert.equal(root.children[0].className, "content");
   assert.equal(all(header).find((e) => e.tag === "h1").textContent, "Greeter");
   assert.equal(byClass(header, "purpose")[0].textContent, "Return a greeting.");
-  assert.equal(byClass(header, "model-pill")[0].textContent, "Model · fake");
+  assert.equal(byClass(header, "agent-meta")[0].textContent, "charter.md · fake");
   assert.equal(source.tag, "details"); assert.notEqual(source.open, true);
   assert.ok(source.textContent.includes(title) && source.textContent.includes(REV));
   assert.equal(byClass(source, "path-value")[0].textContent, SQUAD);
-  assert.ok(!header.textContent.includes(REV));
+  assert.ok(![byClass(header, "agent-meta")[0], byClass(header, "purpose")[0]].some((e) => e.textContent.includes(REV)));
 });
 
-test("UI keeps normal status pills in the header and quiet guidance after instructions", async () => {
-  for (const [latest, state, label] of [
-    [{ status: "none" }, "neutral", "No current result"],
-    [{ status: "stale" }, "neutral", "Result out of date"],
-    [{ status: "current", result: result() }, "pass", "1 of 1 passing"],
-    [{ status: "current", result: result({ state: "cancelled", fullPass: false }) }, "neutral", "Incomplete result"],
+test("UI keeps the latest result in the Tests summary and quiet read-only guidance", async () => {
+  for (const [latest, label] of [
+    [{ status: "none" }, "Not run yet"],
+    [{ status: "stale" }, "Result out of date"],
+    [{ status: "current", result: result() }, "1 passing"],
+    [{ status: "current", result: result({ state: "cancelled", fullPass: false }) }, "Incomplete run: 1 passing"],
   ]) {
-    const root = await rendered({ latest }), header = byClass(root, "agent-header")[0];
-    const status = byClass(root, "status-pill")[0];
-    assert.ok(all(header).includes(status)); assert.equal(status.textContent, label);
-    assert.ok(status.className.split(/\s+/).includes(state));
-    assert.equal(byClass(root, "hero").length, 0);
-    assert.equal(byClass(root, "instructions-section").length, 1);
-    assert.equal(byClass(root, "examples-section").length, 1);
+    const root = await rendered({ latest });
+    assert.equal(summaryOf(root), label);
+    assert.equal(byClass(root, "status-pill").length + byClass(root, "hero").length, 0);
+    assert.equal(byClass(root, "instructions").length, 1);
+    assert.equal(byClass(root, "tests-section").length, 1);
     assert.match(root.textContent, /Read-only inspection/); assertTrustedControls(root);
   }
 });
 
-test("UI reserves the single full status band for confirmed failed cases after instructions", async () => {
+test("UI explains a confirmed failed case once in its row and once at the failed check", async () => {
   const fixture = savedFixture(), r = fixture.latest.result;
   r.fullPass = false; r.verdict = "fail";
-  r.examples[0].verdict = "fail"; r.examples[0].assertions[0].verdict = "fail";
+  r.examples[0].verdict = "fail"; r.examples[0].assertions[0].verdict = "fail"; r.examples[0].answerExcerpt = "Hi, Ada";
   const root = await rendered(fixture);
-  assert.equal(headline(root), "0 of 1 passing");
-  assert.ok(byClass(root, "status-pill")[0].className.includes("fail"));
-  assert.equal(byClass(root, "hero").length, 0);
-  assert.equal(byClass(cards(root)[0], "flow").length, 1);
-  assert.equal(byClass(cards(root)[0], "answer-excerpt").length, 1);
+  assert.equal(summaryOf(root), "1 failing");
+  assert.equal(items(root)[0].attrs["data-status"], "fail");
+  assert.equal(noteOf(items(root)[0]), "Expected “Hello, Ada”, got “Hi, Ada”");
+  openTest(root, "greeting");
+  assert.equal(byClass(root, "why").length, 1);
+  assert.equal(byClass(root, "answer-excerpt").length, 1);
+  assertTrustedControls(root);
   r.examples[0].state = "refused";
-  assert.equal(headline(await rendered(fixture)), "Incomplete result");
+  const refused = await rendered(fixture);
+  assert.equal(summaryOf(refused), "1 didn't finish");
+  assert.equal(items(refused)[0].attrs["data-status"], "error");
 });
 
 test("UI presents canonical charter sections as readable headings, bullets and inline text", async () => {
@@ -667,12 +707,13 @@ test("UI never formats saved inputs, expected operands or model answers", async 
     examples: [{ id: "exact", input: exact, assertions: [{ id: "check", type: "contains", value: exact }] }],
     latest: { status: "current", result: result({ selection: { scope: "full", caseIds: ["exact"], totalCases: 1 }, examples: [{ ...result().examples[0], id: "exact", answerExcerpt: exact, assertions: [{ id: "check", type: "contains", verdict: "pass" }] }] }) },
   });
-  const example = byClass(root, "example")[0];
-  assert.equal(example.tag, "article");
-  assert.equal(all(example).find((e) => e.tag === "h3").textContent, "Exact");
-  assert.ok(byClass(example, "example-preview")[0].textContent.includes(exact));
-  assert.deepEqual(byClass(example, "answer-excerpt").map((e) => e.textContent), [exact]);
-  assert.equal(all(example).filter((e) => ["code", "strong", "a", "img"].includes(e.tag)).length, 0);
+  openTest(root, "exact");
+  assert.equal(byClass(root, "test-title")[0].textContent, "Exact");
+  assert.equal(byClass(root, "example-input")[0].textContent, exact);
+  assert.ok(byClass(root, "check-label")[0].textContent.includes(exact));
+  assert.deepEqual(byClass(root, "answer-excerpt").map((e) => e.textContent), [exact]);
+  const sections = byClass(root, "detail-section");
+  assert.equal(sections.flatMap(all).filter((e) => ["code", "strong", "a", "img"].includes(e.tag)).length, 0);
 });
 
 test("UI keeps static error rendering independent of the normal view hierarchy", () => {
@@ -696,11 +737,13 @@ test("UI renders hostile resource text as text nodes only", async () => {
   const doc = fakeDoc();
   const root = doc.createElement("main");
   renderView(doc, root, view);
+  assert.ok(all(root).some((e) => /\bpass\b/.test(e.className)));
+  assertTrustedControls(root);
+  openTest(root, "e");
   const text = root.textContent;
   assert.ok(text.includes(hostile));
   assert.match(text, /untrusted/i);
   assertTrustedControls(root);
-  assert.ok(all(root).some((e) => /\bpass\b/.test(e.className)));
 
   const stale = await readView(stubSession(resource(MINIMAL, { latest: { status: "stale" } })), MINIMAL);
   const r2 = doc.createElement("main");
@@ -713,7 +756,7 @@ test("UI renders hostile resource text as text nodes only", async () => {
   assert.match(r3.textContent, /Static failure\./);
   const r4 = doc.createElement("main");
   renderView(doc, r4, await readView(stubSession(resource(MINIMAL)), MINIMAL));
-  assert.match(r4.textContent, /No current result/i);
+  assert.match(r4.textContent, /Not run yet/i);
 });
 
 
@@ -734,23 +777,26 @@ function savedFixture(count = 1) {
     }) },
   };
 }
-const headline = (root) => byClass(root, "status-pill")[0].textContent;
-const cards = (root) => byClass(root, "example");
 
-test("UI renders five mixed cases by ID, with one failing headline and compact passed cases", async () => {
+
+
+test("UI renders five mixed cases by ID in authored order, with one failing summary and a quiet passing list", async () => {
   const fixture = savedFixture(5), r = fixture.latest.result;
   r.fullPass = false; r.verdict = "fail";
   r.examples[0].verdict = "fail"; r.examples[0].assertions[0].verdict = "fail";
   r.examples[0].answerExcerpt = "Goodbye, Ada"; r.examples.reverse();
   const root = await rendered(fixture);
-  assert.equal(headline(root), "4 of 5 passing");
-  assert.equal(byClass(root, "examples")[0].children.length, 5);
-  assert.deepEqual(cards(root).map((e) => e.attrs["data-example-id"]), fixture.examples.map((e) => e.id));
-  assert.deepEqual(cards(root).map((e) => byClass(e, "case-status")[0].textContent), ["Failed", "Passed", "Passed", "Passed", "Passed"]);
-  assert.equal(byClass(cards(root)[0], "answer-excerpt")[0].textContent, "Goodbye, Ada");
-  assert.equal(byClass(cards(root)[0], "missing")[0].textContent, 'Missing "Hello, Ada".');
-  assert.ok(cards(root).slice(1).every((e) => byClass(e, "compact-example").length === 1 && byClass(e, "last-answer")[0].open !== true));
-  assert.equal(byClass(cards(root)[0], "flow").length, 1);
+  assert.equal(summaryOf(root), "1 failing, 4 passing");
+  assert.equal(byClass(root, "test-list")[0].children.length, 5);
+  assert.deepEqual(items(root).map((e) => e.attrs["data-test-id"]), fixture.examples.map((e) => e.id));
+  assert.deepEqual(rowLabels(root), ["Failed", "Passed", "Passed", "Passed", "Passed"]);
+  assert.equal(noteOf(items(root)[0]), "Expected “Hello, Ada”, got “Goodbye, Ada”");
+  assert.deepEqual(items(root).slice(1).map(noteOf), ["", "", "", ""]);
+  assert.equal(byClass(root, "answer-excerpt").length, 0, "answers live in the test, not the list");
+  openTest(root, "greeting");
+  assert.equal(byClass(root, "answer-excerpt")[0].textContent, "Goodbye, Ada");
+  assert.equal(byClass(root, "why")[0].textContent, "Expected “Hello, Ada”, got “Goodbye, Ada”.");
+  assert.doesNotMatch(root.textContent, /Missing/);
 });
 
 test("UI uses authored check IDs and types, never assertion array positions", async () => {
@@ -758,24 +804,24 @@ test("UI uses authored check IDs and types, never assertion array positions", as
   fixture.examples[0].assertions.push({ id: "forbidden", type: "notContains", value: "Goodbye" });
   r.verdict = "fail"; r.fullPass = false; r.examples[0].verdict = "fail";
   r.examples[0].assertions = [{ id: "forbidden", type: "notContains", verdict: "fail" }, { id: "greeting-text", type: "contains", verdict: "pass" }];
-  const root = await rendered(fixture), checks = byClass(root, "check");
-  assert.equal(byClass(checks[0], "pass")[0].textContent, "✓ ");
-  assert.equal(byClass(checks[1], "fail")[0].textContent, "✕ ");
-  assert.equal(byClass(root, "missing").length, 0);
+  const root = openTest(await rendered(fixture), "greeting");
+  assert.deepEqual(checkLabels(root), ["Passed", "Failed"]);
+  assert.match(byClass(root, "why")[0].textContent, /^Expected no “Goodbye”/);
+  assert.doesNotMatch(root.textContent, /Missing/);
 });
 
 test("UI renders all authored condition fields literally without executing patterns or inventing semantics", async () => {
   const literal = " **literal**\n<svg onload=alert(1)> ";
-  const root = await rendered({ examples: [{ id: "conditions", input: literal, assertions: [
+  const root = openTest(await rendered({ examples: [{ id: "conditions", input: literal, assertions: [
     { id: "a", type: "contains", value: literal }, { id: "b", type: "notContains", value: literal },
     { id: "c", type: "regex", pattern: "(?invalid)[" },
     { id: "d", type: "llmJudge", rubric: literal, minScore: 70, judgeModel: "judge-x", judgeVersion: "v2" },
     { id: "e", type: "future-type", custom: literal },
-  ] }] });
+  ] }] }), "conditions");
   assert.ok(root.textContent.includes(literal) && root.textContent.includes("(?invalid)["));
-  const details = byClass(root, "check-details")[0];
-  for (const value of ["rubric:", "minScore: 70", "judge-x", "v2", "custom:", "future-type"]) assert.ok(details.textContent.includes(value), value);
-  assert.equal(all(root).filter((e) => e.tag === "svg").length, 0);
+  const details = byClass(root, "check-details").map((e) => e.textContent).join("\n");
+  for (const value of ["rubric:", "minScore: 70", "judge-x", "v2", "custom:", "future-type"]) assert.ok(details.includes(value), value);
+  assertTrustedControls(root);
 });
 
 for (const type of ["notContains", "regex"]) {
@@ -786,24 +832,28 @@ for (const type of ["notContains", "regex"]) {
     r.fullPass = false; r.verdict = "fail"; r.examples[0].verdict = "fail";
     r.examples[0].assertions = [{ id: "greeting-text", type, verdict: "fail" }];
     const root = await rendered(fixture);
-    assert.equal(headline(root), "0 of 1 passing");
-    assert.equal(byClass(root, "missing").length, 0);
-    assert.equal(byClass(byClass(root, "check")[0], "fail")[0].textContent, "✕ ");
+    assert.equal(summaryOf(root), "1 failing");
+    assert.match(noteOf(items(root)[0]), type === "regex" ? /^Expected a match for “\^Hello”/ : /^Expected no “Bye”/);
+    openTest(root, "greeting");
+    assert.doesNotMatch(root.textContent, /Missing/);
+    assert.deepEqual(checkLabels(root), ["Failed"]);
   });
 }
 
 for (const state of ["refused", "error", "cancelled", "not_run", "future-state"]) {
-  test(`UI treats ${state} rows as neutral incomplete, not failing`, async () => {
+  test(`UI treats ${state} rows as amber didn't-finish, never failing`, async () => {
     const fixture = savedFixture();
     const r = fixture.latest.result;
     r.state = state; r.verdict = "fail"; r.fullPass = false;
     r.examples[0].state = state; r.examples[0].verdict = "fail";
     r.examples[0].assertions[0].verdict = "fail";
     const root = await rendered(fixture);
-    assert.equal(headline(root), "Incomplete result");
-    assert.equal(byClass(root, "case-fail").length + byClass(root, "case-pass").length, 0);
-    assert.equal(byClass(root, "missing").length, 0);
-    assert.doesNotMatch(headline(root), /failing|passing/i);
+    assert.equal(summaryOf(root), "1 didn't finish");
+    assert.deepEqual(rowLabels(root), ["Didn't finish"]);
+    assert.doesNotMatch(summaryOf(root), /failing|passing/i);
+    openTest(root, "greeting");
+    assert.equal(byClass(root, "fail").length + byClass(root, "pass").length, 0);
+    assert.doesNotMatch(root.textContent, /Missing/);
     assert.ok(byClass(root, "result-details").some((e) => e.textContent.includes(state)));
   });
 }
@@ -812,8 +862,10 @@ test("UI leaves unknown complete verdicts neutral with literal state and verdict
   const fixture = savedFixture();
   fixture.latest.result.examples[0].verdict = "unrecognised";
   const root = await rendered(fixture);
-  assert.equal(headline(root), "Incomplete result");
-  assert.equal(byClass(root, "case-pass").length + byClass(root, "case-fail").length, 0);
+  assert.equal(summaryOf(root), "1 incomplete");
+  assert.equal(items(root)[0].attrs["data-status"], "none");
+  openTest(root, "greeting");
+  assert.equal(byClass(root, "fail").length + byClass(root, "pass").length, 0);
   assert.ok(byClass(root, "result-details").some((e) => e.textContent.includes("unrecognised")));
 });
 
@@ -823,10 +875,10 @@ test("UI labels selected passing subsets neutrally and omitted cases Not in this
   r.fullPass = false; r.selection.scope = "subset";
   r.selection.caseIds = [fixture.examples[1].id]; r.examples = [r.examples[1]];
   const root = await rendered(fixture);
-  assert.equal(headline(root), "Selected examples passed");
-  assert.equal(byClass(root, "status-pill")[0].className.includes("neutral"), true);
-  assert.deepEqual(cards(root).map((e) => byClass(e, "case-status")[0].textContent), ["Not in this run", "Passed", "Not in this run"]);
-  assert.doesNotMatch(headline(root), /fix/i);
+  assert.equal(summaryOf(root), "1 passing, 2 not run");
+  assert.deepEqual(rowLabels(root), ["Not in this run", "Passed", "Not in this run"]);
+  assert.deepEqual(items(root).map((e) => e.attrs["data-status"]), ["none", "pass", "none"]);
+  assert.doesNotMatch(summaryOf(root), /fix/i);
 });
 
 for (const mutation of ["duplicate authored", "duplicate result", "duplicate selection", "foreign result", "missing result", "missing selection", "foreign selection", "duplicate authored check", "duplicate observed check", "foreign check", "missing check", "wrong check type", "unknown check verdict", "wrong total"]) {
@@ -847,11 +899,11 @@ for (const mutation of ["duplicate authored", "duplicate result", "duplicate sel
     if (mutation === "unknown check verdict") r.examples[0].assertions[0].verdict = "unknown";
     if (mutation === "wrong total") r.selection.totalCases = 9;
     const root = await rendered(fixture);
-    assert.notEqual(headline(root), "2 of 2 passing");
-    assert.equal(byClass(root, "status-pill")[0].className.split(/\s+/).includes("pass"), false);
-    assert.doesNotMatch(headline(root), /0 failing/);
+    assert.notEqual(summaryOf(root), "2 passing");
+    assert.notEqual(rowLabels(root).join(), "Passed,Passed");
+    assert.doesNotMatch(summaryOf(root), /0 failing/);
     if (/duplicate (authored|result|selection|observed)/.test(mutation)) {
-      assert.equal(byClass(cards(root)[0], "case-pass").length, 0);
+      assert.notEqual(items(root)[0].attrs["data-status"], "pass");
     }
   });
 }
@@ -865,8 +917,8 @@ for (const kind of ["authored", "result", "selection", "authored check", "observ
     if (kind === "authored check") fixture.examples[0].assertions = [0, 1].map((i) => ({ id: prefix + i, type: "contains", value: "Hello" }));
     if (kind === "observed check") r.examples[0].assertions = [0, 1].map((i) => ({ id: prefix + i, type: "contains", verdict: "pass" }));
     const root = await rendered(fixture);
-    assert.equal(byClass(root, "status-pill")[0].className.split(/\s+/).includes("pass"), false);
-    assert.equal(byClass(cards(root)[0], "case-pass").length, 0);
+    assert.notEqual(summaryOf(root), "2 passing");
+    assert.notEqual(items(root)[0].attrs["data-status"], "pass");
   });
 }
 
@@ -875,11 +927,13 @@ test("UI never attaches stale, ad-hoc or top-level answer excerpts to saved case
   delete r.examples[0].answerExcerpt;
   r.answerExcerpt = "TOP SECRET"; r.adHoc = { state: "complete", verdict: "pass", answerExcerpt: "AD HOC SECRET" };
   const root = await rendered(fixture);
-  assert.equal(byClass(cards(root)[0], "answer").length, 0);
-  assert.doesNotMatch(cards(root)[0].textContent, /TOP SECRET|AD HOC SECRET/);
-  assert.doesNotMatch(root.textContent, /TOP SECRET/);
   assert.match(byClass(root, "ad-hoc-result")[0].textContent, /AD HOC SECRET/);
-  const stale = await rendered({ ...fixture, latest: { status: "stale" } });
+  openTest(root, "greeting");
+  const detail = byClass(root, "detail-section").map((e) => e.textContent).join("\n");
+  assert.equal(byClass(root, "answer").length, 0);
+  assert.doesNotMatch(detail, /TOP SECRET|AD HOC SECRET/);
+  assert.doesNotMatch(root.textContent, /TOP SECRET/);
+  const stale = openTest(await rendered({ ...fixture, latest: { status: "stale" } }), "greeting");
   assert.equal(byClass(stale, "answer").length, 0);
 });
 
@@ -888,14 +942,12 @@ for (const [excerpt, serverTruncated, truncated] of [["Hello", true, true], ["He
     const fixture = savedFixture();
     fixture.latest.result.examples[0].answerExcerpt = excerpt;
     fixture.latest.result.examples[0].truncated = serverTruncated;
-    const root = await rendered(fixture);
+    const root = openTest(await rendered(fixture), "greeting");
     const answer = byClass(root, "answer")[0];
     assert.equal(answer.tag, "div");
-    const disclosure = byClass(root, "last-answer")[0];
-    assert.equal(disclosure.tag, "details"); assert.notEqual(disclosure.open, true);
-    assert.equal(answer.children[0].textContent, "Last answer · untrusted excerpt" + (truncated ? " (truncated)" : ""));
+    assert.equal(answer.children[0].textContent, "Untrusted excerpt, shown as text" + (truncated ? " (truncated)" : ""));
     assert.equal(byClass(answer, "answer-excerpt")[0].textContent, excerpt.length > 2000 ? excerpt.slice(0, 2000) + "… [truncated]" : excerpt);
-    assert.equal(byClass(root, "missing").length, 0, "never infer checks from excerpt content");
+    assert.doesNotMatch(root.textContent, /Missing/, "never infer checks from excerpt content");
   });
 }
 
@@ -932,11 +984,11 @@ test("UI splits only the first conventional title separator and preserves origin
 });
 
 test("UI treats prototype-named condition types as literal unknown types", async () => {
-  const root = await rendered({ examples: [{ id: "odd", input: "Ada", assertions: [
+  const root = openTest(await rendered({ examples: [{ id: "odd", input: "Ada", assertions: [
     { id: "a", type: "__proto__", value: "A" }, { id: "b", type: "constructor", value: "B" },
-  ] }] });
-  assert.match(root.textContent, /Condition: __proto__; Condition: constructor/);
-  assert.match(byClass(root, "check-details")[0].textContent, /value: A.*value: B/);
+  ] }] }), "odd");
+  assert.deepEqual(byClass(root, "check-label").map((e) => e.textContent), ["Condition: __proto__", "Condition: constructor"]);
+  assert.match(byClass(root, "check-details").map((e) => e.textContent).join(" "), /value: A.*value: B/);
 });
 
 test("UI distinguishes checks sharing an ID but not a type", async () => {
@@ -944,8 +996,8 @@ test("UI distinguishes checks sharing an ID but not a type", async () => {
   fixture.examples[0].assertions.push({ id: "greeting-text", type: "notContains", value: "Bye" });
   r.examples[0].assertions.unshift({ id: "greeting-text", type: "notContains", verdict: "pass" });
   const root = await rendered(fixture);
-  assert.equal(headline(root), "1 of 1 passing");
-  assert.equal(byClass(cards(root)[0], "case-status")[0].textContent, "Passed");
+  assert.equal(summaryOf(root), "1 passing");
+  assert.deepEqual(rowLabels(root), ["Passed"]);
 });
 
 test("UI counts only unique selected complete failed saved cases", async () => {
@@ -957,34 +1009,37 @@ test("UI counts only unique selected complete failed saved cases", async () => {
   r.examples.push(structuredClone(r.examples[2]));
   r.examples.push({ ...structuredClone(r.examples[0]), id: "foreign" });
   const root = await rendered(fixture);
-  assert.equal(headline(root), "Partial or incomplete result");
-  assert.deepEqual(cards(root).map((e) => byClass(e, "case-status")[0].textContent), ["Failed", "Incomplete", "Incomplete", "Not in this run"]);
+  assert.equal(summaryOf(root), "1 failing, 1 didn't finish, 1 incomplete, 1 not run");
+  assert.deepEqual(rowLabels(root), ["Failed", "Didn't finish", "Incomplete", "Not in this run"]);
 });
 
 test("UI preserves empty included excerpts but never creates disclosures when content is omitted", async () => {
   const fixture = savedFixture();
   fixture.latest.result.examples[0].answerExcerpt = "";
-  assert.equal(byClass(await rendered(fixture), "answer").length, 1);
+  assert.equal(byClass(openTest(await rendered(fixture), "greeting"), "answer").length, 1);
   delete fixture.latest.result.examples[0].answerExcerpt;
-  const root = await rendered(fixture);
+  const root = openTest(await rendered(fixture), "greeting");
   assert.equal(byClass(root, "answer").length, 0);
-  assert.equal(byClass(cards(root)[0], "last-answer").length, 0);
+  assert.equal(byClass(root, "answer-excerpt").length, 0);
 });
 
 
 test("UI mentions omitted answer content only when a current case observation exists", async () => {
   for (const status of ["none", "stale"]) {
     const fixture = savedFixture(); fixture.latest = { status };
-    assert.equal(byClass(await rendered(fixture), "answer").length, 0);
+    const root = openTest(await rendered(fixture), "greeting");
+    assert.equal(byClass(root, "answered").length, 0);
+    assert.doesNotMatch(root.textContent, /not included/);
   }
   const fixture = savedFixture(2), r = fixture.latest.result;
   r.fullPass = false; r.selection.scope = "subset"; r.selection.caseIds = [r.examples[0].id];
   r.examples = [r.examples[0]]; delete r.examples[0].answerExcerpt;
   const root = await rendered(fixture);
-  assert.equal(byClass(root, "last-answer").length, 0);
-  assert.deepEqual(cards(root).map((c) => byClass(c, "case-status")[0].textContent), ["Passed", "Not in this run"]);
+  assert.deepEqual(rowLabels(root), ["Passed", "Not in this run"]);
+  assert.match(openTest(root, "greeting").textContent, /Answer content not included for passing tests/);
+  assert.equal(byClass(openTest(goBack(root), "greeting-1"), "answered").length, 0);
   r.examples[0].verdict = "fail"; r.examples[0].assertions[0].verdict = "fail";
-  assert.match(cards(await rendered(fixture))[0].textContent, /Answer content not included/);
+  assert.match(openTest(await rendered(fixture), "greeting").textContent, /Answer content not included/);
 });
 
 test("UI labels root and Squad files friendly while keeping raw paths only in Source details", async () => {
@@ -1003,7 +1058,7 @@ test("UI can format a relative folder label without changing resource path accep
   view.file.path = "agents/team/greeter.agent.md";
   const doc = fakeDoc(), root = doc.createElement("main");
   renderView(doc, root, view);
-  assert.match(byClass(root, "file-chip")[0].textContent, /greeter.agent.md/);
+  assert.match(byClass(root, "agent-meta")[0].textContent, /^greeter.agent.md/);
   assert.equal(byClass(root, "path-value")[0].textContent, view.file.path);
   await assert.rejects(readView(stubSession(resource(view.file.path)), MINIMAL), { code: "invalid-resource" });
 });
@@ -1073,8 +1128,11 @@ test("UI keeps hostile authored buttons inert and exposes only the fixed trusted
   }, MINIMAL, { navigator: { clipboard: { writeText(value) { writes.push(value); return Promise.resolve(); } } } });
   assertTrustedControls(root);
   assert.equal(byClass(root, "instructions")[0].textContent, hostile);
-  assert.ok(byClass(root, "example-preview")[0].textContent.includes(hostile));
+  openTest(root, "odd");
+  assertTrustedControls(root);
+  assert.ok(byClass(root, "example-input")[0].textContent.includes(hostile));
   assert.deepEqual(writes, []);
+  goBack(root);
   await byClass(root, "copy-path")[0].listeners.click[0]();
   assert.deepEqual(writes, [MINIMAL]);
 });
@@ -1131,15 +1189,16 @@ test("UI hides a minimal prelude Purpose once while keeping three primary paragr
   assert.ok(main.children.every((e) => e.tag === "p"));
   assert.doesNotMatch(main.textContent, /Purpose|Turn merged|Preferred/);
   assert.equal(byClass(root, "purpose")[0].textContent, "Turn merged changes into useful release notes. Ask before posting.");
-  assert.equal(cards(root).length, 4);
+  assert.equal(items(root).length, 4);
   assert.equal(byClass(root, "instructions-details").length, 0);
   assertTrustedControls(root);
 });
 
 test("frontend and provider sources avoid unsafe sinks and mutation surfaces", async () => {
-  const [app, html, css, ext, view] = await Promise.all(
-    ["app.js", "index.html", "style.css", "extension.mjs", "view.mjs"].map((f) => readFile(here(f), "utf8")),
+  const [controller, html, css, ext, view, editor] = await Promise.all(
+    ["app.js", "index.html", "style.css", "extension.mjs", "view.mjs", "editor.mjs"].map((f) => readFile(here(f), "utf8")),
   );
+  const app = controller + "\n" + editor;
   const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   for (const bad of [/innerHTML/, /outerHTML/, /insertAdjacentHTML/, /document\.write/, /\beval\s*\(/, /new Function/, /dangerouslySet/, /marked|markdown/i, /\bXMLHttpRequest\b/, /WebSocket/, /localStorage/, /<form|<button|<input|<textarea/i]) {
     assert.doesNotMatch(strip(app), bad, String(bad));
@@ -1163,6 +1222,14 @@ test("frontend and provider sources avoid unsafe sinks and mutation surfaces", a
   assert.doesNotMatch(strip(ext), /actions\s*:/);
   assert.match(strip(ext), /name:\s*"agent-view"/);
 });
+async function viewFor(source, examples, latest = { status: "none" }) {
+  const revision = "sha256:" + createHash("sha256").update(source).digest("hex");
+  return readView(stubSession(resource(MINIMAL, {
+    file: { path: MINIMAL, revision }, instructions: source, model: "fake", examples,
+    latest: typeof latest === "function" ? latest(revision, examples) : latest,
+    authoring: { source, editable: true },
+  })), MINIMAL);
+}
 async function editableCanvas(body, eol, options = {}) {
   let original = await readFile(new URL("../../../../../internal/kmx/agentfile/testdata/greeter.agent.md", import.meta.url), "utf8");
   if (eol) original = original.replace(/\r?\n/g, eol);
@@ -1170,6 +1237,8 @@ async function editableCanvas(body, eol, options = {}) {
   const source = replaceInstructions(original, sections);
   const revision = "sha256:" + createHash("sha256").update(source).digest("hex");
   let latest = { status: "none" };
+  const examples = options.examples ?? [{ id: "greeting", input: "Ada", assertions: [{ id: "greeting-text", type: "contains", value: "Hello, Ada" }] }];
+  if (options.latest) latest = options.latest(revision, examples);
   if (options.currentPass) {
     const result = savedFixture().latest.result;
     result.file = { path: MINIMAL, revision }; result.operation = "test";
@@ -1177,38 +1246,42 @@ async function editableCanvas(body, eol, options = {}) {
     result.examples = [{ id: "greeting", state: "complete", verdict: "pass", assertions: [{ id: "greeting-text", type: "contains", verdict: "pass" }] }];
     latest = { status: "current", result };
   }
-  const view = await readView(stubSession(resource(MINIMAL, {
-    file: { path: MINIMAL, revision }, instructions: source, model: "fake", latest,
-    examples: [{ id: "greeting", input: "Ada", assertions: [{ id: "greeting-text", type: "contains", value: "Hello, Ada" }] }],
-    authoring: { source, editable: true },
-  })), MINIMAL);
-  const doc = fakeDoc(), root = doc.createElement("main"), calls = [];
-  renderView(doc, root, view, async (action) => { calls.push(action); return options.response ?? { error: "refused", message: "Draft kept." }; });
+  const view = await viewFor(source, examples, latest);
+  const doc = fakeDoc(options.defaultView), root = doc.createElement("main"), calls = [];
+  const app = renderView(doc, root, view, async (action) => {
+    calls.push(action);
+    return options.respond ? options.respond(action, calls) : options.response ?? { error: "refused", message: "Draft kept." };
+  }, { fetchView: options.fetchView });
   const clickTest = async () => {
-    byClass(root, "primary")[0].listeners.click[0]();
+    byClass(root, "save-run")[0].listeners.click[0]();
     await Promise.resolve(); await Promise.resolve();
   };
-  return { doc, root, calls, source, sections: instructionSections(source), clickTest };
+  return { doc, root, calls, source, view, app, examples, sections: instructionSections(source), clickTest };
 }
 
 for (const eol of ["\n", "\r\n"]) test(`editable prose renders inline code and strong without a raw-mode focus swap; no-op tests do not save (${eol === "\n" ? "LF" : "CRLF"})`, async () => {
   const body = "Use `users` and **benefits**.\n\nKeep original lines.\n```text\n`literal` **fence**\n```\nLast line.";
-  const h = await editableCanvas(body, eol), editors = byClass(h.root, "instruction-body");
+  const h = await editableCanvas(body, eol);
+  const editors = [c18Prompt(h.root), ...byClass(byClass(h.root, "source-details")[0], "instruction-body")];
   assert.deepEqual(all(editors[0]).filter((e) => e.tag === "code").map((e) => e.textContent), ["users"]);
   assert.deepEqual(all(editors[0]).filter((e) => e.tag === "strong").map((e) => e.textContent), ["benefits"]);
   assert.equal(editors[0].attrs.contenteditable, "plaintext-only");
+  assert.equal(editors[0].attrs.spellcheck, "false");
   assert.equal(editors[0].listeners.focus, undefined);
-  assert.equal(byClass(h.root, "instruction-status")[0].textContent, "Saved instructions");
+  assert.equal(c18Text(h.root, "prompt-status"), "Saved · Enter runs 1 test");
   await h.clickTest();
   assert.equal(h.calls[0].operation, "test"); assert.equal(h.calls[0].showContent, false);
   assert.equal(Object.hasOwn(h.calls[0], "sections"), false);
   assert.equal(Object.hasOwn(h.calls[0], "showFailedContent"), false);
-  editors[2].append("\nAnother boundary."); editors[2].listeners.input[0]();
+  const line = (text) => { const node = h.doc.createElement("div"); node.append(text); return node; };
+  editors[2].append(line("Another boundary.")); editors[2].listeners.input[0]();
   await h.clickTest();
-  const action = h.calls[1];
-  assert.equal(action.operation, "save-and-test");
-  assert.equal(action.sections[0].text, body, "untouched inline delimiters, fences and LFs survive serialization");
-  assert.equal(action.sections[1].text, h.sections[1].text);
+  assert.equal(h.calls[1].operation, "save-and-test");
+  assert.deepEqual(h.calls[1].sections, [{ key: h.sections[2].key, text: h.sections[2].text + "\nAnother boundary." }], "only changed sections are sent");
+  editors[0].append(line("Added.")); editors[0].listeners.input[0]();
+  await h.clickTest();
+  const action = h.calls[2];
+  assert.equal(action.sections.find((s) => s.key === h.sections[0].key).text, body + "\nAdded.", "untouched inline delimiters, fences and LFs survive serialization");
   const saved = replaceInstructions(h.source, action.sections);
   for (const heading of ["Identity", "Model", "Examples"]) {
     const section = (source) => {
@@ -1223,15 +1296,15 @@ for (const eol of ["\n", "\r\n"]) test(`editable prose renders inline code and s
 
 test("editing prose retains formatted source and literal hostile HTML cannot create controls", async () => {
   const body = "Explain `users` and **value**.\n\n```\n`quoted`\n```";
-  const h = await editableCanvas(body), editor = byClass(h.root, "instruction-body")[0];
-  editor.append('\n<button onclick="run()">Not a command</button>');
-  editor.listeners.input[0](); await h.clickTest();
+  const h = await editableCanvas(body), editor = c18Prompt(h.root);
+  const line = h.doc.createElement("div"); line.append('<button onclick="run()">Not a command</button>');
+  editor.append(line); editor.listeners.input[0](); await h.clickTest();
   assert.equal(h.calls[0].sections[0].text, body + '\n<button onclick="run()">Not a command</button>');
   assert.equal(all(editor).filter((e) => ["button", "input", "script", "a"].includes(e.tag)).length, 0);
 });
 
 test("browser BR and paragraph containers serialize newlines; unknown formatting fails closed", async () => {
-  const h = await editableCanvas("Original."), editor = byClass(h.root, "instruction-body")[0];
+  const h = await editableCanvas("Original."), editor = c18Prompt(h.root);
   const p = h.doc.createElement("p"); p.append("Second.");
   const blank = h.doc.createElement("div"); blank.append(h.doc.createElement("br"));
   const last = h.doc.createElement("div"); last.append("Third.");
@@ -1259,24 +1332,27 @@ test("answer opt-in says passing answers and never adds a page failure-disclosur
 
 for (const operation of ["test", "run"]) test(`${operation} execution failure invalidates the previous passing display`, async () => {
   const h = await editableCanvas("Reply briefly.", undefined, { currentPass: true, response: { error: "action-failed", message: "Execution did not complete." } });
-  assert.match(byClass(h.root, "status-pill")[0].textContent, /1 of 1 passing/);
+  assert.equal(summaryOf(h.root), "1 passing");
   if (operation === "test") await h.clickTest();
   else {
     all(h.root).find((node) => node.tag === "button" && node.textContent === "Run").listeners.click[0]();
     await Promise.resolve(); await Promise.resolve();
   }
   assert.equal(h.calls[0].operation, operation);
-  assert.match(byClass(h.root, "status-pill")[0].textContent, /unconfirmed/);
-  assert.equal(byClass(h.root, "case-pass").length, 0);
-  assert.doesNotMatch(h.root.textContent, /Passed/);
+  assert.equal(summaryOf(h.root), "Result unconfirmed");
+  assert.equal(byClass(h.root, "pass").length, 0);
+  assert.doesNotMatch(byClass(h.root, "tests-section")[0].textContent, /Passed/);
+  assert.equal(byClass(byClass(h.root, "message-line")[0], "tb")[0].hidden, false, "only a deliberate reload clears the lock");
 });
 
 test("pre-execution permission refusal retains the previous valid observation", async () => {
   const h = await editableCanvas("Reply briefly.", undefined, { currentPass: true, response: { error: "permission_required", message: "Not permitted before execution." } });
   await h.clickTest();
-  assert.match(byClass(h.root, "status-pill")[0].textContent, /1 of 1 passing/);
-  assert.equal(byClass(h.root, "case-pass").length, 1);
-  assert.match(h.root.textContent, /Not permitted before execution/);
+  assert.equal(summaryOf(h.root), "1 passing");
+  assert.equal(byClass(h.root, "pass").length, 1);
+  assert.match(byClass(h.root, "run-alert")[0].textContent, /The run didn't start: Not permitted before execution\./);
+  assert.equal(byClass(h.root, "run-alert")[0].attrs.role, "alert");
+  assert.equal(byClass(byClass(h.root, "message-line")[0], "tb")[0].hidden, true, "a refusal before execution is not an unknown outcome");
 });
 
 test("judge uses its semantic ID label while actual rubric retains safe inline formatting in details", async () => {
@@ -1287,12 +1363,596 @@ test("judge uses its semantic ID label while actual rubric retains safe inline f
   ];
   r.fullPass = false; r.verdict = "fail"; r.examples[0].verdict = "fail";
   r.examples[0].assertions = [{ id: "literal", type: "contains", verdict: "fail" }, { id: "says-why-it-matters-to-users", type: "llmJudge", verdict: "pass" }];
-  const root = await rendered(f), checks = byClass(root, "check");
-  assert.match(checks[0].textContent, /Includes "`users`"/);
-  assert.match(checks[1].textContent, /Says why it matters to users/);
-  assert.equal(byClass(checks[1], "pass")[0].textContent, "✓ ");
-  const details = byClass(root, "check-details")[0];
+  const root = openTest(await rendered(f), "greeting"), labels = byClass(root, "check-label").map((e) => e.textContent);
+  assert.equal(labels[0], "Contains “`users`”");
+  assert.equal(labels[1], "Says why it matters to users");
+  assert.deepEqual(checkLabels(root), ["Failed", "Passed"]);
+  const details = byClass(root, "check-details")[1];
   assert.match(details.textContent, /rubric: The notes say why it matters to users\./);
   assert.equal(all(details).find((e) => e.tag === "code").textContent, "users");
   assert.match(details.textContent, /minScore: 70/);
+});
+
+// --- C18 milestone: main view and edited state ------------------------------
+const c18Examples = (ids) => ids.map((id) => ({ id, input: `Name ${id}`, assertions: [{ id: "says-hello", type: "contains", value: `Hello, ${id}` }] }));
+function c18Latest(outcomes, { scope = "full", selected } = {}) {
+  return (revision, examples) => {
+    const ids = selected ?? examples.map((e) => e.id);
+    const observed = examples.filter((e) => ids.includes(e.id)).map((e) => outcomes[e.id] === "error"
+      ? { id: e.id, state: "error", verdict: "unknown", reasonCode: "timeout", reason: "no answer in time", assertions: [] }
+      : { id: e.id, state: "complete", verdict: outcomes[e.id], assertions: [{ id: "says-hello", type: "contains", verdict: outcomes[e.id], reason: "checked" }] });
+    const fail = observed.some((o) => o.verdict === "fail"), complete = observed.every((o) => o.state === "complete");
+    return { status: "current", result: result({
+      file: { path: MINIMAL, revision }, selection: { scope, totalCases: examples.length, caseIds: ids }, examples: observed,
+      state: complete ? "complete" : "incomplete", verdict: fail ? "fail" : complete ? "pass" : "unknown",
+      fullPass: !fail && complete && scope === "full" && observed.length === examples.length,
+    }) };
+  };
+}
+const c18Items = (root) => byClass(root, "test-item");
+const c18Status = (root) => c18Items(root).map((i) => i.attrs["data-status"]);
+const c18Shape = (item) => all(byClass(item, "status-icon")[0]).filter((e) => e.tag !== "svg").map((e) => `${e.tag}:${e.attrs.d ?? ""}`).join("|");
+const c18Text = (root, name) => byClass(root, name)[0].textContent;
+const c18Prompt = (root) => byClass(byClass(root, "prompt-box")[0], "instruction-body")[0];
+const c18Edit = (root) => { const editor = c18Prompt(root); editor.append(" More."); editor.listeners.input[0](); };
+const tick = async () => { await Promise.resolve(); await Promise.resolve(); };
+
+test("C18 milestone main shows quiet file and model beside the title, Prompt and Tests, and no legacy chrome", async () => {
+  const h = await editableCanvas("Reply briefly.");
+  for (const name of ["breadcrumb", "wordmark", "eyebrow", "status-pill", "model-pill", "toolbar"]) assert.equal(byClass(h.root, name).length, 0, name);
+  assert.doesNotMatch(h.root.textContent, /Your agent/);
+  assert.equal(all(h.root).find((e) => e.tag === "h1").textContent, "Greeter");
+  assert.equal(c18Text(h.root, "agent-meta"), "greeter.agent.md · fake");
+  assert.equal(c18Text(h.root, "purpose"), "Return a short greeting for the supplied name.");
+  assert.deepEqual(all(h.root).filter((e) => e.tag === "h2").map((e) => e.textContent), ["Prompt", "Tests"]);
+  const prompt = byClass(h.root, "prompt-box")[0], source = byClass(h.root, "source-details")[0];
+  assert.equal(byClass(prompt, "instruction-body").length, 1);
+  assert.equal(c18Prompt(h.root).textContent, "Reply briefly.");
+  assert.equal(byClass(source, "instruction-body").length, 2, "additional canonical bodies stay available, collapsed");
+  assert.equal(byClass(source, "copy-path").length, 1);
+  assert.equal(byClass(source, "include-answers")[0].children[0].checked, false);
+  assert.equal(c18Text(prompt, "prompt-status"), "Saved · Enter runs 1 test");
+  const enter = byClass(prompt, "save-run")[0];
+  assert.equal(enter.attrs["aria-label"], "Save and run all tests");
+  assert.equal(enter.children[0].namespaceURI, "http://www.w3.org/2000/svg");
+  const actions = all(byClass(h.root, "tests-section")[0]).filter((e) => e.tag === "button").map((e) => e.textContent);
+  assert.ok(actions.includes("Suggest tests") && actions.includes("Add test"), actions.join());
+  c18Edit(h.root);
+  assert.equal(c18Text(prompt, "prompt-status"), "Edited · Enter saves and runs 1 test");
+  assert.equal(h.calls.length, 0, "typing never saves or runs");
+});
+
+test("C18 milestone rows keep authored order and a local edit keeps known shapes and counts in grey", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["zeta", "alpha", "mid"]), latest: c18Latest({ zeta: "pass", alpha: "fail", mid: "pass" }) });
+  assert.deepEqual(c18Items(h.root).map((i) => i.attrs["data-test-id"]), ["zeta", "alpha", "mid"]);
+  assert.deepEqual(c18Items(h.root).map((i) => c18Text(i, "test-name")), ["Zeta", "Alpha", "Mid"]);
+  assert.deepEqual(c18Status(h.root), ["pass", "fail", "pass"]);
+  assert.equal(c18Text(c18Items(h.root)[1], "test-note"), "Expected “Hello, alpha”");
+  assert.equal(c18Text(h.root, "tests-summary"), "1 failing, 2 passing");
+  const shapes = c18Items(h.root).map(c18Shape);
+  assert.notEqual(shapes[0], shapes[1]);
+  c18Edit(h.root);
+  assert.deepEqual(c18Items(h.root).map((i) => i.attrs["data-test-id"]), ["zeta", "alpha", "mid"]);
+  assert.deepEqual(c18Status(h.root), ["old-pass", "old-fail", "old-pass"]);
+  assert.deepEqual(c18Items(h.root).map(c18Shape), shapes, "icon shapes survive the edit");
+  assert.equal(c18Text(c18Items(h.root)[1], "test-note"), "Expected “Hello, alpha”");
+  assert.equal(c18Text(h.root, "tests-summary"), "Last run, before your edit: 1 failing, 2 passing");
+  assert.equal(c18Text(h.root, "prompt-status"), "Edited · Enter saves and runs 3 tests");
+});
+
+test("C18 milestone unknown, unselected and stale cases stay neutral and never invent verdicts", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b", "c"]), latest: c18Latest({ a: "pass", b: "error" }, { scope: "selected", selected: ["a", "b"] }) });
+  assert.deepEqual(c18Status(h.root), ["pass", "error", "none"]);
+  assert.equal(c18Text(c18Items(h.root)[1], "test-note"), "Didn't finish: no answer in time");
+  assert.equal(c18Text(c18Items(h.root)[2], "test-note"), "Not in this run");
+  assert.equal(c18Text(h.root, "tests-summary"), "1 passing, 1 didn't finish, 1 not run");
+  c18Edit(h.root);
+  assert.deepEqual(c18Status(h.root), ["old-pass", "old-error", "none"]);
+  assert.equal(c18Text(h.root, "tests-summary"), "Last run, before your edit: 1 passing, 1 didn't finish, 1 not run");
+  const ambiguous = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a"]), latest: (revision, examples) => {
+    const latest = c18Latest({ a: "pass" })(revision, examples); latest.result.examples[0].assertions = [];
+    return latest;
+  } });
+  assert.deepEqual(c18Status(ambiguous.root), ["none"], "complete but uncovered stays a neutral dash, not amber");
+  assert.equal(c18Text(c18Items(ambiguous.root)[0], "test-note"), "Incomplete result");
+  const stale = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: () => ({ status: "stale" }) });
+  assert.deepEqual(c18Status(stale.root), ["none", "none"]);
+  assert.doesNotMatch(c18Text(stale.root, "tests-summary"), /failing|passing/);
+  c18Edit(stale.root);
+  assert.deepEqual(c18Status(stale.root), ["none", "none"]);
+  assert.doesNotMatch(c18Text(stale.root, "tests-summary"), /failing|passing|Last run/);
+});
+
+test("C18 milestone All and Not passing filter hides rows without reordering, and appears only when the list overflows", async () => {
+  const outcomes = { a: "pass", b: "fail", c: "pass", d: "error", e: "pass", f: "pass" }, six = c18Examples(["a", "b", "c", "d", "e", "f"]);
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: six, latest: c18Latest(outcomes), defaultView: { innerHeight: 200 } });
+  const group = (root) => byClass(root, "filter-group")[0];
+  assert.equal(group(h.root).hidden, false, "six rows overflow a 200px panel");
+  const roomy = await editableCanvas("Reply briefly.", undefined, { examples: six, latest: c18Latest(outcomes), defaultView: { innerHeight: 2000 } });
+  assert.equal(group(roomy.root).hidden, true, "no magic count: a list that fits needs no filter");
+  const [allButton, notPassing] = byClass(h.root, "filter-button");
+  assert.equal(allButton.textContent, "All 6"); assert.equal(notPassing.textContent, "Not passing 2");
+  assert.equal(allButton.attrs["aria-pressed"], "true");
+  notPassing.listeners.click[0]();
+  assert.deepEqual(c18Items(h.root).map((i) => i.attrs["data-test-id"]), ["a", "b", "c", "d", "e", "f"]);
+  assert.deepEqual(c18Items(h.root).map((i) => i.hidden === true), [true, false, true, false, true, true]);
+  assert.equal(byClass(h.root, "filter-button")[1].attrs["aria-pressed"], "true");
+  assert.equal(group(h.root).hidden, false, "an active filter stays reachable even when the rest fits");
+  assert.match(c18Text(h.root, "filter-note"), /^4 passing tests hidden/);
+  c18Edit(h.root);
+  assert.deepEqual(c18Items(h.root).map((i) => i.hidden === true), [true, false, true, false, true, true], "the filter survives a local edit");
+  byClass(h.root, "filter-button")[0].listeners.click[0]();
+  assert.deepEqual(c18Items(h.root).map((i) => i.hidden === true), [false, false, false, false, false, false]);
+  const short = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b", "c"]), latest: c18Latest({ a: "pass", b: "fail", c: "pass" }), defaultView: { innerHeight: 600 } });
+  assert.equal(group(short.root).hidden, true, "three tests match the board without a filter");
+});
+
+test("C18 milestone Enter on main always runs every test without a caseId", async () => {
+  const h = await editableCanvas("Reply briefly.");
+  const key = (over) => c18Prompt(h.root).listeners.keydown[0]({ key: "Enter", preventDefault() {}, ...over });
+  key({ shiftKey: true }); await tick();
+  assert.equal(h.calls.length, 0);
+  key(); await tick();
+  assert.equal(h.calls[0].operation, "test");
+  assert.equal(Object.hasOwn(h.calls[0], "caseId"), false);
+  assert.equal(Object.hasOwn(h.calls[0], "sections"), false);
+  c18Edit(h.root); key(); await tick();
+  assert.equal(h.calls[1].operation, "save-and-test");
+  assert.equal(Object.hasOwn(h.calls[1], "caseId"), false);
+  byClass(h.root, "save-run")[0].listeners.click[0](); await tick();
+  assert.equal(h.calls[2].operation, "save-and-test");
+  assert.equal(Object.hasOwn(h.calls[2], "caseId"), false);
+});
+
+
+// --- Final UI regressions: drafts, scope, zero tests, outside changes ---------
+const btn = (root, text) => all(root).find((e) => e.tag === "button" && e.textContent === text);
+const click = (node) => node.listeners.click[0]();
+const edited = (node, value) => { node.value = value; node.listeners[node.tag === "select" ? "change" : "input"][0](); };
+const enterOn = (node) => node.listeners.keydown[0]({ key: "Enter", preventDefault() {} });
+const promptEnter = (root) => enterOn(c18Prompt(root));
+const reloadButton = (root) => byClass(byClass(root, "message-line")[0], "tb")[0];
+
+test("drafts survive A → B → prompt → A navigation without any RPC and never lock other editing", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b", "c"]) });
+  openTest(h.root, "a"); edited(byClass(h.root, "example-input")[0], "Name a, edited"); goBack(h.root);
+  openTest(h.root, "b"); edited(byClass(h.root, "check-value")[0], "Hello, b!"); goBack(h.root);
+  assert.equal(c18Prompt(h.root).attrs.contenteditable, "plaintext-only", "other unsaved tests never lock the prompt");
+  c18Edit(h.root);
+  assert.deepEqual(items(h.root).map((i) => noteOf(i).startsWith("Unsaved")), [true, true, false]);
+  assert.ok(items(h.root).every((i) => byClass(i, "test-row")[0].disabled === false));
+  openTest(h.root, "a");
+  assert.equal(byClass(h.root, "example-input")[0].value, "Name a, edited");
+  assert.equal(byClass(h.root, "unsaved-tag")[0].hidden, false);
+  assert.equal(byClass(h.root, "example-input")[0].disabled, false);
+  goBack(h.root);
+  assert.match(c18Prompt(h.root).textContent, /More\.$/, "the prompt draft survives re-rendering");
+  openTest(h.root, "b");
+  assert.equal(byClass(h.root, "check-value")[0].value, "Hello, b!");
+  // Cancel discards only the active test's draft.
+  click(btn(h.root, "Cancel")); goBack(h.root);
+  assert.deepEqual(items(h.root).map((i) => noteOf(i).startsWith("Unsaved")), [true, false, false]);
+  assert.match(c18Prompt(h.root).textContent, /More\.$/);
+  assert.equal(h.calls.length, 0, "navigation and drafting never call the bridge");
+});
+
+test("a test's Enter saves only it with its caseId and clears only what it sent; main Enter then saves the rest and runs all", async () => {
+  const ex = c18Examples(["a", "b", "c"]), mainKey = "Accountable Responsibilities";
+  let reply;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: ex, respond: () => reply });
+  openTest(h.root, "a"); edited(byClass(h.root, "example-input")[0], "Name a, edited"); goBack(h.root);
+  openTest(h.root, "b"); edited(byClass(h.root, "check-value")[0], "Hello, b!"); goBack(h.root);
+  c18Edit(h.root);
+  const include = byClass(h.root, "include-answers")[0].children[0];
+  include.checked = true; include.listeners.change[0]();
+  openTest(h.root, "a");
+  const savedExamples = structuredClone(ex); savedExamples[0].input = "Name a, edited";
+  const savedSource = replaceExamples(replaceInstructions(h.source, [{ key: mainKey, text: "Reply briefly.\n More." }]), savedExamples);
+  const savedView = await viewFor(savedSource, savedExamples, c18Latest({ a: "pass" }, { scope: "subset", selected: ["a"] }));
+  let release; reply = new Promise((resolve) => { release = resolve; });
+  enterOn(byClass(h.root, "example-input")[0]);
+  assert.equal(h.calls.length, 1);
+  const one = h.calls[0];
+  assert.equal(one.operation, "save-and-test");
+  assert.equal(one.caseId, "a");
+  assert.equal(one.expectedRevision, h.view.file.revision);
+  assert.equal(one.showContent, true, "the passing-answer opt-in follows the user across views");
+  assert.deepEqual(one.sections, [{ key: mainKey, text: "Reply briefly.\n More." }]);
+  assert.deepEqual(one.examples, savedExamples, "only this test's draft is applied; B stays as saved");
+  // Busy: read-only and honest; nothing claims Saved before the bridge answers.
+  assert.doesNotMatch(c18Text(h.root, "prompt-status"), /^Saved/);
+  assert.match(c18Text(h.root, "prompt-status"), /this test/);
+  assert.equal(byClass(h.root, "example-input")[0].disabled, true);
+  enterOn(byClass(h.root, "example-input")[0]);
+  assert.equal(h.calls.length, 1, "no second action while one is running");
+  release({ view: savedView, saved: true }); await tick(); await tick();
+  assert.equal(byClass(h.root, "unsaved-tag")[0].hidden, true);
+  assert.equal(c18Text(h.root, "detail-status"), "Results from the last run, before your edit", "B's unsaved draft also stales A's result");
+  goBack(h.root);
+  assert.deepEqual(items(h.root).map((i) => noteOf(i).startsWith("Unsaved")), [false, true, false], "B's draft is retained");
+  assert.deepEqual(rowLabels(h.root), ["Passed last run", "Not in this run", "Not in this run"], "scope stays honest and B's draft greys the known result");
+  reply = { error: "refused", message: "Kept." };
+  promptEnter(h.root); await tick();
+  const all3 = h.calls[1];
+  assert.equal(all3.operation, "save-and-test");
+  assert.equal(Object.hasOwn(all3, "caseId"), false, "main always runs every test");
+  assert.equal(all3.expectedRevision, savedView.file.revision);
+  assert.equal(Object.hasOwn(all3, "sections"), false, "the saved prompt is not resent");
+  assert.deepEqual(all3.examples.map((e) => [e.id, e.input, e.assertions[0].value]), [["a", "Name a, edited", "Hello, a"], ["b", "Name b", "Hello, b!"], ["c", "Name c", "Hello, c"]]);
+  assert.equal(byClass(h.root, "action-message")[0].textContent, "Kept.");
+  assert.ok(noteOf(items(h.root)[1]).startsWith("Unsaved"), "an error preserves drafts");
+});
+
+test("zero tests: first-run teaching, local refusal, delete-all saves zero and a known no-tests refusal stays Saved; ad-hoc Run still works", async () => {
+  const empty = await editableCanvas("Reply briefly.", undefined, { examples: [] });
+  assert.match(empty.root.textContent, /No tests yet/);
+  assert.ok(btn(empty.root, "Suggest tests") && btn(empty.root, "Add a test yourself"));
+  assert.equal(c18Text(empty.root, "prompt-status"), "Saved · add a test to run it");
+  assert.doesNotMatch(empty.root.textContent, /Keep all|Discard all/, "no invented suggestion review");
+  promptEnter(empty.root); await tick();
+  assert.equal(empty.calls.length, 0);
+  assert.equal(byClass(empty.root, "action-message")[0].textContent, "No tests yet — add or suggest one");
+  click(btn(empty.root, "Add a test yourself"));
+  assert.equal(byClass(empty.root, "test-title-input").length, 1, "a local draft, not a save");
+  assert.equal(empty.calls.length, 0);
+
+  let reply;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a"]), respond: () => reply });
+  const zeroSource = replaceExamples(h.source, []);
+  const noTests = (extra = {}) => (revision) => ({ status: "current", result: result({
+    file: { path: MINIMAL, revision }, selection: { scope: "full", totalCases: 0, caseIds: [] }, examples: [],
+    state: "refused", verdict: "fail", fullPass: false, reasonCode: "no_tests", reason: "No tests yet — add or suggest one", ...extra,
+  }) });
+  reply = { error: "no-tests", message: "No tests yet — add or suggest one", saved: true, view: await viewFor(zeroSource, [], noTests()) };
+  openTest(h.root, "a"); click(byClass(h.root, "more")[0]); click(btn(h.root, "Delete test"));
+  assert.equal(noteOf(items(h.root)[0]), "Deleted · unsaved");
+  promptEnter(h.root); await tick(); await tick();
+  assert.equal(h.calls[0].operation, "save-and-test");
+  assert.deepEqual(h.calls[0].examples, []);
+  assert.equal(Object.hasOwn(h.calls[0], "caseId"), false);
+  assert.equal(c18Text(h.root, "prompt-status"), "Saved · add a test to run it");
+  assert.equal(reloadButton(h.root).hidden, true, "a known no-tests refusal is not an unknown outcome");
+  assert.equal(byClass(h.root, "empty-tests")[0].hidden, false);
+  assert.equal(byClass(h.root, "pass").length, 0, "no green for zero tests");
+  reply = { view: await viewFor(zeroSource, [], noTests({ operation: "run", adHoc: { state: "complete", verdict: "pass", answerExcerpt: "Hi there" } })), saved: false };
+  click(btn(h.root, "Run")); await tick(); await tick();
+  assert.equal(h.calls[1].operation, "run");
+  assert.match(byClass(h.root, "ad-hoc-result")[0].textContent, /Hi there/);
+});
+
+test("outside change with drafts: literal Compare, Keep my edits preserves remote parts, a second change refuses again, Use discards", async () => {
+  const ex = c18Examples(["a", "b"]);
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: ex, response: { error: "refused", message: "Kept." } });
+  const [mainKey, secondKey, thirdKey] = h.sections.map((s) => s.key);
+  const theirsEx = structuredClone(ex); theirsEx[1].input = "Name b, remote"; theirsEx.push(...c18Examples(["extra"]));
+  const theirsSource = replaceExamples(replaceInstructions(h.source, [{ key: secondKey, text: "Changed elsewhere." }]), theirsEx);
+  const theirs = await viewFor(theirsSource, theirsEx);
+  c18Edit(h.root);
+  openTest(h.root, "a"); edited(byClass(h.root, "example-input")[0], "Name a, mine"); goBack(h.root);
+  assert.equal(h.app.observe(theirs), true);
+  const notice = byClass(h.root, "notice-info")[0];
+  assert.equal(notice.attrs.role, "alert");
+  assert.match(notice.textContent, /changed outside the panel/);
+  assert.doesNotMatch(notice.textContent, /Copilot|ago|PM|AM/, "no invented attribution or time");
+  assert.equal(byClass(h.root, "save-run")[0].disabled, true);
+  assert.equal(c18Text(h.root, "prompt-status"), "Edited · settle the outside change before saving");
+  promptEnter(h.root); await tick();
+  assert.equal(h.calls.length, 0, "saving is blocked until a choice");
+  click(btn(h.root, "Compare"));
+  const texts = byClass(h.root, "compare-text").map((e) => e.textContent);
+  for (const literal of ["Reply briefly.", "Reply briefly.\n More.", "Changed elsewhere.", h.sections[1].text, "(not present)"]) assert.ok(texts.includes(literal), literal);
+  assert.ok(texts.some((t) => t.includes("Name a, mine")) && texts.some((t) => t.includes("Name b, remote")) && texts.some((t) => t.includes('"extra"')));
+  click(btn(h.root, "Keep my edits"));
+  assert.equal(byClass(h.root, "notice-info").length, 0);
+  assert.equal(byClass(h.root, "save-run")[0].disabled, false);
+  promptEnter(h.root); await tick();
+  const saved = h.calls[0];
+  assert.equal(saved.expectedRevision, theirs.file.revision, "the explicit choice is the new baseline");
+  assert.deepEqual(saved.sections, [{ key: mainKey, text: "Reply briefly.\n More." }], "the remote section edit is not overwritten");
+  assert.deepEqual(saved.examples.map((e) => [e.id, e.input]), [["a", "Name a, mine"], ["b", "Name b, remote"], ["extra", "Name extra"]]);
+  const third = await viewFor(replaceInstructions(theirsSource, [{ key: thirdKey, text: "Third change." }]), theirsEx);
+  assert.equal(h.app.observe(third), true);
+  assert.equal(byClass(h.root, "notice-info").length, 1, "a later outside change refuses again");
+  assert.equal(byClass(h.root, "save-run")[0].disabled, true);
+  click(btn(h.root, "Use the new version"));
+  assert.equal(byClass(h.root, "notice-info").length, 0);
+  assert.equal(c18Prompt(h.root).textContent, "Reply briefly.");
+  assert.ok(items(h.root).every((i) => !noteOf(i).startsWith("Unsaved")));
+  assert.match(c18Text(h.root, "prompt-status"), /^Saved/);
+  assert.equal(h.calls.length, 1);
+  // With no drafts, an outside change simply refreshes.
+  const fourthEx = structuredClone(theirsEx); fourthEx.pop();
+  assert.equal(h.app.observe(await viewFor(replaceExamples(theirsSource, fourthEx), fourthEx)), true);
+  assert.equal(byClass(h.root, "notice-info").length, 0);
+  assert.deepEqual(items(h.root).map((i) => i.attrs["data-test-id"]), ["a", "b"]);
+});
+
+test("Keep my edits refuses an ambiguous test identity without dropping data; observation never clears an unknown outcome", async () => {
+  const ex = c18Examples(["a"]);
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: ex, response: { error: "outcome-unknown", message: "Not confirmed." } });
+  click(btn(h.root, "Add test"));
+  edited(byClass(h.root, "test-title-input")[0], "Extra");
+  edited(byClass(h.root, "example-input")[0], "Name extra, mine");
+  edited(byClass(h.root, "check-value")[0], "Hello");
+  goBack(h.root);
+  const theirsEx = [...structuredClone(ex), ...c18Examples(["extra"])];
+  assert.equal(h.app.observe(await viewFor(replaceExamples(h.source, theirsEx), theirsEx)), true);
+  click(btn(h.root, "Keep my edits"));
+  assert.match(byClass(h.root, "action-message")[0].textContent, /Can't keep your edits automatically/);
+  assert.equal(byClass(h.root, "notice-info").length, 1, "the decision is still open");
+  assert.ok(items(h.root).some((i) => noteOf(i).startsWith("Unsaved")), "the draft is kept");
+  click(btn(h.root, "Use the new version"));
+  promptEnter(h.root); await tick(); await tick();
+  assert.equal(summaryOf(h.root), "Result unconfirmed");
+  assert.equal(reloadButton(h.root).hidden, false);
+  const later = await viewFor(replaceInstructions(h.source, [{ key: h.sections[1].key, text: "Later." }]), ex);
+  assert.equal(h.app.observe(later), false, "polling never clears an unknown outcome");
+  assert.equal(summaryOf(h.root), "Result unconfirmed");
+  assert.equal(h.app.idle(), false);
+});
+
+test("expected/got uses only the actual answer; a differing reference is named only when the answer has it once", async () => {
+  const ex = [{ id: "issue", input: "Merged: Fix slow search, issue #218", assertions: [{ id: "ref", type: "contains", value: "Fixes #218" }] }];
+  const answered = (answer) => (revision, examples) => {
+    const latest = c18Latest({ issue: "fail" })(revision, examples);
+    latest.result.examples[0].answerExcerpt = answer;
+    latest.result.examples[0].assertions[0].id = "ref";
+    return latest;
+  };
+  const real = await editableCanvas("Keep every issue reference as Closes #218 in notes.", undefined, { examples: ex, latest: answered("Search is faster. Closes #218.") });
+  assert.equal(noteOf(items(real.root)[0]), "Expected “Fixes #218”, got “Closes #218”");
+  openTest(real.root, "issue");
+  assert.equal(all(real.root).filter((e) => e.tag === "mark").map((e) => e.textContent).join(), "Closes #218");
+  assert.equal(byClass(real.root, "answer-excerpt")[0].textContent, "Search is faster. Closes #218.", "the answer stays literal");
+  assert.equal(byClass(real.root, "why").length, 1, "explained once, at the failed check");
+  assert.equal(byClass(real.root, "why-text")[0].textContent, "Expected “Fixes #218”, got “Closes #218”.");
+  const apply = await editableCanvas("Keep every issue reference as Closes #218 in notes.", undefined, { examples: ex, latest: answered("Search is faster. Closes #218.") });
+  openTest(apply.root, "issue"); click(btn(apply.root, "Apply to prompt")); goBack(apply.root);
+  assert.equal(c18Prompt(apply.root).textContent, "Keep every issue reference as Fixes #218 in notes.");
+  assert.equal(apply.calls.length, 0);
+  click(btn(real.root, "Or expect “Closes #218” in this test"));
+  assert.equal(byClass(real.root, "check-value")[0].value, "Closes #218");
+  assert.equal(byClass(real.root, "unsaved-tag")[0].hidden, false);
+  assert.equal(Boolean(btn(real.root, "Apply to prompt")), false, "an edited operand invalidates the saved-result repair");
+  goBack(real.root);
+  assert.equal(c18Prompt(real.root).textContent, "Keep every issue reference as Closes #218 in notes.");
+  assert.equal(real.calls.length, 0, "suggested fixes are local drafts only");
+
+  for (const answer of ["Fixed slow search.", "Closes #218 and Resolves #218."]) {
+    const h = await editableCanvas("Reply briefly.", undefined, { examples: ex, latest: answered(answer) });
+    assert.equal(noteOf(items(h.root)[0]), `Expected “Fixes #218”, got “${answer}”`);
+    openTest(h.root, "issue");
+    assert.ok(!all(h.root).some((e) => e.tag === "button" && /^Or expect|Apply to prompt/.test(e.textContent)), answer);
+    assert.equal(all(h.root).filter((e) => e.tag === "mark").length, 0);
+    if (!answer.includes("Closes")) assert.doesNotMatch(h.root.textContent, /Closes/, "never invent the other reference");
+  }
+});
+
+for (const eol of ["\n", "\r\n"]) test(`prompt paragraphs keep blank lines as their own block and round-trip exactly (${eol === "\n" ? "LF" : "CRLF"})`, async () => {
+  const body = 'Use "quoted" words, it\'s fine.\n\nSecond paragraph.\nSame paragraph.\n\n```\n"code"\n\nkept\n```';
+  const h = await editableCanvas(body, eol, { examples: c18Examples(["a"]) });
+  const blanks = (root) => c18Prompt(root).children.map((line) => line.children.length === 1 && line.children[0].tag === "br");
+  assert.deepEqual(blanks(h.root), [false, true, false, false, true, false], "blank source lines are separate short blocks; the fence stays whole");
+  assert.ok(c18Prompt(h.root).textContent.includes('"quoted"'), "source ASCII quotes are never presented as typographic");
+  openTest(h.root, "a"); goBack(h.root);
+  assert.deepEqual(blanks(h.root), [false, true, false, false, true, false]);
+  await h.clickTest();
+  assert.equal(h.calls[0].operation, "test");
+  assert.equal(Object.hasOwn(h.calls[0], "sections"), false, "re-rendering is a byte-exact no-op");
+  const line = h.doc.createElement("div"); line.append("Added.");
+  c18Prompt(h.root).append(line); c18Prompt(h.root).listeners.input[0]();
+  await h.clickTest();
+  assert.deepEqual(h.calls[1].sections, [{ key: h.sections[0].key, text: body + "\nAdded." }]);
+  const saved = replaceInstructions(h.source, h.calls[1].sections);
+  assert.equal(saved, h.source.replace(body.replaceAll("\n", eol), (body + "\nAdded.").replaceAll("\n", eol)));
+});
+
+test("editing a test keeps raw authored fields, including a judge's minScore 0; existing judges stay read-only", async () => {
+  const judge = { id: "why", type: "llmJudge", rubric: "Says why.", minScore: 0, judgeModel: "judge-x", judgeVersion: "v1" };
+  const ex = [{ id: "a", input: "Name a", assertions: [{ id: "says-hello", type: "contains", value: "Hello, a" }, judge] }];
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: ex });
+  openTest(h.root, "a");
+  const selects = all(h.root).filter((e) => e.tag === "select");
+  assert.equal(selects.length, 1, "the judge has no editable type");
+  assert.deepEqual(selects[0].children.map((o) => o.textContent), ["Contains", "Does not contain", "Matches regex"]);
+  assert.doesNotMatch(h.root.textContent, /Model validated/);
+  assert.match(byClass(h.root, "check-details")[0].textContent, /minScore: 0/);
+  assert.deepEqual(byClass(h.root, "remove-check").map((b) => b.attrs["aria-label"]), ["Remove check 1", "Remove check 2"]);
+  edited(byClass(h.root, "check-value")[0], "Hello there, a");
+  enterOn(byClass(h.root, "check-value")[0]); await tick();
+  assert.equal(h.calls[0].caseId, "a");
+  assert.deepEqual(h.calls[0].examples, [{ id: "a", input: "Name a", assertions: [{ id: "says-hello", type: "contains", value: "Hello there, a" }, judge] }]);
+});
+
+test("duplicate followed by main Enter saves and tests successfully on the first attempt", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a"]) });
+  openTest(h.root, "a"); click(byClass(h.root, "more")[0]); click(btn(h.root, "Duplicate test"));
+  goBack(h.root); promptEnter(h.root); await tick(); await tick();
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].operation, "save-and-test");
+  assert.deepEqual(h.calls[0].examples.map((e) => e.id), ["a", "a-copy"]);
+  assert.equal(Object.hasOwn(h.calls[0], "caseId"), false);
+});
+
+for (const expected of ["Fix$& #218", "Fix$$ #218", "Fix$' #218", "Fix$` #218"]) test(`Apply to prompt keeps the literal operand ${expected}`, async () => {
+  const ex = [{ id: "issue", input: "Issue #218", assertions: [{ id: "ref", type: "contains", value: expected }] }];
+  const h = await editableCanvas("Keep Closes #218 in notes.", undefined, { examples: ex, latest: (revision, examples) => {
+    const latest = c18Latest({ issue: "fail" })(revision, examples);
+    latest.result.examples[0].answerExcerpt = "Closes #218.";
+    latest.result.examples[0].assertions[0].id = "ref";
+    return latest;
+  } });
+  openTest(h.root, "issue"); click(btn(h.root, "Apply to prompt")); goBack(h.root);
+  assert.equal(c18Prompt(h.root).textContent, `Keep ${expected} in notes.`);
+});
+
+test("an unsupported prompt edit also greys every known result before repair", async () => {
+  const h = await editableCanvas("Original text.", undefined, { currentPass: true });
+  const editor = c18Prompt(h.root), unknown = h.doc.createElement("span");
+  unknown.textContent = "Unserializable local edit"; editor.append(unknown); editor.listeners.input[0]();
+  assert.deepEqual(c18Status(h.root), ["old-pass"]);
+  assert.equal(byClass(h.root, "save-run")[0].disabled, true);
+  assert.equal(h.calls.length, 0);
+});
+
+test("unsupported editor DOM is retained against observation and navigation until repaired", async () => {
+  const h = await editableCanvas("Original text.");
+  const editor = c18Prompt(h.root), unknown = h.doc.createElement("span");
+  unknown.textContent = "Unsupported draft text"; editor.append(unknown);
+  editor.listeners.input[0]();
+  const external = await viewFor(replaceInstructions(h.source, [{ key: "Accountable Responsibilities", text: "External text." }]), h.examples);
+  assert.equal(h.app.idle(), false);
+  assert.equal(h.app.observe(external), false);
+  assert.equal(c18Prompt(h.root), editor);
+  assert.match(editor.textContent, /Unsupported draft text/);
+  assert.equal(byClass(h.root, "test-row")[0].disabled, true);
+  assert.equal(h.calls.length, 0);
+  assert.equal(btn(h.root, "Suggest tests").disabled, true);
+  click(btn(h.root, "Suggest tests")); await tick(); await tick();
+  assert.equal(h.calls.length, 0, "even a direct action attempt cannot replace the unsupported draft");
+  assert.equal(c18Prompt(h.root), editor);
+});
+
+test("frontend never relies on array methods of live DOM collections", async () => {
+  const app = await readFile(here("app.js"), "utf8");
+  assert.doesNotMatch(app, /\.(?:children|childNodes)\??\.(?:map|filter|find|some|every|forEach|flatMap|reduce)\(/);
+});
+
+test("ADVERSARIAL detail edit immediately greys a passing check without navigation", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a"]), latest: c18Latest({a: "pass"}) });
+  openTest(h.root, "a");
+  assert.deepEqual(checkLabels(h.root), ["Passed"]);
+  const input = byClass(h.root,"example-input")[0];
+  edited(input, "Different question");
+  assert.equal(byClass(h.root,"example-input")[0], input, "typing must not replace the focused field");
+  assert.equal(byClass(h.root,"unsaved-tag")[0].hidden,false);
+  assert.match(c18Text(h.root,"detail-status"), /before your edit/);
+  assert.deepEqual(checkLabels(h.root), ["Passed last run"]);
+  assert.equal(byClass(h.root, "pass").length, 0);
+});
+test("ADVERSARIAL detail operand edit immediately greys failure and answer mark", async () => {
+  const ex = [{id:"issue",input:"Issue #218",assertions:[{id:"ref",type:"contains",value:"Fixes #218"}]}];
+  const h = await editableCanvas("Keep Closes #218.", undefined, {examples:ex, latest:(revision, examples) => {
+    const r=c18Latest({issue:"fail"})(revision, examples);
+    r.result.examples[0].assertions[0].id="ref"; r.result.examples[0].answerExcerpt="Closes #218."; return r;
+  }});
+  openTest(h.root,"issue");
+  edited(byClass(h.root,"check-value")[0],"Closes #218");
+  assert.deepEqual(checkLabels(h.root),["Failed last run"]);
+  assert.equal(byClass(h.root,"fail").length,0);
+  assert.ok(all(h.root).filter(e=>e.tag==="mark").every(e=>e.className==="old"));
+});
+test("ADVERSARIAL stale expected/got action cannot rewrite a different check type", async () => {
+  const ex = [{id:"issue",input:"Issue #218",assertions:[{id:"ref",type:"contains",value:"Fixes #218"}]}];
+  const h = await editableCanvas("Keep Closes #218.", undefined, {examples:ex, latest:(revision, examples) => {
+    const r=c18Latest({issue:"fail"})(revision, examples);
+    r.result.examples[0].assertions[0].id="ref"; r.result.examples[0].answerExcerpt="Closes #218."; return r;
+  }});
+  openTest(h.root,"issue");
+  const repair = btn(h.root,"Or expect “Closes #218” in this test");
+  const apply = btn(h.root,"Apply to prompt");
+  edited(byClass(h.root,"example-input")[0],"Already drafted input");
+  const select = all(h.root).find(e=>e.tag==="select");
+  edited(select,"notContains");
+  assert.equal(all(h.root).find(e=>e.tag==="select"),select);
+  // The old contains-only repair must not now invert the newly chosen prohibition.
+  assert.equal(Boolean(btn(h.root,"Or expect “Closes #218” in this test")), false);
+  assert.equal(Boolean(btn(h.root,"Apply to prompt")),false);
+  click(repair); click(apply);
+  assert.equal(byClass(h.root,"check-value")[0].value,"Fixes #218", "a detached repair cannot mutate its replacement condition");
+  assert.equal(select.value,"notContains");
+  goBack(h.root); assert.equal(c18Prompt(h.root).textContent,"Keep Closes #218.");
+});
+test("ADVERSARIAL delayed idle poll cannot overwrite the rerun failure with an older pass", async () => {
+  const seed = await editableCanvas("Reply briefly.", undefined, {examples:c18Examples(["a"]),latest:c18Latest({a:"pass"})});
+  const oldView=seed.view;
+  const failedView=await viewFor(seed.source,seed.examples,c18Latest({a:"fail"}));
+  const doc=fakeDoc(), root=doc.createElement("main");
+  doc.getElementById=()=>root;doc.visibilityState="visible";
+  const before={document:globalThis.document,fetch:globalThis.fetch,setInterval:globalThis.setInterval};
+  let poll, release, reads=0;
+  globalThis.document=doc;
+  globalThis.setInterval=(fn)=>{poll=fn;return 1;};
+  globalThis.fetch=async (url)=>{
+    if(url==="actions")return {json:async()=>({view:failedView})};
+    if(++reads===1)return {json:async()=>oldView};
+    return new Promise(resolve=>{release=()=>resolve({json:async()=>oldView});});
+  };
+  try {
+    await import(new URL("./app.js?delayed-poll-probe", import.meta.url));
+    for(let i=0;i<8;i++)await tick();
+    assert.equal(typeof poll,"function");
+    assert.equal(summaryOf(root),"1 passing");
+    const pendingPoll=poll();await tick();
+    click(byClass(root,"save-run")[0]);for(let i=0;i<8;i++)await tick();
+    assert.match(summaryOf(root),/^1 failing/);
+    release();await pendingPoll;
+    assert.match(summaryOf(root),/^1 failing/, "late pre-action GET must not roll the latest result back to passing");
+  } finally {
+    if(before.document===undefined)delete globalThis.document;else globalThis.document=before.document;
+    globalThis.fetch=before.fetch;globalThis.setInterval=before.setInterval;
+  }
+});
+test("ADVERSARIAL any test draft greys other tests from the old file revision", async () => {
+  const h=await editableCanvas("Reply briefly.",undefined,{examples:c18Examples(["a","b"]),latest:c18Latest({a:"pass",b:"pass"})});
+  openTest(h.root,"b");edited(byClass(h.root,"example-input")[0],"New input");goBack(h.root);
+  assert.deepEqual(c18Status(h.root),["old-pass","old-pass"]);
+  openTest(h.root,"a");
+  assert.deepEqual(checkLabels(h.root),["Passed last run"]);
+  assert.equal(byClass(h.root,"unsaved-tag")[0].hidden,true,"A has no draft of its own");
+  assert.match(c18Text(h.root,"detail-status"),/before your edit/);
+});
+for (const operation of ["add", "delete"]) test(`any ${operation} draft greys the other saved tests`, async () => {
+  const h=await editableCanvas("Reply briefly.",undefined,{examples:c18Examples(["a","b"]),latest:c18Latest({a:"pass",b:"pass"})});
+  if(operation==="add") { click(btn(h.root,"Add test")); goBack(h.root); }
+  else { openTest(h.root,"b");click(byClass(h.root,"more")[0]);click(btn(h.root,"Delete test")); }
+  assert.equal(items(h.root)[0].attrs["data-status"],"old-pass");
+  openTest(h.root,"a");assert.deepEqual(checkLabels(h.root),["Passed last run"]);
+});
+test("an accepted same-revision observation rebuilds result DOM without losing drafts or claiming just now", async () => {
+  const h=await editableCanvas("Reply briefly.",undefined,{examples:c18Examples(["a"]),latest:c18Latest({a:"pass"})});
+  openTest(h.root,"a");edited(byClass(h.root,"example-input")[0],"Draft retained");
+  const failed=await viewFor(h.source,h.examples,c18Latest({a:"fail"}));
+  assert.equal(h.app.observe(failed,h.app.observation()),true);
+  assert.equal(byClass(h.root,"example-input")[0].value,"Draft retained");
+  assert.deepEqual(checkLabels(h.root),["Failed last run"]);
+  assert.doesNotMatch(c18Text(h.root,"detail-status"),/just now/);
+});
+test("ADVERSARIAL two canvas controllers cannot silently overwrite the first saved revision", async () => {
+  const {createActionHandler}=await import("./view.mjs");
+  const seed=await editableCanvas("Original prompt.",undefined,{examples:c18Examples(["a"])});
+  let source=seed.source,latest={status:"none"};const calls=[];
+  const rev=()=>"sha256:"+createHash("sha256").update(source).digest("hex");
+  const raw=()=>resource(MINIMAL,{file:{path:MINIMAL,revision:rev()},model:"fake",instructions:source,examples:seed.examples,authoring:{source,editable:true},latest});
+  const session={rpc:{mcp:{resources:{read:async({uri})=>({contents:[{uri,text:JSON.stringify(raw())}]})}},tools:{
+    getCurrentMetadata:async()=>({tools:["edit","test"].map(op=>({name:op,mcpServerName:SERVER_NAME,mcpToolName:op}))}),
+    execute:async req=>{calls.push(req);if(req.name==="edit"){
+      if(req.arguments.expectedRevision!==rev())return {resultType:"failure",error:"stale_revision"};
+      source=req.arguments.content;latest={status:"stale"};return {resultType:"success"};
+    }latest=c18Latest({a:"pass"})(rev(),seed.examples);return {resultType:"success"};}
+  }}};
+  const panels=["A","B"].map(()=>{const doc=fakeDoc(),root=doc.createElement("main");renderView(doc,root,seed.view,createActionHandler({session,path:MINIMAL}));return root;});
+  for(const [i,root] of panels.entries()){const p=c18Prompt(root);p.append(" Draft "+i);p.listeners.input[0]();}
+  promptEnter(panels[0]);for(let i=0;i<20;i++)await tick();
+  assert.equal(calls.filter(c=>c.name==="edit").length,1);const saved=source;
+  promptEnter(panels[1]);for(let i=0;i<20;i++)await tick();
+  assert.equal(source,saved);assert.equal(calls.filter(c=>c.name==="edit").length,1);
+  assert.match(c18Prompt(panels[1]).textContent,/Draft 1/);
+});
+test("ADVERSARIAL explicit Keep my edits retains a remotely removed edited test", async () => {
+  const h=await editableCanvas("Reply briefly.",undefined,{examples:c18Examples(["a","b"])});
+  openTest(h.root,"b");edited(byClass(h.root,"example-input")[0],"My retained input");goBack(h.root);
+  const remote=c18Examples(["a"]);
+  h.app.observe(await viewFor(replaceExamples(h.source,remote),remote));
+  click(btn(h.root,"Keep my edits"));promptEnter(h.root);await tick();
+  assert.deepEqual(h.calls[0].examples.map(e=>[e.id,e.input]),[["a","Name a"],["b","My retained input"]]);
+});
+test("ADVERSARIAL Esc discards only the current test and never the prompt or another draft", async () => {
+  const h=await editableCanvas("Reply briefly.",undefined,{examples:c18Examples(["a","b"])});
+  c18Edit(h.root);openTest(h.root,"a");edited(byClass(h.root,"example-input")[0],"My A");goBack(h.root);
+  openTest(h.root,"b");edited(byClass(h.root,"example-input")[0],"My B");
+  byClass(h.root,"example-input")[0].listeners.keydown[0]({key:"Escape",preventDefault(){}});
+  goBack(h.root);promptEnter(h.root);await tick();
+  assert.equal(h.calls[0].sections.length,1);
+  assert.deepEqual(h.calls[0].examples.map(e=>e.input),["My A","Name b"]);
 });
