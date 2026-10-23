@@ -241,7 +241,7 @@ func (p *Provider) Client(ctx context.Context, r modelaccess.Route) (http.RoundT
 		return nil, err
 	}
 	if _, err := modelaccess.Select(routes, r.Provider, r.Model); err != nil {
-		return nil, ErrModelUnavailable
+		return nil, unavailableWithChoices(routes)
 	}
 	return &transport{owner: p, route: r}, nil
 }
@@ -290,7 +290,11 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 		}
 		if path == "" {
-			err = ErrModelUnavailable
+			routes := make([]modelaccess.Route, 0, len(models))
+			for _, model := range models {
+				routes = append(routes, model.route)
+			}
+			err = unavailableWithChoices(routes)
 		}
 	}
 	p.mu.Unlock()

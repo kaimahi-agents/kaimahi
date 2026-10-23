@@ -53,6 +53,10 @@ func ExportRunProfile(filename string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Offline export preserves authored choices, not preview-time defaults.
+	if agent.Model == "" {
+		return nil, refuse(filename, 1, 1, "Model.Preferred", "add nonblank required fields in the canonical charter format")
+	}
 	// A profile hands examples to a separate runtime; zero tests is no evidence.
 	if len(agent.Examples) == 0 {
 		loc := agent.Locations["Examples"]

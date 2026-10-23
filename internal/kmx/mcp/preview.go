@@ -33,7 +33,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 	}
 	for _, name := range []string{"run", "test"} {
 		schema := &jsonschema.Schema{Type: "object", Required: []string{"path"}, Properties: map[string]*jsonschema.Schema{
-			"path": {Type: "string"}, "caseId": {Type: "string", MinLength: new(1), MaxLength: new(agentfile.MaxInputBytes)}, "showContent": {Type: "boolean"}, "showFailedContent": {Type: "boolean"},
+			"path": {Type: "string"}, "model": {Type: "string"}, "caseId": {Type: "string", MinLength: new(1), MaxLength: new(agentfile.MaxInputBytes)}, "showContent": {Type: "boolean"}, "showFailedContent": {Type: "boolean"},
 		}, AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}}}
 		if files != nil && files.root != nil {
 			schema.Properties["path"].MaxLength = new(256)
@@ -44,6 +44,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 		ops[name] = Operation{Schema: schema, Description: "kmx local preview of this charter; saved examples, optionally one case (always partial). Returns the shared revision, route, state and verdict; never deployment evidence.", Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			var input struct {
 				Path              string  `json:"path"`
+				Model             string  `json:"model"`
 				CaseID            string  `json:"caseId"`
 				Input             *string `json:"input"`
 				ShowContent       bool    `json:"showContent"`
@@ -65,10 +66,16 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 				return nil, parseErr
 			}
 			executionRoute := selected
-			if executionRoute == nil && files.root == nil && parsed != nil && parsed.Model != "fake" {
-				executionRoute = &modelaccess.Route{Provider: "copilot", Model: parsed.Model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+			if executionRoute == nil && files.root == nil && parsed != nil {
+				model := parsed.Model
+				if input.Model != "" {
+					model = input.Model
+				}
+				if model != "fake" {
+					executionRoute = &modelaccess.Route{Provider: "copilot", Model: model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+				}
 			}
-			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Route: executionRoute})
+			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute})
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 			}

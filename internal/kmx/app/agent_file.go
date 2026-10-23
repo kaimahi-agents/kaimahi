@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
@@ -17,6 +18,7 @@ import (
 type FilePreviewOptions struct {
 	File, Operation, CaseID string
 	ToolBindings            string
+	Model                   string
 	Route, JudgeRoute       *modelaccess.Route
 	Input                   *string
 	ShowContent             bool
@@ -89,13 +91,19 @@ type FilePreviewAssertion struct {
 	Reason     string                    `json:"reason"`
 }
 
-// FilePreviewError contains fixed safe text, never provider or authored content.
+// FilePreviewError contains fixed safe text or validated catalog choices, never raw provider content.
 type FilePreviewError struct {
-	code string
-	exit int
+	code    string
+	exit    int
+	message string
 }
 
-func (e *FilePreviewError) Error() string { return previewReason(e.code) }
+func (e *FilePreviewError) Error() string {
+	if e.message != "" {
+		return e.message
+	}
+	return previewReason(e.code)
+}
 func (e *FilePreviewError) ExitCode() int { return e.exit }
 
 var previewCopilotFailures = []struct {
@@ -173,12 +181,12 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	r := FilePreviewResult{SchemaVersion: 1, Kind: "kmx.agent-file-preview", Operation: opt.Operation,
 		File: FilePreviewIdentity{Path: filePath}, Selection: FilePreviewSelection{Scope: "full", CaseIDs: []string{}},
 		State: "refused", Verdict: runtime.EvaluationUnknown, Examples: []FilePreviewExample{}, Retention: FilePreviewRetention{Status: "not_requested"}}
-	fail := func(code string, exit int) (FilePreviewResult, error) {
+	fail := func(code string, exit int) (FilePreviewResult, *FilePreviewError) {
 		r.FullPass = false
 		r.Verdict = runtime.EvaluationUnknown
 		r.ReasonCode = code
 		r.Reason = previewReason(code)
-		return r, &FilePreviewError{code, exit}
+		return r, &FilePreviewError{code: code, exit: exit}
 	}
 	if opt.Operation != "run" && opt.Operation != "test" || opt.Operation == "test" && opt.Input != nil || opt.Input != nil && (len(*opt.Input) > agentfile.MaxInputBytes || !utf8.ValidString(*opt.Input)) {
 		return fail("invalid_options", 1)
@@ -191,7 +199,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return fail("invalid_file", 1)
 	}
 	// Metadata is printable but can still be shaped like a credential. Do not echo it.
-	metadata := []string{r.File.Path, parsed.Model}
+	metadata := []string{r.File.Path, parsed.Model, opt.Model}
 	for _, ex := range parsed.Examples {
 		metadata = append(metadata, ex.ID)
 		for _, as := range ex.Assertions {
@@ -204,6 +212,17 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			return fail("invalid_file", 1)
 		}
 	}
+	if opt.Model != "" && !agentfile.ValidModel(opt.Model) {
+		return fail("invalid_options", 1)
+	}
+	missingModel := parsed.Model == ""
+	execution := *parsed
+	if opt.Model != "" {
+		execution.Model = opt.Model
+	} else if missingModel {
+		execution.Model = modelaccess.CopilotDefaultModel
+	}
+	parsed = &execution
 	r.File.Revision = parsed.Revision
 	r.Selection.TotalCases = len(parsed.Examples)
 	// Zero authored examples permit only an explicit ad-hoc Run, never a Test.
@@ -226,7 +245,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	route := modelaccess.Route{Provider: "fake", Model: "fake", Auth: "none"}
 	if opt.Route != nil {
 		route = *opt.Route
-		if route.Model == "" {
+		if route.Model == "" || opt.Model != "" || missingModel {
 			route.Model = parsed.Model
 		}
 	} else if parsed.Model != "fake" {
@@ -368,6 +387,16 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if cause != nil {
 		if code := previewCopilotFailure(cause); code != "" {
+			if choices, known := copilot.ModelChoices(cause); known {
+				result, previewErr := fail(code, 1)
+				names := strings.Join(choices, ", ")
+				if names == "" {
+					names = "none"
+				}
+				result.Reason = "Available Copilot models: " + names
+				previewErr.message = result.Reason
+				return result, previewErr
+			}
 			return fail(code, 1)
 		}
 		return fail("execution_failed", 1)
@@ -401,7 +430,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	r.Reason = previewReason(r.ReasonCode)
 	r.FullPass = r.Selection.Scope == "full" && r.Verdict == runtime.EvaluationPass
 	if r.Verdict != runtime.EvaluationPass {
-		return r, &FilePreviewError{r.ReasonCode, 2}
+		return r, &FilePreviewError{code: r.ReasonCode, exit: 2}
 	}
 	return r, nil
 }

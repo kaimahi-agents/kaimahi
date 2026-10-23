@@ -12,6 +12,9 @@ import (
 
 const CopilotEndpoint = "https://api.githubcopilot.com"
 
+// CopilotDefaultModel is the file-preview choice when no runtime or authored model is supplied.
+const CopilotDefaultModel = "gpt-5.6-terra"
+
 // Route is the non-secret selection consumed by model callers. Auth names a
 // credential facility, never a credential value. Selection grants no execution.
 type Route struct {

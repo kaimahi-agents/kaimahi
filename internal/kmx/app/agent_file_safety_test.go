@@ -59,7 +59,7 @@ func TestFilePreviewParserDiagnostic(t *testing.T) {
 	}
 	f := &scriptedPreview{}
 	r, err := (&App{FileRunner: f}).PreviewAgentFile(context.Background(), FilePreviewOptions{File: path, Operation: "test"})
-	if err == nil || f.calls != 0 || r.Diagnostic == nil || !strings.Contains(r.Diagnostic.Field, "Identity.ID") || !strings.Contains(r.Diagnostic.Field, "Model.Preferred") || r.Diagnostic.Line < 1 {
+	if err == nil || f.calls != 0 || r.Diagnostic == nil || !strings.Contains(r.Diagnostic.Field, "Identity.ID") || strings.Contains(r.Diagnostic.Field, "Model.Preferred") || !strings.Contains(r.Diagnostic.Field, "Examples") || r.Diagnostic.Line < 1 {
 		t.Fatalf("%+v / %v", r, err)
 	}
 }
