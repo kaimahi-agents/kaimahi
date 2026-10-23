@@ -76,14 +76,18 @@ jobs:
       - name: Build isolated user-owner test launcher
         shell: pwsh
         run: go build -trimpath -o "$env:RUNNER_TEMP\kmx-windows-tests.exe" ./scripts/ci/windows-tests
-      - name: Native checked-read, DACL, and identity tests
+      - name: Native checked filesystem, private mutation, and state tests
         shell: pwsh
         run: |
           & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v ./scripts/ci/windows-tests ./internal/kmx/fileaccess
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v `
+            -run '^(TestStateDirUsesPortableOverrideAndNativeDefault|TestWindowsStateAccessUsesLocalAppDataAndSeparatesCreation|TestWindowsStateAccessRefusesUnsafeRootWithoutRepair)$' `
+            ./internal/kmx/config
           exit $LASTEXITCODE
       - name: Windows amd64 package vet
         shell: pwsh
-        run: go vet ./internal/kmx/fileaccess ./scripts/ci/windows-tests
+        run: go vet ./internal/kmx/fileaccess ./internal/kmx/config ./scripts/ci/windows-tests
       - name: Windows arm64 compile and vet (not native execution)
         shell: pwsh
         env:
@@ -93,9 +97,11 @@ jobs:
         run: |
           go test -c -o "$env:RUNNER_TEMP\fileaccess-arm64.test.exe" ./internal/kmx/fileaccess
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -c -o "$env:RUNNER_TEMP\config-arm64.test.exe" ./internal/kmx/config
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -c -o "$env:RUNNER_TEMP\windows-tests-arm64.test.exe" ./scripts/ci/windows-tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go vet ./internal/kmx/fileaccess ./scripts/ci/windows-tests
+          go vet ./internal/kmx/fileaccess ./internal/kmx/config ./scripts/ci/windows-tests
           exit $LASTEXITCODE
 
   hygiene:
@@ -790,8 +796,8 @@ jobs:
           "$(go env GOPATH)/bin/staticcheck" ./...
       - name: kmx — build
         run: go build ./...
-      - name: kmx — file-access race tests
-        run: go test -race -count=1 ./internal/kmx/fileaccess
+      - name: kmx — filesystem and state race tests
+        run: go test -race -count=1 ./internal/kmx/fileaccess ./internal/kmx/config
       - name: kmx — Windows libraries (CLI remains guarded)
         run: |
           GOOS=windows GOARCH=amd64 go build ./internal/... ./pkg/...
@@ -826,7 +832,8 @@ jobs:
               "pkg/suiteview": "public read-only suite member recipe views",
               # The reason this job is required at all.
               "internal/kmx/guard": "the context guard's port decisions",
-              "internal/kmx/fileaccess": "checked read-only filesystem and identity foundations",
+              "internal/kmx/fileaccess": "checked filesystem, private mutation and identity foundations",
+              "internal/kmx/config": "native state location and explicit creating/non-creating resolution",
               "internal/kmx/scaffold": "the scaffolder's key-shape refusals",
               "internal/kmx/orkaschema": "pinned Orka schemas and unknown-field refusals",
               # kmx downloads kind and kubectl. A binary it fetches

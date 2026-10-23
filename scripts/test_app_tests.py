@@ -146,6 +146,13 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("--shards 4", body)
         self.assertEqual(self.jobs["hygiene"]["needs"], ["app-tests", "windows-read-foundation"])
         self.assertEqual(self.jobs["hygiene"]["if"], "always()")
+        windows = self.jobs["windows-read-foundation"]
+        windows_body = "\n".join(step.get("run", "") for step in windows["steps"])
+        self.assertIn("./scripts/ci/windows-tests ./internal/kmx/fileaccess", windows_body)
+        self.assertIn("TestWindowsStateAccessUsesLocalAppDataAndSeparatesCreation", windows_body)
+        self.assertIn("./internal/kmx/config", windows_body)
+        self.assertIn("config-arm64.test.exe", windows_body)
+        self.assertIn("go vet ./internal/kmx/fileaccess ./internal/kmx/config", windows_body)
 
     def test_final_gate_rejects_every_non_success_and_wrong_dependency_set(self):
         steps = self.jobs["hygiene"]["steps"]
@@ -187,6 +194,8 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn('grep -vx "' + PACKAGE + '"', body)
         self.assertNotIn('"internal/kmx/app":', body)
         self.assertIn('"internal/kmx/guard":', body)
+        self.assertIn('"internal/kmx/fileaccess":', body)
+        self.assertIn('"internal/kmx/config":', body)
         self.assertIn('go test "${packages[@]}" -json', body)
         prelude = body.split("go_status=0", 1)[0]
         for stdout, status in (("", 0), (PACKAGE + "\n", 0), ("other/package\n", 1)):

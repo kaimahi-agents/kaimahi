@@ -13,7 +13,8 @@ type Object interface {
 }
 
 // Directory is an existing checked directory. It deliberately exposes no raw
-// descriptor, writer, lock, rename, delete, or sync surface.
+// descriptor or direct mutation methods. Package operations may use it as an
+// anchored parent for private creation, publication, and directory sync.
 type Directory struct{ file *os.File }
 
 func (d *Directory) fileaccessObject() *os.File {
@@ -78,6 +79,36 @@ func (f *File) ReadAt(p []byte, offset int64) (int, error) {
 	}
 	n, err := f.file.ReadAt(p, offset)
 	return n, wrapReadError("read file", err)
+}
+
+// PrivateFile is an existing protected owner-only regular file opened for
+// package-managed mutation or locking. It deliberately exposes no raw
+// descriptor, writer, truncation, rename, delete, or sync method.
+type PrivateFile struct {
+	file     *os.File
+	identity string
+}
+
+func (f *PrivateFile) fileaccessObject() *os.File {
+	if f == nil {
+		return nil
+	}
+	return f.file
+}
+
+func (f *PrivateFile) Close() error {
+	if f == nil || f.file == nil {
+		return wrapAccess("close private file", unsafeCause("private file handle is absent"))
+	}
+	return wrapAccess("close private file", f.file.Close())
+}
+
+func (f *PrivateFile) Stat() (fs.FileInfo, error) {
+	if f == nil || f.file == nil {
+		return nil, wrapAccess("stat private file", unsafeCause("private file handle is absent"))
+	}
+	info, err := f.file.Stat()
+	return info, wrapAccess("stat private file", err)
 }
 
 func wrapReadError(operation string, err error) error {

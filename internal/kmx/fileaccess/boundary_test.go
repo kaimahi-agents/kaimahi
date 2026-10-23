@@ -11,18 +11,32 @@ import (
 	"testing"
 )
 
-func TestProductionSurfaceIsReadOnly(t *testing.T) {
+func TestProductionSurfaceIsNarrowAndOpaque(t *testing.T) {
 	exportedFunctions := map[string]bool{}
 	exportedTypes := map[string]bool{}
 	banned := map[string]bool{
-		"Create": true, "CreateFile": true, "FlushFileBuffers": true,
-		"Flock": true, "Link": true, "LockFileEx": true, "Mkdir": true,
-		"MoveFileEx": true, "NtSetInformationFile": true,
-		"MkdirAll": true, "OpenFile": true, "Remove": true, "RemoveAll": true,
+		"Create": true, "CreateFile": true, "Link": true, "Mkdir": true,
+		"MoveFileEx": true, "MkdirAll": true, "OpenFile": true, "Remove": true, "RemoveAll": true,
 		"Rename": true, "ReplaceFile": true, "SetEndOfFile": true,
 		"SetFileInformationByHandle": true, "SetFileSecurity": true,
-		"SetFileTime": true, "SetNamedSecurityInfo": true, "SetSecurityInfo": true, "Sync": true,
-		"Truncate": true, "Write": true, "WriteAt": true, "WriteFile": true,
+		"SetFileTime": true, "SetNamedSecurityInfo": true, "SetSecurityInfo": true,
+		"Truncate": true, "WriteAt": true, "WriteFile": true,
+	}
+	authority := map[string]map[string]bool{
+		"Flock":                {"lock_unix.go": true},
+		"FlushFileBuffers":     {"syncdir_windows.go": true},
+		"Linkat":               {"publish_unix.go": true},
+		"LockFileEx":           {"lock_windows.go": true},
+		"Mkdirat":              {"create_unix.go": true},
+		"NtSetInformationFile": {"create_windows.go": true, "publish_windows.go": true},
+		"Sync":                 {"publish.go": true, "syncdir_unix.go": true},
+		"Unlinkat":             {"create_unix.go": true, "publish_unix.go": true},
+		"Write":                {"publish.go": true},
+	}
+	windowsAuthority := map[string]map[string]bool{
+		"DELETE":             {"create_windows.go": true},
+		"FILE_CREATE":        {"create_windows.go": true},
+		"FILE_GENERIC_WRITE": {"create_windows.go": true, "syncdir_windows.go": true},
 	}
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -56,12 +70,16 @@ func TestProductionSurfaceIsReadOnly(t *testing.T) {
 		ast.Inspect(file, func(node ast.Node) bool {
 			switch value := node.(type) {
 			case *ast.SelectorExpr:
-				if banned[value.Sel.Name] {
-					t.Errorf("%s calls phase-3 operation %s", name, value.Sel.Name)
+				if allowed, ok := authority[value.Sel.Name]; ok && !allowed[name] {
+					t.Errorf("%s calls mutation operation %s outside its exact owner", name, value.Sel.Name)
+				} else if banned[value.Sel.Name] && !ok {
+					t.Errorf("%s calls unapproved mutation operation %s", name, value.Sel.Name)
 				}
 			case *ast.Ident:
-				if strings.HasPrefix(value.Name, "FILE_CREATE") || strings.HasPrefix(value.Name, "FILE_OPEN_IF") || strings.HasPrefix(value.Name, "FILE_OVERWRITE") || value.Name == "GENERIC_WRITE" || value.Name == "FILE_GENERIC_WRITE" {
-					t.Errorf("%s contains phase-3 Windows authority %s", name, value.Name)
+				if allowed, ok := windowsAuthority[value.Name]; ok && !allowed[name] {
+					t.Errorf("%s contains Windows mutation authority %s outside its exact owner", name, value.Name)
+				} else if value.Name == "FILE_OPEN_IF" || value.Name == "FILE_SUPERSEDE" || strings.HasPrefix(value.Name, "FILE_OVERWRITE") || value.Name == "GENERIC_WRITE" {
+					t.Errorf("%s contains unapproved Windows replacement authority %s", name, value.Name)
 				}
 			}
 			return true
@@ -72,7 +90,7 @@ func TestProductionSurfaceIsReadOnly(t *testing.T) {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	want := []string{"CheckPrivate", "CheckSafeDirectory", "OpenDirectory", "OpenDirectoryAt", "OpenRegularAt", "PhysicalIdentity"}
+	want := []string{"CheckPrivate", "CheckSafeDirectory", "CreatePrivateDirectoryAt", "CreatePrivateFileAt", "EnsurePrivateDirectory", "EnsurePrivateDirectoryAt", "EnsurePrivateFileAt", "OpenDirectory", "OpenDirectoryAt", "OpenPrivateDirectory", "OpenRegularAt", "PhysicalIdentity", "PublishPrivate", "SyncDirectory", "TryLock"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("exported functions = %v, want exactly %v", names, want)
 	}
@@ -81,7 +99,7 @@ func TestProductionSurfaceIsReadOnly(t *testing.T) {
 		types = append(types, name)
 	}
 	slices.Sort(types)
-	wantTypes := []string{"AccessError", "Directory", "ErrorClass", "File", "Object"}
+	wantTypes := []string{"AccessError", "Directory", "ErrorClass", "File", "Object", "PrivateFile", "PublicationResult"}
 	if !slices.Equal(types, wantTypes) {
 		t.Fatalf("exported types = %v, want exactly %v", types, wantTypes)
 	}
@@ -101,7 +119,7 @@ func TestProductionSurfaceIsReadOnly(t *testing.T) {
 	}
 }
 
-func TestFoundationHasNoProductionConsumers(t *testing.T) {
+func TestFoundationConsumersAreExplicit(t *testing.T) {
 	root := filepath.Join("..", "..", "..")
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -122,7 +140,10 @@ func TestFoundationHasNoProductionConsumers(t *testing.T) {
 		}
 		for _, imported := range file.Imports {
 			if imported.Path.Value == `"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"` {
-				t.Errorf("production package imports unwired foundation: %s", path)
+				allowed := filepath.Join(root, "internal", "kmx", "config") + string(filepath.Separator)
+				if !strings.HasPrefix(path, allowed) {
+					t.Errorf("production package imports unwired filesystem foundation: %s", path)
+				}
 			}
 		}
 		return nil

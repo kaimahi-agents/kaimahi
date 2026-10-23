@@ -166,24 +166,30 @@ func upper(c byte) byte {
 func isSeparator(c byte) bool { return c == '\\' || c == '/' }
 
 func ntOpen(parent windows.Handle, name string, access, options uint32) (windows.Handle, error) {
+	handle, _, err := ntCreate(parent, name, access, options, windows.FILE_OPEN, nil)
+	return handle, err
+}
+
+func ntCreate(parent windows.Handle, name string, access, options, disposition uint32, descriptor *windows.SECURITY_DESCRIPTOR) (windows.Handle, uintptr, error) {
 	ntName, err := windows.NewNTUnicodeString(name)
 	if err != nil {
-		return windows.InvalidHandle, &classifiedCause{class: ClassUnsafe, cause: err}
+		return windows.InvalidHandle, 0, &classifiedCause{class: ClassUnsafe, cause: err}
 	}
 	attributes := windows.OBJECT_ATTRIBUTES{
-		RootDirectory: parent,
-		ObjectName:    ntName,
-		Attributes:    windows.OBJ_CASE_INSENSITIVE | windows.OBJ_DONT_REPARSE,
+		RootDirectory:      parent,
+		ObjectName:         ntName,
+		Attributes:         windows.OBJ_CASE_INSENSITIVE | windows.OBJ_DONT_REPARSE,
+		SecurityDescriptor: descriptor,
 	}
 	attributes.Length = uint32(unsafe.Sizeof(attributes))
 	var handle windows.Handle
 	var status windows.IO_STATUS_BLOCK
 	err = windows.NtCreateFile(&handle, access|windows.SYNCHRONIZE, &attributes, &status, nil,
-		windows.FILE_ATTRIBUTE_NORMAL, shareAll, windows.FILE_OPEN, options|syncOptions, 0, 0)
+		windows.FILE_ATTRIBUTE_NORMAL, shareAll, disposition, options|syncOptions, 0, 0)
 	if err != nil {
-		return windows.InvalidHandle, normalizeNTStatus(err)
+		return windows.InvalidHandle, 0, normalizeNTStatus(err)
 	}
-	return handle, nil
+	return handle, status.Information, nil
 }
 
 func normalizeNTStatus(err error) error {
