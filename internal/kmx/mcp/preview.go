@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -154,7 +154,7 @@ func (f *Files) readSnapshot(ctx context.Context, p string, inspection bool) (*a
 		return nil, nil, err
 	}
 	defer parent.Close()
-	file, b, _, err := readTarget(parent, path.Base(p))
+	file, b, _, err := readTarget(parent, filepath.Base(p))
 	if err != nil {
 		return nil, nil, err
 	}

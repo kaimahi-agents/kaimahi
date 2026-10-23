@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"encoding/json"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,7 +152,7 @@ func TestUnboundResourceCanvasURIEncoding(t *testing.T) {
 	requested := filepath.Join(root, "Bob's (agents) + notes", "Agent!.agent.md")
 	cs := resourceClient(t, f, &app.App{})
 	saved := authoringCall(t, cs, "create", requested, source, "")
-	uri := "kmx://agent/" + url.PathEscape(root) + "%2FBob's%20(agents)%20%2B%20notes%2FAgent!.agent.md"
+	uri := strings.NewReplacer("%27", "'", "%28", "(", "%29", ")", "%21", "!", "+", "%2B").Replace(agentResourceURI(requested))
 	res, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: uri})
 	if err != nil {
 		t.Fatal(err)

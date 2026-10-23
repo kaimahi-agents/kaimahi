@@ -365,7 +365,7 @@ func (f *Files) Create(ctx context.Context, p string, b []byte) (File, error) {
 	if err := cancelled(ctx); err != nil {
 		return File{}, err
 	}
-	if err := renameExclusive(parent, name, path.Base(p)); err != nil {
+	if err := renameExclusive(parent, name, filepath.Base(p)); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return File{}, refusal("already_exists")
 		}
@@ -400,7 +400,7 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 	if observed != nil && !f.observedParent(p, parent, observed) {
 		return File{}, refusal("stale_revision")
 	}
-	target, old, info, err := readTarget(parent, path.Base(p))
+	target, old, info, err := readTarget(parent, filepath.Base(p))
 	if err != nil {
 		return File{}, err
 	}
@@ -429,7 +429,7 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 	defer unlock()
 	// Locks follow inodes across replacement. A waiter on the replaced inode
 	// must refuse rather than treating that obsolete lock as current authority.
-	current, err := parent.Lstat(path.Base(p))
+	current, err := parent.Lstat(filepath.Base(p))
 	if err != nil || !os.SameFile(info, current) || current.Mode() != info.Mode() || !singleLink(target) ||
 		(observed != nil && !f.observedParent(p, parent, observed)) {
 		return File{}, refusal("stale_revision")
@@ -447,7 +447,7 @@ func (f *Files) editObserved(ctx context.Context, p, expected string, b []byte, 
 	if err := cancelled(ctx); err != nil {
 		return File{}, err
 	}
-	if err := parent.Rename(name, path.Base(p)); err != nil {
+	if err := parent.Rename(name, filepath.Base(p)); err != nil {
 		return File{}, refusal("publication_failed")
 	}
 	if f.root == nil {
