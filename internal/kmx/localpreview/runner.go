@@ -280,7 +280,9 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 	}()
 	client := newModelClient(p.route)
-	client.check = checkContent
+	if access != nil || toolHost != nil {
+		client.check = checkContent
+	}
 	call := client.Model
 	if toolHost != nil {
 		call = client.ToolModel

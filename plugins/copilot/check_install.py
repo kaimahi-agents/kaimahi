@@ -11,7 +11,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from package import NATIVE_FILES, SAMPLE_FILES, squad_arguments
+from package import NATIVE_FILES, SAMPLE_FILES, SKILL_FILES, squad_arguments
 
 
 def read_file(path: Path, maximum: int = 512 << 20) -> bytes:
@@ -119,8 +119,12 @@ def check(copilot: str, plugin: Path, digest: str, home: Path) -> None:
             cache = Path(skill["path"]).parent.parent.resolve()
             if home.resolve() not in cache.parents or validate_package(cache, digest) != root:
                 raise ValueError("unexpected installed cache/root")
+            for name in SKILL_FILES:
+                if not any(s["name"] == Path(name).parent.name and s["source"] == "plugin"
+                           and Path(s["path"]).parent.parent.resolve() == cache for s in skills):
+                    raise ValueError("plugin skill discovery failed")
             names = ["plugin.json", "mcp.json", "selected-root.json", "engine.json", "bin/kmx",
-                     "skills/kmx-agent-builder/SKILL.md", *NATIVE_FILES, *SAMPLE_FILES]
+                     *SKILL_FILES, *NATIVE_FILES, *SAMPLE_FILES]
             if (plugin / "SETUP.md").exists():
                 names.append("SETUP.md")
             for name in names:
@@ -132,7 +136,7 @@ def check(copilot: str, plugin: Path, digest: str, home: Path) -> None:
             discovery(cache / "bin/kmx", root, env, arguments)
             cli("plugin", "uninstall", "kmx-agent-builder")
             installed = False
-        print("PASS: installed plugin/skill, four real tools, pinned cache bytes, uninstall/reinstall")
+        print("PASS: installed plugin/skills, four real tools, pinned cache bytes, uninstall/reinstall")
     finally:
         if installed:
             cli("plugin", "uninstall", "kmx-agent-builder")

@@ -22,7 +22,8 @@ The source directory deliberately has no `bin/kmx`; do not install it directly.
 
 The package uses [Agent Plugins 1.0](https://agent-plugins.org/plugin-authors/build-an-agent-plugin.md):
 root [plugin.json](plugin.json), root [mcp.json](mcp.json) and
-[skills/kmx-agent-builder/SKILL.md](skills/kmx-agent-builder/SKILL.md).
+[skills/kmx-agent-builder/SKILL.md](skills/kmx-agent-builder/SKILL.md) and
+[skills/kmx/SKILL.md](skills/kmx/SKILL.md).
 The [MCP specification for plugins](https://agent-plugins.org/plugin-authors/mcp-servers.md)
 resolves `./bin/kmx` against the plugin root; Windows templates use
 `./bin/kmx.exe`. It is one executable token, not a shell command or PATH lookup.
@@ -131,10 +132,24 @@ or cross-compilation do not qualify Squad on Windows/macOS.
 
 ## Agent authoring canvas
 
-After confirming the selected root, ask Copilot to open the installed **kmx agent
-view** canvas with the root-relative path. Opening does not edit or run the agent.
-The native command `/agent-view greeter.agent.md` displays the same projection
-as read-only text; canonical Squad paths work there too.
+After setup confirms the selected root, select the **kmx** skill in the app's slash
+menu and enter `/kmx open greeter.agent.md`. Canonical Squad paths such as
+`/kmx open .squad/agents/greeter/charter.md` work too. `/kmx` or `/kmx help` shows
+usage without opening anything.
+
+This is a host-model skill turn, not a model-free native slash command. The skill
+asks for one built-in `open_canvas` call with the installed provider and a stable
+instance ID. The provider checks the path and reads the existing root-confined
+resource before every open, including reopening an existing instance. An
+unreadable resource refuses that open; it does not close an already-running
+view. It never infers a root from the app folder, changes the
+binding, or asks for another root confirmation. Opening does not create, edit,
+run or test an agent; the existing authoring controls and their checks remain
+unchanged.
+
+Without the built-in canvas opener, the skill uses the native opener's text
+fallback. The manual native command `/agent-view greeter.agent.md` also displays
+the projection as read-only text; canonical Squad paths work there too.
 
 Instructions are directly editable: **Enter** saves through revision-checked MCP
 Edit and then tests; **Shift+Enter** adds a line. Additional instructions retain
@@ -187,6 +202,10 @@ Edit → Test, mixed text/judge results and native rendering using an offline fa
 model. Browser/unit checks cover inline formatting and failure-only disclosure.
 This is not live hosted-model, clean-machine or every desktop error-state
 qualification. A loopback URL or browser mock alone is not desktop evidence.
+The `/kmx` skill → built-in opener → WSL resource → visible panel path was also
+demonstrated once on that Windows app, with one opener call and no agent
+execution. Other platforms, marketplace-qualified provider IDs and every path
+layout/instance-ID length have not been app-qualified by that check.
 
 ## Results and verification
 

@@ -25,6 +25,7 @@ type journalCopilotAccess struct {
 	setupErr   error
 	reply      string
 	checkCalls int
+	beforeSend func(*http.Request) error
 }
 
 func (p *journalCopilotAccess) PreviewClient(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error) {
@@ -43,6 +44,11 @@ func (p *journalCopilotAccess) Validate(ctx context.Context) error              
 func (p *journalCopilotAccess) Client(modelaccess.Route) (http.RoundTripper, error) { return p, nil }
 func (p *journalCopilotAccess) RoundTrip(req *http.Request) (*http.Response, error) {
 	p.sends++
+	if p.beforeSend != nil {
+		if err := p.beforeSend(req); err != nil {
+			return nil, err
+		}
+	}
 	if req.Header.Get("Authorization") != "" {
 		panic("credential injected by runner")
 	}

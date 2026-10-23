@@ -58,8 +58,9 @@ case "$*" in 'model list --provider copilot -o json') printf '[{"model":"claude-
                  "engine.json": json.dumps({"schemaVersion": 1, "version": "v0.9.0-rc.1", "platform": self.platform.replace("-", "/"), "sha256": hashlib.sha256(engine).hexdigest()}).encode(),
                  "try-it.json": b'{"schemaVersion":1}',
                  "samples/release-writer.agent.md": b'# Release writer\n- **Preferred:** claude-haiku-5.5\njudgeModel: claude-haiku-5.5\n',
-                 "skills/kmx-agent-builder/SKILL.md": b'fixture skill', "SETUP.md": b'fixture setup'}
-        for name in ("extension.mjs", "view.mjs", "index.html", "app.js", "style.css", "authoring.mjs"):
+                 "skills/kmx-agent-builder/SKILL.md": b'fixture skill',
+                 "skills/kmx/SKILL.md": b'fixture opener skill', "SETUP.md": b'fixture setup'}
+        for name in ("extension.mjs", "view.mjs", "open.mjs", "index.html", "app.js", "style.css", "authoring.mjs"):
             files["com.github.copilot/extensions/agent-view/" + name] = b'fixture asset'
         files.update(changes)
         with tarfile.open(self.assets / self.name, "w:gz") as archive:
@@ -108,6 +109,15 @@ case "$*" in 'model list --provider copilot -o json') printf '[{"model":"claude-
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("no compatible try-it bundle", result.stdout)
         self.assertFalse(self.root.exists())
+
+    def test_missing_opener_assets_refuse_incomplete_bundle(self):
+        for name in ("com.github.copilot/extensions/agent-view/open.mjs", "skills/kmx/SKILL.md"):
+            with self.subTest(name=name):
+                self.bundle(**{name: None})
+                result = self.run_setup("--dry-run")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("no compatible try-it bundle", result.stdout)
+                self.assertFalse(self.root.exists())
 
     def test_missing_try_it_marker_refuses_old_bundle(self):
         self.bundle(**{"try-it.json": None})

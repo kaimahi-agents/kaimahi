@@ -48,7 +48,7 @@ jobs:
         with:
           node-version: '22'
       - name: Agent canvas, authoring and text fallback contracts
-        run: node --test plugins/copilot/com.github.copilot/extensions/agent-view/view.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/authoring.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/actions.test.mjs
+        run: node --test plugins/copilot/com.github.copilot/extensions/agent-view/view.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/authoring.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/actions.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/open.test.mjs
       - name: Package contracts and real MCP loop (Windows packaging only)
         run: python -m unittest discover -s plugins/copilot -p 'test_*.py' -v
 
