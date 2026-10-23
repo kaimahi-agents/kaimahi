@@ -129,6 +129,42 @@ func TestHistoryMCPRestoreUndoAndRestart(t *testing.T) {
 	}
 }
 
+func TestHistoryZeroExampleSourceRestoresThroughEdit(t *testing.T) {
+	_, root, source := canonicalFiles(t)
+	base, _ := historyPaths(t)
+	f := historyFiles(t, root, base)
+	zero := strings.Split(source, "```yaml")[0] + "```yaml\nexamples: []\n```\n"
+	original, err := f.Create(t.Context(), "greeter.agent.md", []byte(zero))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := historyClient(t, f)
+	next, result := historyEdit(t, cs, original.Path, original.Revision, strings.ReplaceAll(zero, "Hello", "Welcome"))
+	if result.IsError || next.History == nil || next.History.Status != "retained" {
+		t.Fatalf("zero-example save lost history: %+v / %+v", next, result)
+	}
+	view := readView(t, cs, original.Path)
+	if len(view.Examples) != 0 || !view.Authoring.Editable || len(view.History.Versions) != 1 {
+		t.Fatal("zero-example canonical source is not editable with history")
+	}
+	old, err := cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: view.History.Versions[0].URI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct{ Source string }
+	if json.Unmarshal([]byte(old.Contents[0].Text), &document) != nil || document.Source != zero {
+		t.Fatal("zero-example source bytes changed")
+	}
+	restored, result := historyEdit(t, cs, original.Path, next.Revision, document.Source)
+	if result.IsError || restored.Revision != original.Revision || restored.History.Status != "retained" {
+		t.Fatal("zero-example restore bypassed ordinary Edit or failed")
+	}
+	view = readView(t, cs, original.Path)
+	if len(view.History.Versions) != 2 || view.Latest.Result != nil {
+		t.Fatal("restore lost undo or fabricated execution evidence")
+	}
+}
+
 func TestHistoryFailureStillSavesAndWarnsThroughMCP(t *testing.T) {
 	for _, mode := range []string{"busy", "permissions", "corrupt", "resolver"} {
 		t.Run(mode, func(t *testing.T) {
