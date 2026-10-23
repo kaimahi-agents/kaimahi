@@ -304,6 +304,29 @@ Do not mix FILE with `--agent`, workspace, destination, evidence, native judge o
 cluster flags, including explicitly supplied defaults. Existing live
 `run --agent` and full-workspace Test contracts remain separate and unchanged.
 
+### Frozen run-profile export (unreleased)
+
+```bash
+kmx run-profile export ./release-writer.agent.md
+```
+
+Export one canonical agent file offline as deterministic JSON on stdout. It
+contains authored instructions, the exact model, ordered examples/assertions,
+source/instruction/model/example SHA-256 hashes and `targetStatus: not_run` for
+every example. No configuration, credential, provider, model, runtime or registry
+is accessed. Unsupported declarations still refuse through the canonical parser;
+there is no model override. This source-file projection is not a tested package,
+evaluation receipt, AgentSuite runtime profile or deployment authorization.
+
+Stdout is explicitly content-bearing, including inputs and judge rubrics: keep
+it private. Shell redirection can truncate an existing file before validation;
+it is caller-owned and has no kmx privacy/exclusive-create guarantee. There is
+no `--out` writer. Exit0 means complete output, exit1 means refusal/output failure;
+a failed writer may have received partial bytes. Hashes establish unsigned byte
+consistency, not source provenance, model weights, serving availability or target
+execution. Target examples and model compatibility require separate qualification.
+See the [wire format and hash rules](agent-file.md#frozen-run-profile-export-unreleased).
+
 ### Local stdio MCP
 
 `kmx mcp --root /absolute/project` serves exactly `create`, `edit`, `run` and

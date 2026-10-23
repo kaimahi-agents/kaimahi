@@ -30,6 +30,8 @@ kmx
 ├── push [reference]
 ├── deploy [<ref>@<digest>]
 ├── run --agent <name>
+├── run-profile
+│   └── export FILE
 ├── chat <name> [message...]
 ├── quickstart
 ├── status
@@ -113,6 +115,7 @@ Workspace --create/test--> AgentSuite artifact --push--> OCI location
 | `create` | Workspace | Author one offline member; no cluster or model call |
 | `test` | Workspace/prepared AgentSuite | Run full ordered native Orka/kagent cases, or pinned AgentSessions chat with explicit `--development-host FILE` and `--bindings FILE` (`AgentSessionsBinding`); stop later cases after the first non-pass |
 | `test export` | Latest completed exact-suite/member managed proof | Write new detached public evidence offline; captured tagged module/checksum or clean VCS provenance required, no evaluation or private-gate replacement |
+| `run-profile export FILE` | Canonical agent file | Content-bearing frozen JSON on stdout, with source/instruction/model/example hashes and target examples `not_run`; no configuration, execution, evidence, package or deployment authority |
 | `test verify` | Local single-manifest OCI layout + detached evidence + reviewed ExpectedEvaluation | State-free offline CI gate; digest input also requires explicit layout, text/JSON success exits0, coded refusal exits1; no private-gate authority |
 | `push` | Prepared AgentSuite | Transfer exact OCI graph with latest completed exact-S proof, explicit --evaluation override or --unevaluated opt-out; explicit tags unchanged, bare push uses saved `repository:s-<S>`; no deployment |
 | `deploy` | Workspace or exact supported packaged native AgentSuite | No-reference `--to NAME` composes missing Orka eval/push/Deploy with one frozen-plan confirmation and verified exact-version skips. Explicit reference stays deploy-only by digest with private evidence; Orka uses `--inference`, kagent uses `--bindings`; `--plan` has no execution/publication/admission; AgentSessions is a plan-only offline render with `--harness-image` and `--bindings` (apply refuses) |

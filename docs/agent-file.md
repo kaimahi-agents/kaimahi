@@ -145,6 +145,63 @@ For example, `# Legacy` refuses with `Identity.ID`, `Identity.Purpose`,
 `Model.Preferred` and the missing responsibility/Examples sections, without
 inferring identity from its folder or rewriting the file.
 
+## Frozen run-profile export (unreleased)
+
+`kmx run-profile export FILE` uses `agentfile.ExportRunProfile`, which calls
+`Load`/`Parse` once, without configuration, state, provider selection, credentials
+or execution. It accepts canonical runnable charters only, not `Inspect`'s minimal
+display files or the distinct native Squad profile. Existing tools/settings and
+safe parser refusals apply unchanged. The original source is not modified.
+
+The explicit export emits one deterministic, pretty-printed JSON document with
+a final LF, at most 2 MiB. It includes authored content, not the payload-free
+preview result. Keep it private; known-secret scanning cannot detect arbitrary
+secrets in prose. No output-file writer is provided. Shell redirection is caller
+owned and can truncate a file before validation; it does not inherit kmx privacy
+or exclusive-create guarantees. Refusal writes no profile bytes; an output failure
+exits nonzero but may leave partial bytes at the caller's destination.
+
+The experimental v1 envelope has exactly these fields:
+
+| Field | Meaning |
+|---|---|
+| `schemaVersion` | `1` |
+| `kind` | `kmx.agent-run-profile` |
+| `sourceRevision` | `sha256:<lowercase hex>` of original source bytes, including CRLF and YAML comments |
+| `agentId` | Canonical authored identity |
+| `instructions` | Object with `text` (complete canonical LF-normalized prefix before Examples) and `sha256` of that text's decoded UTF-8 bytes |
+| `model` | Object with `id` (exact authored Preferred string) and `sha256` of that string's decoded UTF-8 bytes |
+| `examples` | Ordered objects with `id`, `input`, complete ordered `assertions`, `sha256` and `targetStatus: not_run` |
+
+Each example hash is SHA-256 of **compact JSON** of a fixed object with fields
+in this order: `id`, `input`, `assertions`. Assertion objects retain authored
+`id`, `type` and applicable operands in this order: `value`, `pattern`, `tool`,
+`rubric`, `minScore`, `judgeModel`, `judgeVersion`; empty inapplicable operands
+are omitted, while an authored zero `minScore` remains present. Tool assertions
+remain unsupported. Encoding is Go `encoding/json.Marshal`'s default: HTML
+characters `<`, `>` and `&` use lowercase `\u003c`, `\u003e`, `\u0026` escapes;
+standard JSON quoting applies, UTF-8 is otherwise preserved, and there is no
+whitespace or trailing newline in the hash preimage. Neither `sha256` nor
+`targetStatus` is part of that preimage. For example:
+
+```json
+{"id":"greeting","input":"Ada","assertions":[{"id":"greeting-text","type":"contains","value":"Hello, Ada"}]}
+```
+
+These hashes include assertion IDs and are **not** runtime evaluation-definition
+digests or AgentSuite JCS digests. Paths, source locations, timestamps, routes,
+credentials, local results and build state are omitted. Comments in the Examples YAML affect
+`sourceRevision` but never become example inputs/rubrics or instructions.
+Callers may separately hash the complete emitted artifact. An unsigned profile
+and recomputable hashes establish consistency, not authenticated parser/source
+provenance or model weights/provider identity.
+
+No model or judge identity is substituted or resolved. A consuming runtime must
+separately establish compatible serving identities and run target examples;
+export cannot claim a target pass. A run profile is not an AgentSuite runtime
+profile (`--runtime-profile`), evaluation receipt, tested package, signature or
+deployment authority. Source-file projection is not exact-package continuity.
+
 ## Placement and Squad boundary
 
 The same bytes work as a standalone `<id>.agent.md` or

@@ -515,7 +515,12 @@ refuse tools and unsupported declarations. Parse/Load grant no execution,
 trusted route, source-write, Squad registration or native suite-loader authority.
 `Inspect` shares the scanner for read-only minimal titled-agent display while
 `Parse` remains the execution validator; inspection grants no Run/Test acceptance.
-Keep payload-bearing parsed values out of default logs/results. The loader
+Keep payload-bearing parsed values out of default logs/results. Explicit offline
+`run-profile export FILE` instead emits content-bearing deterministic JSON on
+stdout, preserving authored models and ordered examples/hashes with every target
+status `not_run`. It is not evaluation evidence, a package, an AgentSuite runtime
+profile or deployment authority; never resolve routes or credentials for export.
+The loader
 refuses static special files and symlink/reparse path components; it is not a hostile
 concurrent filesystem sandbox.
 

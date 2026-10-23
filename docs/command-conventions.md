@@ -20,7 +20,7 @@ kmx <noun> <verb> [object] [flags]
   `push` and full-workspace `test`. Root `test` also retains helpers (`diff`,
   `explain`, `export`, `verify`, `from-sessions`, `cleanup`); root digest `deploy` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
-  `suite build/diff/push/pull/validate` and `orka install/status/show/list`. `kmx agent` is removed entirely,
+  `suite build/diff/push/pull/validate`, `run-profile export` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
 - **Singular nouns.** Use `orka list`, not `orkas`. A plural may exist only
   as an explicitly approved hidden alias.
@@ -49,7 +49,7 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `run` | Execute once on a live Orka Agent, including a suite-owned Agent; not workspace-local execution or suite evaluation. | `kmx run --agent NAME` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
 | `test` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx test --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
-| `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx test export --member greeter --out ../evidence.json` |
+| `export` | Write a portable offline artifact without execution: evaluation evidence from completed exact-suite proof, or a frozen source-file run profile. | `kmx test export --member greeter --out ../evidence.json`; `kmx run-profile export FILE` |
 | `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace selection. | `kmx test explain [failure-id] [--workspace DIR] [--show-content\|--clear]` |
 | `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx test verify --suite ./layout --evidence evidence.json --expect expected.json` |
 | `mcp` | Serve exactly four local agent-file tools over stdio, bound to one explicit root; no network listener | `kmx mcp --root DIRECTORY` |

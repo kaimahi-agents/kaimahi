@@ -90,6 +90,16 @@ llmJudge assertion, without retries, fallback, Sessions or native judge evidence
 workspace Explain and hidden legacy Eval remain unchanged. See
 [agent-file preview](kmx.md#agent-file-local-preview-unreleased-integration).
 
+## Frozen source-file run profiles (unreleased)
+
+`run-profile export FILE` calls the canonical agent-file loader offline and emits
+one content-bearing JSON document on stdout. It preserves instructions, authored
+model/judge identities and ordered examples with hashes; every target status is
+`not_run`. It neither executes nor loads operational configuration. This is not
+`test export` evidence, an AgentSuite runtime profile, a package or a Deploy
+operation. No route/model override or file writer is provided. See the
+[run-profile contract](agent-file.md#frozen-run-profile-export-unreleased).
+
 ## Independent evaluation helpers
 
 `test export [--workspace DIR] --member ID --out FILE` writes detached public

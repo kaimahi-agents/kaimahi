@@ -1,6 +1,7 @@
 // Package agentfile parses and loads single-file agent charters.
 // Explicit Squad parsing returns a distinct charter type, not a runnable Agent.
-// Parsing and inspection do not execute agents or register them with Squad.
+// Offline run-profile export preserves canonical content and hashes, not evidence.
+// Parsing, inspection and export do not execute agents or register them with Squad.
 package agentfile
 
 import (
