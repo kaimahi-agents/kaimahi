@@ -92,7 +92,7 @@ func TestToolRunnerOptionalCallCountsAndReplay(t *testing.T) {
 }
 
 func TestToolRunnerPreflightAndCopilotHaveNoEffects(t *testing.T) {
-	for _, field := range []string{"input", "instruction", "example ID", "assertion ID", "file label", "judge model", "copilot agent", "copilot judge", "missing factory"} {
+	for _, field := range []string{"input", "instruction", "native task", "example ID", "assertion ID", "file label", "judge model", "copilot agent", "copilot judge", "missing factory"} {
 		t.Run(field, func(t *testing.T) {
 			req := runnerRequest(t)
 			req.Agent.Tools = []string{localtools.Operation}
@@ -102,6 +102,8 @@ func TestToolRunnerPreflightAndCopilotHaveNoEffects(t *testing.T) {
 				req.Examples[0].Input = "tool-secret-canary"
 			case "instruction":
 				req.Agent.Instructions = "tool-secret-canary"
+			case "native task":
+				req.Agent.NativeTaskInstructions = "tool-secret-canary"
 			case "example ID":
 				req.Examples[0].ID = "tool-secret-canary"
 			case "assertion ID":

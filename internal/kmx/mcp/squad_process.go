@@ -25,11 +25,22 @@ func (w *limitedSquadOutput) Write(p []byte) (int, error) {
 }
 
 func (c *SquadCreator) cast(ctx context.Context, m SquadMember) (bool, error) {
+	return c.invoke(ctx, []string{"cast", "--name", m.ID, "--role", m.Role})
+}
+
+// argv is formed only by the two fixed internal init/cast call sites.
+func (c *SquadCreator) invoke(ctx context.Context, argv []string) (bool, error) {
+	if err := c.checkProgram(); err != nil {
+		return false, err
+	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(bounded, c.program, "cast", "--name", m.ID, "--role", m.Role)
+	cmd := exec.CommandContext(bounded, c.program, argv...)
 	cmd.Dir = c.root.Name()
 	cmd.Env = squadEnvironment()
+	if c.allowSetup {
+		cmd.Env = append(cmd.Env, c.setupEnvironment()...)
+	}
 	// Nil stdin is closed/non-TTY. No parent-added shell or arbitrary arguments;
 	// the qualified installed launcher may itself use its native interpreter.
 	var stdout, stderr limitedSquadOutput
@@ -46,6 +57,9 @@ func (c *SquadCreator) cast(ctx context.Context, m SquadMember) (bool, error) {
 			// ErrWaitDelay can mean a descendant still holds output pipes. Do
 			// not call that a nonzero primary exit or enrich on uncertain IO.
 			return true, refusal("squad_child_io_unknown")
+		}
+		if argv[0] == "init" {
+			return false, refusal("squad_setup_failed")
 		}
 		return false, refusal("squad_cast_failed")
 	}
