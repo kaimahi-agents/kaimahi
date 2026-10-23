@@ -1,6 +1,8 @@
 // Package agentfile parses and loads single-file agent charters.
 // Explicit Squad parsing returns a distinct charter type, not a runnable Agent.
 // Parsing and inspection do not execute agents or register them with Squad.
+// Frozen run profiles preserve canonical instructions/model/examples and their
+// identities without packaging, execution or target-qualification authority.
 package agentfile
 
 import (

@@ -46,10 +46,10 @@ Use one verb per meaning. Do not add a synonym for an existing verb.
 | `create` | Author one tool-free workspace member offline; terminal prompts complete missing model/file inputs, scripts require both flags. No runtime/model bootstrap. | `kmx create <name>` |
 | `install` | Install runtime software onto a cluster. | `kmx orka install` |
 | `up` / `down` | Bring an environment up, or tear it down including its data. | `kmx aks up` |
-| `run` | Execute once on a live Orka Agent, including a suite-owned Agent; not workspace-local execution or suite evaluation. | `kmx run --agent NAME` |
+| `run` | Preview a canonical FILE or execute once on a live Orka Agent; not native workspace evaluation. Explicit `run export` freezes a file profile offline without execution. | `kmx run FILE`; `kmx run --agent NAME`; `kmx run export FILE --out FILE` |
 | `chat` | Open an interactive session. | `kmx chat <name>` |
 | `test` | Place and evaluate the full packaged native workspace inventory. | Orka: `kmx test --to-context <ctx> --inference provider:NAME --out <private.json>`; kagent: replace `--inference` with `--bindings FILE` |
-| `export` | Write new portable evaluation evidence from completed exact-suite proof, without evaluation. | `kmx test export --member greeter --out ../evidence.json` |
+| `export` | Write a new offline artifact, not execute it: `test export` requires completed exact-suite passing proof; `run export` freezes canonical source with target examples not-run. | `kmx test export --member greeter --out ../evidence.json`; `kmx run export FILE --out FILE` |
 | `explain` | Inspect private local evaluation failures offline; content opt-in. `--clear` deletes one ID, or all only with explicit workspace selection. | `kmx test explain [failure-id] [--workspace DIR] [--show-content\|--clear]` |
 | `verify` | Check public evidence against a local suite and independent accepted subject/policy, offline. | `kmx test verify --suite ./layout --evidence evidence.json --expect expected.json` |
 | `mcp` | Serve exactly four local agent-file tools over stdio, bound to one explicit root; no network listener | `kmx mcp --root DIRECTORY` |

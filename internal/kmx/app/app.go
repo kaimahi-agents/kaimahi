@@ -4,6 +4,8 @@
 // App coordinates consent, side effects and runtime-specific evidence.
 // Placement observations are distinct from evaluation proof; successful
 // placement alone must not be treated as proof of agent behavior.
+// Canonical file run-profile export is offline, private and config-free;
+// it freezes source content without execution or passing evidence.
 package app
 
 import (

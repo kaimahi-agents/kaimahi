@@ -29,7 +29,8 @@ kmx
 │   └── from-sessions <session-uid>...
 ├── push [reference]
 ├── deploy [<ref>@<digest>]
-├── run --agent <name>
+├── run [FILE] (or --agent <name>)
+│   └── export FILE --out FILE
 ├── chat <name> [message...]
 ├── quickstart
 ├── status
@@ -117,6 +118,7 @@ Workspace --create/test--> AgentSuite artifact --push--> OCI location
 | `push` | Prepared AgentSuite | Transfer exact OCI graph with latest completed exact-S proof, explicit --evaluation override or --unevaluated opt-out; explicit tags unchanged, bare push uses saved `repository:s-<S>`; no deployment |
 | `deploy` | Workspace or exact supported packaged native AgentSuite | No-reference `--to NAME` composes missing Orka eval/push/Deploy with one frozen-plan confirmation and verified exact-version skips. Explicit reference stays deploy-only by digest with private evidence; Orka uses `--inference`, kagent uses `--bindings`; `--plan` has no execution/publication/admission; AgentSessions is a plan-only offline render with `--harness-image` and `--bindings` (apply refuses) |
 | `run`, `chat` | Existing live Orka Agent | One Task or interactive session; never workspace execution |
+| `run export` | Canonical agent file | Offline frozen source/model/examples profile; target examples not-run, no execution or passing evidence |
 | `status --to NAME` | Named destination namespace | GET-only table/JSON deployed-Agent provenance/readiness inventory; separate candidates, unknown is not absent |
 | `orka status` | Orka installation | Table-only runtime report, not destination placement inspection |
 

@@ -304,6 +304,19 @@ Do not mix FILE with `--agent`, workspace, destination, evidence, native judge o
 cluster flags, including explicitly supplied defaults. Existing live
 `run --agent` and full-workspace Test contracts remain separate and unchanged.
 
+### Frozen run-profile export
+
+`kmx run export FILE --out FILE` freezes a canonical agent file without execution.
+The new private JSON file preserves instructions, authored model and complete
+ordered examples with hashes; target examples remain `not-run`. Stdout contains
+only hash/model/status metadata. No cluster configuration, model, judge, registry
+or runtime is contacted. Select a new file in an existing mode 0700 directory;
+symlink paths and existing outputs refuse. Native Windows publication refuses.
+A source literally named `export` needs `./export` for ordinary preview.
+This is not passing evidence, packaging or Deploy; actual target model selection
+stays host-owned. See [frozen profile contract](agent-file.md#frozen-run-profile-export)
+for serialization, generic Sessions config and partial-publication limits.
+
 ### Local stdio MCP
 
 `kmx mcp --root /absolute/project` serves exactly `create`, `edit`, `run` and

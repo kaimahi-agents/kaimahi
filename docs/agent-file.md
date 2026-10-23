@@ -285,6 +285,69 @@ Windows test-child execution is not Windows Squad/CLI qualification. An opt-in
 installed-Squad test separately performs native init and actual catalog/fallback
 cast/enrich in an isolated project/HOME; it runs no model or coordinator dispatch.
 
+## Frozen run-profile export
+
+```sh
+mkdir -m 700 ./private-profile
+kmx run export ./release-writer.agent.md --out ./private-profile/run.json
+```
+
+This offline helper loads one canonical source snapshot through the same parser
+as Run/Test. It does not discover configuration, call a model/judge/registry,
+start Sessions, publish notes or deploy. Stdout is one content-free JSON summary;
+the new mode 0600 file contains authored instructions, inputs and rubrics.
+Keep that content private. Use an existing mode 0700 output directory with no
+symlink ancestors. Existing files, even identical ones, are never replaced.
+Native Windows private publication is unavailable; it refuses without writing.
+
+The unsigned `kmx.run-profile/v1` document contains:
+
+| Field | Meaning |
+| --- | --- |
+| `agentID`, `sourceRevision` | Canonical ID and exact original-source byte SHA-256 revision. |
+| `authoredModel` | Exact nonempty authored model, not an observed target deployment. |
+| `instructions`, `instructionsSHA256` | Exact canonical instruction projection and its UTF-8 SHA-256. |
+| `sessionConfig`, `sessionConfigSHA256` | Generic Sessions chat config containing only `system_prompt`, plus its exact JSON-byte SHA-256. |
+| `examples` | All ordered parsed IDs, inputs and complete typed assertion definitions, each with a `sha256`. |
+| `examplesSHA256` | SHA-256 of the complete ordered examples JSON array. |
+| `targetExamples` | Always `not-run`, never a pass/ready verdict. |
+
+Each case hash covers the compact JSON object in field order `id`, `input`,
+`assertions`, before adding its `sha256` field. The array hash includes those
+case hashes. Go `json.Marshal` encoding is used: HTML characters are escaped,
+UTF-8 is retained, absent assertion operands use their existing `omitempty`
+rules, and fields/order are fixed by this version. These are hashes of kmx's
+JSON, **not original YAML case-byte hashes**. All digests use `sha256:` followed
+by 64 lowercase hex characters. The summary's `profileSHA256` covers the entire
+exact file including its final newline; the file does not contain its own hash.
+Reformatting/re-encoding changes byte identities. In particular, retain exact
+`sessionConfig` bytes when comparing their hash with a runtime's recorded config.
+
+Original source revision retains CRLF identity; instructions normalize CRLF to
+LF and exclude Examples. Examples comments and source locations/paths are not
+exported. The profile freezes the loaded snapshot: later source edits do not
+update it, and a new source revision needs a new export and new target evidence.
+A syntax error or unsupported declaration refuses; inspection-only and native
+Squad shapes are not silently accepted. The encoded profile is bounded to 4 MiB.
+
+`sessionConfig` uses the existing opaque execution-Config seam and chat harness's
+`system_prompt` field. A runtime need not read agent files or understand the kmx
+profile envelope. Export does not select/contact that runtime or claim a harness
+is installed. Authored model remains separate from host-owned target model;
+a different-model target run must explicitly record/disclose that difference.
+No export hash establishes parser/build attestation, image identity, approval,
+package-digest deployment, actual model execution or passing target examples.
+Full target example qualification, including judges, is a separate operation.
+
+File publication stages/syncs content and exclusively links the new destination,
+then checks/syncs its parent. A failure after publication can leave the complete
+file visible: `output may exist` means inspect that original path, not overwrite,
+retry or silently delete it. No old state is adopted or repaired. Private anchored
+paths are cooperative protections, not a sandbox against a hostile same-UID writer.
+If the source is literally named `export`, use `kmx run ./export` for ordinary
+preview; bare `kmx run export` names this helper. Existing live `--prompt export`
+is still input, not a subcommand.
+
 ## Future AgentSuite mapping — not implemented
 
 Identity.ID could identify one member; the prefix instructions could become its

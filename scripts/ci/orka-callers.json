@@ -183,7 +183,12 @@
     {"file":"internal/kmx/modelaccess/route.go","path":"errors"},
     {"file":"internal/kmx/modelaccess/route.go","path":"net/url"},
     {"file":"internal/kmx/modelaccess/route.go","path":"regexp"},
-    {"file":"internal/kmx/modelaccess/route.go","path":"strings"}
+    {"file":"internal/kmx/modelaccess/route.go","path":"strings"},
+    {"file":"internal/kmx/agentfile/profile.go","path":"crypto/sha256"},
+    {"file":"internal/kmx/agentfile/profile.go","path":"encoding/json"},
+    {"file":"internal/kmx/agentfile/profile.go","path":"errors"},
+    {"file":"internal/kmx/agentfile/profile.go","path":"fmt"},
+    {"file":"internal/kmx/agentfile/profile.go","path":"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"}
   ],
   "edges": [
     {"caller":"cmd/kmx/agent_file_commands.go","caller_object":"github.com/kaimahi-agents/kaimahi/cmd/kmx.fileModelRoute","callee":"internal/kmx/modelaccess/route.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess.CopilotEndpoint"},
@@ -714,7 +719,14 @@
     {"caller":"internal/kmx/modelaccess/copilot/transport.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot.transport","callee":"internal/kmx/modelaccess/route.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess.Route"},
     {"caller":"internal/kmx/modelaccess/copilot/transport.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot.transport.RoundTrip","callee":"internal/kmx/modelaccess/route.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess.Route.Model"},
     {"caller":"internal/kmx/modelaccess/copilot/transport.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot.transport.RoundTrip","callee":"internal/kmx/modelaccess/route.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess.Route.Provider"},
-    {"caller":"internal/kmx/modelaccess/copilot/transport.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot.transport.RoundTrip","callee":"internal/kmx/modelaccess/route.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess.Select"}
+    {"caller":"internal/kmx/modelaccess/copilot/transport.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot.transport.RoundTrip","callee":"internal/kmx/modelaccess/route.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess.Select"},
+    {"caller":"internal/kmx/agentfile/profile.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile.runProfileExampleBody","callee":"internal/kmx/runtime/evaluation_assertions.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime.EvaluationAssertion"},
+    {"caller":"internal/kmx/app/agent_file_export.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/app.App.ExportAgentRunProfile","callee":"internal/kmx/agentfile/load.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile.Load"},
+    {"caller":"internal/kmx/app/agent_file_export.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/app.App.ExportAgentRunProfile","callee":"internal/kmx/agentfile/profile.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile.FreezeRunProfile"},
+    {"caller":"internal/kmx/app/agent_file_export.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/app.App.ExportAgentRunProfile","callee":"internal/kmx/agentfile/profile.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile.RunProfileSummary"},
+    {"caller":"internal/kmx/app/agent_file_export_test.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/app.TestAgentRunProfileExportOfflineAndExclusive","callee":"internal/kmx/agentfile/profile.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile.RunProfileSummary.AuthoredModel"},
+    {"caller":"internal/kmx/app/agent_file_export_test.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/app.TestAgentRunProfileExportOfflineAndExclusive","callee":"internal/kmx/agentfile/profile.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile.RunProfileSummary.ExampleCount"},
+    {"caller":"internal/kmx/app/agent_file_export_test.go","caller_object":"github.com/kaimahi-agents/kaimahi/internal/kmx/app.TestAgentRunProfileExportOfflineAndExclusive","callee":"internal/kmx/agentfile/profile.go","object":"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile.RunProfileSummary.TargetExamples"}
   ],
   "safe_from_run": [
     "internal/kmx/agentfile/examples.go",
@@ -735,7 +747,8 @@
     "internal/kmx/mcp/squad_identity.go",
     "internal/kmx/modelaccess/install.go",
     "internal/kmx/modelaccess/local.go",
-    "internal/kmx/modelaccess/route.go"
+    "internal/kmx/modelaccess/route.go",
+    "internal/kmx/agentfile/profile.go"
   ],
   "safe_to_run": [
     "internal/kmx/agentfile/examples.go",
@@ -758,6 +771,7 @@
     "internal/kmx/mcp/squad_enrich.go",
     "internal/kmx/mcp/squad_identity.go",
     "internal/kmx/mcp/squad_process.go",
-    "internal/kmx/mcp/squad_root.go"
+    "internal/kmx/mcp/squad_root.go",
+    "internal/kmx/agentfile/profile.go"
   ]
 }

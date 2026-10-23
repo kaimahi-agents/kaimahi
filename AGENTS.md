@@ -438,6 +438,15 @@ changes in the package's Go doc comment.
 
 ## Agent-file preview boundary
 
+`run export FILE --out FILE` is a separate config-free offline helper. It uses
+canonical Load/Parse once, freezes source/model/instruction/example identities
+and generic Sessions `system_prompt` config, and marks target examples not-run.
+Its content-bearing private artifact is not a package, receipt or target proof;
+no runtime, model, judge or registry is contacted. Reuse the anchored exclusive
+publisher; preserve native Windows publication refusal until qualified writes
+exist. Runtime model selection remains host-owned and separate from authored
+model identity. Source parsing and kmx-format handling stay in kmx, not hosts.
+
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
 interface without cluster/workspace configuration. CLI/MCP fake/local routes
 use embedded Sessions: optional ad-hoc input first, selected ordered examples,

@@ -72,6 +72,7 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 		}
 		return liveRun(cmd, args)
 	}
+	cmd.AddCommand(newAgentRunExportCommand(state))
 	return cmd
 }
 

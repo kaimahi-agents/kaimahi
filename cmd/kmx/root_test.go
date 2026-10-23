@@ -359,7 +359,7 @@ func commandPaths(root *cobra.Command) []string {
 func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 	want := []string{
 		"test", "test cleanup", "test diff", "test explain", "test export", "test from-sessions", "test verify",
-		"create", "chat", "run", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "push", "deploy", "lift",
+		"create", "chat", "run", "run export", "eval", "eval cleanup", "eval diff", "eval explain", "eval export", "eval from-sessions", "eval verify", "push", "deploy", "lift",
 		"aks", "aks up", "aks down", "completion",
 		"context", "context show", "context use", "ctx", "local", "local up", "local down", "mcp", "model", "model list", "model login", "model logout",
 		"orka", "orka install", "orka status", "orka show", "orka list",

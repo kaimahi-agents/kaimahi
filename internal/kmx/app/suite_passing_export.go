@@ -42,8 +42,23 @@ func preflightSuitePassingExportMode(ctx context.Context, destination, workspace
 	if scaffold.RefuseKeyShapes(destination) != nil || suiteReceiptInside(destination, workspaceRoot) || suiteReceiptInside(destination, cacheRoot) {
 		return nil, errSuitePassingFile
 	}
+	return preflightDetachedExport(ctx, destination, publicParent)
+}
+
+// preflightDetachedExport shares only private file publication; callers retain
+// their own source, workspace and receipt eligibility checks.
+func preflightDetachedExport(ctx context.Context, destination string, publicParent bool) (*suitePassingExport, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if scaffold.RefuseKeyShapes(destination) != nil {
+		return nil, errSuitePassingFile
+	}
 	root, name, parent, err := openSessionReferenceDirectory(destination)
 	if err != nil {
+		if errors.Is(err, errors.ErrUnsupported) {
+			return nil, errors.Join(errSuitePassingFile, errors.ErrUnsupported)
+		}
 		return nil, errSuitePassingFile
 	}
 	if !publicParent && parent.Mode().Perm()&0077 != 0 {
