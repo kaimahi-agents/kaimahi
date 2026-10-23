@@ -90,13 +90,17 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ inputs.version }}
           SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           # `synthetic` marks the one case where the version was invented by
           # this job rather than chosen by a person: a manual dry run with no
           # version given. It exists so the notes step can tell "rehearse a
-          # release" from "rehearse the machinery" — v0.0.0-dryrun.<sha> has
-          # no changelog section and never will.
+          # release" from "rehearse the machinery". Run ID and attempt make
+          # the stamped binaries/checksums distinct even for the same commit;
+          # repeated rehearsals must not re-sign an identical log payload.
+          # Synthetic versions have no changelog section and never will.
           synthetic=false
           if [ "$EVENT_NAME" = push ] && [ "$REF_TYPE" = tag ]; then
             version="$REF_NAME"
@@ -105,7 +109,7 @@ jobs:
             version="$INPUT_VERSION"
             dry_run=true
           else
-            version="v0.0.0-dryrun.${SHA:0:12}"
+            version="v0.0.0-dryrun.${SHA:0:12}.${RUN_ID}.${RUN_ATTEMPT}"
             dry_run=true
             synthetic=true
           fi
@@ -137,7 +141,7 @@ jobs:
       # That refusal applies to every version a PERSON named — a tag, or a
       # dry run given an explicit version, which is how you rehearse a
       # release before cutting it. It cannot apply to a version this job
-      # invented for a dry run: v0.0.0-dryrun.<sha> has no section, so
+      # invented for a dry run: v0.0.0-dryrun.<sha>.<run>.<attempt> has no section, so
       # requiring one would make the "debug the release job without burning
       # a version number" path fail before it built anything. That case
       # reads the Unreleased section instead — the extractor still runs, and
