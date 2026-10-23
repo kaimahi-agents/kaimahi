@@ -211,7 +211,7 @@ func TestParseZeroExamplesRoundTrip(t *testing.T) {
 	if err != nil || a == nil || len(a.Examples) != 0 || a.Revision != fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(source))) {
 		t.Fatalf("zero examples refused or changed: %+v / %v", a, err)
 	}
-	path := filepath.Join(t.TempDir(), "greeter.agent.md")
+	path := filepath.Join(realTemp(t), "greeter.agent.md")
 	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
 		t.Fatal(err)
 	}
