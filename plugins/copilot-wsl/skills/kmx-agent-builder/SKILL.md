@@ -35,8 +35,9 @@ Do not put credentials in agent files, logs or command arguments.
    No automatic Run/Test is needed just to create and open an agent.
 
 Use the user's named model for a real task. The deterministic `fake` example
-below is only for orientation. Real execution needs an available configured model
-route; report a provider error as an error, not as a passing result.
+below is only for orientation. An unbound server uses Copilot for the authored
+real model by default; no provider setup is needed. Explicit startup routes still
+take precedence. Report a provider error as an error, not as a passing result.
 Before the first hosted-model run, say once: "Testing sends the agent prompt and
 test inputs to the selected hosted model." This is a notice, not a confirmation.
 

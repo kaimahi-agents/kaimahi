@@ -20,7 +20,9 @@ import (
 )
 
 // Operations binds the four tools directly to canonical parsing and the shared
-// snapshot operation. The route is trusted startup configuration, never tool input.
+// snapshot operation. An explicit route is trusted startup configuration, never
+// tool input. Without one, unbound real-model previews use Copilot; fake and
+// legacy root-bound previews retain their existing route behavior.
 // A nil runner retains the application's honest runner_unavailable result.
 func Operations(files *Files, application *app.App, route *modelaccess.Route) map[string]Operation {
 	ops := AuthoringOperations(files)
@@ -62,7 +64,11 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if parseErr != nil && !errors.As(parseErr, &detail) {
 				return nil, parseErr
 			}
-			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Route: selected})
+			executionRoute := selected
+			if executionRoute == nil && files.root == nil && parsed != nil && parsed.Model != "fake" {
+				executionRoute = &modelaccess.Route{Provider: "copilot", Model: parsed.Model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+			}
+			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Route: executionRoute})
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 			}

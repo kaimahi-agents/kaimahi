@@ -515,7 +515,7 @@ editability. A restart has no current result;
 a revision change marks the old observation stale and withholds its details.
 Reads perform no inference, mutation or journal retrieval.
 
-The [Copilot plugin](../plugins/copilot/README.md#read-only-agent-view) adds a
+The [WSL Copilot plugin](../plugins/copilot-wsl/README.md) adds a
 native authoring canvas and read-only `/agent-view PATH` text fallback over this
 resource. Canvas Edit/Test/Run use existing same-session MCP tools; only explicit
 Suggest more starts chat. Saves require the original revision; changed result
@@ -523,13 +523,15 @@ revisions are labelled stale rather than silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
 
-A real model route must be selected at process startup with trusted
-`--provider` and, for local routes, `--endpoint`; the exact model still comes from
-the parsed file. For Copilot, use `kmx mcp --provider copilot`
-after explicit sign-in. The same fixed endpoint and hosted-content disclosure
-apply; startup itself performs no sign-in, credential access or model request.
-Tools accept no endpoint, credential or arbitrary-command fields. With no route,
-only exact `fake` is selectable. Run/Test use the same
+Unbound `kmx mcp` uses Copilot for non-fake authored models when no startup route
+is selected. Authored `fake` remains offline. Explicit trusted `--provider` and,
+for local routes, `--endpoint` override that default; the exact model still comes
+from the parsed file. Legacy `--root` mode retains its existing fake-only behavior
+without an explicit route. Copilot uses the fixed endpoint and existing runtime
+credentials, without an installation-time model or login step. Hosted-content
+disclosure still applies; startup itself performs no sign-in, credential access
+or model request. Tools accept no endpoint, credential or arbitrary-command fields.
+Run/Test use the same
 [file preview runner](#agent-file-local-preview-unreleased-integration) as the
 CLI: fake/local routes use embedded Sessions and one private journal; an agent
 or judge using Copilot keeps direct execution with `NoJournal` and the explicit

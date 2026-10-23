@@ -51,6 +51,25 @@ no Azure account or model key is needed.
 
 Use a dedicated test environment. See [other install methods, prerequisites and cleanup](docs/getting-started.md).
 
+## Agent files in Windows Copilot
+
+For the Markdown-agent inner loop without a Kubernetes cluster, use the
+[WSL Copilot plugin](plugins/copilot-wsl/README.md). In WSL, from this checkout:
+
+```sh
+go build -o bin/kmx ./cmd/kmx && sudo install -m 0755 bin/kmx /usr/local/bin/kmx
+```
+
+Then, in a Windows terminal:
+
+```powershell
+copilot plugin install kaimahi-agents/kaimahi:plugins/copilot-wsl
+```
+
+Ask Copilot to create an agent through kmx and open its canvas. No folder or model
+is selected at install time. The agent file names the model; canvas edits save
+back to that file, and Enter tests it. This preview is not deployment evidence.
+
 ## Go deeper
 
 - [Create an agent of your own](docs/getting-started.md#an-agent-of-your-own): instructions, model selection and destination setup.

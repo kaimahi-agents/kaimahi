@@ -1,5 +1,7 @@
 // Package mcp adapts local agent-file operations to stdio MCP.
 // File access is agent-only, optionally root-bound; execution uses shared App snapshots.
+// Unbound non-fake previews default to Copilot's fixed endpoint and the authored
+// model; explicit routes, fake previews and legacy root-bound behavior are unchanged.
 // Tool requests must not choose model endpoints or substitute a runner.
 // The canonical resource includes an exact, revision-bound authoring snapshot.
 // Optional failure-only excerpts exclude passing and unknown answers from safe

@@ -21,9 +21,11 @@ changes in the package's Go doc comment.
   unavailable. Logout clears only kmx's item/memory, not gh or environment auth.
   `internal/kmx/modelaccess/copilot` returns a selected-route RoundTripper for
   direct JSON/SSE Chat Completions, not a proxy or CLI-chat replacement.
-  File Run/Test and shared MCP execution consume it only with explicit
-  `--provider copilot`, exact authored model and prior sign-in. Default only
-  the pinned Copilot endpoint; refuse other endpoints before credential access.
+  File CLI Run/Test consume it with explicit `--provider copilot`; unbound MCP
+  defaults non-fake authored models to Copilot when no startup route is selected.
+  Both use the exact authored model and existing available credentials. Explicit
+  routes, authored fake and legacy root-bound MCP behavior remain unchanged.
+  Default only the pinned Copilot endpoint; refuse other endpoints before credential access.
   Never inject tokens in the runner. Keep known Copilot errors static and safe,
   stop later sends on them (including judging), and preserve cancellation.
   Establish auth through the catalog; exchange only after credential refusal,
@@ -492,8 +494,9 @@ plugins and the separately configured native Squad flow. Expose exactly
 Create/Edit/Run/Test; call canonical parsing and `App.PreviewAgentSnapshot`,
 never the path wrapper or shell CLI strings. Optional native v2 targets use
 explicit `App.PreviewSquadSnapshot` and revalidated native state, not auto-detection.
-Model routes are trusted startup
-configuration, not tool/charter fields. Keep complete safe App results on errors;
+Provider/endpoint selection comes from trusted startup configuration or the
+fixed unbound Copilot default, never from tool/charter endpoint fields; the exact
+model comes from the parsed agent file. Keep complete safe App results on errors;
 App owns full-path projection and credential redaction; MCP must not restore raw
 paths after it returns. Fixture runners are not production execution. Edit preserves mode bits, not
 ownership/ACLs/xattrs; normal directory inheritance is the day-0 own-file contract.
@@ -508,6 +511,12 @@ Safe model excerpts retain the existing showContent opt-in.
 Latest preview state is process-local, revision-bound and never inferred on read.
 The separate native Copilot view uses the host SDK and a private loopback asset
 bridge, without mutations or direct agent-file reads.
+The repository-installable WSL plugin lives in `plugins/copilot-wsl`, including
+shared skills and canvas runtime assets. Legacy native packaging copies these
+same sources; do not maintain a second canvas/skill implementation. Keep its MCP
+command exactly `wsl.exe -e /usr/local/bin/kmx mcp`, without a bundled engine,
+root/model configuration or installation helper. Node tests stay outside the
+installable tree under `plugins/copilot`.
 See [MCP](docs/kmx.md#local-stdio-mcp).
 
 ## Internal native Squad authoring boundary

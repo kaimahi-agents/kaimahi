@@ -20,7 +20,7 @@ new deployment mode.
 | VS Code/editor-connected access | Not used. No editor credential extraction or implicit editor login reuse. |
 | Standalone local sign-in and model listing | Explicit `kmx model login`, opt-in `login --gh`, `logout` and `list --provider copilot`. |
 | Direct selected-model requests | An internal in-process JSON/SSE transport with a non-secret route and kmx-owned credential facility. No model substitution or automatic inference replay. |
-| Agent Run/Test integration | Markdown-file Run/Test and the shared MCP path accept explicit `--provider copilot` through the temporary tool-free, no-journal runner. See [file preview](kmx.md#agent-file-local-preview-unreleased-integration). Native workspace execution is separate. |
+| Agent Run/Test integration | Markdown-file Run/Test accepts explicit `--provider copilot`; unbound MCP defaults non-fake authored models to Copilot when no startup route is selected. Both use the temporary tool-free, no-journal runner. See [file preview](kmx.md#agent-file-local-preview-unreleased-integration). Native workspace execution is separate. |
 | CI, unattended/headless and hosted runners | Runtime credentials can supply auth without an OS keychain, but no runner deployment is qualified here. Hermetic CI tests use fake credentials and endpoints, not a live Copilot account. |
 
 Listing does not initiate OAuth. Explicit sign-in is a user operation, not a CI

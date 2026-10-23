@@ -121,8 +121,10 @@ Markdown-file `kmx run FILE --provider copilot` and
 tool-free preview runner; set the file's `Model.Preferred` to an exact listed
 model first. The endpoint defaults to the fixed Copilot endpoint, and execution
 never initiates login. Instructions and inputs are sent to the hosted service.
-The same route can be selected at trusted MCP startup. This is not a new
-harness or native workspace/deployment integration. See
+Unbound MCP uses the same route by default for the authored non-fake model;
+trusted startup provider overrides still take precedence. Legacy root-bound MCP
+requires an explicit route for real models. This is not a new harness or native
+workspace/deployment integration. See
 [file preview](kmx.md#agent-file-local-preview-unreleased-integration) and
 [direct Copilot transport](copilot-inference.md#direct-model-access)
 for usage, refusal codes and authentication behavior.
