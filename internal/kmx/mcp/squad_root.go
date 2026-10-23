@@ -41,7 +41,7 @@ func (c *SquadCreator) readLocal(p string) ([]byte, error) {
 	return b, nil
 }
 
-func (c *SquadCreator) checkRoot() error {
+func (c *SquadCreator) checkSelectedRoot() error {
 	bad := func() error { return refusal("unsafe_squad_root") }
 	pinned, err := c.root.Stat(".")
 	if err != nil {
@@ -61,6 +61,14 @@ func (c *SquadCreator) checkRoot() error {
 		if _, err := c.root.Lstat(p); !os.IsNotExist(err) {
 			return bad()
 		}
+	}
+	return nil
+}
+
+func (c *SquadCreator) checkRoot() error {
+	bad := func() error { return refusal("unsafe_squad_root") }
+	if err := c.checkSelectedRoot(); err != nil {
+		return err
 	}
 	dir, err := c.root.Lstat(".squad")
 	if err != nil || !dir.IsDir() || dir.Mode()&os.ModeSymlink != 0 {
@@ -102,6 +110,13 @@ func (c *SquadCreator) checkRoot() error {
 // snapshot observes retained files, not every transient write performed by the
 // native process. It rejects static link/special-file hazards before invoking it.
 func (c *SquadCreator) snapshot() (map[string]string, error) {
+	if c.allowSetup {
+		return c.setupSnapshot()
+	}
+	return c.castSnapshot()
+}
+
+func (c *SquadCreator) castSnapshot() (map[string]string, error) {
 	seen := map[string]string{}
 	total, count := 0, 0
 	err := fs.WalkDir(c.root.FS(), ".squad", func(p string, entry fs.DirEntry, walkErr error) error {
@@ -162,11 +177,18 @@ func (c *SquadCreator) snapshot() (map[string]string, error) {
 	return seen, nil
 }
 
-func (c *SquadCreator) preflightMember(m SquadMember, seen map[string]string) error {
+func squadRecoveryRequired(seen map[string]string) bool {
 	for p := range seen {
 		if p == ".squad/casting/registry.lock" || strings.HasPrefix(p, ".squad/casting/registry.lock.") || strings.HasPrefix(p, ".squad/casting/registry-history.transaction") || (strings.HasPrefix(p, ".squad/casting/") && strings.Contains(p, ".tmp-")) {
-			return refusal("squad_recovery_required")
+			return true
 		}
+	}
+	return false
+}
+
+func (c *SquadCreator) preflightMember(m SquadMember, seen map[string]string) error {
+	if squadRecoveryRequired(seen) {
+		return refusal("squad_recovery_required")
 	}
 	if _, err := c.root.Lstat(".squad/agents/" + m.ID); !os.IsNotExist(err) {
 		return refusal("already_exists")

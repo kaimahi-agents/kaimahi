@@ -169,7 +169,7 @@ prompts across hosts.
 
 ## Native Squad profile — internal foundation
 
-`Parse`/`Load` and current file Run/Test/MCP remain canonical-only. Explicit
+`Parse`/`Load`, file Run/Test and v1 MCP remain canonical-only. Explicit
 `ParseSquad(filename, bytes, SquadProfile)` separately accepts the qualified
 **Squad 1.1.0** cast shapes; it does not auto-detect or import arbitrary charters.
 The [captured catalog and fallback fixtures](../internal/kmx/agentfile/testdata/squad-v1.1.0/README.md)
@@ -211,24 +211,33 @@ a source revision or `Enriched=true` is not a package-bound pass.
 
 ### Internal native cast and enrich
 
-`mcp.OpenSquad` and `SquadCreator.Create` add a separate internal authoring core,
-not new CLI flags or MCP bindings. Current four-tool/v1 behavior is unchanged.
-The host must approve composition, native side effects and the owned charter
-changes before invoking it. The operator separately initializes and reviews the
-local project with Squad; this core never runs init, downloads a dependency or
-selects/upgrades a runtime.
+`mcp.OpenSquad` remains the initialized-only cast/enrich core. Explicit trusted
+startup may enable `OpenSquadSetup` and native v2 branches of the same four tools;
+see [native MCP](kmx.md#optional-native-squad-chat-flow). With no native dependency
+configured, four-tool/v1 discovery and behavior are unchanged. The host must
+approve composition, native setup effects and owned charter changes before Create.
+Startup/discovery is read-only. Conditional setup runs fixed
+`init --no-workflows --no-vscode-default` only when `.squad` is absent; existing
+supported setup is validated/reused, never reinitialized. There is no dependency
+download, implicit runtime choice, upgrade, recovery or rollback.
 
 Trusted startup supplies the installed absolute executable, declared qualified
 release `1.1.0` and matching platform. Those labels and file identity checks do
 not authenticate the program or its runtime bundle. There is no version-probe
-child or shell fallback: the only action is `cast --name ID --role ROLE` at the
-selected root. Batch/PowerShell-associated launcher extensions refuse, and
+child or shell fallback: apart from the guarded conditional init, the only action
+is `cast --name ID --role ROLE` at the selected root. Batch/PowerShell-associated launcher extensions refuse, and
 Windows requires a qualified `.exe` rather than implicitly introducing `cmd.exe`. Its installed launcher may itself use its native interpreter.
 Stdin is closed, stdout/stderr are drained with 32 KiB retention each, private
 native output never enters results/errors/MCP stdout, and child execution is
 bounded to 30 seconds plus bounded pipe cleanup. Child environment permits only
 basic OS/home/temp/PATH/locale settings and disables personal lookup; root
 redirects, Node/shell injection variables and unrelated credentials are omitted.
+Setup-enabled creators derive `SQUAD_STANDALONE_HOME` from the selected launcher,
+set root-bound Git ceiling/work-tree overrides, disable system/global Git config,
+and override the origin URL at command scope to avoid platform introspection.
+The operator's HOME remains inherited, not isolated containment. The qualified
+standalone launcher prevents native npx-spec fallback; no additional runtime is
+bundled or installed by kmx.
 
 The approved request has a Lead and up to seven specialists, at most 1 MiB of
 logical authored fields. Each member must fit the existing 256 KiB charter
@@ -240,8 +249,13 @@ collisions validate before the first native effect. The combined charter size
 is checked after observing the native starter: an unexpectedly large starter
 can leave a registered-but-unenriched member requiring human inspection.
 
-Only explicit canonical local roots with `.squad/{config.json,team.md,routing.md}`
-are accepted. Config is exactly `version: 1`, optionally `teamRoot: "."`;
+After setup, only explicit canonical local roots with
+`.squad/{config.json,team.md,routing.md}` are accepted. For new setup, prior
+`.mcp.json`, `.copilot`, `.github/skills` or native capability files refuse;
+linked targets, partial native state and `.git` worktree pointers also refuse.
+Native init owns new built-ins, state/templates/skills, local MCP configuration
+and `.gitignore`/`.gitattributes` changes. Existing regular singly-linked bounded
+ignore/attributes files may be modified by that approved native setup. Config is exactly `version: 1`, optionally `teamRoot: "."`;
 unknown keys, redirect/external state and `.ai-team` refuse rather than being
 rewritten. Existing personal/home/global exclusions are resolved before comparison,
 including aliases. Root TypeScript configuration is unsupported: identities in
@@ -273,7 +287,10 @@ checks, not hostile-tree confinement or crash-durable completion.
 
 Results distinguish not-attempted, failed cast, successful-but-unverified cast,
 registered-but-unenriched and enriched members. Changed paths describe retained differences in the observed
-footprint, not every transient write. Failure/cancellation stops later members;
+footprint, not every transient write. Setup-enabled observations additionally
+cover native skills, `.copilot`, root MCP and ignore/attributes files; the same
+4096-entry/8-MiB total bounds apply. `setup` distinguishes initialized/reused/failed/unknown;
+partial/unknown setup stops before cast. Failure/cancellation stops later members;
 unknown observations remain explicit errors. An acknowledged publication is not
 relabelled unenriched by later cancellation. Nothing is rolled back or deleted,
 and no operation recovery/adoption API is exposed: interrupted members need human
@@ -284,6 +301,28 @@ Native Go tests cover parser/file/process contracts on Linux/macOS/Windows.
 Windows test-child execution is not Windows Squad/CLI qualification. An opt-in
 installed-Squad test separately performs native init and actual catalog/fallback
 cast/enrich in an isolated project/HOME; it runs no model or coordinator dispatch.
+
+### Reopened native member operations
+
+Native member resources and Edit/Run/Test reconstruct the explicit profile from
+validated native casting state on each operation and after restart: managed pair
+and raw-byte commit hashes, exact active ID/display name/role, one matching roster
+row/path/status, rooted charter, supported release and enriched native parse.
+The same bounded read-only inventory used by Create also rejects pending casting
+transactions, registry locks and temporary recovery files. No recovery runs.
+Invalid or missing/inconsistent state shows **not set up by kmx** and disables
+native mutation/preview. No filename/H1 guessing, v1 fallback, repair, recast or
+origin/pass claim. Valid state does not restore a lost proposal, previous preview
+or same-operation initial-enrichment proof. No kmx durable mapping is written.
+
+Owned Edit replaces only Preferred's value and Task Instructions/Examples bodies,
+reparses the candidate and uses the same source/parent CAS. Preview reparses an
+explicit native snapshot and shares the existing tool-free App/runner/judge path
+in memory, without writing a canonical file or inventing Identity.Purpose. Real
+routes receive preserved native plus task instructions excluding Examples; fake
+orientation reads task-only directives. Results bind exact native source revision,
+not an AgentSuite/package digest or team execution. Native flow is chat-only;
+there are no new Squad canvas actions.
 
 ## Future AgentSuite mapping — not implemented
 

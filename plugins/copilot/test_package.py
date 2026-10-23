@@ -12,6 +12,8 @@ import threading
 import unittest
 from unittest import mock
 
+import check_install
+
 HERE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location("copilot_package", HERE / "package.py")
 package = importlib.util.module_from_spec(SPEC)
@@ -53,6 +55,36 @@ class PackageTests(unittest.TestCase):
         if os.name != "nt":
             self.assertEqual((self.out / "bin/kmx").stat().st_mode & 0o777, 0o700)
         self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_optional_native_program_is_explicit_startup_only(self):
+        squad = self.base / "squad"
+        squad.write_bytes(b"qualified standalone fixture, never executed")
+        self.build(squad_program=squad, squad_release="1.1.0")
+        server = json.loads((self.out / "mcp.json").read_text())["mcpServers"]["kmx-agent-builder"]
+        self.assertEqual(server["args"], ["mcp", "--root", str(self.root.resolve()),
+                                        "--squad-program", str(squad.resolve()), "--squad-release", "1.1.0"])
+        self.assertEqual(check_install.validate_package(self.out, self.digest), self.root.resolve())
+        config = json.loads((self.out / "mcp.json").read_text())
+        startup = config["mcpServers"]["kmx-agent-builder"]
+        base, native = server["args"][:3], server["args"][3:]
+        for extra in (["--provider", "copilot", *native], [*native, "--provider", "copilot"]):
+            startup["args"] = [*base, *extra]
+            (self.out / "mcp.json").write_text(json.dumps(config))
+            self.assertEqual(check_install.validate_package(self.out, self.digest), self.root.resolve())
+        for extra in ([*native, "--provider", "compatible"], [*native, *native]):
+            startup["args"] = [*base, *extra]
+            (self.out / "mcp.json").write_text(json.dumps(config))
+            with self.assertRaises(ValueError):
+                check_install.validate_package(self.out, self.digest)
+        self.assertFalse((self.out / "bin/squad").exists())
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_incomplete_native_config_refuses_before_output(self):
+        for extra in ({"squad_release": "1.1.0"}, {"squad_program": Path("relative/squad")},
+                      {"squad_program": self.engine, "squad_release": "2.0.0"}):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                self.build(**extra)
+            self.assertFalse(self.out.exists())
 
     def test_native_view_is_bundled_without_tests_or_dependencies(self):
         self.build()
