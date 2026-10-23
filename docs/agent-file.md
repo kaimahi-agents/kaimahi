@@ -147,6 +147,10 @@ inferring identity from its folder or rewriting the file.
 
 ## Frozen run-profile export (unreleased)
 
+**Temporary demo bridge—not the deploy contract.** The deploy contract is the
+tested AgentSuite artifact handed off by digest (kmx pushes; the host pulls).
+This export does not implement that deployment path or define a host-side API.
+
 `kmx run-profile export FILE` uses `agentfile.ExportRunProfile`, which calls
 `Load`/`Parse` once, without configuration, state, provider selection, credentials
 or execution. It accepts canonical runnable charters only, not `Inspect`'s minimal

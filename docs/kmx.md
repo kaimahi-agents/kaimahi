@@ -306,6 +306,10 @@ cluster flags, including explicitly supplied defaults. Existing live
 
 ### Frozen run-profile export (unreleased)
 
+This is a **temporary demo bridge**, not the deploy contract. That contract is
+the tested AgentSuite artifact by digest (kmx pushes; the host pulls); this
+command neither implements that deployment path nor defines a host-side API.
+
 ```bash
 kmx run-profile export ./release-writer.agent.md
 ```
