@@ -22,25 +22,29 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 ## Unreleased
 
+## v0.9.0 — 2026-10-23
+
 ### Added
 
 - `kmx mcp --root DIRECTORY` serves exactly Create/Edit/Run/Test over stdio.
   It confines canonical charter access to an explicit root, creates without
   replacement, edits at an expected revision and delegates Run/Test to the shared
-  snapshot API and its temporary preview runner (no journal). No new runner,
-  network listener or native evidence authority.
+  snapshot API. Fake/local previews use embedded Sessions and retain cleartext
+  journals; invocations with a Copilot agent or judge remain direct and explicitly
+  unjournaled. No extra MCP network listener or native evidence authority.
 
-- Temporary direct file-preview runner with explicit no-journal output, deterministic
-  fake and selected local OpenAI-compatible model transport. One completion
-  per input/example and one judge sample per llmJudge, without retries or fallback;
-  no Sessions, native judge evidence or deployment qualification. Removed when the
-  embedded Sessions runner is integrated.
+- Direct, explicitly unjournaled file-preview execution when the agent or judge
+  uses Copilot, with one completion per input/example and one judge sample per
+  llmJudge, without retries or fallback. Other fake/local invocations use embedded
+  Sessions and two-sample judging. Neither route grants native judge evidence or
+  deployment qualification.
 
 - Canonical `run FILE` / `test FILE` adapters for markdown-agent local preview:
   stable `--case` selection, versioned payload-free text/JSON outcomes, separate
-  ad-hoc input and distinct non-pass/cancel exits. Tests inject the embedded-runner
-  interface; a temporary direct no-journal adapter is available for preview. No native
-  evidence, file-scoped Explain or change to deployed Run/workspace Test/Eval.
+  ad-hoc input and distinct non-pass/cancel exits. The adapters share the runner
+  interface, with journaled fake/local execution and the direct Copilot exception
+  described above. No native evidence, file-scoped Explain or change to deployed
+  Run/workspace Test/Eval.
 
 - Read-only `kmx model list [-o table|json]` discovers cached Foundry Local
   models at the runtime-reported endpoint and installed Ollama models on loopback
@@ -131,6 +135,128 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   verification, runtime qualification, executable plan, CLI consumer or Apply
   support is enabled.
 
+- Internal experimental flow destination preflight and candidate projection: exact independent bindings, frozen observations, semantic/freshness separation and full-tuple ownership through cleanup/status. No CLI flow execution, evaluation, publication or Deploy is enabled.
+
+- Explicit direct Copilot model access: `kmx model login` uses GitHub device
+  flow; `login --gh` alone opts into bounded private gh token capture. Reusable
+  credentials live only in kmx's native OS keychain item, never a plaintext
+  cache; `model logout` removes only that item and clears memory. Explicit
+  `model list --provider copilot [-o table|json]` returns enabled Chat-compatible
+  non-secret routes without prompting for sign-in; default local discovery is
+  unchanged. The independent `internal/kmx/modelaccess/copilot` package provides
+  selected-route JSON/SSE Chat Completions, with memory-only bearer exchange and
+  expiry. Auth is established through the catalog; legacy exchange follows only
+  credential refusal. No inference replay, model substitution, implicit credential
+  reuse, proxy or change to the existing Copilot CLI-chat adapter is added.
+- The native credential backend supports CGO-free macOS releases, keeps secrets
+  off subprocess arguments, and performs no keychain or session-bus I/O during
+  help, completion or default local discovery. Explicit credential operations
+  may display OS unlock UI; Linux requires an existing session bus. The dated
+  access decision distinguishes this experimental compatibility route from
+  official OAuth/SDK documentation and unqualified runner modes. Hermetic and
+  native package tests do not replace live-account manual acceptance or full
+  Windows CLI qualification.
+
+- Copilot app/CLI plugin development package with Agent Plugins 1.0 manifests,
+  a chat skill and an offline, explicitly root-bound packager for a pinned kmx.
+  Native package tests exercise the real stdio Create/Edit/Run/Test loop.
+  Signed distribution and installed Copilot chat qualification remain separate.
+
+- Local preview library for one tool-free single-file agent. It runs in process
+  on embedded Sessions with a private, bounded SQLite journal, against kmx's
+  deterministic fake model or an explicit OpenAI-compatible endpoint, and
+  reuses the existing assertions and `llmJudge`. The journal keeps
+  instructions, inputs and answers in cleartext, never credentials: content
+  containing the endpoint or judge credential is refused before the journal is
+  created, and an answer echoing the endpoint credential is refused. Each new
+  run prunes to the newest 20 runs, never deleting one still executing, and
+  journals can be cleared per run or all at once. On Windows the journal is
+  under `%AppData%` (roaming profile). Journal inspection replays a run with no
+  model call and gives no verdict. Results are labeled local preview, not
+  deployment qualification. File Run/Test and MCP use it for fake/local routes;
+  if either the agent or judge uses Copilot, the whole invocation instead remains
+  direct and explicitly unjournaled. See
+  [local preview](https://github.com/kaimahi-agents/kaimahi/blob/main/docs/local-preview.md).
+
+- Native CI qualification uploads separate payload-free phase timings on success or failure, without changing runtime proofs, cases or time budgets.
+
+- Add an internal checked-read filesystem foundation with native Windows amd64
+  tests for local-NTFS no-reparse opens, current-user protected DACL inspection
+  and physical identity; Windows arm64 remains compile/vet only. The package is
+  unwired, exposes no create/write/lock/sync/state/publication authority, and
+  does not enable or qualify the guarded Windows CLI.
+
+- Native Copilot plugin archives with a separate signed checksum inventory,
+  exact engine/platform/source checks and explicit root setup before installation.
+  An opt-in isolated host check covers install/discovery, cache bytes and four
+  real MCP tools without changing normal Copilot settings. No Windows release,
+  marketplace publication or OS trust qualification is implied.
+
+- Add a conservative Orka path decision and unconditional hygiene checks for package initialization and typed caller drift across independent Go code. Runtime qualification frequency and existing shard coverage are unchanged.
+
+- An explicit Squad 1.1.0 parser profile preserves native cast charters and source
+  spans, recognizes valid task/model/examples additions and refuses ambiguous
+  structures. Canonical parsing and current CLI/MCP routes are unchanged; team
+  casting/enrichment, member execution and package-bound results are not enabled.
+
+- Root-confined read-only MCP agent resource and `/agent-view` text fallback,
+  plus a native Copilot agent canvas. Display minimal agent files and canonical
+  Squad charters without adding a tool or changing Run/Test acceptance. Latest
+  preview state is process-local. The resource and text fallback do not edit or
+  execute; canvas editing, testing and failed-answer disclosure are described
+  below. Initial views were demonstrated in the Windows Copilot app through a
+  WSL MCP engine.
+
+- Internal Squad 1.1.0 cast/enrich primitives validate a local initialized project,
+  preserve native charter bytes outside approved task/model/examples additions,
+  publish against the new starter's revision and file identity, and report partial
+  native effects. Existing CLI/MCP bindings remain unchanged; native member
+  execution, digest-bound results and coordinator dispatch are separate work.
+
+- Add internal, operation-unwired private filesystem mutation primitives and
+  explicit creating/non-creating state-root resolution. Native Windows amd64
+  tests cover protected local-NTFS creation, process-held locks, exclusive
+  publication and anchored flushes; arm64 remains compile/vet only, and the
+  guarded Windows CLI and release assets remain unchanged.
+
+- Optional native Squad chat/MCP flow with reviewed init → cast → enrich, native-state member validation, owned-field edits and revision-bound local previews. Requires an explicitly configured, separately qualified standalone Squad 1.1.0 dependency. Keeps the four tools and canonical v1 behavior; native Squad canvas and package/team execution are not included.
+
+- Canonical agent files can declare `github_list_merged_prs` in an optional Tools
+  section. Add host-owned binding validation and a bounded journaled tool-preview
+  executor, qualified with hermetic tests. File Run/Test accepts `--tool-bindings
+  FILE` for the read-only GitHub MCP provider described below. Tool-free execution
+  is unchanged; Copilot model routes still refuse declared tools.
+
+- `kmx run-profile export FILE` provides a temporary demo bridge, not the deploy contract. It writes a deterministic frozen canonical agent-file profile to stdout, with instructions, exact authored model/judge identities, ordered examples/assertions and SHA-256 hashes. Every target example is `not_run`; export is offline and is not evaluation evidence, a package or deployment authority. Output includes authored content and has no managed output-file privacy guarantee.
+
+- Edit instructions and examples directly in the Copilot agent canvas, then save and test through the existing rooted MCP tools. The text fallback stays read-only.
+- Show bounded failed-example answers by default in the canvas, with passing answers opt-in. Other MCP clients retain their existing disclosure defaults.
+
+- Open an existing agent canvas with the discoverable `/kmx open PATH` skill. Opening reuses the setup-confirmed root and does not edit, run or test the agent; CLI clients retain a text fallback.
+
+- Markdown-file `kmx run FILE` and `kmx test FILE`, plus their shared MCP path,
+  accept explicit `--provider copilot` using prior model login and an exact
+  authored Chat model. The endpoint is pinned, credentials stay in the existing
+  model-access transport, and safe Copilot failures stop later sends. Selecting
+  Copilot sends instructions and inputs (plus answers/rubrics for judging) to
+  the hosted service. Execution remains tool-free preview without a Sessions
+  journal, inference retries, provider/model fallback or deployment evidence;
+  default fake/local behavior is unchanged.
+
+- A Copilot-default Release writer sample and a checksum-verified, user-confirmed
+  setup helper for macOS and Windows Copilot with WSL. The preview guide explains
+  the chat-based Run/Test loop, model changes, uninstall and safe setup logs.
+- Native Linux/macOS isolated plugin install checks on pull requests and on the
+  exact cross-built release archives before publication. The helper uses HTTPS
+  and checksums, not independent signature verification; older bundles refuse.
+
+- File `kmx run FILE` and `kmx test FILE` accept `--verbose` for content-free
+  execution diagnostics and timings on stderr, including safe transport failure
+  categories. JSON stdout and exit contracts are unchanged; content still
+  requires `--show-content`. Diagnostic write failures stop later execution.
+
+- Canonical file Run/Test can use the host-bound read-only GitHub MCP tool through an explicit local binding and environment credential reference. Reads are bounded, journaled and replayable without network or credentials; Copilot tools remain unsupported.
+
 ### Changed
 
 - Canonical `kmx test` replaces `kmx eval`, including all six helpers:
@@ -188,6 +314,30 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   Exact reuse/mixed reuse/skips never enroll. Kagent is unchanged; plain Lift
   remains create-only. See the [update contract](docs/suite-workspace.md#update-and-rollback).
 
+- Record release notes in per-PR fragments and describe repository responsibilities at directory level, avoiding shared changelog entries and file-count edits when adding files.
+
+- Update the portable AgentSuite dependency to published v0.7.0 and use its focused core, OCI, evidence and experimental flow imports instead of the deprecated root API. Current editor and validator setup uses its v0.7 schema bundle; frozen historical schema assets and consumer fixtures are unchanged. No CLI or runtime behavior change is intended.
+
+- Route full Orka runtime qualification to relevant or unknown PRs, daily main nightly and fresh exact-commit release checks. Explicitly safe PRs and routine main pushes skip only this worker; required check names and other worker coverage remain intact. Nightly failures surface in Actions and one assigned health issue.
+
+- File Run/Test and MCP now use embedded Sessions for fake/local routes, with selected examples and optional ad-hoc input in one private cleartext journal. Journaled judging uses two samples. If either the agent or judge uses Copilot, execution stays direct and explicitly unjournaled; fully journaled Copilot is follow-up work.
+
+- Run hermetic kagent contracts on PRs and routine main pushes, explicitly not live qualification. Move the unchanged full A2A/evaluation/push/lift proof to nightly, manual and fresh exact-commit release checks. Required checks remain intact; live failures may be detected at nightly or before release rather than on the PR.
+
+- Print payload-free UTC phase timestamps for full kagent bootstrap, live A2A, suite evaluation, private helpers and cleanup. Preserve qualification commands, cases, pins and failure behavior; no execution optimization.
+
+- Make the read-only Copilot agent canvas author-focused, with instructions first, compact header status, a failure-only band and plain-language example checks.
+- Show friendly source labels and complete paths in Details, with an explicit Copy path action that respects clipboard permissions.
+- Keep incomplete, partial and stale observations distinct from full passes; mark failed contains checks as missing without changing tools, execution or the answer-content opt-in.
+
+- The Copilot agent canvas uses compact main and test-detail views, keeps unsaved drafts when navigating, shows known pre-edit results in grey and server-stale observations neutrally, and supports testing one selected test through the existing revision-checked MCP flow. Light and narrow layouts share the same controls.
+- Canonical agent files may save an explicit empty test list while authoring. Ad-hoc Run still works; Test asks for a test. Zero-test files remain ineligible for run-profile export and cannot supply packaging or deployment evidence.
+
+- Run all four App test shards on both Linux and macOS in CI, with OS-specific
+  diagnostic artifacts and both platforms required by the hygiene gate.
+
+- Move per-package behavior descriptions from the repository map into Go package comments, so feature PRs no longer conflict on the map.
+
 ### Fixed
 
 - A private Orka ownership checkpoint could leave visible `4.json` after a
@@ -195,6 +345,51 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   create and internal update now require a final `committed.json` marker after
   publication checks and output cleanup succeed. Lost shared-write responses
   still block; there is no retry, backfill or automatic cleanup.
+
+- MCP Run/Test now return completed failing or inconclusive assertions as normal tool results with a compact, bounded summary instead of duplicated JSON. Full safe structured results remain available. Parse, model, execution, cancellation and journal errors remain tool errors; CLI exit codes are unchanged.
+
+- Direct Copilot access can use explicit `COPILOT_GITHUB_TOKEN` or, when the OS
+  keychain is unavailable, an existing github.com `gh auth token` at runtime.
+  The stored-login fallback ignores ambient `GH_TOKEN` and `GITHUB_TOKEN`;
+  explicit `login --gh` keeps normal gh environment behavior.
+  kmx never saves these runtime tokens to a keychain or token file. Invalid
+  explicit tokens, missing kmx credentials and service refusals do not silently
+  switch accounts. `kmx model login` explains these options instead of failing
+  when the keychain is unavailable, without claiming a credential was saved.
+
+- Copilot plugin integration tests consume structured preview results rather than
+  parsing compact human summaries as JSON. The skill preserves completed example
+  failures as normal tool outcomes, without treating `isError: false` as a pass.
+
+- Accept native absolute Create/Edit/Run/Test paths whose cleaned, symlink-resolved targets remain inside the configured MCP root and supported agent-file layouts. Preserve rooted file access and refuse outside targets, dangling links and symlink escapes.
+
+- Local preview refuses missing or mismatched response models and assertion metadata containing a resolved credential before returning it. Keep the question-mark journal path test Unix-only so valid Windows paths remain testable.
+- Run/Test help discloses cleartext journal content, retention and clearing, with the no-journal exception limited to Copilot routes. Packaged-plugin tests check the journaled fake route.
+
+- Restore the Orka caller-boundary check after local-preview parser and App judge-test callers were added. Record the audited references without changing guard logic or path exceptions.
+
+- Cancelling a Copilot agent-file Run/Test during judging leaves the interrupted test and later tests `not_run`, without partial answers or passing checks. Fully finished tests keep their results. MCP clients cancel the existing request and recover the safe result through the agent resource; no new tool or canvas UI change is included.
+
+- Drop observations started before a newer canvas action or accepted result, even for unchanged source. Any prompt or test draft immediately greys every known result, including detail checks and answer highlights, without replacing the edited field. Repairs are invalidated when their original assertion changes.
+- Preserve drafts when an agent changes outside the canvas, with explicit Compare, Keep my edits and Use the new version choices before another save. A refused or uncertain action never restores a previous green result as a fresh test.
+
+- Resolve macOS temporary paths in App test fixtures, remove a Linux-only shell
+  utility path and synchronize pagination cancellation with the intended request.
+  Local `make test-app` artifact directories honor `TMPDIR` on macOS.
+
+- Operational CLI adapters now pass the Cobra invocation context to an
+  Runner copy on the invocation's App, so existing context-aware subprocesses,
+  network requests and waits observe caller cancellation and deadlines. The
+  App identity and recovery metadata are preserved, and the original shared
+  Runner retains its context. Target detection
+  uses the same binding; offline/help behavior, signal ownership and explicit
+  child/cleanup context policies are unchanged.
+
+- Synthetic release rehearsals include the workflow run ID and attempt in the
+  stamped version, keeping repeated same-commit runs' binaries and checksum
+  manifests distinct for transparency-log signing. Real tag versions and
+  explicitly supplied dry-run versions are unchanged; signing and log upload
+  remain required.
 
 ### Breaking
 
@@ -241,6 +436,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   remains callable for at least one released version with one deprecation notice
   on stderr; stdout, arguments, exit codes and state do not change. Do not rename
   case directories, receipts or configuration fields. No data migration is needed.
+
+Known gaps in this preview:
+- Copilot-model runs aren't saved to the preview journal or replayable yet. Fake and local models are.
+- Copilot-model previews can't call tools yet. Local file Run/Test can use the read-only GitHub tool when explicitly configured.
+- The canvas has no version history or revert yet.
 
 ## v0.8.1 — 2026-10-17
 
