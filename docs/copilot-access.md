@@ -9,7 +9,8 @@ in [#610](https://github.com/kaimahi-agents/kaimahi/pull/610), part of
 The project selected an explicit, experimental standalone compatibility route:
 GitHub device-code sign-in using the public OAuth client used by vekil, or an
 opt-in copy of the user's github.com `gh` credential, followed by direct Chat
-Completions. No proxy, agent subprocess or SDK session runtime is introduced.
+Completions. The 23 October follow-up adds memory-only runtime gh access before
+the optional kmx keychain and catalog-selected Responses models. No proxy, agent subprocess or SDK session runtime is introduced.
 This implementation decision does **not** assert that GitHub documents or
 endorses reuse of VS Code's OAuth client as a general third-party model API.
 OAuth success alone is not proof of service entitlement or permission for a
@@ -26,9 +27,9 @@ new deployment mode.
 Listing does not initiate OAuth. Explicit sign-in is a user operation, not a CI
 consent prompt hidden inside discovery. Native OS credential facilities may
 display their own unlock UI. Runtime authentication prefers an explicitly supplied
-`COPILOT_GITHUB_TOKEN`, otherwise kmx's own keychain item. When that keychain is
-unavailable, it may read an existing github.com gh login with bounded private
-`gh auth token` capture. Runtime tokens remain in memory; kmx does not persist
+`COPILOT_GITHUB_TOKEN`, then an existing github.com gh sign-in through bounded
+private `gh auth token` capture, without requiring or opening kmx's keychain.
+If gh is unavailable, kmx can use its existing owned keychain credential. Runtime tokens remain in memory; kmx does not persist
 them. This adds no hosted multi-user credential sharing or deployment qualification.
 Selecting Copilot for file Run/Test sends authored instructions and inputs to
 the hosted service; a judge also receives the answer and rubric. Explicit
@@ -41,11 +42,13 @@ is a separate explicit choice, and fake orientation remains offline.
 
 The 22 October 2026 (UTC) follow-up permits these memory-only runtime sources when
 native credential storage is unavailable, with an explicit environment token
-taking precedence. It does not expand the upstream permission or runner claims.
+taking precedence. The 23 October follow-up makes an existing gh sign-in the
+ordinary runtime path regardless of keychain availability. Neither change expands
+the upstream permission or runner claims.
 
 Device sign-in displays GitHub's verification URI and user code, never the device
 secret or reusable token. `login --gh` explicitly copies a GitHub CLI token to
-kmx's named OS credential item when available; runtime fallback never copies it.
+kmx's named OS credential item when available; runtime gh access never copies it.
 No editor credentials are read. kmx does not write tokens to a workspace, journal,
 receipt, plaintext cache or command argument, or export them into the environment.
 An explicit environment token is caller-supplied. Login explains the runtime
@@ -56,8 +59,8 @@ credential refusal permits the legacy exchange; subscription, organization-polic
 and quota refusals do not. Exchanged bearers remain in memory and refresh before
 their reported expiry. Revoked or unusable reusable credentials require explicit
 sign-in again; an empty or invalid explicit environment token fails closed.
-Missing owned credentials, revocation and service refusals never select another
-credential source. Logout deletes kmx's item and clears its memory. It does not
+A missing owned credential does not block a working gh sign-in. Revocation and
+service refusals never select another credential source. Logout deletes kmx's item and clears its memory. It does not
 unset caller environment tokens, revoke upstream authorization, log out gh/editor sessions or
 retract in-flight requests. Upstream revocation remains controlled through the
 user's GitHub account. See [transport and safe errors](copilot-inference.md#direct-model-access).
