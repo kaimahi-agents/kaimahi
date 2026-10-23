@@ -165,6 +165,7 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
     assert.match(builder, /After (?:a )?successful Create/);
     assert.match(builder, /structuredContent\.file\.path/);
     assert.match(builder, /unbound server uses Copilot/);
+    assert.match(builder, /MCP server `kmx-agent-builder`/);
     assert.match(builder, /open_canvas/);
     assert.match(builder, /open_kmx_canvas/);
     assert.doesNotMatch(builder, /ask the user to\s+confirm|read \[the configured selected root\]/);

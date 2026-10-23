@@ -5,8 +5,10 @@ description: Create an agent through kmx and open its canvas. Edit, run and test
 
 # Build an agent through chat
 
-Use kmx's discovered `create`, `edit`, `run` and `test` MCP tools, not shell or
-host file-write tools, for agent files. Follow their advertised schemas.
+Use the MCP server `kmx-agent-builder` advertised by this plugin for `create`,
+`edit`, `run` and `test`, not shell or host file-write tools. Follow its discovered
+schemas. Use that same server throughout: the canvas reads its resources and
+results. An unrelated demo server's name does not identify this plugin's WSL route.
 Use the repository path from the request or session. Prefer a full WSL path when
 kmx runs in WSL; agent files can live in any directory. Do not ask for a folder
 confirmation or read the plugin's installation folder as the target repository.
