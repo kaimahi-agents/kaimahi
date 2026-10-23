@@ -221,7 +221,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Optional native Squad chat/MCP flow with reviewed init → cast → enrich, native-state member validation, owned-field edits and revision-bound local previews. Requires an explicitly configured, separately qualified standalone Squad 1.1.0 dependency. Keeps the four tools and canonical v1 behavior; native Squad canvas and package/team execution are not included.
 
-- Canonical agent files can declare `github_list_merged_prs` in an optional Tools section. Add host-owned binding validation and a bounded journaled tool-preview executor seam, qualified with hermetic tests. File Run/Test accepts `--tool-bindings FILE` but refuses tool execution until the real MCP provider is available. Tool-free execution is unchanged; Copilot tools depend on [#662](https://github.com/kaimahi-agents/kaimahi/issues/662).
+- Canonical agent files can declare `github_list_merged_prs` in an optional Tools
+  section. Add host-owned binding validation and a bounded journaled tool-preview
+  executor, qualified with hermetic tests. File Run/Test accepts `--tool-bindings
+  FILE` for the read-only GitHub MCP provider described below. Tool-free execution
+  is unchanged; Copilot model routes still refuse declared tools.
 
 - `kmx run-profile export FILE` provides a temporary demo bridge, not the deploy contract. It writes a deterministic frozen canonical agent-file profile to stdout, with instructions, exact authored model/judge identities, ordered examples/assertions and SHA-256 hashes. Every target example is `not_run`; export is offline and is not evaluation evidence, a package or deployment authority. Output includes authored content and has no managed output-file privacy guarantee.
 
@@ -250,6 +254,8 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   execution diagnostics and timings on stderr, including safe transport failure
   categories. JSON stdout and exit contracts are unchanged; content still
   requires `--show-content`. Diagnostic write failures stop later execution.
+
+- Canonical file Run/Test can use the host-bound read-only GitHub MCP tool through an explicit local binding and environment credential reference. Reads are bounded, journaled and replayable without network or credentials; Copilot tools remain unsupported.
 
 ### Changed
 
@@ -433,7 +439,7 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 Known gaps in this preview:
 - Copilot-model runs aren't saved to the preview journal or replayable yet. Fake and local models are.
-- Previews can't call tools yet. Agent files can declare the GitHub tool, but Run/Test refuse to run it.
+- Copilot-model previews can't call tools yet. Local file Run/Test can use the read-only GitHub tool when explicitly configured.
 - The canvas has no version history or revert yet.
 
 ## v0.8.1 — 2026-10-17
