@@ -73,6 +73,10 @@ func newAgentRunCommand(state *commandState) *cobra.Command {
 		return liveRun(cmd, args)
 	}
 	cmd.AddCommand(newAgentRunExportCommand(state))
+	// Cobra otherwise disables file completion as soon as run has a child.
+	cmd.ValidArgsFunction = func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveDefault
+	}
 	return cmd
 }
 

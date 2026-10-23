@@ -79,8 +79,13 @@ func TestRunProfileExportCLIRefusesFlagsAndHelpIsInert(t *testing.T) {
 		if err := execute(args, deps); err != nil || *loads != 0 {
 			t.Fatalf("help/completion: %v %v", args, err)
 		}
-		if len(args) == 3 && args[0] == "__complete" && !strings.Contains(out.String(), "export") {
-			t.Fatal("export not offered in completion")
+		if len(args) == 3 && args[0] == "__complete" {
+			if !strings.Contains(out.String(), "export") {
+				t.Fatal("export not offered in completion")
+			}
+			if !strings.HasSuffix(out.String(), ":0\n") {
+				t.Fatal("run parent disables default file completion")
+			}
 		}
 	}
 }
