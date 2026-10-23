@@ -26,12 +26,13 @@ changes in the package's Go doc comment.
   upstream model and incomplete/refusal/tool outcomes, not a fabricated pass.
   This is not a proxy or CLI-chat replacement.
   File CLI Run/Test consume it with explicit `--provider copilot`; unbound MCP
-  defaults non-fake authored models to Copilot when no startup route is selected.
-  Both use the exact authored model and existing available credentials. Explicit
-  routes, authored fake and legacy root-bound MCP behavior remain unchanged.
+  defaults effective non-fake models to Copilot when no startup route is selected.
+  Both use the exact runtime-selected model and existing available credentials.
+  Trusted route provider/endpoint/auth and legacy root-bound MCP behavior remain unchanged.
   Default only the pinned Copilot endpoint; refuse other endpoints before credential access.
-  Never inject tokens in the runner. Keep known Copilot errors static and safe,
-  stop later sends on them (including judging), and preserve cancellation.
+  Never inject tokens in the runner. Keep known Copilot errors safe; owned catalog
+  selection failures may list validated model IDs, never raw provider errors.
+  Stop later sends on them (including judging), and preserve cancellation.
   Establish auth through the catalog; exchange only after credential refusal,
   never subscription/policy/quota refusal. Never replay inference or substitute
   a model. Keep modelaccess independent of App and Unix-only helpers. Foundry
