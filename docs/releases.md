@@ -122,6 +122,13 @@ Copilot plugin assets. Inspect the failure and rerun the failed workflow jobs
 after addressing it; there is no automatic qualification retry or timeout increase.
 Both full live proofs must finish before release building begins. The hermetic
 kagent PR check is not live qualification and cannot replace either release gate.
+After signing, native Linux and macOS workers exercise the try-it script and
+install/uninstall/reinstall the exact cross-built plugin archive in a fresh
+Copilot CLI profile. Publication waits for both workers. These checks do not
+exercise interactive desktop rendering or hosted inference. Dry-run artifacts
+contain `release-assets/` and `release-notes.md` under their common root.
+For the user-confirmed Copilot setup and its HTTPS/checksum trust model, see
+[Try kmx in Copilot](../TRY-IT.md).
 
 ## Install
 
@@ -467,7 +474,8 @@ than the first.
    [GoReleaser](../.goreleaser.yaml), checks that exact artifact set, then
    publishes those same files together as one GitHub release. It refuses to
    publish if: the version is not semantic, the changelog has no section,
-   the built binary does not report the tag, or the checksums do not verify. The
+   the built binary does not report the tag, the checksums do not verify, or
+   either native plugin install check fails. The
    release also carries `kmx.rb`, GoReleaser's rendered formula for those exact checksums
    (`brews.skip_upload: true` keeps it from being pushed to the tap on its own
    — that stays a human's job, next). A failed asset upload can leave a GitHub

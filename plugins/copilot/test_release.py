@@ -2,14 +2,15 @@
 import hashlib
 import io
 import json
-from pathlib import Path
+import shutil
 import tarfile
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
-import release
 import check_install
+import release
 
 
 class ReleaseTests(unittest.TestCase):
@@ -38,7 +39,7 @@ class ReleaseTests(unittest.TestCase):
         with tarfile.open(self.archive) as archive:
             members = archive.getmembers()
             self.assertEqual({m.name.removeprefix(release.PREFIX) for m in members}, release.FILES)
-            self.assertEqual(len(members), 7 + len(release.package.NATIVE_FILES))
+            self.assertEqual(len(members), 9 + len(release.package.NATIVE_FILES))
             self.assertTrue(all(m.isfile() and m.uid == m.gid == m.mtime == 0 for m in members))
             files = {m.name: archive.extractfile(m).read() for m in members}
             config = json.loads(files["kmx-agent-builder/mcp.json"])
@@ -47,8 +48,20 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(json.loads(files["kmx-agent-builder/selected-root.json"]),
                              {"root": "__SELECTED_ROOT__"})
             self.assertEqual(files["kmx-agent-builder/bin/kmx"], self.engine.read_bytes())
+            for name in ("samples/release-writer.agent.md", "try-it.json"):
+                self.assertEqual(files["kmx-agent-builder/" + name],
+                                 (release.package.HERE / name).read_bytes())
             self.assertEqual(next(m.mode for m in members if m.name.endswith("bin/kmx")), 0o755)
             self.assertNotIn(str(self.base).encode(), b"".join(files.values()))
+
+    def test_archive_accepts_builder_sample_size_budget(self):
+        templates = self.base / "templates"
+        shutil.copytree(release.package.HERE, templates)
+        sample = templates / "samples/release-writer.agent.md"
+        sample.write_bytes(sample.read_bytes() + b"\n" + b" " * (65 << 10))
+        with mock.patch.object(release.package, "HERE", templates):
+            self.archive_build()
+            release.verify_archive(self.archive, self.digest, "linux/amd64", "v0.1.0", self.revision)
 
     def test_archive_refuses_bad_hash_and_existing_output(self):
         with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
@@ -63,15 +76,19 @@ class ReleaseTests(unittest.TestCase):
         self.archive_build()
         with tarfile.open(self.archive) as original:
             rows = [(m, original.extractfile(m).read()) for m in original]
-        for kind in ("engine", "extra", "link", "traversal"):
+        for kind in ("engine", "extra", "link", "traversal", "sample", "marker"):
             with self.subTest(kind=kind):
                 altered = self.base / (kind + ".tar.gz")
                 with tarfile.open(altered, "w:gz") as out:
                     for member, data in rows:
                         if kind == "engine" and member.name.endswith("bin/kmx"):
                             data = b"changed" + data[7:]
+                        if kind == "sample" and member.name.endswith("release-writer.agent.md"):
+                            data = b"X" + data[1:]
+                        if kind == "marker" and member.name.endswith("try-it.json"):
+                            data = data.replace(b"1", b"2")
                         out.addfile(member, io.BytesIO(data))
-                    if kind != "engine":
+                    if kind in ("extra", "link", "traversal"):
                         extra = tarfile.TarInfo("../escape" if kind == "traversal" else "kmx-agent-builder/extra")
                         if kind == "link":
                             extra.type = tarfile.SYMTYPE
@@ -111,6 +128,9 @@ class ReleaseTests(unittest.TestCase):
             check_install.validate_package(package_root, self.digest)
         (package_root / "selected-root.json").write_text(json.dumps({"root": str(root.resolve())}))
         self.assertEqual(check_install.validate_package(package_root, self.digest), root.resolve())
+        config["mcpServers"]["kmx-agent-builder"]["args"].extend(["--provider", "copilot"])
+        (package_root / "mcp.json").write_text(json.dumps(config))
+        self.assertEqual(check_install.validate_package(package_root, self.digest), root.resolve())
         with self.assertRaisesRegex(ValueError, "digest"):
             check_install.validate_package(package_root, "0" * 64)
 
@@ -125,6 +145,29 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "qualified Copilot"):
                 check_install.check("fixture-copilot", plugin, self.digest, home)
         self.assertEqual(list(home.iterdir()), [])
+
+    def test_disabled_host_builtin_is_not_a_user_plugin(self):
+        plugin = self.base / "configured"
+        root = self.base / "selected"
+        root.mkdir()
+        release.package.build(binary=self.engine, sha256=self.digest, target="linux/amd64",
+                              root=root, output=plugin, version="0.1.0")
+        for enabled in (False, True):
+            calls = []
+            def cli(argv, _calls=calls, _enabled=enabled, **_kwargs):
+                _calls.append(argv)
+                if argv[-1] == "--version":
+                    return "GitHub Copilot CLI 1.0.102.\n"
+                if "list" in argv:
+                    return json.dumps([{"name": "browser-use", "source": "builtin", "enabled": _enabled}])
+                raise RuntimeError("reached install boundary")
+            with self.subTest(enabled=enabled), mock.patch("check_install.subprocess.check_output", side_effect=cli):
+                error = ValueError if enabled else RuntimeError
+                message = "profile is not empty" if enabled else "install boundary"
+                with self.assertRaisesRegex(error, message):
+                    check_install.check("fixture-copilot", plugin, self.digest,
+                                        self.base / f"profile-{enabled}")
+                self.assertEqual(any("install" in args for args in calls), not enabled)
 
     def test_checksum_inventory_is_exact_before_packaging(self):
         for text in ("", "0" * 64 + "  ../engine\n", "0" * 64 + "  kmx-linux-amd64\n"):

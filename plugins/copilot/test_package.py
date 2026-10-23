@@ -64,6 +64,18 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(server["args"], ["mcp", "--root", str(self.root.resolve()),
                                         "--squad-program", str(squad.resolve()), "--squad-release", "1.1.0"])
         self.assertEqual(check_install.validate_package(self.out, self.digest), self.root.resolve())
+        config = json.loads((self.out / "mcp.json").read_text())
+        startup = config["mcpServers"]["kmx-agent-builder"]
+        base, native = server["args"][:3], server["args"][3:]
+        for extra in (["--provider", "copilot", *native], [*native, "--provider", "copilot"]):
+            startup["args"] = [*base, *extra]
+            (self.out / "mcp.json").write_text(json.dumps(config))
+            self.assertEqual(check_install.validate_package(self.out, self.digest), self.root.resolve())
+        for extra in ([*native, "--provider", "compatible"], [*native, *native]):
+            startup["args"] = [*base, *extra]
+            (self.out / "mcp.json").write_text(json.dumps(config))
+            with self.assertRaises(ValueError):
+                check_install.validate_package(self.out, self.digest)
         self.assertFalse((self.out / "bin/squad").exists())
         self.assertEqual(list(self.root.iterdir()), [])
 
@@ -83,6 +95,15 @@ class PackageTests(unittest.TestCase):
             self.assertEqual((self.out / native / name).read_bytes(),
                              (HERE / native / name).read_bytes())
         self.assertFalse((self.out / "node_modules").exists())
+
+    def test_sample_and_try_it_marker_are_copied_exactly(self):
+        self.build()
+        self.assertEqual((self.out / "samples/release-writer.agent.md").read_bytes(),
+                         (HERE / "samples/release-writer.agent.md").read_bytes())
+        self.assertEqual((self.out / "try-it.json").read_bytes(),
+                         (HERE / "try-it.json").read_bytes())
+        self.assertEqual(json.loads((self.out / "try-it.json").read_text()), {"schemaVersion": 1})
+        self.assertEqual(list(self.root.iterdir()), [])
 
     def test_windows_command_is_explicit(self):
         self.build(target="windows/amd64")
