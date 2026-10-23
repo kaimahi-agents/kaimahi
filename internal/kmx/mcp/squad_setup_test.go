@@ -68,8 +68,13 @@ func squadSetupRoot(t *testing.T) (string, SquadProgram) {
 		name += ".exe"
 	}
 	program := filepath.Join(t.TempDir(), name)
-	// A local hardlink avoids copying the large Go test executable per case.
-	if err := os.Link(exe, program); err != nil {
+	// Windows locks all hardlinks of the running test executable against deletion.
+	// Other platforms can avoid copying the large fixture executable per case.
+	linked := false
+	if runtime.GOOS != "windows" {
+		linked = os.Link(exe, program) == nil
+	}
+	if !linked {
 		b, err := os.ReadFile(exe)
 		if err != nil {
 			t.Fatal(err)

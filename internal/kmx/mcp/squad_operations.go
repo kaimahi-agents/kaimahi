@@ -25,7 +25,7 @@ type squadMemberInput struct {
 }
 
 func (m squadMemberInput) member() SquadMember {
-	return SquadMember{ID: m.ID, Role: m.Role, DisplayRole: m.DisplayRole, TaskInstructions: m.TaskInstructions, Model: m.Model, Examples: m.Examples}
+	return SquadMember(m)
 }
 func nativeString(max int) *jsonschema.Schema {
 	return &jsonschema.Schema{Type: "string", MinLength: new(1), MaxLength: new(max)}
