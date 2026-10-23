@@ -3,10 +3,54 @@ package copilot
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
+
+func TestResponsesRejectsMissingOrNullText(t *testing.T) {
+	for _, field := range []string{"", `,"text":null`} {
+		payload := `{"model":"responses-only","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text"` + field + `}]}]}`
+		t.Run("json/"+field, func(t *testing.T) {
+			response := &http.Response{Header: make(http.Header), Body: io.NopCloser(strings.NewReader(payload))}
+			defer response.Body.Close()
+			if err := adaptResponsesResponse(response, false); !errors.Is(err, ErrMalformed) {
+				t.Fatalf("malformed text accepted: %v", err)
+			}
+		})
+		t.Run("sse/"+field, func(t *testing.T) {
+			body := newResponsesStreamBody(io.NopCloser(strings.NewReader(`data: {"type":"response.completed","response":` + payload + "}\n\n")))
+			defer body.Close()
+			data, err := io.ReadAll(body)
+			if !errors.Is(err, ErrMalformed) || strings.Contains(string(data), "[DONE]") {
+				t.Fatalf("malformed text became a completed stream: %v", err)
+			}
+		})
+	}
+	for _, field := range []string{"", `,"delta":null`} {
+		t.Run("delta/"+field, func(t *testing.T) {
+			body := newResponsesStreamBody(io.NopCloser(strings.NewReader("data: {\"type\":\"response.created\",\"response\":{\"model\":\"responses-only\"}}\n\n" + `data: {"type":"response.output_text.delta"` + field + "}\n\n" + `data: {"type":"response.completed","response":{"model":"responses-only","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":""}]}]}}` + "\n\n")))
+			defer body.Close()
+			if _, err := io.ReadAll(body); !errors.Is(err, ErrMalformed) {
+				t.Fatalf("missing/null delta accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestResponsesPreservesGenuineEmptyStreamText(t *testing.T) {
+	stream := "data: {\"type\":\"response.created\",\"response\":{\"model\":\"responses-only\"}}\n\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"\"}\n\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"model\":\"responses-only\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"\"}]}]}}\n\n"
+	body := newResponsesStreamBody(io.NopCloser(strings.NewReader(stream)))
+	defer body.Close()
+	data, err := io.ReadAll(body)
+	if err != nil || !strings.Contains(string(data), `"content":""`) || !strings.Contains(string(data), "[DONE]") {
+		t.Fatalf("genuine empty output changed: %v", err)
+	}
+}
 
 func TestResponsesDoesNotInventEmptyAnswer(t *testing.T) {
 	for _, tc := range []struct {

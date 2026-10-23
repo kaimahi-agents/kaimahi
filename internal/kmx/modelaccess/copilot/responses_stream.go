@@ -97,7 +97,7 @@ func (b *responsesStreamBody) convert(data []byte) error {
 	}
 	var event struct {
 		Type     string          `json:"type"`
-		Delta    string          `json:"delta"`
+		Delta    *string         `json:"delta"`
 		Response json.RawMessage `json:"response"`
 	}
 	if json.Unmarshal(data, &event) != nil {
@@ -114,7 +114,7 @@ func (b *responsesStreamBody) convert(data []byte) error {
 		}
 		b.identity(reply)
 	case "response.output_text.delta", "response.refusal.delta":
-		if b.model == "" {
+		if b.model == "" || event.Delta == nil {
 			return ErrMalformed
 		}
 		key := "content"
@@ -124,7 +124,7 @@ func (b *responsesStreamBody) convert(data []byte) error {
 		} else {
 			b.text = true
 		}
-		return b.chunk(map[string]any{key: event.Delta}, nil, nil)
+		return b.chunk(map[string]any{key: *event.Delta}, nil, nil)
 	case "response.completed", "response.incomplete":
 		var reply responsesReply
 		if _, err := requestModel(event.Response); err != nil {
@@ -137,7 +137,10 @@ func (b *responsesStreamBody) convert(data []byte) error {
 			return ErrMalformed
 		}
 		b.identity(reply)
-		completion := reply.completion()
+		completion, err := reply.completion()
+		if err != nil {
+			return err
+		}
 		choice := completion["choices"].([]any)[0].(map[string]any)
 		delta := choice["message"].(map[string]any)
 		if b.text {

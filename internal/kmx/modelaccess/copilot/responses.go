@@ -54,9 +54,9 @@ type responsesReply struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 		Content   []struct {
-			Type    string `json:"type"`
-			Text    string `json:"text"`
-			Refusal string `json:"refusal"`
+			Type    string  `json:"type"`
+			Text    *string `json:"text"`
+			Refusal string  `json:"refusal"`
 		} `json:"content"`
 	} `json:"output"`
 	Usage struct {
@@ -66,7 +66,7 @@ type responsesReply struct {
 	} `json:"usage"`
 }
 
-func (r responsesReply) completion() map[string]any {
+func (r responsesReply) completion() (map[string]any, error) {
 	var answer, refusal strings.Builder
 	refused, hasText := false, false
 	var tools []any
@@ -80,8 +80,11 @@ func (r responsesReply) completion() map[string]any {
 		for _, part := range item.Content {
 			switch part.Type {
 			case "output_text":
+				if part.Text == nil {
+					return nil, ErrMalformed
+				}
 				hasText = true
-				answer.WriteString(part.Text)
+				answer.WriteString(*part.Text)
 			case "refusal":
 				refused = true
 				refusal.WriteString(part.Refusal)
@@ -115,7 +118,7 @@ func (r responsesReply) completion() map[string]any {
 			"finish_reason": finish,
 		}},
 		"usage": map[string]int{"prompt_tokens": r.Usage.InputTokens, "completion_tokens": r.Usage.OutputTokens, "total_tokens": r.Usage.TotalTokens},
-	}
+	}, nil
 }
 
 func adaptResponsesResponse(response *http.Response, stream bool) error {
@@ -147,7 +150,11 @@ func adaptResponsesResponse(response *http.Response, stream bool) error {
 	if reply.Status == "failed" || reply.Status == "cancelled" {
 		return ErrUnavailable
 	}
-	encoded, err := json.Marshal(reply.completion())
+	completion, err := reply.completion()
+	if err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(completion)
 	if err != nil {
 		return ErrMalformed
 	}
