@@ -339,10 +339,11 @@ func TestFilePreviewVerboseStderrOnly(t *testing.T) {
 }
 
 func TestFilePreviewVerboseWriteFailure(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
 	var out, diag bytes.Buffer
 	deps, _ := testDependencies(&out, &diag)
 	deps.stderr = previewBrokenWriter{}
-	deps.fileRunner = app.NewDirectFileRunner()
+	deps.fileRunner = app.NewLocalFileRunner()
 	err := execute([]string{"test", cliPreviewFile(t), "--verbose"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "cannot write local preview diagnostics") || out.Len() != 0 {
 		t.Fatalf("diagnostic failure did not refuse: %v, stdout=%s", err, out.String())

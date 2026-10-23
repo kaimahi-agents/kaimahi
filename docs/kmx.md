@@ -180,21 +180,23 @@ only the [host-tool foundation](local-preview.md#host-tool-foundation). The real
 MCP provider is not yet available, so CLI tool execution refuses safely. Hermetic
 embedding tests qualify the bounded host executor/journal path, not live MCP.
 
-File mode uses embedded Sessions for fake/local routes, with one fresh Session
-per ad-hoc input/example and one private SQLite journal for the invocation.
+File mode uses embedded Sessions for fake/local and explicit Copilot routes,
+with one fresh Session per ad-hoc input, example and judge sample, and one private
+SQLite journal for the invocation.
 Optional ad-hoc input runs first, followed by only the selected examples in order.
 Each turn has a two-minute deadline, including judging, within the five-minute
 overall budget. Execution errors stop later sends. Journal close failure prevents
 a full pass. [Journal content, retention and clearing](local-preview.md#journal-retention-and-clearing)
 are disclosed separately: instructions, inputs and answers are retained in cleartext.
 
-**Tool-free Copilot exception:** when either the agent or judge uses Copilot, the whole
-invocation keeps the direct **preview runner (no journal)** and reports `NoJournal`
-at the runner boundary. It creates no Sessions journal. Fully journaled Copilot
-is follow-up work: its credential-owning transport does not yet provide the
-pre-journal content check. No tokens are exposed to the runner. Declared tools
-with a Copilot agent or judge refuse; Copilot tool support depends on
-[#662](https://github.com/kaimahi-agents/kaimahi/issues/662).
+**Tool-free Copilot is journaled:** the provider checks content against its source
+token and exchanged bearer before any Session starts, without exposing either
+to the runner or harness. Its invocation-local credentials are pinned before
+journaling; there is no mid-run refresh or inference retry. Expiry, logout through
+that provider or authentication refusal stops later sends. Start a new preview
+for fresh credentials. Logout in another kmx process does not interrupt an
+existing preview: cancel it explicitly, or let its five-minute bound finish.
+Declared tools with a Copilot agent or judge still refuse.
 There are no retries, redirects or provider/model fallback. A nil dependency
 still refuses `runner_unavailable`. Hermetic tests do not qualify real local
 models or native Windows.
@@ -215,12 +217,13 @@ endpoints still refuse. Copilot requires prior explicit sign-in and an exact
 enabled Chat model from `kmx model list --provider copilot`; it never falls back
 to another model or starts login during execution.
 
-Journaled fake/local judging uses the shared native two-sample evaluator: both
+File judging uses the shared native two-sample evaluator, including Copilot: both
 scores must agree on the threshold side. Split, unavailable, malformed, refused
 or mismatched-model replies are unknown. This makes two judge calls per authored
-`llmJudge` assertion, within the same deadlines. The Copilot direct exception
-retains one judge call and applies the authored threshold to one valid score.
-Neither path produces native evaluation evidence.
+`llmJudge` assertion, within the same deadlines. Each sample is a separate
+journaled Session; the journal retains its policy, payload and response in
+cleartext, including reasoning. Neither previews nor replay produce native
+evaluation evidence.
 
 ```text
 kmx run ./greeter.agent.md --prompt Ada
@@ -287,11 +290,9 @@ Output defaults to text; `-o json` returns one versioned `schemaVersion: 1`,
 `kind: kmx.agent-file-preview` document. Both preserve operation, exact source-byte
 SHA-256 revision, provider/model, full/subset selection, terminal state and
 example/assertion IDs with pass/fail/unknown and safe reasons. JSON includes
-`fullPass`, which is false for every subset, incomplete or unknown result. The Copilot direct
-exception additionally includes `runner: "preview runner (no journal)"`; its
-underlying journal handle is empty and no journal is retained. Fake/local
-execution retains a private journal handle internally, never in this safe result.
-Neither a journaled local pass nor the direct exception is deploy evidence. Paths
+`fullPass`, which is false for every subset, incomplete or unknown result.
+Fake/local and Copilot execution retain a private journal handle internally,
+never in this safe result. A journaled preview pass is not deploy evidence. Paths
 are sanitized display basenames, not a file-targeting API. The optional structured
 `diagnostic` names safe parser fields, source line/column and repair advice.
 Default output contains no instructions, inputs, answers, operands, provider error
@@ -481,9 +482,8 @@ apply; startup itself performs no sign-in, credential access or model request.
 Tools accept no endpoint, credential or arbitrary-command fields. With no route,
 only exact `fake` is selectable. Run/Test use the same
 [file preview runner](#agent-file-local-preview-unreleased-integration) as the
-CLI: fake/local routes use embedded Sessions and one private journal; an agent
-or judge using Copilot keeps direct execution with `NoJournal` and the explicit
-no-journal runner label. A nil runner still returns `runner_unavailable`, never
+CLI: fake/local and explicit Copilot routes use embedded Sessions and one private
+journal, with one Session per agent turn and per judge sample. A nil runner still returns `runner_unavailable`, never
 a fallback. Hermetic checks do not qualify real models or native Windows.
 There is no fifth Explain/model/install tool; offline Explain stays a CLI action.
 

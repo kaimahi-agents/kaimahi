@@ -16,6 +16,7 @@ func squadToolMember(m SquadMember) map[string]any {
 	return map[string]any{"memberId": m.ID, "role": m.Role, "displayRole": m.DisplayRole, "taskInstructions": m.TaskInstructions, "model": m.Model, "examples": m.Examples}
 }
 func TestSquadMCPRejectsSecondLeadBeforeSetup(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
 	root, p := squadSetupRoot(t)
 	c, err := OpenSquadSetup(root, p)
 	if err != nil {
@@ -27,7 +28,7 @@ func TestSquadMCPRejectsSecondLeadBeforeSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer files.Close()
-	a := &app.App{FileRunner: app.NewDirectFileRunner()}
+	a := &app.App{FileRunner: app.NewLocalFileRunner()}
 	cs := connectFixture(t, WithSquadOperations(Operations(files, a, nil), c, a, nil))
 	extra := squadLead()
 	extra.ID = "other-lead"
@@ -40,6 +41,7 @@ func TestSquadMCPRejectsSecondLeadBeforeSetup(t *testing.T) {
 	}
 }
 func TestSquadMCPChatCreateMapEditAndPreview(t *testing.T) {
+	t.Setenv("KMX_HOME", t.TempDir())
 	root, p := squadSetupRoot(t)
 	c, err := OpenSquadSetup(root, p)
 	if err != nil {
@@ -51,7 +53,7 @@ func TestSquadMCPChatCreateMapEditAndPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer files.Close()
-	a := &app.App{FileRunner: app.NewDirectFileRunner()}
+	a := &app.App{FileRunner: app.NewLocalFileRunner()}
 	cs := connectFixture(t, WithSquadOperations(Operations(files, a, nil), c, a, nil), func(s *sdk.Server) { AddSquadResource(s, c) })
 	lead := squadLead()
 	lead.Model = "fake"

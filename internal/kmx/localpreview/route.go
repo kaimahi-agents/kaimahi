@@ -37,6 +37,8 @@ type route struct {
 	keyEnv    string
 	key       string
 	transport http.RoundTripper
+	// Only a provider-owned capability may return safe typed errors directly.
+	safeErrors bool
 }
 
 // Kind is "fake" or "compatible".

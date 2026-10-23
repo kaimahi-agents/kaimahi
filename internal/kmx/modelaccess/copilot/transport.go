@@ -122,6 +122,10 @@ func (p *Provider) List(ctx context.Context) ([]modelaccess.Route, error) {
 	return p.list(ctx)
 }
 func (p *Provider) list(ctx context.Context) ([]modelaccess.Route, error) {
+	return p.listFor(ctx, 30*time.Second)
+}
+
+func (p *Provider) listFor(ctx context.Context, validity time.Duration) ([]modelaccess.Route, error) {
 	if ctx.Err() != nil {
 		return nil, safeError(ctx.Err())
 	}
@@ -139,7 +143,7 @@ func (p *Provider) list(ctx context.Context) ([]modelaccess.Route, error) {
 		p.source = source
 		p.bearer = source
 	}
-	if p.legacy && (p.bearer == "" || !p.now().Before(p.expires.Add(-30*time.Second))) {
+	if p.legacy && (p.bearer == "" || !p.now().Before(p.expires.Add(-validity))) {
 		if err := p.exchange(ctx); err != nil {
 			return nil, err
 		}
@@ -162,6 +166,13 @@ func (p *Provider) list(ctx context.Context) ([]modelaccess.Route, error) {
 	if status != 200 {
 		return nil, classify(status, b)
 	}
+	if validity > 30*time.Second && p.legacy && !p.expires.After(p.now().Add(validity)) {
+		return nil, ErrAuthRevoked
+	}
+	return catalogRoutes(b, p.source, p.bearer)
+}
+
+func catalogRoutes(b []byte, source, bearer string) ([]modelaccess.Route, error) {
 	var catalog struct {
 		Data *[]struct {
 			ID           string `json:"id"`
@@ -184,7 +195,7 @@ func (p *Provider) list(ctx context.Context) ([]modelaccess.Route, error) {
 			continue
 		}
 		r := modelaccess.Route{Provider: "copilot", Model: m.ID, Endpoint: endpoint, Auth: "copilot"}
-		if r.Validate() != nil || seen[m.ID] || strings.Contains(m.ID, p.source) || strings.Contains(m.ID, p.bearer) {
+		if r.Validate() != nil || seen[m.ID] || strings.Contains(m.ID, source) || strings.Contains(m.ID, bearer) {
 			return nil, ErrMalformed
 		}
 		seen[m.ID] = true

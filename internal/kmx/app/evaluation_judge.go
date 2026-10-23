@@ -42,6 +42,9 @@ type evaluationJudgeClient struct {
 	key        string
 	httpClient *http.Client
 	out        io.Writer
+	// File preview supplies a journaled sample boundary. Native suite evaluation
+	// leaves this nil and retains its ordinary HTTP path.
+	sampleRoundTrip func(*http.Request, string, string) (*http.Response, error)
 }
 
 // newEvaluationCaseJudge validates the selected suite before any agent execution.
@@ -248,7 +251,12 @@ func (c *evaluationJudgeClient) sample(ctx context.Context, payload []byte, mode
 	// or custom transport; copying avoids mutating a shared HTTP client.
 	httpClient := *c.httpClient
 	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	response, err := httpClient.Do(req)
+	var response *http.Response
+	if c.sampleRoundTrip != nil {
+		response, err = c.sampleRoundTrip(req, model, version)
+	} else {
+		response, err = httpClient.Do(req)
+	}
 	if err != nil {
 		return 0, "", "", "judge response unavailable", suiteFailureClass(err)
 	}

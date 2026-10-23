@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync/atomic"
 
@@ -100,11 +102,17 @@ func (c *modelClient) send(ctx context.Context, body []byte) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	if c.check != nil {
+		if err := checkJSONContent(body, c.check); err != nil {
+			return "", err
+		}
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.route.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return "", refuse(RefusedEndpoint, "the model request could not be built", "check the endpoint base URL")
 	}
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
 	if c.route.key != "" {
 		request.Header.Set("Authorization", "Bearer "+c.route.key)
 	}
@@ -113,6 +121,12 @@ func (c *modelClient) send(ctx context.Context, body []byte) (string, error) {
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return "", ctxErr
+		}
+		if c.route.safeErrors {
+			var wrapped *url.Error
+			if errors.As(err, &wrapped) {
+				return "", wrapped.Err
+			}
 		}
 		// Transport errors can quote URLs or proxy diagnostics; report a fixed class.
 		return "", refuse(RefusedUnreachable, "the model endpoint was unreachable", "check that the endpoint is running and reachable; nothing was retried")
@@ -137,6 +151,11 @@ func (c *modelClient) send(ctx context.Context, body []byte) (string, error) {
 	}
 	if len(raw) > MaxReplyBytes {
 		return "", refuse(RefusedOversized, "the model response exceeds 1 MiB", "ask for a shorter answer or use a model that stops sooner")
+	}
+	if c.check != nil {
+		if err := checkJSONContent(raw, c.check); err != nil {
+			return "", err
+		}
 	}
 	content, err := parseReply(raw, c.route.model)
 	if err != nil {
