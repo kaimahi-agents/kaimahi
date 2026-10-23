@@ -336,11 +336,11 @@ export function formatView(view) {
   const { status, badge, result } = view.latest;
   const summary = status === "none" ? "Latest: none (no current Run/Test result)"
     : status === "stale" ? "Latest: STALE (from an earlier revision; not current)"
-    : `Latest: current, ${badge === "pass" ? "PASS" : "NOT PASSING"} (${one(result.state, 40)}, verdict ${one(result.verdict, 40)})`;
+    : `Latest: current, ${badge === "pass" ? "PASS" : "NOT PASSING"} (${one(result.state, 40)}, verdict ${one(result.verdict, 40)}) · runtime model: ${result.modelRoute === "/" ? "not selected" : one(result.modelRoute, 340)}`;
   const out = [
     `Agent view: ${one(view.file.path, 120)} (${one(view.file.revision, 19)})`,
     `Title: ${one(view.title, 120)}`,
-    `Model: ${one(view.model.replace(/\n/g, "; "), 160)}`,
+    `Authored model: ${one(view.model.replace(/\n/g, "; "), 160) || "(not set)"}`,
     // Keep the bounded status ahead of authored details that may be truncated.
     summary,
     "Instructions:",

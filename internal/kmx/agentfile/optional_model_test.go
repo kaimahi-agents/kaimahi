@@ -4,18 +4,13 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestExportStillRequiresAuthoredModel(t *testing.T) {
-	filename := filepath.Join(t.TempDir(), "greeter.agent.md")
 	source := strings.Replace(sample(t), "## Model\n- **Preferred:** fake\n\n", "", 1)
-	if err := os.WriteFile(filename, []byte(source), 0600); err != nil {
-		t.Fatal(err)
-	}
+	filename := exportSource(t, source)
 	data, err := ExportRunProfile(filename)
 	var detail *Error
 	if data != nil || !errors.As(err, &detail) || detail.Field != "Model.Preferred" {

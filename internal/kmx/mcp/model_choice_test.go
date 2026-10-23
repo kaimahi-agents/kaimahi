@@ -14,21 +14,29 @@ import (
 )
 
 func TestMCPRuntimeModelChoice(t *testing.T) {
-	for _, tc := range []struct{ name, authored, override, want, provider string }{
-		{"default", "", "", "gpt-5.6-terra", "copilot"},
-		{"authored", "authored-model", "", "authored-model", "copilot"},
-		{"override", "authored-model", "picked-model", "picked-model", "copilot"},
-		{"fake-to-real", "fake", "picked-model", "picked-model", "copilot"},
-		{"real-to-fake", "authored-model", "fake", "fake", "fake"},
+	for _, tc := range []struct {
+		name, authored, override, want, provider string
+		crlf                                     bool
+	}{
+		{"default", "", "", "gpt-5.6-terra", "copilot", false},
+		{"default-crlf", "", "", "gpt-5.6-terra", "copilot", true},
+		{"authored", "authored-model", "", "authored-model", "copilot", false},
+		{"override", "authored-model", "picked-model", "picked-model", "copilot", false},
+		{"fake-to-real", "fake", "picked-model", "picked-model", "copilot", false},
+		{"real-to-fake", "authored-model", "fake", "fake", "fake", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, source := canonicalFiles(t)
+			source = strings.ReplaceAll(source, "\r\n", "\n")
 			f, _ := unboundFiles(t)
 			path := filepath.Join(t.TempDir(), "greeter.agent.md")
 			if tc.authored == "" {
 				source = strings.Replace(source, "## Model\n- **Preferred:** fake\n\n", "", 1)
 			} else {
 				source = strings.Replace(source, "**Preferred:** fake", "**Preferred:** "+tc.authored, 1)
+			}
+			if tc.crlf {
+				source = strings.ReplaceAll(source, "\n", "\r\n")
 			}
 			saved, err := f.Create(t.Context(), path, []byte(source))
 			if err != nil {

@@ -219,6 +219,17 @@ test("hostile text is stripped of control and bidi characters and bounded", asyn
   assert.match(view.instructions, /\[truncated\]$/);
 });
 
+test("text fallback distinguishes authored model from the current override route", async () => {
+  for (const [authored, provider, model] of [["gpt-5.6-terra", "fake", "fake"], ["fake", "copilot", "gpt-5.6-terra"], ["", "copilot", "gpt-5.6-terra"]]) {
+    const raw = resource(MINIMAL, { model: authored, latest: { status: "current", result: result({ modelRoute: { provider, model } }) } });
+    const text = formatView(await readView(stubSession(raw), MINIMAL));
+    assert.ok(text.includes(`Authored model: ${authored || "(not set)"}`));
+    const summary = text.split("\n").find(line => line.startsWith("Latest:"));
+    assert.ok(summary.includes("current, PASS"));
+    assert.ok(summary.includes(`runtime model: ${provider}/${model}`));
+  }
+});
+
 test("formatView is compact, plain and visibly truncated", async () => {
   const withResult = resource(MINIMAL, { latest: { status: "current", result: result() } });
   const text = formatView(await readView(stubSession(withResult), MINIMAL));
