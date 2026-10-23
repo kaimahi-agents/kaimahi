@@ -59,7 +59,7 @@ case "$*" in 'model list --provider copilot -o json') printf '[{"model":"claude-
                  "try-it.json": b'{"schemaVersion":1}',
                  "samples/release-writer.agent.md": b'# Release writer\n- **Preferred:** claude-haiku-5.5\njudgeModel: claude-haiku-5.5\n',
                  "skills/kmx-agent-builder/SKILL.md": b'fixture skill', "SETUP.md": b'fixture setup'}
-        for name in ("extension.mjs", "view.mjs", "index.html", "app.js", "style.css"):
+        for name in ("extension.mjs", "view.mjs", "index.html", "app.js", "style.css", "authoring.mjs"):
             files["com.github.copilot/extensions/agent-view/" + name] = b'fixture asset'
         files.update(changes)
         with tarfile.open(self.assets / self.name, "w:gz") as archive:
@@ -101,6 +101,13 @@ case "$*" in 'model list --provider copilot -o json') printf '[{"model":"claude-
         self.assertFalse(self.root.exists())
         self.assertFalse((self.base / "calls").exists())
         self.assertFalse(list(self.home.glob(".local/share/kmx-try-it/run.*/kmx-agent-builder")))
+
+    def test_missing_authoring_asset_refuses_incomplete_bundle(self):
+        self.bundle(**{"com.github.copilot/extensions/agent-view/authoring.mjs": None})
+        result = self.run_setup("--dry-run")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no compatible try-it bundle", result.stdout)
+        self.assertFalse(self.root.exists())
 
     def test_missing_try_it_marker_refuses_old_bundle(self):
         self.bundle(**{"try-it.json": None})

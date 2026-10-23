@@ -119,6 +119,7 @@ cat > "$run_dir/expected" <<'FILES'
 kmx-agent-builder/SETUP.md
 kmx-agent-builder/bin/kmx
 kmx-agent-builder/com.github.copilot/extensions/agent-view/app.js
+kmx-agent-builder/com.github.copilot/extensions/agent-view/authoring.mjs
 kmx-agent-builder/com.github.copilot/extensions/agent-view/extension.mjs
 kmx-agent-builder/com.github.copilot/extensions/agent-view/index.html
 kmx-agent-builder/com.github.copilot/extensions/agent-view/style.css

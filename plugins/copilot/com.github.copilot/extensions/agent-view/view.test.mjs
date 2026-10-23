@@ -1163,8 +1163,9 @@ test("frontend and provider sources avoid unsafe sinks and mutation surfaces", a
   assert.doesNotMatch(strip(ext), /actions\s*:/);
   assert.match(strip(ext), /name:\s*"agent-view"/);
 });
-async function editableCanvas(body) {
-  const original = await readFile(new URL("../../../../../internal/kmx/agentfile/testdata/greeter.agent.md", import.meta.url), "utf8");
+async function editableCanvas(body, eol) {
+  let original = await readFile(new URL("../../../../../internal/kmx/agentfile/testdata/greeter.agent.md", import.meta.url), "utf8");
+  if (eol) original = original.replace(/\r?\n/g, eol);
   const sections = instructionSections(original); sections[0].text = body;
   const source = replaceInstructions(original, sections);
   const revision = "sha256:" + createHash("sha256").update(source).digest("hex");
@@ -1182,9 +1183,9 @@ async function editableCanvas(body) {
   return { doc, root, calls, source, sections: instructionSections(source), clickTest };
 }
 
-test("editable prose renders inline code and strong without a raw-mode focus swap; no-op tests do not save", async () => {
+for (const eol of ["\n", "\r\n"]) test(`editable prose renders inline code and strong without a raw-mode focus swap; no-op tests do not save (${eol === "\n" ? "LF" : "CRLF"})`, async () => {
   const body = "Use `users` and **benefits**.\n\nKeep original lines.\n```text\n`literal` **fence**\n```\nLast line.";
-  const h = await editableCanvas(body), editors = byClass(h.root, "instruction-body");
+  const h = await editableCanvas(body, eol), editors = byClass(h.root, "instruction-body");
   assert.deepEqual(all(editors[0]).filter((e) => e.tag === "code").map((e) => e.textContent), ["users"]);
   assert.deepEqual(all(editors[0]).filter((e) => e.tag === "strong").map((e) => e.textContent), ["benefits"]);
   assert.equal(editors[0].attrs.contenteditable, "plaintext-only");
@@ -1202,7 +1203,12 @@ test("editable prose renders inline code and strong without a raw-mode focus swa
   assert.equal(action.sections[1].text, h.sections[1].text);
   const saved = replaceInstructions(h.source, action.sections);
   for (const heading of ["Identity", "Model", "Examples"]) {
-    const section = (source) => source.split("## " + heading + "\n")[1].split("\n## ")[0];
+    const section = (source) => {
+      const start = source.indexOf("## " + heading);
+      assert.notEqual(start, -1, `${heading} is present`);
+      const end = source.indexOf("\n## ", start + 1);
+      return source.slice(start, end < 0 ? source.length : end);
+    };
     assert.equal(section(saved), section(h.source), heading + " is protected");
   }
 });
