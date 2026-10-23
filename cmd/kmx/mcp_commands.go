@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -82,6 +83,11 @@ func newMCPCommand(state *commandState) *cobra.Command {
 				return err
 			}
 			kmxmcp.AddAgentResource(server, files)
+			if route == nil && root == "" || route != nil && route.Provider == "copilot" {
+				kmxmcp.AddModelResource(server, func(ctx context.Context) ([]modelaccess.Route, error) {
+					return state.copilot().List(ctx)
+				})
+			}
 			kmxmcp.AddAgentVersionResource(server, files)
 			if squad != nil {
 				kmxmcp.AddSquadResource(server, squad)

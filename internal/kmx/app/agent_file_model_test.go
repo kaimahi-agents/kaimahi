@@ -1,9 +1,12 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -37,6 +40,51 @@ func TestFilePreviewUnknownModelListsAvailableChoices(t *testing.T) {
 	result, err := (&App{FileRunner: NewDirectFileRunner()}).PreviewAgentFile(t.Context(), FilePreviewOptions{File: path, Operation: "test", Model: "unknown-model", Route: &route})
 	if err == nil || result.ReasonCode != "copilot_model_unavailable" || result.Reason != "Available Copilot models: choice-a, choice-b" || transport.calls != 1 || result.FullPass {
 		t.Fatalf("one-line choices lost: %+v / %v", result, err)
+	}
+}
+
+func TestRuntimeModelReachesBothPreviewRunners(t *testing.T) {
+	for _, direct := range []bool{false, true} {
+		for _, omitted := range []bool{false, true} {
+			t.Run(fmt.Sprintf("direct=%t/omitted=%t", direct, omitted), func(t *testing.T) {
+				t.Setenv("KMX_HOME", t.TempDir())
+				want := "picked-model"
+				if omitted {
+					want = "gpt-5.6-terra"
+				}
+				sends := 0
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					sends++
+					var body directChat
+					if json.NewDecoder(r.Body).Decode(&body) != nil || body.Model != want {
+						t.Error("runner did not receive effective model")
+					}
+					previewEnvelope(w, want, "Hello, PRIVATE INPUT")
+				}))
+				defer server.Close()
+				opt := directOptions(t, "authored-model", false)
+				opt.Model = "picked-model"
+				if omitted {
+					data, err := os.ReadFile(opt.File)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(opt.File, []byte(strings.Replace(string(data), "## Model\n- **Preferred:** authored-model\n\n", "", 1)), 0600); err != nil {
+						t.Fatal(err)
+					}
+					opt.Model = ""
+				}
+				opt.Route = &modelaccess.Route{Provider: "compatible", Endpoint: server.URL, Auth: "none"}
+				runner := NewLocalFileRunner()
+				if direct {
+					runner = NewDirectFileRunner()
+				}
+				result, err := (&App{FileRunner: runner}).PreviewAgentFile(t.Context(), opt)
+				if err != nil || !result.FullPass || result.ModelRoute.Model != want || sends != 2 {
+					t.Fatalf("real runner model copy: %+v / %v sends=%d", result, err, sends)
+				}
+			})
+		}
 	}
 }
 

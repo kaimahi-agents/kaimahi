@@ -2,11 +2,22 @@ package copilot
 
 import (
 	"errors"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 )
+
+func TestCatalogIDsAreConcreteAndSafe(t *testing.T) {
+	var routes []modelaccess.Route
+	for _, id := range []string{"choice-b", "choice-a", "choice-b", "auto", "fake", "https://private.invalid", "bad\nmodel", "ghp_" + strings.Repeat("a", 36)} {
+		routes = append(routes, modelaccess.Route{Provider: "copilot", Model: id, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"})
+	}
+	if got := strings.Join(CatalogIDs(routes), ","); got != "choice-a,choice-b" {
+		t.Fatalf("unsafe/nonconcrete choices: %q", got)
+	}
+}
 
 func TestUnavailableModelListsCurrentChoices(t *testing.T) {
 	for _, beforeSend := range []bool{false, true} {
