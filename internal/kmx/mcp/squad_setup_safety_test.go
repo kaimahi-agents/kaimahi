@@ -81,7 +81,11 @@ func TestSquadSetupGitCannotDiscoverAncestorRepository(t *testing.T) {
 	if err != nil {
 		t.Skip("git not installed")
 	}
-	parent := t.TempDir()
+	// macOS temp roots can contain /var aliases; production intentionally refuses them.
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := exec.Command(git, "init", "--quiet", parent).Run(); err != nil {
 		t.Fatal(err)
 	}
