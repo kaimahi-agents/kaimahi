@@ -48,6 +48,19 @@ var kubectlFixtureBuild struct {
 }
 
 func TestMain(m *testing.M) {
+	// macOS exposes its temporary root through /var -> /private/var. Fixtures
+	// need physical paths because source loaders deliberately refuse symlink
+	// ancestors. Set this before testing creates any t.TempDir directories.
+	if runtime.GOOS == "darwin" {
+		root, err := filepath.EvalSymlinks(os.TempDir())
+		if err == nil {
+			err = os.Setenv("TMPDIR", root)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "resolve app test temporary root:", err)
+			os.Exit(1)
+		}
+	}
 	status := m.Run()
 	if kubectlFixtureBuild.dir != "" {
 		if err := os.RemoveAll(kubectlFixtureBuild.dir); err != nil {

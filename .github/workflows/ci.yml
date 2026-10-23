@@ -32,10 +32,11 @@ jobs:
   # Each process retains serial fixture isolation; top-level names are assigned
   # exactly once without splitting dynamic subtests from their parent.
   app-tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
@@ -51,14 +52,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: kmx-app-timings-${{ matrix.shard }}
+          name: kmx-app-timings-${{ matrix.os }}-${{ matrix.shard }}
           path: kmx-app-test.timings.json
           if-no-files-found: ignore
       - name: App test failure diagnostics
         if: failure() && steps.app_tests.outcome == 'failure' && hashFiles('kmx-app-test.json') != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: kmx-app-test-json-${{ matrix.shard }}
+          name: kmx-app-test-json-${{ matrix.os }}-${{ matrix.shard }}
           path: kmx-app-test.json
           retention-days: 3
 

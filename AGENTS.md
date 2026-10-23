@@ -754,6 +754,9 @@ current exact alpha framework pin is a draft choice, not approval to publish;
 custom-domain and versioned-site changes require a separate review.
 
 Run checks appropriate to the changed paths as described in CONTRIBUTING.md.
+App CI runs all four process-isolated shards on Linux and macOS; both platforms
+gate hygiene and artifact names include OS/shard. The App test harness resolves
+the macOS temporary root before fixtures; retain production symlink refusals.
 Command changes normally require `go test ./cmd/kmx`, affected operation-package
 tests, documentation links, repository-map and legacy-runtime checks. These
 checkers use tracked files, so include intended additions in the index

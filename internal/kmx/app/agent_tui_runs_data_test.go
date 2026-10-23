@@ -321,15 +321,41 @@ func TestConsoleRecentOrkaRunsCancellationAfterFirstPageKeepsRoots(t *testing.T)
 	dir := t.TempDir()
 	fakeTool(t, dir, "kubectl", `case "$*" in
   *'get --raw /apis/core.orka.ai/v1alpha1/namespaces/team/tasks?limit=2') printf '%s' "$KMX_TASK_LIST" ;;
-  *'get --raw /apis/core.orka.ai/v1alpha1/namespaces/team/tasks?limit=2&continue=next') sleep 2 ;;
+  *'get --raw /apis/core.orka.ai/v1alpha1/namespaces/team/tasks?limit=2&continue=next') : > "$KMX_SECOND_PAGE"; exec sleep 10 ;;
   *) exit 86 ;;
 esac`)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("KMX_TASK_LIST", taskPage("next", rootItem("safe", "2025-01-01T00:00:00Z", "private-prompt")))
+	secondPage := filepath.Join(dir, "second-page")
+	t.Setenv("KMX_SECOND_PAGE", secondPage)
 	a := &App{Cfg: &config.Config{}, Run: &run.Runner{}}
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
+	// Cancel only after the second request starts, not on an assumption about
+	// how quickly the host can start the first kubectl process.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := os.Stat(secondPage); err == nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
 	got, err := a.consoleRecentOrkaRuns(ctx, agentTUIEnvironment{Name: "selected"}, agentTUIAgent{Name: "lead", Namespace: "team"})
+	if _, statErr := os.Stat(secondPage); statErr != nil || ctx.Err() != context.Canceled {
+		t.Fatalf("did not cancel during the second page: %v / %v", statErr, ctx.Err())
+	}
 	if err != nil || got.Count != 1 || got.Roots[0].Name != "safe" || got.Missing == "" || strings.Contains(fmt.Sprintf("%+v", got), "private-prompt") {
 		t.Fatalf("cancelled pagination lost safe roots: %+v err=%v", got, err)
 	}

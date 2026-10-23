@@ -137,7 +137,9 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertIn("app-tests", self.jobs)
         job = self.jobs["app-tests"]
         self.assertNotIn("if", job)
-        self.assertEqual(job["strategy"]["matrix"], {"shard": [0, 1, 2, 3]})
+        self.assertEqual(job["runs-on"], "${{ matrix.os }}")
+        self.assertEqual(job["strategy"]["matrix"], {
+            "os": ["ubuntu-latest", "macos-latest"], "shard": [0, 1, 2, 3]})
         self.assertIs(job["strategy"]["fail-fast"], False)
         body = "\n".join(s.get("run", "") for s in job["steps"])
         self.assertIn("python3 scripts/ci/app-tests.py --shard", body)
@@ -177,6 +179,7 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertEqual(failure["with"]["path"], "kmx-app-test.json")
         for artifact in artifacts:
             self.assertIn("${{ matrix.shard }}", artifact["with"]["name"])
+            self.assertIn("${{ matrix.os }}", artifact["with"]["name"])
 
     def test_general_suite_excludes_only_app_and_discovery_fails_closed(self):
         step = next(s for s in self.jobs["hygiene"]["steps"] if s.get("id") == "kmx_tests")

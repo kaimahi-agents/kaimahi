@@ -172,11 +172,10 @@ func TestOrkaWorkerCanGetPolicyUsesTaskNamespace(t *testing.T) {
 			dir := t.TempDir()
 			request := filepath.Join(dir, "review")
 			fakeTool(t, dir, "kubectl", fmt.Sprintf(`/bin/cat > %[1]q
-if /bin/grep -q '"user":"system:serviceaccount:%[2]s:orka-ai-worker"' %[1]q; then
-  printf '%%s' '{"status":{"allowed":true}}'
-else
-  printf '%%s' '{"status":{"allowed":false}}'
-fi`, request, tc.grantNamespace))
+case "$(/bin/cat %[1]q)" in
+  *'"user":"system:serviceaccount:%[2]s:orka-ai-worker"'*) printf '%%s' '{"status":{"allowed":true}}' ;;
+  *) printf '%%s' '{"status":{"allowed":false}}' ;;
+esac`, request, tc.grantNamespace))
 			t.Setenv("PATH", dir)
 			a := &App{Cfg: &config.Config{KubeContext: "kind-demo"}, Run: &run.Runner{}}
 			err := a.orkaWorkerCanGetPolicy(t.Context(), "orka-ai-worker", "health-team", "health-gateway")
