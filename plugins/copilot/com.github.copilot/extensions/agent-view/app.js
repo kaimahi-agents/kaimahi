@@ -232,7 +232,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
   const editable = () => !!snap;
   const matches = (view) => view && !view.error && view.file?.path === payload.file.path;
-  const hasDrafts = () => sectionDrafts.size > 0 || testDrafts.size > 0;
+  const hasDrafts = () => sectionDrafts.size > 0 || testDrafts.size > 0 || invalidEditors.size > 0;
   const rawExamples = () => snap ? base.authoring.examples : [];
   const sectionText = (key) => sectionDrafts.get(key) ?? snap.sections.find((s) => s.key === key).text;
   // Display rows and their unique raw join; ambiguous IDs stay visible but not editable.

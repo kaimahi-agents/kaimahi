@@ -1786,6 +1786,15 @@ for (const expected of ["Fix$& #218", "Fix$$ #218", "Fix$' #218", "Fix$` #218"])
   assert.equal(c18Prompt(h.root).textContent, `Keep ${expected} in notes.`);
 });
 
+test("an unsupported prompt edit also greys every known result before repair", async () => {
+  const h = await editableCanvas("Original text.", undefined, { currentPass: true });
+  const editor = c18Prompt(h.root), unknown = h.doc.createElement("span");
+  unknown.textContent = "Unserializable local edit"; editor.append(unknown); editor.listeners.input[0]();
+  assert.deepEqual(c18Status(h.root), ["old-pass"]);
+  assert.equal(byClass(h.root, "save-run")[0].disabled, true);
+  assert.equal(h.calls.length, 0);
+});
+
 test("unsupported editor DOM is retained against observation and navigation until repaired", async () => {
   const h = await editableCanvas("Original text.");
   const editor = c18Prompt(h.root), unknown = h.doc.createElement("span");
