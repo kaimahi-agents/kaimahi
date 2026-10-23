@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
-import { createOpenHandler, readOpenView, viewInstanceId, OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS } from "./open.mjs";
+import { createOpenHandler, readOpenView, viewInstanceId, OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/open.mjs";
 
 const PATH = "greeter.agent.md";
 const PROVIDER = "plugin:kmx-agent-builder:agent-view";
@@ -125,7 +125,7 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
   const stub = 'data:text/javascript,' + encodeURIComponent('export class CanvasError extends Error { constructor(code,message){super(message);this.code=code;} }; export const createCanvas=(config)=>config; export const joinSession=(config)=>globalThis.__kmxJoin(config);');
   const hooks = registerHooks({ resolve(specifier, context, next) { return specifier === "@github/copilot-sdk/extension" ? { url: stub, shortCircuit: true } : next(specifier, context); } });
   try {
-    await import("./extension.mjs");
+    await import("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/extension.mjs");
     assert.deepEqual(f.calls, [], "joining must not read an agent or open a canvas");
     assert.deepEqual(registration.tools.map(t => t.name), ["open_kmx_canvas"]);
     assert.deepEqual(registration.commands.map(c => c.name), ["agent-view"]);
@@ -151,7 +151,7 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
       f.session.rpc.mcp.resources.read = readResource;
       await canvas.onClose(ctx);
     }
-    const skill = await readFile(new URL("../../../skills/kmx/SKILL.md", import.meta.url), "utf8");
+    const skill = await readFile(new URL("../../../../copilot-wsl/skills/kmx/SKILL.md", import.meta.url), "utf8");
     for (const eol of ["\n", "\r\n"]) {
       assert.match(skill.replace(/\r?\n/g, eol), /^---\r?\nname: kmx\r?\n/);
     }
@@ -161,9 +161,11 @@ test("actual extension registers one explicit opener and the kmx skill, with no 
     assert.match(skill, /`<id>\.agent\.md`[^\n]*`kmx-agent-<id>`/);
     assert.match(skill, /`\.squad\/agents\/<id>\/charter\.md`[^\n]*`kmx-squad-<id>`/);
     assert.doesNotMatch(skill, /\"root\"\s*:/);
-    const builder = await readFile(new URL("../../../skills/kmx-agent-builder/SKILL.md", import.meta.url), "utf8");
+    const builder = await readFile(new URL("../../../../copilot-wsl/skills/kmx-agent-builder/SKILL.md", import.meta.url), "utf8");
     assert.match(builder, /After (?:a )?successful Create/);
     assert.match(builder, /structuredContent\.file\.path/);
+    assert.match(builder, /unbound server uses Copilot/);
+    assert.match(builder, /MCP server `kmx-agent-builder`/);
     assert.match(builder, /open_canvas/);
     assert.match(builder, /open_kmx_canvas/);
     assert.doesNotMatch(builder, /ask the user to\s+confirm|read \[the configured selected root\]/);

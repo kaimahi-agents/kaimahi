@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {createActionHandler,readView,startViewBridge} from './view.mjs';
-import {instructionSections,replaceInstructions,replaceExamples} from './authoring.mjs';
+import {createActionHandler,readView,startViewBridge} from '../../../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs';
+import {instructionSections,replaceInstructions,replaceExamples} from '../../../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs';
 const original=await readFile(new URL('../../../../../internal/kmx/agentfile/testdata/greeter.agent.md',import.meta.url),'utf8');
 const revision=s=>'sha256:'+createHash('sha256').update(s).digest('hex');
 function harness(){

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { instructionSections, replaceExamples, replaceInstructions } from "./authoring.mjs";
+import { instructionSections, replaceExamples, replaceInstructions } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import test from "node:test";
@@ -16,10 +16,10 @@ import {
   readView,
   resourceUri,
   startViewBridge,
-} from "./view.mjs";
-import { renderView } from "./app.js";
+} from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs";
+import { renderView } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/app.js";
 
-const here = (name) => fileURLToPath(new URL(name, import.meta.url));
+const here = (name) => fileURLToPath(new URL("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/" + name, import.meta.url));
 const MINIMAL = "greeter.agent.md";
 const SQUAD = ".squad/agents/greeter/charter.md";
 const REV = "sha256:" + "a".repeat(64);
@@ -260,7 +260,7 @@ test("text truncation never hides the latest-result summary", async () => {
 });
 
 test("status, error and quiet text tokens meet AA contrast in both themes", async () => {
-  const css = await readFile(new URL("./style.css", import.meta.url), "utf8");
+  const css = await readFile(new URL("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/style.css", import.meta.url), "utf8");
   // oklch -> linear sRGB luminance (CSS Color 4), so the check follows the actual tokens.
   const lum = (value) => {
     const [L, C, H] = value.match(/oklch\(([\d.]+) ([\d.]+) ([\d.]+)/).slice(1).map(Number);
@@ -1877,7 +1877,7 @@ test("ADVERSARIAL delayed idle poll cannot overwrite the rerun failure with an o
     return new Promise(resolve=>{release=()=>resolve({json:async()=>oldView});});
   };
   try {
-    await import(new URL("./app.js?delayed-poll-probe", import.meta.url));
+    await import(new URL("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/app.js?delayed-poll-probe", import.meta.url));
     for(let i=0;i<8;i++)await tick();
     assert.equal(typeof poll,"function");
     assert.equal(summaryOf(root),"1 passing");
@@ -1917,7 +1917,7 @@ test("an accepted same-revision observation rebuilds result DOM without losing d
   assert.doesNotMatch(c18Text(h.root,"detail-status"),/just now/);
 });
 test("ADVERSARIAL two canvas controllers cannot silently overwrite the first saved revision", async () => {
-  const {createActionHandler}=await import("./view.mjs");
+  const {createActionHandler}=await import("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs");
   const seed=await editableCanvas("Original prompt.",undefined,{examples:c18Examples(["a"])});
   let source=seed.source,latest={status:"none"};const calls=[];
   const rev=()=>"sha256:"+createHash("sha256").update(source).digest("hex");

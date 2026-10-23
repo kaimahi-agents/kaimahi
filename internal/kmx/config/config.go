@@ -242,6 +242,16 @@ func LocalPreviewJournalDir() (string, error) {
 	return filepath.Join(dir, "local-preview", "journals"), nil
 }
 
+// LocalAgentVersionDir is the bounded cleartext source history base, separate
+// from preview journals. Resolving its path does not create the directory.
+func LocalAgentVersionDir() (string, error) {
+	dir, err := StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "local-preview", "versions"), nil
+}
+
 // ReadSelectedContext returns the context chosen by `kmx context use`, or "".
 func ReadSelectedContext() (string, error) {
 	path, err := contextFile()

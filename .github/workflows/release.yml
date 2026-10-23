@@ -461,18 +461,15 @@ jobs:
           path: ${{ runner.temp }}/checked-release
       - name: Install pinned Copilot CLI without dependency scripts
         run: npm install --prefix "$RUNNER_TEMP/copilot" --ignore-scripts --no-save @github/copilot@1.0.102
-      - name: Native archive dry run and real isolated install cycle
+      - name: Verify native archive and run real isolated install cycle
         shell: bash
-        env:
-          VERSION: ${{ needs.release.outputs.version }}
         run: |
           set -euo pipefail
           case "$(uname -s)" in Darwin) os=darwin;; Linux) os=linux;; *) exit 1;; esac
           case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64) arch=amd64;; *) exit 1;; esac
-          export KMX_TRY_IT_ARCHIVE="$RUNNER_TEMP/checked-release/release-assets/kmx-agent-builder-$os-$arch.tar.gz"
-          export KMX_TRY_IT_COPILOT="$RUNNER_TEMP/copilot/node_modules/.bin/copilot"
-          export KMX_TRY_IT_VERSION="$VERSION"
-          python3 -m unittest discover -s plugins/copilot -p test_try_it.py -v
+          export KMX_NATIVE_ARCHIVE="$RUNNER_TEMP/checked-release/release-assets/kmx-agent-builder-$os-$arch.tar.gz"
+          export KMX_NATIVE_COPILOT="$RUNNER_TEMP/copilot/node_modules/.bin/copilot"
+          python3 -m unittest discover -s plugins/copilot -p test_native_install.py -v
 
   publish:
     needs: [release, plugin-install]

@@ -48,15 +48,20 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(json.loads(files["kmx-agent-builder/selected-root.json"]),
                              {"root": "__SELECTED_ROOT__"})
             self.assertEqual(files["kmx-agent-builder/bin/kmx"], self.engine.read_bytes())
-            for name in ("samples/release-writer.agent.md", "try-it.json"):
-                self.assertEqual(files["kmx-agent-builder/" + name],
-                                 (release.package.HERE / name).read_bytes())
+            for name in (*release.package.SKILL_FILES, *release.package.NATIVE_FILES):
+                source = release.package.asset_source(name)
+                self.assertEqual(source, release.package.HERE.with_name("copilot-wsl") / name)
+                self.assertEqual(files["kmx-agent-builder/" + name], source.read_bytes())
+            self.assertEqual(files["kmx-agent-builder/samples/release-writer.agent.md"],
+                             (release.package.HERE / "samples/release-writer.agent.md").read_bytes())
             self.assertEqual(next(m.mode for m in members if m.name.endswith("bin/kmx")), 0o755)
             self.assertNotIn(str(self.base).encode(), b"".join(files.values()))
 
     def test_archive_accepts_builder_sample_size_budget(self):
-        templates = self.base / "templates"
+        templates = self.base / "copilot"
         shutil.copytree(release.package.HERE, templates)
+        shutil.copytree(release.package.HERE.with_name("copilot-wsl"),
+                        templates.with_name("copilot-wsl"))
         sample = templates / "samples/release-writer.agent.md"
         sample.write_bytes(sample.read_bytes() + b"\n" + b" " * (65 << 10))
         with mock.patch.object(release.package, "HERE", templates):
@@ -76,7 +81,7 @@ class ReleaseTests(unittest.TestCase):
         self.archive_build()
         with tarfile.open(self.archive) as original:
             rows = [(m, original.extractfile(m).read()) for m in original]
-        for kind in ("engine", "extra", "link", "traversal", "sample", "marker", "opener", "skill"):
+        for kind in ("engine", "extra", "link", "traversal", "sample", "opener", "skill"):
             with self.subTest(kind=kind):
                 altered = self.base / (kind + ".tar.gz")
                 with tarfile.open(altered, "w:gz") as out:
@@ -89,8 +94,6 @@ class ReleaseTests(unittest.TestCase):
                             data = b"X" + data[1:]
                         if kind == "skill" and member.name.endswith("skills/kmx/SKILL.md"):
                             data = b"X" + data[1:]
-                        if kind == "marker" and member.name.endswith("try-it.json"):
-                            data = data.replace(b"1", b"2")
                         out.addfile(member, io.BytesIO(data))
                     if kind in ("extra", "link", "traversal"):
                         extra = tarfile.TarInfo("../escape" if kind == "traversal" else "kmx-agent-builder/extra")

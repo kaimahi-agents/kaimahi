@@ -178,7 +178,7 @@ and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
 
 The classifier exposes an independent `orka_required` decision for the Orka
-runtime worker. PRs run it when their diff matches the Orka/shared trigger list;
+runtime worker. PRs run it when their diff matches the Orka-owned trigger list;
 valid paths outside that list skip it. Ordinary main pushes skip it too: main is
 re-verified nightly, not per merge. Manual and release qualification remain full.
 Quickstart and stock Helm schedules and guards are unchanged; kagent uses the separate hermetic/live policy below. The checkout helper accepts
@@ -189,9 +189,11 @@ not the event's possibly stale base. NUL-delimited, no-renames Git output keeps
 deletions and both sides of moves visible.
 
 The `triggers` object in `scripts/ci/orka-routing.json` selects package/file
-prefixes, exact files and slash-component filename globs. It includes Orka
-operations, shared suite/config/build inputs, known startup constructors and live
-fixtures. The exact generated `scripts/ci/orka-callers.json` exception never hides
+prefixes, exact files and slash-component filename globs. It includes the named
+Orka runtime/schema/lift/lifecycle/portforward/toolchain packages, Orka/local/
+quickstart command files, Orka CI drivers/fixtures/assets, build inputs and `.github/`.
+Shared CLI/App/config/packaging and `pkg/kmx/` changes are verified by the nightly,
+not per PR. The exact generated `scripts/ci/orka-callers.json` exception never hides
 another triggering path in the same diff. Hygiene still validates that manifest
 on every PR; it is a typed-reference record, not an execution graph.
 

@@ -36,7 +36,7 @@ test('every maintained Markdown page is rendered exactly once', async () => {
   }
   const docs = (await markdownFiles(path.join(root, 'docs')))
     .map((file) => file.replace(/\/README\.md$/, '/index.md').replace(/\.md$/, '.html'))
-  const expected = ['404.html', 'index.html', 'TRY-IT.html', ...docs].sort()
+  const expected = ['404.html', 'index.html', ...docs].sort()
   assert.deepEqual(await htmlFiles(dist), expected)
 })
 
@@ -176,6 +176,7 @@ test('checkout-only references point to source while guide links stay local', as
 
   const repositoryMap = await readFile(path.join(dist, 'docs', 'repository-map.html'), 'utf8')
   assert.ok(repositoryMap.includes(`https://github.com/kaimahi-agents/kaimahi/blob/${sourceRef}/plugins/copilot/README.md`))
+  assert.ok(repositoryMap.includes(`https://github.com/kaimahi-agents/kaimahi/blob/${sourceRef}/plugins/copilot-wsl/README.md`))
 
   const index = await readFile(path.join(dist, 'docs', 'index.html'), 'utf8')
   assert.ok(index.includes(`href="${agentSuiteDocsURL}"`))

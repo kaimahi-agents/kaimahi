@@ -515,7 +515,7 @@ editability. A restart has no current result;
 a revision change marks the old observation stale and withholds its details.
 Reads perform no inference, mutation or journal retrieval.
 
-The [Copilot plugin](../plugins/copilot/README.md#read-only-agent-view) adds a
+The [WSL Copilot plugin](../plugins/copilot-wsl/README.md) adds a
 native authoring canvas and read-only `/agent-view PATH` text fallback over this
 resource. Canvas Edit/Test/Run use existing same-session MCP tools; only explicit
 Suggest more starts chat. Saves require the original revision; changed result
@@ -523,19 +523,115 @@ revisions are labelled stale rather than silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
 
-A real model route must be selected at process startup with trusted
-`--provider` and, for local routes, `--endpoint`; the exact model still comes from
-the parsed file. For Copilot, use `kmx mcp --provider copilot`
-after explicit sign-in. The same fixed endpoint and hosted-content disclosure
-apply; startup itself performs no sign-in, credential access or model request.
-Tools accept no endpoint, credential or arbitrary-command fields. With no route,
-only exact `fake` is selectable. Run/Test use the same
+Unbound `kmx mcp` uses Copilot for non-fake authored models when no startup route
+is selected. Authored `fake` remains offline. Explicit trusted `--provider` and,
+for local routes, `--endpoint` override that default; the exact model still comes
+from the parsed file. Legacy `--root` mode retains its existing fake-only behavior
+without an explicit route. Copilot uses the fixed endpoint and existing runtime
+credentials, without an installation-time model or login step. Hosted-content
+disclosure still applies; startup itself performs no sign-in, credential access
+or model request. Tools accept no endpoint, credential or arbitrary-command fields.
+Run/Test use the same
 [file preview runner](#agent-file-local-preview-unreleased-integration) as the
 CLI: fake/local routes use embedded Sessions and one private journal; an agent
 or judge using Copilot keeps direct execution with `NoJournal` and the explicit
 no-journal runner label. A nil runner still returns `runner_unavailable`, never
 a fallback. Hermetic checks do not qualify real models or native Windows.
 There is no fifth Explain/model/install tool; offline Explain stays a CLI action.
+
+#### Saved source versions and restore
+
+Canonical MCP Edit keeps best-effort, source-only history on Linux and macOS.
+It captures the valid saved content being replaced, not drafts or the proposed
+new content. The first Edit captures the file's initial contents; Create needs
+no redundant history copy. A snapshot's `capturedAt` is when its content was
+captured for replacement, not its original save time or proof that replacement
+succeeded. External-editor saves are captured only
+when a later MCP Edit replaces them. Native Squad v2 edits are not captured;
+canonical v1 charters at `.squad/agents/ID/charter.md` are eligible.
+
+A history problem **never refuses an otherwise valid save**. Successful Edit
+results add `file.history.status`: `retained` or `unavailable`, with a safe
+`reasonCode` and `reason`. The MCP text includes the same fields. Clients must
+show an unavailable warning separately from save success, for example:
+“Saved, but the previous version could not be confirmed in history.” Do not
+infer successful retention from `isError: false`. Source validation, stale
+revision, cancellation and publication failures still fail normally; they never
+return a Saved confirmation. Normal history growth evicts oldest snapshots,
+not saves. Busy, unsafe or inaccessible history produces the explicit warning.
+
+The existing `kmx://agent/{path}` view adds optional `history`, containing
+`status: available|unavailable` and `versions`, newest first. Each metadata entry
+has `versionId`, exact source `revision`, `capturedAt`, `sourceBytes` and `uri`;
+old source is not included in this list. Missing history is an empty available
+list. Damaged snapshot payloads are omitted from lists and refuse individual
+reads; they still count toward root entry/byte bounds and can be evicted normally.
+Unsafe filesystem objects and oversized state still refuse history access. A
+history error does not prevent reading the current authored view. History-free
+library embeddings omit this optional field.
+
+To restore, without a new tool or alternate filesystem writer:
+
+1. Read the current agent view and keep its current `file.revision`.
+2. Read the selected entry's `uri`, a read-only
+   `kmx://agent-version/{path}/{versionId}` resource. Its `kmx.agent-version` v1
+   JSON contains `file`, version metadata in `version`, and exact `source`.
+   Encode the entire requested absolute or relative path as one component,
+   including slashes. Relative paths use the server cwd or legacy `--root`.
+3. Call the existing `edit` with `schemaVersion: 1`, the same `path`,
+   `content` set to that old source, and `expectedRevision` set to the **current**
+   view's revision, not the old version's revision.
+
+Restore is a new Edit: it retains the displaced current source for undo, subject
+to the same best-effort warning. Existing snapshots are never rewritten. Source
+SHA values can repeat after restore; a `versionId` identifies a captured
+occurrence, not a new kind of source revision. Consecutive identical preimages
+are deduplicated. Failed publication may leave a snapshot of unchanged existing
+source, never a claim that the proposed content was saved. Restoring neither
+runs tests nor creates an execution result; per-version test results are not
+retained here.
+
+History lives outside the project by default, under
+`<kmx state>/local-preview/versions/<hash-of-canonical-root>/`, beside but separate
+from `journals/`. History matches the canonical target, not a requested alias:
+ordinary agent files use their canonical directory as the history root; canonical
+`.squad/agents/ID/charter.md` files share the directory above `.squad`. This keeps
+legacy history readable and aliases consistent without repository discovery.
+Requested paths stay unchanged in responses. `KMX_HOME` selects the state directory; use an absolute path
+outside version control. Records contain original authored source in cleartext,
+not resolved model credentials or run answers. Keep that directory private:
+0700 directories, 0600 regular single-link files. Existing unsafe state is
+refused rather than chmod-repaired. The operator-selected state directory may
+be a symlink, but owned history components may not. No native Windows history
+qualification is implied. Filesystem IO is bounded but synchronous.
+
+Retention is at most 20 snapshots per file, 200 per operation root and 32 MiB of
+encoded records per root; source is bounded to 256 KiB. The oldest eligible
+snapshots are evicted to make room. Roots have independent locks and budgets;
+there is no global cap across arbitrarily many roots. Root/file moves do not
+migrate history, and reusing the same canonical root/file path reuses its history
+namespace. A restart preserves source history, not preview observations.
+
+Clear one existing root's retained source history without starting MCP:
+
+```bash
+kmx mcp --root /absolute/root --clear-history
+```
+
+Clear needs no model route, credentials or protocol stdin; provider/endpoint and
+native-Squad flags cannot be combined with it. It changes no current source,
+preview journals or other root's history. Missing history is a no-op. Unsafe or
+busy state refuses clear rather than deleting broadly. With MCP processes
+stopped, damaged or orphaned history can instead be removed from the private
+`versions` tree; do not remove current agent files or the sibling `journals` tree.
+Unlike normal `kmx mcp` startup, clear requires an explicit existing history
+root via `--root`, so moved/deleted roots need that manual cleanup. List/get also
+require current agent-file inspection: deleting the
+current file disables historical reads through this API. There is no alternate
+Create-based recovery. Pruned, cleared, foreign or unavailable version reads use
+the existing generic MCP `protocol_failed` error. Old source rejected by the
+current validator, or an invalid current file, cannot bypass Edit validation.
+These APIs have hermetic filesystem/MCP coverage, not canvas UI qualification.
 
 ### Deploy compatibility (unreleased)
 

@@ -86,6 +86,15 @@ class PackageTests(unittest.TestCase):
                 self.build(**extra)
             self.assertFalse(self.out.exists())
 
+    def test_shared_sources_are_ordinary_wsl_files(self):
+        shared = HERE.with_name("copilot-wsl")
+        for name in (*package.NATIVE_FILES, *package.SKILL_FILES):
+            with self.subTest(name=name):
+                self.assertEqual(package.asset_source(name), shared / name)
+                self.assertTrue((shared / name).is_file(), name)
+                self.assertFalse((shared / name).is_symlink(), name)
+                self.assertFalse((HERE / name).exists(), name)
+
     def test_native_view_is_bundled_without_tests_or_dependencies(self):
         self.build()
         native = "com.github.copilot/extensions/agent-view"
@@ -93,22 +102,21 @@ class PackageTests(unittest.TestCase):
         self.assertEqual({p.name for p in (self.out / native).iterdir()}, names)
         for name in names:
             self.assertEqual((self.out / native / name).read_bytes(),
-                             (HERE / native / name).read_bytes())
+                             package.asset_source(f"{native}/{name}").read_bytes())
         self.assertFalse((self.out / "node_modules").exists())
 
     def test_both_skills_are_copied_exactly(self):
         self.build()
         for name in ("kmx-agent-builder", "kmx"):
             path = Path("skills") / name / "SKILL.md"
-            self.assertEqual((self.out / path).read_bytes(), (HERE / path).read_bytes())
+            self.assertEqual((self.out / path).read_bytes(),
+                             package.asset_source(path.as_posix()).read_bytes())
 
-    def test_sample_and_try_it_marker_are_copied_exactly(self):
+    def test_native_local_sample_is_copied_without_installer_marker(self):
         self.build()
         self.assertEqual((self.out / "samples/release-writer.agent.md").read_bytes(),
                          (HERE / "samples/release-writer.agent.md").read_bytes())
-        self.assertEqual((self.out / "try-it.json").read_bytes(),
-                         (HERE / "try-it.json").read_bytes())
-        self.assertEqual(json.loads((self.out / "try-it.json").read_text()), {"schemaVersion": 1})
+        self.assertFalse((self.out / "try-it.json").exists())
         self.assertEqual(list(self.root.iterdir()), [])
 
     def test_windows_command_is_explicit(self):

@@ -113,6 +113,9 @@ func TestLocalPreviewJournalDirIsUnderStateDir(t *testing.T) {
 	if got, err := LocalPreviewJournalDir(); err != nil || got != filepath.Join(home, "local-preview", "journals") {
 		t.Fatalf("journal dir = %q, %v", got, err)
 	}
+	if got, err := LocalAgentVersionDir(); err != nil || got != filepath.Join(home, "local-preview", "versions") {
+		t.Fatalf("source version dir = %q, %v", got, err)
+	}
 }
 
 func TestModelRecordsWhetherTheOperatorSelectedIt(t *testing.T) {

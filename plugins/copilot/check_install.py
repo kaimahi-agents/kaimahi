@@ -108,8 +108,7 @@ def check(copilot: str, plugin: Path, digest: str, home: Path) -> None:
         for _ in range(2):  # A real uninstall/reinstall, not a simulated cache copy.
             cli("plugin", "install", str(plugin.resolve()))
             installed = True
-            # Reinstall over the same name, as an explicitly confirmed rebind
-            # does in try-it.sh; then inspect the resulting real host cache.
+            # Reinstall over the same name, then inspect the real host cache.
             cli("plugin", "install", str(plugin.resolve()))
             plugins = json.loads(cli("plugin", "list", "--json"))
             if not any(p["name"] == "kmx-agent-builder" and p["enabled"] for p in plugins):

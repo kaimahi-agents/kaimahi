@@ -321,7 +321,7 @@ The workflow emits `hygiene` and `e2e-hello-world` merge gates. The latter
 fail-closed aggregates four retained shards: `e2e-kagent-lift`,
 `e2e-orka-runtime`, `e2e-orka-helm` and `e2e-quickstart`, plus successful
 classification and the independent `kagent-contract` hermetic check. Only intentional skips are accepted, never failed/cancelled
-shards. Orka runtime proof runs for PRs matching the Orka/shared trigger list;
+shards. Orka runtime proof runs for PRs matching the Orka-owned trigger list;
 valid paths outside it skip, as do ordinary main pushes. Unknown, empty or
 malformed diffs still run full proof. Main is re-verified nightly, not per merge. Required contexts remain
 `hygiene` and `e2e-hello-world`, without a ruleset change.
@@ -329,8 +329,10 @@ malformed diffs still run full proof. Main is re-verified nightly, not per merge
 The read-only [Orka worker](../.github/workflows/orka-runtime.yml) runs the same
 complete proof when invoked, including native evaluation, transfer, promotion,
 and pinned-update checks. It has no internal Markdown shortcut. The independent
-`triggers` object in `scripts/ci/orka-routing.json` selects Orka and shared paths,
-including live fixtures; the generated caller manifest alone is exempt. Its
+`triggers` object in `scripts/ci/orka-routing.json` selects Orka-owned packages,
+command files, CI/build inputs and live fixtures; the generated caller manifest
+alone is exempt. Shared CLI/App/config/packaging and `pkg/kmx/` changes are
+verified by the nightly, not per PR. Its
 hygiene validation remains mandatory. The unchanged init/caller guard selections
 are narrower than all skipped paths, so other skipped changes rely on hygiene
 and nightly integration detection. Its raw check is `e2e-orka-runtime / qualify`.

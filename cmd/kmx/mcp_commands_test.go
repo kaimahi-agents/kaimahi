@@ -149,6 +149,19 @@ func TestMCPCommandUnboundStartup(t *testing.T) {
 	if runner.calls != 0 || *loads != 0 || diag.Len() != 0 {
 		t.Fatalf("authoring effects: calls=%d, loads=%d, diag=%s", runner.calls, *loads, diag.String())
 	}
+	path := filepath.Join(t.TempDir(), "claude.agent.md")
+	claude := bytes.ReplaceAll(source, []byte("**Preferred:** fake"), []byte("**Preferred:** claude-haiku-5.5"))
+	created, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: "create", Arguments: map[string]any{"schemaVersion": 1, "path": path, "content": string(claude)}})
+	if err != nil || created.IsError {
+		t.Fatalf("create Claude agent: %+v, %v", created, err)
+	}
+	for _, operation := range []string{"run", "test"} {
+		result, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: operation, Arguments: map[string]any{"schemaVersion": 1, "path": path}})
+		want := modelaccess.Route{Provider: "copilot", Model: "claude-haiku-5.5", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+		if err != nil || result.IsError || runner.request.Route != want || *loads != 0 {
+			t.Fatalf("default MCP route=%+v err=%v config=%d", runner.request.Route, err, *loads)
+		}
+	}
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)

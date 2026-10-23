@@ -176,6 +176,43 @@ else
   fail=1
 fi
 
+# The repository inventory's Service Tree id is admitted at its one governed
+# path and nowhere else. Three cases pin the exemption from both sides: the
+# reviewed id at the inventory path is clean; the same id in any other file
+# is still a GUID finding; another GUID at the inventory path is still
+# refused. The ids are assembled so this file carries no GUID-shaped literal.
+svc=$(printf '862eb319-3b2d-4450-98eb-%s' bd2c41aff06a)
+other=$(printf '6ce6e72c-ea42-4432-8d89-%s' ea624fd0d782)
+inv="$workdir/inventory-checkout"
+mkdir -p "$inv/scripts" "$inv/.github/compliance"
+cp "$scanner" "$inv/scripts/check-no-azure-ids.sh"
+printf 'inventory:\n- source: ServiceTree\n  isProduction: false\n  items:\n  - id: %s\n' "$svc" > "$inv/.github/compliance/inventory.yml"
+if (cd "$inv" && bash scripts/check-no-azure-ids.sh "$inv/.github/compliance/inventory.yml") > "$workdir/inv-clean.out" 2>&1; then
+  echo "ok   clean  reviewed Service Tree id at the inventory path"
+else
+  echo "FAIL want=clean  reviewed Service Tree id at the inventory path"; sed 's/^/     /' "$workdir/inv-clean.out"; fail=1
+fi
+printf 'service: %s\n' "$svc" > "$inv/elsewhere.txt"
+set +e
+(cd "$inv" && bash scripts/check-no-azure-ids.sh "$inv/elsewhere.txt") > "$workdir/inv-elsewhere.out" 2>&1
+rc=$?
+set -e
+if [ "$rc" -eq 1 ] && grep -q "GUID" "$workdir/inv-elsewhere.out"; then
+  echo "ok   refused  the reviewed id outside the inventory path"
+else
+  echo "FAIL want=refused (GUID) got=rc$rc  the reviewed id outside the inventory path"; sed 's/^/     /' "$workdir/inv-elsewhere.out"; fail=1
+fi
+printf 'inventory:\n- source: ServiceTree\n  isProduction: false\n  items:\n  - id: %s\n' "$other" > "$inv/.github/compliance/inventory.yml"
+set +e
+(cd "$inv" && bash scripts/check-no-azure-ids.sh "$inv/.github/compliance/inventory.yml") > "$workdir/inv-other.out" 2>&1
+rc=$?
+set -e
+if [ "$rc" -eq 1 ] && grep -q "GUID" "$workdir/inv-other.out"; then
+  echo "ok   refused  an unreviewed GUID at the inventory path"
+else
+  echo "FAIL want=refused (GUID) got=rc$rc  an unreviewed GUID at the inventory path"; sed 's/^/     /' "$workdir/inv-other.out"; fail=1
+fi
+
 # A file the scanner cannot read has not been cleared. Skipping it would let
 # a permissions problem shrink the scanned set with no symptom at all.
 unreadable=$(mktemp -d "$workdir/unreadable.XXXXXX")

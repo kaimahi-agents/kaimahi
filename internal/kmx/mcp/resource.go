@@ -24,6 +24,7 @@ type AgentView struct {
 	Examples      []AgentViewExample  `json:"examples"`
 	Latest        AgentViewLatest     `json:"latest"`
 	Authoring     *AgentViewAuthoring `json:"authoring,omitempty"`
+	History       *AgentHistory       `json:"history,omitempty"`
 }
 type AgentViewAuthoring struct {
 	Source   string `json:"source"`
@@ -78,6 +79,7 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		view := AgentView{SchemaVersion: 1, Kind: "kmx.agent-view", File: File{Path: p, Revision: agent.Revision}, Title: agent.Title, Instructions: agent.Instructions, Model: agent.Model, Latest: AgentViewLatest{Status: "none"}}
 		_, strictErr := agentfile.Parse(target, source)
 		view.Authoring = &AgentViewAuthoring{Source: string(source), Editable: strictErr == nil}
+		view.History = files.historyView(ctx, p)
 		for _, example := range agent.Examples {
 			view.Examples = append(view.Examples, AgentViewExample{ID: example.ID, Input: example.Input, Assertions: example.Assertions})
 		}

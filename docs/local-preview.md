@@ -180,7 +180,9 @@ CLI/MCP routes retain the existing model-access policy: fake, or an explicit
 keyless local compatible/Ollama/Foundry endpoint. Validated `localhost` and
 loopback addresses and the selected base path are preserved; the adapter does
 not discover runtimes or silently rewrite the route. Copilot uses the direct
-exception described above.
+exception described above; unbound MCP selects that route for non-fake authored
+models when no startup provider is configured. This does not change the local
+adapter's endpoint policy.
 
 ## Refusals
 
