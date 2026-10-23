@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import shutil
 import tarfile
 import tempfile
 import unittest
@@ -52,6 +53,15 @@ class ReleaseTests(unittest.TestCase):
                                  (release.package.HERE / name).read_bytes())
             self.assertEqual(next(m.mode for m in members if m.name.endswith("bin/kmx")), 0o755)
             self.assertNotIn(str(self.base).encode(), b"".join(files.values()))
+
+    def test_archive_accepts_builder_sample_size_budget(self):
+        templates = self.base / "templates"
+        shutil.copytree(release.package.HERE, templates)
+        sample = templates / "samples/release-writer.agent.md"
+        sample.write_bytes(sample.read_bytes() + b"\n" + b" " * (65 << 10))
+        with mock.patch.object(release.package, "HERE", templates):
+            self.archive_build()
+            release.verify_archive(self.archive, self.digest, "linux/amd64", "v0.1.0", self.revision)
 
     def test_archive_refuses_bad_hash_and_existing_output(self):
         with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):

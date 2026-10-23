@@ -69,7 +69,8 @@ def verify_archive(path: Path, digest: str, target: str, version: str, revision:
         for member in source:
             name = member.name.removeprefix(PREFIX)
             mode = 0o755 if name == "bin/kmx" else 0o644
-            maximum = package.MAX_BINARY if name == "bin/kmx" else 64 << 10
+            maximum = (package.MAX_BINARY if name == "bin/kmx" else
+                       256 << 10 if name in package.SAMPLE_FILES else 64 << 10)
             if (not member.name.startswith(PREFIX) or name not in FILES or name in files
                     or not member.isfile() or member.mode != mode
                     or member.uid != 0 or member.gid != 0 or member.mtime != 0

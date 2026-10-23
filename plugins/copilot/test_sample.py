@@ -17,7 +17,7 @@ class SampleTests(unittest.TestCase):
         new = 'Keep every issue reference as "Fixes #N".'
         self.assertEqual(source.count(old), 1)
         self.assertNotIn(new, source)
-        self.assertIn('value: Fixes #218', source)
+        self.assertIn("value: 'Fixes #218'", source)
         self.assertEqual(source.count('type: llmJudge'), 3)
         self.assertEqual(source.count('judgeModel: claude-haiku-5.5'), 3)
         self.assertEqual(source.count('judgeVersion: default'), 3)
@@ -65,6 +65,9 @@ class SampleTests(unittest.TestCase):
                         "schemaVersion": 1, "path": path, "content": content}})
                     self.assertFalse(result["result"].get("isError"), result)
                     self.assertEqual((root / path).read_text(encoding="utf-8"), content)
+                    resource = call(number + 10, "resources/read", {"uri": "kmx://agent/" + path})
+                    parsed = json.loads(resource["result"]["contents"][0]["text"])
+                    self.assertEqual(parsed["examples"][0]["assertions"][0]["value"], "Fixes #218")
                 process.stdin.close()
                 self.assertEqual(process.wait(timeout=5), 0)
                 self.assertEqual(process.stderr.read(), "")

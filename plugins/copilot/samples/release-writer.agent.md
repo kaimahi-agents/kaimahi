@@ -28,7 +28,7 @@ examples:
     assertions:
       - id: issue-reference
         type: contains
-        value: Fixes #218
+        value: 'Fixes #218'
       - id: search-benefit
         type: llmJudge
         rubric: >-

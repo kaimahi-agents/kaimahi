@@ -27,8 +27,10 @@ containing quotes, backslashes, control characters or plugin placeholders refuse
 If asked, follow `kmx model login`'s device sign-in, then choose an exact model
 from your catalog. The suggested model is `claude-haiku-5.5`; no fallback is used.
 Run/Test sends the charter, inputs, answers and judge rubrics to Copilot. Nothing
-is posted. Downloads use HTTPS and release checksums; this detects changed bytes,
-**not an independently verified publisher signature**.
+is posted. The script download trusts GitHub and HTTPS; its digest is not checked.
+The script verifies the release archive against its release checksum over HTTPS.
+That checksum covers the archive only, **not an independently verified publisher
+signature**.
 
 ## Three things to try
 

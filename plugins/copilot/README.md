@@ -239,9 +239,10 @@ remain separate acceptance activities.
 
 ## Installed-host check and chat qualification
 
-With qualified Copilot CLI **1.0.86-2** (`--no-auto-update`), the opt-in developer check uses a **new
-private profile** through COPILOT_HOME, not the operator's normal configuration.
-It refuses other host versions before installation; requalify isolation first.
+With qualified Copilot CLI **1.0.86-2** or **1.0.102** (`--no-auto-update`), the
+opt-in developer check uses a **new private profile** through COPILOT_HOME, not
+the operator's normal configuration. It refuses other host versions before
+installation; requalify isolation first.
 This relies on the trusted host honoring its documented configuration boundary,
 not OS-level containment. Supply the pinned engine
 digest from the verified bundle:
