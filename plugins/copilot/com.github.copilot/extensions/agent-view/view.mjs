@@ -1,7 +1,7 @@
-// Read-only agent view: validates the kmx `kmx://agent/{path}` resource and
-// serves it to the bundled canvas page through a token-protected loopback
-// server. Nothing here writes files, runs processes or sends model prompts.
-import { randomBytes, timingSafeEqual } from "node:crypto";
+// Root-bound agent canvas. Files and previews are accessed only through the
+// same session's existing kmx MCP resource and Edit/Run/Test operations.
+import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
+import { instructionSections, replaceInstructions, replaceExamples } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 
@@ -18,6 +18,14 @@ const MESSAGES = {
   unavailable: "The kmx agent builder could not be read. Check that its MCP server is running.",
   "invalid-resource": "The kmx agent view was not in the supported format.",
   "too-large": "The kmx agent view was too large to show.",
+  "invalid-action": "This canvas action is not supported.",
+  "read-only": "This file is available for inspection only. Editing and testing require a complete canonical charter.",
+  busy: "Another canvas action is still running.",
+  stale_revision: "Changed elsewhere. Your draft is still here; reload before saving or testing.",
+  revision_mismatch: "The file changed during testing. These results do not test your draft; reload to continue.",
+  permission_required: "Copilot did not permit this action. No permission settings were changed.",
+  "action-failed": "The action did not complete. Check the agent and try again only after reviewing its state.",
+  "outcome-unknown": "The action outcome could not be confirmed. Do not retry; reload the source first.",
 };
 
 export class ViewError extends Error {
@@ -135,14 +143,29 @@ function parseView(json, path) {
   if ((latest.status === "current") !== (latest.result !== undefined)) invalid();
   const result = latest.status === "current" ? cleanResult(latest.result, latest.status, file.revision) : undefined;
   const badge = latest.status !== "current" ? latest.status : result.fullPass && result.state === "complete" && result.selection.scope === "full" && result.verdict === "pass" ? "pass" : "not-passing";
+  const authoring = authoringSnapshot(raw.authoring, raw.examples, file.revision);
   return {
     file: { path, revision: file.revision },
     title: clean(raw.title, 200),
     instructions: clean(raw.instructions, 60000, true),
     model,
     examples,
+    ...(authoring ? { authoring } : {}),
     latest: { status: latest.status, badge, ...(result ? { result } : {}) },
   };
+}
+
+function authoringSnapshot(snapshot, examples, revision) {
+  if (!isObj(snapshot) || typeof snapshot.source !== "string" || typeof snapshot.editable !== "boolean") return;
+  if (Buffer.byteLength(snapshot.source, "utf8") > 256 * 1024 ||
+      `sha256:${createHash("sha256").update(snapshot.source).digest("hex")}` !== revision) return;
+  try {
+    if (snapshot.editable) {
+      instructionSections(snapshot.source);
+      replaceExamples(snapshot.source, examples);
+    }
+    return { source: snapshot.source, editable: snapshot.editable, examples: structuredClone(examples ?? []) };
+  } catch { return; } // A malformed authoring snapshot cannot enable writes.
 }
 
 export async function readView(session, rawPath) {
@@ -161,6 +184,90 @@ export async function readView(session, rawPath) {
   if (Buffer.byteLength(body, "utf8") > MAX_RESOURCE_BYTES) throw new ViewError("too-large");
   if (typeof body.isWellFormed === "function" && !body.isWellFormed()) invalid();
   return parseView(body, path);
+}
+
+// The page can choose a declared interaction, never a tool, path or server.
+export function createActionHandler({ session, path }) {
+  path = normalizePath(path);
+  let busy = false, uncertain = false;
+  const allowed = {
+    "save-and-test": ["expectedRevision", "sections", "showContent"],
+    "save-examples": ["expectedRevision", "examples"],
+    test: ["expectedRevision", "showContent"], run: ["expectedRevision", "input", "showContent"],
+    suggest: [], reload: [],
+  };
+  async function invoke(operation, args) {
+    let metadata;
+    try { metadata = await session.rpc.tools.getCurrentMetadata(); }
+    catch { throw new ViewError("unavailable"); }
+    const tools = metadata.tools?.filter((t) => t.mcpServerName === SERVER_NAME && t.mcpToolName === operation);
+    if (tools?.length !== 1) throw new ViewError("unavailable");
+    let result;
+    try { result = await session.rpc.tools.execute({ name: tools[0].name, arguments: { schemaVersion: 1, path, ...args } }); }
+    catch { uncertain = true; throw new ViewError("outcome-unknown"); }
+    if (result?.resultType !== "success") {
+      const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
+      const code = /stale_revision/.test(detail) ? "stale_revision" : /permission|reject|denied/i.test(detail) ? "permission_required" : "action-failed";
+      throw new ViewError(code);
+    }
+    return result;
+  }
+  return async (input) => {
+    if (busy) return { error: "busy", message: MESSAGES.busy };
+    if (!isObj(input) || !Object.hasOwn(allowed, input.operation) || Object.keys(input).some((k) => k !== "operation" && !allowed[input.operation].includes(k))) return { error: "invalid-action", message: MESSAGES["invalid-action"] };
+    if (input.showContent !== undefined && typeof input.showContent !== "boolean") return { error: "invalid-action", message: MESSAGES["invalid-action"] };
+    busy = true;
+    let saved = false, targetRevision;
+    try {
+      if (uncertain && input.operation !== "reload") throw new ViewError("outcome-unknown");
+      let view = await readView(session, path);
+      if (input.operation === "reload") { uncertain = false; return { view }; }
+      if (!view.authoring?.editable) throw new ViewError("read-only");
+      if (input.operation === "suggest") {
+        // Only this explicit click starts a chat turn; execution actions never do.
+        if (typeof session.send !== "function") throw new ViewError("unavailable");
+        await session.send(`Suggest additional examples for ${JSON.stringify(path)} at revision ${view.file.revision}. Show proposals in chat; do not edit files or run tests. Use only this agent's kmx resource if context is needed.`);
+        return { message: "Asked Copilot to suggest examples in chat." };
+      }
+      if (typeof input.expectedRevision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) throw new ViewError("invalid-action");
+      if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");
+      targetRevision = input.expectedRevision;
+      const saveInstructions = input.operation === "save-and-test";
+      if (saveInstructions || input.operation === "save-examples") {
+        let content;
+        try { content = saveInstructions ? replaceInstructions(view.authoring.source, input.sections) : replaceExamples(view.authoring.source, input.examples); }
+        catch { throw new ViewError("invalid-action"); }
+        if (Buffer.byteLength(content, "utf8") > 256 * 1024) throw new ViewError("too-large");
+        if (content !== view.authoring.source) {
+          await invoke("edit", { expectedRevision: input.expectedRevision, content });
+          targetRevision = `sha256:${createHash("sha256").update(content).digest("hex")}`;
+          try { view = await readView(session, path); }
+          catch { uncertain = true; throw new ViewError("outcome-unknown"); }
+          if (view.file.revision !== targetRevision) { uncertain = true; throw new ViewError("outcome-unknown"); }
+          saved = true;
+        }
+        if (!saveInstructions) return { view, saved };
+      }
+      const operation = input.operation === "run" ? "run" : "test";
+      if (operation === "run" && (typeof input.input !== "string" || Buffer.byteLength(input.input, "utf8") > 16384)) throw new ViewError("invalid-action");
+      // Test/Run have no revision parameter. Check the actual result afterward,
+      // not a fabricated precondition or a refreshed draft revision.
+      await invoke(operation, { ...(operation === "run" ? { input: input.input } : {}), showContent: input.showContent === true, showFailedContent: true });
+      try { view = await readView(session, path); }
+      catch { uncertain = true; throw new ViewError("outcome-unknown"); }
+      if (view.file.revision !== targetRevision) throw new ViewError("revision_mismatch");
+      if (view.latest.status !== "current" || view.latest.result?.operation !== operation) { uncertain = true; throw new ViewError("outcome-unknown"); }
+      return { view, saved };
+    } catch (e) {
+      const err = safeError(e);
+      const response = { error: err.code, message: err.message, saved };
+      if (saved && err.code !== "revision_mismatch" && err.code !== "outcome-unknown") {
+        try { const view = await readView(session, path); if (view.file.revision === targetRevision) response.view = view; }
+        catch { /* Preserve the draft when refresh cannot be confirmed. */ }
+      }
+      return response;
+    } finally { busy = false; }
+  };
 }
 
 // --- plain-text fallback ---------------------------------------------------
@@ -202,6 +309,7 @@ const ASSETS = {
   "": ["index.html", "text/html; charset=utf-8"],
   "app.js": ["app.js", "text/javascript; charset=utf-8"],
   "style.css": ["style.css", "text/css; charset=utf-8"],
+  "authoring.mjs": ["authoring.mjs", "text/javascript; charset=utf-8"],
 };
 const SECURITY_HEADERS = {
   "Cache-Control": "no-store",
@@ -215,6 +323,7 @@ export async function startViewBridge({ session, path }) {
   path = normalizePath(path);
   const token = randomBytes(24).toString("base64url");
   let port = 0;
+  const act = createActionHandler({ session, path });
   const server = http.createServer(async (req, res) => {
     const reply = (status, type, body, extra = {}) => {
       res.writeHead(status, { ...SECURITY_HEADERS, ...extra, "Content-Type": type, "Content-Length": Buffer.byteLength(body) });
@@ -225,12 +334,26 @@ export async function startViewBridge({ session, path }) {
       const { host, origin } = req.headers;
       if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return refuse(403, "Forbidden");
       if (origin !== undefined && origin !== `http://127.0.0.1:${port}` && origin !== `http://localhost:${port}`) return refuse(403, "Forbidden");
-      if (req.method !== "GET") return refuse(405, "Method not allowed", { Allow: "GET" });
       const [, candidate = "", ...rest] = (req.url ?? "").split("?")[0].split("/");
       const a = Buffer.from(candidate);
       const b = Buffer.from(token);
       if (a.length !== b.length || !timingSafeEqual(a, b) || (req.url ?? "")[0] !== "/") return refuse(404, "Not found");
       const name = rest.join("/");
+      if (name === "actions" && req.method === "POST") {
+        if (origin !== `http://${host}` || !/^application\/json(?:;|$)/i.test(req.headers["content-type"] ?? "")) return refuse(403, "Forbidden");
+        const chunks = []; let bytes = 0;
+        for await (const chunk of req) {
+          bytes += chunk.length;
+          if (bytes > MAX_RESOURCE_BYTES) return refuse(413, "Too large");
+          chunks.push(chunk);
+        }
+        let input;
+        try { input = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+        catch { return reply(400, "application/json", JSON.stringify({ error: "invalid-action", message: MESSAGES["invalid-action"] })); }
+        const result = await act(input);
+        return reply(result.error ? 409 : 200, "application/json; charset=utf-8", JSON.stringify(result));
+      }
+      if (req.method !== "GET") return refuse(405, "Method not allowed", { Allow: "GET, POST" });
       if (name === "view.json") {
         try {
           return reply(200, "application/json; charset=utf-8", JSON.stringify(await readView(session, path)));
@@ -286,7 +409,7 @@ export function createViewController({ getSession }) {
     try {
       const bridge = await entry.ready;
       if (instances.get(id) !== entry) throw new ViewError("unavailable");
-      return { url: bridge.url, title: "Agent view", status: "Read-only" };
+      return { url: bridge.url, title: "Agent view", status: "Agent file" };
     } catch (e) {
       throw safeError(e);
     }

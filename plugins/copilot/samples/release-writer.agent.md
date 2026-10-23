@@ -29,7 +29,7 @@ examples:
       - id: issue-reference
         type: contains
         value: 'Fixes #218'
-      - id: search-benefit
+      - id: says-why-it-matters-to-users
         type: llmJudge
         rubric: >-
           Pass only if the answer describes the faster search as a benefit to users,

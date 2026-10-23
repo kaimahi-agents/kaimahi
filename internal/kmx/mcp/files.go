@@ -1,6 +1,9 @@
 // Package mcp adapts local agent-file operations to stdio MCP.
 // File access requires an explicit root; execution uses shared App snapshots.
 // Tool requests must not choose model endpoints or substitute a runner.
+// The resource includes an exact, revision-bound authoring snapshot. Optional
+// failure-only excerpts exclude passing and unknown answers from safe results
+// and observations; broader disclosure remains explicitly requested.
 // Separate unwired Squad cast/enrich primitives use a trusted installed program,
 // operation-owned starter observations, byte-preserving owned-field edits and
 // partial-effect reporting. They add no tools, native preview or dispatch.

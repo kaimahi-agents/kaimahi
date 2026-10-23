@@ -68,6 +68,52 @@ func previewFile(t *testing.T) string {
 	return path
 }
 
+func TestFilePreviewFailureOnlyRequiresJoinedFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*agentpreview.ExampleOutcome)
+		want   bool
+		code   string
+	}{
+		{"failed", nil, true, "assertion_failed"},
+		{"passing", func(r *agentpreview.ExampleOutcome) { r.Assertions[0].Verdict = runtime.EvaluationPass }, false, "checks_passed"},
+		{"unknown", func(r *agentpreview.ExampleOutcome) { r.Assertions[0].Verdict = runtime.EvaluationUnknown }, false, "judge_unknown"},
+		{"incomplete", func(r *agentpreview.ExampleOutcome) { r.Completion.State = "" }, false, "invalid_completion"},
+		{"unmatched-case", func(r *agentpreview.ExampleOutcome) { r.ID = "other" }, false, "invalid_completion"},
+		{"unmatched-assertion", func(r *agentpreview.ExampleOutcome) { r.Assertions[0].ID = "other" }, false, "invalid_completion"},
+		{"unmatched-definition", func(r *agentpreview.ExampleOutcome) {
+			r.Assertions[0].DefinitionDigest = "sha256:" + strings.Repeat("0", 64)
+		}, false, "invalid_completion"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &scriptedPreview{verdict: runtime.EvaluationPass, mutate: func(out *agentpreview.Outcome) {
+				row := &out.Examples[1]
+				row.Assertions[0].Verdict = runtime.EvaluationFail
+				row.Completion.Answer = strings.Repeat("x", 4097)
+				if tc.mutate != nil {
+					tc.mutate(row)
+				}
+			}}
+			input := "ad-hoc"
+			r, _ := (&App{FileRunner: fake}).PreviewAgentFile(t.Context(), FilePreviewOptions{File: previewFile(t), Operation: "run", Input: &input, ShowFailedContent: true})
+			if r.ReasonCode != tc.code || fake.calls != 1 {
+				t.Fatalf("result: %+v / sends=%d", r, fake.calls)
+			}
+			if r.Examples[0].AnswerExcerpt != "" || r.AdHoc == nil || r.AdHoc.AnswerExcerpt != "" {
+				t.Fatal("passing or ad-hoc answer disclosed")
+			}
+			row := r.Examples[1]
+			if tc.want {
+				if row.AnswerExcerpt != strings.Repeat("x", 4096) || !row.Truncated {
+					t.Fatal("bounded failure excerpt lost")
+				}
+			} else if row.AnswerExcerpt != "" || row.Truncated {
+				t.Fatal("unvalidated failure answer disclosed")
+			}
+		})
+	}
+}
+
 func TestFilePreviewSelectionAndPrivacy(t *testing.T) {
 	for _, op := range []string{"run", "test"} {
 		for _, subset := range []bool{false, true} {

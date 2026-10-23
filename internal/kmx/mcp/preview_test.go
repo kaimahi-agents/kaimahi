@@ -26,6 +26,7 @@ type previewFixture struct {
 	during    func(agentpreview.Request)
 	answer    string
 	noJournal bool
+	verdicts  []runtime.EvaluationVerdict
 }
 
 func (f *previewFixture) Run(_ context.Context, r agentpreview.Request) (agentpreview.Outcome, error) {
@@ -50,8 +51,13 @@ func (f *previewFixture) Run(_ context.Context, r agentpreview.Request) (agentpr
 	}
 	for i, ex := range r.Examples {
 		row := agentpreview.ExampleOutcome{ID: ex.ID, Completion: completion(fmt.Sprint(i))}
+		verdict := f.verdict
+		if len(f.verdicts) > i {
+			verdict = f.verdicts[i]
+			row.Completion.Answer = fmt.Sprintf("PRIVATE ANSWER %s", verdict)
+		}
 		for _, a := range ex.Assertions {
-			row.Assertions = append(row.Assertions, runtime.EvaluationAssertionResult{ID: a.ID, Type: a.Type, DefinitionDigest: runtime.EvaluationAssertionDigest(a), Verdict: f.verdict, Reason: "PRIVATE PROVIDER REASON"})
+			row.Assertions = append(row.Assertions, runtime.EvaluationAssertionResult{ID: a.ID, Type: a.Type, DefinitionDigest: runtime.EvaluationAssertionDigest(a), Verdict: verdict, Reason: "PRIVATE PROVIDER REASON"})
 		}
 		out.Examples = append(out.Examples, row)
 	}
@@ -90,6 +96,59 @@ func previewCall(t *testing.T, cs *sdk.ClientSession, name string, args map[stri
 	}
 	return r, res
 }
+func TestPreviewFailureOnlyContentProjection(t *testing.T) {
+	f, _, source := canonicalFiles(t)
+	source = strings.Split(source, "## Examples")[0] + "## Examples\n```yaml\nexamples:\n"
+	for _, id := range []string{"passing", "failing", "unknown"} {
+		source += fmt.Sprintf("  - id: %s\n    input: Ada\n    assertions:\n      - id: text\n        type: contains\n        value: Hello\n", id)
+	}
+	source += "```\n"
+	saved, err := f.Create(t.Context(), "mixed.agent.md", []byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &previewFixture{verdicts: []runtime.EvaluationVerdict{runtime.EvaluationPass, runtime.EvaluationFail, runtime.EvaluationUnknown}}
+	cs := resourceClient(t, f, &app.App{FileRunner: fake})
+	for _, mode := range []struct {
+		name         string
+		show, failed bool
+		want         []bool
+	}{
+		{"failure-only", false, true, []bool{false, true, false}},
+		{"all", true, false, []bool{true, true, true}},
+		{"neither", false, false, []bool{false, false, false}},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			got, res := previewCall(t, cs, "test", map[string]any{"schemaVersion": 1, "path": saved.Path, "showContent": mode.show, "showFailedContent": mode.failed})
+			if res.IsError || got.State != "complete" || len(got.Examples) != 3 {
+				t.Fatalf("mixed result: %+v", got)
+			}
+			view := readView(t, cs, saved.Path)
+			if view.Latest.Result == nil {
+				t.Fatal("missing observer result")
+			}
+			summary := res.Content[0].(*sdk.TextContent).Text
+			observed, err := json.Marshal(view.Latest.Result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, row := range got.Examples {
+				answer := fmt.Sprintf("PRIVATE ANSWER %s", fake.verdicts[i])
+				want := ""
+				if mode.want[i] {
+					want = answer
+				}
+				if row.Verdict != fake.verdicts[i] || row.AnswerExcerpt != want || view.Latest.Result.Examples[i].AnswerExcerpt != want || strings.Contains(summary, answer) != mode.want[i] || strings.Contains(string(observed), answer) != mode.want[i] {
+					t.Fatalf("wrong disclosure for %s: row=%+v summary=%s observer=%s", row.ID, row, summary, observed)
+				}
+			}
+		})
+	}
+	if fake.calls != 3 {
+		t.Fatalf("implicit extra inference: %d", fake.calls)
+	}
+}
+
 func TestPreviewCompletedFailureIsNormalResult(t *testing.T) {
 	f, _, source := canonicalFiles(t)
 	saved, err := f.Create(t.Context(), "greeter.agent.md", []byte(source))

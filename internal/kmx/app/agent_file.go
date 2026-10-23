@@ -19,6 +19,7 @@ type FilePreviewOptions struct {
 	Route, JudgeRoute       *modelaccess.Route
 	Input                   *string
 	ShowContent             bool
+	ShowFailedContent       bool
 	Progress                func(string) error
 }
 
@@ -309,8 +310,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		if malformed {
 			break
 		}
-		r.Examples[i].FilePreviewCompletion = previewCompleted(row.Completion, opt.ShowContent)
-		r.Examples[i].Verdict = runtime.EvaluationAssertionsVerdict(row.Assertions)
+		verdict := runtime.EvaluationAssertionsVerdict(row.Assertions)
+		r.Examples[i].FilePreviewCompletion = previewCompleted(row.Completion, opt.ShowContent || opt.ShowFailedContent && verdict == runtime.EvaluationFail)
+		r.Examples[i].Verdict = verdict
 		all = append(all, row.Assertions...)
 	}
 	r.State = "error"

@@ -1,5 +1,5 @@
-// Native Copilot extension: read-only canvas plus /agent-view text fallback.
-// Loaded by the host from the bundled SDK; no actions, tools or mutations.
+// Native authoring canvas plus the read-only /agent-view text fallback.
+// File changes and previews use only the session's existing kmx MCP tools.
 import { CanvasError, createCanvas, joinSession } from "@github/copilot-sdk/extension";
 import { CANVAS_ID, ViewError, createViewController } from "./view.mjs";
 
@@ -10,7 +10,7 @@ const asCanvasError = (e) => (e instanceof ViewError ? new CanvasError(e.code, e
 const canvas = createCanvas({
   id: CANVAS_ID,
   displayName: "kmx agent view",
-  description: "Read-only view of a kmx agent charter, its examples and latest result.",
+  description: "Author one rooted agent's instructions and examples, then test it in the canvas.",
   inputSchema: {
     type: "object",
     properties: { path: { type: "string", description: "Root-relative <id>.agent.md or .squad/agents/<id>/charter.md" } },

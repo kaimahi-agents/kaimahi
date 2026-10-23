@@ -31,17 +31,18 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 	}
 	for _, name := range []string{"run", "test"} {
 		schema := &jsonschema.Schema{Type: "object", Required: []string{"path"}, Properties: map[string]*jsonschema.Schema{
-			"path": {Type: "string", MaxLength: new(256)}, "caseId": {Type: "string", MinLength: new(1), MaxLength: new(agentfile.MaxInputBytes)}, "showContent": {Type: "boolean"},
+			"path": {Type: "string", MaxLength: new(256)}, "caseId": {Type: "string", MinLength: new(1), MaxLength: new(agentfile.MaxInputBytes)}, "showContent": {Type: "boolean"}, "showFailedContent": {Type: "boolean"},
 		}, AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}}}
 		if name == "run" {
 			schema.Properties["input"] = &jsonschema.Schema{Type: "string", MaxLength: new(agentfile.MaxInputBytes)}
 		}
 		ops[name] = Operation{Schema: schema, Description: "kmx local preview of this charter; saved examples, optionally one case (always partial). Returns the shared revision, route, state and verdict; never deployment evidence.", Handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			var input struct {
-				Path        string  `json:"path"`
-				CaseID      string  `json:"caseId"`
-				Input       *string `json:"input"`
-				ShowContent bool    `json:"showContent"`
+				Path              string  `json:"path"`
+				CaseID            string  `json:"caseId"`
+				Input             *string `json:"input"`
+				ShowContent       bool    `json:"showContent"`
+				ShowFailedContent bool    `json:"showFailedContent"`
 			}
 			if json.Unmarshal(req.Params.Arguments, &input) != nil {
 				return nil, refusal("invalid_options")
@@ -58,7 +59,7 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if parseErr != nil && !errors.As(parseErr, &detail) {
 				return nil, parseErr
 			}
-			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, Route: selected})
+			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Route: selected})
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 			}
@@ -121,36 +122,42 @@ func previewSummaryField(s string, limit int) string {
 }
 
 func (f *Files) snapshot(ctx context.Context, p string) (*agentfile.Agent, error) {
-	return f.readSnapshot(ctx, p, false)
+	agent, _, err := f.readSnapshot(ctx, p, false)
+	return agent, err
 }
 
-func (f *Files) inspect(ctx context.Context, p string) (*agentfile.Agent, error) {
+func (f *Files) inspect(ctx context.Context, p string) (*agentfile.Agent, []byte, error) {
 	return f.readSnapshot(ctx, p, true)
 }
 
-func (f *Files) readSnapshot(ctx context.Context, p string, inspection bool) (*agentfile.Agent, error) {
+// Retain the same bounded descriptor bytes used by parsing and revision hashing.
+// The resource must never reread a possibly changed path for authoring content.
+func (f *Files) readSnapshot(ctx context.Context, p string, inspection bool) (*agentfile.Agent, []byte, error) {
 	if err := cancelled(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	p, err := f.rootRelative(p)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !safePath(p) {
-		return nil, refusal("unsafe_path")
+		return nil, nil, refusal("unsafe_path")
 	}
 	parent, err := f.parent(p, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer parent.Close()
 	file, b, _, err := readTarget(parent, path.Base(p))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer file.Close()
+	var agent *agentfile.Agent
 	if inspection {
-		return agentfile.Inspect(p, b)
+		agent, err = agentfile.Inspect(p, b)
+	} else {
+		agent, err = agentfile.Parse(p, b)
 	}
-	return agentfile.Parse(p, b)
+	return agent, b, err
 }

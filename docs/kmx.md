@@ -322,8 +322,8 @@ frames are bounded to 2 MiB and source files to 256 KiB.
 |---|---|---|
 | `create` | `path`, `content` | Saved root-relative path and exact-byte revision |
 | `edit` | `path`, `content`, `expectedRevision` | Saved path and new revision |
-| `run` | `path`; optional `input`, `caseId`, `showContent` | Shared `kmx.agent-file-preview` v1 result |
-| `test` | `path`; optional `caseId`, `showContent` | Same shared result, no ad-hoc input |
+| `run` | `path`; optional `input`, `caseId`, `showContent`, `showFailedContent` | Shared `kmx.agent-file-preview` v1 result |
+| `test` | `path`; optional `caseId`, `showContent`, `showFailedContent` | Same shared result, no ad-hoc input |
 
 Relative paths are portable root-level `<name>.agent.md` or
 `.squad/agents/<id>/charter.md`, without traversal or symlink components. Native
@@ -362,7 +362,11 @@ It identifies non-passing examples/assertions with safe reasons, preserves scope
 and any no-journal qualifier, and limits details to 10 rows within 8 KiB, reporting
 omitted rows. The full safe result remains in `structuredContent`.
 `showContent` is explicit and defaults false; answers and authored assertion
-operands are not included by default. Opt-in answer excerpts are bounded and
+operands are not included by default. Optional `showFailedContent` also defaults
+false and includes only validated failing saved-example answers, not passing,
+unknown or ad-hoc answers. Existing clients keep their current behavior. The
+canvas requests failure-only excerpts and keeps passing answers opt-in. These
+controls do not change existing runner journal retention. Excerpts are bounded and
 labeled untrusted data, never tool instructions. The result's display basename
 is not target authority.
 
@@ -373,12 +377,18 @@ Encode the whole root-relative path as one component, including slashes.
 Only supported agent paths under the fixed root are readable; there is no
 fifth tool, generic file read or directory listing. After root confirmation,
 authored content is visible without an extra consent mechanism; answer excerpts
-still require the existing `showContent` opt-in. A restart has no current result;
+require an explicit Run/Test disclosure option: `showContent` or failure-only
+`showFailedContent`. The optional authoring snapshot carries exact source from
+the same descriptor read as its revision; strict canonical parsing controls
+editability. A restart has no current result;
 a revision change marks the old observation stale and withholds its details.
 Reads perform no inference, mutation or journal retrieval.
 
 The [Copilot plugin](../plugins/copilot/README.md#read-only-agent-view) adds a
-native read-only canvas and `/agent-view PATH` text fallback over this resource.
+native authoring canvas and read-only `/agent-view PATH` text fallback over this
+resource. Canvas Edit/Test/Run use existing same-session MCP tools; only explicit
+Suggest more starts chat. Saves require the original revision; changed result
+revisions are labelled stale rather than silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
 

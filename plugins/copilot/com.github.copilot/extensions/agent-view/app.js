@@ -1,5 +1,5 @@
-// Renders the read-only agent view. Every value from the resource is untrusted
-// and becomes inert DOM text, never HTML or active content.
+// Resource and authoring values are untrusted: render only inert DOM text.
+import { instructionSections } from "./authoring.mjs";
 const el = (doc, tag, className, text) => {
   const node = doc.createElement(tag);
   if (className) node.className = className;
@@ -68,25 +68,6 @@ function resultDetails(doc, row) {
     details.append(el(doc, "p", "", `${a.id} [${a.type}]: ${a.verdict}${a.reason ? ` — ${a.reason}` : ""}`));
   }
   return details;
-}
-function latestSection(doc, payload, cases) {
-  const [state, label, hint] = heroState(payload, cases);
-  const failing = state === "fail";
-  const box = el(doc, "section", `latest ${failing ? "hero status bad" : "status-inline"} is-${state}${state === "none" ? " empty" : ""}`);
-  if (failing) {
-    const symbol = el(doc, "span", "hero-symbol", "×");
-    symbol.setAttribute("aria-hidden", "true");
-    const content = el(doc, "div", "hero-content");
-    content.append(el(doc, "strong", "badge fail", label), el(doc, "p", "hint", hint));
-    box.append(symbol, content);
-  } else {
-    box.append(el(doc, "span", `badge status-pill ${state}${state === "pass" ? " good" : state === "warning" || state === "stale" ? " wait" : ""}`, label));
-  }
-  return box;
-}
-
-function fileLabel(path, displayName) {
-  return `${path.startsWith(".squad/agents/") && path.endsWith("/charter.md") ? "Squad member" : "Agent file"} · ${displayName}`;
 }
 function pathControls(doc, path) {
   const box = el(doc, "div", "source-path");
@@ -166,6 +147,7 @@ function instructionBlocks(source) {
   return blocks;
 }
 
+const inlineNodes = new WeakSet();
 function inlineText(doc, node, text) {
   for (const [index, line] of text.split("\n").entries()) {
     if (index) node.append("\n");
@@ -180,7 +162,8 @@ function inlineText(doc, node, text) {
       if (i % 2 === 0) node.append(part);
       else {
         const code = part.startsWith("`");
-        node.append(el(doc, code ? "code" : "strong", "", part.slice(code ? 1 : 2, code ? -1 : -2)));
+        const span = el(doc, code ? "code" : "strong", "", part.slice(code ? 1 : 2, code ? -1 : -2));
+        inlineNodes.add(span); node.append(span);
       }
     }
   }
@@ -261,117 +244,408 @@ function instructionsContent(doc, payload) {
   return box;
 }
 
-function checkContent(doc, a, c) {
-  const box = el(doc, "div", "check");
-  const fields = new Map(a.fields);
-  const labels = { contains: "Expected to contain", notContains: "Expected not to contain", regex: "Expected to match pattern", llmJudge: "Expected to meet this rubric" };
-  box.append(el(doc, "span", "check-label label", Object.hasOwn(labels, a.type) ? labels[a.type] : `Condition: ${a.type}`));
-  const key = checkKey(a);
-  const observed = c.expected?.get(key) === a ? c.checks?.get(key) : undefined;
-  const failed = c.state === "fail" && observed?.verdict === "fail";
-  const missing = failed && a.type === "contains";
-  const operand = a.type === "regex" ? "pattern" : a.type === "llmJudge" ? "rubric" : "value";
-  if (Object.hasOwn(labels, a.type) && fields.has(operand)) {
-    box.append(el(doc, "pre", `assertion-value${missing ? " missing" : ""}`, fields.get(operand)));
+// Only our inline spans and browser plain-text line containers are accepted.
+// Unknown formatting blocks saving rather than silently losing source content.
+function editorValue(root) {
+  let count = 0, size = 0;
+  const read = (node, depth) => {
+    if (++count > 8192 || depth > 32) throw new Error("Editor structure is too large.");
+    if (node.nodeType === 3) {
+      size += node.textContent.length;
+      if (size > 262144) throw new Error("Editor text is too large.");
+      return node.textContent;
+    }
+    const tag = node.tagName?.toLowerCase();
+    if (node !== root && !["br", "div", "p"].includes(tag) && !inlineNodes.has(node)) throw new Error("Unsupported editor formatting.");
+    if (tag === "br") return "\n";
+    const children = [...node.childNodes];
+    if (["div", "p"].includes(tag) && node !== root && children.length === 1 && children[0].tagName?.toLowerCase() === "br") return "";
+    if (inlineNodes.has(node) && children.some((child) => child.nodeType !== 3)) throw new Error("Unsupported inline formatting.");
+    let value = "", previousBlock = false;
+    for (const [index, child] of children.entries()) {
+      const block = ["div", "p"].includes(child.tagName?.toLowerCase());
+      if (index && (block || previousBlock) && (previousBlock || !value.endsWith("\n"))) value += "\n";
+      value += read(child, depth + 1); previousBlock = block;
+    }
+    return inlineNodes.has(node) ? (tag === "code" ? "`" + value + "`" : "**" + value + "**") : value;
+  };
+  return read(root, 0);
+}
+
+const friendlyName = (id) => {
+  const text = id.replace(/[-_]+/g, " ");
+  return text ? text[0].toUpperCase() + text.slice(1) : "Unnamed example";
+};
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const operandKey = (type) => type === "regex" ? "pattern" : type === "llmJudge" ? "rubric" : "value";
+const checkLabel = (a) => {
+  const value = new Map(a.fields).get(operandKey(a.type)) ?? "";
+  return a.type === "contains" ? `Includes "${value}"` : a.type === "notContains" ? `Does not include "${value}"`
+    : a.type === "regex" ? `Matches pattern "${value}"` : a.type === "llmJudge" ? friendlyName(a.id) : `Condition: ${a.type}`;
+};
+function frameStatus(payload, cases) {
+  const [state, label] = heroState(payload, cases), r = payload.latest.result;
+  const ids = r?.selection.caseIds ?? [];
+  const complete = payload.latest.status === "current" && r.state === "complete" && r.verdict === "fail" && r.selection.scope === "full" &&
+    cases.length > 0 && ids.length === cases.length && new Set(ids).size === ids.length &&
+    r.selection.totalCases === cases.length && r.examples.length === cases.length &&
+    cases.every((c) => ids.includes(c.example.id) && ["pass", "fail"].includes(c.state) &&
+      c.expected?.size === c.checks?.size && [...c.expected].every(([key, a]) =>
+        a && ["pass", "fail"].includes(c.checks.get(key)?.verdict)));
+  if (state === "pass") return ["pass", `${cases.length} of ${cases.length} passing`];
+  if (complete && state === "fail") return ["fail", `${cases.filter((c) => c.state === "pass").length} of ${cases.length} passing`];
+  return ["neutral", state === "fail" ? "Partial or incomplete result" : label];
+}
+function answerContent(doc, row) {
+  const box = el(doc, "div", "answer");
+  if (row?.answerExcerpt !== undefined) {
+    const truncated = row.truncated || /…\s*\[truncated\]$/.test(row.answerExcerpt);
+    box.append(el(doc, "span", "label", `Last answer · untrusted excerpt${truncated ? " (truncated)" : ""}`),
+      el(doc, "pre", "answer-excerpt", row.answerExcerpt));
+  } else box.append(el(doc, "p", "quiet", "Answer content not included. Test again to see failing answers; select Include passing answers for passing cases."));
+  return box;
+}
+function exampleCard(doc, c, draft) {
+  const e = c.example, state = draft ? "waiting" : c.state;
+  const box = el(doc, "article", `example case-${state}`);
+  box.setAttribute("data-example-id", e.id);
+  const top = el(doc, "div", "example-head");
+  top.append(el(doc, "h3", "", friendlyName(e.id)), el(doc, "span", "case-status", draft || c.label));
+  box.append(top);
+  if (state !== "fail") {
+    box.classList.add("compact-example");
+    box.append(el(doc, "p", "example-preview", `${e.input} → ${e.assertions.map(checkLabel).join("; ")}`));
+    if (state === "pass" && c.row?.answerExcerpt !== undefined) {
+      const details = el(doc, "details", "last-answer");
+      details.append(el(doc, "summary", "", "Last answer"), answerContent(doc, c.row)); box.append(details);
+    }
+  } else {
+    const flow = el(doc, "div", "flow"), input = el(doc, "div"), expected = el(doc, "div");
+    input.append(el(doc, "span", "label", "The agent gets"), el(doc, "pre", "value", e.input));
+    expected.append(el(doc, "span", "label", "A good answer"));
+    const checks = el(doc, "div", "check-surface");
+    for (const a of e.assertions) {
+      const matched = c.expected?.get(checkKey(a)) === a ? c.checks?.get(checkKey(a)) : undefined;
+      const line = el(doc, "div", "check");
+      if (matched && ["pass", "fail"].includes(matched.verdict)) {
+        line.append(el(doc, "span", matched.verdict, matched.verdict === "pass" ? "✓ " : "✕ "));
+      }
+      line.append(el(doc, "span", "", checkLabel(a)));
+      if (a.type === "llmJudge") line.append(el(doc, "small", "quiet", " · judge"));
+      checks.append(line);
+    }
+    expected.append(checks); flow.append(input, expected); box.append(flow, answerContent(doc, c.row));
+    for (const a of e.assertions) {
+      const matched = c.expected?.get(checkKey(a)) === a ? c.checks?.get(checkKey(a)) : undefined;
+      if (a.type === "contains" && matched?.verdict === "fail") {
+        box.append(el(doc, "p", "missing", `Missing "${new Map(a.fields).get("value") ?? ""}".`));
+      }
+    }
   }
-  if (failed) box.append(el(doc, "span", `check-status${missing ? " missing" : ""}`, missing ? "Missing" : "Check failed"));
-  if (observed?.reason) box.append(el(doc, "p", "check-reason", observed.reason));
-  if (a.type === "llmJudge" && fields.has("minScore")) box.append(el(doc, "p", "judge-score", `Minimum score ${fields.get("minScore")}/100`));
-  const extras = a.fields.filter(([name]) => name !== operand && !(a.type === "llmJudge" && name === "minScore"));
-  if (!Object.hasOwn(labels, a.type) || extras.length) {
-    const details = el(doc, "details", a.type === "llmJudge" ? "judge-details" : "condition-details");
-    details.append(el(doc, "summary", "", a.type === "llmJudge" ? "Judge details" : "Condition details"));
-    const included = Object.hasOwn(labels, a.type) ? extras : a.fields;
-    details.append(el(doc, "p", "condition-type", `Type: ${a.type}; ID: ${a.id}`));
-    for (const [name, value] of included) details.append(el(doc, "label", "field-label", name), el(doc, "pre", a.type === "llmJudge" ? "field-value" : "assertion-value", value));
+  if (!draft && c.row && c.state === "unknown") box.append(resultDetails(doc, c.row));
+  const metadata = e.assertions.filter((a) => a.type === "llmJudge" || !["contains", "notContains", "regex"].includes(a.type));
+  if (metadata.length) {
+    const details = el(doc, "details", "check-details");
+    details.append(el(doc, "summary", "", "Check details"));
+    for (const a of metadata) {
+      details.append(el(doc, "p", "", `${a.id} · ${a.type}`));
+      for (const [key, value] of a.fields) {
+        const field = el(doc, "pre");
+        if (a.type === "llmJudge" && key === "rubric") inlineText(doc, field, `${key}: ${value}`);
+        else field.textContent = `${key}: ${value}`;
+        details.append(field);
+      }
+    }
     box.append(details);
   }
   return box;
 }
-function exampleCard(doc, c, dense) {
-  const e = c.example;
-  const box = el(doc, "article", `example case-${c.state}${dense && c.state !== "fail" ? " compact-example" : ""}`);
-  box.setAttribute("data-example-id", e.id);
-  const top = el(doc, "div", "example-top example-head");
-  const friendly = e.id.replace(/[-_]+/g, " ");
-  const name = friendly ? friendly[0].toUpperCase() + friendly.slice(1) : "Unnamed example";
-  top.append(el(doc, "h3", "case-title", name), el(doc, "span", "case-status result", c.label));
-  const flow = el(doc, "div", "flow");
-  const input = el(doc, "div", "input");
-  input.append(el(doc, "span", "label", "Input"), el(doc, "pre", "value input-value", e.input));
-  const arrow = el(doc, "span", "flow-arrow arrow", "→");
-  arrow.setAttribute("aria-hidden", "true");
-  const checks = el(doc, "div", "checks");
-  for (const a of e.assertions) checks.append(checkContent(doc, a, c));
-  flow.append(input, arrow, checks);
-  box.append(top, flow);
-  if (c.row && c.state === "unknown") box.append(resultDetails(doc, c.row));
-  if (c.row?.answerExcerpt !== undefined) {
-    const answer = el(doc, "details", "answer");
-    const truncated = c.row.truncated || /…\s*\[truncated\]$/.test(c.row.answerExcerpt);
-    answer.open = c.state === "fail";
-    answer.append(el(doc, "summary", "", `Untrusted excerpt${truncated ? " (truncated)" : ""}`),
-      el(doc, "pre", "answer-excerpt", c.row.answerExcerpt));
-    box.append(answer);
-  } else if (c.row) box.append(el(doc, "p", "content-unavailable", "Answer content not included."));
-  return box;
+async function postAction(action) {
+  const response = await fetch("actions", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action),
+  });
+  return response.json();
+}
+function insertPlainText(doc, node, text) {
+  const selection = doc.getSelection();
+  let range = selection?.rangeCount ? selection.getRangeAt(0) : undefined;
+  if (!range || !node.contains(range.commonAncestorContainer)) {
+    range = doc.createRange(); range.selectNodeContents(node); range.collapse(false);
+  }
+  range.deleteContents();
+  const inserted = doc.createTextNode(text);
+  range.insertNode(inserted); range.setStartAfter(inserted); range.collapse(true);
+  selection?.removeAllRanges(); selection?.addRange(range);
 }
 
-export function renderView(doc, root, payload) {
+export function renderView(doc, root, payload, execute = postAction) {
   if (!payload || payload.error || !payload.file) {
     root.replaceChildren(el(doc, "p", "error", payload?.message || "The agent view could not be loaded."));
     return;
   }
-  const header = el(doc, "header", "view-header author-header");
-  const identity = el(doc, "div", "identity");
-  const monogram = payload.title.match(/[\p{L}\p{N}]/u)?.[0].toUpperCase() || "?";
-  const avatar = el(doc, "span", "avatar", monogram);
-  avatar.setAttribute("aria-hidden", "true");
-  const identityContent = el(doc, "div", "identity-content");
-  const top = el(doc, "div", "identity-top");
-  const model = el(doc, "p", "model");
-  model.append("Model ", el(doc, "code", "", payload.model));
-  const displayName = payload.title.split(" — ")[0] || payload.title;
-  top.append(el(doc, "h1", "agent-name", displayName));
-  const purpose = purposeText(payload);
-  const summary = el(doc, "p", "purpose");
-  inlineText(doc, summary, purpose);
-  const chars = Array.from(summary.textContent);
-  summary.textContent = chars.length > 160 ? chars.slice(0, 159).join("") + "…" : chars.join("");
-  identityContent.append(top, summary);
-  identity.append(avatar, identityContent);
-  const source = el(doc, "div", "source");
-  const details = el(doc, "details", "source-details");
-  const info = el(doc, "div", "source-info");
-  info.append(el(doc, "p", "source-title", payload.title), pathControls(doc, payload.file.path), el(doc, "code", "revision", payload.file.revision));
-  if (chars.length > 160) info.append(el(doc, "p", "source-purpose", purpose));
-  const original = el(doc, "details", "authored-source");
-  original.append(el(doc, "summary", "", "Original instruction text"), el(doc, "pre", "", payload.instructions));
-  details.append(el(doc, "summary", "", "Source details"), info, original);
-  const file = el(doc, "span", "file-label file-path", fileLabel(payload.file.path, displayName));
-  source.append(file, model, details);
-  header.append(identity, source);
-
-  const cases = inspectCases(payload), dense = cases.length > 3;
-  const status = latestSection(doc, payload, cases);
-  const failing = cases.some((c) => c.state === "fail");
-  const [state, , hint] = heroState(payload, cases);
-  const guidance = failing ? status : el(doc, "p", "hint quiet", hint);
-  if (!failing) {
-    top.append(status);
-    if (payload.latest.status === "current" && state === "warning") header.append(resultDetails(doc, payload.latest.result));
+  let sections;
+  try {
+    if (payload.authoring?.editable === true && typeof payload.authoring.source === "string") {
+      sections = instructionSections(payload.authoring.source);
+    }
+  } catch { /* Old or noncanonical resources remain inspection-only. */ }
+  const mainSection = sections?.find((s) => /accountable/i.test(s.key));
+  const editable = !!mainSection && sections.length === 3 && Array.isArray(payload.authoring?.examples);
+  const cases = inspectCases(payload), [statusKind, statusLabel] = frameStatus(payload, cases);
+  const controls = [], editors = [], baseline = new Map();
+  let busy = false, blocked = false, dirty = false, invalidEditor = false, formOpen = false, adHocResult;
+  const button = (label, action, className = "", guard = "clean") => {
+    const node = el(doc, "button", className, label); node.type = "button";
+    node.addEventListener("click", action); controls.push({ node, guard }); return node;
+  };
+  const message = el(doc, "p", "action-message"); message.setAttribute("role", "status"); message.setAttribute("aria-live", "polite");
+  const status = el(doc, "span", `status-pill ${statusKind}`, statusLabel);
+  const editedLabel = el(doc, "span", "quiet instruction-status", editable ? "Saved instructions" : "Read-only inspection");
+  const formHost = el(doc, "div", "form-host");
+  const exampleList = el(doc, "div", "examples");
+  const update = () => {
+    root.setAttribute("aria-busy", String(busy));
+    try {
+      const values = editors.map(({ node, key }) => [key, editorValue(node)]);
+      dirty = values.some(([key, value]) => value !== baseline.get(key)); invalidEditor = false;
+    } catch {
+      dirty = true; invalidEditor = true;
+      message.textContent = "Unsupported editor formatting. Your draft is kept; reload before saving.";
+    }
+    status.textContent = dirty || formOpen ? "Edited · not tested yet" : blocked ? "Reload required · result unconfirmed" : statusLabel;
+    status.className = `status-pill ${dirty || formOpen || blocked ? "neutral" : statusKind}`;
+    editedLabel.textContent = busy ? "Working…" : dirty ? "Edited · not tested yet" : blocked ? "Reload required" : editable ? "Saved instructions" : "Read-only inspection";
+    for (const { node, guard } of controls) {
+      node.disabled = busy || (guard !== "reload" && (blocked || invalidEditor || (guard === "clean" && (dirty || formOpen)) || (guard === "test" && formOpen)));
+    }
+    for (const { node } of editors) {
+      node.setAttribute("contenteditable", busy || blocked || formOpen ? "false" : "plaintext-only");
+      node.setAttribute("aria-readonly", String(busy || blocked || formOpen));
+    }
+    for (const node of formHost.querySelectorAll("input, textarea, select, button")) node.disabled = busy || blocked;
+    include.disabled = busy || blocked;
+    runInput.disabled = busy || blocked || dirty || formOpen;
+    if (adHocResult) adHocResult.hidden = dirty || formOpen || blocked;
+    testButton?.setAttribute("aria-label", dirty ? "Save and test" : "Test saved examples");
+  };
+  const drawExamples = () => {
+    for (let i = controls.length - 1; i >= 0; i--) {
+      if (exampleList.contains(controls[i].node)) controls.splice(i, 1);
+    }
+    exampleList.replaceChildren();
+    for (const c of [...cases].sort((a, b) => Number(b.state === "fail") - Number(a.state === "fail"))) {
+      const card = exampleCard(doc, c, dirty || formOpen ? "Not tested yet" : blocked ? "Result unconfirmed" : false);
+      if (editable) {
+        const actions = el(doc, "div", "example-actions");
+        // Only a unique full raw identity may be edited; display fields never become a save baseline.
+        const full = payload.authoring.examples;
+        const raw = uniqueIndex(full, (e) => e.id).get(c.example.id);
+        if (raw) {
+          actions.append(button("Edit", () => openExample(full.indexOf(raw)), "text-button"));
+          if (full.length > 1) actions.append(button("Delete", () => act("save-examples", {
+            examples: clone(full.filter((e) => e !== raw)),
+          }), "text-button"));
+        }
+        card.append(actions);
+      }
+      exampleList.append(card);
+    }
+  };
+  const matches = (view) => view && !view.error && view.file?.path === payload.file.path;
+  async function act(operation, values = {}) {
+    if (busy || ((blocked || invalidEditor) && operation !== "reload")) return;
+    if (operation !== "reload" && operation !== "save-and-test" && (dirty || formOpen && operation !== "save-examples")) return;
+    busy = true; message.textContent = "Working…"; update();
+    const action = { operation, ...values };
+    if (!["reload", "suggest"].includes(operation)) action.expectedRevision = payload.file.revision;
+    if (["save-and-test", "test", "run"].includes(operation)) action.showContent = include.checked;
+    try {
+      const response = await execute(action);
+      if (response?.error) {
+        const conflict = ["revision_mismatch", "stale_revision", "revision-mismatch", "stale-revision"].includes(response.error);
+        blocked = conflict || response.saved === true || ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"].includes(response.error);
+        message.textContent = conflict ? "Changed elsewhere. Your draft is still here. Reload and discard draft to continue."
+          : response.saved ? "Saved, but not tested for this revision. Your draft is still here. Reload before continuing."
+          : response.message || "The action was refused. Your draft is still here.";
+      } else if (operation === "suggest") {
+        message.textContent = "Suggestion requested in Copilot. No draft was changed.";
+      } else if (matches(response?.view)) {
+        renderView(doc, root, response.view, execute); return;
+      } else {
+        blocked = true; message.textContent = "Outcome not confirmed. Do not resubmit. Reload deliberately to inspect the saved file.";
+      }
+    } catch {
+      blocked = true; message.textContent = "Connection lost. The action may have completed. Do not resubmit. Your draft is still here; reload to inspect the saved file.";
+    } finally { busy = false; if (blocked) drawExamples(); update(); }
   }
-  const examples = el(doc, "section", "examples-section");
-  const heading = el(doc, "div", "section-line");
-  heading.append(el(doc, "h2", "", "Examples"), el(doc, "small", "", "Saved checks"));
-  const list = el(doc, "div", `examples${dense ? " dense" : ""}`);
-  list.append(...cases.map((c) => exampleCard(doc, c, dense)));
-  examples.append(heading, list);
-  const instructions = el(doc, "section", "instructions-section editing-surface instruction authoring");
-  const instructionHeading = el(doc, "div", "section-line");
-  instructionHeading.append(el(doc, "h2", "", "Instructions"), el(doc, "small", "", "Read-only"));
-  instructions.append(instructionHeading, instructionsContent(doc, payload));
-  root.replaceChildren(header, instructions, guidance, examples);
+  function makeEditor(section) {
+    const node = el(doc, "div", "instruction-body");
+    for (const [index, block] of instructionBlocks(section.text).entries()) {
+      if (index) node.append("\n");
+      if (block.code) node.append(block.raw);
+      else inlineText(doc, node, block.raw);
+    }
+    node.setAttribute("role", "textbox"); node.setAttribute("aria-multiline", "true");
+    node.setAttribute("aria-label", section.key); node.setAttribute("contenteditable", "plaintext-only");
+    node.setAttribute("spellcheck", "true"); baseline.set(section.key, section.text); editors.push({ key: section.key, node });
+    node.addEventListener("input", () => { update(); drawExamples(); update(); });
+    node.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing) {
+        event.preventDefault(); if (!busy && !blocked) test();
+      }
+    });
+    for (const kind of ["paste", "drop"]) node.addEventListener(kind, (event) => {
+      event.preventDefault(); if (busy || blocked || formOpen) return;
+      const transfer = kind === "paste" ? event.clipboardData : event.dataTransfer;
+      insertPlainText(doc, node, transfer?.getData("text/plain") ?? ""); update(); drawExamples(); update();
+    });
+    return node;
+  }
+  function test() {
+    if (formOpen || invalidEditor) return;
+    act(dirty ? "save-and-test" : "test", dirty ? { sections: editors.map(({ key, node }) => ({ key, text: editorValue(node) })) } : {});
+  }
+  function openExample(index) {
+    if (busy || blocked || dirty || formOpen) return;
+    if (index === undefined && payload.authoring.examples.length >= 128) {
+      message.textContent = "Keep at most 128 examples. Edit or delete an existing example first."; return;
+    }
+    formOpen = true;
+    const full = clone(payload.authoring.examples), existing = index !== undefined;
+    const draft = existing ? full[index] : { id: "", input: "", assertions: [] };
+    const form = el(doc, "form", "example-form"), fields = el(doc, "div", "form-fields"), checks = el(doc, "div", "form-checks");
+    const error = el(doc, "p", "error"); error.setAttribute("role", "alert");
+    const field = (label, tag, value, parent = fields) => {
+      const wrap = el(doc, "label", "form-field"), node = el(doc, tag);
+      node.value = value; wrap.append(el(doc, "span", "label", label), node); parent.append(wrap); return node;
+    };
+    const name = field(existing ? "Example ID" : "Name (converted to a portable ID)", "input", draft.id);
+    name.readOnly = existing; name.required = true;
+    const input = field("The agent gets", "textarea", draft.input); input.required = true;
+    const ids = new Set(draft.assertions.map((a) => a.id));
+    const nextId = () => { let i = 1; while (ids.has(`check-${i}`)) i++; const id = `check-${i}`; ids.add(id); return id; };
+    const rows = [];
+    function addCheck(assertion) {
+      const row = el(doc, "div", "form-check"), controls = el(doc, "div", "check-fields");
+      const known = ["contains", "notContains", "regex"].includes(assertion.type);
+      const state = { assertion, row }; rows.push(state);
+      if (known) {
+        const select = field("Check type", "select", "", controls);
+        for (const type of ["contains", "notContains", "regex"]) {
+          const option = el(doc, "option", "", type); option.value = type; select.append(option);
+        }
+        select.value = assertion.type;
+        const value = field("Literal value or pattern", "textarea", assertion[operandKey(assertion.type)] ?? "", controls);
+        value.required = true; state.select = select; state.value = value;
+      } else {
+        controls.append(el(doc, "p", "", `${assertion.id} · ${assertion.type} (read-only)`));
+        const details = el(doc, "details"); details.append(el(doc, "summary", "", "Existing check details"));
+        for (const [key, value] of Object.entries(assertion)) details.append(el(doc, "pre", "", `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`));
+        controls.append(details);
+      }
+      const remove = el(doc, "button", "text-button", "Remove check"); remove.type = "button";
+      remove.addEventListener("click", () => { rows.splice(rows.indexOf(state), 1); row.remove(); });
+      row.append(controls, remove); checks.append(row);
+    }
+    draft.assertions.forEach(addCheck);
+    if (!existing) addCheck({ id: nextId(), type: "contains", value: "" });
+    const add = el(doc, "button", "", "Add text check"); add.type = "button";
+    add.addEventListener("click", () => { if (rows.length < 64) addCheck({ id: nextId(), type: "contains", value: "" }); });
+    const save = el(doc, "button", "primary", "Save example"); save.type = "submit";
+    const cancel = el(doc, "button", "", "Cancel"); cancel.type = "button";
+    cancel.addEventListener("click", () => { formOpen = false; formHost.replaceChildren(); drawExamples(); update(); });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault(); if (busy || blocked || dirty) return;
+      const id = existing ? draft.id : name.value.trim().toLowerCase().replace(/\s+/g, "-");
+      const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
+      if (!existing && (!/^[a-z][a-z0-9-]{0,62}$/.test(id) || reserved.test(id) || full.some((e) => e.id === id))) {
+        error.textContent = "Use a unique name: start with a letter, then letters, numbers or hyphens, up to 63 characters."; return;
+      }
+      if (!rows.length) { error.textContent = "Keep at least one check."; return; }
+      draft.id = id; draft.input = input.value;
+      draft.assertions = rows.map(({ assertion, select, value }) => {
+        const updated = clone(assertion);
+        if (select) {
+          const oldKey = operandKey(updated.type), newKey = operandKey(select.value);
+          if (oldKey !== newKey) delete updated[oldKey];
+          updated.type = select.value; updated[newKey] = value.value;
+        }
+        return updated;
+      });
+      const examples = clone(full);
+      if (existing) examples[index] = draft; else examples.push(draft);
+      act("save-examples", { examples });
+    });
+    const actions = el(doc, "div", "form-actions"); actions.append(add, cancel, save);
+    form.append(el(doc, "h3", "", existing ? "Edit example" : "Add example"), fields, checks, error, actions);
+    formHost.replaceChildren(form); drawExamples(); update(); name.focus();
+  }
+
+  const displayName = payload.title.split(" — ")[0] || payload.title;
+  const toolbar = el(doc, "header", "toolbar"), breadcrumb = el(doc, "div", "breadcrumb");
+  breadcrumb.append(el(doc, "span", "wordmark", "kmx"), el(doc, "span", "", "Agents"), el(doc, "span", "", "/"), el(doc, "span", "breadcrumb-name", displayName));
+  const source = el(doc, "details", "source-details"), info = el(doc, "div", "source-info");
+  const sourceSummary = el(doc, "summary", "file-chip", `${payload.file.path.split("/").pop()} · Selected root`);
+  sourceSummary.setAttribute("aria-label", "Source details"); source.append(sourceSummary);
+  info.append(el(doc, "p", "", payload.title), pathControls(doc, payload.file.path), el(doc, "code", "revision", payload.file.revision));
+  controls.push({ node: info.querySelector(".copy-path"), guard: "copy" });
+  source.append(info); toolbar.append(breadcrumb, source);
+  const content = el(doc, "div", "content"), header = el(doc, "section", "agent-header"), identity = el(doc, "div");
+  identity.append(el(doc, "span", "eyebrow", "Your agent"), el(doc, "h1", "", displayName));
+  const purpose = purposeText(payload), summary = el(doc, "p", "purpose");
+  const chars = Array.from(purpose); summary.textContent = chars.length > 160 ? chars.slice(0, 159).join("") + "…" : purpose;
+  identity.append(summary);
+  if (chars.length > 160) info.append(el(doc, "p", "", purpose));
+  const pills = el(doc, "div", "header-pills"); pills.append(status);
+  if (payload.model) pills.append(el(doc, "span", "model-pill", `Model · ${payload.model}`));
+  header.append(identity, pills);
+
+  const instructions = el(doc, "section", "instructions-section"), instructionHeading = el(doc, "div", "section-line");
+  instructionHeading.append(el(doc, "h2", "", "Instructions"), editedLabel);
+  const panel = el(doc, "div", "instruction-panel");
+  if (editable) {
+    panel.append(makeEditor(mainSection));
+    const additional = el(doc, "details", "additional");
+    additional.append(el(doc, "summary", "", "Additional instructions"));
+    for (const section of sections.filter((s) => s !== mainSection)) {
+      additional.append(el(doc, "h3", "", section.key), makeEditor(section));
+    }
+    panel.append(additional);
+  } else {
+    panel.append(instructionsContent(doc, payload));
+    instructions.append(el(doc, "p", "quiet", "Read-only inspection. This engine or agent file does not provide a complete editable snapshot."));
+  }
+  const footer = el(doc, "div", "instruction-footer");
+  const testButton = editable ? button("↵ Test", test, "primary", "test") : undefined;
+  if (editable) footer.append(el(doc, "span", "quiet", "Enter saves and tests · Shift+Enter for a new line"), testButton);
+  panel.append(footer); instructions.append(instructionHeading, panel);
+
+  const includeLabel = el(doc, "label", "include-answers"), include = el(doc, "input"); include.type = "checkbox"; include.checked = false;
+  includeLabel.append(include, doc.createTextNode("Include passing answers"));
+  const runInput = el(doc, "textarea"); runInput.setAttribute("aria-label", "Ad-hoc input"); runInput.rows = 2;
+  const actionsLine = el(doc, "div", "actions-line"), run = el(doc, "details", "run-disclosure");
+  if (editable) {
+    run.append(el(doc, "summary", "", "Try another input"), runInput, button("Run", () => act("run", { input: runInput.value })));
+    actionsLine.append(includeLabel, el(doc, "small", "answer-disclosure quiet", "Failing answers are shown by default"), run, button("Reload and discard draft", () => act("reload"), "text-button", "reload"));
+  }
+  const examples = el(doc, "section", "examples-section"), heading = el(doc, "div", "section-line examples-heading"), headingText = el(doc, "div", "heading-text");
+  headingText.append(el(doc, "h2", "", "Examples"), el(doc, "span", "quiet", "What the agent gets, and what a good answer does"));
+  heading.append(headingText);
+  if (editable) {
+    const actions = el(doc, "div", "heading-actions");
+    actions.append(button("Suggest more", () => act("suggest")), button("Add example", () => openExample()));
+    heading.append(actions);
+  }
+  drawExamples(); examples.append(heading, formHost, exampleList);
+  content.append(header, instructions);
+  if (editable) content.append(actionsLine, message);
+  const adHoc = payload.latest.status === "current" ? payload.latest.result?.adHoc : undefined;
+  if (adHoc) {
+    adHocResult = el(doc, "section", "ad-hoc-result");
+    adHocResult.append(el(doc, "h2", "", "Last ad-hoc run"), el(doc, "p", "", `${adHoc.state} · ${adHoc.verdict}`), answerContent(doc, adHoc));
+    content.append(adHocResult);
+  }
+  content.append(examples); root.replaceChildren(toolbar, content); update();
 }
 
 async function main() {

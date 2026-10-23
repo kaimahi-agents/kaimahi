@@ -57,7 +57,7 @@ class PackageTests(unittest.TestCase):
     def test_native_view_is_bundled_without_tests_or_dependencies(self):
         self.build()
         native = "com.github.copilot/extensions/agent-view"
-        names = {"extension.mjs", "view.mjs", "index.html", "app.js", "style.css"}
+        names = {"extension.mjs", "view.mjs", "index.html", "app.js", "style.css", "authoring.mjs"}
         self.assertEqual({p.name for p in (self.out / native).iterdir()}, names)
         for name in names:
             self.assertEqual((self.out / native / name).read_bytes(),

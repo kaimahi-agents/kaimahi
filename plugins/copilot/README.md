@@ -1,10 +1,10 @@
 # Copilot agent-builder plugin
 
 This Copilot app/CLI plugin contains a skill, declarative MCP config and a
-native Copilot read-only agent canvas with a text fallback. It is not a VS Code
+native Copilot agent authoring canvas with a read-only text fallback. It is not a VS Code
 extension. The source tree is not an installable package; native bundles are
-generated and signed by the release workflow, not committed here. No in-plugin downloader,
-mutation controls or second runner.
+generated and signed by the release workflow, not committed here. Canvas actions
+use the existing MCP operations, not an in-plugin downloader, file writer or second runner.
 
 For the Copilot-default Release writer setup, see [TRY-IT.md](../../TRY-IT.md).
 The external [try-it.sh](try-it.sh) helper downloads a complete platform archive,
@@ -67,7 +67,7 @@ a server restart, not an implicit rebind during a tool call.
 The bundled engine exposes exactly lowercase `create`, `edit`, `run` and
 `test`. All require `schemaVersion: 1` and root-relative `path`; Create
 also needs canonical `content`, Edit needs `content` and `expectedRevision`.
-Run/Test accept `caseId` and `showContent`; Run also accepts `input`.
+Run/Test accept `caseId`, `showContent` and `showFailedContent`; Run also accepts `input`.
 Use discovered schemas as authority. See the
 [real MCP contract](../../docs/kmx.md#local-stdio-mcp).
 No fifth bind/Explain/model/install tool is introduced.
@@ -94,62 +94,66 @@ A public archive cannot contain a user's absolute root. Release archives start
 unconfigured and refuse MCP startup until an operator chooses a root as below.
 Users do not need Python or this developer builder to install an archive.
 
-## Read-only agent view
+<a id="read-only-agent-view"></a>
+
+## Agent authoring canvas
 
 After confirming the selected root, ask Copilot to open the installed **kmx agent
-view** canvas with the root-relative agent path. The native command
-`/agent-view greeter.agent.md` displays the same projection as text; use
-`/agent-view .squad/agents/greeter/charter.md` for a canonical Squad charter.
-Neither path runs the agent or changes a file. The canvas has no mutation actions.
+view** canvas with the root-relative path. Opening does not edit or run the agent.
+The native command `/agent-view greeter.agent.md` displays the same projection
+as read-only text; canonical Squad paths work there too.
 
-The canvas leads with agent identity and readable instructions, followed by saved
-examples. Normal status stays in a compact header pill; confirmed failures expand
-to a result band after the instructions. Checks use plain-language labels;
-matching failed `contains` checks identify the expected text as missing. Partial, incomplete and out-of-date observations never
-look like a full passing test. Inputs and check operands remain literal text.
-The friendly file label names the agent file or Squad member. Its complete
-root-relative path appears only under **Source details**. **Copy path** writes it only on
-an explicit click; clipboard refusal or unavailability leaves it selectable for
-manual copying. No clipboard permission changes or filesystem reads are added.
-Instructions stay visible, with readable section headings rather than template
-markup. Unique matching ID and Purpose fields already represented by the header or its
-source path are hidden from the main area; ambiguous or non-redundant content stays visible.
-The complete normalized original instructions remain inert text in Source details.
-Included answer excerpts remain labelled untrusted and bounded; the view never
-enables content disclosure itself. It reads the observation when opened, with no
-live refresh or execution controls.
+Instructions are directly editable: **Enter** saves through revision-checked MCP
+Edit and then tests; **Shift+Enter** adds a line. Additional instructions retain
+the other canonical responsibility sections. Inline code and emphasis are inert
+formatting, with source markers retained when saving. Title, identity, model,
+untouched instructions and Examples are not rewritten by an instruction edit.
+Typing alone never saves or runs anything.
 
-The MCP resource template is `kmx://agent/{path}`. Encode the entire path as one
+Add, edit or delete examples inline, retaining at least one example and check.
+Example saves reformat only the Examples YAML, including comments, and preserve
+all check fields, including judge metadata. Judge labels come from authored IDs;
+full rubrics remain in Check details. No check is inferred from an answer.
+Inputs, exact operands and model answers remain literal. Failing examples expand;
+passing examples stay compact. Partial, unknown, ambiguous, stale and unsaved
+states never imply a full pass.
+
+Test and ad-hoc Run use existing same-session MCP tools directly, not chat.
+**Suggest more** alone asks Copilot for proposals in chat; it does not save them.
+The host still enforces its permissions. The private asset bridge permits only
+declared interactions for its fixed path, with token, Host, exact Origin and
+size checks. It is not a generic executor. Acknowledged actions refresh the
+resource; there is no background watcher. Conflicts and uncertain outcomes retain
+the draft and require deliberate reload. Failed saves stop Test. Test/Run have
+no atomic revision precondition; changed result revisions are labelled stale,
+never claimed as tests of the draft.
+
+Failed saved-example answers are shown by default as bounded **untrusted
+excerpts**. **Include passing answers** explicitly adds other excerpts.
+The canvas requests `showFailedContent: true`, not implicit `showContent: true`:
+passing and unknown answers stay out of safe results, MCP summaries and resources
+when the checkbox is off. Ad-hoc answers still require `showContent`.
+Fake/local journal retention is unchanged; projection controls do not promise
+that the underlying runner does not journal content.
+
+The typed resource remains `kmx://agent/{path}`; encode the entire path as one
 URI component, for example
-`kmx://agent/.squad%2Fagents%2Fgreeter%2Fcharter.md`. It is a typed authored-agent
-projection, not a generic file read or directory listing. It contains title,
-instructions, model, saved examples and expected checks. Root confirmation is
-sufficient for this authored content; there is no separate consent mechanism.
-Model answers appear only when the existing Run/Test `showContent` option
-(CLI `--show-content`) opted into bounded excerpts.
+`kmx://agent/.squad%2Fagents%2Fgreeter%2Fcharter.md`.
+An optional authoring snapshot carries exact source from the same bounded
+descriptor read as its revision. Clipped display values are never save baselines.
+Strict canonical charters are editable; older engines and minimal titled files
+remain inspection-only. Inspection does not widen Run/Test parser acceptance.
+There is no new tool, generic read, model route or filesystem writer. Source
+details retain the complete path/revision and explicit Copy path with its
+selectable manual fallback; no clipboard permissions change.
 
-A minimal `.agent.md` view accepts `# Title`, freeform instructions,
-`## Model` with `- **Preferred:** exact-model`, and `## Examples` using the
-existing fenced YAML schema. Canonical Squad charters keep their sections.
-This inspection support does **not** change Run/Test parser acceptance: minimal
-agent execution remains a separate parser capability.
-
-The latest safe Run/Test observation belongs only to the current MCP process.
-Opening a second process or restarting does not recover history. Changed
-revisions show a stale status, not an old passing result next to new checks.
-No observation shows **No current result**. The canvas and fallback read the
-configured session MCP server, rather than launching another engine.
-
-The native provider and text command were manually checked against Linux and
-Windows Copilot CLI 1.0.102 without model sends; the Windows check used a WSL
-MCP engine. CI covers the bridge/renderer and package contracts. Real Windows
-desktop rendering of both initial, no-result file views was demonstrated once
-in Copilot app 1.1.30 with a WSL MCP engine. This does not qualify clean-machine
-installation, live result refresh, current/stale result rendering or every error
-state. The view has no execution controls.
-Installation/discovery, a loopback URL or a browser mock alone is not desktop
-rendering evidence. The panel binds a private loopback listener
-for its own assets/view only and closes it when the instance closes.
+Latest results belong only to the current MCP process; a restart has no history.
+Changed revisions withhold old results. No observation means **No current result**.
+Windows Copilot app 1.1.30 with a WSL MCP engine demonstrated instruction
+Edit → Test, mixed text/judge results and native rendering using an offline fake
+model. Browser/unit checks cover inline formatting and failure-only disclosure.
+This is not live hosted-model, clean-machine or every desktop error-state
+qualification. A loopback URL or browser mock alone is not desktop evidence.
 
 ## Results and verification
 
@@ -160,8 +164,8 @@ A passing subset still has `fullPass: false`. Complete preview data is in
 assertion failures are normal tool results: `isError: false` does not mean pass.
 Preview file.path is a display basename, **not the original Edit target**.
 Boundary refusals have a safe reason code instead of a preview.
-Default output omits answers/operands. Explicit `showContent` opts into bounded
-excerpts. Retention remains `not_requested`; file-scoped Explain is deferred.
+Default tool output omits answers/operands. Explicit `showContent` includes all
+bounded excerpts; optional `showFailedContent` includes only failed saved examples. Retention remains `not_requested`; file-scoped Explain is deferred.
 These results grant no native shipping evidence or Publish/Deploy authority.
 Squad placement alone does not register a team member.
 

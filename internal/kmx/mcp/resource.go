@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,14 +15,19 @@ import (
 // AgentView is authored content for the user's confirmed root, not a safe log.
 // Model answers appear only in an already opted-in safe preview result.
 type AgentView struct {
-	SchemaVersion int                `json:"schemaVersion"`
-	Kind          string             `json:"kind"`
-	File          File               `json:"file"`
-	Title         string             `json:"title"`
-	Instructions  string             `json:"instructions"`
-	Model         string             `json:"model"`
-	Examples      []AgentViewExample `json:"examples"`
-	Latest        AgentViewLatest    `json:"latest"`
+	SchemaVersion int                 `json:"schemaVersion"`
+	Kind          string              `json:"kind"`
+	File          File                `json:"file"`
+	Title         string              `json:"title"`
+	Instructions  string              `json:"instructions"`
+	Model         string              `json:"model"`
+	Examples      []AgentViewExample  `json:"examples"`
+	Latest        AgentViewLatest     `json:"latest"`
+	Authoring     *AgentViewAuthoring `json:"authoring,omitempty"`
+}
+type AgentViewAuthoring struct {
+	Source   string `json:"source"`
+	Editable bool   `json:"editable"`
 }
 type AgentViewExample struct {
 	ID         string                        `json:"id"`
@@ -62,11 +68,13 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		if err != nil {
 			return nil, err
 		}
-		agent, err := files.inspect(ctx, p)
+		agent, source, err := files.inspect(ctx, p)
 		if err != nil {
 			return nil, refusal("invalid_file")
 		}
 		view := AgentView{SchemaVersion: 1, Kind: "kmx.agent-view", File: File{Path: p, Revision: agent.Revision}, Title: agent.Title, Instructions: agent.Instructions, Model: agent.Model, Latest: AgentViewLatest{Status: "none"}}
+		_, strictErr := agentfile.Parse(p, source)
+		view.Authoring = &AgentViewAuthoring{Source: string(source), Editable: strictErr == nil}
 		for _, example := range agent.Examples {
 			view.Examples = append(view.Examples, AgentViewExample{ID: example.ID, Input: example.Input, Assertions: example.Assertions})
 		}

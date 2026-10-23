@@ -47,8 +47,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Read-only canvas and text fallback contracts
-        run: node --test plugins/copilot/com.github.copilot/extensions/agent-view/view.test.mjs
+      - name: Agent canvas, authoring and text fallback contracts
+        run: node --test plugins/copilot/com.github.copilot/extensions/agent-view/view.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/authoring.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/actions.test.mjs
       - name: Package contracts and real MCP loop (Windows packaging only)
         run: python -m unittest discover -s plugins/copilot -p 'test_*.py' -v
 
