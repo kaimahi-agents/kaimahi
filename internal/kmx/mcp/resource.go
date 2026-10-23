@@ -89,6 +89,11 @@ func AddAgentResource(server *sdk.Server, files *Files) {
 		}
 		files.viewMu.Unlock()
 		encoded, err := json.Marshal(view)
+		if err == nil && len(encoded) > 2<<20 && view.Authoring != nil {
+			// Optional editing data must not make an existing read-only view fail.
+			view.Authoring = nil
+			encoded, err = json.Marshal(view)
+		}
 		if err != nil || len(encoded) > 2<<20 {
 			return nil, refusal("invalid_file")
 		}

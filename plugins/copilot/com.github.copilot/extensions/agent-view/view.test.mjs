@@ -1163,19 +1163,27 @@ test("frontend and provider sources avoid unsafe sinks and mutation surfaces", a
   assert.doesNotMatch(strip(ext), /actions\s*:/);
   assert.match(strip(ext), /name:\s*"agent-view"/);
 });
-async function editableCanvas(body, eol) {
+async function editableCanvas(body, eol, options = {}) {
   let original = await readFile(new URL("../../../../../internal/kmx/agentfile/testdata/greeter.agent.md", import.meta.url), "utf8");
   if (eol) original = original.replace(/\r?\n/g, eol);
   const sections = instructionSections(original); sections[0].text = body;
   const source = replaceInstructions(original, sections);
   const revision = "sha256:" + createHash("sha256").update(source).digest("hex");
+  let latest = { status: "none" };
+  if (options.currentPass) {
+    const result = savedFixture().latest.result;
+    result.file = { path: MINIMAL, revision }; result.operation = "test";
+    result.selection = { scope: "full", totalCases: 1, caseIds: ["greeting"] };
+    result.examples = [{ id: "greeting", state: "complete", verdict: "pass", assertions: [{ id: "greeting-text", type: "contains", verdict: "pass" }] }];
+    latest = { status: "current", result };
+  }
   const view = await readView(stubSession(resource(MINIMAL, {
-    file: { path: MINIMAL, revision }, instructions: source, model: "fake",
+    file: { path: MINIMAL, revision }, instructions: source, model: "fake", latest,
     examples: [{ id: "greeting", input: "Ada", assertions: [{ id: "greeting-text", type: "contains", value: "Hello, Ada" }] }],
     authoring: { source, editable: true },
   })), MINIMAL);
   const doc = fakeDoc(), root = doc.createElement("main"), calls = [];
-  renderView(doc, root, view, async (action) => { calls.push(action); return { error: "refused", message: "Draft kept." }; });
+  renderView(doc, root, view, async (action) => { calls.push(action); return options.response ?? { error: "refused", message: "Draft kept." }; });
   const clickTest = async () => {
     byClass(root, "primary")[0].listeners.click[0]();
     await Promise.resolve(); await Promise.resolve();
@@ -1247,6 +1255,28 @@ test("answer opt-in says passing answers and never adds a page failure-disclosur
   await h.clickTest();
   assert.equal(h.calls[0].showContent, true);
   assert.equal(Object.hasOwn(h.calls[0], "showFailedContent"), false);
+});
+
+for (const operation of ["test", "run"]) test(`${operation} execution failure invalidates the previous passing display`, async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { currentPass: true, response: { error: "action-failed", message: "Execution did not complete." } });
+  assert.match(byClass(h.root, "status-pill")[0].textContent, /1 of 1 passing/);
+  if (operation === "test") await h.clickTest();
+  else {
+    all(h.root).find((node) => node.tag === "button" && node.textContent === "Run").listeners.click[0]();
+    await Promise.resolve(); await Promise.resolve();
+  }
+  assert.equal(h.calls[0].operation, operation);
+  assert.match(byClass(h.root, "status-pill")[0].textContent, /unconfirmed/);
+  assert.equal(byClass(h.root, "case-pass").length, 0);
+  assert.doesNotMatch(h.root.textContent, /Passed/);
+});
+
+test("pre-execution permission refusal retains the previous valid observation", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { currentPass: true, response: { error: "permission_required", message: "Not permitted before execution." } });
+  await h.clickTest();
+  assert.match(byClass(h.root, "status-pill")[0].textContent, /1 of 1 passing/);
+  assert.equal(byClass(h.root, "case-pass").length, 1);
+  assert.match(h.root.textContent, /Not permitted before execution/);
 });
 
 test("judge uses its semantic ID label while actual rubric retains safe inline formatting in details", async () => {

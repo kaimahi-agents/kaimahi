@@ -166,7 +166,8 @@ func TestAgentResourceAuthoringSnapshot(t *testing.T) {
 		editable     bool
 	}{
 		{"canonical.agent.md", source, true},
-		{"crlf.agent.md", strings.ReplaceAll(source, "\n", "\r\n"), true},
+		{"crlf.agent.md", strings.ReplaceAll(strings.ReplaceAll(source, "\r\n", "\n"), "\n", "\r\n"), true},
+		{"lf.agent.md", strings.ReplaceAll(source, "\r\n", "\n"), true},
 		{"minimal.agent.md", minimal, false},
 	} {
 		t.Run(row.name, func(t *testing.T) {
@@ -202,6 +203,30 @@ func TestAgentResourceAuthoringSnapshot(t *testing.T) {
 				t.Fatal("inspection widened Run/Test acceptance")
 			}
 		})
+	}
+}
+
+func TestAgentResourceOversizedAuthoringRemainsReadable(t *testing.T) {
+	f, _, source := canonicalFiles(t)
+	source = strings.ReplaceAll(source, "\r\n", "\n")
+	heading := "## Accountable Responsibilities\n"
+	start, end := strings.Index(source, heading), strings.Index(source, "## Non-Responsibilities\n")
+	if start < 0 || end <= start {
+		t.Fatal("canonical section fixture missing")
+	}
+	large := source[:start] + heading + strings.Repeat("&", 190000) + "\n\n" + source[end:]
+	saved, err := f.Create(t.Context(), "large.agent.md", []byte(large))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readView(t, resourceClient(t, f, &app.App{}), saved.Path)
+	if got.Authoring != nil || got.File.Revision != saved.Revision || len(got.Examples) != 1 || !strings.Contains(got.Instructions, strings.Repeat("&", 190000)) {
+		t.Fatal("oversized optional snapshot lost read-only projection")
+	}
+	got.Authoring = &AgentViewAuthoring{Source: large, Editable: true}
+	encoded, err := json.Marshal(got)
+	if err != nil || len(encoded) <= 2<<20 {
+		t.Fatal("fixture no longer exceeds the encoded resource budget")
 	}
 }
 

@@ -55,6 +55,13 @@ test('successful tool without a matching observation is unknown, not a false fil
  const r=await h.act(input);assert.equal(r.error,'outcome-unknown');assert.doesNotMatch(r.message,/file changed/);
  assert.equal((await h.act(input)).error,'outcome-unknown');assert.equal(h.calls.length,1);
 });
+for(const [resultType,code]of[['failure','action-failed'],['rejected','permission_required'],['denied','permission_required'],['timeout','outcome-unknown']])test('SDK '+resultType+' uses execution classification, not model error wording',async()=>{
+ const h=harness();let calls=0;
+ h.session.rpc.tools.execute=async()=>{calls++;return{resultType,error:'model denied or rejected this answer'}};
+ const input={operation:'test',expectedRevision:revision(original)};
+ assert.equal((await h.act(input)).error,code);
+ if(resultType==='timeout'){assert.equal((await h.act(input)).error,'outcome-unknown');assert.equal(calls,1)}
+});
 test('page cannot supply paths, servers, generic tools or implicit answer disclosure',async()=>{const h=harness();for(const input of [{operation:'test',path:'else.agent.md'},{operation:'execute',name:'shell'},{operation:'test',showContent:'true'},{operation:'test',showFailedContent:false},{operation:'toString'}])assert.equal((await h.act(input)).error,'invalid-action');assert.equal(h.calls.length,0)});
 test('only explicit Suggest starts chat and ad-hoc Run retains opt-in',async()=>{const h=harness();assert.match((await h.act({operation:'suggest'})).message,/chat/);assert.equal(h.calls.filter(c=>c.chat).length,1);assert.equal(h.calls.some(c=>c.name),false);const r=await h.act({operation:'run',expectedRevision:revision(original),input:'Ada',showContent:true});assert.equal(r.error,undefined);assert.deepEqual(h.calls.at(-1).arguments,{schemaVersion:1,path:'greeter.agent.md',input:'Ada',showContent:true,showFailedContent:true})});
 test('action POST requires exact same origin and cannot be a form submission',async()=>{const h=harness();const b=await startViewBridge({session:h.session,path:'greeter.agent.md'});try{assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{Origin:'https://untrusted.test','Content-Type':'application/json'},body:'{}'})).status,403);assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{Origin:new URL(b.url).origin,'Content-Type':'application/json'},body:JSON.stringify({operation:'reload'})})).status,200);assert.equal(h.calls.length,0)}finally{await b.close()}});

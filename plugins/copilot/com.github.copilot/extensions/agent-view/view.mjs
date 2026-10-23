@@ -205,9 +205,10 @@ export function createActionHandler({ session, path }) {
     let result;
     try { result = await session.rpc.tools.execute({ name: tools[0].name, arguments: { schemaVersion: 1, path, ...args } }); }
     catch { uncertain = true; throw new ViewError("outcome-unknown"); }
+    if (result?.resultType === "timeout") { uncertain = true; throw new ViewError("outcome-unknown"); }
     if (result?.resultType !== "success") {
       const detail = typeof result === "string" ? result : [result?.textResultForLlm, result?.error].filter((s) => typeof s === "string").join("\n");
-      const code = /stale_revision/.test(detail) ? "stale_revision" : /permission|reject|denied/i.test(detail) ? "permission_required" : "action-failed";
+      const code = ["rejected", "denied"].includes(result?.resultType) ? "permission_required" : /stale_revision/.test(detail) ? "stale_revision" : "action-failed";
       throw new ViewError(code);
     }
     return result;

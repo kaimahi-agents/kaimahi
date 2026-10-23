@@ -463,7 +463,8 @@ export function renderView(doc, root, payload, execute = postAction) {
       const response = await execute(action);
       if (response?.error) {
         const conflict = ["revision_mismatch", "stale_revision", "revision-mismatch", "stale-revision"].includes(response.error);
-        blocked = conflict || response.saved === true || ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"].includes(response.error);
+        const failedPreview = response.error === "action-failed" && ["test", "run"].includes(operation);
+        blocked = failedPreview || conflict || response.saved === true || ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"].includes(response.error);
         message.textContent = conflict ? "Changed elsewhere. Your draft is still here. Reload and discard draft to continue."
           : response.saved ? "Saved, but not tested for this revision. Your draft is still here. Reload before continuing."
           : response.message || "The action was refused. Your draft is still here.";
