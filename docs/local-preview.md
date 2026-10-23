@@ -52,12 +52,12 @@ Name the variable; never put the credential value on the command line.
 
 ## Host-tool foundation
 
-**Hermetically tested; real MCP provider execution is not yet available.**
 The optional [Tools declaration](agent-file.md#markdown-contract) names
-`github_list_merged_prs`. File Run/Test accepts explicit `--tool-bindings FILE`,
-without discovery or workspace configuration. Until the real provider is
-qualified and installed, declared tools refuse `tools_unavailable`; neither
-CLI nor inbound MCP silently executes them as tool-free agents.
+`github_list_merged_prs`. File Run/Test accepts explicit `--tool-bindings FILE`
+for one real read-only GitHub MCP operation, without discovery or workspace
+configuration. Missing bindings or credentials refuse `tools_unavailable`;
+neither CLI nor inbound MCP silently executes declarations as tool-free agents.
+Inbound MCP still has no operator binding selector and cannot grant tools.
 
 The strict local JSON binding is at most 16 KiB and contains references, never
 credential values:
@@ -74,7 +74,8 @@ credential values:
 ```
 
 Only that fixed HTTPS endpoint, one repository and one environment-variable
-reference are accepted. Select a clean path (for example `tools.json`, not
+reference are accepted. Use the repository's canonical GitHub letter case: its
+returned repository URL must match the binding exactly. Select a clean path (for example `tools.json`, not
 `./tools.json`) with no parent traversal or symlink/reparse components. The
 bounded regular-file read checks opened-file identity; it is not a hostile
 concurrent filesystem sandbox. No token flags, implicit gh/Copilot credential reuse,
@@ -83,14 +84,45 @@ The format is kmx-local, not portable AgentSuite remote execution. AgentSuite's
 remote-MCP catalog uses unresolved endpoint/credential references; it does not
 currently select a remote declaration for agent execution.
 
-Trusted embedding code may supply `RunnerOptions.Tools` to resolve an immutable
-binding into a host executor. Construction and parsing access no credentials;
-this slice supplies no production MCP transport or fake data source. The host
-owns credentials and validates the fixed no-argument read, exact repository,
-merged attribution, at most 20 results and bounded number/title projection.
+The production runner installs the host factory; trusted embedding code may
+still supply `RunnerOptions.Tools`. Runner construction and parsing perform no
+credential or network access. A tool-bearing invocation reads only the named
+environment variable once, holds that snapshot in memory, and checks supplied
+content before journal creation. No token value belongs in the binding file.
+
+Only a model-selected call opens a fresh Streamable-HTTP MCP session. It checks
+the remote search schema, calls `search_pull_requests` once with a fixed
+repository/merged query and page-one limit of 20, and closes the session before
+returning. No PR-by-PR requests or hidden data prefetch. Exact `repository_url`
+and explicit `pull_request.merged_at` timestamps establish attribution;
+`state: closed` or the search query alone does not. Incomplete searches refuse.
+This bounded first page is not an exhaustive PR inventory; `total_count` does
+not force a full page or authorize fetching additional items. Only PR numbers and
+titles reach the model under fixed repository/merged metadata; no bodies,
+authors, comments, arbitrary links or remote descriptions are forwarded.
+
+The protocol is pinned to `2025-11-25`, without discovery/fallback, reconnect,
+automatic input-required retries, OAuth or sampling/roots/elicitation callbacks.
+To move to a newer protocol, requalify the hosted schema/output, then update the
+pin and exact-handshake tests rather than enabling automatic negotiation.
+Each read has a 30-second cap within the existing case deadline, a 1 MiB reply
+cap and bounded SSE response events; standalone SSE, redirects and ambient
+proxy credentials are disabled. Auth/schema/transport/result/close failure
+stops the operation without retry or partial success.
+
+The host validates the fixed no-argument call, exact repository, explicit merged
+attribution, result count and bounded number/title projection.
 Inputs, decoded model responses and projected tool results are checked before
-journaling. Exact credentials and known credential shapes refuse; encoded or
+journaling. Exact configured-credential echoes are also refused throughout
+host-only protocol data; opaque server icons/session metadata never enter the
+model or journal, and SDK logs are discarded. Exact credentials and known credential shapes refuse; encoded or
 partial secret copies are not a general data-loss-prevention guarantee.
+
+The opt-in `TestHostedMCPWithScriptedModelJournal` test exercises a real hosted
+read with a scripted loopback model, then offline replay without credentials.
+It prints no PR content and removes its private temporary journal afterward;
+it is not real-LLM tool-selection qualification. Ordinary tests use owned TLS
+MCP fixtures and a test-only bridge excluded from shipped builds.
 
 A distinct `kmx-local-tools-v1` harness permits zero or one model-selected read
 and at most two agent-model calls. No forced call, parallel calls, pagination,

@@ -443,10 +443,17 @@ changes in the package's Go doc comment.
 ## Agent-file preview boundary
 
 Canonical `run FILE` / `test FILE` accept explicit `--tool-bindings FILE` as
-host-only input; no discovery or inbound-MCP binding selection. The current
-production runner has no MCP provider factory and refuses tool execution.
-Trusted embedding can supply a frozen binding/host executor; fixture qualification
-is not real MCP proof. Declared tools with either a Copilot agent or judge refuse
+host-only input; no discovery or inbound-MCP binding selection. The production
+runner installs localtools.NewMCPHost: explicit env snapshot, no constructor
+network, lazy read-owned Streamable-HTTP session and one fixed GitHub search.
+Require exact repository_url and explicit merged_at, complete search and <=20
+bounded number/title rows. Protocol2025-11-25 is pinned; no server/discover,
+OAuth/callbacks/standalone SSE/redirects/proxy credentials/retries/input-required
+resends. Read context bounds SDK-detached cleanup. Exact credential echoes
+refuse in protocol data; known-shape checks also cover every model/journal-bound
+projection. Discard remote metadata/descriptions and SDK logs. Test bridges stay
+in _test.go; scripted-model hosted smoke is not real-LLM qualification.
+Trusted embedding can still supply a frozen binding/host executor. Declared tools with either a Copilot agent or judge refuse
 before credentials or journaling; tool-free Copilot is unchanged and future
 Copilot tools depend on #662. No silent tool dropping.
 

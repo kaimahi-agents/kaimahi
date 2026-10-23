@@ -81,8 +81,10 @@ The trusted provider route, endpoint and credentials must come from outside
 this file; the parser neither checks availability nor chooses/falls back to a
 model. Prose cannot grant tools or hooks. Tool names declare a requirement,
 not authority: execution needs an explicit host binding and a qualified provider.
-The current CLI refuses declared tools until that provider is available; the
-[host-tool foundation](local-preview.md#host-tool-foundation) is hermetically tested. Parsing is not a sandbox or
+The CLI supports one [host-bound read-only GitHub MCP operation](local-preview.md#host-tool-foundation)
+with an explicit local binding and environment credential reference. Missing
+bindings/credentials, unsupported routes or invalid provider results refuse;
+Copilot tools remain unsupported. Parsing is not a sandbox or
 a guarantee that arbitrary prose is safe or secret-free. The complete charter,
 including raw YAML comments, is checked with the existing credential-shape scanner
 and refuses known shapes with a fixed redacted error. Decoded example inputs and
