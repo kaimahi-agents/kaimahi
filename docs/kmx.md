@@ -438,6 +438,47 @@ Completed assertion failures and inconclusive assertions are normal MCP results
 journal-finalization errors still set `isError: true`. A successful subset still
 has `fullPass: false`; App results and CLI exit codes are unchanged.
 
+#### Stopping an in-flight preview
+
+Stop the existing `run` or `test` call using MCP request cancellation, not a
+second tool call or a tool argument. A UI's stop button or typing handler should
+cancel that call's context. With the MCP Go SDK, cancel the context passed to
+`ClientSession.CallTool`; the SDK sends `notifications/cancelled` with that
+request's ID. A raw protocol client sends, for example:
+
+```json
+{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":42,"reason":"User stopped the preview"}}
+```
+
+Use the ID of the in-flight `tools/call`, not a test ID, file revision or a new
+request ID. This cancels the model/judge request and prevents later tests from
+starting; it does not undo work already performed by a provider. The server keeps
+only fully finished tests, including their pass or failure results. The
+interrupted test and later tests are `not_run`, with unknown assertions and no
+answer excerpt, even if the interrupted test had an answer or some passing
+checks before its judge was cancelled. Both local Sessions and direct Copilot
+previews follow this cancellation rule. A finished optional Run ad-hoc answer
+also remains available under the existing content opt-in. The overall result is
+`state: cancelled`, `reasonCode: cancelled`, `fullPass: false`; CLI cancellation
+remains exit 130. Deadline and non-cancellation error behavior is unchanged.
+
+The SDK's cancelled call returns before server finalization and does not deliver
+the partial result. Read the existing `kmx://agent/{path}` resource with a fresh,
+uncancelled context to recover `latest.result`. Encode the whole root-relative
+path as one URI component: `kmx://agent/greeter.agent.md`, or
+`kmx://agent/.squad%2Fagents%2Fgreeter%2Fcharter.md` for a nested charter. Until the
+handler finishes, the resource may show `latest.status: none`. A UI can perform
+bounded repeat reads while waiting for a cancelled result for the expected
+revision; it must not treat the client-side cancellation error as proof that
+server finalization is complete. If no result arrives, report unavailable results
+rather than inventing passes or reusing older results. Cancellation before the
+snapshot may leave no observation at all. A new preview supersedes the older
+observation, and a source edit marks an old result stale and withholds details.
+Keep a pending draft separate from the observed saved revision; never present a
+result for another revision as current. There is no Stop tool, completion push
+notification or persistent run history. Recovery and model-request cancellation
+are covered by hermetic MCP/loopback tests, not live Copilot or canvas UI proof.
+
 Run/Test text is a compact summary rather than a second copy of the result JSON.
 It identifies non-passing examples/assertions with safe reasons, preserves scope
 and any no-journal qualifier, and limits details to 10 rows within 8 KiB, reporting
