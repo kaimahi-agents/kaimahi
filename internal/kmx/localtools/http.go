@@ -83,7 +83,7 @@ func (t *mcpHTTP) RoundTrip(req *http.Request) (*http.Response, error) {
 		headerBytes += len(key)
 		for _, value := range values {
 			headerBytes += len(value)
-			if t.host.Check(key, value) != nil {
+			if strings.Contains(key, t.host.credential) || strings.Contains(value, t.host.credential) {
 				return nil, errReadFailed
 			}
 		}
@@ -135,7 +135,10 @@ func (t *mcpHTTP) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func safeMCPJSON(raw []byte, h *Host) bool {
-	if !agentruntime.JSONKeysUnique(raw) || h.Check(string(raw)) != nil {
+	// The entire protocol stays host-side. Check exact configured-credential
+	// echoes here, not credential-shaped opaque icons/session metadata. Known
+	// shapes are still refused by Host.Check on all model/journal-bound data.
+	if !agentruntime.JSONKeysUnique(raw) || strings.Contains(string(raw), h.credential) {
 		return false
 	}
 	var value any
@@ -146,7 +149,7 @@ func safeMCPJSON(raw []byte, h *Host) bool {
 	check = func(value any) bool {
 		switch v := value.(type) {
 		case string:
-			return h.Check(v) == nil
+			return !strings.Contains(v, h.credential)
 		case []any:
 			for _, item := range v {
 				if !check(item) {
@@ -155,7 +158,7 @@ func safeMCPJSON(raw []byte, h *Host) bool {
 			}
 		case map[string]any:
 			for key, item := range v {
-				if h.Check(key) != nil || !check(item) {
+				if strings.Contains(key, h.credential) || !check(item) {
 					return false
 				}
 			}

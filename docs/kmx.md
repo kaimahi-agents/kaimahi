@@ -176,9 +176,13 @@ snapshot without reopening its filename; the CLI path is a thin load-and-delegat
 wrapper.
 Neither operation changes source or produces native evaluation/deploy evidence.
 An optional canonical Tools declaration and explicit `--tool-bindings FILE` select
-only the [host-tool foundation](local-preview.md#host-tool-foundation). The real
-MCP provider is not yet available, so CLI tool execution refuses safely. Hermetic
-embedding tests qualify the bounded host executor/journal path, not live MCP.
+one [host-owned read-only GitHub MCP operation](local-preview.md#host-tool-foundation).
+The operator binds one repository and an explicit environment credential name;
+no endpoint/credential comes from the agent or model. Only a selected call reads
+up to 20 merged PRs through the fixed Streamable-HTTP endpoint. Missing authority,
+foreign/unmerged results and transport/schema failures refuse, without retries.
+Copilot agent or judge plus tools remains unsupported. The opt-in hosted smoke
+uses a scripted model; it is not real-LLM qualification.
 
 File mode uses embedded Sessions for fake/local routes, with one fresh Session
 per ad-hoc input/example and one private SQLite journal for the invocation.

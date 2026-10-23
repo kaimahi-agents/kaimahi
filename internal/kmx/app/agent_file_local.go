@@ -8,6 +8,7 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localpreview"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -17,7 +18,7 @@ import (
 // Construction does not resolve paths, create files or access credentials.
 func NewLocalFileRunner() agentpreview.Runner {
 	return &localFileRunner{
-		journaled: localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.LocalPreviewJournalDir, Judge: localFilePreviewJudge}),
+		journaled: localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.LocalPreviewJournalDir, Judge: localFilePreviewJudge, Tools: localtools.NewMCPHost}),
 		direct:    NewDirectFileRunner(),
 	}
 }
