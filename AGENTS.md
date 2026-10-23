@@ -363,8 +363,12 @@ changes in the package's Go doc comment.
   native judge wiring does not enable recorded candidate execution.
   The checkout-only native qualifier runs in the full read-only reusable Orka
   worker after raw model proof, with private captures and metadata-only artifacts.
-  Relevant/unknown PRs, manual qualification, daily main nightly and every release
-  retain that proof. Only explicitly safe PRs and routine main pushes skip it.
+  Trigger-matching or uncertain-diff PRs, manual qualification, daily main nightly
+  and every release retain that proof. Valid paths outside the Orka/shared trigger
+  list skip it, as do routine main pushes: main is re-verified nightly, not per merge.
+  The generated caller manifest alone does not trigger proof. Its hygiene guard
+  and the init guard keep their old selections, not every newly skipped path;
+  other skipped effects rely on hygiene and nightly integration detection.
   Keep required `hygiene` and `e2e-hello-world` checks intact and fail closed on
   unintended skips/failures. No path/docs shortcuts belong inside the full worker.
   Its second exclusively owned kind cluster has one pinned Orka in

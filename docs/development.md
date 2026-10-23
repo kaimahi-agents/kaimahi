@@ -321,15 +321,19 @@ The workflow emits `hygiene` and `e2e-hello-world` merge gates. The latter
 fail-closed aggregates four retained shards: `e2e-kagent-lift`,
 `e2e-orka-runtime`, `e2e-orka-helm` and `e2e-quickstart`, plus successful
 classification and the independent `kagent-contract` hermetic check. Only intentional skips are accepted, never failed/cancelled
-shards. Orka runtime proof may skip only an explicitly safe PR or a main push;
-unknown changes and events default to full proof. Required contexts remain
+shards. Orka runtime proof runs for PRs matching the Orka/shared trigger list;
+valid paths outside it skip, as do ordinary main pushes. Unknown, empty or
+malformed diffs still run full proof. Main is re-verified nightly, not per merge. Required contexts remain
 `hygiene` and `e2e-hello-world`, without a ruleset change.
 
 The read-only [Orka worker](../.github/workflows/orka-runtime.yml) runs the same
 complete proof when invoked, including native evaluation, transfer, promotion,
-and pinned-update checks. It has no internal Markdown shortcut. Unrecognized
-Markdown and live instruction fixtures require qualification; root policy docs
-not explicitly listed also run. Its raw check is `e2e-orka-runtime / qualify`.
+and pinned-update checks. It has no internal Markdown shortcut. The independent
+`triggers` object in `scripts/ci/orka-routing.json` selects Orka and shared paths,
+including live fixtures; the generated caller manifest alone is exempt. Its
+hygiene validation remains mandatory. The unchanged init/caller guard selections
+are narrower than all skipped paths, so other skipped changes rely on hygiene
+and nightly integration detection. Its raw check is `e2e-orka-runtime / qualify`.
 Quickstart, stock Helm and clone-free qualification keep their existing routing;
 not every Orka-bearing job is moved out of PR CI.
 

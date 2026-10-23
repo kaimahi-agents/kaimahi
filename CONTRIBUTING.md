@@ -178,8 +178,9 @@ and in the nightly hygiene job. Its inexpensive runner/routing tests and other
 hygiene checks run regardless of that mutation gate.
 
 The classifier exposes an independent `orka_required` decision for the Orka
-runtime worker. Only explicitly safe PRs and ordinary main pushes skip it;
-full nightly, relevant/unknown PR, manual and release qualification remain.
+runtime worker. PRs run it when their diff matches the Orka/shared trigger list;
+valid paths outside that list skip it. Ordinary main pushes skip it too: main is
+re-verified nightly, not per merge. Manual and release qualification remain full.
 Quickstart and stock Helm schedules and guards are unchanged; kagent uses the separate hermetic/live policy below. The checkout helper accepts
 full commit IDs as `python3 scripts/ci/orka-routing.py --base SHA --head SHA`.
 It prints only `true` or `false`; unknown, empty, malformed or failed diffs mean
@@ -187,28 +188,31 @@ It prints only `true` or `false`; unknown, empty, malformed or failed diffs mean
 not the event's possibly stale base. NUL-delimited, no-renames Git output keeps
 deletions and both sides of moves visible.
 
-The exact exceptions live in `scripts/ci/orka-routing.json`: directory prefixes,
-exact leaves and direct `changes/*.md` notes. Shared runtime/build/module/script
-paths and unknown paths require Orka, including shared fixture Markdown; there
-is no blanket Markdown exception. Production command builders, file-flag helpers
-and the direct file-runner constructor remain outside the exceptions. The
-Copilot subtree also requires full proof: its provider constructor now runs at
-CLI startup. Model-access exceptions are limited to the four audited root files,
-not new files or subpackages.
-Hygiene checks safe production Go files and safe App test files for `init()`
+The `triggers` object in `scripts/ci/orka-routing.json` selects package/file
+prefixes, exact files and slash-component filename globs. It includes Orka
+operations, shared suite/config/build inputs, known startup constructors and live
+fixtures. The exact generated `scripts/ci/orka-callers.json` exception never hides
+another triggering path in the same diff. Hygiene still validates that manifest
+on every PR; it is a typed-reference record, not an execution graph.
+
+The separate `safe_*` fields retain the existing guard-only selections; they no
+longer decide routing. These static guards do not cover every newly skipped
+path or prove absence of arbitrary runtime effects. Other skipped changes rely
+on hygiene and the full main nightly for integration detection.
+Hygiene checks the guard-selected production Go files and App test files for `init()`
 functions and active global initializers, across build tags. App test initializers
 also run in the live-test binary, even when `-run` selects another test. Only
 literal `errors.New` and `regexp.MustCompile` setup with verified imports, and
 passive same-file pointer-to-nil type assertions, are permitted.
 
 The separate typed caller guard compares source references with the audited
-`scripts/ci/orka-callers.json` manifest. It catches a safe path calling a new
-runtime object, a new runtime caller of safe code, and new calling declarations
+`scripts/ci/orka-callers.json` manifest. It catches a selected path calling a new
+unselected object, a new caller of selected code, and new calling declarations
 or closures even in a file already on the boundary. Multi-value initializer
 expressions get separate identities. Named imports in analyzed safe files are
 also pinned, including standard packages whose initialization runs even when a
 preview handler is never called. Static graph walks also
-catch safe-to-safe changes that extend an existing runtime dependency in either
+catch selected-to-selected changes that extend an existing boundary reference in either
 direction. Methods, function values, fields and same-package private references
 are resolved with Go types, not names guessed from source text.
 
@@ -225,11 +229,13 @@ proof of dynamic dispatch, value flow or arbitrary Go effects, and not a sandbox
 For an intentional boundary change, inspect the output of
 `go run scripts/ci/orka-callers.go --audit` and review the affected callers before
 updating the manifest;
-hygiene never refreshes it automatically. Remove obsolete entries too. Narrow
-the routing exceptions when a path is no longer independent. Changes to either
-manifest or helper require full qualification themselves. Both boundary helpers
+hygiene never refreshes it automatically. Remove obsolete entries too. Review the
+independent trigger list when runtime dependencies change. Boundary helper code
+still triggers full qualification; the generated caller manifest alone does not.
+Both boundary helpers
 have dedicated negative/positive fixtures rather than top-level checker mutation
-discovery. Expanding the safe policy requires reviewed evidence and routing tests.
+discovery. Expanding the guard-only selections requires reviewed evidence and
+boundary tests.
 
 One Go module contains the root CLI (`cmd/kmx`, `internal/kmx`), concrete
 read-only suite member recipe view (`pkg/suiteview`) and alpha application
@@ -315,8 +321,8 @@ model-answer and native suite proof. Its CI check appears as
 `e2e-orka-runtime / qualify`; required contexts stay `hygiene` and
 `e2e-hello-world`. Routine main-push proof moves to the daily main nightly;
 manual CI and every release/dry run still require fresh full qualification.
-There is no blanket Markdown shortcut inside the worker: unknown Markdown,
-including live instructions, requires proof. See [CI qualification](docs/development.md#what-ci-proves).
+The worker has no internal path/Markdown shortcuts. Selected live fixtures and
+instructions trigger proof; other valid Markdown paths follow the same trigger policy. See [CI qualification](docs/development.md#what-ci-proves).
 
 Inside its two owned contexts the command is
 `python3 scripts/ci/suite-native.py kind-kmx-orka kind-kmx-orka-promote "$RUNNER_TEMP/kmx-suite-native"`.
