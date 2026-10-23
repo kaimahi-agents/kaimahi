@@ -32,18 +32,18 @@ type Host struct {
 	read       func(context.Context) ([]PullRequest, error)
 }
 
-var unsafeContent = errors.New("local tools: unsafe content refused")
-var invalidCall = errors.New("local tools: invalid read call")
-var readFailed = errors.New("local tools: read unavailable")
-var invalidResult = errors.New("local tools: invalid read result")
+var errUnsafeContent = errors.New("local tools: unsafe content refused")
+var errInvalidCall = errors.New("local tools: invalid read call")
+var errReadFailed = errors.New("local tools: read unavailable")
+var errInvalidResult = errors.New("local tools: invalid read result")
 
 func NewHost(binding Binding, credential string, read func(context.Context) ([]PullRequest, error)) (*Host, error) {
 	if !binding.valid() || credential == "" || read == nil {
-		return nil, invalidBinding
+		return nil, errInvalidBinding
 	}
 	host := &Host{binding, credential, read}
 	if host.Check(binding.repository, binding.endpoint, binding.credentialEnv) != nil {
-		return nil, unsafeContent
+		return nil, errUnsafeContent
 	}
 	return host, nil
 }
@@ -51,11 +51,11 @@ func NewHost(binding Binding, credential string, read func(context.Context) ([]P
 // Check must run before any supplied text reaches a journal or model.
 func (h *Host) Check(values ...string) error {
 	if h == nil || h.credential == "" {
-		return unsafeContent
+		return errUnsafeContent
 	}
 	for _, value := range values {
 		if strings.Contains(value, h.credential) || secretshapes.Match(value) != nil {
-			return unsafeContent
+			return errUnsafeContent
 		}
 	}
 	return nil
@@ -63,22 +63,22 @@ func (h *Host) Check(values ...string) error {
 
 func (h *Host) Execute(ctx context.Context, scope controller.ToolCallContext, call api.ToolCall) (api.ToolResult, error) {
 	if h == nil || h.read == nil || !h.binding.valid() || ctx.Err() != nil || strings.TrimSpace(scope.SessionUID) == "" || strings.TrimSpace(call.ID) == "" || strings.TrimSpace(call.IdempotencyKey) == "" || call.Tool != Operation || call.Mediation != api.MediationControllerMediated || len(call.Args) != 0 {
-		return api.ToolResult{}, invalidCall
+		return api.ToolResult{}, errInvalidCall
 	}
 	if err := h.Check(scope.SessionUID, call.ID, call.IdempotencyKey, call.Tool); err != nil {
 		return api.ToolResult{}, err
 	}
 	rows, err := h.read(ctx)
 	if err != nil || ctx.Err() != nil {
-		return api.ToolResult{}, readFailed
+		return api.ToolResult{}, errReadFailed
 	}
 	if len(rows) > 20 {
-		return api.ToolResult{}, invalidResult
+		return api.ToolResult{}, errInvalidResult
 	}
 	projected := make([]any, 0, len(rows))
 	for _, pr := range rows {
 		if pr.Number <= 0 || len(pr.Title) > 512 || !utf8.ValidString(pr.Title) || pr.Repository != h.binding.repository || !pr.Merged {
-			return api.ToolResult{}, invalidResult
+			return api.ToolResult{}, errInvalidResult
 		}
 		if err := h.Check(pr.Title, pr.Repository, strconv.Itoa(pr.Number)); err != nil {
 			return api.ToolResult{}, err

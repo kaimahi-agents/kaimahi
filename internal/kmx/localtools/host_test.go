@@ -42,8 +42,10 @@ func TestHostProjectionAndCorrelation(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("read calls = %d", calls)
 	}
-	data, err := json.Marshal(host)
-	if err != nil || string(data) != "{}" {
+	data, err := json.Marshal(struct {
+		Host any `json:"host"`
+	}{host})
+	if err != nil || string(data) != `{"host":{}}` {
 		t.Fatal("host leaks private fields")
 	}
 	definition := Definition()

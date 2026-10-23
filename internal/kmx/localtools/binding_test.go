@@ -29,8 +29,10 @@ func TestBindingClosedShape(t *testing.T) {
 	if b.Repository() != "owner/repo" || b.Endpoint() != "https://api.githubcopilot.com/mcp/readonly" || b.CredentialEnv() != "GITHUB_TOKEN" {
 		t.Fatal("binding changed authored selection")
 	}
-	data, err := json.Marshal(b)
-	if err != nil || string(data) != "{}" {
+	data, err := json.Marshal(struct {
+		Binding any `json:"binding"`
+	}{b})
+	if err != nil || string(data) != `{"binding":{}}` {
 		t.Fatal("binding fields are public")
 	}
 	for _, input := range []string{
