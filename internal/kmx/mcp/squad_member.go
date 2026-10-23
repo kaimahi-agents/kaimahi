@@ -23,6 +23,12 @@ func (c *SquadCreator) readMember(ctx context.Context, id string) (*agentfile.Sq
 	if !safeID(id) || c.checkRoot() != nil {
 		return bad()
 	}
+	// Committed hashes alone are insufficient while native recovery is pending.
+	// Reuse the bounded, read-only inventory and Create refusal policy.
+	seen, err := c.snapshot()
+	if err != nil || squadRecoveryRequired(seen) {
+		return bad()
+	}
 	agents, err := c.registry()
 	if err != nil {
 		return bad()

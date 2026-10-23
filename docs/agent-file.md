@@ -308,6 +308,8 @@ Native member resources and Edit/Run/Test reconstruct the explicit profile from
 validated native casting state on each operation and after restart: managed pair
 and raw-byte commit hashes, exact active ID/display name/role, one matching roster
 row/path/status, rooted charter, supported release and enriched native parse.
+The same bounded read-only inventory used by Create also rejects pending casting
+transactions, registry locks and temporary recovery files. No recovery runs.
 Invalid or missing/inconsistent state shows **not set up by kmx** and disables
 native mutation/preview. No filename/H1 guessing, v1 fallback, repair, recast or
 origin/pass claim. Valid state does not restore a lost proposal, previous preview

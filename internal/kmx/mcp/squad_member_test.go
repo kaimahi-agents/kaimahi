@@ -43,10 +43,14 @@ func TestSquadMemberMappingSurvivesRestartWithoutKMXStore(t *testing.T) {
 	}
 }
 func TestSquadMemberInvalidNativeStateNeverGuesses(t *testing.T) {
-	for _, kind := range []string{"registry", "history", "manifest", "roster", "roster-outside", "charter", "bare", "id"} {
+	for _, kind := range []string{"registry", "history", "manifest", "roster", "roster-outside", "charter", "bare", "id", "registry.lock", "registry.lock.stale", "registry-history.transaction.json", "registry.json.tmp-interrupted"} {
 		t.Run(kind, func(t *testing.T) {
 			root, p, _ := createdSquadMember(t)
 			switch kind {
+			case "registry.lock", "registry.lock.stale", "registry-history.transaction.json", "registry.json.tmp-interrupted":
+				if err := os.WriteFile(filepath.Join(root, ".squad/casting", kind), []byte("pending"), 0600); err != nil {
+					t.Fatal(err)
+				}
 			case "registry":
 				os.WriteFile(filepath.Join(root, ".squad/casting/registry.json"), []byte(`{"agents":{}}`), 0644)
 			case "history":

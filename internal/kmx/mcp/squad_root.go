@@ -177,11 +177,18 @@ func (c *SquadCreator) castSnapshot() (map[string]string, error) {
 	return seen, nil
 }
 
-func (c *SquadCreator) preflightMember(m SquadMember, seen map[string]string) error {
+func squadRecoveryRequired(seen map[string]string) bool {
 	for p := range seen {
 		if p == ".squad/casting/registry.lock" || strings.HasPrefix(p, ".squad/casting/registry.lock.") || strings.HasPrefix(p, ".squad/casting/registry-history.transaction") || (strings.HasPrefix(p, ".squad/casting/") && strings.Contains(p, ".tmp-")) {
-			return refusal("squad_recovery_required")
+			return true
 		}
+	}
+	return false
+}
+
+func (c *SquadCreator) preflightMember(m SquadMember, seen map[string]string) error {
+	if squadRecoveryRequired(seen) {
+		return refusal("squad_recovery_required")
 	}
 	if _, err := c.root.Lstat(".squad/agents/" + m.ID); !os.IsNotExist(err) {
 		return refusal("already_exists")

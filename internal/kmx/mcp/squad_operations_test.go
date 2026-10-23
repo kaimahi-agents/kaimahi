@@ -96,6 +96,38 @@ func TestSquadMCPChatCreateMapEditAndPreview(t *testing.T) {
 	if err != nil || res.IsError || !strings.Contains(string(b), `"fullPass":false`) || !strings.Contains(string(b), `"verdict":"fail"`) {
 		t.Fatalf("native failing assertion was not normal completion: %s %v", b, err)
 	}
+	marker := filepath.Join(root, ".squad/casting/registry-history.transaction.json")
+	if err := os.WriteFile(marker, []byte("pending"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	charterPath := filepath.Join(root, ".squad/agents/leader/charter.md")
+	before, _ := os.ReadFile(charterPath)
+	for _, operation := range []string{"edit", "run", "test"} {
+		args := map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": "leader"}
+		if operation == "edit" {
+			args["expectedRevision"] = doc.File.Revision
+			args["taskInstructions"] = lead.TaskInstructions
+			args["model"] = "fake"
+			args["examples"] = lead.Examples
+		}
+		res, err = cs.CallTool(t.Context(), &sdk.CallToolParams{Name: operation, Arguments: args})
+		b, _ = json.Marshal(res.StructuredContent)
+		if err != nil || !res.IsError || !strings.Contains(string(b), `"state":"not_setup"`) {
+			t.Fatalf("pending native recovery allowed %s: %s %v", operation, b, err)
+		}
+	}
+	view, err = cs.ReadResource(t.Context(), &sdk.ReadResourceParams{URI: "kmx://squad-member/leader"})
+	if err != nil || !strings.Contains(view.Contents[0].Text, "not set up by kmx") {
+		t.Fatal("pending recovery reported ready")
+	}
+	after, _ := os.ReadFile(charterPath)
+	pending, _ := os.ReadFile(marker)
+	if string(before) != string(after) || string(pending) != "pending" {
+		t.Fatal("recovery refusal changed native state")
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	} // Test models external manual reconciliation, never automatic recovery.
 	os.WriteFile(filepath.Join(root, ".squad/casting/history.json"), []byte(`{}`), 0644)
 	res, err = cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "test", Arguments: map[string]any{"schemaVersion": 2, "target": "squad-member", "memberId": "leader"}})
 	b, _ = json.Marshal(res.StructuredContent)
