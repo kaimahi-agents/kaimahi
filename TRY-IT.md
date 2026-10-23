@@ -7,7 +7,7 @@ Windows uses the Windows app/CLI plus an existing Ubuntu WSL distro, not a nativ
 
 ## Install
 
-The command below is for **v0.9.0-rc.1, once published**. v0.8.1 has no plugin
+The command below installs **v0.9.0-rc.1**. v0.8.1 has no plugin
 bundle. Don't substitute it or install the repository's source-only plugin.
 Run in Terminal on Mac, or inside your intended WSL distro:
 
@@ -34,21 +34,19 @@ signature**.
 
 ## Three things to try
 
-1. **Open it.** Start a new session in the opened folder. Confirm the same root
-   when the kmx skill asks, then say “Open `release-writer.agent.md` in the kmx
-   agent view.” It shows instructions and three examples, initially **No current
-   result**. If canvas opening is unavailable, `/agent-view release-writer.agent.md`
-   shows text. Today's canvas is read-only; use chat for changes and Run/Test.
-2. **Break and fix.** Ask “Test all examples for `release-writer.agent.md`.” The
-   starting instruction omits issue references, so the issue-reference example
-   is intended to fail. Real models and judges vary; don't expect a guaranteed
-   score. Ask Copilot to replace only `Omit issue numbers and issue references
-   from the notes.` with `Keep every issue reference as "Fixes #N".` Keep the
-   examples unchanged, then test all three again. Restore the old line to break
-   it again. Reopen the view for current results; an old view does not refresh.
-3. **Run an input.** Ask “Run `release-writer.agent.md` with input:
-   Merged: Add dark mode, closes issue #219. Users can work comfortably at night.
-   Show the bounded answer.” Review the draft; the agent cannot post it.
+1. **Open the canvas.** Start a new session in the folder you confirmed during
+   setup. Enter `/kmx open release-writer.agent.md`. The canvas shows the prompt
+   and three tests. If canvas opening is unavailable, `/agent-view release-writer.agent.md`
+   shows text.
+2. **Run the tests.** In the main canvas view, press the **↵** control to run
+   all three tests. The starting instruction omits issue references, so the
+   issue-reference test is intended to fail. Real models and judges vary;
+   don't expect a guaranteed score.
+3. **Fix it in the canvas.** In **Prompt**, replace only `Omit issue numbers
+   and issue references from the notes.` with `Keep every issue reference as
+   "Fixes #N".` Keep the tests unchanged. Press **↵** again to save the prompt
+   and run all three tests. Review the updated results. Restore the old line
+   and press **↵** to break it again.
 
 ## Other models and uninstall
 
