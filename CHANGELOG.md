@@ -213,6 +213,12 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   native effects. Existing CLI/MCP bindings remain unchanged; native member
   execution, digest-bound results and coordinator dispatch are separate work.
 
+- Add internal, operation-unwired private filesystem mutation primitives and
+  explicit creating/non-creating state-root resolution. Native Windows amd64
+  tests cover protected local-NTFS creation, process-held locks, exclusive
+  publication and anchored flushes; arm64 remains compile/vet only, and the
+  guarded Windows CLI and release assets remain unchanged.
+
 - Optional native Squad chat/MCP flow with reviewed init → cast → enrich, native-state member validation, owned-field edits and revision-bound local previews. Requires an explicitly configured, separately qualified standalone Squad 1.1.0 dependency. Keeps the four tools and canonical v1 behavior; native Squad canvas and package/team execution are not included.
 
 - Canonical agent files can declare `github_list_merged_prs` in an optional Tools section. Add host-owned binding validation and a bounded journaled tool-preview executor seam, qualified with hermetic tests. File Run/Test accepts `--tool-bindings FILE` but refuses tool execution until the real MCP provider is available. Tool-free execution is unchanged; Copilot tools depend on [#662](https://github.com/kaimahi-agents/kaimahi/issues/662).
@@ -321,6 +327,9 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 - The Copilot agent canvas uses compact main and test-detail views, keeps unsaved drafts when navigating, shows known pre-edit results in grey and server-stale observations neutrally, and supports testing one selected test through the existing revision-checked MCP flow. Light and narrow layouts share the same controls.
 - Canonical agent files may save an explicit empty test list while authoring. Ad-hoc Run still works; Test asks for a test. Zero-test files remain ineligible for run-profile export and cannot supply packaging or deployment evidence.
 
+- Run all four App test shards on both Linux and macOS in CI, with OS-specific
+  diagnostic artifacts and both platforms required by the hygiene gate.
+
 - Move per-package behavior descriptions from the repository map into Go package comments, so feature PRs no longer conflict on the map.
 
 ### Fixed
@@ -357,6 +366,10 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
 
 - Drop observations started before a newer canvas action or accepted result, even for unchanged source. Any prompt or test draft immediately greys every known result, including detail checks and answer highlights, without replacing the edited field. Repairs are invalidated when their original assertion changes.
 - Preserve drafts when an agent changes outside the canvas, with explicit Compare, Keep my edits and Use the new version choices before another save. A refused or uncertain action never restores a previous green result as a fresh test.
+
+- Resolve macOS temporary paths in App test fixtures, remove a Linux-only shell
+  utility path and synchronize pagination cancellation with the intended request.
+  Local `make test-app` artifact directories honor `TMPDIR` on macOS.
 
 - Operational CLI adapters now pass the Cobra invocation context to an
   Runner copy on the invocation's App, so existing context-aware subprocesses,
@@ -417,6 +430,11 @@ to do. Sections: **Added**, **Changed**, **Fixed**, **Breaking**, **Upgrading**.
   remains callable for at least one released version with one deprecation notice
   on stderr; stdout, arguments, exit codes and state do not change. Do not rename
   case directories, receipts or configuration fields. No data migration is needed.
+
+Known gaps in this preview:
+- Copilot-model runs aren't saved to the preview journal or replayable yet. Fake and local models are.
+- Previews can't call tools yet. Agent files can declare the GitHub tool, but Run/Test refuse to run it.
+- The canvas has no version history or revert yet.
 
 ## v0.8.1 — 2026-10-17
 
