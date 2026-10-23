@@ -226,6 +226,9 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   let route = { name: "main" }, busy = false, pending, blocked = false, savedUntested = false, message = "", runAlert, lastRun;
   let showContent = false, filter = "all", newCount = 0, menuOpen = false, cleanups = [], controls = [], includeNode;
   let refresh = () => {};
+  // A revision does not distinguish successive runs of unchanged source.
+  let observationGeneration = 0;
+  const observation = () => ({ generation: observationGeneration, revision: base.file.revision });
 
   const editable = () => !!snap;
   const matches = (view) => view && !view.error && view.file?.path === payload.file.path;
@@ -281,6 +284,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (route.name === "detail" && !entries().some((e) => e.key === route.key)) route = { name: "main" };
   }
   function adopt(view, submitted) {
+    observationGeneration++;
     const renamed = route.name === "detail" && submitted.tests.includes(route.key) ? testDrafts.get(route.key)?.raw?.id : undefined;
     base = view; snap = readSnapshot(view); candidate = undefined; compareOpen = false;
     for (const key of submitted.sections) sectionDrafts.delete(key);
@@ -291,6 +295,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
   async function act(operation, values = {}, submitted = { sections: [], tests: [] }) {
     if (busy || ((blocked || invalidEditors.size) && operation !== "reload")) return;
+    observationGeneration++;
     busy = true; pending = { operation, one: values.caseId !== undefined }; message = operation === "run" ? "Running…" : ""; runAlert = undefined; refresh();
     const action = { operation, ...values };
     if (!["reload", "suggest"].includes(operation)) action.expectedRevision = base.file.revision;
@@ -376,14 +381,17 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   }
 
   // Background observation: never during an action, never clears a lock, never writes.
-  function observe(view) {
-    if (!matches(view) || busy || blocked || invalidEditors.size) return false;
+  function observe(view, started = observation()) {
+    if (started.generation !== observationGeneration || started.revision !== base.file.revision
+      || !matches(view) || busy || blocked || invalidEditors.size) return false;
     if (same(view, base) || (candidate && same(view, candidate))) return false;
+    observationGeneration++;
+    lastRun = undefined;
     if (view.file.revision === base.file.revision || !hasDrafts()) {
-      const sameSource = view.file.revision === base.file.revision;
       base = view; snap = readSnapshot(view); candidate = undefined; compareOpen = false;
-      if (!sameSource) lastRun = undefined;
-      pruneDrafts(); hasDrafts() && sameSource ? refresh() : render();
+      // A newly accepted run needs new result DOM; ordinary edits only refresh
+      // its styling, leaving the focused input in place.
+      pruneDrafts(); render();
       return true;
     }
     candidate = view; compareOpen = false; render();
@@ -391,10 +399,12 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   }
   async function checkNow() {
     if (typeof options.fetchView !== "function") return;
-    try { observe(await options.fetchView()); } catch { /* Polling is best effort and never changes state on failure. */ }
+    const started = observation();
+    try { observe(await options.fetchView(), started); } catch { /* Polling is best effort and never changes state on failure. */ }
   }
   function useTheirs() {
     if (!candidate) return;
+    observationGeneration++;
     sectionDrafts.clear(); testDrafts.clear(); invalidEditors.clear();
     base = candidate; snap = readSnapshot(base); candidate = undefined; compareOpen = false; lastRun = undefined;
     pruneDrafts(); message = "Using the new version. Your edits were discarded."; render();
@@ -403,6 +413,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   // changed section keys and test identities; anything ambiguous is refused intact.
   function keepMine() {
     if (!candidate || invalidEditors.size) return;
+    observationGeneration++;
     const next = readSnapshot(candidate);
     if (!next) { message = "The new version can't be edited here. Compare it, or use the new version."; refresh(); return; }
     const theirs = candidate.authoring.examples, ids = uniqueIndex(theirs, (e) => e.id);
@@ -629,7 +640,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const adHoc = base.latest.status === "current" ? base.latest.result?.adHoc : undefined;
     if (adHoc) {
       const result = el(doc, "section", "ad-hoc-result");
-      result.append(el(doc, "h3", "", "Last ad-hoc run"), el(doc, "p", "", `${adHoc.state} · ${adHoc.verdict}`), answerBlock(adHoc, false));
+      result.append(el(doc, "h3", "", "Last ad-hoc run"), el(doc, "p", "", `${adHoc.state} · ${adHoc.verdict}`), answerBlock(adHoc, hasDrafts, undefined, updates));
       updates.push(() => { result.hidden = hasDrafts() || blocked; });
       info.append(result);
     }
@@ -688,8 +699,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const rowControls = [];
     const draw = () => {
       for (const node of rowControls.splice(0)) if (controls.includes(node)) controls.splice(controls.indexOf(node), 1);
-      const all = entries(), dirtyPrompt = sectionDrafts.size > 0, anyDraft = hasDrafts();
-      const shown = all.map((e) => ({ e, r: e.draft?.origin === null ? { kind: "none", base: "none", label: "Not run", note: "", count: "" } : testRow(e.c, dirtyPrompt || !!e.draft, blocked, ambiguousPassSet(base)) }));
+      const all = entries(), anyDraft = hasDrafts();
+      const shown = all.map((e) => ({ e, r: e.draft?.origin === null ? { kind: "none", base: "none", label: "Not run", note: "", count: "" } : testRow(e.c, anyDraft, blocked, ambiguousPassSet(base)) }));
       const counted = shown.filter(({ e }) => !e.draft?.deleted);
       const notPassing = counted.filter(({ r }) => r.base !== "pass").length;
       filterButtons.forEach((node, i) => {
@@ -781,15 +792,19 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   }
 
   // `actual` is a proven unique substring of the excerpt; it is marked, never rewritten.
-  function answerBlock(row, local, actual) {
+  function answerBlock(row, local, actual, updates) {
     if (row.answerExcerpt === undefined) return el(doc, "p", "quiet", "Answer content not included.");
     const box = el(doc, "div", "answer");
     const truncated = row.truncated || /…\s*\[truncated\]$/.test(row.answerExcerpt ?? "");
-    box.append(el(doc, "span", "label", `Untrusted excerpt, shown as text${truncated ? " (truncated)" : ""}${local ? " · last run" : ""}`));
+    const label = el(doc, "span", "label");
+    updates.push(() => { label.textContent = `Untrusted excerpt, shown as text${truncated ? " (truncated)" : ""}${local() ? " · last run" : ""}`; });
+    box.append(label);
     const pre = el(doc, "pre", "answer-excerpt", actual === undefined ? row.answerExcerpt : undefined);
     if (actual !== undefined) {
       const [before, after] = row.answerExcerpt.split(actual);
-      pre.append(before, el(doc, "mark", local ? "old" : "", actual), after);
+      const mark = el(doc, "mark", "", actual);
+      updates.push(() => { mark.className = local() ? "old" : ""; });
+      pre.append(before, mark, after);
     }
     box.append(pre);
     return box;
@@ -799,7 +814,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const entry = entries().find((e) => (e.key ?? `view:${e.c?.example.id}`) === route.key);
     if (!entry) { route = { name: "main" }; return mainView(button, status, updates); }
     const key = entry.key, editableTest = !!snap && !!key, c = entry.c, draft = () => key ? testDrafts.get(key) : undefined;
-    const local = () => sectionDrafts.size > 0 || !!draft();
+    const local = hasDrafts;
     const current = () => draft()?.raw ?? entry.raw;
     const mutate = (fn) => {
       const d = draft() ?? { origin: entry.origin.id, raw: clone(entry.origin) };
@@ -880,14 +895,16 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     assertions.forEach((a, index) => {
       const display = editableTest ? displayChecks.get(checkKey(a)) : a;
       const observed = display && c?.expected?.get(checkKey(display)) === display ? c.checks?.get(checkKey(display)) : undefined;
-      const oldResult = local();
-      let kind = "none", label = "No result";
-      const completed = !ambiguousPassSet(base) && (c?.state === "pass" || c?.state === "fail");
-      if (completed && !blocked && draft()?.origin !== null && observed?.verdict === "pass") [kind, label] = ["pass", "Passed"];
-      else if (completed && !blocked && draft()?.origin !== null && observed?.verdict === "fail") [kind, label] = ["fail", "Failed"];
-      if (kind !== "none" && oldResult) [kind, label] = [`old-${kind}`, `${label} last run`];
-      const row = el(doc, "div", "check");
-      row.append(statusIcon(doc, kind, label));
+      const row = el(doc, "div", "check"), state = el(doc, "span", "check-state");
+      updates.push(() => {
+        let kind = "none", label = "No result";
+        const completed = !ambiguousPassSet(base) && (c?.state === "pass" || c?.state === "fail");
+        if (completed && !blocked && draft()?.origin !== null && observed?.verdict === "pass") [kind, label] = ["pass", "Passed"];
+        else if (completed && !blocked && draft()?.origin !== null && observed?.verdict === "fail") [kind, label] = ["fail", "Failed"];
+        if (kind !== "none" && local()) [kind, label] = [`old-${kind}`, `${label} last run`];
+        state.replaceChildren(statusIcon(doc, kind, label));
+      });
+      row.append(state);
       const known = editableTest && EDITABLE_TYPES.some(([t]) => t === a.type);
       if (known) {
         const select = el(doc, "select", "token"); select.setAttribute("aria-label", `Check ${index + 1} type`);
@@ -922,7 +939,15 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         remove.append(icon(doc, "trash", 14, 2)); row.append(remove);
       }
       checks.append(row);
-      if (facts && display === facts.assertion) checks.append(explanation(button, facts, oldResult, editableTest ? index : -1, mutate));
+      if (facts && display === facts.assertion) {
+        // Repairs belong to the saved assertion they explain, not a later type
+        // or operand occupying the same input. Recheck even detached handlers.
+        const eligible = () => {
+          const now = current().assertions[index];
+          return now?.id === facts.assertion.id && now.type === facts.assertion.type && now[operandKey(now.type)] === facts.value;
+        };
+        checks.append(explanation(button, facts, local, editableTest ? index : -1, mutate, eligible, updates));
+      }
     });
     checksSection.append(checks);
     if (editableTest) {
@@ -945,7 +970,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       // Unfinished or unrecognised observations keep their literal state and verdict.
       if (c.state === "unknown") answered.append(el(doc, "p", "meta result-details", `State: ${c.row.state || "unknown"} · verdict: ${c.row.verdict || "unknown"}`));
       if (c.row.answerExcerpt !== undefined) {
-        answered.append(answerBlock(c.row, local(), facts?.actual));
+        answered.append(answerBlock(c.row, local, facts?.actual, updates));
       } else if (c.row.state !== "complete") {
         answered.append(el(doc, "p", "answer-error", `No answer${c.row.reason ? `: ${c.row.reason}` : ""}`));
       } else {
@@ -987,8 +1012,9 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     return out;
   }
 
-  function explanation(button, facts, old, index, mutate) {
-    const box = el(doc, "div", old ? "why old" : "why");
+  function explanation(button, facts, local, index, mutate, eligible, updates) {
+    const box = el(doc, "div", "why");
+    updates.push(() => { box.className = local() ? "why old" : "why"; });
     box.append(el(doc, "span", "why-text", `${facts.text}.`));
     if (facts.actual !== undefined && index >= 0) {
       const actions = el(doc, "div", "why-actions");
@@ -996,14 +1022,18 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       // Only a literal, unique occurrence in the prompt can be swapped in place.
       if (prompt.split(facts.actual).length === 2) {
         actions.append(button("Apply to prompt", () => {
+          if (!eligible()) return;
           sectionDrafts.set(snap.main.key, prompt.replace(facts.actual, () => facts.value));
           if (sectionDrafts.get(snap.main.key) === snap.main.text) sectionDrafts.delete(snap.main.key);
           render();
         }, "sb"));
       }
       actions.append(button(`Or expect ${quoted(facts.actual)} in this test`, () => {
+        if (!eligible()) return;
         mutate((d) => { const target = d.raw.assertions[index]; target[operandKey(target.type)] = facts.actual; }); render();
       }, "tb"));
+      const repairs = [...actions.childNodes];
+      updates.push(() => { actions.replaceChildren(...(eligible() ? repairs : [])); });
       box.append(actions);
     }
     return box;
@@ -1012,8 +1042,9 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   render();
   return {
     observe,
+    observation,
     idle: () => !busy && !blocked && invalidEditors.size === 0,
-    dispose() { for (const cleanup of cleanups.splice(0)) cleanup(); },
+    dispose() { observationGeneration++; for (const cleanup of cleanups.splice(0)) cleanup(); },
   };
 }
 
@@ -1033,7 +1064,8 @@ async function main() {
   setInterval(async () => {
     if (reading || document.visibilityState !== "visible" || !app.idle()) return;
     reading = true;
-    try { app.observe(await fetchView()); } catch { /* Try again on the next tick. */ } finally { reading = false; }
+    const started = app.observation();
+    try { app.observe(await fetchView(), started); } catch { /* Try again on the next tick. */ } finally { reading = false; }
   }, 4000);
 }
 if (typeof document !== "undefined" && document.getElementById) main();

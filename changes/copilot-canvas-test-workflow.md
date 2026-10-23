@@ -5,4 +5,5 @@
 
 ### Fixed
 
+- Drop observations started before a newer canvas action or accepted result, even for unchanged source. Any prompt or test draft immediately greys every known result, including detail checks and answer highlights, without replacing the edited field. Repairs are invalidated when their original assertion changes.
 - Preserve drafts when an agent changes outside the canvas, with explicit Compare, Keep my edits and Use the new version choices before another save. A refused or uncertain action never restores a previous green result as a fresh test.
