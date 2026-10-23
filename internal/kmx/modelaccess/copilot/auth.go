@@ -124,7 +124,7 @@ func (p *Provider) Login(ctx context.Context, show func(DevicePrompt) error) err
 }
 
 // LoginGH explicitly copies a gh credential into kmx's keychain item. Runtime
-// fallback uses the same private capture without copying the credential.
+// access captures an existing stored gh sign-in without copying it.
 func (p *Provider) LoginGH(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -155,16 +155,21 @@ func (p *Provider) credential(ctx context.Context) (string, error) {
 		}
 		return token, nil
 	}
-	token, err := p.store.Get()
-	if errors.Is(err, ErrAuthRequired) {
-		return "", ErrAuthRequired
+	token, err := p.ghCredential(ctx, p.runStoredGH)
+	if err == nil {
+		return token, nil
 	}
-	if errors.Is(err, ErrKeychain) {
-		token, err = p.ghCredential(ctx, p.runStoredGH)
-		if errors.Is(err, ErrUnavailable) {
-			return "", ErrKeychain
-		}
-		return token, err
+	if errors.Is(err, ErrMalformed) || errors.Is(err, context.Canceled) {
+		return "", err
+	}
+	if ctx.Err() != nil {
+		return "", safeError(ctx.Err())
+	}
+	// An unavailable gh command (including its own capture deadline) leaves
+	// explicit device-flow users' existing keychain credential usable.
+	token, err = p.store.Get()
+	if errors.Is(err, ErrAuthRequired) || errors.Is(err, ErrKeychain) {
+		return "", ErrAuthRequired
 	}
 	if err != nil {
 		return "", ErrKeychain
@@ -294,7 +299,7 @@ func githubToken(ctx context.Context) ([]byte, error) {
 	return githubTokenWithEnv(ctx, nil)
 }
 
-// Runtime fallback targets a stored sign-in, not unrelated CI token variables.
+// Runtime gh access targets a stored sign-in, not unrelated CI token variables.
 func storedGithubToken(ctx context.Context) ([]byte, error) {
 	inherited := os.Environ()
 	environment := make([]string, 0, len(inherited))

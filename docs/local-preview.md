@@ -16,7 +16,10 @@ Copilot, the whole invocation uses the existing
 and reports `NoJournal`. This preserves Copilot's credential-owning transport:
 it does not yet offer the content preflight needed before Sessions retains a
 turn. A declared tool with either a Copilot agent or a Copilot judge refuses
-before authentication or journal creation. Copilot tool support depends on
+before authentication or journal creation. Enabled Copilot models may use Chat
+Completions or Responses; the credential-owning transport selects the protocol
+from the catalog without changing the preview runner or adding a login step.
+Copilot tool support depends on
 [#662](https://github.com/kaimahi-agents/kaimahi/issues/662), not this slice.
 
 Status: the hermetic tests (fake model, an in-process HTTP endpoint and the

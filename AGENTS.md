@@ -10,17 +10,21 @@ changes in the package's Go doc comment.
 ## Command consistency
 
 - `model list [-o table|json]` defaults to config-free bounded local discovery.
-  Explicit `--provider copilot` lists available Chat-compatible routes without
+  Explicit `--provider copilot` lists available Chat/Responses routes without
   starting sign-in. `model login` uses GitHub device flow; `--gh` explicitly
   copies a bounded private gh token into kmx's OS keychain. Runtime credentials
-  prefer explicit `COPILOT_GITHUB_TOKEN`, then kmx's keychain item; only an
-  unavailable keychain permits bounded `gh auth token --hostname github.com`
-  capture without persistence. Invalid explicit tokens, missing owned items and
-  service refusals do not switch credentials. No token file fallback; exchange
+  prefer explicit `COPILOT_GITHUB_TOKEN`, then bounded private
+  `gh auth token --hostname github.com` capture of an existing sign-in, then
+  kmx's keychain item when gh is unavailable. Runtime gh access is memory-only
+  and does not require a keychain. Invalid explicit tokens and service refusals
+  do not switch credentials. No token file fallback; exchange
   bearers stay in memory. Login explains runtime options if the keychain is
   unavailable. Logout clears only kmx's item/memory, not gh or environment auth.
   `internal/kmx/modelaccess/copilot` returns a selected-route RoundTripper for
-  direct JSON/SSE Chat Completions, not a proxy or CLI-chat replacement.
+  Chat-shaped JSON/SSE access, privately adapting catalog-selected Responses
+  models. Prefer Chat when both protocols are advertised. Preserve the actual
+  upstream model and incomplete/refusal/tool outcomes, not a fabricated pass.
+  This is not a proxy or CLI-chat replacement.
   File CLI Run/Test consume it with explicit `--provider copilot`; unbound MCP
   defaults non-fake authored models to Copilot when no startup route is selected.
   Both use the exact authored model and existing available credentials. Explicit

@@ -76,7 +76,7 @@ func TestDirectCatalogAndJSONSSETransport(t *testing.T) {
 			})
 			s.token = canary
 			routes, err := p.List(context.Background())
-			if err != nil || len(routes) != 1 || routes[0] != selected() {
+			if err != nil || len(routes) != 2 || routes[0] != selected() || routes[1].Model != "responses-only" {
 				t.Fatalf("catalog: %v %v", routes, err)
 			}
 			safe(t, routes)
@@ -287,6 +287,7 @@ func TestRedirectAndNetworkErrorsNeverLeak(t *testing.T) {
 		safe(t, err)
 	}
 	p := New(&memoryStore{token: canary})
+	p.runStoredGH = func(context.Context) ([]byte, error) { return nil, ErrUnavailable }
 	p.http = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, errors.New(canary) })}
 	_, err := p.List(context.Background())
 	if err == nil {

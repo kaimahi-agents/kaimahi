@@ -51,7 +51,7 @@ func addCopilotCommands(group *cobra.Command, state *commandState) {
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(cmd.ErrOrStderr(), "Copilot credential saved in kmx's OS keychain item.")
+		_, err = fmt.Fprintln(cmd.ErrOrStderr(), "Copilot credential saved in kmx's OS keychain item; runtime prefers COPILOT_GITHUB_TOKEN and an existing gh sign-in.")
 		return err
 	}}
 	login.Flags().BoolVar(&useGH, "gh", false, "explicitly copy the existing gh auth token for github.com into kmx's OS keychain item")

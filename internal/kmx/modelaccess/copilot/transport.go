@@ -113,15 +113,27 @@ func (p *Provider) exchange(ctx context.Context) error {
 	return nil
 }
 
-// List returns only available Chat-compatible routes. It never signs in,
-// reads editor credentials, or selects a default model. When the keychain is
-// unavailable it may read an existing gh credential, without persisting it.
+type catalogModel struct {
+	route modelaccess.Route
+	path  string
+}
+
+// List returns available Chat or Responses routes without selecting a default
+// model or initiating sign-in. Protocol selection stays private to the transport.
 func (p *Provider) List(ctx context.Context) ([]modelaccess.Route, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.list(ctx)
+	models, err := p.list(ctx)
+	if err != nil {
+		return nil, err
+	}
+	routes := make([]modelaccess.Route, 0, len(models))
+	for _, model := range models {
+		routes = append(routes, model.route)
+	}
+	return routes, nil
 }
-func (p *Provider) list(ctx context.Context) ([]modelaccess.Route, error) {
+func (p *Provider) list(ctx context.Context) ([]catalogModel, error) {
 	if ctx.Err() != nil {
 		return nil, safeError(ctx.Err())
 	}
@@ -177,18 +189,25 @@ func (p *Provider) list(ctx context.Context) ([]modelaccess.Route, error) {
 	if json.Unmarshal(b, &catalog) != nil || catalog.Data == nil {
 		return nil, ErrMalformed
 	}
-	routes := []modelaccess.Route{}
+	routes := []catalogModel{}
 	seen := map[string]bool{}
 	for _, m := range *catalog.Data {
-		if m.Capabilities.Type != "chat" || m.Policy.State != "enabled" || !slices.Contains(m.Endpoints, "/chat/completions") {
+		if m.Capabilities.Type != "chat" || m.Policy.State != "enabled" {
 			continue
+		}
+		path := "/chat/completions"
+		if !slices.Contains(m.Endpoints, path) {
+			path = "/responses"
+			if !slices.Contains(m.Endpoints, path) {
+				continue
+			}
 		}
 		r := modelaccess.Route{Provider: "copilot", Model: m.ID, Endpoint: endpoint, Auth: "copilot"}
 		if r.Validate() != nil || seen[m.ID] || strings.Contains(m.ID, p.source) || strings.Contains(m.ID, p.bearer) {
 			return nil, ErrMalformed
 		}
 		seen[m.ID] = true
-		routes = append(routes, r)
+		routes = append(routes, catalogModel{route: r, path: path})
 	}
 	return routes, nil
 }
@@ -209,10 +228,10 @@ func (p *Provider) catalog(ctx context.Context) ([]byte, int, error) {
 }
 
 // Client validates the exact selected route against the catalog and returns a
-// RoundTripper for POST /chat/completions only. Caller supplies standard JSON,
-// including the same model, and owns request cancellation and the response body.
-// JSON and SSE pass through unchanged. There are no inference retries, redirects,
-// proxy listeners, model substitutions, or token accessors.
+// Chat-shaped RoundTripper for the owned text preview/judge callers. Chat routes
+// pass JSON/SSE through; Responses routes translate privately. The caller owns
+// cancellation and response-body closure. There are no inference retries,
+// redirects, proxy listeners, model substitutions, or token accessors.
 func (p *Provider) Client(ctx context.Context, r modelaccess.Route) (http.RoundTripper, error) {
 	if r.Provider != "copilot" || r.Validate() != nil {
 		return nil, ErrModelUnavailable
@@ -260,11 +279,17 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	p.mu.Lock()
 	// Establish/refresh via the read-only catalog before inference. Rechecking
 	// availability also prevents a retained transport silently changing models.
-	routes, err := p.list(req.Context())
+	models, err := p.list(req.Context())
 	token := p.bearer
+	path := ""
 	if err == nil {
-		_, err = modelaccess.Select(routes, t.route.Provider, t.route.Model)
-		if err != nil {
+		for _, model := range models {
+			if model.route == t.route {
+				path = model.path
+				break
+			}
+		}
+		if path == "" {
 			err = ErrModelUnavailable
 		}
 	}
@@ -272,8 +297,15 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	stream := false
+	if path == "/responses" {
+		b, stream, err = encodeResponsesRequest(b)
+		if err != nil {
+			return nil, err
+		}
+	}
 	next := req.Clone(req.Context())
-	next.URL, err = url.Parse(p.api + "/chat/completions")
+	next.URL, err = url.Parse(p.api + path)
 	if err != nil {
 		return nil, ErrUnavailable
 	}
@@ -286,6 +318,10 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	next.Header.Del("Idempotency-Key")
 	next.Header.Del("X-Idempotency-Key")
 	next.Header.Del("Proxy-Authorization")
+	if path == "/responses" {
+		next.Header.Del("Accept-Encoding")
+		next.Header.Del("Content-Encoding")
+	}
 	headers(next, token)
 	next.Header.Set("Content-Type", "application/json")
 	next.Header.Set("Openai-Intent", "conversation-panel")
@@ -308,6 +344,12 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, classify(resp.StatusCode, b)
 	}
 	resp.Request = req
+	if path == "/responses" {
+		if err := adaptResponsesResponse(resp, stream); err != nil {
+			resp.Body.Close()
+			return nil, err
+		}
+	}
 	resp.Body = &safeBody{ReadCloser: resp.Body}
 	return resp, nil
 }
