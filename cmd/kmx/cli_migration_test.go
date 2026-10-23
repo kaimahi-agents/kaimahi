@@ -40,7 +40,7 @@ func TestCLIMigrationRoutesAndOfflineHelp(t *testing.T) {
 }
 
 func TestCLIMigrationRemovedRoutesRejectBeforeConfiguration(t *testing.T) {
-	paths := [][]string{{"agent"}, {"edit"}, {"show"}, {"list"}, {"result"}, {"evaluate"}, {"retire"}, {"verify"}}
+	paths := [][]string{{"agent"}, {"edit"}, {"show"}, {"md"}, {"result"}, {"evaluate"}, {"retire"}, {"verify"}}
 	for _, verb := range []string{"create", "chat", "run", "show", "list", "evaluate", "lift", "retire", "verify", "status", "edit", "result", "eval"} {
 		paths = append(paths, []string{"agent", verb})
 	}

@@ -14,7 +14,7 @@ func validateWorkspaceCreateFlags(cmd *cobra.Command, state *commandState) error
 	var invalid string
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "workspace", "model", "instructions", "description", "runtime", "runtime-version", "kagent-runtime", "members", "flow":
+		case "workspace", "model", "instructions", "description", "runtime", "runtime-version", "kagent-runtime", "members", "flow", "type":
 		default:
 			if invalid == "" {
 				invalid = flag.Name

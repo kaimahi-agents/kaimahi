@@ -1,5 +1,10 @@
 [
   {
+    "path": "docs/copilot-inference.md",
+    "text": "./bin/kmx chat hello --type md --session s-SESSION_ID",
+    "reason": "Explicit md-type conversation selection; the retired Orka chat transport flag still refuses in CLI regression tests."
+  },
+  {
     "path": ".github/workflows/ci.yml",
     "text": "\"kmx up --step kagent\",",
     "reason": "Inert negative CI control for retired installation steps."

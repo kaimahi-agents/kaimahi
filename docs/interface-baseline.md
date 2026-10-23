@@ -15,6 +15,22 @@ version, with one stderr notice and unchanged legacy output/exit contracts. See
 
 ## Installed command tree
 
+`tools suggest FILE --repo OWNER/REPO` and `tools review PROPOSAL_ID [--apply]`
+provide inference-assisted local capability selection and explicit scope approval.
+Only fixed GitHub PR list/read templates are executable; this does not restore
+retired gateway tool administration. See the [scoped tool workflow](copilot-inference.md#suggest-and-approve-pr-monitor-tools).
+
+`tools approve FILE [--apply]` additionally resolves/reviews explicit same-file CLI
+bindings and their optional compatibility probes. Model-proposed generic shell
+commands and implicit execution during validation remain unsupported.
+
+The experimental Copilot-native instance extension adds root list/inspect/info/
+settings/import/stop/rm and --type md dispatch on create/run/chat/test. These use
+native YAML front matter and companion tests, while canonical Squad charters keep
+the upstream preview path. Suite map and Markdown deploy/lift reuse native Orka
+packaging and evaluation gates. Bare kmx remains help. See the
+[spike guide](copilot-inference.md#markdown-agent-spike-unreleased).
+
 Visible product commands:
 
 ```text

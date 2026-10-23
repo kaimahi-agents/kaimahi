@@ -10,8 +10,47 @@ kmx status --to prod --workspace ./operator-workspace -o json
 ```
 
 Use `kmx orka status` for the existing table-only Orka runtime report. Bare
-`kmx status` now refuses before application configuration and names both routes.
+`kmx status` reports tracked local running/stopped agent instances, not source files.
+Local status is a compatibility alias of `kmx list`: running only by default,
+`--all` includes stopped instances. Prefer `list` for inventory and `inspect ID`
+for details. Destination `--to` behavior is unchanged.
 There is no new `suite status` or legacy bundle-status command.
+
+## Local instance status
+
+```sh
+kmx status
+kmx list --all
+kmx status --directory ./project -o json
+```
+
+Status reads instance records created by Run/Chat. A fresh installation says
+`No running agents`; merely adding a file does not create one. It shows short ID, name,
+type, environment, running/stopped state, activity, open session count, definition hash and
+inference provider/model. Generation and original source remain in JSON output.
+Shared-manager agents have the same manager
+PID/socket but independent instance IDs and sessions.
+`--directory` filters by original source location; omitted means all instances,
+including ones whose original source was moved or deleted. A process-held lease
+determines liveness; abandoned running records display stopped with an incomplete
+completion reason in JSON. PID is informational. Test calls do not create instances.
+
+Lifecycle and activity are independent: running means the owner lease is held;
+idle/responding is a bounded live manager observation, aggregated across sessions.
+The SESSIONS count is zero until a chat opens a conversation. `inspect ID` expands
+each session's ID, label, open/closed state, activity and pinned version. JSON also
+retains Copilot's underlying ID after the first turn. Stopped agents show no
+activity and zero open sessions, retaining closed metadata. Older/unreachable
+managers show unknown activity/count, never guessed idle or zero.
+Status observes the manager over its private socket with a two-second total budget;
+it does not send inference or create conversations. Restart older agents to enable
+the observation protocol after upgrading the binary.
+
+Status never prompts, signs in, installs, performs inference/tests, or writes KMX
+state. Use `kmx info` for Copilot installation/sign-in/default inference and
+`kmx list --definitions --type md` to discover source files. `--directory` applies
+only locally; `--workspace` and
+cluster selectors require `--to NAME`. Explicit empty `--to` is an error.
 
 ## Selection and access
 

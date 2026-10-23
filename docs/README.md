@@ -64,6 +64,10 @@ See [format boundaries](bundle-format.md) and [current CLI contracts](kmx.md).
 
 ## Assessments that inform current work
 
+- [Markdown-agent inner loop](markdown-agent-inner-loop.md): native
+  agent/Markdown-test pairing, fast format validation, revision hashes, reused
+  chat TUI and mocked-tool tests; implementation boundaries for the Copilot spike.
+
 - [Full chat latency profile](chat-performance-profile.md): local, AKS/Foundry
   and Copilot measurements and optimization priorities.
 - [Local Foundry inference](local-foundry-inference.md): interactive host inference

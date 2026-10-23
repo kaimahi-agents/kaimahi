@@ -9,6 +9,47 @@ changes in the package's Go doc comment.
 
 ## Command consistency
 
+- Native-header agents may declare final `yaml kmx-tool` blocks under Tool bindings.
+  Parse/validate strips bindings from model instructions and never executes them.
+  `tools approve FILE --apply` explicitly reviews PATH resolution, binary hashes,
+  fixed argv, operand constraints and optional fixed probes before saving a grant.
+  CLI granted-scope handlers use bounded direct exec/process-group cancellation,
+  not a shell or sandbox. Probes repeat on activation/update and failure preserves
+  the old running version. PATH/hash/source changes require reapproval. Unsupported
+  per-call/session approval policies refuse. Local tool bindings never qualify Deploy.
+
+- Local tools suggest/review is a separate scoped capability workflow, not retired
+  gateway administration. Default inference proposes up to three scoped CLI
+  declarations; per-tool acceptance edits source without granting execution.
+  Missing scope blocks acceptance; tools approve separately reviews executables.
+  Explicit --repo retains catalog IDs and a private definition/binary/repository-bound
+  overlay. GitHub handlers
+  use fixed GET paths at api.github.com without redirects; gh auth token is captured
+  in memory only. Session handlers are per-agent, binding changes require update,
+  and mocks never fall through to live calls. Native mapping refuses local grants.
+
+- Experimental `--type md` adds persistent Copilot-native agents with YAML front
+  matter and paired tests, alongside the canonical Squad charter preview. Root
+  Run/Test dispatch canonical `# Name` charters to the upstream preview path;
+  explicit `--type md` selects the native-header instance path. Preserve shared
+  MCP/charter execution, model-access auth and the test/eval alias contracts.
+  The SDK-managed Copilot CLI route uses its own installed CLI authentication;
+  it is separate from modelaccess direct inference and does not consume its tokens.
+- Local list/status show instances (running by default, --all includes stopped),
+  short IDs, lifecycle/activity, sessions, inference and age. Inspect reads cached
+  definition/identity; source discovery is explicit with --definitions. Chat/new/
+  selected conversations share one local manager/provider, with per-session turns.
+  Run --update replaces a frozen version after consent; same-version is a no-op.
+  rm removes stopped records (force stops first), retaining cache/source and private
+  generation bookkeeping. Completion is bounded local record/lease inspection.
+- Import missing front matter defaults to one new-file confirmation with inferred
+  fields; optional field editing and original replacement are explicit. Bare kmx
+  prints help; console is explicit. Source, cache, test and runtime authority stay
+  separate. Markdown deploy/lift converts text-only definitions/cases to native
+  Orka source and uses the existing evaluated publication/Deploy pipeline; no
+  local-preview result grants deployment authority. JSON-capable reports may be
+  rendered as YAML by the bounded presentation adapter.
+
 - `model list [-o table|json]` defaults to config-free bounded local discovery.
   Explicit `--provider copilot` lists available Chat/Responses routes without
   starting sign-in. `model login` uses GitHub device flow; `--gh` explicitly

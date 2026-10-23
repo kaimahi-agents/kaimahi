@@ -377,6 +377,11 @@ func (m chatTimelineModel) View() tea.View {
 	width := m.width
 	line := func(s string) string { return ansi.Truncate(s, width, "…") }
 	header := line("KMX / "+tuiField("agent", m.agent)+" · "+tuiField("location", location)) + "\n" + line(tuiField("inference", " "+inference)) + "\n" + line(tuiField("tools", " "+fields["Tools"])) + "\n" + strings.Repeat("─", width)
+	if fields["Definition"] != "" {
+		header = line("KMX / "+tuiField("agent", m.agent)+" · "+tuiField("location", location)) + "\n" +
+			line(tuiField("status", fields["Status"])+" · "+tuiField("def", fields["Definition"])+" · "+tuiField("tests", fields["Tests"])) + "\n" +
+			line(tuiField("inference", inference)+" · "+tuiField("tools", fields["Tools"])) + "\n" + strings.Repeat("─", width)
+	}
 	historyRows := strings.Split(m.history.View(), "\n")
 	// Popup overlays only the history viewport. Header/editor never move.
 	matches := slashMatchesFrom(m.commands, m.editor.Value())
@@ -387,12 +392,12 @@ func (m chatTimelineModel) View() tea.View {
 	}
 	border := lipgloss.NewStyle().Foreground(lipgloss.Blue)
 	inputRows := strings.Split(m.editor.View(), "\n")
-	input := border.Render("╭" + strings.Repeat("─", max(0, width-2)) + "╮")
+	input := border.Render("▌" + strings.Repeat("─", max(0, width-2)) + "╮")
 	for _, row := range inputRows {
 		row = ansi.Truncate(row, max(1, width-4), "")
-		input += "\n" + border.Render("│") + " " + row + strings.Repeat(" ", max(0, width-4-lipgloss.Width(row))) + " " + border.Render("│")
+		input += "\n" + border.Render("▌") + " " + row + strings.Repeat(" ", max(0, width-4-lipgloss.Width(row))) + " " + border.Render("│")
 	}
-	input += "\n" + border.Render("╰"+strings.Repeat("─", max(0, width-2))+"╯")
+	input += "\n" + border.Render("▌"+strings.Repeat("─", max(0, width-2))+"╯")
 	footer := "PgUp/PgDn scroll · ↑ recall · Ctrl-W word · Ctrl-A/E · Enter send"
 	if m.busy {
 		state := "Responding"

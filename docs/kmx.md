@@ -73,6 +73,11 @@ tests are not full Windows CLI qualification.
 
 ## Install
 
+For the unreleased single-file Copilot experiment, use
+[`kmx console`](copilot-inference.md#markdown-agent-spike-unreleased) to browse
+agents by type, `list --type md` to list local agents, and `chat NAME --type md`
+to interact. Root create/run/inspect/test/validate support the local agent loop.
+
 **On Windows, use WSL for now.** Install and run kmx inside your Linux
 WSL distribution, not PowerShell or Command Prompt. Native Windows builds
 are not supported yet; track [Windows support in #578](https://github.com/kaimahi-agents/kaimahi/issues/578).
@@ -1206,7 +1211,9 @@ recorded monitoring, not agents/plane; unknown ownership is left alone. Read
   `unknown` and `not kmx-owned` remain distinct. Exit1 unknown/unhealthy/drift
   overrides2 known pending;0 requires complete ready/empty. Missing fields are
   never filled from companions or local history. Candidate roots remain separate.
-  Bare status names both usage routes; `orka status` remains table-only and
+  Bare status reports tracked running/stopped local instances and cached version
+  hashes. `--directory` filters original source locations without scanning files.
+  Use `info` for local inference setup. `orka status` remains table-only and
   refuses JSON/YAML. See [destination status](destination-status.md).
 
 Completion (`source <(kmx completion bash)`, similarly zsh; fish uses

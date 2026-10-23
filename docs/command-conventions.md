@@ -11,6 +11,13 @@ should be named and shaped. Apply them to new commands and to renames.
 
 ## 1. Grammar
 
+Agents share resource-oriented root verbs: `list`, `inspect`, `create`, `run`,
+`chat`, `test` and `validate`, with `--type md|orka` where supported. Markdown is
+an agent type, never a separate command group. `inspect` is the cross-type detail
+verb; existing `orka show` remains compatible. Bare `kmx` displays help; `kmx console`
+opens the shared console. See the
+[Copilot spike](copilot-inference.md#markdown-agent-spike-unreleased).
+
 ```text
 kmx <verb> [object] [flags]
 kmx <noun> <verb> [object] [flags]
@@ -74,8 +81,8 @@ Keep these distinctions:
   retirement remains unavailable. Environment teardown grants no workload-specific replacement contract.
 - **`result` is not retry.** Reading a result never resubmits work.
 - **`validate` is offline.** Root Deploy `--plan` performs GET-only target checks, not admission.
-- **`show` is the only verb for detail.** Do not add `get`, `describe` or
-  `info`.
+- **`inspect` is the cross-type agent detail verb.** Existing `orka show` remains
+  the runtime-specific route. Do not add `get`, `describe` or `info` synonyms.
 
 ## 3. Arguments and flags
 

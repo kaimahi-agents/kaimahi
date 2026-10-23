@@ -117,6 +117,7 @@ func (s *commandState) operationApplication(cmd *cobra.Command) (*app.App, error
 }
 
 func execute(argv []string, deps dependencies) error {
+	output := &yamlOutput{out: deps.stdout}
 	contextFlag := ""
 	var err error
 	if len(argv) == 0 || argv[0] != "__complete" && argv[0] != "__completeNoDesc" {
@@ -145,6 +146,25 @@ func execute(argv []string, deps dependencies) error {
 	}
 	state := &commandState{deps: deps, contextFlag: contextFlag, argv: append([]string(nil), argv...)}
 	root := newRootCommand(state)
+	output.selectOutput = func(enabled bool) {
+		writer := output.out
+		if enabled {
+			writer = output
+		}
+		state.deps.stdout = writer
+		root.SetOut(writer)
+	}
+	enableYAMLOutput(root, output)
+	// Help/completion produce their own text, never an operation's JSON report.
+	for _, arg := range argv {
+		if arg == "--" {
+			break
+		}
+		if arg == "--help" || arg == "-h" || arg == "help" || arg == "__complete" || arg == "__completeNoDesc" {
+			output.selectOutput = nil
+			break
+		}
+	}
 	root.InitDefaultHelpCmd()
 	help, _, _ := root.Find([]string{"help"})
 	// Cobra otherwise reports an unknown help topic on stdout but exits zero.
@@ -166,7 +186,11 @@ func execute(argv []string, deps dependencies) error {
 		return err
 	})
 	root.SetArgs(argv)
-	return root.Execute()
+	err = root.Execute()
+	if output.selectOutput == nil {
+		return err
+	}
+	return output.finish(err)
 }
 
 // Recognize only the root command (or explicit help topic) after known global
@@ -198,12 +222,14 @@ func legacyCommandInvocation(argv []string, verb string) bool {
 func newRootCommand(state *commandState) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "kmx",
-		Short: "Create and run agents on Kubernetes",
+		Short: "Create, inspect, test and run agents",
 		// Leave Args unset so Cobra rejects unknown roots before parsing their
 		// flags or honoring --help. Bare root still runs the help handler.
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
 	}
 	root.SetOut(state.deps.stdout)
 	root.SetErr(state.deps.stderr)
@@ -213,13 +239,24 @@ func newRootCommand(state *commandState) *cobra.Command {
 	root.PersistentPreRunE = validateContainerEngineFlag
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 	_ = root.RegisterFlagCompletionFunc("container-engine", staticCompletion([]string{"docker", "podman"}))
+	create, chat, run := newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state)
+	addAgentTypeRoute(state, create, "init")
+	addAgentTypeRoute(state, chat, "chat")
+	addAgentTypeRoute(state, run, "run")
+	test := newAgentTestCommand(state)
+	addAgentTypeRoute(state, test, "test")
+	settings := markdownOperation(state, "settings")
+	settings.Use = "settings"
 	root.AddCommand(
 		newVersionCommand(state), newMCPCommand(state), newCompletionCommand(root), newModelCommand(state), newContextCommand(state), newLocalCommand(state), newDestinationsCommand(state),
 		newQuickstartCommand(state), newAKSCommand(state),
 		newConsoleCommand(state), newOrkaCommand(state),
-		newStatusCommand(state), newAgentCreateCommand(state), newAgentChatCommand(state), newAgentRunCommand(state),
-		newAgentTestCommand(state), newAgentEvalCommand(state), newReleaseDeployCommand(state), newReleaseLiftCommand(state), newTaskCommand(state),
+		newStatusCommand(state), create, chat, run,
+		test, newAgentEvalCommand(state), newReleaseDeployCommand(state), newReleaseLiftCommand(state), newTaskCommand(state),
 		newSuiteCommand(state), newSuitePushCommand(state, true), newTargetsCommand(state), newRunProfileCommand(state),
+		newListTypedAgentsCommand(state), newInspectAgentCommand(state), newTypedAgentCommand(state, "validate", "validate"), newInfoCommand(state), newStopAgentCommand(state), newRemoveAgentCommand(state), settings,
+		markdownOperation(state, "import"),
+		newToolsCommand(state),
 		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),
 	)
 	return root

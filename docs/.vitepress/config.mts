@@ -143,6 +143,8 @@ export default defineConfig({
       .map((page) => [page, `${page.slice(0, -'README.md'.length)}index.md`]))
   },
   srcExclude: [
+    '**/*.agent.md',
+    '**/*.agent.test.md',
     'AGENTS.md',
     'CHANGELOG.md',
     'changes/**',

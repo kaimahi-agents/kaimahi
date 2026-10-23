@@ -11,17 +11,18 @@ import (
 )
 
 func newStatusCommand(state *commandState) *cobra.Command {
-	var destination, workspace string
+	var destination, workspace, directory string
 	var opt app.DestinationStatusOptions
+	var all bool
 	cmd := &cobra.Command{
-		Use: "status --to <destination>", Short: "Inspect deployed agents at a named destination",
-		Long: "Inspect deployed agents across a saved destination namespace using read-only observations. Readiness is not an answer or evaluation. Use kmx orka status for the Orka runtime report.",
+		Use: "status [--to <destination>]", Short: "Alias of local list, or inspect a deployment destination",
+		Long: "Without --to, status is a compatibility alias of kmx list: running local instances, with --all for stopped ones. Use inspect ID for detail and info for inference setup.\nWith --to, inspect deployed agents at a saved destination. Use kmx orka status for the Orka runtime report.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := cobra.NoArgs(cmd, args); err != nil {
 				return err
 			}
-			if strings.TrimSpace(destination) == "" {
-				return fmt.Errorf("status requires --to: use kmx status --to <destination> or kmx orka status for the runtime report")
+			if cmd.Flags().Changed("to") && strings.TrimSpace(destination) == "" {
+				return fmt.Errorf("--to requires a destination name; omit --to for local status")
 			}
 			if opt.Output != "table" && opt.Output != "json" {
 				return fmt.Errorf("status output must be table or json")
@@ -29,9 +30,25 @@ func newStatusCommand(state *commandState) *cobra.Command {
 			if cmd.Flags().Changed("workspace") && strings.TrimSpace(workspace) == "" {
 				return fmt.Errorf("status requires non-empty --workspace")
 			}
+			if cmd.Flags().Changed("directory") && strings.TrimSpace(directory) == "" {
+				return fmt.Errorf("--directory requires a directory")
+			}
+			if destination == "" {
+				if cmd.Flags().Changed("workspace") || state.contextFlag != "" || cmd.Flags().Changed("container-engine") {
+					return fmt.Errorf("local status uses --directory; use --to NAME for destination selectors")
+				}
+			} else if cmd.Flags().Changed("directory") {
+				return fmt.Errorf("--directory is for local status; use --workspace with --to")
+			}
+			if destination != "" && cmd.Flags().Changed("all") {
+				return fmt.Errorf("--all applies to local inventory, not --to")
+			}
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if destination == "" {
+				return app.ListAgentInstances(cmd.OutOrStdout(), directory, opt.Output, all)
+			}
 			_, doc, err := resolveDestinations(workspace)
 			if err != nil {
 				return err
@@ -65,6 +82,8 @@ func newStatusCommand(state *commandState) *cobra.Command {
 		},
 	}
 	registerDestinationFlag(cmd, &destination)
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "include stopped local instances (without --to)")
+	cmd.Flags().StringVar(&directory, "directory", "", "filter instances by original source directory (default: all local instances)")
 	cmd.Flags().StringVar(&workspace, "workspace", "", "select an exact workspace root instead of nearest-ancestor discovery")
 	_ = cmd.RegisterFlagCompletionFunc("workspace", staticCompletion(nil))
 	cmd.Flags().StringVarP(&opt.Output, "output", "o", "table", "output: table|json")

@@ -364,7 +364,9 @@ func TestTheCommandTreeIsExactlyWhatIsListedHere(t *testing.T) {
 		"context", "context show", "context use", "ctx", "local", "local up", "local down", "mcp", "model", "model list", "model login", "model logout",
 		"orka", "orka install", "orka status", "orka show", "orka list",
 		"quickstart", "quickstart-wizard", "run-profile", "run-profile export",
-		"status", "suite", "suite build", "suite diff", "suite policy", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",
+		"list", "inspect", "validate", "settings", "info", "stop", "rm", "import",
+		"tools", "tools suggest", "tools review", "tools approve",
+		"status", "suite", "suite build", "suite diff", "suite map", "suite policy", "suite pull", "suite push", "suite validate", "console", "targets", "task", "task result",
 		"version",
 	}
 	sort.Strings(want)
@@ -536,8 +538,8 @@ func TestQuickstartRoutesEachMode(t *testing.T) {
 		{[]string{"quickstart", "--interactive"}, "kmx quickstart --interactive requires an interactive terminal"},
 		{[]string{"quickstart", "--interactive", "--task", "hi", "--verbose", "--tools", "k8s-get-resources"}, "quickstart tool shortcuts are retired"},
 		{[]string{"quickstart", "-i"}, "kmx quickstart --interactive requires an interactive terminal"},
-		{[]string{"quickstart", "-o", "yaml"}, "unknown --output"},
-		{[]string{"quickstart", "--task", "hi", "-o", "yaml"}, "unknown --output"},
+		{[]string{"quickstart", "-o", "xml"}, "unknown --output"},
+		{[]string{"quickstart", "--task", "hi", "-o", "xml"}, "unknown --output"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			var out, errOut bytes.Buffer

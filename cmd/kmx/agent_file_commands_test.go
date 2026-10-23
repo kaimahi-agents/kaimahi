@@ -210,7 +210,7 @@ func TestFileCommandsRefuseMixedModesBeforeConfig(t *testing.T) {
 		{"test", "FILE", "--context", "kind-test"},
 		{"test", "FILE", "--container-engine", "docker"},
 		{"test", "FILE", "--case", ""},
-		{"test", "FILE", "-o", "yaml"},
+		{"test", "FILE", "-o", "xml"},
 		{"eval", "FILE"},
 		{"test", "--case", "greeting"},
 		{"run", "--agent", "live", "--prompt", "x", "--case", "greeting"},

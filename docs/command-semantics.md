@@ -9,6 +9,13 @@ updates below are unreleased. Historical section names remain for stable links.
 
 ## Implemented entry-point alignment (unreleased)
 
+The [markdown Copilot spike](copilot-inference.md#markdown-agent-spike-unreleased)
+uses the shared agent console and root resource verbs with `--type md`. The
+unreleased separate md command group is removed. `list` and `inspect` expose
+typed agents; create/chat/run dispatch md locally and retain existing Orka routes.
+Root `test`/`validate` currently support md files; native workspace `eval` remains
+separate until its rename is integrated. No receipt format is changed.
+
 | Command | Contract |
 |---|---|
 | `kmx ctx [--check]` | List named workspace destinations only; optional bounded local-context/anonymous registry checks. No selection or switching. `targets` remains runtime capabilities. |
