@@ -24,6 +24,7 @@ type previewCopilotAccess struct {
 	sendErrAt    int
 	returnModel  string
 	nilTransport bool
+	beforeSend   func(*http.Request) error
 }
 
 func (p *previewCopilotAccess) Client(ctx context.Context, route modelaccess.Route) (http.RoundTripper, error) {
@@ -39,6 +40,11 @@ func (p *previewCopilotAccess) Client(ctx context.Context, route modelaccess.Rou
 
 func (p *previewCopilotAccess) RoundTrip(req *http.Request) (*http.Response, error) {
 	p.sends++
+	if p.beforeSend != nil {
+		if err := p.beforeSend(req); err != nil {
+			return nil, err
+		}
+	}
 	if req.Method != http.MethodPost || req.URL.String() != modelaccess.CopilotEndpoint+"/chat/completions" ||
 		req.Header.Get("Accept") != "application/json" || req.Header.Get("Authorization") != "" {
 		p.t.Fatal("runner bypassed the credential-owning transport")
@@ -205,6 +211,13 @@ func TestDirectPreviewCopilotJudgeTransportFailuresStopSends(t *testing.T) {
 			result, err := (&App{FileRunner: &directFileRunner{copilot: provider}}).PreviewAgentFile(t.Context(), opt)
 			if err == nil || result.FullPass || result.ReasonCode != tc.code || provider.sends != 2 {
 				t.Fatalf("judge transport failure continued: %+v / %v sends=%d", result, err, provider.sends)
+			}
+			wantState := "complete"
+			if tc.name == "cancelled" {
+				wantState = "not_run"
+			}
+			if result.Examples[0].State != wantState || result.Examples[1].State != "not_run" {
+				t.Fatalf("judge abort changed row retention: %+v", result.Examples)
 			}
 		})
 	}

@@ -2,10 +2,14 @@
 // File changes and previews use only the session's existing kmx MCP tools.
 import { CanvasError, createCanvas, joinSession } from "@github/copilot-sdk/extension";
 import { CANVAS_ID, ViewError, createViewController } from "./view.mjs";
+import { OPEN_TOOL_NAME, OPEN_TOOL_PARAMETERS, createOpenHandler, readOpenView } from "./open.mjs";
 
 let session;
 const controller = createViewController({ getSession: () => session });
-const asCanvasError = (e) => (e instanceof ViewError ? new CanvasError(e.code, e.message) : e);
+const asCanvasError = (e) => {
+  const safe = e instanceof ViewError ? e : new ViewError("unavailable");
+  return new CanvasError(safe.code, safe.message);
+};
 
 const canvas = createCanvas({
   id: CANVAS_ID,
@@ -17,14 +21,25 @@ const canvas = createCanvas({
     required: ["path"],
     additionalProperties: false,
   },
-  open: (ctx) => controller.open(ctx).catch((e) => {
-    throw asCanvasError(e);
-  }),
+  open: async (ctx) => {
+    try {
+      await readOpenView(session, ctx.input);
+      return await controller.open(ctx);
+    } catch (e) {
+      throw asCanvasError(e);
+    }
+  },
   onClose: (ctx) => controller.close(ctx),
 });
 
 session = await joinSession({
   canvases: [canvas],
+  tools: [{
+    name: OPEN_TOOL_NAME,
+    description: "Open an existing kmx agent canvas, or show its text view when no renderer is available. Does not edit, run or test.",
+    parameters: OPEN_TOOL_PARAMETERS,
+    handler: createOpenHandler({ getSession: () => session, extensionId: "plugin:kmx-agent-builder:agent-view" }),
+  }],
   commands: [
     {
       name: "agent-view",

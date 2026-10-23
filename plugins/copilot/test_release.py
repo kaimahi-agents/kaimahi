@@ -39,7 +39,7 @@ class ReleaseTests(unittest.TestCase):
         with tarfile.open(self.archive) as archive:
             members = archive.getmembers()
             self.assertEqual({m.name.removeprefix(release.PREFIX) for m in members}, release.FILES)
-            self.assertEqual(len(members), 9 + len(release.package.NATIVE_FILES))
+            self.assertEqual(len(members), 6 + len(release.package.SKILL_FILES) + len(release.package.NATIVE_FILES) + len(release.package.SAMPLE_FILES))
             self.assertTrue(all(m.isfile() and m.uid == m.gid == m.mtime == 0 for m in members))
             files = {m.name: archive.extractfile(m).read() for m in members}
             config = json.loads(files["kmx-agent-builder/mcp.json"])
@@ -76,7 +76,7 @@ class ReleaseTests(unittest.TestCase):
         self.archive_build()
         with tarfile.open(self.archive) as original:
             rows = [(m, original.extractfile(m).read()) for m in original]
-        for kind in ("engine", "extra", "link", "traversal", "sample", "marker"):
+        for kind in ("engine", "extra", "link", "traversal", "sample", "marker", "opener", "skill"):
             with self.subTest(kind=kind):
                 altered = self.base / (kind + ".tar.gz")
                 with tarfile.open(altered, "w:gz") as out:
@@ -84,6 +84,10 @@ class ReleaseTests(unittest.TestCase):
                         if kind == "engine" and member.name.endswith("bin/kmx"):
                             data = b"changed" + data[7:]
                         if kind == "sample" and member.name.endswith("release-writer.agent.md"):
+                            data = b"X" + data[1:]
+                        if kind == "opener" and member.name.endswith("agent-view/open.mjs"):
+                            data = b"X" + data[1:]
+                        if kind == "skill" and member.name.endswith("skills/kmx/SKILL.md"):
                             data = b"X" + data[1:]
                         if kind == "marker" and member.name.endswith("try-it.json"):
                             data = data.replace(b"1", b"2")

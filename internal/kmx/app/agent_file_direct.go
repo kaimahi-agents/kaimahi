@@ -56,12 +56,19 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	out := agentpreview.Outcome{State: agentpreview.Failed, NoJournal: true}
+	var active *agentpreview.ExampleOutcome
+	var notRun agentpreview.ExampleOutcome
 	abort := func(err error) (agentpreview.Outcome, error) {
 		if ctx.Err() != nil {
 			err = ctx.Err()
 		}
 		if errors.Is(err, context.Canceled) {
 			out.State = agentpreview.Cancelled
+			// A test is unfinished until all its checks finish. Discard its
+			// partial answer/checks on cancellation, not on other error paths.
+			if active != nil {
+				*active = notRun
+			}
 		}
 		return out, err
 	}
@@ -142,6 +149,8 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 		}
 	}
 	for i, ex := range r.Examples {
+		active = &out.Examples[i]
+		notRun = *active
 		completion, err := complete(fmt.Sprint(i), ex.ID, ex.Input)
 		if err != nil {
 			return abort(err)
@@ -187,6 +196,7 @@ func (d *directFileRunner) Run(ctx context.Context, r agentpreview.Request) (age
 				row.Assertions[j].Verdict = runtime.EvaluationFail
 			}
 		}
+		active = nil
 	}
 	if ctx.Err() != nil {
 		return abort(ctx.Err())
