@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "kmx-agent-builder",
-  "version": "0.0.0-dev",
+  "version": "0.1.0-demo",
   "description": "Create, run and test a tool-free markdown agent through chat."
 }

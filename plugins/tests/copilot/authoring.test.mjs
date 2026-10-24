@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, runtimeModelSelection } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, runtimeModelSelection } from "../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs";
 
 const KEYS = ["Accountable Responsibilities", "Non-Responsibilities", "Collaboration and Review Authority"];
 const SOURCE = `# Greeter — Greeting 🌱

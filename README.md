@@ -51,7 +51,13 @@ no Azure account or model key is needed.
 
 Use a dedicated test environment. See [other install methods, prerequisites and cleanup](docs/getting-started.md).
 
-## Agent files in Windows Copilot
+## Agent files in Copilot
+
+On macOS, use the [plain Copilot plugin](plugins/copilot/README.md#install-on-macos):
+install the rc.2 darwin binary, then the plugin. macOS CI checks installation and
+the offline fake-model loop, not a Copilot model or the desktop app.
+
+### Windows through WSL
 
 For the Markdown-agent inner loop without a Kubernetes cluster, use the
 [WSL Copilot plugin](plugins/copilot-wsl/README.md). Install v0.9.0-rc.2 in WSL:

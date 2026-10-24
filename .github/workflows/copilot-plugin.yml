@@ -5,6 +5,7 @@ on:
     paths:
       - 'plugins/copilot/**'
       - 'plugins/copilot-wsl/**'
+      - 'plugins/tests/copilot/**'
       - 'cmd/kmx/**'
       - 'internal/**'
       - 'go.mod'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'plugins/copilot/**'
       - 'plugins/copilot-wsl/**'
+      - 'plugins/tests/copilot/**'
       - 'cmd/kmx/**'
       - 'internal/**'
       - 'go.mod'
@@ -48,6 +50,54 @@ jobs:
         with:
           node-version: '22'
       - name: Agent canvas, authoring and text fallback contracts
-        run: node --test plugins/copilot/com.github.copilot/extensions/agent-view/view.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/authoring.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/actions.test.mjs plugins/copilot/com.github.copilot/extensions/agent-view/open.test.mjs
+        run: node --test plugins/tests/copilot/*.test.mjs
       - name: Package contracts and real MCP loop (Windows packaging only)
         run: python -m unittest discover -s plugins/copilot -p 'test_*.py' -v
+
+  macos-install:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # Deliberately qualify the published rc.2, not a locally built engine.
+      - name: Install the release darwin binary and check its checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in arm64) arch=arm64;; x86_64) arch=amd64;; *) exit 1;; esac
+          asset="kmx-darwin-$arch"
+          release=https://github.com/kaimahi-agents/kaimahi/releases/download/v0.9.0-rc.2
+          curl -fsSL "$release/$asset" -o "$RUNNER_TEMP/$asset"
+          curl -fsSL "$release/checksums.txt" -o "$RUNNER_TEMP/checksums.txt"
+          cd "$RUNNER_TEMP"
+          awk -v asset="$asset" '$2 == asset { print; found++ } END { if (found != 1) exit 1 }' checksums.txt > selected-checksum.txt
+          shasum -a 256 -c selected-checksum.txt
+          sudo mkdir -p /usr/local/bin
+          sudo install -m 755 "$asset" /usr/local/bin/kmx
+          kmx version
+      - name: Install pinned Copilot CLI
+        run: npm install --prefix "$RUNNER_TEMP/copilot" --ignore-scripts --no-save @github/copilot@1.0.102
+      - name: Exercise the public install command (transport only before merge)
+        env:
+          COPILOT_HOME: ${{ runner.temp }}/public-plugin-profile
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/copilot/node_modules/.bin:$PATH"
+          copilot plugin install kaimahi-agents/kaimahi:plugins/copilot
+          copilot plugin list
+          copilot plugin uninstall kmx-agent-builder
+      - name: Check cached assets and offline create, test, edit, rerun
+        env:
+          KMX_PLAIN_COPILOT: ${{ runner.temp }}/copilot/node_modules/.bin/copilot
+          KMX_PLAIN_BINARY: /usr/local/bin/kmx
+          # Before merge validate this PR's bytes. Main also validates the public source's contents.
+          KMX_PLAIN_SOURCE: ${{ github.event_name == 'push' && 'kaimahi-agents/kaimahi:plugins/copilot' || format('{0}/plugins/copilot', github.workspace) }}
+        run: python3 -m unittest discover -s plugins/copilot -p test_plain_install.py -v
+      # No Copilot model or credentials: an authenticated app walk is a separate gate.
