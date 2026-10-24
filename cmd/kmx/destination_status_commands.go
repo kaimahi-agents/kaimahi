@@ -43,9 +43,6 @@ func newStatusCommand(state *commandState) *cobra.Command {
 			if target.Namespace == "" {
 				return fmt.Errorf("status requires an explicit saved namespace in kmx.yaml for the destination")
 			}
-			if target.Runtime == "agentsessions" {
-				return fmt.Errorf("status does not support runtime agentsessions")
-			}
 			// Freeze only the inspection selectors before configuration can consult
 			// remembered or environment contexts. No suite or binding load is needed.
 			selected := *state
