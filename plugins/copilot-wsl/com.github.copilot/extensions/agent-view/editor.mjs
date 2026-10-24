@@ -1,5 +1,5 @@
 // Inert DOM editing and exact source serialization. Loaders and actions are caller-owned.
-import { DEFAULT_MODEL } from "./authoring.mjs";
+import { effectiveModel } from "./authoring.mjs";
 export const el = (doc, tag, className, text) => {
   const node = doc.createElement(tag);
   if (className) node.className = className;
@@ -126,7 +126,6 @@ export function countText(rows) {
     .filter((k) => counts.get(k)).map((k) => `${counts.get(k)} ${k}`).join(", ");
 }
 export const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-export const modelText = (model) => model.match(/^model: (.+)$/m)?.[1] ?? model.replace(/\n/g, " · ");
 // Last-run display is controller-local, never a current resource or write input.
 export function resultHistory(initial) {
   let last;
@@ -157,11 +156,17 @@ export function resultHistory(initial) {
     },
   };
 }
-export const modelLabel = route => {
-  const id = route?.slice(route.indexOf("/") + 1) ?? "";
-  const labels = { "gpt-5.6-terra": "GPT-5.6 Terra", "claude-sonnet-5.5": "Claude Sonnet 5.5", "claude-haiku-5.5": "Claude Haiku 5.5" };
-  return Object.hasOwn(labels, id) ? labels[id] : id;
-};
+// Presentation inferred from familiar ID shapes, never catalog metadata or
+// execution aliases. Unknown IDs remain literal, including provider prefixes.
+export function modelPresentation(id) {
+  let match = /^(gpt-\d+(?:\.\d+)*)(?:-(terra|sol|mini|nano|codex))?$/.exec(id);
+  if (match) return { name: match[1].replace("gpt", "GPT") + (match[2] ? " " + friendlyName(match[2]) : ""), group: "OpenAI" };
+  match = /^claude-(sonnet|haiku|opus)-(\d+(?:\.\d+)*)$/.exec(id);
+  if (match) return { name: `Claude ${friendlyName(match[1])} ${match[2]}`, group: "Claude" };
+  match = /^gemini-(\d+(?:\.\d+)*)-(pro|flash)$/.exec(id);
+  return match ? { name: `Gemini ${match[1]} ${friendlyName(match[2])}`, group: "Gemini" } : { name: id, group: "Other models" };
+}
+export const modelLabel = route => modelPresentation(route?.slice(route.indexOf("/") + 1) ?? "").name;
 export function resultPill(doc, settings) {
   const node = el(doc, "span", "result-pill"), dot = el(doc, "span", "result-dot"), text = el(doc, "span");
   dot.setAttribute("aria-hidden", "true"); node.append(dot, text);
@@ -209,10 +214,54 @@ export function checkTypeControl(doc, initial, change, cancel) {
 
 // Runtime selection only emits values to its owner; it cannot read or write an agent.
 export function runtimeModelControl(doc, settings, load, change) {
-  const node = el(doc, "label", "runtime-model"), select = el(doc, "select", "model-picker"), status = el(doc, "span", "quiet model-status");
-  select.setAttribute("aria-label", "Runtime model"); status.setAttribute("role", "status");
-  let models = [], state = "idle";
-  select.addEventListener("focus", async () => {
+  const node = el(doc, "div", "runtime-model"), trigger = el(doc, "button", "model-picker"), menu = el(doc, "div", "model-menu");
+  const status = el(doc, "div", "quiet model-status"); status.setAttribute("role", "status");
+  trigger.type = "button"; trigger.setAttribute("aria-haspopup", "menu");
+  menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Runtime models");
+  let models = [], state = "idle", choices = [], opened = false;
+  const open = value => { opened = value; menu.hidden = !value; trigger.setAttribute("aria-expanded", String(value)); };
+  const update = () => {
+    const { authored, selected, chatModel, disabled } = settings();
+    const fallback = effectiveModel(authored, "", chatModel), current = selected || fallback;
+    const origin = selected ? "this canvas" : authored ? "from the agent file" : "default";
+    trigger.replaceChildren(el(doc, "span", "model-name", modelPresentation(current).name), el(doc, "span", "model-origin", ` · ${origin}`), icon(doc, "down", 12, 2));
+    trigger.setAttribute("aria-label", `Runtime model: ${modelPresentation(current).name} · ${origin}`);
+    trigger.setAttribute("title", `${current} · ${origin}`); trigger.disabled = !!disabled;
+    const focused = choices.find(option => option === doc.activeElement)?.getAttribute("data-model"), wasOpen = opened;
+    const ids = [...new Set([fallback, chatModel, selected, ...models].filter(Boolean))];
+    const groups = new Map();
+    for (const id of ids) {
+      const group = modelPresentation(id).group;
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(id);
+    }
+    choices = []; menu.replaceChildren();
+    for (const [name, ids] of groups) {
+      const group = el(doc, "div", "model-options"); group.setAttribute("role", "group"); group.setAttribute("aria-label", name);
+      group.append(el(doc, "div", "model-group", name));
+      for (const id of ids) {
+        const option = el(doc, "button", "model-option", modelPresentation(id).name); option.type = "button";
+        option.setAttribute("role", "menuitemradio"); option.setAttribute("aria-checked", String(id === current));
+        option.setAttribute("data-model", id); option.setAttribute("title", id); option.disabled = !!disabled;
+        if (id === chatModel) option.append(el(doc, "span", "model-chat", "Current chat model"));
+        option.addEventListener("click", () => { if (trigger.disabled) return; open(false); change(id === fallback ? "" : id); trigger.focus(); });
+        option.addEventListener("keydown", event => {
+          const index = choices.indexOf(option);
+          if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+            event.preventDefault(); choices[event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (index + (event.key === "ArrowDown" ? 1 : choices.length - 1)) % choices.length].focus();
+          } else if (event.key === "Escape") { event.preventDefault(); open(false); trigger.focus(); }
+          else if (event.key === "Tab") open(false);
+        });
+        choices.push(option); group.append(option);
+      }
+      menu.append(group);
+    }
+    status.textContent = state === "loading" ? "Loading models…" : state === "failed" ? "Choices unavailable; file/default still works." : "";
+    menu.append(status);
+    if (disabled) open(false);
+    if (focused && !disabled) { open(wasOpen); choices.find(option => option.getAttribute("data-model") === focused)?.focus(); }
+  };
+  const discover = async () => {
     if (state === "ready" || state === "loading") return;
     state = "loading"; update();
     try {
@@ -221,18 +270,16 @@ export function runtimeModelControl(doc, settings, load, change) {
       models = response.models; state = "ready";
     } catch { state = "failed"; }
     update();
-  });
-  select.addEventListener("change", () => change(select.value));
-  node.append(el(doc, "span", "meta", "Model"), select, status);
-  const update = () => {
-    const { authored, selected, needsRun } = settings();
-    const first = el(doc, "option", "", authored ? `Agent file (${authored})` : `Default (${DEFAULT_MODEL})`); first.value = "";
-    const ids = selected && !models.includes(selected) ? [selected, ...models] : models;
-    select.replaceChildren(first, ...ids.map((id) => { const option = el(doc, "option", "", id); option.value = id; return option; }));
-    select.value = selected;
-    status.textContent = state === "loading" ? "Loading models…" : state === "failed" ? "Choices unavailable; file/default still works." : needsRun ? "Run to refresh results." : "";
   };
-  update(); return { node, select, update };
+  trigger.addEventListener("click", async () => { if (trigger.disabled) return; open(!opened); if (opened) await discover(); });
+  trigger.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); open(false); }
+    else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault(); open(true); discover(); choices[event.key === "ArrowDown" ? 0 : choices.length - 1]?.focus();
+    }
+  });
+  node.addEventListener("focusout", event => { if (!node.contains(event.relatedTarget)) open(false); });
+  node.append(trigger, menu); open(false); update(); return { node, trigger, update };
 }
 
 // Static icon geometry copied from the approved board builder; never derived from resource text.
@@ -402,6 +449,16 @@ export function insertPlainText(doc, node, text) {
     range = doc.createRange(); range.selectNodeContents(node); range.collapse(false);
   }
   range.deleteContents();
+  // A collapsed root boundary belongs inside its adjacent line, not between
+  // block containers (which the serializer already separates with an LF).
+  if (range.startContainer === node && range.collapsed && node.childNodes.length) {
+    const index = range.startOffset, line = node.childNodes[index === 0 ? 0 : index - 1];
+    if (["div", "p"].includes(line.tagName?.toLowerCase())) range.setStart(line, index === 0 ? 0 : line.childNodes.length);
+  }
+  const container = range.startContainer;
+  if (["div", "p"].includes(container?.tagName?.toLowerCase()) && container.childNodes.length === 1 && container.childNodes[0].tagName?.toLowerCase() === "br") {
+    container.replaceChildren(); range.setStart(container, 0);
+  }
   const inserted = doc.createTextNode(text);
   range.insertNode(inserted); range.setStartAfter(inserted); range.collapse(true);
   selection?.removeAllRanges(); selection?.addRange(range);

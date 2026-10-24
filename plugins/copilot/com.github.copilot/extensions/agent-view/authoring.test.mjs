@@ -38,6 +38,23 @@ test("effective runtime model preserves legacy display metadata and fixed preced
   assert.equal(effectiveModel("", ""), "gpt-5.6-terra");
 });
 
+test("known chat model is the exact default below authored and canvas choices", () => {
+  assert.equal(effectiveModel("", "", "uncatalogued-chat"), "uncatalogued-chat");
+  assert.equal(effectiveModel("authored", "", "chat"), "authored");
+  assert.equal(effectiveModel("authored", "picked", "chat"), "picked");
+});
+
+test("chat metadata changes fence A-B-A without invalidating matching late metadata", () => {
+  const selection = runtimeModelSelection();
+  const view = { model: "", latest: { status: "current", result: { modelRoute: "copilot/chat-a" } } };
+  selection.view(view);
+  assert.equal(selection.view({ ...view, chatModel: "chat-a" }).latest.status, "current");
+  assert.equal(selection.view({ ...view, chatModel: "chat-b" }).latest.status, "stale");
+  assert.equal(selection.view({ ...view, chatModel: "chat-a" }).latest.status, "stale");
+  selection.confirm({ ...view, chatModel: "chat-a" });
+  assert.equal(selection.view({ ...view, chatModel: "chat-a" }).latest.status, "current");
+});
+
 test("an attested pre-route refusal is current but never restores an old model pass", () => {
   const selection = runtimeModelSelection();
   const view = { model: "fake", latest: { status: "current", result: { state: "refused", verdict: "unknown", fullPass: false, reasonCode: "no_tests", modelRoute: "/" } } };

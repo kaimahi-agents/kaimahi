@@ -6,11 +6,11 @@ import {createActionHandler,readView,startViewBridge} from '../../../../copilot-
 import {instructionSections,replaceInstructions,replaceExamples} from '../../../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs';
 const original=await readFile(new URL('../../../../../internal/kmx/agentfile/testdata/greeter.agent.md',import.meta.url),'utf8');
 const revision=s=>'sha256:'+createHash('sha256').update(s).digest('hex');
-function harness(){
- let source=original,latest={status:'none'};
+function harness({omitModel=false}={}){
+ let source=omitModel?original.replace(/## Model\n[\s\S]*?(?=## Examples)/,''):original,latest={status:'none'};
  const calls=[],o={};let race=false,denied=false,unavailable=false,release;
  let examples=[{id:'greeting',input:'Ada',assertions:[{id:'greeting-text',type:'contains',value:'Hello, Ada'}]}];
- const raw=()=>({schemaVersion:1,kind:'kmx.agent-view',file:{path:'greeter.agent.md',revision:revision(source)},title:'Greeter',instructions:source,model:'fake',examples,authoring:{source,editable:true},latest});
+ const raw=()=>({schemaVersion:1,kind:'kmx.agent-view',file:{path:'greeter.agent.md',revision:revision(source)},title:'Greeter',instructions:source,model:omitModel?'':'fake',examples,authoring:{source,editable:true},latest});
  const session={rpc:{mcp:{resources:{read:async({uri})=>({contents:[{uri,text:JSON.stringify(raw())}]})}},tools:{getCurrentMetadata:async()=>({tools:['edit','test','run'].map(op=>({name:'owned-'+op,mcpServerName:'kmx-agent-builder',mcpToolName:op}))}),execute:async request=>{
   calls.push(request);assert.equal(request.arguments.schemaVersion,1);assert.equal(request.arguments.path,'greeter.agent.md');
   if(unavailable)throw Error('private transport secret');
@@ -37,6 +37,52 @@ test('runtime model override reaches Run/Test and save-and-test without changing
   assert.equal(r.error,undefined);assert.equal(h.calls.at(-1).arguments.model,'choice-b');
   assert.equal(h.source(),original);assert.equal(r.view.model,'fake');assert.equal(r.view.latest.result.modelRoute,'copilot/choice-b');
  }
+});
+test('known uncatalogued chat default is sent exactly without eager catalog or source Model',async()=>{
+ const h=harness({omitModel:true}),source=h.source(),read=h.session.rpc.mcp.resources.read;
+ h.session.rpc.model={getCurrent:async()=>({modelId:'known-unlisted'})};
+ h.session.rpc.mcp.resources.read=async args=>{assert.notEqual(args.uri,'kmx://models');return read(args)};
+ h.o.shape=r=>({...r,modelRoute:{provider:'copilot',model:h.calls.at(-1).arguments.model}});
+ const r=await h.act({operation:'test',expectedRevision:revision(source)});
+ assert.equal(r.error,undefined);assert.equal(h.calls.at(-1).arguments.model,'known-unlisted');
+ assert.doesNotMatch(r.view.authoring.source,/## Model/);assert.equal(h.source(),source);
+ h.o.failTest=true;h.o.shape=r=>({...r,state:'refused',modelRoute:{}});
+ assert.equal((await h.act({operation:'test',expectedRevision:revision(source)})).error,'action-failed');
+ assert.equal(h.calls.at(-1).arguments.model,'known-unlisted');
+});
+test('explicit auto/invalid host metadata clears known chat forwarding, while throws retain it',async()=>{
+ for(const next of [undefined,'auto','bad\nID',42,'throw']){
+  const h=harness({omitModel:true});let current='chat-a';
+  h.session.rpc.model={getCurrent:async()=>{if(current==='throw')throw Error('transient');return{modelId:current}}};
+  assert.equal((await readView(h.session,'greeter.agent.md')).chatModel,'chat-a');current=next;
+  h.o.shape=r=>({...r,modelRoute:{provider:'copilot',model:h.calls.at(-1).arguments.model??'gpt-5.6-terra'}});
+  const response=await h.act({operation:'test',expectedRevision:revision(h.source())});
+  assert.equal(response.error,undefined);assert.equal(h.calls.at(-1).arguments.model,next==='throw'?'chat-a':undefined);
+  assert.equal(response.view.chatModel,next==='throw'?'chat-a':undefined);
+ }
+});
+test('default follows chat at action start rather than the last displayed observation',async()=>{
+ const h=harness({omitModel:true});let current='chat-a';
+ h.session.rpc.model={getCurrent:async()=>({modelId:current})};
+ const displayed=await readView(h.session,'greeter.agent.md');current='chat-b';
+ h.o.shape=r=>({...r,modelRoute:{provider:'copilot',model:h.calls.at(-1).arguments.model}});
+ const response=await h.act({operation:'test',expectedRevision:displayed.file.revision});
+ assert.equal(displayed.chatModel,'chat-a');assert.equal(response.error,undefined);
+ assert.equal(h.calls.at(-1).arguments.model,'chat-b');
+ assert.equal(response.view.latest.result.modelRoute,'copilot/chat-b');
+ assert.doesNotMatch(h.source(),/## Model/);
+});
+
+test('a save freezes its selected chat model even if later host metadata changes',async()=>{
+ const h=harness({omitModel:true});let current='chat-a';
+ h.session.rpc.model={getCurrent:async()=>({modelId:current})};
+ const execute=h.session.rpc.tools.execute;h.session.rpc.tools.execute=async request=>{const response=await execute(request);if(request.name==='owned-edit')current='chat-b';return response};
+ h.o.shape=r=>({...r,modelRoute:{provider:'copilot',model:h.calls.at(-1).arguments.model}});
+ const sections=instructionSections(h.source());sections[0].text+='\nKeep it short.';
+ const response=await h.act({operation:'save-and-test',expectedRevision:revision(h.source()),sections});
+ assert.equal(response.error,undefined);assert.equal(h.calls.at(-1).arguments.model,'chat-a');
+ assert.equal(response.view.chatModel,'chat-b');assert.equal(response.view.latest.result.modelRoute,'copilot/chat-a');
+ assert.doesNotMatch(h.source(),/## Model/);
 });
 test('same-revision observation from a different model cannot confirm this invocation',async()=>{
  const h=harness();const r=await h.act({operation:'test',expectedRevision:revision(original),model:'choice-b'});

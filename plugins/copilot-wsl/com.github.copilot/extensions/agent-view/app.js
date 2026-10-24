@@ -1,7 +1,7 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
-import { instructionSections, runtimeModelSelection } from "./authoring.mjs";
+import { instructionSections, runtimeModelSelection, agentName, fileLocation, effectiveModel } from "./authoring.mjs";
 import { el, inlineText, editorValue, insertPlainText, fillEditor, purposeText, instructionsContent, runtimeModelControl, testNameControl, pathControls, icon, statusIcon,
-  checkKey, uniqueIndex, inspectCases, friendlyName, clone, same, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, modelText, resultHistory, resultPill, modelLabel, growTextarea, checkTypeControl } from "./editor.mjs";
+  checkKey, uniqueIndex, inspectCases, friendlyName, clone, same, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, modelPresentation, growTextarea, checkTypeControl } from "./editor.mjs";
 export { provenActual } from "./editor.mjs";
 const CONFLICTS = ["revision_mismatch", "revision-mismatch"];
 const UNKNOWN = ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"];
@@ -366,23 +366,25 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   }
 
   function header(button, updates) {
-    const displayName = base.title.split(" — ")[0] || base.title;
-    // Quiet file name and model sit beside the title. Their disclosure keeps the
-    // path, revision, other canonical sections and privacy controls available.
-    const fileName = base.file.path.split("/").pop(), model = base.model ? modelText(base.model) : "";
+    const displayName = agentName(base.title), file = fileLocation(base.file.path);
+    // One name and model, with source details still available from the file line.
     const source = el(doc, "details", "source-details"), info = el(doc, "div", "source-info");
-    const sourceSummary = el(doc, "summary", "meta agent-meta", model ? `${fileName} · ${model}` : fileName);
+    const sourceSummary = el(doc, "summary", "meta agent-meta", `${file.name}${file.folder ? ` · in ${file.folder}` : ""}`);
     sourceSummary.setAttribute("title", "Source details"); source.append(sourceSummary, info);
     info.append(el(doc, "p", "source-title", base.title), pathControls(doc, base.file.path), el(doc, "code", "revision", base.file.revision));
-    const head = el(doc, "header", "agent-header"), titleLine = el(doc, "div", "title-line");
-    titleLine.append(el(doc, "h1", "", displayName), source);
-    const pill = resultPill(doc, resultSummary); titleLine.append(pill.node); updates.push(pill.update);
+    const head = el(doc, "header", "agent-header"), identity = el(doc, "div", "agent-identity"), actions = el(doc, "div", "header-controls");
+    identity.append(el(doc, "span", "agent-eyebrow", "Your agent"), el(doc, "h1", "", displayName));
+    const pill = resultPill(doc, resultSummary); actions.append(pill.node); updates.push(pill.update);
     if (snap) {
-      modelControl.update(); controls.push({ node: modelControl.select, guard: "idle" }); titleLine.append(modelControl.node);
+      updates.push(modelControl.update); controls.push({ node: modelControl.trigger, guard: "idle" }); actions.append(modelControl.node);
+    } else {
+      const id = effectiveModel(base.model, "", base.chatModel);
+      const model = el(doc, "span", "model-readonly", `${modelPresentation(id).name} · ${base.model ? "from the agent file" : "default"}`);
+      model.setAttribute("title", id); actions.append(model);
     }
     const purpose = purposeText(base), summary = el(doc, "p", "purpose");
     const chars = Array.from(purpose); summary.textContent = chars.length > 160 ? chars.slice(0, 159).join("") + "…" : purpose;
-    head.append(titleLine, summary);
+    identity.append(summary, source); head.append(identity, actions);
     if (chars.length > 160) info.append(el(doc, "p", "", purpose));
     return { head, info };
   }
@@ -403,11 +405,16 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       }
       refresh();
     };
+    const lineBreak = () => { if (!busy && !blocked) { insertPlainText(doc, node, "\n"); changed(); } };
     node.addEventListener("input", changed);
+    node.addEventListener("beforeinput", event => {
+      if (event.inputType === "insertLineBreak" && event.cancelable && !event.isComposing) { event.preventDefault(); lineBreak(); }
+    });
     node.addEventListener("keydown", (event) => {
       if (event.isComposing) return;
-      if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
-        event.preventDefault(); route.name === "detail" ? submitOne(route.key) : submitAll();
+      if (event.key === "Enter" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        if (event.shiftKey) lineBreak(); else route.name === "detail" ? submitOne(route.key) : submitAll();
       } else if (event.key === "Escape" && sectionDrafts.has(section.key)) {
         event.preventDefault(); sectionDrafts.delete(section.key); invalidEditors.delete(section.key); render();
       }
@@ -441,8 +448,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (!n) return hasDrafts() ? "Edited · Enter saves" : "Saved · add a test to run it";
     if (hasDrafts()) return `Edited · Enter saves and runs ${tests}`;
     if (runAlert?.saved && !runAlert.finished) return "Saved · tests didn't run";
-    if (lastRun && !lastRun.one) return `Saved · ran ${tests} just now`;
-    return `Saved · Enter runs ${tests}${base.latest.status === "current" ? " again" : ""}`;
+    return `Saved · Enter runs ${tests}`;
   }
   function saveButton(button, label, action, className = "ib save-run") {
     const node = button("", action, className, "save");
@@ -459,7 +465,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
 
   function mainView(button, status, updates) {
     const { head, info } = header(button, updates);
-    const promptSection = el(doc, "section", "prompt-section"), promptBox = el(doc, "div", "prompt-box");
+    const promptSection = el(doc, "section", "prompt-section"), promptBox = el(doc, "div", "prompt-box main-prompt");
     const promptLabel = el(doc, "h2", "lbl", "Prompt");
     const foot = el(doc, "div", "prompt-foot");
     if (snap) {
@@ -931,14 +937,14 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   }
 
   const modelControl = runtimeModelControl(doc,
-    () => ({ authored: base.model, selected: modelChoice.override, needsRun: modelChoice.needsRun }),
+    () => ({ authored: base.model, selected: modelChoice.override, chatModel: base.chatModel, disabled: busy || blocked || invalidEditors.size > 0 }),
     options.fetchModels ?? (() => execute({ operation: "models" })), (value) => {
       if (busy || blocked) return;
       observationGeneration++;
       if (modelChoice.choose(value, base)) {
         base = modelChoice.view(base); lastRun = undefined; runAlert = undefined;
       }
-      render(); modelControl.select.focus();
+      render(); modelControl.trigger.focus();
     });
   render();
   return {
