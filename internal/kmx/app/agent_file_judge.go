@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
@@ -35,7 +36,7 @@ type FilePreviewJudge struct {
 	Reasons  []string `json:"reasons"`
 }
 
-func previewJudge(row runtime.EvaluationAssertionResult, want runtime.EvaluationAssertion, note fileJudgeNote) *FilePreviewJudge {
+func previewJudge(row runtime.EvaluationAssertionResult, want runtime.EvaluationAssertion, note fileJudgeNote, reasonBytes *int) *FilePreviewJudge {
 	e := row.Judge
 	if want.Type != "llmJudge" || want.MinScore == nil || !runtime.EvaluationJudgeEvidenceValid(row) || e == nil || len(e.Scores) != 2 ||
 		e.Model != want.JudgeModel || e.ModelVersion != want.JudgeVersion || e.MinScore != *want.MinScore {
@@ -47,6 +48,11 @@ func previewJudge(row runtime.EvaluationAssertionResult, want runtime.Evaluation
 			break
 		}
 		if safe, ok := suiteDiagnosticText(reason, 4096, []string{note.key}); ok && safe != "" {
+			encoded, _ := json.Marshal(safe)
+			if len(encoded) > *reasonBytes {
+				continue
+			}
+			*reasonBytes -= len(encoded)
 			display.Reasons = append(display.Reasons, safe)
 		}
 	}

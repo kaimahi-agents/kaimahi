@@ -343,6 +343,9 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		}
 	}
 	all := []runtime.EvaluationAssertionResult{}
+	// Optional explanations share one encoded-byte budget so they cannot crowd
+	// verdicts and numeric scores out of the MCP latest-preview snapshot.
+	judgeReasonBytes := 64 << 10
 	for i, row := range outcome.Examples {
 		if i >= len(selected) {
 			break
@@ -375,7 +378,7 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		if show {
 			for j, as := range row.Assertions {
 				note := judgeNotes[fileJudgeKey{ex.ID, as.ID}]
-				r.Examples[i].Assertions[j].Judge = previewJudge(as, ex.Assertions[j], note)
+				r.Examples[i].Assertions[j].Judge = previewJudge(as, ex.Assertions[j], note, &judgeReasonBytes)
 			}
 		}
 		r.Examples[i].FilePreviewCompletion = previewCompleted(row.Completion, show)

@@ -216,7 +216,7 @@ export function judgeDetails(doc) {
   const binding = el(doc, "div", "meta judge-binding"), node = el(doc, "div", "judge-result");
   const score = el(doc, "div", "judge-score"), reason = el(doc, "div", "judge-reason");
   return { binding, node, score, reason, update(assertion, observed, visible, old) {
-    const model = assertion.judgeModel ?? assertion.fields?.find(([key]) => key === "judgeModel")?.[1];
+    const model = assertion?.judgeModel ?? assertion?.fields?.find(([key]) => key === "judgeModel")?.[1];
     binding.textContent = model ? `Judge model: ${model} · pinned` : "Judge model: Run model · follows selection";
     const detail = visible ? observed?.judge : undefined;
     score.textContent = detail ? `Scores: ${detail.scores.join(", ")} · minimum ${detail.minScore}` : "";

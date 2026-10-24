@@ -1981,6 +1981,14 @@ test("an unpinned Judge is runnable and states that it follows the run model", a
   assert.equal(h.calls[0].examples[0].assertions[0].judgeVersion, "v1");
 });
 
+for (const prefix of [[], [{ id: "text", type: "contains", value: "Hello" }]]) test(`removing a trailing Judge survives the intermediate refresh (${prefix.length} preceding checks)`, async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [...prefix, judgeAssertion()] }] });
+  openTest(h.root, "a"); click(byClass(h.root, "check-line").at(-1));
+  assert.doesNotThrow(() => click(byClass(h.root, "remove-check").at(-1)));
+  assert.equal(byClass(h.root, "check-type-button").length, prefix.length);
+  assert.equal(byClass(h.root, "judge-binding").length, 0); assert.equal(h.calls.length, 0);
+});
+
 test("clearing an existing Judge pin keeps its explicit version and permits the next run", async () => {
   const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }] });
   openTest(h.root, "a"); edited(judgeField(h.root, 1, "judge model"), "");

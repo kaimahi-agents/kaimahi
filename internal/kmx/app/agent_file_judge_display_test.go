@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
@@ -42,6 +45,89 @@ func judgeDisplay(t *testing.T, result FilePreviewResult) []*fileJudgeDisplay {
 		displays = append(displays, ex.Assertions[0].Judge)
 	}
 	return displays
+}
+
+func TestFileJudgeDisplayAggregateReasonBudgetPreservesSnapshot(t *testing.T) {
+	for _, tc := range []struct {
+		name, reason string
+		retained     int
+	}{
+		{"plain", strings.Repeat("x", 4096), 15},
+		{"html-escaped", strings.Repeat("<", 4096), 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("KMX_HOME", t.TempDir())
+			opt := directOptions(t, "unit", true)
+			source, err := os.ReadFile(opt.File)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertion := "      - id: text\n        type: llmJudge\n        rubric: Answer contains `Hello,`.\n        minScore: 80\n        judgeModel: unit\n        judgeVersion: v1\n"
+			var assertions strings.Builder
+			for i := 0; i < 64; i++ {
+				assertions.WriteString(strings.Replace(assertion, "id: text", fmt.Sprintf("id: judge-%d", i), 1))
+			}
+			parsed, err := agentfile.Parse(opt.File, []byte(strings.ReplaceAll(string(source), assertion, assertions.String())))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var samples atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload directChat
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Error(err)
+					return
+				}
+				answer := "Hello, PRIVATE INPUT"
+				if payload.Messages[0].Content == runtime.EvaluationJudgePolicy {
+					score := 95
+					if samples.Add(1)%2 == 0 {
+						score = 90
+					}
+					content, _ := json.Marshal(map[string]any{"score": score, "reasoning": tc.reason})
+					answer = string(content)
+				}
+				previewEnvelope(w, payload.Model, answer)
+			}))
+			defer server.Close()
+			opt.ShowContent = true
+			opt.Route = &modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: server.URL, Auth: "none"}
+			result, err := (&App{FileRunner: NewLocalFileRunner()}).PreviewAgentSnapshot(t.Context(), parsed, opt)
+			if err != nil || result.State != "complete" || !result.FullPass || result.Verdict != runtime.EvaluationPass {
+				t.Fatalf("state=%s verdict=%s reason=%s / %v", result.State, result.Verdict, result.ReasonCode, err)
+			}
+			if result.Selection.Scope != "full" || result.Selection.TotalCases != 2 || !reflect.DeepEqual(result.Selection.CaseIDs, []string{"first", "second"}) || len(result.Examples) != 2 || samples.Load() != 256 {
+				t.Fatalf("incomplete selection/samples: %+v / %d", result.Selection, samples.Load())
+			}
+			encodedBytes, retained := 0, 0
+			for i, ex := range result.Examples {
+				if ex.ID != result.Selection.CaseIDs[i] || ex.Verdict != runtime.EvaluationPass || len(ex.Assertions) != 64 {
+					t.Fatalf("case %d lost verdict/assertions", i)
+				}
+				for j, row := range ex.Assertions {
+					if row.ID != fmt.Sprintf("judge-%d", j) || row.Verdict != runtime.EvaluationPass || row.Judge == nil || row.Judge.MinScore != 80 || !reflect.DeepEqual(row.Judge.Scores, []int{95, 90}) {
+						t.Fatalf("case %d assertion %d lost verdict/scores: %+v", i, j, row)
+					}
+					for _, reason := range row.Judge.Reasons {
+						if reason != tc.reason {
+							t.Fatal("retained reason changed")
+						}
+						encoded, _ := json.Marshal(reason)
+						encodedBytes += len(encoded)
+						retained++
+					}
+				}
+			}
+			data, err := json.Marshal(result)
+			if err != nil || len(data) > 1<<20 {
+				t.Fatalf("completed preview would be dropped by MCP snapshot: bytes=%d / %v", len(data), err)
+			}
+			if encodedBytes > 64<<10 || retained != tc.retained {
+				t.Fatalf("whole-preview JSON reason budget: bytes=%d retained=%d, want %d", encodedBytes, retained, tc.retained)
+			}
+			t.Logf("snapshot bytes=%d, encoded reason bytes=%d, retained reasons=%d; all 128 verdicts and score pairs retained", len(data), encodedBytes, retained)
+		})
+	}
 }
 
 func TestFileJudgeDisplayActualSamplesAndCaseIsolation(t *testing.T) {

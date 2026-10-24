@@ -102,8 +102,10 @@ func TestPreviewCancellationRecoversFinishedTestsFromResource(t *testing.T) {
 				}()
 				select {
 				case <-started:
+				case result := <-finished:
+					t.Fatalf("preview ended before the selected model request: sends=%d result=%+v", sends.Load(), result)
 				case <-time.After(5 * time.Second):
-					t.Fatal("second test did not reach the selected model request")
+					t.Fatalf("second test did not reach the selected model request: sends=%d", sends.Load())
 				}
 				cancel() // The SDK sends notifications/cancelled for this request.
 				select {
