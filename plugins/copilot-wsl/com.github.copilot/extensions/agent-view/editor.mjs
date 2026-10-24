@@ -206,7 +206,7 @@ export function checkFields(doc, initial, index, change, fieldKeys) {
 }
 // Unknown is an observation, not a passing/failing check. Identity must still be unambiguous.
 export function inconclusiveJudge(c, observed) {
-  return observed?.verdict === "unknown" && c?.state === "unknown" && c.expected?.size === c.checks?.size
+  return observed?.verdict === "unknown" && ["unknown", "fail"].includes(c?.state) && c.expected?.size === c.checks?.size
     && [...c.expected.values(), ...c.checks.values()].every(value => value !== null)
     && [...c.checks.keys()].every(key => c.expected.has(key));
 }
@@ -236,7 +236,7 @@ export function checkTypeControl(doc, initial, change, cancel) {
     option.addEventListener("click", () => {
       show(type); open(false);
       choices.forEach((item, i) => { item.setAttribute("aria-checked", String(i === index)); });
-      change(type); trigger.focus();
+      trigger.focus(); change(type);
     });
     option.addEventListener("keydown", event => {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {

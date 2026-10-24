@@ -799,8 +799,11 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         const line = button("", () => { editingChecks.add(editKey); refresh(); fields.focus(); }, "check-line");
         line.append(state, el(doc, "span", "check-label", checkLabel({ type: a.type, fields: [[operandKey(a.type), a[operandKey(a.type)] ?? ""]] })));
         const choice = checkTypeControl(doc, a.type, chosen => {
+          const wasJudge = current().assertions[index].type === "llmJudge";
           editingChecks.add(editKey); mutate(d => convertCheck(d.raw.assertions[index], chosen));
-          fields.show(current().assertions[index]); refresh();
+          if (wasJudge || chosen === "llmJudge") {
+            render(); root.querySelectorAll(".check-type-button")[index]?.focus();
+          } else { fields.show(current().assertions[index]); refresh(); }
         }, cancelDraft);
         const remove = button("", () => { mutate(d => { d.raw.assertions.splice(index, 1); }); render(); }, "ib remove-check");
         remove.setAttribute("aria-label", `Remove check ${index + 1}`); remove.append(icon(doc, "none", 14, 2));

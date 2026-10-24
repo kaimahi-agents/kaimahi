@@ -493,7 +493,7 @@ function fakeDoc(defaultView) {
       get childNodes() { return this._text ? [Object.assign(mk("#text"), { _text: this._text }), ...this.children] : this.children; },
       get classList() { return { add: (...names) => { this.className += " " + names.join(" "); } }; },
       querySelector(selector) { return all(this).find((e) => selector.startsWith(".") ? e.className.split(/\s+/).includes(selector.slice(1)) : e.tag === selector); },
-      querySelectorAll(selector) { return all(this).filter((e) => selector.split(",").includes(e.tag)); },
+      querySelectorAll(selector) { return all(this).filter(e => selector.split(",").some(s => s.startsWith(".") ? e.className.split(/\s+/).includes(s.slice(1)) : e.tag === s)); },
       focus() { doc.activeElement = this; },
       // Minimal layout: a list is 41px per visible row; everything else is one 32px line.
       getBoundingClientRect() { const h = tag === "ul" ? this.children.filter((c) => !c.hidden).length * 41 : 32; return { top: 0, bottom: h, height: h }; },
@@ -1998,6 +1998,32 @@ for (const [label, key, value] of [["rubric", "rubric", "New\nRubric"], ["minimu
   assert.deepEqual(checkLabels(h.root), ["Passed last run"]);
   enterOn(judgeField(h.root, 1, label)); await tick();
   assert.deepEqual(h.calls[0].examples[0].assertions[0], { ...original, [key]: key === "minScore" ? Number(value) : value });
+});
+
+for (const fromJudge of [false, true]) test(`Judge type conversion rebinds results and preserves chooser focus (${fromJudge ? "from" : "to"} Judge)`, async () => {
+  const assertion = fromJudge ? judgeAssertion() : { id: "why", type: "contains", value: "Says why." };
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [assertion] }], latest: bLatest({ a: "pass" }) });
+  openTest(h.root, "a"); click(byClass(h.root, "check-line")[0]);
+  click(byClass(h.root, "check-type-button")[0]); click(byClass(h.root, "check-type-option")[fromJudge ? 0 : 3]);
+  const trigger = byClass(h.root, "check-type-button")[0];
+  assert.equal(trigger.textContent, fromJudge ? "Contains" : "Judge");
+  assert.equal(h.doc.activeElement === trigger, true, "the rebuilt chooser retains keyboard focus");
+  assert.deepEqual(checkLabels(h.root), ["No result"], "a verdict for a different assertion type cannot attach to the new form");
+  assert.equal(byClass(h.root, "check-verdict")[0].textContent, "");
+  assert.equal(h.calls.length, 0);
+});
+
+test("Judge unknown verdict stays visible when another check fails", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion(), { id: "text", type: "contains", value: "Missing" }] }], latest: (revision, examples) => {
+    const latest = bLatest({ a: "fail" })(revision, examples);
+    latest.result.examples[0].assertions[0] = { id: "why", type: "llmJudge", verdict: "unknown", reasonCode: "judge_unknown", reason: "Judge could not decide." };
+    return latest;
+  } });
+  openTest(h.root, "a");
+  assert.deepEqual(checkLabels(h.root), ["Inconclusive", "Failed"]);
+  assert.equal(byClass(h.root, "judge-result")[0].hidden, false);
+  assert.equal(byClass(h.root, "judge-reason")[0].textContent, "Judge could not decide.");
+  assert.match(c18Text(h.root, "detail-status"), /^Failed/);
 });
 
 test("Judge conversion in both directions preserves ID and operand, drops only incompatible known fields; cancel restores", async () => {
