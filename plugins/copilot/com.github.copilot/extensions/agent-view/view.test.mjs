@@ -18,6 +18,7 @@ import {
   startViewBridge,
 } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs";
 import { renderView } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/app.js";
+import { modelLabel } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/editor.mjs";
 
 const here = (name) => fileURLToPath(new URL("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/" + name, import.meta.url));
 const MINIMAL = "greeter.agent.md";
@@ -1807,7 +1808,6 @@ test("Suggest does not claim that tests are running or dim their valid result", 
 });
 
 test("last-run model labels leave unknown IDs literal, including inherited property names", async () => {
-  const { modelLabel } = await import(here("editor.mjs"));
   for (const id of ["constructor", "__proto__", "unknown-model"]) assert.equal(modelLabel(`provider/${id}`), id);
   assert.equal(modelLabel("copilot/gpt-5.6-terra"), "GPT-5.6 Terra");
 });
