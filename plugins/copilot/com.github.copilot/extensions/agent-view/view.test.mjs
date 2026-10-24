@@ -436,6 +436,7 @@ test("agent-view command logs the same view and never sends a prompt", async () 
 // --- DOM / source guards ---------------------------------------------------
 
 function fakeDoc(defaultView) {
+  const doc = { activeElement: null };
   const mk = (tag) => {
     const el = {
       tag, children: [], className: "", _text: "", attrs: {}, listeners: {},
@@ -445,7 +446,7 @@ function fakeDoc(defaultView) {
       get classList() { return { add: (...names) => { this.className += " " + names.join(" "); } }; },
       querySelector(selector) { return all(this).find((e) => selector.startsWith(".") ? e.className.split(/\s+/).includes(selector.slice(1)) : e.tag === selector); },
       querySelectorAll(selector) { return all(this).filter((e) => selector.split(",").includes(e.tag)); },
-      focus() {},
+      focus() { doc.activeElement = this; },
       // Minimal layout: a list is 41px per visible row; everything else is one 32px line.
       getBoundingClientRect() { const h = tag === "ul" ? this.children.filter((c) => !c.hidden).length * 41 : 32; return { top: 0, bottom: h, height: h }; },
       contains(node) { return all(this).includes(node); },
@@ -464,7 +465,7 @@ function fakeDoc(defaultView) {
     return el;
   };
   const mkNS = (ns, tag) => Object.assign(mk(tag), { namespaceURI: ns });
-  return { createElement: mk, createElementNS: mkNS, createTextNode: (text) => Object.assign(mk("#text"), { _text: text }), defaultView };
+  return Object.assign(doc, { createElement: mk, createElementNS: mkNS, createTextNode: (text) => Object.assign(mk("#text"), { _text: text }), defaultView });
 }
 const all = (el) => [el, ...el.children.flatMap(all)];
 const byClass = (root, name) => all(root).filter((e) => e.className.split(/\s+/).includes(name));
@@ -1593,7 +1594,7 @@ test("drafts survive A → B → prompt → A navigation without any RPC and nev
   openTest(h.root, "b");
   assert.equal(byClass(h.root, "check-value")[0].value, "Hello, b!");
   // Cancel discards only the active test's draft.
-  click(btn(h.root, "Cancel")); goBack(h.root);
+  click(all(h.root).find(e => e.tag === "button" && e.attrs["aria-label"] === "Cancel")); goBack(h.root);
   assert.deepEqual(items(h.root).map((i) => noteOf(i).startsWith("Unsaved")), [true, false, false]);
   assert.match(c18Prompt(h.root).textContent, /More\.$/);
   assert.equal(h.calls.length, 0, "navigation and drafting never call the bridge");
@@ -1644,6 +1645,67 @@ test("a test's Enter saves only it with its caseId and clears only what it sent;
   assert.deepEqual(all3.examples.map((e) => [e.id, e.input, e.assertions[0].value]), [["a", "Name a, edited", "Hello, a"], ["b", "Name b", "Hello, b!"], ["c", "Name c", "Hello, c"]]);
   assert.equal(byClass(h.root, "action-message")[0].textContent, "Kept.");
   assert.ok(noteOf(items(h.root)[1]).startsWith("Unsaved"), "an error preserves drafts");
+});
+
+test("Board E blank test focuses its visibly named field without saved-test chrome", async () => {
+  const h = await editableCanvas("Reply briefly.");
+  click(btn(h.root, "Add test"));
+  const name = byClass(h.root, "test-title-input")[0];
+  assert.equal(h.doc.activeElement, name);
+  assert.equal(name.attrs.placeholder, "Name this test");
+  assert.equal(byClass(h.root, "more").length, 0);
+  assert.equal(byClass(h.root, "unsaved-tag")[0].hidden, true);
+  assert.equal(c18Text(h.root, "detail-status"), "");
+  assert.equal(byClass(h.root, "example-input")[0].attrs.placeholder, 'What the agent is given, e.g. Merged: "Fix slow search", closes #218');
+  assert.equal(c18Text(h.root, "prompt-status"), "Enter saves and runs this test");
+  const cancel = byClass(h.root, "cancel-test")[0], run = byClass(h.root, "save-run")[0];
+  assert.equal(cancel.attrs["aria-label"], "Cancel");
+  assert.equal(cancel.textContent, ""); assert.equal(cancel.children[0].tag, "svg");
+  assert.equal(run.attrs["aria-label"], "Save and run this test");
+  assert.equal(h.calls.length, 0);
+});
+
+test("Board E Enter or save without a name focuses the name and gives one inline hint", async () => {
+  for (const via of ["Enter", "button"]) {
+    const h = await editableCanvas("Reply briefly.");
+    click(btn(h.root, "Add test"));
+    const name = byClass(h.root, "test-title-input")[0], input = byClass(h.root, "example-input")[0];
+    edited(input, "Ada"); edited(byClass(h.root, "check-value")[0], "Hello");
+    input.focus();
+    if (via === "Enter") enterOn(input); else click(byClass(h.root, "save-run")[0]);
+    await tick();
+    assert.equal(h.calls.length, 0); assert.equal(h.doc.activeElement, name);
+    assert.equal(name.attrs["aria-invalid"], "true");
+    const hint = byClass(h.root, "name-hint")[0];
+    assert.equal(hint.hidden, false); assert.equal(hint.textContent, "Name this test.");
+    assert.equal(name.attrs["aria-describedby"], hint.attrs.id);
+    assert.equal(c18Text(h.root, "action-message"), "", "do not duplicate the inline hint");
+    edited(name, "Greets Ada");
+    assert.equal(name.attrs["aria-invalid"], "false"); assert.equal(hint.hidden, true);
+    enterOn(name); await tick();
+    assert.equal(h.calls.length, 1); assert.equal(h.calls[0].caseId, "greets-ada");
+    assert.equal(h.calls[0].operation, "save-and-test");
+  }
+});
+
+test("Board E one Enter dispatches once and exposes pending state even if Enter/click repeat", async () => {
+  let finish;
+  const h = await editableCanvas("Reply briefly.", undefined, { respond: () => new Promise(resolve => { finish = resolve; }) });
+  click(btn(h.root, "Add test"));
+  const name = byClass(h.root, "test-title-input")[0];
+  edited(name, "Greets Ada"); edited(byClass(h.root, "example-input")[0], "Ada");
+  edited(byClass(h.root, "check-value")[0], "Hello");
+  enterOn(name); enterOn(name); click(byClass(h.root, "save-run")[0]);
+  assert.equal(h.calls.length, 1); assert.equal(h.root.attrs["aria-busy"], "true");
+  assert.match(c18Text(h.root, "prompt-status"), /Saving and running this test/);
+  finish({ error: "refused", message: "Kept." }); await tick(); await tick();
+  assert.equal(h.root.attrs["aria-busy"], "false");
+});
+
+test("Board C/D saved detail footer says Enter runs this test", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { currentPass: true });
+  openTest(h.root, "greeting");
+  assert.equal(c18Text(h.root, "prompt-status"), "Saved · Enter runs this test");
 });
 
 test("zero tests: first-run teaching, local refusal, delete-all saves zero and a known no-tests refusal stays Saved; ad-hoc Run still works", async () => {

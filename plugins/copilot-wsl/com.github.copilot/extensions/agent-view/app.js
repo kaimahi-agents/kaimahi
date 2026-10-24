@@ -1,6 +1,6 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
 import { instructionSections, runtimeModelSelection } from "./authoring.mjs";
-import { el, inlineText, editorValue, insertPlainText, fillEditor, purposeText, instructionsContent, runtimeModelControl, pathControls } from "./editor.mjs";
+import { el, inlineText, editorValue, insertPlainText, fillEditor, purposeText, instructionsContent, runtimeModelControl, testNameControl, pathControls, icon, statusIcon } from "./editor.mjs";
 const checkKey = (a) => JSON.stringify([a.id, a.type]);
 function uniqueIndex(items, key) {
   const map = new Map();
@@ -50,46 +50,6 @@ const checkLabel = (a) => {
   return a.type === "contains" ? `Contains ${quoted(value)}` : a.type === "notContains" ? `Does not contain ${quoted(value)}`
     : a.type === "regex" ? `Matches regex ${quoted(value)}` : a.type === "llmJudge" ? friendlyName(a.id) : `Condition: ${a.type}`;
 };
-// Static icon geometry copied from the approved board builder; never derived from resource text.
-const SVG_NS = "http://www.w3.org/2000/svg";
-const RING = ["circle", { cx: "12", cy: "12", r: "9" }];
-const ICONS = {
-  fail: [RING, ["path", { d: "M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6" }]],
-  pass: [RING, ["path", { d: "M8.2 12.4l2.6 2.6 5-5.4" }]],
-  error: [RING, ["path", { d: "M12 7.6v5.6" }], ["path", { d: "M12 16.4h.01" }]],
-  none: [["path", { d: "M8 12h8" }]],
-  running: [["path", { d: "M12 3a9 9 0 0 1 9 9" }]],
-  enter: [["path", { d: "M20 5v7a3 3 0 0 1-3 3H5" }], ["path", { d: "M9 11l-4 4 4 4" }]],
-  chevron: [["path", { d: "M9 6l6 6-6 6" }]],
-  back: [["path", { d: "M15 6l-6 6 6 6" }]],
-  plus: [["path", { d: "M12 5v14M5 12h14" }]],
-  more: [["circle", { cx: "5", cy: "12", r: "1" }], ["circle", { cx: "12", cy: "12", r: "1" }], ["circle", { cx: "19", cy: "12", r: "1" }]],
-  trash: [["path", { d: "M4 7h16" }], ["path", { d: "M10 11v6M14 11v6" }], ["path", { d: "M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" }], ["path", { d: "M9 7V4h6v3" }]],
-  sync: [["path", { d: "M21 12a9 9 0 0 1-15.5 6.2" }], ["path", { d: "M3 12A9 9 0 0 1 18.5 5.8" }], ["path", { d: "M18 2v4h-4" }], ["path", { d: "M6 22v-4h4" }]],
-  warn: [["path", { d: "M12 3.5l9.5 16.5h-19z" }], ["path", { d: "M12 10v4.5" }], ["path", { d: "M12 17.4h.01" }]],
-};
-function icon(doc, name, size, strokeWidth, className) {
-  const svg = doc.createElementNS(SVG_NS, "svg");
-  for (const [key, value] of Object.entries({ width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
-    "stroke-width": strokeWidth, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true", focusable: "false" })) {
-    svg.setAttribute(key, String(value));
-  }
-  if (className) svg.setAttribute("class", className);
-  for (const [tag, attrs] of ICONS[name]) {
-    const shape = doc.createElementNS(SVG_NS, tag);
-    for (const [key, value] of Object.entries(attrs)) shape.setAttribute(key, value);
-    svg.append(shape);
-  }
-  return svg;
-}
-function statusIcon(doc, kind, label) {
-  const base = kind.replace(/^old-/, "");
-  const mark = el(doc, "span", `status-icon ${kind}`);
-  mark.setAttribute("role", "img"); mark.setAttribute("aria-label", label); mark.setAttribute("title", label);
-  mark.append(icon(doc, base === "running" ? "running" : base, 14, 2.2, base === "running" ? "spin" : ""));
-  return mark;
-}
-
 // Expected/got wording uses only the actual excerpt. A differing reference is
 // named only when the answer holds exactly one same-anchored phrase, e.g. the
 // expected "Fixes #218" against an answer that literally says "Closes #218".
@@ -199,6 +159,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
   let route = { name: "main" }, busy = false, pending, blocked = false, savedUntested = false, message = "", runAlert, lastRun;
   let showContent = false, filter = "all", newCount = 0, menuOpen = false, cleanups = [], controls = [], includeNode;
   let refresh = () => {};
+  let focusTestName = false, nameHintKey, activeTestName;
   // A revision does not distinguish successive runs of unchanged source.
   let observationGeneration = 0;
   const modelChoice = runtimeModelSelection();
@@ -346,6 +307,9 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (!snap || busy || blocked || candidate || invalidEditors.size) return;
     const entry = entries().find((e) => e.key === key);
     if (!entry?.raw || entry.draft?.deleted) return;
+    if (entry.draft?.origin === null && !entry.draft.fixedId && !entry.draft.name.trim()) {
+      nameHintKey = key; message = ""; refresh(); activeTestName?.focus(); return;
+    }
     let intended = clone(rawExamples());
     if (entry.draft) {
       const raw = entry.draft.raw;
@@ -432,7 +396,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     for (const cleanup of cleanups.splice(0)) cleanup();
     invalidEditors.clear();
     const content = el(doc, "div", route.name === "detail" ? "content detail-view" : "content");
-    controls = []; includeNode = undefined;
+    controls = []; includeNode = undefined; activeTestName = undefined;
     const button = (label, action, className = "", guard = "idle") => {
       const node = el(doc, "button", className, label); node.type = "button";
       node.addEventListener("click", action); controls.push({ node, guard }); return node;
@@ -464,6 +428,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     content.append(...parts);
     root.replaceChildren(content);
     refresh();
+    if (focusTestName) { activeTestName?.focus(); focusTestName = false; }
   }
 
   function conflictNotice(button) {
@@ -570,7 +535,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (blocked) return savedUntested ? "Saved · tests didn't run" : "Reload required · result unconfirmed";
     if (invalidEditors.size) return "Edited · unsupported formatting, reload before saving";
     if (candidate) return "Edited · settle the outside change before saving";
-    if (scope === "one") return "Enter saves and runs this test only";
+    if (scope === "one") return sectionDrafts.size || testDrafts.has(route.key)
+      ? "Enter saves and runs this test" : "Saved · Enter runs this test";
     if (!n) return hasDrafts() ? "Edited · Enter saves" : "Saved · add a test to run it";
     if (hasDrafts()) return `Edited · Enter saves and runs ${tests}`;
     if (runAlert?.saved && !runAlert.finished) return "Saved · tests didn't run";
@@ -772,7 +738,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (localExamples().length >= 128) { message = "Keep at most 128 tests. Edit or delete an existing test first."; refresh(); return; }
     const key = `new:${++newCount}`;
     testDrafts.set(key, { origin: null, name: "", raw: { id: "", input: "", assertions: [{ id: "check-1", type: "contains", value: "" }] } });
-    route = { name: "detail", key }; render();
+    route = { name: "detail", key }; focusTestName = true; render();
   }
 
   // `actual` is a proven unique substring of the excerpt; it is marked, never rewritten.
@@ -810,7 +776,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     const back = button("", () => { route = { name: "main" }; menuOpen = false; render(); }, "back", "nav");
     back.setAttribute("aria-label", "Back to tests"); back.append(icon(doc, "back", 14, 2), "Tests");
     bar.append(back);
-    if (editableTest) {
+    if (editableTest && draft()?.origin !== null) {
       const more = button("", () => { menuOpen = !menuOpen; render(); }, "ib more", "nav");
       more.setAttribute("aria-label", "More actions"); more.setAttribute("aria-haspopup", "menu"); more.setAttribute("aria-expanded", String(menuOpen));
       more.setAttribute("title", "More actions"); more.append(icon(doc, "more", 15, 2.6));
@@ -820,7 +786,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         const duplicate = button("Duplicate test", () => {
           const copy = clone(current()), name = `${draftName(entry)} copy`; copy.id = portableId(name);
           const newKey = `new:${++newCount}`; testDrafts.set(newKey, { origin: null, name, raw: copy });
-          route = { name: "detail", key: newKey }; menuOpen = false; render();
+          route = { name: "detail", key: newKey }; menuOpen = false; focusTestName = true; render();
         }, "mi");
         const remove = button("Delete test", () => {
           if (entry.origin) testDrafts.set(key, { origin: entry.origin.id, raw: null, deleted: true }); else testDrafts.delete(key);
@@ -831,20 +797,24 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       }
     }
     const nameLine = el(doc, "div", "name-line");
+    let nameHint;
     if (editableTest && draft()?.origin === null) {
-      const name = el(doc, "input", "test-title-input"); name.type = "text"; name.value = draft().name;
-      name.setAttribute("aria-label", "Test name"); name.setAttribute("placeholder", "Name this test"); name.setAttribute("spellcheck", "false");
-      name.addEventListener("input", () => { draft().name = name.value; draft().raw.id = portableId(name.value); refresh(); });
-      fieldKeys(name); updates.push(() => { name.disabled = busy || blocked; });
-      nameLine.append(name);
+      const control = testNameControl(doc,
+        () => ({ name: draft().name, disabled: busy || blocked, invalid: nameHintKey === key }), value => {
+          draft().name = value; draft().raw.id = portableId(value);
+          if (value.trim()) nameHintKey = undefined;
+          refresh();
+        });
+      activeTestName = control.input; nameHint = control.hint;
+      fieldKeys(control.input); updates.push(control.update); nameLine.append(control.input);
     } else nameLine.append(el(doc, "h1", "test-title", draftName(entry)));
     const unsaved = el(doc, "span", "unsaved-tag", "Unsaved");
     nameLine.append(unsaved);
     const resultLine = el(doc, "span", "meta detail-status");
     updates.push(() => {
-      unsaved.hidden = !draft();
+      unsaved.hidden = !draft() || draft().origin === null;
       const r = c ? inspectFor(c) : undefined;
-      resultLine.textContent = draft()?.origin === null ? "Not run yet" : !r ? "Not run yet" : r;
+      resultLine.textContent = draft()?.origin === null ? "" : !r ? "Not run yet" : r;
     });
     function inspectFor(caseInfo) {
       if (blocked) return "Result unconfirmed";
@@ -854,7 +824,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       if (local()) return "Results from the last run, before your edit";
       return lastRun && !runAlert ? "Results from the last run, just now" : "Results from the last run";
     }
-    top.append(bar, nameLine, resultLine);
+    top.append(bar, nameLine, ...(nameHint ? [nameHint] : []), resultLine);
     out.push(top);
 
     // The agent gets
@@ -862,6 +832,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (editableTest) {
       const label = el(doc, "label", "lbl", "The agent gets"), input = el(doc, "textarea", "field example-input");
       input.value = current().input; input.rows = 2; input.setAttribute("spellcheck", "false");
+      input.setAttribute("placeholder", 'What the agent is given, e.g. Merged: "Fix slow search", closes #218');
       label.append(input);
       input.addEventListener("input", () => mutate((d) => { d.raw.input = input.value; }));
       fieldKeys(input); updates.push(() => { input.disabled = busy || blocked; });
@@ -971,7 +942,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       const foot = el(doc, "div", "detail-foot");
       foot.append(spinnerStatus(status, "one", updates));
       const right = el(doc, "div", "foot-actions");
-      const cancel = button("Cancel", cancelDraft, "tb tb-quiet", "nav");
+      const cancel = button("", cancelDraft, "ib cancel-test", "nav");
+      cancel.setAttribute("aria-label", "Cancel"); cancel.append(icon(doc, "close", 16, 2.2));
       cancel.setAttribute("title", "Discard this test's edits (Esc)");
       updates.push(() => { cancel.hidden = !draft(); });
       right.append(cancel, saveButton(button, "Save and run this test", () => submitOne(key)));
