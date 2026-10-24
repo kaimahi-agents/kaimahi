@@ -14,12 +14,12 @@ func TestCompiledSessionsCapabilitiesPreserveDevelopmentSuiteEvaluation(t *testi
 		for _, cap := range row.Capabilities {
 			caps[cap.Operation] = cap.Supported
 		}
-		for _, verb := range []string{"create", "eval", "push", "export"} {
+		for _, verb := range []string{"create", "eval", "push", "export", "lift", "inspect"} {
 			if !caps[verb] {
 				t.Fatalf("native development %s missing", verb)
 			}
 		}
-		for _, verb := range []string{"lift", "chat", "run", "inspect", "diff", "status", "retire"} {
+		for _, verb := range []string{"chat", "run", "diff", "status", "retire"} {
 			if supported := caps[verb]; supported {
 				t.Fatalf("unsupported lifecycle %s missing or enabled", verb)
 			}
