@@ -81,7 +81,7 @@ func TestTargetsOfflineDoesNotLoadConfigOrTools(t *testing.T) {
 					if want == "kagent" && capability.Supported && capability.Operation == "status" && (!strings.Contains(capability.Reason, "v0.10.3 Go-only") || !strings.Contains(capability.Reason, "readiness")) {
 						t.Fatalf("Kagent status boundary=%+v", capability)
 					}
-					if want == "agentsessions" && capability.Supported && capability.Operation != "create" && capability.Operation != "eval" && capability.Operation != "push" && capability.Operation != "export" {
+					if want == "agentsessions" && capability.Supported && capability.Operation != "create" && capability.Operation != "eval" && capability.Operation != "push" && capability.Operation != "export" && capability.Operation != "lift" && capability.Operation != "inspect" {
 						t.Fatalf("expanded Sessions support: %+v", capability)
 					}
 				}

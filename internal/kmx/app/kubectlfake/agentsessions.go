@@ -19,6 +19,9 @@ func AgentSessions(r Request) error {
 			exit(2)
 		}
 		args := r.Args
+		if slices.Equal(args, []string{"version", "--client"}) {
+			return
+		}
 		if len(args) < 4 || !slices.Equal(args[:3], []string{"--context", "kind-test", "--request-timeout=10s"}) {
 			exit(2)
 		}
@@ -42,13 +45,36 @@ func AgentSessions(r Request) error {
 			json.NewEncoder(r.Stdout).Encode(map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": name, "uid": name + "-uid"}})
 			return
 		}
+		if len(args) == 3 && args[0] == "get" && args[1] == "--raw" {
+			switch args[2] {
+			case "/apis":
+				fmt.Fprint(r.Stdout, `{"apiVersion":"v1","kind":"APIGroupList","groups":[{"name":"agents.aks-durable-agents.io","versions":[{"groupVersion":"agents.aks-durable-agents.io/v1alpha1","version":"v1alpha1"}]}]}`)
+			case "/apis/agents.aks-durable-agents.io/v1alpha1":
+				fmt.Fprint(r.Stdout, `{"apiVersion":"v1","kind":"APIResourceList","groupVersion":"agents.aks-durable-agents.io/v1alpha1","resources":[{"name":"agents","kind":"Agent","namespaced":true,"verbs":["get","list"]}]}`)
+			default:
+				raw, err := os.ReadFile(filepath.Join(dir, "agent.json"))
+				if err != nil {
+					exit(2)
+				}
+				if strings.HasSuffix(args[2], "/agents?limit=128") {
+					var doc map[string]any
+					json.Unmarshal(raw, &doc)
+					json.NewEncoder(r.Stdout).Encode(map[string]any{"apiVersion": "agents.aks-durable-agents.io/v1alpha1", "kind": "AgentList", "metadata": map[string]any{"resourceVersion": "10"}, "items": []any{doc}})
+				} else if strings.HasPrefix(args[2], "/apis/agents.aks-durable-agents.io/v1alpha1/namespaces/workloads/agents/") {
+					fmt.Fprint(r.Stdout, string(raw))
+				} else {
+					exit(2)
+				}
+			}
+			return
+		}
 		if len(args) < 6 || args[0] != "-n" || args[1] != "workloads" {
 			exit(2)
 		}
 		path := filepath.Join(dir, "agent.json")
 		scenario := r.Getenv("KMX_SESSIONS_TEST_SCENARIO")
 		if args[2] == "get" {
-			if len(body) != 0 || args[3] != "agents.agents.aks-durable-agents.io" {
+			if len(args) != 8 || !slices.Equal(args[5:], []string{"--ignore-not-found=true", "-o", "json"}) || len(body) != 0 || args[3] != "agents.agents.aks-durable-agents.io" {
 				exit(2)
 			}
 			raw, err := os.ReadFile(path)

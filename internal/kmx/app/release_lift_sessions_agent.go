@@ -14,6 +14,13 @@ import (
 	godigest "github.com/opencontainers/go-digest"
 )
 
+// An occupied immutable name is an actionable one-line refusal, including when
+// it is discovered after planning. Keep the ordinary sentinel exit contracts.
+type sessionsAgentOccupied struct{ message string }
+
+func (e *sessionsAgentOccupied) Error() string   { return e.message }
+func (e *sessionsAgentOccupied) Unwrap() []error { return []error{ErrReleaseLift, ErrReleaseLiftApply} }
+
 type releaseLiftSessionsAgent struct {
 	document map[string]any
 	spec     agentsessions.AgentSpec
@@ -45,7 +52,7 @@ func sessionsAgentDecision(agent *agentsessions.Agent, spec agentsessions.AgentS
 		return "create", nil
 	}
 	if agent.Spec != spec {
-		return "", &releaseLiftSessionsRefusal{fmt.Errorf("Agent %s already names %s; use a new --name for changed inputs", agent.Metadata.Name, agent.Spec.Package.Reference)}
+		return "", &sessionsAgentOccupied{fmt.Sprintf("Agent %s already names %s; use a new --name for changed inputs", agent.Metadata.Name, agent.Spec.Package.Reference)}
 	}
 	if agent.Status.AgentUID != agent.Metadata.UID || len(agent.Metadata.DeletionTimestamp) > 0 && string(agent.Metadata.DeletionTimestamp) != "null" {
 		return "", errors.New("existing Agent UID is not acknowledged or is deleting; no adoption")
@@ -107,7 +114,8 @@ func (a *App) applySessionsAgent(ctx context.Context, p *PreparedReleaseLift, di
 	result.Summary = p.Summary()
 	result.Resources = []ReleaseLiftOutcome{{ReleaseLiftResource: p.summary.Resources[0], Outcome: "not-attempted"}}
 	defer func() {
-		if err != nil {
+		_, occupied := err.(*sessionsAgentOccupied)
+		if err != nil && !occupied {
 			err = errors.Join(ErrReleaseLiftApply, err)
 		}
 	}()
@@ -137,8 +145,9 @@ func (a *App) applySessionsAgent(ctx context.Context, p *PreparedReleaseLift, di
 		result.State = "pending"
 		if agentsessions.AgentRegistered(*live) {
 			result.State = "registered"
+			return result, nil
 		}
-		return result, nil
+		return result, ErrDestinationStatusPending
 	}
 	if err = worker.guardOrkaMutation(ctx, CreateOptions{Name: row.Name, Namespace: target.Namespace}, "create immutable Agent "+target.Namespace+"/"+row.Name); err != nil {
 		return result, err

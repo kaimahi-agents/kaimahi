@@ -60,7 +60,7 @@ It reads no Secret contents or metadata, Nodes, controller proxies or auth probe
 | Reported state | Meaning |
 |---|---|
 | `recorded` | A valid, applicable unsigned Deploy attempt observation is present (v1 create or Orka v2 mutation). |
-| `provenance not recorded` | Native suite ownership is valid, but this object has no Deploy annotation. This is normal for older objects or no-write reuse; it does not prove the object's age. |
+| `provenance not recorded` | For Orka/kagent, native suite ownership is valid but this object has no Deploy annotation. For AgentSessions, the contract carries no kmx ownership/evaluation proof. This is normal for older objects or no-write reuse; it does not prove the object's age. |
 | `unknown` | Ownership or provenance is incomplete, malformed, conflicting, unsupported, changed during inspection, or cannot be observed safely. |
 | `not kmx-owned` | No native suite or legacy reservation markers are present. A copied Deploy annotation alone cannot change this classification. |
 

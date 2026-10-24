@@ -999,7 +999,7 @@ the Agent document. Apply retains the existing scoped context consent.
 The spec is immutable. The name defaults to the packaged member; use
 `--name greeter-v2` for changed inputs. An existing exact spec with controller
 acknowledgment of its current UID is a GET-only no-op that reports its existing
-status without waiting. Different inputs under an occupied name refuse and name
+status without waiting (exit 2 while not registered, matching status). Different inputs under an occupied name refuse and name
 the current package reference. There is no update, adoption, retry or cleanup path.
 A failed create response is unknown, not permission to resend. Acknowledged partial
 creates retain their UID in command output.

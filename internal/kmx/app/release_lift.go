@@ -116,6 +116,9 @@ func (a *App) PrepareReleaseLift(ctx context.Context, opt ReleaseLiftOptions) (p
 		return prepared.lift, nil
 	}
 	defer func() {
+		if _, occupied := err.(*sessionsAgentOccupied); occupied {
+			return
+		}
 		if err != nil {
 			cause := ctx.Err()
 			if cause == nil {

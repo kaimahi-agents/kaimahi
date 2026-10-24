@@ -9,7 +9,7 @@ import (
 )
 
 func TestDestinationStatusSessionsExactRegistration(t *testing.T) {
-	for _, scenario := range []string{"registered", "pending", "stale-uid", "stale-generation", "served-mismatch", "deleting", "replacement", "absent-api"} {
+	for _, scenario := range []string{"registered", "pending", "stale-uid", "stale-generation", "served-mismatch", "deleting", "replacement", "absent-api", "unreadable-discovery"} {
 		t.Run(scenario, func(t *testing.T) {
 			a, responses, out, _, paths := statusTestFixture(t)
 			api := "/apis/" + agentsessions.AgentAPIVersion
@@ -40,10 +40,24 @@ func TestDestinationStatusSessionsExactRegistration(t *testing.T) {
 			if scenario == "absent-api" {
 				responses["/apis"] = `{"apiVersion":"v1","kind":"APIGroupList","groups":[]}`
 			}
+			if scenario == "unreadable-discovery" {
+				responses["/apis"] = "ERROR: denied"
+			}
 			err := a.DestinationStatus(DestinationStatusOptions{Destination: "prod", Namespace: statusTestNS, ExpectedRuntime: "agentsessions", Output: "json"})
 			var report destinationStatusReport
 			if json.Unmarshal(out.Bytes(), &report) != nil {
 				t.Fatalf("no report: %s %v", out, err)
+			}
+			if scenario == "unreadable-discovery" {
+				if err == nil || report.Complete {
+					t.Fatal("unreadable discovery became success")
+				}
+				for _, runtime := range report.Runtimes {
+					if runtime.Runtime == "agentsessions" && runtime.State != "unknown" {
+						t.Fatalf("missing unknown state %+v", runtime)
+					}
+				}
+				return
 			}
 			if scenario == "absent-api" {
 				if err == nil || report.Complete {

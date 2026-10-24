@@ -87,7 +87,7 @@ func TestSessionsAgentCreateAndNoop(t *testing.T) {
 	raw, _ = json.Marshal(live)
 	os.WriteFile(filepath.Join(dir, "agent.json"), raw, 0600)
 	_, err = a.PrepareReleaseLift(t.Context(), opt)
-	if err == nil || !strings.Contains(err.Error(), s.SuiteDigest) || !strings.Contains(err.Error(), "--name") {
+	if err == nil || !strings.Contains(err.Error(), s.SuiteDigest) || !strings.Contains(err.Error(), "--name") || strings.Contains(err.Error(), "\n") || !errors.Is(err, ErrReleaseLift) || !errors.Is(err, ErrReleaseLiftApply) {
 		t.Fatalf("occupied refusal: %v", err)
 	}
 	opt.AgentName = "greeter-v2"
@@ -223,8 +223,70 @@ func TestSessionsAgentPendingNoopDoesNotWaitOrWrite(t *testing.T) {
 	result, err := a.ApplyReleaseLift(t.Context(), p, p.Summary().PlanDigest)
 	after, _ := os.ReadFile(filepath.Join(dir, "calls"))
 	delta := strings.TrimPrefix(string(after), string(before))
-	if err != nil || result.State != "pending" || result.Resources[0].Outcome != "unchanged" || strings.Count(delta, `"get"`) != 3 || strings.Contains(delta, `"create"`) {
+	if !errors.Is(err, ErrDestinationStatusPending) || result.State != "pending" || result.Resources[0].Outcome != "unchanged" || strings.Count(delta, `"get"`) != 3 || strings.Contains(delta, `"create"`) {
 		t.Fatalf("pending no-op %+v %v %s", result, err, delta)
+	}
+}
+
+func TestSessionsAgentPlanApplyIdentityDrift(t *testing.T) {
+	for _, field := range []string{"uid", "generation"} {
+		t.Run(field, func(t *testing.T) {
+			a, opt, dir := sessionsAgentFixture(t)
+			p, err := a.PrepareReleaseLift(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = a.ApplyReleaseLift(t.Context(), p, p.Summary().PlanDigest); err != nil {
+				t.Fatal(err)
+			}
+			p, err = a.PrepareReleaseLift(t.Context(), opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := os.ReadFile(filepath.Join(dir, "agent.json"))
+			var doc map[string]any
+			json.Unmarshal(raw, &doc)
+			if field == "uid" {
+				doc["metadata"].(map[string]any)["uid"] = "replacement"
+				doc["status"].(map[string]any)["agentUID"] = "replacement"
+			} else {
+				doc["metadata"].(map[string]any)["generation"] = 2
+			}
+			raw, _ = json.Marshal(doc)
+			os.WriteFile(filepath.Join(dir, "agent.json"), raw, 0600)
+			result, err := a.ApplyReleaseLift(t.Context(), p, p.Summary().PlanDigest)
+			if err == nil || !strings.Contains(err.Error(), "changed since plan") || result.Resources[0].Outcome != "not-attempted" {
+				t.Fatalf("drift outcome %+v %v", result, err)
+			}
+		})
+	}
+}
+
+func TestSessionsAgentAppearsDuringConsent(t *testing.T) {
+	a, opt, dir := sessionsAgentFixture(t)
+	p, err := a.PrepareReleaseLift(t.Context(), opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := a.captureCommand
+	a.captureCommand = func(ctx context.Context, cmd *exec.Cmd) error {
+		err := original(ctx, cmd)
+		if err == nil && strings.Contains(strings.Join(cmd.Args, " "), "config view") {
+			doc := p.Summary().SessionsAgent
+			meta := doc["metadata"].(map[string]any)
+			meta["uid"] = "other-writer"
+			meta["generation"] = 1
+			raw, _ := json.Marshal(doc)
+			if e := os.WriteFile(filepath.Join(dir, "agent.json"), raw, 0600); e != nil {
+				return e
+			}
+		}
+		return err
+	}
+	result, err := a.ApplyReleaseLift(t.Context(), p, p.Summary().PlanDigest)
+	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
+	if err == nil || !strings.Contains(err.Error(), "no longer absent") || result.State != "not-applied" || strings.Contains(string(calls), `"create"`) {
+		t.Fatalf("adopted racing object %+v %v calls=%s", result, err, calls)
 	}
 }
 

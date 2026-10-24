@@ -46,7 +46,7 @@ func (o *destinationStatusObserver) namespaceUID(name string) string {
 	return uid
 }
 func (o *destinationStatusObserver) discover() map[string]string {
-	states := map[string]string{"orka": "unknown", "kagent": "unknown"}
+	states := map[string]string{"orka": "unknown", "kagent": "unknown", "agentsessions": "unknown"}
 	o.collections = map[string]bool{}
 	var discovery map[string]any
 	if !o.get("/apis", &discovery) || discovery["apiVersion"] != "v1" || discovery["kind"] != "APIGroupList" {
