@@ -310,7 +310,10 @@ class ProcessTests(unittest.TestCase):
     def test_relocated_bundle_runs_real_rooted_fail_fix_loop(self):
         # A wrong bundled command/root/schema or fixture-only result breaks this loop.
         with tempfile.TemporaryDirectory(prefix="plugin integration ") as temp:
-            base = Path(temp)
+            # macOS exposes /var as an alias for /private/var. Production
+            # private-state walks reject symlink ancestors, so fixtures use the
+            # resolved temporary root just like the Go App harness.
+            base = Path(temp).resolve()
             root = base / "selected repository"
             root.mkdir()
             output = base / "built plugin"

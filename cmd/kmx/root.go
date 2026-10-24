@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 
@@ -33,6 +34,7 @@ type dependencies struct {
 	newAgentKitBuilder func(agentkitbuilder.Options) kmxsuite.SandboxBuilder
 	discoverModels     func(context.Context) []modelaccess.Report
 	newCopilot         func() copilotAccess
+	goos               string
 }
 
 func productionDependencies() dependencies {
@@ -40,6 +42,7 @@ func productionDependencies() dependencies {
 		fileRunner: app.NewLocalFileRunner(),
 		stdin:      os.Stdin, stdout: os.Stdout, stderr: os.Stderr,
 		executable: invocationExecutable(os.Args[0]),
+		goos:       runtime.GOOS,
 		loadConfig: config.LoadWithOverrides, newApp: app.New, buildInfo: debug.ReadBuildInfo,
 		newAgentKitBuilder: func(options agentkitbuilder.Options) kmxsuite.SandboxBuilder {
 			return agentkitbuilder.New(options)
@@ -222,6 +225,7 @@ func newRootCommand(state *commandState) *cobra.Command {
 		newSuiteCommand(state), newSuitePushCommand(state, true), newTargetsCommand(state), newRunProfileCommand(state),
 		retiredCommand("quickstart-wizard", "kmx quickstart --interactive"),
 	)
+	installPlatformGate(root, state)
 	return root
 }
 

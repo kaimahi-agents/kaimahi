@@ -39,6 +39,19 @@ func (d *Directory) Stat() (fs.FileInfo, error) {
 	return info, wrapAccess("stat directory", err)
 }
 
+// ReadDir reads entries from the retained directory handle. It never reopens
+// the directory pathname. Callers must use a fresh handle for a fresh scan.
+func (d *Directory) ReadDir(n int) ([]fs.DirEntry, error) {
+	if d == nil || d.file == nil {
+		return nil, wrapAccess("read directory", unsafeCause("directory handle is absent"))
+	}
+	entries, err := d.file.ReadDir(n)
+	if err == io.EOF {
+		err = nil
+	}
+	return entries, wrapAccess("read directory", err)
+}
+
 // File is an existing checked regular file opened for reading only. It
 // deliberately exposes no raw descriptor or mutation methods.
 type File struct{ file *os.File }
@@ -87,6 +100,14 @@ func (f *File) ReadAt(p []byte, offset int64) (int, error) {
 type PrivateFile struct {
 	file     *os.File
 	identity string
+}
+
+func (f *PrivateFile) Read(p []byte) (int, error) {
+	if f == nil || f.file == nil {
+		return 0, wrapAccess("read private file", unsafeCause("private file handle is absent"))
+	}
+	n, err := f.file.Read(p)
+	return n, wrapReadError("read private file", err)
 }
 
 func (f *PrivateFile) fileaccessObject() *os.File {

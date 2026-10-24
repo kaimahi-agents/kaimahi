@@ -29,9 +29,10 @@ never switches protocols. Responses requests remain nonstreaming with
 and translated completion, so joined output fragments cannot bypass the check.
 
 Status: the hermetic tests (fake model, an in-process HTTP endpoint and the
-judge) run with the root Go tests. Native Windows execution has not been run:
-the package only cross-compiles (`GOOS=windows`). No run against a real
-compatible model is recorded yet. To record one, a human runs:
+judge) run with the root Go tests. Native Windows amd64 package tests exercise
+the fake model, replay, private journal family and interrupted clear on local
+NTFS. This is not execution of the guarded Windows CLI or native arm64. No run
+against a real compatible model is recorded yet. To record one, a human runs:
 
 ```sh
 KMX_LOCAL_PREVIEW_LIVE_BASE_URL=http://127.0.0.1:11434/v1 \
@@ -262,17 +263,16 @@ sends; a valid split verdict stays unknown.
   `%LOCALAPPDATA%\kmx` on Windows.
   The journal is never stored in a checkout.
 - **Windows:** `%LOCALAPPDATA%` is machine-local and does not roam with a domain
-  profile. Only private state-root creation and lookup are qualified in the
-  current Windows foundation; local-preview storage remains behind the guarded
-  CLI until its later integration phase under
-  [#578](https://github.com/kaimahi-agents/kaimahi/issues/578).
+  profile. Native package tests qualify private state and local-preview storage
+  on local NTFS. The installed Windows CLI remains guarded until executable
+  qualification under [#578](https://github.com/kaimahi-agents/kaimahi/issues/578).
 - Each preview run is one SQLite file named `<UTC time>-<random>.db` (the time
   has nanosecond precision, so names sort in creation order), with its
   `-wal`/`-shm` companions. While the run executes it holds an OS lock on a
-  `<run>.lock` file, removed when the run finishes. The directory is created
-  owner-only (`0700`). A directory with group or other permission bits is
-  refused, not changed. On Windows, privacy relies on the user profile's
-  access control lists.
+  `<run>.lock` file, removed when the run finishes. The directory and known
+  SQLite family are private from first creation (`0700`/`0600` on Unix; protected
+  current-user-only DACLs on Windows). Existing broader objects are refused,
+  never repaired.
 - **Retention:** the journal stores the instructions, each input, the
   model identity, each answer, judge sample payloads and responses, and the
   terminal or error records **in cleartext**. It never stores credentials. kmx keeps the newest 20 runs and
@@ -282,9 +282,12 @@ sends; a valid split verdict stays unknown.
   runs until the next run starts or the journals are cleared.
 - **Clearing:** `localpreview.Clear(dir, runID)` deletes one run, and
   `Clear(dir, "")` deletes all finished runs plus unlocked `<run>.lock` files
-  whose journal is missing. A run that is still executing is kept and
-  reported as a refusal. Only files named like preview journals and run locks
-  are removed. Deleting the directory also clears everything.
+  whose journal is missing. A run that is still executing is kept and reported
+  as a refusal. Removal rechecks each private file's physical identity and
+  flushes the retained directory. A partial known journal family left by an
+  interrupted clear remains discoverable and can be recovered explicitly;
+  unrelated entries are never removed. A post-removal flush error reports
+  uncertainty rather than claiming absence.
 
 ## Replay and inspection
 
@@ -296,7 +299,8 @@ refused and counted. An inspection
 is labeled "local preview journal replay; not a test result". It has no
 verdicts, and incomplete, failed or canceled turns stay `incomplete`.
 Inspection never sends to a model, never re-evaluates assertions and never
-creates a journal: the journal opens read-write only if it already exists.
+creates the main journal: it opens read-write only if that database already
+exists. SQLite's known private companion files may be materialized before open.
 
 ## Executor seam
 

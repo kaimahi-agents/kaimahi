@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 // harnessName is the deployed built-in chat harness contract. The embedded
@@ -51,6 +52,11 @@ func openHost(path, harnessModel string, model controller.ModelFunc) (*host, err
 }
 
 func openPreviewHost(path, name string, harness api.Harness, model controller.ModelFunc, tool controller.ToolFunc) (*host, error) {
+	cleanup, err := prepareSQLiteFamily(path)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 	store, err := sqlitelog.Open(journalDSN(path))
 	if err != nil {
 		return nil, refuse(RefusedJournal, "the preview journal could not be opened", "check the kmx state directory is writable and private")
@@ -86,6 +92,35 @@ func openPreviewHost(path, name string, harness api.Harness, model controller.Mo
 		return nil, refuse(RefusedJournal, "the embedded Sessions client could not start", "retry; no model request was sent")
 	}
 	return h, nil
+}
+
+func prepareSQLiteFamily(path string) (func(), error) {
+	directory, err := fileaccess.OpenPrivateDirectory(context.Background(), filepath.Dir(path))
+	if err != nil {
+		return func() {}, refuse(RefusedJournal, "the preview journal directory is unavailable or unsafe", "clear the run")
+	}
+	base := filepath.Base(path)
+	main, err := fileaccess.OpenPrivateFileAt(context.Background(), directory, base)
+	if err != nil {
+		_ = directory.Close()
+		return func() {}, refuse(RefusedJournal, "the selected local preview run is not retained", "list runs and select a retained one")
+	}
+	if err := main.Close(); err != nil {
+		_ = directory.Close()
+		return func() {}, refuse(RefusedJournal, "the preview journal family is unavailable or unsafe", "clear the run")
+	}
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		file, openErr := fileaccess.EnsurePrivateFileAt(context.Background(), directory, base+suffix)
+		if openErr != nil {
+			_ = directory.Close()
+			return func() {}, refuse(RefusedJournal, "the preview journal family is unavailable or unsafe", "clear the run")
+		}
+		if closeErr := file.Close(); closeErr != nil {
+			_ = directory.Close()
+			return func() {}, refuse(RefusedJournal, "the preview journal family is unavailable or unsafe", "clear the run")
+		}
+	}
+	return func() { _ = directory.Close() }, nil
 }
 
 // journalDSN builds an escaped SQLite file URI so paths with spaces, '#', '%'

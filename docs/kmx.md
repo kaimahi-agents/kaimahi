@@ -528,7 +528,18 @@ Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
 
 The canvas Model picker is session-only: override → authored Model.Preferred →
-`gpt-5.6-terra`. Selecting a model never edits the file or its saved-source history.
+known chat model → `gpt-5.6-terra`. Selecting a model never edits the file or its
+saved-source history. A following default uses the chat model read when Run/Test
+starts and freezes it through any save and execution; the displayed observation
+can lag a chat change until the next idle refresh. Explicit choices still win.
+The optional joined-session SDK `model.getCurrent()` getter
+supplies the exact chat `modelId`; unavailable getters use the established default.
+Transient getter failures or metadata deadlines retain the last valid observation,
+while successful
+unknown/auto/invalid responses clear it. A known ID is sent exactly even if absent
+from the catalog; execution refusal never silently substitutes another model.
+Canvas tab titles use the agent name and folder at instance creation;
+there is no live host tab-title update.
 Changing the effective model makes old results stale; another run must confirm the
 selected model, including after an A → B → A switch. Missing Model is valid for
 canonical authoring; a present blank/invalid Model remains invalid. Run/Test v1
@@ -538,8 +549,16 @@ An unknown catalog model fails in one line listing the available choices.
 Unbound/default-Copilot servers expose read-only `kmx://models` with
 `schemaVersion: 1`, `kind: "kmx.models"`, `defaultModel` and `models` (exact IDs).
 Discovery is lazy, adds no tool and starts neither sign-in nor inference. The
-picker loads it on focus; discovery failure leaves editing and fake/offline
-execution available. Explicit non-Copilot and legacy bound routes stay unchanged.
+picker loads and caches it when opened, not on startup or focus. Familiar model
+IDs have presentation-only display names and family groups; unknown IDs stay
+literal. The button distinguishes this canvas, the agent file and the default,
+and the menu marks the known current chat model. Selecting any model ID pins it,
+even when it equals the current default. The separate following action returns to
+the agent-file/default choice without adding a duplicate model entry.
+Discovery failure leaves editing
+and fake/offline execution available. Explicit non-Copilot and legacy provider,
+endpoint and credential bindings stay unchanged; model selection does not switch
+those bindings.
 
 Unbound `kmx mcp` uses Copilot for the effective non-fake model when no startup
 route is selected. Effective `fake` remains offline. Explicit trusted `--provider`

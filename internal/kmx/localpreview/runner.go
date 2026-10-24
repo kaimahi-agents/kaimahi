@@ -264,6 +264,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	defer func() {
 		if closeErr := executor.Close(); closeErr != nil {
 			out.State = agentpreview.Failed
+			out.Journal = ""
 			err = errors.Join(err, fmt.Errorf("%w: %w", agentpreview.ErrJournalFailed, closeErr))
 		}
 		if ctx.Err() != nil {

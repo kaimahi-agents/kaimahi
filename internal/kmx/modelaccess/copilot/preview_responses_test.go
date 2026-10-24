@@ -255,7 +255,11 @@ func TestPreviewResponsesReplayDoesNotResolveCredentials(t *testing.T) {
 		}
 		return []byte(canary), nil
 	}
-	dir := filepath.Join(t.TempDir(), "local-preview")
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "local-preview")
 	runner := localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: func() (string, error) { return dir, nil }, Access: func(ctx context.Context, routes []modelaccess.Route) (modelaccess.PreviewAccess, error) {
 		factories.Add(1)
 		if offline {

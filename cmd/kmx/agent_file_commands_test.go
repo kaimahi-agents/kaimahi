@@ -7,10 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -54,12 +52,25 @@ func (f *cliPreviewFake) Run(ctx context.Context, r agentpreview.Request) (agent
 }
 func cliPreviewFile(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "agent file.agent.md")
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "agent file.agent.md")
 	s := "# Greeter\n## Identity\n- **ID:** greeter\n- **Purpose:** Greet.\n## Accountable Responsibilities\nGreet the input.\n## Non-Responsibilities\nNo tools.\n## Collaboration and Review Authority\nNone.\n## Model\n- **Preferred:** fake\n## Examples\n```yaml\nexamples:\n  - id: greeting\n    input: PRIVATE INPUT\n    assertions:\n      - id: text\n        type: contains\n        value: PRIVATE OPERAND\n```\n"
 	if err := os.WriteFile(path, []byte(s), 0600); err != nil {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func privateCommandHome(t *testing.T) string {
+	t.Helper()
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(base, "state")
 }
 func TestFileCommandsAgainstRunnerInterface(t *testing.T) {
 	for _, op := range []string{"run", "test"} {
@@ -247,7 +258,7 @@ func TestFileCommandRequiresWiredRunner(t *testing.T) {
 	}
 }
 func TestFileCommandJournaledPreviewDemo(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", privateCommandHome(t))
 	path := cliPreviewFile(t)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -288,7 +299,7 @@ func TestFilePreviewOutputWriteFailure(t *testing.T) {
 }
 
 func TestFilePreviewVerboseStderrOnly(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", privateCommandHome(t))
 	for _, op := range []string{"run", "test"} {
 		for _, verbose := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/%v", op, verbose), func(t *testing.T) {
@@ -347,45 +358,6 @@ func TestFilePreviewVerboseWriteFailure(t *testing.T) {
 	err := execute([]string{"test", cliPreviewFile(t), "--verbose"}, deps)
 	if err == nil || !strings.Contains(err.Error(), "cannot write local preview diagnostics") || out.Len() != 0 {
 		t.Fatalf("diagnostic failure did not refuse: %v, stdout=%s", err, out.String())
-	}
-}
-
-func TestFilePromptOpenPipeInterrupt(t *testing.T) {
-	const helper = "KMX_TEST_PROMPT_INTERRUPT"
-	if os.Getenv(helper) == "1" {
-		var out, diag bytes.Buffer
-		deps, _ := testDependencies(&out, &diag)
-		// Parent keeps this inherited (blocking) stdin pipe open without EOF.
-		cmd := newAgentRunCommand(&commandState{deps: deps})
-		cmd.SetContext(context.Background())
-		if err := cmd.Flags().Set("prompt-file", "-"); err != nil {
-			t.Fatal(err)
-		}
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
-		}()
-		_ = runFileCommand(cmd, &commandState{deps: deps}, "unread.agent.md", fileCommandOptions{Output: "json"}, "", "-")
-		t.Fatal("open-pipe intake returned before interrupt")
-	}
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reader.Close()
-	defer writer.Close()
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestFilePromptOpenPipeInterrupt$")
-	child.Env = append(os.Environ(), helper+"=1")
-	child.Stdin = reader
-	output, err := child.CombinedOutput()
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.Sys().(syscall.WaitStatus).Signal() != syscall.SIGINT {
-		t.Fatalf("Ctrl-C swallowed during open-pipe intake: %v / %s", err, output)
-	}
-	if len(output) != 0 {
-		t.Fatalf("intake invoked preview or printed output: %s", output)
 	}
 }
 

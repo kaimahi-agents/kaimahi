@@ -14,6 +14,7 @@ import (
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/app"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
 func testDependencies(out, errOut *bytes.Buffer) (dependencies, *int) {
@@ -61,6 +62,112 @@ func TestHelpVersionCompletionDoNotLoadConfig(t *testing.T) {
 		if *loads != 0 {
 			t.Fatalf("%v loaded operational config %d times", args, *loads)
 		}
+	}
+}
+
+func TestGuardedWindowsDeferredOperationsRefuseBeforeEffects(t *testing.T) {
+	for _, args := range [][]string{
+		{"run", "--agent", "live", "--prompt", "hello"},
+		{"context", "use", "--", "--help"},
+		{"test"},
+		{"create", "greeter"},
+		{"suite", "validate", "missing"},
+		{"model", "list"},
+		{"local", "up"},
+		{"deploy", "suite@sha256:" + strings.Repeat("a", 64)},
+		{"mcp", "--root", t.TempDir()},
+	} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			deps.goos = "windows"
+			home := filepath.Join(t.TempDir(), "state-must-not-exist")
+			t.Setenv("KMX_HOME", home)
+			err := execute(args, deps)
+			if !errors.Is(err, errWindowsOperationUnsupported) {
+				t.Fatalf("%v = %v", args, err)
+			}
+			if *loads != 0 || out.Len() != 0 || errOut.Len() != 0 {
+				t.Fatalf("%v had effects: loads=%d stdout=%q stderr=%q", args, *loads, out.String(), errOut.String())
+			}
+			if _, statErr := os.Lstat(home); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("%v created state: %v", args, statErr)
+			}
+		})
+	}
+}
+
+func TestGuardedWindowsAllowsPackageFreeFileCommands(t *testing.T) {
+	for _, verb := range []string{"run", "test"} {
+		t.Run(verb, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			deps.goos = "windows"
+			deps.fileRunner = &cliPreviewFake{verdict: runtime.EvaluationPass}
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			file := filepath.Join(root, "greeter.agent.md")
+			source, err := os.ReadFile(filepath.Join("..", "..", "internal", "kmx", "agentfile", "testdata", "greeter.agent.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, source, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err = execute([]string{verb, file}, deps)
+			if err != nil || *loads != 0 || out.Len() == 0 {
+				t.Fatalf("%s FILE = %v loads=%d stdout=%q stderr=%q", verb, err, *loads, out.String(), errOut.String())
+			}
+		})
+	}
+}
+
+func TestGuardedWindowsHelpAndCompatibilityNotices(t *testing.T) {
+	for _, args := range [][]string{{"create", "--help"}, {"eval"}, {"lift"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			deps, loads := testDependencies(&out, &errOut)
+			deps.goos = "windows"
+			err := execute(args, deps)
+			if args[len(args)-1] == "--help" {
+				if err != nil || out.Len() == 0 || errOut.Len() != 0 {
+					t.Fatalf("help = %v stdout=%q stderr=%q", err, out.String(), errOut.String())
+				}
+			} else {
+				if !errors.Is(err, errWindowsOperationUnsupported) || strings.Count(errOut.String(), "deprecated; use kmx") != 1 || out.Len() != 0 {
+					t.Fatalf("compatibility = %v stdout=%q stderr=%q", err, out.String(), errOut.String())
+				}
+			}
+			if *loads != 0 {
+				t.Fatalf("%v loaded config", args)
+			}
+		})
+	}
+}
+
+func TestGuardedWindowsCommandTreeIsExhaustivelyClassified(t *testing.T) {
+	var out, errOut bytes.Buffer
+	deps, loads := testDependencies(&out, &errOut)
+	deps.goos = "windows"
+	root := newRootCommand(&commandState{deps: deps})
+	allowed := map[string]bool{"version": true, "completion": true, "test explain": true, "eval explain": true}
+	var walk func(*cobra.Command)
+	walk = func(parent *cobra.Command) {
+		for _, cmd := range parent.Commands() {
+			path := strings.TrimPrefix(cmd.CommandPath(), "kmx ")
+			if !allowed[path] {
+				if err := cmd.Args(cmd, nil); !errors.Is(err, errWindowsOperationUnsupported) {
+					t.Errorf("%s is not guarded: %v", path, err)
+				}
+			}
+			walk(cmd)
+		}
+	}
+	walk(root)
+	if *loads != 0 || out.Len() != 0 {
+		t.Fatalf("classification had effects: loads=%d stdout=%q", *loads, out.String())
 	}
 }
 

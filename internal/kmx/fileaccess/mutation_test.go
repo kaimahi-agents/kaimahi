@@ -68,6 +68,35 @@ func TestPrivateFirstCreationAndExistingRefusal(t *testing.T) {
 	}
 }
 
+func TestRemovePrivateFileAtRequiresExactObservedObject(t *testing.T) {
+	path, directory := privateTestDirectory(t)
+	first, err := CreatePrivateFileAt(t.Context(), directory, "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := CreatePrivateFileAt(t.Context(), directory, "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if err := RemovePrivateFileAt(t.Context(), directory, "first", second); !errors.Is(err, ErrUnsafe) {
+		t.Fatalf("mismatched removal = %v, want unsafe", err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "first")); err != nil {
+		t.Fatalf("mismatched removal changed first: %v", err)
+	}
+	if err := RemovePrivateFileAt(t.Context(), directory, "first", first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(path, "first")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("exact removal left first: %v", err)
+	}
+	if err := RemovePrivateFileAt(t.Context(), directory, "first", first); !errors.Is(err, ErrMissing) {
+		t.Fatalf("missing removal = %v, want missing", err)
+	}
+}
+
 func TestPrivateCreationHonorsCancellationBeforeEffects(t *testing.T) {
 	path, directory := privateTestDirectory(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -93,14 +122,14 @@ func TestPrivateCreationHonorsCancellationBeforeEffects(t *testing.T) {
 func TestPublishPrivateExclusiveAndDurable(t *testing.T) {
 	path, directory := privateTestDirectory(t)
 	result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
-	if err != nil || !result.Visible {
+	if err != nil || !result.Visible || !result.VisibilityKnown {
 		t.Fatalf("PublishPrivate = %+v, %v", result, err)
 	}
 	data, err := os.ReadFile(filepath.Join(path, "result"))
 	if err != nil || string(data) != "complete" {
 		t.Fatalf("published bytes = %q, %v", data, err)
 	}
-	if result, err := PublishPrivate(t.Context(), directory, "result", []byte("replacement")); err == nil || result.Visible {
+	if result, err := PublishPrivate(t.Context(), directory, "result", []byte("replacement")); err == nil || result.Visible || !result.VisibilityKnown {
 		t.Fatalf("occupied publication = %+v, %v", result, err)
 	}
 	data, err = os.ReadFile(filepath.Join(path, "result"))
@@ -140,10 +169,10 @@ func TestPublishPrivateCompetingPublishersHaveOneWinner(t *testing.T) {
 		got := <-outcomes
 		if got.err == nil {
 			successes++
-			if !got.result.Visible {
+			if !got.result.Visible || !got.result.VisibilityKnown {
 				t.Fatal("successful publisher did not cross visibility")
 			}
-		} else if got.result.Visible {
+		} else if got.result.Visible || !got.result.VisibilityKnown {
 			t.Fatalf("losing publisher reported visibility: %v", got.err)
 		}
 	}
@@ -163,7 +192,7 @@ func TestPublishPrivateFaultBoundaries(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		result, err := PublishPrivate(ctx, directory, "result", []byte("complete"))
-		if !errors.Is(err, context.Canceled) || result.Visible {
+		if !errors.Is(err, context.Canceled) || result.Visible || !result.VisibilityKnown {
 			t.Fatalf("preflight cancellation = %+v, %v", result, err)
 		}
 		entries, readErr := os.ReadDir(path)
@@ -178,7 +207,7 @@ func TestPublishPrivateFaultBoundaries(t *testing.T) {
 		writePrivateBytes = func(*PrivateFile, []byte) error { return injected }
 		t.Cleanup(func() { writePrivateBytes = oldWrite })
 		result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
-		if err == nil || result.Visible {
+		if err == nil || result.Visible || !result.VisibilityKnown {
 			t.Fatalf("write failure = %+v, %v", result, err)
 		}
 		if _, statErr := os.Lstat(filepath.Join(path, "result")); !errors.Is(statErr, os.ErrNotExist) {
@@ -192,7 +221,7 @@ func TestPublishPrivateFaultBoundaries(t *testing.T) {
 		syncPrivateFile = func(*PrivateFile) error { return injected }
 		t.Cleanup(func() { syncPrivateFile = oldSync })
 		result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
-		if err == nil || result.Visible {
+		if err == nil || result.Visible || !result.VisibilityKnown {
 			t.Fatalf("file sync failure = %+v, %v", result, err)
 		}
 		if _, statErr := os.Lstat(filepath.Join(path, "result")); !errors.Is(statErr, os.ErrNotExist) {
@@ -206,7 +235,7 @@ func TestPublishPrivateFaultBoundaries(t *testing.T) {
 		linkPublishedEntry = func(context.Context, *Directory, string, string, string) (bool, error) { return false, injected }
 		t.Cleanup(func() { linkPublishedEntry = oldLink })
 		result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
-		if err == nil || result.Visible {
+		if err == nil || result.Visible || !result.VisibilityKnown {
 			t.Fatalf("link failure = %+v, %v", result, err)
 		}
 		if _, statErr := os.Lstat(filepath.Join(path, "result")); !errors.Is(statErr, os.ErrNotExist) {
@@ -220,7 +249,7 @@ func TestPublishPrivateFaultBoundaries(t *testing.T) {
 		afterPrivateLink = func() error { return injected }
 		t.Cleanup(func() { afterPrivateLink = oldAfter })
 		result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
-		if err == nil || !result.Visible {
+		if err == nil || !result.Visible || !result.VisibilityKnown {
 			t.Fatalf("post-effect link error = %+v, %v", result, err)
 		}
 		data, readErr := os.ReadFile(filepath.Join(path, "result"))
@@ -250,7 +279,7 @@ func TestPublishPrivateFaultBoundaries(t *testing.T) {
 			}
 		})
 		result, err := PublishPrivate(ctx, directory, "result", []byte("complete"))
-		if result.Visible || !errors.Is(err, ErrUnreadable) || errors.Is(err, context.Canceled) {
+		if result.Visible || !result.VisibilityKnown || !errors.Is(err, ErrUnreadable) || errors.Is(err, context.Canceled) {
 			t.Fatalf("cancellation plus cleanup failure = %+v, %v", result, err)
 		}
 	})
@@ -273,7 +302,7 @@ func TestPublishPrivateFaultBoundaries(t *testing.T) {
 			}
 		})
 		result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
-		if err == nil || !result.Visible {
+		if err == nil || !result.Visible || !result.VisibilityKnown {
 			t.Fatalf("retirement failure = %+v, %v", result, err)
 		}
 		data, readErr := os.ReadFile(filepath.Join(path, "result"))
@@ -304,7 +333,7 @@ func TestPublishPrivateFaultBoundaries(t *testing.T) {
 		syncPublishedDir = func(context.Context, *Directory) error { return injected }
 		t.Cleanup(func() { syncPublishedDir = oldSync })
 		result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
-		if err == nil || !result.Visible {
+		if err == nil || !result.Visible || !result.VisibilityKnown {
 			t.Fatalf("directory sync failure = %+v, %v", result, err)
 		}
 		var access *AccessError
@@ -330,7 +359,7 @@ func TestPublishPrivateFaultBoundaries(t *testing.T) {
 		}
 		t.Cleanup(func() { linkPublishedEntry = oldLink })
 		result, err := PublishPrivate(ctx, directory, "result", []byte("complete"))
-		if !errors.Is(err, context.Canceled) || !result.Visible {
+		if !errors.Is(err, context.Canceled) || !result.Visible || !result.VisibilityKnown {
 			t.Fatalf("post-link cancellation = %+v, %v", result, err)
 		}
 		data, readErr := os.ReadFile(filepath.Join(path, "result"))

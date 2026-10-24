@@ -3,7 +3,9 @@
 //
 // App coordinates consent, side effects and runtime-specific evidence.
 // Placement observations are distinct from evaluation proof; successful
-// placement alone must not be treated as proof of agent behavior.
+// placement alone must not be treated as proof of agent behavior. Retained
+// evaluation failures use the checked private filesystem on supported local
+// filesystems; visible-but-unconfirmed records remain diagnostics only.
 package app
 
 import (

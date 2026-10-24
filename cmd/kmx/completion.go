@@ -20,10 +20,16 @@ func staticCompletion(values []string) cobra.CompletionFunc {
 }
 
 func completeContexts(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if state, ok := cmd.Root().Annotations[platformAnnotation]; ok && state == "windows-guarded" {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	return filterCompletions(kubectlCompletion("config", "get-contexts", "-o", "name"), toComplete), cobra.ShellCompDirectiveNoFileComp
 }
 
 func completeLiveAgents(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if state, ok := cmd.Root().Annotations[platformAnnotation]; ok && state == "windows-guarded" {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

@@ -197,7 +197,7 @@ func TestWindowsLinkErrorAfterEffectReconcilesWithoutCallerContext(t *testing.T)
 	}
 	t.Cleanup(func() { setPrivateLinkInformation = oldSet })
 	result, err := PublishPrivate(ctx, directory, "result", []byte("complete"))
-	if err == nil || !result.Visible || errors.Is(err, context.Canceled) {
+	if err == nil || !result.Visible || !result.VisibilityKnown || errors.Is(err, context.Canceled) {
 		t.Fatalf("post-effect native link error = %+v, %v", result, err)
 	}
 	data, readErr := os.ReadFile(filepath.Join(path, "result"))
@@ -228,7 +228,7 @@ func TestWindowsLinkErrorObservationClosePreservesVisibility(t *testing.T) {
 		closeObservedFile = oldClose
 	})
 	result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
-	if err == nil || !result.Visible || !errors.Is(err, ErrUnreadable) {
+	if err == nil || !result.Visible || !result.VisibilityKnown || !errors.Is(err, ErrUnreadable) {
 		t.Fatalf("post-effect observation close = %+v, %v", result, err)
 	}
 	data, readErr := os.ReadFile(filepath.Join(path, "result"))

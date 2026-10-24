@@ -1,6 +1,7 @@
 // Package main implements kmx command parsing, help and presentation.
 // Cobra handles CLI syntax; command adapters connect user requests to
-// application operations.
+// application operations. The guarded Windows tree additionally classifies
+// deferred operations before their argument or operational hooks can run.
 package main
 
 import (

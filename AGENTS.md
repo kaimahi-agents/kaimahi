@@ -43,13 +43,14 @@ changes in the package's Go doc comment.
 - `internal/kmx/fileaccess` is a package-independent checked filesystem
   foundation: existing-object reads, security/identity inspection, private first
   creation, process-held locks and no-replace file/directory-flush publication.
-  Its handles stay opaque; it repairs/adopts nothing, retries no ambiguous effect
-  and remains unwired from operation adapters. `internal/kmx/config` alone uses
-  it for explicit creating/non-creating state-root resolution; ordinary
-  `StateDir` remains location-only. Native Windows package tests qualify these
-  local-NTFS primitives only, not the guarded CLI, native arm64 execution, an
-  operation, release artifact or user support. App/OCI/workspace adapters remain
-  inert until later phases.
+  Its handles stay opaque; it repairs/adopts nothing and retries no ambiguous
+  effect. Explicit state-root resolution, local-preview journal families and
+  retained evaluation diagnostics use it; ordinary `StateDir` remains
+  location-only. Publication errors distinguish positively observed visibility
+  from unresolved visibility; false plus error is never absence. Native Windows
+  package tests qualify those local-NTFS day-zero internals only, not the guarded
+  CLI, native arm64 execution, a release artifact or general user support.
+  OCI/workspace and other deferred operation adapters remain inert.
 
 - Follow the [command conventions](docs/command-conventions.md), the implemented
   interface in [docs/kmx.md](docs/kmx.md) and the
@@ -626,14 +627,14 @@ agent-file fields; Examples YAML comments never reach model or judge requests,
 journals or results. `llmJudge` reuses the native judge through
 `app.LocalPreviewJudge`, defaults to the agent route (fake judge for fake), and
 only explicit `JudgeEndpoint` overrides it. Journals keep content in cleartext,
-bounded to 20 runs at each start, owner-only, clearable by run or all;
-executing runs hold an OS lock and are never pruned or cleared (on Windows this
-rests on unverified share-mode behavior), and overlapping starts can leave
-extra finished runs until the next start or clear. Journals stay under
-`config.StateDir` on every OS (`%LOCALAPPDATA%` on Windows). Phase-3 state-root
-qualification does not wire local preview on Windows; that remains later
-integration work under
-[#578](https://github.com/kaimahi-agents/kaimahi/issues/578). The additive
+  bounded to 20 runs at each start, owner-only, clearable by run or all;
+  executing runs hold an OS lock and are never pruned or cleared, and overlapping
+  starts can leave extra finished runs until the next start or clear. Journal
+  directories and the known SQLite family are private-first; clear is
+  identity-bound, directory-flushed and rediscovers partial known families after
+  interruption without touching unrelated entries. Journals stay under
+  `config.StateDir` on every OS (`%LOCALAPPDATA%` on Windows). Native package
+  tests qualify local-NTFS storage, not the guarded Windows CLI. The additive
 `kmx-local-tools-v1` host-bound harness has a separate bounded
 converter and complete-invocation replay proof, never a relaxed suite/chat check.
 Its optional single no-args read is host-enforced; at most two agent model calls,

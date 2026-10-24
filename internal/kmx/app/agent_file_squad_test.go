@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -45,7 +46,12 @@ func TestNativeSquadPreviewFullInstructionsForRealRoute(t *testing.T) {
 	}
 }
 func TestNativeSquadPreviewJournaledFakeTask(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(base, "state")
+	t.Setenv("KMX_HOME", home)
 	d := nativePreviewFixture(t, "Hello")
 	a := &App{FileRunner: NewLocalFileRunner()}
 	got, err := a.PreviewSquadSnapshot(context.Background(), d, FilePreviewOptions{File: ".squad/agents/leader/charter.md", Operation: "test"})

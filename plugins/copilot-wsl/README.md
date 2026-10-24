@@ -33,15 +33,27 @@ it a full WSL path when the file is outside the current directory. The same
 server handles files in unrelated repositories.
 
 Choose a runtime model in the canvas: picker override → authored `Model.Preferred`
-→ `gpt-5.6-terra`. Model may be omitted; a picker choice never rewrites the agent
-file. Changing the model makes prior results stale until another run. Choices
-load on picker focus; catalog failure does not block editing or offline tests.
+→ known chat model → `gpt-5.6-terra`. Model may be omitted; a picker choice never
+rewrites the agent file. Changing the model makes prior results stale until
+another run. A following default reads the chat model when Run/Test starts and
+freezes it through save/execution; the displayed model can lag until idle refresh.
+Choices load when the menu opens and are cached; catalog failure
+does not block editing or offline tests. Familiar IDs get display names and
+family groups; unknown IDs remain literal and execution always uses the exact ID.
+Selecting a model pins it, including the current default; use the following action
+to return to the agent file or automatic default.
+Older hosts without the optional current-model getter use the established default.
+Transient getter failures or metadata deadlines retain the last valid model;
+explicit unknown/auto
+responses clear it.
 Unbound real-model runs use Copilot by default; effective `fake` is deterministic
 and offline.
 `kmx model list --provider copilot` lists the available model names.
 
-Edit prompts and tests in the canvas. Enter saves and tests; saved agent files
-remain ordinary Markdown. Tests send prompts and inputs to the selected model.
+Edit prompts and tests in the canvas. Enter saves and tests; Shift+Enter inserts
+one line break. Long prompts scroll inside their box, with the save/run footer
+outside the scroll area. Saved agent files remain ordinary Markdown. Tests send
+prompts and inputs to the selected model.
 If the host has no canvas renderer, the same kmx tools remain available in text.
 
 See the [agent-file guide](../../docs/agent-file.md) for authoring and checks,

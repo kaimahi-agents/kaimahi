@@ -101,7 +101,7 @@ func TestUnixCancellationAfterCreateRetiresOwnedObjects(t *testing.T) {
 		afterUnixPrivateFileCreate = cancel
 		t.Cleanup(func() { afterUnixPrivateFileCreate = oldAfter })
 		result, err := PublishPrivate(ctx, directory, "result", []byte("complete"))
-		if !errors.Is(err, context.Canceled) || result.Visible {
+		if !errors.Is(err, context.Canceled) || result.Visible || !result.VisibilityKnown {
 			t.Fatalf("cancel-after-stage-create = %+v, %v", result, err)
 		}
 		entries, readErr := os.ReadDir(path)
@@ -146,7 +146,20 @@ func TestUnixFailedLinkWithAbsentDestinationPreservesFailureClass(t *testing.T) 
 	}
 	t.Cleanup(func() { linkPublishedEntry = oldLink })
 	result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
-	if result.Visible || !errors.Is(err, ErrUnreadable) || errors.Is(err, ErrMissing) {
+	if result.Visible || !result.VisibilityKnown || !errors.Is(err, ErrUnreadable) || errors.Is(err, ErrMissing) {
 		t.Fatalf("absent failed link = %+v, %v", result, err)
+	}
+}
+
+func TestUnixFailedLinkWithUnreconciledDestinationIsUnknown(t *testing.T) {
+	_, directory := privateTestDirectory(t)
+	oldLink := linkPublishedEntry
+	linkPublishedEntry = func(context.Context, *Directory, string, string, string) (bool, error) {
+		return false, errors.Join(unix.ENOSPC, errPublicationVisibilityUnknown, unix.EIO)
+	}
+	t.Cleanup(func() { linkPublishedEntry = oldLink })
+	result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
+	if result.Visible || result.VisibilityKnown || !errors.Is(err, ErrUnreadable) {
+		t.Fatalf("unreconciled link = %+v, %v", result, err)
 	}
 }

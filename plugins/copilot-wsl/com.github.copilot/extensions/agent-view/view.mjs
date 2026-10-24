@@ -1,7 +1,7 @@
 // Agent canvas. Files and previews are accessed only through the
 // same session's existing kmx MCP resource and Edit/Run/Test operations.
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
-import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, preRouteRefusal } from "./authoring.mjs";
+import { instructionSections, replaceInstructions, replaceExamples, effectiveModel, preRouteRefusal, agentName, fileLocation } from "./authoring.mjs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 
@@ -172,6 +172,7 @@ export async function readView(session, rawPath) {
   const path = normalizePath(rawPath);
   const read = session?.rpc?.mcp?.resources?.read;
   if (typeof read !== "function") throw new ViewError("unavailable");
+  const chat = readChatModel(session);
   let response;
   try {
     response = await session.rpc.mcp.resources.read({ serverName: SERVER_NAME, uri: resourceUri(path) });
@@ -183,7 +184,31 @@ export async function readView(session, rawPath) {
   const body = contents[0].text;
   if (Buffer.byteLength(body, "utf8") > MAX_RESOURCE_BYTES) throw new ViewError("too-large");
   if (typeof body.isWellFormed === "function" && !body.isWellFormed()) invalid();
-  return parseView(body, path);
+  const view = parseView(body, path), chatModel = await chat;
+  return chatModel ? { ...view, chatModel } : view;
+}
+
+// Optional joined-session SDK metadata, not catalog/auth discovery. Keep the
+// last valid observation through throws; an explicit unknown clears it. The
+// newest completed observation wins, including explicit invalid/auto values.
+const chatModels = new WeakMap();
+async function readChatModel(session) {
+  let state = chatModels.get(session);
+  if (!state) { state = { generation: 0, resolved: 0 }; chatModels.set(session, state); }
+  const generation = ++state.generation;
+  let timer;
+  try {
+    // Optional metadata must not stall file reads or leave an action locked.
+    const current = typeof session.rpc?.model?.getCurrent === "function" ? await Promise.race([
+      session.rpc.model.getCurrent(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Model metadata timed out.")), 2000); }),
+    ]) : undefined;
+    if (generation > state.resolved) {
+      state.model = validModel(current?.modelId) ? current.modelId : undefined; state.resolved = generation;
+    }
+  } catch { /* Transient metadata failures keep the last known valid model. */ }
+  finally { clearTimeout(timer); }
+  return state.model;
 }
 
 const validModel = (model) => typeof model === "string" && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/.test(model) && model.toLowerCase() !== "auto" && !model.includes("://");
@@ -265,7 +290,8 @@ export function createActionHandler({ session, path }) {
       if (typeof input.expectedRevision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) throw new ViewError("invalid-action");
       if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");
       targetRevision = input.expectedRevision;
-      model = effectiveModel(view.model, input.model);
+      model = effectiveModel(view.model, input.model, view.chatModel);
+      const runtimeModel = input.model || (!view.model && view.chatModel ? model : undefined);
       const saving = input.operation === "save-and-test" || input.operation === "save-examples";
       // Intended drafts apply to the exact current source; an absent draft is a no-op.
       let content = view.authoring.source, examples = view.authoring.examples;
@@ -297,7 +323,7 @@ export function createActionHandler({ session, path }) {
       // Test/Run have no revision parameter. Check the actual result afterward,
       // not a fabricated precondition or a refreshed draft revision.
       tested = true;
-      await invoke(operation, { ...(input.model ? { model: input.model } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true });
+      await invoke(operation, { ...(runtimeModel ? { model: runtimeModel } : {}), ...(operation === "run" ? { input: input.input } : {}), ...(input.caseId !== undefined ? { caseId: input.caseId } : {}), showContent: input.showContent === true, showFailedContent: true });
       try { view = await readView(session, path); }
       catch { uncertain = true; throw new ViewError("outcome-unknown"); }
       if (view.file.revision !== targetRevision) throw new ViewError("revision_mismatch");
@@ -451,7 +477,7 @@ export function createViewController({ getSession }) {
   const instances = new Map(); // instanceId -> { path, ready }
   const stop = (entry) => entry.ready.then((b) => b.close(), () => {});
 
-  async function open(ctx) {
+  async function open(ctx, validatedView) {
     const input = ctx?.input;
     if (!isObj(input) || Object.keys(input).some((k) => k !== "path")) throw new ViewError("invalid-path");
     const path = normalizePath(input.path);
@@ -462,7 +488,9 @@ export function createViewController({ getSession }) {
     if (existing?.path !== path) {
       const session = getSession();
       if (!session) throw new ViewError("unavailable");
-      entry = { path, ready: startViewBridge({ session, path }) };
+      const title = (validatedView ? Promise.resolve(validatedView) : readView(session, path)).then(view => agentName(view.title), () => fileLocation(path).name);
+      entry = { path, ready: Promise.all([startViewBridge({ session, path }), title]).then(([bridge, name]) => ({ ...bridge,
+        title: name + (fileLocation(path).folder ? ` · ${fileLocation(path).folder}` : "") })) };
       instances.set(id, entry);
       entry.ready.catch(() => instances.get(id) === entry && instances.delete(id));
       if (existing) await stop(existing);
@@ -470,7 +498,7 @@ export function createViewController({ getSession }) {
     try {
       const bridge = await entry.ready;
       if (instances.get(id) !== entry) throw new ViewError("unavailable");
-      return { url: bridge.url, title: "Agent view", status: "Agent file" };
+      return { url: bridge.url, title: bridge.title, status: "Agent file" };
     } catch (e) {
       throw safeError(e);
     }

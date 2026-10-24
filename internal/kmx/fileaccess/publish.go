@@ -8,12 +8,17 @@ import (
 	"io"
 )
 
-// PublicationResult records whether an exclusive publication crossed its
-// visibility boundary. Visible can be true together with an error when complete
-// bytes are present but post-link persistence was not acknowledged.
+// PublicationResult records what an exclusive publication positively observed.
+// Visible can be true together with an error when complete bytes are present but
+// post-link persistence was not acknowledged. When err is non-nil, Visible false
+// means visibility was not observed; only VisibilityKnown distinguishes an
+// observed pre-visibility failure from unresolved link reconciliation.
 type PublicationResult struct {
-	Visible bool
+	Visible         bool
+	VisibilityKnown bool
 }
+
+var errPublicationVisibilityUnknown = errors.New("publication visibility is unknown")
 
 var (
 	publicationEntropy = rand.Read
@@ -37,17 +42,36 @@ var (
 // visibility point, then removes the owned stage and flushes the anchored
 // directory. It never replaces, retries, or removes a visible destination.
 func PublishPrivate(ctx context.Context, directory *Directory, name string, data []byte) (result PublicationResult, err error) {
+	return publishPrivate(ctx, directory, name, data, "")
+}
+
+// PublishPrivateNamed is PublishPrivate with one caller-owned staging name.
+// It is intended for protocols whose interrupted stage must be recognizable
+// and recoverable. The stage name is never replaced or adopted.
+func PublishPrivateNamed(ctx context.Context, directory *Directory, name string, data []byte, stage string) (result PublicationResult, err error) {
+	result.VisibilityKnown = true
+	if err := checkPrivateComponent(stage); err != nil {
+		return result, wrapAccess("publish private file", err)
+	}
+	return publishPrivate(ctx, directory, name, data, stage)
+}
+
+func publishPrivate(ctx context.Context, directory *Directory, name string, data []byte, namedStage string) (result PublicationResult, err error) {
+	result.VisibilityKnown = true
 	if err := checkContext(ctx); err != nil {
 		return result, err
 	}
 	if err := checkPrivateComponent(name); err != nil {
 		return result, wrapAccess("publish private file", err)
 	}
+	if namedStage != "" && namedStage == name {
+		return result, wrapAccess("publish private file", unsafeCause("publication stage and destination must differ"))
+	}
 	if err := CheckPrivate(ctx, directory, true); err != nil {
 		return result, wrapAccess("publish private file", err)
 	}
 
-	stage, file, identity, err := createPublicationStage(ctx, directory)
+	stage, file, identity, err := createPublicationStage(ctx, directory, namedStage)
 	if err != nil {
 		return result, wrapAccess("publish private file", err)
 	}
@@ -93,6 +117,9 @@ func PublishPrivate(ctx context.Context, directory *Directory, name string, data
 	}
 	visible, linkErr := linkPublishedEntry(ctx, directory, stage, name, identity)
 	result.Visible = visible
+	if errors.Is(linkErr, errPublicationVisibilityUnknown) {
+		result.VisibilityKnown = false
+	}
 	if linkErr == nil {
 		linkErr = afterPrivateLink()
 	}
@@ -119,6 +146,24 @@ func PublishPrivate(ctx context.Context, directory *Directory, name string, data
 	return result, nil
 }
 
+// OpenPrivateFileAt opens an existing protected owner-only regular file
+// immediately below directory. It creates, repairs, and truncates nothing.
+func OpenPrivateFileAt(ctx context.Context, directory *Directory, name string) (*PrivateFile, error) {
+	file, err := openExistingPrivateFileAt(ctx, directory, name)
+	return file, wrapAccess("open private file", err)
+}
+
+// RemovePrivateFileAt removes name only when it still identifies expected.
+// The caller must retain expected until this call returns. No missing entry is
+// treated as success, and an ambiguous removal is never retried.
+func RemovePrivateFileAt(ctx context.Context, directory *Directory, name string, expected Object) error {
+	identity, err := PhysicalIdentity(ctx, expected)
+	if err != nil {
+		return wrapAccess("remove private file", err)
+	}
+	return wrapAccess("remove private file", removePrivateEntry(ctx, directory, name, identity))
+}
+
 func wrapPublicationError(visible bool, err error) error {
 	if err == nil {
 		return nil
@@ -130,7 +175,18 @@ func wrapPublicationError(visible bool, err error) error {
 	return wrapAccess(operation, err)
 }
 
-func createPublicationStage(ctx context.Context, directory *Directory) (string, *PrivateFile, string, error) {
+func createPublicationStage(ctx context.Context, directory *Directory, named string) (string, *PrivateFile, string, error) {
+	if named != "" {
+		file, err := CreatePrivateFileAt(ctx, directory, named)
+		if err != nil {
+			return "", nil, "", err
+		}
+		if file.identity == "" {
+			closeErr := file.Close()
+			return "", nil, "", creationFailure(unreadableCause("created private file identity is unavailable"), closeErr)
+		}
+		return named, file, file.identity, nil
+	}
 	for range 16 {
 		raw := make([]byte, 16)
 		if _, err := publicationEntropy(raw); err != nil {
@@ -192,5 +248,5 @@ func observedPrivateEntry(ctx context.Context, directory *Directory, name, ident
 	if errors.Is(err, ErrMissing) {
 		return false, effectErr
 	}
-	return false, errors.Join(effectErr, err)
+	return false, errors.Join(effectErr, errPublicationVisibilityUnknown, err)
 }

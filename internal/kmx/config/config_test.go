@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 // Old plane environment and cache files must neither influence native config
@@ -115,6 +117,57 @@ func TestLocalPreviewJournalDirIsUnderStateDir(t *testing.T) {
 	}
 	if got, err := LocalAgentVersionDir(); err != nil || got != filepath.Join(home, "local-preview", "versions") {
 		t.Fatalf("source version dir = %q, %v", got, err)
+	}
+}
+
+func TestPrepareLocalPreviewJournalDirCreatesPrivateChain(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(root, "state")
+	t.Setenv("KMX_HOME", home)
+	want := filepath.Join(home, "local-preview", "journals")
+	if got, err := PrepareLocalPreviewJournalDir(); err != nil || got != want {
+		t.Fatalf("PrepareLocalPreviewJournalDir = %q, %v", got, err)
+	}
+	for _, path := range []string{home, filepath.Join(home, "local-preview"), want} {
+		opened, err := fileaccess.OpenPrivateDirectory(t.Context(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := fileaccess.CheckPrivate(t.Context(), opened, true); err != nil {
+			_ = opened.Close()
+			t.Fatal(err)
+		}
+		if err := opened.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestPrepareLocalPreviewJournalDirAcceptsSafeExistingStateAncestor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows requires a protected private state root")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(root, "state")
+	if err := os.Mkdir(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", home)
+	if _, err := PrepareLocalPreviewJournalDir(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(home)
+	if err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("safe state ancestor was repaired: %v, %v", info, err)
 	}
 }
 

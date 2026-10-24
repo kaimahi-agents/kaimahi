@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentfile"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
@@ -57,7 +58,11 @@ func greeter(t *testing.T, edits ...string) *agentfile.Agent {
 
 func journalDir(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(t.TempDir(), "local-preview")
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(root, "local-preview")
 }
 
 func testContext(t *testing.T) context.Context {
@@ -449,7 +454,11 @@ func TestJournalPathWithURISpecialCharacters(t *testing.T) {
 
 func testJournalPath(t *testing.T, component string) {
 	t.Helper()
-	dir := filepath.Join(t.TempDir(), component, "journals")
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, component, "journals")
 	ctx := testContext(t)
 	result, err := Test(ctx, greeter(t), Options{JournalDir: dir})
 	if err != nil || result.Verdict != agentruntime.EvaluationPass {
@@ -727,7 +736,7 @@ func TestClearKeepsLockOfRunThatLocksAsClearReleases(t *testing.T) {
 	}
 	// A run that started must keep its lock file, so its journal is never
 	// pruned or cleared while it executes.
-	defer run.lock.release()
+	defer func() { _ = run.lock.release() }()
 	if _, err := os.Lstat(run.lock.path); err != nil {
 		t.Fatalf("executing run lost its lock file: %v", err)
 	}
@@ -759,6 +768,39 @@ func TestInspectWithoutDeadlineAndNeverCreatesJournal(t *testing.T) {
 	}
 	if _, err := os.Lstat(missing); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("journal created: %v", err)
+	}
+}
+
+func TestJournalLockCleanupFailureVetoesCompletion(t *testing.T) {
+	dir := journalDir(t)
+	oldSync := syncJournalDirectory
+	calls := 0
+	syncJournalDirectory = func(ctx context.Context, directory *fileaccess.Directory) error {
+		calls++
+		if calls > 1 {
+			return io.ErrClosedPipe
+		}
+		return oldSync(ctx, directory)
+	}
+	t.Cleanup(func() { syncJournalDirectory = oldSync })
+	result, err := Test(testContext(t), greeter(t), Options{JournalDir: dir})
+	if err == nil || result.Verdict == agentruntime.EvaluationPass || calls < 2 {
+		t.Fatalf("lock cleanup failure = %+v, %v calls=%d", result, err, calls)
+	}
+}
+
+func TestClearDirectorySyncFailureReportsUncertainty(t *testing.T) {
+	dir := journalDir(t)
+	result, err := Test(testContext(t), greeter(t), Options{JournalDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSync := syncJournalDirectory
+	syncJournalDirectory = func(context.Context, *fileaccess.Directory) error { return io.ErrClosedPipe }
+	t.Cleanup(func() { syncJournalDirectory = oldSync })
+	err = Clear(dir, result.RunID)
+	if err == nil || !strings.Contains(err.Error(), "unconfirmed") {
+		t.Fatalf("clear sync failure = %v", err)
 	}
 }
 

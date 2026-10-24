@@ -18,12 +18,15 @@ import (
 )
 
 func TestLocalFileRunnerJournaledAppSnapshot(t *testing.T) {
-	home := t.TempDir()
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(base, "state")
 	t.Setenv("KMX_HOME", home)
 	runner := NewLocalFileRunner()
-	entries, err := os.ReadDir(home)
-	if err != nil || len(entries) != 0 {
-		t.Fatalf("constructor performed IO: %v / %v", entries, err)
+	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("constructor performed IO: %v", err)
 	}
 	opt := directOptions(t, "fake", true)
 	opt.Operation = "run"
@@ -60,7 +63,12 @@ func TestLocalFileRunnerJournaledAppSnapshot(t *testing.T) {
 func TestLocalFileRunnerNativeJudgeExactLocalEndpoint(t *testing.T) {
 	for _, path := range []string{"", "/v1", "/custom/"} {
 		t.Run(path, func(t *testing.T) {
-			t.Setenv("KMX_HOME", t.TempDir())
+			base, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			home := filepath.Join(base, "state")
+			t.Setenv("KMX_HOME", home)
 			sends, judgeSends := 0, 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				sends++
@@ -90,7 +98,12 @@ func TestLocalFileRunnerNativeJudgeExactLocalEndpoint(t *testing.T) {
 }
 
 func TestLocalFileRunnerJudgeProgressFailureStopsSamples(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(base, "state")
+	t.Setenv("KMX_HOME", home)
 	sends := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sends++
@@ -112,7 +125,12 @@ func TestLocalFileRunnerJudgeProgressFailureStopsSamples(t *testing.T) {
 }
 
 func TestLocalFileRunnerZeroExamplesAdHoc(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(base, "state")
+	t.Setenv("KMX_HOME", home)
 	opt := directOptions(t, "fake", false)
 	zeroPreviewFile(t, opt.File)
 	opt.Operation, opt.ShowContent = "run", true

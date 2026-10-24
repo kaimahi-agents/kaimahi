@@ -144,15 +144,23 @@ class AppShardWorkflowTests(unittest.TestCase):
         body = "\n".join(s.get("run", "") for s in job["steps"])
         self.assertIn("python3 scripts/ci/app-tests.py --shard", body)
         self.assertIn("--shards 4", body)
-        self.assertEqual(self.jobs["hygiene"]["needs"], ["app-tests", "windows-read-foundation"])
+        self.assertEqual(self.jobs["hygiene"]["needs"], ["app-tests", "windows-day-zero-foundation"])
         self.assertEqual(self.jobs["hygiene"]["if"], "always()")
-        windows = self.jobs["windows-read-foundation"]
+        windows = self.jobs["windows-day-zero-foundation"]
         windows_body = "\n".join(step.get("run", "") for step in windows["steps"])
         self.assertIn("./scripts/ci/windows-tests ./internal/kmx/fileaccess", windows_body)
         self.assertIn("TestWindowsStateAccessUsesLocalAppDataAndSeparatesCreation", windows_body)
         self.assertIn("./internal/kmx/config", windows_body)
+        self.assertIn("./internal/kmx/localpreview", windows_body)
+        self.assertIn("./internal/kmx/app", windows_body)
         self.assertIn("config-arm64.test.exe", windows_body)
-        self.assertIn("go vet ./internal/kmx/fileaccess ./internal/kmx/config", windows_body)
+        self.assertIn("localpreview-arm64.test.exe", windows_body)
+        self.assertIn("app-arm64.test.exe", windows_body)
+        self.assertIn("go vet ./internal/kmx/fileaccess ./internal/kmx/config ./internal/kmx/localpreview ./internal/kmx/app", windows_body)
+        self.assertIn("$previewTests", windows_body)
+        self.assertIn("$appTests", windows_body)
+        self.assertIn("--- SKIP:", windows_body)
+        self.assertEqual(windows_body.count("did not pass"), 2)
 
     def test_final_gate_rejects_every_non_success_and_wrong_dependency_set(self):
         steps = self.jobs["hygiene"]["steps"]
@@ -160,7 +168,7 @@ class AppShardWorkflowTests(unittest.TestCase):
         self.assertEqual(gate.get("name"), "Every required hygiene dependency succeeded")
         self.assertEqual(gate.get("if"), "always()")
         self.assertEqual(gate["env"]["SHARDS"], "${{ toJSON(needs) }}")
-        success = {"app-tests": {"result": "success"}, "windows-read-foundation": {"result": "success"}}
+        success = {"app-tests": {"result": "success"}, "windows-day-zero-foundation": {"result": "success"}}
         cases = [(success, True), ({}, False), ({"app-tests": {}}, False),
                  ({**success, "unexpected": {"result": "success"}}, False)]
         for dependency in success:

@@ -18,7 +18,6 @@ func TestUnsupportedPlatformAdaptersAreInert(t *testing.T) {
 		"destination_open_windows.go",
 		"../app/fspolicy_windows.go",
 		"../app/private_state_windows.go",
-		"../app/suite_failure_store_windows.go",
 		"../agentsuite/oras/extract_windows.go",
 		"../agentsuite/oras/layout_lock_windows.go",
 		"../agentsuite/oras/storage_windows.go",

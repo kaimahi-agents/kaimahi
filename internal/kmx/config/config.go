@@ -4,10 +4,13 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 // Product defaults and namespace hints.
@@ -250,6 +253,24 @@ func LocalAgentVersionDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "local-preview", "versions"), nil
+}
+
+// PrepareLocalPreviewJournalDir creates and validates the private state and
+// journal directory chain. Callers invoke it only after preview preflight.
+func PrepareLocalPreviewJournalDir() (string, error) {
+	dir, err := localPreviewStateRoot()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, "local-preview", "journals")
+	opened, err := fileaccess.EnsurePrivateDirectory(context.Background(), dir)
+	if err != nil {
+		return "", err
+	}
+	if err := opened.Close(); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 // ReadSelectedContext returns the context chosen by `kmx context use`, or "".

@@ -9,13 +9,21 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 func failureStoreFixture(t *testing.T) (string, suiteFailureDetail) {
 	t.Helper()
-	t.Setenv("KMX_HOME", filepath.Join(t.TempDir(), "state"))
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(base, "state")
+	t.Setenv("KMX_HOME", home)
 	root := t.TempDir()
 	frame, obs := failureDetailFixture("fictional answer")
 	d := *captureSuiteFailure(frame, obs, "fictional answer", nil, nil)
@@ -127,11 +135,9 @@ func TestSuiteFailureStorePublicationUncertainty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.rename = func(from, to string) error {
-		if err := s.root.Rename(from, to); err != nil {
-			return err
-		}
-		return s.root.Close()
+	s.publish = func(ctx context.Context, directory *fileaccess.Directory, name string, raw []byte, stage string) (fileaccess.PublicationResult, error) {
+		result, err := fileaccess.PublishPrivateNamed(ctx, directory, name, raw, stage)
+		return result, errors.Join(err, io.ErrClosedPipe)
 	}
 	id, err := s.save(t.Context(), d)
 	_ = s.Close() // The injected failure already closed the root handle.
@@ -146,6 +152,116 @@ func TestSuiteFailureStorePublicationUncertainty(t *testing.T) {
 	entries, err := fresh.scan()
 	if err != nil || len(entries) != 1 || entries[0].record.Detail.ID != id {
 		t.Fatal("published record lost", err)
+	}
+}
+
+func TestSuiteFailureStoreUnresolvedVisibilityKeepsDiagnosticID(t *testing.T) {
+	root, detail := failureStoreFixture(t)
+	store, err := openSuiteFailureStore(root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	store.publish = func(context.Context, *fileaccess.Directory, string, []byte, string) (fileaccess.PublicationResult, error) {
+		return fileaccess.PublicationResult{VisibilityKnown: false}, io.ErrUnexpectedEOF
+	}
+	id, err := store.save(t.Context(), detail)
+	if !suiteFailureID.MatchString(id) || !errors.Is(err, errSuiteFailureStore) {
+		t.Fatalf("unresolved publication lost identity: %q, %v", id, err)
+	}
+}
+
+func TestSuiteFailureStoreOwnPairVisibleUntilWholeClear(t *testing.T) {
+	root, d := failureStoreFixture(t)
+	id, err := saveSuiteFailure(t.Context(), root, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := openSuiteFailureStore(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := s.scan()
+	path := s.path
+	if closeErr := s.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if err != nil || len(entries) != 1 {
+		t.Fatal(entries, err)
+	}
+	if err := os.Link(filepath.Join(path, entries[0].name), filepath.Join(path, suiteFailurePendingName)); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := openSuiteFailureStore(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, scanErr := fresh.scan()
+	if closeErr := fresh.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if scanErr != nil || len(entries) != 1 || entries[0].record.Detail.ID != id {
+		t.Fatalf("own pair hid healthy final: %+v, %v", entries, scanErr)
+	}
+	if _, err := saveSuiteFailure(t.Context(), root, d); !errors.Is(err, errSuiteFailureStore) {
+		t.Fatalf("own pair did not block save: %v", err)
+	}
+	if n, err := clearSuiteFailures(t.Context(), root, id); err != nil || n != 1 {
+		t.Fatalf("targeted clear = %d, %v", n, err)
+	}
+	fresh, err = openSuiteFailureStore(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, pendingErr := fresh.pending()
+	_ = fresh.Close()
+	if pendingErr != nil || pending == nil {
+		t.Fatalf("targeted clear touched pending: %+v, %v", pending, pendingErr)
+	}
+	if n, err := clearSuiteFailures(t.Context(), root, ""); err != nil || n != 1 {
+		t.Fatalf("whole clear recovery = %d, %v", n, err)
+	}
+}
+
+func TestSuiteFailureStoreOwnPairRejectsAnotherHardLinkedRecord(t *testing.T) {
+	root, detail := failureStoreFixture(t)
+	first, err := saveSuiteFailure(t.Context(), root, detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := saveSuiteFailure(t.Context(), root, detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := openSuiteFailureStore(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.scan()
+	path := store.path
+	if closeErr := store.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if err != nil || len(entries) != 2 {
+		t.Fatal(entries, err)
+	}
+	byID := map[string]string{}
+	for _, entry := range entries {
+		byID[entry.record.Detail.ID] = entry.name
+	}
+	if err := os.Link(filepath.Join(path, byID[first]), filepath.Join(path, suiteFailurePendingName)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(filepath.Join(path, byID[second]), filepath.Join(t.TempDir(), "external")); err != nil {
+		t.Fatal(err)
+	}
+	store, err = openSuiteFailureStore(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err := store.scan(); !errors.Is(err, errSuiteFailureStore) {
+		t.Fatalf("independent hard link accepted beside own pair: %v", err)
 	}
 }
 
@@ -166,7 +282,9 @@ func TestSuiteFailureStoreCapacityWriteFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	s.writeFile = func(f *os.File, raw []byte) (int, error) { return f.Write(raw[:1]) }
+	s.publish = func(context.Context, *fileaccess.Directory, string, []byte, string) (fileaccess.PublicationResult, error) {
+		return fileaccess.PublicationResult{VisibilityKnown: true}, io.ErrShortWrite
+	}
 	if _, err := s.save(t.Context(), d); !errors.Is(err, errSuiteFailureStore) {
 		t.Fatal(err)
 	}
@@ -182,7 +300,7 @@ func TestSuiteFailureStoreCapacityWriteFailure(t *testing.T) {
 }
 
 func TestSuiteFailureStoreAtomicErrors(t *testing.T) {
-	for _, mode := range []string{"short-write", "close", "rename"} {
+	for _, mode := range []string{"pre-publication", "directory-sync"} {
 		t.Run(mode, func(t *testing.T) {
 			root, d := failureStoreFixture(t)
 			s, err := openSuiteFailureStore(root, true)
@@ -190,19 +308,22 @@ func TestSuiteFailureStoreAtomicErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer s.Close()
-			switch mode {
-			case "short-write":
-				s.writeFile = func(f *os.File, b []byte) (int, error) { return f.Write(b[:1]) }
-			case "close":
-				s.closeFile = func(f *os.File) error { _ = f.Close(); return io.ErrClosedPipe }
-			case "rename":
-				s.rename = func(string, string) error { return io.ErrUnexpectedEOF }
+			if mode == "directory-sync" {
+				s.syncDir = func(context.Context, *fileaccess.Directory) error { return io.ErrUnexpectedEOF }
+			} else {
+				s.publish = func(context.Context, *fileaccess.Directory, string, []byte, string) (fileaccess.PublicationResult, error) {
+					return fileaccess.PublicationResult{VisibilityKnown: true}, io.ErrUnexpectedEOF
+				}
 			}
 			if _, err := s.save(context.Background(), d); err == nil {
 				t.Fatal("fault accepted")
 			}
 			entries, err := s.scan()
-			if err != nil || len(entries) != 0 {
+			want := 0
+			if mode == "directory-sync" {
+				want = 1
+			}
+			if err != nil || len(entries) != want {
 				t.Fatal("partial publication or leftover stage", entries, err)
 			}
 		})
@@ -398,7 +519,7 @@ func TestSuiteFailureStorePrivacy(t *testing.T) {
 	if err != nil || len(entries) != 1 {
 		t.Fatal(err)
 	}
-	raw, err := s.root.ReadFile(entries[0].name)
+	raw, err := os.ReadFile(filepath.Join(s.path, entries[0].name))
 	if err != nil || bytes.Contains(raw, []byte("private-one")) {
 		t.Fatal("header content retained", err)
 	}
@@ -442,7 +563,7 @@ func TestSuiteFailureStoreRetention(t *testing.T) {
 		if _, err := readSuitePassingReceipt(context.Background(), filepath.Join(store.path, entry.name)); err == nil {
 			t.Fatal("failure record accepted as passing evidence")
 		}
-		info, err := store.root.Lstat(entry.name)
+		info, err := os.Lstat(filepath.Join(store.path, entry.name))
 		if err != nil || info.Mode().Perm() != 0600 || info.Size() > maxSuiteFailureRecordBytes {
 			t.Fatal("unsafe retained file", info, err)
 		}
@@ -453,5 +574,26 @@ func TestSuiteFailureStoreRetention(t *testing.T) {
 	info, err := os.Stat(store.path)
 	if err != nil || info.Mode().Perm() != 0700 {
 		t.Fatal("unsafe partition", err)
+	}
+}
+
+func TestSuiteFailureStoreAcceptsSafeUnixStateAncestor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows requires a protected private state root")
+	}
+	root, detail := failureStoreFixture(t)
+	home := os.Getenv("KMX_HOME")
+	if err := os.Mkdir(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saveSuiteFailure(t.Context(), root, detail); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(home)
+	if err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("safe state ancestor was repaired: %v, %v", info, err)
 	}
 }

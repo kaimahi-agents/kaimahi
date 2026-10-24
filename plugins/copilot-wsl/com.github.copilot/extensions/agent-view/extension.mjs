@@ -23,8 +23,8 @@ const canvas = createCanvas({
   },
   open: async (ctx) => {
     try {
-      await readOpenView(session, ctx.input);
-      return await controller.open(ctx);
+      const { view } = await readOpenView(session, ctx.input);
+      return await controller.open(ctx, view);
     } catch (e) {
       throw asCanvasError(e);
     }

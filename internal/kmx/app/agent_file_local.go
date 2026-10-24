@@ -30,7 +30,7 @@ func newLocalFileRunner(access func(context.Context, []modelaccess.Route) (model
 		}
 		return capability, err
 	}
-	return localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.LocalPreviewJournalDir, Judge: localFilePreviewJudge, JudgeReply: localFileJudgeReply, Access: checkedAccess, Tools: localtools.NewMCPHost})
+	return localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.PrepareLocalPreviewJournalDir, Judge: localFilePreviewJudge, JudgeReply: localFileJudgeReply, Access: checkedAccess, Tools: localtools.NewMCPHost})
 }
 
 // The App owns display normalization, while the provider alone knows the keys.

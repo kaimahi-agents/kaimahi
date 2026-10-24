@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/secretshapes"
 )
@@ -38,18 +38,19 @@ type suiteFailureRecord struct {
 	Detail        suiteFailureDetail `json:"detail"`
 }
 type suiteFailureEntry struct {
-	name   string
-	info   os.FileInfo
-	record suiteFailureRecord
+	name     string
+	identity string
+	info     os.FileInfo
+	links    uint64
+	record   suiteFailureRecord
 }
 type suiteFailureStore struct {
-	root      *os.Root
-	lock      *os.File
-	lockInfo  os.FileInfo
+	directory *fileaccess.Directory
+	lock      *fileaccess.PrivateFile
+	lockID    string
 	path      string
-	writeFile func(*os.File, []byte) (int, error)
-	closeFile func(*os.File) error
-	rename    func(string, string) error
+	publish   func(context.Context, *fileaccess.Directory, string, []byte, string) (fileaccess.PublicationResult, error)
+	syncDir   func(context.Context, *fileaccess.Directory) error
 }
 
 func (s *suiteFailureStore) Close() error {
@@ -58,9 +59,9 @@ func (s *suiteFailureStore) Close() error {
 		err = s.lock.Close()
 		s.lock = nil
 	}
-	if s.root != nil {
-		err = errors.Join(err, s.root.Close())
-		s.root = nil
+	if s.directory != nil {
+		err = errors.Join(err, s.directory.Close())
+		s.directory = nil
 	}
 	if err != nil {
 		return errSuiteFailureStore
@@ -68,18 +69,28 @@ func (s *suiteFailureStore) Close() error {
 	return nil
 }
 func (s *suiteFailureStore) unchanged() error {
-	if s.root == nil || s.lock == nil {
+	if s.directory == nil || s.lock == nil || s.lockID == "" {
 		return errSuiteFailureStore
 	}
-	fresh, _, parent, e := openSessionReferenceDirectory(filepath.Join(s.path, "lock"))
+	fresh, e := fileaccess.OpenPrivateDirectory(context.Background(), s.path)
 	if e != nil {
 		return errSuiteFailureStore
 	}
-	old, oldErr := s.root.Stat(".")
+	wantDir, oldErr := fileaccess.PhysicalIdentity(context.Background(), s.directory)
+	gotDir, freshErr := fileaccess.PhysicalIdentity(context.Background(), fresh)
 	closeErr := fresh.Close()
-	base, baseErr := os.Lstat(filepath.Dir(s.path))
-	lock, lockErr := s.root.Lstat("lock")
-	if oldErr != nil || closeErr != nil || baseErr != nil || !safeSuiteFailureDirectory(base) || !safeSuiteFailureDirectory(parent) || !os.SameFile(old, parent) || lockErr != nil || !safeSuiteFailureFile(lock) || lock.Size() != 0 || !os.SameFile(lock, s.lockInfo) {
+	lock, lockErr := fileaccess.OpenPrivateFileAt(context.Background(), s.directory, "lock")
+	if oldErr != nil || freshErr != nil || closeErr != nil || lockErr != nil {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		return errSuiteFailureStore
+	}
+	lockID, identityErr := fileaccess.PhysicalIdentity(context.Background(), lock)
+	info, statErr := lock.Stat()
+	links, linksErr := fileaccess.LinkCount(context.Background(), lock)
+	lockCloseErr := lock.Close()
+	if wantDir != gotDir || identityErr != nil || statErr != nil || linksErr != nil || lockCloseErr != nil || lockID != s.lockID || info.Size() != 0 || links != 1 {
 		return errSuiteFailureStore
 	}
 	return nil
@@ -88,26 +99,39 @@ func (s *suiteFailureStore) unchanged() error {
 // Pending bytes may be incomplete JSON. They are never read or displayed; only
 // explicit whole-workspace clearing may remove this validated private staging file.
 func (s *suiteFailureStore) pending() (*suiteFailureEntry, error) {
-	info, err := s.root.Lstat(suiteFailurePendingName)
-	if os.IsNotExist(err) {
+	file, err := fileaccess.OpenPrivateFileAt(context.Background(), s.directory, suiteFailurePendingName)
+	if errors.Is(err, fileaccess.ErrMissing) {
 		return nil, nil
 	}
-	if err != nil || !safeSuiteFailureFile(info) {
+	if err != nil {
 		return nil, errSuiteFailureStore
 	}
-	return &suiteFailureEntry{name: suiteFailurePendingName, info: info}, nil
+	info, statErr := file.Stat()
+	identity, identityErr := fileaccess.PhysicalIdentity(context.Background(), file)
+	links, linksErr := fileaccess.LinkCount(context.Background(), file)
+	closeErr := file.Close()
+	if statErr != nil || identityErr != nil || linksErr != nil || closeErr != nil || !info.Mode().IsRegular() || info.Size() > maxSuiteFailureRecordBytes || links < 1 || links > 2 {
+		return nil, errSuiteFailureStore
+	}
+	return &suiteFailureEntry{name: suiteFailurePendingName, identity: identity, info: info, links: links}, nil
 }
 
 func (s *suiteFailureStore) scan() ([]suiteFailureEntry, error) {
 	if s.unchanged() != nil {
 		return nil, errSuiteFailureStore
 	}
-	dir, e := s.root.Open(".")
+	scanDirectory, e := fileaccess.OpenPrivateDirectory(context.Background(), s.path)
 	if e != nil {
 		return nil, errSuiteFailureStore
 	}
-	files, readErr := dir.ReadDir(maxSuiteFailureRecords + 3)
-	closeErr := dir.Close()
+	wantDirectory, wantErr := fileaccess.PhysicalIdentity(context.Background(), s.directory)
+	gotDirectory, gotErr := fileaccess.PhysicalIdentity(context.Background(), scanDirectory)
+	if wantErr != nil || gotErr != nil || wantDirectory != gotDirectory {
+		_ = scanDirectory.Close()
+		return nil, errSuiteFailureStore
+	}
+	files, readErr := scanDirectory.ReadDir(maxSuiteFailureRecords + 3)
+	closeErr := scanDirectory.Close()
 	if readErr != nil && !errors.Is(readErr, io.EOF) || closeErr != nil || len(files) > maxSuiteFailureRecords+2 {
 		return nil, errSuiteFailureStore
 	}
@@ -129,32 +153,8 @@ func (s *suiteFailureStore) scan() ([]suiteFailureEntry, error) {
 		if match == nil {
 			return nil, errSuiteFailureStore
 		}
-		info, e := s.root.Lstat(name)
-		if e != nil || !safeSuiteFailureFile(info) {
-			return nil, errSuiteFailureStore
-		}
-		directory, e := s.root.Open(".")
-		if e != nil {
-			return nil, errSuiteFailureStore
-		}
-		file, e := openKagentFile(directory, name)
-		directoryErr := directory.Close()
-		if e != nil || directoryErr != nil {
-			if file != nil {
-				_ = file.Close()
-			}
-			return nil, errSuiteFailureStore
-		}
-		opened, statErr := file.Stat()
-		if statErr != nil || !safeSuiteFailureFile(opened) || !os.SameFile(info, opened) {
-			_ = file.Close()
-			return nil, errSuiteFailureStore
-		}
-		raw, readErr := io.ReadAll(io.LimitReader(file, maxSuiteFailureRecordBytes+1))
-		after, afterErr := file.Stat()
-		closeErr := file.Close()
-		now, nowErr := s.root.Lstat(name)
-		if readErr != nil || afterErr != nil || closeErr != nil || nowErr != nil || !safeSuiteFailureFile(now) || !os.SameFile(opened, now) || !os.SameFile(opened, after) || opened.Size() != int64(len(raw)) || after.Size() != opened.Size() || !after.ModTime().Equal(opened.ModTime()) || len(raw) > maxSuiteFailureRecordBytes {
+		raw, identity, info, links, e := s.readEntry(name, true)
+		if e != nil || identity == "" {
 			return nil, errSuiteFailureStore
 		}
 		var record suiteFailureRecord
@@ -174,7 +174,31 @@ func (s *suiteFailureStore) scan() ([]suiteFailureEntry, error) {
 			return nil, errSuiteFailureStore
 		}
 		ids[match[2]], sequences[sequence] = true, true
-		entries = append(entries, suiteFailureEntry{name, now, record})
+		entries = append(entries, suiteFailureEntry{name: name, identity: identity, info: info, links: links, record: record})
+	}
+	pending, pendingErr := s.pending()
+	if pendingErr != nil {
+		return nil, pendingErr
+	}
+	if pending != nil && pending.links == 2 {
+		matched := 0
+		for _, entry := range entries {
+			switch {
+			case entry.links == 2 && entry.identity == pending.identity:
+				matched++
+			case entry.links != 1:
+				return nil, errSuiteFailureStore
+			}
+		}
+		if matched != 1 {
+			return nil, errSuiteFailureStore
+		}
+	} else {
+		for _, entry := range entries {
+			if entry.links != 1 {
+				return nil, errSuiteFailureStore
+			}
+		}
 	}
 	if s.unchanged() != nil || len(entries) > maxSuiteFailureRecords {
 		return nil, errSuiteFailureStore
@@ -311,14 +335,48 @@ func (s *suiteFailureStore) remove(entry suiteFailureEntry) error {
 	if s.unchanged() != nil {
 		return errSuiteFailureStore
 	}
-	now, e := s.root.Lstat(entry.name)
-	if e != nil || !safeSuiteFailureFile(now) || !os.SameFile(now, entry.info) || now.Size() != entry.info.Size() || !now.ModTime().Equal(entry.info.ModTime()) {
+	file, e := fileaccess.OpenPrivateFileAt(context.Background(), s.directory, entry.name)
+	if e != nil {
 		return errSuiteFailureStore
 	}
-	if s.root.Remove(entry.name) != nil {
+	now, statErr := file.Stat()
+	identity, identityErr := fileaccess.PhysicalIdentity(context.Background(), file)
+	if statErr != nil || identityErr != nil || identity != entry.identity || now.Size() != entry.info.Size() || !now.ModTime().Equal(entry.info.ModTime()) {
+		_ = file.Close()
+		return errSuiteFailureStore
+	}
+	removeErr := fileaccess.RemovePrivateFileAt(context.Background(), s.directory, entry.name, file)
+	closeErr := file.Close()
+	if removeErr != nil || closeErr != nil {
 		return errSuiteFailureStore
 	}
 	return nil
+}
+
+func (s *suiteFailureStore) removeOwnPair(pending suiteFailureEntry, entries []suiteFailureEntry) (bool, error) {
+	if pending.links != 2 {
+		return false, nil
+	}
+	var final *suiteFailureEntry
+	for i := range entries {
+		if entries[i].links != 2 {
+			continue
+		}
+		if entries[i].identity == pending.identity {
+			if final != nil {
+				return false, errSuiteFailureStore
+			}
+			final = &entries[i]
+		}
+	}
+	if final == nil {
+		return false, errSuiteFailureStore
+	}
+	if s.remove(pending) != nil {
+		return false, errSuiteFailureStore
+	}
+	final.links = 1
+	return true, nil
 }
 func (s *suiteFailureStore) save(ctx context.Context, d suiteFailureDetail) (id string, err error) {
 	entries, e := s.scan()
@@ -354,55 +412,23 @@ func (s *suiteFailureStore) save(ctx context.Context, d suiteFailureDetail) (id 
 			return "", errSuiteFailureStore
 		}
 	}
-	if s.unchanged() != nil {
-		return "", errSuiteFailureStore
-	}
-	const stage = suiteFailurePendingName
-	file, e := s.root.OpenFile(stage, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if e != nil {
-		return "", errSuiteFailureStore
-	}
-	info, statErr := file.Stat()
-	published := false
-	defer func() {
-		_ = file.Close()
-		if !published {
-			now, e := s.root.Lstat(stage)
-			if statErr == nil && e == nil && os.SameFile(info, now) && safeSuiteFailureFile(now) {
-				if s.root.Remove(stage) != nil {
-					err = errSuiteFailureStore
-				}
-			}
-		}
-	}()
-	if statErr != nil || !safeSuiteFailureFile(info) {
-		return "", errSuiteFailureStore
-	}
-	n, writeErr := s.writeFile(file, raw)
-	syncErr := file.Sync()
-	closeErr := s.closeFile(file)
-	if writeErr != nil || n != len(raw) || syncErr != nil || closeErr != nil || s.unchanged() != nil {
-		return "", errSuiteFailureStore
-	}
 	name := fmt.Sprintf("%020d-%s.json", sequence, id)
-	if _, e := s.root.Lstat(name); !os.IsNotExist(e) {
+	result, publishErr := s.publish(ctx, s.directory, name, raw, suiteFailurePendingName)
+	if publishErr != nil {
+		if result.Visible {
+			return id, errSuiteFailureStore
+		}
+		// Not positively observed is not proof of absence. Keep the generated ID
+		// whenever publication reconciliation could not establish either state.
+		if !result.VisibilityKnown {
+			return id, errSuiteFailureStore
+		}
 		return "", errSuiteFailureStore
 	}
-	current, e := s.root.Lstat(stage)
-	if e != nil || !safeSuiteFailureFile(current) || !os.SameFile(info, current) || current.Size() != int64(len(raw)) {
-		return "", errSuiteFailureStore
-	}
-	if s.rename(stage, name) != nil {
-		return "", errSuiteFailureStore
-	}
-	published = true
-	directory, e := s.root.Open(".")
-	if e != nil {
+	if !result.Visible || !result.VisibilityKnown || s.unchanged() != nil {
 		return id, errSuiteFailureStore
 	}
-	syncErr = directory.Sync()
-	closeErr = directory.Close()
-	if syncErr != nil || closeErr != nil || s.unchanged() != nil {
+	if s.syncDir(ctx, s.directory) != nil {
 		return id, errSuiteFailureStore
 	}
 	return id, nil
@@ -444,6 +470,13 @@ func clearSuiteFailures(ctx context.Context, workspaceRoot, id string) (int, err
 			return 0, err
 		}
 		if pending != nil {
+			if recovered, recoverErr := s.removeOwnPair(*pending, entries); recoverErr != nil {
+				return 0, recoverErr
+			} else if recovered {
+				pending = nil
+			}
+		}
+		if pending != nil {
 			entries = append(entries, *pending)
 		}
 	}
@@ -459,13 +492,7 @@ func clearSuiteFailures(ctx context.Context, workspaceRoot, id string) (int, err
 	if id != "" && removed == 0 {
 		return 0, errSuiteFailureMissing
 	}
-	directory, e := s.root.Open(".")
-	if e != nil {
-		return removed, errSuiteFailureStore
-	}
-	syncErr := directory.Sync()
-	closeErr := directory.Close()
-	if syncErr != nil || closeErr != nil || s.unchanged() != nil {
+	if s.syncDir(ctx, s.directory) != nil || s.unchanged() != nil {
 		return removed, errSuiteFailureStore
 	}
 	return removed, nil

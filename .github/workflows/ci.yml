@@ -63,7 +63,7 @@ jobs:
           path: kmx-app-test.json
           retention-days: 3
 
-  windows-read-foundation:
+  windows-day-zero-foundation:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -76,18 +76,38 @@ jobs:
       - name: Build isolated user-owner test launcher
         shell: pwsh
         run: go build -trimpath -o "$env:RUNNER_TEMP\kmx-windows-tests.exe" ./scripts/ci/windows-tests
-      - name: Native checked filesystem, private mutation, and state tests
+      - name: Native filesystem, state, preview, and retained diagnostics
         shell: pwsh
         run: |
           & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v ./scripts/ci/windows-tests ./internal/kmx/fileaccess
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v `
-            -run '^(TestStateDirUsesPortableOverrideAndNativeDefault|TestWindowsStateAccessUsesLocalAppDataAndSeparatesCreation|TestWindowsStateAccessRefusesUnsafeRootWithoutRepair)$' `
+            -run '^(TestStateDirUsesPortableOverrideAndNativeDefault|TestWindowsStateAccessUsesLocalAppDataAndSeparatesCreation|TestWindowsStateAccessRefusesUnsafeRootWithoutRepair|TestPrepareLocalPreviewJournalDirCreatesPrivateChain)$' `
             ./internal/kmx/config
-          exit $LASTEXITCODE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $previewTests = @('TestFakeInstructionRegressionFailsThenFixes','TestInspectReplaysWithoutModelCall','TestJournalRetentionAndClear','TestJournalLockCleanupFailureVetoesCompletion','TestClearDirectorySyncFailureReportsUncertainty','TestWindowsJournalFamilyIsPrivateAndReplayable','TestWindowsInterruptedJournalFamilyClearRecovers')
+          $output = & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v `
+            -run ('^(' + ($previewTests -join '|') + ')$') ./internal/kmx/localpreview 2>&1
+          $status = $LASTEXITCODE
+          $output | Write-Output
+          if ($status -ne 0) { exit $status }
+          if ($output -match '--- SKIP:') { Write-Error 'a selected localpreview test skipped'; exit 1 }
+          foreach ($test in $previewTests) {
+            if (-not ($output -match ("--- PASS: " + [regex]::Escape($test) + " \("))) { Write-Error "$test did not pass"; exit 1 }
+          }
+          $appTests = @('TestLocalFileRunnerJournaledAppSnapshot','TestSuiteFailureStorePublicationUncertainty','TestSuiteFailureStoreUnresolvedVisibilityKeepsDiagnosticID','TestSuiteFailureStoreOwnPairVisibleUntilWholeClear','TestSuiteFailureStoreAtomicErrors','TestWindowsSuiteFailureStoreLifecycle','TestWindowsSuiteFailureWorkspaceCaseAliasesSharePartition')
+          $output = & "$env:RUNNER_TEMP\kmx-windows-tests.exe" go test -race -count=1 -timeout=600s -v `
+            -run ('^(' + ($appTests -join '|') + ')$') ./internal/kmx/app 2>&1
+          $status = $LASTEXITCODE
+          $output | Write-Output
+          if ($status -ne 0) { exit $status }
+          if ($output -match '--- SKIP:') { Write-Error 'a selected App test skipped'; exit 1 }
+          foreach ($test in $appTests) {
+            if (-not ($output -match ("--- PASS: " + [regex]::Escape($test) + " \("))) { Write-Error "$test did not pass"; exit 1 }
+          }
       - name: Windows amd64 package vet
         shell: pwsh
-        run: go vet ./internal/kmx/fileaccess ./internal/kmx/config ./scripts/ci/windows-tests
+        run: go vet ./internal/kmx/fileaccess ./internal/kmx/config ./internal/kmx/localpreview ./internal/kmx/app ./scripts/ci/windows-tests
       - name: Windows arm64 compile and vet (not native execution)
         shell: pwsh
         env:
@@ -99,14 +119,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -c -o "$env:RUNNER_TEMP\config-arm64.test.exe" ./internal/kmx/config
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -c -o "$env:RUNNER_TEMP\localpreview-arm64.test.exe" ./internal/kmx/localpreview
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -c -o "$env:RUNNER_TEMP\app-arm64.test.exe" ./internal/kmx/app
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -c -o "$env:RUNNER_TEMP\windows-tests-arm64.test.exe" ./scripts/ci/windows-tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go vet ./internal/kmx/fileaccess ./internal/kmx/config ./scripts/ci/windows-tests
+          go vet ./internal/kmx/fileaccess ./internal/kmx/config ./internal/kmx/localpreview ./internal/kmx/app ./scripts/ci/windows-tests
           exit $LASTEXITCODE
 
   hygiene:
     runs-on: ubuntu-latest
-    needs: [app-tests, windows-read-foundation]
+    needs: [app-tests, windows-day-zero-foundation]
     if: always()
     steps:
       - uses: actions/checkout@v4
@@ -979,7 +1003,7 @@ jobs:
           python3 - <<'EOF'
           import json, os, sys
           needs = json.loads(os.environ["SHARDS"])
-          expected = {"app-tests", "windows-read-foundation"}
+          expected = {"app-tests", "windows-day-zero-foundation"}
           if set(needs) != expected:
               print("missing or unexpected hygiene dependency — refusing success"); sys.exit(1)
           bad = {}

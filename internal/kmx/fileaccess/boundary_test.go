@@ -90,7 +90,7 @@ func TestProductionSurfaceIsNarrowAndOpaque(t *testing.T) {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	want := []string{"CheckPrivate", "CheckSafeDirectory", "CreatePrivateDirectoryAt", "CreatePrivateFileAt", "EnsurePrivateDirectory", "EnsurePrivateDirectoryAt", "EnsurePrivateFileAt", "OpenDirectory", "OpenDirectoryAt", "OpenPrivateDirectory", "OpenRegularAt", "PhysicalIdentity", "PublishPrivate", "SyncDirectory", "TryLock"}
+	want := []string{"CheckPrivate", "CheckSafeDirectory", "CreatePrivateDirectoryAt", "CreatePrivateFileAt", "EnsurePrivateDirectory", "EnsurePrivateDirectoryAt", "EnsurePrivateFileAt", "LinkCount", "OpenDirectory", "OpenDirectoryAt", "OpenPrivateDirectory", "OpenPrivateFileAt", "OpenRegularAt", "PhysicalIdentity", "PublishPrivate", "PublishPrivateNamed", "RemovePrivateFileAt", "SyncDirectory", "TryLock"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("exported functions = %v, want exactly %v", names, want)
 	}
@@ -111,7 +111,7 @@ func TestProductionSurfaceIsNarrowAndOpaque(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, forbidden := range []string{"internal/kmx/app", "internal/kmx/config", "internal/kmx/agentsuite", "internal/kmx/toolchain"} {
+		for _, forbidden := range []string{"internal/kmx/app", "internal/kmx/config", "internal/kmx/agentsuite", "internal/kmx/localpreview", "internal/kmx/toolchain"} {
 			if strings.Contains(string(data), forbidden) {
 				t.Errorf("%s imports or names operation package %s", name, forbidden)
 			}
@@ -131,7 +131,7 @@ func TestFoundationConsumersAreExplicit(t *testing.T) {
 			}
 			return nil
 		}
-		if filepath.Ext(path) != ".go" || strings.Contains(path, string(filepath.Separator)+"internal"+string(filepath.Separator)+"kmx"+string(filepath.Separator)+"fileaccess"+string(filepath.Separator)) {
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") || strings.Contains(path, string(filepath.Separator)+"internal"+string(filepath.Separator)+"kmx"+string(filepath.Separator)+"fileaccess"+string(filepath.Separator)) {
 			return nil
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
@@ -140,8 +140,15 @@ func TestFoundationConsumersAreExplicit(t *testing.T) {
 		}
 		for _, imported := range file.Imports {
 			if imported.Path.Value == `"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"` {
-				allowed := filepath.Join(root, "internal", "kmx", "config") + string(filepath.Separator)
-				if !strings.HasPrefix(path, allowed) {
+				if strings.Contains(path, "_test.go") {
+					continue
+				}
+				allowed := []string{
+					filepath.Join(root, "internal", "kmx", "app") + string(filepath.Separator),
+					filepath.Join(root, "internal", "kmx", "config") + string(filepath.Separator),
+					filepath.Join(root, "internal", "kmx", "localpreview") + string(filepath.Separator),
+				}
+				if !slices.ContainsFunc(allowed, func(prefix string) bool { return strings.HasPrefix(path, prefix) }) {
 					t.Errorf("production package imports unwired filesystem foundation: %s", path)
 				}
 			}

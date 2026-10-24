@@ -35,28 +35,6 @@ func assertOrkaForwardExited(t *testing.T, dir string) {
 	}
 }
 
-type suiteFailureForeignInfo struct {
-	os.FileInfo
-	stat syscall.Stat_t
-}
-
-func (i suiteFailureForeignInfo) Sys() any { return &i.stat }
-func TestSuiteFailureStoreOwnership(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "owned")
-	if err := os.WriteFile(path, []byte("x"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stat := *info.Sys().(*syscall.Stat_t)
-	stat.Uid++
-	if safeSuiteFailureFile(suiteFailureForeignInfo{info, stat}) {
-		t.Fatal("foreign-owner file accepted")
-	}
-}
-
 func TestSuiteFailureStorePermissions(t *testing.T) {
 	if mode := os.Getenv("KMX_FAILURE_UMASK"); mode != "" {
 		mask := 0077

@@ -7,15 +7,23 @@ const INSTRUCTIONS = [
 ];
 const HEADINGS = ["Identity", ...INSTRUCTIONS, "Model", "Examples"];
 export const DEFAULT_MODEL = "gpt-5.6-terra";
-export const effectiveModel = (authored, override) => override || authored.match(/^model: (.+)$/m)?.[1] || authored || DEFAULT_MODEL;
+export const effectiveModel = (authored, override, chatModel) => override || authored.match(/^model: (.+)$/m)?.[1] || authored || chatModel || DEFAULT_MODEL;
+export const agentName = title => {
+  const conventional = title.split(" — ")[0] || title;
+  if (conventional !== title) return conventional;
+  // Other dashes can belong to an authored name; only strip repeated names.
+  const [name, suffix] = title.split(/ [–-] /), lower = name.toLowerCase();
+  return suffix && (suffix.toLowerCase() === lower || suffix.toLowerCase().startsWith(lower + " ")) ? name : title;
+};
+export const fileLocation = path => { const parts = path.split(/[\\/]/); return { name: parts.pop(), folder: parts.pop() || "" }; };
 // These owned refusals happen before route selection and contain no completion.
 export const preRouteRefusal = (result) => result?.state === "refused" && result.verdict === "unknown" && result.fullPass === false
   && result.modelRoute === "/" && ["no_tests", "model_unavailable", "invalid_selection"].includes(result.reasonCode);
 
 // Runtime state is separate from authored source and survives only this canvas.
 export function runtimeModelSelection() {
-  let override = "", needsRun = false;
-  const selected = (view) => effectiveModel(view.model, override);
+  let override = "", needsRun = false, previous;
+  const selected = (view) => effectiveModel(view.model, override, view.chatModel);
   const actual = (view) => {
     const route = view.latest.result?.modelRoute ?? "";
     return route.slice(route.indexOf("/") + 1);
@@ -31,6 +39,11 @@ export function runtimeModelSelection() {
     },
     confirm(view) { if (actual(view) === selected(view) || preRouteRefusal(view.latest.result)) needsRun = false; },
     view(view) {
+      const next = selected(view);
+      // Late metadata matching the actual run is not a model change. Once a
+      // different model is seen, A-B-A needs an explicit run, never a poll.
+      if (previous !== undefined && previous !== next && actual(view) !== next) needsRun = true;
+      previous = next;
       return view.latest.status === "current" && (needsRun || !preRouteRefusal(view.latest.result) && actual(view) !== selected(view))
         ? { ...view, latest: { status: "stale", badge: "stale" } } : view;
     },

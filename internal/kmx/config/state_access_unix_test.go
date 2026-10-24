@@ -44,6 +44,10 @@ func TestStateAccessRefusesUnsafeExistingRootWithoutRepair(t *testing.T) {
 	if err := os.Mkdir(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Make the fixture unsafe even when the test process has umask 0077.
+	if err := os.Chmod(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("KMX_HOME", home)
 	for _, resolve := range []func() (string, error){ExistingStateDir, PrepareStateDir} {
 		if _, err := resolve(); err == nil {

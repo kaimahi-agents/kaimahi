@@ -5,12 +5,14 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
 	"github.com/agent-primitives/sessions/api"
 
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/agentsessions"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/fileaccess"
 )
 
 // ReplayLabel marks journal inspection. Replay re-reads recorded Sessions; it
@@ -42,6 +44,9 @@ func Inspect(ctx context.Context, dir, runID string) (out Inspection, err error)
 		ctx, cancel = context.WithTimeout(ctx, DefaultInspectTimeout)
 		defer cancel()
 	}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	path, err := JournalPath(dir, runID)
 	if err != nil {
 		return out, err
@@ -56,6 +61,19 @@ func Inspect(ctx context.Context, dir, runID string) (out Inspection, err error)
 		return out, refuse(RefusedJournal, "the selected local preview run is not retained", "list runs and select a retained one")
 	} else if err != nil || !info.Mode().IsRegular() {
 		return out, refuse(RefusedJournal, "the selected local preview journal is not a regular file", "clear the run")
+	}
+	directory, err := fileaccess.OpenPrivateDirectory(ctx, dir)
+	if err != nil {
+		return out, refuse(RefusedJournal, "the local preview journal directory is unavailable or unsafe", "clear the run")
+	}
+	journal, journalErr := fileaccess.OpenPrivateFileAt(ctx, directory, filepath.Base(path))
+	if journalErr == nil {
+		journalErr = fileaccess.CheckPrivate(ctx, journal, false)
+		journalErr = errors.Join(journalErr, journal.Close())
+	}
+	directoryErr := directory.Close()
+	if journalErr != nil || directoryErr != nil {
+		return out, refuse(RefusedJournal, "the selected local preview journal is unavailable or unsafe", "clear the run")
 	}
 	var calls atomic.Int64
 	forbidden := func(context.Context, api.ModelRequest) (api.ModelResponse, error) {

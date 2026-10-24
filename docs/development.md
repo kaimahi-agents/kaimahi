@@ -141,13 +141,16 @@ is the repository's explicit cross-platform isolation contract.
 `internal/kmx/fileaccess` has native Linux and Windows amd64 package tests for
 checked reads, security/identity inspection, protected private first creation,
 process-held locks and no-replace file/directory-flush publication. The package
-keeps opaque handles, repairs/adopts nothing and is unwired from operation
-adapters. `internal/kmx/config` separately exposes explicit creating and
-non-creating private state-root resolution; `StateDir` itself remains a pure
-locator. Windows defaults to machine-local `%LOCALAPPDATA%\kmx`. Windows arm64
-is compiled and vetted, not executed. These tests qualify only low-level local
-NTFS primitives, not the guarded Windows CLI; use WSL for the installed command
-until the later enablement phase lands.
+keeps opaque handles, repairs/adopts nothing and reports unresolved publication
+visibility separately from observed absence. `internal/kmx/config` exposes
+explicit creating and non-creating private state-root resolution; `StateDir`
+itself remains a pure locator. The local-preview journal family and retained
+evaluation-failure store consume the same checked foundation, including
+identity-bound clear, interrupted own-pair recovery and independent file/directory
+flush failure behavior. Windows defaults to machine-local `%LOCALAPPDATA%\kmx`.
+Windows arm64 is compiled and vetted, not executed. These native package tests
+qualify local-NTFS day-zero internals, not the guarded Windows CLI or a release
+artifact; use WSL for the installed command until the enablement phase lands.
 
 The hosted Windows test context is established by the test-only
 [`windows-tests` launcher](../scripts/ci/windows-tests/main_windows.go), whose

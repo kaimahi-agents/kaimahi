@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -125,5 +128,32 @@ func TestCompletionContextUsesEngineFlagOverInvalidEnvironment(t *testing.T) {
 	}
 	if got := completionContext(root); got != "kind-podman-demo" {
 		t.Fatalf("context = %q", got)
+	}
+}
+
+func TestGuardedWindowsDeferredCompletionIsInert(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake kubectl fixture uses a Unix shell script")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte("#!/bin/sh\necho kind-sentinel\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	for _, args := range [][]string{
+		{"__complete", "--context", ""},
+		{"__complete", "context", "use", ""},
+		{"__complete", "run", "--agent", ""},
+		{"__complete", "deploy", "--to", ""},
+	} {
+		var out, errOut bytes.Buffer
+		deps, loads := testDependencies(&out, &errOut)
+		deps.goos = "windows"
+		if err := execute(args, deps); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if *loads != 0 || strings.Contains(out.String(), "kind-sentinel") {
+			t.Fatalf("%v completion had effects: loads=%d stdout=%q stderr=%q", args, *loads, out.String(), errOut.String())
+		}
 	}
 }
