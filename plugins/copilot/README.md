@@ -194,13 +194,19 @@ without that evidence, an older result cannot unlock a retry.
 Stop, versions/restore, a new Model validated type, Ask Copilot and All versions
 are not part of this canvas release; no inactive versions clock is shown.
 
-Failed saved-example answers are shown by default as bounded **untrusted
-excerpts**. **Include passing answers** explicitly adds other excerpts.
-The canvas requests `showFailedContent: true`, not implicit `showContent: true`:
-passing and unknown answers stay out of safe results, MCP summaries and resources
-when the checkbox is off. Ad-hoc answers still require `showContent`.
-Fake/local journal retention is unchanged; projection controls do not promise
-that the underlying runner does not journal content.
+Canvas runs explicitly request bounded answer excerpts with `showContent: true`,
+so passing answers are available without a hidden setting. Those excerpts also
+appear in MCP tool summaries, structured results and the latest `kmx://agent/`
+resource, not only the panel. Answers remain inert text; formatting and links
+cannot become controls. Direct MCP clients still opt in to content. Runner journal
+retention is unchanged.
+
+Saved checks are readable lines; click a line to edit it. Each failing check shows
+its own Missing, Found or No match explanation. The input grows with its content.
+Enter saves and runs the selected test; Esc discards its edits. The result pill
+and right-aligned verdict words distinguish current results from dimmed last-run
+results. Tests arrive together when the batch completes; a running indicator does
+not imply per-test progress.
 
 The typed resource remains `kmx://agent/{path}`; encode the entire path as one
 URI component, for example
@@ -214,10 +220,15 @@ details retain the complete path/revision and explicit Copy path with its
 selectable manual fallback; no clipboard permissions change.
 
 Latest results belong only to the current MCP process; a restart has no history.
-Changed revisions withhold old results. No observation means **No current result**.
+Changed revisions withhold old results. An open canvas can keep already observed
+verdicts dimmed for unchanged test definitions across source or model changes;
+new or changed tests do not inherit them. This display-only memory is lost when
+the canvas closes and never becomes a current resource. Without an observation,
+tests say **Not run yet** and the Tests section offers **Run N tests**.
 Windows Copilot app 1.1.30 with a WSL MCP engine demonstrated instruction
 Edit → Test, mixed text/judge results and native rendering using an offline fake
-model. Browser/unit checks cover inline formatting and failure-only disclosure.
+model. Browser/unit checks cover inline formatting, explicit answer disclosure and result
+presentation.
 This is not live hosted-model, clean-machine or every desktop error-state
 qualification. A loopback URL or browser mock alone is not desktop evidence.
 The `/kmx` skill → built-in opener → WSL resource → visible panel path was also

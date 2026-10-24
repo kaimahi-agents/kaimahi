@@ -6,6 +6,207 @@ export const el = (doc, tag, className, text) => {
   if (text !== undefined) node.textContent = text;
   return node;
 };
+export const checkKey = (a) => JSON.stringify([a.id, a.type]);
+export function uniqueIndex(items, key) {
+  const map = new Map();
+  for (const item of items) {
+    const id = key(item);
+    map.set(id, map.has(id) ? null : item);
+  }
+  return map;
+}
+export function inspectCases(payload) {
+  const r = payload.latest.status === "current" ? payload.latest.result : undefined;
+  const authored = uniqueIndex(payload.examples, (e) => e.id);
+  const observed = uniqueIndex(r?.examples ?? [], (e) => e.id);
+  const selected = uniqueIndex(r?.selection.caseIds ?? [], (id) => id);
+  return payload.examples.map((e) => {
+    const base = { example: e, state: "waiting", label: payload.latest.status === "stale" ? "Out of date" : "No current result" };
+    if (!r) return base;
+    if (!selected.has(e.id) && r.selection.scope !== "full") return { ...base, label: "Not in this run" };
+    const row = authored.get(e.id) === e && selected.get(e.id) === e.id ? observed.get(e.id) : undefined;
+    const unknown = { ...base, state: "unknown", label: "Incomplete", row };
+    if (!row) return unknown;
+    const expected = uniqueIndex(e.assertions, checkKey);
+    const checks = uniqueIndex(row.assertions, checkKey);
+    const ambiguous = [...expected.values(), ...checks.values()].some((v) => v === null);
+    const matched = e.assertions.every((a) => checks.get(checkKey(a))?.verdict === "pass");
+    const covered = expected.size === checks.size && [...checks.keys()].every((key) => expected.has(key));
+    const complete = row.state === "complete";
+    let state = "unknown";
+    if (!ambiguous && complete && row.verdict === "fail") state = "fail";
+    if (!ambiguous && complete && row.verdict === "pass" && covered && matched) state = "pass";
+    return { ...unknown, state, label: state === "pass" ? "Passed" : state === "fail" ? "Failed" : "Incomplete", checks, expected };
+  });
+}
+
+export const friendlyName = (id) => {
+  const text = id.replace(/[-_]+/g, " ");
+  return text ? text[0].toUpperCase() + text.slice(1) : "Unnamed test";
+};
+export const clone = (value) => JSON.parse(JSON.stringify(value));
+export const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+export const operandKey = (type) => type === "regex" ? "pattern" : type === "llmJudge" ? "rubric" : "value";
+export const EDITABLE_TYPES = [["contains", "Contains"], ["notContains", "Not contains"], ["regex", "Regex"]];
+export const quoted = (text) => `“${text}”`;
+const fieldValue = (a) => new Map(a.fields).get(operandKey(a.type)) ?? "";
+export const checkLabel = (a) => {
+  const value = fieldValue(a);
+  return a.type === "contains" ? `Contains ${quoted(value)}` : a.type === "notContains" ? `Not contains ${quoted(value)}`
+    : a.type === "regex" ? `Matches regex ${quoted(value)}` : a.type === "llmJudge" ? friendlyName(a.id) : `Condition: ${a.type}`;
+};
+// Repair suggestions use only the actual excerpt. A differing reference is
+// named only when the answer holds exactly one same-anchored phrase, e.g. the
+// expected "Fixes #218" against an answer that literally says "Closes #218".
+export const oneLine = (text, max = 80) => {
+  const flat = text.replace(/\s+/g, " ").trim(), chars = Array.from(flat);
+  return chars.length > max ? chars.slice(0, max - 1).join("") + "…" : flat;
+};
+export function provenActual(expected, excerpt) {
+  const m = /^(\S+)\s+(\S*\d\S*)$/.exec(expected ?? "");
+  if (!m || typeof excerpt !== "string") return;
+  const anchor = m[2].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const found = new Set();
+  for (const hit of excerpt.matchAll(new RegExp(`(?:^|\\s)(\\S+)\\s+${anchor}(?=$|[\\s.,;:!?)\\]])`, "g"))) {
+    const word = hit[1].replace(/^[^\p{L}\p{N}]+/u, "");
+    if (word) found.add(`${word} ${m[2]}`);
+  }
+  const [only] = found;
+  return found.size === 1 && only !== expected && excerpt.split(only).length === 2 ? only : undefined;
+}
+export function failureFacts(c, assertion) {
+  if (c.state !== "fail") return;
+  for (const a of assertion ? [assertion] : c.example.assertions) {
+    const got = c.expected?.get(checkKey(a)) === a ? c.checks?.get(checkKey(a)) : undefined;
+    if (got?.verdict !== "fail") continue;
+    const value = fieldValue(a), excerpt = c.row?.answerExcerpt;
+    const actual = a.type === "contains" ? provenActual(value, excerpt) : undefined;
+    const text = a.type === "contains" ? `Missing "${value}"` : a.type === "notContains" ? `Found "${value}"`
+      : a.type === "regex" ? `No match for ${value}` : `Not met: ${checkLabel(a)}`;
+    return { assertion: a, text, actual, value };
+  }
+}
+
+// One line per authored test. A local edit keeps the known shape and count but
+// marks it old; missing, unselected or stale observations never become verdicts.
+export function testRow(c, local, blocked, malformed = false) {
+  if (malformed) return { kind: "none", base: "none", label: "Incomplete", note: "Incomplete result", count: "incomplete" };
+  if (blocked) return { kind: "none", base: "none", label: "Result unconfirmed", note: "" };
+  if (!c) return { kind: "none", base: "none", label: "Not run", note: "", count: "" };
+  let base = "none", label = c.label, note = "", count = "";
+  if (c.state === "pass") [base, label, count] = ["pass", "Passed", "passing"];
+  else if (c.state === "fail") [base, label, note, count] = ["fail", "Failed", failureFacts(c)?.text || c.row?.reason || "Failed", "failing"];
+  // Only an observed unfinished row earns the amber "!"; ambiguous or uncovered complete rows stay neutral.
+  else if (c.state === "unknown" && c.row?.state !== undefined && c.row.state !== "complete") {
+    [base, label, count] = ["error", "Didn't finish", "didn't finish"];
+    note = `Didn't finish${c.row.reason ? `: ${c.row.reason}` : ""}`;
+  } else if (c.state === "unknown") [label, note, count] = ["Incomplete", "Incomplete result", "incomplete"];
+  else if (c.label === "Not in this run") [note, count] = [c.label, "not run"];
+  const old = local && base !== "none";
+  return { kind: old ? `old-${base}` : base, base, label: old ? `${label} last run` : label, note, count };
+}
+export function coherentSelection(payload) {
+  const result = payload.latest.result;
+  if (!result) return false;
+  const selected = result.selection.caseIds, known = new Set(payload.examples.map((e) => e.id));
+  const observed = result.examples.map((e) => e.id);
+  return result.selection.totalCases === payload.examples.length && known.size === payload.examples.length
+    && new Set(selected).size === selected.length && selected.every((id) => known.has(id))
+    && new Set(observed).size === observed.length && observed.every((id) => selected.includes(id))
+    && ["full", "subset"].includes(result.selection.scope);
+}
+export function ambiguousPassSet(payload) {
+  return payload.latest.status === "current" && !coherentSelection(payload)
+    && inspectCases(payload).every((c) => c.state === "pass");
+}
+export function countText(rows) {
+  const counts = new Map();
+  for (const r of rows) counts.set(r.count, (counts.get(r.count) ?? 0) + 1);
+  return ["failing", "passing", "didn't finish", "incomplete", "not run"]
+    .filter((k) => counts.get(k)).map((k) => `${counts.get(k)} ${k}`).join(", ");
+}
+export const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+export const modelText = (model) => model.match(/^model: (.+)$/m)?.[1] ?? model.replace(/\n/g, " · ");
+// Last-run display is controller-local, never a current resource or write input.
+export function resultHistory(initial) {
+  let last;
+  const records = new Map();
+  const remember = view => {
+    const definitions = uniqueIndex(view.authoring?.examples ?? [], e => e.id);
+    // Bound memory to this file's remaining case IDs, not every past revision.
+    for (const id of records.keys()) if (!definitions.get(id)) records.delete(id);
+    if (view.latest.status !== "current" || view.latest.result.modelRoute === "/" || !coherentSelection(view)) return;
+    for (const c of inspectCases(view)) {
+      const definition = definitions.get(c.example.id);
+      if (definition && c.row) records.set(c.example.id, { definition, c, model: view.latest.result.modelRoute });
+    }
+    if (view.latest.result.examples.length) last = view;
+  };
+  remember(initial);
+  return {
+    get last() { return last; }, remember,
+    cases(view) {
+      const current = view.latest.status === "current", coherent = coherentSelection(view);
+      const definitions = uniqueIndex(view.authoring?.examples ?? [], e => e.id), identities = uniqueIndex(view.examples, e => e.id);
+      return inspectCases(view).map(c => {
+        if (identities.get(c.example.id) !== c.example || current && (!coherent || c.label !== "Not in this run")) return c;
+        const prior = records.get(c.example.id), definition = definitions.get(c.example.id);
+        return prior && definition && same(prior.definition, definition)
+          ? { ...prior.c, example: c.example, expected: uniqueIndex(c.example.assertions, checkKey), previous: true, previousModel: prior.model } : c;
+      });
+    },
+  };
+}
+export const modelLabel = route => {
+  const id = route?.slice(route.indexOf("/") + 1) ?? "";
+  const labels = { "gpt-5.6-terra": "GPT-5.6 Terra", "claude-sonnet-5.5": "Claude Sonnet 5.5", "claude-haiku-5.5": "Claude Haiku 5.5" };
+  return Object.hasOwn(labels, id) ? labels[id] : id;
+};
+export function resultPill(doc, settings) {
+  const node = el(doc, "span", "result-pill"), dot = el(doc, "span", "result-dot"), text = el(doc, "span");
+  dot.setAttribute("aria-hidden", "true"); node.append(dot, text);
+  const update = () => { const state = settings(); node.setAttribute("data-tone", state.tone); text.textContent = state.text; };
+  update(); return { node, update };
+}
+export function growTextarea(input) {
+  input.style.height = "auto";
+  input.style.height = `${input.scrollHeight + 2}px`;
+}
+export function checkTypeControl(doc, initial, change, cancel) {
+  const node = el(doc, "div", "check-type"), trigger = el(doc, "button", "check-type-button"), menu = el(doc, "div", "check-type-menu");
+  trigger.type = "button"; trigger.setAttribute("aria-haspopup", "menu"); menu.setAttribute("role", "menu");
+  const open = value => { menu.hidden = !value; trigger.setAttribute("aria-expanded", String(value)); };
+  const show = type => {
+    trigger.replaceChildren(EDITABLE_TYPES.find(([id]) => id === type)[1], icon(doc, "down", 12, 2));
+    trigger.setAttribute("aria-label", `Check type: ${trigger.textContent}`);
+  };
+  const choices = EDITABLE_TYPES.map(([type, label], index) => {
+    const option = el(doc, "button", "check-type-option", label); option.type = "button"; option.setAttribute("role", "menuitemradio");
+    option.setAttribute("aria-checked", String(type === initial));
+    option.addEventListener("click", () => {
+      show(type); open(false);
+      choices.forEach((item, i) => { item.setAttribute("aria-checked", String(i === index)); });
+      change(type); trigger.focus();
+    });
+    option.addEventListener("keydown", event => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault(); choices[(index + (event.key === "ArrowDown" ? 1 : choices.length - 1)) % choices.length].focus();
+      } else if (event.key === "Escape") { event.preventDefault(); open(false); trigger.focus(); }
+    });
+    return option;
+  });
+  trigger.addEventListener("click", () => open(menu.hidden));
+  trigger.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); if (menu.hidden) cancel(); else open(false); }
+    else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault(); open(true); choices[event.key === "ArrowDown" ? 0 : choices.length - 1].focus();
+    }
+  });
+  node.addEventListener("focusout", event => { if (!node.contains(event.relatedTarget)) open(false); });
+  menu.append(...choices); node.append(trigger, menu); show(initial); open(false);
+  return { node, update(disabled) { for (const control of [trigger, ...choices]) control.disabled = disabled; if (disabled) open(false); } };
+}
+
 // Runtime selection only emits values to its owner; it cannot read or write an agent.
 export function runtimeModelControl(doc, settings, load, change) {
   const node = el(doc, "label", "runtime-model"), select = el(doc, "select", "model-picker"), status = el(doc, "span", "quiet model-status");
@@ -38,13 +239,13 @@ export function runtimeModelControl(doc, settings, load, change) {
 const SVG_NS = "http://www.w3.org/2000/svg";
 const RING = ["circle", { cx: "12", cy: "12", r: "9" }];
 const ICONS = {
-  fail: [RING, ["path", { d: "M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6" }]],
-  pass: [RING, ["path", { d: "M8.2 12.4l2.6 2.6 5-5.4" }]],
+  fail: [["path", { d: "M6 6l12 12M18 6L6 18" }]],
+  pass: [["path", { d: "M5 12.5l4.5 4.5L19 7.5" }]],
   error: [RING, ["path", { d: "M12 7.6v5.6" }], ["path", { d: "M12 16.4h.01" }]],
   none: [["path", { d: "M8 12h8" }]],
   running: [["path", { d: "M12 3a9 9 0 0 1 9 9" }]],
   enter: [["path", { d: "M20 5v7a3 3 0 0 1-3 3H5" }], ["path", { d: "M9 11l-4 4 4 4" }]],
-  chevron: [["path", { d: "M9 6l6 6-6 6" }]],
+  down: [["path", { d: "M6 9l6 6 6-6" }]],
   back: [["path", { d: "M15 6l-6 6 6 6" }]],
   close: [["path", { d: "M6 6l12 12M18 6L6 18" }]],
   plus: [["path", { d: "M12 5v14M5 12h14" }]],

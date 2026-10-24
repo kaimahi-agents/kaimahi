@@ -495,9 +495,11 @@ omitted rows. The full safe result remains in `structuredContent`.
 operands are not included by default. Optional `showFailedContent` also defaults
 false and includes only validated failing saved-example answers, not passing,
 unknown or ad-hoc answers. Existing clients keep their current behavior. The
-canvas requests failure-only excerpts and keeps passing answers opt-in. These
-controls do not change existing runner journal retention. Excerpts are bounded and
-labeled untrusted data, never tool instructions. Use Create's returned path to
+canvas explicitly requests `showContent: true` so passing answers are visible
+without a hidden setting. Those excerpts also appear in MCP tool summaries,
+structured results and the latest agent resource, not only the panel. These
+controls do not change runner journal retention. Excerpts are bounded, rendered
+as inert text, and never treated as tool instructions. Use Create's returned path to
 open the agent; legacy preview results can carry only a display basename.
 
 The read-only resource template `kmx://agent/{path}` returns a typed
