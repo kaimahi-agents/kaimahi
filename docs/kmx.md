@@ -350,8 +350,9 @@ parser and the same App snapshot operation as file Run/Test. One server accepts
 agent files in any directory. Prefer an absolute WSL path when calling it from
 Windows; relative paths resolve against the server's working directory. In WSL,
 Windows drive-absolute paths such as `C:\work\repo\agent.agent.md` resolve to
-`/mnt/c/work/repo/agent.agent.md` when that drive directory exists. Missing drives
-and Windows UNC/device or drive-relative paths (`C:agent.agent.md`) return the
+`/mnt/c/work/repo/agent.agent.md` when that drive directory exists. The same drive
+check applies to Linux `/mnt/<letter>/...` inputs, including paths sent by the
+builder. Missing drives and Windows UNC/device or drive-relative paths (`C:agent.agent.md`) return the
 existing `unsafe_path` error; use a full WSL path for a custom automount root.
 Other Unix hosts refuse Windows drive paths. Requested paths stay unchanged in responses.
 The server does not listen on a network socket or load cluster/workspace configuration.
