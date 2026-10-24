@@ -6,8 +6,8 @@ import {createActionHandler,readView,startViewBridge} from '../../../../copilot-
 import {instructionSections,replaceInstructions,replaceExamples} from '../../../../copilot-wsl/com.github.copilot/extensions/agent-view/authoring.mjs';
 const original=await readFile(new URL('../../../../../internal/kmx/agentfile/testdata/greeter.agent.md',import.meta.url),'utf8');
 const revision=s=>'sha256:'+createHash('sha256').update(s).digest('hex');
-function harness({omitModel=false}={}){
- let source=omitModel?original.replace(/## Model\n[\s\S]*?(?=## Examples)/,''):original,latest={status:'none'};
+function harness({omitModel=false,fixture=original}={}){
+ let source=omitModel?fixture.replace(/## Model\r?\n[\s\S]*?(?=## Examples)/,''):fixture,latest={status:'none'};
  const calls=[],o={};let race=false,denied=false,unavailable=false,release;
  let examples=[{id:'greeting',input:'Ada',assertions:[{id:'greeting-text',type:'contains',value:'Hello, Ada'}]}];
  const raw=()=>({schemaVersion:1,kind:'kmx.agent-view',file:{path:'greeter.agent.md',revision:revision(source)},title:'Greeter',instructions:source,model:omitModel?'':'fake',examples,authoring:{source,editable:true},latest});
@@ -38,6 +38,18 @@ test('runtime model override reaches Run/Test and save-and-test without changing
   assert.equal(h.source(),original);assert.equal(r.view.model,'fake');assert.equal(r.view.latest.result.modelRoute,'copilot/choice-b');
  }
 });
+test('missing-Model runtime defaults exercise actual LF and CRLF source snapshots',async()=>{
+ for(const eol of ['\n','\r\n']){
+  const h=harness({omitModel:true,fixture:original.replace(/\r?\n/g,eol)});
+  assert.doesNotMatch(h.source(),/^## Model\r?$/m);
+  h.session.rpc.model={getCurrent:async()=>({modelId:'chat-model'})};
+  h.o.shape=r=>({...r,modelRoute:{provider:'copilot',model:h.calls.at(-1).arguments.model}});
+  const response=await h.act({operation:'test',expectedRevision:revision(h.source())});
+  assert.equal(response.error,undefined);assert.equal(h.calls.at(-1).arguments.model,'chat-model');
+  assert.doesNotMatch(response.view.authoring.source,/^## Model\r?$/m);
+ }
+});
+
 test('known uncatalogued chat default is sent exactly without eager catalog or source Model',async()=>{
  const h=harness({omitModel:true}),source=h.source(),read=h.session.rpc.mcp.resources.read;
  h.session.rpc.model={getCurrent:async()=>({modelId:'known-unlisted'})};
