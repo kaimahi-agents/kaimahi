@@ -1439,7 +1439,9 @@ test("omitted Model shows the default while remaining editable without source in
 test("catalog failure does not block prompt edits or fake/offline tests", async () => {
   const h = await editableCanvas("Say hello.", undefined, { fetchModels: async () => ({ error: "models-unavailable" }) });
   const picker = byClass(h.root, "model-picker")[0]; await picker.listeners.click[0]();
-  assert.equal(picker.disabled, false); assert.match(c18Text(h.root, "model-status"), /unavailable/);
+  assert.equal(picker.disabled, false);
+  assert.equal(c18Text(h.root, "model-status"), "Choices unavailable; model selection unchanged.");
+  assert.equal(picker.attrs.title, "fake · from the agent file");
   const prompt = c18Prompt(h.root); prompt.textContent = "Keep it short."; prompt.listeners.input[0]();
   await h.clickTest(); assert.equal(h.calls[0].operation, "save-and-test");
   assert.equal(Object.hasOwn(h.calls[0], "model"), false);

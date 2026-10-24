@@ -319,7 +319,7 @@ export function runtimeModelControl(doc, settings, load, change) {
       }
       menu.append(group);
     }
-    status.textContent = state === "loading" ? "Loading models…" : state === "failed" ? "Choices unavailable; file/default still works." : "";
+    status.textContent = state === "loading" ? "Loading models…" : state === "failed" ? "Choices unavailable; model selection unchanged." : "";
     // Following is a mode, not a duplicate entry for the fallback's model ID.
     const follow = el(doc, "button", "model-default", authored ? "Use agent file model" : chatModel ? "Follow chat model" : "Use default model");
     follow.type = "button"; follow.disabled = !!disabled; follow.setAttribute("role", "menuitem"); follow.setAttribute("data-model", "");

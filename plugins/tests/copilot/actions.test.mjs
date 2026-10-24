@@ -170,7 +170,9 @@ test('malformed catalog data stays nonblocking and never exposes provider text',
  for(const id of ['https://private.invalid','auto','bad\nmodel']){
   const h=harness(),read=h.session.rpc.mcp.resources.read;
   h.session.rpc.mcp.resources.read=async a=>a.uri==='kmx://models'?{contents:[{text:JSON.stringify({schemaVersion:1,kind:'kmx.models',defaultModel:'gpt-5.6-terra',models:[id]})}]}:read(a);
-  const r=await h.act({operation:'models'});assert.equal(r.error,'models-unavailable');assert.equal((await h.act({operation:'test',expectedRevision:revision(original)})).error,undefined);
+  const r=await h.act({operation:'models'});assert.equal(r.error,'models-unavailable');
+  assert.equal(r.message,'Model choices are unavailable. Your model selection is unchanged.');
+  assert.equal((await h.act({operation:'test',expectedRevision:revision(original)})).error,undefined);
  }
 });
 test('full authoring snapshot is hash-bound while display values remain bounded',async()=>{const h=harness();const view=await readView(h.session,'greeter.agent.md');assert.equal(view.authoring.source,original);assert.equal(view.authoring.editable,true);assert.equal(view.authoring.examples[0].assertions[0].value,'Hello, Ada')});
