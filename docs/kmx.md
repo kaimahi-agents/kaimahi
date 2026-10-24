@@ -794,7 +794,6 @@ See [digest deploy](suite-workspace.md#digest-lift) for gates and partial outcom
 | `kmx suite pull <repository:tag> --from-layout <layout> --output <directory>` | resolve and validate one AgentSuite reference from a local OCI image layout, then atomically extract its content into a new directory. Existing output is never replaced. |
 | `kmx suite policy FILE [--administrative-policy FILE]` | resolve a portable v1 deny-write or v2 IPv4/TCP egress policy offline; print canonical effective JSON then its digest. Administrative deny paths union; administrative network allowances intersect (empty denies all). Inputs and output are bounded to 4 MiB; explicit empty administrative flags refuse. No operational configuration, enforcement or provider selection. [Policy contract](portable-policy.md) |
 | `kmx suite validate <path>` | validate an extracted AgentSuite content directory or OCI image layout offline, including strict JSON, canonical identities, closed references, tool locks, build profiles and archive safety. `-o json` emits the validated summary. [AgentSuite specification](https://github.com/agent-primitives/suite/blob/main/spec.md) |
-| `kmx suite diff <before> <after>` | validate and semantically compare two extracted AgentSuites or local OCI image layouts, including supplemental packaged content and artifact identities. The default unified view uses `-` and `+` field lines; `--view split` renders before and after values side by side, and `-o json` emits the versioned change and affected-agent report. [Suite artifact diff](#suite-artifact-diff). |
 | `kmx test from-sessions UID... --sessions SOURCE --assertions CASE.yaml --out MANIFEST.json` | Independent private reference extraction/export only. [Reference extraction](#reference-extraction) |
 | `kmx test explain [failure-id] [--workspace DIR] [--show-content\|--clear]` | inspect private local failures offline without operational config or model calls; metadata by default, bounded content only with --show-content. --clear removes one ID, or all only with explicit --workspace, never passing proof or runtime history. Owner-only retention keeps the last 10 non-pass runs across suite revisions, 64 KiB answers and 128 KiB records. [Local failure inspection](suite-workspace.md#inspect-or-clear-local-evaluation-failures) |
 | `kmx test diff BEFORE AFTER` | Offline strict full-passing native suite evidence only; old bundle receipts unreadable. [Native receipt diff](#native-receipt-diff) |
@@ -1041,47 +1040,9 @@ artifact rather than a mutable tag.
 
 #### Suite artifact diff
 
-`kmx suite diff <before> <after>` validates and compares two extracted content
-directories or local OCI layouts without registry or cluster access. Logical
-records are matched by AgentSuite identity. Identity-keyed collections such as
-agent invocation edges and ToolProvider selections are compared as sets;
-behaviorally ordered values such as process arguments remain positional.
-Added or removed identity-keyed elements are reported as one field containing
-the complete element, and added or removed supplemental content records use one
-aggregate `$` field, so large valid additions do not exhaust field limits by
-expanding every leaf.
-Supplemental packaged files, including `metadata/kmx/`, are compared by path,
-mode, size and digest. A raw packaged-content identity change is still reported
-when all modeled records remain semantically equal.
-
-The report identifies each side by suite name, source type and a
-representation-neutral content digest. OCI-layout inputs also include their
-authoritative manifest digest. The content digest is SHA-256 over the sorted inventory of non-directory path,
-filesystem-equivalent type, mode, size, file digest and symbolic-link target.
-Archive hardlinks inherit their target file metadata and explicit directory
-headers are excluded, so equivalent extracted and OCI-layout content has the
-same identity. A standalone
-ToolProvider composition and its build profile remain record changes but do not
-affect an agent without an explicit AgentSuite relationship.
-
-An OCI manifest-digest change is reported even when both manifests reference
-identical packaged content. Differences are a successful comparison and exit
-with status 0; validation, loading, usage and output failures return a nonzero
-status.
-
-`-o json` emits the pinned `kmx.agentsuite.diff/v1` envelope. `changes` and
-`affectedAgents` are always arrays, including for an unchanged comparison.
-The report refuses more than 10,000 changed fields in one record, 20,000
-changed fields in total, 10,000 changed records, or an indented JSON
-representation larger than 8 MiB; unchanged fields do not consume these
-limits, and automation output is never silently truncated.
-
-Human output strips terminal controls and Unicode format/bidirectional controls,
-and renders artifact-derived labels on one line.
-With a measured terminal width, split output constrains every report line and
-falls back to unified rows when two useful columns do not fit. When output width
-is unknown, split rows remain unwrapped and unpadded rather than assuming a
-terminal size.
+`kmx suite diff` has been removed. There is no replacement CLI command for
+semantic package comparison. The upstream AgentSuite `oci.DiffPaths` API remains
+available; `kmx test diff` still compares passing evaluation receipts, not packages.
 
 #### Suite provenance
 
