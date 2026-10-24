@@ -30,8 +30,8 @@ deprecated; a marketplace install will come later.
 Ask Copilot to create an agent through kmx and open its canvas. Give it a full
 Mac path when the file is outside the current directory. Add or edit tests;
 Enter saves and runs them. Change the prompt and press Enter again to see the
-results change. The runtime model is picker override → authored model →
-`gpt-5.6-terra`; existing `gh` sign-in supplies credentials without an install-time
+results change. The runtime model is picker override → authored model → current
+chat model (when available) → `gpt-5.6-terra`; existing `gh` sign-in supplies credentials without an install-time
 login step. An unknown model fails without silently switching models.
 
 ## Shared assets and verification
