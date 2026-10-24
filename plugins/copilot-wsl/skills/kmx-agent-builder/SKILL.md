@@ -93,9 +93,11 @@ Explain is not an MCP tool.
 
 ## Add tests from chat
 
-When asked to add or suggest tests, read the agent's current kmx resource and
-add job-relevant tests with Edit at that revision. Preserve its prompt, authored
-model and existing tests. Use the stable-string recipe above. Do not run tests
+When asked to add or suggest tests with a saved agent snapshot, use its exact
+`content` and `expectedRevision`; no resource read is needed. Add job-relevant
+tests with one Edit at that revision. Otherwise read the current resource if the
+host provides a resource reader. Preserve the prompt, authored model and existing
+tests. Use the stable-string recipe above. Do not run tests
 unless asked. After a confirmed save, the complete reply is exactly one line:
 `Added <count> tests to <file>.` Use the basename, with no revision, test list or
 trailing explanation. The canvas reads the saved file. If no save occurred,

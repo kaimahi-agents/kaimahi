@@ -288,8 +288,10 @@ or `gpt-5.6-terra` when the Model section is omitted;
 an explicit trusted `--provider` and, for local routes, `--endpoint`, validated by model access;
 there is no discovery, installation, sign-in or fallback inside Run/Test. The
 caller supplies any judge-route override through the App API; otherwise the
-judge uses the exact agent route, never an independently chosen route. Conflicting
-authored judge models refuse rather than silently switching.
+judge uses the exact agent route, never an independently chosen route. A canonical
+file Judge without `judgeModel` follows that route; conflicting authored pins still
+refuse rather than silently switching. `judgeVersion` stays authored and required.
+Strict workspace assertions and exported run profiles still require a model pin.
 
 Output defaults to text; `-o json` returns one versioned `schemaVersion: 1`,
 `kind: kmx.agent-file-preview` document. Both preserve operation, exact source-byte
@@ -526,27 +528,31 @@ The [Windows/WSL plugin](../plugins/copilot-wsl/README.md) and
 [macOS/PATH plugin](../plugins/copilot/README.md) share a
 native authoring canvas and read-only `/agent-view PATH` text fallback over this
 resource. Canvas Edit/Test/Run use existing same-session MCP tools; only explicit
-**Suggest tests** starts chat, asking Copilot to save additional tests through
-revision-checked Edit without running them. Its status acknowledges the request,
-not a completed addition. Saves require the original revision; changed result
+**Suggest tests** starts chat with the exact saved source, path and revision,
+asking Copilot for one revision-checked Edit without running tests or requiring a
+resource-reader tool. Its status acknowledges the request, not a completed addition. Saves require the original revision; changed result
 revisions are labelled stale rather than silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.
 
 The canvas check chooser offers Contains, Not contains, Regex and Judge. Judge
 edits the existing `llmJudge` fields: a multiline rubric, integer minimum score
-from 0 through 100, judge model and judge version. All four are explicit; the
-canvas does not invent a score, model or version. Zero remains a valid threshold.
+from 0 through 100, optional judge model and required authored judge version.
+Leaving the model blank follows the run model; an explicit model stays pinned and
+is labelled in the row. The canvas invents no score or version. Zero is valid.
 Enter saves and runs the current test; Shift+Enter adds a rubric line break and
 Esc discards that test's draft. Changing check type keeps its ID and operand text,
 removing judge-only metadata when changing away from Judge.
 
-Judge results show the observed Passed, Failed or Inconclusive verdict and safe
-reason. The resource does not expose scores or raw judge reasoning, and the canvas
-does not infer them. Draft or model changes keep prior results stale until a new
-run confirms them. MCP judging uses the same effective model as the agent preview:
-the authored judge model must match it. Judge version is authored model identity,
-not a version obtained from the host SDK.
+Judge details show the observed Passed, Failed or Inconclusive verdict. With the
+existing content opt-ins, a validated per-assertion `judge` display includes both
+sample `scores`, `minScore` and bounded, sanitized `reasons`; two samples are never
+averaged. Reasons stay out of list rows, ordinary summaries and receipt evidence.
+Draft or model changes keep prior results stale until a new run confirms them.
+MCP judging follows the agent's effective model unless pinned; an authored pin
+must match that route. Judge version remains authored identity, not host SDK metadata.
+Every fresh, matching refused/failed preview can show kmx's safe reason; revision,
+model, selection and invocation-proof checks still prevent attributing old failures.
 
 The canvas Model picker is session-only: override → authored Model.Preferred →
 known chat model → `gpt-5.6-terra`. Selecting a model never edits the file or its

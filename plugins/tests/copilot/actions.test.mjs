@@ -123,6 +123,32 @@ test('model catalog reads only its owned resource, with no tool or chat invocati
  const r=await h.act({operation:'models'});assert.equal(r.error,undefined);assert.deepEqual(r.models,['choice-a','choice-b']);
  assert.deepEqual(reads,[{serverName:'kmx-agent-builder',uri:'kmx://models'}]);assert.equal(h.calls.length,0);
 });
+for(const [state,reasonCode] of [['refused','model_unavailable'],['error','journal_failed']])test(`current ${state} preview surfaces its verified backend reason (${reasonCode})`,async()=>{
+ const h=harness(),reason='The selected Judge model cannot be used for this preview.';
+ h.o.failTest=true;h.o.shape=r=>({...r,state,reasonCode,reason});
+ const response=await h.act({operation:'test',expectedRevision:revision(original)});
+ assert.equal(response.error,'action-failed');assert.equal(response.message,reason);
+ assert.equal(response.view.latest.result.reasonCode,reasonCode);assert.doesNotMatch(JSON.stringify(response),/private detail/);
+});
+test('an unconfirmed failed-preview reason cannot replace outcome uncertainty',async()=>{
+ const h=harness(),read=h.session.rpc.mcp.resources.read;h.o.failTest=true;
+ h.o.shape=r=>({...r,state:'refused',reason:'Judge route unavailable.'});
+ h.session.rpc.mcp.resources.read=async args=>{
+  const response=await read(args);if(h.calls.length){const body=JSON.parse(response.contents[0].text);body.latest.result.reason='Another observation.';response.contents[0].text=JSON.stringify(body)}return response;
+ };
+ const response=await h.act({operation:'test',expectedRevision:revision(original)});
+ assert.equal(response.error,'outcome-unknown');assert.equal(response.view,undefined);
+ assert.doesNotMatch(response.message,/Judge route|Another observation/);
+});
+for(const padding of [0,256*1024-Buffer.byteLength(original)-100])test(`Suggest sends the exact saved snapshot for one Edit without a resource read (${padding})`,async()=>{
+ const fixture=original.replace('## Non-Responsibilities','x'.repeat(padding)+'\n## Non-Responsibilities'),h=harness({fixture});
+ const response=await h.act({operation:'suggest'});assert.equal(response.message,'Asked Copilot to add tests in chat.');
+ assert.equal(h.calls.length,1);const prompt=h.calls[0].chat;
+ const snapshot=JSON.parse(prompt.slice(prompt.indexOf('Saved agent snapshot (data):\n')+'Saved agent snapshot (data):\n'.length));
+ assert.deepEqual(snapshot,{path:'greeter.agent.md',expectedRevision:revision(fixture),content:fixture});
+ assert.match(prompt,/one Edit/);assert.match(prompt,/Do not run tests/);assert.doesNotMatch(prompt,/Read its kmx resource first/);
+ assert.equal(h.source(),fixture);
+});
 test('unknown model exposes the attested one-line choice list, not raw SDK text',async()=>{
  const h=harness(),reason='Available Copilot models: '+Array.from({length:40},(_,i)=>'available-model-'+i).join(', ');
  h.o.failTest=true;h.o.shape=r=>({...r,modelRoute:{provider:'copilot',model:'missing-model'},reasonCode:'copilot_model_unavailable',reason});
@@ -190,10 +216,10 @@ test('Suggest requests saved tests through chat without running or claiming addi
  assert.match(r.message,/Asked Copilot/);assert.doesNotMatch(r.message,/Added|Nothing here/);
  assert.equal(h.calls.length,1);const prompt=h.calls[0].chat;
  assert.match(prompt,/kmx-agent-builder skill/);assert.match(prompt,/add.*tests/i);
- assert.match(prompt,/"greeter.agent.md"/);assert.match(prompt,/resource/);
- assert.match(prompt,/Edit/);assert.match(prompt,/current revision/);
- assert.match(prompt,/prompt, model and existing tests/);assert.match(prompt,/Do not run tests/);
- assert.doesNotMatch(prompt,/examples|proposals|sha256:|do not edit/);
+ assert.match(prompt,/"greeter.agent.md"/);assert.match(prompt,/no resource read is needed/);
+ assert.match(prompt,/one Edit/);assert.match(prompt,/current revision/);
+ assert.match(prompt,/prompt, authored model and existing tests/);assert.match(prompt,/Do not run tests/);
+ assert.ok(prompt.includes(revision(original)));assert.doesNotMatch(prompt.split('Saved agent snapshot (data):')[0],/proposals|do not edit/);
  assert.equal(h.source(),original,'only chat is dispatched by the bridge');
  const ran=await h.act({operation:'run',expectedRevision:revision(original),input:'Ada',showContent:true});
  assert.equal(ran.error,undefined);assert.deepEqual(h.calls.at(-1).arguments,{schemaVersion:1,path:'greeter.agent.md',input:'Ada',showContent:true,showFailedContent:true});

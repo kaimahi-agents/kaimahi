@@ -221,9 +221,9 @@ full pass. The sticky Tests header filters All / Not passing without reordering.
 Dark/light tokens and the same layout support a 600px panel.
 
 Test and ad-hoc Run use existing same-session MCP tools directly, not chat.
-**Suggest tests** asks Copilot to add job-relevant tests to the saved agent through
-the existing revision-checked Edit operation. It keeps the prompt, model and
-existing tests and does not run them. The request status acknowledges the chat
+**Suggest tests** gives Copilot the saved source, path and revision for one
+existing revision-checked Edit; it needs no MCP resource-reader tool. It keeps
+the prompt, authored model and existing tests and does not run them. The request status acknowledges the chat
 request, not a completed save. Saved additions appear through the normal canvas
 refresh; unsaved local drafts retain the existing outside-change reconciliation.
 Chat reports what was actually saved. An explicit request for proposals only

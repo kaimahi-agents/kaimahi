@@ -194,6 +194,7 @@ export function checkFields(doc, initial, index, change, fieldKeys) {
       else if (input.tagName?.toLowerCase() !== "textarea" && key !== "rubric") input.type = "text";
       if (!judge) input.setAttribute("placeholder", assertion.type === "contains" ? "Text the answer must contain" : assertion.type === "notContains" ? "Text the answer must not contain" : "Pattern the answer must match");
       if (key === "rubric") input.rows = 2;
+      if (key === "judgeModel") input.setAttribute("placeholder", "Run model when blank");
       input.addEventListener("input", () => change(key, key === "minScore" && input.value !== "" ? Number(input.value) : input.value));
       fieldKeys(input); inputs.push(input);
       if (judge) { const wrap = el(doc, "label", `check-field ${key === "rubric" ? "rubric-field" : ""}`, label); wrap.append(input); node.append(wrap); }
@@ -210,11 +211,25 @@ export function inconclusiveJudge(c, observed) {
     && [...c.expected.values(), ...c.checks.values()].every(value => value !== null)
     && [...c.checks.keys()].every(key => c.expected.has(key));
 }
+// Judge diagnostics are display-only and stay out of the list's status copy.
+export function judgeDetails(doc) {
+  const binding = el(doc, "div", "meta judge-binding"), node = el(doc, "div", "judge-result");
+  const score = el(doc, "div", "judge-score"), reason = el(doc, "div", "judge-reason");
+  return { binding, node, score, reason, update(assertion, observed, visible, old) {
+    const model = assertion.judgeModel ?? assertion.fields?.find(([key]) => key === "judgeModel")?.[1];
+    binding.textContent = model ? `Judge model: ${model} · pinned` : "Judge model: Run model · follows selection";
+    const detail = visible ? observed?.judge : undefined;
+    score.textContent = detail ? `Scores: ${detail.scores.join(", ")} · minimum ${detail.minScore}` : "";
+    reason.textContent = visible ? detail?.reasons.length ? detail.reasons.join("\n\n") : observed?.reason ?? "" : "";
+    node.hidden = !visible; node.className = old ? "judge-result old" : "judge-result";
+  } };
+}
 export function checkComplete(a) {
   if (!EDITABLE_TYPES.some(([type]) => type === a.type)) return true;
   if (!String(a[operandKey(a.type)] ?? "").trim()) return false;
   return a.type !== "llmJudge" || typeof a.minScore === "number" && Number.isInteger(a.minScore) && a.minScore >= 0 && a.minScore <= 100
-    && typeof a.judgeModel === "string" && !!a.judgeModel.trim() && typeof a.judgeVersion === "string" && !!a.judgeVersion.trim();
+    && (a.judgeModel === undefined || a.judgeModel === "" || typeof a.judgeModel === "string" && !!a.judgeModel.trim())
+    && typeof a.judgeVersion === "string" && !!a.judgeVersion.trim();
 }
 export function convertCheck(target, type) {
   const oldKey = operandKey(target.type), newKey = operandKey(type), value = target[oldKey] ?? "";

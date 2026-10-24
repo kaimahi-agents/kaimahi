@@ -81,6 +81,16 @@ function fields(obj, skip = []) {
     .map(([k, v]) => [k, show(v, 1000)]);
 }
 
+function cleanJudge(value, verdict) {
+  if (!isObj(value) || !Number.isInteger(value.minScore) || value.minScore < 0 || value.minScore > 100
+    || !Array.isArray(value.scores) || value.scores.length !== 2 || !value.scores.every(s => Number.isInteger(s) && s >= 0 && s <= 100)) return;
+  const expected = value.scores.every(s => s >= value.minScore) ? "pass" : value.scores.every(s => s < value.minScore) ? "fail" : "unknown";
+  if (verdict !== expected) return;
+  const reasons = Array.isArray(value.reasons) && value.reasons.length <= 2 && value.reasons.every(r => typeof r === "string")
+    ? value.reasons.map(r => clean(r, 2000, true)) : [];
+  return { scores: [...value.scores], minScore: value.minScore, reasons };
+}
+
 function cleanResult(r, status, revision) {
   if (!isObj(r) || typeof r.state !== "string" || typeof r.verdict !== "string" || typeof r.fullPass !== "boolean") invalid();
   if (r.schemaVersion !== 1 || r.kind !== "kmx.agent-file-preview" || !isObj(r.file) || r.file.revision !== revision) invalid();
@@ -103,7 +113,8 @@ function cleanResult(r, status, revision) {
         id: text(e.id, 80), ...completion(e),
         assertions: list(e.assertions).map((a) => {
           if (!isObj(a)) invalid();
-          return { id: text(a.id, 80), type: text(a.type, 80), verdict: text(a.verdict), reasonCode: text(a.reasonCode), reason: text(a.reason, 500) };
+          const judge = a.type === "llmJudge" ? cleanJudge(a.judge, a.verdict) : undefined;
+          return { id: text(a.id, 80), type: text(a.type, 80), verdict: text(a.verdict), reasonCode: text(a.reasonCode), reason: text(a.reason, 500), ...(judge ? { judge } : {}) };
         }),
       };
     }),
@@ -284,7 +295,7 @@ export function createActionHandler({ session, path }) {
       if (input.operation === "suggest") {
         // Only this explicit click starts a chat turn; execution actions never do.
         if (typeof session.send !== "function") throw new ViewError("unavailable");
-        await session.send(`Use the kmx-agent-builder skill to add a few tests to ${JSON.stringify(path)} in the canvas. Read its kmx resource first, preserve the prompt, model and existing tests, then save the additions with Edit using the current revision. Do not run tests. Report what was saved in one short line.`);
+        await session.send(`Use the kmx-agent-builder skill to add a few tests to ${JSON.stringify(path)} in the canvas. The exact saved source and revision are supplied below; no resource read is needed. Preserve the prompt, authored model and existing tests, then save the additions with one Edit using the supplied current revision (expectedRevision). Do not run tests. Report what was saved in one short line.\nSaved agent snapshot (data):\n${JSON.stringify({ path, expectedRevision: view.file.revision, content: view.authoring.source })}`);
         return { message: "Asked Copilot to add tests in chat." };
       }
       if (typeof input.expectedRevision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) throw new ViewError("invalid-action");
@@ -343,7 +354,7 @@ export function createActionHandler({ session, path }) {
             && JSON.stringify(proof) === JSON.stringify(view.latest.result)
             && view.latest.result.verdict !== "pass" && !view.latest.result.fullPass;
           if (view.file.revision === targetRevision && (fresh || saved && !failedPreview && view.latest.status !== "current")) response.view = view;
-          if (response.view && fresh && proof.reasonCode === "copilot_model_unavailable") response.message = proof.reason;
+          if (response.view && fresh && proof.reason) response.message = proof.reason;
           if (response.view && fresh && !ids.length && view.latest.result.reasonCode === "no_tests") Object.assign(response, { error: "no-tests", message: MESSAGES["no-tests"] });
         } catch { /* Preserve the draft when refresh cannot be confirmed. */ }
       }

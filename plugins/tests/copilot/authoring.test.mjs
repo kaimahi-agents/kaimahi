@@ -186,6 +186,17 @@ test("unknown fields/types, tool assertions, wrong scalar types and incomplete j
   for (const minScore of [null, "0", -1, 101, 1.5, NaN]) assert.throws(() => replaceExamples(SOURCE, [{ ...examples()[0], assertions: [{ ...judge, minScore }] }]));
 });
 
+test("an omitted Judge model follows the run without serializing a guessed pin", () => {
+  for (const eol of ["\n", "\r\n"]) for (const model of [undefined, ""]) {
+    const judge = { id: "judge", type: "llmJudge", rubric: "Judge well.", minScore: 0, judgeVersion: "v1", ...(model !== undefined ? { judgeModel: model } : {}) };
+    const source = replaceExamples(SOURCE.replaceAll("\n", eol), [{ ...examples()[0], assertions: [judge] }]);
+    assert.doesNotMatch(source, /judgeModel:|undefined/); assert.match(source, /judgeVersion: "v1"/);
+    assert.deepEqual(instructionSections(source), instructionSections(SOURCE.replaceAll("\n", eol)));
+    for (const version of [undefined, "", " "]) assert.throws(() => replaceExamples(SOURCE, [{ ...examples()[0], assertions: [{ ...judge, judgeVersion: version }] }]));
+    for (const judgeModel of [null, 2, " "]) assert.throws(() => replaceExamples(SOURCE, [{ ...examples()[0], assertions: [{ ...judge, judgeModel }] }]));
+  }
+});
+
 test("zero examples serialize as an explicit empty sequence", () => {
   const source = SOURCE.replaceAll("\n", "\r\n");
   const prefix = source.slice(0, source.indexOf("## Examples"));

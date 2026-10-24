@@ -190,7 +190,7 @@ function validateExamples(examples) {
       for (const key of operands) {
         if (key === "minScore") {
           require(Number.isInteger(check[key]) && check[key] >= 0 && check[key] <= 100, "minScore must be an integer from 0 to 100.");
-        } else {
+        } else if (key !== "judgeModel" || check[key] !== undefined && check[key] !== "") {
           nonblank(check[key]);
         }
       }
@@ -211,6 +211,7 @@ export function replaceExamples(source, examples) {
     for (const check of example.assertions) {
       lines.push(`      - id: ${JSON.stringify(check.id)}`, `        type: ${JSON.stringify(check.type)}`);
       for (const key of ASSERTION_FIELDS[check.type]) {
+        if (key === "judgeModel" && (check[key] === undefined || check[key] === "")) continue;
         lines.push(`        ${key}: ${JSON.stringify(check[key])}`);
       }
     }

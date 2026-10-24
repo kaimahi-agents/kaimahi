@@ -1965,10 +1965,61 @@ for (const score of ["0", "100", "", "1.5", "101"]) test(`Judge minimum score ${
   else { assert.equal(h.calls.length, 0); assert.match(h.root.textContent, /Fill in every check\./); }
 });
 
-for (const field of ["judge model", "judge version"]) test(`Judge requires ${field} before dispatch`, async () => {
+for (const field of ["judge version"]) test(`Judge requires ${field} before dispatch`, async () => {
   const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }] });
   openTest(h.root, "a"); edited(judgeField(h.root, 1, field), ""); enterOn(judgeField(h.root, 1, "rubric")); await tick();
   assert.equal(h.calls.length, 0); assert.match(h.root.textContent, /Fill in every check\./);
+});
+
+test("an unpinned Judge is runnable and states that it follows the run model", async () => {
+  const assertion = judgeAssertion(); delete assertion.judgeModel;
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [assertion] }] });
+  openTest(h.root, "a"); assert.match(byClass(h.root, "judge-binding")[0].textContent, /Run model/);
+  edited(judgeField(h.root, 1, "rubric"), "Says exactly why.");
+  enterOn(judgeField(h.root, 1, "rubric")); await tick();
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].examples[0].assertions[0].judgeModel, undefined);
+  assert.equal(h.calls[0].examples[0].assertions[0].judgeVersion, "v1");
+});
+
+test("clearing an existing Judge pin keeps its explicit version and permits the next run", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [judgeAssertion()] }] });
+  openTest(h.root, "a"); edited(judgeField(h.root, 1, "judge model"), "");
+  assert.match(byClass(h.root, "judge-binding")[0].textContent, /Run model/);
+  enterOn(judgeField(h.root, 1, "rubric")); await tick();
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].examples[0].assertions[0].judgeVersion, "v1");
+  assert.equal(h.calls[0].examples[0].assertions[0].judgeModel, "");
+});
+
+test("optional Judge display drops malformed or contradictory scores without invalidating the observation", async () => {
+  for (const judge of [
+    { scores: [20], minScore: 70 }, { scores: [-1, 20], minScore: 70 },
+    { scores: [20, 30], minScore: 101 }, { scores: [80, 90], minScore: 70 },
+    { scores: ["20", 30], minScore: 70 },
+  ]) {
+    const r = result({ verdict: "fail", fullPass: false });
+    r.examples[0].assertions[0] = { id: "exact", type: "llmJudge", verdict: "fail", judge };
+    const view = await readView(stubSession(resource(MINIMAL, { latest: { status: "current", result: r } })), MINIMAL);
+    assert.equal(view.latest.status, "current"); assert.equal(view.latest.badge, "not-passing");
+    assert.equal(view.latest.result.examples[0].assertions[0].judge, undefined);
+  }
+});
+
+test("Judge detail renders both observed scores and safe reasons, never in the list", async () => {
+  const assertion = { ...judgeAssertion(), minScore: 70 }, reasons = ['Missing the reason for users.', '<img src=x onerror="bad()"> Not explained.'];
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: [{ id: "a", input: "Name a", assertions: [assertion] }], latest: (revision, examples) => {
+    const latest = bLatest({ a: "fail" })(revision, examples);
+    latest.result.examples[0].assertions[0].judge = { scores: [40, 55], minScore: 70, reasons };
+    return latest;
+  } });
+  assert.doesNotMatch(h.root.textContent, /Missing the reason|Not explained/);
+  openTest(h.root, "a");
+  assert.match(byClass(h.root, "judge-binding")[0].textContent, /fake.*pinned/);
+  assert.equal(byClass(h.root, "judge-score")[0].textContent, "Scores: 40, 55 · minimum 70");
+  assert.equal(byClass(h.root, "judge-reason")[0].textContent, reasons.join("\n\n"));
+  assert.equal(all(h.root).some(e => e.tag === "img"), false);
+  edited(judgeField(h.root, 1, "judge version"), "v2");
+  assert.match(byClass(h.root, "judge-result")[0].className, /old/);
+  assert.match(byClass(h.root, "check-verdict")[0].textContent, /last run/);
 });
 
 for (const verdict of ["pass", "fail", "unknown"]) test(`Judge renders observed ${verdict} and safe reason without scores`, async () => {

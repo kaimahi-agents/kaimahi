@@ -1,7 +1,7 @@
 // Resource and authoring values are untrusted: render only inert DOM text.
 import { instructionSections, runtimeModelSelection, agentName, fileLocation, effectiveModel } from "./authoring.mjs";
 import { el, inlineText, editorValue, insertPlainText, fillEditor, purposeText, instructionsContent, runtimeModelControl, testNameControl, pathControls, icon, statusIcon,
-  checkKey, uniqueIndex, inspectCases, friendlyName, clone, same, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, modelPresentation, growTextarea, checkTypeControl, checkFields, checkComplete, convertCheck, inconclusiveJudge } from "./editor.mjs";
+  checkKey, uniqueIndex, inspectCases, friendlyName, clone, same, operandKey, EDITABLE_TYPES, quoted, checkLabel, oneLine, failureFacts, testRow, coherentSelection, ambiguousPassSet, countText, plural, resultHistory, resultPill, modelLabel, modelPresentation, growTextarea, checkTypeControl, checkFields, checkComplete, convertCheck, inconclusiveJudge, judgeDetails } from "./editor.mjs";
 export { provenActual } from "./editor.mjs";
 const CONFLICTS = ["revision_mismatch", "revision-mismatch"];
 const UNKNOWN = ["outcome-unknown", "uncertain-outcome", "uncertain_outcome"];
@@ -775,8 +775,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       const display = editableTest ? displayChecks.get(checkKey(a)) : a;
       const observed = display && c?.expected?.get(checkKey(display)) === display ? c.checks?.get(checkKey(display)) : undefined;
       const row = el(doc, "div", "check"), state = el(doc, "span", "check-state"), verdict = el(doc, "span", "check-verdict");
-      const judge = a.type === "llmJudge", reason = judge ? el(doc, "div", "judge-reason") : undefined;
-      const judgeResult = judge ? el(doc, "div", "judge-result") : undefined;
+      const judge = a.type === "llmJudge", details = judge ? judgeDetails(doc) : undefined;
+      const judgeResult = details?.node;
       updates.push(() => {
         let kind = "none", label = "No result";
         const completed = !ambiguousPassSet(base) && (c?.state === "pass" || c?.state === "fail");
@@ -788,7 +788,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         state.replaceChildren(statusIcon(doc, kind, label));
         verdict.textContent = text ? `${judge ? "Judge " : ""}${text}${judge && local() ? " · last run" : ""}` : "";
         verdict.setAttribute("data-tone", kind);
-        if (reason) { reason.textContent = kind === "none" ? "" : observed.reason; judgeResult.hidden = kind === "none"; judgeResult.className = local() ? "judge-result old" : "judge-result"; }
+        if (details) details.update(editableTest ? current().assertions[index] : a, observed, kind !== "none", local());
       });
       const known = editableTest && EDITABLE_TYPES.some(([t]) => t === a.type);
       if (known) {
@@ -832,7 +832,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         remove.append(icon(doc, "trash", 14, 2)); row.append(remove);
       }
       checks.append(row);
-      if (judgeResult) { judgeResult.append(verdict, reason); checks.append(judgeResult); }
+      if (judgeResult) { judgeResult.append(verdict, details.score, details.reason); checks.append(details.binding, judgeResult); }
       const checkFacts = display && c && !blocked && draft()?.origin !== null ? failureFacts(c, display) : undefined;
       if (checkFacts) {
         // Repairs belong to the saved assertion they explain, not a later type
