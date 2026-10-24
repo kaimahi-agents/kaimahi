@@ -145,7 +145,10 @@ func (c *evaluationJudgeClient) evaluate(ctx context.Context, evaluationCase age
 		}
 		row := &rows[i]
 		note := suiteJudgeDiagnostic{CaseID: evaluationCase.ID, AssertionID: a.ID, Class: "judge-unavailable"}
-		defer func() { recordSuiteJudgeDiagnostic(ctx, note) }()
+		defer func() {
+			recordSuiteJudgeDiagnostic(ctx, note)
+			recordFileJudgeDiagnostic(ctx, note, c.key)
+		}()
 		row.Judge = &agentruntime.EvaluationJudgeEvidence{
 			Model: a.JudgeModel, ModelVersion: a.JudgeVersion, Provenance: "user-declared", RequestStyle: agentruntime.EvaluationJudgeRequestStyle,
 			EvaluatorDigest:     agentruntime.EvaluationJudgeEvaluatorDigest(),

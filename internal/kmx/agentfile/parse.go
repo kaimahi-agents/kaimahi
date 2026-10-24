@@ -1,5 +1,7 @@
 // Package agentfile parses and loads single-file agent charters.
 // Explicit Squad parsing returns a distinct charter type, not a runnable Agent.
+// Canonical judge models may be omitted; execution binds isolated copies to the
+// selected route, while native Squad parsing and offline export require pins.
 // Offline run-profile export preserves canonical content and hashes, not evidence.
 // Parsing, inspection and export do not execute agents or register them with Squad.
 package agentfile
@@ -301,7 +303,7 @@ func parse(filename string, data []byte, inspection bool) (*Agent, error) {
 		}
 	}
 	s := sections["Examples"]
-	examples, err := parseExamples(filename, lines[s.start+1:s.end], s.start+2)
+	examples, err := parseExamples(filename, lines[s.start+1:s.end], s.start+2, true)
 	if err != nil {
 		return nil, err
 	}

@@ -147,7 +147,6 @@ func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared,
 			return nil, refuse(RefusedRequest, "the agent has no examples to test", "add examples to the Examples section")
 		}
 		for _, example := range agent.Examples {
-			c := agentruntime.EvaluationCase{ID: example.ID, Input: example.Input, Assertions: example.Assertions}
 			for _, assertion := range example.Assertions {
 				switch assertion.Type {
 				case "contains", "notContains", "regex":
@@ -159,10 +158,6 @@ func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared,
 					return nil, refuse(RefusedRequest, "an example uses an unsupported assertion type", "use contains, notContains, regex or llmJudge")
 				}
 			}
-			if agentruntime.ValidateEvaluationAssertions(c.Assertions) != nil {
-				return nil, refuse(RefusedRequest, "an example has invalid assertions", "fix the Examples section")
-			}
-			p.cases = append(p.cases, c)
 		}
 	}
 	resolver := options.resolveRoute
@@ -174,22 +169,40 @@ func prepare(agent *agentfile.Agent, options Options, examples bool) (*prepared,
 		return nil, err
 	}
 	p.addCredential(p.route.key)
-	if !hasJudge {
-		if options.JudgeEndpoint != nil {
-			return nil, refuse(RefusedJudge, "a judge endpoint was configured but no example uses llmJudge", "remove the judge endpoint")
-		}
-		return p, nil
+	if !hasJudge && options.JudgeEndpoint != nil {
+		return nil, refuse(RefusedJudge, "a judge endpoint was configured but no example uses llmJudge", "remove the judge endpoint")
 	}
-	if options.Judge == nil {
+	if hasJudge && options.Judge == nil {
 		return nil, refuse(RefusedJudge, "llmJudge examples need the shared judge", "run the preview through kmx")
 	}
 	judgeRoute := p.route
-	if options.JudgeEndpoint != nil {
+	if hasJudge && options.JudgeEndpoint != nil {
 		// An explicit override is a compatible endpoint; the judge model is
 		// each assertion's authored judgeModel, not Model.Preferred.
 		if judgeRoute, err = resolver("", options.JudgeEndpoint, options.Transport, "the judge"); err != nil {
 			return nil, err
 		}
+	}
+	// A standalone endpoint override selects transport, not another model.
+	// Adapter routes can supply an explicit judge model; otherwise use the run model.
+	model := judgeRoute.model
+	if model == "" {
+		model = p.route.model
+	}
+	execution := *agent
+	execution.Examples = agentfile.BindJudgeModels(agent.Examples, model)
+	p.agent = &execution
+	if examples {
+		for _, example := range execution.Examples {
+			c := agentruntime.EvaluationCase{ID: example.ID, Input: example.Input, Assertions: example.Assertions}
+			if agentruntime.ValidateEvaluationAssertions(c.Assertions) != nil {
+				return nil, refuse(RefusedRequest, "an example has invalid assertions", "fix the Examples section")
+			}
+			p.cases = append(p.cases, c)
+		}
+	}
+	if !hasJudge {
+		return p, nil
 	}
 	p.judgeRt = judgeRoute.kind()
 	p.addCredential(judgeRoute.key)
@@ -251,7 +264,7 @@ func Test(ctx context.Context, agent *agentfile.Agent, options Options) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	return p.run(ctx, agent.Examples, true)
+	return p.run(ctx, p.agent.Examples, true)
 }
 
 func (p *prepared) run(ctx context.Context, examples []agentfile.Example, evaluate bool) (result Result, err error) {

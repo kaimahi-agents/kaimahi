@@ -227,7 +227,7 @@ func ParseSquad(filename string, data []byte, profile SquadProfile) (*SquadChart
 			return fail("Task Instructions", "add bounded task instructions without replacing native rules")
 		}
 		examples := d.Sections[examplesIndex]
-		d.Examples, err = parseExamples(filename, strings.Split(strings.ReplaceAll(string(data[examples.Body.Start:examples.Body.End]), "\r\n", "\n"), "\n"), d.Locations["Examples"].Line+1)
+		d.Examples, err = parseExamples(filename, strings.Split(strings.ReplaceAll(string(data[examples.Body.Start:examples.Body.End]), "\r\n", "\n"), "\n"), d.Locations["Examples"].Line+1, false)
 		if err != nil {
 			return nil, err
 		}

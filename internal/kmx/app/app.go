@@ -6,6 +6,8 @@
 // placement alone must not be treated as proof of agent behavior. Retained
 // evaluation failures use the checked private filesystem on supported local
 // filesystems; visible-but-unconfirmed records remain diagnostics only.
+// File previews bind omitted judge models on execution copies and expose valid
+// two-sample scores and sanitized transient reasons only with content disclosure.
 package app
 
 import (

@@ -11,7 +11,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func parseExamples(file string, lines []string, firstLine int) ([]Example, error) {
+func parseExamples(file string, lines []string, firstLine int, allowUnpinnedJudge bool) ([]Example, error) {
 	start := 0
 	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
 		start++
@@ -153,6 +153,7 @@ func parseExamples(file string, lines []string, firstLine int) ([]Example, error
 		}
 		e := Example{ID: id, Input: values["input"].Value, Location: location(node)}
 		assertionIDs := map[string]bool{}
+		validationAssertions := make([]runtime.EvaluationAssertion, 0, len(assertions.Content))
 		for _, n := range assertions.Content {
 			if n.Kind != yaml.MappingNode {
 				return nil, errAt(n, "each assertion must be a mapping")
@@ -176,14 +177,27 @@ func parseExamples(file string, lines []string, firstLine int) ([]Example, error
 					return nil, errAt(n, "remove control characters except newline/tab and use LF or CRLF line breaks")
 				}
 			}
-			if err := runtime.ValidateEvaluationAssertions([]runtime.EvaluationAssertion{assertion}); err != nil {
-				return nil, errAt(n, "provide a valid assertion ID and operand; llmJudge requires rubric, minScore (0–100), judgeModel and judgeVersion")
+			validation := assertion
+			if allowUnpinnedJudge && assertion.Type == "llmJudge" && assertion.JudgeModel == "" {
+				// Only absence is unpinned; an explicitly blank model is invalid.
+				for i := 0; i < len(n.Content); i += 2 {
+					if n.Content[i].Value == "judgeModel" {
+						return nil, errAt(n, "omit judgeModel or provide a nonblank exact model")
+					}
+				}
+				// This validation-only identity never enters the authored definition,
+				// digest, export or runner. Both validation layers remain shared/strict.
+				validation.JudgeModel = "validation-only"
 			}
+			if err := runtime.ValidateEvaluationAssertions([]runtime.EvaluationAssertion{validation}); err != nil {
+				return nil, errAt(n, "provide a valid assertion ID and operand; llmJudge requires rubric, minScore (0–100) and judgeVersion; judgeModel is optional")
+			}
+			validationAssertions = append(validationAssertions, validation)
 			assertionIDs[assertion.ID] = true
 			e.Assertions = append(e.Assertions, assertion)
 			e.AssertionLocations = append(e.AssertionLocations, location(n))
 		}
-		if err := runtime.ValidateEvaluationCase(runtime.EvaluationCase{ID: e.ID, Input: e.Input, Assertions: e.Assertions}); err != nil {
+		if err := runtime.ValidateEvaluationCase(runtime.EvaluationCase{ID: e.ID, Input: e.Input, Assertions: validationAssertions}); err != nil {
 			return nil, errAt(values["input"], "provide valid example input without credential-shaped content")
 		}
 		examples = append(examples, e)

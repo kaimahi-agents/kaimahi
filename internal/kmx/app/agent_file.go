@@ -89,6 +89,7 @@ type FilePreviewAssertion struct {
 	Verdict    runtime.EvaluationVerdict `json:"verdict"`
 	ReasonCode string                    `json:"reasonCode"`
 	Reason     string                    `json:"reason"`
+	Judge      *FilePreviewJudge         `json:"judge,omitempty"`
 }
 
 // FilePreviewError contains fixed safe text or validated catalog choices, never raw provider content.
@@ -230,19 +231,6 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	if len(parsed.Examples) == 0 && opt.Input == nil {
 		return fail("no_tests", 1)
 	}
-	selected := parsed.Examples
-	if opt.CaseID != "" {
-		r.Selection.Scope = "subset"
-		selected = nil
-		for _, ex := range parsed.Examples {
-			if ex.ID == opt.CaseID {
-				selected = append(selected, ex)
-			}
-		}
-		if len(selected) != 1 {
-			return fail("invalid_selection", 1)
-		}
-	}
 	route := modelaccess.Route{Provider: "fake", Model: "fake", Auth: "none"}
 	if opt.Route != nil {
 		route = *opt.Route
@@ -262,6 +250,20 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 	}
 	if judge.Validate() != nil || secretshapes.Match(judge.Model) != nil || judge.Provider == "fake" && judge.Model != "fake" || judge.Provider != "fake" && judge.Model == "fake" {
 		return fail("model_unavailable", 1)
+	}
+	parsed.Examples = agentfile.BindJudgeModels(parsed.Examples, judge.Model)
+	selected := parsed.Examples
+	if opt.CaseID != "" {
+		r.Selection.Scope = "subset"
+		selected = nil
+		for _, ex := range parsed.Examples {
+			if ex.ID == opt.CaseID {
+				selected = append(selected, ex)
+			}
+		}
+		if len(selected) != 1 {
+			return fail("invalid_selection", 1)
+		}
 	}
 	if opt.JudgeRoute != nil {
 		r.JudgeRoute = &FilePreviewRoute{judge.Provider, judge.Model}
@@ -301,7 +303,8 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 		return fail("runner_unavailable", 1)
 	}
 	request := agentpreview.Request{Agent: parsed, Examples: selected, Route: route, JudgeRoute: opt.JudgeRoute, Input: opt.Input, Progress: opt.Progress, ToolBindings: opt.ToolBindings, FileLabel: r.File.Path}
-	outcome, cause := a.FileRunner.Run(ctx, request)
+	judgeCtx, judgeNotes := newFileJudgeContext(ctx)
+	outcome, cause := a.FileRunner.Run(judgeCtx, request)
 	if errors.Is(cause, agentpreview.ErrUnsafeToolContent) || errors.Is(cause, agentpreview.ErrCredentialContent) || errors.Is(cause, copilot.ErrCredentialContent) {
 		r.File = FilePreviewIdentity{Path: "[agent file]"}
 		r.ModelRoute = FilePreviewRoute{}
@@ -368,7 +371,14 @@ func (a *App) previewAgentSnapshot(ctx context.Context, parsed *agentfile.Agent,
 			break
 		}
 		verdict := runtime.EvaluationAssertionsVerdict(row.Assertions)
-		r.Examples[i].FilePreviewCompletion = previewCompleted(row.Completion, opt.ShowContent || opt.ShowFailedContent && verdict == runtime.EvaluationFail)
+		show := opt.ShowContent || opt.ShowFailedContent && verdict == runtime.EvaluationFail
+		if show {
+			for j, as := range row.Assertions {
+				note := judgeNotes[fileJudgeKey{ex.ID, as.ID}]
+				r.Examples[i].Assertions[j].Judge = previewJudge(as, ex.Assertions[j], note)
+			}
+		}
+		r.Examples[i].FilePreviewCompletion = previewCompleted(row.Completion, show)
 		r.Examples[i].Verdict = verdict
 		all = append(all, row.Assertions...)
 	}
@@ -459,5 +469,5 @@ func previewAssertion(id, kind string, v runtime.EvaluationVerdict) FilePreviewA
 	} else if v == runtime.EvaluationFail {
 		code = "assertion_failed"
 	}
-	return FilePreviewAssertion{id, kind, v, code, previewReason(code)}
+	return FilePreviewAssertion{ID: id, Type: kind, Verdict: v, ReasonCode: code, Reason: previewReason(code)}
 }
