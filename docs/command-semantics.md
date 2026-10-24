@@ -226,7 +226,15 @@ and 128 KiB serialized records with deterministic truncation. Offline `test expl
 [failure-id] [--workspace DIR]` lists/shows records on stdout; --show-content opts
 into bounded content. --clear removes one ID, or all only with explicit
 --workspace; it conflicts with --show-content and never clears passing/candidate
-state or runtime history. Retention errors warn without changing eval outcomes. Authored `llmJudge`
+state or runtime history. Completed non-pass `test FILE` outcomes use the same
+checked store in separate per-file partitions, with a closed file-record schema
+that keeps exact source revision, selected agent/judge routes and assertion
+identity/results. `test explain --file FILE` is offline, marks records for older
+bytes historical, and clears only that resolved file subject. `--file` and
+`--workspace` are mutually exclusive. Run, passing Test, cancellation, execution
+failure and journal-finalization failure do not retain file diagnostics. The
+Sessions journal remains transcript/replay data without verdict authority.
+Retention errors never change the completed file verdict or workspace eval outcome. Authored `llmJudge`
 requires explicit `--judge-base-url`, optional `--judge-key-env` and authored
 model/version/threshold. Two independent samples must agree on the threshold
 side; errors/splits stay unknown. Judges use the fixed modern Chat Completions

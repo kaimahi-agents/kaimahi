@@ -118,7 +118,7 @@ func linkPrivateEntry(ctx context.Context, parent *Directory, stage, name, ident
 			return err
 		})
 	})
-	closeErr := opened.Close()
+	closeErr := closeObservedFile(opened)
 	if linkErr == nil {
 		if closeErr != nil {
 			return true, unreadableCause("publication link handle close is uncertain")
@@ -127,7 +127,7 @@ func linkPrivateEntry(ctx context.Context, parent *Directory, stage, name, ident
 	}
 	visible, observedErr := observedPrivateEntry(context.WithoutCancel(ctx), parent, name, identity, linkErr)
 	if closeErr != nil {
-		return visible, unreadableCause("publication link handle close is uncertain")
+		return visible, errors.Join(observedErr, unreadableCause("publication link handle close is uncertain"))
 	}
 	return visible, observedErr
 }

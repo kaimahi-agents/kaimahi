@@ -68,6 +68,20 @@ func TestPrivateFirstCreationAndExistingRefusal(t *testing.T) {
 	}
 }
 
+func TestPrivateFileCloseConsumesHandle(t *testing.T) {
+	_, directory := privateTestDirectory(t)
+	file, err := CreatePrivateFileAt(t.Context(), directory, "close-once")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); !errors.Is(err, ErrUnsafe) {
+		t.Fatalf("second close = %v, want unsafe absent handle", err)
+	}
+}
+
 func TestRemovePrivateFileAtRequiresExactObservedObject(t *testing.T) {
 	path, directory := privateTestDirectory(t)
 	first, err := CreatePrivateFileAt(t.Context(), directory, "first")

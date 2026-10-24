@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 )
 
 func TestPreviewToolsUseJournaledLocalRunner(t *testing.T) {
-	home := t.TempDir()
+	home := filepath.Join(t.TempDir(), "state")
 	t.Setenv("KMX_HOME", home)
 	files, _, source := canonicalFiles(t)
 	saved, err := files.Create(t.Context(), "greeter.agent.md", []byte(source))

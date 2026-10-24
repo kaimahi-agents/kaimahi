@@ -424,6 +424,13 @@ func TestFileHelpIsCanonicalOnly(t *testing.T) {
 						t.Errorf("%s help omits retention disclosure %q", verb, disclosure)
 					}
 				}
+				if verb == "test" {
+					for _, disclosure := range []string{"eval-failures", "last 10 per resolved file subject", "test explain --file FILE", "deleting journals does not clear failure diagnostics"} {
+						if !strings.Contains(out.String(), disclosure) {
+							t.Errorf("test help omits file-failure disclosure %q", disclosure)
+						}
+					}
+				}
 				for _, stale := range []string{"NoJournal", "preview runner (no journal)", "whole invocation is direct"} {
 					if strings.Contains(out.String(), stale) {
 						t.Errorf("%s help retains stale Copilot description %q", verb, stale)

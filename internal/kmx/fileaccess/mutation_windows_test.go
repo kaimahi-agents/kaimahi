@@ -236,3 +236,35 @@ func TestWindowsLinkErrorObservationClosePreservesVisibility(t *testing.T) {
 		t.Fatalf("visible output after close failure = %q, %v", data, readErr)
 	}
 }
+
+func TestWindowsLinkAndHandleCloseErrorsPreserveUnknownVisibility(t *testing.T) {
+	_, directory := privateTestDirectory(t)
+	occupied, err := CreatePrivateFileAt(t.Context(), directory, "result")
+	if err != nil || occupied.Close() != nil {
+		t.Fatal(err)
+	}
+	oldSet := setPrivateLinkInformation
+	oldObservedClose := closeObservedFile
+	setPrivateLinkInformation = func(windows.Handle, *windows.IO_STATUS_BLOCK, *byte, uint32) error {
+		return windows.ERROR_GEN_FAILURE
+	}
+	closes := 0
+	closeObservedFile = func(file *PrivateFile) error {
+		if err := oldObservedClose(file); err != nil {
+			return err
+		}
+		closes++
+		if closes == 1 {
+			return errors.New("injected link handle close failure")
+		}
+		return errors.New("injected observation close failure")
+	}
+	t.Cleanup(func() {
+		setPrivateLinkInformation = oldSet
+		closeObservedFile = oldObservedClose
+	})
+	result, err := PublishPrivate(t.Context(), directory, "result", []byte("complete"))
+	if err == nil || result.Visible || result.VisibilityKnown || !errors.Is(err, ErrUnreadable) {
+		t.Fatalf("link and close errors = %+v, %v", result, err)
+	}
+}

@@ -274,8 +274,8 @@ running it and account for subscription, policy and quota limits. The endpoint
 is pinned: omit `--endpoint` or supply exactly `https://api.githubcopilot.com`.
 Known authentication, entitlement, policy, quota and service failures produce
 safe `copilot_*` reasons and stop later sends, including after a judge failure.
-This remains tool-free preview, not a Copilot SDK harness, Sessions execution or
-native deployment evidence. See [Copilot access](copilot-access.md).
+This remains tool-free preview on embedded Sessions, not a Copilot SDK harness
+or native deployment evidence. See [Copilot access](copilot-access.md).
 
 `--case ID` selects one stable saved example and always reports **partial**, even
 if the file contains only that example. Unknown/blank IDs refuse before inference.
@@ -309,8 +309,35 @@ selection is **not** a full pass); 2 means completed assertion fail/unknown;
 1 means refusal, execution/deadline/journal/output failure; 130 means cancellation.
 Journal-finalization failure preserves available rows but makes the overall
 verdict unknown and returns an error, never a pass. Source edits do not rebind
-an in-flight result to a new revision. No file failure retention or file-scoped
-Explain is available here; workspace Explain remains unchanged.
+an in-flight result to a new revision. Completed non-pass Test examples retain
+bounded private diagnostics under the existing `eval-failures` state root. Each
+record binds the resolved file subject, exact source revision, effective agent
+and judge provider/model, selection and assertion identity/result. The safe
+preview result reports `retention.status` and opaque diagnostic IDs; retention
+failure does not change the completed verdict or exit 2. Run, passing Test,
+cancellation, execution failure and journal-finalization failure retain no file
+diagnostic. This diagnostic store is separate from the cleartext Sessions journal
+and grants no evidence, Publish or Deploy authority.
+
+Inspect a file's retained failures without configuration, credentials, provider
+or model calls:
+
+```bash
+kmx test explain --file ./greeter.agent.md
+kmx test explain f-<32-hex-digits> --file ./greeter.agent.md
+kmx test explain f-<32-hex-digits> --file ./greeter.agent.md --show-content
+kmx test explain --file ./greeter.agent.md --clear
+```
+
+Default Explain output is payload-free. `--show-content` opts into the same
+sanitized 64 KiB answer, expected-value, excerpt and score limits as workspace
+diagnostics; file judge rationale is not retained in this first slice. Records
+for earlier source bytes remain visible but are labeled `historical`, never
+current. The last 10 records are retained per checked physical parent plus
+normalized leaf, across file revisions and model selections. Moving/renaming a
+file selects a new subject; aliases of the same resolved file share one subject.
+`--file` and `--workspace` are mutually exclusive, and clear never reaches
+journals, source history, workspace failures, passing proof or runtime history.
 
 Do not mix FILE with `--agent`, workspace, destination, evidence, native judge or
 cluster flags, including explicitly supplied defaults. Existing live
@@ -440,6 +467,8 @@ temp file or empty parent directories; no stale-file sweeping is performed.
 Run/Test parse the selected snapshot once and never reopen the source through
 its display path. Structured results preserve revision, route, full/subset, state,
 verdict, diagnostics and retention status even when the App returns an error.
+Canonical MCP Test passes its already-resolved target separately for retained
+failure identity; requested display spelling never becomes storage authority.
 Completed assertion failures and inconclusive assertions are normal MCP results
 (`isError: false`), not tool errors. Parse, model, execution, cancellation and
 journal-finalization errors still set `isError: true`. A successful subset still
@@ -761,7 +790,7 @@ See [digest deploy](suite-workspace.md#digest-lift) for gates and partial outcom
 | `kmx suite validate <path>` | validate an extracted AgentSuite content directory or OCI image layout offline, including strict JSON, canonical identities, closed references, tool locks, build profiles and archive safety. `-o json` emits the validated summary. [AgentSuite specification](https://github.com/agent-primitives/suite/blob/main/spec.md) |
 | `kmx suite diff <before> <after>` | validate and semantically compare two extracted AgentSuites or local OCI image layouts, including supplemental packaged content and artifact identities. The default unified view uses `-` and `+` field lines; `--view split` renders before and after values side by side, and `-o json` emits the versioned change and affected-agent report. [Suite artifact diff](#suite-artifact-diff). |
 | `kmx test from-sessions UID... --sessions SOURCE --assertions CASE.yaml --out MANIFEST.json` | Independent private reference extraction/export only. [Reference extraction](#reference-extraction) |
-| `kmx test explain [failure-id] [--workspace DIR] [--show-content\|--clear]` | inspect private local failures offline without operational config or model calls; metadata by default, bounded content only with --show-content. --clear removes one ID, or all only with explicit --workspace, never passing proof or runtime history. Owner-only retention keeps the last 10 non-pass runs across suite revisions, 64 KiB answers and 128 KiB records. [Local failure inspection](suite-workspace.md#inspect-or-clear-local-evaluation-failures) |
+| `kmx test explain [failure-id] [--workspace DIR\|--file FILE] [--show-content\|--clear]` | inspect private local failures offline without operational config or model calls; metadata by default, bounded content only with --show-content. `--clear` removes one ID, or all only with an explicit workspace or file subject, never journals, source history, passing proof or runtime history. Owner-only retention keeps the last 10 non-pass records per subject, 64 KiB answers and 128 KiB records. [Local failure inspection](suite-workspace.md#inspect-or-clear-local-evaluation-failures) |
 | `kmx test diff BEFORE AFTER` | Offline strict full-passing native suite evidence only; old bundle receipts unreadable. [Native receipt diff](#native-receipt-diff) |
 | `kmx run --agent NAME --prompt TEXT` | One Task on a live Orka Agent, including suite-owned Agents, with answer-only stdout; not workspace-local execution or suite evaluation. [Task execution and results](#task-execution-and-results) |
 | `kmx task result TASK [--wait 5m]` | Read existing Task phase/answer without resending; retain context/namespace. [Task execution and results](#task-execution-and-results) |

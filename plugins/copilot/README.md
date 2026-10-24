@@ -82,9 +82,10 @@ For manually configured trusted startup, `kmx mcp --root ABSOLUTE_DIR --provider
 uses existing runtime credentials and an exact listed
 `Model.Preferred`, with a fixed endpoint. This sends instructions/inputs and
 any judge answers/rubrics to Copilot. Startup does not sign in or access credentials;
-If either agent or judge uses Copilot, the whole invocation uses the same direct,
-unjournaled runner as the file CLI and reports `NoJournal`, not an SDK harness.
-Fully journaled Copilot remains follow-up work.
+If either agent or judge uses Copilot, the invocation still runs on embedded
+Sessions with one private journal and one fresh Session per agent turn and judge
+sample. The provider owns pre-journal credential/content checks and captures one
+invocation-local credential snapshot; it is not a Copilot SDK harness.
 
 A public archive cannot contain a user's absolute root. Release archives start
 unconfigured and refuse MCP startup until an operator chooses a root as below.
@@ -257,7 +258,11 @@ assertion failures are normal tool results: `isError: false` does not mean pass.
 Preview file.path is a display basename, **not the original Edit target**.
 Boundary refusals have a safe reason code instead of a preview.
 Default tool output omits answers/operands. Explicit `showContent` includes all
-bounded excerpts; optional `showFailedContent` includes only failed saved examples. Retention remains `not_requested`; file-scoped Explain is deferred.
+bounded excerpts; optional `showFailedContent` includes only failed saved examples.
+Completed non-pass Test results may report `retention.status: retained` with
+opaque diagnostic IDs, or `unavailable` when persistence could not be confirmed;
+Run and passing/error/cancelled Test remain `not_requested`. Offline inspection
+is the CLI-only `kmx test explain --file FILE`; no fifth MCP tool is added.
 These results grant no native shipping evidence or Publish/Deploy authority.
 Squad placement alone does not register a team member.
 

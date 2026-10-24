@@ -109,3 +109,56 @@ func TestWindowsSuiteFailureWorkspaceCaseAliasesSharePartition(t *testing.T) {
 		t.Fatalf("case alias partition = %q rows=%d err=%v; want %q", store.path, len(entries), err, path)
 	}
 }
+
+func TestWindowsFileFailureStoreLifecycleAndCaseAliases(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KMX_HOME", filepath.Join(base, "state"))
+	file := previewFile(t)
+	result, previewErr := failingFilePreview(t, file)
+	var status *FilePreviewError
+	if !errors.As(previewErr, &status) || status.ExitCode() != 2 || result.Retention.Status != "retained" || len(result.Retention.Diagnostics) == 0 {
+		t.Fatalf("preview = %+v, %v", result, previewErr)
+	}
+	id := result.Retention.Diagnostics[0].ID
+	store, err := openFileFailureStore(strings.ToUpper(file), false, retainedFileFailureCodec{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, scanErr := store.scan()
+	path := store.path
+	closeErr := store.Close()
+	if scanErr != nil || closeErr != nil || len(entries) != 2 || entries[0].file == nil || entries[0].file.Revision != result.File.Revision {
+		t.Fatalf("file store = %+v, %v, %v", entries, scanErr, closeErr)
+	}
+	for _, object := range []string{path, filepath.Join(path, "lock"), filepath.Join(path, entries[0].name)} {
+		info, err := os.Stat(object)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.IsDir() {
+			directory, err := fileaccess.OpenPrivateDirectory(t.Context(), object)
+			if err != nil || fileaccess.CheckPrivate(t.Context(), directory, true) != nil || directory.Close() != nil {
+				t.Fatalf("private directory %s: %v", object, err)
+			}
+			continue
+		}
+		directory, err := fileaccess.OpenPrivateDirectory(t.Context(), filepath.Dir(object))
+		if err != nil {
+			t.Fatal(err)
+		}
+		opened, err := fileaccess.OpenPrivateFileAt(t.Context(), directory, filepath.Base(object))
+		if err != nil || fileaccess.CheckPrivate(t.Context(), opened, false) != nil || opened.Close() != nil || directory.Close() != nil {
+			t.Fatalf("private file %s: %v", object, err)
+		}
+	}
+	var out bytes.Buffer
+	if err := (&App{Out: &out}).ExplainSuiteEvaluation(t.Context(), SuiteEvaluationExplainOptions{File: strings.ToUpper(file), ID: id}); err != nil || !strings.Contains(out.String(), id) {
+		t.Fatalf("explain = %q, %v", out.String(), err)
+	}
+	if n, err := clearFileFailures(t.Context(), strings.ToUpper(file), ""); err != nil || n != 2 {
+		t.Fatalf("clear = %d, %v", n, err)
+	}
+}

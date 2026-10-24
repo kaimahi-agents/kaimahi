@@ -60,6 +60,13 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 			if pathErr != nil {
 				return nil, pathErr
 			}
+			retentionPath := path
+			if files.root != nil {
+				retentionPath = filepath.Join(files.root.Name(), filepath.FromSlash(path))
+			}
+			if name != "test" {
+				retentionPath = ""
+			}
 			parsed, parseErr := files.snapshot(ctx, path)
 			var detail *agentfile.Error
 			if parseErr != nil && !errors.As(parseErr, &detail) {
@@ -75,7 +82,11 @@ func Operations(files *Files, application *app.App, route *modelaccess.Route) ma
 					executionRoute = &modelaccess.Route{Provider: "copilot", Model: model, Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
 				}
 			}
-			result, err := application.PreviewAgentSnapshot(ctx, parsed, app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute})
+			options := app.FilePreviewOptions{File: input.Path, FullPath: files.root == nil, Operation: name, CaseID: input.CaseID, Input: input.Input, ShowContent: input.ShowContent, ShowFailedContent: input.ShowFailedContent, Model: input.Model, Route: executionRoute}
+			if retentionPath != "" && parsed != nil {
+				options = app.WithFilePreviewRetention(options, retentionPath, parsed.Revision)
+			}
+			result, err := application.PreviewAgentSnapshot(ctx, parsed, options)
 			if detail != nil && result.ReasonCode == "invalid_file" {
 				result.Diagnostic = &app.FilePreviewDiagnostic{Field: detail.Field, Line: detail.Location.Line, Column: detail.Location.Column, Repair: detail.Problem}
 			}

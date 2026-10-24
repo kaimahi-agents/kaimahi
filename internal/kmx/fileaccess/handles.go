@@ -121,7 +121,9 @@ func (f *PrivateFile) Close() error {
 	if f == nil || f.file == nil {
 		return wrapAccess("close private file", unsafeCause("private file handle is absent"))
 	}
-	return wrapAccess("close private file", f.file.Close())
+	err := f.file.Close()
+	f.file = nil
+	return wrapAccess("close private file", err)
 }
 
 func (f *PrivateFile) Stat() (fs.FileInfo, error) {

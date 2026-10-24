@@ -302,6 +302,32 @@ Inspection never sends to a model, never re-evaluates assertions and never
 creates the main journal: it opens read-write only if that database already
 exists. SQLite's known private companion files may be materialized before open.
 
+## Retained Test failures
+
+Completed non-pass `kmx test FILE` and canonical MCP Test outcomes also write a
+separate bounded diagnostic projection under `<kmx state>/eval-failures`. This
+reuses the owner-private checked failure store; it does not read verdicts from
+the journal. The record binds the resolved file subject, exact source revision,
+effective agent/judge provider and model, full/subset selection and assertion
+identity/results. It retains no instructions, input, endpoint, credentials,
+journal handle or arbitrary provider error. File judge scores/thresholds are
+retained, but rationale is not retained in this first slice.
+The checked file scope and matching source revision are frozen before any model
+send, so a later path replacement cannot rebind retained content.
+
+`kmx test explain --file FILE` reads this projection offline with zero model,
+provider, credential, config or journal access. Records for edited source are
+shown as `historical`; they are never attributed to current bytes. Content is
+withheld unless `--show-content` is explicit. The last 10 records are retained
+per checked physical parent plus normalized leaf across revisions. Explicit
+clear is confined to that file subject and never deletes the Sessions journal,
+source history, workspace diagnostics or passing proof. Run, passing Test,
+cancellation, execution failure and journal-finalization failure produce no file
+failure record. Retention failure leaves the original completed Test verdict
+unchanged and reports `retention.status: unavailable`. If one invocation has more
+than 10 non-pass examples, no partial set is written because every returned ID
+must remain discoverable in that subject's bounded store.
+
 ## Executor seam
 
 `localpreview.Executor` sits between the example loop and execution. The

@@ -22,6 +22,18 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "cast" {
 		os.Exit(squadTestChild())
 	}
+	// macOS exposes its temporary root through /var -> /private/var. Resolve it
+	// before any t.TempDir so checked state paths exercise physical ancestors.
+	if runtime.GOOS == "darwin" {
+		root, err := filepath.EvalSymlinks(os.TempDir())
+		if err == nil {
+			err = os.Setenv("TMPDIR", root)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "resolve MCP test temporary root:", err)
+			os.Exit(1)
+		}
+	}
 	os.Exit(m.Run())
 }
 func squadTestChild() int {
