@@ -5,12 +5,14 @@ Linux kmx binary in your default WSL distribution; it does not bundle an engine.
 
 ## Install
 
-1. In WSL, install a current Linux kmx binary at `/usr/local/bin/kmx`. While
-   iterating from this checkout:
+1. In WSL, install the v0.9.0-rc.2 Linux kmx binary at `/usr/local/bin/kmx`:
 
    ```sh
-   go build -o bin/kmx ./cmd/kmx && sudo install -m 0755 bin/kmx /usr/local/bin/kmx
+   curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
    ```
+
+   The installer downloads the binary and checks its published SHA256 over HTTPS;
+   it does not verify the separate signature bundle.
 
 2. In a Windows terminal with Copilot installed:
 
@@ -20,7 +22,9 @@ Linux kmx binary in your default WSL distribution; it does not bundle an engine.
 
 There is no folder or model to configure during installation. The fixed command
 is `wsl.exe -e /usr/local/bin/kmx mcp`. The WSL and native-bundle plugins share the
-name `kmx-agent-builder`; installing one replaces the other.
+name `kmx-agent-builder`; installing one replaces the other. The Copilot CLI warns
+that direct plugin installs are deprecated; this install still works, and a
+marketplace install will come later.
 
 ## Use
 

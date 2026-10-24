@@ -52,6 +52,9 @@ const (
 var (
 	ErrToolsUnavailable  = errors.New("host-bound local tools are unavailable")
 	ErrUnsafeToolContent = errors.New("unsafe tool preview content refused")
+	// ErrCredentialContent withholds all identity/content projections, including
+	// caller-prefilled metadata, when a provider-owned preflight refuses them.
+	ErrCredentialContent = errors.New("credential-bearing preview content refused")
 	ErrJournalFailed     = errors.New("preview journal finalization failed")
 	ErrModelUnavailable  = errors.New("preview model unavailable")
 	ErrDiagnosticsFailed = errors.New("preview diagnostic output failed")
@@ -73,7 +76,8 @@ type ExampleOutcome struct {
 	Assertions []runtime.EvaluationAssertionResult
 }
 type Outcome struct {
-	// NoJournal explicitly identifies the temporary direct preview, never evidence.
+	// NoJournal identifies explicitly injected unjournaled runners, never evidence.
+	// Canonical file previews always journal, including Copilot.
 	NoJournal bool
 	State     State
 	AdHoc     *Completion

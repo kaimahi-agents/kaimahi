@@ -129,6 +129,10 @@ syntax, are unique **within each example**, and cannot use reserved
 `expectContains.*` IDs. Other-type operands refuse even when null or empty.
 `llmJudge` is a definition only; this parser does not evaluate or route judges.
 The existing runner/judge owns judging, not another evaluator in the parser.
+CLI/MCP [local previews](local-preview.md#judging) journal each of the two judge
+samples as a separate Session, including explicit Copilot routes. Judge payloads
+and responses are retained in cleartext under the same retention/clearing policy
+as agent turns; never author secrets in a rubric.
 
 No tool assertions, `tool` fields, legacy `expectContains`, repeat policy,
 executable declarations, unknown/duplicate fields, anchors, aliases, merge keys

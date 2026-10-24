@@ -23,9 +23,8 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
-// NewDirectFileRunner is the unjournaled adapter used when the agent or judge
-// selects Copilot. Its credential-owning transport has no pre-journal content
-// check. Single-sample judgments are local preview only, never native evidence.
+// NewDirectFileRunner supplies an unjournaled fixture for adapter contract tests.
+// Production CLI/MCP file previews always use NewLocalFileRunner.
 func NewDirectFileRunner() agentpreview.Runner {
 	return &directFileRunner{copilot: copilot.New(nil)}
 }

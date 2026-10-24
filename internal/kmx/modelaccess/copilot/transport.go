@@ -116,6 +116,7 @@ func (p *Provider) exchange(ctx context.Context) error {
 type catalogModel struct {
 	route modelaccess.Route
 	path  string
+	paths []string // Recognized advertised paths; path is the ordinary preference.
 }
 
 // List returns available Chat or Responses routes without selecting a default
@@ -134,6 +135,10 @@ func (p *Provider) List(ctx context.Context) ([]modelaccess.Route, error) {
 	return routes, nil
 }
 func (p *Provider) list(ctx context.Context) ([]catalogModel, error) {
+	return p.listFor(ctx, 30*time.Second)
+}
+
+func (p *Provider) listFor(ctx context.Context, validity time.Duration) ([]catalogModel, error) {
 	if ctx.Err() != nil {
 		return nil, safeError(ctx.Err())
 	}
@@ -151,7 +156,7 @@ func (p *Provider) list(ctx context.Context) ([]catalogModel, error) {
 		p.source = source
 		p.bearer = source
 	}
-	if p.legacy && (p.bearer == "" || !p.now().Before(p.expires.Add(-30*time.Second))) {
+	if p.legacy && (p.bearer == "" || !p.now().Before(p.expires.Add(-validity))) {
 		if err := p.exchange(ctx); err != nil {
 			return nil, err
 		}
@@ -174,6 +179,13 @@ func (p *Provider) list(ctx context.Context) ([]catalogModel, error) {
 	if status != 200 {
 		return nil, classify(status, b)
 	}
+	if validity > 30*time.Second && p.legacy && !p.expires.After(p.now().Add(validity)) {
+		return nil, ErrAuthRevoked
+	}
+	return catalogRoutes(b, p.source, p.bearer)
+}
+
+func catalogRoutes(b []byte, source, bearer string) ([]catalogModel, error) {
 	var catalog struct {
 		Data *[]struct {
 			ID           string `json:"id"`
@@ -195,19 +207,21 @@ func (p *Provider) list(ctx context.Context) ([]catalogModel, error) {
 		if m.Capabilities.Type != "chat" || m.Policy.State != "enabled" {
 			continue
 		}
-		path := "/chat/completions"
-		if !slices.Contains(m.Endpoints, path) {
-			path = "/responses"
-			if !slices.Contains(m.Endpoints, path) {
-				continue
+		paths := []string{}
+		for _, path := range []string{"/chat/completions", "/responses"} {
+			if slices.Contains(m.Endpoints, path) {
+				paths = append(paths, path)
 			}
 		}
+		if len(paths) == 0 {
+			continue
+		}
 		r := modelaccess.Route{Provider: "copilot", Model: m.ID, Endpoint: endpoint, Auth: "copilot"}
-		if r.Validate() != nil || seen[m.ID] || strings.Contains(m.ID, p.source) || strings.Contains(m.ID, p.bearer) {
+		if r.Validate() != nil || seen[m.ID] || strings.Contains(m.ID, source) || strings.Contains(m.ID, bearer) {
 			return nil, ErrMalformed
 		}
 		seen[m.ID] = true
-		routes = append(routes, catalogModel{route: r, path: path})
+		routes = append(routes, catalogModel{route: r, path: paths[0], paths: paths})
 	}
 	return routes, nil
 }

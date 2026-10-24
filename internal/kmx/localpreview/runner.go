@@ -2,6 +2,7 @@ package localpreview
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -24,11 +25,15 @@ import (
 
 // RunnerOptions supplies invocation-local facilities. JournalDir is resolved
 // lazily, after validation; constructing a runner performs no IO or authentication.
-// Judge receives only validated fake or keyless local routes, without canonicalizing
-// their selected endpoints. It must preserve the selected route and assertion rows.
+// Judge receives validated routes and provider-owned transports, without
+// canonicalizing selected endpoints. It preserves routes and assertion rows.
 type RunnerOptions struct {
-	JournalDir     func() (string, error)
-	Judge          JudgeFactory
+	JournalDir func() (string, error)
+	Judge      JudgeFactory
+	// JudgeReply validates the shared native scorer's reply before Sessions sees it.
+	JudgeReply func([]byte, string, string) error
+	// Access establishes provider-owned credentials before journal creation.
+	Access         func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error)
 	ExampleTimeout time.Duration
 	// Tools resolves a trusted host from a frozen binding. Nil refuses tools;
 	// it never selects an implicit credential or a production fixture provider.
@@ -80,20 +85,86 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		agent.Instructions = agent.NativeTaskInstructions
 	}
 	agent.Examples = examples
-	agentRoute, routeErr := runnerRoute(request.Route)
-	if routeErr != nil {
-		return abort(routeErr)
-	}
 	judgeSelection := request.Route
 	if request.JudgeRoute != nil {
 		judgeSelection = *request.JudgeRoute
 	}
-	// Even an unused explicit route must be a supported, exact selection.
-	judgeRoute, routeErr := runnerRoute(judgeSelection)
+	var access modelaccess.PreviewAccess
+	var toolHost *localtools.Host
+	checkContent := func(fields ...string) error {
+		if access != nil && access.CheckContent(fields...) != nil {
+			return agentpreview.ErrCredentialContent
+		}
+		if toolHost != nil {
+			return toolHost.Check(fields...)
+		}
+		return nil
+	}
+	validate := func(ctx context.Context) error {
+		if access != nil {
+			return access.Validate(ctx)
+		}
+		return ctx.Err()
+	}
+	var providerRoutes []modelaccess.Route
+	for _, selection := range []modelaccess.Route{request.Route, judgeSelection} {
+		if selection.Provider == "copilot" && !slices.Contains(providerRoutes, selection) {
+			providerRoutes = append(providerRoutes, selection)
+		}
+	}
+	if len(providerRoutes) > 0 {
+		if len(agent.Tools) > 0 || request.ToolBindings != "" {
+			return abort(agentpreview.ErrToolsUnavailable)
+		}
+		if r.options.Access == nil {
+			return abort(agentpreview.ErrModelUnavailable)
+		}
+		var setupErr error
+		access, setupErr = r.options.Access(ctx, providerRoutes)
+		if access != nil {
+			// Marshal failure leaves nil content, which the pre-journal check refuses.
+			content, _ := json.Marshal(struct {
+				Agent        agentfile.Agent
+				Label        string
+				Route, Judge modelaccess.Route
+				Input        *string
+			}{agent, request.FileLabel, request.Route, judgeSelection, request.Input})
+			if checkJSONContent(content, checkContent) != nil {
+				return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrCredentialContent
+			}
+		}
+		if setupErr != nil {
+			return abort(setupErr)
+		}
+		if access == nil {
+			return abort(agentpreview.ErrModelUnavailable)
+		}
+	}
+	routeFor := func(selection modelaccess.Route) (route, error) {
+		if selection.Provider != "copilot" {
+			return runnerRoute(selection)
+		}
+		if selection.Validate() != nil || access == nil {
+			return route{}, agentpreview.ErrModelUnavailable
+		}
+		transport, err := access.Client(selection)
+		if err != nil {
+			return route{}, err
+		}
+		if transport == nil {
+			return route{}, agentpreview.ErrModelUnavailable
+		}
+		return route{model: selection.Model, baseURL: selection.Endpoint, transport: transport, safeErrors: true}, nil
+	}
+	agentRoute, routeErr := routeFor(request.Route)
 	if routeErr != nil {
 		return abort(routeErr)
 	}
-	var toolHost *localtools.Host
+	// Even an unused explicit route must be a supported, exact selection.
+	judgeRoute, routeErr := routeFor(judgeSelection)
+	if routeErr != nil {
+		return abort(routeErr)
+	}
 	if len(agent.Tools) > 0 {
 		binding, err := localtools.Load(request.ToolBindings)
 		if err != nil || !binding.Matches(agent.Tools) || r.options.Tools == nil {
@@ -144,6 +215,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 		return agentRoute, nil
 	}
+	var executor Executor
 	var judgeProgressErr error
 	if hasJudge {
 		if request.JudgeRoute != nil {
@@ -151,7 +223,7 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 		if r.options.Judge != nil {
 			options.Judge = func(base, key string, transport http.RoundTripper, cases []agentruntime.EvaluationCase) (agentruntime.EvaluationJudge, error) {
-				guarded := runnerJudgeTransport{next: transport, request: request, failure: &judgeProgressErr}
+				guarded := &runnerJudgeTransport{next: transport, safeErrors: judgeRoute.safeErrors, request: request, failure: &judgeProgressErr, executor: &executor, check: checkContent, validate: validate, reply: r.options.JudgeReply}
 				return r.options.Judge(base, key, guarded, cases)
 			}
 		}
@@ -169,8 +241,8 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		// Never return prepopulated identities if they contain a resolved credential.
 		return agentpreview.Outcome{State: agentpreview.Failed}, preflightErr
 	}
-	if ctx.Err() != nil {
-		return abort(ctx.Err())
+	if err := validate(ctx); err != nil {
+		return abort(err)
 	}
 	if r.options.JournalDir == nil {
 		return abort(agentpreview.ErrJournalFailed)
@@ -179,7 +251,6 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 	if dirErr != nil {
 		return abort(fmt.Errorf("%w: %w", agentpreview.ErrJournalFailed, dirErr))
 	}
-	var executor Executor
 	var journal string
 	var openErr error
 	if toolHost != nil {
@@ -211,17 +282,19 @@ func (r *runner) Run(ctx context.Context, request agentpreview.Request) (out age
 		}
 	}()
 	client := newModelClient(p.route)
+	if access != nil || toolHost != nil {
+		client.check = checkContent
+	}
 	call := client.Model
 	if toolHost != nil {
-		client.check = toolHost.Check
 		call = client.ToolModel
 	}
 	used := map[string]bool{}
 	execute := func(ex agentfile.Example, index int) (completion agentpreview.Completion, assertions []agentruntime.EvaluationAssertionResult, cause error) {
 		turnCtx, turnCancel := context.WithTimeout(ctx, p.timeout)
 		defer turnCancel()
-		if turnCtx.Err() != nil {
-			return completion, nil, turnCtx.Err()
+		if err := validate(turnCtx); err != nil {
+			return completion, nil, err
 		}
 		label := ex.ID
 		if index < 0 {
@@ -349,37 +422,6 @@ func runnerRoute(selection modelaccess.Route) (route, error) {
 	}
 	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, ResponseHeaderTimeout: 30 * time.Second, MaxResponseHeaderBytes: 16 * 1024, TLSHandshakeTimeout: 10 * time.Second}
 	return route{model: selection.Model, baseURL: strings.TrimRight(selection.Endpoint, "/"), transport: transport}, nil
-}
-
-// The native judge reports unavailable responses as unknown rows. Diagnostic
-// failures instead abort the invocation, and this guard prevents later samples
-// from sending even when the judge itself keeps evaluating.
-type runnerJudgeTransport struct {
-	next    http.RoundTripper
-	request agentpreview.Request
-	failure *error
-}
-
-func (t runnerJudgeTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	if *t.failure != nil {
-		return nil, *t.failure
-	}
-	if request.Context().Err() != nil {
-		return nil, request.Context().Err()
-	}
-	if err := t.request.Report("Judge started"); err != nil {
-		*t.failure = err
-		return nil, err
-	}
-	response, err := t.next.RoundTrip(request)
-	if reportErr := t.request.Report("Judge finished"); reportErr != nil {
-		*t.failure = reportErr
-		if response != nil && response.Body != nil {
-			response.Body.Close()
-		}
-		return nil, reportErr
-	}
-	return response, err
 }
 
 func runnerDiagnosticEndpoint(selection modelaccess.Route) string {

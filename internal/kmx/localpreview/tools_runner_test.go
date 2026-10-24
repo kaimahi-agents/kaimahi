@@ -130,7 +130,7 @@ func TestToolRunnerPreflightAndCopilotHaveNoEffects(t *testing.T) {
 			out, err := NewRunner(options).Run(t.Context(), req)
 			expected := agentpreview.ErrUnsafeToolContent
 			if strings.HasPrefix(field, "copilot") {
-				expected = agentpreview.ErrModelUnavailable
+				expected = agentpreview.ErrToolsUnavailable
 			}
 			if field == "missing factory" {
 				expected = agentpreview.ErrToolsUnavailable

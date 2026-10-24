@@ -1,6 +1,7 @@
 // Package localpreview runs tool-free agent-file previews on embedded Sessions
-// with a private SQLite journal. Preview results and journal replay are not
-// suite evidence or authority to publish or deploy.
+// with a private SQLite journal, including provider-checked Copilot routes and
+// one Session per native judge sample. Preview results and journal replay are
+// not suite evidence or authority to publish or deploy.
 package localpreview
 
 import "fmt"

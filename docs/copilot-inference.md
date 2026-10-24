@@ -28,12 +28,18 @@ credentials. Runtime tokens are never copied to
 storage, exported in argv/environment, or returned in routes. There are no token
 flags or plaintext-cache fallback.
 
-Markdown-file Run/Test and their shared MCP path consume this transport with
-explicit `--provider copilot`, an exact authored model and the pinned endpoint.
-They remain temporary tool-free, no-journal preview execution, not the CLI-chat
-tool adapter below or an embedded Sessions harness. Selecting this route sends
-instructions and inputs to Copilot; judging also sends answers and rubrics.
-Known Copilot refusals stop later sends and expose only static safe reasons.
+Markdown-file Run/Test and their shared MCP path run selected Copilot models on
+embedded Sessions, not the CLI-chat tool adapter below. They establish a
+provider-owned credential and API-path snapshot before journaling; unlike
+ordinary `Client` access, previews never refresh credentials or switch protocols
+mid-run. Chat Completions and Responses share the same Chat-shaped harness
+contract. The provider checks Responses envelopes before translation and checks
+the joined completion afterward, without exposing tokens to Sessions.
+Selecting this route sends instructions and inputs to Copilot; judging also sends
+answers and rubrics. The private journal retains this content, including judge
+reasoning, in cleartext under the existing retention/clearing rules. Known
+Copilot refusals stop later sends and expose only safe reasons. Copilot tool
+execution remains unsupported.
 See [file preview usage](kmx.md#agent-file-local-preview-unreleased-integration).
 
 Internal callers use `copilot.New(store)` (`nil` selects the native keychain),

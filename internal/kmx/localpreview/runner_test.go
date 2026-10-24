@@ -2,6 +2,7 @@ package localpreview
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -54,6 +55,69 @@ func injectedRunner(e *runnerExecutor, timeout time.Duration) agentpreview.Runne
 	r := NewRunner(RunnerOptions{JournalDir: func() (string, error) { return "/unused", nil }, ExampleTimeout: timeout}).(*runner)
 	r.open = func(string, string) (Executor, string, error) { return e, "private-run", nil }
 	return r
+}
+
+func TestRunnerCopilotToolsRefusesBeforeAccessOrJournal(t *testing.T) {
+	for _, judge := range []bool{false, true} {
+		for _, bindings := range []bool{false, true} {
+			t.Run(fmt.Sprintf("judge=%t/bindings=%t", judge, bindings), func(t *testing.T) {
+				req := runnerRequest(t)
+				cp := modelaccess.Route{Provider: "copilot", Model: "gpt-test", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+				if judge {
+					req.JudgeRoute = &cp
+				} else {
+					req.Route = cp
+					req.Agent.Model = cp.Model
+				}
+				if bindings {
+					req.ToolBindings = "/must-not-open.json"
+				} else {
+					req.Agent.Tools = []string{"github.listMergedPullRequests"}
+				}
+				runner := NewRunner(RunnerOptions{
+					JournalDir: func() (string, error) { t.Error("tool refusal accessed journal"); return "", nil },
+					Access: func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error) {
+						t.Error("tool refusal accessed credentials")
+						return nil, agentpreview.ErrModelUnavailable
+					},
+				})
+				if _, err := runner.Run(t.Context(), req); !errors.Is(err, agentpreview.ErrToolsUnavailable) {
+					t.Fatalf("wrong unsupported-tools reason: %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestRunnerCredentialFreeNestedJSONAnswers(t *testing.T) {
+	for _, provider := range []string{"fake", "compatible"} {
+		t.Run(provider, func(t *testing.T) {
+			answer := strings.Repeat("[", 40) + "0" + strings.Repeat("]", 40)
+			req := runnerRequest(t)
+			req.Examples = req.Examples[:1]
+			req.Examples[0].Assertions[0].Value = "0"
+			req.Agent.Instructions = "Reply with exactly `" + answer + "`."
+			if provider == "compatible" {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					if err := json.NewEncoder(w).Encode(map[string]any{"model": "unit", "choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]string{"role": "assistant", "content": answer}}}}); err != nil {
+						t.Error(err)
+					}
+				}))
+				defer server.Close()
+				req.Agent.Model = "unit"
+				req.Route = modelaccess.Route{Provider: "compatible", Model: "unit", Endpoint: server.URL, Auth: "none"}
+			}
+			dir := journalDir(t)
+			out, err := NewRunner(RunnerOptions{JournalDir: func() (string, error) { return dir, nil }}).Run(testContext(t), req)
+			if err != nil || out.State != agentpreview.Complete || out.Journal == "" || len(out.Examples) != 1 || out.Examples[0].Completion.Answer != answer || out.Examples[0].Assertions[0].Verdict != agentruntime.EvaluationPass {
+				t.Fatalf("valid credential-free JSON text rejected: state=%s err=%v completion=%+v", out.State, err, out.Examples)
+			}
+			replay, err := Inspect(testContext(t), dir, out.Journal)
+			if err != nil || len(replay.Sessions) != 1 || replay.Sessions[0].Answer != answer || replay.ModelCalls != 0 {
+				t.Fatalf("deep JSON answer lost in replay: %+v / %v", replay, err)
+			}
+		})
+	}
 }
 
 func TestRunnerSelectedOrderAndAdHocOneJournal(t *testing.T) {

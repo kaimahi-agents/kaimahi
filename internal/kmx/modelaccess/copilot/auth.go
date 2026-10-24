@@ -40,6 +40,7 @@ type Provider struct {
 	source, bearer                        string
 	expires                               time.Time
 	legacy                                bool
+	generation                            uint64
 	now                                   func() time.Time
 	wait                                  func(context.Context, time.Duration) error
 	runGH, runStoredGH                    func(context.Context) ([]byte, error)
@@ -197,6 +198,8 @@ func (p *Provider) ghCredential(ctx context.Context, capture func(context.Contex
 	return token, nil
 }
 func (p *Provider) save(token string) error {
+	// A failed store write may still have changed external state.
+	p.generation++
 	if err := p.store.Set(token); err != nil {
 		return ErrKeychain
 	}
@@ -210,6 +213,7 @@ func (p *Provider) clear() { p.source = ""; p.bearer = ""; p.expires = time.Time
 func (p *Provider) Logout() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.generation++
 	p.clear()
 	if err := p.store.Delete(); err != nil && !errors.Is(err, ErrAuthRequired) {
 		return ErrKeychain

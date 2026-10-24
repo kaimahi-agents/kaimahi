@@ -83,7 +83,7 @@ func TestFileToolsJudgeBudgetAndActualCallProof(t *testing.T) {
 		t.Fatal("missing journal", err)
 	}
 	replay, err := localpreview.Inspect(t.Context(), dir, strings.TrimSuffix(filepath.Base(paths[0]), ".db"))
-	if err != nil || len(replay.Sessions) != 2 || models != 4 || reads != 2 || judges != 4 {
+	if err != nil || len(replay.Sessions) != 6 || replay.ModelCalls != 0 || models != 4 || reads != 2 || judges != 4 {
 		t.Fatal("inspection dispatched model/tool/judge", err)
 	}
 	// Even an unused override is public metadata, so it must receive the host's

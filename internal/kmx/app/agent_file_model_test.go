@@ -30,16 +30,24 @@ func (f *modelCatalogOnlyTransport) RoundTrip(req *http.Request) (*http.Response
 	return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"data":[{"id":"choice-b","capabilities":{"type":"chat"},"policy":{"state":"enabled"},"supported_endpoints":["/responses"]},{"id":"choice-a","capabilities":{"type":"chat"},"policy":{"state":"enabled"},"supported_endpoints":["/chat/completions"]}]}`)), Request: req}, nil
 }
 func TestFilePreviewUnknownModelListsAvailableChoices(t *testing.T) {
-	t.Setenv("COPILOT_GITHUB_TOKEN", "model-choice-test-token")
-	previous := http.DefaultTransport
-	transport := &modelCatalogOnlyTransport{t: t}
-	http.DefaultTransport = transport
-	t.Cleanup(func() { http.DefaultTransport = previous })
-	path := previewFile(t)
-	route := modelaccess.Route{Provider: "copilot", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
-	result, err := (&App{FileRunner: NewDirectFileRunner()}).PreviewAgentFile(t.Context(), FilePreviewOptions{File: path, Operation: "test", Model: "unknown-model", Route: &route})
-	if err == nil || result.ReasonCode != "copilot_model_unavailable" || result.Reason != "Available Copilot models: choice-a, choice-b" || transport.calls != 1 || result.FullPass {
-		t.Fatalf("one-line choices lost: %+v / %v", result, err)
+	for _, journaled := range []bool{false, true} {
+		t.Run(fmt.Sprint(journaled), func(t *testing.T) {
+			t.Setenv("COPILOT_GITHUB_TOKEN", "model-choice-test-token")
+			previous := http.DefaultTransport
+			transport := &modelCatalogOnlyTransport{t: t}
+			http.DefaultTransport = transport
+			t.Cleanup(func() { http.DefaultTransport = previous })
+			path := previewFile(t)
+			route := modelaccess.Route{Provider: "copilot", Endpoint: modelaccess.CopilotEndpoint, Auth: "copilot"}
+			runner := NewDirectFileRunner()
+			if journaled {
+				runner = NewLocalFileRunner()
+			}
+			result, err := (&App{FileRunner: runner}).PreviewAgentFile(t.Context(), FilePreviewOptions{File: path, Operation: "test", Model: "unknown-model", Route: &route})
+			if err == nil || result.ReasonCode != "copilot_model_unavailable" || result.Reason != "Available Copilot models: choice-a, choice-b" || transport.calls != 1 || result.FullPass {
+				t.Fatalf("one-line choices lost: %+v / %v", result, err)
+			}
+		})
 	}
 }
 

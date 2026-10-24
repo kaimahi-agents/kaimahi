@@ -16,8 +16,9 @@ import (
 
 func TestCopilotPreviewCancellationRetainsOnlyFinishedTests(t *testing.T) {
 	for _, operation := range []string{"run", "test"} {
-		for _, phase := range []string{"agent", "judge"} {
+		for _, phase := range []string{"agent", "judge", "second-judge"} {
 			t.Run(operation+"/"+phase, func(t *testing.T) {
+				t.Setenv("KMX_HOME", t.TempDir())
 				opt := directOptions(t, "gpt-test", false)
 				source, err := os.ReadFile(opt.File)
 				if err != nil {
@@ -25,7 +26,7 @@ func TestCopilotPreviewCancellationRetainsOnlyFinishedTests(t *testing.T) {
 				}
 				text := strings.Split(string(source), "## Examples")[0] + "## Examples\n```yaml\nexamples:\n"
 				firstExpected, firstVerdict := "Hello", runtime.EvaluationPass
-				if phase == "judge" {
+				if phase != "agent" {
 					firstExpected, firstVerdict = "missing", runtime.EvaluationFail
 				}
 				for _, id := range []string{"first", "second", "third"} {
@@ -45,7 +46,10 @@ func TestCopilotPreviewCancellationRetainsOnlyFinishedTests(t *testing.T) {
 				route := copilotPreviewRoute()
 				opt.Route, opt.Operation, opt.ShowContent = &route, operation, true
 				blockAt := 2
-				if phase == "judge" {
+				if phase != "agent" {
+					blockAt++
+				}
+				if phase == "second-judge" {
 					blockAt++
 				}
 				if operation == "run" {
@@ -56,7 +60,7 @@ func TestCopilotPreviewCancellationRetainsOnlyFinishedTests(t *testing.T) {
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				started := make(chan struct{})
-				provider := &previewCopilotAccess{t: t}
+				provider := &journalCopilotAccess{}
 				provider.beforeSend = func(req *http.Request) error {
 					if provider.sends == blockAt {
 						close(started)
@@ -70,7 +74,7 @@ func TestCopilotPreviewCancellationRetainsOnlyFinishedTests(t *testing.T) {
 				var cause error
 				go func() {
 					defer close(done)
-					result, cause = (&App{FileRunner: &directFileRunner{copilot: provider}}).PreviewAgentSnapshot(ctx, agent, opt)
+					result, cause = (&App{FileRunner: newLocalFileRunner(provider.PreviewClient)}).PreviewAgentSnapshot(ctx, agent, opt)
 				}()
 				select {
 				case <-started:

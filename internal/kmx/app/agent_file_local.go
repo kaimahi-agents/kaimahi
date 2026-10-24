@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 
@@ -9,34 +10,49 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/config"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localpreview"
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/localtools"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess"
+	"github.com/kaimahi-agents/kaimahi/internal/kmx/modelaccess/copilot"
 	agentruntime "github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
-// NewLocalFileRunner journals fake and keyless local previews on embedded Sessions.
-// Copilot agent or judge routes retain the direct, explicitly unjournaled runner
-// until its credential-owning transport is integrated with the journal backend.
+// NewLocalFileRunner journals file previews on embedded Sessions, including
+// Copilot's provider-owned credential preflight and one Session per judge sample.
 // Construction does not resolve paths, create files or access credentials.
 func NewLocalFileRunner() agentpreview.Runner {
-	return &localFileRunner{
-		journaled: localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.LocalPreviewJournalDir, Judge: localFilePreviewJudge, Tools: localtools.NewMCPHost}),
-		direct:    NewDirectFileRunner(),
-	}
+	return newLocalFileRunner(copilot.New(nil).PreviewClient)
 }
 
-type localFileRunner struct{ journaled, direct agentpreview.Runner }
-
-func (r *localFileRunner) Run(ctx context.Context, request agentpreview.Request) (agentpreview.Outcome, error) {
-	if request.Route.Provider == "copilot" || request.JudgeRoute != nil && request.JudgeRoute.Provider == "copilot" {
-		if request.Agent != nil && len(request.Agent.Tools) > 0 || request.ToolBindings != "" {
-			return agentpreview.Outcome{State: agentpreview.Failed}, agentpreview.ErrToolsUnavailable
+func newLocalFileRunner(access func(context.Context, []modelaccess.Route) (modelaccess.PreviewAccess, error)) agentpreview.Runner {
+	checkedAccess := func(ctx context.Context, routes []modelaccess.Route) (modelaccess.PreviewAccess, error) {
+		capability, err := access(ctx, routes)
+		if capability != nil {
+			capability = previewDisplayAccess{capability}
 		}
-		return r.direct.Run(ctx, request)
+		return capability, err
 	}
-	return r.journaled.Run(ctx, request)
+	return localpreview.NewRunner(localpreview.RunnerOptions{JournalDir: config.LocalPreviewJournalDir, Judge: localFilePreviewJudge, JudgeReply: localFileJudgeReply, Access: checkedAccess, Tools: localtools.NewMCPHost})
 }
 
-// This private factory consumes only the adapter's prevalidated fake/keyless
-// local routes. Reuse the native two-sample evaluator without canonicalizing an
+// The App owns display normalization, while the provider alone knows the keys.
+// Check those same views before Sessions retains any authored or returned text.
+// This also covers local-agent replies when only the judge uses Copilot.
+type previewDisplayAccess struct{ modelaccess.PreviewAccess }
+
+func (a previewDisplayAccess) CheckContent(fields ...string) error {
+	for _, field := range fields {
+		views, _, ok := suiteDiagnosticViews(field, len(field))
+		if !ok {
+			return agentpreview.ErrCredentialContent
+		}
+		if err := a.PreviewAccess.CheckContent(views...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// This private factory consumes only the adapter's prevalidated model routes
+// and provider-owned transports. Reuse the native two-sample evaluator without canonicalizing an
 // exact localhost/custom-path selection. Standalone LocalPreviewJudge and suite
 // endpoint policy remain unchanged; no credential facility is bypassed here.
 func localFilePreviewJudge(base, keyEnv string, transport http.RoundTripper, cases []agentruntime.EvaluationCase) (agentruntime.EvaluationJudge, error) {
@@ -49,5 +65,17 @@ func localFilePreviewJudge(base, keyEnv string, transport http.RoundTripper, cas
 		}
 	}
 	client := &evaluationJudgeClient{baseURL: base, out: io.Discard, httpClient: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	if journaled, ok := transport.(interface {
+		Sample(*http.Request, string, string) (*http.Response, error)
+	}); ok {
+		client.sampleRoundTrip = journaled.Sample
+	}
 	return client.evaluate, nil
+}
+
+func localFileJudgeReply(body []byte, model, version string) error {
+	if _, _, _, ok := parseEvaluationJudgeResponse(body, model, version, ""); !ok {
+		return errors.New("preview judge response malformed")
+	}
+	return nil
 }

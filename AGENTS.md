@@ -467,21 +467,24 @@ refuse in protocol data; known-shape checks also cover every model/journal-bound
 projection. Discard remote metadata/descriptions and SDK logs. Test bridges stay
 in _test.go; scripted-model hosted smoke is not real-LLM qualification.
 Trusted embedding can still supply a frozen binding/host executor. Declared tools with either a Copilot agent or judge refuse
-before credentials or journaling; tool-free Copilot is unchanged and future
-Copilot tools depend on #662. No silent tool dropping.
+before credentials or journaling; tool-free Copilot uses journaled Sessions.
+Copilot tool execution remains unsupported. No silent tool dropping.
 
 Canonical `run FILE` / `test FILE` use the parser and `agentpreview.Runner`
-interface without cluster/workspace configuration. CLI/MCP fake/local routes
-use embedded Sessions: optional ad-hoc input first, selected ordered examples,
-one invocation-owned private journal, one fresh Session per turn, and the shared
-two-sample judge. Execution/deadline errors abort later sends; journal close
-failure vetoes completion. When the agent OR judge uses Copilot, retain the direct
-`preview runner (no journal)` and report NoJournal for the whole invocation,
-with one judge call per llmJudge. Fully journaled Copilot is follow-up work until
-provider-owned content preflight is available; never expose tokens to the runner.
-No retries or fallback. Scripted test fakes remain `_test.go` only, not real-model
+interface without cluster/workspace configuration. CLI/MCP fake/local and explicit
+Copilot routes use embedded Sessions: optional ad-hoc input first, selected ordered
+examples, one invocation-owned private journal, and one fresh Session per agent
+turn and per judge sample. Preserve the shared two-sample scorer and exact mixed
+agent/judge models. Execution/deadline/judge failures abort later sends; journal
+close failure vetoes completion. Copilot provides its own pre-journal content
+checker and atomically captured source/bearer snapshot; never expose tokens to
+the runner or harness. Preview credentials never refresh mid-run. Preserve expiry
+checks, owner logout/save invalidation, explicit nonstreaming requests and no
+inference retries. New previews establish fresh snapshots; ordinary Client/List
+refresh behavior stays unchanged. No fallback. Scripted test fakes remain `_test.go` only, not real-model
 qualification. Copilot selection sends instructions/inputs and any judging
-answer/rubric to the hosted service; never imply SDK or Sessions execution.
+answer/rubric to the hosted service; the local execution is embedded Sessions,
+not the Copilot SDK.
 `app.FilePreviewResult` v1 is the safe shared projection, not a
 native evidence receipt. Subset is always partial, execution/journal failure is
 unknown, and only an explicit caller override changes the judge route. Keep
@@ -601,8 +604,8 @@ symlink refusals.
 (in-memory gRPC, upstream Service/Placer/`chat` harness, private SQLite journal
 under `config.LocalPreviewJournalDir()`), labeled **local preview**. See
 [local-preview.md](docs/local-preview.md). Its `agentpreview.Runner` adapter
-backs `run/test FILE` and MCP for fake/local routes; the direct Copilot exception
-above remains explicitly unjournaled. `Model.Preferred` is exact: `fake` is the in-memory deterministic
+backs `run/test FILE` and MCP for fake/local and explicit Copilot routes, including
+journaled native judge samples. `Model.Preferred` is exact: `fake` is the in-memory deterministic
 route; other models need an explicit OpenAI-compatible endpoint and optional
 key environment variable name. No fallback, retries, tool execution, daemon,
 subprocess, cluster or config probing. Refuse missing routes, tool assertions
