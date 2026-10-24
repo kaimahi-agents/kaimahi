@@ -1,12 +1,12 @@
 """PATH plugin and offline loop; pinned-host checks opt in without model credentials."""
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import threading
 import unittest
+from pathlib import Path
 
 from test_wsl import ASSETS, SKILLS
 
@@ -66,7 +66,9 @@ class PlainPluginTests(unittest.TestCase):
                                check=True, capture_output=True, timeout=120)
             env = {**os.environ, "KMX_HOME": str(base / "state"),
                    "PATH": str(binary.parent) + os.pathsep + os.environ["PATH"]}
-            self.assertEqual(Path(shutil.which("kmx", path=env["PATH"])).resolve(), binary)
+            resolved = shutil.which("kmx", path=env["PATH"])
+            assert resolved is not None
+            self.assertEqual(Path(resolved).resolve(), binary)
             config = json.loads((HERE / "mcp.json").read_text())["mcpServers"]["kmx-agent-builder"]
             process = subprocess.Popen([config["command"], *config["args"]], cwd=HERE,
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -74,20 +76,22 @@ class PlainPluginTests(unittest.TestCase):
             timer = threading.Timer(30, process.kill)
             timer.start()
             try:
+                stdin, stdout, stderr = process.stdin, process.stdout, process.stderr
+                assert stdin is not None and stdout is not None and stderr is not None
                 counter = 0
                 def request(method, params):
                     nonlocal counter
                     counter += 1
-                    process.stdin.write(json.dumps({"jsonrpc": "2.0", "id": counter,
-                                                    "method": method, "params": params}) + "\n")
-                    process.stdin.flush()
-                    reply = json.loads(process.stdout.readline())
+                    stdin.write(json.dumps({"jsonrpc": "2.0", "id": counter,
+                                            "method": method, "params": params}) + "\n")
+                    stdin.flush()
+                    reply = json.loads(stdout.readline())
                     self.assertNotIn("error", reply)
                     return reply["result"]
                 request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                                        "clientInfo": {"name": "plain-plugin-check", "version": "1"}})
-                process.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
-                process.stdin.flush()
+                stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
+                stdin.flush()
                 def call(name, **args):
                     result = request("tools/call", {"name": name, "arguments": {
                         "schemaVersion": 1, **args}})
@@ -100,7 +104,8 @@ class PlainPluginTests(unittest.TestCase):
                 self.assertEqual(path.read_text(), source)
                 def cli_test(verdict, code):
                     result = subprocess.run([str(binary), "test", str(path), "-o", "json"],
-                                            env=env, cwd=base, capture_output=True, text=True, timeout=30)
+                                            env=env, cwd=base, capture_output=True, text=True,
+                                            check=False, timeout=30)
                     self.assertEqual(result.returncode, code, result.stderr)
                     payload = json.loads(result.stdout)
                     self.assertEqual(payload["verdict"], verdict)
@@ -116,16 +121,17 @@ class PlainPluginTests(unittest.TestCase):
                 call("edit", path=str(path), content=source,
                      expectedRevision=edited["file"]["revision"])
                 cli_test("pass", 0)
-                process.stdin.close()
+                stdin.close()
                 self.assertEqual(process.wait(timeout=5), 0)
-                self.assertEqual(process.stderr.read(), "")
+                self.assertEqual(stderr.read(), "")
             finally:
                 timer.cancel()
                 if process.poll() is None:
                     process.kill()
                 process.wait(timeout=5)
                 for stream in (process.stdin, process.stdout, process.stderr):
-                    stream.close()
+                    if stream is not None:
+                        stream.close()
 
 
 if __name__ == "__main__":

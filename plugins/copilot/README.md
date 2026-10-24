@@ -9,13 +9,14 @@ skills, a canvas and MCP configuration, not an engine or a fixed working folder.
 With Copilot installed, run these two commands in a Mac terminal:
 
 ```sh
-download=$(mktemp) && curl -fsSL "https://github.com/kaimahi-agents/kaimahi/releases/download/v0.9.0-rc.2/kmx-darwin-$(uname -m | sed 's/x86_64/amd64/')" -o "$download" && sudo mkdir -p /usr/local/bin && sudo install -m 755 "$download" /usr/local/bin/kmx && rm "$download"
+curl -fsSL https://raw.githubusercontent.com/kaimahi-agents/kaimahi/v0.9.0-rc.2/install.sh | sudo sh -s -- --version=v0.9.0-rc.2 --bin-dir=/usr/local/bin
 copilot plugin install kaimahi-agents/kaimahi:plugins/copilot
 ```
 
 The first command selects `kmx-darwin-arm64` on Apple Silicon and
-`kmx-darwin-amd64` on Intel, downloads it over HTTPS and installs it at
-`/usr/local/bin/kmx`. It does not verify the release's separate signature bundle.
+`kmx-darwin-amd64` on Intel, downloads it over HTTPS, checks its published SHA256
+and installs it at `/usr/local/bin/kmx`. It uses the same binary installer as WSL,
+not a plugin setup script. It does not verify the separate signature bundle.
 The Homebrew tap tracks final releases, not release candidates; use this binary
 for rc.2. Homebrew is the install path for final v0.9.0.
 
