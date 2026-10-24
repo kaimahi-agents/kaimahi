@@ -16,7 +16,7 @@ func squadToolMember(m SquadMember) map[string]any {
 	return map[string]any{"memberId": m.ID, "role": m.Role, "displayRole": m.DisplayRole, "taskInstructions": m.TaskInstructions, "model": m.Model, "examples": m.Examples}
 }
 func TestSquadMCPRejectsSecondLeadBeforeSetup(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", previewStateHome(t))
 	root, p := squadSetupRoot(t)
 	c, err := OpenSquadSetup(root, p)
 	if err != nil {
@@ -41,7 +41,7 @@ func TestSquadMCPRejectsSecondLeadBeforeSetup(t *testing.T) {
 	}
 }
 func TestSquadMCPChatCreateMapEditAndPreview(t *testing.T) {
-	t.Setenv("KMX_HOME", t.TempDir())
+	t.Setenv("KMX_HOME", previewStateHome(t))
 	root, p := squadSetupRoot(t)
 	c, err := OpenSquadSetup(root, p)
 	if err != nil {

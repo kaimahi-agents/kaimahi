@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,8 +10,19 @@ import (
 	"github.com/kaimahi-agents/kaimahi/internal/kmx/runtime"
 )
 
+func previewStateHome(t *testing.T) string {
+	t.Helper()
+	// Match the journal fixture contract: even system temp ancestors such as
+	// macOS /var must be physical paths, not symlinks.
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
 func TestPreviewToolsUseJournaledLocalRunner(t *testing.T) {
-	home := t.TempDir()
+	home := previewStateHome(t)
 	t.Setenv("KMX_HOME", home)
 	files, _, source := canonicalFiles(t)
 	saved, err := files.Create(t.Context(), "greeter.agent.md", []byte(source))

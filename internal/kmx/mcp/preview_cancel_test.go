@@ -21,7 +21,7 @@ func TestPreviewCancellationRecoversFinishedTestsFromResource(t *testing.T) {
 	for _, operation := range []string{"run", "test"} {
 		for _, phase := range []string{"agent", "judge"} {
 			t.Run(operation+"/"+phase, func(t *testing.T) {
-				t.Setenv("KMX_HOME", t.TempDir())
+				t.Setenv("KMX_HOME", previewStateHome(t))
 				files, _, source := canonicalFiles(t)
 				source = strings.Replace(source, "**Preferred:** fake", "**Preferred:** unit", 1)
 				source = strings.Split(source, "## Examples")[0] + "## Examples\n```yaml\nexamples:\n"
