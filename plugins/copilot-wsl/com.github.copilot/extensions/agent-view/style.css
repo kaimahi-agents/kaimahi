@@ -165,6 +165,7 @@ input[readonly]{color:var(--muted)}
 .check-line .check-label{overflow-wrap:anywhere;min-width:0}
 .check-edit{display:grid;grid-template-columns:24px auto minmax(0,1fr) auto;gap:10px;align-items:center;min-width:0}
 .judge-result{padding-left:34px;display:grid;gap:6px;overflow-wrap:anywhere}
+.judge-result .check-verdict{grid-column:1;grid-row:auto}
 .judge-result.old{color:var(--muted)}
 .judge-reason{font-size:14px;color:var(--muted);white-space:pre-wrap}
 .check-fields{min-width:0}
