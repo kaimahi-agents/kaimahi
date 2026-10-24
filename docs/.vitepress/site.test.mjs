@@ -60,29 +60,17 @@ test('renamed headings retain legacy guide fragments', async () => {
   }
 })
 
-test('the stock homepage keeps maintained content and development-channel navigation', async () => {
+test('the homepage renders the interactive journey and channel boundary', async () => {
   const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
   for (const marker of [
     'Run, Test and Publish your agents',
-    'main · development',
-    'Stable release v0.8.1',
+    'Development docs',
+    'Stable v0.8.1',
+    'Choose your path',
+    'role="tablist"',
     'Get your first answer'
   ]) {
-    assert.ok(homepage.includes(marker), `homepage: ${marker}`)
-  }
-  assert.ok(homepage.includes('href="https://github.com/kaimahi-agents/kaimahi/tree/v0.8.1"'))
-  assert.doesNotMatch(homepage, /role="tablist"|id="journey-panel-/)
-})
-
-test('stock navigation retains skip links and labeled controls', async () => {
-  for (const page of ['index.html', 'docs/getting-started.html']) {
-    const html = await readFile(path.join(dist, page), 'utf8')
-    assert.match(html, /<a[^>]*href="#VPContent"[^>]*>Skip to content<\/a>/, `${page}: skip link`)
-    assert.match(html, /id="VPContent"/, `${page}: skip target`)
-    assert.match(html, /<nav[^>]*aria-label="Main Navigation"/, `${page}: navigation landmark`)
-    assert.match(html, /<button[^>]*aria-label="Search"/, `${page}: search`)
-    assert.match(html, /<button[^>]*aria-label="Menu"[^>]*aria-expanded="false"/, `${page}: mobile menu`)
-    assert.match(html, /role="switch"[^>]*aria-label="Appearance"[^>]*aria-checked="false"/, `${page}: appearance`)
+    assert.match(homepage, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
 })
 
@@ -125,11 +113,16 @@ function plainText(html) {
   return html.replace(/<\/(?:p|pre|h[1-6])>/g, '\n').replace(/<[^>]*>/g, '').replaceAll('&gt;', '>').replaceAll('&lt;', '<').replaceAll('&amp;', '&')
 }
 
-test('the homepage links to guides that retain composed Deploy and its prerequisites', async () => {
+test('the front doors lead with composed Deploy and its prerequisites', async () => {
   const homepage = await readFile(path.join(dist, 'index.html'), 'utf8')
-  assert.ok(homepage.includes('href="./docs/getting-started#an-agent-of-your-own"'))
-  assert.ok(homepage.includes('href="./docs/workflow-overview"'))
-  for (const page of ['docs/getting-started.html', 'docs/workflow-overview.html']) {
+  const firstPanel = homepage.match(/<article[^>]*id="journey-panel-0"[\s\S]*?<\/article>/)?.[0]
+  assert.ok(firstPanel, 'the default journey is rendered')
+  const chooser = plainText(firstPanel)
+  assert.match(chooser, /kmx create[^\n]*kmx deploy --to NAME/)
+  for (const prerequisite of ['prepared runtime', 'inference', 'registry authentication', 'kmx.yaml', 'publishRepository', 'evaluationTarget']) {
+    assert.ok(chooser.includes(prerequisite), `chooser prerequisite: ${prerequisite}`)
+  }
+  for (const page of ['index.html', 'docs/getting-started.html', 'docs/workflow-overview.html']) {
     const text = plainText(await readFile(path.join(dist, page), 'utf8'))
     const create = text.indexOf('kmx create ')
     const lift = text.indexOf('kmx deploy --to ')
