@@ -50,13 +50,16 @@ Do not put credentials in agent files, logs or command arguments.
    Do not reconstruct the path from a basename or use a Run/Test display path.
    Report a text fallback as text, not as an opened canvas.
 4. After Create and a confirmed canvas open, reply with exactly one done line:
-   `Created <file> and opened it in the canvas.` No narration or trailing paragraph.
-   If the opener is absent, fails or returns text, say what actually happened;
-   never claim the canvas opened. Let the user edit tests and prompt in the canvas.
+   `Created <basename> and opened it in the canvas.` No narration or trailing paragraph.
+   Use the basename in chat, including fallback and existing-file replies; keep
+   the full path in tool and opener arguments only.
+   If Create succeeds but the opener is absent, fails or returns text, the entire
+   reply is `Created <basename>. Canvas not opened: <short reason>.` For a text
+   fallback, use `text view only` as the reason. Let the user edit in the canvas.
    No automatic Run/Test is needed just to create and open an agent.
 
 If Create returns `already_exists`, leave the existing file alone. Open it when
-possible, then say `<file> already exists. To make a second agent, ask for a
+possible, then reply exactly: `<basename> already exists. To make a second agent, ask for a
 new name, such as <stem>-2.` Do not say Created or claim it was already open.
 
 Use the user's named model for a real task. The canvas picker overrides the
