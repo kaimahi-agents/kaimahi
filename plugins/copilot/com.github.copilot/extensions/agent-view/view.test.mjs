@@ -18,7 +18,7 @@ import {
   startViewBridge,
 } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/view.mjs";
 import { renderView } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/app.js";
-import { modelLabel, editorValue, runtimeModelControl } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/editor.mjs";
+import { modelLabel, editorValue, insertPlainText, runtimeModelControl } from "../../../../copilot-wsl/com.github.copilot/extensions/agent-view/editor.mjs";
 
 const here = (name) => fileURLToPath(new URL("../../../../copilot-wsl/com.github.copilot/extensions/agent-view/" + name, import.meta.url));
 const MINIMAL = "greeter.agent.md";
@@ -1538,6 +1538,58 @@ test("browser BR and paragraph containers serialize newlines; unknown formatting
   assert.ok(editor.textContent.includes("Do not drop this."));
 });
 
+test("terminal newline owns only its caret BR, preserves repeat insertion and foreign BRs", async () => {
+  const h = await editableCanvas("Old."), editor = c18Prompt(h.root), line = editor.childNodes[0];
+  const range = { commonAncestorContainer: line, startContainer: line, startOffset: line.childNodes.length, collapsed: true,
+    deleteContents() {}, collapse() {},
+    setStart(node, offset) { this.startContainer = node; this.startOffset = offset; },
+    setStartAfter(node) { this.setStart(node.parentNode, node.parentNode.childNodes.indexOf(node) + 1); },
+    insertNode(node) { const parent = this.startContainer; node.parentNode = parent; parent.children.splice(this.startOffset, 0, node); } };
+  h.doc.getSelection = () => ({ rangeCount: 1, getRangeAt: () => range, removeAllRanges() {}, addRange() {} });
+  insertPlainText(h.doc, editor, "\n");
+  const placeholder = line.childNodes.at(-1);
+  assert.equal(placeholder.tagName, "BR");
+  assert.equal(editorValue(editor), "Old.\n");
+  assert.equal(range.startOffset, line.childNodes.indexOf(placeholder), "caret precedes the rendered placeholder");
+  insertPlainText(h.doc, editor, "\n");
+  insertPlainText(h.doc, editor, "Next.");
+  assert.equal(editorValue(editor), "Old.\n\nNext.");
+  assert.equal(line.childNodes.filter(node => node.tagName === "BR").length, 1);
+  line.append(h.doc.createElement("br"));
+  assert.equal(editorValue(editor), "Old.\n\nNext.\n", "foreign BR remains authored content");
+  line.append(h.doc.createElement("strong"));
+  assert.throws(() => editorValue(editor), /Unsupported editor formatting/);
+});
+
+test("owned inline terminal LF keeps its caret without admitting foreign inline BRs", async () => {
+  const h = await editableCanvas("`Old.`"), editor = c18Prompt(h.root), code = editor.querySelector("code");
+  code.parentNode = editor.childNodes[0];
+  const range = { commonAncestorContainer: code, startContainer: code, startOffset: code.childNodes.length, collapsed: true,
+    deleteContents() {}, collapse() {},
+    setStart(node, offset) { this.startContainer = node; this.startOffset = offset; },
+    setStartAfter(node) { this.setStart(node.parentNode, node.parentNode.childNodes.indexOf(node) + 1); },
+    insertNode(node) { const parent = this.startContainer; node.parentNode = parent; parent.children.splice(this.startOffset, 0, node); } };
+  h.doc.getSelection = () => ({ rangeCount: 1, getRangeAt: () => range, removeAllRanges() {}, addRange() {} });
+  insertPlainText(h.doc, editor, "\n"); insertPlainText(h.doc, editor, "Next.");
+  assert.equal(editorValue(editor), "`Old.\nNext.`");
+  code.append(h.doc.createElement("br"));
+  assert.throws(() => editorValue(editor), /Unsupported inline formatting/);
+});
+
+test("mid-line inline LF does not add a second visual break before following text", async () => {
+  const h = await editableCanvas("`Old.` tail"), editor = c18Prompt(h.root), code = editor.querySelector("code");
+  code.parentNode = editor.childNodes[0];
+  const range = { commonAncestorContainer: code, startContainer: code, startOffset: code.childNodes.length, collapsed: true,
+    deleteContents() {}, collapse() {},
+    setStart(node, offset) { this.startContainer = node; this.startOffset = offset; },
+    setStartAfter(node) { this.setStart(node.parentNode, node.parentNode.childNodes.indexOf(node) + 1); },
+    insertNode(node) { const parent = this.startContainer; node.parentNode = parent; parent.children.splice(this.startOffset, 0, node); } };
+  h.doc.getSelection = () => ({ rangeCount: 1, getRangeAt: () => range, removeAllRanges() {}, addRange() {} });
+  insertPlainText(h.doc, editor, "\n");
+  assert.equal(editorValue(editor), "`Old.\n` tail");
+  assert.equal(code.childNodes.some(node => node.tagName === "BR"), false);
+});
+
 test("noncancelable native line breaks remain browser-owned instead of inserting twice", async () => {
   const h = await editableCanvas("First sentence."), editor = c18Prompt(h.root);
   editor.listeners.beforeinput[0]({ inputType: "insertLineBreak", cancelable: false, preventDefault() { assert.fail("noncancelable input must remain browser-owned"); } });
@@ -1548,7 +1600,10 @@ test("noncancelable native line breaks remain browser-owned instead of inserting
 test("Shift+Enter and native insertLineBreak insert one literal LF; composition and Enter stay separate", async () => {
   const h = await editableCanvas("First sentence."), editor = c18Prompt(h.root), line = editor.childNodes[0];
   const range = { commonAncestorContainer:line, startContainer:line, startOffset:line.childNodes.length, collapsed:true,
-    deleteContents(){}, insertNode(node){this.startContainer.append(node)}, setStartAfter(){}, collapse(){}, setStart(node,offset){this.startContainer=node;this.startOffset=offset} };
+    deleteContents(){},
+    insertNode(node){node.parentNode=this.startContainer;this.startContainer.children.splice(this.startOffset,0,node)},
+    setStartAfter(node){this.setStart(node.parentNode,node.parentNode.childNodes.indexOf(node)+1)},
+    collapse(){}, setStart(node,offset){this.startContainer=node;this.startOffset=offset} };
   h.doc.getSelection = () => ({rangeCount:1,getRangeAt:()=>range,removeAllRanges(){},addRange(){}});
   let prevented=0;
   editor.listeners.keydown[0]({key:"Enter",shiftKey:true,preventDefault(){prevented++}});

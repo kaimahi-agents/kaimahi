@@ -399,6 +399,7 @@ export function instructionBlocks(source) {
 }
 
 const inlineNodes = new WeakSet();
+const caretPlaceholders = new WeakSet();
 export function inlineText(doc, node, text) {
   for (const [index, line] of text.split("\n").entries()) {
     if (index) node.append("\n");
@@ -433,10 +434,10 @@ export function editorValue(root) {
     }
     const tag = node.tagName?.toLowerCase();
     if (node !== root && !["br", "div", "p"].includes(tag) && !inlineNodes.has(node)) throw new Error("Unsupported editor formatting.");
-    if (tag === "br") return "\n";
+    if (tag === "br") return caretPlaceholders.has(node) ? "" : "\n";
     const children = [...node.childNodes];
     if (["div", "p"].includes(tag) && node !== root && children.length === 1 && children[0].tagName?.toLowerCase() === "br") return "";
-    if (inlineNodes.has(node) && children.some((child) => child.nodeType !== 3)) throw new Error("Unsupported inline formatting.");
+    if (inlineNodes.has(node) && children.some((child) => child.nodeType !== 3 && !caretPlaceholders.has(child))) throw new Error("Unsupported inline formatting.");
     let value = "", previousBlock = false;
     for (const [index, child] of children.entries()) {
       const block = ["div", "p"].includes(child.tagName?.toLowerCase());
@@ -465,8 +466,29 @@ export function insertPlainText(doc, node, text) {
   if (["div", "p"].includes(container?.tagName?.toLowerCase()) && container.childNodes.length === 1 && container.childNodes[0].tagName?.toLowerCase() === "br") {
     container.replaceChildren(); range.setStart(container, 0);
   }
+  // Keep insertion before an existing terminal caret placeholder, including
+  // selections supplied at the line/root end rather than by the browser.
+  const tail = container.childNodes?.[container.childNodes.length - 1];
+  if (caretPlaceholders.has(tail) && range.startOffset === container.childNodes.length) range.setStart(container, range.startOffset - 1);
   const inserted = doc.createTextNode(text);
-  range.insertNode(inserted); range.setStartAfter(inserted); range.collapse(true);
+  range.insertNode(inserted); range.setStartAfter(inserted);
+  // Chromium collapses a terminal LF without a following rendered caret row.
+  // This owned BR supplies that row without contributing authored source text.
+  const following = [];
+  let cursor = inserted;
+  for (;;) {
+    const parent = cursor.parentNode, siblings = [...parent.childNodes];
+    following.push(...siblings.slice(siblings.indexOf(cursor) + 1));
+    if (!inlineNodes.has(parent)) break;
+    cursor = parent;
+  }
+  if (text.endsWith("\n")
+      && following.every(child => caretPlaceholders.has(child) || child.nodeType === 3 && !child.textContent)
+      && !following.some(child => caretPlaceholders.has(child))) {
+    const placeholder = el(doc, "br"); caretPlaceholders.add(placeholder);
+    range.insertNode(placeholder); range.setStartAfter(inserted);
+  }
+  range.collapse(true);
   selection?.removeAllRanges(); selection?.addRange(range);
 }
 // Each source line is its own block so a blank line can be drawn as a short
