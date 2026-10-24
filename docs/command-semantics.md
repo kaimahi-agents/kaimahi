@@ -68,7 +68,7 @@ Deploy stays create-only, including its narrow exact evaluated reuse. Explicit
 `--update` permits only eligible retained Orka updates or rollback with original
 passing evidence; kagent refuses updates. No enrollment, repair or automatic
 rollback. See [update and rollback](suite-workspace.md#update-and-rollback). `task result` and
-`suite push DIRECTORY REFERENCE`, `suite build/diff/pull/validate` are unchanged.
+`suite push DIRECTORY REFERENCE`, `suite build/pull/validate` are unchanged.
 `suite policy FILE [--administrative-policy FILE]` resolves portable policy
 offline and prints canonical effective-policy bytes plus their digest; it does
 not authenticate, authorize, select or invoke an enforcement provider. See the

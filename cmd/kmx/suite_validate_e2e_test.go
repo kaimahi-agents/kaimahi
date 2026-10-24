@@ -16,13 +16,11 @@ import (
 	"github.com/gowebpki/jcs"
 
 	suitecore "github.com/agent-primitives/suite/core"
-	suiteoci "github.com/agent-primitives/suite/oci"
 )
 
-func TestSuiteDiffArtifactsEndToEnd(t *testing.T) {
+func TestSuiteValidateRejectsMissingProviderExtensionCriticalityEndToEnd(t *testing.T) {
 	root := repositoryRoot(t)
 	fixture := filepath.Join(root, "internal", "kmx", "agentsuite", "testdata", "incident-analyst")
-	beforeSuite := copySuiteFixture(t, fixture)
 	afterSuite := copySuiteFixture(t, fixture)
 	mutateIncidentAnalystSuite(t, afterSuite)
 
@@ -35,85 +33,7 @@ func TestSuiteDiffArtifactsEndToEnd(t *testing.T) {
 		t.Fatalf("build kmx: %v\n%s", err, output)
 	}
 
-	runKMX(t, binary, "suite", "validate", beforeSuite)
 	runKMX(t, binary, "suite", "validate", afterSuite)
-
-	beforeLayout := filepath.Join(t.TempDir(), "before.oci")
-	afterLayout := filepath.Join(t.TempDir(), "after.oci")
-	runKMX(t, binary, "suite", "push", beforeSuite,
-		"--to-layout", beforeLayout, "agentsuites/incident-response:v1")
-	runKMX(t, binary, "suite", "push", afterSuite,
-		"--to-layout", afterLayout, "agentsuites/incident-response:v2")
-
-	unified := runKMX(t, binary, "suite", "diff", beforeLayout, afterLayout)
-	for _, expected := range []string{
-		"@@ ~ agent incident-analyst @@",
-		"@@ ~ buildProfile agentkit-v0.1.0 @@",
-		"@@ ~ composition incident-analyst@linux/amd64 @@",
-		"@@ + toolProvider incident-evidence@1.0.0 @@",
-		"@@ + toolProviderComposition incident-evidence@1.0.0@linux/amd64 @@",
-		"@@ ~ toolProviderCatalog catalog @@",
-		`- model.model: "gpt-5-mini"`,
-		`+ model.model: "gpt-5"`,
-		"- sourceEpoch: 1790388400",
-		"+ sourceEpoch: 1790388460",
-		"+ toolProviders[incident-evidence@1.0.0]: {",
-		"Affected agents",
-		"build profile agentkit-v0.1.0 modified",
-		"composition incident-analyst@linux/amd64 modified",
-		"tool provider incident-evidence@1.0.0 added",
-	} {
-		if !strings.Contains(unified, expected) {
-			t.Errorf("unified artifact diff does not contain %q:\n%s", expected, unified)
-		}
-	}
-
-	split := runKMX(t, binary, "suite", "diff", beforeLayout, afterLayout, "--view", "split")
-	for _, expected := range []string{"--- BEFORE", "+++ AFTER", `- model.model: "gpt-5-mini"`, `+ model.model: "gpt-5"`} {
-		if !strings.Contains(split, expected) {
-			t.Errorf("split artifact diff does not contain %q:\n%s", expected, split)
-		}
-	}
-
-	rawReport := runKMX(t, binary, "suite", "diff", beforeLayout, afterLayout, "--output", "json")
-	var report suiteoci.DiffReport
-	if err := json.Unmarshal([]byte(rawReport), &report); err != nil {
-		t.Fatalf("decode JSON artifact diff: %v\n%s", err, rawReport)
-	}
-	if report.SchemaVersion != suiteoci.DiffReportSchemaVersion {
-		t.Fatalf("schema version = %q", report.SchemaVersion)
-	}
-	if report.Before.Suite != "incident-response" || report.After.Suite != "incident-response" {
-		t.Fatalf("suite identities = %q -> %q", report.Before.Suite, report.After.Suite)
-	}
-	if report.Before.ArtifactDigest == "" || report.After.ArtifactDigest == "" ||
-		report.Before.ContentDigest == report.After.ContentDigest {
-		t.Fatalf("artifact identities = %+v -> %+v", report.Before, report.After)
-	}
-	if report.Summary.Added != 4 || report.Summary.Removed != 0 || report.Summary.Modified != 6 ||
-		report.Summary.AgentsAffected != 1 {
-		t.Fatalf("unexpected artifact diff summary: %+v", report.Summary)
-	}
-	for _, expected := range []struct {
-		changeType string
-		kind       string
-		id         string
-	}{
-		{suiteoci.DiffModified, "agent", "incident-analyst"},
-		{suiteoci.DiffModified, "buildProfile", "agentkit-v0.1.0"},
-		{suiteoci.DiffModified, "composition", "incident-analyst@linux/amd64"},
-		{suiteoci.DiffAdded, "toolProvider", "incident-evidence@1.0.0"},
-		{suiteoci.DiffAdded, "toolProviderComposition", "incident-evidence@1.0.0@linux/amd64"},
-		{suiteoci.DiffAdded, "content", "schemas/incident-evidence/query-input.json"},
-		{suiteoci.DiffAdded, "content", "tool-providers/incident-evidence/1.0.0/linux-amd64/bin/incident-evidence"},
-		{suiteoci.DiffModified, "content", "instructions/incident-analyst.md"},
-		{suiteoci.DiffModified, "toolProviderCatalog", "catalog"},
-		{suiteoci.DiffModified, "suite", "metadata"},
-	} {
-		if !reportHasRecordChange(report, expected.changeType, expected.kind, expected.id) {
-			t.Errorf("JSON artifact diff is missing %s %s %s", expected.changeType, expected.kind, expected.id)
-		}
-	}
 
 	// Rebind every ancestor so only the missing extension criticality is invalid.
 	var provider map[string]any
@@ -374,13 +294,4 @@ func variantDigest(t *testing.T, variant suitecore.ToolProviderVariant) string {
 		t.Fatalf("encode ToolProvider variant: %v", err)
 	}
 	return canonicalDigest(t, data)
-}
-
-func reportHasRecordChange(report suiteoci.DiffReport, changeType, kind, id string) bool {
-	for _, change := range report.Changes {
-		if change.Type == changeType && change.Kind == kind && change.ID == id {
-			return true
-		}
-	}
-	return false
 }

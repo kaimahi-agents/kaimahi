@@ -1,6 +1,6 @@
 # Suite-first lifecycle: objects and everyday commands
 
-**Status:** Direction, partly implemented; discussed in [#328](https://github.com/kaimahi-agents/kaimahi/issues/328). Current `main` implements one-member workspace authoring, packaged Orka/exact-v0.10.3 Go kagent evaluation and evaluated publication, suite diff, bounded native CI qualification, and runtime-dispatched deploy-only Lift by digest. Suite deployment status/retirement, workspace run/chat and general image-backed placement are not implemented. Open questions below are owned by the linked issues.
+**Status:** Direction, partly implemented; discussed in [#328](https://github.com/kaimahi-agents/kaimahi/issues/328). Current `main` implements one-member workspace authoring, packaged Orka/exact-v0.10.3 Go kagent evaluation and evaluated publication, bounded native CI qualification, and runtime-dispatched deploy-only Lift by digest. Suite deployment status/retirement, workspace run/chat and general image-backed placement are not implemented. Open questions below are owned by the linked issues.
 
 ## Direction
 

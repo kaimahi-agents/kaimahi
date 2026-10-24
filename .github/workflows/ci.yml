@@ -987,12 +987,6 @@ jobs:
           grep -q -- '--- PASS: TestChatRefusesTheRetiredKagentRuntimeWithoutReachingACluster' retirement.out
           grep -q -- '--- PASS: TestLegacyAgentEditIsRemovedBeforeConfiguration' retirement.out
           ! grep -q -- '--- SKIP:' retirement.out
-      - name: AgentSuite incremental artifact diff end to end
-        run: |
-          set -euo pipefail
-          go test ./cmd/kmx -run '^TestSuiteDiffArtifactsEndToEnd$' -count=1 -v | tee suite-diff-e2e.out
-          grep -q -- '--- PASS: TestSuiteDiffArtifactsEndToEnd' suite-diff-e2e.out
-          ! grep -q -- '--- SKIP:' suite-diff-e2e.out
       # Preserve the required check's name and collect other hygiene diagnostics
       # even if a dependency fails. Missing, skipped and cancelled work refuses.
       - name: Every required hygiene dependency succeeded

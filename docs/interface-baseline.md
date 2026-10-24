@@ -55,7 +55,6 @@ kmx
 │   └── list
 ├── suite
 │   ├── validate <path>
-│   ├── diff <before> <after>
 │   ├── build <directory>
 │   ├── policy <file>
 │   ├── push <directory> <reference>

@@ -20,7 +20,7 @@ kmx <noun> <verb> [object] [flags]
   `push` and full-workspace `test`. Root `test` also retains helpers (`diff`,
   `explain`, `export`, `verify`, `from-sessions`, `cleanup`); root digest `deploy` deploys an evaluated package. Standalone packaged evaluation remains unimplemented.
 - **Resource and domain operations use noun first, then verb:** `task result`,
-  `suite build/diff/push/pull/validate`, `run-profile export` and `orka install/status/show/list`. `kmx agent` is removed entirely,
+  `suite build/push/pull/validate`, `run-profile export` and `orka install/status/show/list`. `kmx agent` is removed entirely,
   with no alias or retirement stub.
 - **Singular nouns.** Use `orka list`, not `orkas`. A plural may exist only
   as an explicitly approved hidden alias.
