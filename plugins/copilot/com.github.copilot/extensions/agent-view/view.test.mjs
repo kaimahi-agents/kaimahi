@@ -1684,6 +1684,34 @@ test("zero tests: first-run teaching, local refusal, delete-all saves zero and a
   assert.match(byClass(h.root, "ad-hoc-result")[0].textContent, /Hi there/);
 });
 
+test("Suggest acknowledges a request truthfully and subsequent saved additions refresh without losing drafts", async () => {
+  for (const withDraft of [false, true]) {
+    const ex = c18Examples(["a"]);
+    const h = await editableCanvas("Reply briefly.", undefined, { examples: ex, response: { message: "Asked Copilot to add tests in chat." } });
+    if (withDraft) c18Edit(h.root);
+    click(btn(h.root, "Suggest tests")); await tick(); await tick();
+    assert.deepEqual(h.calls, [{ operation: "suggest" }], "click starts chat, not a save or run");
+    assert.equal(byClass(h.root, "action-message")[0].textContent, "Asked Copilot to add tests in chat.");
+    assert.doesNotMatch(h.root.textContent, /Nothing here change/);
+    const added = [...ex, ...c18Examples(["extra"])];
+    const saved = await viewFor(replaceExamples(h.source, added), added);
+    h.app.observe(saved);
+    assert.doesNotMatch(h.root.textContent, /Nothing here change/);
+    if (withDraft) {
+      assert.match(c18Prompt(h.root).textContent, /More\./, "unsaved prompt is retained");
+      assert.equal(byClass(h.root, "notice-info").length, 1, "existing outside-change reconciliation remains");
+      click(btn(h.root, "Keep my edits"));
+      promptEnter(h.root); await tick();
+      assert.deepEqual(h.calls[1].sections, [{ key: h.sections[0].key, text: "Reply briefly.\n More." }]);
+      assert.equal(Object.hasOwn(h.calls[1], "examples"), false, "prompt save leaves the newly saved tests alone");
+      assert.deepEqual(items(h.root).map(i => i.attrs["data-test-id"]), ["a", "extra"], "added tests survive draft reconciliation");
+    } else {
+      assert.deepEqual(items(h.root).map(i => i.attrs["data-test-id"]), ["a", "extra"]);
+      assert.equal(byClass(h.root, "notice-info").length, 0);
+    }
+  }
+});
+
 test("outside change with drafts: literal Compare, Keep my edits preserves remote parts, a second change refuses again, Use discards", async () => {
   const ex = c18Examples(["a", "b"]);
   const h = await editableCanvas("Reply briefly.", undefined, { examples: ex, response: { error: "refused", message: "Kept." } });

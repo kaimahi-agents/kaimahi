@@ -3,6 +3,7 @@
 // Unbound non-fake previews default to Copilot's fixed endpoint and the authored
 // model; explicit routes, fake previews and legacy root-bound behavior are unchanged.
 // Tool requests must not choose model endpoints or substitute a runner.
+// Human-readable tool titles leave protocol names and argument schemas unchanged.
 // The canonical resource includes an exact, revision-bound authoring snapshot.
 // Optional failure-only excerpts exclude passing and unknown answers from safe
 // results and observations; broader disclosure remains explicitly requested.

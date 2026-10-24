@@ -259,8 +259,8 @@ export function createActionHandler({ session, path }) {
       if (input.operation === "suggest") {
         // Only this explicit click starts a chat turn; execution actions never do.
         if (typeof session.send !== "function") throw new ViewError("unavailable");
-        await session.send(`Suggest additional examples for ${JSON.stringify(path)} at revision ${view.file.revision}. Show proposals in chat; do not edit files or run tests. Use only this agent's kmx resource if context is needed.`);
-        return { message: "Asked Copilot to suggest examples in chat." };
+        await session.send(`Use the kmx-agent-builder skill to add a few tests to ${JSON.stringify(path)} in the canvas. Read its kmx resource first, preserve the prompt, model and existing tests, then save the additions with Edit using the current revision. Do not run tests. Report what was saved in one short line.`);
+        return { message: "Asked Copilot to add tests in chat." };
       }
       if (typeof input.expectedRevision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) throw new ViewError("invalid-action");
       if (input.expectedRevision !== view.file.revision) throw new ViewError("stale_revision");

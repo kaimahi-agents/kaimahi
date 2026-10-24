@@ -110,7 +110,19 @@ for(const [resultType,code]of[['failure','outcome-unknown'],['rejected','permiss
  if(resultType==='timeout'||resultType==='failure'){assert.equal((await h.act(input)).error,'outcome-unknown');assert.equal(calls,1)}
 });
 test('page cannot supply paths, servers, generic tools or implicit answer disclosure',async()=>{const h=harness();for(const input of [{operation:'test',path:'else.agent.md'},{operation:'execute',name:'shell'},{operation:'test',showContent:'true'},{operation:'test',showFailedContent:false},{operation:'toString'}])assert.equal((await h.act(input)).error,'invalid-action');assert.equal(h.calls.length,0)});
-test('only explicit Suggest starts chat and ad-hoc Run retains opt-in',async()=>{const h=harness();assert.match((await h.act({operation:'suggest'})).message,/chat/);assert.equal(h.calls.filter(c=>c.chat).length,1);assert.equal(h.calls.some(c=>c.name),false);const r=await h.act({operation:'run',expectedRevision:revision(original),input:'Ada',showContent:true});assert.equal(r.error,undefined);assert.deepEqual(h.calls.at(-1).arguments,{schemaVersion:1,path:'greeter.agent.md',input:'Ada',showContent:true,showFailedContent:true})});
+test('Suggest requests saved tests through chat without running or claiming additions completed',async()=>{
+ const h=harness();const r=await h.act({operation:'suggest'});
+ assert.match(r.message,/Asked Copilot/);assert.doesNotMatch(r.message,/Added|Nothing here/);
+ assert.equal(h.calls.length,1);const prompt=h.calls[0].chat;
+ assert.match(prompt,/kmx-agent-builder skill/);assert.match(prompt,/add.*tests/i);
+ assert.match(prompt,/"greeter.agent.md"/);assert.match(prompt,/resource/);
+ assert.match(prompt,/Edit/);assert.match(prompt,/current revision/);
+ assert.match(prompt,/prompt, model and existing tests/);assert.match(prompt,/Do not run tests/);
+ assert.doesNotMatch(prompt,/examples|proposals|sha256:|do not edit/);
+ assert.equal(h.source(),original,'only chat is dispatched by the bridge');
+ const ran=await h.act({operation:'run',expectedRevision:revision(original),input:'Ada',showContent:true});
+ assert.equal(ran.error,undefined);assert.deepEqual(h.calls.at(-1).arguments,{schemaVersion:1,path:'greeter.agent.md',input:'Ada',showContent:true,showFailedContent:true});
+});
 test('action POST requires exact same origin and cannot be a form submission',async()=>{const h=harness();const b=await startViewBridge({session:h.session,path:'greeter.agent.md'});try{assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{Origin:'https://untrusted.test','Content-Type':'application/json'},body:'{}'})).status,403);assert.equal((await fetch(b.url+'actions',{method:'POST',headers:{Origin:new URL(b.url).origin,'Content-Type':'application/json'},body:JSON.stringify({operation:'reload'})})).status,200);assert.equal(h.calls.length,0)}finally{await b.close()}});
 const farewell={id:'farewell',input:'Bo',assertions:[{id:'farewell-text',type:'contains',value:'Bye, Bo'}]};
 const greeting={id:'greeting',input:'Ada',assertions:[{id:'greeting-text',type:'contains',value:'Hello, Ada'}]};

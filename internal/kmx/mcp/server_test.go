@@ -59,8 +59,12 @@ func TestProtocolDiscoveryAndVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := []string{}
+	titles := map[string]string{"create": "Create agent", "edit": "Edit agent", "run": "Run agent", "test": "Test agent"}
 	for _, tool := range list.Tools {
 		names = append(names, tool.Name)
+		if tool.Title != titles[tool.Name] {
+			t.Fatalf("display title for %s: %q", tool.Name, tool.Title)
+		}
 	}
 	if strings.Join(names, ",") != "create,edit,run,test" {
 		t.Fatalf("tools: %v", names)

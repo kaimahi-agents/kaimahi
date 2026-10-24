@@ -173,8 +173,13 @@ full pass. The sticky Tests header filters All / Not passing without reordering.
 Dark/light tokens and the same layout support a 600px panel.
 
 Test and ad-hoc Run use existing same-session MCP tools directly, not chat.
-**Suggest tests** alone asks Copilot for proposals in chat; it does not save them
-or invent canvas suggestions. The host still enforces permissions. The private
+**Suggest tests** asks Copilot to add job-relevant tests to the saved agent through
+the existing revision-checked Edit operation. It keeps the prompt, model and
+existing tests and does not run them. The request status acknowledges the chat
+request, not a completed save. Saved additions appear through the normal canvas
+refresh; unsaved local drafts retain the existing outside-change reconciliation.
+Chat reports what was actually saved. An explicit request for proposals only
+leaves them in chat and says they are not saved. The host still enforces permissions. The private
 asset bridge accepts only declared interactions for its fixed path, with token,
 Host, exact Origin and size checks; it is not a generic executor.
 The visible idle panel observes the same resource for outside changes. With a

@@ -520,7 +520,9 @@ Reads perform no inference, mutation or journal retrieval.
 The [WSL Copilot plugin](../plugins/copilot-wsl/README.md) adds a
 native authoring canvas and read-only `/agent-view PATH` text fallback over this
 resource. Canvas Edit/Test/Run use existing same-session MCP tools; only explicit
-Suggest more starts chat. Saves require the original revision; changed result
+**Suggest tests** starts chat, asking Copilot to save additional tests through
+revision-checked Edit without running them. Its status acknowledges the request,
+not a completed addition. Saves require the original revision; changed result
 revisions are labelled stale rather than silently rebasing the draft.
 Inspection can show a minimal titled agent as well as a canonical Squad charter;
 this display-only support does not change Run/Test parser acceptance.

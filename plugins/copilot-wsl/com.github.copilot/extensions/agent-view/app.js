@@ -316,7 +316,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         runAlert = { text: response.message || "", saved: false, one: values.caseId };
       } else message = response.message || "The action was refused. Your draft is still here.";
     } else if (operation === "suggest") {
-      message = "Suggestion requested in Copilot chat. Nothing here changed.";
+      message = response?.message || "Asked Copilot to add tests in chat.";
     } else if (matches(response?.view)) {
       adopt(response.view, submitted);
       if (tested) lastRun = { one: values.caseId };
@@ -677,7 +677,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
         el(doc, "span", "quiet", "A test gives the agent an input and checks its answer. After each change, Enter saves the prompt and runs every test."));
       const actions = el(doc, "div", "empty-actions");
       actions.append(button("Suggest tests", () => act("suggest"), "sb sb-accent"), add);
-      empty.append(text, actions, el(doc, "span", "meta", "Suggest tests asks Copilot in the chat. Nothing here changes until the agent file does."));
+      empty.append(text, actions, el(doc, "span", "meta", "Ask Copilot to add tests to the saved agent."));
     }
     section.append(empty, list, note);
     const rowControls = [];

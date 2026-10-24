@@ -41,6 +41,7 @@ func NewServer(engineVersion string, operations map[string]Operation) (*sdk.Serv
 		Instructions: instructions,
 		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
+	titles := map[string]string{"create": "Create agent", "edit": "Edit agent", "run": "Run agent", "test": "Test agent"}
 	for _, name := range names {
 		op, ok := operations[name]
 		if !ok || op.Schema == nil || op.Schema.Type != "object" || op.Handler == nil {
@@ -95,7 +96,7 @@ func NewServer(engineVersion string, operations map[string]Operation) (*sdk.Serv
 			advertised.Properties["schemaVersion"] = &jsonschema.Schema{Type: "integer", Enum: []any{1, 2}}
 			advertised.Description = "Canonical v1 requires " + strings.Join(schema.Required, ", ") + ". Native v2 requires " + strings.Join(v2.Required, ", ") + ". Each version is separately validated; never mix operands."
 		}
-		server.AddTool(&sdk.Tool{Name: name, Description: op.Description, InputSchema: advertised}, func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
+		server.AddTool(&sdk.Tool{Name: name, Title: titles[name], Description: op.Description, InputSchema: advertised}, func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			var version struct {
 				SchemaVersion int `json:"schemaVersion"`
 			}
