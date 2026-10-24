@@ -84,9 +84,13 @@ Canonical `run FILE` / `test FILE` dispatch to a cluster-independent App adapter
 and the embedded-runner interface. Run optionally adds a separate ad-hoc input;
 both check saved ordered examples. `--case ID` is always partial. Versioned
 payload-free text/JSON results are local preview, never native evidence. The
-CLI uses a temporary direct `preview runner (no journal)` until the embedded
-runner is wired. It makes one completion per input/example plus one call per
-llmJudge assertion, without retries, fallback, Sessions or native judge evidence. Existing live `run --agent`, full-workspace Test,
+CLI uses embedded Agent Sessions for fake, local and Copilot models, with one
+Session per agent turn and two independent judge samples per llmJudge assertion.
+The invocation-owned cleartext journal retains instructions, inputs, answers,
+judge payloads and reasoning under the existing retention and clearing policy.
+Copilot content checks stay provider-owned and run before journaling. Replay
+makes zero model calls and does not create native evidence. There are no
+inference retries or fallback. Existing live `run --agent`, full-workspace Test,
 workspace Explain and hidden legacy Eval remain unchanged. See
 [agent-file preview](kmx.md#agent-file-local-preview-unreleased-integration).
 

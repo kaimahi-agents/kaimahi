@@ -447,9 +447,14 @@ func TestFileHelpIsCanonicalOnly(t *testing.T) {
 				t.Fatalf("canonical file preview missing from %s help: %s", verb, out.String())
 			}
 			if verb != "eval" {
-				for _, disclosure := range []string{"cleartext SQLite journals", "local-preview/journals", "newest 20 runs", "active runs", "Stop previews", "agent or judge uses Copilot", "NoJournal"} {
+				for _, disclosure := range []string{"cleartext SQLite journals", "local-preview/journals", "newest 20 runs", "active runs", "Stop previews", "fake, local and Copilot models", "embedded Agent Sessions", "judge payloads and reasoning", "provider-owned", "before journaling", "Replay makes zero model calls"} {
 					if !strings.Contains(out.String(), disclosure) {
 						t.Errorf("%s help omits retention disclosure %q", verb, disclosure)
+					}
+				}
+				for _, stale := range []string{"NoJournal", "preview runner (no journal)", "whole invocation is direct"} {
+					if strings.Contains(out.String(), stale) {
+						t.Errorf("%s help retains stale Copilot description %q", verb, stale)
 					}
 				}
 			}
