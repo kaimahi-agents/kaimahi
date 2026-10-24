@@ -160,7 +160,6 @@ export default defineConfig({
     'node_modules/**'
   ],
   head: [
-    ['meta', { name: 'theme-color', content: '#071827' }],
     ['meta', { name: 'color-scheme', content: 'light dark' }]
   ],
   markdown: {

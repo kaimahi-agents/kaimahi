@@ -39,9 +39,10 @@ The sources remain where contributors already review them:
   source rather than pretending those files are website pages.
 
 Navigation lives in `.vitepress/config.mts`. It groups existing pages by user
-task, but does not copy their instructions. The homepage path chooser links into
-those same guides. Local search indexes the rendered Markdown and uses no hosted
-search service or credentials.
+task, but does not copy their instructions. The stock VitePress theme renders
+the homepage and guides without a custom layout, stylesheet or path chooser.
+Local search indexes the rendered Markdown and uses no hosted search service or
+credentials.
 
 AgentSuite links and navigation use the standalone specification on `main`,
 including section fragments. There is no local specification page or issue-link
@@ -53,7 +54,8 @@ and consumer fixtures retain their separately recorded v0.1.0 provenance.
 ## Version boundary
 
 The published site and local preview render `main`, which can describe
-unreleased behavior. The global channel notice links to the stable v0.8.1 source.
+unreleased behavior. The `main · development` navigation menu links to this
+boundary and the stable v0.8.1 source.
 Tagged Markdown remains the historical release record. A version selector and
 generated copies of older guides are deliberately not implemented in this draft.
 
@@ -62,9 +64,9 @@ generated copies of older guides are deliberately not implemented in this draft.
 The private npm package and lockfile live under `docs/`, keeping the Go module
 root free of Node package metadata and scoping dependency automation to the
 preview tooling. The draft pins VitePress `2.0.0-alpha.20` exactly. It provides
-responsive navigation, accessible local search, syntax highlighting, dark mode,
-and a small Vue enhancement while leaving Markdown authoritative. The alpha pin
-and its transitive lockfile must be reassessed before a stable framework claim.
+responsive navigation, accessible local search, syntax highlighting and dark mode
+while leaving Markdown authoritative. The alpha pin and its transitive lockfile
+must be reassessed before a stable framework claim.
 
 `.github/workflows/docs-pages.yml` publishes from `main` to organization GitHub
 Pages after relevant documentation changes, and supports an explicit manual run.
@@ -123,9 +125,11 @@ fake header-configuration files or schema-ID changes are used.
 ## Review and removal
 
 Review the preview at desktop and mobile widths, with keyboard-only navigation,
-dark and light appearance, and reduced motion. The path chooser uses native links
-and an ARIA tablist; the site retains VitePress's skip link and search controls.
-This is useful accessibility behavior, not a claim of full WCAG conformance.
+dark and light appearance, and reduced motion. The site uses stock VitePress
+navigation, skip links, search and appearance controls. Generated-site tests
+check skip-link targets, labeled navigation and control markup on the homepage
+and a guide. These static checks do not qualify keyboard interaction, contrast,
+responsive behavior or full WCAG conformance.
 
 Before removing the documentation UI, retain or migrate the frozen schema routes
 so their public IDs keep resolving. Disabling Pages without replacement also
