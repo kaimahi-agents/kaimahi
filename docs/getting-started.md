@@ -103,7 +103,7 @@ bindings and refuses any occupied target.
 `create --live`, live-only/preview flags, its wizard and user bundle
 commands/readers/writers are removed outright. No conversion/migration or saved
 receipt/resource deletion occurs. Old bundle receipts are unreadable. Suite
-status/retirement remain unavailable. Root run requires `--agent` for a live Orka
+status/retirement remain unavailable. Without FILE, `kmx run` requires `--agent` for a live Orka
 Agent, including one placed by Deploy; chat also targets those live Agents. Neither is
 workspace-local execution or suite evaluation. Task/result access remains
 independent, without resend.

@@ -65,7 +65,8 @@ possible, then reply exactly: `<basename> already exists. To make a second agent
 new name, such as <stem>-2.` Do not say Created or claim it was already open.
 
 Use the user's named model for a real task. The canvas picker overrides the
-file model for that session; without either choice the default is `gpt-5.6-terra`.
+file model for that canvas. With neither choice, the canvas follows the current
+chat model when available; otherwise it uses `gpt-5.6-terra`.
 Do not rewrite the authored model for a runtime choice. The deterministic `fake`
 example below is only for orientation. An unbound server uses Copilot for the
 effective real model by default; no provider setup is needed. Explicit startup routes still

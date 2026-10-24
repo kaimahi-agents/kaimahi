@@ -734,7 +734,7 @@ To author the offline AgentSessions chat profile in a separate workspace:
 ```sh
 kmx create greeter --workspace ./sessions-workspace --runtime agentsessions \
   --model fixture-model --instructions ./instructions.md
-kmx push --workspace ./sessions-workspace --to-layout ./sessions-layout greeter:v1
+kmx push --workspace ./sessions-workspace --to-layout ./sessions-layout --unevaluated greeter:v1
 ```
 
 This fixes `runtime.version` to upstream commit
@@ -2025,8 +2025,8 @@ placement, and triggers no cleanup or retry. Public result JSON is not restart
 or reuse authority. Kagent retirement and authenticated promotion
 policy remain unavailable; evidence never crosses runtimes.
 
-The existing pinned kind shard configures create, three-case evaluation (two text
-cases and an open-ended rubric case), exact local
+The existing pinned kind shard configures create, two-case text evaluation without
+judge requests, exact local
 publication, source-free GET-only deploy planning, explicit new-target promotion and
 occupied repeat refusal, with zero additional native execution traffic.
 
