@@ -1888,6 +1888,33 @@ test("ambiguous normalized IDs cannot inherit remembered verdicts in a stale rea
   assert.deepEqual(c18Status(h.root), ["none", "none"]);
 });
 
+test("Run's observed saved tests drive the result pill, while an ad-hoc run without tests stays never-run", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: (revision, examples) => {
+    const latest = bLatest({ a: "pass", b: "fail" })(revision, examples);
+    latest.result.operation = "run"; latest.result.adHoc = { state: "complete", verdict: "pass", answerExcerpt: "Hello, Kai" };
+    return latest;
+  } });
+  assert.equal(c18Text(h.root, "result-pill"), "1 of 2 passing");
+  assert.equal(byClass(h.root, "result-pill")[0].attrs["data-tone"], "fail");
+  const empty = await editableCanvas("Reply briefly.", undefined, { examples: [], latest: (revision, examples) => {
+    const latest = bLatest({})(revision, examples); latest.result.operation = "run"; latest.result.fullPass = false;
+    latest.result.reasonCode = "completion_ready"; latest.result.adHoc = { state: "complete", verdict: "pass", answerExcerpt: "Hello" };
+    return latest;
+  } });
+  assert.equal(c18Text(empty.root, "result-pill"), "Not run yet");
+});
+
+test("Not passing counts and shows retained old passes rather than treating them as current passes", async () => {
+  const h = await editableCanvas("Reply briefly.", undefined, { examples: c18Examples(["a", "b"]), latest: bLatest({ a: "pass", b: "pass" }), defaultView: { innerHeight: 100 } });
+  h.app.observe(await viewFor(h.source, h.examples, c18Latest({ b: "pass" }, { scope: "subset", selected: ["b"] })));
+  assert.deepEqual(c18Status(h.root), ["old-pass", "pass"]);
+  const filter = byClass(h.root, "filter-button")[1];
+  assert.equal(filter.textContent, "Not passing 1");
+  click(filter);
+  assert.deepEqual(items(h.root).map(item => item.hidden), [false, true]);
+  assert.equal(summaryOf(h.root), "1 passing, 1 not run");
+});
+
 test("Board E blank test focuses its visibly named field without saved-test chrome", async () => {
   const h = await editableCanvas("Reply briefly.");
   click(btn(h.root, "Add test"));

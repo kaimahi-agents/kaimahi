@@ -357,7 +357,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
     if (testing()) return { tone: "running", text: `Running ${pending.one ? "1 test" : plural(n, "test")}…` };
     if (blocked) return { tone: "none", text: "Result unconfirmed" };
     if (base.latest.status === "stale" || (hasDrafts() || base.latest.status !== "current") && history.last) return { tone: "none", text: "Out of date" };
-    if (!result || result.reasonCode === "no_tests" || result.operation === "run") return { tone: "none", text: "Not run yet" };
+    if (!n || !result || result.reasonCode === "no_tests") return { tone: "none", text: "Not run yet" };
     if (result.state !== "complete" || !coherentSelection(base)) return { tone: "error", text: result.state === "complete" ? "Incomplete run" : "Didn't finish" };
     const cases = inspectCases(base), passing = cases.filter(c => c.state === "pass").length;
     const full = result.fullPass && result.verdict === "pass" && result.selection.scope === "full" && passing === n;
@@ -551,7 +551,8 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       const all = entries(), anyDraft = hasDrafts(), oldResults = anyDraft || testing() || base.latest.status !== "current";
       const shown = all.map((e) => ({ e, r: e.draft?.origin === null ? { kind: "none", base: "none", label: "Not run", note: "", count: "" } : testRow(e.c, oldResults || e.c?.previous, blocked, ambiguousPassSet(base)) }));
       const counted = shown.filter(({ e }) => !e.draft?.deleted);
-      const notPassing = counted.filter(({ r }) => r.base !== "pass").length;
+      const currentPass = ({ e, r }) => r.base === "pass" && !e.c?.previous;
+      const notPassing = counted.filter(row => !currentPass(row)).length;
       filterButtons.forEach((node, i) => {
         node.replaceChildren(`${i ? "Not passing" : "All"} `, el(doc, "span", "count", String(i ? notPassing : counted.length)));
         node.setAttribute("aria-pressed", String(filter === (i ? "problems" : "all")));
@@ -561,7 +562,7 @@ export function renderView(doc, root, payload, execute = postAction, options = {
       for (const { e, r } of shown) {
         const item = el(doc, "li", "test-item"), id = e.raw?.id ?? e.c?.example.id ?? "";
         item.setAttribute("data-test-id", id); item.setAttribute("data-status", r.kind);
-        item.hidden = filter === "problems" && r.base === "pass" && !e.draft; hidden += Number(item.hidden);
+        item.hidden = filter === "problems" && currentPass({ e, r }) && !e.draft; hidden += Number(item.hidden);
         if (e.draft?.deleted) {
           item.className += " deleted";
           const row = el(doc, "div", "test-row");
