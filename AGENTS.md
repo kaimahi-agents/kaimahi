@@ -536,10 +536,12 @@ The separate native Copilot view uses the host SDK and a private loopback asset
 bridge, without mutations or direct agent-file reads.
 The repository-installable WSL plugin lives in `plugins/copilot-wsl`, including
 shared skills and canvas runtime assets. Legacy native packaging copies these
-same sources; do not maintain a second canvas/skill implementation. Keep its MCP
-command exactly `wsl.exe -e /usr/local/bin/kmx mcp`, without a bundled engine,
-root/model configuration or installation helper. Node tests stay outside the
-installable tree under `plugins/copilot`.
+same sources; do not maintain a second canvas/skill implementation. The macOS/PATH
+plugin in `plugins/copilot` links to those shared sources; its MCP command is
+`kmx mcp`. Keep the WSL MCP command exactly `wsl.exe -e /usr/local/bin/kmx mcp`,
+without a bundled engine, root/model configuration or installation helper.
+Node tests stay outside both installable trees under `plugins/tests/copilot`.
+Legacy bundle tooling retains its separate `native-mcp.json` template.
 See [MCP](docs/kmx.md#local-stdio-mcp).
 
 ## Internal native Squad authoring boundary

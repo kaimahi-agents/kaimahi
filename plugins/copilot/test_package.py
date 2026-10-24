@@ -93,7 +93,6 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(package.asset_source(name), shared / name)
                 self.assertTrue((shared / name).is_file(), name)
                 self.assertFalse((shared / name).is_symlink(), name)
-                self.assertFalse((HERE / name).exists(), name)
 
     def test_native_view_is_bundled_without_tests_or_dependencies(self):
         self.build()

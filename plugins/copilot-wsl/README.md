@@ -57,4 +57,5 @@ prompts and inputs to the selected model.
 If the host has no canvas renderer, the same kmx tools remain available in text.
 
 See the [agent-file guide](../../docs/agent-file.md) for authoring and checks,
-and the [native packaging guide](../copilot/README.md) for non-WSL bundles.
+and the [macOS/PATH plugin guide](../copilot/README.md) for the Mac install and
+legacy native bundles.

@@ -1,0 +1,1 @@
+../../../copilot-wsl/skills/kmx/SKILL.md
