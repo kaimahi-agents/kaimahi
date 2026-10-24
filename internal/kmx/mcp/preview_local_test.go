@@ -18,7 +18,9 @@ func previewStateHome(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return home
+	// Let the state helper create its private leaf; TempDir inherits a broader
+	// ACL on Windows rather than the journal's owner-only permissions.
+	return filepath.Join(home, "state")
 }
 
 func TestPreviewToolsUseJournaledLocalRunner(t *testing.T) {
